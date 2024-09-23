@@ -323,6 +323,30 @@ class DataType:
         return cls._from_pydatatype(PyDataType.tensor(dtype._dtype, shape))
 
     @classmethod
+    def sparse_tensor(
+        cls,
+        dtype: DataType,
+        shape: tuple[int, ...] | None = None,
+    ) -> DataType:
+        """Create a SparseTensor DataType: SparseTensor arrays implemented as 'COO Sparse Tensor' representation of n-dimensional arrays of data of the provided ``dtype`` as elements, each of the provided
+        ``shape``.
+
+        If a ``shape`` is given, each ndarray in the column will have this shape.
+
+        If ``shape`` is not given, the ndarrays in the column can have different shapes. This is much more flexible,
+        but will result in a less compact representation and may be make some operations less efficient.
+
+        Args:
+            dtype: The type of the data contained within the tensor elements.
+            shape: The shape of each SparseTensor in the column. This is ``None`` by default, which allows the shapes of
+                each tensor element to vary.
+        """
+        if shape is not None:
+            if not isinstance(shape, tuple) or not shape or any(not isinstance(n, int) for n in shape):
+                raise ValueError("SparseTensor shape must be a non-empty tuple of ints, but got: ", shape)
+        return cls._from_pydatatype(PyDataType.sparse_tensor(dtype._dtype, shape))
+
+    @classmethod
     def from_arrow_type(cls, arrow_type: pa.lib.DataType) -> DataType:
         """Maps a PyArrow DataType to a Daft DataType"""
         if pa.types.is_int8(arrow_type):
@@ -454,6 +478,12 @@ class DataType:
 
     def _is_fixed_shape_tensor_type(self) -> builtins.bool:
         return self._dtype.is_fixed_shape_tensor()
+
+    def _is_sparse_tensor_type(self) -> builtins.bool:
+        return self._dtype.is_sparse_tensor()
+
+    def _is_fixed_shape_sparse_tensor_type(self) -> builtins.bool:
+        return self._dtype.is_fixed_shape_sparse_tensor()
 
     def _is_image_type(self) -> builtins.bool:
         return self._dtype.is_image()

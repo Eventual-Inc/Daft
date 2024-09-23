@@ -202,6 +202,14 @@ impl_growable_array!(
     FixedShapeTensorArray,
     logical_growable::LogicalFixedShapeTensorGrowable<'a>
 );
+impl_growable_array!(
+    SparseTensorArray,
+    logical_growable::LogicalSparseTensorGrowable<'a>
+);
+impl_growable_array!(
+    FixedShapeSparseTensorArray,
+    logical_growable::LogicalFixedShapeSparseTensorGrowable<'a>
+);
 impl_growable_array!(ImageArray, logical_growable::LogicalImageGrowable<'a>);
 impl_growable_array!(TensorArray, logical_growable::LogicalTensorGrowable<'a>);
 impl_growable_array!(
