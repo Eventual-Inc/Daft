@@ -10,7 +10,7 @@ from daft.expressions import Expression
 from daft.expressions.testing import expr_structurally_equal
 from daft.series import Series
 from daft.table import MicroPartition
-from daft.udf import udf
+from daft.udfs import udf
 
 
 def test_udf():
