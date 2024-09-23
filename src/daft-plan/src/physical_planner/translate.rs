@@ -213,12 +213,23 @@ pub(super) fn translate_single_logical_node(
                     PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()))
                 }
                 ClusteringSpec::Hash(HashClusteringConfig { by, .. }) => {
-                    let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
-                        input_physical,
-                        num_partitions,
-                        by.clone(),
-                    ));
-                    PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()))
+                    // TODO: YOLOSWAG make this the new exchange op, if we're serious about this we can flip a envvar flag
+                    //
+                    // let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
+                    //     input_physical,
+                    //     num_partitions,
+                    //     by.clone(),
+                    // ));
+                    // PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()))
+                    PhysicalPlan::ExchangeOp(ExchangeOp {
+                        input: input_physical,
+                        strategy: ExchangeOpStrategy::FullyMaterializing {
+                            target_spec: Arc::new(ClusteringSpec::Hash(HashClusteringConfig::new(
+                                num_partitions,
+                                by.clone(),
+                            ))),
+                        },
+                    })
                 }
                 ClusteringSpec::Range(_) => {
                     unreachable!("Repartitioning by range is not supported")
