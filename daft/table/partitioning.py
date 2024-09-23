@@ -1,5 +1,6 @@
 from typing import Dict, List, Optional
 
+from daft import Series
 from daft.expressions import ExpressionsProjection
 
 from .micropartition import MicroPartition
@@ -51,10 +52,11 @@ class PartitionedTable:
 
     def partition_values_str(self) -> Optional[MicroPartition]:
         """
-        Returns the partition values converted to human-readable strings, filling nulls with `partition_null_fallback`.
+        Returns the partition values converted to human-readable strings, keeping null values as null.
 
         If the table is not partitioned, returns None.
         """
+        null_part = Series.from_pylist([None])
         partition_values = self.partition_values()
 
         if partition_values is None:
@@ -67,6 +69,7 @@ class PartitionedTable:
             for c in pkey_names:
                 column = partition_values.get_column(c)
                 string_names = column._to_str_values()
-                partition_strings[c] = string_names
+                null_filled = column.is_null().if_else(null_part, string_names)
+                partition_strings[c] = null_filled
 
             return MicroPartition.from_pydict(partition_strings)
