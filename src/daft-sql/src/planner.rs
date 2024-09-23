@@ -4,12 +4,10 @@ use common_error::DaftResult;
 use daft_core::prelude::*;
 use daft_dsl::{
     col,
-    functions::{
-        numeric::{ceil, floor},
-        utf8::{ilike, like},
-    },
+    functions::utf8::{ilike, like},
     has_agg, lit, literals_to_series, null_lit, Expr, ExprRef, LiteralValue, Operator,
 };
+use daft_functions::numeric::{ceil::ceil, floor::floor};
 use daft_plan::{LogicalPlanBuilder, LogicalPlanRef};
 use sqlparser::{
     ast::{

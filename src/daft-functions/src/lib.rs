@@ -31,7 +31,6 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction_bound!(hash::python::hash, parent)?)?;
 
     parent.add_function(wrap_pyfunction_bound!(minhash::python::minhash, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(numeric::cbrt::python::cbrt, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(
         to_struct::python::to_struct,
         parent
@@ -46,6 +45,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     )?)?;
     parent.add_function(wrap_pyfunction_bound!(uri::python::url_download, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(uri::python::url_upload, parent)?)?;
+    numeric::register_modules(parent)?;
     image::register_modules(parent)?;
     float::register_modules(parent)?;
     temporal::register_modules(parent)?;

@@ -1,5 +1,8 @@
 use common_error::DaftResult;
-use daft_core::prelude::*;
+use daft_core::{
+    prelude::{Field, Schema},
+    series::Series,
+};
 use daft_dsl::{
     functions::{ScalarFunction, ScalarUDF},
     ExprRef,
@@ -7,30 +10,29 @@ use daft_dsl::{
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct Cbrt;
-use super::{evaluate_single_numeric, to_field_single_floating};
+pub struct Sign {}
 
 #[typetag::serde]
-impl ScalarUDF for Cbrt {
+impl ScalarUDF for Sign {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
 
     fn name(&self) -> &'static str {
-        "cbrt"
+        "sign"
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-        to_field_single_floating(self, inputs, schema)
+        to_field_single_numeric(self, inputs, schema)
     }
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
-        evaluate_single_numeric(inputs, Series::cbrt)
+        evaluate_single_numeric(inputs, Series::sign)
     }
 }
 
-pub fn cbrt(input: ExprRef) -> ExprRef {
-    ScalarFunction::new(Cbrt {}, vec![input]).into()
+pub fn sign(input: ExprRef) -> ExprRef {
+    ScalarFunction::new(Sign {}, vec![input]).into()
 }
 
 #[cfg(feature = "python")]
@@ -38,9 +40,11 @@ use {
     daft_dsl::python::PyExpr,
     pyo3::{pyfunction, PyResult},
 };
+
+use super::{evaluate_single_numeric, to_field_single_numeric};
 #[cfg(feature = "python")]
 #[pyfunction]
-#[pyo3(name = "cbrt")]
-pub fn py_cbrt(expr: PyExpr) -> PyResult<PyExpr> {
-    Ok(cbrt(expr.into()).into())
+#[pyo3(name = "sign")]
+pub fn py_sign(expr: PyExpr) -> PyResult<PyExpr> {
+    Ok(sign(expr.into()).into())
 }
