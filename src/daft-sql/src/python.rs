@@ -45,6 +45,11 @@ impl PyCatalog {
         self.catalog.register_table(name, plan);
     }
 
+    /// Copy from another catalog, using tables from other in case of conflict
+    pub fn copy_from(&mut self, other: &PyCatalog) {
+        self.catalog.copy_from(&other.catalog);
+    }
+
     /// __str__ to print the catalog's tables
     fn __str__(&self) -> String {
         format!("{:?}", self.catalog)

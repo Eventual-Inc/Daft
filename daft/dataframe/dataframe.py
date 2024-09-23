@@ -647,12 +647,12 @@ class DataFrame:
             DataFrame: The operations that occurred with this write.
         """
 
-        if len(table.spec().fields) > 0:
-            raise ValueError("Cannot write to partitioned Iceberg tables")
-
         import pyarrow as pa
         import pyiceberg
         from packaging.version import parse
+
+        if len(table.spec().fields) > 0 and parse(pyiceberg.__version__) < parse("0.7.0"):
+            raise ValueError("pyiceberg>=0.7.0 is required to write to a partitioned table")
 
         if parse(pyiceberg.__version__) < parse("0.6.0"):
             raise ValueError(f"Write Iceberg is only supported on pyiceberg>=0.6.0, found {pyiceberg.__version__}")
@@ -683,11 +683,17 @@ class DataFrame:
         else:
             deleted_files = []
 
+        schema = table.schema()
+        partitioning: Dict[str, list] = {schema.find_field(field.source_id).name: [] for field in table.spec().fields}
+
         for data_file in data_files:
             operations.append("ADD")
             path.append(data_file.file_path)
             rows.append(data_file.record_count)
             size.append(data_file.file_size_in_bytes)
+
+            for field in partitioning.keys():
+                partitioning[field].append(getattr(data_file.partition, field, None))
 
         for pf in deleted_files:
             data_file = pf.file
@@ -695,6 +701,9 @@ class DataFrame:
             path.append(data_file.file_path)
             rows.append(data_file.record_count)
             size.append(data_file.file_size_in_bytes)
+
+            for field in partitioning.keys():
+                partitioning[field].append(getattr(data_file.partition, field, None))
 
         if parse(pyiceberg.__version__) >= parse("0.7.0"):
             from pyiceberg.table import ALWAYS_TRUE, PropertyUtil, TableProperties
@@ -735,19 +744,23 @@ class DataFrame:
 
             merge.commit()
 
+        with_operations = {
+            "operation": pa.array(operations, type=pa.string()),
+            "rows": pa.array(rows, type=pa.int64()),
+            "file_size": pa.array(size, type=pa.int64()),
+            "file_name": pa.array([fp for fp in path], type=pa.string()),
+        }
+
+        if partitioning:
+            with_operations["partitioning"] = pa.StructArray.from_arrays(
+                partitioning.values(), names=partitioning.keys()
+            )
+
         from daft import from_pydict
 
-        with_operations = from_pydict(
-            {
-                "operation": pa.array(operations, type=pa.string()),
-                "rows": pa.array(rows, type=pa.int64()),
-                "file_size": pa.array(size, type=pa.int64()),
-                "file_name": pa.array([os.path.basename(fp) for fp in path], type=pa.string()),
-            }
-        )
         # NOTE: We are losing the history of the plan here.
         # This is due to the fact that the logical plan of the write_iceberg returns datafiles but we want to return the above data
-        return with_operations
+        return from_pydict(with_operations)
 
     @DataframePublicAPI
     def write_deltalake(

@@ -52,12 +52,13 @@ macro_rules! impl_func_evaluator_for_partitioning {
         }
     };
 }
-use DataType::{Date, Int32};
+
+use DataType::Int32;
 
 use crate::functions::FunctionExpr;
 impl_func_evaluator_for_partitioning!(YearsEvaluator, years, partitioning_years, Int32);
 impl_func_evaluator_for_partitioning!(MonthsEvaluator, months, partitioning_months, Int32);
-impl_func_evaluator_for_partitioning!(DaysEvaluator, days, partitioning_days, Date);
+impl_func_evaluator_for_partitioning!(DaysEvaluator, days, partitioning_days, Int32);
 impl_func_evaluator_for_partitioning!(HoursEvaluator, hours, partitioning_hours, Int32);
 
 pub(super) struct IcebergBucketEvaluator {}
@@ -125,10 +126,10 @@ impl FunctionEvaluator for IcebergTruncateEvaluator {
             [input] => match input.to_field(schema) {
                 Ok(field) => match &field.dtype {
                     DataType::Decimal128(_, _)
-                    | DataType::Utf8 => Ok(Field::new(format!("{}_truncate", field.name), field.dtype)),
-                    v if v.is_integer() => Ok(Field::new(format!("{}_truncate", field.name), field.dtype)),
+                    | DataType::Utf8 | DataType::Binary => Ok(Field::new(format!("{}_trunc", field.name), field.dtype)),
+                    v if v.is_integer() => Ok(Field::new(format!("{}_trunc", field.name), field.dtype)),
                     _ => Err(DaftError::TypeError(format!(
-                        "Expected input to IcebergTruncate to be an Integer, Utf8 or Decimal, got {}",
+                        "Expected input to IcebergTruncate to be an Integer, Utf8, Decimal, or Binary, got {}",
                         field.dtype
                     ))),
                 },

@@ -1,6 +1,17 @@
-use daft_dsl::{
-    functions::{self, numeric::NumericExpr},
-    ExprRef, LiteralValue,
+use daft_dsl::{ExprRef, LiteralValue};
+use daft_functions::numeric::{
+    abs::abs,
+    ceil::ceil,
+    exp::exp,
+    floor::floor,
+    log::{ln, log, log10, log2},
+    round::round,
+    sign::sign,
+    sqrt::sqrt,
+    trigonometry::{
+        arccos, arccosh, arcsin, arcsinh, arctan, arctanh, atan2, cos, cot, degrees, radians, sin,
+        tan,
+    },
 };
 
 use super::SQLModule;
@@ -13,38 +24,62 @@ use crate::{
 
 pub struct SQLModuleNumeric;
 
-/// SQLModule for FunctionExpr::Numeric
 impl SQLModule for SQLModuleNumeric {
     fn register(parent: &mut SQLFunctions) {
-        use NumericExpr::*;
-        parent.add_fn("abs", Abs);
-        parent.add_fn("ceil", Ceil);
-        parent.add_fn("floor", Floor);
-        parent.add_fn("sign", Sign);
-        parent.add_fn("round", Round(0));
-        parent.add_fn("sqrt", Sqrt);
-        parent.add_fn("sin", Sin);
-        parent.add_fn("cos", Cos);
-        parent.add_fn("tan", Tan);
-        parent.add_fn("cot", Cot);
-        parent.add_fn("asin", ArcSin);
-        parent.add_fn("acos", ArcCos);
-        parent.add_fn("atan", ArcTan);
-        parent.add_fn("atan2", ArcTan2);
-        parent.add_fn("radians", Radians);
-        parent.add_fn("degrees", Degrees);
-        parent.add_fn("log2", Log2);
-        parent.add_fn("log10", Log10);
-        // parent.add("log", f(Log(FloatWrapper(0.0))));
-        parent.add_fn("ln", Ln);
-        parent.add_fn("exp", Exp);
-        parent.add_fn("atanh", ArcTanh);
-        parent.add_fn("acosh", ArcCosh);
-        parent.add_fn("asinh", ArcSinh);
+        parent.add_fn("abs", SQLNumericExpr::Abs);
+        parent.add_fn("ceil", SQLNumericExpr::Ceil);
+        parent.add_fn("floor", SQLNumericExpr::Floor);
+        parent.add_fn("sign", SQLNumericExpr::Sign);
+        parent.add_fn("round", SQLNumericExpr::Round);
+        parent.add_fn("sqrt", SQLNumericExpr::Sqrt);
+        parent.add_fn("sin", SQLNumericExpr::Sin);
+        parent.add_fn("cos", SQLNumericExpr::Cos);
+        parent.add_fn("tan", SQLNumericExpr::Tan);
+        parent.add_fn("cot", SQLNumericExpr::Cot);
+        parent.add_fn("asin", SQLNumericExpr::ArcSin);
+        parent.add_fn("acos", SQLNumericExpr::ArcCos);
+        parent.add_fn("atan", SQLNumericExpr::ArcTan);
+        parent.add_fn("atan2", SQLNumericExpr::ArcTan2);
+        parent.add_fn("radians", SQLNumericExpr::Radians);
+        parent.add_fn("degrees", SQLNumericExpr::Degrees);
+        parent.add_fn("log2", SQLNumericExpr::Log2);
+        parent.add_fn("log10", SQLNumericExpr::Log10);
+        parent.add_fn("log", SQLNumericExpr::Log);
+        parent.add_fn("ln", SQLNumericExpr::Ln);
+        parent.add_fn("exp", SQLNumericExpr::Exp);
+        parent.add_fn("atanh", SQLNumericExpr::ArcTanh);
+        parent.add_fn("acosh", SQLNumericExpr::ArcCosh);
+        parent.add_fn("asinh", SQLNumericExpr::ArcSinh);
     }
 }
+enum SQLNumericExpr {
+    Abs,
+    Ceil,
+    Exp,
+    Floor,
+    Round,
+    Sign,
+    Sqrt,
+    Sin,
+    Cos,
+    Tan,
+    Cot,
+    ArcSin,
+    ArcCos,
+    ArcTan,
+    ArcTan2,
+    Radians,
+    Degrees,
+    Log,
+    Log2,
+    Log10,
+    Ln,
+    ArcTanh,
+    ArcCosh,
+    ArcSinh,
+}
 
-impl SQLFunction for NumericExpr {
+impl SQLFunction for SQLNumericExpr {
     fn to_expr(
         &self,
         inputs: &[sqlparser::ast::FunctionArg],
@@ -54,27 +89,26 @@ impl SQLFunction for NumericExpr {
         to_expr(self, inputs.as_slice())
     }
 }
-fn to_expr(expr: &NumericExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
-    use functions::numeric::*;
-    use NumericExpr::*;
+
+fn to_expr(expr: &SQLNumericExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
     match expr {
-        Abs => {
+        SQLNumericExpr::Abs => {
             ensure!(args.len() == 1, "abs takes exactly one argument");
             Ok(abs(args[0].clone()))
         }
-        Ceil => {
+        SQLNumericExpr::Ceil => {
             ensure!(args.len() == 1, "ceil takes exactly one argument");
             Ok(ceil(args[0].clone()))
         }
-        Floor => {
+        SQLNumericExpr::Floor => {
             ensure!(args.len() == 1, "floor takes exactly one argument");
             Ok(floor(args[0].clone()))
         }
-        Sign => {
+        SQLNumericExpr::Sign => {
             ensure!(args.len() == 1, "sign takes exactly one argument");
             Ok(sign(args[0].clone()))
         }
-        Round(_) => {
+        SQLNumericExpr::Round => {
             ensure!(args.len() == 2, "round takes exactly two arguments");
             let precision = match args[1].as_ref().as_literal() {
                 Some(LiteralValue::Int32(i)) => *i,
@@ -84,63 +118,63 @@ fn to_expr(expr: &NumericExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
             };
             Ok(round(args[0].clone(), precision))
         }
-        Sqrt => {
+        SQLNumericExpr::Sqrt => {
             ensure!(args.len() == 1, "sqrt takes exactly one argument");
             Ok(sqrt(args[0].clone()))
         }
-        Sin => {
+        SQLNumericExpr::Sin => {
             ensure!(args.len() == 1, "sin takes exactly one argument");
             Ok(sin(args[0].clone()))
         }
-        Cos => {
+        SQLNumericExpr::Cos => {
             ensure!(args.len() == 1, "cos takes exactly one argument");
             Ok(cos(args[0].clone()))
         }
-        Tan => {
+        SQLNumericExpr::Tan => {
             ensure!(args.len() == 1, "tan takes exactly one argument");
             Ok(tan(args[0].clone()))
         }
-        Cot => {
+        SQLNumericExpr::Cot => {
             ensure!(args.len() == 1, "cot takes exactly one argument");
             Ok(cot(args[0].clone()))
         }
-        ArcSin => {
+        SQLNumericExpr::ArcSin => {
             ensure!(args.len() == 1, "asin takes exactly one argument");
             Ok(arcsin(args[0].clone()))
         }
-        ArcCos => {
+        SQLNumericExpr::ArcCos => {
             ensure!(args.len() == 1, "acos takes exactly one argument");
             Ok(arccos(args[0].clone()))
         }
-        ArcTan => {
+        SQLNumericExpr::ArcTan => {
             ensure!(args.len() == 1, "atan takes exactly one argument");
             Ok(arctan(args[0].clone()))
         }
-        ArcTan2 => {
+        SQLNumericExpr::ArcTan2 => {
             ensure!(args.len() == 2, "atan2 takes exactly two arguments");
-            Ok(arctan2(args[0].clone(), args[1].clone()))
+            Ok(atan2(args[0].clone(), args[1].clone()))
         }
-        Degrees => {
+        SQLNumericExpr::Degrees => {
             ensure!(args.len() == 1, "degrees takes exactly one argument");
             Ok(degrees(args[0].clone()))
         }
-        Radians => {
+        SQLNumericExpr::Radians => {
             ensure!(args.len() == 1, "radians takes exactly one argument");
             Ok(radians(args[0].clone()))
         }
-        Log2 => {
+        SQLNumericExpr::Log2 => {
             ensure!(args.len() == 1, "log2 takes exactly one argument");
             Ok(log2(args[0].clone()))
         }
-        Log10 => {
+        SQLNumericExpr::Log10 => {
             ensure!(args.len() == 1, "log10 takes exactly one argument");
             Ok(log10(args[0].clone()))
         }
-        Ln => {
+        SQLNumericExpr::Ln => {
             ensure!(args.len() == 1, "ln takes exactly one argument");
             Ok(ln(args[0].clone()))
         }
-        Log(_) => {
+        SQLNumericExpr::Log => {
             ensure!(args.len() == 2, "log takes exactly two arguments");
             let base = args[1]
                 .as_literal()
@@ -158,19 +192,19 @@ fn to_expr(expr: &NumericExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
 
             Ok(log(args[0].clone(), base))
         }
-        Exp => {
+        SQLNumericExpr::Exp => {
             ensure!(args.len() == 1, "exp takes exactly one argument");
             Ok(exp(args[0].clone()))
         }
-        ArcTanh => {
+        SQLNumericExpr::ArcTanh => {
             ensure!(args.len() == 1, "atanh takes exactly one argument");
             Ok(arctanh(args[0].clone()))
         }
-        ArcCosh => {
+        SQLNumericExpr::ArcCosh => {
             ensure!(args.len() == 1, "acosh takes exactly one argument");
             Ok(arccosh(args[0].clone()))
         }
-        ArcSinh => {
+        SQLNumericExpr::ArcSinh => {
             ensure!(args.len() == 1, "asinh takes exactly one argument");
             Ok(arcsinh(args[0].clone()))
         }

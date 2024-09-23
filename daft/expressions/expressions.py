@@ -328,7 +328,7 @@ class Expression:
 
     def abs(self) -> Expression:
         """Absolute of a numeric expression (``expr.abs()``)"""
-        return Expression._from_pyexpr(abs(self._expr))
+        return Expression._from_pyexpr(native.abs(self._expr))
 
     def __add__(self, other: object) -> Expression:
         """Adds two numeric expressions or concatenates two string expressions (``e1 + e2``)"""
@@ -577,17 +577,17 @@ class Expression:
 
     def ceil(self) -> Expression:
         """The ceiling of a numeric expression (``expr.ceil()``)"""
-        expr = self._expr.ceil()
+        expr = native.ceil(self._expr)
         return Expression._from_pyexpr(expr)
 
     def floor(self) -> Expression:
         """The floor of a numeric expression (``expr.floor()``)"""
-        expr = self._expr.floor()
+        expr = native.floor(self._expr)
         return Expression._from_pyexpr(expr)
 
     def sign(self) -> Expression:
         """The sign of a numeric expression (``expr.sign()``)"""
-        expr = self._expr.sign()
+        expr = native.sign(self._expr)
         return Expression._from_pyexpr(expr)
 
     def round(self, decimals: int = 0) -> Expression:
@@ -597,12 +597,12 @@ class Expression:
             decimals: number of decimal places to round to. Defaults to 0.
         """
         assert isinstance(decimals, int)
-        expr = self._expr.round(decimals)
+        expr = native.round(self._expr, decimals)
         return Expression._from_pyexpr(expr)
 
     def sqrt(self) -> Expression:
         """The square root of a numeric expression (``expr.sqrt()``)"""
-        expr = self._expr.sqrt()
+        expr = native.sqrt(self._expr)
         return Expression._from_pyexpr(expr)
 
     def cbrt(self) -> Expression:
@@ -611,37 +611,37 @@ class Expression:
 
     def sin(self) -> Expression:
         """The elementwise sine of a numeric expression (``expr.sin()``)"""
-        expr = self._expr.sin()
+        expr = native.sin(self._expr)
         return Expression._from_pyexpr(expr)
 
     def cos(self) -> Expression:
         """The elementwise cosine of a numeric expression (``expr.cos()``)"""
-        expr = self._expr.cos()
+        expr = native.cos(self._expr)
         return Expression._from_pyexpr(expr)
 
     def tan(self) -> Expression:
         """The elementwise tangent of a numeric expression (``expr.tan()``)"""
-        expr = self._expr.tan()
+        expr = native.tan(self._expr)
         return Expression._from_pyexpr(expr)
 
     def cot(self) -> Expression:
         """The elementwise cotangent of a numeric expression (``expr.cot()``)"""
-        expr = self._expr.cot()
+        expr = native.cot(self._expr)
         return Expression._from_pyexpr(expr)
 
     def arcsin(self) -> Expression:
         """The elementwise arc sine of a numeric expression (``expr.arcsin()``)"""
-        expr = self._expr.arcsin()
+        expr = native.arcsin(self._expr)
         return Expression._from_pyexpr(expr)
 
     def arccos(self) -> Expression:
         """The elementwise arc cosine of a numeric expression (``expr.arccos()``)"""
-        expr = self._expr.arccos()
+        expr = native.arccos(self._expr)
         return Expression._from_pyexpr(expr)
 
     def arctan(self) -> Expression:
         """The elementwise arc tangent of a numeric expression (``expr.arctan()``)"""
-        expr = self._expr.arctan()
+        expr = native.arctan(self._expr)
         return Expression._from_pyexpr(expr)
 
     def arctan2(self, other: Expression) -> Expression:
@@ -652,41 +652,41 @@ class Expression:
         * ``y >= 0``: ``(pi/2, pi]``
         * ``y < 0``: ``(-pi, -pi/2)``"""
         expr = Expression._to_expression(other)
-        return Expression._from_pyexpr(self._expr.arctan2(expr._expr))
+        return Expression._from_pyexpr(native.arctan2(self._expr, expr._expr))
 
     def arctanh(self) -> Expression:
         """The elementwise inverse hyperbolic tangent of a numeric expression (``expr.arctanh()``)"""
-        expr = self._expr.arctanh()
+        expr = native.arctanh(self._expr)
         return Expression._from_pyexpr(expr)
 
     def arccosh(self) -> Expression:
         """The elementwise inverse hyperbolic cosine of a numeric expression (``expr.arccosh()``)"""
-        expr = self._expr.arccosh()
+        expr = native.arccosh(self._expr)
         return Expression._from_pyexpr(expr)
 
     def arcsinh(self) -> Expression:
         """The elementwise inverse hyperbolic sine of a numeric expression (``expr.arcsinh()``)"""
-        expr = self._expr.arcsinh()
+        expr = native.arcsinh(self._expr)
         return Expression._from_pyexpr(expr)
 
     def radians(self) -> Expression:
         """The elementwise radians of a numeric expression (``expr.radians()``)"""
-        expr = self._expr.radians()
+        expr = native.radians(self._expr)
         return Expression._from_pyexpr(expr)
 
     def degrees(self) -> Expression:
         """The elementwise degrees of a numeric expression (``expr.degrees()``)"""
-        expr = self._expr.degrees()
+        expr = native.degrees(self._expr)
         return Expression._from_pyexpr(expr)
 
     def log2(self) -> Expression:
         """The elementwise log base 2 of a numeric expression (``expr.log2()``)"""
-        expr = self._expr.log2()
+        expr = native.log2(self._expr)
         return Expression._from_pyexpr(expr)
 
     def log10(self) -> Expression:
         """The elementwise log base 10 of a numeric expression (``expr.log10()``)"""
-        expr = self._expr.log10()
+        expr = native.log10(self._expr)
         return Expression._from_pyexpr(expr)
 
     def log(self, base: float = math.e) -> Expression:  # type: ignore
@@ -695,17 +695,17 @@ class Expression:
             base: The base of the logarithm. Defaults to e.
         """
         assert isinstance(base, (int, float)), f"base must be an int or float, but {type(base)} was provided."
-        expr = self._expr.log(float(base))
+        expr = native.log(self._expr, float(base))
         return Expression._from_pyexpr(expr)
 
     def ln(self) -> Expression:
         """The elementwise natural log of a numeric expression (``expr.ln()``)"""
-        expr = self._expr.ln()
+        expr = native.ln(self._expr)
         return Expression._from_pyexpr(expr)
 
     def exp(self) -> Expression:
         """The e^self of a numeric expression (``expr.exp()``)"""
-        expr = self._expr.exp()
+        expr = native.exp(self._expr)
         return Expression._from_pyexpr(expr)
 
     def bitwise_and(self, other: Expression) -> Expression:
@@ -884,7 +884,7 @@ class Expression:
         return Expression._from_pyexpr(expr)
 
     def _explode(self) -> Expression:
-        expr = self._expr.explode()
+        expr = native.explode(self._expr)
         return Expression._from_pyexpr(expr)
 
     def if_else(self, if_true: Expression, if_false: Expression) -> Expression:
@@ -1491,7 +1491,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         Returns:
             Expression: a Date expression
         """
-        return Expression._from_pyexpr(self._expr.dt_date())
+        return Expression._from_pyexpr(native.dt_date(self._expr))
 
     def day(self) -> Expression:
         """Retrieves the day for a datetime column
@@ -1526,7 +1526,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         Returns:
             Expression: a UInt32 expression with just the day extracted from a datetime column
         """
-        return Expression._from_pyexpr(self._expr.dt_day())
+        return Expression._from_pyexpr(native.dt_day(self._expr))
 
     def hour(self) -> Expression:
         """Retrieves the day for a datetime column
@@ -1561,7 +1561,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         Returns:
             Expression: a UInt32 expression with just the day extracted from a datetime column
         """
-        return Expression._from_pyexpr(self._expr.dt_hour())
+        return Expression._from_pyexpr(native.dt_hour(self._expr))
 
     def minute(self) -> Expression:
         """Retrieves the minute for a datetime column
@@ -1596,7 +1596,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         Returns:
             Expression: a UInt32 expression with just the minute extracted from a datetime column
         """
-        return Expression._from_pyexpr(self._expr.dt_minute())
+        return Expression._from_pyexpr(native.dt_minute(self._expr))
 
     def second(self) -> Expression:
         """Retrieves the second for a datetime column
@@ -1631,7 +1631,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         Returns:
             Expression: a UInt32 expression with just the second extracted from a datetime column
         """
-        return Expression._from_pyexpr(self._expr.dt_second())
+        return Expression._from_pyexpr(native.dt_second(self._expr))
 
     def time(self) -> Expression:
         """Retrieves the time for a datetime column
@@ -1666,7 +1666,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         Returns:
             Expression: a Time expression
         """
-        return Expression._from_pyexpr(self._expr.dt_time())
+        return Expression._from_pyexpr(native.dt_time(self._expr))
 
     def month(self) -> Expression:
         """Retrieves the month for a datetime column
@@ -1699,7 +1699,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         Returns:
             Expression: a UInt32 expression with just the month extracted from a datetime column
         """
-        return Expression._from_pyexpr(self._expr.dt_month())
+        return Expression._from_pyexpr(native.dt_month(self._expr))
 
     def year(self) -> Expression:
         """Retrieves the year for a datetime column
@@ -1733,7 +1733,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         Returns:
             Expression: a UInt32 expression with just the year extracted from a datetime column
         """
-        return Expression._from_pyexpr(self._expr.dt_year())
+        return Expression._from_pyexpr(native.dt_year(self._expr))
 
     def day_of_week(self) -> Expression:
         """Retrieves the day of the week for a datetime column, starting at 0 for Monday and ending at 6 for Sunday
@@ -1766,7 +1766,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
         Returns:
             Expression: a UInt32 expression with just the day_of_week extracted from a datetime column
         """
-        return Expression._from_pyexpr(self._expr.dt_day_of_week())
+        return Expression._from_pyexpr(native.dt_day_of_week(self._expr))
 
     def truncate(self, interval: str, relative_to: Expression | None = None) -> Expression:
         """Truncates the datetime column to the specified interval
@@ -1804,7 +1804,7 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
             Expression: a DateTime expression truncated to the specified interval
         """
         relative_to = Expression._to_expression(relative_to)
-        return Expression._from_pyexpr(self._expr.dt_truncate(interval, relative_to._expr))
+        return Expression._from_pyexpr(native.dt_truncate(self._expr, interval, relative_to._expr))
 
 
 class ExpressionStringNamespace(ExpressionNamespace):
@@ -1980,7 +1980,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         pattern_expr = Expression._to_expression(pattern)
         return Expression._from_pyexpr(self._expr.utf8_split(pattern_expr._expr, regex))
 
-    def concat(self, other: str) -> Expression:
+    def concat(self, other: str | Expression) -> Expression:
         """Concatenates two string expressions together
 
         .. NOTE::
@@ -2012,7 +2012,8 @@ class ExpressionStringNamespace(ExpressionNamespace):
             Expression: a String expression which is `self` concatenated with `other`
         """
         # Delegate to + operator implementation.
-        return Expression._from_pyexpr(self._expr) + other
+        other_expr = Expression._to_expression(other)
+        return Expression._from_pyexpr(self._expr) + other_expr
 
     def extract(self, pattern: str | Expression, index: int = 0) -> Expression:
         r"""Extracts the specified match group from the first regex match in each string in a string column.
@@ -2919,7 +2920,7 @@ class ExpressionListNamespace(ExpressionNamespace):
             Expression: a String expression which is every element of the list joined on the delimiter
         """
         delimiter_expr = Expression._to_expression(delimiter)
-        return Expression._from_pyexpr(self._expr.list_join(delimiter_expr._expr))
+        return Expression._from_pyexpr(native.list_join(self._expr, delimiter_expr._expr))
 
     def count(self, mode: CountMode = CountMode.Valid) -> Expression:
         """Counts the number of elements in each list
@@ -2930,7 +2931,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         Returns:
             Expression: a UInt64 expression which is the length of each list
         """
-        return Expression._from_pyexpr(self._expr.list_count(mode))
+        return Expression._from_pyexpr(native.list_count(self._expr, mode))
 
     def lengths(self) -> Expression:
         """Gets the length of each list
@@ -2938,7 +2939,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         Returns:
             Expression: a UInt64 expression which is the length of each list
         """
-        return Expression._from_pyexpr(self._expr.list_count(CountMode.All))
+        return Expression._from_pyexpr(native.list_count(self._expr, CountMode.All))
 
     def get(self, idx: int | Expression, default: object = None) -> Expression:
         """Gets the element at an index in each list
@@ -2952,7 +2953,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         idx_expr = Expression._to_expression(idx)
         default_expr = lit(default)
-        return Expression._from_pyexpr(self._expr.list_get(idx_expr._expr, default_expr._expr))
+        return Expression._from_pyexpr(native.list_get(self._expr, idx_expr._expr, default_expr._expr))
 
     def slice(self, start: int | Expression, end: int | Expression | None = None) -> Expression:
         """Gets a subset of each list
@@ -2966,7 +2967,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         start_expr = Expression._to_expression(start)
         end_expr = Expression._to_expression(end)
-        return Expression._from_pyexpr(self._expr.list_slice(start_expr._expr, end_expr._expr))
+        return Expression._from_pyexpr(native.list_slice(self._expr, start_expr._expr, end_expr._expr))
 
     def chunk(self, size: int) -> Expression:
         """Splits each list into chunks of the given size
@@ -2978,7 +2979,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         if not (isinstance(size, int) and size > 0):
             raise ValueError(f"Invalid value for `size`: {size}")
-        return Expression._from_pyexpr(self._expr.list_chunk(size))
+        return Expression._from_pyexpr(native.list_chunk(self._expr, size))
 
     def sum(self) -> Expression:
         """Sums each list. Empty lists and lists with all nulls yield null.
@@ -2986,7 +2987,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         Returns:
             Expression: an expression with the type of the list values
         """
-        return Expression._from_pyexpr(self._expr.list_sum())
+        return Expression._from_pyexpr(native.list_sum(self._expr))
 
     def mean(self) -> Expression:
         """Calculates the mean of each list. If no non-null values in a list, the result is null.
@@ -2994,7 +2995,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         Returns:
             Expression: a Float64 expression with the type of the list values
         """
-        return Expression._from_pyexpr(self._expr.list_mean())
+        return Expression._from_pyexpr(native.list_mean(self._expr))
 
     def min(self) -> Expression:
         """Calculates the minimum of each list. If no non-null values in a list, the result is null.
@@ -3002,7 +3003,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         Returns:
             Expression: a Float64 expression with the type of the list values
         """
-        return Expression._from_pyexpr(self._expr.list_min())
+        return Expression._from_pyexpr(native.list_min(self._expr))
 
     def max(self) -> Expression:
         """Calculates the maximum of each list. If no non-null values in a list, the result is null.
@@ -3010,7 +3011,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         Returns:
             Expression: a Float64 expression with the type of the list values
         """
-        return Expression._from_pyexpr(self._expr.list_max())
+        return Expression._from_pyexpr(native.list_max(self._expr))
 
     def sort(self, desc: bool | Expression = False) -> Expression:
         """Sorts the inner lists of a list column.
@@ -3306,7 +3307,7 @@ class ExpressionPartitioningNamespace(ExpressionNamespace):
         """Partitioning Transform that returns the number of days since epoch (1970-01-01)
 
         Returns:
-            Expression: Date Type Expression
+            Expression: Int32 Expression in days
         """
         return Expression._from_pyexpr(self._expr.partitioning_days())
 

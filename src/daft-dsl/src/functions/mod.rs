@@ -1,11 +1,8 @@
-pub mod list;
 pub mod map;
-pub mod numeric;
 pub mod partitioning;
 pub mod scalar;
 pub mod sketch;
 pub mod struct_;
-pub mod temporal;
 pub mod utf8;
 
 use std::{
@@ -19,8 +16,8 @@ pub use scalar::*;
 use serde::{Deserialize, Serialize};
 
 use self::{
-    list::ListExpr, map::MapExpr, numeric::NumericExpr, partitioning::PartitioningExpr,
-    sketch::SketchExpr, struct_::StructExpr, temporal::TemporalExpr, utf8::Utf8Expr,
+    map::MapExpr, partitioning::PartitioningExpr, sketch::SketchExpr, struct_::StructExpr,
+    utf8::Utf8Expr,
 };
 use crate::{Expr, ExprRef, Operator};
 
@@ -29,10 +26,7 @@ use python::PythonUDF;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum FunctionExpr {
-    Numeric(NumericExpr),
     Utf8(Utf8Expr),
-    Temporal(TemporalExpr),
-    List(ListExpr),
     Map(MapExpr),
     Sketch(SketchExpr),
     Struct(StructExpr),
@@ -56,10 +50,7 @@ impl FunctionExpr {
     fn get_evaluator(&self) -> &dyn FunctionEvaluator {
         use FunctionExpr::*;
         match self {
-            Numeric(expr) => expr.get_evaluator(),
             Utf8(expr) => expr.get_evaluator(),
-            Temporal(expr) => expr.get_evaluator(),
-            List(expr) => expr.get_evaluator(),
             Map(expr) => expr.get_evaluator(),
             Sketch(expr) => expr.get_evaluator(),
             Struct(expr) => expr.get_evaluator(),
