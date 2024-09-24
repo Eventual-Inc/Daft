@@ -871,7 +871,7 @@ impl SQLPlanner {
             // ---------------------------------
             // struct
             // ---------------------------------
-            SQLDataType::Struct(fields) => {
+            SQLDataType::Struct(fields, _) => {
                 let fields = fields
                     .iter()
                     .enumerate()
