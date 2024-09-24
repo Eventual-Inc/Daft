@@ -51,8 +51,10 @@ impl TryFrom<ParquetSchemaInferenceOptionsBuilder> for ParquetSchemaInferenceOpt
         Ok(ParquetSchemaInferenceOptions {
             coerce_int96_timestamp_unit: value
                 .coerce_int96_timestamp_unit
-                .map_or(TimeUnit::Nanoseconds, |py_timeunit| py_timeunit.into()),
-            string_encoding: StringEncoding::try_from(value.string_encoding)
+                .map_or(TimeUnit::Nanoseconds, From::from),
+            string_encoding: value
+                .string_encoding
+                .try_into()
                 .context(crate::Arrow2Snafu)?,
         })
     }
