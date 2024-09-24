@@ -65,7 +65,7 @@ impl Default for ParquetSchemaInferenceOptionsBuilder {
     fn default() -> Self {
         Self {
             coerce_int96_timestamp_unit: Some(PyTimeUnit::nanoseconds().unwrap()),
-            string_encoding: Some("utf8".into()),
+            string_encoding: Some("utf-8".into()),
         }
     }
 }

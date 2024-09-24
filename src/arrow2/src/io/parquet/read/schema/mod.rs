@@ -36,7 +36,7 @@ impl<T: AsRef<str>> TryFrom<Option<T>> for StringEncoding {
 
     fn try_from(value: Option<T>) -> Result<Self> {
         match value.as_ref().map(AsRef::as_ref) {
-            Some("utf8") => Ok(Self::Utf8),
+            Some("utf-8") => Ok(Self::Utf8),
             Some(encoding) => Err(crate::error::Error::InvalidArgumentError(format!(
                 "Unrecognized encoding: {}",
                 encoding
