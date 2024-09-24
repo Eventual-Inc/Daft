@@ -1,8 +1,10 @@
 //! APIs to handle Parquet <-> Arrow schemas.
 
+use std::str::FromStr;
+
 use crate::{
     datatypes::{Schema, TimeUnit},
-    error::Result,
+    error::{Error, Result},
 };
 
 mod convert;
@@ -31,17 +33,17 @@ pub enum StringEncoding {
     Utf8,
 }
 
-impl<T: AsRef<str>> TryFrom<Option<T>> for StringEncoding {
-    type Error = crate::error::Error;
+impl FromStr for StringEncoding {
+    type Err = Error;
 
-    fn try_from(value: Option<T>) -> Result<Self> {
-        match value.as_ref().map(AsRef::as_ref) {
-            Some("utf-8") => Ok(Self::Utf8),
-            Some(encoding) => Err(crate::error::Error::InvalidArgumentError(format!(
+    fn from_str(value: &str) -> Result<Self> {
+        match value {
+            "utf-8" => Ok(Self::Utf8),
+            "raw" => Ok(Self::Raw),
+            encoding => Err(Error::InvalidArgumentError(format!(
                 "Unrecognized encoding: {}",
-                encoding
+                encoding,
             ))),
-            None => Ok(Self::Raw),
         }
     }
 }

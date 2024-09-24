@@ -92,6 +92,7 @@ pub mod pylib {
     pub fn read_parquet_into_pyarrow(
         py: Python,
         uri: &str,
+        string_encoding: String,
         columns: Option<Vec<String>>,
         start_offset: Option<usize>,
         num_rows: Option<usize>,
@@ -99,7 +100,6 @@ pub mod pylib {
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
-        string_encoding: Option<String>,
         file_timeout_ms: Option<i64>,
     ) -> PyResult<PyArrowParquetType> {
         let (schema, all_arrays, num_rows) = py.allow_threads(|| {

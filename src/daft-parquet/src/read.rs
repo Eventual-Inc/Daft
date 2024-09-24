@@ -33,7 +33,7 @@ use crate::{file::ParquetReaderBuilder, JoinSnafu};
 #[derive(Clone)]
 pub struct ParquetSchemaInferenceOptionsBuilder {
     pub coerce_int96_timestamp_unit: Option<PyTimeUnit>,
-    pub string_encoding: Option<String>,
+    pub string_encoding: String,
 }
 
 #[cfg(feature = "python")]
@@ -52,10 +52,7 @@ impl TryFrom<ParquetSchemaInferenceOptionsBuilder> for ParquetSchemaInferenceOpt
             coerce_int96_timestamp_unit: value
                 .coerce_int96_timestamp_unit
                 .map_or(TimeUnit::Nanoseconds, From::from),
-            string_encoding: value
-                .string_encoding
-                .try_into()
-                .context(crate::Arrow2Snafu)?,
+            string_encoding: value.string_encoding.parse().context(crate::Arrow2Snafu)?,
         })
     }
 }
@@ -65,7 +62,7 @@ impl Default for ParquetSchemaInferenceOptionsBuilder {
     fn default() -> Self {
         Self {
             coerce_int96_timestamp_unit: Some(PyTimeUnit::nanoseconds().unwrap()),
-            string_encoding: Some("utf-8".into()),
+            string_encoding: "utf-8".into(),
         }
     }
 }
@@ -1069,9 +1066,8 @@ pub fn read_parquet_statistics(
 mod tests {
     use std::{path::PathBuf, sync::Arc};
 
-    use arrow2::io::parquet::read::schema::StringEncoding;
+    use arrow2::{datatypes::DataType, io::parquet::read::schema::StringEncoding};
     use common_error::DaftResult;
-    use daft_core::prelude::DataType;
     use daft_io::{IOClient, IOConfig};
     use futures::StreamExt;
     use parquet2::{
@@ -1079,9 +1075,7 @@ mod tests {
         schema::types::{ParquetType, PrimitiveConvertedType, PrimitiveLogicalType},
     };
 
-    use super::{
-        read_parquet, read_parquet_metadata, stream_parquet, ParquetSchemaInferenceOptions,
-    };
+    use super::*;
 
     const PARQUET_FILE: &str = "s3://daft-public-data/test_fixtures/parquet-dev/mvp.parquet";
     const PARQUET_FILE_LOCAL: &str = "tests/assets/parquet-data/mvp.parquet";
@@ -1214,9 +1208,8 @@ mod tests {
             primitive_type.converted_type,
             Some(PrimitiveConvertedType::Utf8)
         );
-        let table = read_parquet(
+        let (schema, _, _) = read_parquet_into_pyarrow(
             &parquet,
-            None,
             None,
             None,
             None,
@@ -1231,11 +1224,9 @@ mod tests {
             None,
         )
         .unwrap();
-        let fields = table.schema.fields.values().collect::<Vec<_>>();
-        let field = match fields.as_slice() {
-            &[field] => field,
+        match schema.fields.as_slice() {
+            [field] => assert_eq!(field.data_type, DataType::Binary),
             _ => panic!("There should only be one field in the schema"),
         };
-        assert_eq!(field.dtype, DataType::Binary);
     }
 }
