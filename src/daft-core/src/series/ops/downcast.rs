@@ -1,5 +1,8 @@
 use common_error::DaftResult;
-use logical::{EmbeddingArray, FixedShapeTensorArray, TensorArray};
+use logical::{
+    EmbeddingArray, FixedShapeSparseTensorArray, FixedShapeTensorArray, SparseTensorArray,
+    TensorArray,
+};
 
 use self::logical::{DurationArray, ImageArray, MapArray};
 use crate::{
@@ -151,6 +154,14 @@ impl Series {
     }
 
     pub fn fixed_shape_tensor(&self) -> DaftResult<&FixedShapeTensorArray> {
+        self.downcast()
+    }
+
+    pub fn sparse_tensor(&self) -> DaftResult<&SparseTensorArray> {
+        self.downcast()
+    }
+
+    pub fn fixed_shape_sparse_tensor(&self) -> DaftResult<&FixedShapeSparseTensorArray> {
         self.downcast()
     }
 }

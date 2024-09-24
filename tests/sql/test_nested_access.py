@@ -20,6 +20,7 @@ def test_nested_access():
         list[1] as list_1,
         list[0:1] as list_slice,
         dict['a'] as dict_a,
+        struct_get(dict, 'a') as dict_a_2,
         cast(list as int[3])[1] as fsl_1,
         cast(list as int[3])[0:1] as fsl_slice
     from test
@@ -32,6 +33,7 @@ def test_nested_access():
         daft.col("list").list.get(1).alias("list_1"),
         daft.col("list").list.slice(0, 1).alias("list_slice"),
         daft.col("dict").struct.get("a").alias("dict_a"),
+        daft.col("dict").struct.get("a").alias("dict_a_2"),
         daft.col("list").cast(daft.DataType.fixed_size_list(daft.DataType.int32(), 3)).list.get(1).alias("fsl_1"),
         daft.col("list")
         .cast(daft.DataType.fixed_size_list(daft.DataType.int32(), 3))

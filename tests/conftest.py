@@ -148,7 +148,7 @@ def assert_df_equals(
         sort_key_list: list[str] = [sort_key] if isinstance(sort_key, str) else sort_key
         for key in sort_key_list:
             assert key in daft_pd_df.columns, (
-                f"DaFt Dataframe missing key: {key}\nNOTE: This doesn't necessarily mean your code is "
+                f"Daft Dataframe missing key: {key}\nNOTE: This doesn't necessarily mean your code is "
                 "breaking, but our testing utilities require sorting on this key in order to compare your "
                 "Dataframe against the expected Pandas Dataframe."
             )

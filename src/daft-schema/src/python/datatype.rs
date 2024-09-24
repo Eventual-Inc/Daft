@@ -294,6 +294,21 @@ impl PyDataType {
     }
 
     #[staticmethod]
+    pub fn sparse_tensor(dtype: Self, shape: Option<Vec<u64>>) -> PyResult<Self> {
+        if !dtype.dtype.is_numeric() {
+            return Err(PyValueError::new_err(format!(
+                "The data type for a tensor column must be numeric, but got: {}",
+                dtype.dtype
+            )));
+        }
+        let dtype = Box::new(dtype.dtype);
+        match shape {
+            Some(shape) => Ok(DataType::FixedShapeSparseTensor(dtype, shape).into()),
+            None => Ok(DataType::SparseTensor(dtype).into()),
+        }
+    }
+
+    #[staticmethod]
     pub fn python() -> PyResult<Self> {
         Ok(DataType::Python.into())
     }
@@ -345,6 +360,14 @@ impl PyDataType {
 
     pub fn is_fixed_shape_tensor(&self) -> PyResult<bool> {
         Ok(self.dtype.is_fixed_shape_tensor())
+    }
+
+    pub fn is_sparse_tensor(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_sparse_tensor())
+    }
+
+    pub fn is_fixed_shape_sparse_tensor(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_fixed_shape_sparse_tensor())
     }
 
     pub fn is_map(&self) -> PyResult<bool> {

@@ -69,6 +69,8 @@ impl_logicalarray_take!(EmbeddingArray);
 impl_logicalarray_take!(ImageArray);
 impl_logicalarray_take!(FixedShapeImageArray);
 impl_logicalarray_take!(TensorArray);
+impl_logicalarray_take!(SparseTensorArray);
+impl_logicalarray_take!(FixedShapeSparseTensorArray);
 impl_logicalarray_take!(FixedShapeTensorArray);
 impl_logicalarray_take!(MapArray);
 

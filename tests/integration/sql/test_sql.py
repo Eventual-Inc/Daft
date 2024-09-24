@@ -9,7 +9,7 @@ import sqlalchemy
 
 import daft
 from tests.conftest import assert_df_equals
-from tests.integration.sql.conftest import TEST_TABLE_NAME
+from tests.integration.sql.conftest import EMPTY_TEST_TABLE_NAME, TEST_TABLE_NAME
 
 
 @pytest.fixture(scope="session")
@@ -63,6 +63,28 @@ def test_sql_partitioned_read_with_custom_num_partitions_and_partition_col(
         )
         assert df.num_partitions() == num_partitions
         assert_df_equals(df.to_pandas(coerce_temporal_nanoseconds=True), pdf, sort_key="id")
+
+
+@pytest.mark.integration()
+@pytest.mark.parametrize("num_partitions", [0, 1, 2])
+@pytest.mark.parametrize("partition_col", ["id", "string_col"])
+def test_sql_partitioned_read_on_empty_table(empty_test_db, num_partitions, partition_col) -> None:
+    with daft.execution_config_ctx(
+        scan_tasks_min_size_bytes=0,
+        scan_tasks_max_size_bytes=0,
+    ):
+        df = daft.read_sql(
+            f"SELECT * FROM {EMPTY_TEST_TABLE_NAME}",
+            empty_test_db,
+            partition_col=partition_col,
+            num_partitions=num_partitions,
+            schema={"id": daft.DataType.int64(), "string_col": daft.DataType.string()},
+        )
+        assert df.num_partitions() == 1
+        empty_pdf = pd.read_sql_query(
+            f"SELECT * FROM {EMPTY_TEST_TABLE_NAME}", empty_test_db, dtype={"id": "int64", "string_col": "str"}
+        )
+        assert_df_equals(df.to_pandas(), empty_pdf, sort_key="id")
 
 
 @pytest.mark.integration()
