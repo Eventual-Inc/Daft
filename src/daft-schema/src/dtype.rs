@@ -51,7 +51,7 @@ pub enum DataType {
 
     /// Fixed-precision decimal type.
     /// TODO: allow negative scale once Arrow2 allows it: https://github.com/jorgecarleitao/arrow2/issues/1518
-    #[display("{_0}.{_1}")]
+    #[display("Decimal(precision={_0}, scale={_1})")]
     Decimal128(usize, usize),
 
     /// A [`i64`] representing a timestamp measured in [`TimeUnit`] with an optional timezone.
