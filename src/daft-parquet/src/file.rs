@@ -1,7 +1,4 @@
-use std::{
-    collections::{BTreeMap, HashSet},
-    sync::Arc,
-};
+use std::{collections::BTreeMap, sync::Arc};
 
 use arrow2::io::parquet::read::{column_iter_to_arrays, schema::infer_schema_with_options};
 use common_error::DaftResult;
@@ -11,9 +8,10 @@ use daft_io::{IOClient, IOStatsRef};
 use daft_stats::TruthValue;
 use daft_table::Table;
 use futures::{future::try_join_all, stream::BoxStream, StreamExt};
+use hashbrown::HashSet;
 use parquet2::{
     page::{CompressedPage, Page},
-    read::get_owned_page_stream_from_column_start,
+    read::{decompress, get_owned_page_stream_from_column_start},
     FallibleStreamingIterator,
 };
 use snafu::ResultExt;
@@ -29,22 +27,14 @@ use crate::{
     UnableToParseSchemaFromMetadataSnafu, UnableToRunExpressionOnStatsSnafu,
 };
 
-pub(crate) struct ParquetReaderBuilder {
-    pub uri: String,
-    pub metadata: parquet2::metadata::FileMetaData,
-    selected_columns: Option<HashSet<String>>,
-    row_start_offset: usize,
-    limit: Option<usize>,
-    row_groups: Option<Vec<i64>>,
-    schema_inference_options: ParquetSchemaInferenceOptions,
-    predicate: Option<ExprRef>,
-    chunk_size: Option<usize>,
-}
-use parquet2::read::decompress;
+/// "Trait alias" for the `futures::Stream<Item = parquet2::error::Result<T>>` trait.
+///
+/// Anything that implements `PageStream` will also have to implement `futures::Stream<Item = parquet2::error::Result<T>>` (with no additional functionalities, thus making it a "trait alias").
+/// Namely, `S: PageStream<T>` is equivalent to `S: futures::Stream<Item = parquet2::error::Result<T>>`.
+pub trait PageStream<T = Page>: futures::Stream<Item = parquet2::error::Result<T>> {}
+impl<S, T> PageStream<T> for S where S: futures::Stream<Item = parquet2::error::Result<T>> {}
 
-fn streaming_decompression<S: futures::Stream<Item = parquet2::error::Result<CompressedPage>>>(
-    input: S,
-) -> impl futures::Stream<Item = parquet2::error::Result<Page>> {
+fn streaming_decompression<S: PageStream<CompressedPage>>(input: S) -> impl PageStream {
     async_stream::stream! {
         let mut buffer = vec![];
 
@@ -64,7 +54,7 @@ pub struct StreamIterator<S> {
 
 impl<S> StreamIterator<S>
 where
-    S: futures::Stream<Item = parquet2::error::Result<Page>> + std::marker::Unpin,
+    S: PageStream + Unpin,
 {
     pub fn new(src: S, handle: tokio::runtime::Handle) -> Self {
         StreamIterator {
@@ -77,7 +67,7 @@ where
 
 impl<S> FallibleStreamingIterator for StreamIterator<S>
 where
-    S: futures::Stream<Item = parquet2::error::Result<Page>> + std::marker::Unpin,
+    S: PageStream + Unpin,
 {
     type Error = parquet2::error::Error;
     type Item = Page;
@@ -191,9 +181,21 @@ pub(crate) fn build_row_ranges(
     Ok(row_ranges)
 }
 
-impl ParquetReaderBuilder {
+pub(crate) struct ParquetReaderBuilder<'a> {
+    pub uri: &'a str,
+    pub metadata: parquet2::metadata::FileMetaData,
+    selected_columns: Option<HashSet<String>>,
+    row_start_offset: usize,
+    limit: Option<usize>,
+    row_groups: Option<Vec<i64>>,
+    schema_inference_options: ParquetSchemaInferenceOptions,
+    predicate: Option<ExprRef>,
+    chunk_size: Option<usize>,
+}
+
+impl<'a> ParquetReaderBuilder<'a> {
     pub async fn from_uri(
-        uri: &str,
+        uri: &'a str,
         io_client: Arc<daft_io::IOClient>,
         io_stats: Option<IOStatsRef>,
         field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
@@ -205,7 +207,7 @@ impl ParquetReaderBuilder {
         let metadata =
             read_parquet_metadata(uri, size, io_client, io_stats, field_id_mapping).await?;
         Ok(ParquetReaderBuilder {
-            uri: uri.into(),
+            uri,
             metadata,
             selected_columns: None,
             row_start_offset: 0,
@@ -217,24 +219,16 @@ impl ParquetReaderBuilder {
         })
     }
 
-    pub fn metadata(&self) -> &parquet2::metadata::FileMetaData {
-        &self.metadata
-    }
-
-    pub fn prune_columns(mut self, columns: &[String]) -> super::Result<Self> {
+    pub fn prune_columns(mut self, columns: &[String]) -> Self {
         self.selected_columns = Some(HashSet::from_iter(columns.iter().cloned()));
-        Ok(self)
+        self
     }
 
-    pub fn limit(
-        mut self,
-        start_offset: Option<usize>,
-        num_rows: Option<usize>,
-    ) -> super::Result<Self> {
+    pub fn limit(mut self, start_offset: Option<usize>, num_rows: Option<usize>) -> Self {
         let start_offset = start_offset.unwrap_or(0);
         self.row_start_offset = start_offset;
         self.limit = num_rows;
-        Ok(self)
+        self
     }
 
     pub fn set_row_groups(mut self, row_groups: &[i64]) -> super::Result<Self> {
@@ -265,13 +259,11 @@ impl ParquetReaderBuilder {
                 path: self.uri.clone(),
             },
         )?;
-
         if let Some(names_to_keep) = self.selected_columns {
             arrow_schema
                 .fields
                 .retain(|f| names_to_keep.contains(f.name.as_str()));
         }
-
         let daft_schema =
             Schema::try_from(&arrow_schema).with_context(|_| UnableToConvertSchemaToDaftSnafu {
                 path: self.uri.to_string(),
@@ -283,11 +275,11 @@ impl ParquetReaderBuilder {
             self.predicate.clone(),
             &daft_schema,
             &self.metadata,
-            &self.uri,
+            self.uri,
         )?;
 
         ParquetFileReader::new(
-            self.uri,
+            self.uri.to_owned(),
             self.metadata,
             arrow_schema,
             row_ranges,

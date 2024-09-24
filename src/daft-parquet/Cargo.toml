@@ -12,6 +12,7 @@ daft-io = {path = "../daft-io", default-features = false}
 daft-stats = {path = "../daft-stats", default-features = false}
 daft-table = {path = "../daft-table", default-features = false}
 futures = {workspace = true}
+hashbrown = {workspace = true}
 indexmap = {workspace = true}
 itertools = {workspace = true}
 log = {workspace = true}

@@ -1,11 +1,7 @@
 #[cfg(test)]
 mod tests;
 
-use std::{
-    collections::{BTreeMap, HashMap},
-    sync::Arc,
-    time::Duration,
-};
+use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
 use arrow2::{
     bitmap::Bitmap,
@@ -25,6 +21,7 @@ use futures::{
     stream::BoxStream,
     Stream, StreamExt, TryStreamExt,
 };
+use hashbrown::HashMap;
 use itertools::Itertools;
 use parquet2::metadata::FileMetaData;
 use serde::{Deserialize, Serialize};
@@ -211,7 +208,7 @@ async fn read_parquet_single(
         let builder = builder.set_infer_schema_options(schema_infer_options);
 
         let builder = if let Some(columns) = &columns_to_read {
-            builder.prune_columns(columns)?
+            builder.prune_columns(columns)
         } else {
             builder
         };
@@ -219,8 +216,8 @@ async fn read_parquet_single(
         if row_groups.is_some() && (num_rows_to_read.is_some() || start_offset.is_some()) {
             return Err(common_error::DaftError::ValueError("Both `row_groups` and `num_rows` or `start_offset` is set at the same time. We only support setting one set or the other.".to_string()));
         }
-        let builder = builder.limit(start_offset, num_rows_to_read)?;
-        let metadata = builder.metadata().clone();
+        let builder = builder.limit(start_offset, num_rows_to_read);
+        let metadata = builder.metadata.clone();
 
         let builder = if let Some(ref row_groups) = row_groups {
             builder.set_row_groups(row_groups)?
@@ -424,7 +421,7 @@ async fn stream_parquet_single(
         let builder = builder.set_infer_schema_options(schema_infer_options);
 
         let builder = if let Some(columns) = &columns_to_read {
-            builder.prune_columns(columns)?
+            builder.prune_columns(columns)
         } else {
             builder
         };
@@ -432,8 +429,8 @@ async fn stream_parquet_single(
         if row_groups.is_some() && (num_rows_to_read.is_some() || start_offset.is_some()) {
             return Err(common_error::DaftError::ValueError("Both `row_groups` and `num_rows` or `start_offset` is set at the same time. We only support setting one set or the other.".to_string()));
         }
-        let builder = builder.limit(start_offset, num_rows_to_read)?;
-        let metadata = builder.metadata().clone();
+        let builder = builder.limit(start_offset, num_rows_to_read);
+        let metadata = builder.metadata.clone();
 
         let builder = if let Some(ref row_groups) = row_groups {
             builder.set_row_groups(row_groups)?
@@ -548,7 +545,7 @@ async fn read_parquet_single_into_arrow(
         let builder = builder.set_infer_schema_options(schema_infer_options);
 
         let builder = if let Some(columns) = &columns {
-            builder.prune_columns(columns)?
+            builder.prune_columns(columns)
         } else {
             builder
         };
@@ -556,8 +553,8 @@ async fn read_parquet_single_into_arrow(
         if row_groups.is_some() && (num_rows.is_some() || start_offset.is_some()) {
             return Err(common_error::DaftError::ValueError("Both `row_groups` and `num_rows` or `start_offset` is set at the same time. We only support setting one set or the other.".to_string()));
         }
-        let builder = builder.limit(start_offset, num_rows)?;
-        let metadata = builder.metadata().clone();
+        let builder = builder.limit(start_offset, num_rows);
+        let metadata = builder.metadata.clone();
 
         let builder = if let Some(ref row_groups) = row_groups {
             builder.set_row_groups(row_groups)?

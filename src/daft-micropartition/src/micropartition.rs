@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::BTreeMap,
     fmt::Display,
     ops::Deref,
     sync::{Arc, Mutex},
@@ -22,6 +22,7 @@ use daft_scan::{
 };
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
 use daft_table::Table;
+use hashbrown::{HashMap, HashSet};
 use parquet2::metadata::FileMetaData;
 use snafu::ResultExt;
 #[cfg(feature = "python")]

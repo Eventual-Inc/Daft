@@ -1,5 +1,4 @@
 use std::{
-    collections::HashSet,
     fs::File,
     io::{Read, Seek},
     sync::Arc,
@@ -12,6 +11,7 @@ use daft_dsl::ExprRef;
 use daft_io::IOStatsRef;
 use daft_table::Table;
 use futures::{stream::BoxStream, StreamExt};
+use hashbrown::HashSet;
 use itertools::Itertools;
 use rayon::{
     iter::{IntoParallelRefMutIterator, ParallelIterator},
@@ -31,17 +31,20 @@ fn prune_fields_from_schema(
     columns: Option<&[String]>,
 ) -> super::Result<arrow2::datatypes::Schema> {
     if let Some(columns) = columns {
-        let avail_names = schema
-            .fields
-            .iter()
-            .map(|f| f.name.as_str())
-            .collect::<HashSet<_>>();
-        let mut names_to_keep = HashSet::new();
-        for col_name in columns {
-            if avail_names.contains(col_name.as_str()) {
-                names_to_keep.insert(col_name.to_string());
+        let names_to_keep = {
+            let avail_names = schema
+                .fields
+                .iter()
+                .map(|f| f.name.as_str())
+                .collect::<HashSet<_>>();
+            let mut names_to_keep = HashSet::new();
+            for col_name in columns {
+                if avail_names.contains(col_name.as_str()) {
+                    names_to_keep.insert(col_name.to_string());
+                }
             }
-        }
+            names_to_keep
+        };
         Ok(schema.filter(|_, field| names_to_keep.contains(&field.name)))
     } else {
         Ok(schema)
