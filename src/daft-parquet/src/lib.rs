@@ -20,6 +20,9 @@ pub use python::register_modules;
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[snafu(display("{source}"))]
+    Arrow2Error { source: arrow2::error::Error },
+
+    #[snafu(display("{source}"))]
     DaftIOError { source: daft_io::Error },
 
     #[snafu(display("Parquet reader timed out while trying to read: {path} with a time budget of {duration_ms} ms"))]

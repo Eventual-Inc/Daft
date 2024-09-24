@@ -596,9 +596,9 @@ impl MicroPartition {
             (
                 _,
                 _,
-                FileFormatConfig::Parquet(ParquetSourceConfig {
+                &FileFormatConfig::Parquet(ParquetSourceConfig {
                     coerce_int96_timestamp_unit,
-                    field_id_mapping,
+                    ref field_id_mapping,
                     chunk_size,
                     ..
                 }),
@@ -646,12 +646,13 @@ impl MicroPartition {
                     if scan_task.sources.len() == 1 { 1 } else { 128 }, // Hardcoded for to 128 bulk reads
                     cfg.multithreaded_io,
                     &ParquetSchemaInferenceOptions {
-                        coerce_int96_timestamp_unit: *coerce_int96_timestamp_unit,
+                        coerce_int96_timestamp_unit,
+                        ..Default::default()
                     },
                     Some(schema.clone()),
                     field_id_mapping.clone(),
                     parquet_metadata,
-                    *chunk_size,
+                    chunk_size,
                 )
                 .context(DaftCoreComputeSnafu)
             }
@@ -1162,7 +1163,7 @@ pub(crate) fn read_parquet_into_micropartition<T: AsRef<str>>(
         let schemas = metadata
             .iter()
             .map(|m| {
-                let schema = infer_schema_with_options(m, &Some((*schema_infer_options).into()))?;
+                let schema = infer_schema_with_options(m, Some((*schema_infer_options).into()))?;
                 let daft_schema = daft_core::prelude::Schema::try_from(&schema)?;
                 DaftResult::Ok(Arc::new(daft_schema))
             })
@@ -1186,7 +1187,7 @@ pub(crate) fn read_parquet_into_micropartition<T: AsRef<str>>(
         let schemas = metadata
             .iter()
             .map(|m| {
-                let schema = infer_schema_with_options(m, &Some((*schema_infer_options).into()))?;
+                let schema = infer_schema_with_options(m, Some((*schema_infer_options).into()))?;
                 let daft_schema = daft_core::prelude::Schema::try_from(&schema)?;
                 DaftResult::Ok(Arc::new(daft_schema))
             })
