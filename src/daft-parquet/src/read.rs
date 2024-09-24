@@ -1051,20 +1051,26 @@ pub fn read_parquet_statistics(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{path::PathBuf, sync::Arc};
 
-    use common_error::DaftResult;
+    use common_error::{DaftError, DaftResult};
+    use daft_core::prelude::DataType;
     use daft_io::{IOClient, IOConfig};
     use futures::StreamExt;
-    use parquet2::metadata::FileMetaData;
+    use parquet2::{
+        metadata::FileMetaData,
+        schema::types::{ParquetType, PrimitiveConvertedType, PrimitiveLogicalType},
+    };
 
-    use super::{read_parquet, read_parquet_metadata, stream_parquet};
+    use super::{
+        read_parquet, read_parquet_metadata, stream_parquet, ParquetSchemaInferenceOptions,
+    };
 
     const PARQUET_FILE: &str = "s3://daft-public-data/test_fixtures/parquet-dev/mvp.parquet";
     const PARQUET_FILE_LOCAL: &str = "tests/assets/parquet-data/mvp.parquet";
 
     fn get_local_parquet_path() -> String {
-        let mut d = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         d.push("../../"); // CARGO_MANIFEST_DIR is at src/daft-parquet
         d.push(PARQUET_FILE_LOCAL);
         d.to_str().unwrap().to_string()
@@ -1147,5 +1153,72 @@ mod tests {
             assert_eq!(metadata, deserialized);
             Ok(())
         })?
+    }
+
+    #[test]
+    fn test_invalid_utf8_parquet_reading() {
+        let parquet: Arc<str> = path_macro::path!(
+            env!("CARGO_MANIFEST_DIR")
+                / ".."
+                / ".."
+                / "tests"
+                / "assets"
+                / "parquet-data"
+                / "invalid_utf8.parquet"
+        )
+        .to_str()
+        .unwrap()
+        .into();
+        let io_config = IOConfig::default();
+        let io_client = Arc::new(IOClient::new(io_config.into()).unwrap());
+        let runtime_handle = daft_io::get_runtime(true).unwrap();
+        let file_metadata = runtime_handle
+            .block_on_io_pool({
+                let parquet = parquet.clone();
+                let io_client = io_client.clone();
+                async move { read_parquet_metadata(&parquet, io_client, None, None).await }
+            })
+            .flatten()
+            .unwrap();
+        let primitive_type = match file_metadata.schema_descr.fields() {
+            [parquet_type] => match parquet_type {
+                ParquetType::PrimitiveType(primitive_type) => primitive_type,
+                ParquetType::GroupType { .. } => {
+                    panic!("Parquet type should be primitive type, not group type")
+                }
+            },
+            _ => panic!("This test parquet file should have only 1 field"),
+        };
+        assert_eq!(
+            primitive_type.logical_type,
+            Some(PrimitiveLogicalType::String)
+        );
+        assert_eq!(
+            primitive_type.converted_type,
+            Some(PrimitiveConvertedType::Utf8)
+        );
+        let table = read_parquet(
+            &parquet,
+            None,
+            None,
+            None,
+            None,
+            None,
+            io_client,
+            None,
+            true,
+            ParquetSchemaInferenceOptions {
+                coerce_string_to_binary: true,
+                ..Default::default()
+            },
+            None,
+        )
+        .unwrap();
+        let fields = table.schema.fields.values().collect::<Vec<_>>();
+        let field = match fields.as_slice() {
+            &[field] => field,
+            _ => panic!("There should only be one field in the schema"),
+        };
+        assert_eq!(field.dtype, DataType::Binary);
     }
 }
