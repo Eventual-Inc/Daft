@@ -304,17 +304,16 @@ class LogicalPlanBuilder:
         version: int,
         large_dtypes: bool,
         io_config: IOConfig,
-        partition_cols: list[Expression] | None = None,
+        partition_cols: list[str] | None = None,
     ) -> LogicalPlanBuilder:
         columns_name = self.schema().column_names()
-        part_cols_pyexprs = [expr._expr for expr in partition_cols] if partition_cols is not None else None
         builder = self._builder.delta_write(
             str(path),
             columns_name,
             mode,
             version,
             large_dtypes,
-            part_cols_pyexprs,
+            partition_cols,
             io_config,
         )
         return LogicalPlanBuilder(builder)

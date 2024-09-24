@@ -95,7 +95,7 @@ pub struct DeltaLakeCatalogInfo {
     pub mode: String,
     pub version: i32,
     pub large_dtypes: bool,
-    pub partition_cols: Option<Vec<ExprRef>>,
+    pub partition_cols: Option<Vec<String>>,
     pub io_config: Option<IOConfig>,
 }
 

@@ -23,7 +23,7 @@ from daft.daft import (
     StorageConfig,
 )
 from daft.dependencies import pa, pacsv, pads, pajson, pq
-from daft.expressions import ExpressionsProjection
+from daft.expressions import ExpressionsProjection, col
 from daft.filesystem import (
     _resolve_paths_and_filesystem,
     canonicalize_protocol,
@@ -404,9 +404,10 @@ def partitioned_table_to_hive_iter(partitioned: PartitionedTable, root_path: str
     partition_values = partitioned.partition_values()
 
     if partition_values:
-        partition_strings = partitioned.partition_values_str().to_pylist()  # type: ignore
+        partition_strings = partitioned.partition_values_str()
+        assert partition_strings is not None
 
-        for part_table, part_strs in zip(partitioned.partitions(), partition_strings):
+        for part_table, part_strs in zip(partitioned.partitions(), partition_strings.to_pylist()):
             part_path = partition_strings_to_path(root_path, part_strs)
             arrow_table = part_table.to_arrow()
 
@@ -609,9 +610,10 @@ def partitioned_table_to_deltalake_iter(
 
     if partition_values:
         partition_keys = partition_values.column_names()
-        partition_strings = partitioned.partition_values_str().to_pylist()  # type: ignore
+        partition_strings = partitioned.partition_values_str()
+        assert partition_strings is not None
 
-        for part_table, part_strs in zip(partitioned.partitions(), partition_strings):
+        for part_table, part_strs in zip(partitioned.partitions(), partition_strings.to_pylist()):
             part_path = partition_strings_to_path("", part_strs)
             arrow_table = part_table.to_arrow()
 
@@ -665,8 +667,6 @@ class DeltaLakeWriteVisitors:
             else:
                 size = 0
 
-            print(self.partition_values)
-
             self.parent.add_actions.append(
                 AddAction(
                     written_file.path,
@@ -694,7 +694,7 @@ def write_deltalake(
     large_dtypes: bool,
     base_path: str,
     version: int,
-    partition_cols: ExpressionsProjection | None = None,
+    partition_cols: list[str] | None = None,
     io_config: IOConfig | None = None,
 ):
     from deltalake.writer import DeltaStorageHandler
@@ -720,7 +720,8 @@ def write_deltalake(
     format = pads.ParquetFileFormat()
     opts = format.make_write_options(use_compliant_nested_type=False)
 
-    partitioned = PartitionedTable(table, partition_cols)
+    partition_keys = ExpressionsProjection([col(c) for c in partition_cols]) if partition_cols is not None else None
+    partitioned = PartitionedTable(table, partition_keys)
     visitors = DeltaLakeWriteVisitors(fs)
 
     for part_table, part_path, part_values in partitioned_table_to_deltalake_iter(partitioned, large_dtypes):

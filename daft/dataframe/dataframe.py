@@ -784,7 +784,7 @@ class DataFrame:
 
         Args:
             table (Union[str, pathlib.Path, DataCatalogTable, deltalake.DeltaTable]): Destination `Delta Lake Table <https://delta-io.github.io/delta-rs/api/delta_table/>`__ or table URI to write dataframe to.
-            partition_cols (List[str], optional): How to subpartition each partition further. Expected to match the Delta Lake table's partitioning scheme if the table exists. Defaults to None.
+            partition_cols (List[str], optional): How to subpartition each partition further. If table exists, expected to match table's existing partitioning scheme, otherwise creates the table with specified partition columns. Defaults to None.
             mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace table with new data, `error` will raise an error if table already exists, and `ignore` will not write anything if table already exists. Defaults to "append".
             schema_mode (str, optional): Schema mode of the write. If set to `overwrite`, allows replacing the schema of the table when doing `mode=overwrite`. Schema mode `merge` is currently not supported.
             name (str, optional): User-provided identifier for this table.
@@ -862,7 +862,7 @@ class DataFrame:
         if table:
             if partition_cols and partition_cols != table.metadata().partition_columns:
                 raise ValueError(
-                    f"Partition columns should be {table.metadata().partition_columns} but is {partition_cols}"
+                    f"Expected partition columns to match that of the existing table ({table.metadata().partition_columns}), but received: {partition_cols}"
                 )
             else:
                 partition_cols = table.metadata().partition_columns
@@ -890,13 +890,10 @@ class DataFrame:
         else:
             version = 0
 
-        cols: Optional[List[Expression]] = None
         if partition_cols is not None:
             for c in partition_cols:
                 if self.schema()[c].dtype == DataType.binary():
-                    raise NotImplementedError("Binary partition columns are not yet supported")
-
-            cols = self.__column_input_to_expression(tuple(partition_cols))
+                    raise NotImplementedError("Binary partition columns are not yet supported for Delta Lake writes")
 
         builder = self._builder.write_deltalake(
             table_uri,
@@ -904,7 +901,7 @@ class DataFrame:
             version,
             large_dtypes,
             io_config=io_config,
-            partition_cols=cols,
+            partition_cols=partition_cols,
         )
         write_df = DataFrame(builder)
         write_df.collect()

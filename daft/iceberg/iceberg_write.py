@@ -222,10 +222,12 @@ def partitioned_table_to_iceberg_iter(
     partition_values = partitioned.partition_values()
 
     if partition_values:
-        partition_strings = partitioned.partition_values_str().to_pylist()  # type: ignore
-        partition_values_list = partition_values.to_pylist()
+        partition_strings = partitioned.partition_values_str()
+        assert partition_strings is not None
 
-        for table, part_vals, part_strs in zip(partitioned.partitions(), partition_values_list, partition_strings):
+        for table, part_vals, part_strs in zip(
+            partitioned.partitions(), partition_values.to_pylist(), partition_strings.to_pylist()
+        ):
             iceberg_part_vals = {k: to_partition_representation(v) for k, v in part_vals.items()}
             part_record = IcebergRecord(**iceberg_part_vals)
             part_path = partition_strings_to_path(root_path, part_strs, partition_null_fallback="null")
