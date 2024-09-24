@@ -40,7 +40,7 @@ hash_hasher = "^2.0.3"
 # A Rust port of SwissTable
 hashbrown = {version = "0.14", default-features = false, features = ["ahash"]}
 hex = {version = "^0.4", optional = true}
-indexmap = {version = "^1.6", optional = true}
+indexmap = {version = "^2.5", optional = true}
 itertools = {version = "^0.10", optional = true}
 json-deserializer = {version = "0.4.4", optional = true, features = [
   "preserve_order"
