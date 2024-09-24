@@ -25,7 +25,11 @@ impl SQLFunction for StructGet {
             [input, key] => {
                 let input = planner.plan_function_arg(input)?;
                 let key = planner.plan_function_arg(key)?;
-                Ok(daft_dsl::functions::map::get(input, key))
+                if let Some(lit) = key.as_literal().and_then(|lit| lit.as_str()) {
+                    Ok(daft_dsl::functions::struct_::get(input, lit))
+                } else {
+                    invalid_operation_err!("Expected key to be a string literal")
+                }
             }
             _ => invalid_operation_err!("Expected 2 input args"),
         }
