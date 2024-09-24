@@ -409,15 +409,12 @@ def test_parquet_read_string_utf8_into_binary(parquet_path: Path):
 
     assert parquet_path.exists()
 
-    try:
+    with pytest.raises(DaftCoreException, match="invalid utf-8 sequence"):
         read_parquet_into_pyarrow(path=parquet_path.as_posix())
-    except DaftCoreException:
-        # should throw an exception when `string_encoding` is not specified and is instead defaulted to `"utf-8"`
-        pass
 
     read_back = read_parquet_into_pyarrow(path=parquet_path.as_posix(), string_encoding="raw")
-
     schema = read_back.schema
     assert len(schema) == 1
     assert schema[0].name == "invalid_string"
     assert schema[0].type == pa.binary()
+    assert read_back["invalid_string"][0].as_py() == b"\x80\x80\x80"
