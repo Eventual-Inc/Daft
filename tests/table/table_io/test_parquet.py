@@ -412,7 +412,7 @@ def test_parquet_read_string_utf8_into_binary(parquet_path: Path):
     try:
         read_parquet_into_pyarrow(path=parquet_path.as_posix())
     except DaftCoreException:
-        # should throw an exception without passing the "string_encoding=None" parameter
+        # should throw an exception when `string_encoding` is not specified and is instead defaulted to `"utf-8"`
         pass
 
     read_back = read_parquet_into_pyarrow(path=parquet_path.as_posix(), string_encoding=None)
