@@ -949,7 +949,7 @@ impl SQLPlanner {
                 stride,
             } => {
                 if stride.is_some() {
-                    unsupported_sql_err!("stride");
+                    unsupported_sql_err!("stride cannot be provided when slicing an expression");
                 }
                 match (lower_bound, upper_bound) {
                     (Some(lower), Some(upper)) => {
