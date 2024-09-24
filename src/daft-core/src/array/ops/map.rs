@@ -24,19 +24,7 @@ fn single_map_get(structs: &Series, key_to_get: &Series) -> DaftResult<Series> {
 
 impl MapArray {
     pub fn map_get(&self, key_to_get: &Series) -> DaftResult<Series> {
-        let value_type = if let DataType::Map(inner_dtype) = self.data_type() {
-            match *inner_dtype.clone() {
-                DataType::Struct(fields) if fields.len() == 2 => {
-                    fields[1].dtype.clone()
-                }
-                _ => {
-                    return Err(DaftError::TypeError(format!(
-                        "Expected inner type to be a struct type with two fields: key and value, got {:?}",
-                        inner_dtype
-                    )))
-                }
-            }
-        } else {
+        let DataType::Map { value: value_type, .. } = self.data_type() else {
             return Err(DaftError::TypeError(format!(
                 "Expected input to be a map type, got {:?}",
                 self.data_type()

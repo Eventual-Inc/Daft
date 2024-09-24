@@ -2091,7 +2091,7 @@ impl ListArray {
                     }
                 }
             }
-            DataType::Map(..) => Ok(MapArray::new(
+            DataType::Map{..} => Ok(MapArray::new(
                 Field::new(self.name(), dtype.clone()),
                 self.clone(),
             )

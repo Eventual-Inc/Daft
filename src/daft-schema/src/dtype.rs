@@ -107,8 +107,8 @@ pub enum DataType {
     Struct(Vec<Field>),
 
     /// A nested [`DataType`] that is represented as List<entries: Struct<key: K, value: V>>.
-    #[display("Map[{_0}]")]
-    Map(Box<DataType>),
+    #[display("Map[{key}: {value}]")]
+    Map { key: Box<DataType>, value: Box<DataType> },
 
     /// Extension type.
     #[display("{_1}")]
@@ -233,14 +233,26 @@ impl DataType {
             DataType::List(field) => Ok(ArrowType::LargeList(Box::new(
                 arrow2::datatypes::Field::new("item", field.to_arrow()?, true),
             ))),
-            DataType::Map(field) => Ok(ArrowType::Map(
-                Box::new(arrow2::datatypes::Field::new(
-                    "item",
-                    field.to_arrow()?,
-                    true,
-                )),
-                false,
-            )),
+            DataType::Map { key, value } => {
+                let struct_type = ArrowType::Struct(vec![
+                    arrow2::datatypes::Field::new("key", key.to_arrow()?, true),
+                    arrow2::datatypes::Field::new("value", value.to_arrow()?, true),
+                ]);
+
+                // entries
+                let struct_field = arrow2::datatypes::Field::new("entries", struct_type.clone(), true);
+
+                let list_type = ArrowType::LargeList(Box::new(struct_field));
+
+                // entries
+                // todo: item? items? something else?
+                let list_field = arrow2::datatypes::Field::new("item", list_type.clone(), true);
+
+                Ok(ArrowType::Map(
+                    Box::new(list_field),
+                    false,
+                ))
+            }
             DataType::Struct(fields) => Ok({
                 let fields = fields
                     .iter()
@@ -288,7 +300,10 @@ impl DataType {
             FixedSizeList(child_dtype, size) => {
                 FixedSizeList(Box::new(child_dtype.to_physical()), *size)
             }
-            Map(child_dtype) => List(Box::new(child_dtype.to_physical())),
+            Map { key, value } => List(Box::new(Struct(vec![
+                Field::new("key", key.to_physical()),
+                Field::new("value", value.to_physical()),
+            ]))),
             Embedding(dtype, size) => FixedSizeList(Box::new(dtype.to_physical()), *size),
             Image(mode) => Struct(vec![
                 Field::new(
@@ -329,20 +344,6 @@ impl DataType {
     }
 
     #[inline]
-    pub fn nested_dtype(&self) -> Option<&DataType> {
-        match self {
-            DataType::Map(dtype)
-            | DataType::List(dtype)
-            | DataType::FixedSizeList(dtype, _)
-            | DataType::FixedShapeTensor(dtype, _)
-            | DataType::SparseTensor(dtype)
-            | DataType::FixedShapeSparseTensor(dtype, _)
-            | DataType::Tensor(dtype) => Some(dtype),
-            _ => None,
-        }
-    }
-
-    #[inline]
     pub fn is_arrow(&self) -> bool {
         self.to_arrow().is_ok()
     }
@@ -350,21 +351,21 @@ impl DataType {
     #[inline]
     pub fn is_numeric(&self) -> bool {
         match self {
-             DataType::Int8
-             | DataType::Int16
-             | DataType::Int32
-             | DataType::Int64
-             | DataType::Int128
-             | DataType::UInt8
-             | DataType::UInt16
-             | DataType::UInt32
-             | DataType::UInt64
-             // DataType::Float16
-             | DataType::Float32
-             | DataType::Float64 => true,
-             DataType::Extension(_, inner, _) => inner.is_numeric(),
-             _ => false
-         }
+            DataType::Int8
+            | DataType::Int16
+            | DataType::Int32
+            | DataType::Int64
+            | DataType::Int128
+            | DataType::UInt8
+            | DataType::UInt16
+            | DataType::UInt32
+            | DataType::UInt64
+            // DataType::Float16
+            | DataType::Float32
+            | DataType::Float64 => true,
+            DataType::Extension(_, inner, _) => inner.is_numeric(),
+            _ => false
+        }
     }
 
     #[inline]
@@ -453,7 +454,7 @@ impl DataType {
 
     #[inline]
     pub fn is_map(&self) -> bool {
-        matches!(self, DataType::Map(..))
+        matches!(self, DataType::Map{ .. })
     }
 
     #[inline]
@@ -576,7 +577,7 @@ impl DataType {
                 | DataType::FixedShapeTensor(..)
                 | DataType::SparseTensor(..)
                 | DataType::FixedShapeSparseTensor(..)
-                | DataType::Map(..)
+                | DataType::Map { .. }
         )
     }
 
@@ -593,7 +594,7 @@ impl DataType {
             DataType::List(..)
                 | DataType::FixedSizeList(..)
                 | DataType::Struct(..)
-                | DataType::Map(..)
+                | DataType::Map { .. }
         )
     }
 
@@ -643,7 +644,34 @@ impl From<&ArrowType> for DataType {
             ArrowType::FixedSizeList(field, size) => {
                 DataType::FixedSizeList(Box::new(field.as_ref().data_type().into()), *size)
             }
-            ArrowType::Map(field, ..) => DataType::Map(Box::new(field.as_ref().data_type().into())),
+            ArrowType::Map(field, ..) => {
+                // todo: TryFrom in future? want in second pass maybe
+
+                // field should be a list
+                let ArrowType::List(field) = &field.data_type else {
+                    panic!("Map should have a list as its key")
+                };
+
+                // field should be a struct
+                let ArrowType::Struct(fields) = &field.data_type else {
+                    panic!("Map should have a struct as its key")
+                };
+
+                let [key, value] = fields.as_slice() else {
+                    panic!("Map should have two fields")
+                };
+                
+                let key = &key.data_type;
+                let value = &value.data_type;
+
+                let key = DataType::from(key);
+                let value = DataType::from(value);
+
+                let key = Box::new(key);
+                let value = Box::new(value);
+
+                DataType::Map { key, value }
+            }
             ArrowType::Struct(fields) => {
                 let fields: Vec<Field> = fields.iter().map(|fld| fld.into()).collect();
                 DataType::Struct(fields)

@@ -13,18 +13,16 @@ impl FunctionEvaluator for GetEvaluator {
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         match inputs {
+
+            // what is input and what is key
+            // input is a map field
+
             [input, key] => match (input.to_field(schema), key.to_field(schema)) {
                 (Ok(input_field), Ok(_)) => match input_field.dtype {
-                    DataType::Map(inner) => match inner.as_ref() {
-                        DataType::Struct(fields) if fields.len() == 2 => {
-                            let value_dtype = &fields[1].dtype;
-                            Ok(Field::new("value", value_dtype.clone()))
-                        }
-                        _ => Err(DaftError::TypeError(format!(
-                            "Expected input map to have struct values with 2 fields, got {}",
-                            inner
-                        ))),
-                    },
+                    DataType::Map { value, .. } => {
+                        // todo: perhaps better naming
+                        Ok(Field::new("value", *value))
+                    }
                     _ => Err(DaftError::TypeError(format!(
                         "Expected input to be a map, got {}",
                         input_field.dtype
