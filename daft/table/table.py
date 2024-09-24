@@ -524,7 +524,7 @@ def read_parquet_into_pyarrow(
     io_config: IOConfig | None = None,
     multithreaded_io: bool | None = None,
     coerce_int96_timestamp_unit: TimeUnit = TimeUnit.ns(),
-    coerce_string_to_binary: bool = False,
+    string_encoding: str | None = "utf-8",
     file_timeout_ms: int | None = 900_000,  # 15 minutes
 ) -> pa.Table:
     fields, metadata, columns, num_rows_read = _read_parquet_into_pyarrow(
@@ -536,7 +536,7 @@ def read_parquet_into_pyarrow(
         io_config=io_config,
         multithreaded_io=multithreaded_io,
         coerce_int96_timestamp_unit=coerce_int96_timestamp_unit._timeunit,
-        coerce_string_to_binary=coerce_string_to_binary,
+        string_encoding=string_encoding,
         file_timeout_ms=file_timeout_ms,
     )
     schema = pa.schema(fields, metadata=metadata)
