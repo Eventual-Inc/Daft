@@ -108,7 +108,10 @@ pub enum DataType {
 
     /// A nested [`DataType`] that is represented as List<entries: Struct<key: K, value: V>>.
     #[display("Map[{key}: {value}]")]
-    Map { key: Box<DataType>, value: Box<DataType> },
+    Map {
+        key: Box<DataType>,
+        value: Box<DataType>,
+    },
 
     /// Extension type.
     #[display("{_1}")]
@@ -240,7 +243,8 @@ impl DataType {
                 ]);
 
                 // entries
-                let struct_field = arrow2::datatypes::Field::new("entries", struct_type.clone(), true);
+                let struct_field =
+                    arrow2::datatypes::Field::new("entries", struct_type.clone(), true);
 
                 let list_type = ArrowType::LargeList(Box::new(struct_field));
 
@@ -248,10 +252,7 @@ impl DataType {
                 // todo: item? items? something else?
                 let list_field = arrow2::datatypes::Field::new("item", list_type.clone(), true);
 
-                Ok(ArrowType::Map(
-                    Box::new(list_field),
-                    false,
-                ))
+                Ok(ArrowType::Map(Box::new(list_field), false))
             }
             DataType::Struct(fields) => Ok({
                 let fields = fields
@@ -454,7 +455,7 @@ impl DataType {
 
     #[inline]
     pub fn is_map(&self) -> bool {
-        matches!(self, DataType::Map{ .. })
+        matches!(self, DataType::Map { .. })
     }
 
     #[inline]
@@ -660,7 +661,7 @@ impl From<&ArrowType> for DataType {
                 let [key, value] = fields.as_slice() else {
                     panic!("Map should have two fields")
                 };
-                
+
                 let key = &key.data_type;
                 let value = &value.data_type;
 

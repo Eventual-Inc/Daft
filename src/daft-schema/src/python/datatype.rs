@@ -209,7 +209,11 @@ impl PyDataType {
 
     #[staticmethod]
     pub fn map(key_type: Self, value_type: Self) -> PyResult<Self> {
-        Ok(DataType::Map { key: Box::new(key_type.dtype), value: Box::new(value_type.dtype) }.into())
+        Ok(DataType::Map {
+            key: Box::new(key_type.dtype),
+            value: Box::new(value_type.dtype),
+        }
+        .into())
     }
 
     #[staticmethod]
@@ -220,7 +224,7 @@ impl PyDataType {
                 .map(|(name, dtype)| Field::new(name, dtype.dtype))
                 .collect::<Vec<Field>>(),
         )
-            .into()
+        .into()
     }
 
     #[staticmethod]
@@ -234,7 +238,7 @@ impl PyDataType {
             Box::new(storage_data_type.dtype),
             metadata.map(|s| s.to_string()),
         )
-            .into())
+        .into())
     }
 
     #[staticmethod]
@@ -325,7 +329,7 @@ impl PyDataType {
                             Self {
                                 dtype: *dtype.clone(),
                             }
-                                .to_arrow(py)?,
+                            .to_arrow(py)?,
                             pyo3::types::PyTuple::new_bound(py, shape.clone()),
                         ))
                 } else {

@@ -78,83 +78,83 @@ impl<'d> serde::Deserialize<'d> for Series {
                         &field.dtype,
                         map.next_value::<usize>()?,
                     )
-                        .into_series()),
+                    .into_series()),
                     DataType::Boolean => Ok(BooleanArray::from((
                         field.name.as_str(),
                         map.next_value::<Vec<Option<bool>>>()?.as_slice(),
                     ))
-                        .into_series()),
+                    .into_series()),
                     DataType::Int8 => Ok(Int8Array::from_iter(
                         field.name.as_str(),
                         map.next_value::<Vec<Option<i8>>>()?.into_iter(),
                     )
-                        .into_series()),
+                    .into_series()),
                     DataType::Int16 => Ok(Int16Array::from_iter(
                         field.name.as_str(),
                         map.next_value::<Vec<Option<i16>>>()?.into_iter(),
                     )
-                        .into_series()),
+                    .into_series()),
                     DataType::Int32 => Ok(Int32Array::from_iter(
                         field.name.as_str(),
                         map.next_value::<Vec<Option<i32>>>()?.into_iter(),
                     )
-                        .into_series()),
+                    .into_series()),
                     DataType::Int64 => Ok(Int64Array::from_iter(
                         field.name.as_str(),
                         map.next_value::<Vec<Option<i64>>>()?.into_iter(),
                     )
-                        .into_series()),
+                    .into_series()),
                     DataType::Int128 => Ok(Int128Array::from_iter(
                         field.name.as_str(),
                         map.next_value::<Vec<Option<i128>>>()?.into_iter(),
                     )
-                        .into_series()),
+                    .into_series()),
                     DataType::UInt8 => Ok(UInt8Array::from_iter(
                         field.name.as_str(),
                         map.next_value::<Vec<Option<u8>>>()?.into_iter(),
                     )
-                        .into_series()),
+                    .into_series()),
                     DataType::UInt16 => Ok(UInt16Array::from_iter(
                         field.name.as_str(),
                         map.next_value::<Vec<Option<u16>>>()?.into_iter(),
                     )
-                        .into_series()),
+                    .into_series()),
                     DataType::UInt32 => Ok(UInt32Array::from_iter(
                         field.name.as_str(),
                         map.next_value::<Vec<Option<u32>>>()?.into_iter(),
                     )
-                        .into_series()),
+                    .into_series()),
                     DataType::UInt64 => Ok(UInt64Array::from_iter(
                         field.name.as_str(),
                         map.next_value::<Vec<Option<u64>>>()?.into_iter(),
                     )
-                        .into_series()),
+                    .into_series()),
                     DataType::Float32 => Ok(Float32Array::from_iter(
                         field.name.as_str(),
                         map.next_value::<Vec<Option<f32>>>()?.into_iter(),
                     )
-                        .into_series()),
+                    .into_series()),
                     DataType::Float64 => Ok(Float64Array::from_iter(
                         field.name.as_str(),
                         map.next_value::<Vec<Option<f64>>>()?.into_iter(),
                     )
-                        .into_series()),
+                    .into_series()),
                     DataType::Utf8 => Ok(Utf8Array::from_iter(
                         field.name.as_str(),
                         map.next_value::<Vec<Option<Cow<str>>>>()?.into_iter(),
                     )
-                        .into_series()),
+                    .into_series()),
                     DataType::Binary => Ok(BinaryArray::from_iter(
                         field.name.as_str(),
                         map.next_value::<Vec<Option<Cow<[u8]>>>>()?.into_iter(),
                     )
-                        .into_series()),
+                    .into_series()),
                     DataType::FixedSizeBinary(size) => Ok(FixedSizeBinaryArray::from_iter(
                         field.name.as_str(),
                         map.next_value::<Vec<Option<Cow<[u8]>>>>()?.into_iter(),
                         *size,
                     )
-                        .into_series()),
+                    .into_series()),
                     DataType::Extension(..) => {
                         let physical = map.next_value::<Series>()?;
                         let physical = physical.to_arrow();
@@ -169,7 +169,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                             Arc::new(field),
                             physical.downcast::<ListArray>().unwrap().clone(),
                         )
-                            .into_series())
+                        .into_series())
                     }
                     DataType::Struct(..) => {
                         let mut all_series = map.next_value::<Vec<Option<Series>>>()?;
@@ -198,7 +198,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                         let offsets = OffsetsBuffer::<i64>::try_from(
                             offsets_array.as_arrow().values().clone(),
                         )
-                            .unwrap();
+                        .unwrap();
                         let flat_child = all_series
                             .pop()
                             .ok_or_else(|| serde::de::Error::missing_field("flat_child"))?
@@ -225,7 +225,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                             field,
                             physical.downcast::<PType>().unwrap().clone(),
                         )
-                            .into_series())
+                        .into_series())
                     }
                     DataType::Timestamp(..) => {
                         type PType = <<TimestampType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
@@ -234,7 +234,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                             field,
                             physical.downcast::<PType>().unwrap().clone(),
                         )
-                            .into_series())
+                        .into_series())
                     }
                     DataType::Date => {
                         type PType = <<DateType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
@@ -260,7 +260,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                                 field,
                                 physical.downcast::<PType>().unwrap().clone(),
                             )
-                                .into_series(),
+                            .into_series(),
                         )
                     }
                     DataType::Embedding(..) => {
@@ -270,7 +270,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                             field,
                             physical.downcast::<PType>().unwrap().clone(),
                         )
-                            .into_series())
+                        .into_series())
                     }
                     DataType::Image(..) => {
                         type PType = <<ImageType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
@@ -287,7 +287,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                             field,
                             physical.downcast::<PType>().unwrap().clone(),
                         )
-                            .into_series())
+                        .into_series())
                     }
                     DataType::FixedShapeTensor(..) => {
                         type PType = <<FixedShapeTensorType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
@@ -296,7 +296,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                             field,
                             physical.downcast::<PType>().unwrap().clone(),
                         )
-                            .into_series())
+                        .into_series())
                     }
                     DataType::SparseTensor(..) => {
                         type PType = <<SparseTensorType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
@@ -305,7 +305,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                             field,
                             physical.downcast::<PType>().unwrap().clone(),
                         )
-                            .into_series())
+                        .into_series())
                     }
                     DataType::FixedShapeSparseTensor(..) => {
                         type PType = <<FixedShapeSparseTensorType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
@@ -314,7 +314,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                             field,
                             physical.downcast::<PType>().unwrap().clone(),
                         )
-                            .into_series())
+                        .into_series())
                     }
                     DataType::Tensor(..) => {
                         type PType = <<TensorType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;

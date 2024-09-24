@@ -13,10 +13,8 @@ impl FunctionEvaluator for GetEvaluator {
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
         match inputs {
-
             // what is input and what is key
             // input is a map field
-
             [input, key] => match (input.to_field(schema), key.to_field(schema)) {
                 (Ok(input_field), Ok(_)) => match input_field.dtype {
                     DataType::Map { value, .. } => {

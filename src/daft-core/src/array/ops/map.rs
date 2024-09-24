@@ -24,7 +24,10 @@ fn single_map_get(structs: &Series, key_to_get: &Series) -> DaftResult<Series> {
 
 impl MapArray {
     pub fn map_get(&self, key_to_get: &Series) -> DaftResult<Series> {
-        let DataType::Map { value: value_type, .. } = self.data_type() else {
+        let DataType::Map {
+            value: value_type, ..
+        } = self.data_type()
+        else {
             return Err(DaftError::TypeError(format!(
                 "Expected input to be a map type, got {:?}",
                 self.data_type()
@@ -37,7 +40,7 @@ impl MapArray {
                 for series in self.physical.into_iter() {
                     match series {
                         Some(s) if !s.is_empty() => result.push(single_map_get(&s, key_to_get)?),
-                        _ => result.push(Series::full_null("value", &value_type, 1)),
+                        _ => result.push(Series::full_null("value", value_type, 1)),
                     }
                 }
                 Series::concat(&result.iter().collect::<Vec<_>>())
@@ -47,7 +50,7 @@ impl MapArray {
                 for (i, series) in self.physical.into_iter().enumerate() {
                     match (series, key_to_get.slice(i, i + 1)?) {
                         (Some(s), k) if !s.is_empty() => result.push(single_map_get(&s, &k)?),
-                        _ => result.push(Series::full_null("value", &value_type, 1)),
+                        _ => result.push(Series::full_null("value", value_type, 1)),
                     }
                 }
                 Series::concat(&result.iter().collect::<Vec<_>>())

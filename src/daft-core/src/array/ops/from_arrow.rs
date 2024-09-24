@@ -35,7 +35,7 @@ where
             // TODO: Consolidate Map to use the same .to_type conversion as other logical types
             // Currently, .to_type does not work for Map in Arrow2 because it requires physical types to be equivalent,
             // but the physical type of MapArray in Arrow2 is a MapArray, not a ListArray
-            DataType::Map{..} => arrow_arr,
+            DataType::Map { .. } => arrow_arr,
             _ => arrow_arr.to_type(data_array_field.dtype.to_arrow()?),
         };
         let physical = <L::PhysicalType as DaftDataType>::ArrayType::from_arrow(
@@ -98,7 +98,7 @@ impl FromArrow for ListArray {
                     arrow_arr.validity().cloned(),
                 ))
             }
-            (DataType::List(daft_child_dtype), arrow2::datatypes::DataType::Map(..)) => {
+            (DataType::List(daft_child_dtype), arrow2::datatypes::DataType::Map { .. }) => {
                 let map_arr = arrow_arr
                     .as_any()
                     .downcast_ref::<arrow2::array::MapArray>()
