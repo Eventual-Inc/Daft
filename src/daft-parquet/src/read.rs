@@ -4,7 +4,12 @@ use std::{
     time::Duration,
 };
 
-use arrow2::{bitmap::Bitmap, io::parquet::read::schema::infer_schema_with_options};
+use arrow2::{
+    bitmap::Bitmap,
+    io::parquet::read::schema::{
+        infer_schema_with_options, SchemaInferenceOptions, StringEncoding,
+    },
+};
 use common_error::DaftResult;
 use daft_core::prelude::*;
 #[cfg(feature = "python")]
@@ -25,37 +30,48 @@ use snafu::ResultExt;
 use crate::{file::ParquetReaderBuilder, JoinSnafu};
 
 #[cfg(feature = "python")]
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct ParquetSchemaInferenceOptionsBuilder {
     pub coerce_int96_timestamp_unit: Option<PyTimeUnit>,
-    pub coerce_string_to_binary: Option<bool>,
+    pub string_encoding: Option<String>,
 }
 
 #[cfg(feature = "python")]
 impl ParquetSchemaInferenceOptionsBuilder {
-    pub fn build(self) -> ParquetSchemaInferenceOptions {
-        self.into()
+    pub fn build(self) -> crate::Result<ParquetSchemaInferenceOptions> {
+        self.try_into()
     }
-}
-
-#[derive(Clone, Copy, Serialize, Deserialize)]
-pub struct ParquetSchemaInferenceOptions {
-    pub coerce_int96_timestamp_unit: TimeUnit,
-    pub coerce_string_to_binary: bool,
 }
 
 #[cfg(feature = "python")]
-impl From<ParquetSchemaInferenceOptionsBuilder> for ParquetSchemaInferenceOptions {
-    fn from(builder: ParquetSchemaInferenceOptionsBuilder) -> Self {
-        let coerce_int96_timestamp_unit = builder
-            .coerce_int96_timestamp_unit
-            .map_or(TimeUnit::Nanoseconds, |time_unit| time_unit.into());
-        let coerce_string_to_binary = builder.coerce_string_to_binary.unwrap_or(false);
+impl TryFrom<ParquetSchemaInferenceOptionsBuilder> for ParquetSchemaInferenceOptions {
+    type Error = crate::Error;
+
+    fn try_from(value: ParquetSchemaInferenceOptionsBuilder) -> crate::Result<Self> {
+        Ok(ParquetSchemaInferenceOptions {
+            coerce_int96_timestamp_unit: value
+                .coerce_int96_timestamp_unit
+                .map_or(TimeUnit::Nanoseconds, |py_timeunit| py_timeunit.into()),
+            string_encoding: StringEncoding::try_from(value.string_encoding)
+                .context(crate::Arrow2Snafu)?,
+        })
+    }
+}
+
+#[cfg(feature = "python")]
+impl Default for ParquetSchemaInferenceOptionsBuilder {
+    fn default() -> Self {
         Self {
-            coerce_int96_timestamp_unit,
-            coerce_string_to_binary,
+            coerce_int96_timestamp_unit: Some(PyTimeUnit::nanoseconds().unwrap()),
+            string_encoding: Some("utf8".into()),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct ParquetSchemaInferenceOptions {
+    pub coerce_int96_timestamp_unit: TimeUnit,
+    pub string_encoding: StringEncoding,
 }
 
 impl ParquetSchemaInferenceOptions {
@@ -73,18 +89,16 @@ impl Default for ParquetSchemaInferenceOptions {
     fn default() -> Self {
         ParquetSchemaInferenceOptions {
             coerce_int96_timestamp_unit: TimeUnit::Nanoseconds,
-            coerce_string_to_binary: false,
+            string_encoding: StringEncoding::Utf8,
         }
     }
 }
 
-impl From<ParquetSchemaInferenceOptions>
-    for arrow2::io::parquet::read::schema::SchemaInferenceOptions
-{
+impl From<ParquetSchemaInferenceOptions> for SchemaInferenceOptions {
     fn from(value: ParquetSchemaInferenceOptions) -> Self {
-        arrow2::io::parquet::read::schema::SchemaInferenceOptions {
+        SchemaInferenceOptions {
             int96_coerce_to_timeunit: value.coerce_int96_timestamp_unit.to_arrow(),
-            string_coerce_to_binary: value.coerce_string_to_binary,
+            string_encoding: value.string_encoding,
         }
     }
 }
@@ -1053,7 +1067,8 @@ pub fn read_parquet_statistics(
 mod tests {
     use std::{path::PathBuf, sync::Arc};
 
-    use common_error::{DaftError, DaftResult};
+    use arrow2::io::parquet::read::schema::StringEncoding;
+    use common_error::DaftResult;
     use daft_core::prelude::DataType;
     use daft_io::{IOClient, IOConfig};
     use futures::StreamExt;
@@ -1208,7 +1223,7 @@ mod tests {
             None,
             true,
             ParquetSchemaInferenceOptions {
-                coerce_string_to_binary: true,
+                string_encoding: StringEncoding::Raw,
                 ..Default::default()
             },
             None,

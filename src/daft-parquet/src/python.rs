@@ -99,7 +99,7 @@ pub mod pylib {
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
-        coerce_string_to_binary: Option<bool>,
+        string_encoding: Option<String>,
         file_timeout_ms: Option<i64>,
     ) -> PyResult<PyArrowParquetType> {
         let (schema, all_arrays, num_rows) = py.allow_threads(|| {
@@ -109,9 +109,9 @@ pub mod pylib {
             )?;
             let schema_infer_options = ParquetSchemaInferenceOptionsBuilder {
                 coerce_int96_timestamp_unit,
-                coerce_string_to_binary,
+                string_encoding,
             }
-            .build();
+            .build()?;
 
             crate::read::read_parquet_into_pyarrow(
                 uri,

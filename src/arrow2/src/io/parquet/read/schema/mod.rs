@@ -15,8 +15,36 @@ pub use parquet2::{
     metadata::{FileMetaData, KeyValue, SchemaDescriptor},
     schema::types::ParquetType,
 };
+use serde::{Deserialize, Serialize};
 
 use self::metadata::parse_key_value_metadata;
+
+/// String encoding options.
+///
+/// Each variant of this enum maps to a different interpretation of the underlying binary data:
+/// 1. `StringEncoding::Utf8` assumes the underlying binary data is UTF-8 encoded.
+/// 2. `StringEncoding::Raw` makes no assumptions about the encoding of the underlying binary data. This variant will change the logical type of the column to `DataType::Binary` in the final schema.
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StringEncoding {
+    Raw,
+    #[default]
+    Utf8,
+}
+
+impl<T: AsRef<str>> TryFrom<Option<T>> for StringEncoding {
+    type Error = crate::error::Error;
+
+    fn try_from(value: Option<T>) -> Result<Self> {
+        match value.as_ref().map(AsRef::as_ref) {
+            Some("utf8") => Ok(Self::Utf8),
+            Some(encoding) => Err(crate::error::Error::InvalidArgumentError(format!(
+                "Unrecognized encoding: {}",
+                encoding
+            ))),
+            None => Ok(Self::Raw),
+        }
+    }
+}
 
 /// Options when inferring schemas from Parquet
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,16 +58,15 @@ pub struct SchemaInferenceOptions {
     /// without overflowing when parsing the data.
     pub int96_coerce_to_timeunit: TimeUnit,
 
-    /// If `true`, when inferring schemas from the Parquet String (UTF8 encoded) type, always coerce to a binary type.
-    /// This will avoid any UTF8 validation that would have originally been performed.
-    pub string_coerce_to_binary: bool,
+    /// The string encoding to assume when inferring the schema from Parquet data.
+    pub string_encoding: StringEncoding,
 }
 
 impl Default for SchemaInferenceOptions {
     fn default() -> Self {
         SchemaInferenceOptions {
             int96_coerce_to_timeunit: TimeUnit::Nanosecond,
-            string_coerce_to_binary: false,
+            string_encoding: StringEncoding::default(),
         }
     }
 }

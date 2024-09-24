@@ -7,6 +7,7 @@ use parquet2::schema::{
     Repetition,
 };
 
+use super::StringEncoding;
 use crate::{
     datatypes::{DataType, Field, IntervalUnit, TimeUnit},
     io::parquet::read::schema::SchemaInferenceOptions,
@@ -151,13 +152,10 @@ fn from_byte_array(
     options: &SchemaInferenceOptions,
 ) -> DataType {
     match (logical_type, converted_type) {
-        (Some(PrimitiveLogicalType::String), _) => {
-            if options.string_coerce_to_binary {
-                DataType::Binary
-            } else {
-                DataType::Utf8
-            }
-        }
+        (Some(PrimitiveLogicalType::String), _) => match options.string_encoding {
+            StringEncoding::Utf8 => DataType::Utf8,
+            StringEncoding::Raw => DataType::Binary,
+        },
         (Some(PrimitiveLogicalType::Json), _) => DataType::Binary,
         (Some(PrimitiveLogicalType::Bson), _) => DataType::Binary,
         (Some(PrimitiveLogicalType::Enum), _) => DataType::Binary,
