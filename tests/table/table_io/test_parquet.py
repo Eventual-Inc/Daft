@@ -415,7 +415,7 @@ def test_parquet_read_string_utf8_into_binary(parquet_path: Path):
         # should throw an exception when `string_encoding` is not specified and is instead defaulted to `"utf-8"`
         pass
 
-    read_back = read_parquet_into_pyarrow(path=parquet_path.as_posix(), string_encoding=None)
+    read_back = read_parquet_into_pyarrow(path=parquet_path.as_posix(), string_encoding="raw")
 
     schema = read_back.schema
     assert len(schema) == 1
