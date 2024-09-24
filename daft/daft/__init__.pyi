@@ -1720,6 +1720,7 @@ class LogicalPlanBuilder:
         mode: str,
         version: int,
         large_dtypes: bool,
+        partition_cols: list[str] | None = None,
         io_config: IOConfig | None = None,
     ) -> LogicalPlanBuilder: ...
     def lance_write(

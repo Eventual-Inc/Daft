@@ -27,6 +27,7 @@ daft-functions = {path = "../daft-functions", default-features = false}
 daft-scan = {path = "../daft-scan", default-features = false}
 daft-schema = {path = "../daft-schema", default-features = false}
 daft-table = {path = "../daft-table", default-features = false}
+derivative = {workspace = true}
 indexmap = {workspace = true}
 itertools = {workspace = true}
 log = {workspace = true}
