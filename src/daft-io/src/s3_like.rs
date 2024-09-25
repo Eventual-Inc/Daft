@@ -10,8 +10,10 @@ use aws_credential_types::{
     cache::{CredentialsCache, ProvideCachedCredentials, SharedCredentialsCache},
     provider::error::CredentialsError,
 };
-use aws_sdk_s3 as s3;
-use aws_sdk_s3::{operation::put_object::PutObjectError, primitives::ByteStreamError};
+use aws_sdk_s3::{
+    self as s3, error::ProvideErrorMetadata, operation::put_object::PutObjectError,
+    primitives::ByteStreamError,
+};
 use aws_sig_auth::signer::SigningRequirements;
 use aws_smithy_async::rt::sleep::TokioSleep;
 use common_io_config::S3Config;
@@ -118,9 +120,50 @@ enum Error {
     UploadsCannotBeAnonymous {},
 }
 
+/// List of AWS error codes that are due to throttling
+/// https://docs.aws.amazon.com/AmazonS3/latest/API/ErrorResponses.html#ErrorCodeList
+const THROTTLING_ERRORS: &[&str] = &[
+    "Throttling",
+    "ThrottlingException",
+    "ThrottledException",
+    "RequestThrottledException",
+    "TooManyRequestsException",
+    "ProvisionedThroughputExceededException",
+    "TransactionInProgressException",
+    "RequestLimitExceeded",
+    "BandwidthLimitExceeded",
+    "LimitExceededException",
+    "RequestThrottled",
+    "SlowDown",
+    "PriorRequestNotComplete",
+    "EC2ThrottledException",
+];
+
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
         use Error::*;
+
+        fn classify_unhandled_error<
+            E: std::error::Error + ProvideErrorMetadata + Send + Sync + 'static,
+        >(
+            path: String,
+            err: E,
+        ) -> super::Error {
+            match err.code() {
+                Some("InternalError") => super::Error::MiscTransient {
+                    path,
+                    source: err.into(),
+                },
+                Some(code) if THROTTLING_ERRORS.contains(&code) => super::Error::Throttled {
+                    path,
+                    source: err.into(),
+                },
+                _ => super::Error::Unhandled {
+                    path,
+                    msg: DisplayErrorContext(err).to_string(),
+                },
+            }
+        }
 
         match error {
             UnableToOpenFile { path, source } => match source {
@@ -140,25 +183,20 @@ impl From<Error> for super::Error {
                             source: source.into(),
                         }
                     } else {
-                        Self::UnableToOpenFile {
+                        // who knows what happened here during dispatch, let's just tell the user it's transient
+                        Self::MiscTransient {
                             path,
                             source: source.into(),
                         }
                     }
                 }
+
                 _ => match source.into_service_error() {
                     GetObjectError::NoSuchKey(no_such_key) => Self::NotFound {
                         path,
                         source: no_such_key.into(),
                     },
-                    GetObjectError::Unhandled(v) => Self::Unhandled {
-                        path,
-                        msg: DisplayErrorContext(v).to_string(),
-                    },
-                    err => Self::UnableToOpenFile {
-                        path,
-                        source: err.into(),
-                    },
+                    err => classify_unhandled_error(path, err),
                 },
             },
             UnableToHeadFile { path, source } => match source {
@@ -178,7 +216,8 @@ impl From<Error> for super::Error {
                             source: source.into(),
                         }
                     } else {
-                        Self::UnableToOpenFile {
+                        // who knows what happened here during dispatch, let's just tell the user it's transient
+                        Self::MiscTransient {
                             path,
                             source: source.into(),
                         }
@@ -189,14 +228,7 @@ impl From<Error> for super::Error {
                         path,
                         source: no_such_key.into(),
                     },
-                    HeadObjectError::Unhandled(v) => Self::Unhandled {
-                        path,
-                        msg: DisplayErrorContext(v).to_string(),
-                    },
-                    err => Self::UnableToOpenFile {
-                        path,
-                        source: err.into(),
-                    },
+                    err => classify_unhandled_error(path, err),
                 },
             },
             UnableToListObjects { path, source } => match source {
@@ -216,7 +248,8 @@ impl From<Error> for super::Error {
                             source: source.into(),
                         }
                     } else {
-                        Self::UnableToOpenFile {
+                        // who knows what happened here during dispatch, let's just tell the user it's transient
+                        Self::MiscTransient {
                             path,
                             source: source.into(),
                         }
@@ -227,14 +260,7 @@ impl From<Error> for super::Error {
                         path,
                         source: no_such_key.into(),
                     },
-                    ListObjectsV2Error::Unhandled(v) => Self::Unhandled {
-                        path,
-                        msg: DisplayErrorContext(v).to_string(),
-                    },
-                    err => Self::UnableToOpenFile {
-                        path,
-                        source: err.into(),
-                    },
+                    err => classify_unhandled_error(path, err),
                 },
             },
             InvalidUrl { path, source } => Self::InvalidUrl { path, source },

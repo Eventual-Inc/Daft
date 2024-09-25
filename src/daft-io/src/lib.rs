@@ -97,6 +97,12 @@ pub enum Error {
     ))]
     SocketError { path: String, source: DynError },
 
+    #[snafu(display("Throttled when trying to read {}\nDetails:\n{:?}", path, source))]
+    Throttled { path: String, source: DynError },
+
+    #[snafu(display("Misc Transient error trying to read {}\nDetails:\n{:?}", path, source))]
+    MiscTransient { path: String, source: DynError },
+
     #[snafu(display("Unable to convert URL \"{}\" to path", path))]
     InvalidUrl {
         path: String,
@@ -150,6 +156,8 @@ impl From<Error> for DaftError {
             ReadTimeout { .. } => Self::ReadTimeout(err.into()),
             UnableToReadBytes { .. } => Self::ByteStreamError(err.into()),
             SocketError { .. } => Self::SocketError(err.into()),
+            Throttled { .. } => Self::ThrottledIo(err.into()),
+            MiscTransient { .. } => Self::MiscTransient(err.into()),
             // We have to repeat everything above for the case we have an Arc since we can't move the error.
             CachedError { ref source } => match source.as_ref() {
                 NotFound { path, source: _ } => Self::FileNotFound {
@@ -160,6 +168,8 @@ impl From<Error> for DaftError {
                 ReadTimeout { .. } => Self::ReadTimeout(err.into()),
                 UnableToReadBytes { .. } => Self::ByteStreamError(err.into()),
                 SocketError { .. } => Self::SocketError(err.into()),
+                Throttled { .. } => Self::ThrottledIo(err.into()),
+                MiscTransient { .. } => Self::MiscTransient(err.into()),
                 _ => Self::External(err.into()),
             },
             _ => Self::External(err.into()),
