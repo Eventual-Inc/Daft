@@ -906,7 +906,9 @@ def test_agg_concat_on_string_groupby_null() -> None:
 
 
 def test_agg_concat_on_string_null_list() -> None:
-    df3 = from_pydict({"a": [None, None, None, None], "b": [1, 2, 1, 2]}).with_column("a", col("a").cast(DataType.string()))
+    df3 = from_pydict({"a": [None, None, None, None], "b": [1, 2, 1, 2]}).with_column(
+        "a", col("a").cast(DataType.string())
+    )
     res = df3.agg(col("a").agg_concat()).to_pydict()
     print(res)
     expected = [None]
@@ -915,7 +917,9 @@ def test_agg_concat_on_string_null_list() -> None:
 
 
 def test_agg_concat_on_string_groupby_null_list() -> None:
-    df3 = from_pydict({"a": [None, None, None, None], "b": [1, 2, 1, 2]}).with_column("a", col("a").cast(DataType.string()))
+    df3 = from_pydict({"a": [None, None, None, None], "b": [1, 2, 1, 2]}).with_column(
+        "a", col("a").cast(DataType.string())
+    )
     res = df3.groupby("b").agg_concat("a").to_pydict()
     expected = [None, None]
     assert res["a"] == expected
