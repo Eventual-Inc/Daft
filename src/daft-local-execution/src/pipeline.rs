@@ -7,7 +7,7 @@ use daft_core::{
     prelude::{Schema, SchemaRef},
     utils::supertype,
 };
-use daft_dsl::{join::get_common_join_keys, Expr};
+use daft_dsl::{col, join::get_common_join_keys, Expr};
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{
     Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, Project, Sort,
@@ -184,17 +184,23 @@ pub fn physical_plan_to_pipeline(
         }) => {
             let (first_stage_aggs, second_stage_aggs, final_exprs) =
                 populate_aggregation_stages(aggregations, schema, group_by);
-            let first_stage_agg_op = AggregateOperator::new(
-                first_stage_aggs
-                    .values()
-                    .cloned()
-                    .map(|e| Arc::new(Expr::Agg(e.clone())))
-                    .collect(),
-                group_by.clone(),
-            );
             let child_node = physical_plan_to_pipeline(input, psets)?;
-            let post_first_agg_node =
-                IntermediateNode::new(Arc::new(first_stage_agg_op), vec![child_node]).boxed();
+            let (post_first_agg_node, group_by) = if !first_stage_aggs.is_empty() {
+                let agg_op = AggregateOperator::new(
+                    first_stage_aggs
+                        .values()
+                        .cloned()
+                        .map(|e| Arc::new(Expr::Agg(e.clone())))
+                        .collect(),
+                    group_by.clone(),
+                );
+                (
+                    IntermediateNode::new(Arc::new(agg_op), vec![child_node]).boxed(),
+                    group_by.iter().map(|e| col(e.name())).collect(),
+                )
+            } else {
+                (child_node, group_by.clone())
+            };
 
             let second_stage_agg_sink = AggregateSink::new(
                 second_stage_aggs
