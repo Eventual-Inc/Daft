@@ -1,4 +1,5 @@
 #![feature(let_chains)]
+mod buffer;
 mod channel;
 mod intermediate_ops;
 mod pipeline;
@@ -14,15 +15,20 @@ lazy_static! {
     pub static ref NUM_CPUS: usize = std::thread::available_parallelism().unwrap().get();
 }
 
+pub(crate) type TaskSet<T> = tokio::task::JoinSet<T>;
+pub(crate) fn create_task_set<T>() -> TaskSet<T> {
+    TaskSet::new()
+}
+
 pub struct ExecutionRuntimeHandle {
-    worker_set: tokio::task::JoinSet<crate::Result<()>>,
+    worker_set: TaskSet<crate::Result<()>>,
     default_morsel_size: usize,
 }
 
 impl ExecutionRuntimeHandle {
     pub fn new(default_morsel_size: usize) -> Self {
         Self {
-            worker_set: tokio::task::JoinSet::new(),
+            worker_set: create_task_set(),
             default_morsel_size,
         }
     }

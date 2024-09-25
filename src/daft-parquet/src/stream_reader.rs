@@ -9,7 +9,7 @@ use arrow2::io::parquet::read;
 use common_error::DaftResult;
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
 use daft_dsl::ExprRef;
-use daft_io::IOStatsRef;
+use daft_io::{get_runtime, IOStatsRef};
 use daft_table::Table;
 use futures::{stream::BoxStream, StreamExt};
 use itertools::Itertools;
@@ -514,13 +514,8 @@ pub(crate) fn local_parquet_stream(
 
     // Create a channel for each row group to send the processed tables to the stream
     // Each channel is expected to have a number of chunks equal to the number of chunks in the row group
-    let (senders, receivers): (Vec<_>, Vec<_>) = row_ranges
-        .iter()
-        .map(|rg_range| {
-            let expected_num_chunks =
-                f32::ceil(rg_range.num_rows as f32 / chunk_size as f32) as usize;
-            crossbeam_channel::bounded(expected_num_chunks)
-        })
+    let (senders, receivers): (Vec<_>, Vec<_>) = (0..row_ranges.len())
+        .map(|_| tokio::sync::mpsc::channel::<DaftResult<Table>>(1))
         .unzip();
 
     let owned_uri = uri.to_string();
@@ -542,34 +537,39 @@ pub(crate) fn local_parquet_stream(
                 DaftResult::Ok(table_iter)
             });
 
-    rayon::spawn(move || {
+    let runtime = get_runtime(true)?;
+    let _ = runtime.block_on_io_pool(async move {
         // Once a row group has been read into memory and we have the column iterators,
         // we can start processing them in parallel.
-        let par_table_iters = table_iters.zip(senders).par_bridge();
+        let par_table_iters = table_iters.zip(senders);
 
         // For each vec of column iters, iterate through them in parallel lock step such that each iteration
         // produces a chunk of the row group that can be converted into a table.
         par_table_iters.for_each(move |(table_iter_result, tx)| {
-            let table_iter = match table_iter_result {
-                Ok(t) => t,
-                Err(e) => {
-                    let _ = tx.send(Err(e));
-                    return;
+            tokio::spawn(async move {
+                let table_iter = match table_iter_result {
+                    Ok(t) => t,
+                    Err(e) => {
+                        let _ = tx.send(Err(e)).await;
+                        return;
+                    }
+                };
+                for table_result in table_iter {
+                    let table_err = table_result.is_err();
+                    let _ = tx.send(table_result).await;
+                    if table_err {
+                        break;
+                    }
                 }
-            };
-            for table_result in table_iter {
-                let table_err = table_result.is_err();
-                if let Err(crossbeam_channel::TrySendError::Full(_)) = tx.try_send(table_result) {
-                    panic!("Parquet stream channel should not be full")
-                }
-                if table_err {
-                    break;
-                }
-            }
+            });
         });
     });
 
-    let result_stream = futures::stream::iter(receivers.into_iter().map(futures::stream::iter));
+    let result_stream = futures::stream::iter(
+        receivers
+            .into_iter()
+            .map(tokio_stream::wrappers::ReceiverStream::new),
+    );
 
     match maintain_order {
         true => Ok((metadata, Box::pin(result_stream.flatten()))),

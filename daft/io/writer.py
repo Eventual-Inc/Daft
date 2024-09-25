@@ -28,6 +28,7 @@ class FileWriterBase:
             self.fs.create_dir(root_dir)
 
         self.file_name = f"{uuid.uuid4()}-{file_idx}.{file_format}"
+        self.full_path = f"{self.resolved_path}/{self.file_name}"
         self.compression = compression if compression is not None else "none"
         self.current_writer: Optional[Union[pq.ParquetWriter, pacsv.CSVWriter]] = None
 
@@ -43,7 +44,7 @@ class FileWriterBase:
         if self.current_writer is None:
             return None
         self.current_writer.close()
-        return f"{self.resolved_path}/{self.file_name}"
+        return self.full_path
 
 
 class ParquetFileWriter(FileWriterBase):
@@ -57,9 +58,8 @@ class ParquetFileWriter(FileWriterBase):
         super().__init__(root_dir, file_idx, "parquet", compression, io_config)
 
     def _create_writer(self, schema: pa.Schema) -> pq.ParquetWriter:
-        file_path = f"{self.resolved_path}/{self.file_name}"
         return pq.ParquetWriter(
-            file_path,
+            self.full_path,
             schema,
             compression=self.compression,
             use_compliant_nested_type=False,

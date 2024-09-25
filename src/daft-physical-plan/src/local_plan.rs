@@ -192,12 +192,14 @@ impl LocalPhysicalPlan {
 
     pub(crate) fn physical_write(
         input: LocalPhysicalPlanRef,
-        schema: SchemaRef,
+        data_schema: SchemaRef,
+        file_schema: SchemaRef,
         file_info: OutputFileInfo,
     ) -> LocalPhysicalPlanRef {
         LocalPhysicalPlan::PhysicalWrite(PhysicalWrite {
             input,
-            schema,
+            data_schema,
+            file_schema,
             file_info,
             plan_stats: PlanStats {},
         })
@@ -309,7 +311,8 @@ pub struct Concat {
 
 pub struct PhysicalWrite {
     pub input: LocalPhysicalPlanRef,
-    pub schema: SchemaRef,
+    pub data_schema: SchemaRef,
+    pub file_schema: SchemaRef,
     pub file_info: OutputFileInfo,
     pub plan_stats: PlanStats,
 }

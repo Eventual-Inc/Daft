@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{cmp::min, collections::HashMap, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::{mermaid::MermaidDisplayVisitor, tree::TreeDisplay};
@@ -29,8 +29,9 @@ use crate::{
     },
     sinks::{
         aggregate::AggregateSink, blocking_sink::BlockingSinkNode,
-        hash_join_build::HashJoinBuildSink, limit::LimitSink, physical_write::PhysicalWriteSink,
-        sort::SortSink, streaming_sink::StreamingSinkNode,
+        hash_join_build::HashJoinBuildSink, limit::LimitSink,
+        partitioned_write::PartitionedWriteNode, sort::SortSink, streaming_sink::StreamingSinkNode,
+        unpartitioned_write::UnpartionedWriteNode,
     },
     sources::in_memory::InMemorySource,
     ExecutionRuntimeHandle, PipelineCreationSnafu,
@@ -330,7 +331,11 @@ pub fn physical_plan_to_pipeline(
             probe_node.boxed()
         }
         LocalPhysicalPlan::PhysicalWrite(PhysicalWrite {
-            input, file_info, ..
+            input,
+            file_info,
+            data_schema,
+            file_schema,
+            ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
             let (inflation_factor, target_file_size) = match file_info.file_format {
@@ -338,16 +343,40 @@ pub fn physical_plan_to_pipeline(
                 FileFormat::Csv => (cfg.csv_inflation_factor, cfg.csv_target_filesize),
                 _ => unreachable!("Unsupported file format"),
             };
-            let write_sink = PhysicalWriteSink::new(
-                file_info,
-                inflation_factor,
-                target_file_size,
-                cfg.parquet_target_row_group_size,
-            )
-            .context(PipelineCreationSnafu {
-                plan_name: physical_plan.name(),
-            })?;
-            BlockingSinkNode::new(write_sink.boxed(), child_node).boxed()
+            let estimated_row_size_bytes = data_schema.estimate_row_size_bytes();
+            let target_file_rows = if estimated_row_size_bytes > 0.0 {
+                target_file_size as f64 * inflation_factor / estimated_row_size_bytes
+            } else {
+                target_file_size as f64 * inflation_factor
+            } as usize;
+            // Just assume same chunk size for CSV and Parquet for now
+            let target_chunk_rows = min(
+                target_file_rows,
+                if estimated_row_size_bytes > 0.0 {
+                    cfg.parquet_target_row_group_size as f64 * inflation_factor
+                        / estimated_row_size_bytes
+                } else {
+                    cfg.parquet_target_row_group_size as f64 * inflation_factor
+                } as usize,
+            );
+            match &file_info.partition_cols {
+                Some(_) => PartitionedWriteNode::new(
+                    child_node,
+                    file_info,
+                    file_schema,
+                    target_file_rows,
+                    target_chunk_rows,
+                )
+                .boxed(),
+                None => UnpartionedWriteNode::new(
+                    child_node,
+                    file_info,
+                    file_schema,
+                    target_file_rows,
+                    target_chunk_rows,
+                )
+                .boxed(),
+            }
         }
     };
 

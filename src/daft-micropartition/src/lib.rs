@@ -4,6 +4,7 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
+use common_file_formats::FileFormat;
 use snafu::Snafu;
 mod micropartition;
 mod ops;
@@ -67,4 +68,29 @@ impl From<Error> for pyo3::PyErr {
 pub trait FileWriter: Send + Sync {
     fn write(&self, data: &Arc<MicroPartition>) -> DaftResult<()>;
     fn close(&self) -> DaftResult<Option<String>>;
+}
+
+pub fn create_file_writer(
+    root_dir: &str,
+    file_idx: usize,
+    compression: &Option<String>,
+    io_config: &Option<daft_io::IOConfig>,
+    format: FileFormat,
+) -> DaftResult<Box<dyn FileWriter>> {
+    match format {
+        #[cfg(feature = "python")]
+        FileFormat::Parquet => Ok(Box::new(py_writers::PyArrowParquetWriter::new(
+            root_dir,
+            file_idx,
+            compression,
+            io_config,
+        )?)),
+        #[cfg(feature = "python")]
+        FileFormat::Csv => Ok(Box::new(py_writers::PyArrowCSVWriter::new(
+            root_dir, file_idx, io_config,
+        )?)),
+        _ => Err(DaftError::ComputeError(
+            "Unsupported file format for physical write".to_string(),
+        )),
+    }
 }

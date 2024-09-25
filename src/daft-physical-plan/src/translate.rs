@@ -108,9 +108,11 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
         LogicalPlan::Sink(sink) => {
             use daft_plan::SinkInfo;
             let input = translate(&sink.input)?;
+            let data_schema = input.schema().clone();
             match sink.sink_info.as_ref() {
                 SinkInfo::OutputFileInfo(info) => Ok(LocalPhysicalPlan::physical_write(
                     input,
+                    data_schema,
                     sink.schema.clone(),
                     info.clone(),
                 )),
