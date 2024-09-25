@@ -180,14 +180,33 @@ impl DaftConcatAggable for DataArray<Utf8Type> {
 
     fn grouped_concat(&self, groups: &super::GroupIndices) -> Self::Output {
         let arrow_array = self.as_arrow();
-        let concat_per_group = Box::new(Utf8Array::from_trusted_len_iter(groups.iter().map(|g| {
-            let mut group_res = vec![];
-            g.iter().for_each(|index| {
-                let idx = *index as usize;
-                group_res.push(arrow_array.value(idx));
-            });
-            Some(group_res.concat())
-        })));
+        let concat_per_group = if arrow_array.null_count() > 0 {
+            Box::new(Utf8Array::from_trusted_len_iter(groups.iter().map(|g| {
+                let to_concat = g
+                    .iter()
+                    .filter_map(|index| {
+                        let idx = *index as usize;
+                        arrow_array.get(idx)
+                    })
+                    .collect::<Vec<&str>>();
+                if to_concat.is_empty() {
+                    None
+                } else {
+                    Some(to_concat.concat())
+                }
+            })))
+        } else {
+            Box::new(Utf8Array::from_trusted_len_values_iter(groups.iter().map(
+                |g| {
+                    g.iter()
+                        .map(|index| {
+                            let idx = *index as usize;
+                            arrow_array.value(idx)
+                        })
+                        .collect::<String>()
+                },
+            )))
+        };
 
         Ok(DataArray::from((
             self.field.name.as_ref(),
@@ -196,24 +215,6 @@ impl DaftConcatAggable for DataArray<Utf8Type> {
     }
 }
 
-impl DaftConcatAggable for DataArray<NullType> {
-    type Output = DaftResult<Self>;
-
-    fn concat(&self) -> Self::Output {
-        let arrow_array = self.as_arrow();
-        let result_box = Box::new(NullArray::new_null(arrow_array.data_type().clone(), 1));
-        DataArray::new(self.field().clone().into(), result_box)
-    }
-
-    fn grouped_concat(&self, groups: &super::GroupIndices) -> Self::Output {
-        let arrow_array = self.as_arrow();
-        let result_box = Box::new(NullArray::new_null(
-            arrow_array.data_type().clone(),
-            groups.len(),
-        ));
-        DataArray::new(self.field().clone().into(), result_box)
-    }
-}
 
 #[cfg(test)]
 mod test {

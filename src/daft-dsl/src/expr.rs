@@ -391,7 +391,6 @@ impl AggExpr {
                 match field.dtype {
                     DataType::List(..) => Ok(field),
                     DataType::Utf8 => Ok(field),
-                    DataType::Null => Ok(field),
                     #[cfg(feature = "python")]
                     DataType::Python => Ok(field),
                     _ => Err(DaftError::TypeError(format!(
