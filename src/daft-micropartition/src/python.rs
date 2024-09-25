@@ -749,7 +749,7 @@ impl PyMicroPartition {
     }
 }
 
-pub(crate) fn read_json_into_py_table(
+pub fn read_json_into_py_table(
     py: Python,
     uri: &str,
     schema: PySchema,
@@ -776,7 +776,7 @@ pub(crate) fn read_json_into_py_table(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn read_csv_into_py_table(
+pub fn read_csv_into_py_table(
     py: Python,
     uri: &str,
     has_header: bool,
@@ -810,7 +810,7 @@ pub(crate) fn read_csv_into_py_table(
         .extract()
 }
 
-pub(crate) fn read_parquet_into_py_table(
+pub fn read_parquet_into_py_table(
     py: Python,
     uri: &str,
     schema: PySchema,

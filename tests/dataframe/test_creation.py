@@ -15,17 +15,11 @@ import pyarrow.parquet as papq
 import pytest
 
 import daft
-from daft import context
 from daft.api_annotations import APITypeError
 from daft.dataframe import DataFrame
 from daft.datatype import DataType
 from daft.utils import pyarrow_supports_fixed_shape_tensor
 from tests.conftest import UuidType
-
-pytestmark = pytest.mark.skipif(
-    context.get_context().daft_execution_config.enable_native_executor is True,
-    reason="Native executor fails for these tests",
-)
 
 ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
 

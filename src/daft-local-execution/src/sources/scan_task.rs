@@ -1,14 +1,16 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
+use common_file_formats::{CsvSourceConfig, FileFormatConfig, ParquetSourceConfig};
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_io::IOStatsRef;
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_micropartition::MicroPartition;
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use daft_scan::{storage_config::StorageConfig, ChunkSpec, ScanTask};
+use daft_table::Table;
 use futures::{Stream, StreamExt};
+use snafu::ResultExt;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::instrument;
 
@@ -284,9 +286,78 @@ async fn stream_scan_task(
         }
         #[cfg(feature = "python")]
         StorageConfig::Python(_) => {
-            return Err(common_error::DaftError::TypeError(
-                "Streaming reads not supported for Python storage config".to_string(),
-            ));
+            use pyo3::Python;
+
+            use crate::PyIOSnafu;
+            let table: Table = match scan_task.file_format_config.as_ref() {
+                FileFormatConfig::Parquet(ParquetSourceConfig {
+                    coerce_int96_timestamp_unit,
+                    ..
+                }) => Python::with_gil(|py| {
+                    daft_micropartition::python::read_parquet_into_py_table(
+                        py,
+                        url,
+                        scan_task.schema.clone().into(),
+                        (*coerce_int96_timestamp_unit).into(),
+                        scan_task.storage_config.clone().into(),
+                        scan_task
+                            .pushdowns
+                            .columns
+                            .as_ref()
+                            .map(|cols| cols.as_ref().clone()),
+                        scan_task.pushdowns.limit,
+                    )
+                    .map(|t| t.into())
+                    .context(PyIOSnafu)
+                })?,
+                FileFormatConfig::Csv(CsvSourceConfig {
+                    has_headers,
+                    delimiter,
+                    double_quote,
+                    ..
+                }) => Python::with_gil(|py| {
+                    daft_micropartition::python::read_csv_into_py_table(
+                        py,
+                        url,
+                        *has_headers,
+                        *delimiter,
+                        *double_quote,
+                        scan_task.schema.clone().into(),
+                        scan_task.storage_config.clone().into(),
+                        scan_task
+                            .pushdowns
+                            .columns
+                            .as_ref()
+                            .map(|cols| cols.as_ref().clone()),
+                        scan_task.pushdowns.limit,
+                    )
+                    .map(|t| t.into())
+                    .context(PyIOSnafu)
+                })?,
+                FileFormatConfig::Json(_) => Python::with_gil(|py| {
+                    daft_micropartition::python::read_json_into_py_table(
+                        py,
+                        url,
+                        scan_task.schema.clone().into(),
+                        scan_task.storage_config.clone().into(),
+                        scan_task
+                            .pushdowns
+                            .columns
+                            .as_ref()
+                            .map(|cols| cols.as_ref().clone()),
+                        scan_task.pushdowns.limit,
+                    )
+                    .map(|t| t.into())
+                    .context(PyIOSnafu)
+                })?,
+                FileFormatConfig::Database(_) => {
+                    todo!("Database reads not yet implemented for native executor")
+                }
+                FileFormatConfig::PythonFunction => {
+                    todo!("PythonFunction reads not yet implemented for native executor")
+                }
+            };
+            Box::pin(futures::stream::iter(std::iter::once(Ok(table))))
         }
     };
 
