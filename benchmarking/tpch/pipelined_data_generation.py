@@ -48,7 +48,7 @@ def pipelined_data_generation(
 ):
     assert num_parts > 1, "script should only be used if num_parts > 1"
 
-    cachedir = pathlib.Path(scratch_dir) / ("%.1f" % scale_factor).replace(".", "_") / str(num_parts)
+    cachedir = pathlib.Path(scratch_dir) / (f"{scale_factor:.1f}").replace(".", "_") / str(num_parts)
 
     if not cachedir.exists():
         logger.info("Cloning tpch dbgen repo")

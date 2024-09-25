@@ -1,23 +1,14 @@
-use crate::{
-    catalog::SQLCatalog,
-    column_not_found_err,
-    error::{PlannerError, SQLPlannerResult},
-    invalid_operation_err, table_not_found_err, unsupported_sql_err,
-};
-use daft_core::{
-    datatypes::{Field, TimeUnit},
-    DataType, JoinType,
-};
+use std::sync::Arc;
+
+use common_error::DaftResult;
+use daft_core::prelude::*;
 use daft_dsl::{
     col,
-    functions::{
-        numeric::{ceil, floor},
-        utf8::{ilike, like},
-    },
-    lit, null_lit, Expr, ExprRef, LiteralValue, Operator,
+    functions::utf8::{ilike, like, to_date, to_datetime},
+    has_agg, lit, literals_to_series, null_lit, Expr, ExprRef, LiteralValue, Operator,
 };
+use daft_functions::numeric::{ceil::ceil, floor::floor};
 use daft_plan::{LogicalPlanBuilder, LogicalPlanRef};
-
 use sqlparser::{
     ast::{
         ArrayElemTypeDef, BinaryOperator, CastKind, ExactNumberInfo, GroupByExpr, Ident, Query,
@@ -28,17 +19,27 @@ use sqlparser::{
     parser::{Parser, ParserOptions},
     tokenizer::Tokenizer,
 };
+
+use crate::{
+    catalog::SQLCatalog,
+    column_not_found_err,
+    error::{PlannerError, SQLPlannerResult},
+    invalid_operation_err, table_not_found_err, unsupported_sql_err,
+};
 /// A named logical plan
 /// This is used to keep track of the table name associated with a logical plan while planning a SQL query
 #[derive(Debug, Clone)]
 pub(crate) struct Relation {
-    inner: LogicalPlanBuilder,
-    name: String,
+    pub(crate) inner: LogicalPlanBuilder,
+    pub(crate) name: String,
 }
 
 impl Relation {
     pub fn new(inner: LogicalPlanBuilder, name: String) -> Self {
         Relation { inner, name }
+    }
+    pub(crate) fn schema(&self) -> SchemaRef {
+        self.inner.schema()
     }
 }
 
@@ -71,6 +72,10 @@ impl SQLPlanner {
         self.current_relation.as_mut().expect("relation not set")
     }
 
+    pub(crate) fn relation_opt(&self) -> Option<&Relation> {
+        self.current_relation.as_ref()
+    }
+
     pub fn plan_sql(&mut self, sql: &str) -> SQLPlannerResult<LogicalPlanRef> {
         let tokens = Tokenizer::new(&GenericDialect {}, sql).tokenize()?;
 
@@ -90,30 +95,7 @@ impl SQLPlanner {
     }
 
     fn plan_query(&mut self, query: &Query) -> SQLPlannerResult<LogicalPlanBuilder> {
-        if let Some(with) = &query.with {
-            unsupported_sql_err!("WITH: {with}")
-        }
-        if !query.limit_by.is_empty() {
-            unsupported_sql_err!("LIMIT BY");
-        }
-        if query.offset.is_some() {
-            unsupported_sql_err!("OFFSET");
-        }
-        if query.fetch.is_some() {
-            unsupported_sql_err!("FETCH");
-        }
-        if !query.locks.is_empty() {
-            unsupported_sql_err!("LOCKS");
-        }
-        if let Some(for_clause) = &query.for_clause {
-            unsupported_sql_err!("{for_clause}");
-        }
-        if query.settings.is_some() {
-            unsupported_sql_err!("SETTINGS");
-        }
-        if let Some(format_clause) = &query.format_clause {
-            unsupported_sql_err!("{format_clause}");
-        }
+        check_query_features(query)?;
 
         let selection = query.body.as_select().ok_or_else(|| {
             PlannerError::invalid_operation(format!(
@@ -122,7 +104,66 @@ impl SQLPlanner {
             ))
         })?;
 
-        self.plan_select(selection)?;
+        check_select_features(selection)?;
+
+        // FROM/JOIN
+        let from = selection.clone().from;
+        if from.len() != 1 {
+            unsupported_sql_err!("Only exactly one table is supported");
+        }
+
+        self.current_relation = Some(self.plan_from(&from[0])?);
+
+        // WHERE
+        if let Some(selection) = &selection.selection {
+            let filter = self.plan_expr(selection)?;
+            let rel = self.relation_mut();
+            rel.inner = rel.inner.filter(filter)?;
+        }
+
+        // GROUP BY
+        let mut groupby_exprs = Vec::new();
+
+        match &selection.group_by {
+            GroupByExpr::All(s) => {
+                if !s.is_empty() {
+                    unsupported_sql_err!("GROUP BY ALL");
+                }
+            }
+            GroupByExpr::Expressions(expressions, _) => {
+                groupby_exprs = expressions
+                    .iter()
+                    .map(|expr| self.plan_expr(expr))
+                    .collect::<SQLPlannerResult<Vec<_>>>()?;
+            }
+        }
+
+        // split the selection into the groupby expressions and the rest
+        let (groupby_selection, to_select) = selection
+            .projection
+            .iter()
+            .map(|expr| self.select_item_to_expr(expr))
+            .collect::<SQLPlannerResult<Vec<_>>>()?
+            .into_iter()
+            .flatten()
+            .partition::<Vec<_>, _>(|expr| {
+                groupby_exprs
+                    .iter()
+                    .any(|e| expr.input_mapping() == e.input_mapping())
+            });
+
+        if !groupby_exprs.is_empty() {
+            let rel = self.relation_mut();
+            rel.inner = rel.inner.aggregate(to_select, groupby_exprs.clone())?;
+        } else if !to_select.is_empty() {
+            let rel = self.relation_mut();
+            let has_aggs = to_select.iter().any(has_agg);
+            if has_aggs {
+                rel.inner = rel.inner.aggregate(to_select, vec![])?;
+            } else {
+                rel.inner = rel.inner.select(to_select)?;
+            }
+        }
 
         if let Some(order_by) = &query.order_by {
             if order_by.interpolate.is_some() {
@@ -132,6 +173,42 @@ impl SQLPlanner {
             let (exprs, descending) = self.plan_order_by_exprs(order_by.exprs.as_slice())?;
             let rel = self.relation_mut();
             rel.inner = rel.inner.sort(exprs, descending)?;
+        }
+
+        // Properly apply or remove the groupby columns from the selection
+        // This needs to be done after the orderby
+        // otherwise, the orderby will not be able to reference the grouping columns
+        //
+        // ex: SELECT sum(a) as sum_a, max(a) as max_a, b as c FROM table GROUP BY b
+        //
+        // The groupby columns are [b]
+        // the evaluation of sum(a) and max(a) are already handled by the earlier aggregate,
+        // so our projection is [sum_a, max_a, (b as c)]
+        // leaving us to handle (b as c)
+        //
+        // we filter for the columns in the schema that are not in the groupby keys,
+        // [sum_a, max_a, b] -> [sum_a, max_a]
+        //
+        // Then we add the groupby columns back in with the correct expressions
+        // this gives us the final projection: [sum_a, max_a, (b as c)]
+        if !groupby_exprs.is_empty() {
+            let rel = self.relation_mut();
+            let schema = rel.inner.schema();
+
+            let groupby_keys = groupby_exprs
+                .iter()
+                .map(|e| Ok(e.to_field(&schema)?.name))
+                .collect::<DaftResult<Vec<_>>>()?;
+
+            let selection_colums = schema
+                .exclude(groupby_keys.as_ref())?
+                .names()
+                .iter()
+                .map(|n| col(n.as_str()))
+                .chain(groupby_selection)
+                .collect();
+
+            rel.inner = rel.inner.select(selection_colums)?;
         }
 
         if let Some(limit) = &query.limit {
@@ -168,96 +245,6 @@ impl SQLPlanner {
             exprs.push(expr);
         }
         Ok((exprs, desc))
-    }
-
-    fn plan_select(&mut self, selection: &sqlparser::ast::Select) -> SQLPlannerResult<()> {
-        if selection.top.is_some() {
-            unsupported_sql_err!("TOP");
-        }
-        if selection.distinct.is_some() {
-            unsupported_sql_err!("DISTINCT");
-        }
-        if selection.into.is_some() {
-            unsupported_sql_err!("INTO");
-        }
-        if !selection.lateral_views.is_empty() {
-            unsupported_sql_err!("LATERAL");
-        }
-        if selection.prewhere.is_some() {
-            unsupported_sql_err!("PREWHERE");
-        }
-        if !selection.cluster_by.is_empty() {
-            unsupported_sql_err!("CLUSTER BY");
-        }
-        if !selection.distribute_by.is_empty() {
-            unsupported_sql_err!("DISTRIBUTE BY");
-        }
-        if !selection.sort_by.is_empty() {
-            unsupported_sql_err!("SORT BY");
-        }
-        if selection.having.is_some() {
-            unsupported_sql_err!("HAVING");
-        }
-        if !selection.named_window.is_empty() {
-            unsupported_sql_err!("WINDOW");
-        }
-        if selection.qualify.is_some() {
-            unsupported_sql_err!("QUALIFY");
-        }
-        if selection.connect_by.is_some() {
-            unsupported_sql_err!("CONNECT BY");
-        }
-
-        // FROM/JOIN
-        let from = selection.clone().from;
-        if from.len() != 1 {
-            unsupported_sql_err!("Only exactly one table is supported");
-        }
-
-        self.current_relation = Some(self.plan_from(&from[0])?);
-
-        // WHERE
-        if let Some(selection) = &selection.selection {
-            let filter = self.plan_expr(selection)?;
-            let rel = self.relation_mut();
-            rel.inner = rel.inner.filter(filter)?;
-        }
-
-        // GROUP BY
-        let mut groupby_exprs = Vec::new();
-
-        match &selection.group_by {
-            GroupByExpr::All(s) => {
-                if !s.is_empty() {
-                    unsupported_sql_err!("GROUP BY ALL");
-                }
-            }
-            GroupByExpr::Expressions(expressions, _) => {
-                groupby_exprs = expressions
-                    .iter()
-                    .map(|expr| self.plan_expr(expr))
-                    .collect::<SQLPlannerResult<Vec<_>>>()?;
-            }
-        }
-
-        let to_select = selection
-            .projection
-            .iter()
-            .map(|expr| self.select_item_to_expr(expr))
-            .collect::<SQLPlannerResult<Vec<_>>>()?
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>();
-
-        if !groupby_exprs.is_empty() {
-            let rel = self.relation_mut();
-            rel.inner = rel.inner.aggregate(to_select, groupby_exprs)?;
-        } else if !to_select.is_empty() {
-            let rel = self.relation_mut();
-            rel.inner = rel.inner.select(to_select)?;
-        }
-
-        Ok(())
     }
 
     fn plan_from(&self, from: &TableWithJoins) -> SQLPlannerResult<Relation> {
@@ -407,7 +394,7 @@ impl SQLPlanner {
                     .catalog
                     .get_table(&table_name)
                     .ok_or_else(|| PlannerError::table_not_found(table_name.clone()))?;
-                let plan_builder = LogicalPlanBuilder::new(plan);
+                let plan_builder = LogicalPlanBuilder::new(plan, None);
                 Ok(Relation::new(plan_builder, table_name))
             }
             _ => todo!(),
@@ -510,26 +497,33 @@ impl SQLPlanner {
         }
     }
 
-    pub(crate) fn plan_expr(&self, expr: &sqlparser::ast::Expr) -> SQLPlannerResult<ExprRef> {
-        use sqlparser::ast::Expr as SQLExpr;
-        match expr {
-            SQLExpr::Identifier(ident) => Ok(col(ident_to_str(ident))),
-            SQLExpr::Value(Value::SingleQuotedString(s)) => Ok(lit(s.as_str())),
-            SQLExpr::Value(Value::Number(n, _)) => n
+    fn value_to_lit(&self, value: &Value) -> SQLPlannerResult<LiteralValue> {
+        Ok(match value {
+            Value::SingleQuotedString(s) => LiteralValue::Utf8(s.clone()),
+            Value::Number(n, _) => n
                 .parse::<i64>()
-                .map(lit)
-                .or_else(|_| n.parse::<f64>().map(lit))
+                .map(LiteralValue::Int64)
+                .or_else(|_| n.parse::<f64>().map(LiteralValue::Float64))
                 .map_err(|_| {
                     PlannerError::invalid_operation(format!(
                         "could not parse number literal '{:?}'",
                         n
                     ))
-                }),
-            SQLExpr::Value(Value::Boolean(b)) => Ok(lit(*b)),
-            SQLExpr::Value(Value::Null) => Ok(null_lit()),
-            SQLExpr::Value(other) => {
-                unsupported_sql_err!("literal value '{other}' not yet supported")
+                })?,
+            Value::Boolean(b) => LiteralValue::Boolean(*b),
+            Value::Null => LiteralValue::Null,
+            _ => {
+                return Err(PlannerError::invalid_operation(
+                    "Only string, number, boolean and null literals are supported",
+                ))
             }
+        })
+    }
+    pub(crate) fn plan_expr(&self, expr: &sqlparser::ast::Expr) -> SQLPlannerResult<ExprRef> {
+        use sqlparser::ast::Expr as SQLExpr;
+        match expr {
+            SQLExpr::Identifier(ident) => Ok(col(ident_to_str(ident))),
+            SQLExpr::Value(v) => self.value_to_lit(v).map(Expr::Literal).map(Arc::new),
             SQLExpr::BinaryOp { left, op, right } => {
                 let left = self.plan_expr(left)?;
                 let right = self.plan_expr(right)?;
@@ -557,9 +551,6 @@ impl SQLPlanner {
                 .plan_compound_identifier(idents.as_slice())
                 .map(|e| e[0].clone()),
 
-            SQLExpr::JsonAccess { .. } => {
-                unsupported_sql_err!("json access")
-            }
             SQLExpr::CompositeAccess { .. } => {
                 unsupported_sql_err!("composite access")
             }
@@ -632,9 +623,18 @@ impl SQLPlanner {
             SQLExpr::Collate { .. } => unsupported_sql_err!("COLLATE"),
             SQLExpr::Nested(_) => unsupported_sql_err!("NESTED"),
             SQLExpr::IntroducedString { .. } => unsupported_sql_err!("INTRODUCED STRING"),
-
-            SQLExpr::TypedString { .. } => unsupported_sql_err!("TYPED STRING"),
-            SQLExpr::MapAccess { .. } => unsupported_sql_err!("MAP ACCESS"),
+            SQLExpr::TypedString { data_type, value } => match data_type {
+                sqlparser::ast::DataType::Date => Ok(to_date(lit(value.as_str()), "%Y-%m-%d")),
+                sqlparser::ast::DataType::Timestamp(None, TimezoneInfo::None)
+                | sqlparser::ast::DataType::Datetime(None) => Ok(to_datetime(
+                    lit(value.as_str()),
+                    "%Y-%m-%d %H:%M:%S %z",
+                    None,
+                )),
+                dtype => {
+                    unsupported_sql_err!("TypedString with data type {:?}", dtype)
+                }
+            },
             SQLExpr::Function(func) => self.plan_function(func),
             SQLExpr::Case {
                 operand,
@@ -670,38 +670,39 @@ impl SQLPlanner {
             SQLExpr::GroupingSets(_) => unsupported_sql_err!("GROUPING SETS"),
             SQLExpr::Cube(_) => unsupported_sql_err!("CUBE"),
             SQLExpr::Rollup(_) => unsupported_sql_err!("ROLLUP"),
-            SQLExpr::Tuple(_) => unsupported_sql_err!("TUPLE"),
+            // Similar to rust and python conventions, tuples always have a fixed size,
+            // so we convert them to a fixed size list.
+            SQLExpr::Tuple(exprs) => {
+                let values = exprs
+                    .iter()
+                    .map(|expr| {
+                        let expr = self.plan_expr(expr)?;
+                        // this should always unwrap
+                        // there is no way to have multiple references to the same expr at this point
+                        let expr = Arc::unwrap_or_clone(expr);
+                        match expr {
+                            Expr::Literal(lit) => Ok(lit),
+                            _ => unsupported_sql_err!("Tuple with non-literal"),
+                        }
+                    })
+                    .collect::<SQLPlannerResult<Vec<_>>>()?;
+
+                let s = literals_to_series(&values)?;
+                let s = FixedSizeListArray::new(
+                    Field::new("tuple", s.data_type().clone())
+                        .to_fixed_size_list_field(exprs.len())?,
+                    s,
+                    None,
+                )
+                .into_series();
+
+                Ok(lit(s))
+            }
             SQLExpr::Struct { .. } => unsupported_sql_err!("STRUCT"),
             SQLExpr::Named { .. } => unsupported_sql_err!("NAMED"),
             SQLExpr::Dictionary(_) => unsupported_sql_err!("DICTIONARY"),
             SQLExpr::Map(_) => unsupported_sql_err!("MAP"),
-            SQLExpr::Subscript { expr, subscript } => match subscript.as_ref() {
-                Subscript::Index { index } => {
-                    let index = self.plan_expr(index)?;
-                    let expr = self.plan_expr(expr)?;
-                    Ok(daft_dsl::functions::list::get(expr, index, null_lit()))
-                }
-                Subscript::Slice {
-                    lower_bound,
-                    upper_bound,
-                    stride,
-                } => {
-                    if stride.is_some() {
-                        unsupported_sql_err!("stride");
-                    }
-                    match (lower_bound, upper_bound) {
-                        (Some(lower), Some(upper)) => {
-                            let lower = self.plan_expr(lower)?;
-                            let upper = self.plan_expr(upper)?;
-                            let expr = self.plan_expr(expr)?;
-                            Ok(daft_dsl::functions::list::slice(expr, lower, upper))
-                        }
-                        _ => {
-                            unsupported_sql_err!("slice with only one bound not yet supported");
-                        }
-                    }
-                }
-            },
+            SQLExpr::Subscript { expr, subscript } => self.plan_subscript(expr, subscript.as_ref()),
             SQLExpr::Array(_) => unsupported_sql_err!("ARRAY"),
             SQLExpr::Interval(_) => unsupported_sql_err!("INTERVAL"),
             SQLExpr::MatchAgainst { .. } => unsupported_sql_err!("MATCH AGAINST"),
@@ -710,6 +711,9 @@ impl SQLPlanner {
             SQLExpr::OuterJoin(_) => unsupported_sql_err!("OUTER JOIN"),
             SQLExpr::Prior(_) => unsupported_sql_err!("PRIOR"),
             SQLExpr::Lambda(_) => unsupported_sql_err!("LAMBDA"),
+            SQLExpr::JsonAccess { .. } | SQLExpr::MapAccess { .. } => {
+                unreachable!("Not reachable in our dialect, should always be parsed as subscript")
+            }
         }
     }
 
@@ -840,7 +844,7 @@ impl SQLPlanner {
             // ---------------------------------
             // struct
             // ---------------------------------
-            SQLDataType::Struct(fields) => {
+            SQLDataType::Struct(fields, _) => {
                 let fields = fields
                     .iter()
                     .enumerate()
@@ -905,8 +909,147 @@ impl SQLPlanner {
             other => unsupported_sql_err!("unary operator {:?}", other),
         })
     }
+    fn plan_subscript(
+        &self,
+        expr: &sqlparser::ast::Expr,
+        subscript: &Subscript,
+    ) -> SQLPlannerResult<ExprRef> {
+        match subscript {
+            Subscript::Index { index } => {
+                let expr = self.plan_expr(expr)?;
+                let index = self.plan_expr(index)?;
+                let schema = self
+                    .current_relation
+                    .as_ref()
+                    .ok_or_else(|| {
+                        PlannerError::invalid_operation("subscript without a current relation")
+                    })
+                    .map(|p| p.schema())?;
+                let expr_field = expr.to_field(schema.as_ref())?;
+                match expr_field.dtype {
+                    DataType::List(_) | DataType::FixedSizeList(_, _) => {
+                        Ok(daft_functions::list::get(expr, index, null_lit()))
+                    }
+                    DataType::Struct(_) => {
+                        if let Some(s) = index.as_literal().and_then(|l| l.as_str()) {
+                            Ok(daft_dsl::functions::struct_::get(expr, s))
+                        } else {
+                            invalid_operation_err!("Index must be a string literal")
+                        }
+                    }
+                    DataType::Map(_) => Ok(daft_dsl::functions::map::get(expr, index)),
+                    dtype => {
+                        invalid_operation_err!("nested access on column with type: {}", dtype)
+                    }
+                }
+            }
+            Subscript::Slice {
+                lower_bound,
+                upper_bound,
+                stride,
+            } => {
+                if stride.is_some() {
+                    unsupported_sql_err!("stride cannot be provided when slicing an expression");
+                }
+                match (lower_bound, upper_bound) {
+                    (Some(lower), Some(upper)) => {
+                        let lower = self.plan_expr(lower)?;
+                        let upper = self.plan_expr(upper)?;
+                        let expr = self.plan_expr(expr)?;
+                        Ok(daft_functions::list::slice(expr, lower, upper))
+                    }
+                    _ => {
+                        unsupported_sql_err!("slice with only one bound not yet supported");
+                    }
+                }
+            }
+        }
+    }
 }
 
+/// Checks if the SQL query is valid syntax and doesn't use unsupported features.
+/// /// This function examines various clauses and options in the provided [sqlparser::ast::Query]
+/// and returns an error if any unsupported features are encountered.
+fn check_query_features(query: &sqlparser::ast::Query) -> SQLPlannerResult<()> {
+    if let Some(with) = &query.with {
+        unsupported_sql_err!("WITH: {with}")
+    }
+    if !query.limit_by.is_empty() {
+        unsupported_sql_err!("LIMIT BY");
+    }
+    if query.offset.is_some() {
+        unsupported_sql_err!("OFFSET");
+    }
+    if query.fetch.is_some() {
+        unsupported_sql_err!("FETCH");
+    }
+    if !query.locks.is_empty() {
+        unsupported_sql_err!("LOCKS");
+    }
+    if let Some(for_clause) = &query.for_clause {
+        unsupported_sql_err!("{for_clause}");
+    }
+    if query.settings.is_some() {
+        unsupported_sql_err!("SETTINGS");
+    }
+    if let Some(format_clause) = &query.format_clause {
+        unsupported_sql_err!("{format_clause}");
+    }
+    Ok(())
+}
+
+/// Checks if the features used in the SQL SELECT statement are supported.
+///
+/// This function examines various clauses and options in the provided [sqlparser::ast::Select]
+/// and returns an error if any unsupported features are encountered.
+///
+/// # Arguments
+///
+/// * `selection` - A reference to the [sqlparser::ast::Select] to be checked.
+///
+/// # Returns
+///
+/// * `SQLPlannerResult<()>` - Ok(()) if all features are supported, or an error describing
+///   the first unsupported feature encountered.
+fn check_select_features(selection: &sqlparser::ast::Select) -> SQLPlannerResult<()> {
+    if selection.top.is_some() {
+        unsupported_sql_err!("TOP");
+    }
+    if selection.distinct.is_some() {
+        unsupported_sql_err!("DISTINCT");
+    }
+    if selection.into.is_some() {
+        unsupported_sql_err!("INTO");
+    }
+    if !selection.lateral_views.is_empty() {
+        unsupported_sql_err!("LATERAL");
+    }
+    if selection.prewhere.is_some() {
+        unsupported_sql_err!("PREWHERE");
+    }
+    if !selection.cluster_by.is_empty() {
+        unsupported_sql_err!("CLUSTER BY");
+    }
+    if !selection.distribute_by.is_empty() {
+        unsupported_sql_err!("DISTRIBUTE BY");
+    }
+    if !selection.sort_by.is_empty() {
+        unsupported_sql_err!("SORT BY");
+    }
+    if selection.having.is_some() {
+        unsupported_sql_err!("HAVING");
+    }
+    if !selection.named_window.is_empty() {
+        unsupported_sql_err!("WINDOW");
+    }
+    if selection.qualify.is_some() {
+        unsupported_sql_err!("QUALIFY");
+    }
+    if selection.connect_by.is_some() {
+        unsupported_sql_err!("CONNECT BY");
+    }
+    Ok(())
+}
 pub fn sql_expr<S: AsRef<str>>(s: S) -> SQLPlannerResult<ExprRef> {
     let planner = SQLPlanner::default();
 

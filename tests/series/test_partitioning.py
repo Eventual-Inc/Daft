@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 from itertools import product
 
+import pandas as pd
+import pyarrow as pa
 import pytest
 
 from daft import DataType, TimeUnit
@@ -29,8 +31,8 @@ from daft.series import Series
 def test_partitioning_days(input, dtype, expected):
     s = Series.from_pylist(input).cast(dtype)
     d = s.partitioning.days()
-    assert d.datatype() == DataType.date()
-    assert d.cast(DataType.int32()).to_pylist() == expected
+    assert d.datatype() == DataType.int32()
+    assert d.to_pylist() == expected
 
 
 @pytest.mark.parametrize(
@@ -133,6 +135,35 @@ def test_iceberg_bucketing(input, n):
             assert seen[v] == b
         else:
             seen[v] = b
+
+
+@pytest.mark.parametrize(
+    "input,expected",
+    [
+        (pa.array([34], type=pa.int32()), 2017239379),
+        (pa.array([34], type=pa.int64()), 2017239379),
+        (pa.array([Decimal("14.20")]), -500754589),
+        (pa.array([date.fromisoformat("2017-11-16")]), -653330422),
+        (pa.array([time.fromisoformat("22:31:08")]), -662762989),
+        (pa.array([datetime.fromisoformat("2017-11-16T22:31:08")]), -2047944441),
+        (pa.array([datetime.fromisoformat("2017-11-16T22:31:08.000001")]), -1207196810),
+        (pa.array([datetime.fromisoformat("2017-11-16T14:31:08-08:00")]), -2047944441),
+        (pa.array([datetime.fromisoformat("2017-11-16T14:31:08.000001-08:00")]), -1207196810),
+        (pa.array([datetime.fromisoformat("2017-11-16T22:31:08")], type=pa.timestamp("ns")), -2047944441),
+        (pa.array([pd.to_datetime("2017-11-16T22:31:08.000001001")], type=pa.timestamp("ns")), -1207196810),
+        (pa.array([datetime.fromisoformat("2017-11-16T14:31:08-08:00")], type=pa.timestamp("ns")), -2047944441),
+        (pa.array([pd.to_datetime("2017-11-16T14:31:08.000001001-08:00")], type=pa.timestamp("ns")), -1207196810),
+        (pa.array(["iceberg"]), 1210000089),
+        (pa.array([b"\x00\x01\x02\x03"]), -188683207),
+    ],
+)
+def test_iceberg_bucketing_hash(input, expected):
+    # https://iceberg.apache.org/spec/#appendix-b-32-bit-hash-requirements
+    max_buckets = 2**31 - 1
+    s = Series.from_arrow(input)
+    buckets = s.partitioning.iceberg_bucket(max_buckets)
+    assert buckets.datatype() == DataType.int32()
+    assert buckets.to_pylist() == [(expected & max_buckets) % max_buckets]
 
 
 def test_iceberg_truncate_decimal():

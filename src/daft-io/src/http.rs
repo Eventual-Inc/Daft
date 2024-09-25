@@ -3,7 +3,6 @@ use std::{num::ParseIntError, ops::Range, string::FromUtf8Error, sync::Arc};
 use async_trait::async_trait;
 use common_io_config::HTTPConfig;
 use futures::{stream::BoxStream, TryStreamExt};
-
 use hyper::header;
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -11,13 +10,13 @@ use reqwest::header::{CONTENT_LENGTH, RANGE};
 use snafu::{IntoError, ResultExt, Snafu};
 use url::Position;
 
+use super::object_io::{GetResult, ObjectSource};
 use crate::{
     object_io::{FileMetadata, FileType, LSResult},
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
+    FileFormat,
 };
-
-use super::object_io::{GetResult, ObjectSource};
 
 const HTTP_DELIMITER: &str = "/";
 
@@ -140,7 +139,7 @@ fn _get_file_metadata_from_html(path: &str, text: &str) -> super::Result<Vec<Fil
 }
 
 pub(crate) struct HttpSource {
-    client: reqwest::Client,
+    pub(crate) client: reqwest::Client,
 }
 
 impl From<Error> for super::Error {
@@ -276,6 +275,7 @@ impl ObjectSource for HttpSource {
         _page_size: Option<i32>,
         limit: Option<usize>,
         io_stats: Option<IOStatsRef>,
+        _file_format: Option<FileFormat>,
     ) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>> {
         use crate::object_store_glob::glob;
 
@@ -351,9 +351,7 @@ mod tests {
 
     use std::default;
 
-    use crate::object_io::ObjectSource;
-    use crate::HttpSource;
-    use crate::Result;
+    use crate::{object_io::ObjectSource, HttpSource, Result};
 
     #[tokio::test]
     async fn test_full_get_from_http() -> Result<()> {

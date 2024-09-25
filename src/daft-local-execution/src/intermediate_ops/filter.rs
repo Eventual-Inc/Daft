@@ -2,10 +2,12 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_dsl::ExprRef;
-use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
-use super::intermediate_op::IntermediateOperator;
+use super::intermediate_op::{
+    IntermediateOperator, IntermediateOperatorResult, IntermediateOperatorState,
+};
+use crate::pipeline::PipelineResultType;
 
 pub struct FilterOperator {
     predicate: ExprRef,
@@ -19,9 +21,16 @@ impl FilterOperator {
 
 impl IntermediateOperator for FilterOperator {
     #[instrument(skip_all, name = "FilterOperator::execute")]
-    fn execute(&self, input: &Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
-        let out = input.filter(&[self.predicate.clone()])?;
-        Ok(Arc::new(out))
+    fn execute(
+        &self,
+        _idx: usize,
+        input: &PipelineResultType,
+        _state: Option<&mut Box<dyn IntermediateOperatorState>>,
+    ) -> DaftResult<IntermediateOperatorResult> {
+        let out = input.as_data().filter(&[self.predicate.clone()])?;
+        Ok(IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(
+            out,
+        ))))
     }
 
     fn name(&self) -> &'static str {

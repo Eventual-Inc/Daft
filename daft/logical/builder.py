@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import pathlib
-from typing import TYPE_CHECKING
+import functools
+from typing import TYPE_CHECKING, Callable
 
+from daft.context import get_context
 from daft.daft import (
     CountMode,
     FileFormat,
@@ -15,15 +16,36 @@ from daft.daft import (
 from daft.daft import LogicalPlanBuilder as _LogicalPlanBuilder
 from daft.expressions import Expression, col
 from daft.logical.schema import Schema
-from daft.runners.partitioning import PartitionCacheEntry
 
 if TYPE_CHECKING:
+    import pathlib
+
     from pyiceberg.table import Table as IcebergTable
 
     from daft.plan_scheduler.physical_plan_scheduler import (
         AdaptivePhysicalPlanScheduler,
         PhysicalPlanScheduler,
     )
+    from daft.runners.partitioning import PartitionCacheEntry
+
+
+def _apply_daft_planning_config_to_initializer(classmethod_func: Callable[..., LogicalPlanBuilder]):
+    """Decorator to be applied to any @classmethod instantiation method on LogicalPlanBuilder
+
+    This decorator ensures that the current DaftPlanningConfig is applied to the instantiated LogicalPlanBuilder
+    """
+
+    @functools.wraps(classmethod_func)
+    def wrapper(cls: type[LogicalPlanBuilder], *args, **kwargs):
+        instantiated_logical_plan_builder = classmethod_func(cls, *args, **kwargs)
+
+        # Parametrize the builder with the current DaftPlanningConfig
+        inner = instantiated_logical_plan_builder._builder
+        inner = inner.with_planning_config(get_context().daft_planning_config)
+
+        return cls(inner)
+
+    return wrapper
 
 
 class LogicalPlanBuilder:
@@ -91,6 +113,7 @@ class LogicalPlanBuilder:
         return LogicalPlanBuilder(builder)
 
     @classmethod
+    @_apply_daft_planning_config_to_initializer
     def from_in_memory_scan(
         cls,
         partition: PartitionCacheEntry,
@@ -110,6 +133,7 @@ class LogicalPlanBuilder:
         return cls(builder)
 
     @classmethod
+    @_apply_daft_planning_config_to_initializer
     def from_tabular_scan(
         cls,
         *,
@@ -265,12 +289,12 @@ class LogicalPlanBuilder:
 
         name = ".".join(table.name())
         location = f"{table.location()}/data"
-        spec_id = table.spec().spec_id
+        partition_spec = table.spec()
         schema = table.schema()
         props = table.properties
         columns = [col.name for col in schema.columns]
         io_config = _convert_iceberg_file_io_properties_to_io_config(table.io.properties)
-        builder = self._builder.iceberg_write(name, location, spec_id, schema, props, columns, io_config)
+        builder = self._builder.iceberg_write(name, location, partition_spec, schema, props, columns, io_config)
         return LogicalPlanBuilder(builder)
 
     def write_deltalake(
@@ -280,6 +304,7 @@ class LogicalPlanBuilder:
         version: int,
         large_dtypes: bool,
         io_config: IOConfig,
+        partition_cols: list[str] | None = None,
     ) -> LogicalPlanBuilder:
         columns_name = self.schema().column_names()
         builder = self._builder.delta_write(
@@ -288,6 +313,7 @@ class LogicalPlanBuilder:
             mode,
             version,
             large_dtypes,
+            partition_cols,
             io_config,
         )
         return LogicalPlanBuilder(builder)

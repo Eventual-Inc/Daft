@@ -1,21 +1,26 @@
-use std::io::{SeekFrom, Write};
-use std::ops::Range;
-use std::path::PathBuf;
+use std::{
+    io::{SeekFrom, Write},
+    ops::Range,
+    path::PathBuf,
+    sync::Arc,
+};
 
-use crate::object_io::{self, FileMetadata, LSResult};
-use crate::stats::IOStatsRef;
-
-use super::object_io::{GetResult, ObjectSource};
-use super::Result;
 use async_trait::async_trait;
 use bytes::Bytes;
 use common_error::DaftError;
-use futures::stream::BoxStream;
-use futures::StreamExt;
-use futures::TryStreamExt;
+use futures::{stream::BoxStream, StreamExt, TryStreamExt};
 use snafu::{ResultExt, Snafu};
-use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
+
+use super::{
+    object_io::{GetResult, ObjectSource},
+    Result,
+};
+use crate::{
+    object_io::{self, FileMetadata, LSResult},
+    stats::IOStatsRef,
+    FileFormat,
+};
 
 /// NOTE: We hardcode this even for Windows
 ///
@@ -196,6 +201,7 @@ impl ObjectSource for LocalSource {
         _page_size: Option<i32>,
         limit: Option<usize>,
         io_stats: Option<IOStatsRef>,
+        _file_format: Option<FileFormat>,
     ) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>> {
         use crate::object_store_glob::glob;
 
@@ -369,12 +375,12 @@ pub(crate) async fn collect_file(local_file: LocalFile) -> Result<Bytes> {
 #[cfg(test)]
 
 mod tests {
-    use std::default;
-    use std::io::Write;
+    use std::{default, io::Write};
 
-    use crate::object_io::{FileMetadata, FileType, ObjectSource};
-    use crate::Result;
-    use crate::{HttpSource, LocalSource};
+    use crate::{
+        object_io::{FileMetadata, FileType, ObjectSource},
+        HttpSource, LocalSource, Result,
+    };
 
     async fn write_remote_parquet_to_local_file(
         f: &mut tempfile::NamedTempFile,

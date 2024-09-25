@@ -1,15 +1,13 @@
 use arrow2::array::Array;
 use common_error::DaftResult;
-use daft_core::{impl_bincode_py_state_serialization, Series};
+use common_py_serde::impl_bincode_py_state_serialization;
+use daft_core::prelude::*;
 use daft_table::Table;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
 use {
     daft_table::python::PyTable,
-    pyo3::{
-        exceptions::PyKeyError, pyclass, pymethods, types::PyBytes, PyObject, PyResult, PyTypeInfo,
-        Python, ToPyObject,
-    },
+    pyo3::{exceptions::PyKeyError, pyclass, pymethods, PyObject, PyResult, Python},
 };
 
 /// Metadata for a single file.

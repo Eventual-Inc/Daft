@@ -68,11 +68,14 @@ impl From<Error> for pyo3::PyErr {
 type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[cfg(feature = "python")]
-pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<CsvConvertOptions>()?;
     parent.add_class::<CsvParseOptions>()?;
     parent.add_class::<CsvReadOptions>()?;
-    parent.add_wrapped(wrap_pyfunction!(python::pylib::read_csv))?;
-    parent.add_wrapped(wrap_pyfunction!(python::pylib::read_csv_schema))?;
+    parent.add_function(wrap_pyfunction_bound!(python::pylib::read_csv, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(
+        python::pylib::read_csv_schema,
+        parent
+    )?)?;
     Ok(())
 }

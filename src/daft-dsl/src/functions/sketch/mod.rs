@@ -1,12 +1,10 @@
 mod percentile;
 
 use percentile::PercentileEvaluator;
-
 use serde::{Deserialize, Serialize};
 
-use crate::{Expr, ExprRef};
-
 use super::FunctionEvaluator;
+use crate::{Expr, ExprRef};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct HashableVecPercentiles(pub Vec<f64>);

@@ -1,14 +1,15 @@
 use std::sync::Arc;
 
-use daft_core::datatypes::Field;
+use daft_core::prelude::*;
+use daft_dsl::{resolve_exprs, resolve_single_aggexpr, resolve_single_expr, AggExpr, ExprRef};
+use daft_schema::schema::{Schema, SchemaRef};
 use itertools::Itertools;
 use snafu::ResultExt;
 
-use daft_core::schema::{Schema, SchemaRef};
-use daft_dsl::{resolve_exprs, resolve_single_aggexpr, resolve_single_expr, AggExpr, ExprRef};
-
-use crate::logical_plan::{self, CreationSnafu};
-use crate::LogicalPlan;
+use crate::{
+    logical_plan::{self, CreationSnafu},
+    LogicalPlan,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Pivot {
@@ -32,11 +33,11 @@ impl Pivot {
     ) -> logical_plan::Result<Self> {
         let upstream_schema = input.schema();
         let (group_by, group_by_fields) =
-            resolve_exprs(group_by, &upstream_schema).context(CreationSnafu)?;
+            resolve_exprs(group_by, &upstream_schema, false).context(CreationSnafu)?;
         let (pivot_column, _) =
-            resolve_single_expr(pivot_column, &upstream_schema).context(CreationSnafu)?;
+            resolve_single_expr(pivot_column, &upstream_schema, false).context(CreationSnafu)?;
         let (value_column, value_col_field) =
-            resolve_single_expr(value_column, &upstream_schema).context(CreationSnafu)?;
+            resolve_single_expr(value_column, &upstream_schema, false).context(CreationSnafu)?;
         let (aggregation, _) =
             resolve_single_aggexpr(aggregation, &upstream_schema).context(CreationSnafu)?;
 

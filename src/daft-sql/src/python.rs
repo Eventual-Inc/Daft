@@ -1,3 +1,4 @@
+use common_daft_config::PyDaftPlanningConfig;
 use daft_dsl::python::PyExpr;
 use daft_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
 use pyo3::prelude::*;
@@ -5,10 +6,14 @@ use pyo3::prelude::*;
 use crate::{catalog::SQLCatalog, planner::SQLPlanner};
 
 #[pyfunction]
-pub fn sql(sql: &str, catalog: PyCatalog) -> PyResult<PyLogicalPlanBuilder> {
+pub fn sql(
+    sql: &str,
+    catalog: PyCatalog,
+    daft_planning_config: PyDaftPlanningConfig,
+) -> PyResult<PyLogicalPlanBuilder> {
     let mut planner = SQLPlanner::new(catalog.catalog);
     let plan = planner.plan_sql(sql)?;
-    Ok(LogicalPlanBuilder::new(plan).into())
+    Ok(LogicalPlanBuilder::new(plan, Some(daft_planning_config.config)).into())
 }
 
 #[pyfunction]
@@ -38,6 +43,11 @@ impl PyCatalog {
     pub fn register_table(&mut self, name: &str, dataframe: &mut PyLogicalPlanBuilder) {
         let plan = dataframe.builder.build();
         self.catalog.register_table(name, plan);
+    }
+
+    /// Copy from another catalog, using tables from other in case of conflict
+    pub fn copy_from(&mut self, other: &PyCatalog) {
+        self.catalog.copy_from(&other.catalog);
     }
 
     /// __str__ to print the catalog's tables

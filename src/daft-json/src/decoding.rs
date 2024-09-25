@@ -1,14 +1,17 @@
-use crate::deserializer::Value as BorrowedValue;
-use arrow2::array::{
-    Array, MutableArray, MutableBooleanArray, MutableFixedSizeListArray, MutableListArray,
-    MutableNullArray, MutablePrimitiveArray, MutableStructArray, MutableUtf8Array,
+use std::{borrow::Borrow, fmt::Write};
+
+use arrow2::{
+    array::{
+        Array, MutableArray, MutableBooleanArray, MutableFixedSizeListArray, MutableListArray,
+        MutableNullArray, MutablePrimitiveArray, MutableStructArray, MutableUtf8Array,
+    },
+    bitmap::MutableBitmap,
+    datatypes::{DataType, Field, IntervalUnit, Schema, TimeUnit},
+    error::{Error, Result},
+    offset::Offsets,
+    temporal_conversions,
+    types::{f16, NativeType, Offset},
 };
-use arrow2::bitmap::MutableBitmap;
-use arrow2::datatypes::{DataType, Field, IntervalUnit, Schema, TimeUnit};
-use arrow2::error::{Error, Result};
-use arrow2::offset::Offsets;
-use arrow2::temporal_conversions;
-use arrow2::types::{f16, NativeType, Offset};
 use chrono::{Datelike, Timelike};
 use daft_decoding::deserialize::{
     deserialize_datetime, deserialize_naive_date, deserialize_naive_datetime,
@@ -17,8 +20,8 @@ use daft_decoding::deserialize::{
 use indexmap::IndexMap;
 use num_traits::NumCast;
 use simd_json::StaticNode;
-use std::borrow::Borrow;
-use std::fmt::Write;
+
+use crate::deserializer::Value as BorrowedValue;
 const JSON_NULL_VALUE: BorrowedValue = BorrowedValue::Static(StaticNode::Null);
 /// Deserialize chunk of JSON records into a chunk of Arrow2 arrays.
 pub(crate) fn deserialize_records<'a, A: Borrow<BorrowedValue<'a>>>(

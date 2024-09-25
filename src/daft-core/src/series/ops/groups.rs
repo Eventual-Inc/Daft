@@ -1,9 +1,10 @@
+use common_error::DaftResult;
+
 use crate::{
     array::ops::{GroupIndicesPair, IntoGroups},
     series::Series,
     with_match_hashable_daft_types,
 };
-use common_error::DaftResult;
 
 impl IntoGroups for Series {
     fn make_groups(&self) -> DaftResult<GroupIndicesPair> {

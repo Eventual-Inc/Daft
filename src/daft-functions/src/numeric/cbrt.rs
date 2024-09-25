@@ -1,13 +1,17 @@
-use common_error::{DaftError, DaftResult};
-use daft_core::{datatypes::Field, schema::Schema, Series};
-use daft_dsl::{functions::ScalarUDF, ExprRef};
+use common_error::DaftResult;
+use daft_core::prelude::*;
+use daft_dsl::{
+    functions::{ScalarFunction, ScalarUDF},
+    ExprRef,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-struct CbrtFunction;
+pub struct Cbrt;
+use super::{evaluate_single_numeric, to_field_single_floating};
 
 #[typetag::serde]
-impl ScalarUDF for CbrtFunction {
+impl ScalarUDF for Cbrt {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -17,41 +21,26 @@ impl ScalarUDF for CbrtFunction {
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-        match inputs {
-            [input] => {
-                let field = input.to_field(schema)?;
-                let dtype = field.dtype.to_floating_representation()?;
-                Ok(Field::new(field.name, dtype))
-            }
-            _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 1 input args, got {}",
-                inputs.len()
-            ))),
-        }
+        to_field_single_floating(self, inputs, schema)
     }
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
-        match inputs {
-            [input] => input.cbrt(),
-            _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 1 input args, got {}",
-                inputs.len()
-            ))),
-        }
+        evaluate_single_numeric(inputs, Series::cbrt)
     }
 }
 
+pub fn cbrt(input: ExprRef) -> ExprRef {
+    ScalarFunction::new(Cbrt {}, vec![input]).into()
+}
+
 #[cfg(feature = "python")]
-pub mod python {
-    use daft_dsl::{functions::ScalarFunction, python::PyExpr, ExprRef};
-    use pyo3::{pyfunction, PyResult};
-
-    use super::CbrtFunction;
-
-    #[pyfunction]
-    pub fn cbrt(expr: PyExpr) -> PyResult<PyExpr> {
-        let scalar_function = ScalarFunction::new(CbrtFunction, vec![expr.into()]);
-        let expr = ExprRef::from(scalar_function);
-        Ok(expr.into())
-    }
+use {
+    daft_dsl::python::PyExpr,
+    pyo3::{pyfunction, PyResult},
+};
+#[cfg(feature = "python")]
+#[pyfunction]
+#[pyo3(name = "cbrt")]
+pub fn py_cbrt(expr: PyExpr) -> PyResult<PyExpr> {
+    Ok(cbrt(expr.into()).into())
 }

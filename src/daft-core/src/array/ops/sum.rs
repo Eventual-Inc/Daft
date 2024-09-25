@@ -1,13 +1,8 @@
-use super::DaftSumAggable;
-
-use super::as_arrow::AsArrow;
-
-use crate::array::ops::GroupIndices;
-use crate::datatypes::*;
-
+use arrow2::array::Array;
 use common_error::DaftResult;
 
-use arrow2::array::Array;
+use super::{as_arrow::AsArrow, DaftSumAggable};
+use crate::{array::ops::GroupIndices, datatypes::*};
 macro_rules! impl_daft_numeric_agg {
     ($T:ident, $AggType: ident) => {
         impl DaftSumAggable for &DataArray<$T> {
@@ -54,6 +49,7 @@ macro_rules! impl_daft_numeric_agg {
 }
 
 impl_daft_numeric_agg!(Int64Type, i64);
+impl_daft_numeric_agg!(Int128Type, i128);
 impl_daft_numeric_agg!(UInt64Type, u64);
 impl_daft_numeric_agg!(Float32Type, f32);
 impl_daft_numeric_agg!(Float64Type, f64);

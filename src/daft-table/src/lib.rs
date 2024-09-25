@@ -2,37 +2,39 @@
 #![feature(let_chains)]
 
 use core::slice;
-use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
-use std::fmt::{Display, Formatter, Result};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::{Display, Formatter, Result},
+};
 
-use daft_core::array::ops::full::FullNull;
-use daft_core::utils::display_table::make_comfy_table;
-use num_traits::ToPrimitive;
-
-use daft_core::array::ops::GroupIndices;
-
+use common_display::table_display::{make_comfy_table, StrValue};
 use common_error::{DaftError, DaftResult};
-use daft_core::datatypes::{BooleanArray, DataType, Field, UInt64Array};
-use daft_core::schema::{Schema, SchemaRef};
-use daft_core::series::{IntoSeries, Series};
-
-use daft_dsl::functions::FunctionEvaluator;
-use daft_dsl::{col, null_lit, AggExpr, ApproxPercentileParams, Expr, ExprRef, LiteralValue};
+use daft_core::{
+    array::ops::{
+        full::FullNull, DaftApproxCountDistinctAggable, DaftHllSketchAggable, GroupIndices,
+    },
+    prelude::*,
+};
+use daft_dsl::{
+    col, functions::FunctionEvaluator, null_lit, AggExpr, ApproxPercentileParams, Expr, ExprRef,
+    LiteralValue, SketchType,
+};
+use num_traits::ToPrimitive;
 #[cfg(feature = "python")]
 pub mod ffi;
 mod growable;
 mod ops;
-mod probe_table;
+mod probeable;
+mod repr_html;
 
 pub use growable::GrowableTable;
-
-pub use probe_table::{ProbeTable, ProbeTableBuilder};
+pub use probeable::{make_probeable_builder, Probeable, ProbeableBuilder};
 
 #[cfg(feature = "python")]
 pub mod python;
 #[cfg(feature = "python")]
 pub use python::register_modules;
+use repr_html::html_value;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Table {
@@ -431,30 +433,61 @@ impl Table {
         agg_expr: &AggExpr,
         groups: Option<&GroupIndices>,
     ) -> DaftResult<Series> {
-        use daft_dsl::AggExpr::*;
         match agg_expr {
-            Count(expr, mode) => Series::count(&self.eval_expression(expr)?, groups, *mode),
-            Sum(expr) => Series::sum(&self.eval_expression(expr)?, groups),
-            ApproxSketch(expr) => Series::approx_sketch(&self.eval_expression(expr)?, groups),
-            ApproxPercentile(ApproxPercentileParams {
-                child: expr,
-                percentiles,
+            &AggExpr::Count(ref expr, mode) => self.eval_expression(expr)?.count(groups, mode),
+            AggExpr::Sum(expr) => self.eval_expression(expr)?.sum(groups),
+            &AggExpr::ApproxPercentile(ApproxPercentileParams {
+                child: ref expr,
+                ref percentiles,
                 force_list_output,
             }) => {
                 let percentiles = percentiles.iter().map(|p| p.0).collect::<Vec<f64>>();
-                Series::approx_sketch(&self.eval_expression(expr)?, groups)?
-                    .sketch_percentile(&percentiles, *force_list_output)
+                self.eval_expression(expr)?
+                    .approx_sketch(groups)?
+                    .sketch_percentile(&percentiles, force_list_output)
             }
-            MergeSketch(expr) => Series::merge_sketch(&self.eval_expression(expr)?, groups),
-            Mean(expr) => Series::mean(&self.eval_expression(expr)?, groups),
-            Min(expr) => Series::min(&self.eval_expression(expr)?, groups),
-            Max(expr) => Series::max(&self.eval_expression(expr)?, groups),
-            AnyValue(expr, ignore_nulls) => {
-                Series::any_value(&self.eval_expression(expr)?, groups, *ignore_nulls)
+            AggExpr::ApproxCountDistinct(expr) => {
+                let hashed = self.eval_expression(expr)?.hash_with_validity(None)?;
+                let series = groups
+                    .map_or_else(
+                        || hashed.approx_count_distinct(),
+                        |groups| hashed.grouped_approx_count_distinct(groups),
+                    )?
+                    .into_series();
+                Ok(series)
             }
-            List(expr) => Series::agg_list(&self.eval_expression(expr)?, groups),
-            Concat(expr) => Series::agg_concat(&self.eval_expression(expr)?, groups),
-            MapGroups { .. } => Err(DaftError::ValueError(
+            &AggExpr::ApproxSketch(ref expr, sketch_type) => {
+                let evaled = self.eval_expression(expr)?;
+                match sketch_type {
+                    SketchType::DDSketch => evaled.approx_sketch(groups),
+                    SketchType::HyperLogLog => {
+                        let hashed = self.eval_expression(expr)?.hash_with_validity(None)?;
+                        let series = groups
+                            .map_or_else(
+                                || hashed.hll_sketch(),
+                                |groups| hashed.grouped_hll_sketch(groups),
+                            )?
+                            .into_series();
+                        Ok(series)
+                    }
+                }
+            }
+            &AggExpr::MergeSketch(ref expr, sketch_type) => {
+                let evaled = self.eval_expression(expr)?;
+                match sketch_type {
+                    SketchType::DDSketch => evaled.merge_sketch(groups),
+                    SketchType::HyperLogLog => evaled.hll_merge(groups),
+                }
+            }
+            AggExpr::Mean(expr) => self.eval_expression(expr)?.mean(groups),
+            AggExpr::Min(expr) => self.eval_expression(expr)?.min(groups),
+            AggExpr::Max(expr) => self.eval_expression(expr)?.max(groups),
+            &AggExpr::AnyValue(ref expr, ignore_nulls) => {
+                self.eval_expression(expr)?.any_value(groups, ignore_nulls)
+            }
+            AggExpr::List(expr) => self.eval_expression(expr)?.agg_list(groups),
+            AggExpr::Concat(expr) => self.eval_expression(expr)?.agg_concat(groups),
+            AggExpr::MapGroups { .. } => Err(DaftError::ValueError(
                 "MapGroups not supported via aggregation, use map_groups instead".to_string(),
             )),
         }
@@ -683,7 +716,7 @@ impl Table {
 
             for col in self.columns.iter() {
                 res.push_str(styled_td);
-                res.push_str(&col.html_value(i));
+                res.push_str(&html_value(col, i));
                 res.push_str("</div></td>");
             }
 
@@ -705,7 +738,7 @@ impl Table {
 
             for col in self.columns.iter() {
                 res.push_str(styled_td);
-                res.push_str(&col.html_value(i));
+                res.push_str(&html_value(col, i));
                 res.push_str("</td>");
             }
 
@@ -720,14 +753,21 @@ impl Table {
     }
 
     pub fn to_comfy_table(&self, max_col_width: Option<usize>) -> comfy_table::Table {
+        let str_values = self
+            .columns
+            .iter()
+            .map(|s| s as &dyn StrValue)
+            .collect::<Vec<_>>();
+
         make_comfy_table(
             self.schema
                 .fields
                 .values()
-                .map(Cow::Borrowed)
+                .map(|field| format!("{}\n---\n{}", field.name, field.dtype))
                 .collect::<Vec<_>>()
                 .as_slice(),
-            Some(self.columns.iter().collect::<Vec<_>>().as_slice()),
+            Some(str_values.as_slice()),
+            Some(self.len()),
             max_col_width,
         )
     }
@@ -757,13 +797,12 @@ impl<'a> IntoIterator for &'a Table {
 
 #[cfg(test)]
 mod test {
+    use common_error::DaftResult;
+    use daft_core::prelude::*;
+    use daft_dsl::col;
 
     use crate::Table;
-    use common_error::DaftResult;
-    use daft_core::datatypes::{DataType, Float64Array, Int64Array};
-    use daft_core::schema::Schema;
-    use daft_core::series::IntoSeries;
-    use daft_dsl::col;
+
     #[test]
     fn add_int_and_float_expression() -> DaftResult<()> {
         let a = Int64Array::from(("a", vec![1, 2, 3])).into_series();

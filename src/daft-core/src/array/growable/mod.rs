@@ -1,17 +1,10 @@
 use common_error::DaftResult;
 
 use crate::{
-    array::{FixedSizeListArray, ListArray, StructArray},
-    datatypes::{
-        logical::{
-            DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            FixedShapeTensorArray, ImageArray, MapArray, TensorArray, TimeArray, TimestampArray,
-        },
-        BinaryArray, BooleanArray, ExtensionArray, FixedSizeBinaryArray, Float32Array,
-        Float64Array, Int128Array, Int16Array, Int32Array, Int64Array, Int8Array, NullArray,
-        UInt16Array, UInt32Array, UInt64Array, UInt8Array, Utf8Array,
-    },
-    with_match_daft_types, DataType, Series,
+    array::{prelude::*, FixedSizeListArray, ListArray, StructArray},
+    datatypes::prelude::*,
+    series::Series,
+    with_match_daft_types,
 };
 
 mod arrow_growable;
@@ -208,6 +201,14 @@ impl_growable_array!(
 impl_growable_array!(
     FixedShapeTensorArray,
     logical_growable::LogicalFixedShapeTensorGrowable<'a>
+);
+impl_growable_array!(
+    SparseTensorArray,
+    logical_growable::LogicalSparseTensorGrowable<'a>
+);
+impl_growable_array!(
+    FixedShapeSparseTensorArray,
+    logical_growable::LogicalFixedShapeSparseTensorGrowable<'a>
 );
 impl_growable_array!(ImageArray, logical_growable::LogicalImageGrowable<'a>);
 impl_growable_array!(TensorArray, logical_growable::LogicalTensorGrowable<'a>);

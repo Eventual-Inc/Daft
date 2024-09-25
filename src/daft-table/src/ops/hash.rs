@@ -1,14 +1,14 @@
 use std::{
     collections::{hash_map::RawEntryMut, HashMap},
-    hash::{BuildHasherDefault, Hash, Hasher},
+    hash::{Hash, Hasher},
 };
 
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    array::ops::arrow2::comparison::build_multi_array_is_equal, datatypes::UInt64Array,
+    array::ops::{arrow2::comparison::build_multi_array_is_equal, as_arrow::AsArrow},
+    datatypes::UInt64Array,
+    utils::identity_hash_set::IdentityBuildHasher,
 };
-
-use daft_core::array::ops::as_arrow::AsArrow;
 
 use crate::Table;
 
@@ -22,28 +22,6 @@ impl Hash for IndexHash {
         state.write_u64(self.hash)
     }
 }
-
-#[derive(Default)]
-pub struct IdentityHasher {
-    hash: u64,
-}
-
-impl Hasher for IdentityHasher {
-    fn finish(&self) -> u64 {
-        self.hash
-    }
-
-    fn write(&mut self, _bytes: &[u8]) {
-        unreachable!("IdentityHasher should be used by u64")
-    }
-
-    #[inline]
-    fn write_u64(&mut self, i: u64) {
-        self.hash = i;
-    }
-}
-
-pub type IdentityBuildHasher = BuildHasherDefault<IdentityHasher>;
 
 impl Table {
     pub fn hash_rows(&self) -> DaftResult<UInt64Array> {

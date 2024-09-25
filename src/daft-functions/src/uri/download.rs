@@ -1,18 +1,12 @@
 use std::sync::Arc;
 
-use daft_core::array::ops::as_arrow::AsArrow;
-use daft_core::datatypes::{BinaryArray, Field, Utf8Array};
-use daft_core::{DataType, IntoSeries};
-use daft_dsl::functions::ScalarUDF;
-use daft_dsl::ExprRef;
+use common_error::{DaftError, DaftResult};
+use daft_core::prelude::*;
+use daft_dsl::{functions::ScalarUDF, ExprRef};
 use daft_io::{get_io_client, get_runtime, Error, IOConfig, IOStatsContext, IOStatsRef};
 use futures::{StreamExt, TryStreamExt};
 use serde::Serialize;
 use snafu::prelude::*;
-
-use common_error::{DaftError, DaftResult};
-use daft_core::schema::Schema;
-use daft_core::series::Series;
 
 use crate::InvalidArgumentSnafu;
 
@@ -98,7 +92,6 @@ fn url_download(
     config: Arc<IOConfig>,
     io_stats: Option<IOStatsRef>,
 ) -> DaftResult<BinaryArray> {
-    let urls = array.as_arrow().iter();
     let name = array.name();
     ensure!(
         max_connections > 0,
@@ -107,36 +100,43 @@ fn url_download(
         }
     );
 
-    let runtime_handle = get_runtime(multi_thread)?;
-    let _rt_guard = runtime_handle.enter();
+    let runtime_handle = get_runtime(true)?;
     let max_connections = match multi_thread {
         false => max_connections,
         true => max_connections * usize::from(std::thread::available_parallelism()?),
     };
     let io_client = get_io_client(multi_thread, config)?;
 
-    let fetches = futures::stream::iter(urls.enumerate().map(|(i, url)| {
-        let owned_url = url.map(|s| s.to_string());
-        let owned_client = io_client.clone();
-        let owned_io_stats = io_stats.clone();
-        tokio::spawn(async move {
-            (
-                i,
-                owned_client
-                    .single_url_download(i, owned_url, raise_error_on_failure, owned_io_stats)
-                    .await,
-            )
-        })
-    }))
-    .buffer_unordered(max_connections)
-    .then(async move |r| match r {
-        Ok((i, Ok(v))) => Ok((i, v)),
-        Ok((_i, Err(error))) => Err(error),
-        Err(error) => Err(Error::JoinError { source: error }),
-    });
+    let owned_array = array.clone();
+    let fetches = async move {
+        let urls = owned_array
+            .as_arrow()
+            .into_iter()
+            .map(|s| s.map(|s| s.to_string()))
+            .collect::<Vec<_>>();
 
-    let collect_future = fetches.try_collect::<Vec<_>>();
-    let mut results = runtime_handle.block_on(collect_future)?;
+        let stream = futures::stream::iter(urls.into_iter().enumerate().map(move |(i, url)| {
+            let owned_client = io_client.clone();
+            let owned_io_stats = io_stats.clone();
+            tokio::spawn(async move {
+                (
+                    i,
+                    owned_client
+                        .single_url_download(i, url, raise_error_on_failure, owned_io_stats)
+                        .await,
+                )
+            })
+        }))
+        .buffer_unordered(max_connections)
+        .then(async move |r| match r {
+            Ok((i, Ok(v))) => Ok((i, v)),
+            Ok((_i, Err(error))) => Err(error),
+            Err(error) => Err(Error::JoinError { source: error }),
+        });
+        stream.try_collect::<Vec<_>>().await
+    };
+
+    let mut results = runtime_handle.block_on_io_pool(fetches)??;
 
     results.sort_by_key(|k| k.0);
     let mut offsets: Vec<i64> = Vec::with_capacity(results.len() + 1);

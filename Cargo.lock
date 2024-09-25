@@ -95,6 +95,55 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4b46cbb362ab8752921c97e041f5e366ee6297bd428a31275b9fcf1e380f7299"
 
 [[package]]
+name = "anstream"
+version = "0.6.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "64e15c1ab1f89faffbf04a634d5e1962e9074f2741eef6d97f3c4e322426d526"
+dependencies = [
+ "anstyle",
+ "anstyle-parse",
+ "anstyle-query",
+ "anstyle-wincon",
+ "colorchoice",
+ "is_terminal_polyfill",
+ "utf8parse",
+]
+
+[[package]]
+name = "anstyle"
+version = "1.0.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1bec1de6f59aedf83baf9ff929c98f2ad654b97c9510f4e70cf6f661d49fd5b1"
+
+[[package]]
+name = "anstyle-parse"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eb47de1e80c2b463c735db5b217a0ddc39d612e7ac9e2e96a5aed1f57616c1cb"
+dependencies = [
+ "utf8parse",
+]
+
+[[package]]
+name = "anstyle-query"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d36fc52c7f6c869915e99412912f22093507da8d9e942ceaf66fe4b7c14422a"
+dependencies = [
+ "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "anstyle-wincon"
+version = "3.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5bf74e1b6e971609db8ca7a9ce79fd5768ab6ae46441c572e46cf596f59e57f8"
+dependencies = [
+ "anstyle",
+ "windows-sys 0.52.0",
+]
+
+[[package]]
 name = "anyhow"
 version = "1.0.86"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -234,6 +283,7 @@ dependencies = [
  "simdutf8",
  "streaming-iterator",
  "strength_reduce",
+ "thiserror",
  "tokio",
  "tokio-util",
  "zstd 0.12.4",
@@ -992,7 +1042,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40723b8fb387abc38f4f4a37c09073622e41dd12327033091ef8950659e6dc0c"
 dependencies = [
  "memchr",
- "regex-automata",
+ "regex-automata 0.4.7",
  "serde",
 ]
 
@@ -1212,6 +1262,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d7b894f5411737b7867f4827955924d7c254fc9f4d91a6aad6b097804b1018b"
 
 [[package]]
+name = "colorchoice"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3fd119d74b830634cea2a0f58bbd0d54540518a14397557951e79340abc28c0"
+
+[[package]]
 name = "comfy-table"
 version = "6.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1235,11 +1291,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "common-arrow-ffi"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow2",
+ "pyo3",
+]
+
+[[package]]
 name = "common-daft-config"
 version = "0.3.0-dev0"
 dependencies = [
- "bincode",
  "common-io-config",
+ "common-py-serde",
  "pyo3",
  "serde",
 ]
@@ -1248,7 +1312,8 @@ dependencies = [
 name = "common-display"
 version = "0.3.0-dev0"
 dependencies = [
- "indexmap 2.3.0",
+ "comfy-table 7.1.1",
+ "indexmap 2.5.0",
  "pyo3",
  "terminal_size",
  "textwrap",
@@ -1261,6 +1326,19 @@ dependencies = [
  "arrow2",
  "pyo3",
  "regex",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "common-file-formats"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-error",
+ "common-py-serde",
+ "daft-schema",
+ "pyo3",
+ "serde",
  "serde_json",
 ]
 
@@ -1290,6 +1368,7 @@ dependencies = [
 name = "common-py-serde"
 version = "0.3.0-dev0"
 dependencies = [
+ "bincode",
  "pyo3",
  "serde",
 ]
@@ -1299,6 +1378,7 @@ name = "common-resource-request"
 version = "0.3.0-dev0"
 dependencies = [
  "common-hashable-float-wrapper",
+ "common-py-serde",
  "pyo3",
  "serde",
 ]
@@ -1327,6 +1407,10 @@ version = "0.3.0-dev0"
 dependencies = [
  "common-error",
 ]
+
+[[package]]
+name = "common-version"
+version = "0.3.0-dev0"
 
 [[package]]
 name = "concurrent-queue"
@@ -1585,15 +1669,19 @@ version = "0.3.0-dev0"
 dependencies = [
  "common-daft-config",
  "common-display",
+ "common-file-formats",
  "common-hashable-float-wrapper",
  "common-resource-request",
  "common-system-info",
  "common-tracing",
+ "common-version",
  "daft-compression",
  "daft-core",
  "daft-csv",
  "daft-dsl",
  "daft-functions",
+ "daft-functions-json",
+ "daft-image",
  "daft-io",
  "daft-json",
  "daft-local-execution",
@@ -1631,38 +1719,34 @@ version = "0.3.0-dev0"
 dependencies = [
  "aho-corasick",
  "arrow2",
- "base64 0.22.1",
  "bincode",
  "chrono",
  "chrono-tz",
  "comfy-table 7.1.1",
- "common-daft-config",
+ "common-arrow-ffi",
  "common-display",
  "common-error",
  "common-hashable-float-wrapper",
+ "common-py-serde",
  "daft-minhash",
+ "daft-schema",
  "daft-sketch",
+ "derive_more",
  "fastrand 2.1.0",
  "fnv",
  "html-escape",
- "image",
- "indexmap 2.3.0",
+ "hyperloglog",
+ "indexmap 2.5.0",
  "itertools 0.11.0",
- "jaq-core",
- "jaq-interpret",
- "jaq-parse",
- "jaq-std",
  "lazy_static",
  "log",
  "mur3",
  "ndarray",
- "num-derive",
  "num-traits",
  "numpy",
  "pyo3",
  "regex",
  "serde",
- "serde_json",
  "sketches-ddsketch",
  "unicode-normalization",
  "xxhash-rust",
@@ -1674,9 +1758,9 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow2",
  "async-compat",
- "async-compression",
  "async-stream",
  "common-error",
+ "common-py-serde",
  "csv-async",
  "daft-compression",
  "daft-core",
@@ -1692,7 +1776,6 @@ dependencies = [
  "snafu",
  "tokio",
  "tokio-util",
- "url",
 ]
 
 [[package]]
@@ -1719,7 +1802,8 @@ dependencies = [
  "common-treenode",
  "daft-core",
  "daft-sketch",
- "indexmap 2.3.0",
+ "derive_more",
+ "indexmap 2.5.0",
  "itertools 0.11.0",
  "log",
  "pyo3",
@@ -1735,11 +1819,14 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "common-error",
+ "common-hashable-float-wrapper",
  "common-io-config",
  "daft-core",
  "daft-dsl",
+ "daft-image",
  "daft-io",
  "futures",
+ "paste",
  "pyo3",
  "serde",
  "snafu",
@@ -1747,6 +1834,39 @@ dependencies = [
  "tokio",
  "typetag",
  "uuid 1.10.0",
+]
+
+[[package]]
+name = "daft-functions-json"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-error",
+ "daft-core",
+ "daft-dsl",
+ "itertools 0.11.0",
+ "jaq-core",
+ "jaq-interpret",
+ "jaq-parse",
+ "jaq-std",
+ "lazy_static",
+ "pyo3",
+ "serde",
+ "serde_json",
+ "typetag",
+]
+
+[[package]]
+name = "daft-image"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow2",
+ "base64 0.22.1",
+ "common-error",
+ "daft-core",
+ "image",
+ "log",
+ "num-traits",
+ "pyo3",
 ]
 
 [[package]]
@@ -1768,6 +1888,7 @@ dependencies = [
  "azure_storage_blobs",
  "bytes",
  "common-error",
+ "common-file-formats",
  "common-io-config",
  "futures",
  "globset",
@@ -1780,11 +1901,13 @@ dependencies = [
  "lazy_static",
  "log",
  "md5",
+ "oneshot",
  "openssl-sys",
  "pyo3",
  "rand 0.8.5",
  "regex",
  "reqwest",
+ "serde",
  "snafu",
  "tempfile",
  "tokio",
@@ -1799,6 +1922,7 @@ dependencies = [
  "arrow2",
  "chrono",
  "common-error",
+ "common-py-serde",
  "daft-compression",
  "daft-core",
  "daft-decoding",
@@ -1806,7 +1930,7 @@ dependencies = [
  "daft-io",
  "daft-table",
  "futures",
- "indexmap 2.3.0",
+ "indexmap 2.5.0",
  "memchr",
  "memmap2",
  "num-traits",
@@ -1826,10 +1950,10 @@ dependencies = [
 name = "daft-local-execution"
 version = "0.3.0-dev0"
 dependencies = [
- "async-stream",
- "async-trait",
+ "common-daft-config",
  "common-display",
  "common-error",
+ "common-file-formats",
  "common-tracing",
  "daft-core",
  "daft-csv",
@@ -1841,15 +1965,16 @@ dependencies = [
  "daft-physical-plan",
  "daft-plan",
  "daft-scan",
- "daft-stats",
  "daft-table",
  "futures",
+ "indexmap 2.5.0",
  "lazy_static",
  "log",
  "num-format",
  "pyo3",
  "snafu",
  "tokio",
+ "tokio-stream",
  "tracing",
 ]
 
@@ -1860,6 +1985,7 @@ dependencies = [
  "arrow2",
  "bincode",
  "common-error",
+ "common-file-formats",
  "daft-core",
  "daft-csv",
  "daft-dsl",
@@ -1872,7 +1998,6 @@ dependencies = [
  "parquet2",
  "pyo3",
  "snafu",
- "tokio",
 ]
 
 [[package]]
@@ -1891,7 +2016,9 @@ dependencies = [
  "arrow2",
  "async-compat",
  "async-stream",
+ "bincode",
  "bytes",
+ "common-arrow-ffi",
  "common-error",
  "crossbeam-channel",
  "daft-core",
@@ -1900,10 +2027,11 @@ dependencies = [
  "daft-stats",
  "daft-table",
  "futures",
- "indexmap 2.3.0",
+ "indexmap 2.5.0",
  "itertools 0.11.0",
  "log",
  "parquet2",
+ "path_macro",
  "pyo3",
  "rayon",
  "serde",
@@ -1935,6 +2063,7 @@ dependencies = [
  "common-daft-config",
  "common-display",
  "common-error",
+ "common-file-formats",
  "common-io-config",
  "common-py-serde",
  "common-resource-request",
@@ -1943,8 +2072,10 @@ dependencies = [
  "daft-dsl",
  "daft-functions",
  "daft-scan",
+ "daft-schema",
  "daft-table",
- "indexmap 2.3.0",
+ "derivative",
+ "indexmap 2.5.0",
  "itertools 0.11.0",
  "log",
  "pretty_assertions",
@@ -1952,6 +2083,7 @@ dependencies = [
  "rstest",
  "serde",
  "snafu",
+ "test-log",
 ]
 
 [[package]]
@@ -1961,6 +2093,7 @@ dependencies = [
  "common-daft-config",
  "common-display",
  "common-error",
+ "common-file-formats",
  "common-io-config",
  "common-py-serde",
  "daft-core",
@@ -1969,6 +2102,7 @@ dependencies = [
  "daft-io",
  "daft-json",
  "daft-parquet",
+ "daft-schema",
  "daft-stats",
  "daft-table",
  "futures",
@@ -1976,9 +2110,7 @@ dependencies = [
  "parquet2",
  "pyo3",
  "serde",
- "serde_json",
  "snafu",
- "tokio",
 ]
 
 [[package]]
@@ -1988,7 +2120,9 @@ dependencies = [
  "common-daft-config",
  "common-display",
  "common-error",
+ "common-file-formats",
  "common-io-config",
+ "common-py-serde",
  "daft-core",
  "daft-dsl",
  "daft-plan",
@@ -1996,6 +2130,26 @@ dependencies = [
  "pyo3",
  "rstest",
  "serde",
+]
+
+[[package]]
+name = "daft-schema"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow2",
+ "common-arrow-ffi",
+ "common-display",
+ "common-error",
+ "common-py-serde",
+ "common-version",
+ "derive_more",
+ "html-escape",
+ "indexmap 2.5.0",
+ "num-derive",
+ "num-traits",
+ "pyo3",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -2014,15 +2168,18 @@ dependencies = [
 name = "daft-sql"
 version = "0.3.0-dev0"
 dependencies = [
+ "common-daft-config",
  "common-error",
  "daft-core",
  "daft-dsl",
+ "daft-functions",
+ "daft-functions-json",
  "daft-plan",
+ "once_cell",
  "pyo3",
  "rstest",
  "snafu",
  "sqlparser",
- "strum 0.26.3",
 ]
 
 [[package]]
@@ -2033,7 +2190,7 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-table",
- "indexmap 2.3.0",
+ "indexmap 2.5.0",
  "serde",
  "snafu",
 ]
@@ -2044,10 +2201,14 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow2",
  "comfy-table 7.1.1",
+ "common-arrow-ffi",
+ "common-display",
  "common-error",
  "daft-core",
  "daft-dsl",
+ "daft-image",
  "html-escape",
+ "indexmap 2.5.0",
  "num-traits",
  "pyo3",
  "rand 0.8.5",
@@ -2079,6 +2240,38 @@ checksum = "b42b6fa04a440b495c8b04d0e71b707c585f83cb9cb28cf8cd0d976c315e31b4"
 dependencies = [
  "powerfmt",
  "serde",
+]
+
+[[package]]
+name = "derivative"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fcc3dd5e9e9c0b295d6e1e4d811fb6f157d5ffd784b8d202fc62eac8035a770b"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
+name = "derive_more"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4a9b99b9cbbe49445b21764dc0625032a89b145a2642e67603e1c936f5458d05"
+dependencies = [
+ "derive_more-impl",
+]
+
+[[package]]
+name = "derive_more-impl"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb7330aeadfbe296029522e6c40f315320aba36fc43a5b3632f3795348f3bd22"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.74",
+ "unicode-xid",
 ]
 
 [[package]]
@@ -2135,6 +2328,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "env_filter"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4f2c92ceda6ceec50f43169f9ee8424fe2db276791afde7b2cd8bc084cb376ab"
+dependencies = [
+ "log",
+]
+
+[[package]]
 name = "env_logger"
 version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2142,6 +2344,18 @@ checksum = "a19187fea3ac7e84da7dacf48de0c45d63c6a76f9490dae389aead16c243fce3"
 dependencies = [
  "log",
  "regex",
+]
+
+[[package]]
+name = "env_logger"
+version = "0.11.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e13fa619b91fb2381732789fc5de83b45675e882f66623b7d8cb4f643017018d"
+dependencies = [
+ "anstream",
+ "anstyle",
+ "env_filter",
+ "log",
 ]
 
 [[package]]
@@ -2480,7 +2694,7 @@ dependencies = [
  "aho-corasick",
  "bstr",
  "log",
- "regex-automata",
+ "regex-automata 0.4.7",
  "regex-syntax 0.8.4",
 ]
 
@@ -2569,7 +2783,7 @@ dependencies = [
  "futures-sink",
  "futures-util",
  "http",
- "indexmap 2.3.0",
+ "indexmap 2.5.0",
  "slab",
  "tokio",
  "tokio-util",
@@ -2787,6 +3001,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "hyperloglog"
+version = "0.3.0-dev0"
+
+[[package]]
 name = "iana-time-zone"
 version = "0.1.60"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2847,9 +3065,9 @@ dependencies = [
 
 [[package]]
 name = "indexmap"
-version = "2.3.0"
+version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de3fc2e30ba82dd1b3911c8de1ffc143c74a914a14e99514d7637e3099df5ea0"
+checksum = "68b900aa2f7301e21c36462b170ee99994de34dff39a4a6a528e80e7376d07e5"
 dependencies = [
  "equivalent",
  "hashbrown 0.14.5",
@@ -2858,9 +3076,9 @@ dependencies = [
 
 [[package]]
 name = "indoc"
-version = "1.0.9"
+version = "2.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bfa799dd5ed20a7e349f3b4639aa80d74549c81716d9ec4f994c9b5815598306"
+checksum = "b248f5224d1d606005e02c97f5aa4e88eeb230488bcc03bc9ca4d7991399f2b5"
 
 [[package]]
 name = "infer"
@@ -2888,6 +3106,12 @@ name = "ipnet"
 version = "2.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f518f335dce6725a761382244631d86cf0ccb2863413590b31338feb467f9c3"
+
+[[package]]
+name = "is_terminal_polyfill"
+version = "1.70.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7943c866cc5cd64cbc25b2e01621d07fa8eb2a1a23160ee81ce38704e97b8ecf"
 
 [[package]]
 name = "itertools"
@@ -2939,7 +3163,7 @@ dependencies = [
  "ahash",
  "dyn-clone",
  "hifijson",
- "indexmap 2.3.0",
+ "indexmap 2.5.0",
  "jaq-syn",
  "once_cell",
  "serde_json",
@@ -3193,6 +3417,15 @@ dependencies = [
  "cc",
  "libc",
  "pkg-config",
+]
+
+[[package]]
+name = "matchers"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8263075bb86c5a1b1427b5ae862e8889656f126e9f77c484496e8b47cf5c5558"
+dependencies = [
+ "regex-automata 0.1.10",
 ]
 
 [[package]]
@@ -3483,9 +3716,9 @@ dependencies = [
 
 [[package]]
 name = "numpy"
-version = "0.19.0"
+version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "437213adf41bbccf4aeae535fbfcdad0f6fed241e1ae182ebe97fa1f3ce19389"
+checksum = "ec170733ca37175f5d75a5bea5911d6ff45d2cd52849ce98b685394e4f2f37f4"
 dependencies = [
  "libc",
  "ndarray",
@@ -3529,6 +3762,12 @@ name = "once_cell"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3fdb12b2476b595f9358c5161aa467c2438859caa136dec86c26fdd2efe17b92"
+
+[[package]]
+name = "oneshot"
+version = "0.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e296cf87e61c9cfc1a61c3c63a0f7f286ed4554e0e22be84e8a38e1d264a2a29"
 
 [[package]]
 name = "oorandom"
@@ -3667,6 +3906,7 @@ dependencies = [
  "criterion",
  "flate2",
  "futures",
+ "indexmap 2.5.0",
  "lz4",
  "lz4_flex",
  "parquet-format-safe",
@@ -3675,6 +3915,7 @@ dependencies = [
  "serde",
  "snap 1.1.1",
  "streaming-decompression",
+ "thiserror",
  "tokio",
  "xxhash-rust",
  "zstd 0.12.4",
@@ -3694,6 +3935,12 @@ name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
+
+[[package]]
+name = "path_macro"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a6e819bbd49d5939f682638fa54826bf1650abddcd65d000923de8ad63cc7d15"
 
 [[package]]
 name = "pem"
@@ -3857,6 +4104,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "portable-atomic"
+version = "1.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "da544ee218f0d287a911e9c99a39a8c9bc8fcad3cb8db5959940044ecfc67265"
+
+[[package]]
 name = "powerfmt"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3954,16 +4207,18 @@ dependencies = [
 
 [[package]]
 name = "pyo3"
-version = "0.19.2"
+version = "0.21.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e681a6cfdc4adcc93b4d3cf993749a4552018ee0a9b65fc0ccfad74352c72a38"
+checksum = "a5e00b96a521718e08e03b1a622f01c8a8deb50719335de3f60b3b3950f069d8"
 dependencies = [
  "cfg-if",
+ "indexmap 2.5.0",
  "indoc",
  "inventory",
  "libc",
  "memoffset",
  "parking_lot",
+ "portable-atomic",
  "pyo3-build-config",
  "pyo3-ffi",
  "pyo3-macros",
@@ -3972,9 +4227,9 @@ dependencies = [
 
 [[package]]
 name = "pyo3-build-config"
-version = "0.19.2"
+version = "0.21.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "076c73d0bc438f7a4ef6fdd0c3bb4732149136abd952b110ac93e4edb13a6ba5"
+checksum = "7883df5835fafdad87c0d888b266c8ec0f4c9ca48a5bed6bbb592e8dedee1b50"
 dependencies = [
  "once_cell",
  "target-lexicon",
@@ -3982,9 +4237,9 @@ dependencies = [
 
 [[package]]
 name = "pyo3-ffi"
-version = "0.19.2"
+version = "0.21.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e53cee42e77ebe256066ba8aa77eff722b3bb91f3419177cf4cd0f304d3284d9"
+checksum = "01be5843dc60b916ab4dad1dca6d20b9b4e6ddc8e15f50c47fe6d85f1fb97403"
 dependencies = [
  "libc",
  "pyo3-build-config",
@@ -3992,9 +4247,9 @@ dependencies = [
 
 [[package]]
 name = "pyo3-log"
-version = "0.8.4"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c09c2b349b6538d8a73d436ca606dab6ce0aaab4dad9e6b7bdd57a4f556c3bc3"
+checksum = "3ac84e6eec1159bc2a575c9ae6723baa6ee9d45873e9bebad1e3ad7e8d28a443"
 dependencies = [
  "arc-swap",
  "log",
@@ -4003,25 +4258,27 @@ dependencies = [
 
 [[package]]
 name = "pyo3-macros"
-version = "0.19.2"
+version = "0.21.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dfeb4c99597e136528c6dd7d5e3de5434d1ceaf487436a3f03b2d56b6fc9efd1"
+checksum = "77b34069fc0682e11b31dbd10321cbf94808394c56fd996796ce45217dfac53c"
 dependencies = [
  "proc-macro2",
  "pyo3-macros-backend",
  "quote",
- "syn 1.0.109",
+ "syn 2.0.74",
 ]
 
 [[package]]
 name = "pyo3-macros-backend"
-version = "0.19.2"
+version = "0.21.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "947dc12175c254889edc0c02e399476c2f652b4b9ebd123aa655c224de259536"
+checksum = "08260721f32db5e1a5beae69a55553f56b99bd0e1c3e6e0a5e8851a9d0f5a85c"
 dependencies = [
+ "heck 0.4.1",
  "proc-macro2",
+ "pyo3-build-config",
  "quote",
- "syn 1.0.109",
+ "syn 2.0.74",
 ]
 
 [[package]]
@@ -4040,7 +4297,7 @@ version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "588f6378e4dd99458b60ec275b4477add41ce4fa9f64dcba6f15adccb19b50d6"
 dependencies = [
- "env_logger",
+ "env_logger 0.8.4",
  "log",
  "rand 0.8.5",
 ]
@@ -4207,8 +4464,17 @@ checksum = "4219d74c6b67a3654a9fbebc4b419e22126d13d2f3c4a07ee0cb61ff79a79619"
 dependencies = [
  "aho-corasick",
  "memchr",
- "regex-automata",
+ "regex-automata 0.4.7",
  "regex-syntax 0.8.4",
+]
+
+[[package]]
+name = "regex-automata"
+version = "0.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c230d73fb8d8c1b9c0b3135c5142a8acee3a0558fb8db5cf1cb65f8d7862132"
+dependencies = [
+ "regex-syntax 0.6.29",
 ]
 
 [[package]]
@@ -4562,7 +4828,7 @@ version = "1.0.124"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "66ad62847a56b3dba58cc891acd13884b9c61138d330c0d7b6181713d4fce38d"
 dependencies = [
- "indexmap 2.3.0",
+ "indexmap 2.5.0",
  "itoa",
  "memchr",
  "ryu",
@@ -4794,9 +5060,9 @@ dependencies = [
 
 [[package]]
 name = "sqlparser"
-version = "0.49.0"
+version = "0.51.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a4a404d0e14905361b918cb8afdb73605e25c1d5029312bd9785142dcb3aa49e"
+checksum = "5fe11944a61da0da3f592e19a45ebe5ab92dc14a779907ff1f08fbb797bfefc7"
 dependencies = [
  "log",
 ]
@@ -5002,6 +5268,28 @@ checksum = "21bebf2b7c9e0a515f6e0f8c51dc0f8e4696391e6f1ff30379559f8365fb0df7"
 dependencies = [
  "rustix",
  "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "test-log"
+version = "0.2.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3dffced63c2b5c7be278154d76b479f9f9920ed34e7574201407f0b14e2bbb93"
+dependencies = [
+ "env_logger 0.11.5",
+ "test-log-macros",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "test-log-macros"
+version = "0.2.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5999e24eaa32083191ba4e425deb75cdf25efefabe5aaccb7446dd0d4122a3f5"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.74",
 ]
 
 [[package]]
@@ -5312,10 +5600,14 @@ version = "0.3.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ad0f048c97dbd9faa9b7df56362b8ebcaa52adb06b498c050d2f4e32f90a7a8b"
 dependencies = [
+ "matchers",
  "nu-ansi-term",
+ "once_cell",
+ "regex",
  "sharded-slab",
  "smallvec",
  "thread_local",
+ "tracing",
  "tracing-core",
  "tracing-log",
 ]
@@ -5454,9 +5746,9 @@ checksum = "f962df74c8c05a667b5ee8bcf162993134c104e96440b663c8daa176dc772d8c"
 
 [[package]]
 name = "unindent"
-version = "0.1.11"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1766d682d402817b5ac4490b3c3002d91dfa0d22812f341609f97b08757359c"
+checksum = "c7de7d73e1754487cb58364ee906a499937a0dfabd86bcb980fa99ec8c8fa2ce"
 
 [[package]]
 name = "untrusted"
@@ -5493,6 +5785,12 @@ name = "utf8-width"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "86bd8d4e895da8537e5315b8254664e6b769c4ff3db18321b297a1e7004392e3"
+
+[[package]]
+name = "utf8parse"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "uuid"

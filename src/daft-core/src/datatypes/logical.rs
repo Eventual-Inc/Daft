@@ -1,16 +1,16 @@
 use std::{marker::PhantomData, sync::Arc};
 
-use crate::{
-    array::{ListArray, StructArray},
-    datatypes::{DaftLogicalType, DateType, Field},
-    with_match_daft_logical_primitive_types,
-};
 use common_error::DaftResult;
 
 use super::{
     DaftArrayType, DaftDataType, DataArray, DataType, Decimal128Type, DurationType, EmbeddingType,
-    FixedShapeImageType, FixedShapeTensorType, FixedSizeListArray, ImageType, MapType, TensorType,
-    TimeType, TimestampType,
+    FixedShapeImageType, FixedShapeSparseTensorType, FixedShapeTensorType, FixedSizeListArray,
+    ImageType, MapType, SparseTensorType, TensorType, TimeType, TimestampType,
+};
+use crate::{
+    array::{ListArray, StructArray},
+    datatypes::{DaftLogicalType, DateType, Field},
+    with_match_daft_logical_primitive_types,
 };
 
 /// A LogicalArray is a wrapper on top of some underlying array, applying the semantic meaning of its
@@ -172,8 +172,11 @@ pub type TimestampArray = LogicalArray<TimestampType>;
 pub type TensorArray = LogicalArray<TensorType>;
 pub type EmbeddingArray = LogicalArray<EmbeddingType>;
 pub type FixedShapeTensorArray = LogicalArray<FixedShapeTensorType>;
+pub type SparseTensorArray = LogicalArray<SparseTensorType>;
+pub type FixedShapeSparseTensorArray = LogicalArray<FixedShapeSparseTensorType>;
 pub type FixedShapeImageArray = LogicalArray<FixedShapeImageType>;
 pub type MapArray = LogicalArray<MapType>;
+
 pub trait DaftImageryType: DaftLogicalType {}
 
 impl DaftImageryType for ImageType {}

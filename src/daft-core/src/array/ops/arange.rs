@@ -1,9 +1,9 @@
+use common_error::DaftResult;
+
 use crate::{
     array::DataArray,
     datatypes::{DaftNumericType, Int64Array},
 };
-
-use common_error::DaftResult;
 
 impl<T> DataArray<T>
 where

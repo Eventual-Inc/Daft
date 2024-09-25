@@ -7,18 +7,14 @@ use std::{
 
 use arrow2::io::parquet::read;
 use common_error::DaftResult;
-use daft_core::{
-    schema::{Schema, SchemaRef},
-    utils::arrow::cast_array_for_daft_if_needed,
-    Series,
-};
+use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
 use daft_dsl::ExprRef;
 use daft_io::IOStatsRef;
 use daft_table::Table;
 use futures::{stream::BoxStream, StreamExt};
 use itertools::Itertools;
 use rayon::{
-    iter::IntoParallelRefMutIterator,
+    iter::{IntoParallelRefMutIterator, ParallelIterator},
     prelude::{IndexedParallelIterator, IntoParallelIterator, ParallelBridge},
 };
 use snafu::ResultExt;
@@ -26,11 +22,9 @@ use snafu::ResultExt;
 use crate::{
     file::{build_row_ranges, RowGroupRange},
     read::{ArrowChunk, ArrowChunkIters, ParquetSchemaInferenceOptions},
+    stream_reader::read::schema::infer_schema_with_options,
     UnableToConvertSchemaToDaftSnafu,
 };
-
-use crate::stream_reader::read::schema::infer_schema_with_options;
-use rayon::iter::ParallelIterator;
 
 fn prune_fields_from_schema(
     schema: arrow2::datatypes::Schema,
@@ -239,7 +233,7 @@ pub(crate) fn local_parquet_read_into_column_iters(
             })?,
     };
 
-    let schema = infer_schema_with_options(&metadata, &Some(schema_infer_options.into()))
+    let schema = infer_schema_with_options(&metadata, Some(schema_infer_options.into()))
         .with_context(|_| super::UnableToParseSchemaFromMetadataSnafu {
             path: uri.to_string(),
         })?;
@@ -263,7 +257,7 @@ pub(crate) fn local_parquet_read_into_column_iters(
 
     // Read all the required row groups into memory sequentially
     let column_iters_per_rg = row_ranges.clone().into_iter().map(move |rg_range| {
-        let rg_metadata = all_row_groups.get(rg_range.row_group_index).unwrap();
+        let rg_metadata = all_row_groups.get(&rg_range.row_group_index).unwrap();
 
         // This operation is IO-bounded O(C) where C is the number of columns in the row group.
         // It reads all the columns to memory from the row group associated to the requested fields,
@@ -335,7 +329,7 @@ pub(crate) fn local_parquet_read_into_arrow(
     };
 
     // and infer a [`Schema`] from the `metadata`.
-    let schema = infer_schema_with_options(&metadata, &Some(schema_infer_options.into()))
+    let schema = infer_schema_with_options(&metadata, Some(schema_infer_options.into()))
         .with_context(|_| super::UnableToParseSchemaFromMetadataSnafu {
             path: uri.to_string(),
         })?;
@@ -362,13 +356,13 @@ pub(crate) fn local_parquet_read_into_arrow(
         .iter()
         .enumerate()
         .map(|(req_idx, rg_range)| {
-            let rg = metadata.row_groups.get(rg_range.row_group_index).unwrap();
+            let rg = metadata.row_groups.get(&rg_range.row_group_index).unwrap();
             let single_rg_column_iter = read::read_columns_many(
                 &mut reader,
                 rg,
                 schema.fields.clone(),
                 Some(chunk_size),
-                num_rows,
+                Some(rg_range.num_rows),
                 None,
             );
             let single_rg_column_iter = single_rg_column_iter?;
@@ -521,7 +515,7 @@ pub(crate) fn local_parquet_stream(
             metadata,
             chunk_size,
             io_stats,
-    )?;
+        )?;
 
     // Create a channel for each row group to send the processed tables to the stream
     // Each channel is expected to have a number of chunks equal to the number of chunks in the row group

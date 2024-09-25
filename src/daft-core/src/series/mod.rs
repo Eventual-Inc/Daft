@@ -3,29 +3,26 @@ mod from;
 mod ops;
 mod serdes;
 mod series_like;
-use std::{
-    borrow::Cow,
-    fmt::{Display, Formatter, Result},
-    sync::Arc,
-};
+use std::sync::Arc;
 
+pub use array_impl::IntoSeries;
+use common_display::table_display::{make_comfy_table, StrValue};
+use common_error::DaftResult;
+use derive_more::Display;
+pub use ops::cast_series_to_supertype;
+
+pub(crate) use self::series_like::SeriesLike;
 use crate::{
     array::{
         ops::{from_arrow::FromArrow, full::FullNull, DaftCompare},
         DataArray,
     },
     datatypes::{DaftDataType, DaftNumericType, DataType, Field, FieldRef, NumericNative},
-    utils::display_table::make_comfy_table,
     with_match_daft_types,
 };
-use common_error::DaftResult;
 
-pub use array_impl::IntoSeries;
-pub use ops::cast_series_to_supertype;
-
-pub(crate) use self::series_like::SeriesLike;
-
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Display)]
+#[display("{}\n", self.to_comfy_table())]
 pub struct Series {
     pub inner: Arc<dyn SeriesLike>,
 }
@@ -100,9 +97,13 @@ impl Series {
     }
 
     pub fn to_comfy_table(&self) -> comfy_table::Table {
+        let field = self.field();
+        let field_disp = format!("{}\n---\n{}", field.name, field.dtype);
+
         make_comfy_table(
-            vec![Cow::Borrowed(self.field())].as_slice(),
-            Some([self].as_slice()),
+            [field_disp].as_slice(),
+            Some([self as &dyn StrValue].as_slice()),
+            Some(self.len()),
             Some(80),
         )
     }
@@ -133,13 +134,3 @@ impl Series {
         Ok(data.as_slice())
     }
 }
-impl Display for Series {
-    // `f` is a buffer, and this method must write the formatted string into it
-    fn fmt(&self, f: &mut Formatter) -> Result {
-        let table = self.to_comfy_table();
-        writeln!(f, "{table}")
-    }
-}
-
-#[cfg(test)]
-mod tests {}

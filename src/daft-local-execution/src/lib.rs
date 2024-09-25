@@ -9,26 +9,21 @@ mod sources;
 use common_error::{DaftError, DaftResult};
 use lazy_static::lazy_static;
 pub use run::NativeExecutor;
-use snafu::futures::TryFutureExt;
-use snafu::Snafu;
+use snafu::{futures::TryFutureExt, Snafu};
 lazy_static! {
     pub static ref NUM_CPUS: usize = std::thread::available_parallelism().unwrap().get();
 }
 
 pub struct ExecutionRuntimeHandle {
-    pub worker_set: tokio::task::JoinSet<crate::Result<()>>,
-}
-
-impl Default for ExecutionRuntimeHandle {
-    fn default() -> Self {
-        Self::new()
-    }
+    worker_set: tokio::task::JoinSet<crate::Result<()>>,
+    default_morsel_size: usize,
 }
 
 impl ExecutionRuntimeHandle {
-    pub fn new() -> Self {
+    pub fn new(default_morsel_size: usize) -> Self {
         Self {
             worker_set: tokio::task::JoinSet::new(),
+            default_morsel_size,
         }
     }
     pub fn spawn(
@@ -48,9 +43,11 @@ impl ExecutionRuntimeHandle {
     pub async fn shutdown(&mut self) {
         self.worker_set.shutdown().await;
     }
-}
 
-const DEFAULT_MORSEL_SIZE: usize = 1000;
+    pub fn default_morsel_size(&self) -> usize {
+        self.default_morsel_size
+    }
+}
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -97,7 +94,7 @@ impl From<Error> for DaftError {
 type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[cfg(feature = "python")]
-pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<NativeExecutor>()?;
     Ok(())
 }

@@ -3,11 +3,9 @@ use std::{
     sync::Arc,
 };
 
-use arrow2::io::parquet::read::schema::infer_schema_with_options;
+use arrow2::io::parquet::read::{column_iter_to_arrays, schema::infer_schema_with_options};
 use common_error::DaftResult;
-use daft_core::{
-    datatypes::Field, schema::Schema, utils::arrow::cast_array_for_daft_if_needed, Series,
-};
+use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
 use daft_dsl::ExprRef;
 use daft_io::{IOClient, IOStatsRef};
 use daft_stats::TruthValue;
@@ -30,7 +28,6 @@ use crate::{
     UnableToConvertSchemaToDaftSnafu, UnableToCreateParquetPageStreamSnafu,
     UnableToParseSchemaFromMetadataSnafu, UnableToRunExpressionOnStatsSnafu,
 };
-use arrow2::io::parquet::read::column_iter_to_arrays;
 
 pub(crate) struct ParquetReaderBuilder {
     pub uri: String,
@@ -120,7 +117,7 @@ pub(crate) fn build_row_ranges(
         let mut rows_to_add: i64 = limit.unwrap_or(i64::MAX);
         for i in row_groups {
             let i = *i as usize;
-            if !(0..metadata.row_groups.len()).contains(&i) {
+            if !metadata.row_groups.keys().any(|x| *x == i) {
                 return Err(super::Error::ParquetRowGroupOutOfIndex {
                     path: uri.to_string(),
                     row_group: i as i64,
@@ -130,7 +127,7 @@ pub(crate) fn build_row_ranges(
             if rows_to_add <= 0 {
                 break;
             }
-            let rg = metadata.row_groups.get(i).unwrap();
+            let rg = metadata.row_groups.get(&i).unwrap();
             if let Some(ref pred) = predicate {
                 let stats = statistics::row_group_metadata_to_table_stats(rg, schema)
                     .with_context(|_| UnableToConvertRowGroupMetadataToStatsSnafu {
@@ -158,7 +155,7 @@ pub(crate) fn build_row_ranges(
     } else {
         let mut rows_to_add = limit.unwrap_or(metadata.num_rows as i64);
 
-        for (i, rg) in metadata.row_groups.iter().enumerate() {
+        for (i, rg) in metadata.row_groups.iter() {
             if (curr_row_index + rg.num_rows()) < row_start_offset {
                 curr_row_index += rg.num_rows();
                 continue;
@@ -179,7 +176,7 @@ pub(crate) fn build_row_ranges(
                     }
                 }
                 let range_to_add = RowGroupRange {
-                    row_group_index: i,
+                    row_group_index: *i,
                     start: row_start_offset.saturating_sub(curr_row_index),
                     num_rows: rg.num_rows().min(rows_to_add as usize),
                 };
@@ -224,8 +221,8 @@ impl ParquetReaderBuilder {
         &self.metadata
     }
 
-    pub fn prune_columns<S: ToString + AsRef<str>>(mut self, columns: &[S]) -> super::Result<Self> {
-        self.selected_columns = Some(HashSet::from_iter(columns.iter().map(|s| s.to_string())));
+    pub fn prune_columns(mut self, columns: &[String]) -> super::Result<Self> {
+        self.selected_columns = Some(HashSet::from_iter(columns.iter().cloned()));
         Ok(self)
     }
 
@@ -262,11 +259,12 @@ impl ParquetReaderBuilder {
     }
 
     pub fn build(self) -> super::Result<ParquetFileReader> {
-        let mut arrow_schema =
-            infer_schema_with_options(&self.metadata, &Some(self.schema_inference_options.into()))
-                .context(UnableToParseSchemaFromMetadataSnafu::<String> {
-                    path: self.uri.clone(),
-                })?;
+        let options = self.schema_inference_options.into();
+        let mut arrow_schema = infer_schema_with_options(&self.metadata, Some(options)).context(
+            UnableToParseSchemaFromMetadataSnafu {
+                path: self.uri.clone(),
+            },
+        )?;
 
         if let Some(names_to_keep) = self.selected_columns {
             arrow_schema
@@ -349,7 +347,7 @@ impl ParquetFileReader {
             let rg = self
                 .metadata
                 .row_groups
-                .get(row_group_range.row_group_index)
+                .get(&row_group_range.row_group_index)
                 .unwrap();
 
             let columns = rg.columns();
@@ -401,7 +399,7 @@ impl ParquetFileReader {
         original_columns: Option<Vec<String>>,
         original_num_rows: Option<usize>,
     ) -> DaftResult<BoxStream<'static, DaftResult<Table>>> {
-        let daft_schema = Arc::new(daft_core::schema::Schema::try_from(
+        let daft_schema = Arc::new(daft_core::prelude::Schema::try_from(
             self.arrow_schema.as_ref(),
         )?);
 
@@ -441,7 +439,7 @@ impl ParquetFileReader {
                             tokio::task::spawn(async move {
                                 let rg = metadata
                                     .row_groups
-                                    .get(row_range.row_group_index)
+                                    .get(&row_range.row_group_index)
                                     .expect("Row Group index should be in bounds");
                                 let num_rows =
                                     rg.num_rows().min(row_range.start + row_range.num_rows);
@@ -578,7 +576,7 @@ impl ParquetFileReader {
                         let owned_uri = self.uri.clone();
                         let rg = metadata
                             .row_groups
-                            .get(row_range.row_group_index)
+                            .get(&row_range.row_group_index)
                             .expect("Row Group index should be in bounds");
                         let num_rows = rg.num_rows().min(row_range.start + row_range.num_rows);
                         let chunk_size = self.chunk_size.unwrap_or(Self::DEFAULT_CHUNK_SIZE);
@@ -622,7 +620,7 @@ impl ParquetFileReader {
                             {
                                 let col = metadata
                                     .row_groups
-                                    .get(row_range.row_group_index)
+                                    .get(&row_range.row_group_index)
                                     .expect("Row Group index should be in bounds")
                                     .columns()
                                     .get(col_idx)
@@ -734,7 +732,7 @@ impl ParquetFileReader {
             })?
             .into_iter()
             .collect::<DaftResult<Vec<_>>>()?;
-        let daft_schema = daft_core::schema::Schema::try_from(self.arrow_schema.as_ref())?;
+        let daft_schema = daft_core::prelude::Schema::try_from(self.arrow_schema.as_ref())?;
 
         Table::new_with_size(
             daft_schema,
@@ -764,7 +762,7 @@ impl ParquetFileReader {
                         let owned_uri = self.uri.clone();
                         let rg = metadata
                             .row_groups
-                            .get(row_range.row_group_index)
+                            .get(&row_range.row_group_index)
                             .expect("Row Group index should be in bounds");
                         let num_rows = rg.num_rows().min(row_range.start + row_range.num_rows);
                         let chunk_size = self.chunk_size.unwrap_or(128 * 1024);
@@ -806,7 +804,7 @@ impl ParquetFileReader {
                             {
                                 let col = metadata
                                     .row_groups
-                                    .get(row_range.row_group_index)
+                                    .get(&row_range.row_group_index)
                                     .expect("Row Group index should be in bounds")
                                     .columns()
                                     .get(col_idx)

@@ -58,6 +58,7 @@ Filtering Rows
     :toctree: doc_gen/dataframe_methods
 
     DataFrame.distinct
+    DataFrame.filter
     DataFrame.where
     DataFrame.limit
     DataFrame.sample
@@ -73,6 +74,7 @@ Reordering
 
     DataFrame.sort
     DataFrame.repartition
+    DataFrame.into_partitions
 
 Combining
 *********
@@ -123,6 +125,7 @@ These methods will run the dataframe and retrieve them to where the code is bein
     :toctree: doc_gen/dataframe_methods
 
     DataFrame.to_pydict
+    DataFrame.to_pylist
     DataFrame.iter_partitions
     DataFrame.iter_rows
 

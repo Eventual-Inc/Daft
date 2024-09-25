@@ -5,10 +5,12 @@ use std::{
     time::Instant,
 };
 
-use daft_micropartition::MicroPartition;
 use tokio::sync::mpsc::error::SendError;
 
-use crate::channel::SingleSender;
+use crate::{
+    channel::{PipelineReceiver, Sender},
+    pipeline::PipelineResultType,
+};
 
 #[derive(Default)]
 pub(crate) struct RuntimeStatsContext {
@@ -32,8 +34,7 @@ impl RuntimeStats {
         emitted: bool,
         cpu_time: bool,
     ) -> Result<(), fmt::Error> {
-        use num_format::Locale;
-        use num_format::ToFormattedString;
+        use num_format::{Locale, ToFormattedString};
         if received {
             writeln!(
                 w,
@@ -108,22 +109,50 @@ impl RuntimeStatsContext {
 }
 
 pub(crate) struct CountingSender {
-    sender: SingleSender,
+    sender: Sender<PipelineResultType>,
     rt: Arc<RuntimeStatsContext>,
 }
 
 impl CountingSender {
-    pub(crate) fn new(sender: SingleSender, rt: Arc<RuntimeStatsContext>) -> Self {
+    pub(crate) fn new(sender: Sender<PipelineResultType>, rt: Arc<RuntimeStatsContext>) -> Self {
         Self { sender, rt }
     }
     #[inline]
     pub(crate) async fn send(
         &self,
-        v: Arc<MicroPartition>,
-    ) -> Result<(), SendError<Arc<MicroPartition>>> {
-        let len = v.len();
+        v: PipelineResultType,
+    ) -> Result<(), SendError<PipelineResultType>> {
+        let len = match v {
+            PipelineResultType::Data(ref mp) => mp.len(),
+            PipelineResultType::ProbeTable(_, ref tables) => tables.iter().map(|t| t.len()).sum(),
+        };
         self.sender.send(v).await?;
         self.rt.mark_rows_emitted(len as u64);
         Ok(())
+    }
+}
+
+pub(crate) struct CountingReceiver {
+    receiver: PipelineReceiver,
+    rt: Arc<RuntimeStatsContext>,
+}
+
+impl CountingReceiver {
+    pub(crate) fn new(receiver: PipelineReceiver, rt: Arc<RuntimeStatsContext>) -> Self {
+        Self { receiver, rt }
+    }
+    #[inline]
+    pub(crate) async fn recv(&mut self) -> Option<PipelineResultType> {
+        let v = self.receiver.recv().await;
+        if let Some(ref v) = v {
+            let len = match v {
+                PipelineResultType::Data(ref mp) => mp.len(),
+                PipelineResultType::ProbeTable(_, ref tables) => {
+                    tables.iter().map(|t| t.len()).sum()
+                }
+            };
+            self.rt.mark_rows_received(len as u64);
+        }
+        v
     }
 }

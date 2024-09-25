@@ -1,15 +1,19 @@
 [dependencies]
 common-daft-config = {path = "src/common/daft-config", default-features = false}
 common-display = {path = "src/common/display", default-features = false}
+common-file-formats = {path = "src/common/file-formats", default-features = false}
 common-hashable-float-wrapper = {path = "src/common/hashable-float-wrapper", default-features = false}
 common-resource-request = {path = "src/common/resource-request", default-features = false}
 common-system-info = {path = "src/common/system-info", default-features = false}
 common-tracing = {path = "src/common/tracing", default-features = false}
+common-version = {path = "src/common/version", default-features = false}
 daft-compression = {path = "src/daft-compression", default-features = false}
 daft-core = {path = "src/daft-core", default-features = false}
 daft-csv = {path = "src/daft-csv", default-features = false}
 daft-dsl = {path = "src/daft-dsl", default-features = false}
 daft-functions = {path = "src/daft-functions", default-features = false}
+daft-functions-json = {path = "src/daft-functions-json", default-features = false}
+daft-image = {path = "src/daft-image", default-features = false}
 daft-io = {path = "src/daft-io", default-features = false}
 daft-json = {path = "src/daft-json", default-features = false}
 daft-local-execution = {path = "src/daft-local-execution", default-features = false}
@@ -39,6 +43,7 @@ python = [
   "daft-dsl/python",
   "daft-local-execution/python",
   "daft-io/python",
+  "daft-image/python",
   "daft-json/python",
   "daft-micropartition/python",
   "daft-parquet/python",
@@ -49,6 +54,7 @@ python = [
   "daft-sql/python",
   "daft-table/python",
   "daft-functions/python",
+  "daft-functions-json/python",
   "common-daft-config/python",
   "common-system-info/python",
   "common-display/python",
@@ -112,6 +118,7 @@ members = [
   "src/daft-core",
   "src/daft-local-execution",
   "src/daft-io",
+  "src/daft-image",
   "src/daft-parquet",
   "src/daft-csv",
   "src/daft-json",
@@ -124,7 +131,9 @@ members = [
   "src/daft-scheduler",
   "src/daft-sketch",
   "src/daft-functions",
-  "src/daft-sql"
+  "src/daft-functions-json",
+  "src/daft-sql",
+  "src/hyperloglog"
 ]
 
 [workspace.dependencies]
@@ -140,6 +149,7 @@ bytes = "1.6.0"
 chrono = "0.4.38"
 chrono-tz = "0.8.4"
 comfy-table = "7.1.1"
+derivative = "2.2.0"
 dyn-clone = "1"
 futures = "0.3.30"
 html-escape = "0.2.13"
@@ -151,6 +161,8 @@ jaq-parse = "1.0.0"
 jaq-std = "1.2.0"
 num-derive = "0.3.3"
 num-traits = "0.2"
+once_cell = "1.19.0"
+path_macro = "1.0.0"
 pretty_assertions = "1.4.0"
 rand = "^0.8"
 rayon = "1.10.0"
@@ -159,8 +171,10 @@ rstest = "0.18.2"
 serde_json = "1.0.116"
 sketches-ddsketch = {version = "0.2.2", features = ["use_serde"]}
 snafu = {version = "0.7.4", features = ["futures"]}
-sqlparser = "0.49.0"
+sqlparser = "0.51.0"
 sysinfo = "0.30.12"
+test-log = "0.2.16"
+thiserror = "1.0.63"
 tiktoken-rs = "0.5.9"
 tokio = {version = "1.37.0", features = [
   "net",
@@ -183,6 +197,10 @@ path = "src/arrow2"
 [workspace.dependencies.bincode]
 version = "1.3.3"
 
+[workspace.dependencies.derive_more]
+features = ["display"]
+version = "1.0.0"
+
 [workspace.dependencies.lazy_static]
 version = "1.4.0"
 
@@ -196,11 +214,11 @@ features = ['async']
 path = "src/parquet2"
 
 [workspace.dependencies.pyo3]
-features = ["extension-module", "multiple-pymethods", "abi3-py38"]
-version = "0.19.2"
+features = ["extension-module", "multiple-pymethods", "abi3-py38", "indexmap"]
+version = "0.21.0"
 
 [workspace.dependencies.pyo3-log]
-version = "0.8.3"
+version = "0.11.0"
 
 [workspace.dependencies.serde]
 features = ["derive", "rc"]

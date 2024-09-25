@@ -14,6 +14,7 @@ azure_storage = {version = "0.17.0", features = ["enable_reqwest"], default-feat
 azure_storage_blobs = {version = "0.17.0", features = ["enable_reqwest"], default-features = false}
 bytes = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
+common-file-formats = {path = "../common/file-formats", default-features = false}
 common-io-config = {path = "../common/io-config", default-features = false}
 futures = {workspace = true}
 globset = "0.4"
@@ -25,10 +26,12 @@ hyper-tls = "0.5.0"
 itertools = {workspace = true}
 lazy_static = {workspace = true}
 log = {workspace = true}
+oneshot = "0.1.8"
 openssl-sys = {version = "0.9.102", features = ["vendored"]}
 pyo3 = {workspace = true, optional = true}
 rand = "0.8.5"
 regex = {version = "1.10.4"}
+serde = {workspace = true}
 snafu = {workspace = true}
 tokio = {workspace = true}
 tokio-stream = {workspace = true}
@@ -36,7 +39,7 @@ url = {workspace = true}
 
 [dependencies.reqwest]
 default-features = false
-features = ["stream", "native-tls"]
+features = ["stream", "native-tls", "json"]
 version = "0.11.18"
 
 [dev-dependencies]
@@ -44,7 +47,12 @@ md5 = "0.7.0"
 tempfile = "3.8.1"
 
 [features]
-python = ["dep:pyo3", "common-error/python", "common-io-config/python"]
+python = [
+  "dep:pyo3",
+  "common-error/python",
+  "common-io-config/python",
+  "common-file-formats/python"
+]
 
 [package]
 edition = {workspace = true}

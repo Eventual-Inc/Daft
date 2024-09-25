@@ -1,12 +1,11 @@
 use std::{mem::swap, sync::Arc};
 
+use super::Growable;
 use crate::{
     array::{pseudo_arrow::PseudoArrowArray, DataArray},
-    datatypes::{Field, PythonArray, PythonType},
-    DataType, IntoSeries, Series,
+    datatypes::{DataType, Field, PythonArray, PythonType},
+    series::{IntoSeries, Series},
 };
-
-use super::Growable;
 
 pub struct PythonGrowable<'a> {
     name: String,

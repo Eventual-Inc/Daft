@@ -1,12 +1,9 @@
 use std::sync::Arc;
 
-use daft_core::schema::SchemaRef;
 use daft_scan::PhysicalScanInfo;
+use daft_schema::schema::SchemaRef;
 
-use crate::source_info::SourceInfo;
-
-use crate::source_info::InMemoryInfo;
-use crate::source_info::PlaceHolderInfo;
+use crate::source_info::{InMemoryInfo, PlaceHolderInfo, SourceInfo};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Source {

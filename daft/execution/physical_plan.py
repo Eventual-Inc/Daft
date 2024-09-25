@@ -17,7 +17,6 @@ import collections
 import itertools
 import logging
 import math
-import pathlib
 from collections import deque
 from typing import (
     TYPE_CHECKING,
@@ -30,7 +29,7 @@ from typing import (
 )
 
 from daft.context import get_context
-from daft.daft import FileFormat, IOConfig, JoinType, ResourceRequest
+from daft.daft import ResourceRequest
 from daft.execution import execution_step
 from daft.execution.execution_step import (
     Instruction,
@@ -41,7 +40,6 @@ from daft.execution.execution_step import (
     SingleOutputPartitionTask,
 )
 from daft.expressions import ExpressionsProjection
-from daft.logical.schema import Schema
 from daft.runners.partitioning import (
     MaterializedResult,
     PartitionT,
@@ -53,10 +51,14 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 if TYPE_CHECKING:
+    import pathlib
+
+    from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
-    from daft.udf import PartialStatefulUDF
+    from daft.daft import FileFormat, IOConfig, JoinType
+    from daft.logical.schema import Schema
 
 
 # A PhysicalPlan that is still being built - may yield both PartitionTaskBuilders and PartitionTasks.
@@ -119,7 +121,7 @@ def iceberg_write(
     base_path: str,
     iceberg_schema: IcebergSchema,
     iceberg_properties: IcebergTableProperties,
-    spec_id: int,
+    partition_spec: IcebergPartitionSpec,
     io_config: IOConfig | None,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Write the results of `child_plan` into pyiceberg data files described by `write_info`."""
@@ -130,7 +132,7 @@ def iceberg_write(
                 base_path=base_path,
                 iceberg_schema=iceberg_schema,
                 iceberg_properties=iceberg_properties,
-                spec_id=spec_id,
+                partition_spec=partition_spec,
                 io_config=io_config,
             ),
         )
@@ -145,6 +147,7 @@ def deltalake_write(
     base_path: str,
     large_dtypes: bool,
     version: int,
+    partition_cols: list[str] | None,
     io_config: IOConfig | None,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Write the results of `child_plan` into pyiceberg data files described by `write_info`."""
@@ -155,6 +158,7 @@ def deltalake_write(
                 base_path=base_path,
                 large_dtypes=large_dtypes,
                 version=version,
+                partition_cols=partition_cols,
                 io_config=io_config,
             ),
         )
@@ -204,11 +208,97 @@ def pipeline_instruction(
 def actor_pool_project(
     child_plan: InProgressPhysicalPlan[PartitionT],
     projection: ExpressionsProjection,
-    partial_stateful_udfs: dict[str, PartialStatefulUDF],
     resource_request: execution_step.ResourceRequest,
     num_actors: int,
 ) -> InProgressPhysicalPlan[PartitionT]:
-    raise NotImplementedError("Execution of ActorPoolProjects not yet implemented")
+    stage_id = next(stage_id_counter)
+
+    from daft.daft import extract_partial_stateful_udf_py
+
+    stateful_udf_names = "-".join(
+        name for expr in projection for name in extract_partial_stateful_udf_py(expr._expr).keys()
+    )
+    actor_pool_name = f"{stateful_udf_names}-stage={stage_id}"
+
+    # Keep track of materializations of the children tasks
+    #
+    # Our goal here is to saturate the actors, and so we need a sufficient number of completed child tasks to do so. However
+    # we do not want too many child tasks to be running (potentially starving our actors) and hence place an upper bound of `num_actors * 2`
+    child_materializations_buffer_len = num_actors * 2
+    child_materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
+
+    # Keep track of materializations of the actor_pool tasks
+    actor_pool_materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
+
+    # Perform separate accounting for the tasks' resource request and the actors' resource request:
+    # * When spinning up an actor, we consider resources that are required for the persistent state in an actor (namely, GPUs and memory)
+    # * When running a task, we consider resources that are required for placement of tasks (namely CPUs)
+    task_resource_request = ResourceRequest(num_cpus=resource_request.num_cpus)
+    actor_resource_request = ResourceRequest(
+        num_gpus=resource_request.num_gpus, memory_bytes=resource_request.memory_bytes
+    )
+
+    with get_context().runner().actor_pool_context(
+        actor_pool_name,
+        actor_resource_request,
+        num_actors,
+        projection,
+    ) as actor_pool_id:
+        child_plan_exhausted = False
+
+        # Loop until the child plan is exhausted and there is no more work in the pipeline
+        while not (child_plan_exhausted and len(child_materializations) == 0 and len(actor_pool_materializations) == 0):
+            # Exhaustively pop ready child_steps and submit them to be run on the actor_pool
+            while len(child_materializations) > 0 and child_materializations[0].done():
+                next_ready_child = child_materializations.popleft()
+                actor_project_step = (
+                    PartitionTaskBuilder[PartitionT](
+                        inputs=[next_ready_child.partition()],
+                        partial_metadatas=[next_ready_child.partition_metadata()],
+                        actor_pool_id=actor_pool_id,
+                    )
+                    .add_instruction(
+                        instruction=execution_step.StatefulUDFProject(projection),
+                        resource_request=task_resource_request,
+                    )
+                    .finalize_partition_task_single_output(
+                        stage_id=stage_id,
+                    )
+                )
+                actor_pool_materializations.append(actor_project_step)
+                yield actor_project_step
+
+            # Exhaustively pop ready actor_pool steps and bubble it upwards as the start of a new pipeline
+            while len(actor_pool_materializations) > 0 and actor_pool_materializations[0].done():
+                next_ready_actor_pool_task = actor_pool_materializations.popleft()
+                new_pipeline_starter_task = PartitionTaskBuilder[PartitionT](
+                    inputs=[next_ready_actor_pool_task.partition()],
+                    partial_metadatas=[next_ready_actor_pool_task.partition_metadata()],
+                    resource_request=ResourceRequest(),
+                )
+                yield new_pipeline_starter_task
+
+            # No more child work to be done: if there is pending work in the pipeline we yield None
+            if child_plan_exhausted:
+                if len(child_materializations) > 0 or len(actor_pool_materializations) > 0:
+                    yield None
+
+            # If there is capacity in the pipeline, attempt to schedule child work
+            elif len(child_materializations) < child_materializations_buffer_len:
+                try:
+                    child_step = next(child_plan)
+                except StopIteration:
+                    child_plan_exhausted = True
+                else:
+                    # Finalize and yield the child step to be run if it is a PartitionTaskBuilder
+                    if isinstance(child_step, PartitionTaskBuilder):
+                        child_step = child_step.finalize_partition_task_single_output(stage_id=stage_id)
+                        child_materializations.append(child_step)
+                    yield child_step
+
+            # Otherwise, indicate that we need to wait for work to complete
+            else:
+                yield None
 
 
 def monotonically_increasing_id(
@@ -1024,7 +1114,7 @@ def sort_merge_join_aligned_boundaries(
         ]
 
         # Execute a sorting reduce on it.
-        per_partition_bounds = _to_per_partition_bounds(boundaries.vpartition(), num_partitions)
+        per_partition_bounds = _to_per_partition_bounds(boundaries.micropartition(), num_partitions)
         sorted_plans.append(
             reduce(
                 fanout_plan=iter(range_fanout_plan),
@@ -1498,7 +1588,7 @@ def sort(
         )
         for source in consume_deque(source_materializations)
     )
-    per_partition_bounds = _to_per_partition_bounds(boundaries.vpartition(), num_partitions)
+    per_partition_bounds = _to_per_partition_bounds(boundaries.micropartition(), num_partitions)
 
     # Execute a sorting reduce on it.
     yield from reduce(

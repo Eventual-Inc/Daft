@@ -1,11 +1,10 @@
 use common_error::DaftResult;
-use common_treenode::{Transformed, TreeNode};
+use common_treenode::{DynTreeNode, Transformed, TreeNode};
 
 use crate::{
     physical_ops::FanoutByHash, physical_optimization::rules::PhysicalOptimizerRule,
     ClusteringSpec, PhysicalPlan, PhysicalPlanRef,
 };
-use common_treenode::DynTreeNode;
 pub struct DropRepartitionPhysical {}
 
 // if we are repartitioning but the child already has the correct spec, then don't repartition
@@ -54,20 +53,16 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
-    use daft_core::{
-        datatypes::Field,
-        schema::{Schema, SchemaRef},
-    };
+    use daft_core::prelude::*;
     use daft_dsl::{col, ExprRef};
 
+    use super::DropRepartitionPhysical;
     use crate::{
         partitioning::UnknownClusteringConfig,
         physical_ops::{EmptyScan, FanoutByHash, ReduceMerge},
         physical_optimization::rules::PhysicalOptimizerRule,
         ClusteringSpec, PhysicalPlan, PhysicalPlanRef,
     };
-
-    use super::DropRepartitionPhysical;
 
     fn create_dummy_plan(schema: SchemaRef, num_partitions: usize) -> PhysicalPlanRef {
         PhysicalPlan::EmptyScan(EmptyScan::new(
@@ -94,9 +89,9 @@ mod tests {
     fn test_repartition_removed() -> DaftResult<()> {
         let base = create_dummy_plan(
             Arc::new(Schema::new(vec![
-                Field::new("a", daft_core::DataType::Int32),
-                Field::new("b", daft_core::DataType::Int32),
-                Field::new("c", daft_core::DataType::Int32),
+                Field::new("a", DataType::Int32),
+                Field::new("b", DataType::Int32),
+                Field::new("c", DataType::Int32),
             ])?),
             1,
         );
@@ -116,9 +111,9 @@ mod tests {
     fn test_repartition_not_removed() -> DaftResult<()> {
         let plan = create_dummy_plan(
             Arc::new(Schema::new(vec![
-                Field::new("a", daft_core::DataType::Int32),
-                Field::new("b", daft_core::DataType::Int32),
-                Field::new("c", daft_core::DataType::Int32),
+                Field::new("a", DataType::Int32),
+                Field::new("b", DataType::Int32),
+                Field::new("c", DataType::Int32),
             ])?),
             1,
         );

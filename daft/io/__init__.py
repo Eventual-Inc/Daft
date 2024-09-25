@@ -9,10 +9,9 @@ from daft.daft import (
     HTTPConfig,
     S3Config,
     S3Credentials,
-    set_io_pool_num_threads,
 )
 from daft.io._csv import read_csv
-from daft.io._delta_lake import read_deltalake
+from daft.io._deltalake import read_deltalake
 from daft.io._hudi import read_hudi
 from daft.io._iceberg import read_iceberg
 from daft.io._json import read_json
@@ -53,7 +52,6 @@ __all__ = [
     "AzureConfig",
     "GCSConfig",
     "HTTPConfig",
-    "set_io_pool_num_threads",
     "DataCatalogType",
     "DataCatalogTable",
 ]

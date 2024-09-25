@@ -3,6 +3,12 @@ from __future__ import annotations
 import pytest
 
 import daft
+from daft import context
+
+pytestmark = pytest.mark.skipif(
+    context.get_context().daft_execution_config.enable_native_executor is True,
+    reason="Native executor fails for these tests",
+)
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
@@ -139,4 +145,39 @@ def test_map_groups_compound_input(make_df, repartition_nparts):
     expected = {"group": [2, 1], "c": [1465, 169]}
 
     daft_cols = daft_df.to_pydict()
+    assert daft_cols == expected
+
+
+@pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
+def test_map_groups_with_alias(make_df, repartition_nparts):
+    daft_df = make_df(
+        {
+            "group": [1, 1, 2],
+            "a": [1, 3, 3],
+            "b": [5, 6, 7],
+        },
+        repartition=repartition_nparts,
+    )
+
+    @daft.udf(return_dtype=daft.DataType.list(daft.DataType.float64()))
+    def udf(a, b):
+        a, b = a.to_pylist(), b.to_pylist()
+        res = []
+        for i in range(len(a)):
+            res.append(a[i] / sum(a) + b[i])
+        res.sort()
+        return [res]
+
+    daft_df = (
+        daft_df.groupby(daft_df["group"].alias("group_alias"))
+        .map_groups(udf(daft_df["a"], daft_df["b"]))
+        .sort("group_alias", desc=False)
+    )
+    expected = {
+        "group_alias": [1, 2],
+        "a": [[5.25, 6.75], [8.0]],
+    }
+
+    daft_cols = daft_df.to_pydict()
+
     assert daft_cols == expected

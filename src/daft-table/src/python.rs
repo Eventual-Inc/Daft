@@ -1,19 +1,14 @@
-use daft_core::JoinType;
-use pyo3::exceptions::PyValueError;
-use pyo3::prelude::*;
-use pyo3::types::PyDict;
-
-use crate::ffi;
-use crate::Table;
 use common_error::DaftError;
-use daft_core::datatypes::Field;
-use daft_core::schema::Schema;
-use daft_core::series::Series;
-
+use daft_core::{
+    join::JoinType,
+    prelude::*,
+    python::{series::PySeries, PySchema},
+};
 use daft_dsl::python::PyExpr;
+use indexmap::IndexMap;
+use pyo3::{exceptions::PyValueError, prelude::*};
 
-use daft_core::python::schema::PySchema;
-use daft_core::python::series::PySeries;
+use crate::{ffi, Table};
 
 #[pyclass]
 #[derive(Clone)]
@@ -407,7 +402,7 @@ impl PyTable {
     #[staticmethod]
     pub fn from_arrow_record_batches(
         py: Python,
-        record_batches: Vec<&PyAny>,
+        record_batches: Vec<Bound<PyAny>>,
         schema: &PySchema,
     ) -> PyResult<Self> {
         let table =
@@ -416,16 +411,15 @@ impl PyTable {
     }
 
     #[staticmethod]
-    pub fn from_pylist_series(dict: &PyDict) -> PyResult<Self> {
+    pub fn from_pylist_series(dict: IndexMap<String, PySeries>) -> PyResult<Self> {
         let mut fields: Vec<Field> = Vec::new();
         let mut columns: Vec<Series> = Vec::new();
         fields.reserve(dict.len());
         columns.reserve(dict.len());
 
-        for (k, v) in dict.iter() {
-            let name = k.extract::<String>()?;
-            let series = v.extract::<PySeries>()?.series;
-            fields.push(Field::new(name.clone(), series.data_type().clone()));
+        for (name, series) in dict.into_iter() {
+            let series = series.series;
+            fields.push(Field::new(name.as_str(), series.data_type().clone()));
             columns.push(series.rename(name));
         }
 
@@ -451,8 +445,8 @@ impl PyTable {
 
     pub fn to_arrow_record_batch(&self) -> PyResult<PyObject> {
         Python::with_gil(|py| {
-            let pyarrow = py.import("pyarrow")?;
-            ffi::table_to_record_batch(&self.table, py, pyarrow)
+            let pyarrow = py.import_bound(pyo3::intern!(py, "pyarrow"))?;
+            ffi::table_to_record_batch(py, &self.table, pyarrow)
         })
     }
 
@@ -484,7 +478,7 @@ impl AsRef<Table> for PyTable {
     }
 }
 
-pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyTable>()?;
     Ok(())
 }

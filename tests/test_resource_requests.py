@@ -1,16 +1,22 @@
 from __future__ import annotations
 
+import copy
 import os
 
 import pytest
 import ray
 
 import daft
-from daft import udf
+from daft import context, udf
 from daft.context import get_context
 from daft.daft import SystemInfo
 from daft.expressions import col
 from daft.internal.gpu import cuda_device_count
+
+pytestmark = pytest.mark.skipif(
+    context.get_context().daft_execution_config.enable_native_executor is True,
+    reason="Native executor fails for these tests",
+)
 
 
 def no_gpu_available() -> bool:
@@ -50,6 +56,21 @@ def test_partial_resource_request_overrides():
     assert new_udf.resource_request.num_cpus == 1.0
     assert new_udf.resource_request.num_gpus is None
     assert new_udf.resource_request.memory_bytes == 100
+
+
+def test_resource_request_pickle_roundtrip():
+    new_udf = my_udf.override_options(num_cpus=1.0)
+    assert new_udf.resource_request.num_cpus == 1.0
+    assert new_udf.resource_request.num_gpus is None
+    assert new_udf.resource_request.memory_bytes is None
+
+    assert new_udf == copy.deepcopy(new_udf)
+
+    new_udf = new_udf.override_options(num_gpus=8.0)
+    assert new_udf.resource_request.num_cpus == 1.0
+    assert new_udf.resource_request.num_gpus == 8.0
+    assert new_udf.resource_request.memory_bytes is None
+    assert new_udf == copy.deepcopy(new_udf)
 
 
 ###

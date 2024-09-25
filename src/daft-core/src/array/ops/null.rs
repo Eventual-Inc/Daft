@@ -1,12 +1,12 @@
 use std::{iter::repeat, sync::Arc};
 
+use common_error::DaftResult;
+
+use super::{DaftIsNull, DaftNotNull};
 use crate::{
     array::{ListArray, StructArray},
     datatypes::*,
 };
-use common_error::DaftResult;
-
-use super::{DaftIsNull, DaftNotNull};
 
 impl<T> DataArray<T>
 where

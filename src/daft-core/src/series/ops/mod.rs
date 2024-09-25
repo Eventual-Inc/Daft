@@ -1,7 +1,7 @@
-use crate::utils::supertype::try_get_supertype;
 use common_error::DaftResult;
 
 use super::Series;
+use crate::utils::supertype::try_get_supertype;
 
 pub mod abs;
 pub mod agg;
@@ -21,9 +21,7 @@ pub mod floor;
 pub mod groups;
 pub mod hash;
 pub mod if_else;
-pub mod image;
 pub mod is_in;
-pub mod json;
 pub mod len;
 pub mod list;
 pub mod log;
@@ -59,9 +57,9 @@ pub fn cast_series_to_supertype(series: &[&Series]) -> DaftResult<Vec<Series>> {
 #[cfg(feature = "python")]
 macro_rules! py_binary_op_utilfn {
     ($lhs:expr, $rhs:expr, $pyoperator:expr, $utilfn:expr) => {{
-        use crate::python::PySeries;
-        use crate::DataType;
         use pyo3::prelude::*;
+
+        use crate::{datatypes::DataType, python::PySeries};
 
         let lhs = $lhs.cast(&DataType::Python)?;
         let rhs = $rhs.cast(&DataType::Python)?;
@@ -77,14 +75,14 @@ macro_rules! py_binary_op_utilfn {
         let right_pylist = PySeries::from(rhs.clone()).to_pylist()?;
 
         let result_series: Series = Python::with_gil(|py| -> PyResult<PySeries> {
-            let py_operator = PyModule::import(py, pyo3::intern!(py, "operator"))?
+            let py_operator = PyModule::import_bound(py, pyo3::intern!(py, "operator"))?
                 .getattr(pyo3::intern!(py, $pyoperator))?;
 
-            let result_pylist = PyModule::import(py, pyo3::intern!(py, "daft.utils"))?
+            let result_pylist = PyModule::import_bound(py, pyo3::intern!(py, "daft.utils"))?
                 .getattr(pyo3::intern!(py, $utilfn))?
                 .call1((py_operator, left_pylist, right_pylist))?;
 
-            PyModule::import(py, pyo3::intern!(py, "daft.series"))?
+            PyModule::import_bound(py, pyo3::intern!(py, "daft.series"))?
                 .getattr(pyo3::intern!(py, "Series"))?
                 .getattr(pyo3::intern!(py, "from_pylist"))?
                 .call1((result_pylist, lhs.name(), pyo3::intern!(py, "disallow")))?
@@ -101,9 +99,9 @@ pub(super) use py_binary_op_utilfn;
 
 #[cfg(feature = "python")]
 pub(super) fn py_membership_op_utilfn(lhs: &Series, rhs: &Series) -> DaftResult<Series> {
-    use crate::python::PySeries;
-    use crate::DataType;
     use pyo3::prelude::*;
+
+    use crate::{datatypes::DataType, python::PySeries};
 
     let lhs_casted = lhs.cast(&DataType::Python)?;
     let rhs_casted = rhs.cast(&DataType::Python)?;
@@ -112,11 +110,11 @@ pub(super) fn py_membership_op_utilfn(lhs: &Series, rhs: &Series) -> DaftResult<
     let right_pylist = PySeries::from(rhs_casted.clone()).to_pylist()?;
 
     let result_series: Series = Python::with_gil(|py| -> PyResult<PySeries> {
-        let result_pylist = PyModule::import(py, pyo3::intern!(py, "daft.utils"))?
+        let result_pylist = PyModule::import_bound(py, pyo3::intern!(py, "daft.utils"))?
             .getattr(pyo3::intern!(py, "python_list_membership_check"))?
             .call1((left_pylist, right_pylist))?;
 
-        PyModule::import(py, pyo3::intern!(py, "daft.series"))?
+        PyModule::import_bound(py, pyo3::intern!(py, "daft.series"))?
             .getattr(pyo3::intern!(py, "Series"))?
             .getattr(pyo3::intern!(py, "from_pylist"))?
             .call1((
@@ -138,9 +136,9 @@ pub(super) fn py_between_op_utilfn(
     lower: &Series,
     upper: &Series,
 ) -> DaftResult<Series> {
-    use crate::python::PySeries;
-    use crate::DataType;
     use pyo3::prelude::*;
+
+    use crate::{datatypes::DataType, python::PySeries};
 
     let value_casted = value.cast(&DataType::Python)?;
     let lower_casted = lower.cast(&DataType::Python)?;
@@ -177,11 +175,11 @@ pub(super) fn py_between_op_utilfn(
     let upper_pylist = PySeries::from(upper_casted.clone()).to_pylist()?;
 
     let result_series: Series = Python::with_gil(|py| -> PyResult<PySeries> {
-        let result_pylist = PyModule::import(py, pyo3::intern!(py, "daft.utils"))?
+        let result_pylist = PyModule::import_bound(py, pyo3::intern!(py, "daft.utils"))?
             .getattr(pyo3::intern!(py, "python_list_between_check"))?
             .call1((value_pylist, lower_pylist, upper_pylist))?;
 
-        PyModule::import(py, pyo3::intern!(py, "daft.series"))?
+        PyModule::import_bound(py, pyo3::intern!(py, "daft.series"))?
             .getattr(pyo3::intern!(py, "Series"))?
             .getattr(pyo3::intern!(py, "from_pylist"))?
             .call1((

@@ -1,9 +1,18 @@
-use common_hashable_float_wrapper::FloatWrapper;
-#[cfg(feature = "python")]
-use pyo3::{pyclass, pyclass::CompareOp, pymethods, types::PyModule, PyResult, Python};
-use std::hash::{Hash, Hasher};
-use std::ops::Add;
+use std::{
+    hash::{Hash, Hasher},
+    ops::Add,
+};
 
+use common_hashable_float_wrapper::FloatWrapper;
+use common_py_serde::impl_bincode_py_state_serialization;
+#[cfg(feature = "python")]
+use pyo3::{
+    pyclass,
+    pyclass::CompareOp,
+    pymethods,
+    types::{PyModule, PyModuleMethods},
+    Bound, PyObject, PyResult, Python,
+};
 use serde::{Deserialize, Serialize};
 
 /// Resource request for a query fragment task.
@@ -104,6 +113,14 @@ impl ResourceRequest {
         resource_requests
             .iter()
             .fold(Default::default(), |acc, e| acc.max(e.as_ref()))
+    }
+
+    pub fn multiply(&self, factor: f64) -> Self {
+        Self::new_internal(
+            self.num_cpus.map(|x| x * factor),
+            self.num_gpus.map(|x| x * factor),
+            self.memory_bytes.map(|x| x * (factor as usize)),
+        )
     }
 }
 
@@ -207,6 +224,10 @@ impl ResourceRequest {
         self + other
     }
 
+    fn __mul__(&self, factor: f64) -> Self {
+        self.multiply(factor)
+    }
+
     fn __richcmp__(&self, other: &Self, op: CompareOp) -> bool {
         match op {
             CompareOp::Eq => self == other,
@@ -219,9 +240,10 @@ impl ResourceRequest {
         Ok(format!("{:?}", self))
     }
 }
+impl_bincode_py_state_serialization!(ResourceRequest);
 
 #[cfg(feature = "python")]
-pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<ResourceRequest>()?;
     Ok(())
 }

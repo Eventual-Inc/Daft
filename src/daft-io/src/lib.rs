@@ -5,6 +5,7 @@
 mod azure_blob;
 mod google_cloud;
 mod http;
+mod huggingface;
 mod local;
 mod object_io;
 mod object_store_glob;
@@ -12,31 +13,36 @@ mod s3_like;
 mod stats;
 mod stream_utils;
 use azure_blob::AzureBlobSource;
+use common_file_formats::FileFormat;
+use futures::FutureExt;
 use google_cloud::GCSSource;
+use huggingface::HFSource;
 use lazy_static::lazy_static;
 #[cfg(feature = "python")]
 pub mod python;
 
-pub use common_io_config::{AzureConfig, IOConfig, S3Config};
-pub use object_io::FileMetadata;
-pub use object_io::GetResult;
-use object_io::StreamingRetryParams;
-#[cfg(feature = "python")]
-pub use python::register_modules;
-pub use stats::{IOStatsContext, IOStatsRef};
-use tokio::runtime::RuntimeFlavor;
-
-use std::{borrow::Cow, collections::HashMap, hash::Hash, ops::Range, sync::Arc};
-
-use futures::stream::BoxStream;
-
-use snafu::Snafu;
-use url::ParseError;
-
-use snafu::prelude::*;
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    future::Future,
+    hash::Hash,
+    ops::Range,
+    panic::AssertUnwindSafe,
+    sync::{Arc, OnceLock},
+};
 
 use common_error::{DaftError, DaftResult};
+pub use common_io_config::{AzureConfig, IOConfig, S3Config};
+use futures::stream::BoxStream;
+use object_io::StreamingRetryParams;
+pub use object_io::{FileMetadata, GetResult};
+#[cfg(feature = "python")]
+pub use python::register_modules;
 use s3_like::S3LikeSource;
+use snafu::{prelude::*, Snafu};
+pub use stats::{IOStatsContext, IOStatsRef};
+use tokio::{runtime::RuntimeFlavor, task::JoinHandle};
+use url::ParseError;
 
 use self::{http::HttpSource, local::LocalSource, object_io::ObjectSource};
 
@@ -210,6 +216,9 @@ impl IOClient {
             SourceType::GCS => {
                 GCSSource::get_client(&self.config.gcs).await? as Arc<dyn ObjectSource>
             }
+            SourceType::HF => {
+                HFSource::get_client(&self.config.http).await? as Arc<dyn ObjectSource>
+            }
         };
 
         if w_handle.get(source_type).is_none() {
@@ -225,11 +234,19 @@ impl IOClient {
         page_size: Option<i32>,
         limit: Option<usize>,
         io_stats: Option<Arc<IOStatsContext>>,
+        file_format: Option<FileFormat>,
     ) -> Result<BoxStream<'static, Result<FileMetadata>>> {
         let (scheme, _) = parse_url(input.as_str())?;
         let source = self.get_source(&scheme).await?;
         let files = source
-            .glob(input.as_str(), fanout_limit, page_size, limit, io_stats)
+            .glob(
+                input.as_str(),
+                fanout_limit,
+                page_size,
+                limit,
+                io_stats,
+                file_format,
+            )
             .await?;
         Ok(files)
     }
@@ -338,6 +355,7 @@ pub enum SourceType {
     S3,
     AzureBlob,
     GCS,
+    HF,
 }
 
 impl std::fmt::Display for SourceType {
@@ -348,6 +366,7 @@ impl std::fmt::Display for SourceType {
             SourceType::S3 => write!(f, "s3"),
             SourceType::AzureBlob => write!(f, "AzureBlob"),
             SourceType::GCS => write!(f, "gcs"),
+            SourceType::HF => write!(f, "hf"),
         }
     }
 }
@@ -386,6 +405,7 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
         "s3" | "s3a" => Ok((SourceType::S3, fixed_input)),
         "az" | "abfs" | "abfss" => Ok((SourceType::AzureBlob, fixed_input)),
         "gcs" | "gs" => Ok((SourceType::GCS, fixed_input)),
+        "hf" => Ok((SourceType::HF, fixed_input)),
         #[cfg(target_env = "msvc")]
         _ if scheme.len() == 1 && ("a" <= scheme.as_str() && (scheme.as_str() <= "z")) => {
             Ok((SourceType::File, Cow::Owned(format!("file://{input}"))))
@@ -394,44 +414,26 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
     }
 }
 type CacheKey = (bool, Arc<IOConfig>);
+
+static THREADED_RUNTIME: OnceLock<RuntimeRef> = OnceLock::new();
+static SINGLE_THREADED_RUNTIME: OnceLock<RuntimeRef> = OnceLock::new();
+
 lazy_static! {
     static ref NUM_CPUS: usize = std::thread::available_parallelism().unwrap().get();
     static ref THREADED_RUNTIME_NUM_WORKER_THREADS: usize = 8.min(*NUM_CPUS);
-    static ref THREADED_RUNTIME: tokio::sync::RwLock<(Arc<tokio::runtime::Runtime>, usize)> =
-        tokio::sync::RwLock::new((
-            Arc::new(
-                tokio::runtime::Builder::new_multi_thread()
-                    .worker_threads(*THREADED_RUNTIME_NUM_WORKER_THREADS)
-                    .enable_all()
-                    .build()
-                    .unwrap()
-            ),
-            *THREADED_RUNTIME_NUM_WORKER_THREADS,
-        ));
-    static ref SINGLE_THREADED_RUNTIME: tokio::sync::RwLock<(Arc<tokio::runtime::Runtime>, usize)> =
-        tokio::sync::RwLock::new((
-            Arc::new(
-                tokio::runtime::Builder::new_multi_thread()
-                    .worker_threads(1)
-                    .enable_all()
-                    .build()
-                    .unwrap()
-            ),
-            1,
-        ));
-    static ref CLIENT_CACHE: tokio::sync::RwLock<HashMap<CacheKey, Arc<IOClient>>> =
-        tokio::sync::RwLock::new(HashMap::new());
+    static ref CLIENT_CACHE: std::sync::RwLock<HashMap<CacheKey, Arc<IOClient>>> =
+        std::sync::RwLock::new(HashMap::new());
 }
 
 pub fn get_io_client(multi_thread: bool, config: Arc<IOConfig>) -> DaftResult<Arc<IOClient>> {
-    let read_handle = CLIENT_CACHE.blocking_read();
+    let read_handle = CLIENT_CACHE.read().unwrap();
     let key = (multi_thread, config.clone());
     if let Some(client) = read_handle.get(&key) {
         Ok(client.clone())
     } else {
         drop(read_handle);
 
-        let mut w_handle = CLIENT_CACHE.blocking_write();
+        let mut w_handle = CLIENT_CACHE.write().unwrap();
         if let Some(client) = w_handle.get(&key) {
             Ok(client.clone())
         } else {
@@ -442,70 +444,98 @@ pub fn get_io_client(multi_thread: bool, config: Arc<IOConfig>) -> DaftResult<Ar
     }
 }
 
-pub async fn get_io_client_async(
-    multi_thread: bool,
-    config: Arc<IOConfig>,
-) -> DaftResult<Arc<IOClient>> {
-    let read_handle = CLIENT_CACHE.read().await;
-    let key = (multi_thread, config.clone());
-    if let Some(client) = read_handle.get(&key) {
-        Ok(client.clone())
-    } else {
-        drop(read_handle);
+pub type RuntimeRef = Arc<Runtime>;
 
-        let mut w_handle = CLIENT_CACHE.write().await;
-        if let Some(client) = w_handle.get(&key) {
-            Ok(client.clone())
-        } else {
-            let client = Arc::new(IOClient::new(config.clone())?);
-            w_handle.insert(key, client.clone());
-            Ok(client)
-        }
+pub struct Runtime {
+    runtime: tokio::runtime::Runtime,
+}
+
+impl Runtime {
+    fn new(runtime: tokio::runtime::Runtime) -> RuntimeRef {
+        Arc::new(Self { runtime })
+    }
+
+    /// Similar to tokio's Runtime::block_on but requires static lifetime + Send
+    /// You should use this when you are spawning IO tasks from an Expression Evaluator or in the Executor
+    pub fn block_on_io_pool<F>(&self, future: F) -> DaftResult<F::Output>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
+        let (tx, rx) = oneshot::channel();
+        let _join_handle = self.spawn(async move {
+            let task_output = AssertUnwindSafe(future).catch_unwind().await.map_err(|e| {
+                let s = if let Some(s) = e.downcast_ref::<String>() {
+                    s.clone()
+                } else if let Some(s) = e.downcast_ref::<&str>() {
+                    s.to_string()
+                } else {
+                    "unknown internal error".to_string()
+                };
+                DaftError::ComputeError(format!(
+                    "Caught panic when spawning blocking task in io pool {s})"
+                ))
+            });
+
+            if tx.send(task_output).is_err() {
+                log::warn!("Spawned task output ignored: receiver dropped")
+            }
+        });
+        rx.recv().expect("Spawned task transmitter dropped")
+    }
+
+    /// Blocks current thread to compute future. Can not be called in tokio runtime context
+    ///
+    pub fn block_on_current_thread<F: Future>(&self, future: F) -> F::Output {
+        self.runtime.block_on(future)
+    }
+
+    pub fn spawn<F>(&self, future: F) -> JoinHandle<F::Output>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
+        self.runtime.spawn(future)
     }
 }
 
-pub fn get_runtime(multi_thread: bool) -> DaftResult<Arc<tokio::runtime::Runtime>> {
+fn init_runtime(num_threads: usize) -> Arc<Runtime> {
+    std::thread::spawn(move || {
+        Runtime::new(
+            tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(num_threads)
+                .enable_all()
+                .build()
+                .unwrap(),
+        )
+    })
+    .join()
+    .unwrap()
+}
+
+pub fn get_runtime(multi_thread: bool) -> DaftResult<RuntimeRef> {
     match multi_thread {
         false => {
-            let guard = SINGLE_THREADED_RUNTIME.blocking_read();
-            Ok(guard.clone().0)
+            let runtime = SINGLE_THREADED_RUNTIME
+                .get_or_init(|| init_runtime(1))
+                .clone();
+            Ok(runtime)
         }
         true => {
-            let guard = THREADED_RUNTIME.blocking_read();
-            Ok(guard.clone().0)
+            let runtime = THREADED_RUNTIME
+                .get_or_init(|| init_runtime(*THREADED_RUNTIME_NUM_WORKER_THREADS))
+                .clone();
+            Ok(runtime)
         }
     }
 }
 
-pub fn set_io_pool_num_threads(num_threads: usize) -> bool {
-    {
-        let guard = THREADED_RUNTIME.blocking_read();
-        if guard.1 == num_threads {
-            return false;
-        }
-    }
-    let mut client_guard = CLIENT_CACHE.blocking_write();
-    let mut guard = THREADED_RUNTIME.blocking_write();
-
-    client_guard.clear();
-
-    guard.1 = num_threads;
-    guard.0 = Arc::new(
-        tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(num_threads)
-            .enable_all()
-            .build()
-            .unwrap(),
-    );
-    true
-}
-
-pub async fn get_io_pool_num_threads() -> Option<usize> {
+pub fn get_io_pool_num_threads() -> Option<usize> {
     match tokio::runtime::Handle::try_current() {
         Ok(handle) => {
             match handle.runtime_flavor() {
                 RuntimeFlavor::CurrentThread => Some(1),
-                RuntimeFlavor::MultiThread => Some(THREADED_RUNTIME.read().await.1),
+                RuntimeFlavor::MultiThread => Some(*THREADED_RUNTIME_NUM_WORKER_THREADS),
                 // RuntimeFlavor is #non_exhaustive, so we default to 1 here to be conservative
                 _ => Some(1),
             }

@@ -1,7 +1,6 @@
 use snafu::ResultExt;
 
 use super::{ColumnRangeStatistics, TruthValue};
-
 use crate::DaftCoreComputeSnafu;
 
 impl std::ops::Not for &ColumnRangeStatistics {

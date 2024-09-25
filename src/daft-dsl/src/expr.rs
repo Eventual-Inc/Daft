@@ -1,15 +1,27 @@
+use std::{
+    io::{self, Write},
+    sync::Arc,
+};
+
+use common_error::{DaftError, DaftResult};
 use common_hashable_float_wrapper::FloatWrapper;
+use common_treenode::TreeNode;
 use daft_core::{
-    count_mode::CountMode,
-    datatypes::{try_mean_supertype, try_sum_supertype, DataType, Field, FieldID},
-    schema::Schema,
+    datatypes::{try_mean_supertype, try_sum_supertype, InferDataType},
+    prelude::*,
     utils::supertype::try_get_supertype,
 };
+use derive_more::Display;
 use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 
+use super::functions::FunctionExpr;
 use crate::{
     functions::{
-        function_display, function_semantic_id, scalar_function_semantic_id,
+        binary_op_display_without_formatter, function_display_without_formatter,
+        function_semantic_id,
+        python::PythonUDF,
+        scalar_function_semantic_id,
         sketch::{HashableVecPercentiles, SketchExpr},
         struct_::StructExpr,
         FunctionEvaluator, ScalarFunction,
@@ -18,46 +30,64 @@ use crate::{
     optimization::{get_required_columns, requires_computation},
 };
 
-use common_error::{DaftError, DaftResult};
-
-use serde::{Deserialize, Serialize};
-use std::{
-    fmt::{Display, Formatter, Result},
-    io::{self, Write},
-    sync::Arc,
-};
-
-use super::functions::FunctionExpr;
-
 pub type ExprRef = Arc<Expr>;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum Expr {
+    #[display("{_0} as {_1}")]
     Alias(ExprRef, Arc<str>),
+
+    #[display("{_0}")]
     Agg(AggExpr),
+
+    #[display("{}", binary_op_display_without_formatter(op, left, right)?)]
     BinaryOp {
         op: Operator,
         left: ExprRef,
         right: ExprRef,
     },
+
+    #[display("cast({_0} as {_1})")]
     Cast(ExprRef, DataType),
+
+    #[display("col({_0})")]
     Column(Arc<str>),
+
+    #[display("{}", function_display_without_formatter(func, inputs)?)]
     Function {
         func: FunctionExpr,
         inputs: Vec<ExprRef>,
     },
+
+    #[display("not({_0})")]
     Not(ExprRef),
+
+    #[display("is_null({_0})")]
     IsNull(ExprRef),
+
+    #[display("not_null({_0})")]
     NotNull(ExprRef),
+
+    #[display("fill_null({_0}, {_1})")]
     FillNull(ExprRef, ExprRef),
+
+    #[display("{_0} in {_1}")]
     IsIn(ExprRef, ExprRef),
+
+    #[display("{_0} in [{_1},{_2}]")]
     Between(ExprRef, ExprRef, ExprRef),
+
+    #[display("lit({_0})")]
     Literal(lit::LiteralValue),
+
+    #[display("if [{predicate}] then [{if_true}] else [{if_false}]")]
     IfElse {
         if_true: ExprRef,
         if_false: ExprRef,
         predicate: ExprRef,
     },
+
+    #[display("{_0}")]
     ScalarFunction(ScalarFunction),
 }
 
@@ -68,23 +98,55 @@ pub struct ApproxPercentileParams {
     pub force_list_output: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum AggExpr {
+    #[display("count({_0}, {_1})")]
     Count(ExprRef, CountMode),
+
+    #[display("sum({_0})")]
     Sum(ExprRef),
-    ApproxSketch(ExprRef),
+
+    #[display("approx_percentile({}, percentiles={:?}, force_list_output={})", _0.child, _0.percentiles, _0.force_list_output)]
     ApproxPercentile(ApproxPercentileParams),
-    MergeSketch(ExprRef),
+
+    #[display("approx_count_distinct({_0})")]
+    ApproxCountDistinct(ExprRef),
+
+    #[display("approx_sketch({_0}, sketch_type={_1:?})")]
+    ApproxSketch(ExprRef, SketchType),
+
+    #[display("merge_sketch({_0}, sketch_type={_1:?})")]
+    MergeSketch(ExprRef, SketchType),
+
+    #[display("mean({_0})")]
     Mean(ExprRef),
+
+    #[display("min({_0})")]
     Min(ExprRef),
+
+    #[display("max({_0})")]
     Max(ExprRef),
+
+    #[display("any_value({_0}, ignore_nulls={_1})")]
     AnyValue(ExprRef, bool),
+
+    #[display("list({_0})")]
     List(ExprRef),
+
+    #[display("list({_0})")]
     Concat(ExprRef),
+
+    #[display("{}", function_display_without_formatter(func, inputs)?)]
     MapGroups {
         func: FunctionExpr,
         inputs: Vec<ExprRef>,
     },
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum SketchType {
+    DDSketch,
+    HyperLogLog,
 }
 
 pub fn col<S: Into<Arc<str>>>(name: S) -> ExprRef {
@@ -101,9 +163,10 @@ impl AggExpr {
         match self {
             Count(expr, ..)
             | Sum(expr)
-            | ApproxSketch(expr)
             | ApproxPercentile(ApproxPercentileParams { child: expr, .. })
-            | MergeSketch(expr)
+            | ApproxCountDistinct(expr)
+            | ApproxSketch(expr, _)
+            | MergeSketch(expr, _)
             | Mean(expr)
             | Min(expr)
             | Max(expr)
@@ -125,10 +188,6 @@ impl AggExpr {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_sum()"))
             }
-            ApproxSketch(expr) => {
-                let child_id = expr.semantic_id(schema);
-                FieldID::new(format!("{child_id}.local_approx_sketch()"))
-            }
             ApproxPercentile(ApproxPercentileParams {
                 child: expr,
                 percentiles,
@@ -140,9 +199,21 @@ impl AggExpr {
                     percentiles,
                 ))
             }
-            MergeSketch(expr) => {
+            ApproxCountDistinct(expr) => {
                 let child_id = expr.semantic_id(schema);
-                FieldID::new(format!("{child_id}.local_merge_sketch()"))
+                FieldID::new(format!("{child_id}.local_approx_count_distinct()"))
+            }
+            ApproxSketch(expr, sketch_type) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!(
+                    "{child_id}.local_approx_sketch(sketch_type={sketch_type:?})"
+                ))
+            }
+            MergeSketch(expr, sketch_type) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!(
+                    "{child_id}.local_merge_sketch(sketch_type={sketch_type:?})"
+                ))
             }
             Mean(expr) => {
                 let child_id = expr.semantic_id(schema);
@@ -179,9 +250,10 @@ impl AggExpr {
         match self {
             Count(expr, ..)
             | Sum(expr)
-            | ApproxSketch(expr)
             | ApproxPercentile(ApproxPercentileParams { child: expr, .. })
-            | MergeSketch(expr)
+            | ApproxCountDistinct(expr)
+            | ApproxSketch(expr, _)
+            | MergeSketch(expr, _)
             | Mean(expr)
             | Min(expr)
             | Max(expr)
@@ -222,8 +294,9 @@ impl AggExpr {
                 percentiles: percentiles.clone(),
                 force_list_output: *force_list_output,
             }),
-            ApproxSketch(_) => ApproxSketch(children[0].clone()),
-            MergeSketch(_) => MergeSketch(children[0].clone()),
+            ApproxCountDistinct(_) => ApproxCountDistinct(children[0].clone()),
+            &ApproxSketch(_, sketch_type) => ApproxSketch(children[0].clone(), sketch_type),
+            &MergeSketch(_, sketch_type) => MergeSketch(children[0].clone(), sketch_type),
         }
     }
 
@@ -239,30 +312,6 @@ impl AggExpr {
                 Ok(Field::new(
                     field.name.as_str(),
                     try_sum_supertype(&field.dtype)?,
-                ))
-            }
-            ApproxSketch(expr) => {
-                let field = expr.to_field(schema)?;
-                Ok(Field::new(
-                    field.name.as_str(),
-                    match &field.dtype {
-                        DataType::Int8
-                        | DataType::Int16
-                        | DataType::Int32
-                        | DataType::Int64
-                        | DataType::UInt8
-                        | DataType::UInt16
-                        | DataType::UInt32
-                        | DataType::UInt64
-                        | DataType::Float32
-                        | DataType::Float64 => DataType::from(&*daft_sketch::ARROW2_DDSKETCH_DTYPE),
-                        other => {
-                            return Err(DaftError::TypeError(format!(
-                                "Expected input to approx_sketch() to be numeric but received dtype {} for column \"{}\"",
-                                other, field.name,
-                            )))
-                        }
-                    },
                 ))
             }
             ApproxPercentile(ApproxPercentileParams {
@@ -288,20 +337,42 @@ impl AggExpr {
                     },
                 ))
             }
-            MergeSketch(expr) => {
+            ApproxCountDistinct(expr) => {
                 let field = expr.to_field(schema)?;
-                Ok(Field::new(
-                  field.name.as_str(),
-                  match &field.dtype {
-                      DataType::Struct(fields) => DataType::Struct(fields.clone()),
-                      other => {
-                          return Err(DaftError::TypeError(format!(
-                              "Expected input to merge_sketch() to be struct but received dtype {} for column \"{}\"",
-                              other, field.name,
-                          )))
+                Ok(Field::new(field.name.as_str(), DataType::UInt64))
+            }
+            ApproxSketch(expr, sketch_type) => {
+                let field = expr.to_field(schema)?;
+                let dtype = match sketch_type {
+                    SketchType::DDSketch => {
+                        if !field.dtype.is_numeric() {
+                            return Err(DaftError::TypeError(format!(
+                                r#"Expected input to approx_sketch() to be numeric but received dtype {} for column "{}""#,
+                                field.dtype, field.name,
+                            )));
+                        };
+                        DataType::from(&*daft_sketch::ARROW2_DDSKETCH_DTYPE)
+                    }
+                    SketchType::HyperLogLog => daft_core::array::ops::HLL_SKETCH_DTYPE,
+                };
+                Ok(Field::new(field.name, dtype))
+            }
+            MergeSketch(expr, sketch_type) => {
+                let field = expr.to_field(schema)?;
+                let dtype = match sketch_type {
+                    SketchType::DDSketch => {
+                        if let DataType::Struct(..) = field.dtype {
+                            field.dtype
+                        } else {
+                            return Err(DaftError::TypeError(format!(
+                                "Expected input to merge_sketch() to be struct but received dtype {} for column \"{}\"",
+                                field.dtype, field.name,
+                            )));
                         }
-                    },
-                ))
+                    }
+                    SketchType::HyperLogLog => DataType::UInt64,
+                };
+                Ok(Field::new(field.name, dtype))
             }
             Mean(expr) => {
                 let field = expr.to_field(schema)?;
@@ -319,6 +390,7 @@ impl AggExpr {
                 let field = expr.to_field(schema)?;
                 match field.dtype {
                     DataType::List(..) => Ok(field),
+                    DataType::Utf8 => Ok(field),
                     #[cfg(feature = "python")]
                     DataType::Python => Ok(field),
                     _ => Err(DaftError::TypeError(format!(
@@ -390,8 +462,8 @@ impl Expr {
         Expr::Agg(AggExpr::Sum(self)).into()
     }
 
-    pub fn approx_sketch(self: ExprRef) -> ExprRef {
-        Expr::Agg(AggExpr::ApproxSketch(self)).into()
+    pub fn approx_count_distinct(self: ExprRef) -> ExprRef {
+        Expr::Agg(AggExpr::ApproxCountDistinct(self)).into()
     }
 
     pub fn approx_percentiles(
@@ -420,10 +492,6 @@ impl Expr {
             inputs: vec![self],
         }
         .into()
-    }
-
-    pub fn merge_sketch(self: ExprRef) -> ExprRef {
-        Expr::Agg(AggExpr::MergeSketch(self)).into()
     }
 
     pub fn mean(self: ExprRef) -> ExprRef {
@@ -610,7 +678,7 @@ impl Expr {
         }
     }
 
-    pub(super) fn with_new_children(&self, children: Vec<ExprRef>) -> Expr {
+    pub fn with_new_children(&self, children: Vec<ExprRef>) -> Expr {
         use Expr::*;
         match self {
             // no children
@@ -716,7 +784,8 @@ impl Expr {
                 let left_field = left.to_field(schema)?;
                 let right_field = right.to_field(schema)?;
                 let (result_type, _intermediate, _comp_type) =
-                    left_field.dtype.membership_op(&right_field.dtype)?;
+                    InferDataType::from(&left_field.dtype)
+                        .membership_op(&InferDataType::from(&right_field.dtype))?;
                 Ok(Field::new(left_field.name.as_str(), result_type))
             }
             Between(value, lower, upper) => {
@@ -724,11 +793,14 @@ impl Expr {
                 let lower_field = lower.to_field(schema)?;
                 let upper_field = upper.to_field(schema)?;
                 let (lower_result_type, _intermediate, _comp_type) =
-                    value_field.dtype.membership_op(&lower_field.dtype)?;
+                    InferDataType::from(&value_field.dtype)
+                        .membership_op(&InferDataType::from(&lower_field.dtype))?;
                 let (upper_result_type, _intermediate, _comp_type) =
-                    value_field.dtype.membership_op(&upper_field.dtype)?;
+                    InferDataType::from(&value_field.dtype)
+                        .membership_op(&InferDataType::from(&upper_field.dtype))?;
                 let (result_type, _intermediate, _comp_type) =
-                    lower_result_type.membership_op(&upper_result_type)?;
+                    InferDataType::from(&lower_result_type)
+                        .membership_op(&InferDataType::from(&upper_result_type))?;
                 Ok(Field::new(value_field.name.as_str(), result_type))
             }
             Literal(value) => Ok(Field::new("literal", value.get_type())),
@@ -742,7 +814,8 @@ impl Expr {
                 match op {
                     // Logical operations
                     Operator::And | Operator::Or | Operator::Xor => {
-                        let result_type = left_field.dtype.logical_op(&right_field.dtype)?;
+                        let result_type = InferDataType::from(&left_field.dtype)
+                            .logical_op(&InferDataType::from(&right_field.dtype))?;
                         Ok(Field::new(left_field.name.as_str(), result_type))
                     }
 
@@ -754,37 +827,45 @@ impl Expr {
                     | Operator::LtEq
                     | Operator::GtEq => {
                         let (result_type, _intermediate, _comp_type) =
-                            left_field.dtype.comparison_op(&right_field.dtype)?;
+                            InferDataType::from(&left_field.dtype)
+                                .comparison_op(&InferDataType::from(&right_field.dtype))?;
                         Ok(Field::new(left_field.name.as_str(), result_type))
                     }
 
                     // Arithmetic operations
                     Operator::Plus => {
-                        let result_type = (&left_field.dtype + &right_field.dtype)?;
+                        let result_type = (InferDataType::from(&left_field.dtype)
+                            + InferDataType::from(&right_field.dtype))?;
                         Ok(Field::new(left_field.name.as_str(), result_type))
                     }
                     Operator::Minus => {
-                        let result_type = (&left_field.dtype - &right_field.dtype)?;
+                        let result_type = (InferDataType::from(&left_field.dtype)
+                            - InferDataType::from(&right_field.dtype))?;
                         Ok(Field::new(left_field.name.as_str(), result_type))
                     }
                     Operator::Multiply => {
-                        let result_type = (&left_field.dtype * &right_field.dtype)?;
+                        let result_type = (InferDataType::from(&left_field.dtype)
+                            * InferDataType::from(&right_field.dtype))?;
                         Ok(Field::new(left_field.name.as_str(), result_type))
                     }
                     Operator::TrueDivide => {
-                        let result_type = (&left_field.dtype / &right_field.dtype)?;
+                        let result_type = (InferDataType::from(&left_field.dtype)
+                            / InferDataType::from(&right_field.dtype))?;
                         Ok(Field::new(left_field.name.as_str(), result_type))
                     }
                     Operator::Modulus => {
-                        let result_type = (&left_field.dtype % &right_field.dtype)?;
+                        let result_type = (InferDataType::from(&left_field.dtype)
+                            % InferDataType::from(&right_field.dtype))?;
                         Ok(Field::new(left_field.name.as_str(), result_type))
                     }
                     Operator::ShiftLeft => {
-                        let result_type = (&left_field.dtype << &right_field.dtype)?;
+                        let result_type = (InferDataType::from(&left_field.dtype)
+                            << InferDataType::from(&right_field.dtype))?;
                         Ok(Field::new(left_field.name.as_str(), result_type))
                     }
                     Operator::ShiftRight => {
-                        let result_type = (&left_field.dtype >> &right_field.dtype)?;
+                        let result_type = (InferDataType::from(&left_field.dtype)
+                            >> InferDataType::from(&right_field.dtype))?;
                         Ok(Field::new(left_field.name.as_str(), result_type))
                     }
                     Operator::FloorDivide => {
@@ -953,130 +1034,44 @@ impl Expr {
             _ => None,
         }
     }
-
-    pub fn has_agg(&self) -> bool {
-        use Expr::*;
-
-        match self {
-            Agg(_) => true,
-            Column(_) | Literal(_) => false,
-            _ => self.children().into_iter().any(|e| e.has_agg()),
-        }
-    }
 }
 
-impl Display for Expr {
-    // `f` is a buffer, and this method must write the formatted string into it
-    fn fmt(&self, f: &mut Formatter) -> Result {
-        use Expr::*;
-        match self {
-            Alias(expr, name) => write!(f, "{expr} AS {name}"),
-            Agg(agg_expr) => write!(f, "{agg_expr}"),
-            BinaryOp { op, left, right } => {
-                let write_out_expr = |f: &mut Formatter, input: &Expr| match input {
-                    Alias(e, _) => write!(f, "{e}"),
-                    BinaryOp { .. } => write!(f, "[{input}]"),
-                    _ => write!(f, "{input}"),
-                };
-
-                write_out_expr(f, left)?;
-                write!(f, " {op} ")?;
-                write_out_expr(f, right)?;
-                Ok(())
-            }
-            Cast(expr, dtype) => write!(f, "cast({expr} AS {dtype})"),
-            Column(name) => write!(f, "col({name})"),
-            Not(expr) => write!(f, "not({expr})"),
-            IsNull(expr) => write!(f, "is_null({expr})"),
-            NotNull(expr) => write!(f, "not_null({expr})"),
-            FillNull(expr, fill_value) => write!(f, "fill_null({expr}, {fill_value})"),
-            IsIn(expr, items) => write!(f, "{expr} in {items}"),
-            Between(expr, lower, upper) => write!(f, "{expr} in [{lower},{upper}]"),
-            Literal(val) => write!(f, "lit({val})"),
-            Function { func, inputs } => function_display(f, func, inputs),
-            ScalarFunction(func) => write!(f, "{func}"),
-
-            IfElse {
-                if_true,
-                if_false,
-                predicate,
-            } => {
-                write!(f, "if [{predicate}] then [{if_true}] else [{if_false}]")
-            }
-        }
-    }
-}
-
-impl Display for AggExpr {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        use AggExpr::*;
-        match self {
-            Count(expr, mode) => write!(f, "count({expr}, {mode})"),
-            Sum(expr) => write!(f, "sum({expr})"),
-            ApproxSketch(expr) => write!(f, "approx_sketch({expr})"),
-            ApproxPercentile(ApproxPercentileParams { child, percentiles, force_list_output }) => write!(
-                f,
-                "approx_percentiles({child}, percentiles={percentiles:?}, force_list_output={force_list_output})"
-            ),
-            MergeSketch(expr) => write!(f, "merge_sketch({expr})"),
-            Mean(expr) => write!(f, "mean({expr})"),
-            Min(expr) => write!(f, "min({expr})"),
-            Max(expr) => write!(f, "max({expr})"),
-            AnyValue(expr, ignore_nulls) => {
-                write!(f, "any_value({expr}, ignore_nulls={ignore_nulls})")
-            }
-            List(expr) => write!(f, "list({expr})"),
-            Concat(expr) => write!(f, "list({expr})"),
-            MapGroups { func, inputs } => function_display(f, func, inputs),
-        }
-    }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[derive(Display, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum Operator {
+    #[display("==")]
     Eq,
+    #[display("!=")]
     NotEq,
+    #[display("<")]
     Lt,
+    #[display("<=")]
     LtEq,
+    #[display(">")]
     Gt,
+    #[display(">=")]
     GtEq,
+    #[display("+")]
     Plus,
+    #[display("-")]
     Minus,
+    #[display("*")]
     Multiply,
+    #[display("/")]
     TrueDivide,
+    #[display("//")]
     FloorDivide,
+    #[display("%")]
     Modulus,
+    #[display("&")]
     And,
+    #[display("|")]
     Or,
+    #[display("^")]
     Xor,
+    #[display("<<")]
     ShiftLeft,
+    #[display(">>")]
     ShiftRight,
-}
-
-impl Display for Operator {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        use Operator::*;
-        let tkn = match self {
-            Eq => "==",
-            NotEq => "!=",
-            Lt => "<",
-            LtEq => "<=",
-            Gt => ">",
-            GtEq => ">=",
-            Plus => "+",
-            Minus => "-",
-            Multiply => "*",
-            TrueDivide => "/",
-            FloorDivide => "//",
-            Modulus => "%",
-            And => "&",
-            Or => "|",
-            Xor => "^",
-            ShiftLeft => "<<",
-            ShiftRight => ">>",
-        };
-        write!(f, "{tkn}")
-    }
 }
 
 impl Operator {
@@ -1107,6 +1102,22 @@ pub fn is_partition_compatible(a: &[ExprRef], b: &[ExprRef]) -> bool {
     let a: Vec<&str> = a.iter().map(|a| a.name()).sorted().collect();
     let b: Vec<&str> = b.iter().map(|a| a.name()).sorted().collect();
     a == b
+}
+
+pub fn has_agg(expr: &ExprRef) -> bool {
+    expr.exists(|e| matches!(e.as_ref(), Expr::Agg(_)))
+}
+
+pub fn has_stateful_udf(expr: &ExprRef) -> bool {
+    expr.exists(|e| {
+        matches!(
+            e.as_ref(),
+            Expr::Function {
+                func: FunctionExpr::Python(PythonUDF::Stateful(_)),
+                ..
+            }
+        )
+    })
 }
 
 #[cfg(test)]

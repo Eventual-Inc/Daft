@@ -1,8 +1,7 @@
-use crate::array::pseudo_arrow::PseudoArrowArray;
-use arrow2::array::Array;
-use arrow2::bitmap::Bitmap;
-
+use arrow2::{array::Array, bitmap::Bitmap};
 use pyo3::prelude::*;
+
+use crate::array::pseudo_arrow::PseudoArrowArray;
 
 impl PseudoArrowArray<PyObject> {
     pub fn from_pyobj_vec(pyobj_vec: Vec<PyObject>) -> Self {

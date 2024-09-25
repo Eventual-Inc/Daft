@@ -5,14 +5,15 @@ from typing import TYPE_CHECKING, Iterator
 from daft.daft import (
     NativeExecutor as _NativeExecutor,
 )
-from daft.logical.builder import LogicalPlanBuilder
-from daft.runners.partitioning import (
-    MaterializedResult,
-    PartitionT,
-)
+from daft.daft import PyDaftExecutionConfig
 from daft.table import MicroPartition
 
 if TYPE_CHECKING:
+    from daft.logical.builder import LogicalPlanBuilder
+    from daft.runners.partitioning import (
+        MaterializedResult,
+        PartitionT,
+    )
     from daft.runners.pyrunner import PyMaterializedResult
 
 
@@ -25,10 +26,18 @@ class NativeExecutor:
         executor = _NativeExecutor.from_logical_plan_builder(builder._builder)
         return cls(executor)
 
-    def run(self, psets: dict[str, list[MaterializedResult[PartitionT]]]) -> Iterator[PyMaterializedResult]:
+    def run(
+        self,
+        psets: dict[str, list[MaterializedResult[PartitionT]]],
+        daft_execution_config: PyDaftExecutionConfig,
+        results_buffer_size: int | None,
+    ) -> Iterator[PyMaterializedResult]:
         from daft.runners.pyrunner import PyMaterializedResult
 
-        psets_mp = {part_id: [part.vpartition()._micropartition for part in parts] for part_id, parts in psets.items()}
+        psets_mp = {
+            part_id: [part.micropartition()._micropartition for part in parts] for part_id, parts in psets.items()
+        }
         return (
-            PyMaterializedResult(MicroPartition._from_pymicropartition(part)) for part in self._executor.run(psets_mp)
+            PyMaterializedResult(MicroPartition._from_pymicropartition(part))
+            for part in self._executor.run(psets_mp, daft_execution_config, results_buffer_size)
         )

@@ -3,12 +3,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from daft.daft import FileFormatConfig, ScanOperatorHandle, StorageConfig
-from daft.datatype import DataType
 from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.schema import Schema
 
 if TYPE_CHECKING:
-    pass
+    from daft.datatype import DataType
 
 
 def _get_schema_from_dict(fields: dict[str, DataType]) -> Schema:
@@ -24,7 +23,6 @@ def get_tabular_files_scan(
     schema: dict[str, DataType] | None,
     file_format_config: FileFormatConfig,
     storage_config: StorageConfig,
-    is_ray_runner: bool,
 ) -> LogicalPlanBuilder:
     """Returns a TabularFilesScan LogicalPlan for a given glob filepath."""
     # Glob the path using the Runner
@@ -42,7 +40,6 @@ def get_tabular_files_scan(
         storage_config,
         infer_schema=infer_schema,
         schema=_get_schema_from_dict(schema)._schema if schema is not None else None,
-        is_ray_runner=is_ray_runner,
     )
 
     builder = LogicalPlanBuilder.from_tabular_scan(

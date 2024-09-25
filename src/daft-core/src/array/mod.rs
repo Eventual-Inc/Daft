@@ -1,6 +1,7 @@
 mod fixed_size_list_array;
 pub mod from;
 pub mod growable;
+pub mod image_array;
 pub mod iterator;
 mod list_array;
 pub mod ops;
@@ -10,16 +11,15 @@ mod struct_array;
 use arrow2::bitmap::Bitmap;
 pub use fixed_size_list_array::FixedSizeListArray;
 pub use list_array::ListArray;
-
 pub use struct_array::StructArray;
 mod boolean;
 mod from_iter;
-
+pub mod prelude;
 use std::{marker::PhantomData, sync::Arc};
 
-use crate::datatypes::{DaftArrayType, DaftPhysicalType, DataType, Field};
-
 use common_error::{DaftError, DaftResult};
+
+use crate::datatypes::{DaftArrayType, DaftPhysicalType, DataType, Field};
 
 #[derive(Debug)]
 pub struct DataArray<T: DaftPhysicalType> {

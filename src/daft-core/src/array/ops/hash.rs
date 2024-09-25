@@ -1,3 +1,8 @@
+use arrow2::types::Index;
+use common_error::{DaftError, DaftResult};
+use xxhash_rust::xxh3::{xxh3_64, xxh3_64_with_seed};
+
+use super::as_arrow::AsArrow;
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{
@@ -7,15 +12,9 @@ use crate::{
         Utf8Array,
     },
     kernels,
+    series::Series,
     utils::arrow::arrow_bitmap_and_helper,
-    Series,
 };
-
-use arrow2::types::Index;
-use common_error::{DaftError, DaftResult};
-use xxhash_rust::xxh3::{xxh3_64, xxh3_64_with_seed};
-
-use super::as_arrow::AsArrow;
 
 impl<T> DataArray<T>
 where
@@ -301,7 +300,7 @@ impl DateArray {
 
 impl TimeArray {
     pub fn murmur3_32(&self) -> DaftResult<Int32Array> {
-        let us = self.cast(&crate::DataType::Time(
+        let us = self.cast(&crate::datatypes::DataType::Time(
             crate::datatypes::TimeUnit::Microseconds,
         ))?;
         us.time()?.physical.murmur3_32()
@@ -310,7 +309,7 @@ impl TimeArray {
 
 impl TimestampArray {
     pub fn murmur3_32(&self) -> DaftResult<Int32Array> {
-        let us = self.cast(&crate::DataType::Timestamp(
+        let us = self.cast(&crate::datatypes::DataType::Timestamp(
             crate::datatypes::TimeUnit::Microseconds,
             None,
         ))?;

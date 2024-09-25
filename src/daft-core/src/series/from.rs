@@ -1,15 +1,14 @@
 use std::sync::Arc;
 
-use crate::{
-    datatypes::{DataType, Field},
-    with_match_daft_types,
-};
 use common_error::{DaftError, DaftResult};
 
 use super::Series;
-
-use crate::array::ops::from_arrow::FromArrow;
-use crate::series::array_impl::IntoSeries;
+use crate::{
+    array::ops::from_arrow::FromArrow,
+    datatypes::{DataType, Field},
+    series::array_impl::IntoSeries,
+    with_match_daft_types,
+};
 
 impl Series {
     pub fn try_from_field_and_arrow_array(

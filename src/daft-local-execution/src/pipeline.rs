@@ -1,44 +1,85 @@
 use std::{collections::HashMap, sync::Arc};
 
+use common_display::{mermaid::MermaidDisplayVisitor, tree::TreeDisplay};
+use common_error::DaftResult;
+use daft_core::{
+    datatypes::Field,
+    prelude::{Schema, SchemaRef},
+    utils::supertype,
+};
+use daft_dsl::{join::get_common_join_keys, Expr};
+use daft_micropartition::MicroPartition;
+use daft_physical_plan::{
+    Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, Project, Sort,
+    UnGroupedAggregate,
+};
+use daft_plan::{populate_aggregation_stages, JoinType};
+use daft_table::{Probeable, Table};
+use indexmap::IndexSet;
+use snafu::ResultExt;
+
 use crate::{
+    channel::PipelineChannel,
     intermediate_ops::{
-        aggregate::AggregateOperator, filter::FilterOperator, intermediate_op::IntermediateNode,
-        project::ProjectOperator,
+        aggregate::AggregateOperator, anti_semi_hash_join_probe::AntiSemiProbeOperator,
+        filter::FilterOperator, hash_join_probe::HashJoinProbeOperator,
+        intermediate_op::IntermediateNode, project::ProjectOperator,
     },
     sinks::{
-        aggregate::AggregateSink,
-        blocking_sink::BlockingSinkNode,
-        hash_join::{HashJoinNode, HashJoinOperator},
-        limit::LimitSink,
-        sort::SortSink,
+        aggregate::AggregateSink, blocking_sink::BlockingSinkNode,
+        hash_join_build::HashJoinBuildSink, limit::LimitSink, sort::SortSink,
         streaming_sink::StreamingSinkNode,
     },
     sources::in_memory::InMemorySource,
     ExecutionRuntimeHandle, PipelineCreationSnafu,
 };
 
-use async_trait::async_trait;
-use common_display::{mermaid::MermaidDisplayVisitor, tree::TreeDisplay};
-use daft_dsl::Expr;
-use daft_micropartition::MicroPartition;
-use daft_physical_plan::{
-    Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, Project, Sort,
-    UnGroupedAggregate,
-};
-use daft_plan::populate_aggregation_stages;
-use snafu::ResultExt;
+#[derive(Clone)]
+pub enum PipelineResultType {
+    Data(Arc<MicroPartition>),
+    ProbeTable(Arc<dyn Probeable>, Arc<Vec<Table>>),
+}
 
-use crate::channel::MultiSender;
+impl From<Arc<MicroPartition>> for PipelineResultType {
+    fn from(data: Arc<MicroPartition>) -> Self {
+        PipelineResultType::Data(data)
+    }
+}
 
-#[async_trait]
+impl From<(Arc<dyn Probeable>, Arc<Vec<Table>>)> for PipelineResultType {
+    fn from((probe_table, tables): (Arc<dyn Probeable>, Arc<Vec<Table>>)) -> Self {
+        PipelineResultType::ProbeTable(probe_table, tables)
+    }
+}
+
+impl PipelineResultType {
+    pub fn as_data(&self) -> &Arc<MicroPartition> {
+        match self {
+            PipelineResultType::Data(data) => data,
+            _ => panic!("Expected data"),
+        }
+    }
+
+    pub fn as_probe_table(&self) -> (&Arc<dyn Probeable>, &Arc<Vec<Table>>) {
+        match self {
+            PipelineResultType::ProbeTable(probe_table, tables) => (probe_table, tables),
+            _ => panic!("Expected probe table"),
+        }
+    }
+
+    pub fn should_broadcast(&self) -> bool {
+        matches!(self, PipelineResultType::ProbeTable(_, _))
+    }
+}
+
 pub trait PipelineNode: Sync + Send + TreeDisplay {
     fn children(&self) -> Vec<&dyn PipelineNode>;
     fn name(&self) -> &'static str;
-    async fn start(
+    fn start(
         &mut self,
-        destination: MultiSender,
+        maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> crate::Result<()>;
+    ) -> crate::Result<PipelineChannel>;
 
     fn as_tree_display(&self) -> &dyn TreeDisplay;
 }
@@ -59,8 +100,9 @@ pub fn physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
     psets: &HashMap<String, Vec<Arc<MicroPartition>>>,
 ) -> crate::Result<Box<dyn PipelineNode>> {
-    use crate::sources::scan_task::ScanTaskSource;
     use daft_physical_plan::PhysicalScan;
+
+    use crate::sources::scan_task::ScanTaskSource;
     let out: Box<dyn PipelineNode> = match physical_plan {
         LocalPhysicalPlan::PhysicalScan(PhysicalScan { scan_tasks, .. }) => {
             let scan_task_source = ScanTaskSource::new(scan_tasks.clone());
@@ -189,21 +231,98 @@ pub fn physical_plan_to_pipeline(
         }) => {
             let left_schema = left.schema();
             let right_schema = right.schema();
-            let left_node = physical_plan_to_pipeline(left, psets)?;
-            let right_node = physical_plan_to_pipeline(right, psets)?;
 
-            // we should move to a builder pattern
-            let sink = HashJoinOperator::new(
-                left_on.clone(),
-                right_on.clone(),
-                *join_type,
-                left_schema,
-                right_schema,
-            )
+            // Determine the build and probe sides based on the join type
+            // Currently it is a naive determination, in the future we should leverage the cardinality of the tables
+            // to determine the build and probe sides
+            let build_on_left = match join_type {
+                JoinType::Inner => true,
+                JoinType::Right => true,
+                JoinType::Left => false,
+                JoinType::Anti | JoinType::Semi => false,
+                JoinType::Outer => {
+                    unimplemented!("Outer join not supported yet");
+                }
+            };
+            let (build_on, probe_on, build_child, probe_child) = match build_on_left {
+                true => (left_on, right_on, left, right),
+                false => (right_on, left_on, right, left),
+            };
+
+            let build_schema = build_child.schema();
+            let probe_schema = probe_child.schema();
+            let probe_node = || -> DaftResult<_> {
+                let common_join_keys: IndexSet<_> = get_common_join_keys(left_on, right_on)
+                    .map(|k| k.to_string())
+                    .collect();
+                let build_key_fields = build_on
+                    .iter()
+                    .map(|e| e.to_field(build_schema))
+                    .collect::<DaftResult<Vec<_>>>()?;
+                let probe_key_fields = probe_on
+                    .iter()
+                    .map(|e| e.to_field(probe_schema))
+                    .collect::<DaftResult<Vec<_>>>()?;
+                let key_schema: SchemaRef = Schema::new(
+                    build_key_fields
+                        .into_iter()
+                        .zip(probe_key_fields.into_iter())
+                        .map(|(l, r)| {
+                            // TODO we should be using the comparison_op function here instead but i'm just using existing behavior for now
+                            let dtype = supertype::try_get_supertype(&l.dtype, &r.dtype)?;
+                            Ok(Field::new(l.name, dtype))
+                        })
+                        .collect::<DaftResult<Vec<_>>>()?,
+                )?
+                .into();
+
+                let casted_build_on = build_on
+                    .iter()
+                    .zip(key_schema.fields.values())
+                    .map(|(e, f)| e.clone().cast(&f.dtype))
+                    .collect::<Vec<_>>();
+                let casted_probe_on = probe_on
+                    .iter()
+                    .zip(key_schema.fields.values())
+                    .map(|(e, f)| e.clone().cast(&f.dtype))
+                    .collect::<Vec<_>>();
+
+                // we should move to a builder pattern
+                let build_sink =
+                    HashJoinBuildSink::new(key_schema.clone(), casted_build_on, join_type)?;
+                let build_child_node = physical_plan_to_pipeline(build_child, psets)?;
+                let build_node =
+                    BlockingSinkNode::new(build_sink.boxed(), build_child_node).boxed();
+
+                let probe_child_node = physical_plan_to_pipeline(probe_child, psets)?;
+
+                match join_type {
+                    JoinType::Anti | JoinType::Semi => DaftResult::Ok(IntermediateNode::new(
+                        Arc::new(AntiSemiProbeOperator::new(casted_probe_on, *join_type)),
+                        vec![build_node, probe_child_node],
+                    )),
+                    JoinType::Inner | JoinType::Left | JoinType::Right => {
+                        DaftResult::Ok(IntermediateNode::new(
+                            Arc::new(HashJoinProbeOperator::new(
+                                casted_probe_on,
+                                left_schema,
+                                right_schema,
+                                *join_type,
+                                build_on_left,
+                                common_join_keys,
+                            )),
+                            vec![build_node, probe_child_node],
+                        ))
+                    }
+                    JoinType::Outer => {
+                        unimplemented!("Outer join not supported yet");
+                    }
+                }
+            }()
             .with_context(|_| PipelineCreationSnafu {
                 plan_name: physical_plan.name(),
             })?;
-            HashJoinNode::new(sink, left_node, right_node).boxed()
+            probe_node.boxed()
         }
         _ => {
             unimplemented!("Physical plan not supported: {}", physical_plan.name());

@@ -1,10 +1,10 @@
-use crate::array::ops::trigonometry::TrigonometricFunction;
-use crate::array::ops::DaftAtan2;
-use crate::datatypes::DataType;
-use crate::series::Series;
-use crate::IntoSeries;
-use common_error::DaftError;
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
+
+use crate::{
+    array::ops::{trigonometry::TrigonometricFunction, DaftAtan2},
+    datatypes::DataType,
+    series::{IntoSeries, Series},
+};
 
 impl Series {
     pub fn trigonometry(&self, trig_function: &TrigonometricFunction) -> DaftResult<Self> {

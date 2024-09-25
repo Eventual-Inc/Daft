@@ -4,27 +4,8 @@ import os
 import tempfile
 from collections import defaultdict
 
-import _pytest
 import memray
 import pytest
-
-
-# Monkeypatch to use dash delimiters when showing parameter lists.
-# https://github.com/pytest-dev/pytest/blob/31d0b51039fc295dfb14bfc5d2baddebe11bb746/src/_pytest/python.py#L1190
-# Related: https://github.com/pytest-dev/pytest/issues/3617
-# This allows us to perform pytest selection via the `-k` CLI flag
-def id(self):
-    return "-".join(self._idlist)
-
-
-setattr(_pytest.python.CallSpec2, "id", property(id))
-
-
-def pytest_make_parametrize_id(config, val, argname):
-    if isinstance(val, int):
-        val = f"{val:_}"
-    return f"{argname}:{val}"
-
 
 memray_stats = defaultdict(dict)
 
@@ -59,7 +40,11 @@ def benchmark_with_memray(request, benchmark):
 
     def benchmark_wrapper(func, group):
         benchmark.group = group
-        benchmark(func)
-        return track_mem(func, group)
+        # If running in CI, just run the benchmark
+        if os.getenv("CI"):
+            return benchmark(func)
+        else:
+            benchmark(func)
+            return track_mem(func, group)
 
     return benchmark_wrapper

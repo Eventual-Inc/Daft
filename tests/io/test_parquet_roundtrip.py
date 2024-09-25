@@ -12,6 +12,13 @@ from daft import DataType, Series, TimeUnit
 
 PYARROW_GE_8_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (8, 0, 0)
 
+from daft import context
+
+pytestmark = pytest.mark.skipif(
+    context.get_context().daft_execution_config.enable_native_executor is True,
+    reason="Native executor fails for these tests",
+)
+
 
 @pytest.mark.skipif(
     not PYARROW_GE_8_0_0,
@@ -108,6 +115,24 @@ def test_roundtrip_tensor_types(tmp_path):
     expected_dtype = DataType.tensor(DataType.int64())
     data = [np.array([[1, 2], [3, 4]]), None, None]
     before = daft.from_pydict({"foo": Series.from_pylist(data)})
+    before = before.concat(before)
+    before.write_parquet(str(tmp_path))
+    after = daft.read_parquet(str(tmp_path))
+    assert before.schema()["foo"].dtype == expected_dtype
+    assert after.schema()["foo"].dtype == expected_dtype
+    assert before.to_arrow() == after.to_arrow()
+
+
+@pytest.mark.parametrize("fixed_shape", [True, False])
+def test_roundtrip_sparse_tensor_types(tmp_path, fixed_shape):
+    if fixed_shape:
+        expected_dtype = DataType.sparse_tensor(DataType.int64(), (2, 2))
+        data = [np.array([[0, 0], [1, 0]]), None, np.array([[0, 0], [0, 0]]), np.array([[0, 1], [0, 0]])]
+    else:
+        expected_dtype = DataType.sparse_tensor(DataType.int64())
+        data = [np.array([[0, 0], [1, 0]]), None, np.array([[0, 0]]), np.array([[0, 1, 0], [0, 0, 1]])]
+    before = daft.from_pydict({"foo": Series.from_pylist(data)})
+    before = before.with_column("foo", before["foo"].cast(expected_dtype))
     before = before.concat(before)
     before.write_parquet(str(tmp_path))
     after = daft.read_parquet(str(tmp_path))

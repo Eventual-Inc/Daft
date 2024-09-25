@@ -1,9 +1,19 @@
+use arrow2::{
+    array::ord::{self, DynComparator},
+    types::Index,
+};
+use common_error::DaftResult;
+
+use super::{arrow2::sort::primitive::common::multi_column_idx_sort, as_arrow::AsArrow};
+#[cfg(feature = "python")]
+use crate::datatypes::PythonArray;
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            FixedShapeTensorArray, ImageArray, MapArray, TensorArray, TimeArray, TimestampArray,
+            FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
+            SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
         BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, ExtensionArray,
         FixedSizeBinaryArray, Float32Array, Float64Array, NullArray, Utf8Array,
@@ -11,19 +21,6 @@ use crate::{
     kernels::search_sorted::{build_compare_with_nulls, cmp_float},
     series::Series,
 };
-use common_error::DaftResult;
-
-#[cfg(feature = "python")]
-use crate::datatypes::PythonArray;
-
-use arrow2::{
-    array::ord::{self, DynComparator},
-    types::Index,
-};
-
-use super::arrow2::sort::primitive::common::multi_column_idx_sort;
-
-use super::as_arrow::AsArrow;
 
 pub fn build_multi_array_compare(
     arrays: &[Series],
@@ -679,6 +676,18 @@ impl FixedShapeImageArray {
 impl TensorArray {
     pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
         todo!("impl sort for TensorArray")
+    }
+}
+
+impl SparseTensorArray {
+    pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
+        todo!("impl sort for SparseTensorArray")
+    }
+}
+
+impl FixedShapeSparseTensorArray {
+    pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
+        todo!("impl sort for FixedShapeSparseTensorArray")
     }
 }
 

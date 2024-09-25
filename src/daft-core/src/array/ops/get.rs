@@ -1,3 +1,4 @@
+use super::as_arrow::AsArrow;
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray},
     datatypes::{
@@ -8,10 +9,8 @@ use crate::{
         BinaryArray, BooleanArray, DaftLogicalType, DaftNumericType, ExtensionArray,
         FixedSizeBinaryArray, NullArray, Utf8Array,
     },
-    Series,
+    series::Series,
 };
-
-use super::as_arrow::AsArrow;
 
 impl<T> DataArray<T>
 where
@@ -174,8 +173,8 @@ mod tests {
 
     use crate::{
         array::FixedSizeListArray,
-        datatypes::{Field, Int32Array},
-        DataType, IntoSeries,
+        datatypes::{DataType, Field, Int32Array},
+        series::IntoSeries,
     };
 
     #[test]
@@ -238,6 +237,36 @@ mod tests {
         let element = element.unwrap();
         assert_eq!(element.len(), 3);
         assert_eq!(element.data_type(), &DataType::Int32);
+        let element = element.i32()?;
+        let data = element
+            .into_iter()
+            .map(|x| x.copied())
+            .collect::<Vec<Option<i32>>>();
+        let expected = vec![Some(6), Some(7), Some(8)];
+        assert_eq!(data, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_list_get_some_valid() -> DaftResult<()> {
+        let field = Field::new("foo", DataType::FixedSizeList(Box::new(DataType::Int32), 3));
+        let flat_child = Int32Array::from(("foo", (0..9).collect::<Vec<i32>>()));
+        let raw_validity = vec![true, false, true];
+        let validity = Some(arrow2::bitmap::Bitmap::from(raw_validity.as_slice()));
+        let arr = FixedSizeListArray::new(field, flat_child.into_series(), validity);
+        let list_dtype = DataType::List(Box::new(DataType::Int32));
+        let list_arr = arr.cast(&list_dtype)?;
+        let l = list_arr.list()?;
+        let element = l.get(0).unwrap();
+        let element = element.i32()?;
+        let data = element
+            .into_iter()
+            .map(|x| x.copied())
+            .collect::<Vec<Option<i32>>>();
+        let expected = vec![Some(0), Some(1), Some(2)];
+        assert_eq!(data, expected);
+        let element = l.get(2).unwrap();
         let element = element.i32()?;
         let data = element
             .into_iter()

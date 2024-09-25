@@ -134,9 +134,10 @@ pub struct IOConfig {
 ///
 /// Args:
 ///     user_agent (str, optional): The value for the user-agent header, defaults to "daft/{__version__}" if not provided
+///     bearer_token (str, optional): Bearer token to use for authentication. This will be used as the value for the `Authorization` header. such as "Authorization: Bearer xxx"
 ///
 /// Example:
-///     >>> io_config = IOConfig(http=HTTPConfig(user_agent="my_application/0.0.1"))
+///     >>> io_config = IOConfig(http=HTTPConfig(user_agent="my_application/0.0.1", bearer_token="xxx"))
 ///     >>> daft.read_parquet("http://some-path", io_config=io_config)
 #[derive(Clone, Default)]
 #[pyclass]
@@ -227,19 +228,18 @@ impl IOConfig {
     }
 
     pub fn __reduce__(&self, py: Python) -> PyResult<(PyObject, (String,))> {
-        let io_config_module = py.import("daft.io.config")?;
+        let io_config_module = py.import_bound(pyo3::intern!(py, "daft.io.config"))?;
         let json_string = serde_json::to_string(&self.config).map_err(DaftError::from)?;
         Ok((
             io_config_module
-                .getattr("_io_config_from_json")?
-                .to_object(py),
+                .getattr(pyo3::intern!(py, "_io_config_from_json"))?
+                .into(),
             (json_string,),
         ))
     }
 
     pub fn __hash__(&self) -> PyResult<u64> {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::Hash;
+        use std::{collections::hash_map::DefaultHasher, hash::Hash};
 
         let mut hasher = DefaultHasher::new();
         self.config.hash(&mut hasher);
@@ -252,13 +252,12 @@ impl S3Config {
     #[allow(clippy::too_many_arguments)]
     #[new]
     pub fn new(
-        py: Python,
         region_name: Option<String>,
         endpoint_url: Option<String>,
         key_id: Option<String>,
         session_token: Option<String>,
         access_key: Option<String>,
-        credentials_provider: Option<&PyAny>,
+        credentials_provider: Option<Bound<PyAny>>,
         buffer_time: Option<u64>,
         max_connections: Option<u32>,
         retry_initial_backoff_ms: Option<u64>,
@@ -284,7 +283,7 @@ impl S3Config {
                 access_key: access_key.map(|v| v.into()).or(def.access_key),
                 credentials_provider: credentials_provider
                     .map(|p| {
-                        Ok::<_, PyErr>(Box::new(PyS3CredentialsProvider::new(py, p)?)
+                        Ok::<_, PyErr>(Box::new(PyS3CredentialsProvider::new(p)?)
                             as Box<dyn S3CredentialsProvider>)
                     })
                     .transpose()?
@@ -313,13 +312,12 @@ impl S3Config {
     #[allow(clippy::too_many_arguments)]
     pub fn replace(
         &self,
-        py: Python,
         region_name: Option<String>,
         endpoint_url: Option<String>,
         key_id: Option<String>,
         session_token: Option<String>,
         access_key: Option<String>,
-        credentials_provider: Option<&PyAny>,
+        credentials_provider: Option<Bound<PyAny>>,
         buffer_time: Option<u64>,
         max_connections: Option<u32>,
         retry_initial_backoff_ms: Option<u64>,
@@ -348,7 +346,7 @@ impl S3Config {
                     .or_else(|| self.config.access_key.clone()),
                 credentials_provider: credentials_provider
                     .map(|p| {
-                        Ok::<_, PyErr>(Box::new(PyS3CredentialsProvider::new(py, p)?)
+                        Ok::<_, PyErr>(Box::new(PyS3CredentialsProvider::new(p)?)
                             as Box<dyn S3CredentialsProvider>)
                     })
                     .transpose()?
@@ -379,7 +377,7 @@ impl S3Config {
     #[staticmethod]
     pub fn from_env(py: Python) -> PyResult<Self> {
         let io_config_from_env_func = py
-            .import(pyo3::intern!(py, "daft"))?
+            .import_bound(pyo3::intern!(py, "daft"))?
             .getattr(pyo3::intern!(py, "daft"))?
             .getattr(pyo3::intern!(py, "s3_config_from_env"))?;
         io_config_from_env_func.call0().map(|pyany| {
@@ -445,7 +443,7 @@ impl S3Config {
         Ok(self.config.credentials_provider.as_ref().and_then(|p| {
             p.as_any()
                 .downcast_ref::<PyS3CredentialsProvider>()
-                .map(|p| p.provider.as_ref(py).into())
+                .map(|p| p.provider.clone_ref(py))
         }))
     }
 
@@ -532,15 +530,16 @@ impl S3Config {
 impl S3Credentials {
     #[new]
     pub fn new(
+        py: Python,
         key_id: String,
         access_key: String,
         session_token: Option<String>,
-        expiry: Option<&PyAny>,
+        expiry: Option<Bound<PyAny>>,
     ) -> PyResult<Self> {
         // TODO(Kevin): Refactor when upgrading to PyO3 0.21 (https://github.com/Eventual-Inc/Daft/issues/2288)
         let expiry = expiry
             .map(|e| {
-                let ts = e.call_method0("timestamp")?.extract()?;
+                let ts = e.call_method0(pyo3::intern!(py, "timestamp"))?.extract()?;
 
                 Ok::<_, PyErr>(SystemTime::UNIX_EPOCH + Duration::from_secs_f64(ts))
             })
@@ -574,19 +573,21 @@ impl S3Credentials {
 
     /// AWS Session Token
     #[getter]
-    pub fn expiry<'a>(&self, py: Python<'a>) -> PyResult<Option<&'a PyAny>> {
+    pub fn expiry<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyAny>>> {
         // TODO(Kevin): Refactor when upgrading to PyO3 0.21 (https://github.com/Eventual-Inc/Daft/issues/2288)
         self.credentials
             .expiry
             .map(|e| {
-                let datetime = py.import("datetime")?;
+                let datetime = py.import_bound(pyo3::intern!(py, "datetime"))?;
 
-                datetime.getattr("datetime")?.call_method1(
-                    "fromtimestamp",
-                    (e.duration_since(SystemTime::UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs_f64(),),
-                )
+                datetime
+                    .getattr(pyo3::intern!(py, "datetime"))?
+                    .call_method1(
+                        pyo3::intern!(py, "fromtimestamp"),
+                        (e.duration_since(SystemTime::UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs_f64(),),
+                    )
             })
             .transpose()
     }
@@ -603,10 +604,11 @@ pub struct PyS3CredentialsProvider {
 }
 
 impl PyS3CredentialsProvider {
-    pub fn new(py: Python, provider: &PyAny) -> PyResult<Self> {
+    pub fn new(provider: Bound<PyAny>) -> PyResult<Self> {
+        let hash = provider.hash()?;
         Ok(PyS3CredentialsProvider {
-            provider: provider.to_object(py),
-            hash: provider.hash()?,
+            provider: provider.into(),
+            hash,
         })
     }
 }
@@ -901,7 +903,21 @@ impl From<config::IOConfig> for IOConfig {
     }
 }
 
-pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
+#[pymethods]
+impl HTTPConfig {
+    #[new]
+    pub fn new(bearer_token: Option<String>) -> Self {
+        HTTPConfig {
+            config: crate::HTTPConfig::new(bearer_token),
+        }
+    }
+
+    pub fn __repr__(&self) -> PyResult<String> {
+        Ok(format!("{}", self.config))
+    }
+}
+
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<AzureConfig>()?;
     parent.add_class::<GCSConfig>()?;
     parent.add_class::<S3Config>()?;

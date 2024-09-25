@@ -86,12 +86,11 @@ impl Display for crate::physical_plan::PhysicalPlan {
 
 #[cfg(test)]
 mod test {
-    use common_display::mermaid::{MermaidDisplay, MermaidDisplayOptions, SubgraphOptions};
-
     use std::sync::Arc;
 
+    use common_display::mermaid::{MermaidDisplay, MermaidDisplayOptions, SubgraphOptions};
     use common_error::DaftResult;
-    use daft_core::{datatypes::Field, schema::Schema, DataType};
+    use daft_core::prelude::*;
     use daft_dsl::{
         col,
         functions::utf8::{endswith, startswith},
@@ -146,11 +145,11 @@ mod test {
     #[test]
     // create a random, complex plan and check if it can be displayed as expected
     fn test_mermaid_display() -> DaftResult<()> {
-        let subplan = LogicalPlanBuilder::new(plan_1())
+        let subplan = LogicalPlanBuilder::new(plan_1(), None)
             .filter(col("id").eq(lit(1)))?
             .build();
 
-        let subplan2 = LogicalPlanBuilder::new(plan_2())
+        let subplan2 = LogicalPlanBuilder::new(plan_2(), None)
             .filter(
                 startswith(col("last_name"), lit("S")).and(endswith(col("last_name"), lit("n"))),
             )?
@@ -160,12 +159,12 @@ mod test {
             .sort(vec![col("last_name")], vec![false])?
             .build();
 
-        let plan = LogicalPlanBuilder::new(subplan)
+        let plan = LogicalPlanBuilder::new(subplan, None)
             .join(
                 subplan2,
                 vec![col("id")],
                 vec![col("id")],
-                daft_core::JoinType::Inner,
+                JoinType::Inner,
                 None,
             )?
             .filter(col("first_name").eq(lit("hello")))?
@@ -217,11 +216,11 @@ Project1 --> Limit0
     #[test]
     // create a random, complex plan and check if it can be displayed as expected
     fn test_mermaid_display_simple() -> DaftResult<()> {
-        let subplan = LogicalPlanBuilder::new(plan_1())
+        let subplan = LogicalPlanBuilder::new(plan_1(), None)
             .filter(col("id").eq(lit(1)))?
             .build();
 
-        let subplan2 = LogicalPlanBuilder::new(plan_2())
+        let subplan2 = LogicalPlanBuilder::new(plan_2(), None)
             .filter(
                 startswith(col("last_name"), lit("S")).and(endswith(col("last_name"), lit("n"))),
             )?
@@ -231,12 +230,12 @@ Project1 --> Limit0
             .sort(vec![col("last_name")], vec![false])?
             .build();
 
-        let plan = LogicalPlanBuilder::new(subplan)
+        let plan = LogicalPlanBuilder::new(subplan, None)
             .join(
                 subplan2,
                 vec![col("id")],
                 vec![col("id")],
-                daft_core::JoinType::Inner,
+                JoinType::Inner,
                 None,
             )?
             .filter(col("first_name").eq(lit("hello")))?

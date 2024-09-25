@@ -1,23 +1,18 @@
 use std::{cmp, iter::repeat};
 
 use arrow2::{bitmap::MutableBitmap, types::IndexRange};
+use common_error::DaftResult;
 use daft_core::{
-    array::ops::{arrow2::comparison::build_multi_array_is_equal, full::FullNull},
-    datatypes::{BooleanArray, UInt64Array},
-    DataType, IntoSeries, JoinType,
+    array::ops::{arrow2::comparison::build_multi_array_is_equal, as_arrow::AsArrow},
+    prelude::*,
 };
 use daft_dsl::{
     join::{get_common_join_keys, infer_join_schema},
     ExprRef,
 };
 
-use crate::Table;
-use common_error::DaftResult;
-
-use daft_core::array::ops::as_arrow::AsArrow;
-
 use super::{add_non_join_key_columns, match_types_for_tables};
-
+use crate::Table;
 pub(super) fn hash_inner_join(
     left: &Table,
     right: &Table,
@@ -56,7 +51,7 @@ pub(super) fn hash_inner_join(
         let probe_table = lkeys.to_probe_hash_table()?;
 
         let r_hashes = rkeys.hash_rows()?;
-
+        use daft_core::array::ops::arrow2::comparison::build_multi_array_is_equal;
         let is_equal = build_multi_array_is_equal(
             lkeys.columns.as_slice(),
             rkeys.columns.as_slice(),

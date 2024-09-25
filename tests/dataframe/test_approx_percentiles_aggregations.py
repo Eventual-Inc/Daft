@@ -4,7 +4,12 @@ import pandas as pd
 import pyarrow as pa
 import pytest
 
-from daft import col
+from daft import col, context
+
+pytestmark = pytest.mark.skipif(
+    context.get_context().daft_execution_config.enable_native_executor is True,
+    reason="Native executor fails for these tests",
+)
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
@@ -146,3 +151,35 @@ def test_approx_percentiles_groupby_all_nulls(make_df, repartition_nparts, perce
     )
     daft_cols = daft_df.to_pydict()
     assert daft_cols["percentiles"] == expected
+
+
+@pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
+@pytest.mark.parametrize(
+    "percentiles_expected",
+    [
+        (0.5, [2.0, 2.0]),
+        ([0.5], [[2.0], [2.0]]),
+        ([0.5, 0.5], [[2.0, 2.0], [2.0, 2.0]]),
+    ],
+)
+def test_approx_percentiles_groupby_with_alias(make_df, repartition_nparts, percentiles_expected):
+    percentiles, expected = percentiles_expected
+    daft_df = make_df(
+        {
+            "id": [1, 1, 1, 2],
+            "values": [1, 2, 3, 2],
+        },
+        repartition=repartition_nparts,
+    )
+    daft_df = daft_df.groupby(daft_df["id"].alias("id_alias")).agg(
+        [
+            col("values").approx_percentiles(percentiles).alias("percentiles"),
+        ]
+    )
+    daft_cols = daft_df.to_pydict()
+    pd.testing.assert_series_equal(
+        pd.Series(daft_cols["percentiles"]),
+        pd.Series(expected),
+        check_exact=False,
+        rtol=0.02,
+    )

@@ -1,12 +1,11 @@
 use common_error::DaftResult;
 
+use super::{bitmap_growable::ArrowBitmapGrowable, Growable};
 use crate::{
     array::{growable::make_growable, StructArray},
-    datatypes::Field,
-    DataType, IntoSeries, Series,
+    datatypes::{DataType, Field},
+    series::{IntoSeries, Series},
 };
-
-use super::{bitmap_growable::ArrowBitmapGrowable, Growable};
 
 pub struct StructGrowable<'a> {
     name: String,

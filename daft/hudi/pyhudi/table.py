@@ -3,9 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 
-import pyarrow as pa
-import pyarrow.fs as pafs
-
+from daft.dependencies import pa, pafs
 from daft.filesystem import join_path
 from daft.hudi.pyhudi.filegroup import BaseFile, FileGroup, FileSlice
 from daft.hudi.pyhudi.timeline import Timeline

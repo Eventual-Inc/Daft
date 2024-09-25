@@ -1,13 +1,12 @@
 use arrow2::types::Index;
 use common_error::DaftResult;
 
+use super::{bitmap_growable::ArrowBitmapGrowable, Growable};
 use crate::{
     array::{growable::make_growable, ListArray},
-    datatypes::Field,
-    DataType, IntoSeries, Series,
+    datatypes::{DataType, Field},
+    series::{IntoSeries, Series},
 };
-
-use super::{bitmap_growable::ArrowBitmapGrowable, Growable};
 
 pub struct ListGrowable<'a> {
     name: String,

@@ -4,5 +4,4 @@ mod rules;
 #[cfg(test)]
 mod test;
 
-pub use optimizer::Optimizer;
-pub use rules::Transformed;
+pub use optimizer::{Optimizer, OptimizerConfig};

@@ -60,7 +60,7 @@ if not dev_build and not user_opted_out:
 # Daft top-level imports
 ###
 
-from daft.context import set_execution_config, set_planning_config
+from daft.context import set_execution_config, set_planning_config, execution_config_ctx, planning_config_ctx
 from daft.convert import (
     from_arrow,
     from_dask_dataframe,
@@ -88,7 +88,7 @@ from daft.io import (
     read_lance,
 )
 from daft.series import Series
-from daft.sql.sql import sql, sql_expr
+from daft.sql import sql, sql_expr
 from daft.udf import udf
 from daft.viz import register_viz_hook
 
@@ -128,6 +128,8 @@ __all__ = [
     "Schema",
     "set_planning_config",
     "set_execution_config",
+    "planning_config_ctx",
+    "execution_config_ctx",
     "sql",
     "sql_expr",
     "to_struct",

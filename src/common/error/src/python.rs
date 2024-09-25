@@ -1,12 +1,6 @@
-use pyo3::import_exception;
+use pyo3::{exceptions::PyFileNotFoundError, import_exception};
 
 use crate::DaftError;
-
-impl From<pyo3::PyErr> for DaftError {
-    fn from(error: pyo3::PyErr) -> Self {
-        DaftError::PyO3Error(error)
-    }
-}
 
 import_exception!(daft.exceptions, DaftCoreException);
 import_exception!(daft.exceptions, DaftTypeError);
@@ -17,8 +11,6 @@ import_exception!(daft.exceptions, SocketError);
 
 impl std::convert::From<DaftError> for pyo3::PyErr {
     fn from(err: DaftError) -> pyo3::PyErr {
-        use pyo3::exceptions::PyFileNotFoundError;
-
         match err {
             DaftError::PyO3Error(pyerr) => pyerr,
             DaftError::FileNotFound { path, source } => {

@@ -7,24 +7,28 @@ use parquet2::schema::{
     Repetition,
 };
 
-use crate::datatypes::{DataType, Field, IntervalUnit, TimeUnit};
-use crate::io::parquet::read::schema::SchemaInferenceOptions;
+use super::StringEncoding;
+use crate::{
+    datatypes::{DataType, Field, IntervalUnit, TimeUnit},
+    io::parquet::read::schema::SchemaInferenceOptions,
+};
 
 /// Converts [`ParquetType`]s to a [`Field`], ignoring parquet fields that do not contain
 /// any physical column.
 #[allow(dead_code)]
 pub fn parquet_to_arrow_schema(fields: &[ParquetType]) -> Vec<Field> {
-    parquet_to_arrow_schema_with_options(fields, &None)
+    parquet_to_arrow_schema_with_options(fields, None)
 }
 
 /// Like [`parquet_to_arrow_schema`] but with configurable options which affect the behavior of schema inference
 pub fn parquet_to_arrow_schema_with_options(
     fields: &[ParquetType],
-    options: &Option<SchemaInferenceOptions>,
+    options: Option<SchemaInferenceOptions>,
 ) -> Vec<Field> {
+    let options = options.unwrap_or_default();
     fields
         .iter()
-        .filter_map(|f| to_field(f, options.as_ref().unwrap_or(&Default::default())))
+        .filter_map(|f| to_field(f, &options))
         .collect::<Vec<_>>()
 }
 
@@ -145,9 +149,13 @@ fn from_int64(
 fn from_byte_array(
     logical_type: &Option<PrimitiveLogicalType>,
     converted_type: &Option<PrimitiveConvertedType>,
+    options: &SchemaInferenceOptions,
 ) -> DataType {
     match (logical_type, converted_type) {
-        (Some(PrimitiveLogicalType::String), _) => DataType::Utf8,
+        (Some(PrimitiveLogicalType::String), _) => match options.string_encoding {
+            StringEncoding::Utf8 => DataType::Utf8,
+            StringEncoding::Raw => DataType::Binary,
+        },
         (Some(PrimitiveLogicalType::Json), _) => DataType::Binary,
         (Some(PrimitiveLogicalType::Bson), _) => DataType::Binary,
         (Some(PrimitiveLogicalType::Enum), _) => DataType::Binary,
@@ -219,9 +227,11 @@ fn to_primitive_type_inner(
         PhysicalType::Int96 => DataType::Timestamp(options.int96_coerce_to_timeunit, None),
         PhysicalType::Float => DataType::Float32,
         PhysicalType::Double => DataType::Float64,
-        PhysicalType::ByteArray => {
-            from_byte_array(&primitive_type.logical_type, &primitive_type.converted_type)
-        }
+        PhysicalType::ByteArray => from_byte_array(
+            &primitive_type.logical_type,
+            &primitive_type.converted_type,
+            options,
+        ),
         PhysicalType::FixedLenByteArray(length) => from_fixed_len_byte_array(
             length,
             primitive_type.logical_type,
@@ -300,11 +310,17 @@ fn to_group_type(
 ) -> Option<DataType> {
     debug_assert!(!fields.is_empty());
     if field_info.repetition == Repetition::Repeated {
-        if (field_info.name == "key_value" || field_info.name == "map") && fields.len() == 2 {
+        if (field_info.name == "key_value"
+            || field_info.name == "map"
+            || field_info.name == "entries")
+            && fields.len() == 2
+        {
             // For map types, the middle level, named key_value, is a repeated group with "key_value" as the name
             // and two fields, "key" and "value". The "key" field is the key type and the "value" field is the value type.
             // For backward compatibility, the "key_value" group may be named "map" instead of "key_value".
             // https://github.com/apache/parquet-format/blob/master/LogicalTypes.md#maps
+            // For compatibility with arrow-rs, the "key_value" group may also be named "entries" instead of "key_value".
+            // https://github.com/apache/arrow-rs/blob/704f90bbf541896387bed030e12a39be308047e8/arrow-array/src/builder/map_builder.rs#L81
             to_struct(fields, options)
         } else {
             Some(DataType::List(Box::new(Field::new(
@@ -434,7 +450,6 @@ mod tests {
     use parquet2::metadata::SchemaDescriptor;
 
     use super::*;
-
     use crate::error::Result;
 
     #[test]
@@ -1117,8 +1132,9 @@ mod tests {
             let parquet_schema = SchemaDescriptor::try_from_message(message_type)?;
             let fields = parquet_to_arrow_schema_with_options(
                 parquet_schema.fields(),
-                &Some(SchemaInferenceOptions {
+                Some(SchemaInferenceOptions {
                     int96_coerce_to_timeunit: tu,
+                    ..Default::default()
                 }),
             );
             assert_eq!(arrow_fields, fields);

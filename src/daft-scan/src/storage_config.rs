@@ -2,17 +2,13 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_io_config::IOConfig;
-use daft_core::impl_bincode_py_state_serialization;
-use daft_io::{get_io_client, get_runtime, IOClient};
+use common_py_serde::impl_bincode_py_state_serialization;
+use daft_io::{get_io_client, get_runtime, IOClient, RuntimeRef};
 use serde::{Deserialize, Serialize};
-
 #[cfg(feature = "python")]
 use {
     common_io_config::python,
-    pyo3::{
-        pyclass, pymethods, types::PyBytes, IntoPy, PyObject, PyResult, PyTypeInfo, Python,
-        ToPyObject,
-    },
+    pyo3::{pyclass, pymethods, IntoPy, PyObject, PyResult, Python},
     std::hash::{Hash, Hasher},
 };
 
@@ -26,9 +22,7 @@ pub enum StorageConfig {
 }
 
 impl StorageConfig {
-    pub fn get_io_client_and_runtime(
-        &self,
-    ) -> DaftResult<(Arc<tokio::runtime::Runtime>, Arc<IOClient>)> {
+    pub fn get_io_client_and_runtime(&self) -> DaftResult<(RuntimeRef, Arc<IOClient>)> {
         // Grab an IOClient and Runtime
         // TODO: This should be cleaned up and hidden behind a better API from daft-io
         match self {

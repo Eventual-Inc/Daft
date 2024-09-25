@@ -1,6 +1,7 @@
 pub mod catalog;
 pub mod error;
 pub mod functions;
+mod modules;
 mod planner;
 
 #[cfg(feature = "python")]
@@ -10,10 +11,10 @@ pub mod python;
 use pyo3::prelude::*;
 
 #[cfg(feature = "python")]
-pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<python::PyCatalog>()?;
-    parent.add_wrapped(wrap_pyfunction!(python::sql))?;
-    parent.add_wrapped(wrap_pyfunction!(python::sql_expr))?;
+    parent.add_function(wrap_pyfunction_bound!(python::sql, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(python::sql_expr, parent)?)?;
     Ok(())
 }
 
@@ -21,15 +22,8 @@ pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
 mod tests {
     use std::sync::Arc;
 
-    use crate::planner::SQLPlanner;
-
-    use super::*;
     use catalog::SQLCatalog;
-    use daft_core::{
-        datatypes::{Field, TimeUnit},
-        schema::Schema,
-        DataType,
-    };
+    use daft_core::prelude::*;
     use daft_dsl::{col, lit};
     use daft_plan::{
         logical_plan::Source, source_info::PlaceHolderInfo, ClusteringSpec, LogicalPlan,
@@ -37,6 +31,9 @@ mod tests {
     };
     use error::SQLPlannerResult;
     use rstest::{fixture, rstest};
+
+    use super::*;
+    use crate::planner::SQLPlanner;
 
     #[fixture]
     fn tbl_1() -> LogicalPlanRef {
@@ -155,6 +152,7 @@ mod tests {
     #[case::orderby("select * from tbl1 order by i32 asc")]
     #[case::orderby_multi("select * from tbl1 order by i32 desc, f32 asc")]
     #[case::whenthen("select case when i32 = 1 then 'a' else 'b' end from tbl1")]
+    #[case::globalagg("select max(i32) from tbl1")]
     fn test_compiles(mut planner: SQLPlanner, #[case] query: &str) -> SQLPlannerResult<()> {
         let plan = planner.plan_sql(query);
         assert!(plan.is_ok(), "query: {}\nerror: {:?}", query, plan);
@@ -167,7 +165,7 @@ mod tests {
         let sql = "select test as a from tbl1";
         let plan = planner.plan_sql(sql).unwrap();
 
-        let expected = LogicalPlanBuilder::new(tbl_1)
+        let expected = LogicalPlanBuilder::new(tbl_1, None)
             .select(vec![col("test").alias("a")])
             .unwrap()
             .build();
@@ -179,7 +177,7 @@ mod tests {
         let sql = "select test as a from tbl1 where test = 'a'";
         let plan = planner.plan_sql(sql)?;
 
-        let expected = LogicalPlanBuilder::new(tbl_1)
+        let expected = LogicalPlanBuilder::new(tbl_1, None)
             .filter(col("test").eq(lit("a")))?
             .select(vec![col("test").alias("a")])?
             .build();
@@ -192,7 +190,7 @@ mod tests {
         let sql = "select test as a from tbl1 limit 10";
         let plan = planner.plan_sql(sql)?;
 
-        let expected = LogicalPlanBuilder::new(tbl_1)
+        let expected = LogicalPlanBuilder::new(tbl_1, None)
             .select(vec![col("test").alias("a")])?
             .limit(10, true)?
             .build();
@@ -206,7 +204,7 @@ mod tests {
         let sql = "select utf8 from tbl1 order by utf8 desc";
         let plan = planner.plan_sql(sql)?;
 
-        let expected = LogicalPlanBuilder::new(tbl_1)
+        let expected = LogicalPlanBuilder::new(tbl_1, None)
             .select(vec![col("utf8")])?
             .sort(vec![col("utf8")], vec![true])?
             .build();
@@ -217,7 +215,7 @@ mod tests {
 
     #[rstest]
     fn test_cast(mut planner: SQLPlanner, tbl_1: LogicalPlanRef) -> SQLPlannerResult<()> {
-        let builder = LogicalPlanBuilder::new(tbl_1);
+        let builder = LogicalPlanBuilder::new(tbl_1, None);
         let cases = vec![
             (
                 "select bool::text from tbl1",
@@ -255,12 +253,12 @@ mod tests {
     ) -> SQLPlannerResult<()> {
         let sql = "select * from tbl2 join tbl3 on tbl2.id = tbl3.id";
         let plan = planner.plan_sql(sql)?;
-        let expected = LogicalPlanBuilder::new(tbl_2)
+        let expected = LogicalPlanBuilder::new(tbl_2, None)
             .join(
                 tbl_3,
                 vec![col("id")],
                 vec![col("id")],
-                daft_core::JoinType::Inner,
+                JoinType::Inner,
                 None,
             )?
             .build();
@@ -312,11 +310,26 @@ mod tests {
     #[case::to_date("select to_date(utf8, 'YYYY-MM-DD') as to_date from tbl1")]
     #[case::like("select utf8 like 'a' as like from tbl1")]
     #[case::ilike("select utf8 ilike 'a' as ilike from tbl1")]
+    #[case::datestring("select DATE '2021-08-01' as dt from tbl1")]
+    #[case::datetime("select DATETIME '2021-08-01 00:00:00' as dt from tbl1")]
     // #[case::to_datetime("select to_datetime(utf8, 'YYYY-MM-DD') as to_datetime from tbl1")]
     fn test_compiles_funcs(mut planner: SQLPlanner, #[case] query: &str) -> SQLPlannerResult<()> {
         let plan = planner.plan_sql(query);
         assert!(plan.is_ok(), "query: {}\nerror: {:?}", query, plan);
 
+        Ok(())
+    }
+
+    #[rstest]
+    fn test_global_agg(mut planner: SQLPlanner, tbl_1: LogicalPlanRef) -> SQLPlannerResult<()> {
+        let sql = "select max(i32) from tbl1";
+        let plan = planner.plan_sql(sql)?;
+
+        let expected = LogicalPlanBuilder::new(tbl_1, None)
+            .aggregate(vec![col("i32").max()], vec![])?
+            .build();
+
+        assert_eq!(plan, expected);
         Ok(())
     }
 }

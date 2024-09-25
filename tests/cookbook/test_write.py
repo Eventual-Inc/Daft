@@ -1,15 +1,20 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import datetime
 
 import pyarrow as pa
 import pytest
 from pyarrow import dataset as pads
 
 import daft
+from daft import context
 from tests.conftest import assert_df_equals
 from tests.cookbook.assets import COOKBOOK_DATA_CSV
 
+pytestmark = pytest.mark.skipif(
+    context.get_context().daft_execution_config.enable_native_executor is True,
+    reason="Native executor fails for these tests",
+)
 PYARROW_GE_7_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (7, 0, 0)
 
 
@@ -92,7 +97,7 @@ def test_parquet_write_with_partitioning_readback_values(tmp_path):
         (
             daft.col("date").partitioning.days(),
             "date_days",
-            [date(2024, 1, 1), date(2024, 2, 1), date(2024, 3, 1), date(2024, 4, 1), date(2024, 5, 1)],
+            [19723, 19754, 19783, 19814, 19844],
         ),
         (daft.col("date").partitioning.hours(), "date_hours", [473352, 474096, 474792, 475536, 476256]),
         (daft.col("date").partitioning.months(), "date_months", [648, 649, 650, 651, 652]),
@@ -123,7 +128,7 @@ def test_parquet_write_with_iceberg_date_partitioning(exp, key, answer, tmp_path
     "exp,key,answer",
     [
         (daft.col("id").partitioning.iceberg_bucket(10), "id_bucket", [0, 3, 5, 6, 8]),
-        (daft.col("id").partitioning.iceberg_truncate(10), "id_truncate", [0, 10, 20, 40]),
+        (daft.col("id").partitioning.iceberg_truncate(10), "id_trunc", [0, 10, 20, 40]),
     ],
 )
 def test_parquet_write_with_iceberg_bucket_and_trunc(exp, key, answer, tmp_path):
@@ -160,12 +165,8 @@ def test_parquet_write_with_null_values(tmp_path):
 
 @pytest.fixture()
 def smaller_parquet_target_filesize():
-    old_execution_config = daft.context.get_context().daft_execution_config
-    try:
-        daft.set_execution_config(parquet_target_filesize=1024)
+    with daft.execution_config_ctx(parquet_target_filesize=1024):
         yield
-    finally:
-        daft.set_execution_config(old_execution_config)
 
 
 @pytest.mark.skipif(

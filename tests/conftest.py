@@ -21,16 +21,6 @@ def pytest_addoption(parser):
     )
 
 
-@pytest.fixture(scope="session", autouse=True)
-def set_execution_configs():
-    """Sets global Daft config for testing"""
-    daft.set_execution_config(
-        # Disables merging of ScanTasks
-        scan_tasks_min_size_bytes=0,
-        scan_tasks_max_size_bytes=0,
-    )
-
-
 def pytest_configure(config):
     config.addinivalue_line(
         "markers", "integration: mark test as an integration test that runs with external dependencies"
@@ -82,14 +72,8 @@ def join_strategy(request):
     if request.param != "sort_merge_aligned_boundaries":
         yield request.param
     else:
-        old_execution_config = daft.context.get_context().daft_execution_config
-        try:
-            daft.set_execution_config(
-                sort_merge_join_sort_with_aligned_boundaries=True,
-            )
+        with daft.execution_config_ctx(sort_merge_join_sort_with_aligned_boundaries=True):
             yield "sort_merge"
-        finally:
-            daft.set_execution_config(old_execution_config)
 
 
 @pytest.fixture(scope="function")
@@ -135,7 +119,12 @@ def make_df(data_source, tmp_path) -> daft.Dataframe:
         else:
             raise NotImplementedError(f"make_df not implemented for: {variant}")
 
-    yield _make_df
+    with daft.execution_config_ctx(
+        # Disables merging of ScanTasks of Parquet when reading small Parquet files
+        scan_tasks_min_size_bytes=0,
+        scan_tasks_max_size_bytes=0,
+    ):
+        yield _make_df
 
 
 def assert_df_equals(
@@ -159,7 +148,7 @@ def assert_df_equals(
         sort_key_list: list[str] = [sort_key] if isinstance(sort_key, str) else sort_key
         for key in sort_key_list:
             assert key in daft_pd_df.columns, (
-                f"DaFt Dataframe missing key: {key}\nNOTE: This doesn't necessarily mean your code is "
+                f"Daft Dataframe missing key: {key}\nNOTE: This doesn't necessarily mean your code is "
                 "breaking, but our testing utilities require sorting on this key in order to compare your "
                 "Dataframe against the expected Pandas Dataframe."
             )

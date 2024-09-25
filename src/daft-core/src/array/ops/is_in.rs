@@ -1,17 +1,13 @@
-use crate::{
-    array::DataArray,
-    datatypes::{
-        BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, FixedSizeBinaryArray,
-        Float32Array, Float64Array, NullArray, Utf8Array,
-    },
-    DataType,
-};
+use std::collections::{BTreeSet, HashSet};
 
-use super::as_arrow::AsArrow;
-use super::{full::FullNull, DaftIsIn};
 use common_error::DaftResult;
 use common_hashable_float_wrapper::FloatWrapper;
-use std::collections::{BTreeSet, HashSet};
+
+use super::{as_arrow::AsArrow, full::FullNull, DaftIsIn};
+use crate::{
+    array::{prelude::*, DataArray},
+    datatypes::prelude::*,
+};
 
 macro_rules! collect_to_set_and_check_membership {
     ($self:expr, $rhs:expr) => {{

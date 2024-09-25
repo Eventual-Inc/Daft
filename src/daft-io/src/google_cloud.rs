@@ -1,30 +1,24 @@
-use std::ops::Range;
-use std::sync::Arc;
-
-use futures::stream::BoxStream;
-use futures::TryStreamExt;
-use google_cloud_storage::client::google_cloud_auth::credentials::CredentialsFile;
-use google_cloud_storage::client::ClientConfig;
-use google_cloud_token::{TokenSource, TokenSourceProvider};
+use std::{ops::Range, sync::Arc};
 
 use async_trait::async_trait;
-use google_cloud_storage::client::Client;
-use google_cloud_storage::http::objects::get::GetObjectRequest;
-
-use google_cloud_storage::http::objects::list::ListObjectsRequest;
-use google_cloud_storage::http::Error as GError;
-use snafu::IntoError;
-use snafu::ResultExt;
-use snafu::Snafu;
-
-use crate::object_io::FileMetadata;
-use crate::object_io::FileType;
-use crate::object_io::LSResult;
-use crate::object_io::ObjectSource;
-use crate::stats::IOStatsRef;
-use crate::stream_utils::io_stats_on_bytestream;
-use crate::GetResult;
 use common_io_config::GCSConfig;
+use futures::{stream::BoxStream, TryStreamExt};
+use google_cloud_storage::{
+    client::{google_cloud_auth::credentials::CredentialsFile, Client, ClientConfig},
+    http::{
+        objects::{get::GetObjectRequest, list::ListObjectsRequest},
+        Error as GError,
+    },
+};
+use google_cloud_token::{TokenSource, TokenSourceProvider};
+use snafu::{IntoError, ResultExt, Snafu};
+
+use crate::{
+    object_io::{FileMetadata, FileType, LSResult, ObjectSource},
+    stats::IOStatsRef,
+    stream_utils::io_stats_on_bytestream,
+    FileFormat, GetResult,
+};
 
 const GCS_DELIMITER: &str = "/";
 const GCS_SCHEME: &str = "gs";
@@ -436,6 +430,7 @@ impl ObjectSource for GCSSource {
         page_size: Option<i32>,
         limit: Option<usize>,
         io_stats: Option<IOStatsRef>,
+        _file_format: Option<FileFormat>,
     ) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>> {
         use crate::object_store_glob::glob;
 

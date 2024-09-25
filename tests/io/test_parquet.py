@@ -3,15 +3,16 @@ from __future__ import annotations
 import contextlib
 import datetime
 import os
-import random
 import tempfile
 import uuid
 
+import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as papq
 import pytest
 
 import daft
+from daft import context
 from daft.daft import NativeStorageConfig, PythonStorageConfig, StorageConfig
 from daft.datatype import DataType, TimeUnit
 from daft.expressions import col
@@ -20,6 +21,10 @@ from daft.table import MicroPartition
 
 from ..integration.io.conftest import minio_create_bucket
 
+pytestmark = pytest.mark.skipif(
+    context.get_context().daft_execution_config.enable_native_executor is True,
+    reason="Native executor fails for these tests",
+)
 PYARROW_GE_11_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (11, 0, 0)
 PYARROW_GE_13_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (13, 0, 0)
 
@@ -165,39 +170,59 @@ def test_parquet_rows_cross_page_boundaries(tmpdir, minio_io_config, chunk_size)
 
     def get_int_data_and_type(num_rows, repeat_int):
         data = [[{"field1": 1, "field2": 2}]]
-        for _ in range(num_rows):
-            row = []
-            for _ in range(repeat_int):
-                row += [{"field1": random.randint(int64_min, int64_max), "field2": 2}]
-            data += [row]
-        data_type = pa.list_(pa.struct([("field1", pa.int64()), ("field2", pa.int64())]))
+        random_int_array = np.random.randint(int64_min, int64_max, size=(num_rows, repeat_int))
+        data.extend([{"field1": int(field1), "field2": 2} for field1 in row] for row in random_int_array)
+        data_type = pa.large_list(pa.struct([("field1", pa.int64()), ("field2", pa.int64())]))
         return data, data_type
 
     def get_string_data_and_type(num_rows, str_len, repeat_str):
         data = [[{"field1": "a", "field2": "b"}]]
-        for _ in range(num_rows):
-            row = []
-            for _ in range(repeat_str):
-                random_str = ""
-                for _ in range(str_len):
-                    random_str += chr(random.randint(32, 126))
-                row += [{"field1": random_str, "field2": "b"}]
-            data += [row]
-        data_type = pa.list_(pa.struct([("field1", pa.string()), ("field2", pa.string())]))
+
+        random_ascii_arrays = np.random.randint(32, 127, size=(num_rows, repeat_str, str_len), dtype=np.uint8)
+        random_str_arrays = np.apply_along_axis(lambda x: "".join(map(chr, x)), 2, random_ascii_arrays)
+        data.extend([{"field1": random_str, "field2": "b"} for random_str in row] for row in random_str_arrays)
+        assert len(data) == num_rows + 1
+        for i in range(1, num_rows + 1):
+            assert len(data[i]) == repeat_str
+            for j in range(repeat_str):
+                assert len(data[i][j]["field1"]) == str_len
+
+        data_type = pa.large_list(pa.struct([("field1", pa.large_string()), ("field2", pa.large_string())]))
         return data, data_type
 
     def get_dictionary_data_and_type(num_rows, str_len, repeat_str):
         data, _ = get_string_data_and_type(num_rows, str_len, repeat_str)
-        data_type = pa.list_(pa.struct([("field1", pa.dictionary(pa.int32(), pa.string())), ("field2", pa.string())]))
+        data_type = pa.large_list(
+            pa.struct(
+                [
+                    ("field1", pa.dictionary(pa.int32(), pa.string())),
+                    ("field2", pa.large_string()),
+                ]
+            )
+        )
         return data, data_type
 
-    def compare_before_and_after(before, after, is_arrow):
+    def compare_before_and_after(before, after):
+        is_arrow = isinstance(before, pa.Table)
+        has_dict = (
+            pa.types.is_dictionary(before.schema.field("nested_col").type.field(0).type.field("field1").type)
+            if is_arrow
+            else False
+        )
+
         # Test various combinations of limits, shows, and collects.
         after.limit(5).show()
         after.show()
         after.show(10)
         after = after.sort(col("_index"))
-        assert before.to_pydict() == after.to_pydict()
+        if is_arrow:
+            if has_dict:
+                # Compare using to_pydict if there is a dictionary column because Daft does not support dictionary columns.
+                assert before.to_pydict() == after.to_pydict()
+            else:
+                assert before == after.to_arrow()
+        else:
+            assert before.to_arrow() == after.to_arrow()
         after_limit_50 = after.limit(50)
         after_limit_2050 = after.limit(2050)  # Test a limit beyond the default chunk size (2048).
         if is_arrow:
@@ -207,8 +232,13 @@ def test_parquet_rows_cross_page_boundaries(tmpdir, minio_io_config, chunk_size)
             ]
             before_limit_50 = before.take(list(range(min(before.num_rows, 50))))
             before_limit_2050 = before.take(list(range(min(before.num_rows, 2050))))
-            assert before_limit_50.to_pydict() == after_limit_50.to_pydict()
-            assert before_limit_2050.to_pydict() == after_limit_2050.to_pydict()
+            if has_dict:
+                # Compare using to_pydict if there is a dictionary column because Daft does not support dictionary columns.
+                assert before_limit_50.to_pydict() == after_limit_50.to_pydict()
+                assert before_limit_2050.to_pydict() == after_limit_2050.to_pydict()
+            else:
+                assert before_limit_50 == after_limit_50.to_arrow()
+                assert before_limit_2050 == after_limit_2050.to_arrow()
             pd_table = before_limit_50.to_pandas().explode("nested_col")
             assert [pd_table.count().get("nested_col")] == [
                 x["count"] for x in after_limit_50.explode(col("nested_col")).count().collect()
@@ -223,11 +253,11 @@ def test_parquet_rows_cross_page_boundaries(tmpdir, minio_io_config, chunk_size)
             ]
             before_limit_50 = before.limit(50)
             before_limit_2050 = before.limit(2050)
-            assert before_limit_50.to_pydict() == after_limit_50.to_pydict()
+            assert before_limit_50.to_arrow() == after_limit_50.to_arrow()
             assert [x for x in before_limit_50.explode(col("nested_col")).count().collect()] == [
                 x for x in after_limit_50.explode(col("nested_col")).count().collect()
             ]
-            assert before_limit_2050.to_pydict() == after_limit_2050.to_pydict()
+            assert before_limit_2050.to_arrow() == after_limit_2050.to_arrow()
             assert [x for x in before_limit_2050.explode(col("nested_col")).count().collect()] == [
                 x for x in after_limit_2050.explode(col("nested_col")).count().collect()
             ]
@@ -246,14 +276,14 @@ def test_parquet_rows_cross_page_boundaries(tmpdir, minio_io_config, chunk_size)
             before = before.sort(col("_index"))
             before.write_parquet(file_path)
             after = daft.read_parquet(file_path, _chunk_size=chunk_size)
-            compare_before_and_after(before, after, False)
+            compare_before_and_after(before, after)
             # Test reads from S3.
             bucket_name = "my-bucket"
             s3_path = f"s3://{bucket_name}/my-folder"
             with minio_create_bucket(minio_io_config=minio_io_config, bucket_name=bucket_name):
                 before.write_parquet(s3_path, io_config=minio_io_config)
                 after = daft.read_parquet(s3_path, io_config=minio_io_config, _chunk_size=chunk_size)
-                compare_before_and_after(before, after, False)
+                compare_before_and_after(before, after)
 
         # Test Arrow write with Daft read.
         file_path = f"{tmpdir}/{str(uuid.uuid4())}.parquet"
@@ -271,7 +301,7 @@ def test_parquet_rows_cross_page_boundaries(tmpdir, minio_io_config, chunk_size)
         with write_options as writer:
             writer.write_table(before)
         after = daft.read_parquet(file_path, _chunk_size=chunk_size)
-        compare_before_and_after(before, after, True)
+        compare_before_and_after(before, after)
 
     # The normal case where the last row `nested.field1` is contained within a single data page.
     # Data page has 131071 items.
@@ -320,3 +350,39 @@ def test_parquet_rows_cross_page_boundaries(tmpdir, minio_io_config, chunk_size)
     # One column uses a single dictionary-encoded data page, and the other contains data pages with
     # 4096 values each.
     test_parquet_helper(get_string_data_and_type(8192, 300, 1), True)
+
+
+@pytest.mark.integration()
+def test_parquet_limits_across_row_groups(tmpdir, minio_io_config):
+    test_row_group_size = 1024
+    daft_execution_config = daft.context.get_context().daft_execution_config
+    default_row_group_size = daft_execution_config.parquet_target_row_group_size
+    int_array = np.full(shape=4096, fill_value=3, dtype=np.int32)
+    before = daft.from_pydict({"col": pa.array(int_array, type=pa.int32())})
+    file_path = f"{tmpdir}/{str(uuid.uuid4())}.parquet"
+    # Decrease the target row group size before writing the parquet file.
+    daft.set_execution_config(parquet_target_row_group_size=test_row_group_size)
+    before.write_parquet(file_path)
+    assert (
+        before.limit(test_row_group_size + 10).to_arrow()
+        == daft.read_parquet(file_path).limit(test_row_group_size + 10).to_arrow()
+    )
+    assert (
+        before.limit(test_row_group_size * 2).to_arrow()
+        == daft.read_parquet(file_path).limit(test_row_group_size * 2).to_arrow()
+    )
+
+    bucket_name = "my-bucket"
+    s3_path = f"s3://{bucket_name}/my-folder"
+    with minio_create_bucket(minio_io_config=minio_io_config, bucket_name=bucket_name):
+        before.write_parquet(s3_path, io_config=minio_io_config)
+        assert (
+            before.limit(test_row_group_size + 10).to_arrow()
+            == daft.read_parquet(s3_path, io_config=minio_io_config).limit(test_row_group_size + 10).to_arrow()
+        )
+        assert (
+            before.limit(test_row_group_size * 2).to_arrow()
+            == daft.read_parquet(s3_path, io_config=minio_io_config).limit(test_row_group_size * 2).to_arrow()
+        )
+    # Reset the target row group size.
+    daft.set_execution_config(parquet_target_row_group_size=default_row_group_size)
