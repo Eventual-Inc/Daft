@@ -208,10 +208,7 @@ impl DaftConcatAggable for DataArray<Utf8Type> {
             )))
         };
 
-        Ok(Self::from((
-            self.field.name.as_ref(),
-            concat_per_group,
-        )))
+        Ok(Self::from((self.field.name.as_ref(), concat_per_group)))
     }
 }
 
