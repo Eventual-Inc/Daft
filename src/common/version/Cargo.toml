@@ -1,3 +1,6 @@
+[lints]
+workspace = true
+
 [package]
 edition = {workspace = true}
 name = "common-version"

@@ -17,11 +17,13 @@ from daft.expressions import Expression, ExpressionsProjection
 from daft.logical.map_partition_ops import MapPartitionOp
 from daft.logical.schema import Schema
 from daft.runners.partitioning import PartitionT
-from daft.table import MicroPartition
 
 if TYPE_CHECKING:
+    from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
+
+    from daft.table import MicroPartition
 
 
 def scan_with_tasks(
@@ -343,7 +345,7 @@ def write_iceberg(
     base_path: str,
     iceberg_schema: IcebergSchema,
     iceberg_properties: IcebergTableProperties,
-    spec_id: int,
+    partition_spec: IcebergPartitionSpec,
     io_config: IOConfig | None,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     return physical_plan.iceberg_write(
@@ -351,7 +353,7 @@ def write_iceberg(
         base_path=base_path,
         iceberg_schema=iceberg_schema,
         iceberg_properties=iceberg_properties,
-        spec_id=spec_id,
+        partition_spec=partition_spec,
         io_config=io_config,
     )
 
@@ -361,6 +363,7 @@ def write_deltalake(
     path: str,
     large_dtypes: bool,
     version: int,
+    partition_cols: list[str] | None,
     io_config: IOConfig | None,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     return physical_plan.deltalake_write(
@@ -368,6 +371,7 @@ def write_deltalake(
         path,
         large_dtypes,
         version,
+        partition_cols,
         io_config,
     )
 

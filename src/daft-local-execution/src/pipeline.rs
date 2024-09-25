@@ -43,33 +43,33 @@ pub enum PipelineResultType {
 
 impl From<Arc<MicroPartition>> for PipelineResultType {
     fn from(data: Arc<MicroPartition>) -> Self {
-        PipelineResultType::Data(data)
+        Self::Data(data)
     }
 }
 
 impl From<Arc<ProbeState>> for PipelineResultType {
     fn from(probe_state: Arc<ProbeState>) -> Self {
-        PipelineResultType::ProbeState(probe_state)
+        Self::ProbeState(probe_state)
     }
 }
 
 impl PipelineResultType {
     pub fn as_data(&self) -> &Arc<MicroPartition> {
         match self {
-            PipelineResultType::Data(data) => data,
+            Self::Data(data) => data,
             _ => panic!("Expected data"),
         }
     }
 
     pub fn as_probe_state(&self) -> &Arc<ProbeState> {
         match self {
-            PipelineResultType::ProbeState(probe_state) => probe_state,
+            Self::ProbeState(probe_state) => probe_state,
             _ => panic!("Expected probe table"),
         }
     }
 
     pub fn should_broadcast(&self) -> bool {
-        matches!(self, PipelineResultType::ProbeState(_))
+        matches!(self, Self::ProbeState(_))
     }
 }
 
@@ -111,7 +111,9 @@ pub fn physical_plan_to_pipeline(
         }
         LocalPhysicalPlan::InMemoryScan(InMemoryScan { info, .. }) => {
             let partitions = psets.get(&info.cache_key).expect("Cache key not found");
-            InMemorySource::new(partitions.clone()).boxed().into()
+            InMemorySource::new(partitions.clone(), info.source_schema.clone())
+                .boxed()
+                .into()
         }
         LocalPhysicalPlan::Project(Project {
             input, projection, ..

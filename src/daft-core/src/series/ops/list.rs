@@ -7,7 +7,7 @@ use crate::{
 };
 
 impl Series {
-    pub fn explode(&self) -> DaftResult<Series> {
+    pub fn explode(&self) -> DaftResult<Self> {
         match self.data_type() {
             DataType::List(_) => self.list()?.explode(),
             DataType::FixedSizeList(..) => self.fixed_size_list()?.explode(),
@@ -55,7 +55,7 @@ impl Series {
         }
     }
 
-    pub fn list_get(&self, idx: &Series, default: &Series) -> DaftResult<Series> {
+    pub fn list_get(&self, idx: &Self, default: &Self) -> DaftResult<Self> {
         let idx = idx.cast(&DataType::Int64)?;
         let idx_arr = idx.i64().unwrap();
 
@@ -69,7 +69,7 @@ impl Series {
         }
     }
 
-    pub fn list_slice(&self, start: &Series, end: &Series) -> DaftResult<Series> {
+    pub fn list_slice(&self, start: &Self, end: &Self) -> DaftResult<Self> {
         let start = start.cast(&DataType::Int64)?;
         let start_arr = start.i64().unwrap();
         let end_arr = if end.data_type().is_integer() {
@@ -89,7 +89,7 @@ impl Series {
         }
     }
 
-    pub fn list_chunk(&self, size: usize) -> DaftResult<Series> {
+    pub fn list_chunk(&self, size: usize) -> DaftResult<Self> {
         match self.data_type() {
             DataType::List(_) => self.list()?.get_chunks(size),
             DataType::FixedSizeList(..) => self.fixed_size_list()?.get_chunks(size),
@@ -99,7 +99,7 @@ impl Series {
         }
     }
 
-    pub fn list_sum(&self) -> DaftResult<Series> {
+    pub fn list_sum(&self) -> DaftResult<Self> {
         match self.data_type() {
             DataType::List(_) => self.list()?.sum(),
             DataType::FixedSizeList(..) => self.fixed_size_list()?.sum(),
@@ -110,7 +110,7 @@ impl Series {
         }
     }
 
-    pub fn list_mean(&self) -> DaftResult<Series> {
+    pub fn list_mean(&self) -> DaftResult<Self> {
         match self.data_type() {
             DataType::List(_) => self.list()?.mean(),
             DataType::FixedSizeList(..) => self.fixed_size_list()?.mean(),
@@ -121,7 +121,7 @@ impl Series {
         }
     }
 
-    pub fn list_min(&self) -> DaftResult<Series> {
+    pub fn list_min(&self) -> DaftResult<Self> {
         match self.data_type() {
             DataType::List(_) => self.list()?.min(),
             DataType::FixedSizeList(..) => self.fixed_size_list()?.min(),
@@ -132,7 +132,7 @@ impl Series {
         }
     }
 
-    pub fn list_max(&self) -> DaftResult<Series> {
+    pub fn list_max(&self) -> DaftResult<Self> {
         match self.data_type() {
             DataType::List(_) => self.list()?.max(),
             DataType::FixedSizeList(..) => self.fixed_size_list()?.max(),
@@ -143,7 +143,7 @@ impl Series {
         }
     }
 
-    pub fn list_sort(&self, desc: &Series) -> DaftResult<Series> {
+    pub fn list_sort(&self, desc: &Self) -> DaftResult<Self> {
         let desc_arr = desc.bool()?;
 
         match self.data_type() {

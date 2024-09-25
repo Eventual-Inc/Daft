@@ -8,6 +8,9 @@ thiserror = {workspace = true}
 [features]
 python = ["dep:pyo3"]
 
+[lints]
+workspace = true
+
 [package]
 edition = {workspace = true}
 name = "common-error"

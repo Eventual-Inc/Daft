@@ -34,7 +34,7 @@ impl PyCatalog {
     /// Construct an empty PyCatalog.
     #[staticmethod]
     pub fn new() -> Self {
-        PyCatalog {
+        Self {
             catalog: SQLCatalog::new(),
         }
     }
@@ -43,6 +43,11 @@ impl PyCatalog {
     pub fn register_table(&mut self, name: &str, dataframe: &mut PyLogicalPlanBuilder) {
         let plan = dataframe.builder.build();
         self.catalog.register_table(name, plan);
+    }
+
+    /// Copy from another catalog, using tables from other in case of conflict
+    pub fn copy_from(&mut self, other: &Self) {
+        self.catalog.copy_from(&other.catalog);
     }
 
     /// __str__ to print the catalog's tables

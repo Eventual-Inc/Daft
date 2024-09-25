@@ -36,7 +36,7 @@ where
         if dtype.is_python() {
             let py_none = Python::with_gil(|py: Python| py.None());
 
-            return DataArray::new(
+            return Self::new(
                 field.into(),
                 Box::new(PseudoArrowArray::from_pyobj_vec(vec![py_none; length])),
             )
@@ -45,7 +45,7 @@ where
 
         let arrow_dtype = dtype.to_arrow();
         match arrow_dtype {
-            Ok(arrow_dtype) => DataArray::<T>::new(
+            Ok(arrow_dtype) => Self::new(
                 Arc::new(Field::new(name.to_string(), dtype.clone())),
                 arrow2::array::new_null_array(arrow_dtype, length),
             )
@@ -58,7 +58,7 @@ where
         let field = Field::new(name, dtype.clone());
         #[cfg(feature = "python")]
         if dtype.is_python() {
-            return DataArray::new(
+            return Self::new(
                 field.into(),
                 Box::new(PseudoArrowArray::from_pyobj_vec(vec![])),
             )
@@ -67,7 +67,7 @@ where
 
         let arrow_dtype = dtype.to_arrow();
         match arrow_dtype {
-            Ok(arrow_dtype) => DataArray::<T>::new(
+            Ok(arrow_dtype) => Self::new(
                 Arc::new(Field::new(name.to_string(), dtype.clone())),
                 arrow2::array::new_empty_array(arrow_dtype),
             )

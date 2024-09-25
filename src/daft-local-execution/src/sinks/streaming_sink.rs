@@ -53,7 +53,7 @@ pub(crate) struct StreamingSinkNode {
 impl StreamingSinkNode {
     pub(crate) fn new(op: Arc<dyn StreamingSink>, children: Vec<Box<dyn PipelineNode>>) -> Self {
         let name = op.name();
-        StreamingSinkNode {
+        Self {
             op,
             name,
             children,

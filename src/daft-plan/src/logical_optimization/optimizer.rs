@@ -23,7 +23,7 @@ pub struct OptimizerConfig {
 
 impl OptimizerConfig {
     fn new(max_optimizer_passes: usize, enable_actor_pool_projections: bool) -> Self {
-        OptimizerConfig {
+        Self {
             default_max_optimizer_passes: max_optimizer_passes,
             enable_actor_pool_projections,
         }
@@ -33,7 +33,7 @@ impl OptimizerConfig {
 impl Default for OptimizerConfig {
     fn default() -> Self {
         // Default to a max of 5 optimizer passes for a given batch.
-        OptimizerConfig::new(5, false)
+        Self::new(5, false)
     }
 }
 

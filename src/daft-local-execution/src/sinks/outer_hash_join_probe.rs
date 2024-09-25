@@ -105,8 +105,8 @@ enum OuterHashJoinProbeState {
 impl OuterHashJoinProbeState {
     fn initialize_probe_state(&mut self, probe_state: Arc<ProbeState>, needs_bitmap: bool) {
         let tables = probe_state.get_tables().clone();
-        if let OuterHashJoinProbeState::Building = self {
-            *self = OuterHashJoinProbeState::ReadyToProbe(
+        if let Self::Building = self {
+            *self = Self::ReadyToProbe(
                 probe_state,
                 if needs_bitmap {
                     Some(IndexBitmapBuilder::new(&tables))
@@ -120,7 +120,7 @@ impl OuterHashJoinProbeState {
     }
 
     fn get_probe_state(&self) -> &ProbeState {
-        if let OuterHashJoinProbeState::ReadyToProbe(probe_state, _) = self {
+        if let Self::ReadyToProbe(probe_state, _) = self {
             probe_state
         } else {
             panic!("get_probeable_and_table can only be used during the ReadyToProbe Phase")
@@ -128,7 +128,7 @@ impl OuterHashJoinProbeState {
     }
 
     fn get_bitmap_builder(&mut self) -> &mut Option<IndexBitmapBuilder> {
-        if let OuterHashJoinProbeState::ReadyToProbe(_, bitmap_builder) = self {
+        if let Self::ReadyToProbe(_, bitmap_builder) = self {
             bitmap_builder
         } else {
             panic!("get_bitmap can only be used during the ReadyToProbe Phase")

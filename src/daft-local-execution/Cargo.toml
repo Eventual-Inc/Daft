@@ -29,6 +29,9 @@ tracing = {workspace = true}
 [features]
 python = ["dep:pyo3", "common-daft-config/python", "common-file-formats/python", "common-error/python", "daft-dsl/python", "daft-io/python", "daft-micropartition/python", "daft-plan/python", "daft-scan/python", "common-display/python"]
 
+[lints]
+workspace = true
+
 [package]
 edition = {workspace = true}
 name = "daft-local-execution"

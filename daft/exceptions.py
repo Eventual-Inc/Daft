@@ -52,3 +52,19 @@ class SocketError(DaftTransientError):
     """
 
     pass
+
+
+class ThrottleError(DaftTransientError):
+    """Daft Throttle Error
+    Daft client had a throttle error while making request to server.
+    """
+
+    pass
+
+
+class MiscTransientError(DaftTransientError):
+    """Daft Misc Transient Error
+    Daft client had a Misc Transient Error while making request to server.
+    """
+
+    pass

@@ -30,7 +30,7 @@ pub struct DataArray<T: DaftPhysicalType> {
 
 impl<T: DaftPhysicalType> Clone for DataArray<T> {
     fn clone(&self) -> Self {
-        DataArray::new(self.field.clone(), self.data.clone()).unwrap()
+        Self::new(self.field.clone(), self.data.clone()).unwrap()
     }
 }
 
@@ -44,7 +44,7 @@ impl<T> DataArray<T>
 where
     T: DaftPhysicalType,
 {
-    pub fn new(field: Arc<Field>, data: Box<dyn arrow2::array::Array>) -> DaftResult<DataArray<T>> {
+    pub fn new(field: Arc<Field>, data: Box<dyn arrow2::array::Array>) -> DaftResult<Self> {
         assert!(
             field.dtype.is_physical(),
             "Can only construct DataArray for PhysicalTypes, got {}",
@@ -61,7 +61,7 @@ where
             }
         }
 
-        Ok(DataArray {
+        Ok(Self {
             field,
             data,
             marker_: PhantomData,
@@ -93,7 +93,7 @@ where
             )));
         }
         let with_bitmap = self.data.with_validity(Some(Bitmap::from(validity)));
-        DataArray::new(self.field.clone(), with_bitmap)
+        Self::new(self.field.clone(), with_bitmap)
     }
 
     pub fn with_validity(&self, validity: Option<Bitmap>) -> DaftResult<Self> {
@@ -107,7 +107,7 @@ where
             )));
         }
         let with_bitmap = self.data.with_validity(validity);
-        DataArray::new(self.field.clone(), with_bitmap)
+        Self::new(self.field.clone(), with_bitmap)
     }
 
     pub fn validity(&self) -> Option<&Bitmap> {

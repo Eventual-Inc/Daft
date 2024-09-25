@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Iterator
+from typing import TYPE_CHECKING
 
 from deltalake.table import DeltaTable
 
@@ -19,6 +19,9 @@ from daft.daft import (
 from daft.io.object_store_options import io_config_to_storage_options
 from daft.io.scan import PartitionField, ScanOperator
 from daft.logical.schema import Schema
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 logger = logging.getLogger(__name__)
 

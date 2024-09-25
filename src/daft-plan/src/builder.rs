@@ -53,8 +53,8 @@ impl LogicalPlanBuilder {
     }
 }
 
-impl From<&LogicalPlanBuilder> for LogicalPlanBuilder {
-    fn from(builder: &LogicalPlanBuilder) -> Self {
+impl From<&Self> for LogicalPlanBuilder {
+    fn from(builder: &Self) -> Self {
         Self {
             plan: builder.plan.clone(),
             config: builder.config.clone(),
@@ -105,7 +105,7 @@ impl LogicalPlanBuilder {
         ));
         let logical_plan: LogicalPlan =
             logical_ops::Source::new(schema.clone(), source_info.into()).into();
-        Ok(LogicalPlanBuilder::new(logical_plan.into(), None))
+        Ok(Self::new(logical_plan.into(), None))
     }
 
     pub fn table_scan(
@@ -139,7 +139,7 @@ impl LogicalPlanBuilder {
         };
         let logical_plan: LogicalPlan =
             logical_ops::Source::new(output_schema, source_info.into()).into();
-        Ok(LogicalPlanBuilder::new(logical_plan.into(), None))
+        Ok(Self::new(logical_plan.into(), None))
     }
 
     pub fn select(&self, to_select: Vec<ExprRef>) -> DaftResult<Self> {
@@ -400,7 +400,7 @@ impl LogicalPlanBuilder {
         &self,
         table_name: String,
         table_location: String,
-        spec_id: i64,
+        partition_spec: PyObject,
         iceberg_schema: PyObject,
         iceberg_properties: PyObject,
         io_config: Option<IOConfig>,
@@ -410,7 +410,7 @@ impl LogicalPlanBuilder {
             catalog: crate::sink_info::CatalogType::Iceberg(IcebergCatalogInfo {
                 table_name,
                 table_location,
-                spec_id,
+                partition_spec,
                 iceberg_schema,
                 iceberg_properties,
                 io_config,
@@ -432,6 +432,7 @@ impl LogicalPlanBuilder {
         mode: String,
         version: i32,
         large_dtypes: bool,
+        partition_cols: Option<Vec<String>>,
         io_config: Option<IOConfig>,
     ) -> DaftResult<Self> {
         use crate::sink_info::DeltaLakeCatalogInfo;
@@ -441,6 +442,7 @@ impl LogicalPlanBuilder {
                 mode,
                 version,
                 large_dtypes,
+                partition_cols,
                 io_config,
             }),
             catalog_columns: columns_name,
@@ -724,7 +726,7 @@ impl PyLogicalPlanBuilder {
         &self,
         table_name: String,
         table_location: String,
-        spec_id: i64,
+        partition_spec: PyObject,
         iceberg_schema: PyObject,
         iceberg_properties: PyObject,
         catalog_columns: Vec<String>,
@@ -735,7 +737,7 @@ impl PyLogicalPlanBuilder {
             .iceberg_write(
                 table_name,
                 table_location,
-                spec_id,
+                partition_spec,
                 iceberg_schema,
                 iceberg_properties,
                 io_config.map(|cfg| cfg.config),
@@ -752,6 +754,7 @@ impl PyLogicalPlanBuilder {
         mode: String,
         version: i32,
         large_dtypes: bool,
+        partition_cols: Option<Vec<String>>,
         io_config: Option<common_io_config::python::IOConfig>,
     ) -> PyResult<Self> {
         Ok(self
@@ -762,6 +765,7 @@ impl PyLogicalPlanBuilder {
                 mode,
                 version,
                 large_dtypes,
+                partition_cols,
                 io_config.map(|cfg| cfg.config),
             )?
             .into())

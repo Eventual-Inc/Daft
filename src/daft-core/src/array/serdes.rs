@@ -27,7 +27,7 @@ where
     <I as IntoIterator>::Item: serde::Serialize,
 {
     fn new(iter: I) -> Self {
-        IterSer {
+        Self {
             iter: RefCell::new(Some(iter)),
         }
     }

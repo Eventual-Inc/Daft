@@ -28,6 +28,7 @@ URLS = [
     "mysql+pymysql://username:password@localhost:3306/mysql",
 ]
 TEST_TABLE_NAME = "example"
+EMPTY_TEST_TABLE_NAME = "empty_table"
 
 
 @pytest.fixture(scope="session", params=[{"num_rows": 200}])
@@ -51,6 +52,28 @@ def generated_data(request: pytest.FixtureRequest) -> pd.DataFrame:
 def test_db(request: pytest.FixtureRequest, generated_data: pd.DataFrame) -> Generator[str, None, None]:
     db_url = request.param
     setup_database(db_url, generated_data)
+    yield db_url
+
+
+@pytest.fixture(scope="session", params=URLS)
+def empty_test_db(request: pytest.FixtureRequest) -> Generator[str, None, None]:
+    data = pd.DataFrame(
+        {
+            "id": pd.Series(dtype="int"),
+            "string_col": pd.Series(dtype="str"),
+        }
+    )
+    db_url = request.param
+    engine = create_engine(db_url)
+    metadata = MetaData()
+    table = Table(
+        EMPTY_TEST_TABLE_NAME,
+        metadata,
+        Column("id", Integer),
+        Column("string_col", String(50)),
+    )
+    metadata.create_all(engine)
+    data.to_sql(table.name, con=engine, if_exists="replace", index=False)
     yield db_url
 
 

@@ -6,7 +6,7 @@ use crate::{
 };
 
 impl Series {
-    pub fn sign(&self) -> DaftResult<Series> {
+    pub fn sign(&self) -> DaftResult<Self> {
         match self.data_type() {
             DataType::UInt8 => Ok(self.u8().unwrap().sign_unsigned()?.into_series()),
             DataType::UInt16 => Ok(self.u16().unwrap().sign_unsigned()?.into_series()),

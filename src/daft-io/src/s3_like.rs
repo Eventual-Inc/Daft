@@ -10,8 +10,10 @@ use aws_credential_types::{
     cache::{CredentialsCache, ProvideCachedCredentials, SharedCredentialsCache},
     provider::error::CredentialsError,
 };
-use aws_sdk_s3 as s3;
-use aws_sdk_s3::{operation::put_object::PutObjectError, primitives::ByteStreamError};
+use aws_sdk_s3::{
+    self as s3, error::ProvideErrorMetadata, operation::put_object::PutObjectError,
+    primitives::ByteStreamError,
+};
 use aws_sig_auth::signer::SigningRequirements;
 use aws_smithy_async::rt::sleep::TokioSleep;
 use common_io_config::S3Config;
@@ -118,126 +120,150 @@ enum Error {
     UploadsCannotBeAnonymous {},
 }
 
+/// List of AWS error codes that are due to throttling
+/// https://docs.aws.amazon.com/AmazonS3/latest/API/ErrorResponses.html#ErrorCodeList
+const THROTTLING_ERRORS: &[&str] = &[
+    "Throttling",
+    "ThrottlingException",
+    "ThrottledException",
+    "RequestThrottledException",
+    "TooManyRequestsException",
+    "ProvisionedThroughputExceededException",
+    "TransactionInProgressException",
+    "RequestLimitExceeded",
+    "BandwidthLimitExceeded",
+    "LimitExceededException",
+    "RequestThrottled",
+    "SlowDown",
+    "PriorRequestNotComplete",
+    "EC2ThrottledException",
+];
+
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
         use Error::*;
 
+        fn classify_unhandled_error<
+            E: std::error::Error + ProvideErrorMetadata + Send + Sync + 'static,
+        >(
+            path: String,
+            err: E,
+        ) -> super::Error {
+            match err.code() {
+                Some("InternalError") => super::Error::MiscTransient {
+                    path,
+                    source: err.into(),
+                },
+                Some(code) if THROTTLING_ERRORS.contains(&code) => super::Error::Throttled {
+                    path,
+                    source: err.into(),
+                },
+                _ => super::Error::Unhandled {
+                    path,
+                    msg: DisplayErrorContext(err).to_string(),
+                },
+            }
+        }
+
         match error {
             UnableToOpenFile { path, source } => match source {
-                SdkError::TimeoutError(_) => super::Error::ReadTimeout {
+                SdkError::TimeoutError(_) => Self::ReadTimeout {
                     path,
                     source: source.into(),
                 },
                 SdkError::DispatchFailure(ref dispatch) => {
                     if dispatch.is_timeout() {
-                        super::Error::ConnectTimeout {
+                        Self::ConnectTimeout {
                             path,
                             source: source.into(),
                         }
                     } else if dispatch.is_io() {
-                        super::Error::SocketError {
+                        Self::SocketError {
                             path,
                             source: source.into(),
                         }
                     } else {
-                        super::Error::UnableToOpenFile {
+                        // who knows what happened here during dispatch, let's just tell the user it's transient
+                        Self::MiscTransient {
                             path,
                             source: source.into(),
                         }
                     }
                 }
+
                 _ => match source.into_service_error() {
-                    GetObjectError::NoSuchKey(no_such_key) => super::Error::NotFound {
+                    GetObjectError::NoSuchKey(no_such_key) => Self::NotFound {
                         path,
                         source: no_such_key.into(),
                     },
-                    GetObjectError::Unhandled(v) => super::Error::Unhandled {
-                        path,
-                        msg: DisplayErrorContext(v).to_string(),
-                    },
-                    err => super::Error::UnableToOpenFile {
-                        path,
-                        source: err.into(),
-                    },
+                    err => classify_unhandled_error(path, err),
                 },
             },
             UnableToHeadFile { path, source } => match source {
-                SdkError::TimeoutError(_) => super::Error::ReadTimeout {
+                SdkError::TimeoutError(_) => Self::ReadTimeout {
                     path,
                     source: source.into(),
                 },
                 SdkError::DispatchFailure(ref dispatch) => {
                     if dispatch.is_timeout() {
-                        super::Error::ConnectTimeout {
+                        Self::ConnectTimeout {
                             path,
                             source: source.into(),
                         }
                     } else if dispatch.is_io() {
-                        super::Error::SocketError {
+                        Self::SocketError {
                             path,
                             source: source.into(),
                         }
                     } else {
-                        super::Error::UnableToOpenFile {
+                        // who knows what happened here during dispatch, let's just tell the user it's transient
+                        Self::MiscTransient {
                             path,
                             source: source.into(),
                         }
                     }
                 }
                 _ => match source.into_service_error() {
-                    HeadObjectError::NotFound(no_such_key) => super::Error::NotFound {
+                    HeadObjectError::NotFound(no_such_key) => Self::NotFound {
                         path,
                         source: no_such_key.into(),
                     },
-                    HeadObjectError::Unhandled(v) => super::Error::Unhandled {
-                        path,
-                        msg: DisplayErrorContext(v).to_string(),
-                    },
-                    err => super::Error::UnableToOpenFile {
-                        path,
-                        source: err.into(),
-                    },
+                    err => classify_unhandled_error(path, err),
                 },
             },
             UnableToListObjects { path, source } => match source {
-                SdkError::TimeoutError(_) => super::Error::ReadTimeout {
+                SdkError::TimeoutError(_) => Self::ReadTimeout {
                     path,
                     source: source.into(),
                 },
                 SdkError::DispatchFailure(ref dispatch) => {
                     if dispatch.is_timeout() {
-                        super::Error::ConnectTimeout {
+                        Self::ConnectTimeout {
                             path,
                             source: source.into(),
                         }
                     } else if dispatch.is_io() {
-                        super::Error::SocketError {
+                        Self::SocketError {
                             path,
                             source: source.into(),
                         }
                     } else {
-                        super::Error::UnableToOpenFile {
+                        // who knows what happened here during dispatch, let's just tell the user it's transient
+                        Self::MiscTransient {
                             path,
                             source: source.into(),
                         }
                     }
                 }
                 _ => match source.into_service_error() {
-                    ListObjectsV2Error::NoSuchBucket(no_such_key) => super::Error::NotFound {
+                    ListObjectsV2Error::NoSuchBucket(no_such_key) => Self::NotFound {
                         path,
                         source: no_such_key.into(),
                     },
-                    ListObjectsV2Error::Unhandled(v) => super::Error::Unhandled {
-                        path,
-                        msg: DisplayErrorContext(v).to_string(),
-                    },
-                    err => super::Error::UnableToOpenFile {
-                        path,
-                        source: err.into(),
-                    },
+                    err => classify_unhandled_error(path, err),
                 },
             },
-            InvalidUrl { path, source } => super::Error::InvalidUrl { path, source },
+            InvalidUrl { path, source } => Self::InvalidUrl { path, source },
             UnableToReadBytes { path, source } => {
                 use std::error::Error;
                 let io_error = if let Some(source) = source.source() {
@@ -247,21 +273,21 @@ impl From<Error> for super::Error {
                 } else {
                     std::io::Error::new(io::ErrorKind::Other, source)
                 };
-                super::Error::UnableToReadBytes {
+                Self::UnableToReadBytes {
                     path,
                     source: io_error,
                 }
             }
-            NotAFile { path } => super::Error::NotAFile { path },
-            UnableToLoadCredentials { source } => super::Error::UnableToLoadCredentials {
+            NotAFile { path } => Self::NotAFile { path },
+            UnableToLoadCredentials { source } => Self::UnableToLoadCredentials {
                 store: SourceType::S3,
                 source: source.into(),
             },
-            NotFound { ref path } => super::Error::NotFound {
+            NotFound { ref path } => Self::NotFound {
                 path: path.into(),
                 source: error.into(),
             },
-            err => super::Error::Generic {
+            err => Self::Generic {
                 store: SourceType::S3,
                 source: err.into(),
             },
@@ -553,7 +579,7 @@ async fn build_client(config: &S3Config) -> super::Result<S3LikeSource> {
 const REGION_HEADER: &str = "x-amz-bucket-region";
 
 impl S3LikeSource {
-    pub async fn get_client(config: &S3Config) -> super::Result<Arc<S3LikeSource>> {
+    pub async fn get_client(config: &S3Config) -> super::Result<Arc<Self>> {
         Ok(build_client(config).await?.into())
     }
 

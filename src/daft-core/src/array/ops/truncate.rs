@@ -10,6 +10,7 @@ use crate::{
         logical::Decimal128Array, DaftNumericType, Int16Type, Int32Type, Int64Type, Int8Type,
         UInt16Type, UInt32Type, UInt64Type, UInt8Type, Utf8Array,
     },
+    prelude::BinaryArray,
 };
 
 macro_rules! impl_int_truncate {
@@ -43,7 +44,7 @@ impl_int_truncate!(UInt32Type);
 impl_int_truncate!(UInt64Type);
 
 impl Decimal128Array {
-    pub fn iceberg_truncate(&self, w: i64) -> DaftResult<Decimal128Array> {
+    pub fn iceberg_truncate(&self, w: i64) -> DaftResult<Self> {
         let as_arrow = self.as_arrow();
         let trun_value = as_arrow.into_iter().map(|v| {
             v.map(|i| {
@@ -61,9 +62,17 @@ impl Decimal128Array {
 }
 
 impl Utf8Array {
-    pub fn iceberg_truncate(&self, w: i64) -> DaftResult<Utf8Array> {
+    pub fn iceberg_truncate(&self, w: i64) -> DaftResult<Self> {
         let as_arrow = self.as_arrow();
         let substring = arrow2::compute::substring::utf8_substring(as_arrow, 0, &Some(w));
-        Ok(Utf8Array::from((self.name(), Box::new(substring))))
+        Ok(Self::from((self.name(), Box::new(substring))))
+    }
+}
+
+impl BinaryArray {
+    pub fn iceberg_truncate(&self, w: i64) -> DaftResult<Self> {
+        let as_arrow = self.as_arrow();
+        let substring = arrow2::compute::substring::binary_substring(as_arrow, 0, &Some(w));
+        Ok(Self::from((self.name(), Box::new(substring))))
     }
 }

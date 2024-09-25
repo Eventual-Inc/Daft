@@ -6,7 +6,8 @@ use crate::{
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            FixedShapeTensorArray, ImageArray, MapArray, TensorArray, TimeArray, TimestampArray,
+            FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
+            SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
         BinaryArray, BooleanArray, DaftNumericType, DataType, ExtensionArray, FixedSizeBinaryArray,
         NullArray, UInt64Array, Utf8Array,
@@ -269,6 +270,47 @@ impl ImageArray {
     }
 }
 
+impl SparseTensorArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        // Shapes are always valid, use values array validity
+        let is_valid = self
+            .values_array()
+            .validity()
+            .map_or(true, |v| v.get_bit(idx));
+        let shape_element = if is_valid {
+            self.shape_array().get(idx)
+        } else {
+            None
+        };
+        match shape_element {
+            Some(shape) => Ok(format!(
+                "<SparseTensor shape=({})>",
+                shape
+                    .downcast::<UInt64Array>()
+                    .unwrap()
+                    .into_iter()
+                    .map(|dim| match dim {
+                        None => "None".to_string(),
+                        Some(dim) => dim.to_string(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )),
+            None => Ok("None".to_string()),
+        }
+    }
+}
+
+impl FixedShapeSparseTensorArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        if self.physical.is_valid(idx) {
+            Ok("<FixedShapeSparseTensor>".to_string())
+        } else {
+            Ok("None".to_string())
+        }
+    }
+}
+
 impl FixedShapeImageArray {
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
         if self.physical.is_valid(idx) {
@@ -425,6 +467,24 @@ impl FixedShapeTensorArray {
 }
 
 impl TensorArray {
+    pub fn html_value(&self, idx: usize) -> String {
+        let str_value = self.str_value(idx).unwrap();
+        html_escape::encode_text(&str_value)
+            .into_owned()
+            .replace('\n', "<br />")
+    }
+}
+
+impl SparseTensorArray {
+    pub fn html_value(&self, idx: usize) -> String {
+        let str_value = self.str_value(idx).unwrap();
+        html_escape::encode_text(&str_value)
+            .into_owned()
+            .replace('\n', "<br />")
+    }
+}
+
+impl FixedShapeSparseTensorArray {
     pub fn html_value(&self, idx: usize) -> String {
         let str_value = self.str_value(idx).unwrap();
         html_escape::encode_text(&str_value)

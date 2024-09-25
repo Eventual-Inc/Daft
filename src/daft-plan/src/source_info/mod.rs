@@ -87,7 +87,7 @@ pub struct PlaceHolderInfo {
 
 impl PlaceHolderInfo {
     pub fn new(source_schema: SchemaRef, clustering_spec: ClusteringSpecRef) -> Self {
-        PlaceHolderInfo {
+        Self {
             source_schema,
             clustering_spec,
             source_id: PLACEHOLDER_ID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst),

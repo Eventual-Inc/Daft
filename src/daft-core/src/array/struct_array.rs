@@ -64,7 +64,7 @@ impl StructArray {
                     )
                 }
 
-                StructArray {
+                Self {
                     field,
                     children,
                     validity,
@@ -108,7 +108,7 @@ impl StructArray {
 
         growable
             .build()
-            .map(|s| s.downcast::<StructArray>().unwrap().clone())
+            .map(|s| s.downcast::<Self>().unwrap().clone())
     }
 
     pub fn len(&self) -> usize {

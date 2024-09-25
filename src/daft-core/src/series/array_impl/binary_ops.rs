@@ -11,7 +11,8 @@ use crate::{
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            FixedShapeTensorArray, ImageArray, MapArray, TensorArray, TimeArray, TimestampArray,
+            FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
+            SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
         BinaryArray, BooleanArray, DataType, ExtensionArray, Field, FixedSizeBinaryArray,
         Float32Array, Float64Array, InferDataType, Int128Array, Int16Array, Int32Array, Int64Array,
@@ -399,3 +400,5 @@ impl SeriesBinaryOps for ArrayWrapper<ImageArray> {}
 impl SeriesBinaryOps for ArrayWrapper<FixedShapeImageArray> {}
 impl SeriesBinaryOps for ArrayWrapper<TensorArray> {}
 impl SeriesBinaryOps for ArrayWrapper<FixedShapeTensorArray> {}
+impl SeriesBinaryOps for ArrayWrapper<SparseTensorArray> {}
+impl SeriesBinaryOps for ArrayWrapper<FixedShapeSparseTensorArray> {}

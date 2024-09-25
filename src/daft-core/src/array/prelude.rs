@@ -2,8 +2,8 @@ pub use super::{DataArray, FixedSizeListArray, ListArray, StructArray};
 // Import logical array types
 pub use crate::datatypes::logical::{
     DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-    FixedShapeTensorArray, ImageArray, LogicalArray, MapArray, TensorArray, TimeArray,
-    TimestampArray,
+    FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, LogicalArray, MapArray,
+    SparseTensorArray, TensorArray, TimeArray, TimestampArray,
 };
 pub use crate::{
     array::ops::{

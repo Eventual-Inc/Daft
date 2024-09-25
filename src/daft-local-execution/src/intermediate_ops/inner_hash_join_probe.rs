@@ -20,15 +20,15 @@ enum InnerHashJoinProbeState {
 
 impl InnerHashJoinProbeState {
     fn set_probe_state(&mut self, probe_state: Arc<ProbeState>) {
-        if let InnerHashJoinProbeState::Building = self {
-            *self = InnerHashJoinProbeState::ReadyToProbe(probe_state);
+        if let Self::Building = self {
+            *self = Self::ReadyToProbe(probe_state);
         } else {
             panic!("InnerHashJoinProbeState should only be in Building state when setting table")
         }
     }
 
     fn get_probe_state(&self) -> Arc<ProbeState> {
-        if let InnerHashJoinProbeState::ReadyToProbe(probe_state) = self {
+        if let Self::ReadyToProbe(probe_state) = self {
             probe_state.clone()
         } else {
             panic!("get_probeable_and_table can only be used during the ReadyToProbe Phase")

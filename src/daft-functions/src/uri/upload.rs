@@ -26,7 +26,7 @@ impl ScalarUDF for UploadFunction {
     }
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
-        let UploadFunction {
+        let Self {
             location,
             config,
             max_connections,

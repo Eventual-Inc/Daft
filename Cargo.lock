@@ -1819,12 +1819,14 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "common-error",
+ "common-hashable-float-wrapper",
  "common-io-config",
  "daft-core",
  "daft-dsl",
  "daft-image",
  "daft-io",
  "futures",
+ "paste",
  "pyo3",
  "serde",
  "snafu",
@@ -2029,6 +2031,7 @@ dependencies = [
  "itertools 0.11.0",
  "log",
  "parquet2",
+ "path_macro",
  "pyo3",
  "rayon",
  "serde",
@@ -2071,6 +2074,7 @@ dependencies = [
  "daft-scan",
  "daft-schema",
  "daft-table",
+ "derivative",
  "indexmap 2.5.0",
  "itertools 0.11.0",
  "log",
@@ -2169,6 +2173,7 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-functions",
+ "daft-functions-json",
  "daft-plan",
  "once_cell",
  "pyo3",
@@ -2235,6 +2240,17 @@ checksum = "b42b6fa04a440b495c8b04d0e71b707c585f83cb9cb28cf8cd0d976c315e31b4"
 dependencies = [
  "powerfmt",
  "serde",
+]
+
+[[package]]
+name = "derivative"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fcc3dd5e9e9c0b295d6e1e4d811fb6f157d5ffd784b8d202fc62eac8035a770b"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -3921,6 +3937,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
+name = "path_macro"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a6e819bbd49d5939f682638fa54826bf1650abddcd65d000923de8ad63cc7d15"
+
+[[package]]
 name = "pem"
 version = "3.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5038,9 +5060,9 @@ dependencies = [
 
 [[package]]
 name = "sqlparser"
-version = "0.49.0"
+version = "0.51.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a4a404d0e14905361b918cb8afdb73605e25c1d5029312bd9785142dcb3aa49e"
+checksum = "5fe11944a61da0da3f592e19a45ebe5ab92dc14a779907ff1f08fbb797bfefc7"
 dependencies = [
  "log",
 ]

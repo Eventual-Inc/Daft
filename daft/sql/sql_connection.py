@@ -4,12 +4,12 @@ import logging
 from typing import TYPE_CHECKING, Callable
 from urllib.parse import urlparse
 
-import pyarrow as pa
-
+from daft.dependencies import pa
 from daft.logical.schema import Schema
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Connection
+
 
 logger = logging.getLogger(__name__)
 

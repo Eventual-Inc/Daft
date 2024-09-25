@@ -62,7 +62,7 @@ pub struct ApproxStats {
 
 impl ApproxStats {
     fn empty() -> Self {
-        ApproxStats {
+        Self {
             lower_bound_rows: 0,
             upper_bound_rows: None,
             lower_bound_bytes: 0,
@@ -70,7 +70,7 @@ impl ApproxStats {
         }
     }
     fn apply<F: Fn(usize) -> usize>(&self, f: F) -> Self {
-        ApproxStats {
+        Self {
             lower_bound_rows: f(self.lower_bound_rows),
             upper_bound_rows: self.upper_bound_rows.map(&f),
             lower_bound_bytes: f(self.lower_bound_rows),
@@ -411,7 +411,7 @@ impl PhysicalPlan {
         }
     }
 
-    pub fn children(&self) -> Vec<&PhysicalPlan> {
+    pub fn children(&self) -> Vec<&Self> {
         match self {
             Self::InMemoryScan(..) => vec![],
             Self::TabularScan(..) | Self::EmptyScan(..) => vec![],
@@ -457,7 +457,7 @@ impl PhysicalPlan {
         }
     }
 
-    pub fn with_new_children(&self, children: &[PhysicalPlanRef]) -> PhysicalPlan {
+    pub fn with_new_children(&self, children: &[PhysicalPlanRef]) -> Self {
         match children {
             [input] => match self {
                 Self::InMemoryScan(..) => panic!("Source nodes don't have children, with_new_children() should never be called for source ops"),
