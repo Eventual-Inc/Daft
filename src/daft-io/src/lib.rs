@@ -97,6 +97,12 @@ pub enum Error {
     ))]
     SocketError { path: String, source: DynError },
 
+    #[snafu(display("Throttled when trying to read {}\nDetails:\n{:?}", path, source))]
+    Throttled { path: String, source: DynError },
+
+    #[snafu(display("Misc Transient error trying to read {}\nDetails:\n{:?}", path, source))]
+    MiscTransient { path: String, source: DynError },
+
     #[snafu(display("Unable to convert URL \"{}\" to path", path))]
     InvalidUrl {
         path: String,

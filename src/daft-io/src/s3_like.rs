@@ -10,8 +10,10 @@ use aws_credential_types::{
     cache::{CredentialsCache, ProvideCachedCredentials, SharedCredentialsCache},
     provider::error::CredentialsError,
 };
-use aws_sdk_s3 as s3;
-use aws_sdk_s3::{operation::put_object::PutObjectError, primitives::ByteStreamError};
+use aws_sdk_s3::{
+    self as s3, error::ProvideErrorMetadata, operation::put_object::PutObjectError,
+    primitives::ByteStreamError,
+};
 use aws_sig_auth::signer::SigningRequirements;
 use aws_smithy_async::rt::sleep::TokioSleep;
 use common_io_config::S3Config;
@@ -118,6 +120,23 @@ enum Error {
     UploadsCannotBeAnonymous {},
 }
 
+const THROTTLING_ERRORS: &[&str] = &[
+    "Throttling",
+    "ThrottlingException",
+    "ThrottledException",
+    "RequestThrottledException",
+    "TooManyRequestsException",
+    "ProvisionedThroughputExceededException",
+    "TransactionInProgressException",
+    "RequestLimitExceeded",
+    "BandwidthLimitExceeded",
+    "LimitExceededException",
+    "RequestThrottled",
+    "SlowDown",
+    "PriorRequestNotComplete",
+    "EC2ThrottledException",
+];
+
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
         use Error::*;
@@ -140,24 +159,33 @@ impl From<Error> for super::Error {
                             source: source.into(),
                         }
                     } else {
-                        super::Error::UnableToOpenFile {
+                        super::Error::MiscTransient {
                             path,
                             source: source.into(),
                         }
                     }
                 }
+
                 _ => match source.into_service_error() {
                     GetObjectError::NoSuchKey(no_such_key) => super::Error::NotFound {
                         path,
                         source: no_such_key.into(),
                     },
-                    GetObjectError::Unhandled(v) => super::Error::Unhandled {
-                        path,
-                        msg: DisplayErrorContext(v).to_string(),
-                    },
-                    err => super::Error::UnableToOpenFile {
-                        path,
-                        source: err.into(),
+                    err => match err.code() {
+                        Some("InternalError") => super::Error::MiscTransient {
+                            path,
+                            source: err.into(),
+                        },
+                        Some(code) if THROTTLING_ERRORS.contains(&code) => {
+                            super::Error::Throttled {
+                                path,
+                                source: err.into(),
+                            }
+                        }
+                        _ => super::Error::UnableToOpenFile {
+                            path,
+                            source: err.into(),
+                        },
                     },
                 },
             },
