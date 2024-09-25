@@ -350,8 +350,32 @@ async fn stream_scan_task(
                     .map(|t| t.into())
                     .context(PyIOSnafu)
                 })?,
-                FileFormatConfig::Database(_) => {
-                    todo!("Database reads not yet implemented for native executor")
+                FileFormatConfig::Database(common_file_formats::DatabaseSourceConfig {
+                    sql,
+                    conn,
+                }) => {
+                    let predicate = scan_task
+                        .pushdowns
+                        .filters
+                        .as_ref()
+                        .map(|p| (*p.as_ref()).clone().into());
+                    Python::with_gil(|py| {
+                        daft_micropartition::python::read_sql_into_py_table(
+                            py,
+                            sql,
+                            conn,
+                            predicate.clone(),
+                            scan_task.schema.clone().into(),
+                            scan_task
+                                .pushdowns
+                                .columns
+                                .as_ref()
+                                .map(|cols| cols.as_ref().clone()),
+                            scan_task.pushdowns.limit,
+                        )
+                        .map(|t| t.into())
+                        .context(PyIOSnafu)
+                    })?
                 }
                 FileFormatConfig::PythonFunction => {
                     todo!("PythonFunction reads not yet implemented for native executor")
