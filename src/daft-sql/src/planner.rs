@@ -103,7 +103,6 @@ impl SQLPlanner {
                 query.body
             ))
         })?;
-        println!("selection: {}", selection);
 
         check_select_features(selection)?;
 
@@ -152,7 +151,6 @@ impl SQLPlanner {
                     .iter()
                     .any(|e| expr.input_mapping() == e.input_mapping())
             });
-        println!("select exprs: {:?}", to_select);
 
         if !groupby_exprs.is_empty() {
             let rel = self.relation_mut();
