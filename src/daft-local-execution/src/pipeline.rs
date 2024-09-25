@@ -14,7 +14,7 @@ use daft_physical_plan::{
     UnGroupedAggregate,
 };
 use daft_plan::{populate_aggregation_stages, JoinType};
-use daft_table::{Probeable, Table};
+use daft_table::ProbeState;
 use indexmap::IndexSet;
 use snafu::ResultExt;
 
@@ -38,7 +38,7 @@ use crate::{
 #[derive(Clone)]
 pub enum PipelineResultType {
     Data(Arc<MicroPartition>),
-    ProbeTable(Arc<dyn Probeable>, Arc<Vec<Table>>),
+    ProbeState(Arc<ProbeState>),
 }
 
 impl From<Arc<MicroPartition>> for PipelineResultType {
@@ -47,9 +47,9 @@ impl From<Arc<MicroPartition>> for PipelineResultType {
     }
 }
 
-impl From<(Arc<dyn Probeable>, Arc<Vec<Table>>)> for PipelineResultType {
-    fn from((probe_table, tables): (Arc<dyn Probeable>, Arc<Vec<Table>>)) -> Self {
-        PipelineResultType::ProbeTable(probe_table, tables)
+impl From<Arc<ProbeState>> for PipelineResultType {
+    fn from(probe_state: Arc<ProbeState>) -> Self {
+        PipelineResultType::ProbeState(probe_state)
     }
 }
 
@@ -61,15 +61,15 @@ impl PipelineResultType {
         }
     }
 
-    pub fn as_probe_table(&self) -> (&Arc<dyn Probeable>, &Arc<Vec<Table>>) {
+    pub fn as_probe_state(&self) -> &Arc<ProbeState> {
         match self {
-            PipelineResultType::ProbeTable(probe_table, tables) => (probe_table, tables),
+            PipelineResultType::ProbeState(probe_state) => probe_state,
             _ => panic!("Expected probe table"),
         }
     }
 
     pub fn should_broadcast(&self) -> bool {
-        matches!(self, PipelineResultType::ProbeTable(_, _))
+        matches!(self, PipelineResultType::ProbeState(_))
     }
 }
 

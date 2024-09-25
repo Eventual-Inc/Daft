@@ -4,7 +4,7 @@ use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
-use daft_table::{GrowableTable, Probeable, Table};
+use daft_table::{GrowableTable, ProbeState};
 use indexmap::IndexSet;
 use tracing::{info_span, instrument};
 
@@ -15,21 +15,21 @@ use crate::pipeline::PipelineResultType;
 
 enum InnerHashJoinProbeState {
     Building,
-    ReadyToProbe(Arc<dyn Probeable>, Arc<Vec<Table>>),
+    ReadyToProbe(Arc<ProbeState>),
 }
 
 impl InnerHashJoinProbeState {
-    fn set_table(&mut self, table: &Arc<dyn Probeable>, tables: &Arc<Vec<Table>>) {
+    fn set_probe_state(&mut self, probe_state: Arc<ProbeState>) {
         if let InnerHashJoinProbeState::Building = self {
-            *self = InnerHashJoinProbeState::ReadyToProbe(table.clone(), tables.clone());
+            *self = InnerHashJoinProbeState::ReadyToProbe(probe_state);
         } else {
             panic!("InnerHashJoinProbeState should only be in Building state when setting table")
         }
     }
 
-    fn get_probeable_and_table(&self) -> (&Arc<dyn Probeable>, &Arc<Vec<Table>>) {
-        if let InnerHashJoinProbeState::ReadyToProbe(probe_table, tables) = self {
-            (probe_table, tables)
+    fn get_probe_state(&self) -> Arc<ProbeState> {
+        if let InnerHashJoinProbeState::ReadyToProbe(probe_state) = self {
+            probe_state.clone()
         } else {
             panic!("get_probeable_and_table can only be used during the ReadyToProbe Phase")
         }
@@ -85,7 +85,10 @@ impl InnerHashJoinProbeOperator {
         input: &Arc<MicroPartition>,
         state: &mut InnerHashJoinProbeState,
     ) -> DaftResult<Arc<MicroPartition>> {
-        let (probe_table, tables) = state.get_probeable_and_table();
+        let (probe_table, tables) = {
+            let probe_state = state.get_probe_state();
+            (probe_state.get_probeable(), probe_state.get_tables())
+        };
 
         let _growables = info_span!("InnerHashJoinOperator::build_growables").entered();
 
@@ -159,8 +162,8 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
             .expect("InnerHashJoinProbeOperator state should be InnerHashJoinProbeState");
         match idx {
             0 => {
-                let (probe_table, tables) = input.as_probe_table();
-                state.set_table(probe_table, tables);
+                let probe_state = input.as_probe_state();
+                state.set_probe_state(probe_state.clone());
                 Ok(IntermediateOperatorResult::NeedMoreInput(None))
             }
             _ => {

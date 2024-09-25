@@ -18,9 +18,9 @@ enum AntiSemiProbeState {
 }
 
 impl AntiSemiProbeState {
-    fn set_table(&mut self, table: &Arc<dyn Probeable>) {
+    fn set_table(&mut self, table: Arc<dyn Probeable>) {
         if let AntiSemiProbeState::Building = self {
-            *self = AntiSemiProbeState::ReadyToProbe(table.clone());
+            *self = AntiSemiProbeState::ReadyToProbe(table);
         } else {
             panic!("AntiSemiProbeState should only be in Building state when setting table")
         }
@@ -109,8 +109,8 @@ impl IntermediateOperator for AntiSemiProbeOperator {
                     .as_any_mut()
                     .downcast_mut::<AntiSemiProbeState>()
                     .expect("AntiSemiProbeOperator state should be AntiSemiProbeState");
-                let (probe_table, _) = input.as_probe_table();
-                state.set_table(probe_table);
+                let probe_state = input.as_probe_state();
+                state.set_table(probe_state.get_probeable());
                 Ok(IntermediateOperatorResult::NeedMoreInput(None))
             }
             _ => {

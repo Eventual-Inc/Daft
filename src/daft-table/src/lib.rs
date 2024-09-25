@@ -28,7 +28,7 @@ mod probeable;
 mod repr_html;
 
 pub use growable::GrowableTable;
-pub use probeable::{make_probeable_builder, Probeable, ProbeableBuilder};
+pub use probeable::{make_probeable_builder, ProbeState, Probeable, ProbeableBuilder};
 
 #[cfg(feature = "python")]
 pub mod python;

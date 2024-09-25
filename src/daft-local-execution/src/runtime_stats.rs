@@ -124,7 +124,9 @@ impl CountingSender {
     ) -> Result<(), SendError<PipelineResultType>> {
         let len = match v {
             PipelineResultType::Data(ref mp) => mp.len(),
-            PipelineResultType::ProbeTable(_, ref tables) => tables.iter().map(|t| t.len()).sum(),
+            PipelineResultType::ProbeState(ref state) => {
+                state.get_tables().iter().map(|t| t.len()).sum()
+            }
         };
         self.sender.send(v).await?;
         self.rt.mark_rows_emitted(len as u64);
@@ -147,8 +149,8 @@ impl CountingReceiver {
         if let Some(ref v) = v {
             let len = match v {
                 PipelineResultType::Data(ref mp) => mp.len(),
-                PipelineResultType::ProbeTable(_, ref tables) => {
-                    tables.iter().map(|t| t.len()).sum()
+                PipelineResultType::ProbeState(state) => {
+                    state.get_tables().iter().map(|t| t.len()).sum()
                 }
             };
             self.rt.mark_rows_received(len as u64);

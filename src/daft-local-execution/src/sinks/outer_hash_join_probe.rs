@@ -1,89 +1,103 @@
 use std::sync::Arc;
 
-use arrow2::bitmap::MutableBitmap;
 use common_error::DaftResult;
 use daft_core::{
-    prelude::{Schema, SchemaRef},
+    prelude::{
+        bitmap::{or, Bitmap, MutableBitmap},
+        Schema, SchemaRef,
+    },
     series::Series,
 };
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use daft_plan::JoinType;
-use daft_table::{GrowableTable, Probeable, Table};
+use daft_table::{GrowableTable, ProbeState, Table};
 use indexmap::IndexSet;
 use tracing::{info_span, instrument};
 
 use super::streaming_sink::{StreamingSink, StreamingSinkOutput, StreamingSinkState};
 use crate::pipeline::PipelineResultType;
 
-struct IndexBitmapTracker {
-    bitmaps: Vec<MutableBitmap>,
+struct IndexBitmapBuilder {
+    bitmap: MutableBitmap,
 }
 
-impl IndexBitmapTracker {
-    fn new(tables: &Arc<Vec<Table>>) -> Self {
-        let bitmaps = tables
-            .iter()
-            .map(|table| MutableBitmap::from_len_zeroed(table.len()))
-            .collect();
-        Self { bitmaps }
+impl IndexBitmapBuilder {
+    const TABLE_IDX_SHIFT: usize = 36;
+    const LOWER_MASK: u64 = (1 << Self::TABLE_IDX_SHIFT) - 1;
+
+    fn new(tables: &[Table]) -> Self {
+        let total_len = tables.iter().map(|t| t.len()).sum();
+        Self {
+            bitmap: MutableBitmap::with_capacity(total_len),
+        }
     }
 
-    fn set_true(&mut self, table_idx: usize, row_idx: usize) {
-        self.bitmaps[table_idx].set(row_idx, true);
+    #[inline]
+    fn mark_used(&mut self, table_idx: usize, row_idx: usize) {
+        let idx = (table_idx as u64) << Self::TABLE_IDX_SHIFT | row_idx as u64;
+        self.bitmap.set(idx as usize, true);
     }
 
+    fn build(self) -> IndexBitmap {
+        IndexBitmap {
+            bitmap: self.bitmap.into(),
+            table_idx_shift: Self::TABLE_IDX_SHIFT,
+            lower_mask: Self::LOWER_MASK,
+        }
+    }
+}
+
+struct IndexBitmap {
+    bitmap: Bitmap,
+    table_idx_shift: usize,
+    lower_mask: u64,
+}
+
+impl IndexBitmap {
     fn or(&self, other: &Self) -> Self {
-        let bitmaps = self
-            .bitmaps
-            .iter()
-            .zip(other.bitmaps.iter())
-            .map(|(a, b)| a.or(b))
-            .collect();
-        Self { bitmaps }
+        assert_eq!(self.table_idx_shift, other.table_idx_shift);
+        assert_eq!(self.lower_mask, other.lower_mask);
+        Self {
+            bitmap: or(&self.bitmap, &other.bitmap),
+            table_idx_shift: self.table_idx_shift,
+            lower_mask: self.lower_mask,
+        }
+    }
+
+    fn unset_bits(&self) -> usize {
+        self.bitmap.unset_bits()
     }
 
     fn get_unused_indices(&self) -> impl Iterator<Item = (usize, usize)> + '_ {
-        self.bitmaps
+        self.bitmap
             .iter()
             .enumerate()
-            .flat_map(|(table_idx, bitmap)| {
-                bitmap
-                    .iter()
-                    .enumerate()
-                    .filter_map(move |(row_idx, is_set)| {
-                        if !is_set {
-                            Some((table_idx, row_idx))
-                        } else {
-                            None
-                        }
-                    })
+            .filter_map(move |(idx, is_set)| {
+                if !is_set {
+                    let table_idx = idx >> self.table_idx_shift;
+                    let row_idx = (idx as u64 & self.lower_mask) as usize;
+                    Some((table_idx, row_idx))
+                } else {
+                    None
+                }
             })
     }
 }
 
 enum OuterHashJoinProbeState {
     Building,
-    ReadyToProbe(
-        Arc<dyn Probeable>,
-        Arc<Vec<Table>>,
-        Option<IndexBitmapTracker>,
-    ),
+    ReadyToProbe(Arc<ProbeState>, Option<IndexBitmapBuilder>),
 }
 
 impl OuterHashJoinProbeState {
-    fn initialize_probe_state(
-        &mut self,
-        table: &Arc<dyn Probeable>,
-        tables: &Arc<Vec<Table>>,
-        needs_bitmap: bool,
-    ) {
+    fn initialize_probe_state(&mut self, probe_state: Arc<ProbeState>, needs_bitmap: bool) {
+        let tables = probe_state.get_tables().clone();
         if let OuterHashJoinProbeState::Building = self {
             *self = OuterHashJoinProbeState::ReadyToProbe(
-                table.clone(),
-                tables.clone(),
+                probe_state,
                 if needs_bitmap {
-                    Some(IndexBitmapTracker::new(tables))
+                    Some(IndexBitmapBuilder::new(&tables))
                 } else {
                     None
                 },
@@ -93,17 +107,17 @@ impl OuterHashJoinProbeState {
         }
     }
 
-    fn get_probeable_and_tables(&self) -> (Arc<dyn Probeable>, Arc<Vec<Table>>) {
-        if let OuterHashJoinProbeState::ReadyToProbe(probe_table, tables, _) = self {
-            (probe_table.clone(), tables.clone())
+    fn get_probe_state(&self) -> &ProbeState {
+        if let OuterHashJoinProbeState::ReadyToProbe(probe_state, _) = self {
+            probe_state
         } else {
             panic!("get_probeable_and_table can only be used during the ReadyToProbe Phase")
         }
     }
 
-    fn get_bitmap(&mut self) -> &mut Option<IndexBitmapTracker> {
-        if let OuterHashJoinProbeState::ReadyToProbe(_, _, bitmap) = self {
-            bitmap
+    fn get_bitmap_builder(&mut self) -> &mut Option<IndexBitmapBuilder> {
+        if let OuterHashJoinProbeState::ReadyToProbe(_, bitmap_builder) = self {
+            bitmap_builder
         } else {
             panic!("get_bitmap can only be used during the ReadyToProbe Phase")
         }
@@ -164,7 +178,10 @@ impl OuterHashJoinProbeSink {
         input: &Arc<MicroPartition>,
         state: &mut OuterHashJoinProbeState,
     ) -> DaftResult<Arc<MicroPartition>> {
-        let (probe_table, tables) = state.get_probeable_and_tables();
+        let (probe_table, tables) = {
+            let probe_state = state.get_probe_state();
+            (probe_state.get_probeable(), probe_state.get_tables())
+        };
 
         let _growables = info_span!("OuterHashJoinProbeSink::build_growables").entered();
 
@@ -230,8 +247,11 @@ impl OuterHashJoinProbeSink {
         input: &Arc<MicroPartition>,
         state: &mut OuterHashJoinProbeState,
     ) -> DaftResult<Arc<MicroPartition>> {
-        let (probe_table, tables) = state.get_probeable_and_tables();
-        let bitmap = state.get_bitmap();
+        let (probe_table, tables) = {
+            let probe_state = state.get_probe_state();
+            (probe_state.get_probeable(), probe_state.get_tables())
+        };
+        let bitmap_builder = state.get_bitmap_builder();
         let _growables = info_span!("OuterHashJoinProbeSink::build_growables").entered();
 
         // Need to set use_validity to true here because we add nulls to the build side
@@ -246,7 +266,9 @@ impl OuterHashJoinProbeSink {
         let mut probe_side_growable =
             GrowableTable::new(&input_tables.iter().collect::<Vec<_>>(), false, input.len())?;
 
-        let left_idx_used = bitmap.as_mut().expect("bitmap should be set in outer join");
+        let left_idx_used = bitmap_builder
+            .as_mut()
+            .expect("bitmap should be set in outer join");
 
         drop(_growables);
         {
@@ -258,13 +280,10 @@ impl OuterHashJoinProbeSink {
                 for (probe_row_idx, inner_iter) in idx_mapper.make_iter().enumerate() {
                     if let Some(inner_iter) = inner_iter {
                         for (build_side_table_idx, build_row_idx) in inner_iter {
-                            left_idx_used
-                                .set_true(build_side_table_idx as usize, build_row_idx as usize);
-                            build_side_growable.extend(
-                                build_side_table_idx as usize,
-                                build_row_idx as usize,
-                                1,
-                            );
+                            let build_side_table_idx = build_side_table_idx as usize;
+                            let build_row_idx = build_row_idx as usize;
+                            left_idx_used.mark_used(build_side_table_idx, build_row_idx);
+                            build_side_growable.extend(build_side_table_idx, build_row_idx, 1);
                             probe_side_growable.extend(probe_side_table_idx, probe_row_idx, 1);
                         }
                     } else {
@@ -304,31 +323,32 @@ impl OuterHashJoinProbeSink {
         let tables = states
             .first()
             .expect("at least one state should be present")
-            .get_probeable_and_tables()
-            .1;
+            .get_probe_state()
+            .get_tables();
 
         let merged_bitmap = {
-            let bitmaps = states
-                .into_iter()
-                .map(|s| {
-                    if let OuterHashJoinProbeState::ReadyToProbe(_, _, bitmap) = s {
-                        bitmap
-                            .take()
-                            .expect("bitmap should be present in outer join")
-                    } else {
-                        panic!("OuterHashJoinProbeState should be in ReadyToProbe state")
-                    }
-                })
-                .collect::<Vec<_>>();
-            bitmaps.into_iter().fold(None, |acc, x| match acc {
+            let bitmaps = states.into_iter().map(|s| {
+                if let OuterHashJoinProbeState::ReadyToProbe(_, bitmap) = s {
+                    bitmap
+                        .take()
+                        .expect("bitmap should be present in outer join")
+                        .build()
+                } else {
+                    panic!("OuterHashJoinProbeState should be in ReadyToProbe state")
+                }
+            });
+            bitmaps.fold(None, |acc, x| match acc {
                 None => Some(x),
                 Some(acc) => Some(acc.or(&x)),
             })
         }
         .expect("at least one bitmap should be present");
 
-        let mut build_side_growable =
-            GrowableTable::new(&tables.iter().collect::<Vec<_>>(), true, 20)?;
+        let mut build_side_growable = GrowableTable::new(
+            &tables.iter().collect::<Vec<_>>(),
+            true,
+            merged_bitmap.unset_bits(),
+        )?;
 
         for (table_idx, row_idx) in merged_bitmap.get_unused_indices() {
             build_side_growable.extend(table_idx, row_idx, 1);
@@ -370,12 +390,9 @@ impl StreamingSink for OuterHashJoinProbeSink {
                     .as_any_mut()
                     .downcast_mut::<OuterHashJoinProbeState>()
                     .expect("OuterHashJoinProbeSink state should be OuterHashJoinProbeState");
-                let (probe_table, tables) = input.as_probe_table();
-                state.initialize_probe_state(
-                    probe_table,
-                    tables,
-                    self.join_type == JoinType::Outer,
-                );
+                let probe_state = input.as_probe_state();
+                state
+                    .initialize_probe_state(probe_state.clone(), self.join_type == JoinType::Outer);
                 Ok(StreamingSinkOutput::NeedMoreInput(None))
             }
             _ => {
