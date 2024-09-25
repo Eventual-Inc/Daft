@@ -72,7 +72,7 @@ impl ArrowSchema {
             flags += *is_ordered as i64;
             // we do not store field info in the dict values, so can't recover it all :(
             let field = Field::new("", values.as_ref().clone(), true);
-            Some(Box::new(Self::new(&field)))
+            Some(Box::new(ArrowSchema::new(&field)))
         } else {
             None
         };

@@ -29,7 +29,7 @@ impl<O: Offset> From<MutableUtf8Array<O>> for Utf8Array<O> {
             let validity: Option<Bitmap> = x.into();
             validity
         });
-        let array: Self = other.values.into();
+        let array: Utf8Array<O> = other.values.into();
         array.with_validity(validity)
     }
 }

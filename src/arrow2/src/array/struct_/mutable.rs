@@ -79,7 +79,7 @@ impl From<MutableStructArray> for StructArray {
             None
         };
 
-        Self::new(
+        StructArray::new(
             other.data_type,
             other.values.into_iter().map(|mut v| v.as_box()).collect(),
             validity,

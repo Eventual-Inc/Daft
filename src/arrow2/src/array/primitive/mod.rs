@@ -330,7 +330,7 @@ impl<T: NativeType> PrimitiveArray<T> {
 
         if let Some(bitmap) = self.validity {
             match bitmap.into_mut() {
-                Left(bitmap) => Left(Self::new(
+                Left(bitmap) => Left(PrimitiveArray::new(
                     self.data_type,
                     self.values,
                     Some(bitmap),
@@ -344,7 +344,7 @@ impl<T: NativeType> PrimitiveArray<T> {
                         )
                         .unwrap(),
                     ),
-                    Left(values) => Left(Self::new(
+                    Left(values) => Left(PrimitiveArray::new(
                         self.data_type,
                         values,
                         Some(mutable_bitmap.into()),
@@ -356,7 +356,7 @@ impl<T: NativeType> PrimitiveArray<T> {
                 Right(values) => {
                     Right(MutablePrimitiveArray::try_new(self.data_type, values, None).unwrap())
                 }
-                Left(values) => Left(Self::new(self.data_type, values, None)),
+                Left(values) => Left(PrimitiveArray::new(self.data_type, values, None)),
             }
         }
     }
@@ -509,6 +509,6 @@ pub type UInt64Vec = MutablePrimitiveArray<u64>;
 
 impl<T: NativeType> Default for PrimitiveArray<T> {
     fn default() -> Self {
-        Self::new(T::PRIMITIVE.into(), Default::default(), None)
+        PrimitiveArray::new(T::PRIMITIVE.into(), Default::default(), None)
     }
 }

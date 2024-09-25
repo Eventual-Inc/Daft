@@ -20,8 +20,8 @@ impl ColumnOrder {
     /// Returns sort order associated with this column order.
     pub fn sort_order(&self) -> SortOrder {
         match *self {
-            Self::TypeDefinedOrder(order) => order,
-            Self::Undefined => SortOrder::Signed,
+            ColumnOrder::TypeDefinedOrder(order) => order,
+            ColumnOrder::Undefined => SortOrder::Signed,
         }
     }
 }

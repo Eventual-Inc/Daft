@@ -7,6 +7,6 @@ use crate::error::Error;
 
 impl From<format::error::Error> for Error {
     fn from(error: format::error::Error) -> Self {
-        Self::ExternalFormat(format!("{error:?}"))
+        Error::ExternalFormat(format!("{error:?}"))
     }
 }

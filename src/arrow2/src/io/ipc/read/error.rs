@@ -101,12 +101,12 @@ pub enum OutOfSpecKind {
 
 impl From<OutOfSpecKind> for Error {
     fn from(kind: OutOfSpecKind) -> Self {
-        Self::OutOfSpec(format!("{kind:?}"))
+        Error::OutOfSpec(format!("{kind:?}"))
     }
 }
 
 impl From<arrow_format::ipc::planus::Error> for Error {
     fn from(error: arrow_format::ipc::planus::Error) -> Self {
-        Self::OutOfSpec(error.to_string())
+        Error::OutOfSpec(error.to_string())
     }
 }

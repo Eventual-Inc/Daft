@@ -298,7 +298,7 @@ impl Bitmap {
         // don't use `MutableBitmap::from_len_zeroed().into()`
         // it triggers a bitcount
         let bytes = vec![0; length.saturating_add(7) / 8];
-        unsafe { Self::from_inner_unchecked(Arc::new(bytes.into()), 0, length, length) }
+        unsafe { Bitmap::from_inner_unchecked(Arc::new(bytes.into()), 0, length, length) }
     }
 
     /// Initializes an new [`Bitmap`] filled with set values.
@@ -307,7 +307,7 @@ impl Bitmap {
         // just set each byte to u8::MAX
         // we will not access data with index >= length
         let bytes = vec![0b11111111u8; length.saturating_add(7) / 8];
-        unsafe { Self::from_inner_unchecked(Arc::new(bytes.into()), 0, length, 0) }
+        unsafe { Bitmap::from_inner_unchecked(Arc::new(bytes.into()), 0, length, 0) }
     }
 
     /// Counts the nulls (unset bits) starting from `offset` bits and for `length` bits.
@@ -321,7 +321,7 @@ impl Bitmap {
     /// Panics iff `length <= bytes.len() * 8`
     #[inline]
     pub fn from_u8_slice<T: AsRef<[u8]>>(slice: T, length: usize) -> Self {
-        Self::try_new(slice.as_ref().to_vec(), length).unwrap()
+        Bitmap::try_new(slice.as_ref().to_vec(), length).unwrap()
     }
 
     /// Alias for `Bitmap::try_new().unwrap()`
@@ -330,7 +330,7 @@ impl Bitmap {
     /// This function panics iff `length <= bytes.len() * 8`
     #[inline]
     pub fn from_u8_vec(vec: Vec<u8>, length: usize) -> Self {
-        Self::try_new(vec, length).unwrap()
+        Bitmap::try_new(vec, length).unwrap()
     }
 
     /// Returns whether the bit at position `i` is set.

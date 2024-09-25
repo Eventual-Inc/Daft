@@ -10,13 +10,13 @@ mod utils;
 #[cfg(feature = "io_csv_read")]
 impl From<csv::Error> for Error {
     fn from(error: csv::Error) -> Self {
-        Self::External("".to_string(), Box::new(error))
+        Error::External("".to_string(), Box::new(error))
     }
 }
 
 impl From<chrono::ParseError> for Error {
     fn from(error: chrono::ParseError) -> Self {
-        Self::External("".to_string(), Box::new(error))
+        Error::External("".to_string(), Box::new(error))
     }
 }
 

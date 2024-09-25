@@ -232,9 +232,6 @@ simd = []
 bench = false
 name = "arrow2"
 
-[lints]
-workspace = true
-
 [package]
 authors = [
   "Jorge C. Leitao <jorgecarleitao@gmail.com>",

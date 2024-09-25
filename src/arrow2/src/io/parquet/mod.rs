@@ -17,18 +17,18 @@ impl From<parquet2::error::Error> for Error {
                 let message = "Failed to read a compressed parquet file. \
                     Use the cargo feature \"io_parquet_compression\" to read compressed parquet files."
                     .to_string();
-                Self::ExternalFormat(message)
+                Error::ExternalFormat(message)
             }
             parquet2::error::Error::Transport(msg) => {
-                Self::Io(std::io::Error::new(std::io::ErrorKind::Other, msg))
+                Error::Io(std::io::Error::new(std::io::ErrorKind::Other, msg))
             }
-            _ => Self::ExternalFormat(error.to_string()),
+            _ => Error::ExternalFormat(error.to_string()),
         }
     }
 }
 
 impl From<Error> for parquet2::error::Error {
     fn from(error: Error) -> Self {
-        Self::OutOfSpec(error.to_string())
+        parquet2::error::Error::OutOfSpec(error.to_string())
     }
 }

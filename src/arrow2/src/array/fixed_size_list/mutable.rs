@@ -24,7 +24,7 @@ pub struct MutableFixedSizeListArray<M: MutableArray> {
 
 impl<M: MutableArray> From<MutableFixedSizeListArray<M>> for FixedSizeListArray {
     fn from(mut other: MutableFixedSizeListArray<M>) -> Self {
-        Self::new(
+        FixedSizeListArray::new(
             other.data_type,
             other.values.as_box(),
             other.validity.map(|x| x.into()),

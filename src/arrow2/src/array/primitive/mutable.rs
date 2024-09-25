@@ -34,7 +34,7 @@ impl<T: NativeType> From<MutablePrimitiveArray<T>> for PrimitiveArray<T> {
             }
         });
 
-        Self::new(other.data_type, other.values.into(), validity)
+        PrimitiveArray::<T>::new(other.data_type, other.values.into(), validity)
     }
 }
 

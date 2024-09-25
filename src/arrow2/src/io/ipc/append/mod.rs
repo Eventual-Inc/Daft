@@ -25,7 +25,7 @@ impl<R: Read + Seek + Write> FileWriter<R> {
         mut writer: R,
         metadata: FileMetadata,
         options: WriteOptions,
-    ) -> Result<Self> {
+    ) -> Result<FileWriter<R>> {
         if metadata.ipc_schema.is_little_endian != is_native_little_endian() {
             return Err(Error::nyi(
                 "Appending to a file of a non-native endianness is still not supported",
@@ -54,7 +54,7 @@ impl<R: Read + Seek + Write> FileWriter<R> {
 
         writer.seek(SeekFrom::Start(offset))?;
 
-        Ok(Self {
+        Ok(FileWriter {
             writer,
             options,
             schema: metadata.schema,

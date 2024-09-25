@@ -262,7 +262,7 @@ impl DataType {
     /// Returns `&self` for all but [`DataType::Extension`]. For [`DataType::Extension`],
     /// (recursively) returns the inner [`DataType`].
     /// Never returns the variant [`DataType::Extension`].
-    pub fn to_logical_type(&self) -> &Self {
+    pub fn to_logical_type(&self) -> &DataType {
         use DataType::*;
         match self {
             Extension(_, key, _) => key.to_logical_type(),
@@ -274,14 +274,14 @@ impl DataType {
 impl From<IntegerType> for DataType {
     fn from(item: IntegerType) -> Self {
         match item {
-            IntegerType::Int8 => Self::Int8,
-            IntegerType::Int16 => Self::Int16,
-            IntegerType::Int32 => Self::Int32,
-            IntegerType::Int64 => Self::Int64,
-            IntegerType::UInt8 => Self::UInt8,
-            IntegerType::UInt16 => Self::UInt16,
-            IntegerType::UInt32 => Self::UInt32,
-            IntegerType::UInt64 => Self::UInt64,
+            IntegerType::Int8 => DataType::Int8,
+            IntegerType::Int16 => DataType::Int16,
+            IntegerType::Int32 => DataType::Int32,
+            IntegerType::Int64 => DataType::Int64,
+            IntegerType::UInt8 => DataType::UInt8,
+            IntegerType::UInt16 => DataType::UInt16,
+            IntegerType::UInt32 => DataType::UInt32,
+            IntegerType::UInt64 => DataType::UInt64,
         }
     }
 }
@@ -289,21 +289,21 @@ impl From<IntegerType> for DataType {
 impl From<PrimitiveType> for DataType {
     fn from(item: PrimitiveType) -> Self {
         match item {
-            PrimitiveType::Int8 => Self::Int8,
-            PrimitiveType::Int16 => Self::Int16,
-            PrimitiveType::Int32 => Self::Int32,
-            PrimitiveType::Int64 => Self::Int64,
-            PrimitiveType::UInt8 => Self::UInt8,
-            PrimitiveType::UInt16 => Self::UInt16,
-            PrimitiveType::UInt32 => Self::UInt32,
-            PrimitiveType::UInt64 => Self::UInt64,
-            PrimitiveType::Int128 => Self::Decimal(32, 32),
-            PrimitiveType::Int256 => Self::Decimal256(32, 32),
-            PrimitiveType::Float16 => Self::Float16,
-            PrimitiveType::Float32 => Self::Float32,
-            PrimitiveType::Float64 => Self::Float64,
-            PrimitiveType::DaysMs => Self::Interval(IntervalUnit::DayTime),
-            PrimitiveType::MonthDayNano => Self::Interval(IntervalUnit::MonthDayNano),
+            PrimitiveType::Int8 => DataType::Int8,
+            PrimitiveType::Int16 => DataType::Int16,
+            PrimitiveType::Int32 => DataType::Int32,
+            PrimitiveType::Int64 => DataType::Int64,
+            PrimitiveType::UInt8 => DataType::UInt8,
+            PrimitiveType::UInt16 => DataType::UInt16,
+            PrimitiveType::UInt32 => DataType::UInt32,
+            PrimitiveType::UInt64 => DataType::UInt64,
+            PrimitiveType::Int128 => DataType::Decimal(32, 32),
+            PrimitiveType::Int256 => DataType::Decimal256(32, 32),
+            PrimitiveType::Float16 => DataType::Float16,
+            PrimitiveType::Float32 => DataType::Float32,
+            PrimitiveType::Float64 => DataType::Float64,
+            PrimitiveType::DaysMs => DataType::Interval(IntervalUnit::DayTime),
+            PrimitiveType::MonthDayNano => DataType::Interval(IntervalUnit::MonthDayNano),
         }
     }
 }

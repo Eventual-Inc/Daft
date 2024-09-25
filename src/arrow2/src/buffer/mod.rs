@@ -51,7 +51,7 @@ impl<T> From<Vec<T>> for Bytes<T> {
     #[inline]
     fn from(data: Vec<T>) -> Self {
         let inner: BytesInner<T> = data.into();
-        Self(inner)
+        Bytes(inner)
     }
 }
 

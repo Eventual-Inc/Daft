@@ -26,8 +26,8 @@ pub struct ColumnOffsetsMetadata {
 }
 
 impl ColumnOffsetsMetadata {
-    pub fn from_column_chunk(column_chunk: &ColumnChunk) -> Self {
-        Self {
+    pub fn from_column_chunk(column_chunk: &ColumnChunk) -> ColumnOffsetsMetadata {
+        ColumnOffsetsMetadata {
             dictionary_page_offset: column_chunk
                 .meta_data
                 .as_ref()
@@ -42,8 +42,8 @@ impl ColumnOffsetsMetadata {
 
     pub fn from_column_chunk_metadata(
         column_chunk_metadata: &ColumnChunkMetaData,
-    ) -> Self {
-        Self {
+    ) -> ColumnOffsetsMetadata {
+        ColumnOffsetsMetadata {
             dictionary_page_offset: column_chunk_metadata.dictionary_page_offset(),
             data_page_offset: Some(column_chunk_metadata.data_page_offset()),
         }

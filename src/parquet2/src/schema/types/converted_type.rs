@@ -149,9 +149,9 @@ impl TryFrom<ConvertedType> for GroupConvertedType {
 
     fn try_from(type_: ConvertedType) -> Result<Self, Self::Error> {
         Ok(match type_ {
-            ConvertedType::LIST => Self::List,
-            ConvertedType::MAP => Self::Map,
-            ConvertedType::MAP_KEY_VALUE => Self::MapKeyValue,
+            ConvertedType::LIST => GroupConvertedType::List,
+            ConvertedType::MAP => GroupConvertedType::Map,
+            ConvertedType::MAP_KEY_VALUE => GroupConvertedType::MapKeyValue,
             _ => return Err(Error::oos("LogicalType value out of range")),
         })
     }
@@ -160,9 +160,9 @@ impl TryFrom<ConvertedType> for GroupConvertedType {
 impl From<GroupConvertedType> for ConvertedType {
     fn from(type_: GroupConvertedType) -> Self {
         match type_ {
-            GroupConvertedType::Map => Self::MAP,
-            GroupConvertedType::List => Self::LIST,
-            GroupConvertedType::MapKeyValue => Self::MAP_KEY_VALUE,
+            GroupConvertedType::Map => ConvertedType::MAP,
+            GroupConvertedType::List => ConvertedType::LIST,
+            GroupConvertedType::MapKeyValue => ConvertedType::MAP_KEY_VALUE,
         }
     }
 }

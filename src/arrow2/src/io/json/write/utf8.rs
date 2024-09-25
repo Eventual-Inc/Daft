@@ -89,16 +89,16 @@ pub enum CharEscape {
 
 impl CharEscape {
     #[inline]
-    fn from_escape_table(escape: u8, byte: u8) -> Self {
+    fn from_escape_table(escape: u8, byte: u8) -> CharEscape {
         match escape {
-            self::BB => Self::Backspace,
-            self::TT => Self::Tab,
-            self::NN => Self::LineFeed,
-            self::FF => Self::FormFeed,
-            self::RR => Self::CarriageReturn,
-            self::QU => Self::Quote,
-            self::BS => Self::ReverseSolidus,
-            self::UU => Self::AsciiControl(byte),
+            self::BB => CharEscape::Backspace,
+            self::TT => CharEscape::Tab,
+            self::NN => CharEscape::LineFeed,
+            self::FF => CharEscape::FormFeed,
+            self::RR => CharEscape::CarriageReturn,
+            self::QU => CharEscape::Quote,
+            self::BS => CharEscape::ReverseSolidus,
+            self::UU => CharEscape::AsciiControl(byte),
             _ => unreachable!(),
         }
     }

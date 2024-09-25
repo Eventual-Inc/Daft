@@ -79,12 +79,12 @@ impl Error {
 }
 
 impl From<parquet_format_safe::thrift::Error> for Error {
-    fn from(e: parquet_format_safe::thrift::Error) -> Self {
+    fn from(e: parquet_format_safe::thrift::Error) -> Error {
         match e {
             parquet_format_safe::thrift::Error::Transport(msg) => {
-                Self::Transport(format!("io error occurred when decoding thrift: {}", msg))
+                Error::Transport(format!("io error occurred when decoding thrift: {}", msg))
             }
-            _ => Self::OutOfSpec(format!("Invalid thrift: {}", e)),
+            _ => Error::OutOfSpec(format!("Invalid thrift: {}", e)),
         }
     }
 }

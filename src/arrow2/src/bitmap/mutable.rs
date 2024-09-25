@@ -330,7 +330,7 @@ impl MutableBitmap {
 impl From<MutableBitmap> for Bitmap {
     #[inline]
     fn from(buffer: MutableBitmap) -> Self {
-        Self::try_new(buffer.buffer, buffer.length).unwrap()
+        Bitmap::try_new(buffer.buffer, buffer.length).unwrap()
     }
 }
 
@@ -359,7 +359,7 @@ impl From<MutableBitmap> for Option<Bitmap> {
 impl<P: AsRef<[bool]>> From<P> for MutableBitmap {
     #[inline]
     fn from(slice: P) -> Self {
-        Self::from_trusted_len_iter(slice.as_ref().iter().copied())
+        MutableBitmap::from_trusted_len_iter(slice.as_ref().iter().copied())
     }
 }
 

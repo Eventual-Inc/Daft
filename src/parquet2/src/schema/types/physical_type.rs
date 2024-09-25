@@ -22,17 +22,17 @@ impl TryFrom<(Type, Option<i32>)> for PhysicalType {
 
     fn try_from((type_, length): (Type, Option<i32>)) -> Result<Self, Self::Error> {
         Ok(match type_ {
-            Type::BOOLEAN => Self::Boolean,
-            Type::INT32 => Self::Int32,
-            Type::INT64 => Self::Int64,
-            Type::INT96 => Self::Int96,
-            Type::FLOAT => Self::Float,
-            Type::DOUBLE => Self::Double,
-            Type::BYTE_ARRAY => Self::ByteArray,
+            Type::BOOLEAN => PhysicalType::Boolean,
+            Type::INT32 => PhysicalType::Int32,
+            Type::INT64 => PhysicalType::Int64,
+            Type::INT96 => PhysicalType::Int96,
+            Type::FLOAT => PhysicalType::Float,
+            Type::DOUBLE => PhysicalType::Double,
+            Type::BYTE_ARRAY => PhysicalType::ByteArray,
             Type::FIXED_LEN_BYTE_ARRAY => {
                 let length = length
                     .ok_or_else(|| Error::oos("Length must be defined for FixedLenByteArray"))?;
-                Self::FixedLenByteArray(length.try_into()?)
+                PhysicalType::FixedLenByteArray(length.try_into()?)
             }
             _ => return Err(Error::oos("Unknown type")),
         })

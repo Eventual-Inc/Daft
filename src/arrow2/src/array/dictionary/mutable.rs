@@ -39,7 +39,7 @@ impl<K: DictionaryKey, M: MutableArray> From<MutableDictionaryArray<K, M>> for D
     fn from(other: MutableDictionaryArray<K, M>) -> Self {
         // Safety - the invariant of this struct ensures that this is up-held
         unsafe {
-            Self::try_new_unchecked(
+            DictionaryArray::<K>::try_new_unchecked(
                 other.data_type,
                 other.keys.into(),
                 other.map.into_values().as_box(),

@@ -125,8 +125,8 @@ pub enum DataPageHeader {
 impl DataPageHeader {
     pub fn num_values(&self) -> usize {
         match &self {
-            Self::V1(d) => d.num_values as usize,
-            Self::V2(d) => d.num_values as usize,
+            DataPageHeader::V1(d) => d.num_values as usize,
+            DataPageHeader::V2(d) => d.num_values as usize,
         }
     }
 }
@@ -262,36 +262,36 @@ pub enum CompressedPage {
 impl CompressedPage {
     pub(crate) fn buffer(&mut self) -> &mut Vec<u8> {
         match self {
-            Self::Data(page) => &mut page.buffer,
-            Self::Dict(page) => &mut page.buffer,
+            CompressedPage::Data(page) => &mut page.buffer,
+            CompressedPage::Dict(page) => &mut page.buffer,
         }
     }
 
     pub(crate) fn compression(&self) -> Compression {
         match self {
-            Self::Data(page) => page.compression(),
-            Self::Dict(page) => page.compression(),
+            CompressedPage::Data(page) => page.compression(),
+            CompressedPage::Dict(page) => page.compression(),
         }
     }
 
     pub(crate) fn num_values(&self) -> usize {
         match self {
-            Self::Data(page) => page.num_values(),
-            Self::Dict(_) => 0,
+            CompressedPage::Data(page) => page.num_values(),
+            CompressedPage::Dict(_) => 0,
         }
     }
 
     pub(crate) fn selected_rows(&self) -> Option<&[Interval]> {
         match self {
-            Self::Data(page) => page.selected_rows(),
-            Self::Dict(_) => None,
+            CompressedPage::Data(page) => page.selected_rows(),
+            CompressedPage::Dict(_) => None,
         }
     }
 
     pub(crate) fn uncompressed_size(&self) -> usize {
         match self {
-            Self::Data(page) => page.uncompressed_page_size,
-            Self::Dict(page) => page.uncompressed_page_size,
+            CompressedPage::Data(page) => page.uncompressed_page_size,
+            CompressedPage::Dict(page) => page.uncompressed_page_size,
         }
     }
 }

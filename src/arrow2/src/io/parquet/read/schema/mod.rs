@@ -66,7 +66,7 @@ pub struct SchemaInferenceOptions {
 
 impl Default for SchemaInferenceOptions {
     fn default() -> Self {
-        Self {
+        SchemaInferenceOptions {
             int96_coerce_to_timeunit: TimeUnit::Nanosecond,
             string_encoding: StringEncoding::default(),
         }

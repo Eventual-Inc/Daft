@@ -111,7 +111,7 @@ impl<'a> From<GrowableUnion<'a>> for UnionArray {
     fn from(val: GrowableUnion<'a>) -> Self {
         let fields = val.fields.into_iter().map(|mut x| x.as_box()).collect();
 
-        Self::new(
+        UnionArray::new(
             val.arrays[0].data_type().clone(),
             val.types.into(),
             fields,

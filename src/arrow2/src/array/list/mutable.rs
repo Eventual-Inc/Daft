@@ -54,7 +54,7 @@ impl<O: Offset, M: MutableArray + Default> Default for MutableListArray<O, M> {
 
 impl<O: Offset, M: MutableArray> From<MutableListArray<O, M>> for ListArray<O> {
     fn from(mut other: MutableListArray<O, M>) -> Self {
-        Self::new(
+        ListArray::new(
             other.data_type,
             other.offsets.into(),
             other.values.as_box(),
@@ -266,7 +266,7 @@ impl<O: Offset, M: MutableArray> MutableListArray<O, M> {
 
 impl<O: Offset, M: MutableArray + 'static> MutableArray for MutableListArray<O, M> {
     fn len(&self) -> usize {
-        Self::len(self)
+        MutableListArray::len(self)
     }
 
     fn validity(&self) -> Option<&MutableBitmap> {

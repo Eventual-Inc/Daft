@@ -77,7 +77,7 @@ impl<T> Buffer<T> {
     /// Auxiliary method to create a new Buffer
     pub(crate) fn from_bytes(bytes: Bytes<T>) -> Self {
         let length = bytes.len();
-        Self {
+        Buffer {
             data: Arc::new(bytes),
             offset: 0,
             length,

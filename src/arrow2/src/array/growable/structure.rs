@@ -129,7 +129,7 @@ impl<'a> From<GrowableStruct<'a>> for StructArray {
     fn from(val: GrowableStruct<'a>) -> Self {
         let values = val.values.into_iter().map(|mut x| x.as_box()).collect();
 
-        Self::new(
+        StructArray::new(
             val.arrays[0].data_type().clone(),
             values,
             val.validity.into(),

@@ -79,21 +79,21 @@ where
 }
 
 // Implementation of ArrayDiv trait for PrimitiveArrays
-impl<T> ArrayDiv<Self> for PrimitiveArray<T>
+impl<T> ArrayDiv<PrimitiveArray<T>> for PrimitiveArray<T>
 where
     T: NativeArithmetics + Div<Output = T>,
 {
-    fn div(&self, rhs: &Self) -> Self {
+    fn div(&self, rhs: &PrimitiveArray<T>) -> Self {
         div(self, rhs)
     }
 }
 
 // Implementation of ArrayCheckedDiv trait for PrimitiveArrays
-impl<T> ArrayCheckedDiv<Self> for PrimitiveArray<T>
+impl<T> ArrayCheckedDiv<PrimitiveArray<T>> for PrimitiveArray<T>
 where
     T: NativeArithmetics + CheckedDiv<Output = T>,
 {
-    fn checked_div(&self, rhs: &Self) -> Self {
+    fn checked_div(&self, rhs: &PrimitiveArray<T>) -> Self {
         checked_div(self, rhs)
     }
 }

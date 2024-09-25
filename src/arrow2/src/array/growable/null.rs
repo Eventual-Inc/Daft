@@ -54,6 +54,6 @@ impl<'a> Growable<'a> for GrowableNull {
 
 impl From<GrowableNull> for NullArray {
     fn from(val: GrowableNull) -> Self {
-        Self::new(val.data_type, val.length)
+        NullArray::new(val.data_type, val.length)
     }
 }

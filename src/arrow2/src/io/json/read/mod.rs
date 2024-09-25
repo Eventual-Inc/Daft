@@ -13,6 +13,6 @@ use crate::error::Error;
 
 impl From<json_deserializer::Error> for Error {
     fn from(error: json_deserializer::Error) -> Self {
-        Self::ExternalFormat(error.to_string())
+        Error::ExternalFormat(error.to_string())
     }
 }

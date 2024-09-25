@@ -26,7 +26,7 @@ pub struct MutableBinaryValuesArray<O: Offset> {
 
 impl<O: Offset> From<MutableBinaryValuesArray<O>> for BinaryArray<O> {
     fn from(other: MutableBinaryValuesArray<O>) -> Self {
-        Self::new(
+        BinaryArray::<O>::new(
             other.data_type,
             other.offsets.into(),
             other.values.into(),
@@ -37,7 +37,7 @@ impl<O: Offset> From<MutableBinaryValuesArray<O>> for BinaryArray<O> {
 
 impl<O: Offset> From<MutableBinaryValuesArray<O>> for MutableBinaryArray<O> {
     fn from(other: MutableBinaryValuesArray<O>) -> Self {
-        Self::try_new(other.data_type, other.offsets, other.values, None)
+        MutableBinaryArray::<O>::try_new(other.data_type, other.offsets, other.values, None)
             .expect("MutableBinaryValuesArray is consistent with MutableBinaryArray")
     }
 }

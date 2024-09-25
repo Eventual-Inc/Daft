@@ -50,7 +50,7 @@ pub fn serialize_batch(
 
 impl From<EncodedData> for FlightData {
     fn from(data: EncodedData) -> Self {
-        Self {
+        FlightData {
             data_header: data.ipc_message,
             data_body: data.arrow_data,
             ..Default::default()
