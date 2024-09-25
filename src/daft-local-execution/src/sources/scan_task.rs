@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{pin::Pin, sync::Arc};
 
 use common_error::DaftResult;
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
@@ -8,6 +8,7 @@ use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_micropartition::MicroPartition;
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use daft_scan::{storage_config::StorageConfig, ChunkSpec, ScanTask};
+use daft_table::Table;
 use futures::{Stream, StreamExt};
 use snafu::ResultExt;
 use tokio_stream::wrappers::ReceiverStream;
@@ -293,9 +294,10 @@ async fn stream_scan_task(
         }
         #[cfg(feature = "python")]
         FileFormatConfig::PythonFunction => {
-            return Err(common_error::DaftError::TypeError(
-                "PythonFunction file format not implemented".to_string(),
-            ));
+            let iter =
+                daft_micropartition::python::read_pyfunc_into_table_iter(&scan_task)?;
+            let stream = futures::stream::iter(iter.map(|r| r.map_err(|e| e.into())));
+            Box::pin(stream) as Pin<Box<dyn Stream<Item = DaftResult<Table>> + Send>>
         }
     };
 
