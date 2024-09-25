@@ -184,7 +184,7 @@ impl From<Error> for super::Error {
                         }
                     } else {
                         // who knows what happened here during dispatch, let's just tell the user it's transient
-                        super::Error::MiscTransient {
+                        Self::MiscTransient {
                             path,
                             source: source.into(),
                         }
@@ -217,7 +217,7 @@ impl From<Error> for super::Error {
                         }
                     } else {
                         // who knows what happened here during dispatch, let's just tell the user it's transient
-                        super::Error::MiscTransient {
+                        Self::MiscTransient {
                             path,
                             source: source.into(),
                         }
@@ -249,7 +249,7 @@ impl From<Error> for super::Error {
                         }
                     } else {
                         // who knows what happened here during dispatch, let's just tell the user it's transient
-                        super::Error::MiscTransient {
+                        Self::MiscTransient {
                             path,
                             source: source.into(),
                         }
