@@ -16,19 +16,19 @@ impl TimeUnit {
     #![allow(clippy::wrong_self_convention)]
     pub fn to_arrow(&self) -> ArrowTimeUnit {
         match self {
-            TimeUnit::Nanoseconds => ArrowTimeUnit::Nanosecond,
-            TimeUnit::Microseconds => ArrowTimeUnit::Microsecond,
-            TimeUnit::Milliseconds => ArrowTimeUnit::Millisecond,
-            TimeUnit::Seconds => ArrowTimeUnit::Second,
+            Self::Nanoseconds => ArrowTimeUnit::Nanosecond,
+            Self::Microseconds => ArrowTimeUnit::Microsecond,
+            Self::Milliseconds => ArrowTimeUnit::Millisecond,
+            Self::Seconds => ArrowTimeUnit::Second,
         }
     }
 
     pub fn to_scale_factor(&self) -> i64 {
         match self {
-            TimeUnit::Seconds => 1,
-            TimeUnit::Milliseconds => 1000,
-            TimeUnit::Microseconds => 1_000_000,
-            TimeUnit::Nanoseconds => 1_000_000_000,
+            Self::Seconds => 1,
+            Self::Milliseconds => 1000,
+            Self::Microseconds => 1_000_000,
+            Self::Nanoseconds => 1_000_000_000,
         }
     }
 }
@@ -36,10 +36,10 @@ impl TimeUnit {
 impl From<&ArrowTimeUnit> for TimeUnit {
     fn from(tu: &ArrowTimeUnit) -> Self {
         match tu {
-            ArrowTimeUnit::Nanosecond => TimeUnit::Nanoseconds,
-            ArrowTimeUnit::Microsecond => TimeUnit::Microseconds,
-            ArrowTimeUnit::Millisecond => TimeUnit::Milliseconds,
-            ArrowTimeUnit::Second => TimeUnit::Seconds,
+            ArrowTimeUnit::Nanosecond => Self::Nanoseconds,
+            ArrowTimeUnit::Microsecond => Self::Microseconds,
+            ArrowTimeUnit::Millisecond => Self::Milliseconds,
+            ArrowTimeUnit::Second => Self::Seconds,
         }
     }
 }

@@ -132,7 +132,7 @@ pub(crate) struct ReadPlanner {
 
 impl ReadPlanner {
     pub fn new(source: &str) -> Self {
-        ReadPlanner {
+        Self {
             source: source.into(),
             ranges: vec![],
             passes: vec![],

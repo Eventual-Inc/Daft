@@ -299,7 +299,7 @@ impl PySeries {
         Ok(self.series.argsort(descending)?.into())
     }
 
-    pub fn hash(&self, seed: Option<PySeries>) -> PyResult<Self> {
+    pub fn hash(&self, seed: Option<Self>) -> PyResult<Self> {
         let seed_series;
         let mut seed_array = None;
         if let Some(s) = seed {
@@ -710,7 +710,7 @@ impl PySeries {
 
 impl From<series::Series> for PySeries {
     fn from(value: series::Series) -> Self {
-        PySeries { series: value }
+        Self { series: value }
     }
 }
 

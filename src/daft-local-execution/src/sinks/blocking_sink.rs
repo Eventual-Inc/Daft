@@ -34,7 +34,7 @@ pub(crate) struct BlockingSinkNode {
 impl BlockingSinkNode {
     pub(crate) fn new(op: Box<dyn BlockingSink>, child: Box<dyn PipelineNode>) -> Self {
         let name = op.name();
-        BlockingSinkNode {
+        Self {
             op: Arc::new(tokio::sync::Mutex::new(op)),
             name,
             child,

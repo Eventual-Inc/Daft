@@ -5,6 +5,9 @@ sysinfo = "0.30.7"
 [features]
 python = ["dep:pyo3"]
 
+[lints]
+workspace = true
+
 [package]
 edition = {workspace = true}
 name = "common-system-info"

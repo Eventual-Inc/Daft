@@ -21,7 +21,7 @@ where
 
 impl<T: DaftPhysicalType> FromArrow for DataArray<T> {
     fn from_arrow(field: FieldRef, arrow_arr: Box<dyn arrow2::array::Array>) -> DaftResult<Self> {
-        DataArray::<T>::try_from((field.clone(), arrow_arr))
+        Self::try_from((field.clone(), arrow_arr))
     }
 }
 
@@ -42,7 +42,7 @@ where
             data_array_field,
             physical_arrow_arr,
         )?;
-        Ok(LogicalArray::<L>::new(field.clone(), physical))
+        Ok(Self::new(field.clone(), physical))
     }
 }
 
@@ -57,7 +57,7 @@ impl FromArrow for FixedSizeListArray {
                 let arrow_arr = arrow_arr.as_ref().as_any().downcast_ref::<arrow2::array::FixedSizeListArray>().unwrap();
                 let arrow_child_array = arrow_arr.values();
                 let child_series = Series::from_arrow(Arc::new(Field::new("item", daft_child_dtype.as_ref().clone())), arrow_child_array.clone())?;
-                Ok(FixedSizeListArray::new(
+                Ok(Self::new(
                     field.clone(),
                     child_series,
                     arrow_arr.validity().cloned(),
@@ -91,7 +91,7 @@ impl FromArrow for ListArray {
                     Arc::new(Field::new("list", daft_child_dtype.as_ref().clone())),
                     arrow_child_array.clone(),
                 )?;
-                Ok(ListArray::new(
+                Ok(Self::new(
                     field.clone(),
                     child_series,
                     arrow_arr.offsets().clone(),
@@ -108,7 +108,7 @@ impl FromArrow for ListArray {
                     Arc::new(Field::new("map", daft_child_dtype.as_ref().clone())),
                     arrow_child_array.clone(),
                 )?;
-                Ok(ListArray::new(
+                Ok(Self::new(
                     field.clone(),
                     child_series,
                     map_arr.offsets().into(),
@@ -138,7 +138,7 @@ impl FromArrow for StructArray {
                     Series::from_arrow(Arc::new(daft_field.clone()), arrow_arr.to_boxed())
                 }).collect::<DaftResult<Vec<Series>>>()?;
 
-                Ok(StructArray::new(
+                Ok(Self::new(
                     field.clone(),
                     child_series,
                     arrow_arr.validity().cloned(),

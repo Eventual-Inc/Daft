@@ -58,7 +58,7 @@ impl ActorPoolProject {
 
         let projected_schema = Schema::new(fields).context(CreationSnafu)?.into();
 
-        Ok(ActorPoolProject {
+        Ok(Self {
             input,
             projection,
             projected_schema,

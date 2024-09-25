@@ -11,7 +11,7 @@ use crate::{
 impl<L> IntoSeries for LogicalArray<L>
 where
     L: DaftLogicalType,
-    ArrayWrapper<LogicalArray<L>>: SeriesLike,
+    ArrayWrapper<Self>: SeriesLike,
 {
     fn into_series(self) -> Series {
         Series {

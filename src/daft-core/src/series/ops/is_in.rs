@@ -14,7 +14,7 @@ fn default(name: &str, size: usize) -> DaftResult<Series> {
 }
 
 impl Series {
-    pub fn is_in(&self, items: &Self) -> DaftResult<Series> {
+    pub fn is_in(&self, items: &Self) -> DaftResult<Self> {
         if items.is_empty() {
             return default(self.name(), self.len());
         }

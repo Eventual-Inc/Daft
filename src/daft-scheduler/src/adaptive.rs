@@ -17,7 +17,7 @@ pub struct AdaptivePhysicalPlanScheduler {
 
 impl AdaptivePhysicalPlanScheduler {
     pub fn new(logical_plan: Arc<LogicalPlan>, cfg: Arc<DaftExecutionConfig>) -> Self {
-        AdaptivePhysicalPlanScheduler {
+        Self {
             planner: AdaptivePlanner::new(logical_plan, cfg),
         }
     }
@@ -34,10 +34,7 @@ impl AdaptivePhysicalPlanScheduler {
     ) -> PyResult<Self> {
         py.allow_threads(|| {
             let logical_plan = logical_plan_builder.builder.build();
-            Ok(AdaptivePhysicalPlanScheduler::new(
-                logical_plan,
-                cfg.config.clone(),
-            ))
+            Ok(Self::new(logical_plan, cfg.config.clone()))
         })
     }
     pub fn next(&mut self, py: Python) -> PyResult<(Option<usize>, PhysicalPlanScheduler)> {

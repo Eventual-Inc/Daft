@@ -128,7 +128,7 @@ impl FromStr for HFPathParts {
             let (repository, uri) = if let Some((repo, uri)) = uri.split_once('/') {
                 (repo, uri)
             } else {
-                return Some(HFPathParts {
+                return Some(Self {
                     bucket: bucket.to_string(),
                     repository: format!("{}/{}", username, uri),
                     revision: "main".to_string(),
@@ -150,7 +150,7 @@ impl FromStr for HFPathParts {
             // ^--------------^
             let path = uri.to_string().trim_end_matches('/').to_string();
 
-            Some(HFPathParts {
+            Some(Self {
                 bucket: bucket.to_string(),
                 repository,
                 revision,
@@ -221,17 +221,17 @@ impl From<Error> for super::Error {
         use Error::*;
         match error {
             UnableToOpenFile { path, source } => match source.status().map(|v| v.as_u16()) {
-                Some(404) | Some(410) => super::Error::NotFound {
+                Some(404) | Some(410) => Self::NotFound {
                     path,
                     source: source.into(),
                 },
-                None | Some(_) => super::Error::UnableToOpenFile {
+                None | Some(_) => Self::UnableToOpenFile {
                     path,
                     source: source.into(),
                 },
             },
-            UnableToDetermineSize { path } => super::Error::UnableToDetermineSize { path },
-            _ => super::Error::Generic {
+            UnableToDetermineSize { path } => Self::UnableToDetermineSize { path },
+            _ => Self::Generic {
                 store: super::SourceType::Http,
                 source: error.into(),
             },
@@ -256,7 +256,7 @@ impl HFSource {
             );
         }
 
-        Ok(HFSource {
+        Ok(Self {
             http_source: HttpSource {
                 client: reqwest::ClientBuilder::default()
                     .pool_max_idle_per_host(70)

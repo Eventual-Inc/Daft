@@ -27,18 +27,18 @@ pub enum TrigonometricFunction {
 impl TrigonometricFunction {
     pub fn fn_name(&self) -> &'static str {
         match self {
-            TrigonometricFunction::Sin => "sin",
-            TrigonometricFunction::Cos => "cos",
-            TrigonometricFunction::Tan => "tan",
-            TrigonometricFunction::Cot => "cot",
-            TrigonometricFunction::ArcSin => "arcsin",
-            TrigonometricFunction::ArcCos => "arccos",
-            TrigonometricFunction::ArcTan => "arctan",
-            TrigonometricFunction::Radians => "radians",
-            TrigonometricFunction::Degrees => "degrees",
-            TrigonometricFunction::ArcTanh => "arctanh",
-            TrigonometricFunction::ArcCosh => "arccosh",
-            TrigonometricFunction::ArcSinh => "arcsinh",
+            Self::Sin => "sin",
+            Self::Cos => "cos",
+            Self::Tan => "tan",
+            Self::Cot => "cot",
+            Self::ArcSin => "arcsin",
+            Self::ArcCos => "arccos",
+            Self::ArcTan => "arctan",
+            Self::Radians => "radians",
+            Self::Degrees => "degrees",
+            Self::ArcTanh => "arctanh",
+            Self::ArcCosh => "arccosh",
+            Self::ArcSinh => "arcsinh",
         }
     }
 }

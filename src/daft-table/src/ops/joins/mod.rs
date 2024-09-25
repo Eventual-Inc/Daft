@@ -178,6 +178,6 @@ impl Table {
         let num_rows = lidx.len();
         join_series = add_non_join_key_columns(self, right, lidx, ridx, join_series)?;
 
-        Table::new_with_size(join_schema, join_series, num_rows)
+        Self::new_with_size(join_schema, join_series, num_rows)
     }
 }

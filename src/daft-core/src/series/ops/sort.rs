@@ -6,7 +6,7 @@ use crate::{
 };
 
 impl Series {
-    pub fn argsort(&self, descending: bool) -> DaftResult<Series> {
+    pub fn argsort(&self, descending: bool) -> DaftResult<Self> {
         let series = self.as_physical()?;
         with_match_comparable_daft_types!(series.data_type(), |$T| {
             let downcasted = series.downcast::<<$T as DaftDataType>::ArrayType>()?;
@@ -14,7 +14,7 @@ impl Series {
         })
     }
 
-    pub fn argsort_multikey(sort_keys: &[Series], descending: &[bool]) -> DaftResult<Series> {
+    pub fn argsort_multikey(sort_keys: &[Self], descending: &[bool]) -> DaftResult<Self> {
         if sort_keys.len() != descending.len() {
             return Err(DaftError::ValueError(format!(
                 "sort_keys and descending length must match, got {} vs {}",
