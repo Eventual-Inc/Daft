@@ -18,9 +18,9 @@ enum AntiSemiProbeState {
 }
 
 impl AntiSemiProbeState {
-    fn set_table(&mut self, table: Arc<dyn Probeable>) {
+    fn set_table(&mut self, table: &Arc<dyn Probeable>) {
         if let Self::Building = self {
-            *self = Self::ReadyToProbe(table);
+            *self = Self::ReadyToProbe(table.clone());
         } else {
             panic!("AntiSemiProbeState should only be in Building state when setting table")
         }
@@ -47,6 +47,8 @@ pub struct AntiSemiProbeOperator {
 }
 
 impl AntiSemiProbeOperator {
+    const DEFAULT_GROWABLE_SIZE: usize = 20;
+
     pub fn new(probe_on: Vec<ExprRef>, join_type: &JoinType) -> Self {
         Self {
             probe_on,
@@ -65,8 +67,11 @@ impl AntiSemiProbeOperator {
 
         let input_tables = input.get_tables()?;
 
-        let mut probe_side_growable =
-            GrowableTable::new(&input_tables.iter().collect::<Vec<_>>(), false, 20)?;
+        let mut probe_side_growable = GrowableTable::new(
+            &input_tables.iter().collect::<Vec<_>>(),
+            false,
+            Self::DEFAULT_GROWABLE_SIZE,
+        )?;
 
         drop(_growables);
         {
@@ -110,7 +115,7 @@ impl IntermediateOperator for AntiSemiProbeOperator {
                     .downcast_mut::<AntiSemiProbeState>()
                     .expect("AntiSemiProbeOperator state should be AntiSemiProbeState");
                 let probe_state = input.as_probe_state();
-                state.set_table(probe_state.get_probeable());
+                state.set_table(&probe_state.get_probeable());
                 Ok(IntermediateOperatorResult::NeedMoreInput(None))
             }
             _ => {

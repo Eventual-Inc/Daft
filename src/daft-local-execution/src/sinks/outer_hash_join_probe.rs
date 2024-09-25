@@ -25,7 +25,6 @@ struct IndexBitmapBuilder {
 
 impl IndexBitmapBuilder {
     fn new(tables: &[Table]) -> Self {
-        println!("tables: {:#?}", tables);
         let prefix_sums = tables
             .iter()
             .map(|t| t.len())
@@ -35,9 +34,7 @@ impl IndexBitmapBuilder {
                 Some(prev)
             })
             .collect::<Vec<_>>();
-        println!("prefix_sums: {:?}", prefix_sums);
         let total_len = prefix_sums.last().unwrap() + tables.last().unwrap().len();
-        println!("total_len: {:?}", total_len);
         Self {
             bitmap: MutableBitmap::from_len_zeroed(total_len),
             prefix_sums,
@@ -355,8 +352,7 @@ impl OuterHashJoinProbeSink {
             })
         }
         .expect("at least one bitmap should be present");
-        println!("num nulls: {}", merged_bitmap.unset_bits());
-        println!("tables: {:#?}", tables);
+
         let mut build_side_growable = GrowableTable::new(
             &tables.iter().collect::<Vec<_>>(),
             true,
@@ -364,7 +360,6 @@ impl OuterHashJoinProbeSink {
         )?;
 
         for (table_idx, row_idx) in merged_bitmap.get_unused_indices() {
-            println!("table_idx: {:?}, row_idx: {:?}", table_idx, row_idx);
             build_side_growable.extend(table_idx, row_idx, 1);
         }
 

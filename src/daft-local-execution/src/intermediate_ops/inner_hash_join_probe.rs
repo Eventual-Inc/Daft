@@ -51,6 +51,8 @@ pub struct InnerHashJoinProbeOperator {
 }
 
 impl InnerHashJoinProbeOperator {
+    const DEFAULT_GROWABLE_SIZE: usize = 20;
+
     pub fn new(
         probe_on: Vec<ExprRef>,
         left_schema: &SchemaRef,
@@ -92,13 +94,19 @@ impl InnerHashJoinProbeOperator {
 
         let _growables = info_span!("InnerHashJoinOperator::build_growables").entered();
 
-        let mut build_side_growable =
-            GrowableTable::new(&tables.iter().collect::<Vec<_>>(), false, 20)?;
+        let mut build_side_growable = GrowableTable::new(
+            &tables.iter().collect::<Vec<_>>(),
+            false,
+            Self::DEFAULT_GROWABLE_SIZE,
+        )?;
 
         let input_tables = input.get_tables()?;
 
-        let mut probe_side_growable =
-            GrowableTable::new(&input_tables.iter().collect::<Vec<_>>(), false, 20)?;
+        let mut probe_side_growable = GrowableTable::new(
+            &input_tables.iter().collect::<Vec<_>>(),
+            false,
+            Self::DEFAULT_GROWABLE_SIZE,
+        )?;
 
         drop(_growables);
         {
