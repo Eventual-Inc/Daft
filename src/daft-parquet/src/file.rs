@@ -503,6 +503,8 @@ impl ParquetFileReader {
                             .collect::<DaftResult<Vec<_>>>()?;
 
                         rayon::spawn(move || {
+                            // Even if there are no columns to read, we still need to create a empty table with the correct number of rows
+                            // This is because the columns may be present in other files. See https://github.com/Eventual-Inc/Daft/pull/2514
                             if arr_iters.is_empty() {
                                 let table = Table::new_with_size(
                                     Schema::empty(),

@@ -539,6 +539,8 @@ pub(crate) fn local_parquet_stream(
         par_column_iters.for_each(move |((rg_column_iters_result, rg_range), tx)| {
             let table_iter = match rg_column_iters_result {
                 Ok(rg_column_iters) => {
+                    // Even if there are no columns to read, we still need to create a empty table with the correct number of rows
+                    // This is because the columns may be present in other files. See https://github.com/Eventual-Inc/Daft/pull/2514
                     if rg_column_iters.is_empty() {
                         let table =
                             Table::new_with_size(Schema::empty(), vec![], rg_range.num_rows);
@@ -559,11 +561,7 @@ pub(crate) fn local_parquet_stream(
                     }
                 }
                 Err(e) => {
-                    if let Err(crossbeam_channel::TrySendError::Full(_)) =
-                        tx.try_send(Err(e.into()))
-                    {
-                        panic!("Parquet stream channel should not be full")
-                    }
+                    let _ = tx.send(Err(e.into()));
                     return;
                 }
             };
