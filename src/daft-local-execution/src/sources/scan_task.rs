@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{pin::Pin, sync::Arc};
 
 use common_error::DaftResult;
 use common_file_formats::{CsvSourceConfig, FileFormatConfig, ParquetSourceConfig};
@@ -289,75 +289,86 @@ async fn stream_scan_task(
             use pyo3::Python;
 
             use crate::PyIOSnafu;
-            let table: Table = match scan_task.file_format_config.as_ref() {
+            match scan_task.file_format_config.as_ref() {
                 FileFormatConfig::Parquet(ParquetSourceConfig {
                     coerce_int96_timestamp_unit,
                     ..
-                }) => Python::with_gil(|py| {
-                    daft_micropartition::python::read_parquet_into_py_table(
-                        py,
-                        url,
-                        scan_task.schema.clone().into(),
-                        (*coerce_int96_timestamp_unit).into(),
-                        scan_task.storage_config.clone().into(),
-                        scan_task
-                            .pushdowns
-                            .columns
-                            .as_ref()
-                            .map(|cols| cols.as_ref().clone()),
-                        scan_task.pushdowns.limit,
-                    )
-                    .map(|t| t.into())
-                    .context(PyIOSnafu)
-                })?,
+                }) => {
+                    let table: Table = Python::with_gil(|py| {
+                        daft_micropartition::python::read_parquet_into_py_table(
+                            py,
+                            url,
+                            scan_task.schema.clone().into(),
+                            (*coerce_int96_timestamp_unit).into(),
+                            scan_task.storage_config.clone().into(),
+                            scan_task
+                                .pushdowns
+                                .columns
+                                .as_ref()
+                                .map(|cols| cols.as_ref().clone()),
+                            scan_task.pushdowns.limit,
+                        )
+                        .map(|t| t.into())
+                        .context(PyIOSnafu)
+                    })?;
+                    Box::pin(futures::stream::once(async move { Ok(table) }))
+                        as Pin<Box<dyn Stream<Item = DaftResult<Table>> + Send>>
+                }
                 FileFormatConfig::Csv(CsvSourceConfig {
                     has_headers,
                     delimiter,
                     double_quote,
                     ..
-                }) => Python::with_gil(|py| {
-                    daft_micropartition::python::read_csv_into_py_table(
-                        py,
-                        url,
-                        *has_headers,
-                        *delimiter,
-                        *double_quote,
-                        scan_task.schema.clone().into(),
-                        scan_task.storage_config.clone().into(),
-                        scan_task
-                            .pushdowns
-                            .columns
-                            .as_ref()
-                            .map(|cols| cols.as_ref().clone()),
-                        scan_task.pushdowns.limit,
-                    )
-                    .map(|t| t.into())
-                    .context(PyIOSnafu)
-                })?,
-                FileFormatConfig::Json(_) => Python::with_gil(|py| {
-                    daft_micropartition::python::read_json_into_py_table(
-                        py,
-                        url,
-                        scan_task.schema.clone().into(),
-                        scan_task.storage_config.clone().into(),
-                        scan_task
-                            .pushdowns
-                            .columns
-                            .as_ref()
-                            .map(|cols| cols.as_ref().clone()),
-                        scan_task.pushdowns.limit,
-                    )
-                    .map(|t| t.into())
-                    .context(PyIOSnafu)
-                })?,
+                }) => {
+                    let table: Table = Python::with_gil(|py| {
+                        daft_micropartition::python::read_csv_into_py_table(
+                            py,
+                            url,
+                            *has_headers,
+                            *delimiter,
+                            *double_quote,
+                            scan_task.schema.clone().into(),
+                            scan_task.storage_config.clone().into(),
+                            scan_task
+                                .pushdowns
+                                .columns
+                                .as_ref()
+                                .map(|cols| cols.as_ref().clone()),
+                            scan_task.pushdowns.limit,
+                        )
+                        .map(|t| t.into())
+                        .context(PyIOSnafu)
+                    })?;
+                    Box::pin(futures::stream::once(async move { Ok(table) }))
+                        as Pin<Box<dyn Stream<Item = DaftResult<Table>> + Send>>
+                }
+                FileFormatConfig::Json(_) => {
+                    let table: Table = Python::with_gil(|py| {
+                        daft_micropartition::python::read_json_into_py_table(
+                            py,
+                            url,
+                            scan_task.schema.clone().into(),
+                            scan_task.storage_config.clone().into(),
+                            scan_task
+                                .pushdowns
+                                .columns
+                                .as_ref()
+                                .map(|cols| cols.as_ref().clone()),
+                            scan_task.pushdowns.limit,
+                        )
+                        .map(|t| t.into())
+                        .context(PyIOSnafu)
+                    })?;
+                    Box::pin(futures::stream::once(async move { Ok(table) }))
+                        as Pin<Box<dyn Stream<Item = DaftResult<Table>> + Send>>
+                }
                 FileFormatConfig::Database(_) => {
-                    todo!("Database reads not yet implemented for native executor")
+                    todo!("Database file format not yet implemented in native Executor")
                 }
                 FileFormatConfig::PythonFunction => {
-                    todo!("PythonFunction reads not yet implemented for native executor")
+                    todo!("PythonFunction file format not yet implemented in native Executor")
                 }
-            };
-            Box::pin(futures::stream::iter(std::iter::once(Ok(table))))
+            }
         }
     };
 
