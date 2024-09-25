@@ -1,38 +1,45 @@
----
 name: Bug report
-about: Create a report to help us improve
-title: ''
-labels: ''
-assignees: ''
-
----
-
-**Describe the bug**
-A clear and concise description of what the bug is.
-
-**To Reproduce**
-Steps to reproduce the behavior:
-1. Go to '...'
-2. Click on '....'
-3. Scroll down to '....'
-4. See error
-
-**Expected behavior**
-A clear and concise description of what you expected to happen.
-
-**Screenshots**
-If applicable, add screenshots to help explain your problem.
-
-**Desktop (please complete the following information):**
- - OS: [e.g. iOS]
- - Browser [e.g. chrome, safari]
- - Version [e.g. 22]
-
-**Smartphone (please complete the following information):**
- - Device: [e.g. iPhone6]
- - OS: [e.g. iOS8.1]
- - Browser [e.g. stock browser, safari]
- - Version [e.g. 22]
-
-**Additional context**
-Add any other context about the problem here.
+description: Create a report to help us improve Daft
+labels: [bug, needs triage]
+body:
+  - type: textarea
+    attributes:
+      label: Describe the bug
+      description: Describe the bug.
+      placeholder: >
+        A clear and concise description of what the bug is.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: To Reproduce
+      placeholder: >
+        Steps to reproduce the behavior:
+  - type: textarea
+    attributes:
+      label: Expected behavior
+      placeholder: >
+        A clear and concise description of what you expected to happen.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component(s)
+      multiple: true
+      options:
+        - Expressions
+        - SQL
+        - Python Runner
+        - Ray Runner
+        - Parquet
+        - CSV
+        - Continuous Integration
+        - Developer Tools
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Additional context
+      placeholder: >
+        Add any other context about the problem here.
