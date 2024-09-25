@@ -503,19 +503,18 @@ pub(crate) fn local_parquet_stream(
     BoxStream<'static, DaftResult<Table>>,
 )> {
     let chunk_size = 128 * 1024;
-    let (metadata, schema_ref, row_ranges, column_iters_per_rg) =
-        local_parquet_read_into_column_iters(
-            uri,
-            columns.as_deref(),
-            start_offset,
-            num_rows,
-            row_groups.as_deref(),
-            predicate.clone(),
-            schema_infer_options,
-            metadata,
-            chunk_size,
-            io_stats,
-        )?;
+    let (metadata, schema_ref, row_ranges, column_iters) = local_parquet_read_into_column_iters(
+        uri,
+        columns.as_deref(),
+        start_offset,
+        num_rows,
+        row_groups.as_deref(),
+        predicate.clone(),
+        schema_infer_options,
+        metadata,
+        chunk_size,
+        io_stats,
+    )?;
 
     // Create a channel for each row group to send the processed tables to the stream
     // Each channel is expected to have a number of chunks equal to the number of chunks in the row group
@@ -531,57 +530,53 @@ pub(crate) fn local_parquet_stream(
     let owned_uri = uri.to_string();
 
     rayon::spawn(move || {
+        // Once a row group has been read into memory and we have the column iterators,
+        // we can start processing them in parallel.
+        let par_column_iters = column_iters.zip(row_ranges).zip(senders).par_bridge();
+
         // For each vec of column iters, iterate through them in parallel lock step such that each iteration
         // produces a chunk of the row group that can be converted into a table.
-        column_iters_per_rg
-            .into_iter()
-            .zip(row_ranges)
-            .zip(senders)
-            .par_bridge()
-            .for_each(move |((rg_column_iters_result, rg_range), tx)| {
-                let table_iter = match rg_column_iters_result {
-                    Ok(rg_column_iters) => {
-                        if rg_column_iters.is_empty() {
-                            let table =
-                                Table::new_with_size(Schema::empty(), vec![], rg_range.num_rows);
-                            if let Err(crossbeam_channel::TrySendError::Full(_)) =
-                                tx.try_send(table)
-                            {
-                                panic!("Parquet stream channel should not be full")
-                            }
-                            return;
-                        } else {
-                            arrow_column_iters_to_table_iter(
-                                rg_column_iters,
-                                rg_range.start,
-                                schema_ref.clone(),
-                                owned_uri.clone(),
-                                predicate.clone(),
-                                original_columns.clone(),
-                                original_num_rows,
-                            )
-                        }
-                    }
-                    Err(e) => {
-                        if let Err(crossbeam_channel::TrySendError::Full(_)) =
-                            tx.try_send(Err(e.into()))
-                        {
+        par_column_iters.for_each(move |((rg_column_iters_result, rg_range), tx)| {
+            let table_iter = match rg_column_iters_result {
+                Ok(rg_column_iters) => {
+                    if rg_column_iters.is_empty() {
+                        let table =
+                            Table::new_with_size(Schema::empty(), vec![], rg_range.num_rows);
+                        if let Err(crossbeam_channel::TrySendError::Full(_)) = tx.try_send(table) {
                             panic!("Parquet stream channel should not be full")
                         }
                         return;
+                    } else {
+                        arrow_column_iters_to_table_iter(
+                            rg_column_iters,
+                            rg_range.start,
+                            schema_ref.clone(),
+                            owned_uri.clone(),
+                            predicate.clone(),
+                            original_columns.clone(),
+                            original_num_rows,
+                        )
                     }
-                };
-                for table_result in table_iter {
-                    let table_err = table_result.is_err();
-                    if let Err(crossbeam_channel::TrySendError::Full(_)) = tx.try_send(table_result)
+                }
+                Err(e) => {
+                    if let Err(crossbeam_channel::TrySendError::Full(_)) =
+                        tx.try_send(Err(e.into()))
                     {
                         panic!("Parquet stream channel should not be full")
                     }
-                    if table_err {
-                        break;
-                    }
+                    return;
                 }
-            });
+            };
+            for table_result in table_iter {
+                let table_err = table_result.is_err();
+                if let Err(crossbeam_channel::TrySendError::Full(_)) = tx.try_send(table_result) {
+                    panic!("Parquet stream channel should not be full")
+                }
+                if table_err {
+                    break;
+                }
+            }
+        });
     });
 
     let result_stream = futures::stream::iter(receivers.into_iter().map(futures::stream::iter));
