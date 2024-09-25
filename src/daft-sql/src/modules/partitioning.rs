@@ -32,19 +32,11 @@ impl SQLFunction for PartitioningExpr {
         planner: &crate::planner::SQLPlanner,
     ) -> crate::error::SQLPlannerResult<daft_dsl::ExprRef> {
         match self {
-            PartitioningExpr::Years => {
-                partitioning_helper(args, planner, "years", partitioning::years)
-            }
-            PartitioningExpr::Months => {
-                partitioning_helper(args, planner, "months", partitioning::months)
-            }
-            PartitioningExpr::Days => {
-                partitioning_helper(args, planner, "days", partitioning::days)
-            }
-            PartitioningExpr::Hours => {
-                partitioning_helper(args, planner, "hours", partitioning::hours)
-            }
-            PartitioningExpr::IcebergBucket(_) => {
+            Self::Years => partitioning_helper(args, planner, "years", partitioning::years),
+            Self::Months => partitioning_helper(args, planner, "months", partitioning::months),
+            Self::Days => partitioning_helper(args, planner, "days", partitioning::days),
+            Self::Hours => partitioning_helper(args, planner, "hours", partitioning::hours),
+            Self::IcebergBucket(_) => {
                 ensure!(args.len() == 2, "iceberg_bucket takes exactly 2 arguments");
                 let input = planner.plan_function_arg(&args[0])?;
                 let n = planner
@@ -68,7 +60,7 @@ impl SQLFunction for PartitioningExpr {
 
                 Ok(partitioning::iceberg_bucket(input, n))
             }
-            PartitioningExpr::IcebergTruncate(_) => {
+            Self::IcebergTruncate(_) => {
                 ensure!(
                     args.len() == 2,
                     "iceberg_truncate takes exactly 2 arguments"

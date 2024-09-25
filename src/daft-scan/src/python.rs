@@ -93,7 +93,7 @@ pub mod pylib {
                     file_format_config.into(),
                     storage_config.into(),
                 ));
-                Ok(ScanOperatorHandle {
+                Ok(Self {
                     scan_op: ScanOperatorRef(operator),
                 })
             })
@@ -116,7 +116,7 @@ pub mod pylib {
                     infer_schema,
                     schema.map(|s| s.schema),
                 )?);
-                Ok(ScanOperatorHandle {
+                Ok(Self {
                     scan_op: ScanOperatorRef(operator),
                 })
             })
@@ -127,7 +127,7 @@ pub mod pylib {
             let scan_op = ScanOperatorRef(Arc::new(PythonScanOperatorBridge::from_python_abc(
                 py_scan, py,
             )?));
-            Ok(ScanOperatorHandle { scan_op })
+            Ok(Self { scan_op })
         }
     }
     #[pyclass(module = "daft.daft")]
@@ -349,7 +349,7 @@ pub mod pylib {
                 storage_config.into(),
                 pushdowns.map(|p| p.0.as_ref().clone()).unwrap_or_default(),
             );
-            Ok(Some(PyScanTask(scan_task.into())))
+            Ok(Some(Self(scan_task.into())))
         }
 
         #[allow(clippy::too_many_arguments)]
@@ -381,7 +381,7 @@ pub mod pylib {
                 storage_config.into(),
                 pushdowns.map(|p| p.0.as_ref().clone()).unwrap_or_default(),
             );
-            Ok(PyScanTask(scan_task.into()))
+            Ok(Self(scan_task.into()))
         }
 
         #[allow(clippy::too_many_arguments)]
@@ -425,7 +425,7 @@ pub mod pylib {
                 ))),
                 pushdowns.map(|p| p.0.as_ref().clone()).unwrap_or_default(),
             );
-            Ok(PyScanTask(scan_task.into()))
+            Ok(Self(scan_task.into()))
         }
 
         pub fn __repr__(&self) -> PyResult<String> {
@@ -464,7 +464,7 @@ pub mod pylib {
                 source_field.map(|f| f.into()),
                 transform.map(|e| e.0),
             )?;
-            Ok(PyPartitionField(Arc::new(p_field)))
+            Ok(Self(Arc::new(p_field)))
         }
 
         pub fn __repr__(&self) -> PyResult<String> {

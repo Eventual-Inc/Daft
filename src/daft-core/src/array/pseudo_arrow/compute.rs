@@ -26,6 +26,6 @@ impl<T: Send + Sync + Clone + 'static> PseudoArrowArray<T> {
         let concatenated_validity =
             Bitmap::from_iter(bitmaps.iter().flat_map(|bitmap| bitmap.iter()));
 
-        PseudoArrowArray::new(concatenated_values.into(), Some(concatenated_validity))
+        Self::new(concatenated_values.into(), Some(concatenated_validity))
     }
 }

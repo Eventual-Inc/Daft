@@ -7,7 +7,7 @@ impl Series {
         &self,
         percentiles: &[f64],
         force_list_output: bool,
-    ) -> DaftResult<Series> {
+    ) -> DaftResult<Self> {
         use crate::datatypes::DataType::*;
 
         match self.data_type() {

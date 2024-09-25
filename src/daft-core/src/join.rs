@@ -38,7 +38,7 @@ impl JoinType {
 impl_bincode_py_state_serialization!(JoinType);
 
 impl JoinType {
-    pub fn iterator() -> std::slice::Iter<'static, JoinType> {
+    pub fn iterator() -> std::slice::Iter<'static, Self> {
         static JOIN_TYPES: [JoinType; 6] = [
             JoinType::Inner,
             JoinType::Left,
@@ -56,16 +56,16 @@ impl FromStr for JoinType {
 
     fn from_str(join_type: &str) -> DaftResult<Self> {
         match join_type {
-            "inner" => Ok(JoinType::Inner),
-            "left" => Ok(JoinType::Left),
-            "right" => Ok(JoinType::Right),
-            "outer" => Ok(JoinType::Outer),
-            "anti" => Ok(JoinType::Anti),
-            "semi" => Ok(JoinType::Semi),
+            "inner" => Ok(Self::Inner),
+            "left" => Ok(Self::Left),
+            "right" => Ok(Self::Right),
+            "outer" => Ok(Self::Outer),
+            "anti" => Ok(Self::Anti),
+            "semi" => Ok(Self::Semi),
             _ => Err(DaftError::TypeError(format!(
                 "Join type {} is not supported; only the following types are supported: {:?}",
                 join_type,
-                JoinType::iterator().as_slice()
+                Self::iterator().as_slice()
             ))),
         }
     }
@@ -98,7 +98,7 @@ impl JoinStrategy {
 impl_bincode_py_state_serialization!(JoinStrategy);
 
 impl JoinStrategy {
-    pub fn iterator() -> std::slice::Iter<'static, JoinStrategy> {
+    pub fn iterator() -> std::slice::Iter<'static, Self> {
         static JOIN_STRATEGIES: [JoinStrategy; 3] = [
             JoinStrategy::Hash,
             JoinStrategy::SortMerge,
@@ -113,13 +113,13 @@ impl FromStr for JoinStrategy {
 
     fn from_str(join_strategy: &str) -> DaftResult<Self> {
         match join_strategy {
-            "hash" => Ok(JoinStrategy::Hash),
-            "sort_merge" => Ok(JoinStrategy::SortMerge),
-            "broadcast" => Ok(JoinStrategy::Broadcast),
+            "hash" => Ok(Self::Hash),
+            "sort_merge" => Ok(Self::SortMerge),
+            "broadcast" => Ok(Self::Broadcast),
             _ => Err(DaftError::TypeError(format!(
                 "Join strategy {} is not supported; only the following strategies are supported: {:?}",
                 join_strategy,
-                JoinStrategy::iterator().as_slice()
+                Self::iterator().as_slice()
             ))),
         }
     }

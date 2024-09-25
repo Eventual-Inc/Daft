@@ -17,6 +17,9 @@ rstest = {workspace = true}
 [features]
 python = ["dep:pyo3", "common-error/python", "daft-functions/python", "daft-functions-json/python"]
 
+[lints]
+workspace = true
+
 [package]
 name = "daft-sql"
 edition.workspace = true

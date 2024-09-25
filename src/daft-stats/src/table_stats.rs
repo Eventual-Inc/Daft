@@ -31,7 +31,7 @@ impl TableStatistics {
             let stats = ColumnRangeStatistics::new(Some(col.slice(0, 1)?), Some(col.slice(1, 2)?))?;
             columns.insert(name, stats);
         }
-        Ok(TableStatistics { columns })
+        Ok(Self { columns })
     }
 
     pub fn from_table(table: &Table) -> Self {
@@ -41,7 +41,7 @@ impl TableStatistics {
             let stats = ColumnRangeStatistics::from_series(col);
             columns.insert(name, stats);
         }
-        TableStatistics { columns }
+        Self { columns }
     }
 
     pub fn union(&self, other: &Self) -> crate::Result<Self> {
@@ -61,7 +61,7 @@ impl TableStatistics {
             }?;
             columns.insert(col.clone(), res_col);
         }
-        Ok(TableStatistics { columns })
+        Ok(Self { columns })
     }
 
     pub fn eval_expression_list(
@@ -151,7 +151,7 @@ impl TableStatistics {
         }
     }
 
-    pub fn cast_to_schema(&self, schema: SchemaRef) -> crate::Result<TableStatistics> {
+    pub fn cast_to_schema(&self, schema: SchemaRef) -> crate::Result<Self> {
         self.cast_to_schema_with_fill(schema, None)
     }
 
@@ -159,7 +159,7 @@ impl TableStatistics {
         &self,
         schema: SchemaRef,
         fill_map: Option<&HashMap<&str, ExprRef>>,
-    ) -> crate::Result<TableStatistics> {
+    ) -> crate::Result<Self> {
         let mut columns = IndexMap::new();
         for (field_name, field) in schema.fields.iter() {
             let crs = match self.columns.get(field_name) {
@@ -175,7 +175,7 @@ impl TableStatistics {
             };
             columns.insert(field_name.clone(), crs);
         }
-        Ok(TableStatistics { columns })
+        Ok(Self { columns })
     }
 }
 

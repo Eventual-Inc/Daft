@@ -13,8 +13,8 @@ use crate::{
 impl<T> DaftListAggable for DataArray<T>
 where
     T: DaftArrowBackedType,
-    DataArray<T>: IntoSeries,
-    DataArray<T>: GrowableArray,
+    Self: IntoSeries,
+    Self: GrowableArray,
 {
     type Output = DaftResult<ListArray>;
     fn list(&self) -> Self::Output {
@@ -60,7 +60,7 @@ where
 
 #[cfg(feature = "python")]
 impl DaftListAggable for crate::datatypes::PythonArray {
-    type Output = DaftResult<crate::datatypes::PythonArray>;
+    type Output = DaftResult<Self>;
 
     fn list(&self) -> Self::Output {
         use pyo3::{prelude::*, types::PyList};
@@ -97,7 +97,7 @@ impl DaftListAggable for crate::datatypes::PythonArray {
 }
 
 impl DaftListAggable for ListArray {
-    type Output = DaftResult<ListArray>;
+    type Output = DaftResult<Self>;
 
     fn list(&self) -> Self::Output {
         // TODO(FixedSizeList)

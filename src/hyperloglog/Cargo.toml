@@ -1,5 +1,8 @@
 [dependencies]
 
+[lints]
+workspace = true
+
 [package]
 name = "hyperloglog"
 edition.workspace = true

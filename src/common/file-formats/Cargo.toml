@@ -9,6 +9,9 @@ serde_json = {workspace = true, optional = true}
 [features]
 python = ["dep:pyo3", "dep:serde_json", "common-error/python", "common-py-serde/python", "daft-schema/python"]
 
+[lints]
+workspace = true
+
 [package]
 edition = {workspace = true}
 name = "common-file-formats"

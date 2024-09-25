@@ -3,7 +3,7 @@ use common_error::{DaftError, DaftResult};
 use crate::{datatypes::BooleanArray, series::Series};
 
 impl Series {
-    pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Series> {
+    pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
         match (self.len(), mask.len()) {
             (_, 1) => {
                 if Some(true) == mask.get(0) {

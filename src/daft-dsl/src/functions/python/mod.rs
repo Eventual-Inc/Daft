@@ -26,8 +26,8 @@ impl PythonUDF {
     #[inline]
     pub fn get_evaluator(&self) -> &dyn FunctionEvaluator {
         match self {
-            PythonUDF::Stateless(stateless_python_udf) => stateless_python_udf,
-            PythonUDF::Stateful(stateful_python_udf) => stateful_python_udf,
+            Self::Stateless(stateless_python_udf) => stateless_python_udf,
+            Self::Stateful(stateful_python_udf) => stateful_python_udf,
         }
     }
 }

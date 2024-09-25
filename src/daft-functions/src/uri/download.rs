@@ -29,7 +29,7 @@ impl ScalarUDF for DownloadFunction {
     }
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
-        let DownloadFunction {
+        let Self {
             max_connections,
             raise_error_on_failure,
             multi_thread,

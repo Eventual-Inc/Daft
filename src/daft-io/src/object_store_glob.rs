@@ -58,7 +58,7 @@ impl GlobState {
     }
 
     pub fn advance(self, path: String, idx: usize, fanout_factor: usize) -> Self {
-        GlobState {
+        Self {
             current_path: path,
             current_fragment_idx: idx,
             current_fanout: self.current_fanout * fanout_factor,
@@ -67,7 +67,7 @@ impl GlobState {
     }
 
     pub fn with_wildcard_mode(self) -> Self {
-        GlobState {
+        Self {
             wildcard_mode: true,
             ..self
         }
@@ -126,7 +126,7 @@ impl GlobFragment {
             }
         }
 
-        GlobFragment {
+        Self {
             data: data.to_string(),
             first_wildcard_idx,
             escaped_data,
@@ -139,11 +139,11 @@ impl GlobFragment {
     }
 
     /// Joins a slice of GlobFragments together with a separator
-    pub fn join(fragments: &[GlobFragment], sep: &str) -> Self {
-        GlobFragment::new(
+    pub fn join(fragments: &[Self], sep: &str) -> Self {
+        Self::new(
             fragments
                 .iter()
-                .map(|frag: &GlobFragment| frag.data.as_str())
+                .map(|frag: &Self| frag.data.as_str())
                 .join(sep)
                 .as_str(),
         )

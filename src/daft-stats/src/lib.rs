@@ -40,7 +40,7 @@ impl From<Error> for DaftError {
     fn from(value: Error) -> Self {
         match value {
             Error::DaftCoreCompute { source } => source,
-            _ => DaftError::External(value.into()),
+            _ => Self::External(value.into()),
         }
     }
 }

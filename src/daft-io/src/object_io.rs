@@ -109,7 +109,7 @@ impl GetResult {
                                 .source
                                 .get(&rp.input, rp.range.clone(), rp.io_stats.clone())
                                 .await?;
-                            if let GetResult::Stream(stream, size, permit, _) = get_result {
+                            if let Self::Stream(stream, size, permit, _) = get_result {
                                 result = collect_bytes(stream, size, permit).await;
                             } else {
                                 unreachable!("Retrying a stream should always be a stream");
@@ -125,9 +125,9 @@ impl GetResult {
 
     pub fn with_retry(self, params: StreamingRetryParams) -> Self {
         match self {
-            GetResult::File(..) => self,
-            GetResult::Stream(s, size, permit, _) => {
-                GetResult::Stream(s, size, permit, Some(Box::new(params)))
+            Self::File(..) => self,
+            Self::Stream(s, size, permit, _) => {
+                Self::Stream(s, size, permit, Some(Box::new(params)))
             }
         }
     }
