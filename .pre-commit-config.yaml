@@ -110,6 +110,15 @@ repos:
     types: [rust]
     pass_filenames: false
 
+  - id: cargo-machete
+    name: cargo machete
+    description: Check for unused Rust dependencies
+    entry: cargo machete
+    language: system
+    types: [rust]
+    pass_filenames: false
+    args: [--with-metadata]
+
 - repo: https://github.com/abravalheri/validate-pyproject
   rev: v0.19
   hooks:
