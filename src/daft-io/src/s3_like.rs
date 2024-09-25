@@ -182,9 +182,9 @@ impl From<Error> for super::Error {
                                 source: err.into(),
                             }
                         }
-                        _ => super::Error::UnableToOpenFile {
+                        _ => super::Error::Unhandled {
                             path,
-                            source: err.into(),
+                            msg: DisplayErrorContext(err).to_string(),
                         },
                     },
                 },
@@ -206,7 +206,7 @@ impl From<Error> for super::Error {
                             source: source.into(),
                         }
                     } else {
-                        super::Error::UnableToOpenFile {
+                        super::Error::MiscTransient {
                             path,
                             source: source.into(),
                         }
@@ -217,13 +217,21 @@ impl From<Error> for super::Error {
                         path,
                         source: no_such_key.into(),
                     },
-                    HeadObjectError::Unhandled(v) => super::Error::Unhandled {
-                        path,
-                        msg: DisplayErrorContext(v).to_string(),
-                    },
-                    err => super::Error::UnableToOpenFile {
-                        path,
-                        source: err.into(),
+                    err => match err.code() {
+                        Some("InternalError") => super::Error::MiscTransient {
+                            path,
+                            source: err.into(),
+                        },
+                        Some(code) if THROTTLING_ERRORS.contains(&code) => {
+                            super::Error::Throttled {
+                                path,
+                                source: err.into(),
+                            }
+                        }
+                        _ => super::Error::Unhandled {
+                            path,
+                            msg: DisplayErrorContext(err).to_string(),
+                        },
                     },
                 },
             },
@@ -244,7 +252,7 @@ impl From<Error> for super::Error {
                             source: source.into(),
                         }
                     } else {
-                        super::Error::UnableToOpenFile {
+                        super::Error::MiscTransient {
                             path,
                             source: source.into(),
                         }
@@ -255,13 +263,21 @@ impl From<Error> for super::Error {
                         path,
                         source: no_such_key.into(),
                     },
-                    ListObjectsV2Error::Unhandled(v) => super::Error::Unhandled {
-                        path,
-                        msg: DisplayErrorContext(v).to_string(),
-                    },
-                    err => super::Error::UnableToOpenFile {
-                        path,
-                        source: err.into(),
+                    err => match err.code() {
+                        Some("InternalError") => super::Error::MiscTransient {
+                            path,
+                            source: err.into(),
+                        },
+                        Some(code) if THROTTLING_ERRORS.contains(&code) => {
+                            super::Error::Throttled {
+                                path,
+                                source: err.into(),
+                            }
+                        }
+                        _ => super::Error::Unhandled {
+                            path,
+                            msg: DisplayErrorContext(err).to_string(),
+                        },
                     },
                 },
             },
