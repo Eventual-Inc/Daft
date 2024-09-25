@@ -390,6 +390,7 @@ impl AggExpr {
                 let field = expr.to_field(schema)?;
                 match field.dtype {
                     DataType::List(..) => Ok(field),
+                    DataType::Utf8 => Ok(field),
                     #[cfg(feature = "python")]
                     DataType::Python => Ok(field),
                     _ => Err(DaftError::TypeError(format!(
