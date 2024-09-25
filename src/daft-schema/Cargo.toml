@@ -29,4 +29,4 @@ name = "daft-schema"
 version = {workspace = true}
 
 [package.metadata.cargo-machete]
-ignored = ["num_traits"]  # needed by num-derive
+ignored = ["num-traits"]  # needed by num-derive
