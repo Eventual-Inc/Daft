@@ -196,10 +196,10 @@ pub fn physical_plan_to_pipeline(
                 );
                 (
                     IntermediateNode::new(Arc::new(agg_op), vec![child_node]).boxed(),
-                    group_by.iter().map(|e| col(e.name())).collect(),
+                    &group_by.iter().map(|e| col(e.name())).collect(),
                 )
             } else {
-                (child_node, group_by.clone())
+                (child_node, group_by)
             };
 
             let second_stage_agg_sink = AggregateSink::new(
