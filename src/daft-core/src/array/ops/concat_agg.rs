@@ -1,5 +1,5 @@
 use arrow2::{
-    array::{Array, NullArray, Utf8Array},
+    array::{Array, Utf8Array},
     bitmap::utils::SlicesIterator,
     offset::OffsetsBuffer,
     types::Index,
@@ -12,7 +12,7 @@ use crate::{
         growable::{make_growable, Growable},
         DataArray, ListArray,
     },
-    prelude::{NullType, Utf8Type},
+    prelude::Utf8Type,
 };
 
 #[cfg(feature = "python")]
@@ -214,7 +214,6 @@ impl DaftConcatAggable for DataArray<Utf8Type> {
         )))
     }
 }
-
 
 #[cfg(test)]
 mod test {
