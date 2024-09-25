@@ -19,7 +19,9 @@ use snafu::ResultExt;
 use crate::{
     metadata::read_parquet_metadata,
     read::ParquetSchemaInferenceOptions,
-    read_planner::{CoalescePass, RangesContainer, ReadPlanner, SplitLargeRequestPass},
+    read_planner::{
+        CoalescePass, RangesContainer, ReadPlanPass, ReadPlanner, SplitLargeRequestPass,
+    },
     statistics,
     stream_reader::arrow_column_iters_to_table_iter,
     JoinSnafu, OneShotRecvSnafu, UnableToConvertRowGroupMetadataToStatsSnafu,
@@ -254,11 +256,8 @@ impl<'a> ParquetReaderBuilder<'a> {
 
     pub fn build(self) -> super::Result<ParquetFileReader> {
         let options = self.schema_inference_options.into();
-        let mut arrow_schema = infer_schema_with_options(&self.metadata, Some(options)).context(
-            UnableToParseSchemaFromMetadataSnafu {
-                path: self.uri.clone(),
-            },
-        )?;
+        let mut arrow_schema = infer_schema_with_options(&self.metadata, Some(options))
+            .context(UnableToParseSchemaFromMetadataSnafu { path: self.uri })?;
         if let Some(names_to_keep) = self.selected_columns {
             arrow_schema
                 .fields
@@ -369,12 +368,12 @@ impl ParquetFileReader {
     ) -> DaftResult<Arc<RangesContainer>> {
         let mut read_planner = self.naive_read_plan()?;
         // TODO(sammy) these values should be populated by io_client
-        read_planner.add_pass(Box::new(SplitLargeRequestPass {
+        read_planner.add_pass(ReadPlanPass::SplitLargeRequestPass(SplitLargeRequestPass {
             max_request_size: 16 * 1024 * 1024,
             split_threshold: 24 * 1024 * 1024,
         }));
 
-        read_planner.add_pass(Box::new(CoalescePass {
+        read_planner.add_pass(ReadPlanPass::CoalescePass(CoalescePass {
             max_hole_size: 1024 * 1024,
             max_request_size: 16 * 1024 * 1024,
         }));

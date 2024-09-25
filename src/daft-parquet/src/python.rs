@@ -7,7 +7,9 @@ use daft_io::{get_io_client, python::IOConfig, IOStatsContext};
 use daft_table::python::PyTable;
 use pyo3::{prelude::*, pyfunction, types::PyModule, Bound, PyResult, Python};
 
-use crate::read::{ArrowChunk, ParquetSchemaInferenceOptions};
+use crate::read::{
+    ArrowChunk, ParquetSchemaInferenceOptions, ParquetSchemaInferenceOptionsBuilder,
+};
 
 type PyArrowChunks = Vec<Vec<pyo3::PyObject>>;
 type PyArrowFields = Vec<pyo3::PyObject>;
@@ -20,7 +22,7 @@ type PyArrowParquetType = (
 
 #[allow(clippy::too_many_arguments)]
 #[pyfunction]
-fn read_parquet(
+pub fn read_parquet(
     py: Python,
     uri: &str,
     columns: Option<Vec<String>>,
@@ -86,9 +88,10 @@ fn convert_pyarrow_parquet_read_result_into_py(
 
 #[allow(clippy::too_many_arguments)]
 #[pyfunction]
-fn read_parquet_into_pyarrow(
+pub fn read_parquet_into_pyarrow(
     py: Python,
     uri: &str,
+    string_encoding: String,
     columns: Option<Vec<String>>,
     start_offset: Option<usize>,
     num_rows: Option<usize>,
@@ -98,13 +101,16 @@ fn read_parquet_into_pyarrow(
     coerce_int96_timestamp_unit: Option<PyTimeUnit>,
     file_timeout_ms: Option<i64>,
 ) -> PyResult<PyArrowParquetType> {
-    let read_parquet_result = py.allow_threads(|| {
+    let (schema, all_arrays, num_rows) = py.allow_threads(|| {
         let io_client = get_io_client(
             multithreaded_io.unwrap_or(true),
             io_config.unwrap_or_default().config.into(),
         )?;
-        let schema_infer_options =
-            ParquetSchemaInferenceOptions::new(coerce_int96_timestamp_unit.map(|tu| tu.timeunit));
+        let schema_infer_options = ParquetSchemaInferenceOptionsBuilder {
+            coerce_int96_timestamp_unit,
+            string_encoding,
+        }
+        .build()?;
 
         crate::read::read_parquet_into_pyarrow(
             uri,
@@ -119,14 +125,13 @@ fn read_parquet_into_pyarrow(
             file_timeout_ms,
         )
     })?;
-    let (schema, all_arrays, num_rows) = read_parquet_result;
     let pyarrow = py.import_bound(pyo3::intern!(py, "pyarrow"))?;
     convert_pyarrow_parquet_read_result_into_py(py, schema, all_arrays, num_rows, &pyarrow)
 }
 
 #[allow(clippy::too_many_arguments)]
 #[pyfunction]
-fn read_parquet_bulk(
+pub fn read_parquet_bulk(
     py: Python,
     uris: Vec<String>,
     columns: Option<Vec<String>>,
@@ -173,7 +178,7 @@ fn read_parquet_bulk(
 
 #[allow(clippy::too_many_arguments)]
 #[pyfunction]
-fn read_parquet_into_pyarrow_bulk(
+pub fn read_parquet_into_pyarrow_bulk(
     py: Python,
     uris: Vec<String>,
     columns: Option<Vec<String>>,
@@ -216,7 +221,7 @@ fn read_parquet_into_pyarrow_bulk(
 }
 
 #[pyfunction]
-fn read_parquet_schema(
+pub fn read_parquet_schema(
     py: Python,
     uri: &str,
     io_config: Option<IOConfig>,
@@ -247,7 +252,7 @@ fn read_parquet_schema(
 }
 
 #[pyfunction]
-fn read_parquet_statistics(
+pub fn read_parquet_statistics(
     py: Python,
     uris: PySeries,
     io_config: Option<IOConfig>,

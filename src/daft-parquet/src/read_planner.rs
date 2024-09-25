@@ -8,8 +8,18 @@ use tokio::task::JoinHandle;
 
 type RangeList = Vec<Range<usize>>;
 
-pub trait ReadPlanPass: Send {
-    fn run(&self, ranges: &RangeList) -> crate::Result<(bool, RangeList)>;
+pub enum ReadPlanPass {
+    CoalescePass(CoalescePass),
+    SplitLargeRequestPass(SplitLargeRequestPass),
+}
+
+impl ReadPlanPass {
+    pub fn run(&self, ranges: &RangeList) -> crate::Result<(bool, RangeList)> {
+        match self {
+            ReadPlanPass::CoalescePass(pass) => pass.run(ranges),
+            ReadPlanPass::SplitLargeRequestPass(pass) => pass.run(ranges),
+        }
+    }
 }
 
 pub struct CoalescePass {
@@ -17,7 +27,7 @@ pub struct CoalescePass {
     pub max_request_size: usize,
 }
 
-impl ReadPlanPass for CoalescePass {
+impl CoalescePass {
     fn run(&self, ranges: &RangeList) -> crate::Result<(bool, RangeList)> {
         let mut ranges = ranges.clone();
         let before_num_ranges = ranges.len();
@@ -55,7 +65,7 @@ pub struct SplitLargeRequestPass {
     pub split_threshold: usize,
 }
 
-impl ReadPlanPass for SplitLargeRequestPass {
+impl SplitLargeRequestPass {
     fn run(&self, ranges: &RangeList) -> crate::Result<(bool, RangeList)> {
         let mut ranges = ranges.clone();
         let before_num_ranges = ranges.len();
@@ -127,7 +137,7 @@ impl RangeCacheEntry {
 pub(crate) struct ReadPlanner {
     source: String,
     ranges: RangeList,
-    passes: Vec<Box<dyn ReadPlanPass>>,
+    passes: Vec<ReadPlanPass>,
 }
 
 impl ReadPlanner {
@@ -143,7 +153,7 @@ impl ReadPlanner {
         self.ranges.push(start..end);
     }
 
-    pub fn add_pass(&mut self, pass: Box<dyn ReadPlanPass>) {
+    pub fn add_pass(&mut self, pass: ReadPlanPass) {
         self.passes.push(pass);
     }
 
