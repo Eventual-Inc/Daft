@@ -110,7 +110,9 @@ pub fn physical_plan_to_pipeline(
         }
         LocalPhysicalPlan::InMemoryScan(InMemoryScan { info, .. }) => {
             let partitions = psets.get(&info.cache_key).expect("Cache key not found");
-            InMemorySource::new(partitions.clone()).boxed().into()
+            InMemorySource::new(partitions.clone(), info.source_schema.clone())
+                .boxed()
+                .into()
         }
         LocalPhysicalPlan::Project(Project {
             input, projection, ..
