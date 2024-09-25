@@ -20,48 +20,55 @@ use crate::pipeline::PipelineResultType;
 
 struct IndexBitmapBuilder {
     bitmap: MutableBitmap,
+    prefix_sums: Vec<usize>,
 }
 
 impl IndexBitmapBuilder {
-    const TABLE_IDX_SHIFT: usize = 36;
-    const LOWER_MASK: u64 = (1 << Self::TABLE_IDX_SHIFT) - 1;
-
     fn new(tables: &[Table]) -> Self {
-        let total_len = tables.iter().map(|t| t.len()).sum();
+        println!("tables: {:#?}", tables);
+        let prefix_sums = tables
+            .iter()
+            .map(|t| t.len())
+            .scan(0, |acc, x| {
+                let prev = *acc;
+                *acc += x;
+                Some(prev)
+            })
+            .collect::<Vec<_>>();
+        println!("prefix_sums: {:?}", prefix_sums);
+        let total_len = prefix_sums.last().unwrap() + tables.last().unwrap().len();
+        println!("total_len: {:?}", total_len);
         Self {
-            bitmap: MutableBitmap::with_capacity(total_len),
+            bitmap: MutableBitmap::from_len_zeroed(total_len),
+            prefix_sums,
         }
     }
 
     #[inline]
     fn mark_used(&mut self, table_idx: usize, row_idx: usize) {
-        let idx = (table_idx as u64) << Self::TABLE_IDX_SHIFT | row_idx as u64;
-        self.bitmap.set(idx as usize, true);
+        let idx = self.prefix_sums[table_idx] + row_idx;
+        self.bitmap.set(idx, true);
     }
 
     fn build(self) -> IndexBitmap {
         IndexBitmap {
             bitmap: self.bitmap.into(),
-            table_idx_shift: Self::TABLE_IDX_SHIFT,
-            lower_mask: Self::LOWER_MASK,
+            prefix_sums: self.prefix_sums,
         }
     }
 }
 
 struct IndexBitmap {
     bitmap: Bitmap,
-    table_idx_shift: usize,
-    lower_mask: u64,
+    prefix_sums: Vec<usize>,
 }
 
 impl IndexBitmap {
     fn or(&self, other: &Self) -> Self {
-        assert_eq!(self.table_idx_shift, other.table_idx_shift);
-        assert_eq!(self.lower_mask, other.lower_mask);
+        assert_eq!(self.prefix_sums, other.prefix_sums);
         Self {
             bitmap: or(&self.bitmap, &other.bitmap),
-            table_idx_shift: self.table_idx_shift,
-            lower_mask: self.lower_mask,
+            prefix_sums: self.prefix_sums.clone(),
         }
     }
 
@@ -70,16 +77,21 @@ impl IndexBitmap {
     }
 
     fn get_unused_indices(&self) -> impl Iterator<Item = (usize, usize)> + '_ {
+        let mut curr_table = 0;
         self.bitmap
             .iter()
             .enumerate()
             .filter_map(move |(idx, is_set)| {
-                if !is_set {
-                    let table_idx = idx >> self.table_idx_shift;
-                    let row_idx = (idx as u64 & self.lower_mask) as usize;
-                    Some((table_idx, row_idx))
-                } else {
+                if is_set {
                     None
+                } else {
+                    while curr_table < self.prefix_sums.len() - 1
+                        && idx >= self.prefix_sums[curr_table + 1]
+                    {
+                        curr_table += 1;
+                    }
+                    let row_idx = idx - self.prefix_sums[curr_table];
+                    Some((curr_table, row_idx))
                 }
             })
     }
@@ -343,7 +355,8 @@ impl OuterHashJoinProbeSink {
             })
         }
         .expect("at least one bitmap should be present");
-
+        println!("num nulls: {}", merged_bitmap.unset_bits());
+        println!("tables: {:#?}", tables);
         let mut build_side_growable = GrowableTable::new(
             &tables.iter().collect::<Vec<_>>(),
             true,
@@ -351,6 +364,7 @@ impl OuterHashJoinProbeSink {
         )?;
 
         for (table_idx, row_idx) in merged_bitmap.get_unused_indices() {
+            println!("table_idx: {:?}, row_idx: {:?}", table_idx, row_idx);
             build_side_growable.extend(table_idx, row_idx, 1);
         }
 
