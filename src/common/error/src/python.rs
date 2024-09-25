@@ -12,7 +12,7 @@ import_exception!(daft.exceptions, ThrottleError);
 import_exception!(daft.exceptions, MiscTransientError);
 
 impl std::convert::From<DaftError> for pyo3::PyErr {
-    fn from(err: DaftError) -> pyo3::PyErr {
+    fn from(err: DaftError) -> Self {
         match err {
             DaftError::PyO3Error(pyerr) => pyerr,
             DaftError::FileNotFound { path, source } => {

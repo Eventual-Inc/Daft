@@ -30,6 +30,9 @@ python = [
   "common-io-config/python"
 ]
 
+[lints]
+workspace = true
+
 [package]
 name = "daft-functions"
 edition.workspace = true

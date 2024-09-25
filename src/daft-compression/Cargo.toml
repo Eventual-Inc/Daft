@@ -3,6 +3,9 @@ async-compression = {workspace = true}
 tokio = {workspace = true}
 url = {workspace = true}
 
+[lints]
+workspace = true
+
 [package]
 edition = {workspace = true}
 name = "daft-compression"

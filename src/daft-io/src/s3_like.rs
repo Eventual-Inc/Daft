@@ -167,18 +167,18 @@ impl From<Error> for super::Error {
 
         match error {
             UnableToOpenFile { path, source } => match source {
-                SdkError::TimeoutError(_) => super::Error::ReadTimeout {
+                SdkError::TimeoutError(_) => Self::ReadTimeout {
                     path,
                     source: source.into(),
                 },
                 SdkError::DispatchFailure(ref dispatch) => {
                     if dispatch.is_timeout() {
-                        super::Error::ConnectTimeout {
+                        Self::ConnectTimeout {
                             path,
                             source: source.into(),
                         }
                     } else if dispatch.is_io() {
-                        super::Error::SocketError {
+                        Self::SocketError {
                             path,
                             source: source.into(),
                         }
@@ -192,7 +192,7 @@ impl From<Error> for super::Error {
                 }
 
                 _ => match source.into_service_error() {
-                    GetObjectError::NoSuchKey(no_such_key) => super::Error::NotFound {
+                    GetObjectError::NoSuchKey(no_such_key) => Self::NotFound {
                         path,
                         source: no_such_key.into(),
                     },
@@ -200,18 +200,18 @@ impl From<Error> for super::Error {
                 },
             },
             UnableToHeadFile { path, source } => match source {
-                SdkError::TimeoutError(_) => super::Error::ReadTimeout {
+                SdkError::TimeoutError(_) => Self::ReadTimeout {
                     path,
                     source: source.into(),
                 },
                 SdkError::DispatchFailure(ref dispatch) => {
                     if dispatch.is_timeout() {
-                        super::Error::ConnectTimeout {
+                        Self::ConnectTimeout {
                             path,
                             source: source.into(),
                         }
                     } else if dispatch.is_io() {
-                        super::Error::SocketError {
+                        Self::SocketError {
                             path,
                             source: source.into(),
                         }
@@ -224,7 +224,7 @@ impl From<Error> for super::Error {
                     }
                 }
                 _ => match source.into_service_error() {
-                    HeadObjectError::NotFound(no_such_key) => super::Error::NotFound {
+                    HeadObjectError::NotFound(no_such_key) => Self::NotFound {
                         path,
                         source: no_such_key.into(),
                     },
@@ -232,18 +232,18 @@ impl From<Error> for super::Error {
                 },
             },
             UnableToListObjects { path, source } => match source {
-                SdkError::TimeoutError(_) => super::Error::ReadTimeout {
+                SdkError::TimeoutError(_) => Self::ReadTimeout {
                     path,
                     source: source.into(),
                 },
                 SdkError::DispatchFailure(ref dispatch) => {
                     if dispatch.is_timeout() {
-                        super::Error::ConnectTimeout {
+                        Self::ConnectTimeout {
                             path,
                             source: source.into(),
                         }
                     } else if dispatch.is_io() {
-                        super::Error::SocketError {
+                        Self::SocketError {
                             path,
                             source: source.into(),
                         }
@@ -256,14 +256,14 @@ impl From<Error> for super::Error {
                     }
                 }
                 _ => match source.into_service_error() {
-                    ListObjectsV2Error::NoSuchBucket(no_such_key) => super::Error::NotFound {
+                    ListObjectsV2Error::NoSuchBucket(no_such_key) => Self::NotFound {
                         path,
                         source: no_such_key.into(),
                     },
                     err => classify_unhandled_error(path, err),
                 },
             },
-            InvalidUrl { path, source } => super::Error::InvalidUrl { path, source },
+            InvalidUrl { path, source } => Self::InvalidUrl { path, source },
             UnableToReadBytes { path, source } => {
                 use std::error::Error;
                 let io_error = if let Some(source) = source.source() {
@@ -273,21 +273,21 @@ impl From<Error> for super::Error {
                 } else {
                     std::io::Error::new(io::ErrorKind::Other, source)
                 };
-                super::Error::UnableToReadBytes {
+                Self::UnableToReadBytes {
                     path,
                     source: io_error,
                 }
             }
-            NotAFile { path } => super::Error::NotAFile { path },
-            UnableToLoadCredentials { source } => super::Error::UnableToLoadCredentials {
+            NotAFile { path } => Self::NotAFile { path },
+            UnableToLoadCredentials { source } => Self::UnableToLoadCredentials {
                 store: SourceType::S3,
                 source: source.into(),
             },
-            NotFound { ref path } => super::Error::NotFound {
+            NotFound { ref path } => Self::NotFound {
                 path: path.into(),
                 source: error.into(),
             },
-            err => super::Error::Generic {
+            err => Self::Generic {
                 store: SourceType::S3,
                 source: err.into(),
             },
@@ -579,7 +579,7 @@ async fn build_client(config: &S3Config) -> super::Result<S3LikeSource> {
 const REGION_HEADER: &str = "x-amz-bucket-region";
 
 impl S3LikeSource {
-    pub async fn get_client(config: &S3Config) -> super::Result<Arc<S3LikeSource>> {
+    pub async fn get_client(config: &S3Config) -> super::Result<Arc<Self>> {
         Ok(build_client(config).await?.into())
     }
 

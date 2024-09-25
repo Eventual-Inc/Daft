@@ -34,7 +34,7 @@ impl PyCatalog {
     /// Construct an empty PyCatalog.
     #[staticmethod]
     pub fn new() -> Self {
-        PyCatalog {
+        Self {
             catalog: SQLCatalog::new(),
         }
     }
@@ -46,7 +46,7 @@ impl PyCatalog {
     }
 
     /// Copy from another catalog, using tables from other in case of conflict
-    pub fn copy_from(&mut self, other: &PyCatalog) {
+    pub fn copy_from(&mut self, other: &Self) {
         self.catalog.copy_from(&other.catalog);
     }
 

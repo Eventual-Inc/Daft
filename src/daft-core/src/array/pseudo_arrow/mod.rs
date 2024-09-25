@@ -298,7 +298,7 @@ impl<T: Send + Sync + Clone + 'static> Array for PseudoArrowArray<T> {
     }
 
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
-        Box::new(PseudoArrowArray {
+        Box::new(Self {
             values: self.values.clone(),
             validity,
         })

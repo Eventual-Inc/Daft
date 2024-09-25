@@ -19,15 +19,15 @@ enum AntiSemiProbeState {
 
 impl AntiSemiProbeState {
     fn set_table(&mut self, table: &Arc<dyn Probeable>) {
-        if let AntiSemiProbeState::Building = self {
-            *self = AntiSemiProbeState::ReadyToProbe(table.clone());
+        if let Self::Building = self {
+            *self = Self::ReadyToProbe(table.clone());
         } else {
             panic!("AntiSemiProbeState should only be in Building state when setting table")
         }
     }
 
     fn get_probeable(&self) -> &Arc<dyn Probeable> {
-        if let AntiSemiProbeState::ReadyToProbe(probeable) = self {
+        if let Self::ReadyToProbe(probeable) = self {
             probeable
         } else {
             panic!("AntiSemiProbeState should only be in ReadyToProbe state when getting probeable")

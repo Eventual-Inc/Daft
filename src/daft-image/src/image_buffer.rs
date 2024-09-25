@@ -45,12 +45,7 @@ macro_rules! with_method_on_image_buffer {
 }
 
 impl<'a> DaftImageBuffer<'a> {
-    pub fn from_raw(
-        mode: &ImageMode,
-        width: u32,
-        height: u32,
-        data: Cow<'a, [u8]>,
-    ) -> DaftImageBuffer<'a> {
+    pub fn from_raw(mode: &ImageMode, width: u32, height: u32, data: Cow<'a, [u8]>) -> Self {
         use DaftImageBuffer::*;
         match mode {
             ImageMode::L => L(ImageBuffer::from_raw(width, height, data).unwrap()),

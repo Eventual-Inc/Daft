@@ -36,7 +36,7 @@ pub(crate) struct Relation {
 
 impl Relation {
     pub fn new(inner: LogicalPlanBuilder, name: String) -> Self {
-        Relation { inner, name }
+        Self { inner, name }
     }
     pub(crate) fn schema(&self) -> SchemaRef {
         self.inner.schema()
@@ -50,7 +50,7 @@ pub struct SQLPlanner {
 
 impl Default for SQLPlanner {
     fn default() -> Self {
-        SQLPlanner {
+        Self {
             catalog: SQLCatalog::new(),
             current_relation: None,
         }
@@ -59,7 +59,7 @@ impl Default for SQLPlanner {
 
 impl SQLPlanner {
     pub fn new(context: SQLCatalog) -> Self {
-        SQLPlanner {
+        Self {
             catalog: context,
             current_relation: None,
         }
@@ -551,9 +551,6 @@ impl SQLPlanner {
                 .plan_compound_identifier(idents.as_slice())
                 .map(|e| e[0].clone()),
 
-            SQLExpr::JsonAccess { .. } => {
-                unsupported_sql_err!("json access")
-            }
             SQLExpr::CompositeAccess { .. } => {
                 unsupported_sql_err!("composite access")
             }
@@ -638,7 +635,6 @@ impl SQLPlanner {
                     unsupported_sql_err!("TypedString with data type {:?}", dtype)
                 }
             },
-            SQLExpr::MapAccess { .. } => unsupported_sql_err!("MAP ACCESS"),
             SQLExpr::Function(func) => self.plan_function(func),
             SQLExpr::Case {
                 operand,
@@ -706,33 +702,7 @@ impl SQLPlanner {
             SQLExpr::Named { .. } => unsupported_sql_err!("NAMED"),
             SQLExpr::Dictionary(_) => unsupported_sql_err!("DICTIONARY"),
             SQLExpr::Map(_) => unsupported_sql_err!("MAP"),
-            SQLExpr::Subscript { expr, subscript } => match subscript.as_ref() {
-                Subscript::Index { index } => {
-                    let index = self.plan_expr(index)?;
-                    let expr = self.plan_expr(expr)?;
-                    Ok(daft_functions::list::get(expr, index, null_lit()))
-                }
-                Subscript::Slice {
-                    lower_bound,
-                    upper_bound,
-                    stride,
-                } => {
-                    if stride.is_some() {
-                        unsupported_sql_err!("stride");
-                    }
-                    match (lower_bound, upper_bound) {
-                        (Some(lower), Some(upper)) => {
-                            let lower = self.plan_expr(lower)?;
-                            let upper = self.plan_expr(upper)?;
-                            let expr = self.plan_expr(expr)?;
-                            Ok(daft_functions::list::slice(expr, lower, upper))
-                        }
-                        _ => {
-                            unsupported_sql_err!("slice with only one bound not yet supported");
-                        }
-                    }
-                }
-            },
+            SQLExpr::Subscript { expr, subscript } => self.plan_subscript(expr, subscript.as_ref()),
             SQLExpr::Array(_) => unsupported_sql_err!("ARRAY"),
             SQLExpr::Interval(_) => unsupported_sql_err!("INTERVAL"),
             SQLExpr::MatchAgainst { .. } => unsupported_sql_err!("MATCH AGAINST"),
@@ -741,6 +711,9 @@ impl SQLPlanner {
             SQLExpr::OuterJoin(_) => unsupported_sql_err!("OUTER JOIN"),
             SQLExpr::Prior(_) => unsupported_sql_err!("PRIOR"),
             SQLExpr::Lambda(_) => unsupported_sql_err!("LAMBDA"),
+            SQLExpr::JsonAccess { .. } | SQLExpr::MapAccess { .. } => {
+                unreachable!("Not reachable in our dialect, should always be parsed as subscript")
+            }
         }
     }
 
@@ -935,6 +908,62 @@ impl SQLPlanner {
             (UnaryOperator::Not, _) => expr.not(),
             other => unsupported_sql_err!("unary operator {:?}", other),
         })
+    }
+    fn plan_subscript(
+        &self,
+        expr: &sqlparser::ast::Expr,
+        subscript: &Subscript,
+    ) -> SQLPlannerResult<ExprRef> {
+        match subscript {
+            Subscript::Index { index } => {
+                let expr = self.plan_expr(expr)?;
+                let index = self.plan_expr(index)?;
+                let schema = self
+                    .current_relation
+                    .as_ref()
+                    .ok_or_else(|| {
+                        PlannerError::invalid_operation("subscript without a current relation")
+                    })
+                    .map(|p| p.schema())?;
+                let expr_field = expr.to_field(schema.as_ref())?;
+                match expr_field.dtype {
+                    DataType::List(_) | DataType::FixedSizeList(_, _) => {
+                        Ok(daft_functions::list::get(expr, index, null_lit()))
+                    }
+                    DataType::Struct(_) => {
+                        if let Some(s) = index.as_literal().and_then(|l| l.as_str()) {
+                            Ok(daft_dsl::functions::struct_::get(expr, s))
+                        } else {
+                            invalid_operation_err!("Index must be a string literal")
+                        }
+                    }
+                    DataType::Map(_) => Ok(daft_dsl::functions::map::get(expr, index)),
+                    dtype => {
+                        invalid_operation_err!("nested access on column with type: {}", dtype)
+                    }
+                }
+            }
+            Subscript::Slice {
+                lower_bound,
+                upper_bound,
+                stride,
+            } => {
+                if stride.is_some() {
+                    unsupported_sql_err!("stride cannot be provided when slicing an expression");
+                }
+                match (lower_bound, upper_bound) {
+                    (Some(lower), Some(upper)) => {
+                        let lower = self.plan_expr(lower)?;
+                        let upper = self.plan_expr(upper)?;
+                        let expr = self.plan_expr(expr)?;
+                        Ok(daft_functions::list::slice(expr, lower, upper))
+                    }
+                    _ => {
+                        unsupported_sql_err!("slice with only one bound not yet supported");
+                    }
+                }
+            }
+        }
     }
 }
 

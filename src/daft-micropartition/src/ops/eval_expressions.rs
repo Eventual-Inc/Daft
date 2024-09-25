@@ -45,7 +45,7 @@ impl MicroPartition {
             .map(|s| s.eval_expression_list(exprs, &expected_schema))
             .transpose()?;
 
-        Ok(MicroPartition::new_loaded(
+        Ok(Self::new_loaded(
             expected_schema.into(),
             Arc::new(evaluated_tables),
             eval_stats,
@@ -85,7 +85,7 @@ impl MicroPartition {
             }
         }
 
-        Ok(MicroPartition::new_loaded(
+        Ok(Self::new_loaded(
             Arc::new(expected_schema),
             Arc::new(evaluated_tables),
             eval_stats,

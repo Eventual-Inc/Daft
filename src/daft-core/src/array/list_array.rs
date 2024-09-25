@@ -53,7 +53,7 @@ impl ListArray {
                 field
             ),
         }
-        ListArray {
+        Self {
             field,
             flat_child,
             offsets,
@@ -102,7 +102,7 @@ impl ListArray {
 
         growable
             .build()
-            .map(|s| s.downcast::<ListArray>().unwrap().clone())
+            .map(|s| s.downcast::<Self>().unwrap().clone())
     }
 
     pub fn len(&self) -> usize {

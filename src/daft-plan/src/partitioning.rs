@@ -428,6 +428,6 @@ impl UnknownClusteringConfig {
 
 impl Default for UnknownClusteringConfig {
     fn default() -> Self {
-        UnknownClusteringConfig::new(1)
+        Self::new(1)
     }
 }

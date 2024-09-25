@@ -38,7 +38,7 @@ pub(crate) enum TableState {
 impl Display for TableState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TableState::Unloaded(scan_task) => {
+            Self::Unloaded(scan_task) => {
                 write!(
                     f,
                     "TableState: Unloaded. To load from: {:#?}",
@@ -49,7 +49,7 @@ impl Display for TableState {
                         .collect::<Vec<_>>()
                 )
             }
-            TableState::Loaded(tables) => {
+            Self::Loaded(tables) => {
                 writeln!(f, "TableState: Loaded. {} tables", tables.len())?;
                 for tab in tables.iter() {
                     writeln!(f, "{}", tab)?;
@@ -524,7 +524,7 @@ impl MicroPartition {
         let statistics = statistics
             .cast_to_schema_with_fill(schema.clone(), fill_map.as_ref())
             .expect("Statistics cannot be casted to schema");
-        MicroPartition {
+        Self {
             schema,
             state: Mutex::new(TableState::Unloaded(scan_task)),
             metadata,
@@ -557,7 +557,7 @@ impl MicroPartition {
         });
         let tables_len_sum = tables.iter().map(|t| t.len()).sum();
 
-        MicroPartition {
+        Self {
             schema,
             state: Mutex::new(TableState::Loaded(tables)),
             metadata: TableMetadata {

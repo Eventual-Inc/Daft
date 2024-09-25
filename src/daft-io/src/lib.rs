@@ -148,7 +148,7 @@ pub enum Error {
 }
 
 impl From<Error> for DaftError {
-    fn from(err: Error) -> DaftError {
+    fn from(err: Error) -> Self {
         use Error::*;
         match err {
             NotFound { path, source } => DaftError::FileNotFound { path, source },
@@ -160,7 +160,7 @@ impl From<Error> for DaftError {
             MiscTransient { .. } => DaftError::MiscTransient(err.into()),
             // We have to repeat everything above for the case we have an Arc since we can't move the error.
             CachedError { ref source } => match source.as_ref() {
-                NotFound { path, source: _ } => DaftError::FileNotFound {
+                NotFound { path, source: _ } => Self::FileNotFound {
                     path: path.clone(),
                     source: err.into(),
                 },
@@ -172,14 +172,14 @@ impl From<Error> for DaftError {
                 MiscTransient { .. } => DaftError::MiscTransient(err.into()),
                 _ => DaftError::External(err.into()),
             },
-            _ => DaftError::External(err.into()),
+            _ => Self::External(err.into()),
         }
     }
 }
 
 impl From<Error> for std::io::Error {
-    fn from(err: Error) -> std::io::Error {
-        std::io::Error::new(std::io::ErrorKind::Other, err)
+    fn from(err: Error) -> Self {
+        Self::new(std::io::ErrorKind::Other, err)
     }
 }
 
@@ -193,7 +193,7 @@ pub struct IOClient {
 
 impl IOClient {
     pub fn new(config: Arc<IOConfig>) -> Result<Self> {
-        Ok(IOClient {
+        Ok(Self {
             source_type_to_store: tokio::sync::RwLock::new(HashMap::new()),
             config,
         })
@@ -371,12 +371,12 @@ pub enum SourceType {
 impl std::fmt::Display for SourceType {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            SourceType::File => write!(f, "file"),
-            SourceType::Http => write!(f, "http"),
-            SourceType::S3 => write!(f, "s3"),
-            SourceType::AzureBlob => write!(f, "AzureBlob"),
-            SourceType::GCS => write!(f, "gcs"),
-            SourceType::HF => write!(f, "hf"),
+            Self::File => write!(f, "file"),
+            Self::Http => write!(f, "http"),
+            Self::S3 => write!(f, "s3"),
+            Self::AzureBlob => write!(f, "AzureBlob"),
+            Self::GCS => write!(f, "gcs"),
+            Self::HF => write!(f, "hf"),
         }
     }
 }

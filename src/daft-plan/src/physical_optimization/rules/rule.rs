@@ -30,7 +30,7 @@ impl PhysicalOptimizerRuleBatch {
         rules: Vec<Box<dyn PhysicalOptimizerRule>>,
         strategy: PhysicalRuleExecutionStrategy,
     ) -> Self {
-        PhysicalOptimizerRuleBatch { rules, strategy }
+        Self { rules, strategy }
     }
 
     fn optimize_once(&self, plan: PhysicalPlanRef) -> DaftResult<Transformed<PhysicalPlanRef>> {

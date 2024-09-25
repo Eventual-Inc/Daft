@@ -67,7 +67,7 @@ where
     S: futures::Stream<Item = parquet2::error::Result<Page>> + std::marker::Unpin,
 {
     pub fn new(src: S, handle: tokio::runtime::Handle) -> Self {
-        StreamIterator {
+        Self {
             curr: None,
             src: tokio::sync::Mutex::new(src),
             handle,
@@ -204,7 +204,7 @@ impl ParquetReaderBuilder {
             .await?;
         let metadata =
             read_parquet_metadata(uri, size, io_client, io_stats, field_id_mapping).await?;
-        Ok(ParquetReaderBuilder {
+        Ok(Self {
             uri: uri.into(),
             metadata,
             selected_columns: None,
@@ -325,7 +325,7 @@ impl ParquetFileReader {
         row_ranges: Vec<RowGroupRange>,
         chunk_size: Option<usize>,
     ) -> super::Result<Self> {
-        Ok(ParquetFileReader {
+        Ok(Self {
             uri,
             metadata: Arc::new(metadata),
             arrow_schema: arrow_schema.into(),
