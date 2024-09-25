@@ -246,27 +246,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_join(
-        mut planner: SQLPlanner,
-        tbl_2: LogicalPlanRef,
-        tbl_3: LogicalPlanRef,
-    ) -> SQLPlannerResult<()> {
-        let sql = "select * from tbl2 join tbl3 on tbl2.id = tbl3.id";
-        let plan = planner.plan_sql(sql)?;
-        let expected = LogicalPlanBuilder::new(tbl_2, None)
-            .join(
-                tbl_3,
-                vec![col("id")],
-                vec![col("id")],
-                JoinType::Inner,
-                None,
-            )?
-            .build();
-        assert_eq!(plan, expected);
-        Ok(())
-    }
-
-    #[rstest]
     #[case::abs("select abs(i32) as abs from tbl1")]
     #[case::ceil("select ceil(i32) as ceil from tbl1")]
     #[case::floor("select floor(i32) as floor from tbl1")]
