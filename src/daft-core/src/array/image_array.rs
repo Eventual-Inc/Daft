@@ -19,7 +19,7 @@ impl BBox {
             .downcast_ref::<arrow2::array::UInt32Array>()
             .unwrap()
             .iter();
-        BBox(
+        Self(
             *iter.next().unwrap().unwrap(),
             *iter.next().unwrap().unwrap(),
             *iter.next().unwrap().unwrap(),

@@ -42,33 +42,33 @@ pub enum PipelineResultType {
 
 impl From<Arc<MicroPartition>> for PipelineResultType {
     fn from(data: Arc<MicroPartition>) -> Self {
-        PipelineResultType::Data(data)
+        Self::Data(data)
     }
 }
 
 impl From<(Arc<dyn Probeable>, Arc<Vec<Table>>)> for PipelineResultType {
     fn from((probe_table, tables): (Arc<dyn Probeable>, Arc<Vec<Table>>)) -> Self {
-        PipelineResultType::ProbeTable(probe_table, tables)
+        Self::ProbeTable(probe_table, tables)
     }
 }
 
 impl PipelineResultType {
     pub fn as_data(&self) -> &Arc<MicroPartition> {
         match self {
-            PipelineResultType::Data(data) => data,
+            Self::Data(data) => data,
             _ => panic!("Expected data"),
         }
     }
 
     pub fn as_probe_table(&self) -> (&Arc<dyn Probeable>, &Arc<Vec<Table>>) {
         match self {
-            PipelineResultType::ProbeTable(probe_table, tables) => (probe_table, tables),
+            Self::ProbeTable(probe_table, tables) => (probe_table, tables),
             _ => panic!("Expected probe table"),
         }
     }
 
     pub fn should_broadcast(&self) -> bool {
-        matches!(self, PipelineResultType::ProbeTable(_, _))
+        matches!(self, Self::ProbeTable(_, _))
     }
 }
 

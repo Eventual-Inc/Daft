@@ -87,11 +87,11 @@ impl From<Error> for super::Error {
             UnableToOpenFile { path, source } | UnableToFetchDirectoryEntries { path, source } => {
                 use std::io::ErrorKind::*;
                 match source.kind() {
-                    NotFound => super::Error::NotFound {
+                    NotFound => Self::NotFound {
                         path,
                         source: source.into(),
                     },
-                    _ => super::Error::UnableToOpenFile {
+                    _ => Self::UnableToOpenFile {
                         path,
                         source: source.into(),
                     },
@@ -100,21 +100,21 @@ impl From<Error> for super::Error {
             UnableToFetchFileMetadata { path, source } => {
                 use std::io::ErrorKind::*;
                 match source.kind() {
-                    NotFound | IsADirectory => super::Error::NotFound {
+                    NotFound | IsADirectory => Self::NotFound {
                         path,
                         source: source.into(),
                     },
-                    _ => super::Error::UnableToOpenFile {
+                    _ => Self::UnableToOpenFile {
                         path,
                         source: source.into(),
                     },
                 }
             }
-            UnableToReadBytes { path, source } => super::Error::UnableToReadBytes { path, source },
+            UnableToReadBytes { path, source } => Self::UnableToReadBytes { path, source },
             UnableToWriteToFile { path, source } | UnableToOpenFileForWriting { path, source } => {
-                super::Error::UnableToWriteToFile { path, source }
+                Self::UnableToWriteToFile { path, source }
             }
-            _ => super::Error::Generic {
+            _ => Self::Generic {
                 store: super::SourceType::File,
                 source: error.into(),
             },
@@ -124,7 +124,7 @@ impl From<Error> for super::Error {
 
 impl LocalSource {
     pub async fn get_client() -> super::Result<Arc<Self>> {
-        Ok(LocalSource {}.into())
+        Ok(Self {}.into())
     }
 }
 

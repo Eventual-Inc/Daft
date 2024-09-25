@@ -19,7 +19,7 @@ impl From<Error> for DaftError {
         use Error::*;
         match value {
             DeserializationError { source } => {
-                DaftError::ComputeError(format!("Deserialization error: {}", source))
+                Self::ComputeError(format!("Deserialization error: {}", source))
             }
         }
     }

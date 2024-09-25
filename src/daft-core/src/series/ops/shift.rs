@@ -3,7 +3,7 @@ use common_error::{DaftError, DaftResult};
 use crate::{datatypes::DataType, series::Series};
 
 impl Series {
-    pub fn shift_left(&self, bits: &Self) -> DaftResult<Series> {
+    pub fn shift_left(&self, bits: &Self) -> DaftResult<Self> {
         use crate::series::array_impl::IntoSeries;
         if !bits.data_type().is_integer() {
             return Err(DaftError::TypeError(format!(
@@ -52,7 +52,7 @@ impl Series {
         }
     }
 
-    pub fn shift_right(&self, bits: &Self) -> DaftResult<Series> {
+    pub fn shift_right(&self, bits: &Self) -> DaftResult<Self> {
         use crate::series::array_impl::IntoSeries;
         if !bits.data_type().is_integer() {
             return Err(DaftError::TypeError(format!(

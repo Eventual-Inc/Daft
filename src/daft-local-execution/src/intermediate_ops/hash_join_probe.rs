@@ -21,15 +21,15 @@ enum HashJoinProbeState {
 
 impl HashJoinProbeState {
     fn set_table(&mut self, table: &Arc<dyn Probeable>, tables: &Arc<Vec<Table>>) {
-        if let HashJoinProbeState::Building = self {
-            *self = HashJoinProbeState::ReadyToProbe(table.clone(), tables.clone());
+        if let Self::Building = self {
+            *self = Self::ReadyToProbe(table.clone(), tables.clone());
         } else {
             panic!("HashJoinProbeState should only be in Building state when setting table")
         }
     }
 
     fn get_probeable_and_table(&self) -> (&Arc<dyn Probeable>, &Arc<Vec<Table>>) {
-        if let HashJoinProbeState::ReadyToProbe(probe_table, tables) = self {
+        if let Self::ReadyToProbe(probe_table, tables) = self {
             (probe_table, tables)
         } else {
             panic!("get_probeable_and_table can only be used during the ReadyToProbe Phase")

@@ -540,38 +540,29 @@ pub enum TreeNodeRecursion {
 impl TreeNodeRecursion {
     /// Continues visiting nodes with `f` depending on the current [`TreeNodeRecursion`]
     /// value and the fact that `f` is visiting the current node's children.
-    pub fn visit_children<F: FnOnce() -> Result<TreeNodeRecursion>>(
-        self,
-        f: F,
-    ) -> Result<TreeNodeRecursion> {
+    pub fn visit_children<F: FnOnce() -> Result<Self>>(self, f: F) -> Result<Self> {
         match self {
-            TreeNodeRecursion::Continue => f(),
-            TreeNodeRecursion::Jump => Ok(TreeNodeRecursion::Continue),
-            TreeNodeRecursion::Stop => Ok(self),
+            Self::Continue => f(),
+            Self::Jump => Ok(Self::Continue),
+            Self::Stop => Ok(self),
         }
     }
 
     /// Continues visiting nodes with `f` depending on the current [`TreeNodeRecursion`]
     /// value and the fact that `f` is visiting the current node's sibling.
-    pub fn visit_sibling<F: FnOnce() -> Result<TreeNodeRecursion>>(
-        self,
-        f: F,
-    ) -> Result<TreeNodeRecursion> {
+    pub fn visit_sibling<F: FnOnce() -> Result<Self>>(self, f: F) -> Result<Self> {
         match self {
-            TreeNodeRecursion::Continue | TreeNodeRecursion::Jump => f(),
-            TreeNodeRecursion::Stop => Ok(self),
+            Self::Continue | Self::Jump => f(),
+            Self::Stop => Ok(self),
         }
     }
 
     /// Continues visiting nodes with `f` depending on the current [`TreeNodeRecursion`]
     /// value and the fact that `f` is visiting the current node's parent.
-    pub fn visit_parent<F: FnOnce() -> Result<TreeNodeRecursion>>(
-        self,
-        f: F,
-    ) -> Result<TreeNodeRecursion> {
+    pub fn visit_parent<F: FnOnce() -> Result<Self>>(self, f: F) -> Result<Self> {
         match self {
-            TreeNodeRecursion::Continue => f(),
-            TreeNodeRecursion::Jump | TreeNodeRecursion::Stop => Ok(self),
+            Self::Continue => f(),
+            Self::Jump | Self::Stop => Ok(self),
         }
     }
 }
@@ -670,10 +661,7 @@ impl<T> Transformed<T> {
     /// Maps the [`Transformed`] object to the result of the given `f` depending on the
     /// current [`TreeNodeRecursion`] value and the fact that `f` is changing the current
     /// node's children.
-    pub fn transform_children<F: FnOnce(T) -> Result<Transformed<T>>>(
-        mut self,
-        f: F,
-    ) -> Result<Transformed<T>> {
+    pub fn transform_children<F: FnOnce(T) -> Result<Self>>(mut self, f: F) -> Result<Self> {
         match self.tnr {
             TreeNodeRecursion::Continue => {
                 return f(self.data).map(|mut t| {
@@ -692,10 +680,7 @@ impl<T> Transformed<T> {
     /// Maps the [`Transformed`] object to the result of the given `f` depending on the
     /// current [`TreeNodeRecursion`] value and the fact that `f` is changing the current
     /// node's sibling.
-    pub fn transform_sibling<F: FnOnce(T) -> Result<Transformed<T>>>(
-        self,
-        f: F,
-    ) -> Result<Transformed<T>> {
+    pub fn transform_sibling<F: FnOnce(T) -> Result<Self>>(self, f: F) -> Result<Self> {
         match self.tnr {
             TreeNodeRecursion::Continue | TreeNodeRecursion::Jump => f(self.data).map(|mut t| {
                 t.transformed |= self.transformed;
@@ -708,10 +693,7 @@ impl<T> Transformed<T> {
     /// Maps the [`Transformed`] object to the result of the given `f` depending on the
     /// current [`TreeNodeRecursion`] value and the fact that `f` is changing the current
     /// node's parent.
-    pub fn transform_parent<F: FnOnce(T) -> Result<Transformed<T>>>(
-        self,
-        f: F,
-    ) -> Result<Transformed<T>> {
+    pub fn transform_parent<F: FnOnce(T) -> Result<Self>>(self, f: F) -> Result<Self> {
         match self.tnr {
             TreeNodeRecursion::Continue => f(self.data).map(|mut t| {
                 t.transformed |= self.transformed;
@@ -951,7 +933,7 @@ mod tests {
     }
 
     impl<T> TestTreeNode<T> {
-        fn new(children: Vec<TestTreeNode<T>>, data: T) -> Self {
+        fn new(children: Vec<Self>, data: T) -> Self {
             Self { children, data }
         }
     }

@@ -94,7 +94,7 @@ impl Table {
             })
             .collect();
 
-        Ok(Table::new_unchecked(schema, columns?, num_rows))
+        Ok(Self::new_unchecked(schema, columns?, num_rows))
     }
 
     /// Create a new [`Table`] and validate against `num_rows`
@@ -121,7 +121,7 @@ impl Table {
             }
         }
 
-        Ok(Table::new_unchecked(schema, columns, num_rows))
+        Ok(Self::new_unchecked(schema, columns, num_rows))
     }
 
     /// Create a new [`Table`] without any validations
@@ -135,7 +135,7 @@ impl Table {
         columns: Vec<Series>,
         num_rows: usize,
     ) -> Self {
-        Table {
+        Self {
             schema: schema.into(),
             columns,
             num_rows,
@@ -149,7 +149,7 @@ impl Table {
             let series = Series::empty(field_name, &field.dtype);
             columns.push(series)
         }
-        Ok(Table::new_unchecked(schema, columns, 0))
+        Ok(Self::new_unchecked(schema, columns, 0))
     }
 
     /// Create a Table from a set of columns.
@@ -179,7 +179,7 @@ impl Table {
             }
         }
 
-        Ok(Table::new_unchecked(schema, columns, num_rows))
+        Ok(Self::new_unchecked(schema, columns, num_rows))
     }
 
     pub fn num_columns(&self) -> usize {
@@ -202,12 +202,12 @@ impl Table {
         let new_series: DaftResult<Vec<_>> =
             self.columns.iter().map(|s| s.slice(start, end)).collect();
         let new_num_rows = self.len().min(end - start);
-        Table::new_with_size(self.schema.clone(), new_series?, new_num_rows)
+        Self::new_with_size(self.schema.clone(), new_series?, new_num_rows)
     }
 
     pub fn head(&self, num: usize) -> DaftResult<Self> {
         if num >= self.len() {
-            return Ok(Table::new_unchecked(
+            return Ok(Self::new_unchecked(
                 self.schema.clone(),
                 self.columns.clone(),
                 self.len(),
@@ -346,15 +346,15 @@ impl Table {
             mask.len() - num_filtered
         };
 
-        Table::new_with_size(self.schema.clone(), new_series?, num_rows)
+        Self::new_with_size(self.schema.clone(), new_series?, num_rows)
     }
 
     pub fn take(&self, idx: &Series) -> DaftResult<Self> {
         let new_series: DaftResult<Vec<_>> = self.columns.iter().map(|s| s.take(idx)).collect();
-        Table::new_with_size(self.schema.clone(), new_series?, idx.len())
+        Self::new_with_size(self.schema.clone(), new_series?, idx.len())
     }
 
-    pub fn concat<T: AsRef<Table>>(tables: &[T]) -> DaftResult<Self> {
+    pub fn concat<T: AsRef<Self>>(tables: &[T]) -> DaftResult<Self> {
         if tables.is_empty() {
             return Err(DaftError::ValueError(
                 "Need at least 1 Table to perform concat".to_string(),
@@ -384,14 +384,14 @@ impl Table {
             new_series.push(Series::concat(series_to_cat.as_slice())?);
         }
 
-        Table::new_with_size(
+        Self::new_with_size(
             first_table.schema.clone(),
             new_series,
             tables.iter().map(|t| t.as_ref().len()).sum(),
         )
     }
 
-    pub fn union(&self, other: &Table) -> DaftResult<Self> {
+    pub fn union(&self, other: &Self) -> DaftResult<Self> {
         if self.num_rows != other.num_rows {
             return Err(DaftError::ValueError(format!(
                 "Cannot union tables of length {} and {}",
@@ -625,7 +625,7 @@ impl Table {
             (true, _) => result_series.iter().map(|s| s.len()).max().unwrap(),
         };
 
-        Table::new_with_broadcast(new_schema, result_series, num_rows)
+        Self::new_with_broadcast(new_schema, result_series, num_rows)
     }
 
     pub fn as_physical(&self) -> DaftResult<Self> {
@@ -635,7 +635,7 @@ impl Table {
             .map(|s| s.as_physical())
             .collect::<DaftResult<Vec<_>>>()?;
         let new_schema = Schema::new(new_series.iter().map(|s| s.field().clone()).collect())?;
-        Table::new_with_size(new_schema, new_series, self.len())
+        Self::new_with_size(new_schema, new_series, self.len())
     }
 
     pub fn cast_to_schema(&self, schema: &Schema) -> DaftResult<Self> {
@@ -781,8 +781,8 @@ impl Display for Table {
     }
 }
 
-impl AsRef<Table> for Table {
-    fn as_ref(&self) -> &Table {
+impl AsRef<Self> for Table {
+    fn as_ref(&self) -> &Self {
         self
     }
 }

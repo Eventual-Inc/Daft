@@ -38,7 +38,7 @@ pub(crate) struct StreamingSinkNode {
 impl StreamingSinkNode {
     pub(crate) fn new(op: Box<dyn StreamingSink>, children: Vec<Box<dyn PipelineNode>>) -> Self {
         let name = op.name();
-        StreamingSinkNode {
+        Self {
             op: Arc::new(tokio::sync::Mutex::new(op)),
             name,
             children,

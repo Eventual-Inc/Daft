@@ -14,9 +14,9 @@ trait SpatialSimilarity {
 
 impl SpatialSimilarity for f64 {
     fn cosine(a: &[Self], b: &[Self]) -> Option<f64> {
-        let xy = a.iter().zip(b).map(|(a, b)| a * b).sum::<f64>();
-        let x_sq = a.iter().map(|x| x.powi(2)).sum::<f64>().sqrt();
-        let y_sq = b.iter().map(|x| x.powi(2)).sum::<f64>().sqrt();
+        let xy = a.iter().zip(b).map(|(a, b)| a * b).sum::<Self>();
+        let x_sq = a.iter().map(|x| x.powi(2)).sum::<Self>().sqrt();
+        let y_sq = b.iter().map(|x| x.powi(2)).sum::<Self>().sqrt();
         Some(1.0 - xy / (x_sq * y_sq))
     }
 }

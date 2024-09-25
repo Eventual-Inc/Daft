@@ -261,7 +261,7 @@ impl PyTable {
                 .partition_by_hash(exprs.as_slice(), num_partitions as usize)?
                 .into_iter()
                 .map(|t| t.into())
-                .collect::<Vec<PyTable>>())
+                .collect::<Vec<Self>>())
         })
     }
 
@@ -288,7 +288,7 @@ impl PyTable {
                 .partition_by_random(num_partitions as usize, seed as u64)?
                 .into_iter()
                 .map(|t| t.into())
-                .collect::<Vec<PyTable>>())
+                .collect::<Vec<Self>>())
         })
     }
 
@@ -306,7 +306,7 @@ impl PyTable {
                 .partition_by_range(exprs.as_slice(), &boundaries.table, descending.as_slice())?
                 .into_iter()
                 .map(|t| t.into())
-                .collect::<Vec<PyTable>>())
+                .collect::<Vec<Self>>())
         })
     }
 
@@ -318,10 +318,7 @@ impl PyTable {
         let exprs: Vec<daft_dsl::ExprRef> = partition_keys.into_iter().map(|e| e.into()).collect();
         py.allow_threads(|| {
             let (tables, values) = self.table.partition_by_value(exprs.as_slice())?;
-            let pytables = tables
-                .into_iter()
-                .map(|t| t.into())
-                .collect::<Vec<PyTable>>();
+            let pytables = tables.into_iter().map(|t| t.into()).collect::<Vec<Self>>();
             let values = values.into();
             Ok((pytables, values))
         })
@@ -407,7 +404,7 @@ impl PyTable {
     ) -> PyResult<Self> {
         let table =
             ffi::record_batches_to_table(py, record_batches.as_slice(), schema.schema.clone())?;
-        Ok(PyTable { table })
+        Ok(Self { table })
     }
 
     #[staticmethod]
@@ -438,7 +435,7 @@ impl PyTable {
             }
         }
 
-        Ok(PyTable {
+        Ok(Self {
             table: Table::new_with_broadcast(Schema::new(fields)?, columns, num_rows)?,
         })
     }
@@ -462,7 +459,7 @@ impl PyTable {
 
 impl From<Table> for PyTable {
     fn from(value: Table) -> Self {
-        PyTable { table: value }
+        Self { table: value }
     }
 }
 
