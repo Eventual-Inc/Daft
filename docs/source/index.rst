@@ -1,11 +1,11 @@
 Daft Documentation
 ==================
 
-Daft is a unified distributed data engine for data engineering, analytics and ML/AI.
+Daft is a unified data engine for **data engineering, analytics and ML/AI**.
 
 Daft exposes both a **SQL and Python DataFrame interface** and is implemented in Rust.
 
-Daft provides a snappy and delightful local interactive experience, but also seamlessly scales to distributed petabyte-scale data engineering workloads.
+Daft provides a **snappy and delightful local interactive experience**, but also seamlessly **scales to petabyte-scale distributed workloads**.
 
 Use-Cases
 ---------
