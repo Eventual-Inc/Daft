@@ -120,6 +120,8 @@ enum Error {
     UploadsCannotBeAnonymous {},
 }
 
+/// List of AWS error codes that are due to throttling
+/// https://docs.aws.amazon.com/AmazonS3/latest/API/ErrorResponses.html#ErrorCodeList
 const THROTTLING_ERRORS: &[&str] = &[
     "Throttling",
     "ThrottlingException",
@@ -140,6 +142,28 @@ const THROTTLING_ERRORS: &[&str] = &[
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
         use Error::*;
+
+        fn classify_unhandled_error<
+            E: std::error::Error + ProvideErrorMetadata + Send + Sync + 'static,
+        >(
+            path: String,
+            err: E,
+        ) -> super::Error {
+            match err.code() {
+                Some("InternalError") => super::Error::MiscTransient {
+                    path,
+                    source: err.into(),
+                },
+                Some(code) if THROTTLING_ERRORS.contains(&code) => super::Error::Throttled {
+                    path,
+                    source: err.into(),
+                },
+                _ => super::Error::Unhandled {
+                    path,
+                    msg: DisplayErrorContext(err).to_string(),
+                },
+            }
+        }
 
         match error {
             UnableToOpenFile { path, source } => match source {
@@ -171,22 +195,7 @@ impl From<Error> for super::Error {
                         path,
                         source: no_such_key.into(),
                     },
-                    err => match err.code() {
-                        Some("InternalError") => super::Error::MiscTransient {
-                            path,
-                            source: err.into(),
-                        },
-                        Some(code) if THROTTLING_ERRORS.contains(&code) => {
-                            super::Error::Throttled {
-                                path,
-                                source: err.into(),
-                            }
-                        }
-                        _ => super::Error::Unhandled {
-                            path,
-                            msg: DisplayErrorContext(err).to_string(),
-                        },
-                    },
+                    err => classify_unhandled_error(path, err),
                 },
             },
             UnableToHeadFile { path, source } => match source {
@@ -217,22 +226,7 @@ impl From<Error> for super::Error {
                         path,
                         source: no_such_key.into(),
                     },
-                    err => match err.code() {
-                        Some("InternalError") => super::Error::MiscTransient {
-                            path,
-                            source: err.into(),
-                        },
-                        Some(code) if THROTTLING_ERRORS.contains(&code) => {
-                            super::Error::Throttled {
-                                path,
-                                source: err.into(),
-                            }
-                        }
-                        _ => super::Error::Unhandled {
-                            path,
-                            msg: DisplayErrorContext(err).to_string(),
-                        },
-                    },
+                    err => classify_unhandled_error(path, err),
                 },
             },
             UnableToListObjects { path, source } => match source {
@@ -263,22 +257,7 @@ impl From<Error> for super::Error {
                         path,
                         source: no_such_key.into(),
                     },
-                    err => match err.code() {
-                        Some("InternalError") => super::Error::MiscTransient {
-                            path,
-                            source: err.into(),
-                        },
-                        Some(code) if THROTTLING_ERRORS.contains(&code) => {
-                            super::Error::Throttled {
-                                path,
-                                source: err.into(),
-                            }
-                        }
-                        _ => super::Error::Unhandled {
-                            path,
-                            msg: DisplayErrorContext(err).to_string(),
-                        },
-                    },
+                    err => classify_unhandled_error(path, err),
                 },
             },
             InvalidUrl { path, source } => super::Error::InvalidUrl { path, source },
