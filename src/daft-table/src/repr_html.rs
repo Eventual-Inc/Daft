@@ -126,6 +126,14 @@ pub fn html_value(s: &Series, idx: usize) -> String {
             let arr = s.fixed_shape_tensor().unwrap();
             arr.html_value(idx)
         }
+        DataType::SparseTensor(_) => {
+            let arr = s.sparse_tensor().unwrap();
+            arr.html_value(idx)
+        }
+        DataType::FixedShapeSparseTensor(_, _) => {
+            let arr = s.fixed_shape_sparse_tensor().unwrap();
+            arr.html_value(idx)
+        }
         #[cfg(feature = "python")]
         DataType::Python => {
             let arr = s.python().unwrap();

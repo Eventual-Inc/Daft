@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 
-import pyarrow as pa
+from daft.dependencies import pa
 
 
 def ensure_array(arr: pa.Array) -> pa.Array:
@@ -34,13 +34,21 @@ class _FixEmptyStructArrays:
     Python layer before going through ffi into Rust.
     """
 
-    EMPTY_STRUCT_TYPE = pa.struct([])
-    SINGLE_FIELD_STRUCT_TYPE = pa.struct({"": pa.null()})
-    SINGLE_FIELD_STRUCT_VALUE = {"": None}
+    @staticmethod
+    def get_empty_struct_type():
+        return pa.struct([])
+
+    @staticmethod
+    def get_single_field_struct_type():
+        return pa.struct({"": pa.null()})
+
+    @staticmethod
+    def get_single_field_struct_value():
+        return {"": None}
 
     def ensure_table(table: pa.Table) -> pa.Table:
         empty_struct_fields = [
-            (i, f) for (i, f) in enumerate(table.schema) if f.type == _FixEmptyStructArrays.EMPTY_STRUCT_TYPE
+            (i, f) for (i, f) in enumerate(table.schema) if f.type == _FixEmptyStructArrays.get_empty_struct_type()
         ]
         if not empty_struct_fields:
             return table
@@ -49,19 +57,19 @@ class _FixEmptyStructArrays:
         return table
 
     def ensure_chunked_array(arr: pa.ChunkedArray) -> pa.ChunkedArray:
-        if arr.type != _FixEmptyStructArrays.EMPTY_STRUCT_TYPE:
+        if arr.type != _FixEmptyStructArrays.get_empty_struct_type():
             return arr
         return pa.chunked_array([_FixEmptyStructArrays.ensure_array(chunk) for chunk in arr.chunks])
 
     def ensure_array(arr: pa.Array) -> pa.Array:
         """Recursively converts empty struct arrays to single-field struct arrays"""
-        if arr.type == _FixEmptyStructArrays.EMPTY_STRUCT_TYPE:
+        if arr.type == _FixEmptyStructArrays.get_empty_struct_type():
             return pa.array(
                 [
-                    _FixEmptyStructArrays.SINGLE_FIELD_STRUCT_VALUE if valid.as_py() else None
+                    _FixEmptyStructArrays.get_single_field_struct_value() if valid.as_py() else None
                     for valid in arr.is_valid()
                 ],
-                type=_FixEmptyStructArrays.SINGLE_FIELD_STRUCT_TYPE,
+                type=_FixEmptyStructArrays.get_single_field_struct_type(),
             )
 
         elif isinstance(arr, pa.StructArray):
@@ -77,10 +85,10 @@ class _FixEmptyStructArrays:
 
 def remove_empty_struct_placeholders(arr: pa.Array):
     """Recursively removes the empty struct placeholders placed by _FixEmptyStructArrays.ensure_array"""
-    if arr.type == _FixEmptyStructArrays.SINGLE_FIELD_STRUCT_TYPE:
+    if arr.type == _FixEmptyStructArrays.get_single_field_struct_type():
         return pa.array(
             [{} if valid.as_py() else None for valid in arr.is_valid()],
-            type=_FixEmptyStructArrays.EMPTY_STRUCT_TYPE,
+            type=_FixEmptyStructArrays.get_empty_struct_type(),
         )
 
     elif isinstance(arr, pa.StructArray):

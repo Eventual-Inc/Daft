@@ -3,9 +3,8 @@ from __future__ import annotations
 import logging
 import math
 import warnings
-from collections.abc import Iterator
 from enum import Enum, auto
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from daft.context import get_context
 from daft.daft import (
@@ -16,13 +15,17 @@ from daft.daft import (
     ScanTask,
     StorageConfig,
 )
-from daft.datatype import DataType
 from daft.expressions.expressions import lit
 from daft.io.common import _get_schema_from_dict
 from daft.io.scan import PartitionField, ScanOperator
-from daft.logical.schema import Schema
-from daft.sql.sql_connection import SQLConnection
 from daft.table import Table
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from daft.datatype import DataType
+    from daft.logical.schema import Schema
+    from daft.sql.sql_connection import SQLConnection
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +74,8 @@ class SQLScanOperator(ScanOperator):
 
     def to_scan_tasks(self, pushdowns: Pushdowns) -> Iterator[ScanTask]:
         total_rows, total_size, num_scan_tasks = self._get_size_estimates()
+        if num_scan_tasks == 0:
+            return iter(())
         if num_scan_tasks == 1 or self._partition_col is None:
             return self._single_scan_task(pushdowns, total_rows, total_size)
 
@@ -136,6 +141,7 @@ class SQLScanOperator(ScanOperator):
             if self._num_partitions is None
             else self._num_partitions
         )
+        num_scan_tasks = min(num_scan_tasks, total_rows)
         return total_rows, total_size, num_scan_tasks
 
     def _get_num_rows(self) -> int:

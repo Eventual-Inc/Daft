@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
+from typing import TYPE_CHECKING
 
 import daft
 from daft.daft import (
@@ -15,6 +15,9 @@ from daft.filesystem import _resolve_paths_and_filesystem, join_path
 from daft.hudi.pyhudi.table import HUDI_METAFIELD_PARTITION_PATH, HudiTable, HudiTableMetadata
 from daft.io.scan import PartitionField, ScanOperator
 from daft.logical.schema import Schema
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 logger = logging.getLogger(__name__)
 

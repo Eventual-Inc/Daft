@@ -2,16 +2,11 @@ from __future__ import annotations
 
 import logging
 import warnings
-from collections.abc import Iterator
+from typing import TYPE_CHECKING
 
-import pyarrow as pa
 from pyiceberg.io.pyarrow import schema_to_pyarrow
-from pyiceberg.partitioning import PartitionField as IcebergPartitionField
-from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
 from pyiceberg.schema import Schema as IcebergSchema
 from pyiceberg.schema import visit
-from pyiceberg.table import Table
-from pyiceberg.typedef import Record
 
 import daft
 from daft.daft import (
@@ -23,9 +18,18 @@ from daft.daft import (
     StorageConfig,
 )
 from daft.datatype import DataType
+from daft.dependencies import pa
 from daft.iceberg.schema_field_id_mapping_visitor import SchemaFieldIdMappingVisitor
 from daft.io.scan import PartitionField, ScanOperator, make_partition_field
 from daft.logical.schema import Field, Schema
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from pyiceberg.partitioning import PartitionField as IcebergPartitionField
+    from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
+    from pyiceberg.table import Table
+    from pyiceberg.typedef import Record
 
 logger = logging.getLogger(__name__)
 
@@ -41,10 +45,8 @@ def _iceberg_partition_field_to_daft_partition_field(
         source_name, DataType.from_arrow_type(schema_to_pyarrow(iceberg_schema.find_type(source_name)))
     )
     transform = pfield.transform
-    iceberg_result_type = transform.result_type(source_field.field_type)
-    arrow_result_type = schema_to_pyarrow(iceberg_result_type)
-    daft_result_type = DataType.from_arrow_type(arrow_result_type)
-    result_field = Field.create(name, daft_result_type)
+    source_type = DataType.from_arrow_type(schema_to_pyarrow(source_field.field_type))
+
     from pyiceberg.transforms import (
         BucketTransform,
         DayTransform,
@@ -58,22 +60,33 @@ def _iceberg_partition_field_to_daft_partition_field(
     tfm = None
     if isinstance(transform, IdentityTransform):
         tfm = PartitionTransform.identity()
+        result_type = source_type
     elif isinstance(transform, YearTransform):
         tfm = PartitionTransform.year()
+        result_type = DataType.int32()
     elif isinstance(transform, MonthTransform):
         tfm = PartitionTransform.month()
+        result_type = DataType.int32()
     elif isinstance(transform, DayTransform):
         tfm = PartitionTransform.day()
+        # pyiceberg uses date as the result type of a day transform, which is incorrect
+        # so we cannot use transform.result_type() here
+        result_type = DataType.int32()
     elif isinstance(transform, HourTransform):
         tfm = PartitionTransform.hour()
+        result_type = DataType.int32()
     elif isinstance(transform, BucketTransform):
         n = transform.num_buckets
         tfm = PartitionTransform.iceberg_bucket(n)
+        result_type = DataType.int32()
     elif isinstance(transform, TruncateTransform):
         w = transform.width
         tfm = PartitionTransform.iceberg_truncate(w)
+        result_type = source_type
     else:
         warnings.warn(f"{transform} not implemented, Please make an issue!")
+        result_type = source_type
+    result_field = Field.create(name, result_type)
     return make_partition_field(result_field, daft_field, transform=tfm)
 
 

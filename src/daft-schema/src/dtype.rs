@@ -51,7 +51,7 @@ pub enum DataType {
 
     /// Fixed-precision decimal type.
     /// TODO: allow negative scale once Arrow2 allows it: https://github.com/jorgecarleitao/arrow2/issues/1518
-    #[display("{_0}.{_1}")]
+    #[display("Decimal(precision={_0}, scale={_1})")]
     Decimal128(usize, usize),
 
     /// A [`i64`] representing a timestamp measured in [`TimeUnit`] with an optional timezone.
@@ -134,6 +134,14 @@ pub enum DataType {
     /// A logical type for tensors with the same shape.
     #[display("FixedShapeTensor[{_0}; {_1:?}]")]
     FixedShapeTensor(Box<DataType>, Vec<u64>),
+
+    /// A logical type for sparse tensors with variable shapes.
+    #[display("SparseTensor({_0})")]
+    SparseTensor(Box<DataType>),
+
+    /// A logical type for sparse tensors with the same shape.
+    #[display("FixedShapeSparseTensor[{_0}; {_1:?}]")]
+    FixedShapeSparseTensor(Box<DataType>, Vec<u64>),
 
     #[cfg(feature = "python")]
     Python,
@@ -249,7 +257,9 @@ impl DataType {
             | DataType::Image(..)
             | DataType::FixedShapeImage(..)
             | DataType::Tensor(..)
-            | DataType::FixedShapeTensor(..) => {
+            | DataType::FixedShapeTensor(..)
+            | DataType::SparseTensor(..)
+            | DataType::FixedShapeSparseTensor(..) => {
                 let physical = Box::new(self.to_physical());
                 let logical_extension = DataType::Extension(
                     DAFT_SUPER_EXTENSION_NAME.into(),
@@ -302,6 +312,15 @@ impl DataType {
                 Box::new(*dtype.clone()),
                 usize::try_from(shape.iter().product::<u64>()).unwrap(),
             ),
+            SparseTensor(dtype) => Struct(vec![
+                Field::new("values", List(Box::new(*dtype.clone()))),
+                Field::new("indices", List(Box::new(DataType::UInt64))),
+                Field::new("shape", List(Box::new(DataType::UInt64))),
+            ]),
+            FixedShapeSparseTensor(dtype, _) => Struct(vec![
+                Field::new("values", List(Box::new(*dtype.clone()))),
+                Field::new("indices", List(Box::new(DataType::UInt64))),
+            ]),
             _ => {
                 assert!(self.is_physical());
                 self.clone()
@@ -316,6 +335,8 @@ impl DataType {
             | DataType::List(dtype)
             | DataType::FixedSizeList(dtype, _)
             | DataType::FixedShapeTensor(dtype, _)
+            | DataType::SparseTensor(dtype)
+            | DataType::FixedShapeSparseTensor(dtype, _)
             | DataType::Tensor(dtype) => Some(dtype),
             _ => None,
         }
@@ -351,7 +372,8 @@ impl DataType {
         match self {
             DataType::FixedSizeList(dtype, ..)
             | DataType::Embedding(dtype, ..)
-            | DataType::FixedShapeTensor(dtype, ..) => dtype.is_numeric(),
+            | DataType::FixedShapeTensor(dtype, ..)
+            | DataType::FixedShapeSparseTensor(dtype, ..) => dtype.is_numeric(),
             _ => false,
         }
     }
@@ -405,8 +427,18 @@ impl DataType {
     }
 
     #[inline]
+    pub fn is_sparse_tensor(&self) -> bool {
+        matches!(self, DataType::SparseTensor(..))
+    }
+
+    #[inline]
     pub fn is_fixed_shape_tensor(&self) -> bool {
         matches!(self, DataType::FixedShapeTensor(..))
+    }
+
+    #[inline]
+    pub fn is_fixed_shape_sparse_tensor(&self) -> bool {
+        matches!(self, DataType::FixedShapeSparseTensor(..))
     }
 
     #[inline]
@@ -542,6 +574,8 @@ impl DataType {
                 | DataType::FixedShapeImage(..)
                 | DataType::Tensor(..)
                 | DataType::FixedShapeTensor(..)
+                | DataType::SparseTensor(..)
+                | DataType::FixedShapeSparseTensor(..)
                 | DataType::Map(..)
         )
     }

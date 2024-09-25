@@ -27,31 +27,29 @@ impl Table {
             )));
         }
 
-        use daft_dsl::functions::{list::ListExpr, FunctionExpr};
-
         let mut evaluated_columns = Vec::with_capacity(exprs.len());
         for expr in exprs {
             match expr.as_ref() {
-                Expr::Function {
-                    func: FunctionExpr::List(ListExpr::Explode),
-                    inputs,
-                } => {
-                    if inputs.len() != 1 {
-                        return Err(DaftError::ValueError(format!("ListExpr::Explode function expression must have one input only, received: {}", inputs.len())));
-                    }
-                    let expr = inputs.first().unwrap();
-                    let exploded_name = expr.name();
-                    let evaluated = self.eval_expression(expr)?;
-                    if !matches!(
-                        evaluated.data_type(),
-                        DataType::List(..) | DataType::FixedSizeList(..)
-                    ) {
-                        return Err(DaftError::ValueError(format!(
+                Expr::ScalarFunction(func) => {
+                    if func.name() == "explode" {
+                        let inputs = &func.inputs;
+                        if inputs.len() != 1 {
+                            return Err(DaftError::ValueError(format!("ListExpr::Explode function expression must have one input only, received: {}", inputs.len())));
+                        }
+                        let expr = inputs.first().unwrap();
+                        let exploded_name = expr.name();
+                        let evaluated = self.eval_expression(expr)?;
+                        if !matches!(
+                            evaluated.data_type(),
+                            DataType::List(..) | DataType::FixedSizeList(..)
+                        ) {
+                            return Err(DaftError::ValueError(format!(
                             "Expected Expression for series: `{exploded_name}` to be a List Type, but is {}",
                             evaluated.data_type()
                         )));
+                        }
+                        evaluated_columns.push(evaluated);
                     }
-                    evaluated_columns.push(evaluated);
                 }
                 _ => {
                     return Err(DaftError::ValueError(

@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-import builtins
 from typing import TYPE_CHECKING
-
-import pyarrow as pa
 
 from daft.context import get_context
 from daft.daft import ImageMode, PyDataType, PyTimeUnit
+from daft.dependencies import pa
 
 if TYPE_CHECKING:
+    import builtins
+
     import numpy as np
 
 
@@ -323,6 +323,30 @@ class DataType:
         return cls._from_pydatatype(PyDataType.tensor(dtype._dtype, shape))
 
     @classmethod
+    def sparse_tensor(
+        cls,
+        dtype: DataType,
+        shape: tuple[int, ...] | None = None,
+    ) -> DataType:
+        """Create a SparseTensor DataType: SparseTensor arrays implemented as 'COO Sparse Tensor' representation of n-dimensional arrays of data of the provided ``dtype`` as elements, each of the provided
+        ``shape``.
+
+        If a ``shape`` is given, each ndarray in the column will have this shape.
+
+        If ``shape`` is not given, the ndarrays in the column can have different shapes. This is much more flexible,
+        but will result in a less compact representation and may be make some operations less efficient.
+
+        Args:
+            dtype: The type of the data contained within the tensor elements.
+            shape: The shape of each SparseTensor in the column. This is ``None`` by default, which allows the shapes of
+                each tensor element to vary.
+        """
+        if shape is not None:
+            if not isinstance(shape, tuple) or not shape or any(not isinstance(n, int) for n in shape):
+                raise ValueError("SparseTensor shape must be a non-empty tuple of ints, but got: ", shape)
+        return cls._from_pydatatype(PyDataType.sparse_tensor(dtype._dtype, shape))
+
+    @classmethod
     def from_arrow_type(cls, arrow_type: pa.lib.DataType) -> DataType:
         """Maps a PyArrow DataType to a Daft DataType"""
         if pa.types.is_int8(arrow_type):
@@ -455,6 +479,12 @@ class DataType:
     def _is_fixed_shape_tensor_type(self) -> builtins.bool:
         return self._dtype.is_fixed_shape_tensor()
 
+    def _is_sparse_tensor_type(self) -> builtins.bool:
+        return self._dtype.is_sparse_tensor()
+
+    def _is_fixed_shape_sparse_tensor_type(self) -> builtins.bool:
+        return self._dtype.is_fixed_shape_sparse_tensor()
+
     def _is_image_type(self) -> builtins.bool:
         return self._dtype.is_image()
 
@@ -501,25 +531,40 @@ class DataType:
         return self._dtype.__hash__()
 
 
-class DaftExtension(pa.ExtensionType):
-    def __init__(self, dtype, metadata=b""):
-        # attributes need to be set first before calling
-        # super init (as that calls serialize)
-        self._metadata = metadata
-        super().__init__(dtype, "daft.super_extension")
-
-    def __reduce__(self):
-        return type(self).__arrow_ext_deserialize__, (self.storage_type, self.__arrow_ext_serialize__())
-
-    def __arrow_ext_serialize__(self):
-        return self._metadata
-
-    @classmethod
-    def __arrow_ext_deserialize__(cls, storage_type, serialized):
-        return cls(storage_type, serialized)
+_EXT_TYPE_REGISTERED = False
+_STATIC_DAFT_EXTENSION = None
 
 
-pa.register_extension_type(DaftExtension(pa.null()))
-import atexit
+def _ensure_registered_super_ext_type():
+    global _EXT_TYPE_REGISTERED
+    global _STATIC_DAFT_EXTENSION
+    if not _EXT_TYPE_REGISTERED:
 
-atexit.register(lambda: pa.unregister_extension_type("daft.super_extension"))
+        class DaftExtension(pa.ExtensionType):
+            def __init__(self, dtype, metadata=b""):
+                # attributes need to be set first before calling
+                # super init (as that calls serialize)
+                self._metadata = metadata
+                super().__init__(dtype, "daft.super_extension")
+
+            def __reduce__(self):
+                return type(self).__arrow_ext_deserialize__, (self.storage_type, self.__arrow_ext_serialize__())
+
+            def __arrow_ext_serialize__(self):
+                return self._metadata
+
+            @classmethod
+            def __arrow_ext_deserialize__(cls, storage_type, serialized):
+                return cls(storage_type, serialized)
+
+        _STATIC_DAFT_EXTENSION = DaftExtension
+        pa.register_extension_type(DaftExtension(pa.null()))
+        import atexit
+
+        atexit.register(lambda: pa.unregister_extension_type("daft.super_extension"))
+        _EXT_TYPE_REGISTERED = True
+
+
+def get_super_ext_type():
+    _ensure_registered_super_ext_type()
+    return _STATIC_DAFT_EXTENSION

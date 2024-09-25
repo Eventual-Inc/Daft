@@ -1,3 +1,4 @@
+#![allow(non_snake_case)]
 use std::{
     collections::{hash_map::DefaultHasher, HashMap},
     hash::{Hash, Hasher},
@@ -20,7 +21,7 @@ use pyo3::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{functions, Expr, ExprRef, LiteralValue};
+use crate::{Expr, ExprRef, LiteralValue};
 
 #[pyfunction]
 pub fn col(name: &str) -> PyResult<PyExpr> {
@@ -272,126 +273,6 @@ impl PyExpr {
         Ok(self.expr.clone().cast(&dtype.into()).into())
     }
 
-    pub fn ceil(&self) -> PyResult<Self> {
-        use functions::numeric::ceil;
-        Ok(ceil(self.into()).into())
-    }
-
-    pub fn floor(&self) -> PyResult<Self> {
-        use functions::numeric::floor;
-        Ok(floor(self.into()).into())
-    }
-
-    pub fn sign(&self) -> PyResult<Self> {
-        use functions::numeric::sign;
-        Ok(sign(self.into()).into())
-    }
-
-    pub fn round(&self, decimal: i32) -> PyResult<Self> {
-        use functions::numeric::round;
-        if decimal < 0 {
-            return Err(PyValueError::new_err(format!(
-                "decimal can not be negative: {decimal}"
-            )));
-        }
-        Ok(round(self.into(), decimal).into())
-    }
-
-    pub fn sqrt(&self) -> PyResult<Self> {
-        use functions::numeric::sqrt;
-        Ok(sqrt(self.into()).into())
-    }
-
-    pub fn sin(&self) -> PyResult<Self> {
-        use functions::numeric::sin;
-        Ok(sin(self.into()).into())
-    }
-
-    pub fn cos(&self) -> PyResult<Self> {
-        use functions::numeric::cos;
-        Ok(cos(self.into()).into())
-    }
-
-    pub fn tan(&self) -> PyResult<Self> {
-        use functions::numeric::tan;
-        Ok(tan(self.into()).into())
-    }
-
-    pub fn cot(&self) -> PyResult<Self> {
-        use functions::numeric::cot;
-        Ok(cot(self.into()).into())
-    }
-
-    pub fn arcsin(&self) -> PyResult<Self> {
-        use functions::numeric::arcsin;
-        Ok(arcsin(self.into()).into())
-    }
-
-    pub fn arccos(&self) -> PyResult<Self> {
-        use functions::numeric::arccos;
-        Ok(arccos(self.into()).into())
-    }
-
-    pub fn arctan(&self) -> PyResult<Self> {
-        use functions::numeric::arctan;
-        Ok(arctan(self.into()).into())
-    }
-
-    pub fn arctan2(&self, other: &Self) -> PyResult<Self> {
-        use functions::numeric::arctan2;
-        Ok(arctan2(self.into(), other.expr.clone()).into())
-    }
-
-    pub fn radians(&self) -> PyResult<Self> {
-        use functions::numeric::radians;
-        Ok(radians(self.into()).into())
-    }
-
-    pub fn degrees(&self) -> PyResult<Self> {
-        use functions::numeric::degrees;
-        Ok(degrees(self.into()).into())
-    }
-
-    pub fn arctanh(&self) -> PyResult<Self> {
-        use functions::numeric::arctanh;
-        Ok(arctanh(self.into()).into())
-    }
-
-    pub fn arccosh(&self) -> PyResult<Self> {
-        use functions::numeric::arccosh;
-        Ok(arccosh(self.into()).into())
-    }
-
-    pub fn arcsinh(&self) -> PyResult<Self> {
-        use functions::numeric::arcsinh;
-        Ok(arcsinh(self.into()).into())
-    }
-
-    pub fn log2(&self) -> PyResult<Self> {
-        use functions::numeric::log2;
-        Ok(log2(self.into()).into())
-    }
-
-    pub fn log10(&self) -> PyResult<Self> {
-        use functions::numeric::log10;
-        Ok(log10(self.into()).into())
-    }
-
-    pub fn log(&self, base: f64) -> PyResult<Self> {
-        use functions::numeric::log;
-        Ok(log(self.into(), base).into())
-    }
-
-    pub fn ln(&self) -> PyResult<Self> {
-        use functions::numeric::ln;
-        Ok(ln(self.into()).into())
-    }
-
-    pub fn exp(&self) -> PyResult<Self> {
-        use functions::numeric::exp;
-        Ok(exp(self.into()).into())
-    }
-
     pub fn if_else(&self, if_true: &Self, if_false: &Self) -> PyResult<Self> {
         Ok(self
             .expr
@@ -458,28 +339,15 @@ impl PyExpr {
         Ok(self.expr.clone().agg_concat().into())
     }
 
-    pub fn explode(&self) -> PyResult<Self> {
-        use functions::list::explode;
-        Ok(explode(self.into()).into())
-    }
-
-    pub fn __abs__(&self) -> PyResult<Self> {
-        use functions::numeric::abs;
-        Ok(abs(self.into()).into())
-    }
-
     pub fn __add__(&self, other: &Self) -> PyResult<Self> {
         Ok(crate::binary_op(crate::Operator::Plus, self.into(), other.expr.clone()).into())
     }
-
     pub fn __sub__(&self, other: &Self) -> PyResult<Self> {
         Ok(crate::binary_op(crate::Operator::Minus, self.into(), other.expr.clone()).into())
     }
-
     pub fn __mul__(&self, other: &Self) -> PyResult<Self> {
         Ok(crate::binary_op(crate::Operator::Multiply, self.into(), other.expr.clone()).into())
     }
-
     pub fn __floordiv__(&self, other: &Self) -> PyResult<Self> {
         Ok(crate::binary_op(
             crate::Operator::FloorDivide,
@@ -577,56 +445,6 @@ impl PyExpr {
         let mut hasher = DefaultHasher::new();
         self.expr.hash(&mut hasher);
         hasher.finish()
-    }
-
-    pub fn dt_date(&self) -> PyResult<Self> {
-        use functions::temporal::date;
-        Ok(date(self.into()).into())
-    }
-
-    pub fn dt_day(&self) -> PyResult<Self> {
-        use functions::temporal::day;
-        Ok(day(self.into()).into())
-    }
-
-    pub fn dt_hour(&self) -> PyResult<Self> {
-        use functions::temporal::hour;
-        Ok(hour(self.into()).into())
-    }
-
-    pub fn dt_minute(&self) -> PyResult<Self> {
-        use functions::temporal::minute;
-        Ok(minute(self.into()).into())
-    }
-
-    pub fn dt_second(&self) -> PyResult<Self> {
-        use functions::temporal::second;
-        Ok(second(self.into()).into())
-    }
-
-    pub fn dt_time(&self) -> PyResult<Self> {
-        use functions::temporal::time;
-        Ok(time(self.into()).into())
-    }
-
-    pub fn dt_month(&self) -> PyResult<Self> {
-        use functions::temporal::month;
-        Ok(month(self.into()).into())
-    }
-
-    pub fn dt_year(&self) -> PyResult<Self> {
-        use functions::temporal::year;
-        Ok(year(self.into()).into())
-    }
-
-    pub fn dt_day_of_week(&self) -> PyResult<Self> {
-        use functions::temporal::day_of_week;
-        Ok(day_of_week(self.into()).into())
-    }
-
-    pub fn dt_truncate(&self, interval: &str, relative_to: &Self) -> PyResult<Self> {
-        use functions::temporal::truncate;
-        Ok(truncate(self.into(), interval, relative_to.expr.clone()).into())
     }
 
     pub fn utf8_endswith(&self, pattern: &Self) -> PyResult<Self> {
@@ -786,51 +604,6 @@ impl PyExpr {
         };
 
         Ok(normalize(self.into(), opts).into())
-    }
-
-    pub fn list_join(&self, delimiter: &Self) -> PyResult<Self> {
-        use crate::functions::list::join;
-        Ok(join(self.into(), delimiter.into()).into())
-    }
-
-    pub fn list_count(&self, mode: CountMode) -> PyResult<Self> {
-        use crate::functions::list::count;
-        Ok(count(self.into(), mode).into())
-    }
-
-    pub fn list_get(&self, idx: &Self, default: &Self) -> PyResult<Self> {
-        use crate::functions::list::get;
-        Ok(get(self.into(), idx.into(), default.into()).into())
-    }
-
-    pub fn list_sum(&self) -> PyResult<Self> {
-        use crate::functions::list::sum;
-        Ok(sum(self.into()).into())
-    }
-
-    pub fn list_mean(&self) -> PyResult<Self> {
-        use crate::functions::list::mean;
-        Ok(mean(self.into()).into())
-    }
-
-    pub fn list_min(&self) -> PyResult<Self> {
-        use crate::functions::list::min;
-        Ok(min(self.into()).into())
-    }
-
-    pub fn list_max(&self) -> PyResult<Self> {
-        use crate::functions::list::max;
-        Ok(max(self.into()).into())
-    }
-
-    pub fn list_slice(&self, start: &Self, end: &Self) -> PyResult<Self> {
-        use crate::functions::list::slice;
-        Ok(slice(self.into(), start.into(), end.into()).into())
-    }
-
-    pub fn list_chunk(&self, size: usize) -> PyResult<Self> {
-        use crate::functions::list::chunk;
-        Ok(chunk(self.into(), size).into())
     }
 
     pub fn struct_get(&self, name: &str) -> PyResult<Self> {

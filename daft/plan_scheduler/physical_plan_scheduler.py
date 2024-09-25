@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from daft.daft import (
     AdaptivePhysicalPlanScheduler as _AdaptivePhysicalPlanScheduler,
 )
@@ -8,11 +10,13 @@ from daft.daft import (
     PyDaftExecutionConfig,
 )
 from daft.execution import physical_plan
-from daft.logical.builder import LogicalPlanBuilder
-from daft.runners.partitioning import (
-    PartitionCacheEntry,
-    PartitionT,
-)
+
+if TYPE_CHECKING:
+    from daft.logical.builder import LogicalPlanBuilder
+    from daft.runners.partitioning import (
+        PartitionCacheEntry,
+        PartitionT,
+    )
 
 
 class PhysicalPlanScheduler:
