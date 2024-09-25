@@ -103,6 +103,7 @@ impl SQLPlanner {
                 query.body
             ))
         })?;
+        println!("selection: {}", selection);
 
         check_select_features(selection)?;
 
@@ -151,6 +152,7 @@ impl SQLPlanner {
                     .iter()
                     .any(|e| expr.input_mapping() == e.input_mapping())
             });
+        println!("select exprs: {:?}", to_select);
 
         if !groupby_exprs.is_empty() {
             let rel = self.relation_mut();
@@ -489,9 +491,19 @@ impl SQLPlanner {
                             .collect::<Vec<_>>()
                     })
                     .map_err(|e| e.into());
+                } else {
+                    let current_relation = self.current_relation.as_ref().ok_or_else(|| {
+                        PlannerError::TableNotFound {
+                            message: "No table found to select columns from".to_string(),
+                        }
+                    })?;
+                    let schema = current_relation.inner.schema();
+                    return Ok(schema
+                        .names()
+                        .iter()
+                        .map(|n| col(n.as_ref()))
+                        .collect::<Vec<_>>());
                 }
-
-                Ok(vec![])
             }
             _ => todo!(),
         }
@@ -621,7 +633,7 @@ impl SQLPlanner {
             SQLExpr::Trim { .. } => unsupported_sql_err!("TRIM"),
             SQLExpr::Overlay { .. } => unsupported_sql_err!("OVERLAY"),
             SQLExpr::Collate { .. } => unsupported_sql_err!("COLLATE"),
-            SQLExpr::Nested(_) => unsupported_sql_err!("NESTED"),
+            SQLExpr::Nested(e) => self.plan_expr(e),
             SQLExpr::IntroducedString { .. } => unsupported_sql_err!("INTRODUCED STRING"),
             SQLExpr::TypedString { data_type, value } => match data_type {
                 sqlparser::ast::DataType::Date => Ok(to_date(lit(value.as_str()), "%Y-%m-%d")),
