@@ -1,7 +1,7 @@
 import builtins
 import datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable, Iterator
+from typing import TYPE_CHECKING, Any, Callable, Iterator, Literal
 
 from daft.dataframe.display import MermaidOptions
 from daft.execution import physical_plan
@@ -871,6 +871,7 @@ def read_parquet_into_pyarrow(
     io_config: IOConfig | None = None,
     multithreaded_io: bool | None = None,
     coerce_int96_timestamp_unit: PyTimeUnit | None = None,
+    string_encoding: Literal["utf-8"] | Literal["raw"] = "utf-8",
     file_timeout_ms: int | None = None,
 ): ...
 def read_parquet_into_pyarrow_bulk(
@@ -1720,6 +1721,7 @@ class LogicalPlanBuilder:
         mode: str,
         version: int,
         large_dtypes: bool,
+        partition_cols: list[str] | None = None,
         io_config: IOConfig | None = None,
     ) -> LogicalPlanBuilder: ...
     def lance_write(

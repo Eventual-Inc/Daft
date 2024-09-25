@@ -147,6 +147,7 @@ def deltalake_write(
     base_path: str,
     large_dtypes: bool,
     version: int,
+    partition_cols: list[str] | None,
     io_config: IOConfig | None,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Write the results of `child_plan` into pyiceberg data files described by `write_info`."""
@@ -157,6 +158,7 @@ def deltalake_write(
                 base_path=base_path,
                 large_dtypes=large_dtypes,
                 version=version,
+                partition_cols=partition_cols,
                 io_config=io_config,
             ),
         )
@@ -210,7 +212,13 @@ def actor_pool_project(
     num_actors: int,
 ) -> InProgressPhysicalPlan[PartitionT]:
     stage_id = next(stage_id_counter)
-    actor_pool_name = f"ActorPool_stage{stage_id}"
+
+    from daft.daft import extract_partial_stateful_udf_py
+
+    stateful_udf_names = "-".join(
+        name for expr in projection for name in extract_partial_stateful_udf_py(expr._expr).keys()
+    )
+    actor_pool_name = f"{stateful_udf_names}-stage={stage_id}"
 
     # Keep track of materializations of the children tasks
     #

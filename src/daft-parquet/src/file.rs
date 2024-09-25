@@ -259,11 +259,12 @@ impl ParquetReaderBuilder {
     }
 
     pub fn build(self) -> super::Result<ParquetFileReader> {
-        let mut arrow_schema =
-            infer_schema_with_options(&self.metadata, &Some(self.schema_inference_options.into()))
-                .context(UnableToParseSchemaFromMetadataSnafu::<String> {
-                    path: self.uri.clone(),
-                })?;
+        let options = self.schema_inference_options.into();
+        let mut arrow_schema = infer_schema_with_options(&self.metadata, Some(options)).context(
+            UnableToParseSchemaFromMetadataSnafu {
+                path: self.uri.clone(),
+            },
+        )?;
 
         if let Some(names_to_keep) = self.selected_columns {
             arrow_schema

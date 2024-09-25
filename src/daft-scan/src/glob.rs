@@ -166,9 +166,9 @@ impl GlobScanOperator {
         let schema = match infer_schema {
             true => {
                 let inferred_schema = match file_format_config.as_ref() {
-                    FileFormatConfig::Parquet(ParquetSourceConfig {
+                    &FileFormatConfig::Parquet(ParquetSourceConfig {
                         coerce_int96_timestamp_unit,
-                        field_id_mapping,
+                        ref field_id_mapping,
                         ..
                     }) => {
                         let io_stats = IOStatsContext::new(format!(
@@ -180,7 +180,8 @@ impl GlobScanOperator {
                             io_client.clone(),
                             Some(io_stats),
                             ParquetSchemaInferenceOptions {
-                                coerce_int96_timestamp_unit: *coerce_int96_timestamp_unit,
+                                coerce_int96_timestamp_unit,
+                                ..Default::default()
                             },
                             field_id_mapping.clone(),
                         )?;

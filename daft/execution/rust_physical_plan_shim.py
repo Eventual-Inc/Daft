@@ -363,6 +363,7 @@ def write_deltalake(
     path: str,
     large_dtypes: bool,
     version: int,
+    partition_cols: list[str] | None,
     io_config: IOConfig | None,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     return physical_plan.deltalake_write(
@@ -370,6 +371,7 @@ def write_deltalake(
         path,
         large_dtypes,
         version,
+        partition_cols,
         io_config,
     )
 

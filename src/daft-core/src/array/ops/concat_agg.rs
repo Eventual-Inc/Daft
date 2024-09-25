@@ -1,10 +1,18 @@
-use arrow2::{bitmap::utils::SlicesIterator, offset::OffsetsBuffer, types::Index};
+use arrow2::{
+    array::{Array, Utf8Array},
+    bitmap::utils::SlicesIterator,
+    offset::OffsetsBuffer,
+    types::Index,
+};
 use common_error::DaftResult;
 
 use super::{as_arrow::AsArrow, DaftConcatAggable};
-use crate::array::{
-    growable::{make_growable, Growable},
-    ListArray,
+use crate::{
+    array::{
+        growable::{make_growable, Growable},
+        DataArray, ListArray,
+    },
+    prelude::Utf8Type,
 };
 
 #[cfg(feature = "python")]
@@ -143,6 +151,67 @@ impl DaftConcatAggable for ListArray {
             new_offsets.into(),
             new_validities,
         ))
+    }
+}
+
+impl DaftConcatAggable for DataArray<Utf8Type> {
+    type Output = DaftResult<Self>;
+
+    fn concat(&self) -> Self::Output {
+        let new_validity = match self.validity() {
+            Some(validity) if validity.unset_bits() == self.len() => {
+                Some(arrow2::bitmap::Bitmap::from(vec![false]))
+            }
+            _ => None,
+        };
+
+        let arrow_array = self.as_arrow();
+        let new_offsets = OffsetsBuffer::<i64>::try_from(vec![0, *arrow_array.offsets().last()])?;
+        let output = Utf8Array::new(
+            arrow_array.data_type().clone(),
+            new_offsets,
+            arrow_array.values().clone(),
+            new_validity,
+        );
+
+        let result_box = Box::new(output);
+        Self::new(self.field().clone().into(), result_box)
+    }
+
+    fn grouped_concat(&self, groups: &super::GroupIndices) -> Self::Output {
+        let arrow_array = self.as_arrow();
+        let concat_per_group = if arrow_array.null_count() > 0 {
+            Box::new(Utf8Array::from_trusted_len_iter(groups.iter().map(|g| {
+                let to_concat = g
+                    .iter()
+                    .filter_map(|index| {
+                        let idx = *index as usize;
+                        arrow_array.get(idx)
+                    })
+                    .collect::<Vec<&str>>();
+                if to_concat.is_empty() {
+                    None
+                } else {
+                    Some(to_concat.concat())
+                }
+            })))
+        } else {
+            Box::new(Utf8Array::from_trusted_len_values_iter(groups.iter().map(
+                |g| {
+                    g.iter()
+                        .map(|index| {
+                            let idx = *index as usize;
+                            arrow_array.value(idx)
+                        })
+                        .collect::<String>()
+                },
+            )))
+        };
+
+        Ok(Self::from((
+            self.field.name.as_ref(),
+            concat_per_group,
+        )))
     }
 }
 

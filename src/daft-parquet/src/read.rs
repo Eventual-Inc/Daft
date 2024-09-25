@@ -4,9 +4,16 @@ use std::{
     time::Duration,
 };
 
-use arrow2::{bitmap::Bitmap, io::parquet::read::schema::infer_schema_with_options};
+use arrow2::{
+    bitmap::Bitmap,
+    io::parquet::read::schema::{
+        infer_schema_with_options, SchemaInferenceOptions, StringEncoding,
+    },
+};
 use common_error::DaftResult;
 use daft_core::prelude::*;
+#[cfg(feature = "python")]
+use daft_core::python::PyTimeUnit;
 use daft_dsl::{optimization::get_required_columns, ExprRef};
 use daft_io::{get_runtime, parse_url, IOClient, IOStatsRef, SourceType};
 use daft_table::Table;
@@ -22,18 +29,57 @@ use snafu::ResultExt;
 
 use crate::{file::ParquetReaderBuilder, JoinSnafu};
 
-#[derive(Clone, Copy, Serialize, Deserialize)]
+#[cfg(feature = "python")]
+#[derive(Clone)]
+pub struct ParquetSchemaInferenceOptionsBuilder {
+    pub coerce_int96_timestamp_unit: Option<PyTimeUnit>,
+    pub string_encoding: String,
+}
+
+#[cfg(feature = "python")]
+impl ParquetSchemaInferenceOptionsBuilder {
+    pub fn build(self) -> crate::Result<ParquetSchemaInferenceOptions> {
+        self.try_into()
+    }
+}
+
+#[cfg(feature = "python")]
+impl TryFrom<ParquetSchemaInferenceOptionsBuilder> for ParquetSchemaInferenceOptions {
+    type Error = crate::Error;
+
+    fn try_from(value: ParquetSchemaInferenceOptionsBuilder) -> crate::Result<Self> {
+        Ok(Self {
+            coerce_int96_timestamp_unit: value
+                .coerce_int96_timestamp_unit
+                .map_or(TimeUnit::Nanoseconds, From::from),
+            string_encoding: value.string_encoding.parse().context(crate::Arrow2Snafu)?,
+        })
+    }
+}
+
+#[cfg(feature = "python")]
+impl Default for ParquetSchemaInferenceOptionsBuilder {
+    fn default() -> Self {
+        Self {
+            coerce_int96_timestamp_unit: Some(PyTimeUnit::nanoseconds().unwrap()),
+            string_encoding: "utf-8".into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct ParquetSchemaInferenceOptions {
     pub coerce_int96_timestamp_unit: TimeUnit,
+    pub string_encoding: StringEncoding,
 }
 
 impl ParquetSchemaInferenceOptions {
     pub fn new(coerce_int96_timestamp_unit: Option<TimeUnit>) -> Self {
-        let default: Self = Default::default();
         let coerce_int96_timestamp_unit =
-            coerce_int96_timestamp_unit.unwrap_or(default.coerce_int96_timestamp_unit);
+            coerce_int96_timestamp_unit.unwrap_or(TimeUnit::Nanoseconds);
         Self {
             coerce_int96_timestamp_unit,
+            ..Default::default()
         }
     }
 }
@@ -42,16 +88,16 @@ impl Default for ParquetSchemaInferenceOptions {
     fn default() -> Self {
         Self {
             coerce_int96_timestamp_unit: TimeUnit::Nanoseconds,
+            string_encoding: StringEncoding::Utf8,
         }
     }
 }
 
-impl From<ParquetSchemaInferenceOptions>
-    for arrow2::io::parquet::read::schema::SchemaInferenceOptions
-{
+impl From<ParquetSchemaInferenceOptions> for SchemaInferenceOptions {
     fn from(value: ParquetSchemaInferenceOptions) -> Self {
         Self {
             int96_coerce_to_timeunit: value.coerce_int96_timestamp_unit.to_arrow(),
+            string_encoding: value.string_encoding,
         }
     }
 }
@@ -470,7 +516,7 @@ async fn read_parquet_single_into_arrow(
     schema_infer_options: ParquetSchemaInferenceOptions,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     metadata: Option<Arc<FileMetaData>>,
-) -> DaftResult<(arrow2::datatypes::SchemaRef, Vec<ArrowChunk>, usize)> {
+) -> DaftResult<ParquetPyarrowChunk> {
     let field_id_mapping_provided = field_id_mapping.is_some();
     let (source_type, fixed_uri) = parse_url(uri)?;
     let (metadata, schema, all_arrays, num_rows_read) = if matches!(source_type, SourceType::File) {
@@ -889,8 +935,7 @@ pub fn read_parquet_schema(
     let builder = builder.set_infer_schema_options(schema_inference_options);
 
     let metadata = builder.metadata;
-    let arrow_schema =
-        infer_schema_with_options(&metadata, &Some(schema_inference_options.into()))?;
+    let arrow_schema = infer_schema_with_options(&metadata, Some(schema_inference_options.into()))?;
     let schema = Schema::try_from(&arrow_schema)?;
     Ok((schema, metadata))
 }
@@ -1019,20 +1064,24 @@ pub fn read_parquet_statistics(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{path::PathBuf, sync::Arc};
 
+    use arrow2::{datatypes::DataType, io::parquet::read::schema::StringEncoding};
     use common_error::DaftResult;
     use daft_io::{IOClient, IOConfig};
     use futures::StreamExt;
-    use parquet2::metadata::FileMetaData;
+    use parquet2::{
+        metadata::FileMetaData,
+        schema::types::{ParquetType, PrimitiveConvertedType, PrimitiveLogicalType},
+    };
 
-    use super::{read_parquet, read_parquet_metadata, stream_parquet};
+    use super::*;
 
     const PARQUET_FILE: &str = "s3://daft-public-data/test_fixtures/parquet-dev/mvp.parquet";
     const PARQUET_FILE_LOCAL: &str = "tests/assets/parquet-data/mvp.parquet";
 
     fn get_local_parquet_path() -> String {
-        let mut d = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         d.push("../../"); // CARGO_MANIFEST_DIR is at src/daft-parquet
         d.push(PARQUET_FILE_LOCAL);
         d.to_str().unwrap().to_string()
@@ -1115,5 +1164,69 @@ mod tests {
             assert_eq!(metadata, deserialized);
             Ok(())
         })?
+    }
+
+    #[test]
+    fn test_invalid_utf8_parquet_reading() {
+        let parquet: Arc<str> = path_macro::path!(
+            env!("CARGO_MANIFEST_DIR")
+                / ".."
+                / ".."
+                / "tests"
+                / "assets"
+                / "parquet-data"
+                / "invalid_utf8.parquet"
+        )
+        .to_str()
+        .unwrap()
+        .into();
+        let io_config = IOConfig::default();
+        let io_client = Arc::new(IOClient::new(io_config.into()).unwrap());
+        let runtime_handle = daft_io::get_runtime(true).unwrap();
+        let file_metadata = runtime_handle
+            .block_on_io_pool({
+                let parquet = parquet.clone();
+                let io_client = io_client.clone();
+                async move { read_parquet_metadata(&parquet, io_client, None, None).await }
+            })
+            .flatten()
+            .unwrap();
+        let primitive_type = match file_metadata.schema_descr.fields() {
+            [parquet_type] => match parquet_type {
+                ParquetType::PrimitiveType(primitive_type) => primitive_type,
+                ParquetType::GroupType { .. } => {
+                    panic!("Parquet type should be primitive type, not group type")
+                }
+            },
+            _ => panic!("This test parquet file should have only 1 field"),
+        };
+        assert_eq!(
+            primitive_type.logical_type,
+            Some(PrimitiveLogicalType::String)
+        );
+        assert_eq!(
+            primitive_type.converted_type,
+            Some(PrimitiveConvertedType::Utf8)
+        );
+        let (schema, _, _) = read_parquet_into_pyarrow(
+            &parquet,
+            None,
+            None,
+            None,
+            None,
+            io_client,
+            None,
+            true,
+            ParquetSchemaInferenceOptions {
+                string_encoding: StringEncoding::Raw,
+                ..Default::default()
+            },
+            None,
+        )
+        .unwrap();
+        match schema.fields.as_slice() {
+            [field] => assert_eq!(field.data_type, DataType::Binary),
+            _ => panic!("There should only be one field in the schema"),
+        };
     }
 }

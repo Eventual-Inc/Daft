@@ -429,6 +429,7 @@ class WriteDeltaLake(SingleOutputInstruction):
     base_path: str
     large_dtypes: bool
     version: int
+    partition_cols: list[str] | None
     io_config: IOConfig | None
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
@@ -456,6 +457,7 @@ class WriteDeltaLake(SingleOutputInstruction):
             large_dtypes=self.large_dtypes,
             base_path=self.base_path,
             version=self.version,
+            partition_cols=self.partition_cols,
             io_config=self.io_config,
         )
 
