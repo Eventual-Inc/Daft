@@ -113,15 +113,12 @@ This file is usually found in the `.vscode` folder of your project root. See the
 
 At this point, your debugger should stop on breakpoints in any .rs file located within the codebase.
 
-!!! info
-
-    On some systems, the LLDB debugger will not attach unless [ptrace protection](https://linux-audit.com/protect-ptrace-processes-kernel-yama-ptrace_scope) is disabled.
-    To disable, run the following command:
-
-    ```shell
-    echo 0 | sudo tee /proc/sys/kernel/yama/ptrace_scope
-    ```
-
+> **Note**:  
+> On some systems, the LLDB debugger will not attach unless [ptrace protection](https://linux-audit.com/protect-ptrace-processes-kernel-yama-ptrace_scope) is disabled.
+To disable, run the following command:  
+> ```shell
+> echo 0 | sudo tee /proc/sys/kernel/yama/ptrace_scope
+> ```
 
 ### Benchmarking
 
