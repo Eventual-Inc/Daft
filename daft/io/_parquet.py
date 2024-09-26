@@ -49,7 +49,7 @@ def read_parquet(
         file_path_column: Include the source path(s) as a column with this name. Defaults to None.
         use_native_downloader: Whether to use the native downloader instead of PyArrow for reading Parquet.
         coerce_int96_timestamp_unit: TimeUnit to coerce Int96 TimeStamps to. e.g.: [ns, us, ms], Defaults to None.
-        _multithreaded_io: Include the source path(s) as a column called
+        _multithreaded_io: Whether to use multithreading for IO threads. Setting this to False can be helpful in reducing
             the amount of system resources (number of connections and thread contention) when running in the Ray runner.
             Defaults to None, which will let Daft decide based on the runner it is currently using.
 

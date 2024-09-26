@@ -181,7 +181,7 @@ fn materialize_scan_task(
                         metadatas,
                         Some(delete_map),
                         *chunk_size,
-                        scan_task.file_path_column.clone(),
+                        scan_task.file_path_column.as_deref(),
                     )
                     .context(DaftCoreComputeSnafu)?
                 }
@@ -236,7 +236,7 @@ fn materialize_scan_task(
                         native_storage_config.multithreaded_io,
                         None,
                         8,
-                        scan_task.file_path_column.clone(),
+                        scan_task.file_path_column.as_deref(),
                     )
                     .context(DaftCoreComputeSnafu)?
                 }
@@ -267,7 +267,7 @@ fn materialize_scan_task(
                         native_storage_config.multithreaded_io,
                         None,
                         8,
-                        scan_task.file_path_column.clone(),
+                        scan_task.file_path_column.as_deref(),
                     )
                     .context(DaftCoreComputeSnafu)?
                 }
@@ -656,7 +656,7 @@ impl MicroPartition {
                     field_id_mapping.clone(),
                     parquet_metadata,
                     chunk_size,
-                    scan_task.file_path_column.clone(),
+                    scan_task.file_path_column.as_deref(),
                 )
                 .context(DaftCoreComputeSnafu)
             }
@@ -1039,7 +1039,7 @@ fn _read_parquet_into_loaded_micropartition<T: AsRef<str>>(
     catalog_provided_schema: Option<SchemaRef>,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     chunk_size: Option<usize>,
-    file_path_column: Option<String>,
+    file_path_column: Option<&str>,
 ) -> DaftResult<MicroPartition> {
     let delete_map = iceberg_delete_files
         .map(|files| {
@@ -1125,7 +1125,7 @@ pub(crate) fn read_parquet_into_micropartition<T: AsRef<str>>(
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     parquet_metadata: Option<Vec<Arc<FileMetaData>>>,
     chunk_size: Option<usize>,
-    file_path_column: Option<String>,
+    file_path_column: Option<&str>,
 ) -> DaftResult<MicroPartition> {
     if let Some(so) = start_offset
         && so > 0
@@ -1315,7 +1315,7 @@ pub(crate) fn read_parquet_into_micropartition<T: AsRef<str>>(
                 }),
                 num_rows,
             ),
-            file_path_column,
+            file_path_column.map(|s| s.to_string()),
         );
 
         let fill_map = scan_task.partition_spec().map(|pspec| pspec.to_fill_map());

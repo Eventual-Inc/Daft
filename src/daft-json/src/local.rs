@@ -28,7 +28,7 @@ pub fn read_json_local(
     parse_options: Option<JsonParseOptions>,
     read_options: Option<JsonReadOptions>,
     max_chunks_in_flight: Option<usize>,
-    file_path_column: Option<String>,
+    file_path_column: Option<&str>,
 ) -> DaftResult<Table> {
     let uri = uri.trim_start_matches("file://");
     let file = std::fs::File::open(uri)?;
@@ -46,9 +46,10 @@ pub fn read_json_local(
     )?;
     let output_table = reader.finish()?;
     if let Some(file_path_col_name) = file_path_column {
+        let trimmed = uri.trim_start_matches("file://");
         let file_paths_column = Utf8Array::from_iter(
-            file_path_col_name.as_str(),
-            std::iter::repeat(Some(uri.trim_start_matches("file://"))).take(output_table.len()),
+            file_path_col_name,
+            std::iter::repeat(Some(trimmed)).take(output_table.len()),
         )
         .into_series();
         return output_table.union(&Table::from_nonempty_columns(vec![file_paths_column])?);
