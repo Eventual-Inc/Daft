@@ -214,7 +214,7 @@ impl SQLPlanner {
                     }
                     positional_args.insert(idx, self.try_unwrap_function_arg_expr(arg)?);
                 }
-                _ => unsupported_sql_err!("unsupported function argument type"),
+                other => unsupported_sql_err!("unsupported function argument type: {other}, valid function arguments for this function are: {expected_named:?}."),
             }
         }
 

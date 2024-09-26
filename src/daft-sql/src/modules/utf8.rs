@@ -2,11 +2,14 @@ use daft_dsl::{
     functions::{self, utf8::Utf8Expr},
     ExprRef, LiteralValue,
 };
+use daft_functions::count_matches::{utf8_count_matches, CountMatchesFunction};
 
 use super::SQLModule;
 use crate::{
-    ensure, error::SQLPlannerResult, functions::SQLFunction, invalid_operation_err,
-    unsupported_sql_err,
+    ensure,
+    error::{PlannerError, SQLPlannerResult},
+    functions::{SQLFunction, SQLFunctionArguments},
+    invalid_operation_err, unsupported_sql_err,
 };
 
 pub struct SQLModuleUtf8;
@@ -17,13 +20,14 @@ impl SQLModule for SQLModuleUtf8 {
         parent.add_fn("ends_with", EndsWith);
         parent.add_fn("starts_with", StartsWith);
         parent.add_fn("contains", Contains);
-        parent.add_fn("split", Split(true));
+        parent.add_fn("split", Split(false));
         // TODO add split variants
         // parent.add("split", f(Split(false)));
-        parent.add_fn("match", Match);
-        parent.add_fn("extract", Extract(0));
-        parent.add_fn("extract_all", ExtractAll(0));
-        parent.add_fn("replace", Replace(true));
+        parent.add_fn("regexp_match", Match);
+        parent.add_fn("regexp_extract", Extract(0));
+        parent.add_fn("regexp_extract_all", ExtractAll(0));
+        parent.add_fn("regexp_replace", Replace(true));
+        parent.add_fn("regexp_split", Split(true));
         // TODO add replace variants
         // parent.add("replace", f(Replace(false)));
         parent.add_fn("length", Length);
@@ -39,11 +43,11 @@ impl SQLModule for SQLModuleUtf8 {
         parent.add_fn("rpad", Rpad);
         parent.add_fn("lpad", Lpad);
         parent.add_fn("repeat", Repeat);
-        parent.add_fn("like", Like);
-        parent.add_fn("ilike", Ilike);
-        parent.add_fn("substr", Substr);
+
+        parent.add_fn("substring", Substr);
         parent.add_fn("to_date", ToDate("".to_string()));
         parent.add_fn("to_datetime", ToDatetime("".to_string(), None));
+        parent.add_fn("count_matches", SQLCountMatches);
         // TODO add normalization variants.
         // parent.add("normalize", f(Normalize(Default::default())));
     }
@@ -78,19 +82,44 @@ fn to_expr(expr: &Utf8Expr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
             ensure!(args.len() == 2, "contains takes exactly two arguments");
             Ok(contains(args[0].clone(), args[1].clone()))
         }
-        Split(_) => {
+        Split(true) => {
+            ensure!(args.len() == 2, "split takes exactly two arguments");
+            Ok(split(args[0].clone(), args[1].clone(), true))
+        }
+        Split(false) => {
             ensure!(args.len() == 2, "split takes exactly two arguments");
             Ok(split(args[0].clone(), args[1].clone(), false))
         }
         Match => {
-            unsupported_sql_err!("match")
+            ensure!(args.len() == 2, "regexp_match takes exactly two arguments");
+            Ok(match_(args[0].clone(), args[1].clone()))
         }
-        Extract(_) => {
-            unsupported_sql_err!("extract")
-        }
-        ExtractAll(_) => {
-            unsupported_sql_err!("extract_all")
-        }
+        Extract(_) => match args {
+            [input, pattern] => Ok(extract(input.clone(), pattern.clone(), 0)),
+            [input, pattern, idx] => {
+                let idx = idx.as_literal().and_then(|lit| lit.as_i64()).ok_or_else(|| {
+                   PlannerError::invalid_operation(format!("Expected a literal integer for the third argument of regexp_extract, found {:?}", idx))
+               })?;
+
+                Ok(extract(input.clone(), pattern.clone(), idx as usize))
+            }
+            _ => {
+                invalid_operation_err!("regexp_extract takes exactly two or three arguments")
+            }
+        },
+        ExtractAll(_) => match args {
+            [input, pattern] => Ok(extract_all(input.clone(), pattern.clone(), 0)),
+            [input, pattern, idx] => {
+                let idx = idx.as_literal().and_then(|lit| lit.as_i64()).ok_or_else(|| {
+                   PlannerError::invalid_operation(format!("Expected a literal integer for the third argument of regexp_extract, found {:?}", idx))
+               })?;
+
+                Ok(extract_all(input.clone(), pattern.clone(), idx as usize))
+            }
+            _ => {
+                invalid_operation_err!("regexp_extract_all takes exactly two or three arguments")
+            }
+        },
         Replace(_) => {
             ensure!(args.len() == 3, "replace takes exactly three arguments");
             Ok(replace(
@@ -101,10 +130,10 @@ fn to_expr(expr: &Utf8Expr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
             ))
         }
         Like => {
-            unsupported_sql_err!("like")
+            unreachable!("like should be handled by the parser")
         }
         Ilike => {
-            unsupported_sql_err!("ilike")
+            unreachable!("ilike should be handled by the parser")
         }
         Length => {
             ensure!(args.len() == 1, "length takes exactly one argument");
@@ -163,8 +192,7 @@ fn to_expr(expr: &Utf8Expr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
             Ok(repeat(args[0].clone(), args[1].clone()))
         }
         Substr => {
-            ensure!(args.len() == 3, "substr takes exactly three arguments");
-            Ok(substr(args[0].clone(), args[1].clone(), args[2].clone()))
+            unreachable!("substr should be handled by the parser")
         }
         ToDate(_) => {
             ensure!(args.len() == 2, "to_date takes exactly two arguments");
@@ -192,6 +220,77 @@ fn to_expr(expr: &Utf8Expr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
         }
         Normalize(_) => {
             unsupported_sql_err!("normalize")
+        }
+    }
+}
+
+pub struct SQLCountMatches;
+
+impl TryFrom<SQLFunctionArguments> for CountMatchesFunction {
+    type Error = PlannerError;
+
+    fn try_from(args: SQLFunctionArguments) -> Result<Self, Self::Error> {
+        let whole_words = args
+            .get_named("whole_words")
+            .map(|v| {
+                v.as_literal().and_then(|lit| lit.as_bool()).ok_or_else(|| {
+                    PlannerError::invalid_operation(format!(
+                        "whole_words argument must be a boolean, got {:?}",
+                        v
+                    ))
+                })
+            })
+            .transpose()?
+            .unwrap_or(false);
+
+        let case_sensitive = args
+            .get_named("case_sensitive")
+            .map(|v| {
+                v.as_literal().and_then(|lit| lit.as_bool()).ok_or_else(|| {
+                    PlannerError::invalid_operation(format!(
+                        "case_sensitive argument must be a boolean, got {:?}",
+                        v
+                    ))
+                })
+            })
+            .transpose()?
+            .unwrap_or(true);
+
+        Ok(Self {
+            whole_words,
+            case_sensitive,
+        })
+    }
+}
+
+impl SQLFunction for SQLCountMatches {
+    fn to_expr(
+        &self,
+        inputs: &[sqlparser::ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        match inputs {
+            [input, pattern] => {
+                let input = planner.plan_function_arg(input)?;
+                let pattern = planner.plan_function_arg(pattern)?;
+                Ok(utf8_count_matches(input, pattern, false, true))
+            }
+            [input, pattern, args @ ..] => {
+                let input = planner.plan_function_arg(input)?;
+                let pattern = planner.plan_function_arg(pattern)?;
+                let args: CountMatchesFunction =
+                    planner.plan_function_args(args, &["whole_words", "case_sensitive"], 0)?;
+
+                Ok(utf8_count_matches(
+                    input,
+                    pattern,
+                    args.whole_words,
+                    args.case_sensitive,
+                ))
+            }
+            _ => Err(PlannerError::invalid_operation(
+                "Invalid arguments for count_matches: '{inputs:?}'",
+            )),
         }
     }
 }
