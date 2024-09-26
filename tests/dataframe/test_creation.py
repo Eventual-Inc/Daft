@@ -447,6 +447,21 @@ def test_create_dataframe_multiple_csvs_with_file_path_column(valid_data: list[d
         assert pd_df["file_path"].to_list() == [f1name] * len(valid_data) + [f2name] * len(valid_data)
 
 
+def test_create_dataframe_csv_with_file_path_column_duplicate_field_names() -> None:
+    with create_temp_filename() as fname:
+        with open(fname, "w") as f:
+            data = [{"path": 1, "data": "a"}, {"path": 2, "data": "b"}, {"path": 3, "data": "c"}]
+            header = list(data[0].keys())
+            writer = csv.writer(f)
+            writer.writerow(header)
+            writer.writerows([[item[col] for col in header] for item in data])
+            f.flush()
+
+        with pytest.raises(ValueError):
+            # The file_path_column name is the same as a column in the table, which is not allowed
+            daft.read_json(fname, file_path_column="path")
+
+
 @pytest.mark.parametrize("use_native_downloader", [True, False])
 def test_create_dataframe_csv_generate_headers(valid_data: list[dict[str, float]], use_native_downloader) -> None:
     with create_temp_filename() as fname:
@@ -755,6 +770,20 @@ def test_create_dataframe_multiple_jsons_with_file_path_column(valid_data: list[
         assert pd_df["file_path"].to_list() == [f1name] * len(valid_data) + [f2name] * len(valid_data)
 
 
+def test_create_dataframe_json_with_file_path_column_duplicate_field_names() -> None:
+    with create_temp_filename() as fname:
+        with open(fname, "w") as f:
+            data = {"path": [1, 2, 3], "data": [4, 5, 6]}
+            for i in range(len(data["path"])):
+                f.write(json.dumps({k: data[k][i] for k in data}))
+                f.write("\n")
+            f.flush()
+
+        with pytest.raises(ValueError):
+            # The file_path_column name is the same as a column in the table, which is not allowed
+            daft.read_json(fname, file_path_column="path")
+
+
 @pytest.mark.parametrize("use_native_downloader", [True, False])
 def test_create_dataframe_json_column_projection(valid_data: list[dict[str, float]], use_native_downloader) -> None:
     with create_temp_filename() as fname:
@@ -1008,6 +1037,18 @@ def test_create_dataframe_multiple_parquets_with_file_path_column(valid_data: li
         assert list(pd_df.columns) == COL_NAMES + ["file_path"]
         assert len(pd_df) == (len(valid_data) * 2)
         assert pd_df["file_path"].to_list() == [f1name] * len(valid_data) + [f2name] * len(valid_data)
+
+
+def test_create_dataframe_parquet_with_file_path_column_duplicate_field_names() -> None:
+    with create_temp_filename() as fname:
+        with open(fname, "w") as f:
+            table = pa.Table.from_pydict({"path": [1, 2, 3], "data": [4, 5, 6]})
+            papq.write_table(table, f.name)
+            f.flush()
+
+        with pytest.raises(ValueError):
+            # The file_path_column name is the same as a column in the table, which is not allowed
+            daft.read_parquet(fname, file_path_column="path")
 
 
 def test_create_dataframe_parquet_with_filter(valid_data: list[dict[str, float]]) -> None:
