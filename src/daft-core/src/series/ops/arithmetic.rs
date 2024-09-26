@@ -1,7 +1,4 @@
-use std::{
-    ops::{Add, Div, Mul, Rem, Sub},
-    time::Duration,
-};
+use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use common_error::DaftResult;
 use daft_schema::dtype::DataType;
@@ -86,26 +83,26 @@ impl Sub for &Series {
                     (DataType::Date, DataType::Duration(tu2)) => {
                         let days = rhs.duration()?.cast_to_days()?;
                         let physical_result = self.date()?.physical.sub(&days)?;
-                        physical_result.cast(&output_type)
+                        physical_result.cast(output_type)
                     }
                     (DataType::Date, DataType::Date) => {
                         let physical_result = self.date()?.physical.sub(&rhs.date()?.physical)?;
-                        physical_result.cast(&output_type)
+                        physical_result.cast(output_type)
                     }
                     (DataType::Duration(tu1), DataType::Duration(tu2)) => {
                         let physical_result =
                             lhs.duration()?.physical.sub(&rhs.duration()?.physical)?;
-                        physical_result.cast(&output_type)
+                        physical_result.cast(output_type)
                     }
                     (DataType::Timestamp(..), DataType::Duration(..)) => {
                         let physical_result =
                             self.timestamp()?.physical.sub(&rhs.duration()?.physical)?;
-                        physical_result.cast(&output_type)
+                        physical_result.cast(output_type)
                     }
                     (DataType::Timestamp(..), DataType::Timestamp(..)) => {
                         let physical_result =
                             self.timestamp()?.physical.sub(&rhs.timestamp()?.physical)?;
-                        physical_result.cast(&output_type)
+                        physical_result.cast(output_type)
                     }
                     _ => binary_op_unimplemented!(self, "-", rhs, output_type),
                 }

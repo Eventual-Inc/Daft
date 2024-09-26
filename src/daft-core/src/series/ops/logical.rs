@@ -21,10 +21,10 @@ macro_rules! binary_op_not_implemented {
     }};
 }
 
-impl DaftLogical<&Series> for Series {
-    type Output = DaftResult<Series>;
+impl DaftLogical<&Self> for Series {
+    type Output = DaftResult<Self>;
 
-    fn and(&self, rhs: &Series) -> Self::Output {
+    fn and(&self, rhs: &Self) -> Self::Output {
         let lhs = self;
         let output_type = InferDataType::from(lhs.data_type())
             .logical_op(&InferDataType::from(rhs.data_type()))?;
@@ -55,7 +55,7 @@ impl DaftLogical<&Series> for Series {
         }
     }
 
-    fn or(&self, rhs: &Series) -> Self::Output {
+    fn or(&self, rhs: &Self) -> Self::Output {
         let lhs = self;
         let output_type = InferDataType::from(self.data_type())
             .logical_op(&InferDataType::from(rhs.data_type()))?;
@@ -85,7 +85,7 @@ impl DaftLogical<&Series> for Series {
         }
     }
 
-    fn xor(&self, rhs: &Series) -> Self::Output {
+    fn xor(&self, rhs: &Self) -> Self::Output {
         let lhs = self;
         let output_type = InferDataType::from(self.data_type())
             .logical_op(&InferDataType::from(rhs.data_type()))?;
