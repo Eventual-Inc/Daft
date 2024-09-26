@@ -7,6 +7,7 @@ pub use arrow2::bitmap;
 // Re-export core series structures
 // Re-export arrow2 bitmap
 pub use arrow2::bitmap;
+// Re-export core series structures
 pub use daft_schema::schema::{Schema, SchemaRef};
 
 // Re-export count mode enum
