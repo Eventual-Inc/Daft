@@ -3,7 +3,7 @@ pub mod error;
 pub mod functions;
 mod modules;
 mod planner;
-
+mod table_provider;
 #[cfg(feature = "python")]
 pub mod python;
 

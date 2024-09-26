@@ -388,7 +388,19 @@ impl SQLPlanner {
 
     fn plan_relation(&self, rel: &sqlparser::ast::TableFactor) -> SQLPlannerResult<Relation> {
         match rel {
-            sqlparser::ast::TableFactor::Table { name, .. } => {
+            sqlparser::ast::TableFactor::Table {
+                name,
+                args: Some(args),
+                alias,
+                ..
+            } => {
+                let tbl_fn = name.0.first().unwrap().value.as_str();
+
+                self.plan_table_function(tbl_fn, args, alias)
+            }
+            sqlparser::ast::TableFactor::Table {
+                name, args: None, ..
+            } => {
                 let table_name = name.to_string();
                 let plan = self
                     .catalog

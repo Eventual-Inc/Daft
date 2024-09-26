@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 
 mod anonymous;
 pub use anonymous::AnonymousScanOperator;
-mod glob;
+pub mod glob;
 use common_daft_config::DaftExecutionConfig;
 pub mod scan_task_iters;
 

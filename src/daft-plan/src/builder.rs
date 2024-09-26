@@ -6,11 +6,15 @@ use std::{
 use common_daft_config::DaftPlanningConfig;
 use common_display::mermaid::MermaidDisplayOptions;
 use common_error::DaftResult;
-use common_file_formats::FileFormat;
+use common_file_formats::{FileFormat, FileFormatConfig, ParquetSourceConfig};
 use common_io_config::IOConfig;
 use daft_core::join::{JoinStrategy, JoinType};
 use daft_dsl::{col, ExprRef};
-use daft_scan::{PhysicalScanInfo, Pushdowns, ScanOperatorRef};
+use daft_scan::{
+    glob::GlobScanOperator,
+    storage_config::{NativeStorageConfig, StorageConfig},
+    PhysicalScanInfo, Pushdowns, ScanOperatorRef,
+};
 use daft_schema::schema::{Schema, SchemaRef};
 #[cfg(feature = "python")]
 use {
@@ -73,7 +77,29 @@ impl From<&LogicalPlanBuilder> for LogicalPlanRef {
         value.plan.clone()
     }
 }
-
+pub trait IntoGlobPath {
+    fn into_glob_path(self) -> Vec<String>;
+}
+impl IntoGlobPath for Vec<String> {
+    fn into_glob_path(self) -> Vec<String> {
+        self
+    }
+}
+impl IntoGlobPath for String {
+    fn into_glob_path(self) -> Vec<String> {
+        vec![self]
+    }
+}
+impl IntoGlobPath for &str {
+    fn into_glob_path(self) -> Vec<String> {
+        vec![self.to_string()]
+    }
+}
+impl IntoGlobPath for Vec<&str> {
+    fn into_glob_path(self) -> Vec<String> {
+        self.iter().map(|s| s.to_string()).collect()
+    }
+}
 impl LogicalPlanBuilder {
     /// Replace the LogicalPlanBuilder's plan with the provided plan
     pub fn with_new_plan<LP: Into<Arc<LogicalPlan>>>(&self, plan: LP) -> Self {
@@ -140,6 +166,24 @@ impl LogicalPlanBuilder {
         let logical_plan: LogicalPlan =
             logical_ops::Source::new(output_schema, source_info.into()).into();
         Ok(Self::new(logical_plan.into(), None))
+    }
+
+    pub fn parquet_scan<T: IntoGlobPath>(
+        glob_path: T,
+        config: Option<ParquetSourceConfig>,
+        io_config: Option<IOConfig>,
+        infer_schema: bool,
+    ) -> DaftResult<Self> {
+        let operator = Arc::new(GlobScanOperator::try_new(
+            glob_path.into_glob_path(),
+            Arc::new(FileFormatConfig::Parquet(config.unwrap_or_default())),
+            Arc::new(StorageConfig::Native(Arc::new(
+                NativeStorageConfig::new_internal(true, io_config),
+            ))),
+            infer_schema,
+            None,
+        )?);
+        Self::table_scan(ScanOperatorRef(operator), None)
     }
 
     pub fn select(&self, to_select: Vec<ExprRef>) -> DaftResult<Self> {
