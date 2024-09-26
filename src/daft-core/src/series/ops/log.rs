@@ -6,7 +6,7 @@ use crate::{
 };
 
 impl Series {
-    pub fn log2(&self) -> DaftResult<Series> {
+    pub fn log2(&self) -> DaftResult<Self> {
         match self.data_type() {
             DataType::Int8
             | DataType::Int16
@@ -28,7 +28,7 @@ impl Series {
         }
     }
 
-    pub fn log10(&self) -> DaftResult<Series> {
+    pub fn log10(&self) -> DaftResult<Self> {
         match self.data_type() {
             DataType::Int8
             | DataType::Int16
@@ -50,7 +50,7 @@ impl Series {
         }
     }
 
-    pub fn log(&self, base: f64) -> DaftResult<Series> {
+    pub fn log(&self, base: f64) -> DaftResult<Self> {
         match self.data_type() {
             DataType::Int8
             | DataType::Int16
@@ -72,7 +72,7 @@ impl Series {
         }
     }
 
-    pub fn ln(&self) -> DaftResult<Series> {
+    pub fn ln(&self) -> DaftResult<Self> {
         use crate::series::array_impl::IntoSeries;
         match self.data_type() {
             DataType::Int8

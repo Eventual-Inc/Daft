@@ -26,9 +26,13 @@ tokio-util = {workspace = true}
 
 [dev-dependencies]
 bincode = {workspace = true}
+path_macro = {workspace = true}
 
 [features]
 python = ["dep:pyo3", "common-error/python", "daft-core/python", "daft-io/python", "daft-table/python", "daft-stats/python", "daft-dsl/python", "common-arrow-ffi/python"]
+
+[lints]
+workspace = true
 
 [package]
 edition = {workspace = true}

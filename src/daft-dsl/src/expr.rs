@@ -390,6 +390,7 @@ impl AggExpr {
                 let field = expr.to_field(schema)?;
                 match field.dtype {
                     DataType::List(..) => Ok(field),
+                    DataType::Utf8 => Ok(field),
                     #[cfg(feature = "python")]
                     DataType::Python => Ok(field),
                     _ => Err(DaftError::TypeError(format!(
@@ -402,7 +403,7 @@ impl AggExpr {
         }
     }
 
-    pub fn from_name_and_child_expr(name: &str, child: ExprRef) -> DaftResult<AggExpr> {
+    pub fn from_name_and_child_expr(name: &str, child: ExprRef) -> DaftResult<Self> {
         use AggExpr::*;
         match name {
             "count" => Ok(Count(child, CountMode::Valid)),
@@ -421,12 +422,12 @@ impl AggExpr {
 
 impl From<&AggExpr> for ExprRef {
     fn from(agg_expr: &AggExpr) -> Self {
-        Arc::new(Expr::Agg(agg_expr.clone()))
+        Self::new(Expr::Agg(agg_expr.clone()))
     }
 }
 
-impl AsRef<Expr> for Expr {
-    fn as_ref(&self) -> &Expr {
+impl AsRef<Self> for Expr {
+    fn as_ref(&self) -> &Self {
         self
     }
 }
@@ -437,11 +438,11 @@ impl Expr {
     }
 
     pub fn alias<S: Into<Arc<str>>>(self: &ExprRef, name: S) -> ExprRef {
-        Expr::Alias(self.clone(), name.into()).into()
+        Self::Alias(self.clone(), name.into()).into()
     }
 
     pub fn if_else(self: ExprRef, if_true: ExprRef, if_false: ExprRef) -> ExprRef {
-        Expr::IfElse {
+        Self::IfElse {
             if_true,
             if_false,
             predicate: self,
@@ -450,19 +451,19 @@ impl Expr {
     }
 
     pub fn cast(self: ExprRef, dtype: &DataType) -> ExprRef {
-        Expr::Cast(self, dtype.clone()).into()
+        Self::Cast(self, dtype.clone()).into()
     }
 
     pub fn count(self: ExprRef, mode: CountMode) -> ExprRef {
-        Expr::Agg(AggExpr::Count(self, mode)).into()
+        Self::Agg(AggExpr::Count(self, mode)).into()
     }
 
     pub fn sum(self: ExprRef) -> ExprRef {
-        Expr::Agg(AggExpr::Sum(self)).into()
+        Self::Agg(AggExpr::Sum(self)).into()
     }
 
     pub fn approx_count_distinct(self: ExprRef) -> ExprRef {
-        Expr::Agg(AggExpr::ApproxCountDistinct(self)).into()
+        Self::Agg(AggExpr::ApproxCountDistinct(self)).into()
     }
 
     pub fn approx_percentiles(
@@ -470,7 +471,7 @@ impl Expr {
         percentiles: &[f64],
         force_list_output: bool,
     ) -> ExprRef {
-        Expr::Agg(AggExpr::ApproxPercentile(ApproxPercentileParams {
+        Self::Agg(AggExpr::ApproxPercentile(ApproxPercentileParams {
             child: self,
             percentiles: percentiles.iter().map(|f| FloatWrapper(*f)).collect(),
             force_list_output,
@@ -483,7 +484,7 @@ impl Expr {
         percentiles: &[f64],
         force_list_output: bool,
     ) -> ExprRef {
-        Expr::Function {
+        Self::Function {
             func: FunctionExpr::Sketch(SketchExpr::Percentile {
                 percentiles: HashableVecPercentiles(percentiles.to_vec()),
                 force_list_output,
@@ -494,52 +495,52 @@ impl Expr {
     }
 
     pub fn mean(self: ExprRef) -> ExprRef {
-        Expr::Agg(AggExpr::Mean(self)).into()
+        Self::Agg(AggExpr::Mean(self)).into()
     }
 
     pub fn min(self: ExprRef) -> ExprRef {
-        Expr::Agg(AggExpr::Min(self)).into()
+        Self::Agg(AggExpr::Min(self)).into()
     }
 
     pub fn max(self: ExprRef) -> ExprRef {
-        Expr::Agg(AggExpr::Max(self)).into()
+        Self::Agg(AggExpr::Max(self)).into()
     }
 
     pub fn any_value(self: ExprRef, ignore_nulls: bool) -> ExprRef {
-        Expr::Agg(AggExpr::AnyValue(self, ignore_nulls)).into()
+        Self::Agg(AggExpr::AnyValue(self, ignore_nulls)).into()
     }
 
     pub fn agg_list(self: ExprRef) -> ExprRef {
-        Expr::Agg(AggExpr::List(self)).into()
+        Self::Agg(AggExpr::List(self)).into()
     }
 
     pub fn agg_concat(self: ExprRef) -> ExprRef {
-        Expr::Agg(AggExpr::Concat(self)).into()
+        Self::Agg(AggExpr::Concat(self)).into()
     }
 
     #[allow(clippy::should_implement_trait)]
     pub fn not(self: ExprRef) -> ExprRef {
-        Expr::Not(self).into()
+        Self::Not(self).into()
     }
 
     pub fn is_null(self: ExprRef) -> ExprRef {
-        Expr::IsNull(self).into()
+        Self::IsNull(self).into()
     }
 
     pub fn not_null(self: ExprRef) -> ExprRef {
-        Expr::NotNull(self).into()
+        Self::NotNull(self).into()
     }
 
     pub fn fill_null(self: ExprRef, fill_value: ExprRef) -> ExprRef {
-        Expr::FillNull(self, fill_value).into()
+        Self::FillNull(self, fill_value).into()
     }
 
     pub fn is_in(self: ExprRef, items: ExprRef) -> ExprRef {
-        Expr::IsIn(self, items).into()
+        Self::IsIn(self, items).into()
     }
 
     pub fn between(self: ExprRef, lower: ExprRef, upper: ExprRef) -> ExprRef {
-        Expr::Between(self, lower, upper).into()
+        Self::Between(self, lower, upper).into()
     }
 
     pub fn eq(self: ExprRef, other: ExprRef) -> ExprRef {
@@ -677,7 +678,7 @@ impl Expr {
         }
     }
 
-    pub fn with_new_children(&self, children: Vec<ExprRef>) -> Expr {
+    pub fn with_new_children(&self, children: Vec<ExprRef>) -> Self {
         use Expr::*;
         match self {
             // no children
@@ -884,8 +885,8 @@ impl Expr {
                     )));
                 }
                 match predicate.as_ref() {
-                    Expr::Literal(lit::LiteralValue::Boolean(true)) => if_true.to_field(schema),
-                    Expr::Literal(lit::LiteralValue::Boolean(false)) => {
+                    Self::Literal(lit::LiteralValue::Boolean(true)) => if_true.to_field(schema),
+                    Self::Literal(lit::LiteralValue::Boolean(false)) => {
                         Ok(if_false.to_field(schema)?.rename(if_true.name()))
                     }
                     _ => {
@@ -1029,7 +1030,7 @@ impl Expr {
     /// If the expression is a literal, return it. Otherwise, return None.
     pub fn as_literal(&self) -> Option<&lit::LiteralValue> {
         match self {
-            Expr::Literal(lit) => Some(lit),
+            Self::Literal(lit) => Some(lit),
             _ => None,
         }
     }

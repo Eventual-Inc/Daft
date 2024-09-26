@@ -35,7 +35,7 @@ where
 impl<T> Broadcastable for DataArray<T>
 where
     T: DaftPhysicalType + 'static,
-    DataArray<T>: GrowableArray,
+    Self: GrowableArray,
 {
     fn broadcast(&self, num: usize) -> DaftResult<Self> {
         if self.len() != 1 {
@@ -48,7 +48,7 @@ where
         if self.is_valid(0) {
             generic_growable_broadcast(self, num, self.name(), self.data_type())
         } else {
-            Ok(DataArray::full_null(self.name(), self.data_type(), num))
+            Ok(Self::full_null(self.name(), self.data_type(), num))
         }
     }
 }
@@ -65,11 +65,7 @@ impl Broadcastable for FixedSizeListArray {
         if self.is_valid(0) {
             generic_growable_broadcast(self, num, self.name(), self.data_type())
         } else {
-            Ok(FixedSizeListArray::full_null(
-                self.name(),
-                self.data_type(),
-                num,
-            ))
+            Ok(Self::full_null(self.name(), self.data_type(), num))
         }
     }
 }
@@ -86,7 +82,7 @@ impl Broadcastable for ListArray {
         if self.is_valid(0) {
             generic_growable_broadcast(self, num, self.name(), self.data_type())
         } else {
-            Ok(ListArray::full_null(self.name(), self.data_type(), num))
+            Ok(Self::full_null(self.name(), self.data_type(), num))
         }
     }
 }
@@ -103,7 +99,7 @@ impl Broadcastable for StructArray {
         if self.is_valid(0) {
             generic_growable_broadcast(self, num, self.name(), self.data_type())
         } else {
-            Ok(StructArray::full_null(self.name(), self.data_type(), num))
+            Ok(Self::full_null(self.name(), self.data_type(), num))
         }
     }
 }

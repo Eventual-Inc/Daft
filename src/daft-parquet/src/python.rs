@@ -10,7 +10,9 @@ pub mod pylib {
     use daft_table::python::PyTable;
     use pyo3::{pyfunction, types::PyModule, Bound, PyResult, Python};
 
-    use crate::read::{ArrowChunk, ParquetSchemaInferenceOptions};
+    use crate::read::{
+        ArrowChunk, ParquetSchemaInferenceOptions, ParquetSchemaInferenceOptionsBuilder,
+    };
     #[allow(clippy::too_many_arguments)]
     #[pyfunction]
     pub fn read_parquet(
@@ -90,6 +92,7 @@ pub mod pylib {
     pub fn read_parquet_into_pyarrow(
         py: Python,
         uri: &str,
+        string_encoding: String,
         columns: Option<Vec<String>>,
         start_offset: Option<usize>,
         num_rows: Option<usize>,
@@ -99,14 +102,16 @@ pub mod pylib {
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
         file_timeout_ms: Option<i64>,
     ) -> PyResult<PyArrowParquetType> {
-        let read_parquet_result = py.allow_threads(|| {
+        let (schema, all_arrays, num_rows) = py.allow_threads(|| {
             let io_client = get_io_client(
                 multithreaded_io.unwrap_or(true),
                 io_config.unwrap_or_default().config.into(),
             )?;
-            let schema_infer_options = ParquetSchemaInferenceOptions::new(
-                coerce_int96_timestamp_unit.map(|tu| tu.timeunit),
-            );
+            let schema_infer_options = ParquetSchemaInferenceOptionsBuilder {
+                coerce_int96_timestamp_unit,
+                string_encoding,
+            }
+            .build()?;
 
             crate::read::read_parquet_into_pyarrow(
                 uri,
@@ -121,7 +126,6 @@ pub mod pylib {
                 file_timeout_ms,
             )
         })?;
-        let (schema, all_arrays, num_rows) = read_parquet_result;
         let pyarrow = py.import_bound(pyo3::intern!(py, "pyarrow"))?;
         convert_pyarrow_parquet_read_result_into_py(py, schema, all_arrays, num_rows, &pyarrow)
     }

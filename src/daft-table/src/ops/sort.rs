@@ -5,7 +5,7 @@ use daft_dsl::ExprRef;
 use crate::Table;
 
 impl Table {
-    pub fn sort(&self, sort_keys: &[ExprRef], descending: &[bool]) -> DaftResult<Table> {
+    pub fn sort(&self, sort_keys: &[ExprRef], descending: &[bool]) -> DaftResult<Self> {
         let argsort = self.argsort(sort_keys, descending)?;
         self.take(&argsort)
     }

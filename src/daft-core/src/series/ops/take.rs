@@ -8,19 +8,19 @@ use crate::{
 };
 
 impl Series {
-    pub fn head(&self, num: usize) -> DaftResult<Series> {
+    pub fn head(&self, num: usize) -> DaftResult<Self> {
         if num >= self.len() {
             return Ok(self.clone());
         }
         self.inner.head(num)
     }
 
-    pub fn slice(&self, start: usize, end: usize) -> DaftResult<Series> {
+    pub fn slice(&self, start: usize, end: usize) -> DaftResult<Self> {
         let l = self.len();
         self.inner.slice(start.min(l), end.min(l))
     }
 
-    pub fn take(&self, idx: &Series) -> DaftResult<Series> {
+    pub fn take(&self, idx: &Self) -> DaftResult<Self> {
         self.inner.take(idx)
     }
 

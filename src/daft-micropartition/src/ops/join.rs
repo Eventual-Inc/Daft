@@ -70,7 +70,7 @@ impl MicroPartition {
             ([], _) | (_, []) => Ok(Self::empty(Some(join_schema))),
             ([lt], [rt]) => {
                 let joined_table = table_join(lt, rt, left_on, right_on, how)?;
-                Ok(MicroPartition::new_loaded(
+                Ok(Self::new_loaded(
                     join_schema,
                     vec![joined_table].into(),
                     None,

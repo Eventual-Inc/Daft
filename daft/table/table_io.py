@@ -5,7 +5,6 @@ import math
 import pathlib
 import random
 import time
-from functools import partial
 from typing import IO, TYPE_CHECKING, Any, Iterator, Union
 from uuid import uuid4
 
@@ -24,7 +23,7 @@ from daft.daft import (
     StorageConfig,
 )
 from daft.dependencies import pa, pacsv, pads, pajson, pq
-from daft.expressions import ExpressionsProjection
+from daft.expressions import ExpressionsProjection, col
 from daft.filesystem import (
     _resolve_paths_and_filesystem,
     canonicalize_protocol,
@@ -40,13 +39,14 @@ from daft.series import Series
 from daft.sql.sql_connection import SQLConnection
 
 from .micropartition import MicroPartition
-from .partitioning import PartitionedTable, partition_strings_to_path, partition_values_to_string
+from .partitioning import PartitionedTable, partition_strings_to_path
 
 FileInput = Union[pathlib.Path, str, IO[bytes]]
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Generator
 
+    from deltalake.writer import AddAction
     from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
@@ -404,9 +404,10 @@ def partitioned_table_to_hive_iter(partitioned: PartitionedTable, root_path: str
     partition_values = partitioned.partition_values()
 
     if partition_values:
-        partition_strings = partition_values_to_string(partition_values).to_pylist()
+        partition_strings = partitioned.partition_values_str()
+        assert partition_strings is not None
 
-        for part_table, part_strs in zip(partitioned.partitions(), partition_strings):
+        for part_table, part_strs in zip(partitioned.partitions(), partition_strings.to_pylist()):
             part_path = partition_strings_to_path(root_path, part_strs)
             arrow_table = part_table.to_arrow()
 
@@ -595,67 +596,114 @@ def write_iceberg(
     return visitors.to_metadata()
 
 
+def partitioned_table_to_deltalake_iter(
+    partitioned: PartitionedTable, large_dtypes: bool
+) -> Iterator[tuple[pa.Table, str, dict[str, str | None]]]:
+    """
+    Iterates over partitions, yielding each partition as an Arrow table, along with their respective paths and partition values.
+    """
+    from deltalake.schema import _convert_pa_schema_to_delta
+
+    from daft.io._deltalake import large_dtypes_kwargs
+
+    partition_values = partitioned.partition_values()
+
+    if partition_values:
+        partition_keys = partition_values.column_names()
+        partition_strings = partitioned.partition_values_str()
+        assert partition_strings is not None
+
+        for part_table, part_strs in zip(partitioned.partitions(), partition_strings.to_pylist()):
+            part_path = partition_strings_to_path("", part_strs)
+            arrow_table = part_table.to_arrow()
+
+            # Remove partition keys from the table since they are already encoded as keys
+            arrow_table_no_pkeys = arrow_table.drop_columns(partition_keys)
+
+            converted_schema = _convert_pa_schema_to_delta(
+                arrow_table_no_pkeys.schema, **large_dtypes_kwargs(large_dtypes)
+            )
+            converted_arrow_table = arrow_table_no_pkeys.cast(converted_schema)
+
+            yield converted_arrow_table, part_path, part_strs
+    else:
+        arrow_table = partitioned.table.to_arrow()
+        arrow_batch = _convert_pa_schema_to_delta(arrow_table.schema, **large_dtypes_kwargs(large_dtypes))
+        converted_arrow_table = arrow_table.cast(arrow_batch)
+
+        yield converted_arrow_table, "/", {}
+
+
+class DeltaLakeWriteVisitors:
+    class FileVisitor:
+        def __init__(self, parent: DeltaLakeWriteVisitors, partition_values: dict[str, str | None]):
+            self.parent = parent
+            self.partition_values = partition_values
+
+        def __call__(self, written_file):
+            import json
+            from datetime import datetime
+
+            import deltalake
+            from deltalake.writer import AddAction, DeltaJSONEncoder, get_file_stats_from_metadata
+            from packaging.version import parse
+
+            from daft.utils import get_arrow_version
+
+            # added to get_file_stats_from_metadata in deltalake v0.17.4: non-optional "num_indexed_cols" and "columns_to_collect_stats" arguments
+            # https://github.com/delta-io/delta-rs/blob/353e08be0202c45334dcdceee65a8679f35de710/python/deltalake/writer.py#L725
+            if parse(deltalake.__version__) < parse("0.17.4"):
+                file_stats_args = {}
+            else:
+                file_stats_args = {"num_indexed_cols": -1, "columns_to_collect_stats": None}
+
+            stats = get_file_stats_from_metadata(written_file.metadata, **file_stats_args)
+
+            # PyArrow added support for written_file.size in 9.0.0
+            if get_arrow_version() >= (9, 0, 0):
+                size = written_file.size
+            elif self.parent.fs is not None:
+                size = self.parent.fs.get_file_info([written_file.path])[0].size
+            else:
+                size = 0
+
+            self.parent.add_actions.append(
+                AddAction(
+                    written_file.path,
+                    size,
+                    self.partition_values,
+                    int(datetime.now().timestamp() * 1000),
+                    True,
+                    json.dumps(stats, cls=DeltaJSONEncoder),
+                )
+            )
+
+    def __init__(self, fs: pa.fs.FileSystem):
+        self.add_actions: list[AddAction] = []
+        self.fs = fs
+
+    def visitor(self, partition_values: dict[str, str | None]) -> DeltaLakeWriteVisitors.FileVisitor:
+        return self.FileVisitor(self, partition_values)
+
+    def to_metadata(self) -> MicroPartition:
+        return MicroPartition.from_pydict({"add_action": self.add_actions})
+
+
 def write_deltalake(
-    mp: MicroPartition,
+    table: MicroPartition,
     large_dtypes: bool,
     base_path: str,
     version: int,
+    partition_cols: list[str] | None = None,
     io_config: IOConfig | None = None,
 ):
-    import json
-    from datetime import datetime
-
-    import deltalake
-    from deltalake.schema import convert_pyarrow_table
-    from deltalake.writer import (
-        AddAction,
-        DeltaJSONEncoder,
-        DeltaStorageHandler,
-        get_partitions_from_path,
-    )
-    from packaging.version import parse
+    from deltalake.writer import DeltaStorageHandler
     from pyarrow.fs import PyFileSystem
 
-    from daft.io._deltalake import large_dtypes_kwargs
     from daft.io.object_store_options import io_config_to_storage_options
-    from daft.utils import get_arrow_version
 
     protocol = get_protocol_from_path(base_path)
     canonicalized_protocol = canonicalize_protocol(protocol)
-
-    data_files: list[AddAction] = []
-
-    # added to get_file_stats_from_metadata in deltalake v0.17.4: non-optional "num_indexed_cols" and "columns_to_collect_stats" arguments
-    # https://github.com/delta-io/delta-rs/blob/353e08be0202c45334dcdceee65a8679f35de710/python/deltalake/writer.py#L725
-    if parse(deltalake.__version__) < parse("0.17.4"):
-        get_file_stats_from_metadata = deltalake.writer.get_file_stats_from_metadata
-    else:
-        get_file_stats_from_metadata = partial(
-            deltalake.writer.get_file_stats_from_metadata, num_indexed_cols=-1, columns_to_collect_stats=None
-        )
-
-    def file_visitor(written_file: Any) -> None:
-        path, partition_values = get_partitions_from_path(written_file.path)
-        stats = get_file_stats_from_metadata(written_file.metadata)
-
-        # PyArrow added support for written_file.size in 9.0.0
-        if get_arrow_version() >= (9, 0, 0):
-            size = written_file.size
-        elif fs is not None:
-            size = fs.get_file_info([path])[0].size
-        else:
-            size = 0
-
-        data_files.append(
-            AddAction(
-                path,
-                size,
-                partition_values,
-                int(datetime.now().timestamp() * 1000),
-                True,
-                json.dumps(stats, cls=DeltaJSONEncoder),
-            )
-        )
 
     is_local_fs = canonicalized_protocol == "file"
 
@@ -663,44 +711,45 @@ def write_deltalake(
     storage_options = io_config_to_storage_options(io_config, base_path)
     fs = PyFileSystem(DeltaStorageHandler(base_path, storage_options))
 
-    arrow_table = mp.to_arrow()
-    arrow_batch = convert_pyarrow_table(arrow_table, **large_dtypes_kwargs(large_dtypes))
-
     execution_config = get_context().daft_execution_config
 
     target_row_group_size = execution_config.parquet_target_row_group_size
     inflation_factor = execution_config.parquet_inflation_factor
     target_file_size = execution_config.parquet_target_filesize
 
-    size_bytes = arrow_table.nbytes
-
-    target_num_files = max(math.ceil(size_bytes / target_file_size / inflation_factor), 1)
-    num_rows = len(arrow_table)
-
-    rows_per_file = max(math.ceil(num_rows / target_num_files), 1)
-
-    target_row_groups = max(math.ceil(size_bytes / target_row_group_size / inflation_factor), 1)
-    rows_per_row_group = max(min(math.ceil(num_rows / target_row_groups), rows_per_file), 1)
-
     format = pads.ParquetFileFormat()
-
     opts = format.make_write_options(use_compliant_nested_type=False)
 
-    _write_tabular_arrow_table(
-        arrow_table=arrow_batch,
-        schema=None,
-        full_path="/",
-        format=format,
-        opts=opts,
-        fs=fs,
-        rows_per_file=rows_per_file,
-        rows_per_row_group=rows_per_row_group,
-        create_dir=is_local_fs,
-        file_visitor=file_visitor,
-        version=version,
-    )
+    partition_keys = ExpressionsProjection([col(c) for c in partition_cols]) if partition_cols is not None else None
+    partitioned = PartitionedTable(table, partition_keys)
+    visitors = DeltaLakeWriteVisitors(fs)
 
-    return MicroPartition.from_pydict({"data_file": Series.from_pylist(data_files, name="data_file", pyobj="force")})
+    for part_table, part_path, part_values in partitioned_table_to_deltalake_iter(partitioned, large_dtypes):
+        size_bytes = part_table.nbytes
+
+        target_num_files = max(math.ceil(size_bytes / target_file_size / inflation_factor), 1)
+        num_rows = len(part_table)
+
+        rows_per_file = max(math.ceil(num_rows / target_num_files), 1)
+
+        target_row_groups = max(math.ceil(size_bytes / target_row_group_size / inflation_factor), 1)
+        rows_per_row_group = max(min(math.ceil(num_rows / target_row_groups), rows_per_file), 1)
+
+        _write_tabular_arrow_table(
+            arrow_table=part_table,
+            schema=None,
+            full_path=part_path,
+            format=format,
+            opts=opts,
+            fs=fs,
+            rows_per_file=rows_per_file,
+            rows_per_row_group=rows_per_row_group,
+            create_dir=is_local_fs,
+            file_visitor=visitors.visitor(part_values),
+            version=version,
+        )
+
+    return visitors.to_metadata()
 
 
 def write_lance(mp: MicroPartition, base_path: str, mode: str, io_config: IOConfig | None, kwargs: dict | None):

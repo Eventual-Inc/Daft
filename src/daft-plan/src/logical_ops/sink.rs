@@ -21,6 +21,7 @@ impl Sink {
     pub(crate) fn try_new(input: Arc<LogicalPlan>, sink_info: Arc<SinkInfo>) -> DaftResult<Self> {
         let schema = input.schema();
 
+        // replace partition columns with resolved columns
         let sink_info = match sink_info.as_ref() {
             SinkInfo::OutputFileInfo(OutputFileInfo {
                 root_dir,
@@ -67,7 +68,7 @@ impl Sink {
                             Field::new("data_file", DataType::Python),
                         ]
                     }
-                    CatalogType::DeltaLake(_) => vec![Field::new("data_file", DataType::Python)],
+                    CatalogType::DeltaLake(_) => vec![Field::new("add_action", DataType::Python)],
                     CatalogType::Lance(_) => vec![Field::new("fragments", DataType::Python)],
                 }
             }

@@ -30,14 +30,14 @@ impl MicroPartition {
                         scan_task.pushdowns.clone(),
                     ))
                 };
-                Ok(MicroPartition::new_unloaded(
+                Ok(Self::new_unloaded(
                     maybe_new_scan_task,
                     self.metadata.clone(),
                     pruned_statistics.expect("Unloaded MicroPartition should have statistics"),
                 ))
             }
             // If Tables are already loaded, we map `Table::cast_to_schema` on each Table
-            TableState::Loaded(tables) => Ok(MicroPartition::new_loaded(
+            TableState::Loaded(tables) => Ok(Self::new_loaded(
                 schema.clone(),
                 Arc::new(
                     tables

@@ -27,42 +27,42 @@ pub enum PlannerError {
 
 impl From<DaftError> for PlannerError {
     fn from(value: DaftError) -> Self {
-        PlannerError::DaftError { source: value }
+        Self::DaftError { source: value }
     }
 }
 
 impl From<TokenizerError> for PlannerError {
     fn from(value: TokenizerError) -> Self {
-        PlannerError::TokenizeError { source: value }
+        Self::TokenizeError { source: value }
     }
 }
 
 impl From<ParserError> for PlannerError {
     fn from(value: ParserError) -> Self {
-        PlannerError::SQLParserError { source: value }
+        Self::SQLParserError { source: value }
     }
 }
 
 impl PlannerError {
     pub fn column_not_found<A: Into<String>, B: Into<String>>(column_name: A, relation: B) -> Self {
-        PlannerError::ColumnNotFound {
+        Self::ColumnNotFound {
             column_name: column_name.into(),
             relation: relation.into(),
         }
     }
 
     pub fn table_not_found<S: Into<String>>(table_name: S) -> Self {
-        PlannerError::TableNotFound {
+        Self::TableNotFound {
             message: table_name.into(),
         }
     }
 
     pub fn unsupported_sql(sql: String) -> Self {
-        PlannerError::UnsupportedSQL { message: sql }
+        Self::UnsupportedSQL { message: sql }
     }
 
     pub fn invalid_operation<S: Into<String>>(message: S) -> Self {
-        PlannerError::InvalidOperation {
+        Self::InvalidOperation {
             message: message.into(),
         }
     }
@@ -112,7 +112,7 @@ impl From<PlannerError> for DaftError {
         if let PlannerError::DaftError { source } = value {
             source
         } else {
-            DaftError::External(Box::new(value))
+            Self::External(Box::new(value))
         }
     }
 }

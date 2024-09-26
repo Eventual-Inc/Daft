@@ -430,7 +430,6 @@ def udf(
     num_gpus: float | None = None,
     memory_bytes: int | None = None,
     batch_size: int | None = None,
-    _concurrency: int | None = None,
 ) -> Callable[[UserProvidedPythonFunction | type], StatelessUDF | StatefulUDF]:
     """Decorator to convert a Python function into a UDF
 

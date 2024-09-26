@@ -57,7 +57,7 @@ macro_rules! impl_compare_method {
     };
 }
 
-impl DaftCompare<&Series> for Series {
+impl DaftCompare<&Self> for Series {
     type Output = DaftResult<BooleanArray>;
     impl_compare_method!(equal, eq);
     impl_compare_method!(not_equal, ne);

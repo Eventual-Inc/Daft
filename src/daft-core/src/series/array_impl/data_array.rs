@@ -18,7 +18,7 @@ use crate::{
 
 impl<T: DaftArrowBackedType> IntoSeries for DataArray<T>
 where
-    ArrayWrapper<DataArray<T>>: SeriesLike,
+    ArrayWrapper<Self>: SeriesLike,
 {
     fn into_series(self) -> Series {
         Series {

@@ -77,6 +77,11 @@ impl_logical_growable!(LogicalTimeGrowable, TimeType);
 impl_logical_growable!(LogicalEmbeddingGrowable, EmbeddingType);
 impl_logical_growable!(LogicalFixedShapeImageGrowable, FixedShapeImageType);
 impl_logical_growable!(LogicalFixedShapeTensorGrowable, FixedShapeTensorType);
+impl_logical_growable!(LogicalSparseTensorGrowable, SparseTensorType);
+impl_logical_growable!(
+    LogicalFixedShapeSparseTensorGrowable,
+    FixedShapeSparseTensorType
+);
 impl_logical_growable!(LogicalImageGrowable, ImageType);
 impl_logical_growable!(LogicalDecimal128Growable, Decimal128Type);
 impl_logical_growable!(LogicalTensorGrowable, TensorType);

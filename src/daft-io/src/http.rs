@@ -147,17 +147,17 @@ impl From<Error> for super::Error {
         use Error::*;
         match error {
             UnableToOpenFile { path, source } => match source.status().map(|v| v.as_u16()) {
-                Some(404) | Some(410) => super::Error::NotFound {
+                Some(404) | Some(410) => Self::NotFound {
                     path,
                     source: source.into(),
                 },
-                None | Some(_) => super::Error::UnableToOpenFile {
+                None | Some(_) => Self::UnableToOpenFile {
                     path,
                     source: source.into(),
                 },
             },
-            UnableToDetermineSize { path } => super::Error::UnableToDetermineSize { path },
-            _ => super::Error::Generic {
+            UnableToDetermineSize { path } => Self::UnableToDetermineSize { path },
+            _ => Self::Generic {
                 store: super::SourceType::Http,
                 source: error.into(),
             },
@@ -174,7 +174,7 @@ impl HttpSource {
                 .context(UnableToCreateHeaderSnafu)?,
         );
 
-        Ok(HttpSource {
+        Ok(Self {
             client: reqwest::ClientBuilder::default()
                 .pool_max_idle_per_host(70)
                 .default_headers(default_headers)

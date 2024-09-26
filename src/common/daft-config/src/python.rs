@@ -17,27 +17,24 @@ pub struct PyDaftPlanningConfig {
 impl PyDaftPlanningConfig {
     #[new]
     pub fn new() -> Self {
-        PyDaftPlanningConfig::default()
+        Self::default()
     }
 
     #[staticmethod]
     pub fn from_env() -> Self {
-        PyDaftPlanningConfig {
+        Self {
             config: Arc::new(DaftPlanningConfig::from_env()),
         }
     }
 
-    fn with_config_values(
-        &mut self,
-        default_io_config: Option<PyIOConfig>,
-    ) -> PyResult<PyDaftPlanningConfig> {
+    fn with_config_values(&mut self, default_io_config: Option<PyIOConfig>) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
         if let Some(default_io_config) = default_io_config {
             config.default_io_config = default_io_config.config;
         }
 
-        Ok(PyDaftPlanningConfig {
+        Ok(Self {
             config: Arc::new(config),
         })
     }
@@ -67,12 +64,12 @@ pub struct PyDaftExecutionConfig {
 impl PyDaftExecutionConfig {
     #[new]
     pub fn new() -> Self {
-        PyDaftExecutionConfig::default()
+        Self::default()
     }
 
     #[staticmethod]
     pub fn from_env() -> Self {
-        PyDaftExecutionConfig {
+        Self {
             config: Arc::new(DaftExecutionConfig::from_env()),
         }
     }
@@ -94,12 +91,11 @@ impl PyDaftExecutionConfig {
         csv_target_filesize: Option<usize>,
         csv_inflation_factor: Option<f64>,
         shuffle_aggregation_default_partitions: Option<usize>,
-        shuffle_join_default_partitions: Option<usize>,
         read_sql_partition_size_bytes: Option<usize>,
         enable_aqe: Option<bool>,
         enable_native_executor: Option<bool>,
         default_morsel_size: Option<usize>,
-    ) -> PyResult<PyDaftExecutionConfig> {
+    ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
         if let Some(scan_tasks_max_size_bytes) = scan_tasks_max_size_bytes {
@@ -144,16 +140,10 @@ impl PyDaftExecutionConfig {
         if let Some(csv_inflation_factor) = csv_inflation_factor {
             config.csv_inflation_factor = csv_inflation_factor;
         }
-
         if let Some(shuffle_aggregation_default_partitions) = shuffle_aggregation_default_partitions
         {
             config.shuffle_aggregation_default_partitions = shuffle_aggregation_default_partitions;
         }
-
-        if let Some(shuffle_join_default_partitions) = shuffle_join_default_partitions {
-            config.shuffle_join_default_partitions = shuffle_join_default_partitions;
-        }
-
         if let Some(read_sql_partition_size_bytes) = read_sql_partition_size_bytes {
             config.read_sql_partition_size_bytes = read_sql_partition_size_bytes;
         }
@@ -168,7 +158,7 @@ impl PyDaftExecutionConfig {
             config.default_morsel_size = default_morsel_size;
         }
 
-        Ok(PyDaftExecutionConfig {
+        Ok(Self {
             config: Arc::new(config),
         })
     }
@@ -236,11 +226,6 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn get_shuffle_aggregation_default_partitions(&self) -> PyResult<usize> {
         Ok(self.config.shuffle_aggregation_default_partitions)
-    }
-
-    #[getter]
-    fn get_shuffle_join_default_partitions(&self) -> PyResult<usize> {
-        Ok(self.config.shuffle_join_default_partitions)
     }
 
     #[getter]

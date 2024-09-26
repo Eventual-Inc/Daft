@@ -12,7 +12,8 @@ use crate::{
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            FixedShapeTensorArray, ImageArray, MapArray, TensorArray, TimeArray, TimestampArray,
+            FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
+            SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
         BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, ExtensionArray,
         FixedSizeBinaryArray, Float32Array, Float64Array, NullArray, Utf8Array,
@@ -147,7 +148,7 @@ where
             None,
         );
 
-        Ok(DataArray::<T>::from((self.name(), Box::new(result))))
+        Ok(Self::from((self.name(), Box::new(result))))
     }
 }
 
@@ -239,7 +240,7 @@ impl Float32Array {
             None,
         );
 
-        Ok(Float32Array::from((self.name(), Box::new(result))))
+        Ok(Self::from((self.name(), Box::new(result))))
     }
 }
 
@@ -331,7 +332,7 @@ impl Float64Array {
             None,
         );
 
-        Ok(Float64Array::from((self.name(), Box::new(result))))
+        Ok(Self::from((self.name(), Box::new(result))))
     }
 }
 
@@ -461,7 +462,7 @@ impl BooleanArray {
 
         let result = arrow2::compute::sort::sort(self.data(), &options, None)?;
 
-        BooleanArray::try_from((self.field.clone(), result))
+        Self::try_from((self.field.clone(), result))
     }
 }
 
@@ -675,6 +676,18 @@ impl FixedShapeImageArray {
 impl TensorArray {
     pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
         todo!("impl sort for TensorArray")
+    }
+}
+
+impl SparseTensorArray {
+    pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
+        todo!("impl sort for SparseTensorArray")
+    }
+}
+
+impl FixedShapeSparseTensorArray {
+    pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
+        todo!("impl sort for FixedShapeSparseTensorArray")
     }
 }
 
