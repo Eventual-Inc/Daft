@@ -221,6 +221,10 @@ jobs:
       matrix:
         python-version: ['3.8']
         daft-runner: [py, ray]
+        enable-native-executor: [0, 1]
+        exclude:
+        - daft-runner: ray
+          enable-native-executor: 1
     steps:
     - uses: actions/checkout@v4
       with:
@@ -296,6 +300,10 @@ jobs:
       matrix:
         python-version: ['3.8'] # can't use 3.7 due to requiring anon mode for adlfs
         daft-runner: [py, ray]
+        enable-native-executor: [0, 1]
+        exclude:
+        - daft-runner: ray
+          enable-native-executor: 1
     steps:
     - uses: actions/checkout@v4
       with:
@@ -374,6 +382,10 @@ jobs:
       matrix:
         python-version: ['3.8'] # can't use 3.7 due to requiring anon mode for adlfs
         daft-runner: [py, ray]
+        enable-native-executor: [0, 1]
+        exclude:
+        - daft-runner: ray
+          enable-native-executor: 1
     # These permissions are needed to interact with GitHub's OIDC Token endpoint.
     # This is used in the step "Assume GitHub Actions AWS Credentials"
     permissions:
@@ -468,6 +480,10 @@ jobs:
       matrix:
         python-version: ['3.8'] # can't use 3.7 due to requiring anon mode for adlfs
         daft-runner: [py, ray]
+        enable-native-executor: [0, 1]
+        exclude:
+        - daft-runner: ray
+          enable-native-executor: 1
     steps:
     - uses: actions/checkout@v4
       with:
