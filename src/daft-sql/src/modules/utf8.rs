@@ -38,6 +38,7 @@ impl SQLModule for SQLModuleUtf8 {
         // TODO add replace variants
         // parent.add("replace", f(Replace(false)));
         parent.add_fn("length", Length);
+        parent.add_fn("length_bytes", LengthBytes);
         parent.add_fn("lower", Lower);
         parent.add_fn("upper", Upper);
         parent.add_fn("lstrip", Lstrip);
