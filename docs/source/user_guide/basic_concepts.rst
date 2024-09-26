@@ -42,6 +42,8 @@ Structured Query Language (SQL)
 SQL is a common query language for expressing queries over tables of data. Daft exposes a SQL API as an alternative (but often also complementary API) to the Python :class:`DataFrame <daft.DataFrame>` and
 :class:`Expression <daft.expressions.Expression>` APIs for building queries.
 
+You can use SQL in Daft via the :func:`daft.sql` function, and Daft will also convert many SQL-compatible strings into Expressions via :func:`daft.sql_expr` for easy interoperability with DataFrames.
+
 DataFrame
 ---------
 
@@ -90,18 +92,20 @@ Examine your Dataframe by printing it:
 .. code-block:: text
     :caption: Output
 
-    +---------+-----------+-----------+-----------+
-    |       A |         B | C         | D         |
-    |   Int64 |   Float64 | Boolean   | Null      |
-    +=========+===========+===========+===========+
-    |       1 |       1.5 | true      | None      |
-    +---------+-----------+-----------+-----------+
-    |       2 |       2.5 | true      | None      |
-    +---------+-----------+-----------+-----------+
-    |       3 |       3.5 | false     | None      |
-    +---------+-----------+-----------+-----------+
-    |       4 |       4.5 | false     | None      |
-    +---------+-----------+-----------+-----------+
+    ╭───────┬─────────┬─────────┬──────╮
+    │ A     ┆ B       ┆ C       ┆ D    │
+    │ ---   ┆ ---     ┆ ---     ┆ ---  │
+    │ Int64 ┆ Float64 ┆ Boolean ┆ Null │
+    ╞═══════╪═════════╪═════════╪══════╡
+    │ 1     ┆ 1.5     ┆ true    ┆ None │
+    ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+    │ 2     ┆ 2.5     ┆ true    ┆ None │
+    ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+    │ 3     ┆ 3.5     ┆ false   ┆ None │
+    ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+    │ 4     ┆ 4.5     ┆ false   ┆ None │
+    ╰───────┴─────────┴─────────┴──────╯
+
     (Showing first 4 of 4 rows)
 
 
@@ -126,11 +130,12 @@ Congratulations - you just created your first DataFrame! It has 4 columns, "A", 
 .. code-block:: text
     :caption: Output
 
-    +---------+-----------+-----------+
-    | A       | B         | C         |
-    | Int64   | Float64   | Boolean   |
-    +=========+===========+===========+
-    +---------+-----------+-----------+
+    ╭───────┬─────────┬─────────╮
+    │ A     ┆ B       ┆ C       │
+    │ ---   ┆ ---     ┆ ---     │
+    │ Int64 ┆ Float64 ┆ Boolean │
+    ╰───────┴─────────┴─────────╯
+
     (No data to display: Dataframe not materialized)
 
 
@@ -149,7 +154,38 @@ In this case, Daft is just deferring the work required to read the data and sele
 
     Passing the ``show_all=True`` argument will show you the plan after Daft applies its query optimizations and the physical (lower-level) plan.
 
-We can tell Daft to execute our DataFrame and cache the results using :meth:`df.collect() <daft.DataFrame.collect>`:
+    .. code-block:: text
+        :caption: Plan Output
+
+        == Unoptimized Logical Plan ==
+
+        * Project: col(A), col(B), col(C)
+        |
+        * Source:
+        |   Number of partitions = 1
+        |   Output schema = A#Int64, B#Float64, C#Boolean, D#Null
+
+
+        == Optimized Logical Plan ==
+
+        * Project: col(A), col(B), col(C)
+        |
+        * Source:
+        |   Number of partitions = 1
+        |   Output schema = A#Int64, B#Float64, C#Boolean, D#Null
+
+
+        == Physical Plan ==
+
+        * Project: col(A), col(B), col(C)
+        |   Clustering spec = { Num partitions = 1 }
+        |
+        * InMemoryScan:
+        |   Schema = A#Int64, B#Float64, C#Boolean, D#Null,
+        |   Size bytes = 65,
+        |   Clustering spec = { Num partitions = 1 }
+
+We can tell Daft to execute our DataFrame and store the results in-memory using :meth:`df.collect() <daft.DataFrame.collect>`:
 
 .. tabs::
 
@@ -244,6 +280,22 @@ We suggest materializing DataFrames using :meth:`df.collect() <daft.DataFrame.co
 
     (Showing first 1 of 1 rows)
 
+    ╭───────┬─────────┬─────────┬──────────╮
+    │ A     ┆ B       ┆ C       ┆ try_this │
+    │ ---   ┆ ---     ┆ ---     ┆ ---      │
+    │ Int64 ┆ Float64 ┆ Boolean ┆ Int64    │
+    ╞═══════╪═════════╪═════════╪══════════╡
+    │ 1     ┆ 1.5     ┆ true    ┆ 2        │
+    ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+    │ 2     ┆ 2.5     ┆ true    ┆ 3        │
+    ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+    │ 3     ┆ 3.5     ┆ false   ┆ 4        │
+    ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+    │ 4     ┆ 4.5     ┆ false   ┆ 5        │
+    ╰───────┴─────────┴─────────┴──────────╯
+
+    (Showing first 4 of 4 rows)
+
 
 In many other cases however, there are better options than materializing your entire DataFrame with :meth:`df.collect() <daft.DataFrame.collect>`:
 
@@ -263,8 +315,8 @@ Daft can display your DataFrame's schema without materializing it. Under the hoo
     Under the hood, Daft represents data in the `Apache Arrow <https://arrow.apache.org/>`_ format, which allows it to efficiently represent and work on data using high-performance kernels which are written in Rust.
 
 
-Running Computations
-^^^^^^^^^^^^^^^^^^^^
+Running Computation with Expressions
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 To run computations on data in our DataFrame, we use Expressions.
 
@@ -282,24 +334,26 @@ The following statement will :meth:`df.show() <daft.DataFrame.show>` a DataFrame
 
         .. code:: python
 
-            daft.sql("SELECT A + 1 FROM df")
+            daft.sql("SELECT A + 1 FROM df").show()
 
 .. code-block:: text
     :caption: Output
 
-    +---------+
-    |       A |
-    |   Int64 |
-    +=========+
-    |       2 |
-    +---------+
-    |       3 |
-    +---------+
-    |       4 |
-    +---------+
-    |       5 |
-    +---------+
-    (Showing first 4 rows)
+    ╭───────╮
+    │ A     │
+    │ ---   │
+    │ Int64 │
+    ╞═══════╡
+    │ 2     │
+    ├╌╌╌╌╌╌╌┤
+    │ 3     │
+    ├╌╌╌╌╌╌╌┤
+    │ 4     │
+    ├╌╌╌╌╌╌╌┤
+    │ 5     │
+    ╰───────╯
+
+    (Showing first 4 of 4 rows)
 
 .. NOTE::
 
@@ -314,6 +368,7 @@ The following statement will :meth:`df.show() <daft.DataFrame.show>` a DataFrame
                 # Creates a new column named "foo" which takes on values
                 # of column "A" incremented by 1
                 df = df.with_column("foo", df["A"] + 1)
+                df.show()
 
         .. group-tab:: ⚙️ SQL
 
@@ -322,6 +377,26 @@ The following statement will :meth:`df.show() <daft.DataFrame.show>` a DataFrame
                 # Creates a new column named "foo" which takes on values
                 # of column "A" incremented by 1
                 df = daft.sql("SELECT *, A + 1 AS foo FROM df")
+                df.show()
+
+.. code-block:: text
+    :caption: Output
+
+    ╭───────┬─────────┬─────────┬───────╮
+    │ A     ┆ B       ┆ C       ┆ foo   │
+    │ ---   ┆ ---     ┆ ---     ┆ ---   │
+    │ Int64 ┆ Float64 ┆ Boolean ┆ Int64 │
+    ╞═══════╪═════════╪═════════╪═══════╡
+    │ 1     ┆ 1.5     ┆ true    ┆ 2     │
+    ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+    │ 2     ┆ 2.5     ┆ true    ┆ 3     │
+    ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+    │ 3     ┆ 3.5     ┆ false   ┆ 4     │
+    ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+    │ 4     ┆ 4.5     ┆ false   ┆ 5     │
+    ╰───────┴─────────┴─────────┴───────╯
+
+    (Showing first 4 of 4 rows)
 
 Congratulations, you have just written your first **Expression**: ``df["A"] + 1``!
 

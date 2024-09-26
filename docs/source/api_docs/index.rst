@@ -8,6 +8,7 @@ API Documentation
    creation
    dataframe
    expressions
+   sql
    schema
    datatype
    groupby
