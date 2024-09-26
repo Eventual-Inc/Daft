@@ -4,6 +4,8 @@ import warnings
 from typing import TYPE_CHECKING, Any, Iterator, List, Tuple
 
 from daft import Expression, col
+from daft.datatype import DataType
+from daft.io.common import _get_schema_from_dict
 from daft.table import MicroPartition
 from daft.table.partitioning import PartitionedTable, partition_strings_to_path
 
@@ -136,6 +138,8 @@ def to_partition_representation(value: Any):
 
 
 class IcebergWriteVisitors:
+    OUTPUT_FILE_NAME = "data_file"
+
     class FileVisitor:
         def __init__(self, parent: "IcebergWriteVisitors", partition_record: "IcebergRecord"):
             self.parent = parent
@@ -211,7 +215,10 @@ class IcebergWriteVisitors:
         return self.FileVisitor(self, partition_record)
 
     def to_metadata(self) -> MicroPartition:
-        return MicroPartition.from_pydict({"data_file": self.data_files})
+        col_name = "data_file"
+        if len(self.data_files) == 0:
+            return MicroPartition.empty(_get_schema_from_dict({col_name: DataType.python()}))
+        return MicroPartition.from_pydict({col_name: self.data_files})
 
 
 def partitioned_table_to_iceberg_iter(
