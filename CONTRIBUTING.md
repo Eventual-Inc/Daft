@@ -57,9 +57,10 @@ The debugging feature uses a special VSCode launch configuration to start the Py
 - **CodeLLDB Extension for Visual Studio Code**:  
 This extension is useful for debugging Rust code invoked from Python.
 
-- **Setting Up the Virtual Environment Interpreter** (Ctrl+Shift+P -> Python: Select Interpreter -> .venv)
+- **Setting Up the Virtual Environment Interpreter**  
+(Ctrl+Shift+P -> Python: Select Interpreter -> .venv)
 
-- **Debug Settings in launch.json**
+- **Debug Settings in launch.json**  
 This file is usually found in the `.vscode` folder of your project root. See the [official VSCode documentation](https://code.visualstudio.com/docs/editor/debugging#_launch-configurations) for more information about the launch.json file.
     <details><summary><code><b>launch.json</b></code></summary>
 
