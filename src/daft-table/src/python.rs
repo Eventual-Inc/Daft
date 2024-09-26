@@ -452,7 +452,7 @@ impl PyTable {
         Ok(Table::empty(match schema {
             Some(s) => Some(s.schema),
             None => None,
-        })?
+        })
         .into())
     }
 }

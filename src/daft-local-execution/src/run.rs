@@ -14,11 +14,13 @@ use common_error::DaftResult;
 use common_tracing::refresh_chrome_trace;
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{translate, LocalPhysicalPlan};
+use daft_table::Table;
 #[cfg(feature = "python")]
 use {
     common_daft_config::PyDaftExecutionConfig,
     daft_micropartition::python::PyMicroPartition,
     daft_plan::PyLogicalPlanBuilder,
+    daft_table::python::PyTable,
     pyo3::{pyclass, pymethods, IntoPy, PyObject, PyRef, PyRefMut, PyResult, Python},
 };
 
@@ -71,11 +73,11 @@ impl NativeExecutor {
     pub fn run(
         &self,
         py: Python,
-        psets: HashMap<String, Vec<PyMicroPartition>>,
+        psets: HashMap<String, Vec<PyTable>>,
         cfg: PyDaftExecutionConfig,
         results_buffer_size: Option<usize>,
     ) -> PyResult<PyObject> {
-        let native_psets: HashMap<String, Vec<Arc<MicroPartition>>> = psets
+        let native_psets: HashMap<String, Vec<Table>> = psets
             .into_iter()
             .map(|(part_id, parts)| {
                 (
@@ -83,7 +85,7 @@ impl NativeExecutor {
                     parts
                         .into_iter()
                         .map(|part| part.into())
-                        .collect::<Vec<Arc<MicroPartition>>>(),
+                        .collect::<Vec<Table>>(),
                 )
             })
             .collect();
@@ -116,7 +118,7 @@ fn should_enable_explain_analyze() -> bool {
 
 pub fn run_local(
     physical_plan: &LocalPhysicalPlan,
-    psets: HashMap<String, Vec<Arc<MicroPartition>>>,
+    psets: HashMap<String, Vec<Table>>,
     cfg: Arc<DaftExecutionConfig>,
     results_buffer_size: Option<usize>,
 ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<Arc<MicroPartition>>> + Send>> {
@@ -168,7 +170,7 @@ pub fn run_local(
     });
 
     struct ReceiverIterator {
-        receiver: Receiver<Arc<MicroPartition>>,
+        receiver: Receiver<Table>,
         handle: Option<std::thread::JoinHandle<DaftResult<()>>>,
     }
 
@@ -177,7 +179,11 @@ pub fn run_local(
 
         fn next(&mut self) -> Option<Self::Item> {
             match self.receiver.blocking_recv() {
-                Some(part) => Some(Ok(part)),
+                Some(part) => Some(Ok(Arc::new(MicroPartition::new_loaded(
+                    part.schema.clone(),
+                    vec![part].into(),
+                    None,
+                )))),
                 None => {
                     if self.handle.is_some() {
                         let join_result = self

@@ -323,7 +323,7 @@ pub mod pylib {
             let pspec = PartitionSpec {
                 keys: partition_values
                     .map(|p| p.table)
-                    .unwrap_or_else(|| Table::empty(None).unwrap()),
+                    .unwrap_or_else(|| Table::empty(None)),
             };
             let statistics = stats
                 .map(|s| TableStatistics::from_stats_table(&s.table))

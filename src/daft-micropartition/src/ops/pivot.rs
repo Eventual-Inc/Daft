@@ -19,7 +19,7 @@ impl MicroPartition {
 
         match tables.as_slice() {
             [] => {
-                let empty_table = Table::empty(Some(self.schema.clone()))?;
+                let empty_table = Table::empty(Some(self.schema.clone()));
                 let pivoted = empty_table.pivot(group_by, pivot_col, values_col, names)?;
                 Ok(Self::empty(Some(pivoted.schema.clone())))
             }

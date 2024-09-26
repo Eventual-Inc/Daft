@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_display::{tree::TreeDisplay, utils::bytes_to_human_readable};
 use daft_io::{IOStatsContext, IOStatsRef};
-use daft_micropartition::MicroPartition;
+use daft_table::Table;
 use futures::{stream::BoxStream, StreamExt};
 
 use crate::{
@@ -10,7 +10,7 @@ use crate::{
     ExecutionRuntimeHandle,
 };
 
-pub type SourceStream<'a> = BoxStream<'a, Arc<MicroPartition>>;
+pub type SourceStream<'a> = BoxStream<'a, Table>;
 
 pub(crate) trait Source: Send + Sync {
     fn name(&self) -> &'static str;

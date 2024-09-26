@@ -100,7 +100,7 @@ impl Table {
 
         // Take fast path short circuit if there is only 1 group
         let (groupkeys_table, grouped_col) = if groupvals_indices.is_empty() {
-            let empty_groupkeys_table = Self::empty(Some(groupby_table.schema.clone()))?;
+            let empty_groupkeys_table = Self::empty(Some(groupby_table.schema.clone()));
             let empty_udf_output_col = Series::empty(
                 evaluated_inputs
                     .first()

@@ -19,7 +19,7 @@ impl MicroPartition {
         match tables.as_slice() {
             // Fallback onto `[empty_table]` behavior
             [] => {
-                let empty_table = Table::empty(Some(self.schema.clone()))?;
+                let empty_table = Table::empty(Some(self.schema.clone()));
                 let taken = empty_table.take(idx)?;
                 Ok(Self::new_loaded(
                     self.schema.clone(),

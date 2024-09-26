@@ -67,7 +67,7 @@ impl<'a> GrowableTable<'a> {
     /// Builds an array from the [`Growable`]
     pub fn build(&mut self) -> DaftResult<Table> {
         if self.growables.is_empty() {
-            Table::empty(None)
+            Ok(Table::empty(None))
         } else {
             let columns = self
                 .growables

@@ -33,7 +33,7 @@ impl MicroPartition {
         let tables = self.concat_or_get(io_stats)?;
         match tables.as_slice() {
             [] => {
-                let empty_table = Table::empty(Some(self.schema.clone()))?;
+                let empty_table = Table::empty(Some(self.schema.clone()));
                 empty_table.argsort(sort_keys, descending)
             }
             [single] => single.argsort(sort_keys, descending),

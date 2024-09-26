@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use daft_core::{prelude::UInt64Array, series::IntoSeries};
 use daft_dsl::ExprRef;
-use daft_micropartition::MicroPartition;
 use daft_plan::JoinType;
-use daft_table::{GrowableTable, Probeable};
+use daft_table::{Probeable, Table};
 use tracing::{info_span, instrument};
 
 use super::intermediate_op::{
@@ -54,43 +54,31 @@ impl AntiSemiProbeOperator {
         }
     }
 
-    fn probe_anti_semi(
-        &self,
-        input: &Arc<MicroPartition>,
-        state: &mut AntiSemiProbeState,
-    ) -> DaftResult<Arc<MicroPartition>> {
+    fn probe_anti_semi(&self, input: &Table, state: &mut AntiSemiProbeState) -> DaftResult<Table> {
         let probe_set = state.get_probeable();
 
         let _growables = info_span!("AntiSemiOperator::build_growables").entered();
 
-        let input_tables = input.get_tables()?;
-
-        let mut probe_side_growable =
-            GrowableTable::new(&input_tables.iter().collect::<Vec<_>>(), false, 20)?;
+        let mut input_idx_matches = vec![];
 
         drop(_growables);
         {
             let _loop = info_span!("AntiSemiOperator::eval_and_probe").entered();
-            for (probe_side_table_idx, table) in input_tables.iter().enumerate() {
-                let join_keys = table.eval_expression_list(&self.probe_on)?;
-                let iter = probe_set.probe_exists(&join_keys)?;
+            let join_keys = input.eval_expression_list(&self.probe_on)?;
+            let iter = probe_set.probe_exists(&join_keys)?;
 
-                for (probe_row_idx, matched) in iter.enumerate() {
-                    match (self.join_type == JoinType::Semi, matched) {
-                        (true, true) | (false, false) => {
-                            probe_side_growable.extend(probe_side_table_idx, probe_row_idx, 1);
-                        }
-                        _ => {}
+            for (probe_row_idx, matched) in iter.enumerate() {
+                match (self.join_type == JoinType::Semi, matched) {
+                    (true, true) | (false, false) => {
+                        input_idx_matches.push(probe_row_idx as u64);
                     }
+                    _ => {}
                 }
             }
         }
-        let probe_side_table = probe_side_growable.build()?;
-        Ok(Arc::new(MicroPartition::new_loaded(
-            probe_side_table.schema.clone(),
-            Arc::new(vec![probe_side_table]),
-            None,
-        )))
+        let result =
+            input.take(&UInt64Array::from(("matches", input_idx_matches)).into_series())?;
+        Ok(result)
     }
 }
 

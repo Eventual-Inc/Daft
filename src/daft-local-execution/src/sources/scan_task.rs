@@ -5,9 +5,9 @@ use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_io::IOStatsRef;
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
-use daft_micropartition::MicroPartition;
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use daft_scan::{storage_config::StorageConfig, ChunkSpec, ScanTask};
+use daft_table::Table;
 use futures::{Stream, StreamExt};
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::instrument;
@@ -34,7 +34,7 @@ impl ScanTaskSource {
     )]
     async fn process_scan_task_stream(
         scan_task: Arc<ScanTask>,
-        sender: Sender<Arc<MicroPartition>>,
+        sender: Sender<Table>,
         maintain_order: bool,
         io_stats: IOStatsRef,
     ) -> DaftResult<()> {
@@ -46,7 +46,7 @@ impl ScanTaskSource {
             has_data = true;
         }
         if !has_data {
-            let empty = Arc::new(MicroPartition::empty(Some(schema.clone())));
+            let empty = Table::empty(Some(schema.clone()));
             let _ = sender.send(empty).await;
         }
         Ok(())
@@ -101,7 +101,7 @@ async fn stream_scan_task(
     scan_task: Arc<ScanTask>,
     io_stats: Option<IOStatsRef>,
     maintain_order: bool,
-) -> DaftResult<impl Stream<Item = DaftResult<Arc<MicroPartition>>> + Send> {
+) -> DaftResult<impl Stream<Item = DaftResult<Table>> + Send> {
     let pushdown_columns = scan_task
         .pushdowns
         .columns
@@ -307,11 +307,6 @@ async fn stream_scan_task(
                 .map(|pspec| pspec.to_fill_map())
                 .as_ref(),
         )?;
-        let mp = Arc::new(MicroPartition::new_loaded(
-            scan_task.materialized_schema().clone(),
-            Arc::new(vec![casted_table]),
-            scan_task.statistics.clone(),
-        ));
-        Ok(mp)
+        Ok(casted_table)
     }))
 }

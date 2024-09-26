@@ -8,7 +8,6 @@ use daft_core::{
     utils::supertype,
 };
 use daft_dsl::{join::get_common_join_keys, Expr};
-use daft_micropartition::MicroPartition;
 use daft_physical_plan::{
     Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, Project, Sort,
     UnGroupedAggregate,
@@ -36,12 +35,12 @@ use crate::{
 
 #[derive(Clone)]
 pub enum PipelineResultType {
-    Data(Arc<MicroPartition>),
+    Data(Table),
     ProbeTable(Arc<dyn Probeable>, Arc<Vec<Table>>),
 }
 
-impl From<Arc<MicroPartition>> for PipelineResultType {
-    fn from(data: Arc<MicroPartition>) -> Self {
+impl From<Table> for PipelineResultType {
+    fn from(data: Table) -> Self {
         Self::Data(data)
     }
 }
@@ -53,7 +52,7 @@ impl From<(Arc<dyn Probeable>, Arc<Vec<Table>>)> for PipelineResultType {
 }
 
 impl PipelineResultType {
-    pub fn as_data(&self) -> &Arc<MicroPartition> {
+    pub fn as_data(&self) -> &Table {
         match self {
             Self::Data(data) => data,
             _ => panic!("Expected data"),
@@ -98,7 +97,7 @@ pub(crate) fn viz_pipeline(root: &dyn PipelineNode) -> String {
 
 pub fn physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
-    psets: &HashMap<String, Vec<Arc<MicroPartition>>>,
+    psets: &HashMap<String, Vec<Table>>,
 ) -> crate::Result<Box<dyn PipelineNode>> {
     use daft_physical_plan::PhysicalScan;
 

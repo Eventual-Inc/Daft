@@ -142,14 +142,14 @@ impl Table {
         }
     }
 
-    pub fn empty(schema: Option<SchemaRef>) -> DaftResult<Self> {
+    pub fn empty(schema: Option<SchemaRef>) -> Self {
         let schema = schema.unwrap_or_else(|| Schema::empty().into());
         let mut columns: Vec<Series> = Vec::with_capacity(schema.names().len());
         for (field_name, field) in schema.fields.iter() {
             let series = Series::empty(field_name, &field.dtype);
             columns.push(series)
         }
-        Ok(Self::new_unchecked(schema, columns, 0))
+        Self::new_unchecked(schema, columns, 0)
     }
 
     /// Create a Table from a set of columns.
@@ -203,6 +203,10 @@ impl Table {
             self.columns.iter().map(|s| s.slice(start, end)).collect();
         let new_num_rows = self.len().min(end - start);
         Self::new_with_size(self.schema.clone(), new_series?, new_num_rows)
+    }
+
+    pub fn split_at(&self, idx: usize) -> DaftResult<(Self, Self)> {
+        Ok((self.head(idx)?, self.slice(idx, self.len())?))
     }
 
     pub fn head(&self, num: usize) -> DaftResult<Self> {

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
-use daft_micropartition::MicroPartition;
+use daft_table::Table;
 use tracing::{info_span, instrument};
 
 use super::buffer::OperatorBuffer;
@@ -18,9 +18,9 @@ pub trait IntermediateOperatorState: Send + Sync {
 }
 
 pub enum IntermediateOperatorResult {
-    NeedMoreInput(Option<Arc<MicroPartition>>),
+    NeedMoreInput(Option<Table>),
     #[allow(dead_code)]
-    HasMoreOutput(Arc<MicroPartition>),
+    HasMoreOutput(Table),
 }
 
 pub trait IntermediateOperator: Send + Sync {

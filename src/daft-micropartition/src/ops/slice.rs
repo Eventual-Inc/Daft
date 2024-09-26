@@ -54,8 +54,4 @@ impl MicroPartition {
     pub fn head(&self, num: usize) -> DaftResult<Self> {
         self.slice(0, num)
     }
-
-    pub fn split_at(&self, idx: usize) -> DaftResult<(Self, Self)> {
-        Ok((self.head(idx)?, self.slice(idx, self.len())?))
-    }
 }

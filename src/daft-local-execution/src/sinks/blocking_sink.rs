@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
-use daft_micropartition::MicroPartition;
+use daft_table::Table;
 use tracing::info_span;
 
 use crate::{
@@ -18,7 +18,7 @@ pub enum BlockingSinkStatus {
 }
 
 pub trait BlockingSink: Send + Sync {
-    fn sink(&mut self, input: &Arc<MicroPartition>) -> DaftResult<BlockingSinkStatus>;
+    fn sink(&mut self, input: &Table) -> DaftResult<BlockingSinkStatus>;
     fn finalize(&mut self) -> DaftResult<Option<PipelineResultType>>;
     fn name(&self) -> &'static str;
 }

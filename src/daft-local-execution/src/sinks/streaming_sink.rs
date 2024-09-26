@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
-use daft_micropartition::MicroPartition;
+use daft_table::Table;
 use tracing::info_span;
 
 use crate::{
@@ -11,18 +11,14 @@ use crate::{
 };
 
 pub enum StreamSinkOutput {
-    NeedMoreInput(Option<Arc<MicroPartition>>),
+    NeedMoreInput(Option<Table>),
     #[allow(dead_code)]
-    HasMoreOutput(Arc<MicroPartition>),
-    Finished(Option<Arc<MicroPartition>>),
+    HasMoreOutput(Table),
+    Finished(Option<Table>),
 }
 
 pub trait StreamingSink: Send + Sync {
-    fn execute(
-        &mut self,
-        index: usize,
-        input: &Arc<MicroPartition>,
-    ) -> DaftResult<StreamSinkOutput>;
+    fn execute(&mut self, index: usize, input: &Table) -> DaftResult<StreamSinkOutput>;
     #[allow(dead_code)]
     fn name(&self) -> &'static str;
 }

@@ -13,7 +13,7 @@ impl MicroPartition {
 
         match tables.as_slice() {
             [] => {
-                let empty_table = Table::empty(Some(self.schema.clone()))?;
+                let empty_table = Table::empty(Some(self.schema.clone()));
                 let agged = empty_table.agg(to_agg, group_by)?;
                 Ok(Self::new_loaded(
                     agged.schema.clone(),

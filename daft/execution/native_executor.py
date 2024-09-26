@@ -35,7 +35,8 @@ class NativeExecutor:
         from daft.runners.pyrunner import PyMaterializedResult
 
         psets_mp = {
-            part_id: [part.micropartition()._micropartition for part in parts] for part_id, parts in psets.items()
+            part_id: [part.micropartition()._micropartition.to_table() for part in parts]
+            for part_id, parts in psets.items()
         }
         return (
             PyMaterializedResult(MicroPartition._from_pymicropartition(part))

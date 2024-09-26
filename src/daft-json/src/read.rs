@@ -272,7 +272,7 @@ async fn read_json_single_into_table(
     // Handle empty table case.
     if collected_tables.is_empty() {
         let daft_schema = Arc::new(Schema::try_from(&schema)?);
-        return Table::empty(Some(daft_schema));
+        return Ok(Table::empty(Some(daft_schema)));
     }
     // // TODO(Clark): Don't concatenate all chunks from a file into a single table, since MicroPartition is natively chunked.
     let concated_table = tables_concat(collected_tables)?;

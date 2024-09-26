@@ -3,7 +3,6 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
-use daft_micropartition::MicroPartition;
 use daft_plan::JoinType;
 use daft_table::{make_probeable_builder, Probeable, ProbeableBuilder, Table};
 
@@ -36,7 +35,7 @@ impl ProbeTableState {
         })
     }
 
-    fn add_tables(&mut self, input: &Arc<MicroPartition>) -> DaftResult<()> {
+    fn add_tables(&mut self, input: &Table) -> DaftResult<()> {
         if let Self::Building {
             ref mut probe_table_builder,
             projection,
@@ -44,12 +43,9 @@ impl ProbeTableState {
         } = self
         {
             let probe_table_builder = probe_table_builder.as_mut().unwrap();
-            for table in input.get_tables()?.iter() {
-                tables.push(table.clone());
-                let join_keys = table.eval_expression_list(projection)?;
-
-                probe_table_builder.add_table(&join_keys)?;
-            }
+            let join_keys = input.eval_expression_list(projection)?;
+            tables.push(input.clone());
+            probe_table_builder.add_table(&join_keys)?;
             Ok(())
         } else {
             panic!("add_tables can only be used during the Building Phase")
@@ -101,7 +97,7 @@ impl BlockingSink for HashJoinBuildSink {
         "HashJoinBuildSink"
     }
 
-    fn sink(&mut self, input: &Arc<MicroPartition>) -> DaftResult<BlockingSinkStatus> {
+    fn sink(&mut self, input: &Table) -> DaftResult<BlockingSinkStatus> {
         self.probe_table_state.add_tables(input)?;
         Ok(BlockingSinkStatus::NeedMoreInput)
     }

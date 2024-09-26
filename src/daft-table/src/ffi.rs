@@ -14,7 +14,7 @@ pub fn record_batches_to_table(
     schema: SchemaRef,
 ) -> PyResult<Table> {
     if batches.is_empty() {
-        return Ok(Table::empty(Some(schema))?);
+        return Ok(Table::empty(Some(schema)));
     }
 
     let names = schema.names();
