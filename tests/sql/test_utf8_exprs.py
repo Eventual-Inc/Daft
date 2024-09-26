@@ -56,6 +56,12 @@ def test_utf8_exprs():
         count_matches(a, 'a', case_sensitive := true) as count_matches_a_1,
         count_matches(a, 'a', case_sensitive := false, whole_words := false) as count_matches_a_2,
         count_matches(a, 'a', case_sensitive := true, whole_words := true) as count_matches_a_3,
+        normalize(a) as normalize_a,
+        normalize(a, remove_punct:=true) as normalize_remove_punct_a,
+        normalize(a, remove_punct:=true, lowercase:=true) as normalize_remove_punct_lower_a,
+        normalize(a, remove_punct:=true, lowercase:=true, white_space:=true) as normalize_remove_punct_lower_ws_a,
+        tokenize_encode(a, 'r50k_base') as tokenize_encode_a,
+        tokenize_decode(tokenize_encode(a, 'r50k_base'), 'r50k_base') as tokenize_decode_a
     FROM df
     """
     actual = daft.sql(sql).collect()
@@ -89,6 +95,14 @@ def test_utf8_exprs():
             col("a").str.count_matches("a", case_sensitive=True).alias("count_matches_a_1"),
             col("a").str.count_matches("a", case_sensitive=False, whole_words=False).alias("count_matches_a_2"),
             col("a").str.count_matches("a", case_sensitive=True, whole_words=True).alias("count_matches_a_3"),
+            col("a").str.normalize().alias("normalize_a"),
+            col("a").str.normalize(remove_punct=True).alias("normalize_remove_punct_a"),
+            col("a").str.normalize(remove_punct=True, lowercase=True).alias("normalize_remove_punct_lower_a"),
+            col("a")
+            .str.normalize(remove_punct=True, lowercase=True, white_space=True)
+            .alias("normalize_remove_punct_lower_ws_a"),
+            col("a").str.tokenize_encode("r50k_base").alias("tokenize_encode_a"),
+            col("a").str.tokenize_encode("r50k_base").str.tokenize_decode("r50k_base").alias("tokenize_decode_a"),
         )
         .collect()
         .to_pydict()
