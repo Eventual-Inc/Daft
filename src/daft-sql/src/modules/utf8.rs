@@ -44,7 +44,6 @@ impl SQLModule for SQLModuleUtf8 {
         parent.add_fn("lpad", Lpad);
         parent.add_fn("repeat", Repeat);
 
-        parent.add_fn("substring", Substr);
         parent.add_fn("to_date", ToDate("".to_string()));
         parent.add_fn("to_datetime", ToDatetime("".to_string(), None));
         parent.add_fn("count_matches", SQLCountMatches);
