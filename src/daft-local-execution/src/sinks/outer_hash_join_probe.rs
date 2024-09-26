@@ -146,6 +146,7 @@ pub(crate) struct OuterHashJoinProbeSink {
     right_non_join_columns: Vec<String>,
     right_non_join_schema: SchemaRef,
     join_type: JoinType,
+    output_schema: SchemaRef,
 }
 
 impl OuterHashJoinProbeSink {
@@ -155,6 +156,7 @@ impl OuterHashJoinProbeSink {
         right_schema: &SchemaRef,
         join_type: JoinType,
         common_join_keys: IndexSet<String>,
+        output_schema: &SchemaRef,
     ) -> Self {
         let left_non_join_columns = left_schema
             .fields
@@ -179,6 +181,7 @@ impl OuterHashJoinProbeSink {
             right_non_join_columns,
             right_non_join_schema,
             join_type,
+            output_schema: output_schema.clone(),
         }
     }
 
@@ -410,6 +413,10 @@ impl StreamingSink for OuterHashJoinProbeSink {
                     .downcast_mut::<OuterHashJoinProbeState>()
                     .expect("OuterHashJoinProbeSink state should be OuterHashJoinProbeState");
                 let input = input.as_data();
+                if input.is_empty() {
+                    let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));
+                    return Ok(StreamingSinkOutput::NeedMoreInput(Some(empty)));
+                }
                 let out = match self.join_type {
                     JoinType::Left | JoinType::Right => self.probe_left_right(input, state),
                     JoinType::Outer => self.probe_outer(input, state),

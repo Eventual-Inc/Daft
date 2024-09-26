@@ -230,7 +230,7 @@ pub fn physical_plan_to_pipeline(
             left_on,
             right_on,
             join_type,
-            ..
+            schema,
         }) => {
             let left_schema = left.schema();
             let right_schema = right.schema();
@@ -299,7 +299,11 @@ pub fn physical_plan_to_pipeline(
 
                 match join_type {
                     JoinType::Anti | JoinType::Semi => Ok(IntermediateNode::new(
-                        Arc::new(AntiSemiProbeOperator::new(casted_probe_on, join_type)),
+                        Arc::new(AntiSemiProbeOperator::new(
+                            casted_probe_on,
+                            join_type,
+                            schema,
+                        )),
                         vec![build_node, probe_child_node],
                     )
                     .boxed()),
@@ -310,6 +314,7 @@ pub fn physical_plan_to_pipeline(
                             right_schema,
                             build_on_left,
                             common_join_keys,
+                            schema,
                         )),
                         vec![build_node, probe_child_node],
                     )
@@ -322,6 +327,7 @@ pub fn physical_plan_to_pipeline(
                                 right_schema,
                                 *join_type,
                                 common_join_keys,
+                                schema,
                             )),
                             vec![build_node, probe_child_node],
                         )

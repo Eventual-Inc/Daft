@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use daft_plan::JoinType;
@@ -44,15 +45,17 @@ impl IntermediateOperatorState for AntiSemiProbeState {
 pub struct AntiSemiProbeOperator {
     probe_on: Vec<ExprRef>,
     is_semi: bool,
+    output_schema: SchemaRef,
 }
 
 impl AntiSemiProbeOperator {
     const DEFAULT_GROWABLE_SIZE: usize = 20;
 
-    pub fn new(probe_on: Vec<ExprRef>, join_type: &JoinType) -> Self {
+    pub fn new(probe_on: Vec<ExprRef>, join_type: &JoinType, output_schema: &SchemaRef) -> Self {
         Self {
             probe_on,
             is_semi: *join_type == JoinType::Semi,
+            output_schema: output_schema.clone(),
         }
     }
 
@@ -125,6 +128,10 @@ impl IntermediateOperator for AntiSemiProbeOperator {
                     .downcast_mut::<AntiSemiProbeState>()
                     .expect("AntiSemiProbeOperator state should be AntiSemiProbeState");
                 let input = input.as_data();
+                if input.is_empty() {
+                    let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));
+                    return Ok(IntermediateOperatorResult::NeedMoreInput(Some(empty)));
+                }
                 let out = self.probe_anti_semi(input, state)?;
                 Ok(IntermediateOperatorResult::NeedMoreInput(Some(out)))
             }

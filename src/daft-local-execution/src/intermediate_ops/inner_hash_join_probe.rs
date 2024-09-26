@@ -48,6 +48,7 @@ pub struct InnerHashJoinProbeOperator {
     left_non_join_columns: Vec<String>,
     right_non_join_columns: Vec<String>,
     build_on_left: bool,
+    output_schema: SchemaRef,
 }
 
 impl InnerHashJoinProbeOperator {
@@ -59,6 +60,7 @@ impl InnerHashJoinProbeOperator {
         right_schema: &SchemaRef,
         build_on_left: bool,
         common_join_keys: IndexSet<String>,
+        output_schema: &SchemaRef,
     ) -> Self {
         let left_non_join_columns = left_schema
             .fields
@@ -79,6 +81,7 @@ impl InnerHashJoinProbeOperator {
             left_non_join_columns,
             right_non_join_columns,
             build_on_left,
+            output_schema: output_schema.clone(),
         }
     }
 
@@ -176,6 +179,10 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
             }
             _ => {
                 let input = input.as_data();
+                if input.is_empty() {
+                    let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));
+                    return Ok(IntermediateOperatorResult::NeedMoreInput(Some(empty)));
+                }
                 let out = self.probe_inner(input, state)?;
                 Ok(IntermediateOperatorResult::NeedMoreInput(Some(out)))
             }
