@@ -34,7 +34,7 @@ impl ScanTaskSource {
     )]
     async fn process_scan_task_stream(
         scan_task: Arc<ScanTask>,
-        sender: Sender<Table>,
+        sender: Sender<Arc<Table>>,
         maintain_order: bool,
         io_stats: IOStatsRef,
     ) -> DaftResult<()> {
@@ -42,12 +42,12 @@ impl ScanTaskSource {
         let mut stream = stream_scan_task(scan_task, Some(io_stats), maintain_order).await?;
         let mut has_data = false;
         while let Some(partition) = stream.next().await {
-            let _ = sender.send(partition?).await;
+            let _ = sender.send(Arc::new(partition?)).await;
             has_data = true;
         }
         if !has_data {
             let empty = Table::empty(Some(schema.clone()));
-            let _ = sender.send(empty).await;
+            let _ = sender.send(Arc::new(empty)).await;
         }
         Ok(())
     }

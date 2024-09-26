@@ -234,7 +234,9 @@ impl IntermediateOperator for HashJoinProbeOperator {
                         unimplemented!("Only Inner, Left, and Right joins are supported in HashJoinProbeOperator")
                     }
                 }?;
-                Ok(IntermediateOperatorResult::NeedMoreInput(Some(out)))
+                Ok(IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(
+                    out,
+                ))))
             }
         }
     }

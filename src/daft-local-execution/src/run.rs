@@ -77,15 +77,15 @@ impl NativeExecutor {
         cfg: PyDaftExecutionConfig,
         results_buffer_size: Option<usize>,
     ) -> PyResult<PyObject> {
-        let native_psets: HashMap<String, Vec<Table>> = psets
+        let native_psets: HashMap<String, Vec<Arc<Table>>> = psets
             .into_iter()
             .map(|(part_id, parts)| {
                 (
                     part_id,
                     parts
                         .into_iter()
-                        .map(|part| part.into())
-                        .collect::<Vec<Table>>(),
+                        .map(|part| Arc::new(part.into()))
+                        .collect::<Vec<Arc<Table>>>(),
                 )
             })
             .collect();
@@ -118,7 +118,7 @@ fn should_enable_explain_analyze() -> bool {
 
 pub fn run_local(
     physical_plan: &LocalPhysicalPlan,
-    psets: HashMap<String, Vec<Table>>,
+    psets: HashMap<String, Vec<Arc<Table>>>,
     cfg: Arc<DaftExecutionConfig>,
     results_buffer_size: Option<usize>,
 ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<Arc<MicroPartition>>> + Send>> {
@@ -170,7 +170,7 @@ pub fn run_local(
     });
 
     struct ReceiverIterator {
-        receiver: Receiver<Table>,
+        receiver: Receiver<Arc<Table>>,
         handle: Option<std::thread::JoinHandle<DaftResult<()>>>,
     }
 
@@ -181,7 +181,7 @@ pub fn run_local(
             match self.receiver.blocking_recv() {
                 Some(part) => Some(Ok(Arc::new(MicroPartition::new_loaded(
                     part.schema.clone(),
-                    vec![part].into(),
+                    vec![part.as_ref().clone()].into(),
                     None,
                 )))),
                 None => {

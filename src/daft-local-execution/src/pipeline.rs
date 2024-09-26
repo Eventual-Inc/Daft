@@ -35,12 +35,12 @@ use crate::{
 
 #[derive(Clone)]
 pub enum PipelineResultType {
-    Data(Table),
+    Data(Arc<Table>),
     ProbeTable(Arc<dyn Probeable>, Arc<Vec<Table>>),
 }
 
-impl From<Table> for PipelineResultType {
-    fn from(data: Table) -> Self {
+impl From<Arc<Table>> for PipelineResultType {
+    fn from(data: Arc<Table>) -> Self {
         Self::Data(data)
     }
 }
@@ -52,7 +52,7 @@ impl From<(Arc<dyn Probeable>, Arc<Vec<Table>>)> for PipelineResultType {
 }
 
 impl PipelineResultType {
-    pub fn as_data(&self) -> &Table {
+    pub fn as_data(&self) -> &Arc<Table> {
         match self {
             Self::Data(data) => data,
             _ => panic!("Expected data"),
@@ -97,7 +97,7 @@ pub(crate) fn viz_pipeline(root: &dyn PipelineNode) -> String {
 
 pub fn physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
-    psets: &HashMap<String, Vec<Table>>,
+    psets: &HashMap<String, Vec<Arc<Table>>>,
 ) -> crate::Result<Box<dyn PipelineNode>> {
     use daft_physical_plan::PhysicalScan;
 

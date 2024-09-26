@@ -18,9 +18,9 @@ pub trait IntermediateOperatorState: Send + Sync {
 }
 
 pub enum IntermediateOperatorResult {
-    NeedMoreInput(Option<Table>),
+    NeedMoreInput(Option<Arc<Table>>),
     #[allow(dead_code)]
-    HasMoreOutput(Table),
+    HasMoreOutput(Arc<Table>),
 }
 
 pub trait IntermediateOperator: Send + Sync {

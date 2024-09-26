@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use common_error::DaftResult;
 use daft_table::Table;
 use tracing::instrument;
@@ -24,7 +26,7 @@ impl LimitSink {
 
 impl StreamingSink for LimitSink {
     #[instrument(skip_all, name = "LimitSink::sink")]
-    fn execute(&mut self, index: usize, input: &Table) -> DaftResult<StreamSinkOutput> {
+    fn execute(&mut self, index: usize, input: &Arc<Table>) -> DaftResult<StreamSinkOutput> {
         assert_eq!(index, 0);
 
         let input_num_rows = input.len();
@@ -42,7 +44,7 @@ impl StreamingSink for LimitSink {
             Greater => {
                 let taken = input.head(self.remaining)?;
                 self.remaining -= taken.len();
-                Ok(StreamSinkOutput::Finished(Some(taken)))
+                Ok(StreamSinkOutput::Finished(Some(taken.into())))
             }
         }
     }

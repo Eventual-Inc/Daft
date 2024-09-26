@@ -10,7 +10,7 @@ use crate::{
     ExecutionRuntimeHandle,
 };
 
-pub type SourceStream<'a> = BoxStream<'a, Table>;
+pub type SourceStream<'a> = BoxStream<'a, Arc<Table>>;
 
 pub(crate) trait Source: Send + Sync {
     fn name(&self) -> &'static str;

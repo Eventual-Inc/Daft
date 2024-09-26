@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use common_error::DaftResult;
 use daft_dsl::ExprRef;
 use tracing::instrument;
@@ -26,7 +28,9 @@ impl IntermediateOperator for FilterOperator {
         _state: Option<&mut Box<dyn IntermediateOperatorState>>,
     ) -> DaftResult<IntermediateOperatorResult> {
         let out = input.as_data().filter(&[self.predicate.clone()])?;
-        Ok(IntermediateOperatorResult::NeedMoreInput(Some(out)))
+        Ok(IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(
+            out,
+        ))))
     }
 
     fn name(&self) -> &'static str {

@@ -112,7 +112,9 @@ impl IntermediateOperator for AntiSemiProbeOperator {
                     JoinType::Semi | JoinType::Anti => self.probe_anti_semi(input, state),
                     _ => unreachable!("Only Semi and Anti joins are supported"),
                 }?;
-                Ok(IntermediateOperatorResult::NeedMoreInput(Some(out)))
+                Ok(IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(
+                    out,
+                ))))
             }
         }
     }

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use daft_core::prelude::SchemaRef;
 use daft_io::IOStatsRef;
 use daft_table::Table;
@@ -7,12 +9,12 @@ use super::source::Source;
 use crate::{sources::source::SourceStream, ExecutionRuntimeHandle};
 
 pub struct InMemorySource {
-    data: Vec<Table>,
+    data: Vec<Arc<Table>>,
     schema: SchemaRef,
 }
 
 impl InMemorySource {
-    pub fn new(data: Vec<Table>, schema: SchemaRef) -> Self {
+    pub fn new(data: Vec<Arc<Table>>, schema: SchemaRef) -> Self {
         Self { data, schema }
     }
     pub fn boxed(self) -> Box<dyn Source> {
@@ -30,7 +32,7 @@ impl Source for InMemorySource {
     ) -> crate::Result<SourceStream<'static>> {
         if self.data.is_empty() {
             let empty = Table::empty(Some(self.schema.clone()));
-            return Ok(Box::pin(futures::stream::once(async { empty })));
+            return Ok(Box::pin(futures::stream::once(async { Arc::new(empty) })));
         }
         Ok(Box::pin(futures::stream::iter(self.data.clone())))
     }
