@@ -670,9 +670,9 @@ JSON Expressions
 
 If you have a column of JSON strings, Daft provides the :meth:`.json.* <daft.expressions.Expression.json>` method namespace to run `JQ-style filters <https://stedolan.github.io/jq/manual/>`_ on them. For example, to extract a value from a JSON object:
 
-.. tab-set::
+.. tabs::
 
-    .. tab-item:: 🐍 Python
+    .. group-tab:: 🐍 Python
 
         .. code:: python
 
@@ -685,7 +685,7 @@ If you have a column of JSON strings, Daft provides the :meth:`.json.* <daft.exp
             df = df.with_column("a", df["json"].json.query(".a"))
             df.collect()
 
-    .. tab-item:: ⚙️ SQL
+    .. group-tab:: ⚙️ SQL
 
         .. code:: python
 
@@ -698,7 +698,7 @@ If you have a column of JSON strings, Daft provides the :meth:`.json.* <daft.exp
             df = daft.sql("""
                 SELECT
                     json,
-                    json_query(json, '$.a') AS a
+                    json_query(json, '.a') AS a
                 FROM df
             """)
             df.collect()
@@ -727,10 +727,13 @@ Logical Expressions
 
 Logical Expressions are an expression that refers to a column of type :meth:`Boolean <daft.DataType.boolean>`, and can only take on the values True or False.
 
-.. code:: python
+.. tabs::
 
-    df = daft.from_pydict({"C": [True, False, True]})
-    df["C"]
+    .. group-tab:: 🐍 Python
+
+        .. code:: python
+
+            df = daft.from_pydict({"C": [True, False, True]})
 
 Daft supports logical operations such as ``&`` (and) and ``|`` (or) between logical expressions.
 
@@ -741,27 +744,49 @@ Many of the types in Daft support comparisons between expressions that returns a
 
 For example, here we can compare if each element in column "A" is equal to elements in column "B":
 
-.. code:: python
+.. tabs::
 
-    df = daft.from_pydict({"A": [1, 2, 3], "B": [1, 2, 4]})
+    .. group-tab:: 🐍 Python
 
-    df = df.with_column("A_eq_B", df["A"] == df["B"])
+        .. code:: python
 
-    df.collect()
+            df = daft.from_pydict({"A": [1, 2, 3], "B": [1, 2, 4]})
+
+            df = df.with_column("A_eq_B", df["A"] == df["B"])
+
+            df.collect()
+
+    .. group-tab:: ⚙️ SQL
+
+        .. code:: python
+
+            df = daft.from_pydict({"A": [1, 2, 3], "B": [1, 2, 4]})
+
+            df = daft.sql("""
+                SELECT
+                    A,
+                    B,
+                    A = B AS A_eq_B
+                FROM df
+            """)
+
+            df.collect()
 
 .. code-block:: text
     :caption: Output
 
-    +---------+---------+-----------+
-    |       A |       B | A_eq_B    |
-    |   Int64 |   Int64 | Boolean   |
-    +=========+=========+===========+
-    |       1 |       1 | true      |
-    +---------+---------+-----------+
-    |       2 |       2 | true      |
-    +---------+---------+-----------+
-    |       3 |       4 | false     |
-    +---------+---------+-----------+
+    ╭───────┬───────┬─────────╮
+    │ A     ┆ B     ┆ A_eq_B  │
+    │ ---   ┆ ---   ┆ ---     │
+    │ Int64 ┆ Int64 ┆ Boolean │
+    ╞═══════╪═══════╪═════════╡
+    │ 1     ┆ 1     ┆ true    │
+    ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+    │ 2     ┆ 2     ┆ true    │
+    ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+    │ 3     ┆ 4     ┆ false   │
+    ╰───────┴───────┴─────────╯
+
     (Showing first 3 of 3 rows)
 
 Other useful comparisons can be found in the :ref:`Expressions API reference <api-comparison-expression>`.
@@ -771,32 +796,57 @@ If Else Pattern
 
 The :meth:`.if_else() <daft.expressions.Expression.if_else>` method is a useful expression to have up your sleeve for choosing values between two other expressions based on a logical expression:
 
-.. code:: python
+.. tabs::
 
-    df = daft.from_pydict({"A": [1, 2, 3], "B": [0, 2, 4]})
+    .. group-tab:: 🐍 Python
 
-    # Pick values from column A if the value in column A is bigger
-    # than the value in column B. Otherwise, pick values from column B.
-    df = df.with_column(
-        "A_if_bigger_else_B",
-        (df["A"] > df["B"]).if_else(df["A"], df["B"]),
-    )
+        .. code:: python
 
-    df.collect()
+            df = daft.from_pydict({"A": [1, 2, 3], "B": [0, 2, 4]})
+
+            # Pick values from column A if the value in column A is bigger
+            # than the value in column B. Otherwise, pick values from column B.
+            df = df.with_column(
+                "A_if_bigger_else_B",
+                (df["A"] > df["B"]).if_else(df["A"], df["B"]),
+            )
+
+            df.collect()
+
+    .. group-tab:: ⚙️ SQL
+
+        .. code:: python
+
+            df = daft.from_pydict({"A": [1, 2, 3], "B": [0, 2, 4]})
+
+            df = daft.sql("""
+                SELECT
+                    A,
+                    B,
+                    CASE
+                        WHEN A > B THEN A
+                        ELSE B
+                    END AS A_if_bigger_else_B
+                FROM df
+            """)
+
+            df.collect()
 
 .. code-block:: text
     :caption: Output
 
-    +---------+---------+----------------------+
-    |       A |       B |   A_if_bigger_else_B |
-    |   Int64 |   Int64 |                Int64 |
-    +=========+=========+======================+
-    |       1 |       0 |                    1 |
-    +---------+---------+----------------------+
-    |       2 |       2 |                    2 |
-    +---------+---------+----------------------+
-    |       3 |       4 |                    4 |
-    +---------+---------+----------------------+
+    ╭───────┬───────┬────────────────────╮
+    │ A     ┆ B     ┆ A_if_bigger_else_B │
+    │ ---   ┆ ---   ┆ ---                │
+    │ Int64 ┆ Int64 ┆ Int64              │
+    ╞═══════╪═══════╪════════════════════╡
+    │ 1     ┆ 0     ┆ 1                  │
+    ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 2     ┆ 2     ┆ 2                  │
+    ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 3     ┆ 4     ┆ 4                  │
+    ╰───────┴───────┴────────────────────╯
+
     (Showing first 3 of 3 rows)
 
 This is a useful expression for cleaning your data!
