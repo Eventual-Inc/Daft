@@ -3,14 +3,8 @@ from __future__ import annotations
 import pyarrow as pa
 import pytest
 
-from daft import context
 from daft.datatype import DataType
 from tests.utils import sort_arrow_table
-
-pytestmark = pytest.mark.skipif(
-    context.get_context().daft_execution_config.enable_native_executor is True,
-    reason="Native executor fails for these tests",
-)
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
