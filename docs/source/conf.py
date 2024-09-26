@@ -45,6 +45,7 @@ extensions = [
     "myst_nb",
     "sphinx_copybutton",
     "sphinx_autosummary_accessors",
+    "sphinx_tabs.tabs",
 ]
 
 templates_path = ["_templates", sphinx_autosummary_accessors.templates_path]

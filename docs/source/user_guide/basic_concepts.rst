@@ -66,16 +66,20 @@ Creating a Dataframe
 
 Let's create our first Dataframe from a Python dictionary of columns.
 
-.. code:: python
+.. tabs::
 
-    import daft
+    .. group-tab:: 🐍 Python
 
-    df = daft.from_pydict({
-        "A": [1, 2, 3, 4],
-        "B": [1.5, 2.5, 3.5, 4.5],
-        "C": [True, True, False, False],
-        "D": [None, None, None, None],
-    })
+        .. code:: python
+
+            import daft
+
+            df = daft.from_pydict({
+                "A": [1, 2, 3, 4],
+                "B": [1.5, 2.5, 3.5, 4.5],
+                "C": [True, True, False, False],
+                "D": [None, None, None, None],
+            })
 
 Examine your Dataframe by printing it:
 
@@ -103,9 +107,21 @@ Examine your Dataframe by printing it:
 
 Congratulations - you just created your first DataFrame! It has 4 columns, "A", "B", "C", and "D". Let's try to select only the "A", "B", and "C" columns:
 
-.. code:: python
+.. tabs::
 
-    df.select("A", "B", "C")
+    .. group-tab:: 🐍 Python
+
+        .. code:: python
+
+            df = df.select("A", "B", "C")
+            df
+
+    .. group-tab:: ⚙️ SQL
+
+        .. code:: python
+
+            df = daft.sql("SELECT A, B, C FROM df")
+            df
 
 .. code-block:: text
     :caption: Output
@@ -135,26 +151,32 @@ In this case, Daft is just deferring the work required to read the data and sele
 
 We can tell Daft to execute our DataFrame and cache the results using :meth:`df.collect() <daft.DataFrame.collect>`:
 
-.. code:: python
+.. tabs::
 
-    df.collect()
-    df
+    .. group-tab:: 🐍 Python
+
+        .. code:: python
+
+            df.collect()
+            df
 
 .. code-block:: text
     :caption: Output
 
-    +---------+-----------+-----------+
-    |       A |         B | C         |
-    |   Int64 |   Float64 | Boolean   |
-    +=========+===========+===========+
-    |       1 |       1.5 | true      |
-    +---------+-----------+-----------+
-    |       2 |       2.5 | true      |
-    +---------+-----------+-----------+
-    |       3 |       3.5 | false     |
-    +---------+-----------+-----------+
-    |       4 |       4.5 | false     |
-    +---------+-----------+-----------+
+    ╭───────┬─────────┬─────────┬──────╮
+    │ A     ┆ B       ┆ C       ┆ D    │
+    │ ---   ┆ ---     ┆ ---     ┆ ---  │
+    │ Int64 ┆ Float64 ┆ Boolean ┆ Null │
+    ╞═══════╪═════════╪═════════╪══════╡
+    │ 1     ┆ 1.5     ┆ true    ┆ None │
+    ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+    │ 2     ┆ 2.5     ┆ true    ┆ None │
+    ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+    │ 3     ┆ 3.5     ┆ false   ┆ None │
+    ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+    │ 4     ┆ 4.5     ┆ false   ┆ None │
+    ╰───────┴─────────┴─────────┴──────╯
+
     (Showing first 4 of 4 rows)
 
 Now your DataFrame object ``df`` is **materialized** - Daft has executed all the steps required to compute the results, and has cached the results in memory so that it can display this preview.
@@ -173,16 +195,55 @@ However, data science is all about experimentation and trying different things o
 
 We suggest materializing DataFrames using :meth:`df.collect() <daft.DataFrame.collect>` when they contain expensive operations (e.g. sorts or expensive function calls) and have to be called multiple times by downstream code:
 
-.. code:: python
+.. tabs::
 
-    df = df.with_column("A", df["A"].apply(expensive_function))  # expensive function
-    df = df.sort("A")  # expensive sort
-    df.collect()  # materialize the DataFrame
+    .. group-tab:: 🐍 Python
 
-    # All subsequent work on df avoids recomputing previous steps
-    df.sum().show()
-    df.mean().show()
-    df.with_column("try_this", df["A"] + 1).show(5)
+        .. code:: python
+
+            df = df.sort("A")  # expensive sort
+            df.collect()  # materialize the DataFrame
+
+            # All subsequent work on df avoids recomputing previous steps
+            df.sum("B").show()
+            df.mean("B").show()
+            df.with_column("try_this", df["A"] + 1).show(5)
+
+    .. group-tab:: ⚙️ SQL
+
+        .. code:: python
+
+            df = daft.sql("SELECT * FROM df ORDER BY A")
+            df.collect()
+
+            # All subsequent work on df avoids recomputing previous steps
+            daft.sql("SELECT sum(B) FROM df").show()
+            daft.sql("SELECT mean(B) FROM df").show()
+            daft.sql("SELECT *, (A + 1) AS try_this FROM df").show(5)
+
+.. code-block:: text
+    :caption: Output
+
+    ╭─────────╮
+    │ B       │
+    │ ---     │
+    │ Float64 │
+    ╞═════════╡
+    │ 12      │
+    ╰─────────╯
+
+    (Showing first 1 of 1 rows)
+
+    ╭─────────╮
+    │ B       │
+    │ ---     │
+    │ Float64 │
+    ╞═════════╡
+    │ 3       │
+    ╰─────────╯
+
+    (Showing first 1 of 1 rows)
+
 
 In many other cases however, there are better options than materializing your entire DataFrame with :meth:`df.collect() <daft.DataFrame.collect>`:
 
@@ -209,9 +270,19 @@ To run computations on data in our DataFrame, we use Expressions.
 
 The following statement will :meth:`df.show() <daft.DataFrame.show>` a DataFrame that has only one column - the column ``A`` from our original DataFrame but with every row incremented by 1.
 
-.. code:: python
+.. tabs::
 
-    df.select(df["A"] + 1).show()
+    .. group-tab:: 🐍 Python
+
+        .. code:: python
+
+            df.select(df["A"] + 1).show()
+
+    .. group-tab:: ⚙️ SQL
+
+        .. code:: python
+
+            daft.sql("SELECT A + 1 FROM df")
 
 .. code-block:: text
     :caption: Output
@@ -234,11 +305,23 @@ The following statement will :meth:`df.show() <daft.DataFrame.show>` a DataFrame
 
     A common pattern is to create a new columns using ``DataFrame.with_column``:
 
-    .. code:: python
+    .. tabs::
 
-        # Creates a new column named "foo" which takes on values
-        # of column "A" incremented by 1
-        df = df.with_column("foo", df["A"] + 1)
+        .. group-tab:: 🐍 Python
+
+            .. code:: python
+
+                # Creates a new column named "foo" which takes on values
+                # of column "A" incremented by 1
+                df = df.with_column("foo", df["A"] + 1)
+
+        .. group-tab:: ⚙️ SQL
+
+            .. code:: python
+
+                # Creates a new column named "foo" which takes on values
+                # of column "A" incremented by 1
+                df = daft.sql("SELECT *, A + 1 AS foo FROM df")
 
 Congratulations, you have just written your first **Expression**: ``df["A"] + 1``!
 
@@ -255,10 +338,20 @@ Referring to a column in a DataFrame
 
 Most commonly you will be creating expressions by using the :func:`daft.col` function.
 
-.. code:: python
+.. tabs::
 
-    # Refers to column "A"
-    daft.col("A")
+    .. group-tab:: 🐍 Python
+
+        .. code:: python
+
+            # Refers to column "A"
+            daft.col("A")
+
+    .. group-tab:: ⚙️ SQL
+
+        .. code:: python
+
+            daft.sql_expr("A")
 
 .. code-block:: text
     :caption: Output
@@ -272,30 +365,43 @@ Using SQL
 
 Daft can also parse valid SQL as expressions.
 
-.. code:: python
+.. tabs::
 
-    from daft import sql_expr
+    .. group-tab:: ⚙️ SQL
 
-    sql_expr("A + 1")
+        .. code:: python
+
+            daft.sql_expr("A + 1")
 
 .. code-block:: text
     :caption: Output
 
     col(A) + lit(1)
 
-The above code will create an expression representing "the column named 'x' incremented by 1".
+The above code will create an expression representing "the column named 'x' incremented by 1". For many APIs, sql_expr will actually be applied for you as syntactic sugar!
 
 Literals
 ########
 
 You may find yourself needing to hardcode a "single value" oftentimes as an expression. Daft provides a :func:`~daft.expressions.lit` helper to do so:
 
-.. code:: python
+.. tabs::
 
-    from daft import lit
+    .. group-tab:: 🐍 Python
 
-    # Refers to an expression which always evaluates to 42
-    lit(42)
+        .. code:: python
+
+            from daft import lit
+
+            # Refers to an expression which always evaluates to 42
+            lit(42)
+
+    .. group-tab:: ⚙️ SQL
+
+        .. code:: python
+
+            # Refers to an expression which always evaluates to 42
+            daft.sql_expr("42")
 
 .. code-block:: text
     :caption: Output
@@ -309,13 +415,17 @@ Wildcard Expressions
 
 You can create expressions on multiple columns at once using a wildcard. The expression `col("*")` selects every column in a DataFrame, and you can operate on this expression in the same way as a single column:
 
-.. code:: python
+.. tabs::
 
-    import daft
-    from daft import col
+    .. group-tab:: 🐍 Python
 
-    df = daft.from_pydict({"A": [1, 2, 3], "B": [4, 5, 6]})
-    df.select(col("*") * 3).show()
+        .. code:: python
+
+            import daft
+            from daft import col
+
+            df = daft.from_pydict({"A": [1, 2, 3], "B": [4, 5, 6]})
+            df.select(col("*") * 3).show()
 
 .. code-block:: text
     :caption: Output
@@ -342,18 +452,36 @@ Numeric Expressions
 
 Since column "A" is an integer, we can run numeric computation such as addition, division and checking its value. Here are some examples where we create new columns using the results of such computations:
 
-.. code:: python
+.. tabs::
 
-    # Add 1 to each element in column "A"
-    df = df.with_column("A_add_one", df["A"] + 1)
+    .. group-tab:: 🐍 Python
 
-    # Divide each element in column A by 2
-    df = df.with_column("A_divide_two", df["A"] / 2.)
+        .. code:: python
 
-    # Check if each element in column A is more than 1
-    df = df.with_column("A_gt_1", df["A"] > 1)
+            # Add 1 to each element in column "A"
+            df = df.with_column("A_add_one", df["A"] + 1)
 
-    df.collect()
+            # Divide each element in column A by 2
+            df = df.with_column("A_divide_two", df["A"] / 2.)
+
+            # Check if each element in column A is more than 1
+            df = df.with_column("A_gt_1", df["A"] > 1)
+
+            df.collect()
+
+    .. group-tab:: ⚙️ SQL
+
+        .. code:: python
+
+            df = daft.sql("""
+                SELECT
+                    *,
+                    A + 1 AS A_add_one,
+                    A / 2.0 AS A_divide_two,
+                    A > 1 AS A_gt_1
+                FROM df
+            """)
+            df.collect()
 
 .. code-block:: text
     :caption: Output
@@ -381,10 +509,14 @@ String Expressions
 
 Daft also lets you have columns of strings in a DataFrame. Let's take a look!
 
-.. code:: python
+.. tabs::
 
-    df = daft.from_pydict({"B": ["foo", "bar", "baz"]})
-    df.show()
+    .. group-tab:: 🐍 Python
+
+        .. code:: python
+
+            df = daft.from_pydict({"B": ["foo", "bar", "baz"]})
+            df.show()
 
 .. code-block:: text
     :caption: Output
@@ -403,10 +535,21 @@ Daft also lets you have columns of strings in a DataFrame. Let's take a look!
 
 Unlike the numeric types, the string type does not support arithmetic operations such as ``*`` and ``/``. The one exception to this is the ``+`` operator, which is overridden to concatenate two string expressions as is commonly done in Python. Let's try that!
 
-.. code:: python
+.. tabs::
 
-    df = df.with_column("B2", df["B"] + "foo")
-    df.show()
+    .. group-tab:: 🐍 Python
+
+        .. code:: python
+
+            df = df.with_column("B2", df["B"] + "foo")
+            df.show()
+
+    .. group-tab:: ⚙️ SQL
+
+        .. code:: python
+
+            df = daft.sql("SELECT *, B + 'foo' AS B2 FROM df")
+            df.show()
 
 .. code-block:: text
     :caption: Output
@@ -427,10 +570,21 @@ There are also many string operators that are accessed through a separate :meth:
 
 For example, to check if each element in column "B" contains the substring "a", we can use the :meth:`.str.contains <daft.expressions.expressions.ExpressionStringNamespace.contains>` method:
 
-.. code:: python
+.. tabs::
 
-    df = df.with_column("B2_contains_B", df["B2"].str.contains(df["B"]))
-    df.show()
+    .. group-tab:: 🐍 Python
+
+        .. code:: python
+
+            df = df.with_column("B2_contains_B", df["B2"].str.contains(df["B"]))
+            df.show()
+
+    .. group-tab:: ⚙️ SQL
+
+        .. code:: python
+
+            df = daft.sql("SELECT *, contains(B2, B) AS B2_contains_B FROM df")
+            df.show()
 
 .. code-block:: text
     :caption: Output
@@ -456,16 +610,39 @@ One special case of a String column you may find yourself working with is a colu
 
 Daft provides the :meth:`.url.* <daft.expressions.Expression.url>` method namespace with functionality for working with URL strings. For example, to download data from URLs:
 
-.. code:: python
+.. tabs::
 
-    df = daft.from_pydict({
-        "urls": [
-            "https://www.google.com",
-            "s3://daft-public-data/open-images/validation-images/0001eeaf4aed83f9.jpg",
-        ],
-    })
-    df = df.with_column("data", df["urls"].url.download())
-    df.collect()
+    .. group-tab:: 🐍 Python
+
+        .. code:: python
+
+            df = daft.from_pydict({
+                "urls": [
+                    "https://www.google.com",
+                    "s3://daft-public-data/open-images/validation-images/0001eeaf4aed83f9.jpg",
+                ],
+            })
+            df = df.with_column("data", df["urls"].url.download())
+            df.collect()
+
+    .. group-tab:: ⚙️ SQL
+
+        .. code:: python
+
+
+            df = daft.from_pydict({
+                "urls": [
+                    "https://www.google.com",
+                    "s3://daft-public-data/open-images/validation-images/0001eeaf4aed83f9.jpg",
+                ],
+            })
+            df = daft.sql("""
+                SELECT
+                    urls,
+                    url_download(urls) AS data
+                FROM df
+            """)
+            df.collect()
 
 .. code-block:: text
     :caption: Output
@@ -493,16 +670,38 @@ JSON Expressions
 
 If you have a column of JSON strings, Daft provides the :meth:`.json.* <daft.expressions.Expression.json>` method namespace to run `JQ-style filters <https://stedolan.github.io/jq/manual/>`_ on them. For example, to extract a value from a JSON object:
 
-.. code:: python
+.. tab-set::
 
-    df = daft.from_pydict({
-        "json": [
-            '{"a": 1, "b": 2}',
-            '{"a": 3, "b": 4}',
-        ],
-    })
-    df = df.with_column("a", df["json"].json.query(".a"))
-    df.collect()
+    .. tab-item:: 🐍 Python
+
+        .. code:: python
+
+            df = daft.from_pydict({
+                "json": [
+                    '{"a": 1, "b": 2}',
+                    '{"a": 3, "b": 4}',
+                ],
+            })
+            df = df.with_column("a", df["json"].json.query(".a"))
+            df.collect()
+
+    .. tab-item:: ⚙️ SQL
+
+        .. code:: python
+
+            df = daft.from_pydict({
+                "json": [
+                    '{"a": 1, "b": 2}',
+                    '{"a": 3, "b": 4}',
+                ],
+            })
+            df = daft.sql("""
+                SELECT
+                    json,
+                    json_query(json, '$.a') AS a
+                FROM df
+            """)
+            df.collect()
 
 .. code-block:: text
     :caption: Output

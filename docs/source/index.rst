@@ -13,26 +13,29 @@ Use-Cases
 Data Engineering
 ****************
 
-*Provides the local performance and memory stability of DuckDB/Polars with the scalability of Apache Spark*
+*Combine the performance of DuckDB, Pythonic UX of Polars and scalability of Apache Spark for data engineering from MB to PB scale*
 
-* **Extract → Transform → Load (ETL):** Perform data engineering on messy multimodal data at scales ranging from MB to PB, on a single node or a distributed cluster
-* **Cloud-native:** Native integrations with modern cloud storage (e.g. S3), open catalogs/table formats (e.g. Apache Iceberg, DeltaLake) and open data formats (e.g. Apache Parquet)
+* Scale ETL workflows effortlessly from local to distributed environments
+* Enjoy a Python-first experience without JVM dependency hell
+* Leverage native integrations with cloud storage, open catalogs, and data formats
 
 Data Analytics
 **************
 
-*Provides a SQL interface with the snappiness of local engines such as DuckDB and scalability of engines such as Spark/Trino*
+*Blend the snappiness of DuckDB with the scalability of Spark/Trino for unified local and distributed analytics*
 
-* **Local Analytics:** Snappy interactive data exploration and aggregations from Python notebooks using DataFrames or SQL with the performance/development experience of local engines such as DuckDB/Polars
-* **Distributed Analytics:** Powerful capabilities to scale to the cloud when required to process larger datasets, outperforming distributed analytics engines such as Spark and Trino
+* Utilize complementary SQL and Python interfaces for versatile analytics
+* Perform snappy local exploration with DuckDB-like performance
+* Seamlessly scale to the cloud, outperforming distributed engines like Spark and Trino
 
 ML/AI
 *****
 
-*Replaces opinionated data formats such as Mosaic Data Shard (MDS) or TFRecords with dataloading directly from open formats (Apache Parquet, JPEG) into Pytorch or Numpy while saturating network bandwidth*
+*Streamline ML/AI workflows with efficient dataloading from open formats like Parquet and JPEG*
 
-* **Dataloading for training:** Fast and memory efficient dataloaders from open file formats such as Parquet and JPEG
-* **Model batch inference on GPUs:** Schedule large-scale model batch inference on a fleet of GPUs on a distributed cluster.
+* Load data efficiently from open formats directly into PyTorch or NumPy
+* Schedule large-scale model batch inference on distributed GPU clusters
+* Optimize data curation with advanced clustering, deduplication, and filtering
 
 Technology
 ----------
