@@ -194,12 +194,14 @@ impl PipelineNode for StreamingSinkNode {
 
         let op = self.op.clone();
         let runtime_stats = self.runtime_stats.clone();
+        let num_workers = op.max_concurrency();
+        let (input_senders, input_receivers) = (0..num_workers).map(|_| create_channel(1)).unzip();
+        runtime_handle.spawn(
+            Self::forward_input_to_workers(child_result_receivers, input_senders),
+            self.name(),
+        );
         runtime_handle.spawn(
             async move {
-                let num_workers = op.max_concurrency();
-                let (input_senders, input_receivers) =
-                    (0..num_workers).map(|_| create_channel(1)).unzip();
-
                 let mut worker_set = create_worker_set();
                 let mut output_receiver = Self::spawn_workers(
                     op.clone(),
@@ -208,7 +210,6 @@ impl PipelineNode for StreamingSinkNode {
                     runtime_stats.clone(),
                 );
 
-                Self::forward_input_to_workers(child_result_receivers, input_senders).await?;
                 while let Some(morsel) = output_receiver.recv().await {
                     let _ = destination_sender.send(morsel.into()).await;
                 }
