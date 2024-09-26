@@ -66,38 +66,38 @@ This file is usually found in the `.vscode` folder of your project root. See the
 
     ```json
     {
-    "configurations": [
-        {
-        "name": "Debug Rust/Python",
-        "type": "debugpy",
-        "request": "launch",
-        "program": "${workspaceFolder}/tools/attach_debugger.py",
-        "args": [
-            "${file}"
-        ],
-        "console": "internalConsole",
-        "justMyCode": true,
-        "serverReadyAction": {
-            "pattern": "pID = ([0-9]+)",
-            "action": "startDebugging",
-            "name": "Rust LLDB"
-        }
-        },
-        {
-        "name": "Rust LLDB",
-        "pid": "0",
-        "type": "lldb",
-        "request": "attach",
-        "program": "${command:python.interpreterPath}",
-        "stopOnEntry": false,
-        "sourceLanguages": [
-            "rust"
-        ],
-        "presentation": {
-            "hidden": true
-        }
-        }
-    ]
+        "configurations": [
+            {
+                "name": "Debug Rust/Python",
+                "type": "debugpy",
+                "request": "launch",
+                "program": "${workspaceFolder}/tools/attach_debugger.py",
+                "args": [
+                    "${file}"
+                ],
+                "console": "internalConsole",
+                "justMyCode": true,
+                "serverReadyAction": {
+                    "pattern": "pID = ([0-9]+)",
+                    "action": "startDebugging",
+                    "name": "Rust LLDB"
+                }
+            },
+            {
+                "name": "Rust LLDB",
+                "pid": "0",
+                "type": "lldb",
+                "request": "attach",
+                "program": "${command:python.interpreterPath}",
+                "stopOnEntry": false,
+                "sourceLanguages": [
+                    "rust"
+                ],
+                "presentation": {
+                    "hidden": true
+                }
+            }
+        ]
     }
     ```
 
