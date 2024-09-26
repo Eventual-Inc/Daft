@@ -258,18 +258,18 @@ pub enum QueryStageOutput {
 impl QueryStageOutput {
     pub fn unwrap(self) -> (Option<usize>, PhysicalPlanRef) {
         match self {
-            QueryStageOutput::Partial {
+            Self::Partial {
                 physical_plan,
                 source_id,
             } => (Some(source_id), physical_plan),
-            QueryStageOutput::Final { physical_plan } => (None, physical_plan),
+            Self::Final { physical_plan } => (None, physical_plan),
         }
     }
 
     pub fn source_id(&self) -> Option<usize> {
         match self {
-            QueryStageOutput::Partial { source_id, .. } => Some(*source_id),
-            QueryStageOutput::Final { .. } => None,
+            Self::Partial { source_id, .. } => Some(*source_id),
+            Self::Final { .. } => None,
         }
     }
 }
@@ -293,7 +293,7 @@ pub struct AdaptivePlanner {
 
 impl AdaptivePlanner {
     pub fn new(logical_plan: LogicalPlanRef, cfg: Arc<DaftExecutionConfig>) -> Self {
-        AdaptivePlanner {
+        Self {
             logical_plan,
             cfg,
             status: AdaptivePlannerStatus::Ready,

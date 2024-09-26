@@ -6,7 +6,7 @@ use crate::{
 };
 
 impl Series {
-    pub fn ceil(&self) -> DaftResult<Series> {
+    pub fn ceil(&self) -> DaftResult<Self> {
         match self.data_type() {
             DataType::Int8
             | DataType::Int16

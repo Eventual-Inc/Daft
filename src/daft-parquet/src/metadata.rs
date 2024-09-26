@@ -26,7 +26,7 @@ impl TreeNode for ParquetTypeWrapper {
             ParquetType::GroupType { fields, .. } => {
                 for child in fields.iter() {
                     // TODO: Expensive clone here because of ParquetTypeWrapper type, can we get rid of this?
-                    match op(&ParquetTypeWrapper(child.clone()))? {
+                    match op(&Self(child.clone()))? {
                         TreeNodeRecursion::Continue => {}
                         TreeNodeRecursion::Jump => return Ok(TreeNodeRecursion::Continue),
                         TreeNodeRecursion::Stop => return Ok(TreeNodeRecursion::Stop),
@@ -50,19 +50,15 @@ impl TreeNode for ParquetTypeWrapper {
                 logical_type,
                 converted_type,
                 fields,
-            } => Ok(Transformed::yes(ParquetTypeWrapper(
-                ParquetType::GroupType {
-                    fields: fields
-                        .into_iter()
-                        .map(|child| {
-                            transform(ParquetTypeWrapper(child)).map(|wrapper| wrapper.data.0)
-                        })
-                        .collect::<DaftResult<Vec<_>>>()?,
-                    field_info,
-                    logical_type,
-                    converted_type,
-                },
-            ))),
+            } => Ok(Transformed::yes(Self(ParquetType::GroupType {
+                fields: fields
+                    .into_iter()
+                    .map(|child| transform(Self(child)).map(|wrapper| wrapper.data.0))
+                    .collect::<DaftResult<Vec<_>>>()?,
+                field_info,
+                logical_type,
+                converted_type,
+            }))),
         }
     }
 }

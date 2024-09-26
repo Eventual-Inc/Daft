@@ -47,7 +47,7 @@ impl MicroPartition {
         }
         let new_len = all_tables.iter().map(|t| t.len()).sum();
 
-        Ok(MicroPartition {
+        Ok(Self {
             schema: mps.first().unwrap().schema.clone(),
             state: Mutex::new(TableState::Loaded(all_tables.into())),
             metadata: TableMetadata { length: new_len },

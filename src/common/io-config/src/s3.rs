@@ -138,7 +138,7 @@ impl S3Config {
 
 impl Default for S3Config {
     fn default() -> Self {
-        S3Config {
+        Self {
             region_name: None,
             endpoint_url: None,
             key_id: None,

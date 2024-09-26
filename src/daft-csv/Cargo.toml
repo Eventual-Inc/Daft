@@ -25,6 +25,9 @@ rstest = {workspace = true}
 [features]
 python = ["dep:pyo3", "common-error/python", "common-py-serde/python", "daft-core/python", "daft-io/python", "daft-table/python", "daft-dsl/python"]
 
+[lints]
+workspace = true
+
 [package]
 edition = {workspace = true}
 name = "daft-csv"

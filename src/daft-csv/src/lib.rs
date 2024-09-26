@@ -43,17 +43,17 @@ pub enum Error {
 }
 
 impl From<Error> for DaftError {
-    fn from(err: Error) -> DaftError {
+    fn from(err: Error) -> Self {
         match err {
             Error::IOError { source } => source.into(),
-            _ => DaftError::External(err.into()),
+            _ => Self::External(err.into()),
         }
     }
 }
 
 impl From<daft_io::Error> for Error {
     fn from(err: daft_io::Error) -> Self {
-        Error::IOError { source: err }
+        Self::IOError { source: err }
     }
 }
 

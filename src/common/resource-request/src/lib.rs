@@ -85,7 +85,7 @@ impl ResourceRequest {
     ///
     /// Currently, this returns true unless one resource request has a non-zero CPU request and the other task has a
     /// non-zero GPU request.
-    pub fn is_pipeline_compatible_with(&self, other: &ResourceRequest) -> bool {
+    pub fn is_pipeline_compatible_with(&self, other: &Self) -> bool {
         let self_num_cpus = self.num_cpus;
         let self_num_gpus = self.num_gpus;
         let other_num_cpus = other.num_cpus;
@@ -100,7 +100,7 @@ impl ResourceRequest {
         }
     }
 
-    pub fn max(&self, other: &ResourceRequest) -> Self {
+    pub fn max(&self, other: &Self) -> Self {
         let max_num_cpus = lift(float_max, self.num_cpus, other.num_cpus);
         let max_num_gpus = lift(float_max, self.num_gpus, other.num_gpus);
         let max_memory_bytes = lift(std::cmp::max, self.memory_bytes, other.memory_bytes);
@@ -152,8 +152,8 @@ impl Hash for ResourceRequest {
     }
 }
 
-impl AsRef<ResourceRequest> for ResourceRequest {
-    fn as_ref(&self) -> &ResourceRequest {
+impl AsRef<Self> for ResourceRequest {
+    fn as_ref(&self) -> &Self {
         self
     }
 }
@@ -200,21 +200,21 @@ impl ResourceRequest {
     }
 
     pub fn with_num_cpus(&self, num_cpus: Option<f64>) -> Self {
-        ResourceRequest {
+        Self {
             num_cpus,
             ..self.clone()
         }
     }
 
     pub fn with_num_gpus(&self, num_gpus: Option<f64>) -> Self {
-        ResourceRequest {
+        Self {
             num_gpus,
             ..self.clone()
         }
     }
 
     pub fn with_memory_bytes(&self, memory_bytes: Option<usize>) -> Self {
-        ResourceRequest {
+        Self {
             memory_bytes,
             ..self.clone()
         }

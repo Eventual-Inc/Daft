@@ -79,7 +79,7 @@ pub enum Error {
 }
 
 impl From<Error> for DaftError {
-    fn from(err: Error) -> DaftError {
+    fn from(err: Error) -> Self {
         match err {
             Error::PipelineCreationError { source, plan_name } => {
                 log::error!("Error creating pipeline from {}", plan_name);
@@ -89,7 +89,7 @@ impl From<Error> for DaftError {
                 log::error!("Error when running pipeline node {}", node_name);
                 source
             }
-            _ => DaftError::External(err.into()),
+            _ => Self::External(err.into()),
         }
     }
 }

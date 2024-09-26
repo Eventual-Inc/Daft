@@ -890,7 +890,7 @@ impl From<MicroPartition> for PyMicroPartition {
 
 impl From<Arc<MicroPartition>> for PyMicroPartition {
     fn from(value: Arc<MicroPartition>) -> Self {
-        PyMicroPartition { inner: value }
+        Self { inner: value }
     }
 }
 

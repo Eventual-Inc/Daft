@@ -148,7 +148,7 @@ where
             None,
         );
 
-        Ok(DataArray::<T>::from((self.name(), Box::new(result))))
+        Ok(Self::from((self.name(), Box::new(result))))
     }
 }
 
@@ -240,7 +240,7 @@ impl Float32Array {
             None,
         );
 
-        Ok(Float32Array::from((self.name(), Box::new(result))))
+        Ok(Self::from((self.name(), Box::new(result))))
     }
 }
 
@@ -332,7 +332,7 @@ impl Float64Array {
             None,
         );
 
-        Ok(Float64Array::from((self.name(), Box::new(result))))
+        Ok(Self::from((self.name(), Box::new(result))))
     }
 }
 
@@ -462,7 +462,7 @@ impl BooleanArray {
 
         let result = arrow2::compute::sort::sort(self.data(), &options, None)?;
 
-        BooleanArray::try_from((self.field.clone(), result))
+        Self::try_from((self.field.clone(), result))
     }
 }
 

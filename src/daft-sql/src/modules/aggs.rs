@@ -34,7 +34,7 @@ impl SQLModule for SQLModuleAggs {
 impl SQLFunction for AggExpr {
     fn to_expr(&self, inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
         // COUNT(*) needs a bit of extra handling, so we process that outside of `to_expr`
-        if let AggExpr::Count(_, _) = self {
+        if let Self::Count(_, _) = self {
             handle_count(inputs, planner)
         } else {
             let inputs = self.args_to_expr_unnamed(inputs, planner)?;

@@ -3,7 +3,7 @@ use daft_dsl::python::PyExpr;
 use daft_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
 use pyo3::prelude::*;
 
-use crate::{catalog::SQLCatalog, planner::SQLPlanner};
+use crate::{catalog::SQLCatalog, functions::SQL_FUNCTIONS, planner::SQLPlanner};
 
 #[pyfunction]
 pub fn sql(
@@ -22,6 +22,11 @@ pub fn sql_expr(sql: &str) -> PyResult<PyExpr> {
     Ok(PyExpr { expr })
 }
 
+#[pyfunction]
+pub fn list_sql_functions() -> Vec<String> {
+    SQL_FUNCTIONS.map.keys().cloned().collect()
+}
+
 /// PyCatalog is the Python interface to the Catalog.
 #[pyclass(module = "daft.daft")]
 #[derive(Debug, Clone)]
@@ -34,7 +39,7 @@ impl PyCatalog {
     /// Construct an empty PyCatalog.
     #[staticmethod]
     pub fn new() -> Self {
-        PyCatalog {
+        Self {
             catalog: SQLCatalog::new(),
         }
     }
@@ -46,7 +51,7 @@ impl PyCatalog {
     }
 
     /// Copy from another catalog, using tables from other in case of conflict
-    pub fn copy_from(&mut self, other: &PyCatalog) {
+    pub fn copy_from(&mut self, other: &Self) {
         self.catalog.copy_from(&other.catalog);
     }
 

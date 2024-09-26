@@ -48,7 +48,7 @@ impl TryFrom<ParquetSchemaInferenceOptionsBuilder> for ParquetSchemaInferenceOpt
     type Error = crate::Error;
 
     fn try_from(value: ParquetSchemaInferenceOptionsBuilder) -> crate::Result<Self> {
-        Ok(ParquetSchemaInferenceOptions {
+        Ok(Self {
             coerce_int96_timestamp_unit: value
                 .coerce_int96_timestamp_unit
                 .map_or(TimeUnit::Nanoseconds, From::from),
@@ -77,7 +77,7 @@ impl ParquetSchemaInferenceOptions {
     pub fn new(coerce_int96_timestamp_unit: Option<TimeUnit>) -> Self {
         let coerce_int96_timestamp_unit =
             coerce_int96_timestamp_unit.unwrap_or(TimeUnit::Nanoseconds);
-        ParquetSchemaInferenceOptions {
+        Self {
             coerce_int96_timestamp_unit,
             ..Default::default()
         }
@@ -86,7 +86,7 @@ impl ParquetSchemaInferenceOptions {
 
 impl Default for ParquetSchemaInferenceOptions {
     fn default() -> Self {
-        ParquetSchemaInferenceOptions {
+        Self {
             coerce_int96_timestamp_unit: TimeUnit::Nanoseconds,
             string_encoding: StringEncoding::Utf8,
         }
@@ -95,7 +95,7 @@ impl Default for ParquetSchemaInferenceOptions {
 
 impl From<ParquetSchemaInferenceOptions> for SchemaInferenceOptions {
     fn from(value: ParquetSchemaInferenceOptions) -> Self {
-        SchemaInferenceOptions {
+        Self {
             int96_coerce_to_timeunit: value.coerce_int96_timestamp_unit.to_arrow(),
             string_encoding: value.string_encoding,
         }

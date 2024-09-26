@@ -4,12 +4,7 @@ import pandas as pd
 import pyarrow as pa
 import pytest
 
-from daft import col, context
-
-pytestmark = pytest.mark.skipif(
-    context.get_context().daft_execution_config.enable_native_executor is True,
-    reason="Native executor fails for these tests",
-)
+from daft import col
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])

@@ -388,7 +388,7 @@ pub fn resolve_aggexprs(
 pub fn check_column_name_validity(name: &str, schema: &Schema) -> DaftResult<()> {
     let struct_expr_map = calculate_struct_expr_map(schema);
 
-    let names = if name.contains('*') {
+    let names = if name == "*" || name.ends_with(".*") {
         if let Ok(names) = get_wildcard_matches(name, schema, &struct_expr_map) {
             names
         } else {

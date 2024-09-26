@@ -25,7 +25,7 @@ impl MicroPartition {
             }
             [t] => {
                 let pivoted = t.pivot(group_by, pivot_col, values_col, names)?;
-                Ok(MicroPartition::new_loaded(
+                Ok(Self::new_loaded(
                     pivoted.schema.clone(),
                     vec![pivoted].into(),
                     None,
