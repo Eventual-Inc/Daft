@@ -262,6 +262,7 @@ mod tests {
                 JoinType::Inner,
                 None,
             )?
+            .select(vec![col("*")])?
             .build();
         assert_eq!(plan, expected);
         Ok(())
