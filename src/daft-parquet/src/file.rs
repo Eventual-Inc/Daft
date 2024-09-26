@@ -325,8 +325,8 @@ impl ParquetFileReader {
         })
     }
 
-    pub fn arrow_schema(&self) -> &Arc<arrow2::datatypes::Schema> {
-        &self.arrow_schema
+    pub fn arrow_schema(&self) -> Arc<arrow2::datatypes::Schema> {
+        self.arrow_schema.clone()
     }
 
     fn naive_read_plan(&self) -> super::Result<ReadPlanner> {

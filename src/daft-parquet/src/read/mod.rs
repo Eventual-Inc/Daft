@@ -564,7 +564,7 @@ async fn read_parquet_single_into_arrow(
 
         let parquet_reader = builder.build()?;
 
-        let schema = parquet_reader.arrow_schema().clone();
+        let schema = parquet_reader.arrow_schema();
         let ranges = parquet_reader.prebuffer_ranges(io_client, io_stats)?;
         let (all_arrays, num_rows_read) = parquet_reader
             .read_from_ranges_into_arrow_arrays(ranges)
@@ -687,11 +687,13 @@ pub fn read_parquet(
         .await
     })
 }
+
 pub type ArrowChunk = Vec<Box<dyn arrow2::array::Array>>;
 pub type ArrowChunkIters = Vec<
     Box<dyn Iterator<Item = arrow2::error::Result<Box<dyn arrow2::array::Array>>> + Send + Sync>,
 >;
 pub type ParquetPyarrowChunk = (arrow2::datatypes::SchemaRef, Vec<ArrowChunk>, usize);
+
 #[allow(clippy::too_many_arguments)]
 pub fn read_parquet_into_pyarrow(
     uri: &str,
@@ -950,6 +952,7 @@ pub async fn read_parquet_metadata(
         ParquetReaderBuilder::from_uri(uri, io_client, io_stats, field_id_mapping).await?;
     Ok(builder.metadata)
 }
+
 pub async fn read_parquet_metadata_bulk(
     uris: &[&str],
     io_client: Arc<IOClient>,
