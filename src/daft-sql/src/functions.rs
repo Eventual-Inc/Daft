@@ -237,7 +237,10 @@ impl SQLPlanner {
         }
     }
 
-    fn try_unwrap_function_arg_expr(&self, expr: &FunctionArgExpr) -> SQLPlannerResult<ExprRef> {
+    pub(crate) fn try_unwrap_function_arg_expr(
+        &self,
+        expr: &FunctionArgExpr,
+    ) -> SQLPlannerResult<ExprRef> {
         match expr {
             FunctionArgExpr::Expr(expr) => self.plan_expr(expr),
             _ => unsupported_sql_err!("Wildcard function args not yet supported"),

@@ -37,8 +37,8 @@ impl SQLFunction for SQLHash {
             [input, seed] => {
                 let input = planner.plan_function_arg(input)?;
                 match seed {
-                    arg @ FunctionArg::Named { name, .. } if name.value == "seed" => {
-                        let seed = planner.plan_function_arg(arg)?;
+                    FunctionArg::Named { name, arg, .. } if name.value == "seed" => {
+                        let seed = planner.try_unwrap_function_arg_expr(arg)?;
                         Ok(hash(input, Some(seed)))
                     }
                     arg @ FunctionArg::Unnamed(_) => {
@@ -61,12 +61,17 @@ impl TryFrom<SQLFunctionArguments> for MinHashFunction {
     fn try_from(args: SQLFunctionArguments) -> Result<Self, Self::Error> {
         let num_hashes = args
             .get_named("num_hashes")
-            .and_then(|arg| arg.as_literal().and_then(|lit| lit.as_i64()))
+            .ok_or_else(|| PlannerError::invalid_operation("num_hashes is required"))?
+            .as_literal()
+            .and_then(|lit| lit.as_i64())
             .ok_or_else(|| PlannerError::invalid_operation("num_hashes must be an integer"))?
             as usize;
+
         let ngram_size = args
             .get_named("ngram_size")
-            .and_then(|arg| arg.as_literal().and_then(|lit| lit.as_i64()))
+            .ok_or_else(|| PlannerError::invalid_operation("ngram_size is required"))?
+            .as_literal()
+            .and_then(|lit| lit.as_i64())
             .ok_or_else(|| PlannerError::invalid_operation("ngram_size must be an integer"))?
             as usize;
         let seed = args
