@@ -107,6 +107,7 @@ pub mod pylib {
             storage_config: PyStorageConfig,
             infer_schema: bool,
             schema: Option<PySchema>,
+            file_path_column: Option<String>,
         ) -> PyResult<Self> {
             py.allow_threads(|| {
                 let operator = Arc::new(GlobScanOperator::try_new(
@@ -115,6 +116,7 @@ pub mod pylib {
                     storage_config.into(),
                     infer_schema,
                     schema.map(|s| s.schema),
+                    file_path_column,
                 )?);
                 Ok(Self {
                     scan_op: ScanOperatorRef(operator),
@@ -210,6 +212,9 @@ pub mod pylib {
         }
         fn schema(&self) -> daft_schema::schema::SchemaRef {
             self.schema.clone()
+        }
+        fn file_path_column(&self) -> Option<&str> {
+            None
         }
         fn can_absorb_filter(&self) -> bool {
             self.can_absorb_filter
@@ -348,6 +353,7 @@ pub mod pylib {
                 schema.schema,
                 storage_config.into(),
                 pushdowns.map(|p| p.0.as_ref().clone()).unwrap_or_default(),
+                None,
             );
             Ok(Some(Self(scan_task.into())))
         }
@@ -380,6 +386,7 @@ pub mod pylib {
                 schema.schema,
                 storage_config.into(),
                 pushdowns.map(|p| p.0.as_ref().clone()).unwrap_or_default(),
+                None,
             );
             Ok(Self(scan_task.into()))
         }
@@ -424,6 +431,7 @@ pub mod pylib {
                     PythonStorageConfig { io_config: None },
                 ))),
                 pushdowns.map(|p| p.0.as_ref().clone()).unwrap_or_default(),
+                None,
             );
             Ok(Self(scan_task.into()))
         }

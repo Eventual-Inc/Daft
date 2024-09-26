@@ -56,6 +56,7 @@ pub fn read_json(
             io_client,
             io_stats,
             max_chunks_in_flight,
+            None,
         )
         .await
     })
@@ -72,18 +73,28 @@ pub fn read_json_bulk(
     multithreaded_io: bool,
     max_chunks_in_flight: Option<usize>,
     num_parallel_tasks: usize,
+    file_path_column: Option<String>,
 ) -> DaftResult<Vec<Table>> {
     let runtime_handle = get_runtime(multithreaded_io)?;
     let tables = runtime_handle.block_on_current_thread(async move {
         // Launch a read task per URI, throttling the number of concurrent file reads to num_parallel tasks.
         let task_stream = futures::stream::iter(uris.iter().map(|uri| {
-            let (uri, convert_options, parse_options, read_options, io_client, io_stats) = (
+            let (
+                uri,
+                convert_options,
+                parse_options,
+                read_options,
+                io_client,
+                io_stats,
+                file_path_column,
+            ) = (
                 uri.to_string(),
                 convert_options.clone(),
                 parse_options.clone(),
                 read_options.clone(),
                 io_client.clone(),
                 io_stats.clone(),
+                file_path_column.clone(),
             );
             tokio::task::spawn(async move {
                 let table = read_json_single_into_table(
@@ -94,6 +105,7 @@ pub fn read_json_bulk(
                     io_client,
                     io_stats,
                     max_chunks_in_flight,
+                    file_path_column,
                 )
                 .await?;
                 DaftResult::Ok(table)
@@ -168,6 +180,7 @@ pub(crate) fn tables_concat(mut tables: Vec<Table>) -> DaftResult<Table> {
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn read_json_single_into_table(
     uri: &str,
     convert_options: Option<JsonConvertOptions>,
@@ -176,6 +189,7 @@ async fn read_json_single_into_table(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
+    file_path_column: Option<String>,
 ) -> DaftResult<Table> {
     let (source_type, fixed_uri) = parse_url(uri)?;
     let is_compressed = CompressionCodec::from_uri(uri).is_some();
@@ -186,6 +200,7 @@ async fn read_json_single_into_table(
             parse_options,
             read_options,
             max_chunks_in_flight,
+            file_path_column,
         );
     }
 
@@ -270,20 +285,32 @@ async fn read_json_single_into_table(
         .into_iter()
         .collect::<DaftResult<Vec<_>>>()?;
     // Handle empty table case.
-    if collected_tables.is_empty() {
-        let daft_schema = Arc::new(Schema::try_from(&schema)?);
-        return Table::empty(Some(daft_schema));
+    let output_table = {
+        if collected_tables.is_empty() {
+            let daft_schema = Arc::new(Schema::try_from(&schema)?);
+            return Table::empty(Some(daft_schema));
+        }
+
+        // // TODO(Clark): Don't concatenate all chunks from a file into a single table, since MicroPartition is natively chunked.
+        let concated_table = tables_concat(collected_tables)?;
+        if let Some(limit) = limit
+            && concated_table.len() > limit
+        {
+            // apply head in case that last chunk went over limit
+            concated_table.head(limit)
+        } else {
+            Ok(concated_table)
+        }
+    }?;
+    if let Some(file_path_col_name) = file_path_column {
+        let file_paths_column = Utf8Array::from_iter(
+            file_path_col_name.as_str(),
+            std::iter::repeat(Some(uri.trim_start_matches("file://"))).take(output_table.len()),
+        )
+        .into_series();
+        return output_table.union(&Table::from_nonempty_columns(vec![file_paths_column])?);
     }
-    // // TODO(Clark): Don't concatenate all chunks from a file into a single table, since MicroPartition is natively chunked.
-    let concated_table = tables_concat(collected_tables)?;
-    if let Some(limit) = limit
-        && concated_table.len() > limit
-    {
-        // apply head in case that last chunk went over limit
-        concated_table.head(limit)
-    } else {
-        Ok(concated_table)
-    }
+    Ok(output_table)
 }
 
 pub async fn stream_json(

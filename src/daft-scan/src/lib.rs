@@ -12,6 +12,7 @@ use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormatConfig;
 use daft_dsl::ExprRef;
 use daft_schema::{
+    dtype::DataType,
     field::Field,
     schema::{Schema, SchemaRef},
 };
@@ -64,6 +65,13 @@ pub enum Error {
         ffc1: Arc<FileFormatConfig>,
         ffc2: Arc<FileFormatConfig>,
     },
+
+    #[snafu(display(
+        "FilePathColumns were different during ScanTask::merge: {:?} vs {:?}",
+        fpc1,
+        fpc2
+    ))]
+    DifferingFilePathColumnsInScanTaskMerge { fpc1: String, fpc2: String },
 
     #[snafu(display(
         "StorageConfigs were different during ScanTask::merge: {:?} vs {:?}",
@@ -356,6 +364,7 @@ pub struct ScanTask {
     pub size_bytes_on_disk: Option<u64>,
     pub metadata: Option<TableMetadata>,
     pub statistics: Option<TableStatistics>,
+    pub file_path_column: Option<String>,
 }
 pub type ScanTaskRef = Arc<ScanTask>;
 
@@ -366,6 +375,7 @@ impl ScanTask {
         schema: SchemaRef,
         storage_config: Arc<StorageConfig>,
         pushdowns: Pushdowns,
+        file_path_column: Option<String>,
     ) -> Self {
         assert!(!sources.is_empty());
         debug_assert!(
@@ -406,6 +416,7 @@ impl ScanTask {
             size_bytes_on_disk,
             metadata,
             statistics,
+            file_path_column,
         }
     }
 
@@ -440,6 +451,12 @@ impl ScanTask {
                 p2: sc2.pushdowns.clone(),
             });
         }
+        if sc1.file_path_column != sc2.file_path_column {
+            return Err(Error::DifferingFileFormatConfigsInScanTaskMerge {
+                ffc1: sc1.file_format_config.clone(),
+                ffc2: sc2.file_format_config.clone(),
+            });
+        }
         Ok(Self::new(
             sc1.sources
                 .clone()
@@ -450,19 +467,43 @@ impl ScanTask {
             sc1.schema.clone(),
             sc1.storage_config.clone(),
             sc1.pushdowns.clone(),
+            sc1.file_path_column.clone(),
         ))
     }
 
     pub fn materialized_schema(&self) -> SchemaRef {
-        match &self.pushdowns.columns {
-            None => self.schema.clone(),
-            Some(columns) => Arc::new(Schema {
+        match (&self.pushdowns.columns, &self.file_path_column) {
+            (None, None) => self.schema.clone(),
+            (Some(columns), file_path_column_opt) => {
+                let filtered_fields = self
+                    .schema
+                    .fields
+                    .clone()
+                    .into_iter()
+                    .filter(|(name, _)| columns.contains(name));
+
+                let fields = match file_path_column_opt {
+                    Some(file_path_column) => filtered_fields
+                        .chain(std::iter::once((
+                            file_path_column.to_string(),
+                            Field::new(file_path_column.to_string(), DataType::Utf8),
+                        )))
+                        .collect(),
+                    None => filtered_fields.collect(),
+                };
+
+                Arc::new(Schema { fields })
+            }
+            (None, Some(file_path_column)) => Arc::new(Schema {
                 fields: self
                     .schema
                     .fields
                     .clone()
                     .into_iter()
-                    .filter(|(name, _)| columns.contains(name))
+                    .chain(std::iter::once((
+                        file_path_column.to_string(),
+                        Field::new(file_path_column.to_string(), DataType::Utf8),
+                    )))
                     .collect(),
             }),
         }
@@ -752,6 +793,7 @@ impl Display for PartitionTransform {
 pub trait ScanOperator: Send + Sync + Debug {
     fn schema(&self) -> SchemaRef;
     fn partitioning_keys(&self) -> &[PartitionField];
+    fn file_path_column(&self) -> Option<&str>;
 
     fn can_absorb_filter(&self) -> bool;
     fn can_absorb_select(&self) -> bool;
@@ -1000,6 +1042,7 @@ mod test {
                 NativeStorageConfig::new_internal(false, None),
             ))),
             Pushdowns::default(),
+            None,
         )
     }
 
@@ -1025,6 +1068,7 @@ mod test {
             ))),
             false,
             Some(Arc::new(Schema::empty())),
+            None,
         )
         .unwrap();
 

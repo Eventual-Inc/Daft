@@ -19,6 +19,7 @@ pub struct GlobScanOperator {
     file_format_config: Arc<FileFormatConfig>,
     schema: SchemaRef,
     storage_config: Arc<StorageConfig>,
+    file_path_column: Option<String>,
 }
 
 /// Wrapper struct that implements a sync Iterator for a BoxStream
@@ -130,6 +131,7 @@ impl GlobScanOperator {
         storage_config: Arc<StorageConfig>,
         infer_schema: bool,
         schema: Option<SchemaRef>,
+        file_path_column: Option<String>,
     ) -> DaftResult<Self> {
         let first_glob_path = match glob_paths.first() {
             None => Err(DaftError::ValueError(
@@ -247,6 +249,7 @@ impl GlobScanOperator {
             file_format_config,
             schema,
             storage_config,
+            file_path_column,
         })
     }
 }
@@ -258,6 +261,10 @@ impl ScanOperator for GlobScanOperator {
 
     fn partitioning_keys(&self) -> &[PartitionField] {
         &[]
+    }
+
+    fn file_path_column(&self) -> Option<&str> {
+        self.file_path_column.as_deref()
     }
 
     fn can_absorb_filter(&self) -> bool {
@@ -310,7 +317,6 @@ impl ScanOperator for GlobScanOperator {
             self.glob_paths
         ));
         let file_format = self.file_format_config.file_format();
-
         let files = run_glob_parallel(
             self.glob_paths.clone(),
             io_client.clone(),
@@ -332,7 +338,7 @@ impl ScanOperator for GlobScanOperator {
         } else {
             None
         };
-
+        let file_path_column = self.file_path_column.clone();
         // Create one ScanTask per file
         Ok(Box::new(files.enumerate().map(move |(idx, f)| {
             let FileMetadata {
@@ -340,7 +346,6 @@ impl ScanOperator for GlobScanOperator {
                 size: size_bytes,
                 ..
             } = f?;
-
             let row_group = row_groups
                 .as_ref()
                 .and_then(|rgs| rgs.get(idx).cloned())
@@ -361,6 +366,7 @@ impl ScanOperator for GlobScanOperator {
                 schema.clone(),
                 storage_config.clone(),
                 pushdowns.clone(),
+                file_path_column.clone(),
             )
             .into())
         })))

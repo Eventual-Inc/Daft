@@ -2,12 +2,14 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
+use daft_core::{prelude::Utf8Array, series::IntoSeries};
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_io::IOStatsRef;
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_micropartition::MicroPartition;
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use daft_scan::{storage_config::StorageConfig, ChunkSpec, ScanTask};
+use daft_table::Table;
 use futures::{Stream, StreamExt};
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::instrument;
@@ -136,7 +138,7 @@ async fn stream_scan_task(
         ));
     }
     let source = scan_task.sources.first().unwrap();
-    let url = source.get_path();
+    let url = source.get_path().to_string();
     let table_stream = match scan_task.storage_config.as_ref() {
         StorageConfig::Native(native_storage_config) => {
             let io_config = Arc::new(
@@ -178,7 +180,7 @@ async fn stream_scan_task(
                         .first()
                         .and_then(|s| s.get_parquet_metadata().cloned());
                     daft_parquet::read::stream_parquet(
-                        url,
+                        url.clone(),
                         file_column_names.as_deref(),
                         None,
                         scan_task.pushdowns.limit,
@@ -233,7 +235,7 @@ async fn stream_scan_task(
                     let read_options =
                         CsvReadOptions::new_internal(cfg.buffer_size, cfg.chunk_size);
                     daft_csv::stream_csv(
-                        url.to_string(),
+                        url.clone(),
                         Some(convert_options),
                         Some(parse_options),
                         Some(read_options),
@@ -264,7 +266,7 @@ async fn stream_scan_task(
                         JsonReadOptions::new_internal(cfg.buffer_size, cfg.chunk_size);
 
                     daft_json::read::stream_json(
-                        url.to_string(),
+                        url.clone(),
                         Some(convert_options),
                         Some(parse_options),
                         Some(read_options),
@@ -298,7 +300,15 @@ async fn stream_scan_task(
     };
 
     Ok(table_stream.map(move |table| {
-        let table = table?;
+        let mut table = table?;
+        if let Some(file_path_col_name) = &scan_task.file_path_column {
+            let file_paths_column = Utf8Array::from_iter(
+                file_path_col_name.as_str(),
+                std::iter::repeat(Some(url.trim_start_matches("file://"))).take(table.len()),
+            )
+            .into_series();
+            table = table.union(&Table::from_nonempty_columns(vec![file_paths_column])?)?;
+        }
         let casted_table = table.cast_to_schema_with_fill(
             scan_task.materialized_schema().as_ref(),
             scan_task
