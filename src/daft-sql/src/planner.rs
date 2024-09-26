@@ -490,17 +490,7 @@ impl SQLPlanner {
                     })
                     .map_err(|e| e.into());
                 } else {
-                    let current_relation = self.current_relation.as_ref().ok_or_else(|| {
-                        PlannerError::TableNotFound {
-                            message: "No table found to select columns from".to_string(),
-                        }
-                    })?;
-                    let schema = current_relation.inner.schema();
-                    return Ok(schema
-                        .names()
-                        .iter()
-                        .map(|n| col(n.as_ref()))
-                        .collect::<Vec<_>>());
+                    Ok(vec![col("*")])
                 }
             }
             _ => todo!(),

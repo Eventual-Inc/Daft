@@ -261,12 +261,7 @@ mod tests {
                 JoinType::Inner,
                 None,
             )?
-            .select(vec![
-                col("id"),
-                col("text"),
-                col("first_name"),
-                col("last_name"),
-            ])?
+            .select(vec![col("*")])?
             .build();
         assert_eq!(plan, expected);
         Ok(())
