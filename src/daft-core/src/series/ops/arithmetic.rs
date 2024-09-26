@@ -23,7 +23,7 @@ macro_rules! impl_arithmetic_ref_for_series {
     };
 }
 
-macro_rules! binary_op_unimplemented {
+macro_rules! arithmetic_op_not_implemented {
     ($lhs:expr, $op:expr, $rhs:expr, $output_ty:expr) => {
         unimplemented!(
             "No implementation for {} {} {} -> {}",
@@ -84,10 +84,10 @@ impl Add for &Series {
                             lhs.duration()?.physical.add(&rhs.timestamp()?.physical)?;
                         physical_result.cast(output_type)
                     }
-                    _ => binary_op_unimplemented!(self, "+", rhs, output_type),
+                    _ => arithmetic_op_not_implemented!(self, "+", rhs, output_type),
                 }
             }
-            _ => binary_op_unimplemented!(self, "+", rhs, output_type),
+            _ => arithmetic_op_not_implemented!(self, "+", rhs, output_type),
         }
     }
 }
@@ -134,13 +134,13 @@ impl Sub for &Series {
                             self.timestamp()?.physical.sub(&rhs.timestamp()?.physical)?;
                         physical_result.cast(output_type)
                     }
-                    _ => binary_op_unimplemented!(self, "-", rhs, output_type),
+                    _ => arithmetic_op_not_implemented!(self, "-", rhs, output_type),
                 }
             }
             output_type if output_type.is_fixed_size_numeric() => {
                 fixed_size_binary_op(lhs, rhs, output_type, FixedSizeBinaryOp::Sub)
             }
-            _ => binary_op_unimplemented!(self, "-", rhs, output_type),
+            _ => arithmetic_op_not_implemented!(self, "-", rhs, output_type),
         }
     }
 }
@@ -162,7 +162,7 @@ impl Mul for &Series {
             output_type if output_type.is_fixed_size_numeric() => {
                 fixed_size_binary_op(lhs, rhs, output_type, FixedSizeBinaryOp::Mul)
             }
-            _ => binary_op_unimplemented!(self, "*", rhs, output_type),
+            _ => arithmetic_op_not_implemented!(self, "*", rhs, output_type),
         }
     }
 }
@@ -185,7 +185,7 @@ impl Div for &Series {
             output_type if output_type.is_fixed_size_numeric() => {
                 fixed_size_binary_op(lhs, rhs, output_type, FixedSizeBinaryOp::Div)
             }
-            _ => binary_op_unimplemented!(self, "/", rhs, output_type),
+            _ => arithmetic_op_not_implemented!(self, "/", rhs, output_type),
         }
     }
 }
@@ -207,7 +207,7 @@ impl Rem for &Series {
             output_type if output_type.is_fixed_size_numeric() => {
                 fixed_size_binary_op(lhs, rhs, output_type, FixedSizeBinaryOp::Rem)
             }
-            _ => binary_op_unimplemented!(self, "%", rhs, output_type),
+            _ => arithmetic_op_not_implemented!(self, "%", rhs, output_type),
         }
     }
 }

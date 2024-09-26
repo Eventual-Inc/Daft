@@ -10,13 +10,13 @@ use crate::{
     series::{utils::cast::cast_downcast_op, IntoSeries, Series},
     with_match_integer_daft_types,
 };
-macro_rules! binary_op_not_implemented {
+macro_rules! logical_op_not_implemented {
     ($self:expr, $rhs:expr, $op:ident) => {{
         let left_dtype = $self.data_type();
         let right_dtype = $rhs.data_type();
         let op_name = stringify!($op);
         return Err(common_error::DaftError::ComputeError(format!(
-            "Binary Op: {op_name} not implemented for {left_dtype}, {right_dtype}"
+            "Logical Op: {op_name} not implemented for {left_dtype}, {right_dtype}"
         )));
     }};
 }
@@ -51,7 +51,7 @@ impl DaftLogical<&Self> for Series {
                 })
             }
 
-            _ => binary_op_not_implemented!(self, rhs, and),
+            _ => logical_op_not_implemented!(self, rhs, and),
         }
     }
 
@@ -81,7 +81,7 @@ impl DaftLogical<&Self> for Series {
                     )?.into_series())
                 })
             }
-            _ => binary_op_not_implemented!(self, rhs, or),
+            _ => logical_op_not_implemented!(self, rhs, or),
         }
     }
 
@@ -111,7 +111,7 @@ impl DaftLogical<&Self> for Series {
                     )?.into_series())
                 })
             }
-            _ => binary_op_not_implemented!(self, rhs, xor),
+            _ => logical_op_not_implemented!(self, rhs, xor),
         }
     }
 }
