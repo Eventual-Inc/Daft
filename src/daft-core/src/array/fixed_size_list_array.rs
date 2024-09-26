@@ -53,7 +53,7 @@ impl FixedSizeListArray {
                 field
             ),
         }
-        FixedSizeListArray {
+        Self {
             field,
             flat_child,
             validity,
@@ -90,7 +90,7 @@ impl FixedSizeListArray {
 
         growable
             .build()
-            .map(|s| s.downcast::<FixedSizeListArray>().unwrap().clone())
+            .map(|s| s.downcast::<Self>().unwrap().clone())
     }
 
     pub fn len(&self) -> usize {

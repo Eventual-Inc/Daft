@@ -110,27 +110,27 @@ impl From<Error> for super::Error {
         match error {
             UnableToReadBytes { path, source } | UnableToOpenFile { path, source } => {
                 match source.as_http_error().map(|v| v.status().into()) {
-                    Some(404) | Some(410) => super::Error::NotFound {
+                    Some(404) | Some(410) => Self::NotFound {
                         path,
                         source: source.into(),
                     },
-                    Some(401) => super::Error::Unauthorized {
+                    Some(401) => Self::Unauthorized {
                         store: super::SourceType::AzureBlob,
                         path,
                         source: source.into(),
                     },
-                    None | Some(_) => super::Error::UnableToOpenFile {
+                    None | Some(_) => Self::UnableToOpenFile {
                         path,
                         source: source.into(),
                     },
                 }
             }
-            NotFound { ref path } => super::Error::NotFound {
+            NotFound { ref path } => Self::NotFound {
                 path: path.into(),
                 source: error.into(),
             },
-            NotAFile { path } => super::Error::NotAFile { path },
-            _ => super::Error::Generic {
+            NotAFile { path } => Self::NotAFile { path },
+            _ => Self::Generic {
                 store: super::SourceType::AzureBlob,
                 source: error.into(),
             },
@@ -225,7 +225,7 @@ impl AzureBlobSource {
             BlobServiceClient::new(storage_account, storage_credentials)
         };
 
-        Ok(AzureBlobSource {
+        Ok(Self {
             blob_client: blob_client.into(),
         }
         .into())

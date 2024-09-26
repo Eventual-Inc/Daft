@@ -34,18 +34,4 @@ pub trait SeriesLike: Send + Sync + Any + std::fmt::Debug {
     fn slice(&self, start: usize, end: usize) -> DaftResult<Series>;
     fn take(&self, idx: &Series) -> DaftResult<Series>;
     fn str_value(&self, idx: usize) -> DaftResult<String>;
-    fn add(&self, rhs: &Series) -> DaftResult<Series>;
-    fn sub(&self, rhs: &Series) -> DaftResult<Series>;
-    fn mul(&self, rhs: &Series) -> DaftResult<Series>;
-    fn div(&self, rhs: &Series) -> DaftResult<Series>;
-    fn rem(&self, rhs: &Series) -> DaftResult<Series>;
-    fn and(&self, rhs: &Series) -> DaftResult<Series>;
-    fn or(&self, rhs: &Series) -> DaftResult<Series>;
-    fn xor(&self, rhs: &Series) -> DaftResult<Series>;
-    fn equal(&self, rhs: &Series) -> DaftResult<BooleanArray>;
-    fn not_equal(&self, rhs: &Series) -> DaftResult<BooleanArray>;
-    fn lt(&self, rhs: &Series) -> DaftResult<BooleanArray>;
-    fn lte(&self, rhs: &Series) -> DaftResult<BooleanArray>;
-    fn gt(&self, rhs: &Series) -> DaftResult<BooleanArray>;
-    fn gte(&self, rhs: &Series) -> DaftResult<BooleanArray>;
 }

@@ -52,7 +52,6 @@ pub struct DaftExecutionConfig {
     pub csv_target_filesize: usize,
     pub csv_inflation_factor: f64,
     pub shuffle_aggregation_default_partitions: usize,
-    pub shuffle_join_default_partitions: usize,
     pub read_sql_partition_size_bytes: usize,
     pub enable_aqe: bool,
     pub enable_native_executor: bool,
@@ -61,7 +60,7 @@ pub struct DaftExecutionConfig {
 
 impl Default for DaftExecutionConfig {
     fn default() -> Self {
-        DaftExecutionConfig {
+        Self {
             scan_tasks_min_size_bytes: 96 * 1024 * 1024,  // 96MB
             scan_tasks_max_size_bytes: 384 * 1024 * 1024, // 384MB
             broadcast_join_size_bytes_threshold: 10 * 1024 * 1024, // 10 MiB
@@ -76,7 +75,6 @@ impl Default for DaftExecutionConfig {
             csv_target_filesize: 512 * 1024 * 1024, // 512MB
             csv_inflation_factor: 0.5,
             shuffle_aggregation_default_partitions: 200,
-            shuffle_join_default_partitions: 16,
             read_sql_partition_size_bytes: 512 * 1024 * 1024, // 512MB
             enable_aqe: false,
             enable_native_executor: false,

@@ -47,6 +47,7 @@ mod shift;
 mod sign;
 mod sketch_percentile;
 mod sort;
+pub(crate) mod sparse_tensor;
 mod sqrt;
 mod struct_;
 mod sum;

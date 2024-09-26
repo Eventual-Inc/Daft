@@ -4,14 +4,14 @@ use super::{ArrayWrapper, IntoSeries, Series};
 use crate::{
     array::{ops::GroupIndices, prelude::*},
     datatypes::prelude::*,
-    series::{array_impl::binary_ops::SeriesBinaryOps, DaftResult, SeriesLike},
+    series::{DaftResult, SeriesLike},
     with_match_integer_daft_types,
 };
 
 impl<L> IntoSeries for LogicalArray<L>
 where
     L: DaftLogicalType,
-    ArrayWrapper<LogicalArray<L>>: SeriesLike,
+    ArrayWrapper<Self>: SeriesLike,
 {
     fn into_series(self) -> Series {
         Series {
@@ -165,53 +165,6 @@ macro_rules! impl_series_like_for_logical_array {
                 )
                 .into_series())
             }
-
-            fn add(&self, rhs: &Series) -> DaftResult<Series> {
-                SeriesBinaryOps::add(self, rhs)
-            }
-
-            fn sub(&self, rhs: &Series) -> DaftResult<Series> {
-                SeriesBinaryOps::sub(self, rhs)
-            }
-
-            fn mul(&self, rhs: &Series) -> DaftResult<Series> {
-                SeriesBinaryOps::mul(self, rhs)
-            }
-
-            fn div(&self, rhs: &Series) -> DaftResult<Series> {
-                SeriesBinaryOps::div(self, rhs)
-            }
-
-            fn rem(&self, rhs: &Series) -> DaftResult<Series> {
-                SeriesBinaryOps::rem(self, rhs)
-            }
-            fn and(&self, rhs: &Series) -> DaftResult<Series> {
-                SeriesBinaryOps::and(self, rhs)
-            }
-            fn or(&self, rhs: &Series) -> DaftResult<Series> {
-                SeriesBinaryOps::or(self, rhs)
-            }
-            fn xor(&self, rhs: &Series) -> DaftResult<Series> {
-                SeriesBinaryOps::xor(self, rhs)
-            }
-            fn equal(&self, rhs: &Series) -> DaftResult<BooleanArray> {
-                SeriesBinaryOps::equal(self, rhs)
-            }
-            fn not_equal(&self, rhs: &Series) -> DaftResult<BooleanArray> {
-                SeriesBinaryOps::not_equal(self, rhs)
-            }
-            fn lt(&self, rhs: &Series) -> DaftResult<BooleanArray> {
-                SeriesBinaryOps::lt(self, rhs)
-            }
-            fn lte(&self, rhs: &Series) -> DaftResult<BooleanArray> {
-                SeriesBinaryOps::lte(self, rhs)
-            }
-            fn gt(&self, rhs: &Series) -> DaftResult<BooleanArray> {
-                SeriesBinaryOps::gt(self, rhs)
-            }
-            fn gte(&self, rhs: &Series) -> DaftResult<BooleanArray> {
-                SeriesBinaryOps::gte(self, rhs)
-            }
         }
     };
 }
@@ -226,4 +179,6 @@ impl_series_like_for_logical_array!(FixedShapeImageArray);
 impl_series_like_for_logical_array!(TensorArray);
 impl_series_like_for_logical_array!(EmbeddingArray);
 impl_series_like_for_logical_array!(FixedShapeTensorArray);
+impl_series_like_for_logical_array!(SparseTensorArray);
+impl_series_like_for_logical_array!(FixedShapeSparseTensorArray);
 impl_series_like_for_logical_array!(MapArray);

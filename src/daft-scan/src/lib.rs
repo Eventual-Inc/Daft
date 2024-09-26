@@ -85,7 +85,7 @@ pub enum Error {
 
 impl From<Error> for DaftError {
     fn from(value: Error) -> Self {
-        DaftError::External(value.into())
+        Self::External(value.into())
     }
 }
 
@@ -409,7 +409,7 @@ impl ScanTask {
         }
     }
 
-    pub fn merge(sc1: &ScanTask, sc2: &ScanTask) -> Result<ScanTask, Error> {
+    pub fn merge(sc1: &Self, sc2: &Self) -> Result<Self, Error> {
         if sc1.partition_spec() != sc2.partition_spec() {
             return Err(Error::DifferingPartitionSpecsInScanTaskMerge {
                 ps1: sc1.partition_spec().cloned(),
@@ -440,7 +440,7 @@ impl ScanTask {
                 p2: sc2.pushdowns.clone(),
             });
         }
-        Ok(ScanTask::new(
+        Ok(Self::new(
             sc1.sources
                 .clone()
                 .into_iter()
@@ -676,7 +676,7 @@ impl PartitionField {
         match (&source_field, &transform) {
             (Some(_), Some(_)) => {
                 // TODO ADD VALIDATION OF TRANSFORM based on types
-                Ok(PartitionField {
+                Ok(Self {
                     field,
                     source_field,
                     transform,
@@ -686,7 +686,7 @@ impl PartitionField {
                 "transform set in PartitionField: {} but source_field not set",
                 tfm
             ))),
-            _ => Ok(PartitionField {
+            _ => Ok(Self {
                 field,
                 source_field,
                 transform,
@@ -787,8 +787,8 @@ impl Hash for ScanOperatorRef {
     }
 }
 
-impl PartialEq<ScanOperatorRef> for ScanOperatorRef {
-    fn eq(&self, other: &ScanOperatorRef) -> bool {
+impl PartialEq<Self> for ScanOperatorRef {
+    fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.0, &other.0)
     }
 }
@@ -1014,7 +1014,7 @@ mod test {
         let mut sources: Vec<String> = Vec::new();
 
         for _ in 0..num_sources {
-            sources.push(format!("../../tests/assets/parquet-data/mvp.parquet"));
+            sources.push("../../tests/assets/parquet-data/mvp.parquet".to_string());
         }
 
         let glob_scan_operator: GlobScanOperator = GlobScanOperator::try_new(

@@ -11,6 +11,9 @@ strum = {version = "0.26", features = ["derive"]}
 [features]
 python = ["common-error/python", "common-resource-request/python", "daft-core/python", "daft-dsl/python", "daft-plan/python", "daft-scan/python"]
 
+[lints]
+workspace = true
+
 [package]
 edition = {workspace = true}
 name = "daft-physical-plan"

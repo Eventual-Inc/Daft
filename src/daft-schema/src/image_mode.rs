@@ -75,12 +75,12 @@ impl ImageMode {
             "1" | "P" | "CMYK" | "YCbCr" | "LAB" | "HSV" | "I" | "F" | "PA" | "RGBX" | "RGBa" | "La" | "I;16" | "I;16L" | "I;16B" | "I;16N" | "BGR;15" | "BGR;16" | "BGR;24" => Err(DaftError::TypeError(format!(
                 "PIL image mode {} is not supported; only the following modes are supported: {:?}",
                 mode,
-                ImageMode::iterator().as_slice()
+                Self::iterator().as_slice()
             ))),
             _ => Err(DaftError::TypeError(format!(
                 "Image mode {} is not a valid PIL image mode; see https://pillow.readthedocs.io/en/stable/handbook/concepts.html#modes for valid PIL image modes. Of these, only the following modes are supported by Daft: {:?}",
                 mode,
-                ImageMode::iterator().as_slice()
+                Self::iterator().as_slice()
             ))),
         }
     }
@@ -114,7 +114,7 @@ impl ImageMode {
             RGBA | RGBA16 | RGBA32F => 4,
         }
     }
-    pub fn iterator() -> std::slice::Iter<'static, ImageMode> {
+    pub fn iterator() -> std::slice::Iter<'static, Self> {
         use ImageMode::*;
 
         static MODES: [ImageMode; 10] =
@@ -146,7 +146,7 @@ impl FromStr for ImageMode {
             _ => Err(DaftError::TypeError(format!(
                 "Image mode {} is not supported; only the following modes are supported: {:?}",
                 mode,
-                ImageMode::iterator().as_slice()
+                Self::iterator().as_slice()
             ))),
         }
     }

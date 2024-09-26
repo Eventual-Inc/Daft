@@ -5,7 +5,7 @@ use daft_dsl::{functions::FunctionExpr, AggExpr, Expr, ExprRef};
 use crate::Table;
 
 impl Table {
-    pub fn agg(&self, to_agg: &[ExprRef], group_by: &[ExprRef]) -> DaftResult<Table> {
+    pub fn agg(&self, to_agg: &[ExprRef], group_by: &[ExprRef]) -> DaftResult<Self> {
         // Dispatch depending on whether we're doing groupby or just a global agg.
         match group_by.len() {
             0 => self.agg_global(to_agg),
@@ -13,11 +13,11 @@ impl Table {
         }
     }
 
-    pub fn agg_global(&self, to_agg: &[ExprRef]) -> DaftResult<Table> {
+    pub fn agg_global(&self, to_agg: &[ExprRef]) -> DaftResult<Self> {
         self.eval_expression_list(to_agg)
     }
 
-    pub fn agg_groupby(&self, to_agg: &[ExprRef], group_by: &[ExprRef]) -> DaftResult<Table> {
+    pub fn agg_groupby(&self, to_agg: &[ExprRef], group_by: &[ExprRef]) -> DaftResult<Self> {
         let agg_exprs = to_agg
             .iter()
             .map(|e| match e.as_ref() {
@@ -68,7 +68,7 @@ impl Table {
         func: &FunctionExpr,
         inputs: &[ExprRef],
         group_by: &[ExprRef],
-    ) -> DaftResult<Table> {
+    ) -> DaftResult<Self> {
         use daft_core::array::ops::IntoGroups;
         use daft_dsl::functions::python::PythonUDF;
 
@@ -100,7 +100,7 @@ impl Table {
 
         // Take fast path short circuit if there is only 1 group
         let (groupkeys_table, grouped_col) = if groupvals_indices.is_empty() {
-            let empty_groupkeys_table = Table::empty(Some(groupby_table.schema.clone()))?;
+            let empty_groupkeys_table = Self::empty(Some(groupby_table.schema.clone()))?;
             let empty_udf_output_col = Series::empty(
                 evaluated_inputs
                     .first()
@@ -151,7 +151,7 @@ impl Table {
                             .collect::<DaftResult<Vec<_>>>()?;
 
                         // Combine the broadcasted group keys into a Table
-                        Table::from_nonempty_columns(broadcasted_groupkeys)?
+                        Self::from_nonempty_columns(broadcasted_groupkeys)?
                     };
 
                     Ok((broadcasted_groupkeys_table, evaluated_grouped_col))
@@ -162,7 +162,7 @@ impl Table {
             let concatenated_grouped_col = Series::concat(series_refs.as_slice())?;
 
             let table_refs = grouped_results.iter().map(|(t, _)| t).collect::<Vec<_>>();
-            let concatenated_groupkeys_table = Table::concat(table_refs.as_slice())?;
+            let concatenated_groupkeys_table = Self::concat(table_refs.as_slice())?;
 
             (concatenated_groupkeys_table, concatenated_grouped_col)
         };

@@ -16,13 +16,13 @@ pub struct PhysicalOptimizerConfig {
 impl PhysicalOptimizerConfig {
     #[allow(dead_code)] // used in test
     pub fn new(max_passes: usize) -> Self {
-        PhysicalOptimizerConfig { max_passes }
+        Self { max_passes }
     }
 }
 
 impl Default for PhysicalOptimizerConfig {
     fn default() -> Self {
-        PhysicalOptimizerConfig { max_passes: 5 }
+        Self { max_passes: 5 }
     }
 }
 
@@ -37,7 +37,7 @@ impl PhysicalOptimizer {
         rule_batches: Vec<PhysicalOptimizerRuleBatch>,
         config: PhysicalOptimizerConfig,
     ) -> Self {
-        PhysicalOptimizer {
+        Self {
             rule_batches,
             config,
         }
@@ -53,7 +53,7 @@ impl PhysicalOptimizer {
 
 impl Default for PhysicalOptimizer {
     fn default() -> Self {
-        PhysicalOptimizer {
+        Self {
             rule_batches: vec![PhysicalOptimizerRuleBatch::new(
                 vec![
                     Box::new(ReorderPartitionKeys {}),

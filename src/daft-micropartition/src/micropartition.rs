@@ -38,7 +38,7 @@ pub(crate) enum TableState {
 impl Display for TableState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TableState::Unloaded(scan_task) => {
+            Self::Unloaded(scan_task) => {
                 write!(
                     f,
                     "TableState: Unloaded. To load from: {:#?}",
@@ -49,7 +49,7 @@ impl Display for TableState {
                         .collect::<Vec<_>>()
                 )
             }
-            TableState::Loaded(tables) => {
+            Self::Loaded(tables) => {
                 writeln!(f, "TableState: Loaded. {} tables", tables.len())?;
                 for tab in tables.iter() {
                     writeln!(f, "{}", tab)?;
@@ -524,7 +524,7 @@ impl MicroPartition {
         let statistics = statistics
             .cast_to_schema_with_fill(schema.clone(), fill_map.as_ref())
             .expect("Statistics cannot be casted to schema");
-        MicroPartition {
+        Self {
             schema,
             state: Mutex::new(TableState::Unloaded(scan_task)),
             metadata,
@@ -557,7 +557,7 @@ impl MicroPartition {
         });
         let tables_len_sum = tables.iter().map(|t| t.len()).sum();
 
-        MicroPartition {
+        Self {
             schema,
             state: Mutex::new(TableState::Loaded(tables)),
             metadata: TableMetadata {
@@ -596,9 +596,9 @@ impl MicroPartition {
             (
                 _,
                 _,
-                FileFormatConfig::Parquet(ParquetSourceConfig {
+                &FileFormatConfig::Parquet(ParquetSourceConfig {
                     coerce_int96_timestamp_unit,
-                    field_id_mapping,
+                    ref field_id_mapping,
                     chunk_size,
                     ..
                 }),
@@ -646,12 +646,13 @@ impl MicroPartition {
                     if scan_task.sources.len() == 1 { 1 } else { 128 }, // Hardcoded for to 128 bulk reads
                     cfg.multithreaded_io,
                     &ParquetSchemaInferenceOptions {
-                        coerce_int96_timestamp_unit: *coerce_int96_timestamp_unit,
+                        coerce_int96_timestamp_unit,
+                        ..Default::default()
                     },
                     Some(schema.clone()),
                     field_id_mapping.clone(),
                     parquet_metadata,
-                    *chunk_size,
+                    chunk_size,
                 )
                 .context(DaftCoreComputeSnafu)
             }
@@ -1162,7 +1163,7 @@ pub(crate) fn read_parquet_into_micropartition<T: AsRef<str>>(
         let schemas = metadata
             .iter()
             .map(|m| {
-                let schema = infer_schema_with_options(m, &Some((*schema_infer_options).into()))?;
+                let schema = infer_schema_with_options(m, Some((*schema_infer_options).into()))?;
                 let daft_schema = daft_core::prelude::Schema::try_from(&schema)?;
                 DaftResult::Ok(Arc::new(daft_schema))
             })
@@ -1186,7 +1187,7 @@ pub(crate) fn read_parquet_into_micropartition<T: AsRef<str>>(
         let schemas = metadata
             .iter()
             .map(|m| {
-                let schema = infer_schema_with_options(m, &Some((*schema_infer_options).into()))?;
+                let schema = infer_schema_with_options(m, Some((*schema_infer_options).into()))?;
                 let daft_schema = daft_core::prelude::Schema::try_from(&schema)?;
                 DaftResult::Ok(Arc::new(daft_schema))
             })

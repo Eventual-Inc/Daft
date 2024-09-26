@@ -11,7 +11,7 @@ where
     ) -> Self {
         let arrow_array =
             Box::new(arrow2::array::PrimitiveArray::<T::Native>::from_trusted_len_iter(iter));
-        DataArray::new(Field::new(name, T::get_dtype()).into(), arrow_array).unwrap()
+        Self::new(Field::new(name, T::get_dtype()).into(), arrow_array).unwrap()
     }
 }
 
@@ -21,7 +21,7 @@ impl Utf8Array {
         iter: impl arrow2::trusted_len::TrustedLen<Item = Option<S>>,
     ) -> Self {
         let arrow_array = Box::new(arrow2::array::Utf8Array::<i64>::from_trusted_len_iter(iter));
-        DataArray::new(
+        Self::new(
             Field::new(name, crate::datatypes::DataType::Utf8).into(),
             arrow_array,
         )
@@ -37,7 +37,7 @@ impl BinaryArray {
         let arrow_array = Box::new(arrow2::array::BinaryArray::<i64>::from_trusted_len_iter(
             iter,
         ));
-        DataArray::new(
+        Self::new(
             Field::new(name, crate::datatypes::DataType::Binary).into(),
             arrow_array,
         )
@@ -52,7 +52,7 @@ impl FixedSizeBinaryArray {
         size: usize,
     ) -> Self {
         let arrow_array = Box::new(arrow2::array::FixedSizeBinaryArray::from_iter(iter, size));
-        DataArray::new(
+        Self::new(
             Field::new(name, crate::datatypes::DataType::FixedSizeBinary(size)).into(),
             arrow_array,
         )
@@ -66,7 +66,7 @@ impl BooleanArray {
         iter: impl arrow2::trusted_len::TrustedLen<Item = Option<bool>>,
     ) -> Self {
         let arrow_array = Box::new(arrow2::array::BooleanArray::from_trusted_len_iter(iter));
-        DataArray::new(
+        Self::new(
             Field::new(name, crate::datatypes::DataType::Boolean).into(),
             arrow_array,
         )
@@ -85,7 +85,7 @@ where
         let arrow_array = Box::new(
             arrow2::array::PrimitiveArray::<T::Native>::from_trusted_len_values_iter(iter),
         );
-        DataArray::new(Field::new(name, T::get_dtype()).into(), arrow_array).unwrap()
+        Self::new(Field::new(name, T::get_dtype()).into(), arrow_array).unwrap()
     }
 }
 
@@ -96,7 +96,7 @@ impl Utf8Array {
     ) -> Self {
         let arrow_array =
             Box::new(arrow2::array::Utf8Array::<i64>::from_trusted_len_values_iter(iter));
-        DataArray::new(Field::new(name, DataType::Utf8).into(), arrow_array).unwrap()
+        Self::new(Field::new(name, DataType::Utf8).into(), arrow_array).unwrap()
     }
 }
 
@@ -107,7 +107,7 @@ impl BinaryArray {
     ) -> Self {
         let arrow_array =
             Box::new(arrow2::array::BinaryArray::<i64>::from_trusted_len_values_iter(iter));
-        DataArray::new(Field::new(name, DataType::Binary).into(), arrow_array).unwrap()
+        Self::new(Field::new(name, DataType::Binary).into(), arrow_array).unwrap()
     }
 }
 
@@ -119,6 +119,6 @@ impl BooleanArray {
         let arrow_array = Box::new(arrow2::array::BooleanArray::from_trusted_len_values_iter(
             iter,
         ));
-        DataArray::new(Field::new(name, DataType::Boolean).into(), arrow_array).unwrap()
+        Self::new(Field::new(name, DataType::Boolean).into(), arrow_array).unwrap()
     }
 }

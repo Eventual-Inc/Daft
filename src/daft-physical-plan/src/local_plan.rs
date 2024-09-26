@@ -56,7 +56,7 @@ impl LocalPhysicalPlan {
     }
 
     pub(crate) fn in_memory_scan(in_memory_info: InMemoryInfo) -> LocalPhysicalPlanRef {
-        LocalPhysicalPlan::InMemoryScan(InMemoryScan {
+        Self::InMemoryScan(InMemoryScan {
             info: in_memory_info,
             plan_stats: PlanStats {},
         })
@@ -67,7 +67,7 @@ impl LocalPhysicalPlan {
         scan_tasks: Vec<ScanTaskRef>,
         schema: SchemaRef,
     ) -> LocalPhysicalPlanRef {
-        LocalPhysicalPlan::PhysicalScan(PhysicalScan {
+        Self::PhysicalScan(PhysicalScan {
             scan_tasks,
             schema,
             plan_stats: PlanStats {},
@@ -77,7 +77,7 @@ impl LocalPhysicalPlan {
 
     pub(crate) fn filter(input: LocalPhysicalPlanRef, predicate: ExprRef) -> LocalPhysicalPlanRef {
         let schema = input.schema().clone();
-        LocalPhysicalPlan::Filter(Filter {
+        Self::Filter(Filter {
             input,
             predicate,
             schema,
@@ -88,7 +88,7 @@ impl LocalPhysicalPlan {
 
     pub(crate) fn limit(input: LocalPhysicalPlanRef, num_rows: i64) -> LocalPhysicalPlanRef {
         let schema = input.schema().clone();
-        LocalPhysicalPlan::Limit(Limit {
+        Self::Limit(Limit {
             input,
             num_rows,
             schema,
@@ -102,7 +102,7 @@ impl LocalPhysicalPlan {
         projection: Vec<ExprRef>,
         schema: SchemaRef,
     ) -> LocalPhysicalPlanRef {
-        LocalPhysicalPlan::Project(Project {
+        Self::Project(Project {
             input,
             projection,
             schema,
@@ -116,7 +116,7 @@ impl LocalPhysicalPlan {
         aggregations: Vec<AggExpr>,
         schema: SchemaRef,
     ) -> LocalPhysicalPlanRef {
-        LocalPhysicalPlan::UnGroupedAggregate(UnGroupedAggregate {
+        Self::UnGroupedAggregate(UnGroupedAggregate {
             input,
             aggregations,
             schema,
@@ -131,7 +131,7 @@ impl LocalPhysicalPlan {
         group_by: Vec<ExprRef>,
         schema: SchemaRef,
     ) -> LocalPhysicalPlanRef {
-        LocalPhysicalPlan::HashAggregate(HashAggregate {
+        Self::HashAggregate(HashAggregate {
             input,
             aggregations,
             group_by,
@@ -147,7 +147,7 @@ impl LocalPhysicalPlan {
         descending: Vec<bool>,
     ) -> LocalPhysicalPlanRef {
         let schema = input.schema().clone();
-        LocalPhysicalPlan::Sort(Sort {
+        Self::Sort(Sort {
             input,
             sort_by,
             descending,
@@ -165,7 +165,7 @@ impl LocalPhysicalPlan {
         join_type: JoinType,
         schema: SchemaRef,
     ) -> LocalPhysicalPlanRef {
-        LocalPhysicalPlan::HashJoin(HashJoin {
+        Self::HashJoin(HashJoin {
             left,
             right,
             left_on,
@@ -181,7 +181,7 @@ impl LocalPhysicalPlan {
         other: LocalPhysicalPlanRef,
     ) -> LocalPhysicalPlanRef {
         let schema = input.schema().clone();
-        LocalPhysicalPlan::Concat(Concat {
+        Self::Concat(Concat {
             input,
             other,
             schema,
@@ -196,7 +196,7 @@ impl LocalPhysicalPlan {
         file_schema: SchemaRef,
         file_info: OutputFileInfo,
     ) -> LocalPhysicalPlanRef {
-        LocalPhysicalPlan::PhysicalWrite(PhysicalWrite {
+        Self::PhysicalWrite(PhysicalWrite {
             input,
             data_schema,
             file_schema,
@@ -208,16 +208,16 @@ impl LocalPhysicalPlan {
 
     pub fn schema(&self) -> &SchemaRef {
         match self {
-            LocalPhysicalPlan::PhysicalScan(PhysicalScan { schema, .. })
-            | LocalPhysicalPlan::Filter(Filter { schema, .. })
-            | LocalPhysicalPlan::Limit(Limit { schema, .. })
-            | LocalPhysicalPlan::Project(Project { schema, .. })
-            | LocalPhysicalPlan::UnGroupedAggregate(UnGroupedAggregate { schema, .. })
-            | LocalPhysicalPlan::HashAggregate(HashAggregate { schema, .. })
-            | LocalPhysicalPlan::Sort(Sort { schema, .. })
-            | LocalPhysicalPlan::HashJoin(HashJoin { schema, .. })
-            | LocalPhysicalPlan::Concat(Concat { schema, .. }) => schema,
-            LocalPhysicalPlan::InMemoryScan(InMemoryScan { info, .. }) => &info.source_schema,
+            Self::PhysicalScan(PhysicalScan { schema, .. })
+            | Self::Filter(Filter { schema, .. })
+            | Self::Limit(Limit { schema, .. })
+            | Self::Project(Project { schema, .. })
+            | Self::UnGroupedAggregate(UnGroupedAggregate { schema, .. })
+            | Self::HashAggregate(HashAggregate { schema, .. })
+            | Self::Sort(Sort { schema, .. })
+            | Self::HashJoin(HashJoin { schema, .. })
+            | Self::Concat(Concat { schema, .. }) => schema,
+            Self::InMemoryScan(InMemoryScan { info, .. }) => &info.source_schema,
             _ => todo!("{:?}", self),
         }
     }

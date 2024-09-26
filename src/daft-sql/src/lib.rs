@@ -15,6 +15,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<python::PyCatalog>()?;
     parent.add_function(wrap_pyfunction_bound!(python::sql, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(python::sql_expr, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(python::list_sql_functions, parent)?)?;
     Ok(())
 }
 
@@ -261,6 +262,7 @@ mod tests {
                 JoinType::Inner,
                 None,
             )?
+            .select(vec![col("*")])?
             .build();
         assert_eq!(plan, expected);
         Ok(())
@@ -310,6 +312,8 @@ mod tests {
     #[case::to_date("select to_date(utf8, 'YYYY-MM-DD') as to_date from tbl1")]
     #[case::like("select utf8 like 'a' as like from tbl1")]
     #[case::ilike("select utf8 ilike 'a' as ilike from tbl1")]
+    #[case::datestring("select DATE '2021-08-01' as dt from tbl1")]
+    #[case::datetime("select DATETIME '2021-08-01 00:00:00' as dt from tbl1")]
     // #[case::to_datetime("select to_datetime(utf8, 'YYYY-MM-DD') as to_datetime from tbl1")]
     fn test_compiles_funcs(mut planner: SQLPlanner, #[case] query: &str) -> SQLPlannerResult<()> {
         let plan = planner.plan_sql(query);

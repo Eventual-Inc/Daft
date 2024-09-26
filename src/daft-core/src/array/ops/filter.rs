@@ -28,7 +28,7 @@ impl crate::datatypes::PythonArray {
         use arrow2::array::Array;
         use pyo3::PyObject;
 
-        use crate::{array::pseudo_arrow::PseudoArrowArray, datatypes::PythonType};
+        use crate::array::pseudo_arrow::PseudoArrowArray;
 
         let mask = mask.as_arrow();
 
@@ -71,7 +71,7 @@ impl crate::datatypes::PythonArray {
         let arrow_array: Box<dyn arrow2::array::Array> =
             Box::new(PseudoArrowArray::new(new_values.into(), new_validity));
 
-        DataArray::<PythonType>::new(self.field().clone().into(), arrow_array)
+        Self::new(self.field().clone().into(), arrow_array)
     }
 }
 

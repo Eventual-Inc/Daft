@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from daft.arrow_utils import ensure_table
 from daft.daft import (
@@ -93,6 +93,8 @@ class Table:
             if field.dtype == DataType.python()
             or field.dtype._is_tensor_type()
             or field.dtype._is_fixed_shape_tensor_type()
+            or field.dtype._is_sparse_tensor_type()
+            or field.dtype._is_fixed_shape_sparse_tensor_type()
         ]
         if non_native_fields:
             # If there are any contained Arrow types that are not natively supported, go through Table.from_pydict()
@@ -524,6 +526,7 @@ def read_parquet_into_pyarrow(
     io_config: IOConfig | None = None,
     multithreaded_io: bool | None = None,
     coerce_int96_timestamp_unit: TimeUnit = TimeUnit.ns(),
+    string_encoding: Literal["utf-8"] | Literal["raw"] = "utf-8",
     file_timeout_ms: int | None = 900_000,  # 15 minutes
 ) -> pa.Table:
     fields, metadata, columns, num_rows_read = _read_parquet_into_pyarrow(
@@ -535,6 +538,7 @@ def read_parquet_into_pyarrow(
         io_config=io_config,
         multithreaded_io=multithreaded_io,
         coerce_int96_timestamp_unit=coerce_int96_timestamp_unit._timeunit,
+        string_encoding=string_encoding,
         file_timeout_ms=file_timeout_ms,
     )
     schema = pa.schema(fields, metadata=metadata)

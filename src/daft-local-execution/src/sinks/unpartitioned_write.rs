@@ -37,7 +37,7 @@ impl UnpartionedWriteNode {
         target_in_memory_file_rows: usize,
         target_in_memory_chunk_rows: usize,
     ) -> Self {
-        UnpartionedWriteNode {
+        Self {
             child,
             runtime_stats: RuntimeStatsContext::new(),
             file_info: file_info.clone(),

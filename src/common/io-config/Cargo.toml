@@ -12,6 +12,9 @@ typetag = "0.2.16"
 [features]
 python = ["dep:pyo3", "common-error/python", "common-py-serde/python"]
 
+[lints]
+workspace = true
+
 [package]
 edition = {workspace = true}
 name = "common-io-config"

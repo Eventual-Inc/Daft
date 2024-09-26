@@ -28,7 +28,7 @@ impl PyArrowParquetWriter {
                     config: cfg.clone(),
                 }),
             ))?;
-            Ok(PyArrowParquetWriter {
+            Ok(Self {
                 py_writer: py_writer.into(),
             })
         })
@@ -78,7 +78,7 @@ impl PyArrowCSVWriter {
                     config: cfg.clone(),
                 }),
             ))?;
-            Ok(PyArrowCSVWriter {
+            Ok(Self {
                 py_writer: py_writer.into(),
             })
         })

@@ -19,6 +19,9 @@ typetag = "0.2.16"
 python = ["dep:pyo3", "common-error/python", "daft-core/python", "common-treenode/python", "common-py-serde/python", "common-resource-request/python"]
 test-utils = []
 
+[lints]
+workspace = true
+
 [package]
 edition = {workspace = true}
 name = "daft-dsl"

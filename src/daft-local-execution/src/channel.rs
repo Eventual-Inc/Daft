@@ -91,8 +91,8 @@ pub enum PipelineReceiver {
 impl PipelineReceiver {
     pub async fn recv(&mut self) -> Option<PipelineResultType> {
         match self {
-            PipelineReceiver::InOrder(rr) => rr.recv().await,
-            PipelineReceiver::OutOfOrder(r) => r.recv().await,
+            Self::InOrder(rr) => rr.recv().await,
+            Self::OutOfOrder(r) => r.recv().await,
         }
     }
 }

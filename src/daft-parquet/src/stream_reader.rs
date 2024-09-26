@@ -229,7 +229,7 @@ pub(crate) fn local_parquet_read_into_column_iters(
             })?,
     };
 
-    let schema = infer_schema_with_options(&metadata, &Some(schema_infer_options.into()))
+    let schema = infer_schema_with_options(&metadata, Some(schema_infer_options.into()))
         .with_context(|_| super::UnableToParseSchemaFromMetadataSnafu {
             path: uri.to_string(),
         })?;
@@ -325,7 +325,7 @@ pub(crate) fn local_parquet_read_into_arrow(
     };
 
     // and infer a [`Schema`] from the `metadata`.
-    let schema = infer_schema_with_options(&metadata, &Some(schema_infer_options.into()))
+    let schema = infer_schema_with_options(&metadata, Some(schema_infer_options.into()))
         .with_context(|_| super::UnableToParseSchemaFromMetadataSnafu {
             path: uri.to_string(),
         })?;

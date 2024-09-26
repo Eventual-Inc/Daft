@@ -42,13 +42,13 @@ impl ColumnRangeStatistics {
                 assert_eq!(l.data_type(), u.data_type(), "");
 
                 // If creating on incompatible types, default to `Missing`
-                if !ColumnRangeStatistics::supports_dtype(l.data_type()) {
-                    return Ok(ColumnRangeStatistics::Missing);
+                if !Self::supports_dtype(l.data_type()) {
+                    return Ok(Self::Missing);
                 }
 
-                Ok(ColumnRangeStatistics::Loaded(l, u))
+                Ok(Self::Loaded(l, u))
             }
-            _ => Ok(ColumnRangeStatistics::Missing),
+            _ => Ok(Self::Missing),
         }
     }
 
@@ -71,7 +71,7 @@ impl ColumnRangeStatistics {
 
             // UNSUPPORTED TYPES:
             // Types that don't support comparisons and can't be used as ColumnRangeStatistics
-            DataType::List(..) | DataType::FixedSizeList(..) | DataType::Image(..) | DataType::FixedShapeImage(..) | DataType::Tensor(..) | DataType::FixedShapeTensor(..) | DataType::Struct(..) | DataType::Map(..) | DataType::Extension(..) | DataType::Embedding(..) | DataType::Unknown => false,
+            DataType::List(..) | DataType::FixedSizeList(..) | DataType::Image(..) | DataType::FixedShapeImage(..) | DataType::Tensor(..) | DataType::SparseTensor(..) | DataType::FixedShapeSparseTensor(..) | DataType::FixedShapeTensor(..) | DataType::Struct(..) | DataType::Map(..) | DataType::Extension(..) | DataType::Embedding(..) | DataType::Unknown => false,
             #[cfg(feature = "python")]
             DataType::Python => false,
         }
@@ -148,18 +148,16 @@ impl ColumnRangeStatistics {
     pub fn cast(&self, dtype: &DataType) -> crate::Result<Self> {
         match self {
             // `Missing` is casted to `Missing`
-            ColumnRangeStatistics::Missing => Ok(ColumnRangeStatistics::Missing),
+            Self::Missing => Ok(Self::Missing),
 
             // If the type to cast to matches the current type exactly, short-circuit the logic here. This should be the
             // most common case (e.g. parsing a Parquet file with the same types as the inferred types)
-            ColumnRangeStatistics::Loaded(l, r) if l.data_type() == dtype => {
-                Ok(ColumnRangeStatistics::Loaded(l.clone(), r.clone()))
-            }
+            Self::Loaded(l, r) if l.data_type() == dtype => Ok(Self::Loaded(l.clone(), r.clone())),
 
             // Only certain types are allowed to be casted in the context of ColumnRangeStatistics
             // as casting may not correctly preserve ordering of elements. We allow-list some type combinations
             // but for most combinations, we will default to `ColumnRangeStatistics::Missing`.
-            ColumnRangeStatistics::Loaded(l, r) => {
+            Self::Loaded(l, r) => {
                 match (l.data_type(), dtype) {
                     // Int casting to higher bitwidths
                     (DataType::Int8, DataType::Int16) |
@@ -187,11 +185,11 @@ impl ColumnRangeStatistics {
                     (DataType::Int64, DataType::Timestamp(..)) |
                     // Binary to Utf8
                     (DataType::Binary, DataType::Utf8)
-                    => Ok(ColumnRangeStatistics::Loaded(
+                    => Ok(Self::Loaded(
                         l.cast(dtype).context(DaftCoreComputeSnafu)?,
                         r.cast(dtype).context(DaftCoreComputeSnafu)?,
                     )),
-                    _ => Ok(ColumnRangeStatistics::Missing)
+                    _ => Ok(Self::Missing)
                 }
             }
         }
@@ -240,7 +238,7 @@ pub enum Error {
 
 impl From<Error> for crate::Error {
     fn from(value: Error) -> Self {
-        crate::Error::MissingStatistics { source: value }
+        Self::MissingStatistics { source: value }
     }
 }
 

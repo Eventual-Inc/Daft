@@ -14,7 +14,7 @@ use crate::{
 };
 
 impl Series {
-    pub fn count(&self, groups: Option<&GroupIndices>, mode: CountMode) -> DaftResult<Series> {
+    pub fn count(&self, groups: Option<&GroupIndices>, mode: CountMode) -> DaftResult<Self> {
         use crate::array::ops::DaftCountAggable;
         let s = self.as_physical()?;
         with_match_physical_daft_types!(s.data_type(), |$T| {
@@ -25,7 +25,7 @@ impl Series {
         })
     }
 
-    pub fn sum(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
+    pub fn sum(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
         use crate::{array::ops::DaftSumAggable, datatypes::DataType::*};
 
         match self.data_type() {
@@ -94,7 +94,7 @@ impl Series {
         }
     }
 
-    pub fn approx_sketch(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
+    pub fn approx_sketch(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
         use crate::{array::ops::DaftApproxSketchAggable, datatypes::DataType::*};
 
         // Upcast all numeric types to float64 and compute approx_sketch.
@@ -119,7 +119,7 @@ impl Series {
         }
     }
 
-    pub fn merge_sketch(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
+    pub fn merge_sketch(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
         use crate::{array::ops::DaftMergeSketchAggable, datatypes::DataType::*};
 
         match self.data_type() {
@@ -138,7 +138,7 @@ impl Series {
         }
     }
 
-    pub fn hll_merge(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
+    pub fn hll_merge(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
         let downcasted_self = self.downcast::<FixedSizeBinaryArray>()?;
         let series = match groups {
             Some(groups) => downcasted_self.grouped_hll_merge(groups),
@@ -148,7 +148,7 @@ impl Series {
         Ok(series)
     }
 
-    pub fn mean(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
+    pub fn mean(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
         use crate::{array::ops::DaftMeanAggable, datatypes::DataType::*};
 
         // Upcast all numeric types to float64 and use f64 mean kernel.
@@ -169,19 +169,15 @@ impl Series {
         }
     }
 
-    pub fn min(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
+    pub fn min(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
         self.inner.min(groups)
     }
 
-    pub fn max(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
+    pub fn max(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
         self.inner.max(groups)
     }
 
-    pub fn any_value(
-        &self,
-        groups: Option<&GroupIndices>,
-        ignore_nulls: bool,
-    ) -> DaftResult<Series> {
+    pub fn any_value(&self, groups: Option<&GroupIndices>, ignore_nulls: bool) -> DaftResult<Self> {
         let indices = match groups {
             Some(groups) => {
                 if self.data_type().is_null() {
@@ -212,17 +208,17 @@ impl Series {
             }
         };
 
-        self.take(&Series::from_arrow(
+        self.take(&Self::from_arrow(
             Field::new("", DataType::UInt64).into(),
             indices,
         )?)
     }
 
-    pub fn agg_list(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
+    pub fn agg_list(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
         self.inner.agg_list(groups)
     }
 
-    pub fn agg_concat(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {
+    pub fn agg_concat(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
         use crate::array::ops::DaftConcatAggable;
         match self.data_type() {
             DataType::List(..) => {
@@ -244,8 +240,17 @@ impl Series {
                     None => Ok(DaftConcatAggable::concat(downcasted)?.into_series()),
                 }
             }
+            DataType::Utf8 => {
+                let downcasted = self.downcast::<Utf8Array>()?;
+                match groups {
+                    Some(groups) => {
+                        Ok(DaftConcatAggable::grouped_concat(downcasted, groups)?.into_series())
+                    }
+                    None => Ok(DaftConcatAggable::concat(downcasted)?.into_series()),
+                }
+            }
             _ => Err(DaftError::TypeError(format!(
-                "concat aggregation is only valid for List or Python types, got {}",
+                "concat aggregation is only valid for List, Python types, or Utf8, got {}",
                 self.data_type()
             ))),
         }

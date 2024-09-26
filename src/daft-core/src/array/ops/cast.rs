@@ -19,7 +19,6 @@ use indexmap::IndexMap;
 use {
     crate::array::pseudo_arrow::PseudoArrowArray,
     crate::datatypes::PythonArray,
-    crate::with_match_numeric_daft_types,
     common_arrow_ffi as ffi,
     ndarray::IntoDimension,
     num_traits::{NumCast, ToPrimitive},
@@ -33,20 +32,21 @@ use crate::{
     array::{
         growable::make_growable,
         image_array::ImageArraySidecarData,
-        ops::{from_arrow::FromArrow, full::FullNull},
+        ops::{from_arrow::FromArrow, full::FullNull, DaftCompare},
         DataArray, FixedSizeListArray, ListArray, StructArray,
     },
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            FixedShapeTensorArray, ImageArray, LogicalArray, MapArray, TensorArray, TimeArray,
-            TimestampArray,
+            FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, LogicalArray, MapArray,
+            SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
         DaftArrayType, DaftArrowBackedType, DaftLogicalType, DataType, Field, ImageMode,
         Int32Array, Int64Array, NullArray, TimeUnit, UInt64Array, Utf8Array,
     },
     series::{IntoSeries, Series},
     utils::display::display_time64,
+    with_match_numeric_daft_types,
 };
 
 impl<T> DataArray<T>
@@ -1392,6 +1392,83 @@ impl TensorArray {
                 );
                 Ok(tensor_array.into_series())
             }
+            DataType::SparseTensor(inner_dtype) => {
+                let shape_iterator = self.shape_array().into_iter();
+                let data_iterator = self.data_array().into_iter();
+                let validity = self.data_array().validity();
+                let shape_and_data_iter = shape_iterator.zip(data_iterator);
+                let zero_series = Int64Array::from(("item", [0].as_slice())).into_series();
+                let mut non_zero_values = Vec::new();
+                let mut non_zero_indices = Vec::new();
+                let mut offsets = Vec::<usize>::new();
+                for (i, (shape_series, data_series)) in shape_and_data_iter.enumerate() {
+                    let is_valid = validity.map_or(true, |v| v.get_bit(i));
+                    if !is_valid {
+                        // Handle invalid row by populating dummy data.
+                        offsets.push(1);
+                        non_zero_values.push(Series::empty("dummy", inner_dtype.as_ref()));
+                        non_zero_indices.push(Series::empty("dummy", &DataType::UInt64));
+                        continue;
+                    }
+                    let shape_series = shape_series.unwrap();
+                    let data_series = data_series.unwrap();
+                    let shape_array = shape_series.u64().unwrap();
+                    assert!(
+                        data_series.len()
+                            == shape_array.into_iter().flatten().product::<u64>() as usize
+                    );
+                    let non_zero_mask = data_series.not_equal(&zero_series)?;
+                    let data = data_series.filter(&non_zero_mask)?;
+                    let indices = UInt64Array::arange("item", 0, data_series.len() as i64, 1)?
+                        .into_series()
+                        .filter(&non_zero_mask)?;
+                    offsets.push(data.len());
+                    non_zero_values.push(data);
+                    non_zero_indices.push(indices);
+                }
+
+                let offsets: Offsets<i64> =
+                    Offsets::try_from_iter(non_zero_values.iter().map(|s| s.len()))?;
+                let non_zero_values_series =
+                    Series::concat(&non_zero_values.iter().collect::<Vec<&Series>>())?;
+                let non_zero_indices_series =
+                    Series::concat(&non_zero_indices.iter().collect::<Vec<&Series>>())?;
+                let offsets_cloned = offsets.clone();
+                let data_list_arr = ListArray::new(
+                    Field::new(
+                        "values",
+                        DataType::List(Box::new(non_zero_values_series.data_type().clone())),
+                    ),
+                    non_zero_values_series,
+                    offsets.into(),
+                    validity.cloned(),
+                );
+                let indices_list_arr = ListArray::new(
+                    Field::new(
+                        "indices",
+                        DataType::List(Box::new(non_zero_indices_series.data_type().clone())),
+                    ),
+                    non_zero_indices_series,
+                    offsets_cloned.into(),
+                    validity.cloned(),
+                );
+                // Shapes must be all valid to reproduce dense tensor.
+                let all_valid_shape_array = self.shape_array().with_validity(None)?;
+                let sparse_struct_array = StructArray::new(
+                    Field::new(self.name(), dtype.to_physical()),
+                    vec![
+                        data_list_arr.into_series(),
+                        indices_list_arr.into_series(),
+                        all_valid_shape_array.into_series(),
+                    ],
+                    validity.cloned(),
+                );
+                Ok(SparseTensorArray::new(
+                    Field::new(sparse_struct_array.name(), dtype.clone()),
+                    sparse_struct_array,
+                )
+                .into_series())
+            }
             DataType::Image(mode) => {
                 let sa = self.shape_array();
                 if !(0..self.len()).map(|i| sa.get(i)).all(|s| {
@@ -1511,6 +1588,216 @@ impl TensorArray {
     }
 }
 
+fn cast_sparse_to_dense_for_inner_dtype(
+    inner_dtype: &DataType,
+    n_values: usize,
+    non_zero_indices_array: &ListArray,
+    non_zero_values_array: &ListArray,
+    offsets: &Offsets<i64>,
+) -> DaftResult<Box<dyn arrow2::array::Array>> {
+    let item: Box<dyn arrow2::array::Array> = with_match_numeric_daft_types!(inner_dtype, |$T| {
+            let mut values = vec![0 as <$T as DaftNumericType>::Native; n_values];
+            let validity = non_zero_values_array.validity();
+            for i in 0..non_zero_values_array.len() {
+                let is_valid = validity.map_or(true, |v| v.get_bit(i));
+                if !is_valid {
+                    continue;
+                }
+                let index_series: Series = non_zero_indices_array.get(i).unwrap();
+                let index_array = index_series.u64().unwrap().as_arrow();
+                let values_series: Series = non_zero_values_array.get(i).unwrap();
+                let values_array = values_series.downcast::<<$T as DaftDataType>::ArrayType>()
+                .unwrap()
+                .as_arrow();
+                for (idx, val) in index_array.into_iter().zip(values_array.into_iter()) {
+                    let list_start_offset = offsets.start_end(i).0;
+                    values[list_start_offset + *idx.unwrap() as usize] = *val.unwrap();
+                }
+            }
+            Box::new(arrow2::array::PrimitiveArray::from_vec(values))
+    });
+    Ok(item)
+}
+
+impl SparseTensorArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        match dtype {
+            DataType::Tensor(inner_dtype) => {
+                let non_zero_values_array = self.values_array();
+                let non_zero_indices_array = self.indices_array();
+                let shape_array = self.shape_array();
+                let sizes_vec: Vec<usize> = shape_array
+                    .into_iter()
+                    .map(|shape| {
+                        shape.map_or(0, |shape| {
+                            let shape = shape.u64().unwrap().as_arrow();
+                            shape.values().clone().into_iter().product::<u64>() as usize
+                        })
+                    })
+                    .collect();
+                let offsets: Offsets<i64> = Offsets::try_from_iter(sizes_vec.iter().cloned())?;
+                let n_values = sizes_vec.iter().sum::<usize>();
+                let validity = non_zero_indices_array.validity();
+                let item = cast_sparse_to_dense_for_inner_dtype(
+                    inner_dtype,
+                    n_values,
+                    non_zero_indices_array,
+                    non_zero_values_array,
+                    &offsets,
+                )?;
+                let list_arr = ListArray::new(
+                    Field::new(
+                        "data",
+                        DataType::List(Box::new(inner_dtype.as_ref().clone())),
+                    ),
+                    Series::try_from(("item", item))?,
+                    offsets.into(),
+                    validity.cloned(),
+                )
+                .into_series();
+                let physical_type = dtype.to_physical();
+                let struct_array = StructArray::new(
+                    Field::new(self.name(), physical_type),
+                    vec![list_arr, shape_array.clone().into_series()],
+                    validity.cloned(),
+                );
+                Ok(
+                    TensorArray::new(Field::new(self.name(), dtype.clone()), struct_array)
+                        .into_series(),
+                )
+            }
+            DataType::FixedShapeSparseTensor(inner_dtype, shape) => {
+                let sa = self.shape_array();
+                let va = self.values_array();
+                let ia = self.indices_array();
+                if !(0..self.len()).map(|i| sa.get(i)).all(|s| {
+                    s.map_or(true, |s| {
+                        s.u64()
+                            .unwrap()
+                            .as_arrow()
+                            .iter()
+                            .eq(shape.iter().map(Some))
+                    })
+                }) {
+                    return Err(DaftError::TypeError(format!(
+                        "Can not cast SparseTensor array to FixedShapeSparseTensor array with type {:?}: Tensor array has shapes different than {:?};",
+                        dtype,
+                        shape,
+                    )));
+                };
+                let values_array =
+                    va.cast(&DataType::List(Box::new(inner_dtype.as_ref().clone())))?;
+                let struct_array = StructArray::new(
+                    Field::new(self.name(), dtype.to_physical()),
+                    vec![values_array, ia.clone().into_series()],
+                    va.validity().cloned(),
+                );
+                let sparse_tensor_array = FixedShapeSparseTensorArray::new(
+                    Field::new(self.name(), dtype.clone()),
+                    struct_array,
+                );
+                Ok(sparse_tensor_array.into_series())
+            }
+            _ => self.physical.cast(dtype),
+        }
+    }
+}
+
+impl FixedShapeSparseTensorArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        match (dtype, self.data_type()) {
+            (
+                DataType::SparseTensor(_),
+                DataType::FixedShapeSparseTensor(inner_dtype, tensor_shape),
+            ) => {
+                let ndim = tensor_shape.len();
+                let shapes = tensor_shape
+                    .iter()
+                    .cycle()
+                    .copied()
+                    .take(ndim * self.len())
+                    .collect();
+                let shape_offsets = (0..=ndim * self.len())
+                    .step_by(ndim)
+                    .map(|v| v as i64)
+                    .collect::<Vec<i64>>();
+
+                let validity = self.physical.validity();
+
+                let va = self.values_array();
+                let ia = self.indices_array();
+
+                let values_arr =
+                    va.cast(&DataType::List(Box::new(inner_dtype.as_ref().clone())))?;
+
+                // List -> Struct
+                let shape_offsets = arrow2::offset::OffsetsBuffer::try_from(shape_offsets)?;
+                let shapes_array = ListArray::new(
+                    Field::new("shape", DataType::List(Box::new(DataType::UInt64))),
+                    Series::try_from((
+                        "shape",
+                        Box::new(arrow2::array::PrimitiveArray::from_vec(shapes))
+                            as Box<dyn arrow2::array::Array>,
+                    ))?,
+                    shape_offsets,
+                    validity.cloned(),
+                );
+                let physical_type = dtype.to_physical();
+                let struct_array = StructArray::new(
+                    Field::new(self.name(), physical_type),
+                    vec![
+                        values_arr,
+                        ia.clone().into_series(),
+                        shapes_array.into_series(),
+                    ],
+                    validity.cloned(),
+                );
+                Ok(
+                    SparseTensorArray::new(Field::new(self.name(), dtype.clone()), struct_array)
+                        .into_series(),
+                )
+            }
+            (
+                DataType::FixedShapeTensor(_, target_tensor_shape),
+                DataType::FixedShapeSparseTensor(inner_dtype, tensor_shape),
+            ) => {
+                let non_zero_values_array = self.values_array();
+                let non_zero_indices_array = self.indices_array();
+                let size = tensor_shape.iter().product::<u64>() as usize;
+                let target_size = target_tensor_shape.iter().product::<u64>() as usize;
+                if size != target_size {
+                    return Err(DaftError::TypeError(format!(
+                        "Can not cast FixedShapeSparseTensor array to FixedShapeTensor array with type {:?}: FixedShapeSparseTensor array has shapes different than {:?};",
+                        dtype,
+                        tensor_shape,
+                    )));
+                }
+                let n_values = size * non_zero_values_array.len();
+                let item = cast_sparse_to_dense_for_inner_dtype(
+                    inner_dtype,
+                    n_values,
+                    non_zero_indices_array,
+                    non_zero_values_array,
+                    &Offsets::try_from_iter(repeat(target_size).take(self.len()))?,
+                )?;
+                let validity = non_zero_values_array.validity();
+                let physical = FixedSizeListArray::new(
+                    Field::new(
+                        self.name(),
+                        DataType::FixedSizeList(Box::new(inner_dtype.as_ref().clone()), size),
+                    ),
+                    Series::try_from(("item", item))?,
+                    validity.cloned(),
+                );
+                let fixed_shape_tensor_array =
+                    FixedShapeTensorArray::new(Field::new(self.name(), dtype.clone()), physical);
+                Ok(fixed_shape_tensor_array.into_series())
+            }
+            (_, _) => self.physical.cast(dtype),
+        }
+    }
+}
+
 impl FixedShapeTensorArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         match (dtype, self.data_type()) {
@@ -1586,7 +1873,72 @@ impl FixedShapeTensorArray {
                         .into_series(),
                 )
             }
-            // NOTE(Clark): Casting to FixedShapeImage is supported by the physical array cast.
+            (
+                DataType::FixedShapeSparseTensor(_, _),
+                DataType::FixedShapeTensor(inner_dtype, tensor_shape),
+            ) => {
+                let physical_arr = &self.physical;
+                let validity = self.physical.validity();
+                let zero_series = Int64Array::from(("item", [0].as_slice())).into_series();
+                let mut non_zero_values = Vec::new();
+                let mut non_zero_indices = Vec::new();
+                let mut offsets = Vec::<usize>::new();
+                for (i, data_series) in physical_arr.into_iter().enumerate() {
+                    let is_valid = validity.map_or(true, |v| v.get_bit(i));
+                    if !is_valid {
+                        // Handle invalid row by populating dummy data.
+                        offsets.push(1);
+                        non_zero_values.push(Series::empty("dummy", inner_dtype.as_ref()));
+                        non_zero_indices.push(Series::empty("dummy", &DataType::UInt64));
+                        continue;
+                    }
+                    let data_series = data_series.unwrap();
+                    assert!(data_series.len() == tensor_shape.iter().product::<u64>() as usize);
+                    let non_zero_mask = data_series.not_equal(&zero_series)?;
+                    let data = data_series.filter(&non_zero_mask)?;
+                    let indices = UInt64Array::arange("item", 0, data_series.len() as i64, 1)?
+                        .into_series()
+                        .filter(&non_zero_mask)?;
+                    offsets.push(data.len());
+                    non_zero_values.push(data);
+                    non_zero_indices.push(indices);
+                }
+                let offsets: Offsets<i64> =
+                    Offsets::try_from_iter(non_zero_values.iter().map(|s| s.len()))?;
+                let non_zero_values_series =
+                    Series::concat(&non_zero_values.iter().collect::<Vec<&Series>>())?;
+                let non_zero_indices_series =
+                    Series::concat(&non_zero_indices.iter().collect::<Vec<&Series>>())?;
+                let offsets_cloned = offsets.clone();
+                let data_list_arr = ListArray::new(
+                    Field::new(
+                        "values",
+                        DataType::List(Box::new(non_zero_values_series.data_type().clone())),
+                    ),
+                    non_zero_values_series,
+                    offsets.into(),
+                    validity.cloned(),
+                );
+                let indices_list_arr = ListArray::new(
+                    Field::new(
+                        "indices",
+                        DataType::List(Box::new(non_zero_indices_series.data_type().clone())),
+                    ),
+                    non_zero_indices_series,
+                    offsets_cloned.into(),
+                    validity.cloned(),
+                );
+                let sparse_struct_array = StructArray::new(
+                    Field::new(self.name(), dtype.to_physical()),
+                    vec![data_list_arr.into_series(), indices_list_arr.into_series()],
+                    validity.cloned(),
+                );
+                Ok(FixedShapeSparseTensorArray::new(
+                    Field::new(sparse_struct_array.name(), dtype.clone()),
+                    sparse_struct_array,
+                )
+                .into_series())
+            }
             (_, _) => self.physical.cast(dtype),
         }
     }
@@ -1604,7 +1956,7 @@ impl FixedSizeListArray {
                     )));
                 }
                 let casted_child = self.flat_child.cast(child_dtype.as_ref())?;
-                Ok(FixedSizeListArray::new(
+                Ok(Self::new(
                     Field::new(self.name().to_string(), dtype.clone()),
                     casted_child,
                     self.validity().cloned(),
@@ -1666,7 +2018,7 @@ impl FixedSizeListArray {
 impl ListArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         match dtype {
-            DataType::List(child_dtype) => Ok(ListArray::new(
+            DataType::List(child_dtype) => Ok(Self::new(
                 Field::new(self.name(), dtype.clone()),
                 self.flat_child.cast(child_dtype.as_ref())?,
                 self.offsets().clone(),
@@ -1786,7 +2138,7 @@ impl StructArray {
                         },
                     )
                     .collect::<DaftResult<Vec<Series>>>();
-                Ok(StructArray::new(
+                Ok(Self::new(
                     Field::new(self.name(), dtype.clone()),
                     casted_series?,
                     self.validity().cloned(),
@@ -1800,6 +2152,24 @@ impl StructArray {
                     TensorArray::new(Field::new(self.name(), dtype.clone()), casted_struct_array)
                         .into_series(),
                 )
+            }
+            (DataType::Struct(..), DataType::SparseTensor(..)) => {
+                let casted_struct_array =
+                    self.cast(&dtype.to_physical())?.struct_().unwrap().clone();
+                Ok(SparseTensorArray::new(
+                    Field::new(self.name(), dtype.clone()),
+                    casted_struct_array,
+                )
+                .into_series())
+            }
+            (DataType::Struct(..), DataType::FixedShapeSparseTensor(..)) => {
+                let casted_struct_array =
+                    self.cast(&dtype.to_physical())?.struct_().unwrap().clone();
+                Ok(FixedShapeSparseTensorArray::new(
+                    Field::new(self.name(), dtype.clone()),
+                    casted_struct_array,
+                )
+                .into_series())
             }
             (DataType::Struct(..), DataType::Image(..)) => {
                 let casted_struct_array =

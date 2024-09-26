@@ -6,7 +6,7 @@ use crate::{
 };
 
 impl Series {
-    pub fn concat(series: &[&Series]) -> DaftResult<Self> {
+    pub fn concat(series: &[&Self]) -> DaftResult<Self> {
         if series.is_empty() {
             return Err(DaftError::ValueError(
                 "Need at least 1 series to perform concat".to_string(),

@@ -304,6 +304,7 @@ class LogicalPlanBuilder:
         version: int,
         large_dtypes: bool,
         io_config: IOConfig,
+        partition_cols: list[str] | None = None,
     ) -> LogicalPlanBuilder:
         columns_name = self.schema().column_names()
         builder = self._builder.delta_write(
@@ -312,6 +313,7 @@ class LogicalPlanBuilder:
             mode,
             version,
             large_dtypes,
+            partition_cols,
             io_config,
         )
         return LogicalPlanBuilder(builder)

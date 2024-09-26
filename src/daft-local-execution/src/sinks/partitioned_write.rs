@@ -98,7 +98,7 @@ impl PartitionedWriteNode {
         target_file_rows: usize,
         target_chunk_rows: usize,
     ) -> Self {
-        PartitionedWriteNode {
+        Self {
             child,
             runtime_stats: RuntimeStatsContext::new(),
             file_info: file_info.clone(),
