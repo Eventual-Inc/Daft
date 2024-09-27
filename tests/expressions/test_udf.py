@@ -4,6 +4,7 @@ import numpy as np
 import pyarrow as pa
 import pytest
 
+import daft
 from daft import col
 from daft.context import get_context, set_planning_config
 from daft.datatype import DataType
@@ -40,7 +41,7 @@ def test_udf():
 
 @pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
 def test_class_udf(batch_size, actor_pool_enabled):
-    table = MicroPartition.from_pydict({"a": ["foo", "bar", "baz"]})
+    df = daft.from_pydict({"a": ["foo", "bar", "baz"]})
 
     @udf(return_dtype=DataType.string(), batch_size=batch_size)
     class RepeatN:
@@ -54,17 +55,17 @@ def test_class_udf(batch_size, actor_pool_enabled):
         RepeatN = RepeatN.with_concurrency(1)
 
     expr = RepeatN(col("a"))
-    field = expr._to_field(table.schema())
+    field = expr._to_field(df.schema())
     assert field.name == "a"
     assert field.dtype == DataType.string()
 
-    result = table.eval_expression_list([expr])
+    result = df.select(expr)
     assert result.to_pydict() == {"a": ["foofoo", "barbar", "bazbaz"]}
 
 
 @pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
 def test_class_udf_init_args(batch_size, actor_pool_enabled):
-    table = MicroPartition.from_pydict({"a": ["foo", "bar", "baz"]})
+    df = daft.from_pydict({"a": ["foo", "bar", "baz"]})
 
     @udf(return_dtype=DataType.string(), batch_size=batch_size)
     class RepeatN:
@@ -78,23 +79,23 @@ def test_class_udf_init_args(batch_size, actor_pool_enabled):
         RepeatN = RepeatN.with_concurrency(1)
 
     expr = RepeatN(col("a"))
-    field = expr._to_field(table.schema())
+    field = expr._to_field(df.schema())
     assert field.name == "a"
     assert field.dtype == DataType.string()
-    result = table.eval_expression_list([expr])
+    result = df.select(expr)
     assert result.to_pydict() == {"a": ["foofoo", "barbar", "bazbaz"]}
 
     expr = RepeatN.with_init_args(initial_n=3)(col("a"))
-    field = expr._to_field(table.schema())
+    field = expr._to_field(df.schema())
     assert field.name == "a"
     assert field.dtype == DataType.string()
-    result = table.eval_expression_list([expr])
+    result = df.select(expr)
     assert result.to_pydict() == {"a": ["foofoofoo", "barbarbar", "bazbazbaz"]}
 
 
 @pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
 def test_class_udf_init_args_no_default(batch_size, actor_pool_enabled):
-    table = MicroPartition.from_pydict({"a": ["foo", "bar", "baz"]})
+    df = daft.from_pydict({"a": ["foo", "bar", "baz"]})
 
     @udf(return_dtype=DataType.string(), batch_size=batch_size)
     class RepeatN:
@@ -111,10 +112,10 @@ def test_class_udf_init_args_no_default(batch_size, actor_pool_enabled):
         RepeatN(col("a"))
 
     expr = RepeatN.with_init_args(initial_n=2)(col("a"))
-    field = expr._to_field(table.schema())
+    field = expr._to_field(df.schema())
     assert field.name == "a"
     assert field.dtype == DataType.string()
-    result = table.eval_expression_list([expr])
+    result = df.select(expr)
     assert result.to_pydict() == {"a": ["foofoo", "barbar", "bazbaz"]}
 
 
@@ -137,7 +138,7 @@ def test_class_udf_init_args_bad_args(actor_pool_enabled):
 @pytest.mark.parametrize("concurrency", [1, 2, 4])
 @pytest.mark.parametrize("actor_pool_enabled", [True], indirect=True)
 def test_stateful_udf_concurrency(concurrency, actor_pool_enabled):
-    table = MicroPartition.from_pydict({"a": ["foo", "bar", "baz"]})
+    df = daft.from_pydict({"a": ["foo", "bar", "baz"]})
 
     @udf(return_dtype=DataType.string(), batch_size=1)
     class RepeatN:
@@ -150,11 +151,11 @@ def test_stateful_udf_concurrency(concurrency, actor_pool_enabled):
     RepeatN = RepeatN.with_concurrency(concurrency)
 
     expr = RepeatN(col("a"))
-    field = expr._to_field(table.schema())
+    field = expr._to_field(df.schema())
     assert field.name == "a"
     assert field.dtype == DataType.string()
 
-    result = table.eval_expression_list([expr])
+    result = df.select(expr)
     assert result.to_pydict() == {"a": ["foofoo", "barbar", "bazbaz"]}
 
 
@@ -254,7 +255,7 @@ def test_full_udf_call():
 
 
 def test_class_udf_initialization_error(actor_pool_enabled):
-    table = MicroPartition.from_pydict({"a": ["foo", "bar", "baz"]})
+    df = daft.from_pydict({"a": ["foo", "bar", "baz"]})
 
     @udf(return_dtype=DataType.string())
     class IdentityWithInitError:
@@ -268,8 +269,12 @@ def test_class_udf_initialization_error(actor_pool_enabled):
         IdentityWithInitError = IdentityWithInitError.with_concurrency(1)
 
     expr = IdentityWithInitError(col("a"))
-    with pytest.raises(RuntimeError, match="UDF INIT ERROR"):
-        table.eval_expression_list([expr])
+    if actor_pool_enabled:
+        with pytest.raises(Exception):
+            df.select(expr).collect()
+    else:
+        with pytest.raises(RuntimeError, match="UDF INIT ERROR"):
+            df.select(expr).collect()
 
 
 def test_udf_equality():
