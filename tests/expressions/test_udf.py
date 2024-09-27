@@ -23,10 +23,14 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.fixture(scope="function", params=[False, True])
 def actor_pool_enabled(request):
-    set_planning_config(
-        config=get_context().daft_planning_config.with_config_values(enable_actor_pool_projections=request.param)
-    )
-    yield request.param
+    original_config = get_context().daft_planning_config
+    try:
+        set_planning_config(
+            config=get_context().daft_planning_config.with_config_values(enable_actor_pool_projections=request.param)
+        )
+        yield request.param
+    finally:
+        set_planning_config(config=original_config)
 
 
 def test_udf():
