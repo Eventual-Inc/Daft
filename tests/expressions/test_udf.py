@@ -16,7 +16,7 @@ from daft.udf import udf
 
 pytestmark = pytest.mark.skipif(
     get_context().daft_execution_config.enable_native_executor is True
-    and get_context().daft_execution_config.enable_actor_pool_projections is True,
+    and get_context().daft_planning_config.enable_actor_pool_projections is True,
     reason="Native executor does not support stateful UDFs",
 )
 
