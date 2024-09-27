@@ -82,7 +82,11 @@ parquet2 = {path = "src/parquet2"}
 debug = true
 
 [profile.dev]
+debug = "line-tables-only"
 overflow-checks = false
+
+[profile.dev.build-override]
+opt-level = 3
 
 [profile.dev-bench]
 codegen-units = 16

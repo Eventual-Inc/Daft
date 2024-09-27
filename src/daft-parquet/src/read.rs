@@ -842,7 +842,7 @@ pub fn read_parquet_bulk<T: AsRef<str>>(
 
 #[allow(clippy::too_many_arguments)]
 pub async fn stream_parquet(
-    uri: String,
+    uri: &str,
     columns: Option<&[&str]>,
     start_offset: Option<usize>,
     num_rows: Option<usize>,
@@ -856,7 +856,7 @@ pub async fn stream_parquet(
     maintain_order: bool,
 ) -> DaftResult<BoxStream<'static, DaftResult<Table>>> {
     let stream = stream_parquet_single(
-        uri,
+        uri.to_string(),
         columns,
         start_offset,
         num_rows,
@@ -1140,7 +1140,7 @@ mod tests {
         let runtime_handle = daft_io::get_runtime(true)?;
         runtime_handle.block_on_current_thread(async move {
             let tables = stream_parquet(
-                file.to_string(),
+                file,
                 None,
                 None,
                 None,
