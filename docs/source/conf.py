@@ -87,11 +87,13 @@ redirects = {
     "learn/user_guides/remote_cluster_execution": "distributed-computing.html",
     "learn/quickstart": "learn/10-min.html",
     "learn/10-min": "../10-min.html",
-    "user_guide/basic_concepts/*": "user_guide/basic_concepts.html",
+    "user_guide/basic_concepts/expressions": "user_guide/expressions",
+    "user_guide/basic_concepts/dataframe_introduction": "user_guide/basic_concepts",
+    "user_guide/basic_concepts/introduction": "user_guide/basic_concepts",
     "user_guide/daft_in_depth/aggregations": "user_guide/aggregations",
     "user_guide/daft_in_depth/dataframe-operations": "user_guide/dataframe-operations",
-    "user_guide/daft_in_depth/datatypes": "user_guide/datatypes",
-    "user_guide/daft_in_depth/udf": "user_guide/udf",
+    "user_guide/datatypes": "user_guide/datatypes",
+    "user_guide/udf": "user_guide/udf",
 }
 
 # Resolving code links to github

@@ -12,6 +12,7 @@ Daft User Guide
     dataframe-operations
     sql
     aggregations
+    udf
     poweruser
     integrations
     tutorials
@@ -41,15 +42,22 @@ The Daft User Guide is laid out as follows:
 
 High-level overview of Daft interfaces and usage to give you a better understanding of how Daft will fit into your day-to-day workflow.
 
+Daft in Depth
+*************
+
+Core Daft concepts all Daft users will find useful to understand deeply.
+
+* :doc:`read-and-write`
+* :doc:`expressions`
+* :doc:`datatypes`
+* :doc:`dataframe-operations`
+* :doc:`aggregations`
+* :doc:`udf`
+
 :doc:`Structured Query Language (SQL) <sql>`
 ********************************************
 
 A look into Daft's SQL interface and how it complements Daft's Pythonic DataFrame APIs.
-
-:doc:`Daft in Depth <daft_in_depth>`
-************************************
-
-Core Daft concepts all Daft users will find useful to understand deeply.
 
 :doc:`The Daft Poweruser <poweruser>`
 *************************************
