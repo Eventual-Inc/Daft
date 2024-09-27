@@ -222,7 +222,9 @@ pub fn stateful_udf(
 
 /// Extracts the `class PartialStatefulUDF` Python objects that are in the specified expression tree
 #[pyfunction]
-pub fn extract_partial_stateful_udf_py(expr: PyExpr) -> HashMap<String, Py<PyAny>> {
+pub fn extract_partial_stateful_udf_py(
+    expr: PyExpr,
+) -> HashMap<String, (Py<PyAny>, Option<Py<PyAny>>)> {
     use crate::functions::python::extract_partial_stateful_udf_py;
     extract_partial_stateful_udf_py(expr.expr)
 }
