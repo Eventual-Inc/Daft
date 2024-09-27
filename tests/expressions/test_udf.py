@@ -14,6 +14,12 @@ from daft.series import Series
 from daft.table import MicroPartition
 from daft.udf import udf
 
+pytestmark = pytest.mark.skipif(
+    get_context().daft_execution_config.enable_native_executor is True
+    and get_context().daft_execution_config.enable_actor_pool_projections is True,
+    reason="Native executor does not support stateful UDFs",
+)
+
 
 @pytest.fixture(scope="function", params=[False, True])
 def actor_pool_enabled(request):
