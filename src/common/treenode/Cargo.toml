@@ -4,6 +4,9 @@ common-error = {path = "../error", default-features = false}
 [features]
 python = ["common-error/python"]
 
+[lints]
+workspace = true
+
 [package]
 edition = {workspace = true}
 name = "common-treenode"

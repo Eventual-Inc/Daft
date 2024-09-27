@@ -21,6 +21,9 @@ python = [
   "daft-dsl/python"
 ]
 
+[lints]
+workspace = true
+
 [package]
 name = "daft-functions-json"
 edition.workspace = true

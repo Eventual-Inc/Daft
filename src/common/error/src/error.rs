@@ -34,6 +34,10 @@ pub enum DaftError {
     ByteStreamError(GenericError),
     #[error("SocketError {0}")]
     SocketError(GenericError),
+    #[error("ThrottledIo {0}")]
+    ThrottledIo(GenericError),
+    #[error("MiscTransient {0}")]
+    MiscTransient(GenericError),
     #[error("DaftError::External {0}")]
     External(GenericError),
     #[error("DaftError::SerdeJsonError {0}")]

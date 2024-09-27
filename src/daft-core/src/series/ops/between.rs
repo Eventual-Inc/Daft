@@ -1,7 +1,7 @@
 use common_error::DaftResult;
 
 #[cfg(feature = "python")]
-use crate::series::ops::py_between_op_utilfn;
+use crate::series::utils::python_fn::py_between_op_utilfn;
 use crate::{
     array::ops::DaftBetween,
     datatypes::{BooleanArray, DataType, InferDataType},
@@ -10,7 +10,7 @@ use crate::{
 };
 
 impl Series {
-    pub fn between(&self, lower: &Series, upper: &Series) -> DaftResult<Series> {
+    pub fn between(&self, lower: &Self, upper: &Self) -> DaftResult<Self> {
         let (_output_type, _intermediate, lower_comp_type) = InferDataType::from(self.data_type())
             .comparison_op(&InferDataType::from(lower.data_type()))?;
         let (_output_type, _intermediate, upper_comp_type) = InferDataType::from(self.data_type())
@@ -29,11 +29,7 @@ impl Series {
                     .downcast::<BooleanArray>()?
                     .clone()
                     .into_series()),
-                DataType::Null => Ok(Series::full_null(
-                    self.name(),
-                    &DataType::Boolean,
-                    self.len(),
-                )),
+                DataType::Null => Ok(Self::full_null(self.name(), &DataType::Boolean, self.len())),
                 _ => with_match_numeric_daft_types!(comp_type, |$T| {
                         let casted_value = it_value.cast(&comp_type)?;
                         let casted_lower = it_lower.cast(&comp_type)?;

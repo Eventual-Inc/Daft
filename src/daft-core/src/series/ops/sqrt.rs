@@ -6,7 +6,7 @@ use crate::{
 };
 
 impl Series {
-    pub fn sqrt(&self) -> DaftResult<Series> {
+    pub fn sqrt(&self) -> DaftResult<Self> {
         let casted_dtype = self.to_floating_data_type()?;
         let casted_self = self
             .cast(&casted_dtype)

@@ -8,6 +8,9 @@ serde_arrow = {version = "0.11.0", features = ["arrow2-0-17"]}
 sketches-ddsketch = {workspace = true}
 snafu = {workspace = true}
 
+[lints]
+workspace = true
+
 [package]
 edition = {workspace = true}
 name = "daft-sketch"

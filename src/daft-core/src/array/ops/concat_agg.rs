@@ -69,7 +69,7 @@ impl DaftConcatAggable for ListArray {
     fn concat(&self) -> Self::Output {
         if self.null_count() == 0 {
             let new_offsets = OffsetsBuffer::<i64>::try_from(vec![0, *self.offsets().last()])?;
-            return Ok(ListArray::new(
+            return Ok(Self::new(
                 self.field.clone(),
                 self.flat_child.clone(),
                 new_offsets,
@@ -102,7 +102,7 @@ impl DaftConcatAggable for ListArray {
         let new_child = child_growable.build()?;
         let new_offsets = OffsetsBuffer::<i64>::try_from(vec![0, new_child.len() as i64])?;
 
-        Ok(ListArray::new(
+        Ok(Self::new(
             self.field.clone(),
             new_child,
             new_offsets,
@@ -145,7 +145,7 @@ impl DaftConcatAggable for ListArray {
             Some(arrow2::bitmap::Bitmap::from(group_valids))
         };
 
-        Ok(ListArray::new(
+        Ok(Self::new(
             self.field.clone(),
             child_array_growable.build()?,
             new_offsets.into(),
@@ -175,7 +175,7 @@ impl DaftConcatAggable for DataArray<Utf8Type> {
         );
 
         let result_box = Box::new(output);
-        DataArray::new(self.field().clone().into(), result_box)
+        Self::new(self.field().clone().into(), result_box)
     }
 
     fn grouped_concat(&self, groups: &super::GroupIndices) -> Self::Output {
@@ -208,10 +208,7 @@ impl DaftConcatAggable for DataArray<Utf8Type> {
             )))
         };
 
-        Ok(DataArray::from((
-            self.field.name.as_ref(),
-            concat_per_group,
-        )))
+        Ok(Self::from((self.field.name.as_ref(), concat_per_group)))
     }
 }
 

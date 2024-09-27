@@ -72,7 +72,7 @@ publish = false
 version = "0.3.0-dev0"
 
 [package.metadata.cargo-machete]
-ignored = ["lzma_sys"]
+ignored = ["lzma-sys"]
 
 [patch.crates-io]
 arrow2 = {path = "src/arrow2"}
@@ -82,7 +82,11 @@ parquet2 = {path = "src/parquet2"}
 debug = true
 
 [profile.dev]
+debug = "line-tables-only"
 overflow-checks = false
+
+[profile.dev.build-override]
+opt-level = 3
 
 [profile.dev-bench]
 codegen-units = 16
@@ -223,6 +227,9 @@ version = "0.11.0"
 [workspace.dependencies.serde]
 features = ["derive", "rc"]
 version = "1.0.200"
+
+[workspace.lints.clippy]
+use-self = "deny"
 
 [workspace.package]
 edition = "2021"

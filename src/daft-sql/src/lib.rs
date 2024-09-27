@@ -15,6 +15,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<python::PyCatalog>()?;
     parent.add_function(wrap_pyfunction_bound!(python::sql, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(python::sql_expr, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(python::list_sql_functions, parent)?)?;
     Ok(())
 }
 
@@ -261,6 +262,7 @@ mod tests {
                 JoinType::Inner,
                 None,
             )?
+            .select(vec![col("*")])?
             .build();
         assert_eq!(plan, expected);
         Ok(())

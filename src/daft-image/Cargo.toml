@@ -18,6 +18,9 @@ python = [
   "common-error/python"
 ]
 
+[lints]
+workspace = true
+
 [package]
 name = "daft-image"
 edition.workspace = true

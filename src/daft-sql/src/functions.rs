@@ -14,7 +14,7 @@ use crate::{
 };
 
 /// [SQL_FUNCTIONS] is a singleton that holds all the registered SQL functions.
-static SQL_FUNCTIONS: Lazy<SQLFunctions> = Lazy::new(|| {
+pub(crate) static SQL_FUNCTIONS: Lazy<SQLFunctions> = Lazy::new(|| {
     let mut functions = SQLFunctions::new();
     functions.register::<SQLModuleAggs>();
     functions.register::<SQLModuleFloat>();
@@ -88,7 +88,7 @@ pub trait SQLFunction: Send + Sync {
 ///   - Use multimap for function variants.
 ///   - Add more functions..
 pub struct SQLFunctions {
-    map: HashMap<String, Arc<dyn SQLFunction>>,
+    pub(crate) map: HashMap<String, Arc<dyn SQLFunction>>,
 }
 
 pub(crate) struct SQLFunctionArguments {

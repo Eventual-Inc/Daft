@@ -6,13 +6,13 @@ use crate::{
     datatypes::{BooleanArray, DaftNumericType},
 };
 
-impl<T> DaftBetween<&DataArray<T>, &DataArray<T>> for DataArray<T>
+impl<T> DaftBetween<&Self, &Self> for DataArray<T>
 where
     T: DaftNumericType,
 {
     type Output = DaftResult<BooleanArray>;
 
-    fn between(&self, lower: &DataArray<T>, upper: &DataArray<T>) -> Self::Output {
+    fn between(&self, lower: &Self, upper: &Self) -> Self::Output {
         let are_two_equal_and_single_one = |v_size, l_size, u_size: usize| {
             [v_size, l_size, u_size]
                 .iter()

@@ -38,6 +38,9 @@ python = [
   "daft-dsl/python"
 ]
 
+[lints]
+workspace = true
+
 [package]
 edition = {workspace = true}
 name = "daft-json"

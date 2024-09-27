@@ -17,27 +17,24 @@ pub struct PyDaftPlanningConfig {
 impl PyDaftPlanningConfig {
     #[new]
     pub fn new() -> Self {
-        PyDaftPlanningConfig::default()
+        Self::default()
     }
 
     #[staticmethod]
     pub fn from_env() -> Self {
-        PyDaftPlanningConfig {
+        Self {
             config: Arc::new(DaftPlanningConfig::from_env()),
         }
     }
 
-    fn with_config_values(
-        &mut self,
-        default_io_config: Option<PyIOConfig>,
-    ) -> PyResult<PyDaftPlanningConfig> {
+    fn with_config_values(&mut self, default_io_config: Option<PyIOConfig>) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
         if let Some(default_io_config) = default_io_config {
             config.default_io_config = default_io_config.config;
         }
 
-        Ok(PyDaftPlanningConfig {
+        Ok(Self {
             config: Arc::new(config),
         })
     }
@@ -67,12 +64,12 @@ pub struct PyDaftExecutionConfig {
 impl PyDaftExecutionConfig {
     #[new]
     pub fn new() -> Self {
-        PyDaftExecutionConfig::default()
+        Self::default()
     }
 
     #[staticmethod]
     pub fn from_env() -> Self {
-        PyDaftExecutionConfig {
+        Self {
             config: Arc::new(DaftExecutionConfig::from_env()),
         }
     }
@@ -98,7 +95,7 @@ impl PyDaftExecutionConfig {
         enable_aqe: Option<bool>,
         enable_native_executor: Option<bool>,
         default_morsel_size: Option<usize>,
-    ) -> PyResult<PyDaftExecutionConfig> {
+    ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
         if let Some(scan_tasks_max_size_bytes) = scan_tasks_max_size_bytes {
@@ -161,7 +158,7 @@ impl PyDaftExecutionConfig {
             config.default_morsel_size = default_morsel_size;
         }
 
-        Ok(PyDaftExecutionConfig {
+        Ok(Self {
             config: Arc::new(config),
         })
     }

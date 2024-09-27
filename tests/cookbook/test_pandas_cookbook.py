@@ -7,15 +7,10 @@ import pandas as pd
 import pytest
 
 import daft
-from daft import context
 from daft.datatype import DataType
 from daft.expressions import col, lit
 from tests.conftest import assert_df_equals
 
-pytestmark = pytest.mark.skipif(
-    context.get_context().daft_execution_config.enable_native_executor is True,
-    reason="Native executor fails for these tests",
-)
 ###
 # Idioms: if-then
 ###

@@ -154,7 +154,7 @@ impl IOConfig {
         gcs: Option<GCSConfig>,
         http: Option<HTTPConfig>,
     ) -> Self {
-        IOConfig {
+        Self {
             config: config::IOConfig {
                 s3: s3.unwrap_or_default().config,
                 azure: azure.unwrap_or_default().config,
@@ -171,7 +171,7 @@ impl IOConfig {
         gcs: Option<GCSConfig>,
         http: Option<HTTPConfig>,
     ) -> Self {
-        IOConfig {
+        Self {
             config: config::IOConfig {
                 s3: s3.map(|s3| s3.config).unwrap_or(self.config.s3.clone()),
                 azure: azure
@@ -274,7 +274,7 @@ impl S3Config {
         profile_name: Option<String>,
     ) -> PyResult<Self> {
         let def = crate::S3Config::default();
-        Ok(S3Config {
+        Ok(Self {
             config: crate::S3Config {
                 region_name: region_name.or(def.region_name),
                 endpoint_url: endpoint_url.or(def.endpoint_url),
@@ -333,7 +333,7 @@ impl S3Config {
         force_virtual_addressing: Option<bool>,
         profile_name: Option<String>,
     ) -> PyResult<Self> {
-        Ok(S3Config {
+        Ok(Self {
             config: crate::S3Config {
                 region_name: region_name.or_else(|| self.config.region_name.clone()),
                 endpoint_url: endpoint_url.or_else(|| self.config.endpoint_url.clone()),
@@ -545,7 +545,7 @@ impl S3Credentials {
             })
             .transpose()?;
 
-        Ok(S3Credentials {
+        Ok(Self {
             credentials: crate::S3Credentials {
                 key_id,
                 access_key,
@@ -606,7 +606,7 @@ pub struct PyS3CredentialsProvider {
 impl PyS3CredentialsProvider {
     pub fn new(provider: Bound<PyAny>) -> PyResult<Self> {
         let hash = provider.hash()?;
-        Ok(PyS3CredentialsProvider {
+        Ok(Self {
             provider: provider.into(),
             hash,
         })
@@ -693,7 +693,7 @@ impl AzureConfig {
         use_ssl: Option<bool>,
     ) -> Self {
         let def = crate::AzureConfig::default();
-        AzureConfig {
+        Self {
             config: crate::AzureConfig {
                 storage_account: storage_account.or(def.storage_account),
                 access_key: access_key.map(|v| v.into()).or(def.access_key),
@@ -725,7 +725,7 @@ impl AzureConfig {
         endpoint_url: Option<String>,
         use_ssl: Option<bool>,
     ) -> Self {
-        AzureConfig {
+        Self {
             config: crate::AzureConfig {
                 storage_account: storage_account.or_else(|| self.config.storage_account.clone()),
                 access_key: access_key
@@ -835,7 +835,7 @@ impl GCSConfig {
         anonymous: Option<bool>,
     ) -> Self {
         let def = crate::GCSConfig::default();
-        GCSConfig {
+        Self {
             config: crate::GCSConfig {
                 project_id: project_id.or(def.project_id),
                 credentials: credentials.map(|v| v.into()).or(def.credentials),
@@ -852,7 +852,7 @@ impl GCSConfig {
         token: Option<String>,
         anonymous: Option<bool>,
     ) -> Self {
-        GCSConfig {
+        Self {
             config: crate::GCSConfig {
                 project_id: project_id.or_else(|| self.config.project_id.clone()),
                 credentials: credentials
@@ -907,7 +907,7 @@ impl From<config::IOConfig> for IOConfig {
 impl HTTPConfig {
     #[new]
     pub fn new(bearer_token: Option<String>) -> Self {
-        HTTPConfig {
+        Self {
             config: crate::HTTPConfig::new(bearer_token),
         }
     }

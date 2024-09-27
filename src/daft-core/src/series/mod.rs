@@ -3,6 +3,7 @@ mod from;
 mod ops;
 mod serdes;
 mod series_like;
+mod utils;
 use std::sync::Arc;
 
 pub use array_impl::IntoSeries;
@@ -87,7 +88,7 @@ impl Series {
     pub fn field(&self) -> &Field {
         self.inner.field()
     }
-    pub fn as_physical(&self) -> DaftResult<Series> {
+    pub fn as_physical(&self) -> DaftResult<Self> {
         let physical_dtype = self.data_type().to_physical();
         if &physical_dtype == self.data_type() {
             Ok(self.clone())
@@ -108,7 +109,7 @@ impl Series {
         )
     }
 
-    pub fn with_validity(&self, validity: Option<arrow2::bitmap::Bitmap>) -> DaftResult<Series> {
+    pub fn with_validity(&self, validity: Option<arrow2::bitmap::Bitmap>) -> DaftResult<Self> {
         self.inner.with_validity(validity)
     }
 
