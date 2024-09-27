@@ -56,7 +56,10 @@ pub(crate) fn arrow_column_iters_to_table_iter(
     predicate: Option<ExprRef>,
     original_columns: Option<Vec<String>>,
     original_num_rows: Option<usize>,
-) -> impl Iterator<Item = DaftResult<Table>> {
+) -> Option<impl Iterator<Item = DaftResult<Table>>> {
+    if arr_iters.is_empty() {
+        return None;
+    }
     pub struct ParallelLockStepIter {
         pub iters: ArrowChunkIters,
     }
@@ -73,7 +76,7 @@ pub(crate) fn arrow_column_iters_to_table_iter(
     // and slice arrays that are partially needed.
     let mut index_so_far = 0;
     let owned_schema_ref = schema_ref.clone();
-    par_lock_step_iter.into_iter().map(move |chunk| {
+    let table_iter = par_lock_step_iter.into_iter().map(move |chunk| {
         let chunk = chunk.with_context(|_| {
             super::UnableToCreateChunkFromStreamingFileReaderSnafu { path: uri.clone() }
         })?;
@@ -96,7 +99,10 @@ pub(crate) fn arrow_column_iters_to_table_iter(
             })
             .collect::<DaftResult<Vec<_>>>()?;
 
-        let len = all_series[0].len();
+        let len = all_series
+            .first()
+            .map(|s| s.len())
+            .expect("All series should not be empty when creating table from parquet chunks");
         if all_series.iter().any(|s| s.len() != len) {
             return Err(super::Error::ParquetColumnsDontHaveEqualRows { path: uri.clone() }.into());
         }
@@ -115,7 +121,8 @@ pub(crate) fn arrow_column_iters_to_table_iter(
             }
         }
         Ok(table)
-    })
+    });
+    Some(table_iter)
 }
 
 struct CountingReader<R> {
@@ -524,36 +531,41 @@ pub(crate) fn local_parquet_stream(
         .unzip();
 
     let owned_uri = uri.to_string();
-    let table_iters =
-        column_iters
-            .into_iter()
-            .zip(row_ranges)
-            .map(move |(rg_col_iter_result, rg_range)| {
-                let rg_col_iter = rg_col_iter_result?;
-                let table_iter = arrow_column_iters_to_table_iter(
-                    rg_col_iter,
-                    rg_range.start,
-                    schema_ref.clone(),
-                    owned_uri.clone(),
-                    predicate.clone(),
-                    original_columns.clone(),
-                    original_num_rows,
-                );
-                DaftResult::Ok(table_iter)
-            });
 
     rayon::spawn(move || {
         // Once a row group has been read into memory and we have the column iterators,
         // we can start processing them in parallel.
-        let par_table_iters = table_iters.zip(senders).par_bridge();
+        let par_column_iters = column_iters.zip(row_ranges).zip(senders).par_bridge();
 
         // For each vec of column iters, iterate through them in parallel lock step such that each iteration
         // produces a chunk of the row group that can be converted into a table.
-        par_table_iters.for_each(move |(table_iter_result, tx)| {
-            let table_iter = match table_iter_result {
-                Ok(t) => t,
+        par_column_iters.for_each(move |((rg_column_iters_result, rg_range), tx)| {
+            let table_iter = match rg_column_iters_result {
+                Ok(rg_column_iters) => {
+                    let table_iter = arrow_column_iters_to_table_iter(
+                        rg_column_iters,
+                        rg_range.start,
+                        schema_ref.clone(),
+                        owned_uri.clone(),
+                        predicate.clone(),
+                        original_columns.clone(),
+                        original_num_rows,
+                    );
+                    // Even if there are no columns to read, we still need to create a empty table with the correct number of rows
+                    // This is because the columns may be present in other files. See https://github.com/Eventual-Inc/Daft/pull/2514
+                    if let Some(table_iter) = table_iter {
+                        table_iter
+                    } else {
+                        let table =
+                            Table::new_with_size(schema_ref.clone(), vec![], rg_range.num_rows);
+                        if let Err(crossbeam_channel::TrySendError::Full(_)) = tx.try_send(table) {
+                            panic!("Parquet stream channel should not be full")
+                        }
+                        return;
+                    }
+                }
                 Err(e) => {
-                    let _ = tx.send(Err(e));
+                    let _ = tx.send(Err(e.into()));
                     return;
                 }
             };

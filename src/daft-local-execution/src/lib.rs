@@ -63,6 +63,9 @@ pub enum Error {
     OneShotRecvError {
         source: tokio::sync::oneshot::error::RecvError,
     },
+    #[cfg(feature = "python")]
+    #[snafu(display("PyIOError: {}", source))]
+    PyIO { source: PyErr },
     #[snafu(display("Error creating pipeline from {}: {}", plan_name, source))]
     PipelineCreationError {
         source: DaftError,
