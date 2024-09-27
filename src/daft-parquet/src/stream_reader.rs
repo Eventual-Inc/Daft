@@ -56,8 +56,10 @@ pub(crate) fn arrow_column_iters_to_table_iter(
     predicate: Option<ExprRef>,
     original_columns: Option<Vec<String>>,
     original_num_rows: Option<usize>,
-) -> impl Iterator<Item = DaftResult<Table>> {
-    assert!(!arr_iters.is_empty());
+) -> Option<impl Iterator<Item = DaftResult<Table>>> {
+    if arr_iters.is_empty() {
+        return None;
+    }
     pub struct ParallelLockStepIter {
         pub iters: ArrowChunkIters,
     }
@@ -74,7 +76,7 @@ pub(crate) fn arrow_column_iters_to_table_iter(
     // and slice arrays that are partially needed.
     let mut index_so_far = 0;
     let owned_schema_ref = schema_ref.clone();
-    par_lock_step_iter.into_iter().map(move |chunk| {
+    let table_iter = par_lock_step_iter.into_iter().map(move |chunk| {
         let chunk = chunk.with_context(|_| {
             super::UnableToCreateChunkFromStreamingFileReaderSnafu { path: uri.clone() }
         })?;
@@ -119,7 +121,8 @@ pub(crate) fn arrow_column_iters_to_table_iter(
             }
         }
         Ok(table)
-    })
+    });
+    Some(table_iter)
 }
 
 struct CountingReader<R> {
@@ -539,25 +542,26 @@ pub(crate) fn local_parquet_stream(
         par_column_iters.for_each(move |((rg_column_iters_result, rg_range), tx)| {
             let table_iter = match rg_column_iters_result {
                 Ok(rg_column_iters) => {
+                    let table_iter = arrow_column_iters_to_table_iter(
+                        rg_column_iters,
+                        rg_range.start,
+                        schema_ref.clone(),
+                        owned_uri.clone(),
+                        predicate.clone(),
+                        original_columns.clone(),
+                        original_num_rows,
+                    );
                     // Even if there are no columns to read, we still need to create a empty table with the correct number of rows
                     // This is because the columns may be present in other files. See https://github.com/Eventual-Inc/Daft/pull/2514
-                    if rg_column_iters.is_empty() {
+                    if let Some(table_iter) = table_iter {
+                        table_iter
+                    } else {
                         let table =
-                            Table::new_with_size(Schema::empty(), vec![], rg_range.num_rows);
+                            Table::new_with_size(schema_ref.clone(), vec![], rg_range.num_rows);
                         if let Err(crossbeam_channel::TrySendError::Full(_)) = tx.try_send(table) {
                             panic!("Parquet stream channel should not be full")
                         }
                         return;
-                    } else {
-                        arrow_column_iters_to_table_iter(
-                            rg_column_iters,
-                            rg_range.start,
-                            schema_ref.clone(),
-                            owned_uri.clone(),
-                            predicate.clone(),
-                            original_columns.clone(),
-                            original_num_rows,
-                        )
                     }
                 }
                 Err(e) => {

@@ -3,6 +3,7 @@ mod from;
 mod ops;
 mod serdes;
 mod series_like;
+mod utils;
 use std::sync::Arc;
 
 pub use array_impl::IntoSeries;

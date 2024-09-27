@@ -12,8 +12,8 @@ use daft_plan::{LogicalPlanBuilder, LogicalPlanRef};
 use sqlparser::{
     ast::{
         ArrayElemTypeDef, BinaryOperator, CastKind, ExactNumberInfo, GroupByExpr, Ident, Query,
-        SelectItem, StructField, Subscript, TableWithJoins, TimezoneInfo, UnaryOperator, Value,
-        WildcardAdditionalOptions,
+        SelectItem, Statement, StructField, Subscript, TableWithJoins, TimezoneInfo, UnaryOperator,
+        Value, WildcardAdditionalOptions,
     },
     dialect::GenericDialect,
     parser::{Parser, ParserOptions},
@@ -88,9 +88,18 @@ impl SQLPlanner {
 
         let statements = parser.parse_statements()?;
 
-        match statements.as_slice() {
-            [sqlparser::ast::Statement::Query(query)] => Ok(self.plan_query(query)?.build()),
-            other => unsupported_sql_err!("{}", other[0]),
+        match statements.len() {
+            1 => Ok(self.plan_statement(&statements[0])?),
+            other => {
+                unsupported_sql_err!("Only exactly one SQL statement allowed, found {}", other)
+            }
+        }
+    }
+
+    fn plan_statement(&mut self, statement: &Statement) -> SQLPlannerResult<LogicalPlanRef> {
+        match statement {
+            Statement::Query(query) => Ok(self.plan_query(query)?.build()),
+            other => unsupported_sql_err!("{}", other),
         }
     }
 
@@ -489,9 +498,9 @@ impl SQLPlanner {
                             .collect::<Vec<_>>()
                     })
                     .map_err(|e| e.into());
+                } else {
+                    Ok(vec![col("*")])
                 }
-
-                Ok(vec![])
             }
             _ => todo!(),
         }
@@ -621,7 +630,7 @@ impl SQLPlanner {
             SQLExpr::Trim { .. } => unsupported_sql_err!("TRIM"),
             SQLExpr::Overlay { .. } => unsupported_sql_err!("OVERLAY"),
             SQLExpr::Collate { .. } => unsupported_sql_err!("COLLATE"),
-            SQLExpr::Nested(_) => unsupported_sql_err!("NESTED"),
+            SQLExpr::Nested(e) => self.plan_expr(e),
             SQLExpr::IntroducedString { .. } => unsupported_sql_err!("INTRODUCED STRING"),
             SQLExpr::TypedString { data_type, value } => match data_type {
                 sqlparser::ast::DataType::Date => Ok(to_date(lit(value.as_str()), "%Y-%m-%d")),
