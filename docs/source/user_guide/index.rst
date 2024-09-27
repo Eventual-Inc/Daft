@@ -7,8 +7,11 @@ Daft User Guide
 
     basic_concepts
     read-and-write
+    expressions
+    datatypes
+    dataframe-operations
     sql
-    daft_in_depth
+    aggregations
     poweruser
     integrations
     tutorials
