@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
 use daft_core::prelude::*;
@@ -712,7 +712,23 @@ impl SQLPlanner {
             }
             SQLExpr::Struct { .. } => unsupported_sql_err!("STRUCT"),
             SQLExpr::Named { .. } => unsupported_sql_err!("NAMED"),
-            SQLExpr::Dictionary(_) => unsupported_sql_err!("DICTIONARY"),
+            SQLExpr::Dictionary(dict) => {
+                let entries = dict
+                    .iter()
+                    .map(|entry| {
+                        let key = entry.key.value.clone();
+                        let value = self.plan_expr(&entry.value)?;
+                        println!("value: {:?}", value);
+                        let value = value.as_literal().ok_or_else(|| {
+                            PlannerError::invalid_operation("Dictionary value is not a literal")
+                        })?;
+                        let struct_field = Field::new(key, value.get_type());
+                        Ok((struct_field, value.clone()))
+                    })
+                    .collect::<SQLPlannerResult<HashMap<_, _>>>()?;
+
+                Ok(Expr::Literal(LiteralValue::Struct(entries)).arced())
+            }
             SQLExpr::Map(_) => unsupported_sql_err!("MAP"),
             SQLExpr::Subscript { expr, subscript } => self.plan_subscript(expr, subscript.as_ref()),
             SQLExpr::Array(_) => unsupported_sql_err!("ARRAY"),

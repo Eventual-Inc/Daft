@@ -1,5 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
+use config::SQLModuleConfig;
 use daft_dsl::ExprRef;
 use once_cell::sync::Lazy;
 use sqlparser::ast::{
@@ -29,6 +30,7 @@ pub(crate) static SQL_FUNCTIONS: Lazy<SQLFunctions> = Lazy::new(|| {
     functions.register::<SQLModuleStructs>();
     functions.register::<SQLModuleTemporal>();
     functions.register::<SQLModuleUtf8>();
+    functions.register::<SQLModuleConfig>();
     functions
 });
 
@@ -97,11 +99,75 @@ pub(crate) struct SQLFunctionArguments {
 }
 
 impl SQLFunctionArguments {
-    pub fn get_unnamed(&self, idx: usize) -> Option<&ExprRef> {
+    pub fn get_positional(&self, idx: usize) -> Option<&ExprRef> {
         self.positional.get(&idx)
     }
     pub fn get_named(&self, name: &str) -> Option<&ExprRef> {
         self.named.get(name)
+    }
+
+    pub fn try_get_named<T: SQLLiteral>(&self, name: &str) -> Result<Option<T>, PlannerError> {
+        self.named
+            .get(name)
+            .map(|expr| T::from_expr(expr))
+            .transpose()
+    }
+    pub fn try_get_positional<T: SQLLiteral>(&self, idx: usize) -> Result<Option<T>, PlannerError> {
+        self.positional
+            .get(&idx)
+            .map(|expr| T::from_expr(expr))
+            .transpose()
+    }
+}
+
+pub trait SQLLiteral {
+    fn from_expr(expr: &ExprRef) -> Result<Self, PlannerError>
+    where
+        Self: Sized;
+}
+
+impl SQLLiteral for String {
+    fn from_expr(expr: &ExprRef) -> Result<Self, PlannerError>
+    where
+        Self: Sized,
+    {
+        let e = expr
+            .as_literal()
+            .and_then(|lit| lit.as_str())
+            .ok_or_else(|| PlannerError::invalid_operation("Expected a string literal"))?;
+        Ok(e.to_string())
+    }
+}
+
+impl SQLLiteral for i64 {
+    fn from_expr(expr: &ExprRef) -> Result<Self, PlannerError>
+    where
+        Self: Sized,
+    {
+        expr.as_literal()
+            .and_then(|lit| lit.as_i64())
+            .ok_or_else(|| PlannerError::invalid_operation("Expected an integer literal"))
+    }
+}
+impl SQLLiteral for usize {
+    fn from_expr(expr: &ExprRef) -> Result<Self, PlannerError>
+    where
+        Self: Sized,
+    {
+        expr.as_literal()
+            .and_then(|lit| lit.as_i64().map(|v| v as usize))
+            .ok_or_else(|| PlannerError::invalid_operation("Expected an integer literal"))
+    }
+}
+
+impl SQLLiteral for bool {
+    fn from_expr(expr: &ExprRef) -> Result<Self, PlannerError>
+    where
+        Self: Sized,
+    {
+        expr.as_literal()
+            .and_then(|lit| lit.as_bool())
+            .ok_or_else(|| PlannerError::invalid_operation("Expected a boolean literal"))
     }
 }
 
@@ -194,6 +260,15 @@ impl SQLPlanner {
     where
         T: TryFrom<SQLFunctionArguments, Error = PlannerError>,
     {
+        self.parse_function_args(args, expected_named, expected_positional)?
+            .try_into()
+    }
+    pub(crate) fn parse_function_args(
+        &self,
+        args: &[FunctionArg],
+        expected_named: &'static [&'static str],
+        expected_positional: usize,
+    ) -> SQLPlannerResult<SQLFunctionArguments> {
         let mut positional_args = HashMap::new();
         let mut named_args = HashMap::new();
         for (idx, arg) in args.iter().enumerate() {
@@ -218,11 +293,10 @@ impl SQLPlanner {
             }
         }
 
-        SQLFunctionArguments {
+        Ok(SQLFunctionArguments {
             positional: positional_args,
             named: named_args,
-        }
-        .try_into()
+        })
     }
 
     pub(crate) fn plan_function_arg(
@@ -235,7 +309,7 @@ impl SQLPlanner {
         }
     }
 
-    fn try_unwrap_function_arg_expr(&self, expr: &FunctionArgExpr) -> SQLPlannerResult<ExprRef> {
+    pub(crate)fn try_unwrap_function_arg_expr(&self, expr: &FunctionArgExpr) -> SQLPlannerResult<ExprRef> {
         match expr {
             FunctionArgExpr::Expr(expr) => self.plan_expr(expr),
             _ => unsupported_sql_err!("Wildcard function args not yet supported"),

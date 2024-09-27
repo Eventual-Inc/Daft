@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     sync::Arc,
 };
 
@@ -8,14 +8,20 @@ use common_display::mermaid::MermaidDisplayOptions;
 use common_error::DaftResult;
 use common_file_formats::{FileFormat, FileFormatConfig, ParquetSourceConfig};
 use common_io_config::IOConfig;
-use daft_core::join::{JoinStrategy, JoinType};
+use daft_core::{
+    join::{JoinStrategy, JoinType},
+    prelude::TimeUnit,
+};
 use daft_dsl::{col, ExprRef};
 use daft_scan::{
     glob::GlobScanOperator,
     storage_config::{NativeStorageConfig, StorageConfig},
     PhysicalScanInfo, Pushdowns, ScanOperatorRef,
 };
-use daft_schema::schema::{Schema, SchemaRef};
+use daft_schema::{
+    field::Field,
+    schema::{Schema, SchemaRef},
+};
 #[cfg(feature = "python")]
 use {
     crate::sink_info::{CatalogInfo, IcebergCatalogInfo},
@@ -168,22 +174,8 @@ impl LogicalPlanBuilder {
         Ok(Self::new(logical_plan.into(), None))
     }
 
-    pub fn parquet_scan<T: IntoGlobPath>(
-        glob_path: T,
-        config: Option<ParquetSourceConfig>,
-        io_config: Option<IOConfig>,
-        infer_schema: bool,
-    ) -> DaftResult<Self> {
-        let operator = Arc::new(GlobScanOperator::try_new(
-            glob_path.into_glob_path(),
-            Arc::new(FileFormatConfig::Parquet(config.unwrap_or_default())),
-            Arc::new(StorageConfig::Native(Arc::new(
-                NativeStorageConfig::new_internal(true, io_config),
-            ))),
-            infer_schema,
-            None,
-        )?);
-        Self::table_scan(ScanOperatorRef(operator), None)
+    pub fn parquet_scan<T: IntoGlobPath>(glob_path: T) -> ParquetScanBuilder {
+        ParquetScanBuilder::new(glob_path)
     }
 
     pub fn select(&self, to_select: Vec<ExprRef>) -> DaftResult<Self> {
@@ -539,6 +531,95 @@ impl LogicalPlanBuilder {
     pub fn repr_mermaid(&self, opts: MermaidDisplayOptions) -> String {
         use common_display::mermaid::MermaidDisplay;
         self.plan.repr_mermaid(opts)
+    }
+}
+
+pub struct ParquetScanBuilder {
+    pub glob_paths: Vec<String>,
+    pub infer_schema: bool,
+    pub coerce_int96_timestamp_unit: TimeUnit,
+    pub field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
+    pub row_groups: Option<Vec<Option<Vec<i64>>>>,
+    pub chunk_size: Option<usize>,
+    pub io_config: Option<IOConfig>,
+    pub multithreaded: bool,
+    pub schema: Option<SchemaRef>,
+}
+
+impl ParquetScanBuilder {
+    pub fn new<T: IntoGlobPath>(glob_paths: T) -> Self {
+        let glob_paths = glob_paths.into_glob_path();
+        Self::new_impl(glob_paths)
+    }
+
+    // concrete implementation to reduce LLVM code duplication
+    fn new_impl(glob_paths: Vec<String>) -> Self {
+        Self {
+            glob_paths,
+            infer_schema: true,
+            coerce_int96_timestamp_unit: TimeUnit::Nanoseconds,
+            field_id_mapping: None,
+            row_groups: None,
+            chunk_size: None,
+            multithreaded: true,
+            schema: None,
+            io_config: None,
+        }
+    }
+    pub fn infer_schema(mut self, infer_schema: bool) -> Self {
+        self.infer_schema = infer_schema;
+        self
+    }
+    pub fn coerce_int96_timestamp_unit(mut self, unit: TimeUnit) -> Self {
+        self.coerce_int96_timestamp_unit = unit;
+        self
+    }
+    pub fn field_id_mapping(mut self, field_id_mapping: Arc<BTreeMap<i32, Field>>) -> Self {
+        self.field_id_mapping = Some(field_id_mapping);
+        self
+    }
+    pub fn row_groups(mut self, row_groups: Vec<Option<Vec<i64>>>) -> Self {
+        self.row_groups = Some(row_groups);
+        self
+    }
+    pub fn chunk_size(mut self, chunk_size: usize) -> Self {
+        self.chunk_size = Some(chunk_size);
+        self
+    }
+
+    pub fn io_config(mut self, io_config: IOConfig) -> Self {
+        self.io_config = Some(io_config);
+        self
+    }
+
+    pub fn multithreaded(mut self, multithreaded: bool) -> Self {
+        self.multithreaded = multithreaded;
+        self
+    }
+    pub fn schema(mut self, schema: SchemaRef) -> Self {
+        self.schema = Some(schema);
+        self
+    }
+
+    pub fn finish(self) -> DaftResult<LogicalPlanBuilder> {
+        let cfg = ParquetSourceConfig {
+            coerce_int96_timestamp_unit: self.coerce_int96_timestamp_unit,
+            field_id_mapping: self.field_id_mapping,
+            row_groups: self.row_groups,
+            chunk_size: self.chunk_size,
+        };
+
+        let operator = Arc::new(GlobScanOperator::try_new(
+            self.glob_paths,
+            Arc::new(FileFormatConfig::Parquet(cfg)),
+            Arc::new(StorageConfig::Native(Arc::new(
+                NativeStorageConfig::new_internal(self.multithreaded, self.io_config),
+            ))),
+            self.infer_schema,
+            self.schema,
+        )?);
+
+        LogicalPlanBuilder::table_scan(ScanOperatorRef(operator), None)
     }
 }
 
