@@ -293,9 +293,17 @@ async fn stream_scan_task(
             .into_series();
             table = table.union(&Table::from_nonempty_columns(vec![file_paths_column])?)?;
         }
+        let casted_table = table.cast_to_schema_with_fill(
+            scan_task.materialized_schema().as_ref(),
+            scan_task
+                .partition_spec()
+                .as_ref()
+                .map(|pspec| pspec.to_fill_map())
+                .as_ref(),
+        )?;
         let mp = Arc::new(MicroPartition::new_loaded(
             scan_task.materialized_schema().clone(),
-            Arc::new(vec![table]),
+            Arc::new(vec![casted_table]),
             scan_task.statistics.clone(),
         ));
         Ok(mp)
