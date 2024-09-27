@@ -199,3 +199,9 @@ def test_sql_function_raises_when_cant_get_frame(monkeypatch):
     monkeypatch.setattr("inspect.currentframe", lambda: None)
     with pytest.raises(DaftCoreException, match="Cannot get caller environment"):
         daft.sql("SELECT * FROM df")
+
+
+def test_sql_multi_statement_sql_error():
+    catalog = SQLCatalog({})
+    with pytest.raises(Exception, match="one SQL statement allowed"):
+        daft.sql("SELECT * FROM df; SELECT * FROM df", catalog)
