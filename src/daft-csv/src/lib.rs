@@ -24,11 +24,11 @@ pub use read::{read_csv, read_csv_bulk, stream_csv};
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[snafu(display("{source}"))]
-    IOError { source: daft_io::Error },
+    IoError { source: daft_io::Error },
     #[snafu(display("{source}"))]
-    StdIOError { source: std::io::Error },
+    StdIoError { source: std::io::Error },
     #[snafu(display("{source}"))]
-    CSVError { source: csv_async::Error },
+    CsvError { source: csv_async::Error },
     #[snafu(display("Invalid char: {}", val))]
     WrongChar {
         source: std::char::TryFromCharError,
@@ -50,7 +50,7 @@ pub enum Error {
 impl From<Error> for DaftError {
     fn from(err: Error) -> DaftError {
         match err {
-            Error::IOError { source } => source.into(),
+            Error::IoError { source } => source.into(),
             _ => DaftError::External(err.into()),
         }
     }
@@ -58,12 +58,12 @@ impl From<Error> for DaftError {
 
 impl From<daft_io::Error> for Error {
     fn from(err: daft_io::Error) -> Self {
-        Error::IOError { source: err }
+        Error::IoError { source: err }
     }
 }
 
 #[cfg(feature = "python")]
-impl From<Error> for pyo3::PyErr {
+impl From<Error> for PyErr {
     fn from(value: Error) -> Self {
         let daft_error: DaftError = value.into();
         daft_error.into()
