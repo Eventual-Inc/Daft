@@ -155,7 +155,8 @@ pub async fn stream_csv(
     let uri = uri.as_str();
     let (source_type, _) = parse_url(uri)?;
     let is_compressed = CompressionCodec::from_uri(uri).is_some();
-    if matches!(source_type, SourceType::File) && !is_compressed {
+    let use_local = false;
+    if matches!(source_type, SourceType::File) && !is_compressed && use_local {
         let stream = stream_csv_local(
             uri,
             convert_options,
@@ -228,7 +229,8 @@ async fn read_csv_single_into_table(
 ) -> DaftResult<Table> {
     let (source_type, _) = parse_url(uri)?;
     let is_compressed = CompressionCodec::from_uri(uri).is_some();
-    if matches!(source_type, SourceType::File) && !is_compressed {
+    let use_local = false;
+    if matches!(source_type, SourceType::File) && !is_compressed && use_local {
         return read_csv_local(
             uri,
             convert_options,
