@@ -1,6 +1,7 @@
 use std::{borrow::Cow, sync::Arc};
 
 use arrow2::offset::OffsetsBuffer;
+use logical::GeometryArray;
 use serde::{de::Visitor, Deserializer};
 
 use crate::{
@@ -162,6 +163,14 @@ impl<'d> serde::Deserialize<'d> for Series {
                         Ok(ExtensionArray::new(Arc::new(field), ext_array)
                             .unwrap()
                             .into_series())
+                    }
+                    DataType::Geometry => {
+                        let physical = map.next_value::<Series>()?;
+                        Ok(GeometryArray::new(
+                            Arc::new(field),
+                            physical.downcast::<ListArray>().unwrap().clone(),
+                        )
+                        .into_series())
                     }
                     DataType::Map(..) => {
                         let physical = map.next_value::<Series>()?;

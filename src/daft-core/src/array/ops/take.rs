@@ -7,7 +7,7 @@ use crate::{
         growable::{Growable, GrowableArray},
         prelude::*,
     },
-    datatypes::prelude::*,
+    datatypes::{logical::GeometryArray, prelude::*},
 };
 
 impl<T> DataArray<T>
@@ -73,6 +73,7 @@ impl_logicalarray_take!(SparseTensorArray);
 impl_logicalarray_take!(FixedShapeSparseTensorArray);
 impl_logicalarray_take!(FixedShapeTensorArray);
 impl_logicalarray_take!(MapArray);
+impl_logicalarray_take!(GeometryArray);
 
 impl FixedSizeBinaryArray {
     pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>

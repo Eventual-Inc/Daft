@@ -1,7 +1,7 @@
 use common_error::DaftResult;
 use logical::{
-    EmbeddingArray, FixedShapeSparseTensorArray, FixedShapeTensorArray, SparseTensorArray,
-    TensorArray,
+    EmbeddingArray, FixedShapeSparseTensorArray, FixedShapeTensorArray, GeometryArray,
+    SparseTensorArray, TensorArray,
 };
 
 use self::logical::{DurationArray, ImageArray, MapArray};
@@ -105,6 +105,10 @@ impl Series {
     }
 
     pub fn map(&self) -> DaftResult<&MapArray> {
+        self.downcast()
+    }
+
+    pub fn geometry(&self) -> DaftResult<&GeometryArray> {
         self.downcast()
     }
 

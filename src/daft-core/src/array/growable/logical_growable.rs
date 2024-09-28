@@ -5,7 +5,7 @@ use common_error::DaftResult;
 use super::{Growable, GrowableArray};
 use crate::{
     array::prelude::*,
-    datatypes::prelude::*,
+    datatypes::{prelude::*, GeometryType},
     series::{IntoSeries, Series},
 };
 
@@ -86,3 +86,4 @@ impl_logical_growable!(LogicalImageGrowable, ImageType);
 impl_logical_growable!(LogicalDecimal128Growable, Decimal128Type);
 impl_logical_growable!(LogicalTensorGrowable, TensorType);
 impl_logical_growable!(LogicalMapGrowable, MapType);
+impl_logical_growable!(LogicalGeometryGrowable, GeometryType);

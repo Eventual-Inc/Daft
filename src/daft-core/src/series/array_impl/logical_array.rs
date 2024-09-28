@@ -3,7 +3,7 @@ use std::sync::Arc;
 use super::{ArrayWrapper, IntoSeries, Series};
 use crate::{
     array::{ops::GroupIndices, prelude::*},
-    datatypes::prelude::*,
+    datatypes::{logical::GeometryArray, prelude::*},
     series::{DaftResult, SeriesLike},
     with_match_integer_daft_types,
 };
@@ -182,3 +182,4 @@ impl_series_like_for_logical_array!(FixedShapeTensorArray);
 impl_series_like_for_logical_array!(SparseTensorArray);
 impl_series_like_for_logical_array!(FixedShapeSparseTensorArray);
 impl_series_like_for_logical_array!(MapArray);
+impl_series_like_for_logical_array!(GeometryArray);

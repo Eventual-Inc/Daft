@@ -43,6 +43,7 @@ macro_rules! with_match_daft_types {(
         SparseTensor(..) => __with_ty__! { SparseTensorType },
         FixedShapeSparseTensor(..) => __with_ty__! { FixedShapeSparseTensorType },
         Decimal128(..) => __with_ty__! { Decimal128Type },
+        Geometry => __with_ty__! { GeometryType },
         // Float16 => unimplemented!("Array for Float16 DataType not implemented"),
         Unknown => unimplemented!("Array for Unknown DataType not implemented"),
 

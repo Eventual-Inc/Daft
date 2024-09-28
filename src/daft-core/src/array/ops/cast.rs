@@ -38,8 +38,8 @@ use crate::{
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, LogicalArray, MapArray,
-            SparseTensorArray, TensorArray, TimeArray, TimestampArray,
+            FixedShapeSparseTensorArray, FixedShapeTensorArray, GeometryArray, ImageArray,
+            LogicalArray, MapArray, SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
         DaftArrayType, DaftArrowBackedType, DaftLogicalType, DataType, Field, ImageMode,
         Int32Array, Int64Array, NullArray, TimeUnit, UInt64Array, Utf8Array,
@@ -2185,6 +2185,12 @@ impl StructArray {
                 dtype
             ),
         }
+    }
+}
+
+impl GeometryArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        self.physical.cast(dtype)
     }
 }
 

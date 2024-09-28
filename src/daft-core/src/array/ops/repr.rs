@@ -6,8 +6,8 @@ use crate::{
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
-            SparseTensorArray, TensorArray, TimeArray, TimestampArray,
+            FixedShapeSparseTensorArray, FixedShapeTensorArray, GeometryArray, ImageArray,
+            MapArray, SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
         BinaryArray, BooleanArray, DaftNumericType, DataType, ExtensionArray, FixedSizeBinaryArray,
         NullArray, UInt64Array, Utf8Array,
@@ -382,6 +382,16 @@ impl StructArray {
     }
 }
 
+impl GeometryArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        if self.physical.is_valid(idx) {
+            Ok("<Geometry>".to_string())
+        } else {
+            Ok("None".to_string())
+        }
+    }
+}
+
 // Default implementation of html_value: html escape the str_value.
 macro_rules! impl_array_html_value {
     ($ArrayT:ty) => {
@@ -412,6 +422,7 @@ impl_array_html_value!(TimeArray);
 impl_array_html_value!(DurationArray);
 impl_array_html_value!(TimestampArray);
 impl_array_html_value!(EmbeddingArray);
+impl_array_html_value!(GeometryArray);
 
 #[cfg(feature = "python")]
 impl crate::datatypes::PythonArray {

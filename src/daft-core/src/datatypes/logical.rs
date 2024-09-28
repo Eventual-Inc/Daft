@@ -5,7 +5,7 @@ use common_error::DaftResult;
 use super::{
     DaftArrayType, DaftDataType, DataArray, DataType, Decimal128Type, DurationType, EmbeddingType,
     FixedShapeImageType, FixedShapeSparseTensorType, FixedShapeTensorType, FixedSizeListArray,
-    ImageType, MapType, SparseTensorType, TensorType, TimeType, TimestampType,
+    GeometryType, ImageType, MapType, SparseTensorType, TensorType, TimeType, TimestampType,
 };
 use crate::{
     array::{ListArray, StructArray},
@@ -147,6 +147,20 @@ impl<L: DaftLogicalType> LogicalArrayImpl<L, StructArray> {
     }
 }
 
+impl GeometryArray {
+    impl_logical_type!(ListArray);
+
+    pub fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
+        let arrow_dtype = self.data_type().to_arrow().unwrap();
+        Box::new(arrow2::array::ListArray::new(
+            arrow_dtype,
+            self.physical.offsets().try_into().unwrap(),
+            self.physical.flat_child.to_arrow(),
+            self.physical.validity().cloned(),
+        ))
+    }
+}
+
 impl MapArray {
     impl_logical_type!(ListArray);
 
@@ -176,6 +190,7 @@ pub type SparseTensorArray = LogicalArray<SparseTensorType>;
 pub type FixedShapeSparseTensorArray = LogicalArray<FixedShapeSparseTensorType>;
 pub type FixedShapeImageArray = LogicalArray<FixedShapeImageType>;
 pub type MapArray = LogicalArray<MapType>;
+pub type GeometryArray = LogicalArray<GeometryType>;
 
 pub trait DaftImageryType: DaftLogicalType {}
 

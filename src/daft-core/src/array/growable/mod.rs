@@ -2,7 +2,7 @@ use common_error::DaftResult;
 
 use crate::{
     array::{prelude::*, FixedSizeListArray, ListArray, StructArray},
-    datatypes::prelude::*,
+    datatypes::{logical::GeometryArray, prelude::*},
     series::Series,
     with_match_daft_types,
 };
@@ -217,3 +217,4 @@ impl_growable_array!(
     logical_growable::LogicalDecimal128Growable<'a>
 );
 impl_growable_array!(MapArray, logical_growable::LogicalMapGrowable<'a>);
+impl_growable_array!(GeometryArray, logical_growable::LogicalGeometryGrowable<'a>);
