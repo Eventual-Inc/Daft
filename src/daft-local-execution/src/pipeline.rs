@@ -29,7 +29,8 @@ use crate::{
     },
     sinks::{
         aggregate::AggregateSink, blocking_sink::BlockingSinkNode,
-        hash_join_build::HashJoinBuildSink, limit::LimitSink,
+        hash_join_build::HashJoinBuildSink,
+        iceberg_unpartitioned_write::IcebergUnpartitionedWriteNode, limit::LimitSink,
         partitioned_write::PartitionedWriteNode, sort::SortSink, streaming_sink::StreamingSinkNode,
         unpartitioned_write::UnpartionedWriteNode,
     },
@@ -383,6 +384,41 @@ pub fn physical_plan_to_pipeline(
                 )
                 .boxed(),
             }
+        }
+        #[cfg(feature = "python")]
+        LocalPhysicalPlan::IcebergWrite(daft_physical_plan::IcebergWrite {
+            input,
+            iceberg_info,
+            file_schema,
+            data_schema,
+            ..
+        }) => {
+            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            let estimated_row_size_bytes = data_schema.estimate_row_size_bytes();
+            let target_file_rows = if estimated_row_size_bytes > 0.0 {
+                cfg.parquet_target_filesize as f64 * cfg.parquet_inflation_factor
+                    / estimated_row_size_bytes
+            } else {
+                cfg.parquet_target_filesize as f64 * cfg.parquet_inflation_factor
+            } as usize;
+            // Just assume same chunk size for CSV and Parquet for now
+            let target_chunk_rows = min(
+                target_file_rows,
+                if estimated_row_size_bytes > 0.0 {
+                    cfg.parquet_target_row_group_size as f64 * cfg.parquet_inflation_factor
+                        / estimated_row_size_bytes
+                } else {
+                    cfg.parquet_target_row_group_size as f64 * cfg.parquet_inflation_factor
+                } as usize,
+            );
+            IcebergUnpartitionedWriteNode::new(
+                child_node,
+                iceberg_info,
+                file_schema,
+                target_file_rows,
+                target_chunk_rows,
+            )
+            .boxed()
         }
     };
 

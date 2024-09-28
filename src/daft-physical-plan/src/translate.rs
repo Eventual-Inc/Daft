@@ -117,9 +117,18 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                     info.clone(),
                 )),
                 #[cfg(feature = "python")]
-                SinkInfo::CatalogInfo(_) => {
-                    todo!("CatalogInfo not yet implemented")
-                }
+                #[cfg(feature = "python")]
+                SinkInfo::CatalogInfo(catalog_info) => match &catalog_info.catalog {
+                    daft_plan::CatalogType::Iceberg(iceberg_info) => {
+                        Ok(LocalPhysicalPlan::iceberg_write(
+                            input,
+                            data_schema,
+                            sink.schema.clone(),
+                            iceberg_info.clone(),
+                        ))
+                    }
+                    _ => todo!("{} not yet implemented", plan.name()),
+                },
             }
         }
         _ => todo!("{} not yet implemented", plan.name()),

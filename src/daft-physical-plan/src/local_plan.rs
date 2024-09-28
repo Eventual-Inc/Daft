@@ -37,8 +37,8 @@ pub enum LocalPhysicalPlan {
     PhysicalWrite(PhysicalWrite),
     // TabularWriteJson(TabularWriteJson),
     // TabularWriteCsv(TabularWriteCsv),
-    // #[cfg(feature = "python")]
-    // IcebergWrite(IcebergWrite),
+    #[cfg(feature = "python")]
+    IcebergWrite(IcebergWrite),
     // #[cfg(feature = "python")]
     // DeltaLakeWrite(DeltaLakeWrite),
     // #[cfg(feature = "python")]
@@ -206,6 +206,23 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    #[cfg(feature = "python")]
+    pub(crate) fn iceberg_write(
+        input: LocalPhysicalPlanRef,
+        data_schema: SchemaRef,
+        file_schema: SchemaRef,
+        iceberg_info: daft_plan::IcebergCatalogInfo,
+    ) -> LocalPhysicalPlanRef {
+        Self::IcebergWrite(IcebergWrite {
+            input,
+            iceberg_info,
+            file_schema,
+            data_schema,
+            plan_stats: PlanStats {},
+        })
+        .arced()
+    }
+
     pub fn schema(&self) -> &SchemaRef {
         match self {
             Self::PhysicalScan(PhysicalScan { schema, .. })
@@ -316,6 +333,16 @@ pub struct PhysicalWrite {
     pub file_info: OutputFileInfo,
     pub plan_stats: PlanStats,
 }
+
+#[derive(Debug)]
+pub struct IcebergWrite {
+    pub input: LocalPhysicalPlanRef,
+    pub iceberg_info: daft_plan::IcebergCatalogInfo,    
+    pub data_schema: SchemaRef,
+    pub file_schema: SchemaRef,
+    pub plan_stats: PlanStats,
+}
+
 #[derive(Debug)]
 
 pub struct PlanStats {}

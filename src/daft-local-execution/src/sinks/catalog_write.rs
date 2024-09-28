@@ -27,7 +27,7 @@ struct SizedDataWriter {
     file_format: FileFormat,
     compression: Option<String>,
     io_config: Option<daft_io::IOConfig>,
-    writer: Box<dyn FileWriter<ResultItem = String>>,
+    writer: Box<dyn FileWriter>,
     target_file_rows: usize,
     written_files: Vec<Option<String>>,
     written_rows_so_far: usize,

@@ -372,6 +372,7 @@ async fn stream_parquet_single(
     schema_infer_options: ParquetSchemaInferenceOptions,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     metadata: Option<Arc<FileMetaData>>,
+    mut delete_rows: Option<Vec<i64>>,
     maintain_order: bool,
 ) -> DaftResult<impl Stream<Item = DaftResult<Table>> + Send> {
     let field_id_mapping_provided = field_id_mapping.is_some();
@@ -391,6 +392,12 @@ async fn stream_parquet_single(
                 }
             }
         }
+    }
+
+    // Increase the number of rows_to_read to account for deleted rows
+    // in order to have the correct number of rows in the end
+    if let Some(delete_rows) = &delete_rows {
+        num_rows_to_read = limit_with_delete_rows(delete_rows, start_offset, num_rows_to_read);
     }
 
     let (source_type, fixed_uri) = parse_url(uri.as_str())?;
@@ -462,9 +469,43 @@ async fn stream_parquet_single(
 
     let metadata_num_columns = metadata.schema().fields().len();
     let mut remaining_rows = num_rows_to_return.map(|limit| limit as i64);
+    let mut curr_delete_row_idx = 0;
+    let start_offset = start_offset.unwrap_or(0);
+    if let Some(delete_rows) = delete_rows.as_deref_mut()
+        && !delete_rows.is_empty()
+    {
+        while delete_rows[curr_delete_row_idx] < start_offset as i64
+            && curr_delete_row_idx < delete_rows.len()
+        {
+            curr_delete_row_idx += 1;
+        }
+    }
+    let mut table_lens_so_far = 0;
     let finalized_table_stream = table_stream
         .map(move |table| {
-            let table = table?;
+            let mut table = table?;
+
+            if let Some(delete_rows) = delete_rows.as_deref_mut()
+                && !delete_rows.is_empty()
+            {
+                let mut selection_mask = Bitmap::new_trued(table.len()).make_mut();
+                let max_row_idx = table_lens_so_far + start_offset + table.len();
+                while curr_delete_row_idx < delete_rows.len()
+                    && delete_rows[curr_delete_row_idx] < max_row_idx as i64
+                {
+                    let table_row = delete_rows[curr_delete_row_idx] as usize
+                        - table_lens_so_far
+                        - start_offset;
+                    unsafe {
+                        selection_mask.set_unchecked(table_row, false);
+                    }
+                    curr_delete_row_idx += 1;
+                }
+                let selection_mask: BooleanArray =
+                    ("selection_mask", Bitmap::from(selection_mask)).into();
+                table_lens_so_far += table.len();
+                table = table.mask_filter(&selection_mask.into_series())?;
+            }
 
             let expected_num_columns = if let Some(columns) = requested_columns {
                 columns
@@ -839,6 +880,7 @@ pub async fn stream_parquet(
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     metadata: Option<Arc<FileMetaData>>,
     maintain_order: bool,
+    delete_rows: Option<Vec<i64>>,
 ) -> DaftResult<BoxStream<'static, DaftResult<Table>>> {
     let stream = stream_parquet_single(
         uri.to_string(),
@@ -852,6 +894,7 @@ pub async fn stream_parquet(
         *schema_infer_options,
         field_id_mapping,
         metadata,
+        delete_rows,
         maintain_order,
     )
     .await?;
@@ -1137,6 +1180,7 @@ mod tests {
                 None,
                 None,
                 false,
+                None,
             )
             .await?
             .collect::<Vec<_>>()

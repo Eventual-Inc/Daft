@@ -5,7 +5,7 @@ import math
 import pathlib
 import random
 import time
-from typing import IO, TYPE_CHECKING, Any, Iterator, Union
+from typing import IO, TYPE_CHECKING, Any, Iterable, Iterator, Union
 from uuid import uuid4
 
 from daft.context import get_context
@@ -536,7 +536,7 @@ def write_iceberg(
         partition_field_to_expr,
         partitioned_table_to_iceberg_iter,
     )
-
+    print("write_iceberg base_path:", base_path)
     [resolved_path], fs = _resolve_paths_and_filesystem(base_path, io_config=io_config)
     if isinstance(base_path, pathlib.Path):
         path_str = str(base_path)

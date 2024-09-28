@@ -66,8 +66,9 @@ impl From<Error> for pyo3::PyErr {
 }
 
 pub trait FileWriter: Send + Sync {
+    type ResultItem;
     fn write(&self, data: &Arc<MicroPartition>) -> DaftResult<()>;
-    fn close(&self) -> DaftResult<Option<String>>;
+    fn close(&self) -> DaftResult<Option<Self::ResultItem>>;
 }
 
 pub fn create_file_writer(
@@ -76,7 +77,7 @@ pub fn create_file_writer(
     compression: &Option<String>,
     io_config: &Option<daft_io::IOConfig>,
     format: FileFormat,
-) -> DaftResult<Box<dyn FileWriter>> {
+) -> DaftResult<Box<dyn FileWriter<ResultItem = String>>> {
     match format {
         #[cfg(feature = "python")]
         FileFormat::Parquet => Ok(Box::new(py_writers::PyArrowParquetWriter::new(
@@ -93,4 +94,27 @@ pub fn create_file_writer(
             "Unsupported file format for physical write".to_string(),
         )),
     }
+}
+
+#[cfg(feature = "python")]
+pub fn create_iceberg_file_writer(
+    root_dir: &str,
+    file_idx: usize,
+    compression: &Option<String>,
+    io_config: &Option<daft_io::IOConfig>,
+    schema: &pyo3::Py<pyo3::PyAny>,
+    properties: &pyo3::Py<pyo3::PyAny>,
+    partition_spec: &pyo3::Py<pyo3::PyAny>,
+    partition_values: Option<Arc<MicroPartition>>,
+) -> DaftResult<Box<dyn FileWriter<ResultItem = Arc<MicroPartition>>>> {
+    Ok(Box::new(py_writers::IcebergWriter::new(
+        root_dir,
+        file_idx,
+        schema,
+        properties,
+        partition_spec,
+        partition_values,
+        compression,
+        io_config,
+    )?))
 }

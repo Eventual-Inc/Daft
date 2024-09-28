@@ -6,8 +6,10 @@ use daft_core::{
     prelude::{SchemaRef, Utf8Array},
     series::IntoSeries,
 };
-use daft_micropartition::{create_file_writer, FileWriter, MicroPartition};
-use daft_plan::OutputFileInfo;
+use daft_micropartition::{
+    create_file_writer, create_iceberg_file_writer, FileWriter, MicroPartition,
+};
+use daft_plan::{IcebergCatalogInfo, OutputFileInfo};
 use daft_table::Table;
 use snafu::ResultExt;
 
@@ -20,19 +22,19 @@ use crate::{
     ExecutionRuntimeHandle, JoinSnafu, TaskSet, NUM_CPUS,
 };
 
-pub(crate) struct UnpartionedWriteNode {
+pub(crate) struct IcebergUnpartitionedWriteNode {
     child: Box<dyn PipelineNode>,
     runtime_stats: Arc<RuntimeStatsContext>,
-    file_info: OutputFileInfo,
+    iceberg_info: IcebergCatalogInfo,
     file_schema: SchemaRef,
     target_in_memory_file_rows: usize,
     target_in_memory_chunk_rows: usize,
 }
 
-impl UnpartionedWriteNode {
+impl IcebergUnpartitionedWriteNode {
     pub(crate) fn new(
         child: Box<dyn PipelineNode>,
-        file_info: &OutputFileInfo,
+        iceberg_info: &IcebergCatalogInfo,
         file_schema: &SchemaRef,
         target_in_memory_file_rows: usize,
         target_in_memory_chunk_rows: usize,
@@ -40,7 +42,7 @@ impl UnpartionedWriteNode {
         Self {
             child,
             runtime_stats: RuntimeStatsContext::new(),
-            file_info: file_info.clone(),
+            iceberg_info: iceberg_info.clone(),
             file_schema: file_schema.clone(),
             target_in_memory_file_rows,
             target_in_memory_chunk_rows,
@@ -53,10 +55,11 @@ impl UnpartionedWriteNode {
 
     async fn run_writer(
         mut input_receiver: Receiver<(Arc<MicroPartition>, usize)>,
-        file_info: Arc<OutputFileInfo>,
-    ) -> DaftResult<Vec<String>> {
+        iceberg_info: Arc<IcebergCatalogInfo>,
+    ) -> DaftResult<Vec<Arc<MicroPartition>>> {
         let mut written_file_paths = vec![];
-        let mut current_writer: Option<Box<dyn FileWriter<ResultItem = String>>> = None;
+        let mut current_writer: Option<Box<dyn FileWriter<ResultItem = Arc<MicroPartition>>>> =
+            None;
         let mut current_file_idx = None;
         while let Some((data, file_idx)) = input_receiver.recv().await {
             if current_file_idx.is_none() || current_file_idx.unwrap() != file_idx {
@@ -66,12 +69,15 @@ impl UnpartionedWriteNode {
                     }
                 }
                 current_file_idx = Some(file_idx);
-                current_writer = Some(create_file_writer(
-                    &file_info.root_dir,
+                current_writer = Some(create_iceberg_file_writer(
+                    &iceberg_info.table_location,
                     file_idx,
-                    &file_info.compression,
-                    &file_info.io_config,
-                    file_info.file_format,
+                    &None,
+                    &iceberg_info.io_config,
+                    &iceberg_info.iceberg_schema,
+                    &iceberg_info.iceberg_properties,
+                    &iceberg_info.partition_spec,
+                    None,
                 )?);
             }
             if let Some(writer) = current_writer.as_mut() {
@@ -88,13 +94,13 @@ impl UnpartionedWriteNode {
 
     fn spawn_writers(
         num_writers: usize,
-        task_set: &mut TaskSet<DaftResult<Vec<String>>>,
-        file_info: &Arc<OutputFileInfo>,
+        task_set: &mut TaskSet<DaftResult<Vec<Arc<MicroPartition>>>>,
+        iceberg_info: &Arc<IcebergCatalogInfo>,
     ) -> Vec<Sender<(Arc<MicroPartition>, usize)>> {
         let mut writer_senders = Vec::with_capacity(num_writers);
         for _ in 0..num_writers {
             let (writer_sender, writer_receiver) = create_channel(1);
-            task_set.spawn(Self::run_writer(writer_receiver, file_info.clone()));
+            task_set.spawn(Self::run_writer(writer_receiver, iceberg_info.clone()));
             writer_senders.push(writer_sender);
         }
         writer_senders
@@ -135,7 +141,7 @@ impl UnpartionedWriteNode {
     }
 }
 
-impl TreeDisplay for UnpartionedWriteNode {
+impl TreeDisplay for IcebergUnpartitionedWriteNode {
     fn display_as(&self, level: common_display::DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
@@ -156,13 +162,13 @@ impl TreeDisplay for UnpartionedWriteNode {
     }
 }
 
-impl PipelineNode for UnpartionedWriteNode {
+impl PipelineNode for IcebergUnpartitionedWriteNode {
     fn children(&self) -> Vec<&dyn PipelineNode> {
         vec![self.child.as_ref()]
     }
 
     fn name(&self) -> &'static str {
-        "UnpartionedWrite"
+        "IcebergUnpartionedWrite"
     }
 
     fn start(
@@ -178,14 +184,14 @@ impl PipelineNode for UnpartionedWriteNode {
         let mut destination_channel = PipelineChannel::new(1, maintain_order);
         let destination_sender =
             destination_channel.get_next_sender_with_stats(&self.runtime_stats);
-        let file_info = Arc::new(self.file_info.clone());
+        let iceberg_info = Arc::new(self.iceberg_info.clone());
         let target_chunk_rows = self.target_in_memory_chunk_rows;
         let target_file_rows = self.target_in_memory_file_rows;
         let file_schema = self.file_schema.clone();
         runtime_handle.spawn(
             async move {
                 let mut task_set = create_task_set();
-                let writer_senders = Self::spawn_writers(*NUM_CPUS, &mut task_set, &file_info);
+                let writer_senders = Self::spawn_writers(*NUM_CPUS, &mut task_set, &iceberg_info);
                 Self::dispatch(
                     child_results_receiver,
                     target_chunk_rows,
@@ -202,22 +208,8 @@ impl PipelineNode for UnpartionedWriteNode {
                     return Ok(());
                 }
 
-                let written_file_paths_series = Utf8Array::from((
-                    "path",
-                    results
-                        .iter()
-                        .map(|v| v.as_str())
-                        .collect::<Vec<_>>()
-                        .as_slice(),
-                ))
-                .into_series();
-                let result_table = Table::from_nonempty_columns(vec![written_file_paths_series])?;
-                let result_mp = Arc::new(MicroPartition::new_loaded(
-                    file_schema,
-                    Arc::new(vec![result_table]),
-                    None,
-                ));
-                let _ = destination_sender.send(result_mp.into()).await;
+                let concated = MicroPartition::concat(&results.iter().map(|x| x.as_ref()).collect::<Vec<_>>())?;
+                let _ = destination_sender.send(Arc::new(concated).into()).await;
                 Ok(())
             },
             self.name(),

@@ -7,3 +7,4 @@ pub mod partitioned_write;
 pub mod sort;
 pub mod streaming_sink;
 pub mod unpartitioned_write;
+pub mod iceberg_unpartitioned_write;
