@@ -1,19 +1,16 @@
-use std::{collections::HashMap, num::NonZeroUsize, sync::Arc, sync::Mutex};
-
-use std::sync::atomic::{AtomicUsize, Ordering};
+use core::str;
+use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
 use arrow2::{
     datatypes::Field,
-    io::csv::read,
-    io::csv::read::{Reader, ReaderBuilder},
     io::csv::read_async,
-    io::csv::read_async::{local_read_rows, read_rows, AsyncReaderBuilder},
+    io::csv::read_async::{read_rows, AsyncReaderBuilder},
 };
 use async_compat::{Compat, CompatExt};
 use common_error::{DaftError, DaftResult};
 use csv_async::AsyncReader;
 use daft_core::{schema::Schema, utils::arrow::cast_array_for_daft_if_needed, Series};
-use daft_dsl::{optimization::get_required_columns, Expr};
+use daft_dsl::optimization::get_required_columns;
 use daft_io::{get_runtime, parse_url, GetResult, IOClient, IOStatsRef, SourceType};
 use daft_table::Table;
 use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
@@ -32,8 +29,8 @@ use tokio::{
 };
 use tokio_util::io::StreamReader;
 
+use crate::ArrowSnafu;
 use crate::{metadata::read_csv_schema_single, CsvConvertOptions, CsvParseOptions, CsvReadOptions};
-use crate::{ArrowSnafu, StdIOSnafu};
 use daft_compression::CompressionCodec;
 use daft_decoding::deserialize::deserialize_column;
 
@@ -42,6 +39,8 @@ impl<S> ByteRecordChunkStream for S where
     S: Stream<Item = super::Result<Vec<read_async::ByteRecord>>>
 {
 }
+
+use crate::{local::read_csv_local, local::stream_csv_local};
 
 type TableChunkResult =
     super::Result<Context<JoinHandle<DaftResult<Table>>, super::JoinSnafu, super::Error>>;
@@ -156,16 +155,14 @@ pub async fn stream_csv(
     let uri = uri.as_str();
     let (source_type, _) = parse_url(uri)?;
     let is_compressed = CompressionCodec::from_uri(uri).is_some();
-    let use_local_reader = false; // TODO(desmond): Feature under dev.
-    if matches!(source_type, SourceType::File) && !is_compressed && use_local_reader {
+    if matches!(source_type, SourceType::File) && !is_compressed {
         let stream = stream_csv_local(
             uri,
             convert_options,
             parse_options.unwrap_or_default(),
             read_options,
             max_chunks_in_flight,
-        )
-        .await?;
+        )?;
         Ok(Box::pin(stream))
     } else {
         let stream = stream_csv_single(
@@ -182,7 +179,7 @@ pub async fn stream_csv(
     }
 }
 
-fn tables_concat(mut tables: Vec<Table>) -> DaftResult<Table> {
+pub fn tables_concat(mut tables: Vec<Table>) -> DaftResult<Table> {
     if tables.is_empty() {
         return Err(DaftError::ValueError(
             "Need at least 1 Table to perform concat".to_string(),
@@ -220,387 +217,6 @@ fn tables_concat(mut tables: Vec<Table>) -> DaftResult<Table> {
     )
 }
 
-#[derive(Debug)]
-struct CsvBufferPool {
-    buffers: Mutex<Vec<Vec<read::ByteRecord>>>,
-    buffer_size: usize,
-    record_buffer_size: usize,
-    num_fields: usize,
-}
-
-struct CsvBufferPoolRef<'a> {
-    pool: &'a CsvBufferPool,
-    buffer: Vec<read::ByteRecord>,
-}
-
-impl CsvBufferPool {
-    pub fn new(
-        record_buffer_size: usize,
-        num_fields: usize,
-        chunk_size_rows: usize,
-        initial_pool_size: usize,
-    ) -> Self {
-        let chunk_buffers = vec![
-            vec![
-                read::ByteRecord::with_capacity(record_buffer_size, num_fields);
-                chunk_size_rows
-            ];
-            initial_pool_size
-        ];
-        CsvBufferPool {
-            buffers: Mutex::new(chunk_buffers),
-            buffer_size: chunk_size_rows,
-            record_buffer_size,
-            num_fields,
-        }
-    }
-
-    pub fn get_buffer(&self) -> CsvBufferPoolRef {
-        let mut buffers = self.buffers.lock().unwrap();
-        let buffer = buffers.pop();
-        let buffer = match buffer {
-            Some(buffer) => buffer,
-            None => {
-                vec![
-                    read::ByteRecord::with_capacity(self.record_buffer_size, self.num_fields);
-                    self.buffer_size
-                ]
-            }
-        };
-
-        CsvBufferPoolRef { pool: self, buffer }
-    }
-
-    fn return_buffer(&self, buffer: Vec<read::ByteRecord>) {
-        let mut buffers = self.buffers.lock().unwrap();
-        buffers.push(buffer);
-    }
-}
-
-// Daft does not currently support non-\n record terminators (e.g. carriage return \r, which only
-// matters for pre-Mac OS X).
-const NEWLINE: u8 = b'\n';
-const DEFAULT_CHUNK_SIZE: usize = 4 * 1024 * 1024; // 1MiB. TODO(desmond): This should be tuned.
-
-/// Helper function that finds the first new line character (\n) in the given byte slice.
-fn next_line_position(input: &[u8]) -> Option<usize> {
-    // Assuming we are searching for the ASCII `\n` character, we don't need to do any special
-    // handling for UTF-8, since a `\n` value always corresponds to an ASCII `\n`.
-    // For more details, see: https://en.wikipedia.org/wiki/UTF-8#Encoding
-    memchr::memchr(NEWLINE, input)
-}
-
-/// Helper function that determines what chunk of data to parse given a starting position within the
-/// file, and the desired initial chunk size.
-///
-/// Given a starting position, we use our chunk size to compute a preliminary start and stop
-/// position. For example, we can visualize all preliminary chunks in a file as follows.
-///
-///  Chunk 1         Chunk 2         Chunk 3              Chunk N
-/// ┌──────────┐    ┌──────────┐    ┌──────────┐         ┌──────────┐
-/// │          │    │\n        │    │   \n     │         │       \n │
-/// │          │    │          │    │          │         │          │
-/// │          │    │       \n │    │          │         │          │
-/// │   \n     │    │          │    │      \n  │         │          │
-/// │          │    │          │    │          │   ...   │     \n   │
-/// │          │    │  \n      │    │          │         │          │
-/// │ \n       │    │          │    │          │         │          │
-/// │          │    │          │    │     \n   │         │  \n      │
-/// └──────────┘    └──────────┘    └──────────┘         └──────────┘
-///
-/// However, record boundaries (i.e. the \n terminators) do not align nicely with these preliminary
-/// chunk boundaries. So we adjust each preliminary chunk as follows:
-/// - Find the first record terminator from the chunk's start. This is the new starting position.
-/// - Find the first record terminator from the chunk's end. This is the new ending position.
-/// - If a given preliminary chunk doesn't contain a record terminator, the adjusted chunk is empty.
-///
-/// For example:
-///
-///  Adjusted Chunk 1    Adj. Chunk 2        Adj. Chunk 3          Adj. Chunk N
-/// ┌──────────────────┐┌─────────────────┐ ┌────────┐            ┌─┐
-/// │                \n││               \n│ │      \n│         \n │ │
-/// │          ┌───────┘│      ┌──────────┘ │  ┌─────┘            │ │
-/// │          │    ┌───┘   \n │    ┌───────┘  │         ┌────────┘ │
-/// │   \n     │    │          │    │      \n  │         │          │
-/// │          │    │          │    │          │   ...   │     \n   │
-/// │          │    │  \n      │    │          │         │          │
-/// │ \n       │    │          │    │          │         │          │
-/// │          │    │          │    │     \n   │         │  \n      │
-/// └──────────┘    └──────────┘    └──────────┘         └──────────┘
-///
-/// Using this method, we now have adjusted chunks that are aligned with record boundaries, that do
-/// not overlap, and that fully cover every byte in the CSV file. Parsing each adjusted chunk can
-/// now happen in parallel.
-///
-/// This is the same method as described in:
-/// Ge, Chang et al. “Speculative Distributed CSV Data Parsing for Big Data Analytics.” Proceedings of the 2019 International Conference on Management of Data (2019).
-fn get_file_chunk(bytes: &[u8], start: usize, chunk_size: usize) -> Option<(usize, usize)> {
-    let stop = start + chunk_size;
-    let start = if start == 0 {
-        0
-    } else {
-        match next_line_position(&bytes[start..]) {
-            // Start reading after the first record terminator from the start of the chunk.
-            Some(pos) => start + pos + 1,
-            // If there's no record terminator found, then the previous chunk reader would have
-            // consumed the current chunk. Hence, we skip.
-            None => return None,
-        }
-    };
-    // If the first record terminator comes after this chunk, then the previous chunk reader would
-    // have consumed the current chunk. Hence, we skip.
-    if start > stop {
-        return None;
-    }
-    let stop = if stop < bytes.len() {
-        match next_line_position(&bytes[stop..]) {
-            // Read up to the first terminator from the end of the chunk.
-            Some(pos) => stop + pos,
-            None => bytes.len(),
-        }
-    } else {
-        bytes.len()
-    };
-    Some((start, stop))
-}
-
-#[allow(clippy::too_many_arguments)]
-fn parse_csv_chunk<R>(
-    mut reader: Reader<R>,
-    projection_indices: Arc<Vec<usize>>,
-    fields: Vec<arrow2::datatypes::Field>,
-    read_daft_fields: Arc<Vec<Arc<daft_core::datatypes::Field>>>,
-    read_schema: Arc<Schema>,
-    buf: CsvBufferPoolRef,
-    include_columns: &Option<Vec<String>>,
-    predicate: Option<Arc<Expr>>,
-) -> DaftResult<Vec<Table>>
-where
-    R: std::io::Read,
-{
-    let mut chunk_buffer = buf.buffer;
-    let mut tables = vec![];
-    loop {
-        let (rows_read, has_more) =
-            local_read_rows(&mut reader, chunk_buffer.as_mut_slice()).context(ArrowSnafu {})?;
-        let chunk = projection_indices
-            .par_iter()
-            .enumerate()
-            .map(|(i, proj_idx)| {
-                let deserialized_col = deserialize_column(
-                    &chunk_buffer[0..rows_read],
-                    *proj_idx,
-                    fields[*proj_idx].data_type().clone(),
-                    0,
-                );
-                Series::try_from_field_and_arrow_array(
-                    read_daft_fields[i].clone(),
-                    cast_array_for_daft_if_needed(deserialized_col?),
-                )
-            })
-            .collect::<DaftResult<Vec<Series>>>()?;
-        let num_rows = chunk.first().map(|s| s.len()).unwrap_or(0);
-        let table = Table::new_unchecked(read_schema.clone(), chunk, num_rows);
-        let table = if let Some(predicate) = &predicate {
-            let filtered = table.filter(&[predicate.clone()])?;
-            if let Some(include_columns) = &include_columns {
-                filtered.get_columns(include_columns.as_slice())?
-            } else {
-                filtered
-            }
-        } else {
-            table
-        };
-        tables.push(table);
-
-        // The number of record might exceed the number of byte records we've allocated.
-        // Retry until all byte records in this chunk are read.
-        if !has_more {
-            break;
-        }
-    }
-    buf.pool.return_buffer(chunk_buffer);
-    Ok(tables)
-}
-
-async fn stream_csv_local(
-    uri: &str,
-    convert_options: Option<CsvConvertOptions>,
-    parse_options: CsvParseOptions,
-    read_options: Option<CsvReadOptions>,
-    max_chunks_in_flight: Option<usize>,
-) -> DaftResult<impl Stream<Item = DaftResult<Table>> + Send> {
-    let uri = uri.trim_start_matches("file://");
-    let file = std::fs::File::open(uri)?;
-    let mmap = unsafe { memmap2::Mmap::map(&file) }.context(StdIOSnafu)?;
-    let bytes = &mmap[..];
-
-    // TODO(desmond): This logic is repeated multiple times in this file. Should dedup.
-    let predicate = convert_options
-        .as_ref()
-        .and_then(|opts| opts.predicate.clone());
-
-    let limit = convert_options.as_ref().and_then(|opts| opts.limit);
-
-    let include_columns = convert_options
-        .as_ref()
-        .and_then(|opts| opts.include_columns.clone());
-
-    let convert_options = match (convert_options, &predicate) {
-        (None, _) => None,
-        (co, None) => co,
-        (Some(mut co), Some(predicate)) => {
-            if let Some(ref mut include_columns) = co.include_columns {
-                let required_columns_for_predicate = get_required_columns(predicate);
-                for rc in required_columns_for_predicate {
-                    if include_columns.iter().all(|c| c.as_str() != rc.as_str()) {
-                        include_columns.push(rc)
-                    }
-                }
-            }
-            // If we have a limit and a predicate, remove limit for stream.
-            co.limit = None;
-            Some(co)
-        }
-    }
-    .unwrap_or_default();
-    // End of `should dedup`.
-
-    // TODO(desmond): We should do better schema inference here.
-    let schema = convert_options.clone().schema.unwrap().to_arrow()?;
-    let n_threads: usize = std::thread::available_parallelism()
-        .unwrap_or(NonZeroUsize::new(2).unwrap())
-        .into();
-    let chunk_size = read_options
-        .as_ref()
-        .and_then(|opt| opt.chunk_size.or_else(|| opt.buffer_size.map(|bs| bs / 8)))
-        .unwrap_or(DEFAULT_CHUNK_SIZE);
-    let projection_indices = fields_to_projection_indices(
-        &schema.clone().fields,
-        &convert_options.clone().include_columns,
-    );
-    let fields = schema.clone().fields;
-    let fields_subset = projection_indices
-        .iter()
-        .map(|i| fields.get(*i).unwrap().into())
-        .collect::<Vec<daft_core::datatypes::Field>>();
-    let read_schema = Arc::new(daft_core::schema::Schema::new(fields_subset)?);
-    let read_daft_fields = Arc::new(
-        read_schema
-            .fields
-            .values()
-            .map(|f| Arc::new(f.clone()))
-            .collect::<Vec<_>>(),
-    );
-    // TODO(desmond): Need better upfront estimators. Sample or keep running count of stats.
-    let estimated_mean_row_size = 100f64;
-    let estimated_std_row_size = 20f64;
-    let record_buffer_size = (estimated_mean_row_size + estimated_std_row_size).ceil() as usize;
-    let chunk_size_rows = (chunk_size as f64 / record_buffer_size as f64).ceil() as usize;
-    // TODO(desmond): We don't want to create a per-read buffer pool, we want one pool shared with
-    // the whole process.
-    let buffer_pool = CsvBufferPool::new(
-        record_buffer_size,
-        schema.fields.len(),
-        chunk_size_rows,
-        n_threads * 2,
-    );
-    let chunk_offsets: Vec<usize> = (0..=bytes.len()).step_by(chunk_size).collect();
-    // TODO(desmond): Memory usage is still growing during execution of a .count(*).collect(), so
-    // the following approach still isn't quite right.
-    // TODO(desmond): Also, is this usage of max_chunks_in_flight correct?
-    let (sender, receiver) =
-        crossbeam_channel::bounded(max_chunks_in_flight.unwrap_or(n_threads * 2));
-    let rows_read = AtomicUsize::new(0);
-    rayon::spawn(move || {
-        let bytes = &mmap[..];
-        chunk_offsets.into_par_iter().for_each(|start| {
-            // TODO(desmond): Use try_for_each and terminate early once the limit is reached.
-            let limit_reached = limit.map_or(false, |limit| {
-                let current_rows_read = rows_read.load(Ordering::Relaxed);
-                current_rows_read >= limit
-            });
-
-            if !limit_reached && let Some((start, stop)) = get_file_chunk(bytes, start, chunk_size)
-            {
-                let buf = buffer_pool.get_buffer();
-                let chunk = &bytes[start..stop];
-                // Only the first chunk might potentially have headers. Subsequent chunks should
-                // read all rows as records.
-                let has_headers = start == 0 && parse_options.has_header;
-                let rdr = ReaderBuilder::new()
-                    .has_headers(has_headers)
-                    .delimiter(parse_options.delimiter)
-                    .double_quote(parse_options.double_quote)
-                    // TODO(desmond): We need to handle the quoted case properly.
-                    .quote(parse_options.quote)
-                    .escape(parse_options.escape_char)
-                    .comment(parse_options.comment)
-                    .flexible(parse_options.allow_variable_columns)
-                    .from_reader(chunk);
-                Reader::from_reader(chunk);
-                let table_results = parse_csv_chunk(
-                    rdr,
-                    projection_indices.clone(),
-                    fields.clone(),
-                    read_daft_fields.clone(),
-                    read_schema.clone(),
-                    buf,
-                    &include_columns,
-                    predicate.clone(),
-                );
-                match table_results {
-                    Ok(tables) => {
-                        for table in tables {
-                            let table_len = table.len();
-                            sender.send(Ok(table)).unwrap();
-                            // Atomically update the number of rows read only after the result has
-                            // been sent. In theory we could wrap these steps in a mutex, but
-                            // applying limit at this layer can be best-effort with no adverse
-                            // side effects.
-                            rows_read.fetch_add(table_len, Ordering::Relaxed);
-                        }
-                    }
-                    Err(e) => sender.send(Err(e)).unwrap(),
-                }
-            }
-        })
-    });
-
-    let result_stream = futures::stream::iter(receiver);
-    Ok(result_stream)
-}
-
-async fn tables_stream_collect(stream: BoxStream<'static, DaftResult<Table>>) -> Vec<Table> {
-    stream
-        .filter_map(|result| async {
-            match result {
-                Ok(table) => Some(table),
-                Err(_) => None, // Skips errors; you could log them or handle differently
-            }
-        })
-        .collect()
-        .await
-}
-
-async fn read_csv_local(
-    uri: &str,
-    convert_options: Option<CsvConvertOptions>,
-    parse_options: CsvParseOptions,
-    read_options: Option<CsvReadOptions>,
-    max_chunks_in_flight: Option<usize>,
-) -> DaftResult<Table> {
-    let stream = stream_csv_local(
-        uri,
-        convert_options,
-        parse_options,
-        read_options,
-        max_chunks_in_flight,
-    )
-    .await?;
-    tables_concat(tables_stream_collect(Box::pin(stream)).await)
-}
-
 async fn read_csv_single_into_table(
     uri: &str,
     convert_options: Option<CsvConvertOptions>,
@@ -612,8 +228,7 @@ async fn read_csv_single_into_table(
 ) -> DaftResult<Table> {
     let (source_type, _) = parse_url(uri)?;
     let is_compressed = CompressionCodec::from_uri(uri).is_some();
-    let use_local_reader = false; // TODO(desmond): Feature under dev.
-    if matches!(source_type, SourceType::File) && !is_compressed && use_local_reader {
+    if matches!(source_type, SourceType::File) && !is_compressed {
         return read_csv_local(
             uri,
             convert_options,
@@ -1054,7 +669,7 @@ fn parse_into_column_array_chunk_stream(
     }))
 }
 
-fn fields_to_projection_indices(
+pub fn fields_to_projection_indices(
     fields: &[arrow2::datatypes::Field],
     include_columns: &Option<Vec<String>>,
 ) -> Arc<Vec<usize>> {

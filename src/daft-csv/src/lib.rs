@@ -7,6 +7,7 @@ extern crate test;
 use common_error::DaftError;
 use snafu::Snafu;
 
+pub mod local;
 pub mod metadata;
 pub mod options;
 #[cfg(feature = "python")]
