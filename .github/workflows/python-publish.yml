@@ -14,6 +14,10 @@ on:
     tags:
     - v*
   workflow_dispatch:
+  pull_request:
+    branches: [main]
+
+
 env:
   PACKAGE_NAME: getdaft
   PYTHON_VERSION: 3.11
@@ -136,11 +140,26 @@ jobs:
     runs-on: ubuntu-latest
     needs:
     - build-and-test
+    permissions:
+      id-token: write
+      contents: read
     steps:
     - uses: actions/setup-python@v5
       with:
         python-version: ${{ env.PYTHON_VERSION }}
         architecture: x64
+    - name: Assume GitHub Actions AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-region: us-west-2
+        role-to-assume: ${{ secrets.ACTIONS_AWS_CODE_ARTIFACT_ROLE_ARN }}
+        role-session-name: DaftPythonPublish
+    - id: install-aws-cli
+      uses: unfor19/install-aws-cli-action@v1
+      with:
+        version: 2                         # default
+        verbose: false                     # default
+        arch: amd64                        # allowed values: amd64, arm64
     - run: pip install -U twine
     - uses: actions/checkout@v4
     - uses: actions/download-artifact@v4
@@ -149,58 +168,35 @@ jobs:
         merge-multiple: true
         path: dist
     - run: ls -R ./dist
-    - name: Publish bdist package to PYPI
-      if: ${{ success() && (env.IS_PUSH == 'true') }}
-      run: python -m twine upload --skip-existing --disable-progress-bar ./dist/*
-      env:
-        TWINE_USERNAME: __token__
-        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-
-    - uses: conda-incubator/setup-miniconda@v3
-      with:
-        # Really doesn't matter what version we upload with
-        # just the version we test with
-        python-version: '3.8'
-        channels: conda-forge
-        channel-priority: true
-
-    - name: Install anaconda client
-      shell: bash -el {0}
-      run: conda install -q -y anaconda-client "urllib3<2.0"
-
-    - name: Upload wheels to anaconda nightly
+    - name: Publish bdist package to Code Artifact
       if: ${{ success() && (((env.IS_SCHEDULE_DISPATCH == 'true') && (github.ref == 'refs/heads/main')) || env.IS_PUSH == 'true') }}
-      shell: bash -el {0}
-      env:
-        DAFT_STAGING_UPLOAD_TOKEN: ${{ secrets.DAFT_STAGING_UPLOAD_TOKEN }}
-        DAFT_NIGHTLY_UPLOAD_TOKEN: ${{ secrets.DAFT_NIGHTLY_UPLOAD_TOKEN }}
       run: |
-        source ci/upload_wheels.sh
-        set_upload_vars
-        # trigger an upload to
-        # https://anaconda.org/daft-nightly/getdaft
-        # for cron jobs or "Run workflow" (restricted to main branch).
-        # Tags will upload to
-        # https://anaconda.org/daft/getdaft
-        # The tokens were originally generated at anaconda.org
-        upload_wheels
+        aws codeartifact login --tool twine --repository daft-nightlies --domain eventual --domain-owner 941892620273 --region us-west-2
+        python -m twine upload --repository codeartifact --skip-existing --disable-progress-bar ./dist/*
+    # - name: Publish bdist package to PYPI
+    #   if: ${{ success() && (env.IS_PUSH == 'true') }}
+    #   run: python -m twine upload --skip-existing --disable-progress-bar ./dist/*
+    #   env:
+    #     TWINE_USERNAME: __token__
+    #     TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
 
-    - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v1.26.0
-      if: failure()
-      with:
-        payload: |
-          {
-            "blocks": [
-              {
-                "type": "section",
-                "text": {
-                  "type": "mrkdwn",
-                  "text": ":rotating_light: Release: Uploading Wheels <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED* :rotating_light:"
-                }
-              }
-            ]
-          }
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+    # - name: Send Slack notification on failure
+    #   uses: slackapi/slack-github-action@v1.26.0
+    #   if: failure()
+    #   with:
+    #     payload: |
+    #       {
+    #         "blocks": [
+    #           {
+    #             "type": "section",
+    #             "text": {
+    #               "type": "mrkdwn",
+    #               "text": ":rotating_light: Release: Uploading Wheels <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED* :rotating_light:"
+    #             }
+    #           }
+    #         ]
+    #       }
+    #   env:
+    #     SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+    #     SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
