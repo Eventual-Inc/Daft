@@ -38,6 +38,55 @@ class SQLCatalog:
 
 @PublicAPI
 def sql_expr(sql: str) -> Expression:
+    """Parses a SQL string into a Daft Expression
+
+    This function allows you to create Daft Expressions from SQL snippets, which can then be used
+    in Daft operations or combined with other Daft Expressions.
+
+    Args:
+        sql (str): A SQL string to be parsed into a Daft Expression.
+
+    Returns:
+        Expression: A Daft Expression representing the parsed SQL.
+
+    Examples:
+        Create a simple SQL expression:
+
+        >>> import daft
+        >>> expr = daft.sql_expr("1 + 2")
+        >>> print(expr)
+        lit(1) + lit(2)
+
+        Use SQL expression in a Daft DataFrame operation:
+
+        >>> df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
+        >>> df = df.with_column("c", daft.sql_expr("a + b"))
+        >>> df.show()
+        ╭───────┬───────┬───────╮
+        │ a     ┆ b     ┆ c     │
+        │ ---   ┆ ---   ┆ ---   │
+        │ Int64 ┆ Int64 ┆ Int64 │
+        ╞═══════╪═══════╪═══════╡
+        │ 1     ┆ 4     ┆ 5     │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 2     ┆ 5     ┆ 7     │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 3     ┆ 6     ┆ 9     │
+        ╰───────┴───────┴───────╯
+
+        `daft.sql_expr` is also called automatically for you in some DataFrame operations such as filters:
+
+        >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+        >>> result = df.where("x < 3 AND y > 4")
+        >>> result.show()
+        ╭───────┬───────╮
+        │ x     ┆ y     │
+        │ ---   ┆ ---   │
+        │ Int64 ┆ Int64 │
+        ╞═══════╪═══════╡
+        │ 2     ┆ 5     │
+        ╰───────┴───────╯
+    """
     return Expression._from_pyexpr(_sql_expr(sql))
 
 
