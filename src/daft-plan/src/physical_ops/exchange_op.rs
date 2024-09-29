@@ -15,7 +15,7 @@ pub enum ExchangeOpStrategy {
     /// Fully materialize the data after the Map, and then pull results from the Reduce.
     FullyMaterializing { target_spec: Arc<ClusteringSpec> },
     /// Stand up Reducers and then send data from the mappers into the reducers eagerly
-    StreamingPush { target_spec: Arc<ClusteringSpec> },
+    FullyMaterializingPush { target_spec: Arc<ClusteringSpec> },
 }
 
 impl ExchangeOp {
@@ -27,8 +27,8 @@ impl ExchangeOp {
                 res.push("  Strategy: FullyMaterializing".to_string());
                 res.push(format!("  Target Spec: {:?}", target_spec));
             }
-            ExchangeOpStrategy::StreamingPush { target_spec } => {
-                res.push("  Strategy: StreamingPush".to_string());
+            ExchangeOpStrategy::FullyMaterializingPush { target_spec } => {
+                res.push("  Strategy: FullyMaterializingPush".to_string());
                 res.push(format!("  Target Spec: {:?}", target_spec));
             }
         }

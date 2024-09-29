@@ -246,7 +246,7 @@ impl PhysicalPlan {
                 ..
             })
             | Self::ExchangeOp(ExchangeOp {
-                strategy: ExchangeOpStrategy::StreamingPush { target_spec },
+                strategy: ExchangeOpStrategy::FullyMaterializingPush { target_spec },
                 ..
             }) => target_spec.clone(),
         }
@@ -569,9 +569,9 @@ impl PhysicalPlan {
                 ..
             }) => "ExchangeOp[FullyMaterializing]",
             Self::ExchangeOp(ExchangeOp {
-                strategy: ExchangeOpStrategy::StreamingPush { .. },
+                strategy: ExchangeOpStrategy::FullyMaterializingPush { .. },
                 ..
-            }) => "ExchangeOp[StreamingPush]",
+            }) => "ExchangeOp[FullyMaterializingPush]",
         };
         name.to_string()
     }

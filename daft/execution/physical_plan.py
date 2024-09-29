@@ -1616,10 +1616,42 @@ def fanout_random(child_plan: InProgressPhysicalPlan[PartitionT], num_partitions
         seed += 1
 
 
-def streaming_push_exchange_op(
+def fully_materializing_push_exchange_op(
     child_plan: InProgressPhysicalPlan[PartitionT], partition_by: list[PyExpr], num_partitions: int
 ) -> InProgressPhysicalPlan[PartitionT]:
-    raise NotImplementedError("TODO: jay")
+    from daft.expressions import Expression
+
+    # Step 1: Naively materialize all child partitions
+    stage_id_children = next(stage_id_counter)
+    materialized_partitions: list[SingleOutputPartitionTask] = []
+    for step in child_plan:
+        if isinstance(step, PartitionTaskBuilder):
+            task = step.finalize_partition_task_single_output(stage_id=stage_id_children)
+            materialized_partitions.append(task)
+            yield task
+        elif isinstance(step, PartitionTask):
+            yield step
+        elif step is None:
+            yield None
+        else:
+            yield step
+
+    # Step 2: Wait for all partitions to be done
+    while any(not p.done() for p in materialized_partitions):
+        yield None
+
+    with get_context().shuffle_service_factory().push_based_shuffle_service_context(
+        num_partitions, partition_by=ExpressionsProjection([Expression._from_pyexpr(e) for e in partition_by])
+    ) as shuffle_service:
+        results = shuffle_service.run([p.partition() for p in materialized_partitions])
+
+    for reduced_data in results:
+        reduce_task = PartitionTaskBuilder(
+            inputs=[reduced_data],
+            partial_metadatas=None,
+            resource_request=ResourceRequest(),
+        )
+        yield reduce_task
 
 
 def fully_materializing_exchange_op(

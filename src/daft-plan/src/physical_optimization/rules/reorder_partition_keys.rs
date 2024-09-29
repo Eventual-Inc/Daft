@@ -140,10 +140,10 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
                     });
                     Ok(Transformed::yes(c.with_plan(new_plan.into()).propagate()))
                 }
-                PhysicalPlan::ExchangeOp(ExchangeOp{input, strategy: ExchangeOpStrategy::StreamingPush { .. }}) => {
+                PhysicalPlan::ExchangeOp(ExchangeOp{input, strategy: ExchangeOpStrategy::FullyMaterializingPush { .. }}) => {
                     let new_plan = PhysicalPlan::ExchangeOp(ExchangeOp {
                         input: input.clone(),
-                        strategy: ExchangeOpStrategy::StreamingPush { target_spec: new_spec.into() }
+                        strategy: ExchangeOpStrategy::FullyMaterializingPush { target_spec: new_spec.into() }
                     });
                     Ok(Transformed::yes(c.with_plan(new_plan.into()).propagate()))
                 }

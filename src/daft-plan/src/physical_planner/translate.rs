@@ -55,7 +55,7 @@ fn build_exchange_op(
         }),
         Ok("streaming_push") => PhysicalPlan::ExchangeOp(ExchangeOp {
             input,
-            strategy: ExchangeOpStrategy::StreamingPush {
+            strategy: ExchangeOpStrategy::FullyMaterializingPush {
                 target_spec: Arc::new(ClusteringSpec::Hash(HashClusteringConfig::new(
                     num_partitions,
                     partition_by,

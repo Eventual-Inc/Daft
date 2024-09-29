@@ -806,7 +806,7 @@ fn physical_plan_to_partition_tasks(
         }
         PhysicalPlan::ExchangeOp(ExchangeOp {
             input,
-            strategy: ExchangeOpStrategy::StreamingPush { target_spec },
+            strategy: ExchangeOpStrategy::FullyMaterializingPush { target_spec },
         }) => {
             let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
             let partition_by_pyexprs: Vec<PyExpr> = target_spec
@@ -816,7 +816,7 @@ fn physical_plan_to_partition_tasks(
                 .collect();
             let py_iter = py
                 .import_bound(pyo3::intern!(py, "daft.execution.physical_plan"))?
-                .getattr(pyo3::intern!(py, "streaming_push_exchange_op"))?
+                .getattr(pyo3::intern!(py, "fully_materializing_push_exchange_op"))?
                 .call1((
                     upstream_iter,
                     partition_by_pyexprs,

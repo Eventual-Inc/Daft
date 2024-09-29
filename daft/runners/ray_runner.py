@@ -1492,3 +1492,167 @@ class RayShuffleServiceFactory:
         )
         yield shuffle_service
         shuffle_service.teardown()
+
+    @contextlib.contextmanager
+    def push_based_shuffle_service_context(
+        self,
+        num_partitions: int,
+        partition_by: ExpressionsProjection,
+    ) -> Iterator[RayPushBasedShuffle]:
+        num_cpus = int(ray.cluster_resources()["CPU"])
+
+        # Number of mappers is ~2x number of mergers
+        num_map_tasks = num_cpus // 3
+        num_merge_tasks = num_map_tasks * 2
+
+        yield RayPushBasedShuffle(num_map_tasks, num_merge_tasks, num_partitions, partition_by)
+
+
+@ray.remote
+def map_fn(
+    map_input: MicroPartition, num_mergers: int, partition_by: ExpressionsProjection, num_partitions: int
+) -> list[list[MicroPartition]]:
+    """Returns `N` number of inputs, where `N` is the number of mergers"""
+    # Partition the input data based on the partitioning spec
+    partitioned_data = map_input.partition_by_hash(partition_by, num_partitions)
+
+    outputs: list[list[MicroPartition]] = [[] for _ in range(num_mergers)]
+
+    # Distribute the partitioned data across the mergers
+    for partition_idx, partition in enumerate(partitioned_data):
+        merger_idx = partition_idx // (num_partitions // num_mergers)
+        if merger_idx >= num_mergers:
+            merger_idx = num_mergers - 1
+        outputs[merger_idx].append(partition)
+
+    return outputs
+
+
+@ray.remote
+def merge_fn(*merger_inputs_across_mappers: list[MicroPartition]) -> list[MicroPartition]:
+    """Returns `P` number of inputs, where `P` is the number of reducers assigned to this merger"""
+    num_partitions_for_this_merger = len(merger_inputs_across_mappers[0])
+    merged_partitions = []
+    for partition_idx in range(num_partitions_for_this_merger):
+        partitions_to_merge = [data[partition_idx] for data in merger_inputs_across_mappers]
+        merged_partition = MicroPartition.concat(partitions_to_merge)
+        merged_partitions.append(merged_partition)
+    return merged_partitions
+
+
+@ray.remote
+def reduce_fn(*reduce_inputs_across_rounds: MicroPartition) -> MicroPartition:
+    """Returns 1 output, which is the reduced data across rounds"""
+    # Concatenate all input MicroPartitions across rounds
+    reduced_partition = MicroPartition.concat(list(reduce_inputs_across_rounds))
+
+    # Return the result as a list containing a single MicroPartition
+    return reduced_partition
+
+
+class RayPushBasedShuffle:
+    def __init__(self, num_mappers: int, num_mergers: int, num_reducers: int, partition_by: ExpressionsProjection):
+        self._num_mappers = num_mappers
+        self._num_mergers = num_mergers
+        self._num_reducers = num_reducers
+        self._partition_by = partition_by
+
+    def _num_reducers_for_merger(self, merger_idx: int) -> int:
+        base_num = self._num_reducers // self._num_mergers
+        if merger_idx < (self._num_reducers % self._num_mergers):
+            return base_num + 1
+        return base_num
+
+    def _get_reducer_inputs_location(self, reducer_idx: int) -> tuple[int, int]:
+        """Returns the (merger_idx, offset) of where the inputs to a given reducer should live"""
+        for merger_idx in range(self._num_mergers):
+            num_reducers = self._num_reducers_for_merger(merger_idx)
+            if num_reducers > reducer_idx:
+                return merger_idx, reducer_idx
+            else:
+                reducer_idx - num_reducers
+        raise ValueError(f"Cannot find merger for reducer_idx: {reducer_idx}")
+
+    def _merger_options(self, merger_idx: int) -> dict[str, Any]:
+        # TODO: populate the nth merger's options. Place the nth merge task on the (n % NUM_NODES)th node
+        #
+        # node_strategies = {
+        #     node_id: {
+        #         "scheduling_strategy": NodeAffinitySchedulingStrategy(
+        #             node_id, soft=True
+        #         )
+        #     }
+        #     for node_id in set(merge_task_placement)
+        # }
+        # self._merge_task_options = [
+        #     node_strategies[node_id] for node_id in merge_task_placement
+        # ]
+        return {}
+
+    def _reduce_options(self, reducer_idx: int) -> dict[str, Any]:
+        # TODO: populate the nth merger's options. Place the nth merge task on the (n % NUM_NODES)th node
+        #
+        # node_strategies = {
+        #     node_id: {
+        #         "scheduling_strategy": NodeAffinitySchedulingStrategy(
+        #             node_id, soft=True
+        #         )
+        #     }
+        #     for node_id in set(merge_task_placement)
+        # }
+        # self._merge_task_options = [
+        #     node_strategies[node_id] for node_id in merge_task_placement
+        # ]
+        return {}
+
+    def run(self, materialized_inputs: list[ray.ObjectRef]) -> list[ray.ObjectRef]:
+        """Runs the Mappers and Mergers in a 2-stage pipeline until all mergers are materialized
+
+        There are `R` reducers.
+        There are `N` mergers. Each merger is "responsible" for `R / N` reducers.
+        Each Mapper then should run partitioning on the data into `N` chunks.
+        """
+        # [N_ROUNDS, N_MERGERS, N_REDUCERS_PER_MERGER] list of outputs
+        merge_results: list[list[list[ray.ObjectRef]]] = []
+        map_results_buffer: list[ray.ObjectRef] = []
+
+        # Keep running the pipeline while there is still work to do
+        while materialized_inputs or map_results_buffer:
+            # Drain the map_results_buffer, running merge tasks
+            per_round_merge_results = []
+            while map_results_buffer:
+                map_results = map_results_buffer.pop()
+                assert len(map_results) == self._num_mergers
+                for merger_idx, merger_input in enumerate(map_results):
+                    merge_results = merge_fn.options(
+                        **self._merger_options(merger_idx), num_returns=self._num_reducers_for_merger(merger_idx)
+                    ).remote(*merger_input)
+                    per_round_merge_results.append(merge_results)
+            if per_round_merge_results:
+                merge_results.append(per_round_merge_results)
+
+            # Run map tasks:
+            for i in range(self._num_mappers):
+                if len(materialized_inputs) == 0:
+                    break
+                else:
+                    map_input = materialized_inputs.pop(0)
+                    map_results = map_fn.options(num_returns=self._num_mergers).remote(
+                        map_input, self._num_mergers, self._partition_by, self._num_reducers
+                    )
+                    map_results_buffer.append(map_results)
+
+            # Wait for all tasks in this wave to complete
+            ray.wait(per_round_merge_results)
+            ray.wait(map_results_buffer)
+
+        # INVARIANT: At this point, the map/merge step is done
+        # Start running all the reduce functions
+        # TODO: we could stagger this by num CPUs as well, but here we just YOLO run all
+        reduce_results = []
+        for reducer_idx in range(self._num_reducers):
+            assigned_merger_idx, offset = self._get_reducer_inputs_location(reducer_idx)
+            reducer_inputs = [merge_results[round][assigned_merger_idx][offset] for round in range(len(merge_results))]
+            res = reduce_fn.options(**self._reduce_options(reducer_idx)).remote(*reducer_inputs)
+            reduce_results.append(res)
+        return reduce_results
