@@ -8,7 +8,7 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_file_formats::FileFormat;
 use daft_core::prelude::*;
-use daft_dsl::{col, is_partition_compatible, ApproxPercentileParams, ExprRef, SketchType};
+use daft_dsl::{col, is_partition_compatible, ApproxPercentileParams, Expr, ExprRef, SketchType};
 use daft_scan::PhysicalScanInfo;
 
 use crate::{
@@ -29,6 +29,42 @@ use crate::{
     sink_info::{OutputFileInfo, SinkInfo},
     source_info::{PlaceHolderInfo, SourceInfo},
 };
+
+/// Builds an exchange op (PhysicalPlan node(s) that shuffles data)
+fn build_exchange_op(
+    input: PhysicalPlanRef,
+    num_partitions: usize,
+    partition_by: Vec<Arc<Expr>>,
+) -> PhysicalPlan {
+    let exchange_op = std::env::var("DAFT_EXCHANGE_OP");
+    match exchange_op.as_deref() {
+        Err(_) => {
+            let split_op =
+                PhysicalPlan::FanoutByHash(FanoutByHash::new(input, num_partitions, partition_by))
+                    .arced();
+            PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op))
+        }
+        Ok("fully_materialize") => PhysicalPlan::ExchangeOp(ExchangeOp {
+            input,
+            strategy: ExchangeOpStrategy::FullyMaterializing {
+                target_spec: Arc::new(ClusteringSpec::Hash(HashClusteringConfig::new(
+                    num_partitions,
+                    partition_by,
+                ))),
+            },
+        }),
+        Ok("streaming_push") => PhysicalPlan::ExchangeOp(ExchangeOp {
+            input,
+            strategy: ExchangeOpStrategy::StreamingPush {
+                target_spec: Arc::new(ClusteringSpec::Hash(HashClusteringConfig::new(
+                    num_partitions,
+                    partition_by,
+                ))),
+            },
+        }),
+        Ok(exo) => panic!("Unsupported DAFT_EXCHANGE_OP={exo}"),
+    }
+}
 
 pub(super) fn translate_single_logical_node(
     logical_plan: &LogicalPlan,
@@ -206,6 +242,7 @@ pub(super) fn translate_single_logical_node(
                     }
                 }
                 ClusteringSpec::Random(_) => {
+                    // TODO: Support Random clustering spec for ExchangeOps
                     let split_op = PhysicalPlan::FanoutRandom(FanoutRandom::new(
                         input_physical,
                         num_partitions,
@@ -213,22 +250,7 @@ pub(super) fn translate_single_logical_node(
                     PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()))
                 }
                 ClusteringSpec::Hash(HashClusteringConfig { by, .. }) => {
-                    // YOLOSWAG: use the new exchange op instead
-                    // let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
-                    //     input_physical,
-                    //     num_partitions,
-                    //     by.clone(),
-                    // ));
-                    // PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()))
-                    PhysicalPlan::ExchangeOp(ExchangeOp {
-                        input: input_physical,
-                        strategy: ExchangeOpStrategy::FullyMaterializing {
-                            target_spec: Arc::new(ClusteringSpec::Hash(HashClusteringConfig::new(
-                                num_partitions,
-                                by.clone(),
-                            ))),
-                        },
-                    })
+                    build_exchange_op(input_physical, num_partitions, by.clone())
                 }
                 ClusteringSpec::Range(_) => {
                     unreachable!("Repartitioning by range is not supported")
@@ -248,14 +270,10 @@ pub(super) fn translate_single_logical_node(
                 PhysicalPlan::Aggregate(Aggregate::new(input_physical, vec![], col_exprs.clone()));
             let num_partitions = agg_op.clustering_spec().num_partitions();
             if num_partitions > 1 {
-                let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
-                    agg_op.into(),
-                    num_partitions,
-                    col_exprs.clone(),
-                ));
-                let reduce_op = PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()));
+                let exchange_op =
+                    build_exchange_op(agg_op.into(), num_partitions, col_exprs.clone());
                 Ok(
-                    PhysicalPlan::Aggregate(Aggregate::new(reduce_op.into(), vec![], col_exprs))
+                    PhysicalPlan::Aggregate(Aggregate::new(exchange_op.into(), vec![], col_exprs))
                         .arced(),
                 )
             } else {
@@ -319,31 +337,15 @@ pub(super) fn translate_single_logical_node(
                         ))
                         .arced()
                     } else {
-                        // let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
-                        //     first_stage_agg,
-                        //     min(
-                        //         num_input_partitions,
-                        //         cfg.shuffle_aggregation_default_partitions,
-                        //     ),
-                        //     groupby.clone(),
-                        // ))
-                        // .arced();
-                        // PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op)).arced()
-                        PhysicalPlan::ExchangeOp(ExchangeOp {
-                            input: first_stage_agg,
-                            strategy: ExchangeOpStrategy::FullyMaterializing {
-                                target_spec: Arc::new(ClusteringSpec::Hash(
-                                    HashClusteringConfig::new(
-                                        min(
-                                            num_input_partitions,
-                                            cfg.shuffle_aggregation_default_partitions,
-                                        ),
-                                        groupby.clone(),
-                                    ),
-                                )),
-                            },
-                        })
-                        .into()
+                        build_exchange_op(
+                            first_stage_agg,
+                            min(
+                                num_input_partitions,
+                                cfg.shuffle_aggregation_default_partitions,
+                            ),
+                            groupby.clone(),
+                        )
+                        .arced()
                     };
 
                     let second_stage_agg = PhysicalPlan::Aggregate(Aggregate::new(
@@ -403,7 +405,7 @@ pub(super) fn translate_single_logical_node(
                         ))
                         .arced()
                     } else {
-                        let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
+                        build_exchange_op(
                             first_stage_agg,
                             min(
                                 num_input_partitions,
@@ -412,9 +414,8 @@ pub(super) fn translate_single_logical_node(
                             // NOTE: For the shuffle of a pivot operation, we don't include the pivot column for the hashing as we need
                             // to ensure that all rows with the same group_by column values are hashed to the same partition.
                             group_by.clone(),
-                        ))
-                        .arced();
-                        PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op)).arced()
+                        )
+                        .arced()
                     };
 
                     let second_stage_agg = PhysicalPlan::Aggregate(Aggregate::new(
@@ -666,24 +667,16 @@ pub(super) fn translate_single_logical_node(
                     if num_left_partitions != num_partitions
                         || (num_partitions > 1 && !is_left_hash_partitioned)
                     {
-                        let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
-                            left_physical,
-                            num_partitions,
-                            left_on.clone(),
-                        ));
                         left_physical =
-                            PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into())).arced();
+                            build_exchange_op(left_physical, num_partitions, left_on.clone())
+                                .arced();
                     }
                     if num_right_partitions != num_partitions
                         || (num_partitions > 1 && !is_right_hash_partitioned)
                     {
-                        let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
-                            right_physical,
-                            num_partitions,
-                            right_on.clone(),
-                        ));
                         right_physical =
-                            PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into())).arced();
+                            build_exchange_op(right_physical, num_partitions, right_on.clone())
+                                .arced();
                     }
                     Ok(PhysicalPlan::HashJoin(HashJoin::new(
                         left_physical,

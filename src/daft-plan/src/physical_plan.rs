@@ -244,6 +244,10 @@ impl PhysicalPlan {
             Self::ExchangeOp(ExchangeOp {
                 strategy: ExchangeOpStrategy::FullyMaterializing { target_spec },
                 ..
+            })
+            | Self::ExchangeOp(ExchangeOp {
+                strategy: ExchangeOpStrategy::StreamingPush { target_spec },
+                ..
             }) => target_spec.clone(),
         }
     }
@@ -500,7 +504,7 @@ impl PhysicalPlan {
                 Self::DeltaLakeWrite(DeltaLakeWrite {schema, delta_lake_info, .. }) => Self::DeltaLakeWrite(DeltaLakeWrite::new(schema.clone(), delta_lake_info.clone(), input.clone())),
                 #[cfg(feature = "python")]
                 Self::LanceWrite(LanceWrite { schema, lance_info, .. }) => Self::LanceWrite(LanceWrite::new(schema.clone(), lance_info.clone(), input.clone())),
-                Self::ExchangeOp(ExchangeOp{strategy: ExchangeOpStrategy::FullyMaterializing{target_spec, .. }, ..}) => Self::ExchangeOp(ExchangeOp{ input: input.clone(), strategy: ExchangeOpStrategy::FullyMaterializing { target_spec: target_spec.clone() }}),
+                Self::ExchangeOp(ExchangeOp{strategy, ..}) => Self::ExchangeOp(ExchangeOp{ input: input.clone(), strategy: strategy.clone()}),
                 Self::Concat(_) | Self::HashJoin(_) | Self::SortMergeJoin(_) | Self::BroadcastJoin(_) => panic!("{} requires more than 1 input, but received: {}", self, children.len()),
             },
             [input1, input2] => match self {
@@ -564,6 +568,10 @@ impl PhysicalPlan {
                 strategy: ExchangeOpStrategy::FullyMaterializing { .. },
                 ..
             }) => "ExchangeOp[FullyMaterializing]",
+            Self::ExchangeOp(ExchangeOp {
+                strategy: ExchangeOpStrategy::StreamingPush { .. },
+                ..
+            }) => "ExchangeOp[StreamingPush]",
         };
         name.to_string()
     }

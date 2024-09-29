@@ -1615,6 +1615,12 @@ def fanout_random(child_plan: InProgressPhysicalPlan[PartitionT], num_partitions
         seed += 1
 
 
+def streaming_push_exchange_op(
+    child_plan: InProgressPhysicalPlan[PartitionT], partition_by: list[PyExpr], num_partitions: int
+) -> InProgressPhysicalPlan[PartitionT]:
+    raise NotImplementedError("TODO: jay")
+
+
 def fully_materializing_exchange_op(
     child_plan: InProgressPhysicalPlan[PartitionT], partition_by: list[PyExpr], num_partitions: int
 ) -> InProgressPhysicalPlan[PartitionT]:
