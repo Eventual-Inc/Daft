@@ -73,6 +73,8 @@ def sql_expr(sql: str) -> Expression:
         ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
         │ 3     ┆ 6     ┆ 9     │
         ╰───────┴───────┴───────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
 
         `daft.sql_expr` is also called automatically for you in some DataFrame operations such as filters:
 
@@ -86,6 +88,8 @@ def sql_expr(sql: str) -> Expression:
         ╞═══════╪═══════╡
         │ 2     ┆ 5     │
         ╰───────┴───────╯
+        <BLANKLINE>
+        (Showing first 1 of 1 rows)
     """
     return Expression._from_pyexpr(_sql_expr(sql))
 
