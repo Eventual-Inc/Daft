@@ -1645,7 +1645,7 @@ def fully_materializing_exchange_op(
     MAX_NUM_CHILD_INFLIGHT_TASKS_BEFORE_INGESTION = 128
 
     # Create the shuffle service and start materializing children and sending data to the service
-    with get_context().shuffle_service_factory().shuffle_service_context(
+    with get_context().shuffle_service_factory().fully_materializing_shuffle_service_context(
         num_partitions,
         [c.name() for c in partition_by],  # TODO: Assume no-op here for now, YOLO!
     ) as shuffle_service:

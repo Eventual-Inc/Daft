@@ -53,7 +53,6 @@ from daft.execution.execution_step import (
     SingleOutputPartitionTask,
     StatefulUDFProject,
 )
-from daft.expressions import ExpressionsProjection
 from daft.filesystem import glob_path_with_stats
 from daft.runners import runner_io
 from daft.runners.partitioning import (
@@ -1351,7 +1350,7 @@ class ShuffleServiceActor:
                 self._partitioned_data_buffer[partition_request].append(partition)
 
 
-class RayPerNodeActorShuffleService(ShuffleServiceInterface[ray.ObjectRef, ray.ObjectRef]):
+class RayPerNodeActorFullyMaterializingShuffleService(ShuffleServiceInterface[ray.ObjectRef, ray.ObjectRef]):
     """A ShuffleService implementation in Ray that utilizes Ray Actors on each node to perform a shuffle
 
     This is nice because it lets us `.ingest` data into each node's Actor before actually performing the shuffle,
@@ -1481,14 +1480,14 @@ class RayPerNodeActorShuffleService(ShuffleServiceInterface[ray.ObjectRef, ray.O
 
 class RayShuffleServiceFactory:
     @contextlib.contextmanager
-    def shuffle_service_context(
+    def fully_materializing_shuffle_service_context(
         self,
         num_partitions: int,
         columns: list[str],
-    ) -> Iterator[RayPerNodeActorShuffleService]:
+    ) -> Iterator[RayPerNodeActorFullyMaterializingShuffleService]:
         from daft.execution.physical_plan_shuffles import HashPartitioningSpec
 
-        shuffle_service = RayPerNodeActorShuffleService(
+        shuffle_service = RayPerNodeActorFullyMaterializingShuffleService(
             HashPartitioningSpec(type_="hash", num_partitions=num_partitions, columns=columns)
         )
         yield shuffle_service
