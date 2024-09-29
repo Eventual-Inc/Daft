@@ -13,7 +13,7 @@ pub struct ExchangeOp {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ExchangeOpStrategy {
     /// Fully materialize the data after the Map, and then pull results from the Reduce.
-    FullyMaterializing { target_spec: Arc<ClusteringSpec> },
+    FullyMaterializingPull { target_spec: Arc<ClusteringSpec> },
     /// Stand up Reducers and then send data from the mappers into the reducers eagerly
     FullyMaterializingPush { target_spec: Arc<ClusteringSpec> },
 }
@@ -23,8 +23,8 @@ impl ExchangeOp {
         let mut res = vec![];
         res.push("ExchangeOp:".to_string());
         match &self.strategy {
-            ExchangeOpStrategy::FullyMaterializing { target_spec } => {
-                res.push("  Strategy: FullyMaterializing".to_string());
+            ExchangeOpStrategy::FullyMaterializingPull { target_spec } => {
+                res.push("  Strategy: FullyMaterializingPull".to_string());
                 res.push(format!("  Target Spec: {:?}", target_spec));
             }
             ExchangeOpStrategy::FullyMaterializingPush { target_spec } => {

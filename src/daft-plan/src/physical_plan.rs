@@ -242,7 +242,7 @@ impl PhysicalPlan {
                 ClusteringSpec::Unknown(UnknownClusteringConfig::new(1)).into()
             }
             Self::ExchangeOp(ExchangeOp {
-                strategy: ExchangeOpStrategy::FullyMaterializing { target_spec },
+                strategy: ExchangeOpStrategy::FullyMaterializingPull { target_spec },
                 ..
             })
             | Self::ExchangeOp(ExchangeOp {
@@ -565,7 +565,7 @@ impl PhysicalPlan {
             #[cfg(feature = "python")]
             Self::LanceWrite(..) => "LanceWrite",
             Self::ExchangeOp(ExchangeOp {
-                strategy: ExchangeOpStrategy::FullyMaterializing { .. },
+                strategy: ExchangeOpStrategy::FullyMaterializingPull { .. },
                 ..
             }) => "ExchangeOp[FullyMaterializing]",
             Self::ExchangeOp(ExchangeOp {

@@ -786,7 +786,7 @@ fn physical_plan_to_partition_tasks(
         ),
         PhysicalPlan::ExchangeOp(ExchangeOp {
             input,
-            strategy: ExchangeOpStrategy::FullyMaterializing { target_spec },
+            strategy: ExchangeOpStrategy::FullyMaterializingPull { target_spec },
         }) => {
             let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
             let partition_by_pyexprs: Vec<PyExpr> = target_spec

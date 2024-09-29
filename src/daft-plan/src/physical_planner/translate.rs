@@ -44,16 +44,16 @@ fn build_exchange_op(
                     .arced();
             PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op))
         }
-        Ok("fully_materialize") => PhysicalPlan::ExchangeOp(ExchangeOp {
+        Ok("pull") => PhysicalPlan::ExchangeOp(ExchangeOp {
             input,
-            strategy: ExchangeOpStrategy::FullyMaterializing {
+            strategy: ExchangeOpStrategy::FullyMaterializingPull {
                 target_spec: Arc::new(ClusteringSpec::Hash(HashClusteringConfig::new(
                     num_partitions,
                     partition_by,
                 ))),
             },
         }),
-        Ok("streaming_push") => PhysicalPlan::ExchangeOp(ExchangeOp {
+        Ok("push") => PhysicalPlan::ExchangeOp(ExchangeOp {
             input,
             strategy: ExchangeOpStrategy::FullyMaterializingPush {
                 target_spec: Arc::new(ClusteringSpec::Hash(HashClusteringConfig::new(
