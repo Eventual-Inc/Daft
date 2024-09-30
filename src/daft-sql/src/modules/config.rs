@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use common_io_config::{HTTPConfig, IOConfig, S3Config};
+use common_io_config::{AzureConfig, GCSConfig, HTTPConfig, IOConfig, S3Config};
 use daft_core::prelude::{DataType, Field};
 use daft_dsl::{literal_value, Expr, ExprRef, LiteralValue};
 
@@ -17,8 +17,8 @@ impl SQLModule for SQLModuleConfig {
     fn register(parent: &mut SQLFunctions) {
         parent.add_fn("S3Config", S3ConfigFunction);
         parent.add_fn("HTTPConfig", HTTPConfigFunction);
-        // parent.add_fn("AzureConfig", AzureConfigFunction);
-        // parent.add_fn("GCSConfig", GCSConfigFunction);
+        parent.add_fn("AzureConfig", AzureConfigFunction);
+        parent.add_fn("GCSConfig", GCSConfigFunction);
     }
 }
 
@@ -154,6 +154,99 @@ impl SQLFunction for HTTPConfigFunction {
         Ok(Expr::Literal(LiteralValue::Struct(entries)).arced())
     }
 }
+pub struct AzureConfigFunction;
+impl SQLFunction for AzureConfigFunction {
+    fn to_expr(
+        &self,
+        inputs: &[sqlparser::ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> crate::error::SQLPlannerResult<daft_dsl::ExprRef> {
+        let args: SQLFunctionArguments = planner.parse_function_args(
+            inputs,
+            &[
+                "storage_account",
+                "access_key",
+                "sas_token",
+                "bearer_token",
+                "tenant_id",
+                "client_id",
+                "client_secret",
+                "use_fabric_endpoint",
+                "anonymous",
+                "endpoint_url",
+                "use_ssl",
+            ],
+            0,
+        )?;
+
+        let storage_account = args.try_get_named::<String>("storage_account")?;
+        let access_key = args.try_get_named::<String>("access_key")?;
+        let sas_token = args.try_get_named::<String>("sas_token")?;
+        let bearer_token = args.try_get_named::<String>("bearer_token")?;
+        let tenant_id = args.try_get_named::<String>("tenant_id")?;
+        let client_id = args.try_get_named::<String>("client_id")?;
+        let client_secret = args.try_get_named::<String>("client_secret")?;
+        let use_fabric_endpoint = args.try_get_named::<bool>("use_fabric_endpoint")?;
+        let anonymous = args.try_get_named::<bool>("anonymous")?;
+        let endpoint_url = args.try_get_named::<String>("endpoint_url")?;
+        let use_ssl = args.try_get_named::<bool>("use_ssl")?;
+
+        let entries = vec![
+            (
+                Field::new("variant", DataType::Utf8),
+                literal_value("azure"),
+            ),
+            item!(storage_account, Utf8),
+            item!(access_key, Utf8),
+            item!(sas_token, Utf8),
+            item!(bearer_token, Utf8),
+            item!(tenant_id, Utf8),
+            item!(client_id, Utf8),
+            item!(client_secret, Utf8),
+            item!(use_fabric_endpoint, Boolean),
+            item!(anonymous, Boolean),
+            item!(endpoint_url, Utf8),
+            item!(use_ssl, Boolean),
+        ]
+        .into_iter()
+        .collect::<HashMap<_, _>>();
+
+        Ok(Expr::Literal(LiteralValue::Struct(entries)).arced())
+    }
+}
+
+pub struct GCSConfigFunction;
+
+impl SQLFunction for GCSConfigFunction {
+    fn to_expr(
+        &self,
+        inputs: &[sqlparser::ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        let args: SQLFunctionArguments = planner.parse_function_args(
+            inputs,
+            &["project_id", "credentials", "token", "anonymous"],
+            0,
+        )?;
+
+        let project_id = args.try_get_named::<String>("project_id")?;
+        let credentials = args.try_get_named::<String>("credentials")?;
+        let token = args.try_get_named::<String>("token")?;
+        let anonymous = args.try_get_named::<bool>("anonymous")?;
+
+        let entries = vec![
+            (Field::new("variant", DataType::Utf8), literal_value("gcs")),
+            item!(project_id, Utf8),
+            item!(credentials, Utf8),
+            item!(token, Utf8),
+            item!(anonymous, Boolean),
+        ]
+        .into_iter()
+        .collect::<HashMap<_, _>>();
+
+        Ok(Expr::Literal(LiteralValue::Struct(entries)).arced())
+    }
+}
 
 pub(crate) fn expr_to_iocfg(expr: &ExprRef) -> SQLPlannerResult<IOConfig> {
     // TODO(CORY): use serde to deserialize this
@@ -244,8 +337,57 @@ pub(crate) fn expr_to_iocfg(expr: &ExprRef) -> SQLPlannerResult<IOConfig> {
                 ..Default::default()
             })
         }
+        "azure" => {
+            let storage_account = get_value!("storage_account", Utf8)?;
+            let access_key = get_value!("access_key", Utf8)?;
+            let sas_token = get_value!("sas_token", Utf8)?;
+            let bearer_token = get_value!("bearer_token", Utf8)?;
+            let tenant_id = get_value!("tenant_id", Utf8)?;
+            let client_id = get_value!("client_id", Utf8)?;
+            let client_secret = get_value!("client_secret", Utf8)?;
+            let use_fabric_endpoint = get_value!("use_fabric_endpoint", Boolean)?;
+            let anonymous = get_value!("anonymous", Boolean)?;
+            let endpoint_url = get_value!("endpoint_url", Utf8)?;
+            let use_ssl = get_value!("use_ssl", Boolean)?;
+
+            let default = AzureConfig::default();
+
+            Ok(IOConfig {
+                azure: AzureConfig {
+                    storage_account,
+                    access_key: access_key.map(|s| s.into()),
+                    sas_token,
+                    bearer_token,
+                    tenant_id,
+                    client_id,
+                    client_secret: client_secret.map(|s| s.into()),
+                    use_fabric_endpoint: use_fabric_endpoint.unwrap_or(default.use_fabric_endpoint),
+                    anonymous: anonymous.unwrap_or(default.anonymous),
+                    endpoint_url,
+                    use_ssl: use_ssl.unwrap_or(default.use_ssl),
+                },
+                ..Default::default()
+            })
+        }
+        "gcs" => {
+            let project_id = get_value!("project_id", Utf8)?;
+            let credentials = get_value!("credentials", Utf8)?;
+            let token = get_value!("token", Utf8)?;
+            let anonymous = get_value!("anonymous", Boolean)?;
+            let default = GCSConfig::default();
+
+            Ok(IOConfig {
+                gcs: GCSConfig {
+                    project_id,
+                    credentials: credentials.map(|s| s.into()),
+                    token,
+                    anonymous: anonymous.unwrap_or(default.anonymous),
+                },
+                ..Default::default()
+            })
+        }
         _ => {
-            unsupported_sql_err!("Unsupported IOConfig variant: {}", variant);
+            unreachable!("variant is required for IOConfig, this indicates a programming error")
         }
     }
 }
