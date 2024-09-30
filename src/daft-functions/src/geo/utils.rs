@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use arrow2::types::NativeType;
 use common_error::{DaftError, DaftResult};
 use daft_core::{
     array::ListArray,
@@ -74,6 +75,10 @@ impl GH {
         self.offsets.push(*self.offsets.last().unwrap());
         self.validity.push(false);
     }
+
+    fn into_series(self, name: &str) -> DaftResult<Series> {
+        gh_to(name, self)
+    }
 }
 
 fn gh_to(name: &str, g: GH) -> DaftResult<Series> {
@@ -116,7 +121,7 @@ pub fn decode_series(s: &Series, raise_error_on_failure: bool) -> DaftResult<Ser
                     None => gh.null(),
                 }
             }
-            gh_to(binary.name(), gh)
+            gh.into_series(binary.name())
         }
         DataType::Utf8 => {
             let strings = s.utf8()?;
@@ -143,7 +148,7 @@ pub fn decode_series(s: &Series, raise_error_on_failure: bool) -> DaftResult<Ser
                     None => gh.null(),
                 }
             }
-            gh_to(strings.name(), gh)
+            gh.into_series(strings.name())
         }
         other => Err(DaftError::TypeError(format!(
             "GeoDecode can only decode Binary or Utf8 arrays, got {}",
@@ -199,16 +204,22 @@ pub fn encode_series(s: &Series, text: bool) -> DaftResult<Series> {
     }
 }
 
-pub fn geo_unary_to_float(s: &Series, op: &str) -> DaftResult<Series> {
+pub fn geo_unary_dispatch(s: &Series, op: &str) -> DaftResult<Series> {
+    match op {
+        "area" => geo_unary_to_scalar::<f64, _>(s, |g: Geometry| g.unsigned_area()),
+        _ => Err(DaftError::ValueError(format!("unsupported op {}", op))),
+    }
+}
+
+pub fn geo_unary_to_scalar<T: NativeType, F>(s: &Series, op_fn: F) -> DaftResult<Series>
+where
+    F: Fn(Geometry) -> T,
+{
     let geo_array = s.geometry()?;
-    let op_fn = match op {
-        "area" => |g: Geometry| g.unsigned_area(),
-        _ => return Err(DaftError::ValueError(format!("unsupported op {}", op))),
-    };
     let float_array = GeometryArrayIter::new(geo_array)
-        .map(|geo| geo.map(op_fn))
-        .collect::<Vec<_>>();
-    let arrow_array = arrow2::array::Float64Array::from(float_array);
+        .map(|geo| geo.map(&op_fn))
+        .collect::<Vec<Option<T>>>();
+    let arrow_array = arrow2::array::PrimitiveArray::<T>::from(float_array);
     Series::from_arrow(
         Arc::new(Field::new(geo_array.name(), DataType::Float64)),
         Box::new(arrow_array),

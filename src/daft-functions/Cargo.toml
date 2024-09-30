@@ -17,7 +17,6 @@ tiktoken-rs = {workspace = true}
 tokio = {workspace = true}
 typetag = "0.2.16"
 uuid = "1.10.0"
-wkt = "0.11.0"
 bytes.workspace = true
 serde.workspace = true
 snafu.workspace = true

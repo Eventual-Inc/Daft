@@ -49,7 +49,7 @@ impl ScalarUDF for GeoOp {
         match inputs {
             [input] => match input.data_type() {
                 DataType::Geometry => match self.op.as_str() {
-                    "area" => utils::geo_unary_to_float(input, "area"),
+                    "area" => utils::geo_unary_dispatch(input, "area"),
                     other => Err(DaftError::ValueError(format!("unsupported op {}", other))),
                 },
                 other => Err(DaftError::TypeError(format!(

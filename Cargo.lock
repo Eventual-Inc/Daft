@@ -1846,7 +1846,6 @@ dependencies = [
  "tokio",
  "typetag",
  "uuid 1.10.0",
- "wkt",
 ]
 
 [[package]]
