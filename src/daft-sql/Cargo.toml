@@ -7,10 +7,8 @@ daft-dsl = {path = "../daft-dsl"}
 daft-functions = {path = "../daft-functions"}
 daft-functions-json = {path = "../daft-functions-json"}
 daft-plan = {path = "../daft-plan"}
-
 once_cell = {workspace = true}
 pyo3 = {workspace = true, optional = true}
-serde = {workspace = true}
 sqlparser = {workspace = true}
 snafu.workspace = true
 

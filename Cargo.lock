@@ -2179,7 +2179,6 @@ dependencies = [
  "once_cell",
  "pyo3",
  "rstest",
- "serde",
  "snafu",
  "sqlparser",
 ]

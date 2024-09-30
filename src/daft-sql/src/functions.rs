@@ -149,13 +149,14 @@ impl SQLLiteral for i64 {
             .ok_or_else(|| PlannerError::invalid_operation("Expected an integer literal"))
     }
 }
+
 impl SQLLiteral for usize {
     fn from_expr(expr: &ExprRef) -> Result<Self, PlannerError>
     where
         Self: Sized,
     {
         expr.as_literal()
-            .and_then(|lit| lit.as_i64().map(|v| v as usize))
+            .and_then(|lit| lit.as_i64().map(|v| v as Self))
             .ok_or_else(|| PlannerError::invalid_operation("Expected an integer literal"))
     }
 }
@@ -309,7 +310,10 @@ impl SQLPlanner {
         }
     }
 
-    pub(crate)fn try_unwrap_function_arg_expr(&self, expr: &FunctionArgExpr) -> SQLPlannerResult<ExprRef> {
+    pub(crate) fn try_unwrap_function_arg_expr(
+        &self,
+        expr: &FunctionArgExpr,
+    ) -> SQLPlannerResult<ExprRef> {
         match expr {
             FunctionArgExpr::Expr(expr) => self.plan_expr(expr),
             _ => unsupported_sql_err!("Wildcard function args not yet supported"),
