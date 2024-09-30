@@ -1,7 +1,7 @@
 use daft_dsl::{functions::ScalarFunction, ExprRef};
 use daft_io::IOConfig;
-use decode::TokenizeDecodeFunction;
-use encode::TokenizeEncodeFunction;
+pub use decode::TokenizeDecodeFunction;
+pub use encode::TokenizeEncodeFunction;
 
 mod bpe;
 mod decode;

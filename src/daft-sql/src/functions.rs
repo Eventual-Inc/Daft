@@ -105,6 +105,54 @@ impl SQLFunctionArguments {
     pub fn get_named(&self, name: &str) -> Option<&ExprRef> {
         self.named.get(name)
     }
+
+    pub fn try_get_named<T: SQLLiteral>(&self, name: &str) -> Result<Option<T>, PlannerError> {
+        self.named
+            .get(name)
+            .map(|expr| T::from_expr(expr))
+            .transpose()
+    }
+}
+
+pub trait SQLLiteral {
+    fn from_expr(expr: &ExprRef) -> Result<Self, PlannerError>
+    where
+        Self: Sized;
+}
+
+impl SQLLiteral for String {
+    fn from_expr(expr: &ExprRef) -> Result<Self, PlannerError>
+    where
+        Self: Sized,
+    {
+        let e = expr
+            .as_literal()
+            .and_then(|lit| lit.as_str())
+            .ok_or_else(|| PlannerError::invalid_operation("Expected a string literal"))?;
+        Ok(e.to_string())
+    }
+}
+
+impl SQLLiteral for i64 {
+    fn from_expr(expr: &ExprRef) -> Result<Self, PlannerError>
+    where
+        Self: Sized,
+    {
+        expr.as_literal()
+            .and_then(|lit| lit.as_i64())
+            .ok_or_else(|| PlannerError::invalid_operation("Expected an integer literal"))
+    }
+}
+
+impl SQLLiteral for bool {
+    fn from_expr(expr: &ExprRef) -> Result<Self, PlannerError>
+    where
+        Self: Sized,
+    {
+        expr.as_literal()
+            .and_then(|lit| lit.as_bool())
+            .ok_or_else(|| PlannerError::invalid_operation("Expected a boolean literal"))
+    }
 }
 
 impl SQLFunctions {
@@ -216,7 +264,7 @@ impl SQLPlanner {
                     }
                     positional_args.insert(idx, self.try_unwrap_function_arg_expr(arg)?);
                 }
-                _ => unsupported_sql_err!("unsupported function argument type"),
+                other => unsupported_sql_err!("unsupported function argument type: {other}, valid function arguments for this function are: {expected_named:?}."),
             }
         }
 
