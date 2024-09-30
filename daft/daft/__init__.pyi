@@ -9,7 +9,7 @@ from daft.io.scan import ScanOperator
 from daft.plan_scheduler.physical_plan_scheduler import PartitionT
 from daft.runners.partitioning import PartitionCacheEntry
 from daft.sql.sql_connection import SQLConnection
-from daft.udf import PartialStatefulUDF, PartialStatelessUDF
+from daft.udf import InitArgsType, PartialStatefulUDF, PartialStatelessUDF
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -1150,12 +1150,14 @@ def stateful_udf(
     expressions: list[PyExpr],
     return_dtype: PyDataType,
     resource_request: ResourceRequest | None,
-    init_args: tuple[tuple[Any, ...], dict[str, Any]] | None,
+    init_args: InitArgsType,
     batch_size: int | None,
     concurrency: int | None,
 ) -> PyExpr: ...
 def check_column_name_validity(name: str, schema: PySchema): ...
-def extract_partial_stateful_udf_py(expression: PyExpr) -> dict[str, PartialStatefulUDF]: ...
+def extract_partial_stateful_udf_py(
+    expression: PyExpr,
+) -> dict[str, tuple[PartialStatefulUDF, InitArgsType]]: ...
 def bind_stateful_udfs(expression: PyExpr, initialized_funcs: dict[str, Callable]) -> PyExpr: ...
 def resolve_expr(expr: PyExpr, schema: PySchema) -> tuple[PyExpr, PyField]: ...
 def hash(expr: PyExpr, seed: Any | None = None) -> PyExpr: ...
