@@ -718,7 +718,6 @@ impl SQLPlanner {
                     .map(|entry| {
                         let key = entry.key.value.clone();
                         let value = self.plan_expr(&entry.value)?;
-                        println!("value: {:?}", value);
                         let value = value.as_literal().ok_or_else(|| {
                             PlannerError::invalid_operation("Dictionary value is not a literal")
                         })?;

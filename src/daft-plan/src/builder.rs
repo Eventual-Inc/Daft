@@ -137,7 +137,50 @@ impl LogicalPlanBuilder {
         ));
         let logical_plan: LogicalPlan =
             logical_ops::Source::new(schema.clone(), source_info.into()).into();
+
         Ok(Self::new(logical_plan.into(), None))
+    }
+
+    #[cfg(feature = "python")]
+    pub fn delta_scan<T: AsRef<str>>(
+        glob_path: T,
+        io_config: Option<IOConfig>,
+        multithreaded_io: bool,
+    ) -> DaftResult<Self> {
+        use daft_scan::storage_config::PyStorageConfig;
+        Python::with_gil(|py| {
+            let io_config = io_config.unwrap_or_default();
+
+            let native_storage_config = NativeStorageConfig {
+                io_config: Some(io_config),
+                multithreaded_io,
+            };
+
+            let py_storage_config: PyStorageConfig =
+                Arc::new(StorageConfig::Native(Arc::new(native_storage_config))).into();
+
+            // let py_io_config = PyIOConfig { config: io_config };
+            let daft = PyModule::import_bound(py, "daft.delta_lake.delta_lake_scan")?;
+            let delta_lake_scan_operator =
+                daft.getattr(pyo3::intern!(py, "DeltaLakeScanOperator"))?;
+            let delta_lake_operator = delta_lake_scan_operator
+                .call1((glob_path.as_ref(), py_storage_config))?
+                .to_object(py);
+            let scan_operator_handle =
+                ScanOperatorHandle::from_python_scan_operator(delta_lake_operator, py)?;
+            Self::table_scan(scan_operator_handle.into(), None)
+        })
+    }
+
+    #[cfg(not(feature = "python"))]
+    pub fn delta_scan<T: IntoGlobPath>(
+        glob_path: T,
+        io_config: Option<IOConfig>,
+        multithreaded_io: bool,
+    ) -> DaftResult<Self> {
+        Err(common_error::DaftError::InternalError(
+            "Python support is required for Delta Lake scans".to_string(),
+        ))
     }
 
     pub fn table_scan(
