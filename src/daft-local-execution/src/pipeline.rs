@@ -1,4 +1,8 @@
-use std::{cmp::min, collections::HashMap, sync::Arc};
+use std::{
+    cmp::min,
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::{mermaid::MermaidDisplayVisitor, tree::TreeDisplay};
@@ -9,7 +13,7 @@ use daft_core::{
     prelude::{Schema, SchemaRef},
     utils::supertype,
 };
-use daft_dsl::{col, join::get_common_join_keys, Expr};
+use daft_dsl::{col, join::get_common_join_keys, Expr, LiteralValue};
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{
     Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, PhysicalWrite,
@@ -29,12 +33,14 @@ use crate::{
     },
     sinks::{
         aggregate::AggregateSink, blocking_sink::BlockingSinkNode,
-        hash_join_build::HashJoinBuildSink,
-        iceberg_unpartitioned_write::IcebergUnpartitionedWriteNode, limit::LimitSink,
-        partitioned_write::PartitionedWriteNode, sort::SortSink, streaming_sink::StreamingSinkNode,
-        unpartitioned_write::UnpartionedWriteNode,
+        hash_join_build::HashJoinBuildSink, limit::LimitSink, sort::SortSink,
+        streaming_sink::StreamingSinkNode,
     },
     sources::in_memory::InMemorySource,
+    writes::{
+        partitioned_write::PartitionedWriteNode, physical_write::PhysicalWriteOperator,
+        unpartitioned_write::UnpartitionedWriteNode,
+    },
     ExecutionRuntimeHandle, PipelineCreationSnafu,
 };
 
@@ -366,19 +372,21 @@ pub fn physical_plan_to_pipeline(
                     cfg.parquet_target_row_group_size as f64 * inflation_factor
                 } as usize,
             );
+            let write_op = PhysicalWriteOperator::new(file_info.clone());
             match &file_info.partition_cols {
-                Some(_) => PartitionedWriteNode::new(
+                Some(part_cols) => PartitionedWriteNode::new(
                     child_node,
-                    file_info,
-                    file_schema,
+                    Arc::new(write_op),
+                    part_cols.clone(),
+                    "__HIVE_DEFAULT_PARTITION__".into(),
                     target_file_rows,
                     target_chunk_rows,
+                    file_schema.clone(),
                 )
                 .boxed(),
-                None => UnpartionedWriteNode::new(
+                None => UnpartitionedWriteNode::new(
                     child_node,
-                    file_info,
-                    file_schema,
+                    Arc::new(write_op),
                     target_file_rows,
                     target_chunk_rows,
                 )
@@ -411,14 +419,103 @@ pub fn physical_plan_to_pipeline(
                     cfg.parquet_target_row_group_size as f64 * cfg.parquet_inflation_factor
                 } as usize,
             );
-            IcebergUnpartitionedWriteNode::new(
-                child_node,
-                iceberg_info,
-                file_schema,
+            let missing_cols = iceberg_info
+                .daft_iceberg_schema
+                .fields
+                .values()
+                .filter(|field| !data_schema.fields.contains_key(field.name.as_str()))
+                .collect::<HashSet<_>>();
+            let child_node = if !missing_cols.is_empty() {
+                let projections = missing_cols
+                    .iter()
+                    .map(|field| {
+                        Arc::new(Expr::Literal(LiteralValue::Null))
+                            .alias(field.name.as_str())
+                            .cast(&field.dtype)
+                    })
+                    .collect::<Vec<_>>();
+                let project_op = ProjectOperator::new(projections);
+                IntermediateNode::new(Arc::new(project_op), vec![child_node]).boxed()
+            } else {
+                child_node
+            };
+            let write_op =
+                crate::writes::iceberg_write::IcebergWriteOperator::new(iceberg_info.clone());
+            if iceberg_info.partition_cols.is_empty() {
+                UnpartitionedWriteNode::new(
+                    child_node,
+                    Arc::new(write_op),
+                    target_file_rows,
+                    target_chunk_rows,
+                )
+                .boxed()
+            } else {
+                PartitionedWriteNode::new(
+                    child_node,
+                    Arc::new(write_op),
+                    iceberg_info.partition_cols.clone(),
+                    "null".into(),
+                    target_file_rows,
+                    target_chunk_rows,
+                    file_schema.clone(),
+                )
+                .boxed()
+            }
+        }
+        #[cfg(feature = "python")]
+        LocalPhysicalPlan::DeltaLakeWrite(daft_physical_plan::DeltaLakeWrite {
+            input,
+            deltalake_info,
+            data_schema,
+            file_schema,
+            ..
+        }) => {
+            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            let estimated_row_size_bytes = data_schema.estimate_row_size_bytes();
+            let target_file_rows = if estimated_row_size_bytes > 0.0 {
+                cfg.parquet_target_filesize as f64 * cfg.parquet_inflation_factor
+                    / estimated_row_size_bytes
+            } else {
+                cfg.parquet_target_filesize as f64 * cfg.parquet_inflation_factor
+            } as usize;
+            // Just assume same chunk size for CSV and Parquet for now
+            let target_chunk_rows = min(
                 target_file_rows,
-                target_chunk_rows,
-            )
-            .boxed()
+                if estimated_row_size_bytes > 0.0 {
+                    cfg.parquet_target_row_group_size as f64 * cfg.parquet_inflation_factor
+                        / estimated_row_size_bytes
+                } else {
+                    cfg.parquet_target_row_group_size as f64 * cfg.parquet_inflation_factor
+                } as usize,
+            );
+            let write_op =
+                crate::writes::deltalake_write::DeltalakeWriteOperator::new(deltalake_info.clone());
+            if let Some(partition_cols) = &deltalake_info.partition_cols
+                && !partition_cols.is_empty()
+            {
+                let partition_col_exprs = partition_cols
+                    .iter()
+                    .map(|name| col(name.as_str()))
+                    .collect::<Vec<_>>();
+                PartitionedWriteNode::new(
+                    child_node,
+                    Arc::new(write_op),
+                    partition_col_exprs,
+                    "null".into(),
+                    target_file_rows,
+                    target_chunk_rows,
+                    file_schema.clone(),
+                )
+                .boxed()
+            } else {
+                UnpartitionedWriteNode::new(
+                    child_node,
+                    Arc::new(write_op),
+                    target_file_rows,
+                    target_chunk_rows,
+                )
+                .boxed()
+            }
         }
     };
 

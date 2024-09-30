@@ -285,16 +285,23 @@ class LogicalPlanBuilder:
         return LogicalPlanBuilder(builder)
 
     def write_iceberg(self, table: IcebergTable) -> LogicalPlanBuilder:
+        from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+        from daft.iceberg.iceberg_write import partition_field_to_expr
         from daft.io._iceberg import _convert_iceberg_file_io_properties_to_io_config
 
         name = ".".join(table.name())
         location = f"{table.location()}/data"
         partition_spec = table.spec()
         schema = table.schema()
+        daft_iceberg_schema = Schema.from_pyarrow_schema(schema_to_pyarrow(schema))._schema
         props = table.properties
         columns = [col.name for col in schema.columns]
         io_config = _convert_iceberg_file_io_properties_to_io_config(table.io.properties)
-        builder = self._builder.iceberg_write(name, location, partition_spec, schema, props, columns, io_config)
+        partition_cols = [partition_field_to_expr(field, schema)._expr for field in partition_spec.fields]
+        builder = self._builder.iceberg_write(
+            name, location, partition_spec, partition_cols, schema, daft_iceberg_schema, props, columns, io_config
+        )
         return LogicalPlanBuilder(builder)
 
     def write_deltalake(

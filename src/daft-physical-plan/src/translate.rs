@@ -127,6 +127,14 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                             iceberg_info.clone(),
                         ))
                     }
+                    daft_plan::CatalogType::DeltaLake(deltalake_info) => {
+                        Ok(LocalPhysicalPlan::deltalake_write(
+                            input,
+                            data_schema,
+                            sink.schema.clone(),
+                            deltalake_info.clone(),
+                        ))
+                    }
                     _ => todo!("{} not yet implemented", plan.name()),
                 },
             }

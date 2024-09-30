@@ -31,7 +31,7 @@ pub use physical_planner::{
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 #[cfg(feature = "python")]
-pub use sink_info::{DeltaLakeCatalogInfo, IcebergCatalogInfo, LanceCatalogInfo, CatalogType};
+pub use sink_info::{CatalogType, DeltaLakeCatalogInfo, IcebergCatalogInfo, LanceCatalogInfo};
 pub use sink_info::{OutputFileInfo, SinkInfo};
 pub use source_info::{FileInfo, FileInfos, InMemoryInfo, SourceInfo};
 #[cfg(feature = "python")]

@@ -64,11 +64,7 @@ impl Schema {
 
     pub fn get_field(&self, name: &str) -> DaftResult<&Field> {
         match self.fields.get(name) {
-            None => Err(DaftError::FieldNotFound(format!(
-                "Column \"{}\" not found in schema: {:?}",
-                name,
-                self.fields.keys()
-            ))),
+            None => panic!("Column \"{}\" not found in schema: {:?}", name, self.fields),
             Some(val) => Ok(val),
         }
     }

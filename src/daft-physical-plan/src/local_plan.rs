@@ -39,8 +39,8 @@ pub enum LocalPhysicalPlan {
     // TabularWriteCsv(TabularWriteCsv),
     #[cfg(feature = "python")]
     IcebergWrite(IcebergWrite),
-    // #[cfg(feature = "python")]
-    // DeltaLakeWrite(DeltaLakeWrite),
+    #[cfg(feature = "python")]
+    DeltaLakeWrite(DeltaLakeWrite),
     // #[cfg(feature = "python")]
     // LanceWrite(LanceWrite),
 }
@@ -223,6 +223,23 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    #[cfg(feature = "python")]
+    pub(crate) fn deltalake_write(
+        input: LocalPhysicalPlanRef,
+        data_schema: SchemaRef,
+        file_schema: SchemaRef,
+        deltalake_info: daft_plan::DeltaLakeCatalogInfo,
+    ) -> LocalPhysicalPlanRef {
+        Self::DeltaLakeWrite(DeltaLakeWrite {
+            input,
+            deltalake_info,
+            file_schema,
+            data_schema,
+            plan_stats: PlanStats {},
+        })
+        .arced()
+    }
+
     pub fn schema(&self) -> &SchemaRef {
         match self {
             Self::PhysicalScan(PhysicalScan { schema, .. })
@@ -334,10 +351,21 @@ pub struct PhysicalWrite {
     pub plan_stats: PlanStats,
 }
 
+#[cfg(feature = "python")]
 #[derive(Debug)]
 pub struct IcebergWrite {
     pub input: LocalPhysicalPlanRef,
-    pub iceberg_info: daft_plan::IcebergCatalogInfo,    
+    pub iceberg_info: daft_plan::IcebergCatalogInfo,
+    pub data_schema: SchemaRef,
+    pub file_schema: SchemaRef,
+    pub plan_stats: PlanStats,
+}
+
+#[cfg(feature = "python")]
+#[derive(Debug)]
+pub struct DeltaLakeWrite {
+    pub input: LocalPhysicalPlanRef,
+    pub deltalake_info: daft_plan::DeltaLakeCatalogInfo,
     pub data_schema: SchemaRef,
     pub file_schema: SchemaRef,
     pub plan_stats: PlanStats,

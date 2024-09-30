@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
@@ -7,7 +7,7 @@ use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_io::{get_runtime, IOClient, IOStatsRef};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_micropartition::MicroPartition;
-use daft_parquet::read::{read_parquet_bulk, ParquetSchemaInferenceOptions};
+use daft_parquet::read::{read_parquet_bulk_async, ParquetSchemaInferenceOptions};
 use daft_scan::{storage_config::StorageConfig, ChunkSpec, ScanTask};
 use futures::{Stream, StreamExt};
 use tokio_stream::wrappers::ReceiverStream;
@@ -99,7 +99,7 @@ impl Source for ScanTaskSource {
 }
 
 fn _read_delete_files(
-    delete_files: &[&str],
+    delete_files: &[String],
     uri: &str,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
@@ -107,13 +107,13 @@ fn _read_delete_files(
     multithreaded_io: bool,
     schema_infer_options: &ParquetSchemaInferenceOptions,
 ) -> DaftResult<Vec<i64>> {
-    let columns: Option<&[&str]> = Some(&["file_path", "pos"]);
+    let columns = Some(vec!["file_path".to_string(), "pos".to_string()]);
+    let schema_infer_options = *schema_infer_options;
+    let delete_files = delete_files.to_owned();
     let runtime = get_runtime(multithreaded_io)?;
-    let delete_files = delete_files.iter().map(|s| s.to_string()).collect::<Vec<String>>();
-    let schema_infer_options = schema_infer_options.clone();
-    let tables = std::thread::spawn(move || {
-        read_parquet_bulk(
-            &delete_files.iter().map(|s| s.as_str()).collect::<Vec<&str>>(),
+    let tables = runtime.block_on_io_pool(async move {
+        read_parquet_bulk_async(
+            delete_files,
             columns,
             None,
             None,
@@ -122,18 +122,18 @@ fn _read_delete_files(
             io_client,
             io_stats,
             num_parallel_tasks,
-            multithreaded_io,
-            &schema_infer_options,
+            schema_infer_options,
             None,
             None,
             None,
             None,
         )
-    }).join().unwrap()?;
+        .await
+    })??;
 
     let mut delete_rows = vec![];
-
-    for table in tables.iter() {
+    for table_result in tables.into_iter() {
+        let table = table_result?;
         // values in the file_path column are guaranteed by the iceberg spec to match the full URI of the corresponding data file
         // https://iceberg.apache.org/spec/#position-delete-files
         let file_paths = table.get_column("file_path")?.downcast::<Utf8Array>()?;
@@ -145,6 +145,7 @@ fn _read_delete_files(
 
             if let Some(file) = file
                 && let Some(pos) = pos
+                && file == uri
             {
                 delete_rows.push(pos);
             }
@@ -218,9 +219,10 @@ async fn stream_scan_task(
                     let inference_options =
                         ParquetSchemaInferenceOptions::new(Some(*coerce_int96_timestamp_unit));
 
-                    let delete_rows = if let Some(delete_files) = source.get_iceberg_delete_files() {
+                    let delete_rows = if let Some(delete_files) = source.get_iceberg_delete_files()
+                    {
                         Some(_read_delete_files(
-                            &delete_files.iter().map(|s| s.as_str()).collect::<Vec<&str>>(),
+                            delete_files,
                             url,
                             io_client.clone(),
                             io_stats.clone(),
