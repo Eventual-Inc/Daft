@@ -2,11 +2,12 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
+use daft_core::prelude::{Int64Array, Utf8Array};
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
-use daft_io::IOStatsRef;
+use daft_io::{get_runtime, IOStatsRef};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_micropartition::MicroPartition;
-use daft_parquet::read::ParquetSchemaInferenceOptions;
+use daft_parquet::read::{read_parquet_bulk_async, ParquetSchemaInferenceOptions};
 use daft_scan::{storage_config::StorageConfig, ChunkSpec, ScanTask};
 use futures::{Stream, StreamExt};
 use tokio_stream::wrappers::ReceiverStream;
@@ -15,7 +16,7 @@ use tracing::instrument;
 use crate::{
     channel::{create_channel, Sender},
     sources::source::{Source, SourceStream},
-    ExecutionRuntimeHandle,
+    ExecutionRuntimeHandle, NUM_CPUS,
 };
 
 pub struct ScanTaskSource {
@@ -159,11 +160,55 @@ async fn stream_scan_task(
             let inference_options =
                 ParquetSchemaInferenceOptions::new(Some(*coerce_int96_timestamp_unit));
 
-            if source.get_iceberg_delete_files().is_some() {
-                return Err(common_error::DaftError::TypeError(
-                    "Streaming reads not supported for Iceberg delete files".to_string(),
-                ));
-            }
+            let delete_rows = if let Some(delete_files) = source.get_iceberg_delete_files() {
+                let columns = Some(vec!["file_path".to_string(), "pos".to_string()]);
+                let delete_files = delete_files.to_owned();
+                let runtime = get_runtime(multi_threaded_io)?;
+                let io_client = io_client.clone();
+                let io_stats = io_stats.clone();
+                let tables = runtime.block_on_io_pool(async move {
+                    read_parquet_bulk_async(
+                        delete_files,
+                        columns,
+                        None,
+                        None,
+                        None,
+                        None,
+                        io_client,
+                        io_stats,
+                        *NUM_CPUS,
+                        inference_options,
+                        None,
+                        None,
+                        None,
+                        None,
+                    )
+                    .await
+                })??;
+
+                let mut delete_rows = vec![];
+                for table_result in tables.into_iter() {
+                    let table = table_result?;
+                    // values in the file_path column are guaranteed by the iceberg spec to match the full URI of the corresponding data file
+                    // https://iceberg.apache.org/spec/#position-delete-files
+                    let file_paths = table.get_column("file_path")?.downcast::<Utf8Array>()?;
+                    let positions = table.get_column("pos")?.downcast::<Int64Array>()?;
+
+                    for i in 0..table.len() {
+                        let file = file_paths.get(i);
+                        let pos = positions.get(i);
+                        if let Some(file) = file
+                            && let Some(pos) = pos
+                            && file == url
+                        {
+                            delete_rows.push(pos);
+                        }
+                    }
+                }
+                Some(delete_rows)
+            } else {
+                None
+            };
 
             let row_groups = if let Some(ChunkSpec::Parquet(row_groups)) = source.get_chunk_spec() {
                 Some(row_groups.clone())
@@ -177,7 +222,6 @@ async fn stream_scan_task(
             daft_parquet::read::stream_parquet(
                 url,
                 file_column_names.as_deref(),
-                None,
                 scan_task.pushdowns.limit,
                 row_groups,
                 scan_task.pushdowns.filters.clone(),
@@ -187,6 +231,7 @@ async fn stream_scan_task(
                 field_id_mapping.clone(),
                 metadata,
                 maintain_order,
+                delete_rows,
             )
             .await?
         }
