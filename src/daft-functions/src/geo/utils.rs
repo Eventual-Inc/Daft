@@ -201,17 +201,13 @@ pub fn encode_series(s: &Series, text: bool) -> DaftResult<Series> {
 
 pub fn geo_unary_to_float(s: &Series, op: &str) -> DaftResult<Series> {
     let geo_array = s.geometry()?;
-    let mut float_array: Vec<Option<f64>> = Vec::with_capacity(geo_array.len());
-    for geo in GeometryArrayIter::new(geo_array) {
-        let elem = match geo {
-            Some(geo) => match op {
-                "area" => Some(geo.unsigned_area()),
-                _ => None,
-            },
-            None => None,
-        };
-        float_array.push(elem);
-    }
+    let op_fn = match op {
+        "area" => |g: Geometry| g.unsigned_area(),
+        _ => return Err(DaftError::ValueError(format!("unsupported op {}", op))),
+    };
+    let float_array = GeometryArrayIter::new(geo_array)
+        .map(|geo| geo.map(op_fn))
+        .collect::<Vec<_>>();
     let arrow_array = arrow2::array::Float64Array::from(float_array);
     Series::from_arrow(
         Arc::new(Field::new(geo_array.name(), DataType::Float64)),
