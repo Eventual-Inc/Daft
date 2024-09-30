@@ -13,9 +13,6 @@ SQL Functions
 
 This is a full list of functions that can be used from within SQL.
 
-.. TODO!
-.. .. autosummary::
-..     :recursive:
-..     :toctree: doc_gen/sql_funcs
 
-..     daft.sql_func_module
+.. sql-autosummary::
+    :toctree: doc_gen/sql_funcs

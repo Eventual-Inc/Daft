@@ -7,8 +7,8 @@ API Documentation
    Table of Contents <self>
    creation
    dataframe
-   expressions
    sql
+   expressions
    schema
    datatype
    groupby

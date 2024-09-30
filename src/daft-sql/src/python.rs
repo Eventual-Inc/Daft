@@ -23,8 +23,13 @@ pub fn sql_expr(sql: &str) -> PyResult<PyExpr> {
 }
 
 #[pyfunction]
-pub fn list_sql_functions() -> Vec<String> {
-    SQL_FUNCTIONS.map.keys().cloned().collect()
+pub fn list_sql_functions() -> Vec<(String, &'static str, Vec<&'static str>)> {
+    SQL_FUNCTIONS
+        .map
+        .keys()
+        .cloned()
+        .map(|name| (name, "TODO: docstrings", vec!["foo", "bar"]))
+        .collect()
 }
 
 /// PyCatalog is the Python interface to the Catalog.

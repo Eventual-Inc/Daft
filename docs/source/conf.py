@@ -9,11 +9,15 @@ import importlib
 import inspect
 import os
 import subprocess
+import sys
 
 import sphinx_autosummary_accessors
 
 # Set environment variable to help code determine whether or not we are running a Sphinx doc build process
 os.environ["DAFT_SPHINX_BUILD"] = "1"
+
+# Help Sphinx find local custom extensions/directives that we build
+sys.path.insert(0, os.path.abspath("ext"))
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
@@ -46,6 +50,8 @@ extensions = [
     "sphinx_copybutton",
     "sphinx_autosummary_accessors",
     "sphinx_tabs.tabs",
+    # Local extensions
+    "sql_autosummary",
 ]
 
 templates_path = ["_templates", sphinx_autosummary_accessors.templates_path]
