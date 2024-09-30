@@ -138,8 +138,6 @@ def to_partition_representation(value: Any):
 
 
 class IcebergWriteVisitors:
-    OUTPUT_FILE_NAME = "data_file"
-
     class FileVisitor:
         def __init__(self, parent: "IcebergWriteVisitors", partition_record: "IcebergRecord"):
             self.parent = parent
