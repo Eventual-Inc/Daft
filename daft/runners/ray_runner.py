@@ -1518,11 +1518,26 @@ def map_fn(
 
     outputs: list[list[MicroPartition]] = [[] for _ in range(num_mergers)]
 
+    # Calculate the base number of partitions per merger and the number of mergers that get an extra partition
+    base_partitions_per_merger = num_partitions // num_mergers
+    extra_partitions = num_partitions % num_mergers
+
+    num_mergers_with_extra_partitions = extra_partitions
+    num_partitions_assigned_to_mergers_with_extra_partitions = (base_partitions_per_merger + 1) * extra_partitions
+
     # Distribute the partitioned data across the mergers
     for partition_idx, partition in enumerate(partitioned_data):
-        merger_idx = partition_idx // (num_partitions // num_mergers)
-        if merger_idx >= num_mergers:
-            merger_idx = num_mergers - 1
+        if partition_idx < num_partitions_assigned_to_mergers_with_extra_partitions:
+            # For the first 'extra_partitions' mergers, assign base + 1 partitions
+            merger_idx = partition_idx // (base_partitions_per_merger + 1)
+        else:
+            # For the remaining mergers, assign base partitions
+            merger_idx = (
+                num_mergers_with_extra_partitions
+                + (partition_idx - num_partitions_assigned_to_mergers_with_extra_partitions)
+                // base_partitions_per_merger
+            )
+
         outputs[merger_idx].append(partition)
 
     return outputs
@@ -1559,7 +1574,8 @@ class RayPushBasedShuffle:
 
     def _num_reducers_for_merger(self, merger_idx: int) -> int:
         base_num = self._num_reducers // self._num_mergers
-        if merger_idx < (self._num_reducers % self._num_mergers):
+        extra = self._num_reducers % self._num_mergers
+        if merger_idx < extra:
             return base_num + 1
         return base_num
 
