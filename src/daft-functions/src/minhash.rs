@@ -7,10 +7,10 @@ use daft_dsl::{
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub(super) struct MinHashFunction {
-    num_hashes: usize,
-    ngram_size: usize,
-    seed: u32,
+pub struct MinHashFunction {
+    pub num_hashes: usize,
+    pub ngram_size: usize,
+    pub seed: u32,
 }
 
 #[typetag::serde]

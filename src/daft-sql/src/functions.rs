@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use daft_dsl::ExprRef;
+use hashing::SQLModuleHashing;
 use once_cell::sync::Lazy;
 use sqlparser::ast::{
     Function, FunctionArg, FunctionArgExpr, FunctionArgOperator, FunctionArguments,
@@ -18,6 +19,7 @@ pub(crate) static SQL_FUNCTIONS: Lazy<SQLFunctions> = Lazy::new(|| {
     let mut functions = SQLFunctions::new();
     functions.register::<SQLModuleAggs>();
     functions.register::<SQLModuleFloat>();
+    functions.register::<SQLModuleHashing>();
     functions.register::<SQLModuleImage>();
     functions.register::<SQLModuleJson>();
     functions.register::<SQLModuleList>();
@@ -235,7 +237,10 @@ impl SQLPlanner {
         }
     }
 
-    fn try_unwrap_function_arg_expr(&self, expr: &FunctionArgExpr) -> SQLPlannerResult<ExprRef> {
+    pub(crate) fn try_unwrap_function_arg_expr(
+        &self,
+        expr: &FunctionArgExpr,
+    ) -> SQLPlannerResult<ExprRef> {
         match expr {
             FunctionArgExpr::Expr(expr) => self.plan_expr(expr),
             _ => unsupported_sql_err!("Wildcard function args not yet supported"),
