@@ -243,7 +243,6 @@ async fn stream_scan_task(
             daft_parquet::read::stream_parquet(
                 url,
                 file_column_names.as_deref(),
-                None,
                 scan_task.pushdowns.limit,
                 row_groups,
                 scan_task.pushdowns.filters.clone(),

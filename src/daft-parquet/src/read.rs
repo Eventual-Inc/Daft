@@ -363,7 +363,6 @@ async fn read_parquet_single(
 async fn stream_parquet_single(
     uri: String,
     columns: Option<&[&str]>,
-    start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<Vec<i64>>,
     predicate: Option<ExprRef>,
@@ -372,7 +371,7 @@ async fn stream_parquet_single(
     schema_infer_options: ParquetSchemaInferenceOptions,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     metadata: Option<Arc<FileMetaData>>,
-    mut delete_rows: Option<Vec<i64>>,
+    delete_rows: Option<Vec<i64>>,
     maintain_order: bool,
 ) -> DaftResult<impl Stream<Item = DaftResult<Table>> + Send> {
     let field_id_mapping_provided = field_id_mapping.is_some();
@@ -397,7 +396,7 @@ async fn stream_parquet_single(
     // Increase the number of rows_to_read to account for deleted rows
     // in order to have the correct number of rows in the end
     if let Some(delete_rows) = &delete_rows {
-        num_rows_to_read = limit_with_delete_rows(delete_rows, start_offset, num_rows_to_read);
+        num_rows_to_read = limit_with_delete_rows(delete_rows, None, num_rows_to_read);
     }
 
     let (source_type, fixed_uri) = parse_url(uri.as_str())?;
@@ -407,9 +406,9 @@ async fn stream_parquet_single(
             fixed_uri.as_ref(),
             columns_to_return,
             columns_to_read,
-            start_offset,
             num_rows_to_return,
             num_rows_to_read,
+            delete_rows,
             row_groups.clone(),
             predicate.clone(),
             schema_infer_options,
@@ -433,10 +432,10 @@ async fn stream_parquet_single(
             builder
         };
 
-        if row_groups.is_some() && (num_rows_to_read.is_some() || start_offset.is_some()) {
-            return Err(common_error::DaftError::ValueError("Both `row_groups` and `num_rows` or `start_offset` is set at the same time. We only support setting one set or the other.".to_string()));
+        if row_groups.is_some() && num_rows_to_read.is_some() {
+            return Err(common_error::DaftError::ValueError("Both `row_groups` and `num_rows` is set at the same time. We only support setting one set or the other.".to_string()));
         }
-        let builder = builder.limit(start_offset, num_rows_to_read)?;
+        let builder = builder.limit(None, num_rows_to_read)?;
         let metadata = builder.metadata().clone();
 
         let builder = if let Some(ref row_groups) = row_groups {
@@ -462,6 +461,7 @@ async fn stream_parquet_single(
                     predicate.clone(),
                     columns_to_return,
                     num_rows_to_return,
+                    delete_rows,
                 )
                 .await?,
         ))
@@ -469,43 +469,9 @@ async fn stream_parquet_single(
 
     let metadata_num_columns = metadata.schema().fields().len();
     let mut remaining_rows = num_rows_to_return.map(|limit| limit as i64);
-    let mut curr_delete_row_idx = 0;
-    let start_offset = start_offset.unwrap_or(0);
-    if let Some(delete_rows) = delete_rows.as_deref_mut()
-        && !delete_rows.is_empty()
-    {
-        while delete_rows[curr_delete_row_idx] < start_offset as i64
-            && curr_delete_row_idx < delete_rows.len()
-        {
-            curr_delete_row_idx += 1;
-        }
-    }
-    let mut table_lens_so_far = 0;
     let finalized_table_stream = table_stream
         .map(move |table| {
-            let mut table = table?;
-
-            if let Some(delete_rows) = delete_rows.as_deref_mut()
-                && !delete_rows.is_empty()
-            {
-                let mut selection_mask = Bitmap::new_trued(table.len()).make_mut();
-                let max_row_idx = table_lens_so_far + start_offset + table.len();
-                while curr_delete_row_idx < delete_rows.len()
-                    && delete_rows[curr_delete_row_idx] < max_row_idx as i64
-                {
-                    let table_row = delete_rows[curr_delete_row_idx] as usize
-                        - table_lens_so_far
-                        - start_offset;
-                    unsafe {
-                        selection_mask.set_unchecked(table_row, false);
-                    }
-                    curr_delete_row_idx += 1;
-                }
-                let selection_mask: BooleanArray =
-                    ("selection_mask", Bitmap::from(selection_mask)).into();
-                table_lens_so_far += table.len();
-                table = table.mask_filter(&selection_mask.into_series())?;
-            }
+            let table = table?;
 
             let expected_num_columns = if let Some(columns) = requested_columns {
                 columns
@@ -894,7 +860,6 @@ pub async fn read_parquet_bulk_async(
 pub async fn stream_parquet(
     uri: &str,
     columns: Option<&[&str]>,
-    start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<Vec<i64>>,
     predicate: Option<ExprRef>,
@@ -909,7 +874,6 @@ pub async fn stream_parquet(
     let stream = stream_parquet_single(
         uri.to_string(),
         columns,
-        start_offset,
         num_rows,
         row_groups,
         predicate,
@@ -1193,7 +1157,6 @@ mod tests {
         runtime_handle.block_on_current_thread(async move {
             let tables = stream_parquet(
                 file,
-                None,
                 None,
                 None,
                 None,
