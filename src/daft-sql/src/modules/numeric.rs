@@ -26,30 +26,60 @@ pub struct SQLModuleNumeric;
 
 impl SQLModule for SQLModuleNumeric {
     fn register(parent: &mut SQLFunctions) {
-        parent.add_fn("abs", SQLNumericExpr::Abs);
-        parent.add_fn("ceil", SQLNumericExpr::Ceil);
-        parent.add_fn("floor", SQLNumericExpr::Floor);
-        parent.add_fn("sign", SQLNumericExpr::Sign);
-        parent.add_fn("round", SQLNumericExpr::Round);
-        parent.add_fn("sqrt", SQLNumericExpr::Sqrt);
-        parent.add_fn("sin", SQLNumericExpr::Sin);
-        parent.add_fn("cos", SQLNumericExpr::Cos);
-        parent.add_fn("tan", SQLNumericExpr::Tan);
-        parent.add_fn("cot", SQLNumericExpr::Cot);
-        parent.add_fn("asin", SQLNumericExpr::ArcSin);
-        parent.add_fn("acos", SQLNumericExpr::ArcCos);
-        parent.add_fn("atan", SQLNumericExpr::ArcTan);
-        parent.add_fn("atan2", SQLNumericExpr::ArcTan2);
-        parent.add_fn("radians", SQLNumericExpr::Radians);
-        parent.add_fn("degrees", SQLNumericExpr::Degrees);
-        parent.add_fn("log2", SQLNumericExpr::Log2);
-        parent.add_fn("log10", SQLNumericExpr::Log10);
-        parent.add_fn("log", SQLNumericExpr::Log);
-        parent.add_fn("ln", SQLNumericExpr::Ln);
-        parent.add_fn("exp", SQLNumericExpr::Exp);
-        parent.add_fn("atanh", SQLNumericExpr::ArcTanh);
-        parent.add_fn("acosh", SQLNumericExpr::ArcCosh);
-        parent.add_fn("asinh", SQLNumericExpr::ArcSinh);
+        parent.add_fn("abs", SQLNumericExpr::Abs, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("ceil", SQLNumericExpr::Ceil, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("floor", SQLNumericExpr::Floor, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("sign", SQLNumericExpr::Sign, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("round", SQLNumericExpr::Round, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("sqrt", SQLNumericExpr::Sqrt, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("sin", SQLNumericExpr::Sin, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("cos", SQLNumericExpr::Cos, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("tan", SQLNumericExpr::Tan, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("cot", SQLNumericExpr::Cot, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("asin", SQLNumericExpr::ArcSin, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("acos", SQLNumericExpr::ArcCos, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("atan", SQLNumericExpr::ArcTan, "TODO: Docstring", &["TODO"]);
+        parent.add_fn(
+            "atan2",
+            SQLNumericExpr::ArcTan2,
+            "TODO: Docstring",
+            &["TODO"],
+        );
+        parent.add_fn(
+            "radians",
+            SQLNumericExpr::Radians,
+            "TODO: Docstring",
+            &["TODO"],
+        );
+        parent.add_fn(
+            "degrees",
+            SQLNumericExpr::Degrees,
+            "TODO: Docstring",
+            &["TODO"],
+        );
+        parent.add_fn("log2", SQLNumericExpr::Log2, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("log10", SQLNumericExpr::Log10, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("log", SQLNumericExpr::Log, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("ln", SQLNumericExpr::Ln, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("exp", SQLNumericExpr::Exp, "TODO: Docstring", &["TODO"]);
+        parent.add_fn(
+            "atanh",
+            SQLNumericExpr::ArcTanh,
+            "TODO: Docstring",
+            &["TODO"],
+        );
+        parent.add_fn(
+            "acosh",
+            SQLNumericExpr::ArcCosh,
+            "TODO: Docstring",
+            &["TODO"],
+        );
+        parent.add_fn(
+            "asinh",
+            SQLNumericExpr::ArcSinh,
+            "TODO: Docstring",
+            &["TODO"],
+        );
     }
 }
 enum SQLNumericExpr {

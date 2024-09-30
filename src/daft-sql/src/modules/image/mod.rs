@@ -10,10 +10,30 @@ pub struct SQLModuleImage;
 
 impl SQLModule for SQLModuleImage {
     fn register(parent: &mut SQLFunctions) {
-        parent.add_fn("image_crop", crop::SQLImageCrop {});
-        parent.add_fn("image_decode", decode::SQLImageDecode {});
-        parent.add_fn("image_encode", encode::SQLImageEncode {});
-        parent.add_fn("image_resize", resize::SQLImageResize {});
-        parent.add_fn("image_to_mode", to_mode::SQLImageToMode {});
+        parent.add_fn("image_crop", crop::SQLImageCrop {}, "TODO: Docstring", &[]);
+        parent.add_fn(
+            "image_decode",
+            decode::SQLImageDecode {},
+            "TODO: Docstring",
+            &[],
+        );
+        parent.add_fn(
+            "image_encode",
+            encode::SQLImageEncode {},
+            "TODO: Docstring",
+            &[],
+        );
+        parent.add_fn(
+            "image_resize",
+            resize::SQLImageResize {},
+            "TODO: Docstring",
+            &[],
+        );
+        parent.add_fn(
+            "image_to_mode",
+            to_mode::SQLImageToMode {},
+            "TODO: Docstring",
+            &[],
+        );
     }
 }

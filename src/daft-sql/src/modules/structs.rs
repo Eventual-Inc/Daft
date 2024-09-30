@@ -8,8 +8,18 @@ pub struct SQLModuleStructs;
 
 impl SQLModule for SQLModuleStructs {
     fn register(parent: &mut SQLFunctions) {
-        parent.add_fn("struct_get", StructGet);
-        parent.add_fn("struct_extract", StructGet);
+        parent.add_fn(
+            "struct_get",
+            StructGet,
+            "TODO: Docstring",
+            &["input", "key"],
+        );
+        parent.add_fn(
+            "struct_extract",
+            StructGet,
+            "Alias of struct_get",
+            &["input", "key"],
+        );
     }
 }
 

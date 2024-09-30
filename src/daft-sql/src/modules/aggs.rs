@@ -22,12 +22,52 @@ impl SQLModule for SQLModuleAggs {
         parent.add_fn(
             "count",
             Count(nil.clone(), daft_core::count_mode::CountMode::Valid),
+            "
+Aggregates the number of items in the input expression. Only counts non-null items.
+
+Example:
+
+For a table like this:
+
+.. code-block:: text
+    :caption: Input
+
+    ╭───────╮
+    │ x     │
+    │ ---   │
+    │ Int64 │
+    ╞═══════╡
+    │ 100   │
+    ├╌╌╌╌╌╌╌┤
+    │ null  │
+    ╰───────╯
+    (Showing first 2 of 2 rows)
+
+```sql
+SELECT count(x) FROM tbl
+```
+
+Result:
+
+.. code-block:: text
+    :caption: Output
+
+    ╭───────╮
+    │ x     │
+    │ ---   │
+    │ Int64 │
+    ╞═══════╡
+    │ 1     │
+    ╰───────╯
+    (Showing first 1 of 1 rows)
+",
+            &["input"],
         );
-        parent.add_fn("sum", Sum(nil.clone()));
-        parent.add_fn("avg", Mean(nil.clone()));
-        parent.add_fn("mean", Mean(nil.clone()));
-        parent.add_fn("min", Min(nil.clone()));
-        parent.add_fn("max", Max(nil.clone()));
+        parent.add_fn("sum", Sum(nil.clone()), "TODO: Docstring", &[]);
+        parent.add_fn("avg", Mean(nil.clone()), "TODO: Docstring", &[]);
+        parent.add_fn("mean", Mean(nil.clone()), "TODO: Docstring", &[]);
+        parent.add_fn("min", Min(nil.clone()), "TODO: Docstring", &[]);
+        parent.add_fn("max", Max(nil.clone()), "TODO: Docstring", &[]);
     }
 }
 

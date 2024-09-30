@@ -13,15 +13,15 @@ pub struct SQLModuleTemporal;
 
 impl SQLModule for SQLModuleTemporal {
     fn register(parent: &mut SQLFunctions) {
-        parent.add_fn("date", SQLDate);
-        parent.add_fn("day", SQLDay);
-        parent.add_fn("dayofweek", SQLDayOfWeek);
-        parent.add_fn("hour", SQLHour);
-        parent.add_fn("minute", SQLMinute);
-        parent.add_fn("month", SQLMonth);
-        parent.add_fn("second", SQLSecond);
-        parent.add_fn("year", SQLYear);
-        parent.add_fn("time", SQLTime);
+        parent.add_fn("date", SQLDate, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("day", SQLDay, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("dayofweek", SQLDayOfWeek, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("hour", SQLHour, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("minute", SQLMinute, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("month", SQLMonth, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("second", SQLSecond, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("year", SQLYear, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("time", SQLTime, "TODO: Docstring", &["TODO"]);
 
         // TODO: Add truncate
         // Our `dt_truncate` function has vastly different semantics than SQL `DATE_TRUNCATE` function.

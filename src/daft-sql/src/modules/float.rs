@@ -13,10 +13,10 @@ pub struct SQLModuleFloat;
 
 impl SQLModule for SQLModuleFloat {
     fn register(parent: &mut SQLFunctions) {
-        parent.add_fn("fill_nan", SQLFillNan {});
-        parent.add_fn("is_inf", SQLIsInf {});
-        parent.add_fn("is_nan", SQLIsNan {});
-        parent.add_fn("not_nan", SQLNotNan {});
+        parent.add_fn("fill_nan", SQLFillNan {}, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("is_inf", SQLIsInf {}, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("is_nan", SQLIsNan {}, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("not_nan", SQLNotNan {}, "TODO: Docstring", &["TODO"]);
     }
 }
 

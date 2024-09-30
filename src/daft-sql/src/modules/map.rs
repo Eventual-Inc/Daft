@@ -8,8 +8,8 @@ pub struct SQLModuleMap;
 
 impl SQLModule for SQLModuleMap {
     fn register(parent: &mut SQLFunctions) {
-        parent.add_fn("map_get", MapGet);
-        parent.add_fn("map_extract", MapGet);
+        parent.add_fn("map_get", MapGet, "TODO: Docstring", &["input", "key"]);
+        parent.add_fn("map_extract", MapGet, "Alias of map_get", &["input", "key"]);
     }
 }
 

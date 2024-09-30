@@ -89,6 +89,7 @@ pub trait SQLFunction: Send + Sync {
 ///   - Add more functions..
 pub struct SQLFunctions {
     pub(crate) map: HashMap<String, Arc<dyn SQLFunction>>,
+    pub(crate) docsmap: HashMap<String, (&'static str, &'static [&'static str])>,
 }
 
 pub(crate) struct SQLFunctionArguments {
@@ -110,6 +111,7 @@ impl SQLFunctions {
     pub fn new() -> Self {
         Self {
             map: HashMap::new(),
+            docsmap: HashMap::new(),
         }
     }
 
@@ -119,8 +121,15 @@ impl SQLFunctions {
     }
 
     /// Add a [FunctionExpr] to the [SQLFunctions] instance.
-    pub fn add_fn<F: SQLFunction + 'static>(&mut self, name: &str, func: F) {
+    pub fn add_fn<F: SQLFunction + 'static>(
+        &mut self,
+        name: &str,
+        func: F,
+        docstring: &'static str,
+        args: &'static [&'static str],
+    ) {
         self.map.insert(name.to_string(), Arc::new(func));
+        self.docsmap.insert(name.to_string(), (docstring, args));
     }
 
     /// Get a function by name from the [SQLFunctions] instance.

@@ -28,7 +28,10 @@ pub fn list_sql_functions() -> Vec<(String, &'static str, Vec<&'static str>)> {
         .map
         .keys()
         .cloned()
-        .map(|name| (name, "TODO: docstrings", vec!["foo", "bar"]))
+        .map(|name| {
+            let (docstring, args) = SQL_FUNCTIONS.docsmap.get(&name).unwrap();
+            (name, *docstring, args.to_vec())
+        })
         .collect()
 }
 

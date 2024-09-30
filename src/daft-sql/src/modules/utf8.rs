@@ -14,36 +14,46 @@ pub struct SQLModuleUtf8;
 impl SQLModule for SQLModuleUtf8 {
     fn register(parent: &mut crate::functions::SQLFunctions) {
         use Utf8Expr::*;
-        parent.add_fn("ends_with", EndsWith);
-        parent.add_fn("starts_with", StartsWith);
-        parent.add_fn("contains", Contains);
-        parent.add_fn("split", Split(true));
+        parent.add_fn("ends_with", EndsWith, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("starts_with", StartsWith, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("contains", Contains, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("split", Split(true), "TODO: Docstring", &["TODO"]);
         // TODO add split variants
         // parent.add("split", f(Split(false)));
-        parent.add_fn("match", Match);
-        parent.add_fn("extract", Extract(0));
-        parent.add_fn("extract_all", ExtractAll(0));
-        parent.add_fn("replace", Replace(true));
+        parent.add_fn("match", Match, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("extract", Extract(0), "TODO: Docstring", &["TODO"]);
+        parent.add_fn("extract_all", ExtractAll(0), "TODO: Docstring", &["TODO"]);
+        parent.add_fn("replace", Replace(true), "TODO: Docstring", &["TODO"]);
         // TODO add replace variants
         // parent.add("replace", f(Replace(false)));
-        parent.add_fn("length", Length);
-        parent.add_fn("lower", Lower);
-        parent.add_fn("upper", Upper);
-        parent.add_fn("lstrip", Lstrip);
-        parent.add_fn("rstrip", Rstrip);
-        parent.add_fn("reverse", Reverse);
-        parent.add_fn("capitalize", Capitalize);
-        parent.add_fn("left", Left);
-        parent.add_fn("right", Right);
-        parent.add_fn("find", Find);
-        parent.add_fn("rpad", Rpad);
-        parent.add_fn("lpad", Lpad);
-        parent.add_fn("repeat", Repeat);
-        parent.add_fn("like", Like);
-        parent.add_fn("ilike", Ilike);
-        parent.add_fn("substr", Substr);
-        parent.add_fn("to_date", ToDate("".to_string()));
-        parent.add_fn("to_datetime", ToDatetime("".to_string(), None));
+        parent.add_fn("length", Length, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("lower", Lower, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("upper", Upper, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("lstrip", Lstrip, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("rstrip", Rstrip, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("reverse", Reverse, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("capitalize", Capitalize, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("left", Left, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("right", Right, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("find", Find, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("rpad", Rpad, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("lpad", Lpad, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("repeat", Repeat, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("like", Like, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("ilike", Ilike, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("substr", Substr, "TODO: Docstring", &["TODO"]);
+        parent.add_fn(
+            "to_date",
+            ToDate("".to_string()),
+            "TODO: Docstring",
+            &["TODO"],
+        );
+        parent.add_fn(
+            "to_datetime",
+            ToDatetime("".to_string(), None),
+            "TODO: Docstring",
+            &["TODO"],
+        );
         // TODO add normalization variants.
         // parent.add("normalize", f(Normalize(Default::default())));
     }
