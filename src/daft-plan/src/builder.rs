@@ -148,6 +148,7 @@ impl LogicalPlanBuilder {
         multithreaded_io: bool,
     ) -> DaftResult<Self> {
         use daft_scan::storage_config::PyStorageConfig;
+
         Python::with_gil(|py| {
             let io_config = io_config.unwrap_or_default();
 
@@ -178,9 +179,7 @@ impl LogicalPlanBuilder {
         io_config: Option<IOConfig>,
         multithreaded_io: bool,
     ) -> DaftResult<Self> {
-        Err(common_error::DaftError::InternalError(
-            "Python support is required for Delta Lake scans".to_string(),
-        ))
+        panic!("Delta Lake scan requires the 'python' feature to be enabled.")
     }
 
     pub fn table_scan(
