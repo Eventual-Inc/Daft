@@ -30,6 +30,7 @@ daft-sketch = {path = "../daft-sketch", default-features = false}
 derive_more = {workspace = true}
 fastrand = "2.1.0"
 fnv = "1.0.7"
+geozero = {version = "0.14.0", features = ["with-wkb"]}
 html-escape = {workspace = true}
 hyperloglog = {path = "../hyperloglog"}
 indexmap = {workspace = true, features = ["serde"]}

@@ -210,6 +210,10 @@ class Expression:
         return ExpressionImageNamespace.from_expression(self)
 
     @property
+    def geo(self) -> ExpressionGeometryNamespace:
+        return ExpressionGeometryNamespace.from_expression(self)
+
+    @property
     def partitioning(self) -> ExpressionPartitioningNamespace:
         """Access methods that support partitioning operators"""
         return ExpressionPartitioningNamespace.from_expression(self)
@@ -3398,4 +3402,18 @@ class ExpressionJsonNamespace(ExpressionNamespace):
 class ExpressionEmbeddingNamespace(ExpressionNamespace):
     def cosine_distance(self, other: Expression) -> Expression:
         """Compute the cosine distance between two embeddings"""
-        return Expression._from_pyexpr(native.cosine_distance(self._expr, other._expr))
+        return Expression._from_pyexpr(native.cosine_dπistance(self._expr, other._expr))
+
+
+class ExpressionGeometryNamespace(ExpressionNamespace):
+    def decode(self, raise_on_error: bool = True) -> Expression:
+        """Decodes a WKB binary into a geometry object"""
+        return Expression._from_pyexpr(native.geo_decode(self._expr, raise_on_error))
+
+    def encode(self, text: bool = False, raise_on_error: bool = True) -> Expression:
+        """Encodes a geometry object into a WKB binary or WKT Text"""
+        return Expression._from_pyexpr(native.geo_encode(self._expr, text, raise_on_error))
+
+    def area(self) -> Expression:
+        """Compute the area of a geometry"""
+        return Expression._from_pyexpr(native.geo_op(self._expr, "area"))

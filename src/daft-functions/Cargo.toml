@@ -9,12 +9,15 @@ daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-image = {path = "../daft-image", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
 futures = {workspace = true}
+geo = "0.28.0"
+geozero = {version = "0.14.0", features = ["with-wkb"]}
 paste = "1.0.15"
 pyo3 = {workspace = true, optional = true}
 tiktoken-rs = {workspace = true}
 tokio = {workspace = true}
 typetag = "0.2.16"
 uuid = "1.10.0"
+wkt = "0.11.0"
 bytes.workspace = true
 serde.workspace = true
 snafu.workspace = true
