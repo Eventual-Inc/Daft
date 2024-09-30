@@ -152,12 +152,11 @@ pub fn physical_plan_to_pipeline(
             let child_node = physical_plan_to_pipeline(input, psets)?;
             StreamingSinkNode::new(Arc::new(sink), vec![child_node]).boxed()
         }
-        LocalPhysicalPlan::Concat(_) => {
-            todo!("concat")
-            // let sink = ConcatSink::new();
-            // let left_child = physical_plan_to_pipeline(input, psets)?;
-            // let right_child = physical_plan_to_pipeline(other, psets)?;
-            // PipelineNode::double_sink(sink, left_child, right_child)
+        LocalPhysicalPlan::Concat(Concat { input, other, .. }) => {
+            let left_child = physical_plan_to_pipeline(input, psets)?;
+            let right_child = physical_plan_to_pipeline(other, psets)?;
+            let sink = crate::sinks::concat::ConcatSink {};
+            StreamingSinkNode::new(Arc::new(sink), vec![left_child, right_child]).boxed()
         }
         LocalPhysicalPlan::UnGroupedAggregate(UnGroupedAggregate {
             input,

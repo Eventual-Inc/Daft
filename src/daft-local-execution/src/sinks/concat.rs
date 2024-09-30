@@ -1,61 +1,49 @@
-// use std::sync::Arc;
+use std::sync::Arc;
 
-// use common_error::DaftResult;
-// use daft_micropartition::MicroPartition;
-// use tracing::instrument;
+use common_error::DaftResult;
+use daft_micropartition::MicroPartition;
+use tracing::instrument;
 
-// use super::sink::{Sink, SinkResultType};
+use super::streaming_sink::{StreamingSink, StreamingSinkOutput, StreamingSinkState};
+use crate::pipeline::PipelineResultType;
 
-// #[derive(Clone)]
-// pub struct ConcatSink {
-//     result_left: Vec<Arc<MicroPartition>>,
-//     result_right: Vec<Arc<MicroPartition>>,
-// }
+struct ConcatSinkState {}
+impl StreamingSinkState for ConcatSinkState {
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
 
-// impl ConcatSink {
-//     pub fn new() -> Self {
-//         Self {
-//             result_left: Vec::new(),
-//             result_right: Vec::new(),
-//         }
-//     }
+pub struct ConcatSink {}
 
-//     #[instrument(skip_all, name = "ConcatSink::sink")]
-//     fn sink_left(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
-//         self.result_left.push(input.clone());
-//         Ok(SinkResultType::NeedMoreInput)
-//     }
+impl StreamingSink for ConcatSink {
+    #[instrument(skip_all, name = "ConcatSink::sink")]
+    fn execute(
+        &self,
+        _index: usize,
+        input: &PipelineResultType,
+        _state: &mut dyn StreamingSinkState,
+    ) -> DaftResult<StreamingSinkOutput> {
+        let input = input.as_data();
+        Ok(StreamingSinkOutput::NeedMoreInput(Some(input.clone())))
+    }
 
-//     #[instrument(skip_all, name = "ConcatSink::sink")]
-//     fn sink_right(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
-//         self.result_right.push(input.clone());
-//         Ok(SinkResultType::NeedMoreInput)
-//     }
-// }
+    fn name(&self) -> &'static str {
+        "Concat"
+    }
 
-// impl Sink for ConcatSink {
-//     fn sink(&mut self, index: usize, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
-//         match index {
-//             0 => self.sink_left(input),
-//             1 => self.sink_right(input),
-//             _ => panic!("concat only supports 2 inputs, got {index}"),
-//         }
-//     }
+    fn finalize(
+        &self,
+        _states: Vec<Box<dyn StreamingSinkState>>,
+    ) -> DaftResult<Option<Arc<MicroPartition>>> {
+        Ok(None)
+    }
 
-//     fn in_order(&self) -> bool {
-//         true
-//     }
+    fn make_state(&self) -> Box<dyn StreamingSinkState> {
+        Box::new(ConcatSinkState {})
+    }
 
-//     fn num_inputs(&self) -> usize {
-//         2
-//     }
-
-//     #[instrument(skip_all, name = "ConcatSink::finalize")]
-//     fn finalize(self: Box<Self>) -> DaftResult<Vec<Arc<MicroPartition>>> {
-//         Ok(self
-//             .result_left
-//             .into_iter()
-//             .chain(self.result_right.into_iter())
-//             .collect())
-//     }
-// }
+    fn max_concurrency(&self) -> usize {
+        1
+    }
+}
