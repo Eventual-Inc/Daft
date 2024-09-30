@@ -7,9 +7,9 @@ use daft_dsl::{
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-struct CountMatchesFunction {
-    pub(super) whole_words: bool,
-    pub(super) case_sensitive: bool,
+pub struct CountMatchesFunction {
+    pub whole_words: bool,
+    pub case_sensitive: bool,
 }
 
 #[typetag::serde]

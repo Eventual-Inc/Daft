@@ -1,12 +1,22 @@
+use daft_core::array::ops::Utf8NormalizeOptions;
 use daft_dsl::{
-    functions::{self, utf8::Utf8Expr},
+    functions::{
+        self,
+        utf8::{normalize, Utf8Expr},
+    },
     ExprRef, LiteralValue,
+};
+use daft_functions::{
+    count_matches::{utf8_count_matches, CountMatchesFunction},
+    tokenize::{tokenize_decode, tokenize_encode, TokenizeDecodeFunction, TokenizeEncodeFunction},
 };
 
 use super::SQLModule;
 use crate::{
-    ensure, error::SQLPlannerResult, functions::SQLFunction, invalid_operation_err,
-    unsupported_sql_err,
+    ensure,
+    error::{PlannerError, SQLPlannerResult},
+    functions::{SQLFunction, SQLFunctionArguments},
+    invalid_operation_err, unsupported_sql_err,
 };
 
 pub struct SQLModuleUtf8;
@@ -17,16 +27,18 @@ impl SQLModule for SQLModuleUtf8 {
         parent.add_fn("ends_with", EndsWith);
         parent.add_fn("starts_with", StartsWith);
         parent.add_fn("contains", Contains);
-        parent.add_fn("split", Split(true));
+        parent.add_fn("split", Split(false));
         // TODO add split variants
         // parent.add("split", f(Split(false)));
-        parent.add_fn("match", Match);
-        parent.add_fn("extract", Extract(0));
-        parent.add_fn("extract_all", ExtractAll(0));
-        parent.add_fn("replace", Replace(true));
+        parent.add_fn("regexp_match", Match);
+        parent.add_fn("regexp_extract", Extract(0));
+        parent.add_fn("regexp_extract_all", ExtractAll(0));
+        parent.add_fn("regexp_replace", Replace(true));
+        parent.add_fn("regexp_split", Split(true));
         // TODO add replace variants
         // parent.add("replace", f(Replace(false)));
         parent.add_fn("length", Length);
+        parent.add_fn("length_bytes", LengthBytes);
         parent.add_fn("lower", Lower);
         parent.add_fn("upper", Upper);
         parent.add_fn("lstrip", Lstrip);
@@ -39,13 +51,13 @@ impl SQLModule for SQLModuleUtf8 {
         parent.add_fn("rpad", Rpad);
         parent.add_fn("lpad", Lpad);
         parent.add_fn("repeat", Repeat);
-        parent.add_fn("like", Like);
-        parent.add_fn("ilike", Ilike);
-        parent.add_fn("substr", Substr);
+
         parent.add_fn("to_date", ToDate("".to_string()));
         parent.add_fn("to_datetime", ToDatetime("".to_string(), None));
-        // TODO add normalization variants.
-        // parent.add("normalize", f(Normalize(Default::default())));
+        parent.add_fn("count_matches", SQLCountMatches);
+        parent.add_fn("normalize", SQLNormalize);
+        parent.add_fn("tokenize_encode", SQLTokenizeEncode);
+        parent.add_fn("tokenize_decode", SQLTokenizeDecode);
     }
 }
 
@@ -78,19 +90,44 @@ fn to_expr(expr: &Utf8Expr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
             ensure!(args.len() == 2, "contains takes exactly two arguments");
             Ok(contains(args[0].clone(), args[1].clone()))
         }
-        Split(_) => {
+        Split(true) => {
+            ensure!(args.len() == 2, "split takes exactly two arguments");
+            Ok(split(args[0].clone(), args[1].clone(), true))
+        }
+        Split(false) => {
             ensure!(args.len() == 2, "split takes exactly two arguments");
             Ok(split(args[0].clone(), args[1].clone(), false))
         }
         Match => {
-            unsupported_sql_err!("match")
+            ensure!(args.len() == 2, "regexp_match takes exactly two arguments");
+            Ok(match_(args[0].clone(), args[1].clone()))
         }
-        Extract(_) => {
-            unsupported_sql_err!("extract")
-        }
-        ExtractAll(_) => {
-            unsupported_sql_err!("extract_all")
-        }
+        Extract(_) => match args {
+            [input, pattern] => Ok(extract(input.clone(), pattern.clone(), 0)),
+            [input, pattern, idx] => {
+                let idx = idx.as_literal().and_then(|lit| lit.as_i64()).ok_or_else(|| {
+                   PlannerError::invalid_operation(format!("Expected a literal integer for the third argument of regexp_extract, found {:?}", idx))
+               })?;
+
+                Ok(extract(input.clone(), pattern.clone(), idx as usize))
+            }
+            _ => {
+                invalid_operation_err!("regexp_extract takes exactly two or three arguments")
+            }
+        },
+        ExtractAll(_) => match args {
+            [input, pattern] => Ok(extract_all(input.clone(), pattern.clone(), 0)),
+            [input, pattern, idx] => {
+                let idx = idx.as_literal().and_then(|lit| lit.as_i64()).ok_or_else(|| {
+                   PlannerError::invalid_operation(format!("Expected a literal integer for the third argument of regexp_extract, found {:?}", idx))
+               })?;
+
+                Ok(extract_all(input.clone(), pattern.clone(), idx as usize))
+            }
+            _ => {
+                invalid_operation_err!("regexp_extract_all takes exactly two or three arguments")
+            }
+        },
         Replace(_) => {
             ensure!(args.len() == 3, "replace takes exactly three arguments");
             Ok(replace(
@@ -101,10 +138,10 @@ fn to_expr(expr: &Utf8Expr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
             ))
         }
         Like => {
-            unsupported_sql_err!("like")
+            unreachable!("like should be handled by the parser")
         }
         Ilike => {
-            unsupported_sql_err!("ilike")
+            unreachable!("ilike should be handled by the parser")
         }
         Length => {
             ensure!(args.len() == 1, "length takes exactly one argument");
@@ -163,8 +200,7 @@ fn to_expr(expr: &Utf8Expr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
             Ok(repeat(args[0].clone(), args[1].clone()))
         }
         Substr => {
-            ensure!(args.len() == 3, "substr takes exactly three arguments");
-            Ok(substr(args[0].clone(), args[1].clone(), args[2].clone()))
+            unreachable!("substr should be handled by the parser")
         }
         ToDate(_) => {
             ensure!(args.len() == 2, "to_date takes exactly two arguments");
@@ -192,6 +228,236 @@ fn to_expr(expr: &Utf8Expr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
         }
         Normalize(_) => {
             unsupported_sql_err!("normalize")
+        }
+    }
+}
+
+pub struct SQLCountMatches;
+
+impl TryFrom<SQLFunctionArguments> for CountMatchesFunction {
+    type Error = PlannerError;
+
+    fn try_from(args: SQLFunctionArguments) -> Result<Self, Self::Error> {
+        let whole_words = args.try_get_named("whole_words")?.unwrap_or(false);
+        let case_sensitive = args.try_get_named("case_sensitive")?.unwrap_or(true);
+
+        Ok(Self {
+            whole_words,
+            case_sensitive,
+        })
+    }
+}
+
+impl SQLFunction for SQLCountMatches {
+    fn to_expr(
+        &self,
+        inputs: &[sqlparser::ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        match inputs {
+            [input, pattern] => {
+                let input = planner.plan_function_arg(input)?;
+                let pattern = planner.plan_function_arg(pattern)?;
+                Ok(utf8_count_matches(input, pattern, false, true))
+            }
+            [input, pattern, args @ ..] => {
+                let input = planner.plan_function_arg(input)?;
+                let pattern = planner.plan_function_arg(pattern)?;
+                let args: CountMatchesFunction =
+                    planner.plan_function_args(args, &["whole_words", "case_sensitive"], 0)?;
+
+                Ok(utf8_count_matches(
+                    input,
+                    pattern,
+                    args.whole_words,
+                    args.case_sensitive,
+                ))
+            }
+            _ => Err(PlannerError::invalid_operation(
+                "Invalid arguments for count_matches: '{inputs:?}'",
+            )),
+        }
+    }
+}
+
+pub struct SQLNormalize;
+
+impl TryFrom<SQLFunctionArguments> for Utf8NormalizeOptions {
+    type Error = PlannerError;
+
+    fn try_from(args: SQLFunctionArguments) -> Result<Self, Self::Error> {
+        let remove_punct = args.try_get_named("remove_punct")?.unwrap_or(false);
+        let lowercase = args.try_get_named("lowercase")?.unwrap_or(false);
+        let nfd_unicode = args.try_get_named("nfd_unicode")?.unwrap_or(false);
+        let white_space = args.try_get_named("white_space")?.unwrap_or(false);
+
+        Ok(Self {
+            remove_punct,
+            lowercase,
+            nfd_unicode,
+            white_space,
+        })
+    }
+}
+
+impl SQLFunction for SQLNormalize {
+    fn to_expr(
+        &self,
+        inputs: &[sqlparser::ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        match inputs {
+            [input] => {
+                let input = planner.plan_function_arg(input)?;
+                Ok(normalize(input, Utf8NormalizeOptions::default()))
+            }
+            [input, args @ ..] => {
+                let input = planner.plan_function_arg(input)?;
+                let args: Utf8NormalizeOptions = planner.plan_function_args(
+                    args,
+                    &["remove_punct", "lowercase", "nfd_unicode", "white_space"],
+                    0,
+                )?;
+                Ok(normalize(input, args))
+            }
+            _ => invalid_operation_err!("Invalid arguments for normalize"),
+        }
+    }
+}
+
+pub struct SQLTokenizeEncode;
+impl TryFrom<SQLFunctionArguments> for TokenizeEncodeFunction {
+    type Error = PlannerError;
+
+    fn try_from(args: SQLFunctionArguments) -> Result<Self, Self::Error> {
+        if args.get_named("io_config").is_some() {
+            return Err(PlannerError::invalid_operation(
+                "io_config argument is not yet supported for tokenize_encode",
+            ));
+        }
+
+        let tokens_path = args.try_get_named("tokens_path")?.ok_or_else(|| {
+            PlannerError::invalid_operation("tokens_path argument is required for tokenize_encode")
+        })?;
+
+        let pattern = args.try_get_named("pattern")?;
+        let special_tokens = args.try_get_named("special_tokens")?;
+        let use_special_tokens = args.try_get_named("use_special_tokens")?.unwrap_or(false);
+
+        Ok(Self {
+            tokens_path,
+            pattern,
+            special_tokens,
+            use_special_tokens,
+            io_config: None,
+        })
+    }
+}
+
+impl SQLFunction for SQLTokenizeEncode {
+    fn to_expr(
+        &self,
+        inputs: &[sqlparser::ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        match inputs {
+            [input, tokens_path] => {
+                let input = planner.plan_function_arg(input)?;
+                let tokens_path = planner.plan_function_arg(tokens_path)?;
+                let tokens_path = tokens_path
+                    .as_literal()
+                    .and_then(|lit| lit.as_str())
+                    .ok_or_else(|| {
+                        PlannerError::invalid_operation("tokens_path argument must be a string")
+                    })?;
+                Ok(tokenize_encode(input, tokens_path, None, None, None, false))
+            }
+            [input, args @ ..] => {
+                let input = planner.plan_function_arg(input)?;
+                let args: TokenizeEncodeFunction = planner.plan_function_args(
+                    args,
+                    &[
+                        "tokens_path",
+                        "pattern",
+                        "special_tokens",
+                        "use_special_tokens",
+                    ],
+                    1, // tokens_path can be named or positional
+                )?;
+                Ok(tokenize_encode(
+                    input,
+                    &args.tokens_path,
+                    None,
+                    args.pattern.as_deref(),
+                    args.special_tokens.as_deref(),
+                    args.use_special_tokens,
+                ))
+            }
+            _ => invalid_operation_err!("Invalid arguments for tokenize_encode"),
+        }
+    }
+}
+
+pub struct SQLTokenizeDecode;
+impl TryFrom<SQLFunctionArguments> for TokenizeDecodeFunction {
+    type Error = PlannerError;
+
+    fn try_from(args: SQLFunctionArguments) -> Result<Self, Self::Error> {
+        if args.get_named("io_config").is_some() {
+            return Err(PlannerError::invalid_operation(
+                "io_config argument is not yet supported for tokenize_decode",
+            ));
+        }
+
+        let tokens_path = args.try_get_named("tokens_path")?.ok_or_else(|| {
+            PlannerError::invalid_operation("tokens_path argument is required for tokenize_encode")
+        })?;
+
+        let pattern = args.try_get_named("pattern")?;
+        let special_tokens = args.try_get_named("special_tokens")?;
+
+        Ok(Self {
+            tokens_path,
+            pattern,
+            special_tokens,
+            io_config: None,
+        })
+    }
+}
+impl SQLFunction for SQLTokenizeDecode {
+    fn to_expr(
+        &self,
+        inputs: &[sqlparser::ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        match inputs {
+            [input, tokens_path] => {
+                let input = planner.plan_function_arg(input)?;
+                let tokens_path = planner.plan_function_arg(tokens_path)?;
+                let tokens_path = tokens_path
+                    .as_literal()
+                    .and_then(|lit| lit.as_str())
+                    .ok_or_else(|| {
+                        PlannerError::invalid_operation("tokens_path argument must be a string")
+                    })?;
+                Ok(tokenize_decode(input, tokens_path, None, None, None))
+            }
+            [input, args @ ..] => {
+                let input = planner.plan_function_arg(input)?;
+                let args: TokenizeDecodeFunction = planner.plan_function_args(
+                    args,
+                    &["tokens_path", "pattern", "special_tokens"],
+                    1, // tokens_path can be named or positional
+                )?;
+                Ok(tokenize_decode(
+                    input,
+                    &args.tokens_path,
+                    None,
+                    args.pattern.as_deref(),
+                    args.special_tokens.as_deref(),
+                ))
+            }
+            _ => invalid_operation_err!("Invalid arguments for tokenize_decode"),
         }
     }
 }

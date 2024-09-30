@@ -2,6 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use config::SQLModuleConfig;
 use daft_dsl::ExprRef;
+use hashing::SQLModuleHashing;
 use once_cell::sync::Lazy;
 use sqlparser::ast::{
     Function, FunctionArg, FunctionArgExpr, FunctionArgOperator, FunctionArguments,
@@ -19,6 +20,7 @@ pub(crate) static SQL_FUNCTIONS: Lazy<SQLFunctions> = Lazy::new(|| {
     let mut functions = SQLFunctions::new();
     functions.register::<SQLModuleAggs>();
     functions.register::<SQLModuleFloat>();
+    functions.register::<SQLModuleHashing>();
     functions.register::<SQLModuleImage>();
     functions.register::<SQLModuleJson>();
     functions.register::<SQLModuleList>();
@@ -290,7 +292,7 @@ impl SQLPlanner {
                     }
                     positional_args.insert(idx, self.try_unwrap_function_arg_expr(arg)?);
                 }
-                _ => unsupported_sql_err!("unsupported function argument type"),
+                other => unsupported_sql_err!("unsupported function argument type: {other}, valid function arguments for this function are: {expected_named:?}."),
             }
         }
 

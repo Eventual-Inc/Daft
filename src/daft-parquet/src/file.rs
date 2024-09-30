@@ -502,17 +502,29 @@ impl ParquetFileReader {
                             .into_iter()
                             .collect::<DaftResult<Vec<_>>>()?;
 
-                        let table_iter = arrow_column_iters_to_table_iter(
-                            arr_iters,
-                            row_range.start,
-                            daft_schema,
-                            uri,
-                            predicate,
-                            original_columns,
-                            original_num_rows,
-                        );
                         rayon::spawn(move || {
-                            for table_result in table_iter {
+                            // Even if there are no columns to read, we still need to create a empty table with the correct number of rows
+                            // This is because the columns may be present in other files. See https://github.com/Eventual-Inc/Daft/pull/2514
+                            let table_iter = arrow_column_iters_to_table_iter(
+                                arr_iters,
+                                row_range.start,
+                                daft_schema.clone(),
+                                uri,
+                                predicate,
+                                original_columns,
+                                original_num_rows,
+                            );
+                            if table_iter.is_none() {
+                                let table =
+                                    Table::new_with_size(daft_schema, vec![], row_range.num_rows);
+                                if let Err(crossbeam_channel::TrySendError::Full(_)) =
+                                    sender.try_send(table)
+                                {
+                                    panic!("Parquet stream channel should not be full")
+                                }
+                                return;
+                            }
+                            for table_result in table_iter.unwrap() {
                                 let is_err = table_result.is_err();
                                 if let Err(crossbeam_channel::TrySendError::Full(_)) =
                                     sender.try_send(table_result)
