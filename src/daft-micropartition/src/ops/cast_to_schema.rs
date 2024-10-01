@@ -28,6 +28,7 @@ impl MicroPartition {
                         schema,
                         scan_task.storage_config.clone(),
                         scan_task.pushdowns.clone(),
+                        scan_task.file_path_column.clone(),
                     ))
                 };
                 Ok(Self::new_unloaded(

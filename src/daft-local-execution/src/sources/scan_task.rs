@@ -2,12 +2,14 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
+use daft_core::{prelude::Utf8Array, series::IntoSeries};
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_io::IOStatsRef;
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_micropartition::MicroPartition;
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use daft_scan::{storage_config::StorageConfig, ChunkSpec, ScanTask};
+use daft_table::Table;
 use futures::{Stream, StreamExt};
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::instrument;
@@ -275,8 +277,22 @@ async fn stream_scan_task(
         }
     };
 
+    let url = if scan_task.file_path_column.is_some() {
+        Some(url.to_string())
+    } else {
+        None
+    };
     Ok(table_stream.map(move |table| {
-        let table = table?;
+        let mut table = table?;
+        if let Some(file_path_col_name) = scan_task.file_path_column.as_ref() {
+            let trimmed = url.as_ref().unwrap().trim_start_matches("file://");
+            let file_paths_column = Utf8Array::from_iter(
+                file_path_col_name,
+                std::iter::repeat(Some(trimmed)).take(table.len()),
+            )
+            .into_series();
+            table = table.union(&Table::from_nonempty_columns(vec![file_paths_column])?)?;
+        }
         let casted_table = table.cast_to_schema_with_fill(
             scan_task.materialized_schema().as_ref(),
             scan_task

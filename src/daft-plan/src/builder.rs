@@ -11,7 +11,11 @@ use common_io_config::IOConfig;
 use daft_core::join::{JoinStrategy, JoinType};
 use daft_dsl::{col, ExprRef};
 use daft_scan::{PhysicalScanInfo, Pushdowns, ScanOperatorRef};
-use daft_schema::schema::{Schema, SchemaRef};
+use daft_schema::{
+    dtype::DataType,
+    field::Field,
+    schema::{Schema, SchemaRef},
+};
 #[cfg(feature = "python")]
 use {
     crate::sink_info::{CatalogInfo, IcebergCatalogInfo},
@@ -121,21 +125,45 @@ impl LogicalPlanBuilder {
             pushdowns.clone().unwrap_or_default(),
         ));
         // If column selection (projection) pushdown is specified, prune unselected columns from the schema.
-        let output_schema = if let Some(Pushdowns {
-            columns: Some(columns),
-            ..
-        }) = &pushdowns
-            && columns.len() < schema.fields.len()
-        {
-            let pruned_upstream_schema = schema
-                .fields
-                .iter()
-                .filter(|&(name, _)| columns.contains(name))
-                .map(|(_, field)| field.clone())
-                .collect::<Vec<_>>();
-            Arc::new(Schema::new(pruned_upstream_schema)?)
-        } else {
-            schema.clone()
+        // If file path column is specified, add it to the schema.
+        let output_schema = match (&pushdowns, &scan_operator.0.file_path_column()) {
+            (
+                Some(Pushdowns {
+                    columns: Some(columns),
+                    ..
+                }),
+                file_path_column_opt,
+            ) if columns.len() < schema.fields.len() => {
+                let pruned_fields = schema
+                    .fields
+                    .iter()
+                    .filter(|(name, _)| columns.contains(name))
+                    .map(|(_, field)| field.clone());
+
+                let finalized_fields = match file_path_column_opt {
+                    Some(file_path_column) => pruned_fields
+                        .chain(std::iter::once(Field::new(
+                            file_path_column.to_string(),
+                            DataType::Utf8,
+                        )))
+                        .collect::<Vec<_>>(),
+                    None => pruned_fields.collect::<Vec<_>>(),
+                };
+                Arc::new(Schema::new(finalized_fields)?)
+            }
+            (None, Some(file_path_column)) => {
+                let schema_with_file_path = schema
+                    .fields
+                    .values()
+                    .cloned()
+                    .chain(std::iter::once(Field::new(
+                        file_path_column.to_string(),
+                        DataType::Utf8,
+                    )))
+                    .collect::<Vec<_>>();
+                Arc::new(Schema::new(schema_with_file_path)?)
+            }
+            _ => schema.clone(),
         };
         let logical_plan: LogicalPlan =
             logical_ops::Source::new(output_schema, source_info.into()).into();
