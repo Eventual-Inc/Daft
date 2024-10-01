@@ -1,3 +1,4 @@
+use super::{new_empty_array, specification::try_check_offsets_bounds, Array, ListArray};
 use crate::{
     bitmap::Bitmap,
     datatypes::{DataType, Field},
@@ -5,13 +6,12 @@ use crate::{
     offset::OffsetsBuffer,
 };
 
-use super::{new_empty_array, specification::try_check_offsets_bounds, Array};
-
 mod ffi;
 pub(super) mod fmt;
 mod iterator;
 #[allow(unused)]
 pub use iterator::*;
+
 
 /// An array representing a (key, value), both of arbitrary logical types.
 #[derive(Clone)]
@@ -41,20 +41,27 @@ impl MapArray {
         try_check_offsets_bounds(&offsets, field.len())?;
 
         let inner_field = Self::try_get_field(&data_type)?;
-        if let DataType::Struct(inner) = inner_field.data_type() {
-            if inner.len() != 2 {
-                return Err(Error::InvalidArgumentError(
-                    "MapArray's inner `Struct` must have 2 fields (keys and maps)".to_string(),
-                ));
-            }
-        } else {
+
+        let inner_data_type = inner_field.data_type();
+        let DataType::Struct(inner) = inner_data_type else {
             return Err(Error::InvalidArgumentError(
-                "MapArray expects `DataType::Struct` as its inner logical type".to_string(),
+                format!("MapArray expects `DataType::Struct` as its inner logical type, but found {inner_data_type:?}"),
             ));
+        };
+
+        let inner_len = inner.len();
+        if inner_len != 2 {
+            let msg = format!(
+                "MapArray's inner `Struct` must have 2 fields (keys and maps), but found {} fields",
+                inner_len
+            );
+            return Err(Error::InvalidArgumentError(msg));
         }
-        if field.data_type() != inner_field.data_type() {
+
+        let field_data_type = field.data_type();
+        if field_data_type != inner_field.data_type() {
             return Err(Error::InvalidArgumentError(
-                "MapArray expects `field.data_type` to match its inner DataType".to_string(),
+                format!("MapArray expects `field.data_type` to match its inner DataType, but found \n{field_data_type:?}\nvs\n\n\n{inner_field:?}"),
             ));
         }
 
@@ -194,6 +201,43 @@ impl MapArray {
 
 impl Array for MapArray {
     impl_common_array!();
+
+    fn convert_logical_type(&self, target: DataType) -> Box<dyn Array> {
+        tracing::trace!("converting logical type to\n{target:#?}");
+        let outer_is_map = matches!(target, DataType::Map { .. });
+
+        if outer_is_map {
+            // we can do simple conversion
+            let mut new = self.to_boxed();
+            new.change_type(target);
+            return new;
+        }
+
+        let DataType::LargeList(target_inner) = &target else {
+            panic!("MapArray can only be converted to Map or LargeList");
+        };
+
+        let DataType::Map(current_inner, _) = self.data_type() else {
+            unreachable!("Somehow DataType is not Map for a MapArray");
+        };
+
+        let current_inner_physical = current_inner.data_type.to_physical_type();
+        let target_inner_physical = target_inner.data_type.to_physical_type();
+
+        if current_inner_physical != target_inner_physical {
+            panic!("inner types are not equal");
+        }
+
+        let mut field = self.field.clone();
+        field.change_type(target_inner.data_type.clone());
+
+        let offsets = self.offsets().clone();
+        let offsets = offsets.map(|offset| offset as i64);
+
+        let list = ListArray::new(target, offsets, field, self.validity.clone());
+
+        Box::new(list)
+    }
 
     fn validity(&self) -> Option<&Bitmap> {
         self.validity.as_ref()

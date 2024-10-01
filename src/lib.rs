@@ -96,6 +96,7 @@ pub mod pylib {
     #[pymodule]
     fn daft(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         refresh_logger(py)?;
+
         init_tracing(crate::should_enable_chrome_trace());
 
         common_daft_config::register_modules(m)?;

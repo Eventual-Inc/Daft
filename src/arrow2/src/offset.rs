@@ -71,7 +71,7 @@ impl<O: Offset> Offsets<O> {
 
     /// Creates a new [`Offsets`] from an iterator of lengths
     #[inline]
-    pub fn try_from_iter<I: IntoIterator<Item = usize>>(iter: I) -> Result<Self, Error> {
+    pub fn try_from_iter<I: IntoIterator<Item=usize>>(iter: I) -> Result<Self, Error> {
         let iterator = iter.into_iter();
         let (lower, _) = iterator.size_hint();
         let mut offsets = Self::with_capacity(lower);
@@ -144,10 +144,7 @@ impl<O: Offset> Offsets<O> {
     /// Returns the last offset of this container.
     #[inline]
     pub fn last(&self) -> &O {
-        match self.0.last() {
-            Some(element) => element,
-            None => unsafe { unreachable_unchecked() },
-        }
+        self.0.last().unwrap_or_else(|| unsafe { unreachable_unchecked() })
     }
 
     /// Returns a range (start, end) corresponding to the position `index`
@@ -215,7 +212,7 @@ impl<O: Offset> Offsets<O> {
     /// # Errors
     /// This function errors iff this operation overflows for the maximum value of `O`.
     #[inline]
-    pub fn try_from_lengths<I: Iterator<Item = usize>>(lengths: I) -> Result<Self, Error> {
+    pub fn try_from_lengths<I: Iterator<Item=usize>>(lengths: I) -> Result<Self, Error> {
         let mut self_ = Self::with_capacity(lengths.size_hint().0);
         self_.try_extend_from_lengths(lengths)?;
         Ok(self_)
@@ -225,7 +222,7 @@ impl<O: Offset> Offsets<O> {
     /// # Errors
     /// This function errors iff this operation overflows for the maximum value of `O`.
     #[inline]
-    pub fn try_extend_from_lengths<I: Iterator<Item = usize>>(
+    pub fn try_extend_from_lengths<I: Iterator<Item=usize>>(
         &mut self,
         lengths: I,
     ) -> Result<(), Error> {
@@ -338,12 +335,23 @@ fn try_check_offsets<O: Offset>(offsets: &[O]) -> Result<(), Error> {
 /// * Every element is `>= 0`
 /// * element at position `i` is >= than element at position `i-1`.
 #[derive(Clone, PartialEq, Debug)]
-pub struct OffsetsBuffer<O: Offset>(Buffer<O>);
+pub struct OffsetsBuffer<O>(Buffer<O>);
 
 impl<O: Offset> Default for OffsetsBuffer<O> {
     #[inline]
     fn default() -> Self {
         Self(vec![O::zero()].into())
+    }
+}
+
+impl <O: Copy> OffsetsBuffer<O> {
+    pub fn map<T>(&self, f: impl Fn(O) -> T) -> OffsetsBuffer<T> {
+        let buffer = self.0.iter()
+            .copied()
+            .map(f)
+            .collect();
+
+        OffsetsBuffer(buffer)
     }
 }
 
@@ -354,6 +362,7 @@ impl<O: Offset> OffsetsBuffer<O> {
     pub unsafe fn new_unchecked(offsets: Buffer<O>) -> Self {
         Self(offsets)
     }
+
 
     /// Returns an empty [`OffsetsBuffer`] (i.e. with a single element, the zero)
     #[inline]
@@ -401,22 +410,26 @@ impl<O: Offset> OffsetsBuffer<O> {
         *self.last() - *self.first()
     }
 
+    pub fn ranges(&self) -> impl Iterator<Item=core::ops::Range<O>> + '_ {
+        self.0.windows(2).map(|w| {
+            let from = w[0];
+            let to = w[1];
+            debug_assert!(from <= to, "offsets must be monotonically increasing");
+            from..to
+        })
+    }
+
+
     /// Returns the first offset.
     #[inline]
     pub fn first(&self) -> &O {
-        match self.0.first() {
-            Some(element) => element,
-            None => unsafe { unreachable_unchecked() },
-        }
+        self.0.first().unwrap_or_else(|| unsafe { unreachable_unchecked() })
     }
 
     /// Returns the last offset.
     #[inline]
     pub fn last(&self) -> &O {
-        match self.0.last() {
-            Some(element) => element,
-            None => unsafe { unreachable_unchecked() },
-        }
+        self.0.last().unwrap_or_else(|| unsafe { unreachable_unchecked() })
     }
 
     /// Returns a range (start, end) corresponding to the position `index`
@@ -460,7 +473,7 @@ impl<O: Offset> OffsetsBuffer<O> {
 
     /// Returns an iterator with the lengths of the offsets
     #[inline]
-    pub fn lengths(&self) -> impl Iterator<Item = usize> + '_ {
+    pub fn lengths(&self) -> impl Iterator<Item=usize> + '_ {
         self.0.windows(2).map(|w| (w[1] - w[0]).to_usize())
     }
 

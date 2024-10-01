@@ -55,6 +55,10 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
     /// When the validity is [`None`], all slots are valid.
     fn validity(&self) -> Option<&Bitmap>;
 
+    fn direct_children<'a>(&'a mut self) -> Box<dyn Iterator<Item=&'a mut dyn Array> + 'a> {
+        Box::new(core::iter::empty())
+    }
+
     /// The number of null slots on this [`Array`].
     /// # Implementation
     /// This is `O(1)` since the number of null elements is pre-computed.
@@ -183,7 +187,7 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
     /// ```
     /// # Panics
     /// Panics iff the `data_type`'s [`PhysicalType`] is not equal to array's `PhysicalType`.
-    fn to_type(&self, data_type: DataType) -> Box<dyn Array> {
+    fn convert_logical_type(&self, data_type: DataType) -> Box<dyn Array> {
         let mut new = self.to_boxed();
         new.change_type(data_type);
         new
@@ -634,15 +638,26 @@ macro_rules! impl_common_array {
         fn change_type(&mut self, data_type: DataType) {
             if data_type.to_physical_type() != self.data_type().to_physical_type() {
                 panic!(
-                    "Converting array with logical type {:?} to logical type {:?} failed, physical types do not match: {:?} -> {:?}",
+                    "Converting array with logical type\n{:#?}\n\nto logical type\n{:#?}\nfailed, physical types do not match: {:?} -> {:?}",
                     self.data_type(),
                     data_type,
                     self.data_type().to_physical_type(),
                     data_type.to_physical_type(),
                 );
             }
-            self.data_type = data_type;
+
+            self.data_type = data_type.clone();
+
+            let mut children = self.direct_children();
+
+            data_type.direct_children(|child| {
+                let Some(child_elem) = children.next() else {
+                    return;
+                };
+                child_elem.change_type(child.clone());
+            })
         }
+
     };
 }
 
@@ -737,7 +752,7 @@ pub(crate) use self::ffi::ToFfi;
 /// This is similar to [`Extend`], but accepted the creation to error.
 pub trait TryExtend<A> {
     /// Fallible version of [`Extend::extend`].
-    fn try_extend<I: IntoIterator<Item = A>>(&mut self, iter: I) -> Result<()>;
+    fn try_extend<I: IntoIterator<Item=A>>(&mut self, iter: I) -> Result<()>;
 }
 
 /// A trait describing the ability of a struct to receive new items.
@@ -773,4 +788,79 @@ pub unsafe trait GenericBinaryArray<O: crate::offset::Offset>: Array {
     fn values(&self) -> &[u8];
     /// The offsets of the array
     fn offsets(&self) -> &[O];
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::datatypes::{DataType, Field, TimeUnit, IntervalUnit};
+    use crate::array::{Int32Array, Int64Array, Float32Array, Utf8Array, BooleanArray, ListArray, StructArray, UnionArray, MapArray};
+
+    #[test]
+    fn test_int32_to_date32() {
+        let array = Int32Array::from_slice([1, 2, 3]);
+        let result = array.convert_logical_type(DataType::Date32);
+        assert_eq!(result.data_type(), &DataType::Date32);
+    }
+
+    #[test]
+    fn test_int64_to_timestamp() {
+        let array = Int64Array::from_slice([1000, 2000, 3000]);
+        let result = array.convert_logical_type(DataType::Timestamp(TimeUnit::Millisecond, None));
+        assert_eq!(result.data_type(), &DataType::Timestamp(TimeUnit::Millisecond, None));
+    }
+
+    #[test]
+    fn test_boolean_to_boolean() {
+        let array = BooleanArray::from_slice([true, false, true]);
+        let result = array.convert_logical_type(DataType::Boolean);
+        assert_eq!(result.data_type(), &DataType::Boolean);
+    }
+
+    #[test]
+    fn test_list_to_list() {
+        let values = Int32Array::from_slice([1, 2, 3, 4, 5]);
+        let offsets = vec![0, 2, 5];
+        let list_array = ListArray::try_new(
+            DataType::List(Box::new(Field::new("item", DataType::Int32, true))),
+            offsets.try_into().unwrap(),
+            Box::new(values),
+            None,
+        ).unwrap();
+        let result = list_array.convert_logical_type(DataType::List(Box::new(Field::new("item", DataType::Int32, true))));
+        assert_eq!(result.data_type(), &DataType::List(Box::new(Field::new("item", DataType::Int32, true))));
+    }
+
+    #[test]
+    fn test_struct_to_struct() {
+        let boolean = BooleanArray::from_slice([true, false, true]);
+        let int = Int32Array::from_slice([1, 2, 3]);
+        let struct_array = StructArray::try_new(
+            DataType::Struct(vec![
+                Field::new("b", DataType::Boolean, true),
+                Field::new("i", DataType::Int32, true),
+            ]),
+            vec![
+                Box::new(boolean) as Box<dyn Array>,
+                Box::new(int) as Box<dyn Array>,
+            ],
+            None,
+        ).unwrap();
+        let result = struct_array.convert_logical_type(DataType::Struct(vec![
+            Field::new("b", DataType::Boolean, true),
+            Field::new("i", DataType::Int32, true),
+        ]));
+        assert_eq!(result.data_type(), &DataType::Struct(vec![
+            Field::new("b", DataType::Boolean, true),
+            Field::new("i", DataType::Int32, true),
+        ]));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_conversion() {
+        let array = Int32Array::from_slice([1, 2, 3]);
+        array.convert_logical_type(DataType::Utf8);
+    }
 }

@@ -286,6 +286,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-util",
+ "tracing",
  "zstd 0.12.4",
 ]
 
@@ -2150,6 +2151,8 @@ dependencies = [
  "pyo3",
  "serde",
  "serde_json",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

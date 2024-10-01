@@ -508,3 +508,30 @@ def test_repr_series_lit() -> None:
     s = lit(Series.from_pylist([1, 2, 3]))
     output = repr(s)
     assert output == "lit([1, 2, 3])"
+
+
+def test_list_value_counts():
+    # Create a MicroPartition with a list column
+    mp = MicroPartition.from_pydict(
+        {"list_col": [["a", "b", "a", "c"], ["b", "b", "c"], ["a", "a", "a"], [], ["d", None, "d"]]}
+    )
+
+    # # Apply list_value_counts operation
+    result = mp.eval_expression_list([col("list_col").list.value_counts().alias("value_counts")])
+    value_counts = result.to_pydict()["value_counts"]
+
+    # Expected output
+    expected = [[("a", 2), ("b", 1), ("c", 1)], [("b", 2), ("c", 1)], [("a", 3)], [], [("d", 2)]]
+
+    # Check the result
+    assert value_counts == expected
+
+    # Test with empty input (no proper type -> should raise error)
+    empty_mp = MicroPartition.from_pydict({"list_col": []})
+    with pytest.raises(ValueError):
+        empty_mp.eval_expression_list([col("list_col").list.value_counts().alias("value_counts")])
+
+    # Test with empty input (no proper type -> should raise error)
+    none_mp = MicroPartition.from_pydict({"list_col": [None, None, None]})
+    with pytest.raises(ValueError):
+        none_mp.eval_expression_list([col("list_col").list.value_counts().alias("value_counts")])

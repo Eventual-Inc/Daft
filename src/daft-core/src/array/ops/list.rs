@@ -2,16 +2,24 @@ use std::{iter::repeat, sync::Arc};
 
 use arrow2::offset::OffsetsBuffer;
 use common_error::DaftResult;
+use indexmap::{
+    map::{raw_entry_v1::RawEntryMut, RawEntryApiV1},
+    IndexMap,
+};
 
 use super::as_arrow::AsArrow;
 use crate::{
     array::{
         growable::{make_growable, Growable},
-        FixedSizeListArray, ListArray,
+        ops::arrow2::comparison::build_is_equal,
+        FixedSizeListArray, ListArray, StructArray,
     },
     count_mode::CountMode,
     datatypes::{BooleanArray, DataType, Field, Int64Array, UInt64Array, Utf8Array},
+    kernels::search_sorted::build_is_valid,
+    prelude::MapArray,
     series::{IntoSeries, Series},
+    utils::identity_hash_set::IdentityBuildHasher,
 };
 
 fn join_arrow_list_of_utf8s(
@@ -244,6 +252,128 @@ fn list_sort_helper_fixed_size(
 }
 
 impl ListArray {
+    pub fn value_counts(&self) -> DaftResult<MapArray> {
+        struct IndexRef {
+            index: usize,
+            hash: u64,
+        }
+
+        impl std::hash::Hash for IndexRef {
+            fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+                self.hash.hash(state);
+            }
+        }
+
+        let original_name = self.name();
+
+        let hashes = self.flat_child.hash(None)?;
+
+        let flat_child = self.flat_child.to_arrow();
+        let flat_child = &*flat_child;
+
+        let is_equal = build_is_equal(
+            flat_child, flat_child, true, // todo: should nans be considered equal?
+            true,
+        )?;
+
+        let is_valid = build_is_valid(flat_child);
+
+        let key_type = self.flat_child.data_type().clone();
+        let count_type = DataType::UInt64;
+
+        let mut include_mask = Vec::with_capacity(self.flat_child.len());
+        let mut count_array = Vec::new();
+
+        let mut offsets = Vec::with_capacity(self.len());
+
+        offsets.push(0_i64);
+
+        let mut map: IndexMap<IndexRef, u64, IdentityBuildHasher> = IndexMap::default();
+        for range in self.offsets().ranges() {
+            map.clear();
+
+            for index in range {
+                let index = index as usize;
+                if !is_valid(index) {
+                    include_mask.push(false);
+                    // skip nulls
+                    continue;
+                }
+
+                let hash = hashes.get(index).unwrap();
+
+                let entry = map
+                    .raw_entry_mut_v1()
+                    .from_hash(hash, |other| is_equal(other.index, index));
+
+                match entry {
+                    RawEntryMut::Occupied(mut entry) => {
+                        include_mask.push(false);
+                        *entry.get_mut() += 1;
+                    }
+                    RawEntryMut::Vacant(vacant) => {
+                        include_mask.push(true);
+                        vacant.insert(IndexRef { hash, index }, 1);
+                    }
+                }
+            }
+
+            // indexmap so ordered
+            for v in map.values() {
+                count_array.push(*v);
+            }
+
+            offsets.push(count_array.len() as i64);
+        }
+
+        let values = UInt64Array::from(("count", count_array)).into_series();
+        let boolean_array = BooleanArray::from(("boolean", include_mask.as_slice()));
+
+        let keys = self.flat_child.filter(&boolean_array)?;
+
+        let keys = Series::try_from_field_and_arrow_array(
+            Field::new("key", key_type.clone()),
+            keys.to_arrow(),
+        )?;
+
+        let values = Series::try_from_field_and_arrow_array(
+            Field::new("value", count_type.clone()),
+            values.to_arrow(),
+        )?;
+
+        let struct_type = DataType::Struct(vec![
+            Field::new("key", key_type.clone()),
+            Field::new("value", count_type.clone()),
+        ]);
+
+        let struct_array = StructArray::new(
+            Arc::new(Field::new("entries", struct_type.clone())),
+            vec![keys, values],
+            None,
+        );
+
+        let list_type = DataType::List(Box::new(struct_type));
+
+        let offsets = OffsetsBuffer::try_from(offsets)?;
+
+        let list_array = Self::new(
+            Arc::new(Field::new("entries", list_type.clone())),
+            struct_array.into_series(),
+            offsets,
+            None,
+        );
+
+        let map_type = DataType::Map {
+            key: Box::new(key_type),
+            value: Box::new(count_type),
+        };
+
+        Ok(MapArray::new(
+            Field::new(original_name, map_type.clone()),
+            list_array,
+        ))
+    }
+
     pub fn count(&self, mode: CountMode) -> DaftResult<UInt64Array> {
         let counts = match (mode, self.flat_child.validity()) {
             (CountMode::All, _) | (CountMode::Valid, None) => {
@@ -472,6 +602,11 @@ impl ListArray {
 }
 
 impl FixedSizeListArray {
+    pub fn value_counts(&self) -> DaftResult<MapArray> {
+        let list = self.to_list();
+        list.value_counts()
+    }
+
     pub fn count(&self, mode: CountMode) -> DaftResult<UInt64Array> {
         let size = self.fixed_element_len();
         let counts = match (mode, self.flat_child.validity()) {

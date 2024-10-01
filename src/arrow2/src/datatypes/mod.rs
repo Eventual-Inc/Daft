@@ -19,6 +19,10 @@ pub type Metadata = BTreeMap<String, String>;
 /// typedef for [Option<(String, Option<String>)>] descr
 pub(crate) type Extension = Option<(String, Option<String>)>;
 
+pub type ArrowDataType = DataType;
+pub type ArrowField = Field;
+
+
 /// The set of supported logical types in this crate.
 ///
 /// Each variant uniquely identifies a logical type, which define specific semantics to the data
@@ -157,6 +161,29 @@ pub enum DataType {
     Decimal256(usize, usize),
     /// Extension type.
     Extension(String, Box<DataType>, Option<String>),
+}
+
+impl DataType {
+    pub fn map(field: impl Into<Box<Field>>, keys_sorted: bool) -> Self {
+        Self::Map(field.into(), keys_sorted)
+    }
+
+    pub fn direct_children(&self, mut processor: impl FnMut(&DataType)) {
+        match self {
+            DataType::Null | DataType::Boolean | DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Decimal(..) | DataType::Decimal256(..) |
+            DataType::Int64 | DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 |
+            DataType::Float16 | DataType::Float32 | DataType::Float64 | DataType::Timestamp(_, _) |
+            DataType::Date32 | DataType::Date64 | DataType::Time32(_) | DataType::Time64(_) |
+            DataType::Duration(_) | DataType::Interval(_) | DataType::Binary | DataType::FixedSizeBinary(_) |
+            DataType::LargeBinary | DataType::Utf8 | DataType::LargeUtf8 => {}
+            DataType::List(field) | DataType::FixedSizeList(field, _) | DataType::LargeList(field) | DataType::Map(field, ..) => processor(&field.data_type),
+            DataType::Struct(fields) | DataType::Union(fields, _, _) => fields.iter().for_each(|field| processor(&field.data_type)),
+            DataType::Dictionary(..) => {
+                // todo: not sure what to do here, going to just ignore for now
+            }
+            DataType::Extension(_, inner, _) => processor(inner),
+        }
+    }
 }
 
 /// Mode of [`DataType::Union`]

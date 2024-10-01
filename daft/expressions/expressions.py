@@ -2922,6 +2922,37 @@ class ExpressionListNamespace(ExpressionNamespace):
         delimiter_expr = Expression._to_expression(delimiter)
         return Expression._from_pyexpr(native.list_join(self._expr, delimiter_expr._expr))
 
+    # todo: do we want type to be a Map expression? how should we do this?
+    def value_counts(self) -> Expression:
+        """Counts the occurrences of each unique value in the list.
+
+        Returns:
+            Expression: A Map<X, UInt64> expression where the keys are unique elements from the
+                        original list of type X, and the values are UInt64 counts representing
+                        the number of times each element appears in the list.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"letters": [["a", "b", "a"], ["b", "c", "b", "c"]]})
+            >>> df.with_column("value_counts", df["letters"].list.value_counts()).collect()
+            ╭──────────────┬───────────────────╮
+            │ letters      ┆ value_counts      │
+            │ ---          ┆ ---               │
+            │ List[Utf8]   ┆ Map[Utf8: UInt64] │
+            ╞══════════════╪═══════════════════╡
+            │ [a, b, a]    ┆ [{key: a,         │
+            │              ┆ value: 2,         │
+            │              ┆ }, {key: …        │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ [b, c, b, c] ┆ [{key: b,         │
+            │              ┆ value: 2,         │
+            │              ┆ }, {key: …        │
+            ╰──────────────┴───────────────────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+        """
+        return Expression._from_pyexpr(native.list_value_counts(self._expr))
+
     def count(self, mode: CountMode = CountMode.Valid) -> Expression:
         """Counts the number of elements in each list
 
@@ -3069,21 +3100,21 @@ class ExpressionMapNamespace(ExpressionNamespace):
             >>> df = daft.from_arrow(pa.table({"map_col": pa_array}))
             >>> df = df.with_column("a", df["map_col"].map.get("a"))
             >>> df.show()
-            ╭──────────────────────────────────────┬───────╮
-            │ map_col                              ┆ a     │
-            │ ---                                  ┆ ---   │
-            │ Map[Struct[key: Utf8, value: Int64]] ┆ Int64 │
-            ╞══════════════════════════════════════╪═══════╡
-            │ [{key: a,                            ┆ 1     │
-            │ value: 1,                            ┆       │
-            │ }]                                   ┆       │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ []                                   ┆ None  │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ [{key: b,                            ┆ None  │
-            │ value: 2,                            ┆       │
-            │ }]                                   ┆       │
-            ╰──────────────────────────────────────┴───────╯
+            ╭──────────────────┬───────╮
+            │ map_col          ┆ a     │
+            │ ---              ┆ ---   │
+            │ Map[Utf8: Int64] ┆ Int64 │
+            ╞══════════════════╪═══════╡
+            │ [{key: a,        ┆ 1     │
+            │ value: 1,        ┆       │
+            │ }]               ┆       │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ []               ┆ None  │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ [{key: b,        ┆ None  │
+            │ value: 2,        ┆       │
+            │ }]               ┆       │
+            ╰──────────────────┴───────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 

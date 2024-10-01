@@ -117,6 +117,13 @@ impl Series {
         self.inner.validity()
     }
 
+    pub fn is_valid(&self, idx: usize) -> bool {
+        let Some(validity) = self.validity() else {
+            return true;
+        };
+        validity.get_bit(idx)
+    }
+
     /// Attempts to downcast the Series to a primitive slice
     /// This will return an error if the Series is not of the physical type `T`
     /// # Example
