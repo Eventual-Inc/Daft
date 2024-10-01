@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_core::prelude::*;
@@ -724,7 +724,7 @@ impl SQLPlanner {
                         let struct_field = Field::new(key, value.get_type());
                         Ok((struct_field, value.clone()))
                     })
-                    .collect::<SQLPlannerResult<HashMap<_, _>>>()?;
+                    .collect::<SQLPlannerResult<_>>()?;
 
                 Ok(Expr::Literal(LiteralValue::Struct(entries)).arced())
             }

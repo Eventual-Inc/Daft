@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     fmt::{Display, Formatter, Result},
     hash::{Hash, Hasher},
     io::{self, Write},
@@ -15,6 +14,7 @@ use daft_core::{
         display_timestamp,
     },
 };
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
@@ -70,7 +70,7 @@ pub enum LiteralValue {
     #[cfg(feature = "python")]
     Python(PyObjectWrapper),
 
-    Struct(HashMap<Field, LiteralValue>),
+    Struct(IndexMap<Field, LiteralValue>),
 }
 
 impl Eq for LiteralValue {}

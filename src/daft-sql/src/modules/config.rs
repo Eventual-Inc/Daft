@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use common_io_config::{HTTPConfig, IOConfig, S3Config};
 use daft_core::prelude::{DataType, Field};
 use daft_dsl::{literal_value, Expr, ExprRef, LiteralValue};
@@ -123,7 +121,7 @@ impl SQLFunction for S3ConfigFunction {
             item!(profile_name, Utf8),
         ]
         .into_iter()
-        .collect::<HashMap<_, _>>();
+        .collect::<_>();
 
         Ok(Expr::Literal(LiteralValue::Struct(entries)).arced())
     }
@@ -149,7 +147,7 @@ impl SQLFunction for HTTPConfigFunction {
             item!(bearer_token, Utf8),
         ]
         .into_iter()
-        .collect::<HashMap<_, _>>();
+        .collect::<_>();
 
         Ok(Expr::Literal(LiteralValue::Struct(entries)).arced())
     }

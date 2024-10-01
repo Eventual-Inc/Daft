@@ -38,7 +38,6 @@ impl TimeUnit {
 
 impl FromStr for TimeUnit {
     type Err = DaftError;
-
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "ns" | "nanoseconds" => Ok(Self::Nanoseconds),

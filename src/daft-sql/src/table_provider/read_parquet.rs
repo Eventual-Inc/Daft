@@ -25,7 +25,7 @@ impl TryFrom<SQLFunctionArguments> for ParquetScanBuilder {
         let coerce_int96_timestamp_unit: TimeUnit = coerce_int96_timestamp_unit
             .as_deref()
             .unwrap_or("nanoseconds")
-            .parse()
+            .parse::<TimeUnit>()
             .map_err(|_| {
                 PlannerError::invalid_argument("coerce_int96_timestamp_unit", "read_parquet")
             })?;
