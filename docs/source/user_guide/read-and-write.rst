@@ -1,5 +1,5 @@
-Reading/Writing
-===============
+Reading/Writing Data
+====================
 
 Daft can read data from a variety of sources, and write data to many destinations.
 
@@ -37,7 +37,7 @@ To learn more about each of these constructors, as well as the options that they
 From Data Catalogs
 ^^^^^^^^^^^^^^^^^^
 
-If you use catalogs such as Apache Iceberg or Hive, you may wish to consult our user guide on integrations with Data Catalogs: :doc:`Daft integration with Data Catalogs <../integrations/>`.
+If you use catalogs such as Apache Iceberg or Hive, you may wish to consult our user guide on integrations with Data Catalogs: :doc:`Daft integration with Data Catalogs <integrations>`.
 
 From File Paths
 ^^^^^^^^^^^^^^^
@@ -87,7 +87,50 @@ In order to partition the data, you can specify a partition column, which will a
     # Read with a partition column
     df = daft.read_sql("SELECT * FROM my_table", partition_col="date", uri)
 
-To learn more, consult the :doc:`SQL User Guide <../integrations/sql>` or the API documentation on :func:`daft.read_sql`.
+To learn more, consult the :doc:`SQL User Guide <integrations/sql>` or the API documentation on :func:`daft.read_sql`.
+
+
+Reading a column of URLs
+------------------------
+
+Daft provides a convenient way to read data from a column of URLs using the :meth:`.url.download() <daft.expressions.expressions.ExpressionUrlNamespace.download>` method. This is particularly useful when you have a DataFrame with a column containing URLs pointing to external resources that you want to fetch and incorporate into your DataFrame.
+
+Here's an example of how to use this feature:
+
+.. code:: python
+
+    # Assume we have a DataFrame with a column named 'image_urls'
+    df = daft.from_pydict({
+        "image_urls": [
+            "https://example.com/image1.jpg",
+            "https://example.com/image2.jpg",
+            "https://example.com/image3.jpg"
+        ]
+    })
+
+    # Download the content from the URLs and create a new column 'image_data'
+    df = df.with_column("image_data", df["image_urls"].url.download())
+    df.show()
+
+.. code-block:: text
+    :caption: Output
+
+    +------------------------------------+------------------------------------+
+    | image_urls                         | image_data                         |
+    | Utf8                               | Binary                             |
+    +====================================+====================================+
+    | https://example.com/image1.jpg     | b'\xff\xd8\xff\xe0\x00\x10JFIF...' |
+    +------------------------------------+------------------------------------+
+    | https://example.com/image2.jpg     | b'\xff\xd8\xff\xe0\x00\x10JFIF...' |
+    +------------------------------------+------------------------------------+
+    | https://example.com/image3.jpg     | b'\xff\xd8\xff\xe0\x00\x10JFIF...' |
+    +------------------------------------+------------------------------------+
+
+    (Showing first 3 of 3 rows)
+
+
+This approach allows you to efficiently download and process data from a large number of URLs in parallel, leveraging Daft's distributed computing capabilities.
+
 
 
 Writing Data

@@ -72,6 +72,72 @@ impl SQLFunction for Utf8Expr {
         let inputs = self.args_to_expr_unnamed(inputs, planner)?;
         to_expr(self, &inputs)
     }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        match self {
+            Self::EndsWith => "Returns true if the string ends with the specified substring".to_string(),
+            Self::StartsWith => "Returns true if the string starts with the specified substring".to_string(),
+            Self::Contains => "Returns true if the string contains the specified substring".to_string(),
+            Self::Split(_) => "Splits the string by the specified delimiter and returns an array of substrings".to_string(),
+            Self::Match => "Returns true if the string matches the specified regular expression pattern".to_string(),
+            Self::Extract(_) => "Extracts the first substring that matches the specified regular expression pattern".to_string(),
+            Self::ExtractAll(_) => "Extracts all substrings that match the specified regular expression pattern".to_string(),
+            Self::Replace(_) => "Replaces all occurrences of a substring with a new string".to_string(),
+            Self::Like => "Returns true if the string matches the specified SQL LIKE pattern".to_string(),
+            Self::Ilike => "Returns true if the string matches the specified SQL LIKE pattern (case-insensitive)".to_string(),
+            Self::Length => "Returns the length of the string".to_string(),
+            Self::Lower => "Converts the string to lowercase".to_string(),
+            Self::Upper => "Converts the string to uppercase".to_string(),
+            Self::Lstrip => "Removes leading whitespace from the string".to_string(),
+            Self::Rstrip => "Removes trailing whitespace from the string".to_string(),
+            Self::Reverse => "Reverses the order of characters in the string".to_string(),
+            Self::Capitalize => "Capitalizes the first character of the string".to_string(),
+            Self::Left => "Returns the specified number of leftmost characters from the string".to_string(),
+            Self::Right => "Returns the specified number of rightmost characters from the string".to_string(),
+            Self::Find => "Returns the index of the first occurrence of a substring within the string".to_string(),
+            Self::Rpad => "Pads the string on the right side with the specified string until it reaches the specified length".to_string(),
+            Self::Lpad => "Pads the string on the left side with the specified string until it reaches the specified length".to_string(),
+            Self::Repeat => "Repeats the string the specified number of times".to_string(),
+            Self::Substr => "Returns a substring of the string starting at the specified position and length".to_string(),
+            Self::ToDate(_) => "Parses the string as a date using the specified format.".to_string(),
+            Self::ToDatetime(_, _) => "Parses the string as a datetime using the specified format.".to_string(),
+            Self::LengthBytes => "Returns the length of the string in bytes".to_string(),
+            Self::Normalize(_) => unimplemented!("Normalize not implemented"),
+        }
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        match self {
+            Self::EndsWith => &["string_input", "substring"],
+            Self::StartsWith => &["string_input", "substring"],
+            Self::Contains => &["string_input", "substring"],
+            Self::Split(_) => &["string_input", "delimiter"],
+            Self::Match => &["string_input", "pattern"],
+            Self::Extract(_) => &["string_input", "pattern"],
+            Self::ExtractAll(_) => &["string_input", "pattern"],
+            Self::Replace(_) => &["string_input", "pattern", "replacement"],
+            Self::Like => &["string_input", "pattern"],
+            Self::Ilike => &["string_input", "pattern"],
+            Self::Length => &["string_input"],
+            Self::Lower => &["string_input"],
+            Self::Upper => &["string_input"],
+            Self::Lstrip => &["string_input"],
+            Self::Rstrip => &["string_input"],
+            Self::Reverse => &["string_input"],
+            Self::Capitalize => &["string_input"],
+            Self::Left => &["string_input", "length"],
+            Self::Right => &["string_input", "length"],
+            Self::Find => &["string_input", "substring"],
+            Self::Rpad => &["string_input", "length", "pad"],
+            Self::Lpad => &["string_input", "length", "pad"],
+            Self::Repeat => &["string_input", "count"],
+            Self::Substr => &["string_input", "start", "length"],
+            Self::ToDate(_) => &["string_input", "format"],
+            Self::ToDatetime(_, _) => &["string_input", "format"],
+            Self::LengthBytes => &["string_input"],
+            Self::Normalize(_) => unimplemented!("Normalize not implemented"),
+        }
+    }
 }
 
 fn to_expr(expr: &Utf8Expr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
