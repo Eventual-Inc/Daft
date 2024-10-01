@@ -67,6 +67,7 @@ serde_json = {version = "^1.0", features = [
 ], optional = true}
 # For SIMD utf8 validation
 simdutf8 = "0.1.4"
+similar = "2.6.0"
 streaming-iterator = {version = "0.1", optional = true}
 # for division/remainder optimization at runtime
 strength_reduce = {version = "0.2", optional = true}

@@ -17,13 +17,12 @@
 //!
 //! Most arrays contain a [`MutableArray`] counterpart that is neither clonable nor sliceable, but
 //! can be operated in-place.
-use std::any::Any;
-use std::sync::Arc;
+use std::{any::Any, sync::Arc};
 
-use crate::error::Result;
 use crate::{
     bitmap::{Bitmap, MutableBitmap},
     datatypes::DataType,
+    error::Result,
 };
 
 mod physical_binary;
@@ -55,7 +54,7 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
     /// When the validity is [`None`], all slots are valid.
     fn validity(&self) -> Option<&Bitmap>;
 
-    fn direct_children<'a>(&'a mut self) -> Box<dyn Iterator<Item=&'a mut dyn Array> + 'a> {
+    fn direct_children<'a>(&'a mut self) -> Box<dyn Iterator<Item = &'a mut dyn Array> + 'a> {
         Box::new(core::iter::empty())
     }
 
@@ -637,13 +636,16 @@ macro_rules! impl_common_array {
 
         fn change_type(&mut self, data_type: DataType) {
             if data_type.to_physical_type() != self.data_type().to_physical_type() {
-                panic!(
-                    "Converting array with logical type\n{:#?}\n\nto logical type\n{:#?}\nfailed, physical types do not match: {:?} -> {:?}",
-                    self.data_type(),
-                    data_type,
-                    self.data_type().to_physical_type(),
-                    data_type.to_physical_type(),
-                );
+                let from =                     format!("{:#?}", self.data_type());
+                let to = format!("{:#?}", data_type);
+
+
+                let diff = similar::TextDiff::from_lines(&from, &to);
+
+                let diff = diff
+                    .unified_diff();
+
+                panic!("{diff}");
             }
 
             self.data_type = data_type.clone();
@@ -657,7 +659,6 @@ macro_rules! impl_common_array {
                 child_elem.change_type(child.clone());
             })
         }
-
     };
 }
 
@@ -725,17 +726,15 @@ pub mod dyn_ord;
 pub mod growable;
 pub mod ord;
 
-pub(crate) use iterator::ArrayAccessor;
-pub use iterator::ArrayValuesIter;
-
-pub use equal::equal;
-pub use fmt::{get_display, get_value_display};
-
 pub use binary::{BinaryArray, BinaryValueIter, MutableBinaryArray, MutableBinaryValuesArray};
 pub use boolean::{BooleanArray, MutableBooleanArray};
 pub use dictionary::{DictionaryArray, DictionaryKey, MutableDictionaryArray};
+pub use equal::equal;
 pub use fixed_size_binary::{FixedSizeBinaryArray, MutableFixedSizeBinaryArray};
 pub use fixed_size_list::{FixedSizeListArray, MutableFixedSizeListArray};
+pub use fmt::{get_display, get_value_display};
+pub(crate) use iterator::ArrayAccessor;
+pub use iterator::ArrayValuesIter;
 pub use list::{ListArray, ListValuesIter, MutableListArray};
 pub use map::MapArray;
 pub use null::{MutableNullArray, NullArray};
@@ -744,15 +743,13 @@ pub use struct_::{MutableStructArray, StructArray};
 pub use union::UnionArray;
 pub use utf8::{MutableUtf8Array, MutableUtf8ValuesArray, Utf8Array, Utf8ValuesIter};
 
-pub(crate) use self::ffi::offset_buffers_children_dictionary;
-pub(crate) use self::ffi::FromFfi;
-pub(crate) use self::ffi::ToFfi;
+pub(crate) use self::ffi::{offset_buffers_children_dictionary, FromFfi, ToFfi};
 
 /// A trait describing the ability of a struct to create itself from a iterator.
 /// This is similar to [`Extend`], but accepted the creation to error.
 pub trait TryExtend<A> {
     /// Fallible version of [`Extend::extend`].
-    fn try_extend<I: IntoIterator<Item=A>>(&mut self, iter: I) -> Result<()>;
+    fn try_extend<I: IntoIterator<Item = A>>(&mut self, iter: I) -> Result<()>;
 }
 
 /// A trait describing the ability of a struct to receive new items.
@@ -790,12 +787,16 @@ pub unsafe trait GenericBinaryArray<O: crate::offset::Offset>: Array {
     fn offsets(&self) -> &[O];
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::datatypes::{DataType, Field, TimeUnit, IntervalUnit};
-    use crate::array::{Int32Array, Int64Array, Float32Array, Utf8Array, BooleanArray, ListArray, StructArray, UnionArray, MapArray};
+    use crate::{
+        array::{
+            BooleanArray, Float32Array, Int32Array, Int64Array, ListArray, MapArray, StructArray,
+            UnionArray, Utf8Array,
+        },
+        datatypes::{DataType, Field, IntervalUnit, TimeUnit},
+    };
 
     #[test]
     fn test_int32_to_date32() {
@@ -808,7 +809,10 @@ mod tests {
     fn test_int64_to_timestamp() {
         let array = Int64Array::from_slice([1000, 2000, 3000]);
         let result = array.convert_logical_type(DataType::Timestamp(TimeUnit::Millisecond, None));
-        assert_eq!(result.data_type(), &DataType::Timestamp(TimeUnit::Millisecond, None));
+        assert_eq!(
+            result.data_type(),
+            &DataType::Timestamp(TimeUnit::Millisecond, None)
+        );
     }
 
     #[test]
@@ -827,9 +831,17 @@ mod tests {
             offsets.try_into().unwrap(),
             Box::new(values),
             None,
-        ).unwrap();
-        let result = list_array.convert_logical_type(DataType::List(Box::new(Field::new("item", DataType::Int32, true))));
-        assert_eq!(result.data_type(), &DataType::List(Box::new(Field::new("item", DataType::Int32, true))));
+        )
+        .unwrap();
+        let result = list_array.convert_logical_type(DataType::List(Box::new(Field::new(
+            "item",
+            DataType::Int32,
+            true,
+        ))));
+        assert_eq!(
+            result.data_type(),
+            &DataType::List(Box::new(Field::new("item", DataType::Int32, true)))
+        );
     }
 
     #[test]
@@ -846,15 +858,19 @@ mod tests {
                 Box::new(int) as Box<dyn Array>,
             ],
             None,
-        ).unwrap();
+        )
+        .unwrap();
         let result = struct_array.convert_logical_type(DataType::Struct(vec![
             Field::new("b", DataType::Boolean, true),
             Field::new("i", DataType::Int32, true),
         ]));
-        assert_eq!(result.data_type(), &DataType::Struct(vec![
-            Field::new("b", DataType::Boolean, true),
-            Field::new("i", DataType::Int32, true),
-        ]));
+        assert_eq!(
+            result.data_type(),
+            &DataType::Struct(vec![
+                Field::new("b", DataType::Boolean, true),
+                Field::new("i", DataType::Int32, true),
+            ])
+        );
     }
 
     #[test]
