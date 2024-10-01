@@ -75,6 +75,16 @@ repos:
     types: [rust]
     args: [--]
 
+  - id: cargo-machete
+    name: cargo machete
+    description: Check for unused Rust dependencies
+    entry: ./tools/run_cargo_machete.sh
+    language: system
+    types: [rust]
+    pass_filenames: false
+    verbose: true
+    fail_fast: false
+
   - id: cargo-check-default
     name: cargo check (default)
     description: Check the package for errors with default features.
@@ -109,15 +119,6 @@ repos:
     language: system
     types: [rust]
     pass_filenames: false
-
-  - id: cargo-machete
-    name: cargo machete
-    description: Check for unused Rust dependencies
-    entry: cargo machete
-    language: system
-    types: [rust]
-    pass_filenames: false
-    args: [--with-metadata]
 
 - repo: https://github.com/abravalheri/validate-pyproject
   rev: v0.19
