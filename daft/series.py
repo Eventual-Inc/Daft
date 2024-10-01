@@ -929,7 +929,7 @@ class SeriesPartitioningNamespace(SeriesNamespace):
 class SeriesListNamespace(SeriesNamespace):
     def lengths(self) -> Series:
         warnings.warn(
-            "This function will be deprecated from Daft version >= 0.3.5!  Instead, please use 'Expression.list.length'",
+            "This function will be deprecated from Daft version >= 0.3.5!  Instead, please use 'length'",
             category=DeprecationWarning,
         )
 
