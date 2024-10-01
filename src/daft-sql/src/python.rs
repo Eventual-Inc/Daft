@@ -5,6 +5,31 @@ use pyo3::prelude::*;
 
 use crate::{catalog::SQLCatalog, functions::SQL_FUNCTIONS, planner::SQLPlanner};
 
+#[pyclass]
+pub struct SQLFunctionStub {
+    name: String,
+    docstring: String,
+    arg_names: Vec<&'static str>,
+}
+
+#[pymethods]
+impl SQLFunctionStub {
+    #[getter]
+    fn name(&self) -> PyResult<String> {
+        Ok(self.name.clone())
+    }
+
+    #[getter]
+    fn docstring(&self) -> PyResult<String> {
+        Ok(self.docstring.clone())
+    }
+
+    #[getter]
+    fn arg_names(&self) -> PyResult<Vec<&'static str>> {
+        Ok(self.arg_names.clone())
+    }
+}
+
 #[pyfunction]
 pub fn sql(
     sql: &str,
@@ -23,14 +48,18 @@ pub fn sql_expr(sql: &str) -> PyResult<PyExpr> {
 }
 
 #[pyfunction]
-pub fn list_sql_functions() -> Vec<(String, String, Vec<&'static str>)> {
+pub fn list_sql_functions() -> Vec<SQLFunctionStub> {
     SQL_FUNCTIONS
         .map
         .keys()
         .cloned()
         .map(|name| {
             let (docstring, args) = SQL_FUNCTIONS.docsmap.get(&name).unwrap();
-            (name, docstring.to_string(), args.to_vec())
+            SQLFunctionStub {
+                name,
+                docstring: docstring.to_string(),
+                arg_names: args.to_vec(),
+            }
         })
         .collect()
 }

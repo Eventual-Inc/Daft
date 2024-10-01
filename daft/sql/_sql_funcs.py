@@ -7,7 +7,7 @@ from __future__ import annotations
 from inspect import Parameter as _Parameter
 from inspect import Signature as _Signature
 
-from daft.daft import list_sql_functions as _list_sql_funcstions
+from daft.daft import list_sql_functions as _list_sql_functions
 
 
 def _create_sql_function(func_name: str, docstring: str, arg_names: list[str]):
@@ -25,6 +25,6 @@ def _create_sql_function(func_name: str, docstring: str, arg_names: list[str]):
 
 __all__ = []
 
-for sql_func_name, docstring, arg_names in _list_sql_funcstions():
-    _create_sql_function(sql_func_name, docstring, arg_names)
-    __all__.append(sql_func_name)
+for sql_function_stub in _list_sql_functions():
+    _create_sql_function(sql_function_stub.name, sql_function_stub.docstring, sql_function_stub.arg_names)
+    __all__.append(sql_function_stub.name)
