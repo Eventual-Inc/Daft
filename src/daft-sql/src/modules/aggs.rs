@@ -27,7 +27,7 @@ impl SQLModule for SQLModuleAggs {
         parent.add_fn("avg", Mean(nil.clone()));
         parent.add_fn("mean", Mean(nil.clone()));
         parent.add_fn("min", Min(nil.clone()));
-        parent.add_fn("max", Max(nil.clone()));
+        parent.add_fn("max", Max(nil));
     }
 }
 
@@ -74,7 +74,7 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
     })
 }
 
-pub(crate) fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
+pub fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
     match expr {
         AggExpr::Count(_, _) => unreachable!("count should be handled by by this point"),
         AggExpr::Sum(_) => {

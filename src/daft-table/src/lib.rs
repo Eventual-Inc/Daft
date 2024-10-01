@@ -711,16 +711,11 @@ impl Table {
         // Begin the body.
         res.push_str("<tbody>\n");
 
-        let head_rows;
-        let tail_rows;
-
-        if self.len() > 10 {
-            head_rows = 5;
-            tail_rows = 5;
+        let (head_rows, tail_rows) = if self.len() > 10 {
+            (5, 5)
         } else {
-            head_rows = self.len();
-            tail_rows = 0;
-        }
+            (self.len(), 0)
+        };
 
         let styled_td =
             "<td><div style=\"text-align:left; max-width:192px; max-height:64px; overflow:auto\">";

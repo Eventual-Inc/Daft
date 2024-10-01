@@ -138,7 +138,7 @@ fn _get_file_metadata_from_html(path: &str, text: &str) -> super::Result<Vec<Fil
     Ok(metas.into_iter().flatten().collect())
 }
 
-pub(crate) struct HttpSource {
+pub struct HttpSource {
     pub(crate) client: reqwest::Client,
 }
 

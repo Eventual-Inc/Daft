@@ -1,3 +1,8 @@
+#![expect(
+    clippy::fallible_impl_from,
+    reason = "TODO(andrewgazelka/others): This should really be changed in the future"
+)]
+
 use std::{borrow::Cow, sync::Arc};
 
 use common_error::{DaftError, DaftResult};

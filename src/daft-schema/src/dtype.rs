@@ -361,21 +361,21 @@ impl DataType {
     #[must_use]
     pub fn is_numeric(&self) -> bool {
         match self {
-             Self::Int8
-             | Self::Int16
-             | Self::Int32
-             | Self::Int64
-             | Self::Int128
-             | Self::UInt8
-             | Self::UInt16
-             | Self::UInt32
-             | Self::UInt64
-             // DataType::Float16
-             | Self::Float32
-             | Self::Float64 => true,
-             Self::Extension(_, inner, _) => inner.is_numeric(),
-             _ => false
-         }
+            Self::Int8
+            | Self::Int16
+            | Self::Int32
+            | Self::Int64
+            | Self::Int128
+            | Self::UInt8
+            | Self::UInt16
+            | Self::UInt32
+            | Self::UInt64
+            // DataType::Float16
+            | Self::Float32
+            | Self::Float64 => true,
+            Self::Extension(_, inner, _) => inner.is_numeric(),
+            _ => false
+        }
     }
 
     #[inline]
@@ -637,6 +637,10 @@ impl DataType {
     }
 }
 
+#[expect(
+    clippy::fallible_impl_from,
+    reason = "TODO(andrewgazelka): This should really be changed in the future"
+)]
 impl From<&ArrowType> for DataType {
     fn from(item: &ArrowType) -> Self {
         match item {

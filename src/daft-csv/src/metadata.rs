@@ -332,8 +332,7 @@ mod tests {
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let (schema, read_stats) =
-            read_csv_schema(file.as_ref(), None, None, io_client.clone(), None)?;
+        let (schema, read_stats) = read_csv_schema(file.as_ref(), None, None, io_client, None)?;
         assert_eq!(
             schema,
             Schema::new(vec![
@@ -365,7 +364,7 @@ mod tests {
             file.as_ref(),
             Some(CsvParseOptions::default().with_delimiter(b'|')),
             None,
-            io_client.clone(),
+            io_client,
             None,
         )?;
         assert_eq!(
@@ -392,7 +391,7 @@ mod tests {
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let (_, read_stats) = read_csv_schema(file.as_ref(), None, None, io_client.clone(), None)?;
+        let (_, read_stats) = read_csv_schema(file.as_ref(), None, None, io_client, None)?;
         assert_eq!(read_stats.total_bytes_read, 328);
         assert_eq!(read_stats.total_records_read, 20);
 
@@ -414,7 +413,7 @@ mod tests {
             file.as_ref(),
             Some(CsvParseOptions::default().with_has_header(false)),
             None,
-            io_client.clone(),
+            io_client,
             None,
         )?;
         assert_eq!(
@@ -444,8 +443,7 @@ mod tests {
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let (schema, read_stats) =
-            read_csv_schema(file.as_ref(), None, None, io_client.clone(), None)?;
+        let (schema, read_stats) = read_csv_schema(file.as_ref(), None, None, io_client, None)?;
         assert_eq!(
             schema,
             Schema::new(vec![
@@ -470,8 +468,7 @@ mod tests {
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let (schema, read_stats) =
-            read_csv_schema(file.as_ref(), None, None, io_client.clone(), None)?;
+        let (schema, read_stats) = read_csv_schema(file.as_ref(), None, None, io_client, None)?;
         assert_eq!(
             schema,
             Schema::new(vec![
@@ -499,8 +496,7 @@ mod tests {
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let (schema, read_stats) =
-            read_csv_schema(file.as_ref(), None, None, io_client.clone(), None)?;
+        let (schema, read_stats) = read_csv_schema(file.as_ref(), None, None, io_client, None)?;
         assert_eq!(
             schema,
             Schema::new(vec![
@@ -527,7 +523,7 @@ mod tests {
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
         let (schema, read_stats) =
-            read_csv_schema(file.as_ref(), None, Some(100), io_client.clone(), None)?;
+            read_csv_schema(file.as_ref(), None, Some(100), io_client, None)?;
         assert_eq!(
             schema,
             Schema::new(vec![
@@ -564,7 +560,7 @@ mod tests {
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let err = read_csv_schema(file.as_ref(), None, None, io_client.clone(), None);
+        let err = read_csv_schema(file.as_ref(), None, None, io_client, None);
         assert!(err.is_err());
         let err = err.unwrap_err();
         assert!(matches!(err, DaftError::ArrowError(_)), "{}", err);
@@ -593,7 +589,7 @@ mod tests {
             file.as_ref(),
             Some(CsvParseOptions::default().with_has_header(false)),
             None,
-            io_client.clone(),
+            io_client,
             None,
         );
         assert!(err.is_err());
@@ -642,7 +638,7 @@ mod tests {
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let (schema, _) = read_csv_schema(file.as_ref(), None, None, io_client.clone(), None)?;
+        let (schema, _) = read_csv_schema(file.as_ref(), None, None, io_client, None)?;
         assert_eq!(
             schema,
             Schema::new(vec![

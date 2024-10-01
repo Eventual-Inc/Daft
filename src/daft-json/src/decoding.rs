@@ -24,7 +24,7 @@ use simd_json::StaticNode;
 use crate::deserializer::Value as BorrowedValue;
 const JSON_NULL_VALUE: BorrowedValue = BorrowedValue::Static(StaticNode::Null);
 /// Deserialize chunk of JSON records into a chunk of Arrow2 arrays.
-pub(crate) fn deserialize_records<'a, A: Borrow<BorrowedValue<'a>>>(
+pub fn deserialize_records<'a, A: Borrow<BorrowedValue<'a>>>(
     records: &[A],
     schema: &Schema,
     schema_is_projection: bool,
@@ -62,7 +62,7 @@ pub(crate) fn deserialize_records<'a, A: Borrow<BorrowedValue<'a>>>(
     Ok(results.into_values().map(|mut ma| ma.as_box()).collect())
 }
 
-pub(crate) fn allocate_array(f: &Field, length: usize) -> Box<dyn MutableArray> {
+pub fn allocate_array(f: &Field, length: usize) -> Box<dyn MutableArray> {
     match f.data_type() {
         DataType::Null => Box::new(MutableNullArray::new(DataType::Null, 0)),
         DataType::Int8 => Box::new(MutablePrimitiveArray::<i8>::with_capacity(length)),
@@ -126,7 +126,7 @@ pub(crate) fn allocate_array(f: &Field, length: usize) -> Box<dyn MutableArray> 
 }
 
 /// Deserialize `rows` by extending them into the given `target`
-pub(crate) fn deserialize_into<'a, A: Borrow<BorrowedValue<'a>>>(
+pub fn deserialize_into<'a, A: Borrow<BorrowedValue<'a>>>(
     target: &mut Box<dyn MutableArray>,
     rows: &[A],
 ) {

@@ -117,9 +117,9 @@ impl<'a> JsonReader<'a> {
         let mut total_rows = 128;
 
         if let Some((mean, std)) = get_line_stats_json(bytes, self.sample_size) {
-            let line_length_upper_bound = mean + 1.1 * std;
+            let line_length_upper_bound = 1.1f32.mul_add(std, mean);
 
-            total_rows = (bytes.len() as f32 / (mean - 0.01 * std)) as usize;
+            total_rows = (bytes.len() as f32 / 0.01f32.mul_add(-std, mean)) as usize;
             if let Some(n_rows) = self.n_rows {
                 total_rows = std::cmp::min(n_rows, total_rows);
                 // the guessed upper bound of the no. of bytes in the file
@@ -225,10 +225,7 @@ impl<'a> JsonReader<'a> {
             .zip(daft_fields)
             .map(|(mut ma, fld)| {
                 let arr = ma.as_box();
-                Series::try_from_field_and_arrow_array(
-                    fld.clone(),
-                    cast_array_for_daft_if_needed(arr),
-                )
+                Series::try_from_field_and_arrow_array(fld, cast_array_for_daft_if_needed(arr))
             })
             .collect::<DaftResult<Vec<_>>>()?;
 

@@ -28,7 +28,7 @@ impl<'a> ArrowBitmapGrowable<'a> {
     }
 
     pub fn build(self) -> arrow2::bitmap::Bitmap {
-        self.mutable_bitmap.clone().into()
+        self.mutable_bitmap.into()
     }
 }
 

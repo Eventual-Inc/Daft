@@ -46,7 +46,7 @@ pub mod pylib {
                 row_groups,
                 predicate.map(|e| e.expr),
                 io_client,
-                Some(io_stats.clone()),
+                Some(io_stats),
                 multithreaded_io.unwrap_or(true),
                 schema_infer_options,
                 None,

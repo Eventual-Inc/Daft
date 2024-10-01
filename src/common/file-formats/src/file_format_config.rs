@@ -130,7 +130,7 @@ impl ParquetSourceConfig {
     ) -> Self {
         Self {
             coerce_int96_timestamp_unit: coerce_int96_timestamp_unit
-                .unwrap_or(TimeUnit::Nanoseconds.into())
+                .unwrap_or_else(|| TimeUnit::Nanoseconds.into())
                 .into(),
             field_id_mapping: field_id_mapping
                 .map(|map| Arc::new(map.into_iter().map(|(k, v)| (k, v.field)).collect())),

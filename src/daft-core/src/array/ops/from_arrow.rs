@@ -21,7 +21,7 @@ where
 
 impl<T: DaftPhysicalType> FromArrow for DataArray<T> {
     fn from_arrow(field: FieldRef, arrow_arr: Box<dyn arrow2::array::Array>) -> DaftResult<Self> {
-        Self::try_from((field.clone(), arrow_arr))
+        Self::try_from((field, arrow_arr))
     }
 }
 
@@ -42,7 +42,7 @@ where
             data_array_field,
             physical_arrow_arr,
         )?;
-        Ok(Self::new(field.clone(), physical))
+        Ok(Self::new(field, physical))
     }
 }
 

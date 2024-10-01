@@ -138,7 +138,7 @@ impl From<Error> for super::Error {
     }
 }
 
-pub(crate) struct AzureBlobSource {
+pub struct AzureBlobSource {
     blob_client: Arc<BlobServiceClient>,
 }
 

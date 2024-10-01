@@ -5,7 +5,7 @@ use daft_core::datatypes::Field;
 use daft_dsl::common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_io::{IOClient, IOStatsRef};
 pub use parquet2::metadata::{FileMetaData, RowGroupMetaData};
-use parquet2::{metadata::RowGroupList, read::deserialize_metadata, schema::types::ParquetType};
+use parquet2::{read::deserialize_metadata, schema::types::ParquetType};
 use snafu::ResultExt;
 
 use crate::{Error, JoinSnafu, UnableToParseMetadataSnafu};
@@ -174,7 +174,7 @@ fn apply_field_ids_to_parquet_file_metadata(
         })
         .collect::<BTreeMap<_, _>>();
 
-    let new_row_groups_list = file_metadata
+    let new_row_groups = file_metadata
         .row_groups
         .into_values()
         .map(|rg| {
@@ -203,9 +203,8 @@ fn apply_field_ids_to_parquet_file_metadata(
                 new_total_uncompressed_size,
             )
         })
-        .collect::<Vec<RowGroupMetaData>>();
-
-    let new_row_groups = RowGroupList::from_iter(new_row_groups_list.into_iter().enumerate());
+        .enumerate()
+        .collect();
 
     Ok(FileMetaData {
         row_groups: new_row_groups,

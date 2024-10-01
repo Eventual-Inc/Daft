@@ -517,7 +517,7 @@ pub trait TreeNodeRewriter: Sized {
 }
 
 /// Controls how [`TreeNode`] recursions should proceed.
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy, Eq)]
 pub enum TreeNodeRecursion {
     /// Continue recursion with the next node.
     Continue,
@@ -585,7 +585,7 @@ impl TreeNodeRecursion {
 /// - [`TreeNode::transform_down`],
 /// - [`TreeNode::transform_up`],
 /// - [`TreeNode::transform_down_up`]
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Eq, Debug)]
 pub struct Transformed<T> {
     pub data: T,
     pub transformed: bool,

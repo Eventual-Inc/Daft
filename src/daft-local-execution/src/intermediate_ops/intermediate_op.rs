@@ -36,7 +36,7 @@ pub trait IntermediateOperator: Send + Sync {
     }
 }
 
-pub(crate) struct IntermediateNode {
+pub struct IntermediateNode {
     intermediate_op: Arc<dyn IntermediateOperator>,
     children: Vec<Box<dyn PipelineNode>>,
     runtime_stats: Arc<RuntimeStatsContext>,
@@ -167,7 +167,7 @@ impl TreeDisplay for IntermediateNode {
         let mut display = String::new();
         writeln!(display, "{}", self.intermediate_op.name()).unwrap();
         use common_display::DisplayLevel::Compact;
-        if let Compact = level {
+        if matches!(level, Compact) {
         } else {
             let rt_result = self.runtime_stats.result();
             rt_result.display(&mut display, true, true, true).unwrap();

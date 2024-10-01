@@ -43,7 +43,7 @@ pub fn sketch_percentile(input: ExprRef, percentiles: &[f64], force_list_output:
             percentiles: HashableVecPercentiles(percentiles.to_vec()),
             force_list_output,
         }),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
     .into()
 }

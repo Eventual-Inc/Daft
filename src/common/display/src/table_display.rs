@@ -80,18 +80,14 @@ pub fn make_comfy_table<S: AsRef<str>>(
     let max_cols = (terminal_width.div_ceil(expected_col_width) - 1).max(1);
     let num_columns = fields.len();
 
-    let head_cols;
-    let tail_cols;
-    let total_cols;
-    if num_columns > max_cols {
-        head_cols = (max_cols + 1) / 2;
-        tail_cols = max_cols / 2;
-        total_cols = head_cols + tail_cols + 1;
+    let (head_cols, tail_cols, total_cols) = if num_columns > max_cols {
+        let head_cols = (max_cols + 1) / 2;
+        let tail_cols = max_cols / 2;
+        (head_cols, tail_cols, head_cols + tail_cols + 1)
     } else {
-        head_cols = num_columns;
-        tail_cols = 0;
-        total_cols = head_cols;
-    }
+        (num_columns, 0, num_columns)
+    };
+
     let mut header = fields
         .iter()
         .take(head_cols)
@@ -116,16 +112,11 @@ pub fn make_comfy_table<S: AsRef<str>>(
     {
         table.set_header(header);
         let len = num_rows.expect("if columns are set, so should `num_rows`");
-        let head_rows;
-        let tail_rows;
-
-        if len > TOTAL_ROWS {
-            head_rows = TOTAL_ROWS / 2;
-            tail_rows = TOTAL_ROWS / 2;
+        let (head_rows, tail_rows) = if len > TOTAL_ROWS {
+            (TOTAL_ROWS / 2, TOTAL_ROWS / 2)
         } else {
-            head_rows = len;
-            tail_rows = 0;
-        }
+            (len, 0)
+        };
 
         for i in 0..head_rows {
             let all_cols = columns

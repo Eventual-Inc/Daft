@@ -34,7 +34,7 @@ const MARKER_FILES: [&str; 3] = ["_metadata", "_common_metadata", "_success"];
 const MARKER_PREFIXES: [&str; 2] = ["_started", "_committed"];
 
 #[derive(Clone)]
-pub(crate) struct GlobState {
+pub struct GlobState {
     // Current path in dirtree and glob_fragments
     pub current_path: String,
     pub current_fragment_idx: usize,
@@ -62,7 +62,7 @@ impl GlobState {
             current_path: path,
             current_fragment_idx: idx,
             current_fanout: self.current_fanout * fanout_factor,
-            ..self.clone()
+            ..self
         }
     }
 
@@ -75,7 +75,7 @@ impl GlobState {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct GlobFragment {
+pub struct GlobFragment {
     data: String,
     escaped_data: String,
     first_wildcard_idx: Option<usize>,
@@ -165,7 +165,7 @@ impl GlobFragment {
 ///   2. Non-wildcard fragments are joined and coalesced by delimiter
 ///   3. The first fragment is prefixed by "{scheme}://"
 ///   4. Preserves any leading delimiters
-pub(crate) fn to_glob_fragments(glob_str: &str) -> super::Result<Vec<GlobFragment>> {
+pub fn to_glob_fragments(glob_str: &str) -> super::Result<Vec<GlobFragment>> {
     // NOTE: We only use the URL parse library to get the scheme, because it will escape some of our glob special characters
     // such as ? and {}
     let glob_url = url::Url::parse(glob_str).map_err(|e| super::Error::InvalidUrl {
@@ -351,7 +351,7 @@ fn _should_return(fm: &FileMetadata) -> bool {
 ///     parallel connections (usually defaulting to 64).
 /// * page_size: control the returned results page size, or None to use the ObjectSource's defaults. Usually only used for testing
 ///     but may yield some performance improvements depending on the workload.
-pub(crate) async fn glob(
+pub async fn glob(
     source: Arc<dyn ObjectSource>,
     glob: &str,
     fanout_limit: Option<usize>,

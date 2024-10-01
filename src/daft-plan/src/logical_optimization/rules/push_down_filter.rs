@@ -76,7 +76,6 @@ impl PushDownFilter {
                 self.try_optimize_node(new_filter.clone())?
                     .or(Transformed::yes(new_filter))
                     .data
-                    .clone()
             }
             LogicalPlan::Source(source) => {
                 match source.source_info.as_ref() {
@@ -97,7 +96,7 @@ impl PushDownFilter {
                             .filters
                             .as_ref()
                             .map(|f| predicate.clone().and(f.clone()))
-                            .unwrap_or(predicate.clone());
+                            .unwrap_or_else(|| predicate.clone());
                         // We split the predicate into three groups:
                         // 1. All partition-only filters, which can be applied directly to partition values and can be
                         //    dropped from the data-level filter.
@@ -681,19 +680,13 @@ mod tests {
         let expected_left_filter_scan = if push_into_left_scan {
             dummy_scan_node_with_pushdowns(
                 left_scan_op.clone(),
-                Pushdowns::default().with_filters(Some(pred.clone())),
+                Pushdowns::default().with_filters(Some(pred)),
             )
         } else {
-            left_scan_plan.filter(pred.clone())?
+            left_scan_plan.filter(pred)?
         };
         let expected = expected_left_filter_scan
-            .join(
-                &right_scan_plan,
-                join_on.clone(),
-                join_on.clone(),
-                how,
-                None,
-            )?
+            .join(&right_scan_plan, join_on.clone(), join_on, how, None)?
             .build();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
@@ -733,16 +726,16 @@ mod tests {
         let expected_right_filter_scan = if push_into_right_scan {
             dummy_scan_node_with_pushdowns(
                 right_scan_op.clone(),
-                Pushdowns::default().with_filters(Some(pred.clone())),
+                Pushdowns::default().with_filters(Some(pred)),
             )
         } else {
-            right_scan_plan.filter(pred.clone())?
+            right_scan_plan.filter(pred)?
         };
         let expected = left_scan_plan
             .join(
                 &expected_right_filter_scan,
                 join_on.clone(),
-                join_on.clone(),
+                join_on,
                 how,
                 None,
             )?
@@ -815,7 +808,7 @@ mod tests {
             .join(
                 &expected_right_filter_scan,
                 join_on.clone(),
-                join_on.clone(),
+                join_on,
                 how,
                 None,
             )?
@@ -842,14 +835,8 @@ mod tests {
         let join_on = vec![col("b")];
         let pred = col("a").lt(lit(2));
         let plan = left_scan_plan
-            .join(
-                &right_scan_plan,
-                join_on.clone(),
-                join_on.clone(),
-                how,
-                None,
-            )?
-            .filter(pred.clone())?
+            .join(&right_scan_plan, join_on.clone(), join_on, how, None)?
+            .filter(pred)?
             .build();
         // should not push down filter
         let expected = plan.clone();
@@ -875,14 +862,8 @@ mod tests {
         let join_on = vec![col("b")];
         let pred = col("c").lt(lit(2.0));
         let plan = left_scan_plan
-            .join(
-                &right_scan_plan,
-                join_on.clone(),
-                join_on.clone(),
-                how,
-                None,
-            )?
-            .filter(pred.clone())?
+            .join(&right_scan_plan, join_on.clone(), join_on, how, None)?
+            .filter(pred)?
             .build();
         // should not push down filter
         let expected = plan.clone();

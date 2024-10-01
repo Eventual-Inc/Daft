@@ -98,7 +98,7 @@ impl From<Error> for pyo3::PyErr {
 }
 
 /// Specification of a subset of a file to be read.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ChunkSpec {
     /// Selection of Parquet row groups.
     Parquet(Vec<i64>),

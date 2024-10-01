@@ -329,7 +329,7 @@ impl GCSClientWrapper {
     }
 }
 
-pub(crate) struct GCSSource {
+pub struct GCSSource {
     client: GCSClientWrapper,
 }
 

@@ -74,7 +74,7 @@ impl Join {
         if matches!(join_type, JoinType::Anti | JoinType::Semi) {
             // The output schema is the same as the left input schema for anti and semi joins.
 
-            let output_schema = left.schema().clone();
+            let output_schema = left.schema();
 
             Ok(Self {
                 left,

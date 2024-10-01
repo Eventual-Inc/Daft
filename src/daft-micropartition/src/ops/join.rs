@@ -46,7 +46,7 @@ impl MicroPartition {
                         .values()
                         .zip(r_eval_stats.columns.values())
                     {
-                        if let TruthValue::False = lc.equal(rc)?.to_truth_value() {
+                        if lc.equal(rc)?.to_truth_value() == TruthValue::False {
                             curr_tv = TruthValue::False;
                             break;
                         }
@@ -54,7 +54,7 @@ impl MicroPartition {
                     curr_tv
                 }
             };
-            if let TruthValue::False = tv {
+            if tv == TruthValue::False {
                 return Ok(Self::empty(Some(join_schema)));
             }
         }

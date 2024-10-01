@@ -28,7 +28,7 @@ use crate::{
 /// as long as there is no "mix" of "\" and "/".
 const PATH_SEGMENT_DELIMITER: &str = "/";
 
-pub(crate) struct LocalSource {}
+pub struct LocalSource {}
 
 #[derive(Debug, Snafu)]
 enum Error {
@@ -337,7 +337,7 @@ impl ObjectSource for LocalSource {
     }
 }
 
-pub(crate) async fn collect_file(local_file: LocalFile) -> Result<Bytes> {
+pub async fn collect_file(local_file: LocalFile) -> Result<Bytes> {
     let path = &local_file.path;
     let mut file = tokio::fs::File::open(path)
         .await
@@ -376,7 +376,6 @@ pub(crate) async fn collect_file(local_file: LocalFile) -> Result<Bytes> {
 }
 
 #[cfg(test)]
-
 mod tests {
     use std::{default, io::Write};
 

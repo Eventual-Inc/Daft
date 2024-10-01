@@ -451,7 +451,7 @@ pub fn get_io_client(multi_thread: bool, config: Arc<IOConfig>) -> DaftResult<Ar
         if let Some(client) = w_handle.get(&key) {
             Ok(client.clone())
         } else {
-            let client = Arc::new(IOClient::new(config.clone())?);
+            let client = Arc::new(IOClient::new(config)?);
             w_handle.insert(key, client.clone());
             Ok(client)
         }

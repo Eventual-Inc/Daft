@@ -266,7 +266,7 @@ impl PyDataType {
     ) -> PyResult<Self> {
         match (height, width) {
             (Some(height), Some(width)) => {
-                let image_mode = mode.ok_or(PyValueError::new_err(
+                let image_mode = mode.ok_or_else(|| PyValueError::new_err(
                     "Image mode must be provided if specifying an image size.",
                 ))?;
                 Ok(DataType::FixedShapeImage(image_mode, height, width).into())

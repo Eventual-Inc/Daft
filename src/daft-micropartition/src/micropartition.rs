@@ -29,7 +29,7 @@ use {crate::PyIOSnafu, common_file_formats::DatabaseSourceConfig};
 use crate::{DaftCSVSnafu, DaftCoreComputeSnafu};
 
 #[derive(Debug)]
-pub(crate) enum TableState {
+pub enum TableState {
     Unloaded(Arc<ScanTask>),
     Loaded(Arc<Vec<Table>>),
 }
@@ -168,7 +168,7 @@ fn materialize_scan_task(
                         scan_task.pushdowns.limit,
                         row_groups,
                         scan_task.pushdowns.filters.clone(),
-                        io_client.clone(),
+                        io_client,
                         io_stats,
                         num_parallel_tasks,
                         multithreaded_io,
@@ -399,7 +399,7 @@ fn materialize_scan_task(
                                         .with_context(|_| PyIOSnafu)
                                         .map(Into::<PyObject>::into)
                                 })
-                            },
+                            }
                             _ => unreachable!("PythonFunction file format must be paired with PythonFactoryFunction data file sources"),
                         }
                     });
@@ -632,10 +632,7 @@ impl MicroPartition {
                     row_groups,
                     scan_task.pushdowns.filters.clone(),
                     scan_task.partition_spec(),
-                    cfg.io_config
-                        .clone()
-                        .map(|c| Arc::new(c.clone()))
-                        .unwrap_or_default(),
+                    cfg.io_config.clone().map(Arc::new).unwrap_or_default(),
                     Some(io_stats),
                     if scan_task.sources.len() == 1 { 1 } else { 128 }, // Hardcoded for to 128 bulk reads
                     cfg.multithreaded_io,
@@ -643,7 +640,7 @@ impl MicroPartition {
                         coerce_int96_timestamp_unit,
                         ..Default::default()
                     },
-                    Some(schema.clone()),
+                    Some(schema),
                     field_id_mapping.clone(),
                     parquet_metadata,
                     chunk_size,
@@ -663,7 +660,7 @@ impl MicroPartition {
 
     #[must_use]
     pub fn empty(schema: Option<SchemaRef>) -> Self {
-        let schema = schema.unwrap_or(Schema::empty().into());
+        let schema = schema.unwrap_or_else(|| Schema::empty().into());
         Self::new_loaded(schema, Arc::new(vec![]), None)
     }
 
@@ -832,7 +829,7 @@ fn parquet_sources_to_row_groups(sources: &[DataSource]) -> Option<Vec<Option<Ve
     }
 }
 
-pub(crate) fn read_csv_into_micropartition(
+pub fn read_csv_into_micropartition(
     uris: &[&str],
     convert_options: Option<CsvConvertOptions>,
     parse_options: Option<CsvParseOptions>,
@@ -841,7 +838,7 @@ pub(crate) fn read_csv_into_micropartition(
     multithreaded_io: bool,
     io_stats: Option<IOStatsRef>,
 ) -> DaftResult<MicroPartition> {
-    let io_client = daft_io::get_io_client(multithreaded_io, io_config.clone())?;
+    let io_client = daft_io::get_io_client(multithreaded_io, io_config)?;
 
     match uris {
         [] => Ok(MicroPartition::empty(None)),
@@ -873,7 +870,7 @@ pub(crate) fn read_csv_into_micropartition(
 
             // Construct MicroPartition from tables and unioned schema
             Ok(MicroPartition::new_loaded(
-                unioned_schema.clone(),
+                unioned_schema,
                 Arc::new(tables),
                 None,
             ))
@@ -881,7 +878,7 @@ pub(crate) fn read_csv_into_micropartition(
     }
 }
 
-pub(crate) fn read_json_into_micropartition(
+pub fn read_json_into_micropartition(
     uris: &[&str],
     convert_options: Option<JsonConvertOptions>,
     parse_options: Option<JsonParseOptions>,
@@ -890,7 +887,7 @@ pub(crate) fn read_json_into_micropartition(
     multithreaded_io: bool,
     io_stats: Option<IOStatsRef>,
 ) -> DaftResult<MicroPartition> {
-    let io_client = daft_io::get_io_client(multithreaded_io, io_config.clone())?;
+    let io_client = daft_io::get_io_client(multithreaded_io, io_config)?;
 
     match uris {
         [] => Ok(MicroPartition::empty(None)),
@@ -922,7 +919,7 @@ pub(crate) fn read_json_into_micropartition(
 
             // Construct MicroPartition from tables and unioned schema
             Ok(MicroPartition::new_loaded(
-                unioned_schema.clone(),
+                unioned_schema,
                 Arc::new(tables),
                 None,
             ))
@@ -1098,7 +1095,7 @@ fn _read_parquet_into_loaded_micropartition<T: AsRef<str>>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn read_parquet_into_micropartition<T: AsRef<str>>(
+pub fn read_parquet_into_micropartition<T: AsRef<str>>(
     uris: &[&str],
     columns: Option<&[T]>,
     start_offset: Option<usize>,
@@ -1247,7 +1244,7 @@ pub(crate) fn read_parquet_into_micropartition<T: AsRef<str>>(
             num_rows.min(total_rows_no_limit)
         });
 
-        let owned_urls = uris.iter().map(|s| (*s).to_string()).collect::<Vec<_>>();
+        let owned_urls = uris.iter().map(|s| (*s).to_string());
         let size_bytes = metadata
             .iter()
             .map(|m| -> u64 {

@@ -48,7 +48,7 @@ fn prune_fields_from_schema(
     }
 }
 
-pub(crate) fn arrow_column_iters_to_table_iter(
+pub fn arrow_column_iters_to_table_iter(
     arr_iters: ArrowChunkIters,
     row_range_start: usize,
     schema_ref: SchemaRef,
@@ -78,7 +78,7 @@ pub(crate) fn arrow_column_iters_to_table_iter(
     // Keep track of the current index in the row group so we can throw away arrays that are not needed
     // and slice arrays that are partially needed.
     let mut index_so_far = 0;
-    let owned_schema_ref = schema_ref.clone();
+    let owned_schema_ref = schema_ref;
     let table_iter = par_lock_step_iter.into_iter().map(move |chunk| {
         let chunk = chunk.with_context(|_| {
             super::UnableToCreateChunkFromStreamingFileReaderSnafu { path: uri.clone() }
@@ -184,7 +184,7 @@ impl<R> Drop for CountingReader<R> {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn local_parquet_read_into_column_iters(
+pub fn local_parquet_read_into_column_iters(
     uri: &str,
     columns: Option<&[String]>,
     start_offset: Option<usize>,
@@ -205,7 +205,7 @@ pub(crate) fn local_parquet_read_into_column_iters(
     let uri = uri
         .strip_prefix(LOCAL_PROTOCOL)
         .map(std::string::ToString::to_string)
-        .unwrap_or(uri.to_string());
+        .unwrap_or_else(|| uri.to_string());
 
     let reader = File::open(uri.clone()).with_context(|_| super::InternalIOSnafu {
         path: uri.to_string(),
@@ -253,7 +253,7 @@ pub(crate) fn local_parquet_read_into_column_iters(
         num_rows,
         start_offset.unwrap_or(0),
         row_groups,
-        predicate.clone(),
+        predicate,
         &daft_schema,
         &metadata,
         &uri,
@@ -289,7 +289,7 @@ pub(crate) fn local_parquet_read_into_column_iters(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn local_parquet_read_into_arrow(
+pub fn local_parquet_read_into_arrow(
     uri: &str,
     columns: Option<&[String]>,
     start_offset: Option<usize>,
@@ -429,7 +429,7 @@ pub(crate) fn local_parquet_read_into_arrow(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) async fn local_parquet_read_async(
+pub async fn local_parquet_read_async(
     uri: &str,
     columns: Option<Vec<String>>,
     start_offset: Option<usize>,
@@ -491,7 +491,7 @@ pub(crate) async fn local_parquet_read_async(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn local_parquet_stream(
+pub fn local_parquet_stream(
     uri: &str,
     original_columns: Option<Vec<String>>,
     columns: Option<Vec<String>>,
@@ -593,7 +593,7 @@ pub(crate) fn local_parquet_stream(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) async fn local_parquet_read_into_arrow_async(
+pub async fn local_parquet_read_into_arrow_async(
     uri: &str,
     columns: Option<Vec<String>>,
     start_offset: Option<usize>,

@@ -216,7 +216,7 @@ pub(super) fn translate_single_logical_node(
                     let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
                         input_physical,
                         num_partitions,
-                        by.clone(),
+                        by,
                     ));
                     PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()))
                 }
@@ -449,9 +449,9 @@ pub(super) fn translate_single_logical_node(
                     left_clustering_spec.as_ref()
                 {
                     by.len() >= left_on.len()
-                    && by.iter().zip(left_on.iter()).all(|(e1, e2)| e1 == e2)
-                    // TODO(Clark): Add support for descending sort orders.
-                    && descending.iter().all(|v| !*v)
+                        && by.iter().zip(left_on.iter()).all(|(e1, e2)| e1 == e2)
+                        // TODO(Clark): Add support for descending sort orders.
+                        && descending.iter().all(|v| !*v)
                 } else {
                     false
                 };
@@ -462,9 +462,9 @@ pub(super) fn translate_single_logical_node(
                     right_clustering_spec.as_ref()
                 {
                     by.len() >= right_on.len()
-                    && by.iter().zip(right_on.iter()).all(|(e1, e2)| e1 == e2)
-                    // TODO(Clark): Add support for descending sort orders.
-                    && descending.iter().all(|v| !*v)
+                        && by.iter().zip(right_on.iter()).all(|(e1, e2)| e1 == e2)
+                        // TODO(Clark): Add support for descending sort orders.
+                        && descending.iter().all(|v| !*v)
                 } else {
                     false
                 };
@@ -992,7 +992,7 @@ mod tests {
             10
         );
         let logical_plan = builder.into_partitions(10)?.build();
-        let physical_plan = logical_to_physical(logical_plan, cfg.clone())?;
+        let physical_plan = logical_to_physical(logical_plan, cfg)?;
         // Check that the last repartition was dropped (the last op should be the filter).
         assert_matches!(physical_plan.as_ref(), PhysicalPlan::Filter(_));
         Ok(())
@@ -1016,7 +1016,7 @@ mod tests {
             1
         );
         let logical_plan = builder.hash_repartition(Some(1), vec![col("a")])?.build();
-        let physical_plan = logical_to_physical(logical_plan, cfg.clone())?;
+        let physical_plan = logical_to_physical(logical_plan, cfg)?;
         assert_matches!(physical_plan.as_ref(), PhysicalPlan::TabularScan(_));
         Ok(())
     }
@@ -1221,7 +1221,7 @@ mod tests {
         assert!(check_physical_matches(physical_plan, false, true));
 
         let physical_plan = get_hash_join_plan(
-            cfg.clone(),
+            cfg,
             RepartitionOptions::Good(20),
             RepartitionOptions::Bad(26),
         )?;

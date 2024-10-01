@@ -29,7 +29,7 @@ use crate::{
 /// A named logical plan
 /// This is used to keep track of the table name associated with a logical plan while planning a SQL query
 #[derive(Debug, Clone)]
-pub(crate) struct Relation {
+pub struct Relation {
     pub(crate) inner: LogicalPlanBuilder,
     pub(crate) name: String,
 }
@@ -1106,7 +1106,7 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> SQLPlannerResult<ExprRef> {
 }
 
 fn ident_to_str(ident: &Ident) -> String {
-    if let Some('"') = ident.quote_style {
+    if ident.quote_style == Some('"') {
         ident.value.to_string()
     } else {
         ident.to_string()

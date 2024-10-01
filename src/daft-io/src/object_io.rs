@@ -134,7 +134,7 @@ impl GetResult {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FileType {
     File,
     Directory,
@@ -159,7 +159,7 @@ impl TryFrom<std::fs::FileType> for FileType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileMetadata {
     pub filepath: String,
     pub size: Option<u64>,
@@ -174,7 +174,7 @@ pub struct LSResult {
 use async_stream::stream;
 
 #[async_trait]
-pub(crate) trait ObjectSource: Sync + Send {
+pub trait ObjectSource: Sync + Send {
     async fn get(
         &self,
         uri: &str,

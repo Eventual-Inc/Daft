@@ -27,7 +27,7 @@ pub trait StreamingSink: Send + Sync {
     fn name(&self) -> &'static str;
 }
 
-pub(crate) struct StreamingSinkNode {
+pub struct StreamingSinkNode {
     // use a RW lock
     op: Arc<tokio::sync::Mutex<Box<dyn StreamingSink>>>,
     name: &'static str,
@@ -56,7 +56,7 @@ impl TreeDisplay for StreamingSinkNode {
         let mut display = String::new();
         writeln!(display, "{}", self.name()).unwrap();
         use common_display::DisplayLevel::Compact;
-        if let Compact = level {
+        if matches!(level, Compact) {
         } else {
             let rt_result = self.runtime_stats.result();
             rt_result.display(&mut display, true, true, true).unwrap();

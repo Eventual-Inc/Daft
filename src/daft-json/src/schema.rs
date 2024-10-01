@@ -238,7 +238,7 @@ mod tests {
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let schema = read_json_schema(file.as_ref(), None, None, io_client.clone(), None)?;
+        let schema = read_json_schema(file.as_ref(), None, None, io_client, None)?;
         assert_eq!(
             schema,
             Schema::new(vec![
@@ -323,7 +323,7 @@ mod tests {
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let schema = read_json_schema(file.as_ref(), None, None, io_client.clone(), None)?;
+        let schema = read_json_schema(file.as_ref(), None, None, io_client, None)?;
         assert_eq!(
             schema,
             Schema::new(vec![
@@ -349,7 +349,7 @@ mod tests {
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let schema = read_json_schema(file.as_ref(), None, None, io_client.clone(), None)?;
+        let schema = read_json_schema(file.as_ref(), None, None, io_client, None)?;
         assert_eq!(
             schema,
             Schema::new(vec![
@@ -374,7 +374,7 @@ mod tests {
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let schema = read_json_schema(file.as_ref(), None, Some(100), io_client.clone(), None)?;
+        let schema = read_json_schema(file.as_ref(), None, Some(100), io_client, None)?;
         assert_eq!(
             schema,
             Schema::new(vec![
@@ -423,7 +423,7 @@ mod tests {
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let schema = read_json_schema(file.as_ref(), None, None, io_client.clone(), None)?;
+        let schema = read_json_schema(file.as_ref(), None, None, io_client, None)?;
         assert_eq!(
             schema,
             Schema::new(vec![

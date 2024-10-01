@@ -43,7 +43,7 @@ use crate::{
 
 const S3_DELIMITER: &str = "/";
 const DEFAULT_GLOB_FANOUT_LIMIT: usize = 1024;
-pub(crate) struct S3LikeSource {
+pub struct S3LikeSource {
     region_to_client_map: tokio::sync::RwLock<HashMap<Region, Arc<s3::Client>>>,
     connection_pool_sema: Arc<tokio::sync::Semaphore>,
     default_region: Region,
@@ -299,7 +299,7 @@ impl From<Error> for super::Error {
 }
 
 /// Retrieves an S3Config from the environment by leveraging the AWS SDK's credentials chain
-pub(crate) async fn s3_config_from_env() -> super::Result<S3Config> {
+pub async fn s3_config_from_env() -> super::Result<S3Config> {
     let default_s3_config = S3Config::default();
     let (anonymous, s3_conf) = build_s3_conf(&default_s3_config, None).await?;
     let creds = s3_conf
@@ -405,11 +405,7 @@ async fn build_s3_conf(
                 .as_ref()
                 .map(|s| s.as_string().clone())
                 .unwrap(),
-            config
-                .session_token
-                .as_ref()
-                .map(|s| s.as_string().clone())
-                .clone(),
+            config.session_token.as_ref().map(|s| s.as_string().clone()),
         );
         Some(aws_credential_types::provider::SharedCredentialsProvider::new(creds))
     } else if config.access_key.is_some() || config.key_id.is_some() {

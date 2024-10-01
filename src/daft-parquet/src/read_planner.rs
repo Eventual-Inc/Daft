@@ -124,7 +124,7 @@ impl RangeCacheEntry {
     }
 }
 
-pub(crate) struct ReadPlanner {
+pub struct ReadPlanner {
     source: String,
     ranges: RangeList,
     passes: Vec<Box<dyn ReadPlanPass>>,
@@ -193,7 +193,7 @@ impl ReadPlanner {
     }
 }
 
-pub(crate) struct RangesContainer {
+pub struct RangesContainer {
     ranges: Vec<Arc<RangeCacheEntry>>,
 }
 

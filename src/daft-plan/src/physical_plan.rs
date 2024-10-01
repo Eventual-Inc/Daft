@@ -128,7 +128,7 @@ impl PhysicalPlan {
             }) => clustering_spec.clone(),
             Self::Sample(Sample { input, .. }) => input.clustering_spec(),
             Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. }) => {
-                input.clustering_spec().clone()
+                input.clustering_spec()
             }
 
             Self::Sort(Sort {

@@ -106,6 +106,11 @@ fn url_download(
     let io_client = get_io_client(multi_thread, config)?;
 
     let owned_array = array.clone();
+
+    #[expect(
+        clippy::needless_collect,
+        reason = "This actually might be needed, but need to double check TODO:(andrewgazelka)"
+    )]
     let fetches = async move {
         let urls = owned_array
             .as_arrow()

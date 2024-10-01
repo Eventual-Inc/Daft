@@ -285,7 +285,7 @@ async fn stream_scan_task(
                 .as_ref(),
         )?;
         let mp = Arc::new(MicroPartition::new_loaded(
-            scan_task.materialized_schema().clone(),
+            scan_task.materialized_schema(),
             Arc::new(vec![casted_table]),
             scan_task.statistics.clone(),
         ));

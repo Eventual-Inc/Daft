@@ -14,7 +14,7 @@ pub enum ColumnRangeStatistics {
     Loaded(Series, Series),
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Eq, Debug)]
 pub enum TruthValue {
     False,
     Maybe,
@@ -225,7 +225,7 @@ impl TryFrom<&daft_dsl::LiteralValue> for ColumnRangeStatistics {
     fn try_from(value: &daft_dsl::LiteralValue) -> crate::Result<Self, Self::Error> {
         let series = value.to_series();
         assert_eq!(series.len(), 1);
-        Self::new(Some(series.clone()), Some(series.clone()))
+        Self::new(Some(series.clone()), Some(series))
     }
 }
 

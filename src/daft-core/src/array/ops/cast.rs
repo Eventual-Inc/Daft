@@ -206,7 +206,7 @@ impl DateArray {
 /// Formats a naive timestamp to a string in the format "%Y-%m-%d %H:%M:%S%.f".
 /// Example: 2021-01-01 00:00:00
 /// See https://docs.rs/chrono/latest/chrono/format/strftime/index.html for format string options.
-pub(crate) fn timestamp_to_str_naive(val: i64, unit: &TimeUnit) -> String {
+pub fn timestamp_to_str_naive(val: i64, unit: &TimeUnit) -> String {
     let chrono_ts = arrow2::temporal_conversions::timestamp_to_naive_datetime(val, unit.to_arrow());
     let format_str = "%Y-%m-%d %H:%M:%S%.f";
     chrono_ts.format(format_str).to_string()
@@ -215,11 +215,7 @@ pub(crate) fn timestamp_to_str_naive(val: i64, unit: &TimeUnit) -> String {
 /// Formats a timestamp with an offset to a string in the format "%Y-%m-%d %H:%M:%S%.f %:z".
 /// Example: 2021-01-01 00:00:00 -07:00
 /// See https://docs.rs/chrono/latest/chrono/format/strftime/index.html for format string options.
-pub(crate) fn timestamp_to_str_offset(
-    val: i64,
-    unit: &TimeUnit,
-    offset: &chrono::FixedOffset,
-) -> String {
+pub fn timestamp_to_str_offset(val: i64, unit: &TimeUnit, offset: &chrono::FixedOffset) -> String {
     let chrono_ts =
         arrow2::temporal_conversions::timestamp_to_datetime(val, unit.to_arrow(), offset);
     let format_str = "%Y-%m-%d %H:%M:%S%.f %:z";
@@ -229,7 +225,7 @@ pub(crate) fn timestamp_to_str_offset(
 /// Formats a timestamp with a timezone to a string in the format "%Y-%m-%d %H:%M:%S%.f %Z".
 /// Example: 2021-01-01 00:00:00 PST
 /// See https://docs.rs/chrono/latest/chrono/format/strftime/index.html for format string options.
-pub(crate) fn timestamp_to_str_tz(val: i64, unit: &TimeUnit, tz: &chrono_tz::Tz) -> String {
+pub fn timestamp_to_str_tz(val: i64, unit: &TimeUnit, tz: &chrono_tz::Tz) -> String {
     let chrono_ts = arrow2::temporal_conversions::timestamp_to_datetime(val, unit.to_arrow(), tz);
     let format_str = "%Y-%m-%d %H:%M:%S%.f %Z";
     chrono_ts.format(format_str).to_string()
@@ -647,9 +643,9 @@ fn extract_python_to_vec<
                 if let Some(list_size) = list_size {
                     if num_values != list_size {
                         return Err(DaftError::ValueError(format!(
-                                "Expected Array-like Object to have {list_size} elements but got {} at index {}",
-                                num_values, i
-                            )));
+                            "Expected Array-like Object to have {list_size} elements but got {} at index {}",
+                            num_values, i
+                        )));
                     }
                 } else {
                     offsets_vec.push(offsets_vec.last().unwrap() + num_values as i64);
@@ -1400,12 +1396,10 @@ impl TensorArray {
                 let zero_series = Int64Array::from(("item", [0].as_slice())).into_series();
                 let mut non_zero_values = Vec::new();
                 let mut non_zero_indices = Vec::new();
-                let mut offsets = Vec::<usize>::new();
                 for (i, (shape_series, data_series)) in shape_and_data_iter.enumerate() {
                     let is_valid = validity.map_or(true, |v| v.get_bit(i));
                     if !is_valid {
                         // Handle invalid row by populating dummy data.
-                        offsets.push(1);
                         non_zero_values.push(Series::empty("dummy", inner_dtype.as_ref()));
                         non_zero_indices.push(Series::empty("dummy", &DataType::UInt64));
                         continue;
@@ -1422,7 +1416,6 @@ impl TensorArray {
                     let indices = UInt64Array::arange("item", 0, data_series.len() as i64, 1)?
                         .into_series()
                         .filter(&non_zero_mask)?;
-                    offsets.push(data.len());
                     non_zero_values.push(data);
                     non_zero_indices.push(indices);
                 }
@@ -1882,24 +1875,24 @@ impl FixedShapeTensorArray {
                 let zero_series = Int64Array::from(("item", [0].as_slice())).into_series();
                 let mut non_zero_values = Vec::new();
                 let mut non_zero_indices = Vec::new();
-                let mut offsets = Vec::<usize>::new();
                 for (i, data_series) in physical_arr.into_iter().enumerate() {
                     let is_valid = validity.map_or(true, |v| v.get_bit(i));
                     if !is_valid {
                         // Handle invalid row by populating dummy data.
-                        offsets.push(1);
                         non_zero_values.push(Series::empty("dummy", inner_dtype.as_ref()));
                         non_zero_indices.push(Series::empty("dummy", &DataType::UInt64));
                         continue;
                     }
                     let data_series = data_series.unwrap();
-                    assert!(data_series.len() == tensor_shape.iter().product::<u64>() as usize);
+                    assert_eq!(
+                        data_series.len(),
+                        tensor_shape.iter().product::<u64>() as usize
+                    );
                     let non_zero_mask = data_series.not_equal(&zero_series)?;
                     let data = data_series.filter(&non_zero_mask)?;
                     let indices = UInt64Array::arange("item", 0, data_series.len() as i64, 1)?
                         .into_series()
                         .filter(&non_zero_mask)?;
-                    offsets.push(data.len());
                     non_zero_values.push(data);
                     non_zero_indices.push(indices);
                 }
@@ -2057,7 +2050,7 @@ impl ListArray {
                         }
                         Ok(FixedSizeListArray::new(
                             Field::new(self.name(), dtype.clone()),
-                            casted_child.clone(),
+                            casted_child,
                             None,
                         )
                         .into_series())

@@ -50,7 +50,7 @@ impl TryFrom<(&str, Box<dyn arrow2::array::Array>)> for Series {
         let (name, array) = item;
         let source_arrow_type = array.data_type();
         let dtype: DataType = source_arrow_type.into();
-        let field = Arc::new(Field::new(name, dtype.clone()));
+        let field = Arc::new(Field::new(name, dtype));
         Self::try_from_field_and_arrow_array(field, array)
     }
 }

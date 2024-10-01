@@ -206,7 +206,7 @@ impl HFPathParts {
     }
 }
 
-pub(crate) struct HFSource {
+pub struct HFSource {
     http_source: HttpSource,
 }
 
@@ -294,7 +294,7 @@ impl ObjectSource for HFSource {
             .context(UnableToConnectSnafu::<String> { path: uri.into() })?;
 
         let response = response.error_for_status().map_err(|e| {
-            if let Some(401) = e.status().map(|s| s.as_u16()) {
+            if e.status().map(|s| s.as_u16()) == Some(401) {
                 Error::Unauthorized
             } else {
                 Error::UnableToOpenFile {
@@ -344,7 +344,7 @@ impl ObjectSource for HFSource {
             .await
             .context(UnableToConnectSnafu::<String> { path: uri.into() })?;
         let response = response.error_for_status().map_err(|e| {
-            if let Some(401) = e.status().map(|s| s.as_u16()) {
+            if e.status().map(|s| s.as_u16()) == Some(401) {
                 Error::Unauthorized
             } else {
                 Error::UnableToOpenFile {
@@ -393,7 +393,7 @@ impl ObjectSource for HFSource {
         // hf://datasets/user/repo
         // but not
         // hf://datasets/user/repo/file.parquet
-        if let Some(FileFormat::Parquet) = file_format {
+        if file_format == Some(FileFormat::Parquet) {
             let res =
                 try_parquet_api(glob_path, limit, io_stats.clone(), &self.http_source.client).await;
             match res {
@@ -433,7 +433,7 @@ impl ObjectSource for HFSource {
             })?;
 
         let response = response.error_for_status().map_err(|e| {
-            if let Some(401) = e.status().map(|s| s.as_u16()) {
+            if e.status().map(|s| s.as_u16()) == Some(401) {
                 Error::Unauthorized
             } else {
                 Error::UnableToOpenFile {

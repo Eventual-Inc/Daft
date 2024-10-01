@@ -177,14 +177,18 @@ impl IOConfig {
     ) -> Self {
         Self {
             config: config::IOConfig {
-                s3: s3.map(|s3| s3.config).unwrap_or(self.config.s3.clone()),
+                s3: s3
+                    .map(|s3| s3.config)
+                    .unwrap_or_else(|| self.config.s3.clone()),
                 azure: azure
                     .map(|azure| azure.config)
-                    .unwrap_or(self.config.azure.clone()),
-                gcs: gcs.map(|gcs| gcs.config).unwrap_or(self.config.gcs.clone()),
+                    .unwrap_or_else(|| self.config.azure.clone()),
+                gcs: gcs
+                    .map(|gcs| gcs.config)
+                    .unwrap_or_else(|| self.config.gcs.clone()),
                 http: http
                     .map(|http| http.config)
-                    .unwrap_or(self.config.http.clone()),
+                    .unwrap_or_else(|| self.config.http.clone()),
             },
         }
     }

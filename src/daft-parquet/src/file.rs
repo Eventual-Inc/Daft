@@ -29,7 +29,7 @@ use crate::{
     UnableToParseSchemaFromMetadataSnafu, UnableToRunExpressionOnStatsSnafu,
 };
 
-pub(crate) struct ParquetReaderBuilder {
+pub struct ParquetReaderBuilder {
     pub uri: String,
     pub metadata: parquet2::metadata::FileMetaData,
     selected_columns: Option<HashSet<String>>,
@@ -100,7 +100,7 @@ where
     }
 }
 
-pub(crate) fn build_row_ranges(
+pub fn build_row_ranges(
     limit: Option<usize>,
     row_start_offset: usize,
     row_groups: Option<&[i64]>,
@@ -297,13 +297,13 @@ impl ParquetReaderBuilder {
 }
 
 #[derive(Copy, Clone)]
-pub(crate) struct RowGroupRange {
+pub struct RowGroupRange {
     pub row_group_index: usize,
     pub start: usize,
     pub num_rows: usize,
 }
 
-pub(crate) struct ParquetFileReader {
+pub struct ParquetFileReader {
     uri: String,
     metadata: Arc<parquet2::metadata::FileMetaData>,
     arrow_schema: arrow2::datatypes::SchemaRef,
