@@ -3,7 +3,6 @@ pub use crate::types::PrimitiveType;
 use serde::{Deserialize, Serialize};
 
 /// The set of physical types: unique in-memory representations of an Arrow array.
-///
 /// A physical type has a one-to-many relationship with a [`crate::datatypes::DataType`] and
 /// a one-to-one mapping to each struct in this crate that implements [`crate::array::Array`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

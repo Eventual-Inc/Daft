@@ -223,7 +223,6 @@ where
 }
 
 /// Calculates the difference between two timestamps returning an array of type
-///
 /// Duration. The timeunit enum is used to scale correctly both arrays;
 /// subtracting seconds with seconds, or milliseconds with milliseconds.
 ///

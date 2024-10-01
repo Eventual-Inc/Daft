@@ -28,7 +28,6 @@ use super::super::arity::{unary, unary_checked};
 
 /// Trait describing a [`NativeType`] whose semantics of arithmetic in Arrow equals
 /// the semantics in Rust.
-///
 /// A counter example is `i128`, that in arrow represents a decimal while in rust represents
 /// a signed integer.
 pub trait NativeArithmetics: NativeType {}

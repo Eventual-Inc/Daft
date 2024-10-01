@@ -13,9 +13,7 @@ use crate::{
 
 use super::{adjusted_precision_scale, get_parameters, max_value, number_digits};
 
-/// Subtract two decimal primitive arrays with the same precision and scale.
-///
-/// If
+/// Subtract two decimal primitive arrays with the same precision and scale. If
 /// the precision and scale is different, then an InvalidArgumentError is
 /// returned. This function panics if the subtracted numbers result in a number
 /// smaller than the possible number for the selected precision.
@@ -54,9 +52,7 @@ pub fn sub(lhs: &PrimitiveArray<i128>, rhs: &PrimitiveArray<i128>) -> PrimitiveA
 }
 
 /// Saturated subtraction of two decimal primitive arrays with the same
-/// precision and scale.
-///
-/// If the precision and scale is different, then an
+/// precision and scale. If the precision and scale is different, then an
 /// InvalidArgumentError is returned. If the result from the sum is smaller
 /// than the possible number with the selected precision then the resulted
 /// number in the arrow array is the minimum number for the selected precision.
@@ -122,9 +118,7 @@ impl ArraySaturatingSub<PrimitiveArray<i128>> for PrimitiveArray<i128> {
     }
 }
 /// Checked subtract of two decimal primitive arrays with the same precision
-/// and scale.
-///
-/// If the precision and scale is different, then an
+/// and scale. If the precision and scale is different, then an
 /// InvalidArgumentError is returned. If the result from the sub is larger than
 /// the possible number with the selected precision (overflowing), then the
 /// validity for that index is changed to None
@@ -161,9 +155,7 @@ pub fn checked_sub(lhs: &PrimitiveArray<i128>, rhs: &PrimitiveArray<i128>) -> Pr
 }
 
 /// Adaptive subtract of two decimal primitive arrays with different precision
-/// and scale.
-///
-/// If the precision and scale is different, then the smallest scale
+/// and scale. If the precision and scale is different, then the smallest scale
 /// and precision is adjusted to the largest precision and scale. If during the
 /// addition one of the results is smaller than the min possible value, the
 /// result precision is changed to the precision of the min value

@@ -110,9 +110,7 @@ where
     binary(lhs, rhs, lhs.data_type().clone(), op)
 }
 
-/// Overflowing multiplication of two primitive arrays.
-///
-/// If the result from the
+/// Overflowing multiplication of two primitive arrays. If the result from the
 /// mul overflows, the result for the operation will be an array with
 /// overflowed values and a validity array indicating the overflowing elements
 /// from the array.
@@ -278,9 +276,8 @@ where
     unary(lhs, op, lhs.data_type().clone())
 }
 
-/// Overflowing multiplication of a scalar T to a primitive array of type T.
-///
-/// If the result from the mul overflows for this type,
+/// Overflowing multiplication of a scalar T to a primitive array of type T. If
+/// the result from the mul overflows for this type,
 /// then the result will be an array with overflowed values and a validity
 /// array indicating the overflowing elements from the array
 ///

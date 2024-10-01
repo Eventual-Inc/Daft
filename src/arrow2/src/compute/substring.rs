@@ -25,7 +25,6 @@ use crate::{
 };
 
 /// Returns a Utf8Array<O> with a substring starting from `start` and with optional length `length` of each of the elements in `array`.
-///
 /// `start` can be negative, in which case the start counts from the end of the string.
 pub fn utf8_substring<O: Offset>(
     array: &Utf8Array<O>,
@@ -76,7 +75,6 @@ pub fn utf8_substring<O: Offset>(
 }
 
 /// Returns a BinaryArray<O> with a substring starting from `start` and with optional length `length` of each of the elements in `array`.
-///
 /// `start` can be negative, in which case the start counts from the end of the string.
 pub fn binary_substring<O: Offset>(
     array: &BinaryArray<O>,
@@ -126,7 +124,6 @@ pub fn binary_substring<O: Offset>(
 }
 
 /// Returns an ArrayRef with a substring starting from `start` and with optional length `length` of each of the elements in `array`.
-///
 /// `start` can be negative, in which case the start counts from the end of the string.
 /// this function errors when the passed array is not a \[Large\]String array.
 pub fn substring(array: &dyn Array, start: i64, length: &Option<u64>) -> Result<Box<dyn Array>> {
@@ -179,7 +176,7 @@ pub fn substring(array: &dyn Array, start: i64, length: &Option<u64>) -> Result<
 ///
 /// let data_type = DataType::Utf8;
 /// assert_eq!(can_substring(&data_type), true);
-///
+
 /// let data_type = DataType::Null;
 /// assert_eq!(can_substring(&data_type), false);
 /// ```

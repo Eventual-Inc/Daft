@@ -61,7 +61,6 @@ pub type PageFilter = Arc<dyn Fn(&Descriptor, &DataPageHeader) -> bool + Send + 
 
 /// A fallible [`Iterator`] of [`CompressedDataPage`]. This iterator reads pages back
 /// to back until all pages have been consumed.
-///
 /// The pages from this iterator always have [`None`] [`crate::page::CompressedDataPage::selected_rows()`] since
 /// filter pushdown is not supported without a
 /// pre-computed [page index](https://github.com/apache/parquet-format/blob/master/PageIndex.md).

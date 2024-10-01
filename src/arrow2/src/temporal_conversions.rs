@@ -341,7 +341,6 @@ pub fn utf8_to_timestamp_ns_scalar<T: chrono::TimeZone>(
 }
 
 /// Parses `value` to `Option<i64>` consistent with the Arrow's definition of timestamp with timezone.
-///
 /// `tz` must be built from `timezone` (either via [`parse_offset`] or `chrono-tz`).
 /// Returns in scale `tz` of `TimeUnit`.
 #[inline]
@@ -464,7 +463,6 @@ pub fn utf8_to_timestamp_ns<O: Offset>(
 }
 
 /// Parses a [`Utf8Array`] to naive timestamp, i.e.
-///
 /// [`PrimitiveArray<i64>`] with type `Timestamp(Nanosecond, None)`.
 /// Timezones are ignored.
 /// Null elements remain null; non-parsable elements are set to null.

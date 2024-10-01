@@ -89,7 +89,6 @@ pub fn month(array: &dyn Array) -> Result<PrimitiveArray<u32>> {
 }
 
 /// Extracts the days of a temporal array as [`PrimitiveArray<u32>`].
-///
 /// Value ranges from 1 to 32 (Last day depends on month).
 /// Use [`can_day`] to check if this operation is supported for the target [`DataType`].
 pub fn day(array: &dyn Array) -> Result<PrimitiveArray<u32>> {
@@ -104,7 +103,6 @@ pub fn weekday(array: &dyn Array) -> Result<PrimitiveArray<u32>> {
 }
 
 /// Extracts ISO week of a temporal array as [`PrimitiveArray<u32>`]
-///
 /// Value ranges from 1 to 53 (Last week depends on the year).
 /// Use [`can_iso_week`] to check if this operation is supported for the target [`DataType`]
 pub fn iso_week(array: &dyn Array) -> Result<PrimitiveArray<u32>> {

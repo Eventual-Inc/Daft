@@ -54,9 +54,7 @@ pub fn add(lhs: &PrimitiveArray<i128>, rhs: &PrimitiveArray<i128>) -> PrimitiveA
 }
 
 /// Saturated addition of two decimal primitive arrays with the same precision
-/// and scale.
-///
-/// If the precision and scale is different, then an
+/// and scale. If the precision and scale is different, then an
 /// InvalidArgumentError is returned. If the result from the sum is larger than
 /// the possible number with the selected precision then the resulted number in
 /// the arrow array is the maximum number for the selected precision.
@@ -100,9 +98,7 @@ pub fn saturating_add(
 }
 
 /// Checked addition of two decimal primitive arrays with the same precision
-/// and scale.
-///
-/// If the precision and scale is different, then an
+/// and scale. If the precision and scale is different, then an
 /// InvalidArgumentError is returned. If the result from the sum is larger than
 /// the possible number with the selected precision (overflowing), then the
 /// validity for that index is changed to None
@@ -160,9 +156,7 @@ impl ArraySaturatingAdd<PrimitiveArray<i128>> for PrimitiveArray<i128> {
 }
 
 /// Adaptive addition of two decimal primitive arrays with different precision
-/// and scale.
-///
-/// If the precision and scale is different, then the smallest scale
+/// and scale. If the precision and scale is different, then the smallest scale
 /// and precision is adjusted to the largest precision and scale. If during the
 /// addition one of the results is larger than the max possible value, the
 /// result precision is changed to the precision of the max value

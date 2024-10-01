@@ -119,7 +119,10 @@ impl MutableFixedSizeBinaryArray {
                 }
                 self.values.extend_from_slice(bytes);
 
-                if let Some(validity) = &mut self.validity { validity.push(true) }
+                match &mut self.validity {
+                    Some(validity) => validity.push(true),
+                    None => {}
+                }
             }
             None => {
                 self.values.resize(self.values.len() + self.size, 0);

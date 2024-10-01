@@ -137,7 +137,10 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
         match value {
             Some(value) => {
                 self.values.push(value);
-                if let Some(validity) = &mut self.validity { validity.push(true) }
+                match &mut self.validity {
+                    Some(validity) => validity.push(true),
+                    None => {}
+                }
             }
             None => {
                 self.values.push(T::default());

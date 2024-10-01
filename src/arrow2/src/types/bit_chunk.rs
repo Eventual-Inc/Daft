@@ -52,7 +52,6 @@ bit_chunk!(u64);
 
 /// An [`Iterator<Item=bool>`] over a [`BitChunk`]. This iterator is often
 /// compiled to SIMD.
-///
 /// The [LSB](https://en.wikipedia.org/wiki/Bit_numbering#Least_significant_bit) corresponds
 /// to the first slot, as defined by the arrow specification.
 /// # Example
