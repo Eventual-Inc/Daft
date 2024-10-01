@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
-use daft_core::prelude::{AsArrow, SchemaRef};
+use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
 use daft_io::IOStatsContext;
 use daft_micropartition::{FileWriter, MicroPartition};
@@ -142,31 +142,31 @@ impl PartitionedWriteNode {
         target_chunk_rows: usize,
         target_file_rows: usize,
     ) -> DaftResult<Vec<Table>> {
-        // dis ain't gon work
-        let mut per_partition_writers: HashMap<u64, PerPartitionWriter> = HashMap::new();
+        let mut per_partition_writers = HashMap::new();
         while let Some(data) = input_receiver.recv().await {
             let (split_tables, partition_values) = Self::partition(&partition_cols, &data)?;
-            let hashes = partition_values.hash_rows()?;
-            for (idx, (partition, hash)) in split_tables
-                .into_iter()
-                .zip(hashes.as_arrow().values_iter())
-                .enumerate()
-            {
-                let per_partition_writer = if !per_partition_writers.contains_key(hash) {
-                    let partition_value_row = partition_values.slice(idx, idx + 1)?;
-                    per_partition_writers.insert(
-                        *hash,
-                        PerPartitionWriter::new(
-                            write_operator.clone(),
-                            partition_value_row,
-                            target_file_rows,
-                            target_chunk_rows,
-                        )?,
-                    );
-                    per_partition_writers.get_mut(hash).unwrap()
-                } else {
-                    per_partition_writers.get_mut(hash).unwrap()
-                };
+            for (idx, partition) in split_tables.into_iter().enumerate() {
+                let partition_value_row = partition_values.slice(idx, idx + 1)?;
+                let partition_value_row_str = partition_value_row.to_string(); // TODO (Colin): Figure out how to map a partition to a writer without using String as key
+                let per_partition_writer =
+                    if !per_partition_writers.contains_key(&partition_value_row_str) {
+                        per_partition_writers.insert(
+                            partition_value_row_str.clone(),
+                            PerPartitionWriter::new(
+                                write_operator.clone(),
+                                partition_value_row,
+                                target_file_rows,
+                                target_chunk_rows,
+                            )?,
+                        );
+                        per_partition_writers
+                            .get_mut(&partition_value_row_str)
+                            .unwrap()
+                    } else {
+                        per_partition_writers
+                            .get_mut(&partition_value_row_str)
+                            .unwrap()
+                    };
 
                 per_partition_writer.submit(&Arc::new(MicroPartition::new_loaded(
                     partition.schema.clone(),
