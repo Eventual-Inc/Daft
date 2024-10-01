@@ -13,8 +13,6 @@ num-traits = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true, features = ["rc"]}
 serde_json = {workspace = true}
-tracing = {workspace = true}
-tracing-subscriber = "0.3.18"
 
 [features]
 python = [
