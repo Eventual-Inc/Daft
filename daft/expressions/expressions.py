@@ -2941,7 +2941,7 @@ class ExpressionListNamespace(ExpressionNamespace):
             Expression: a UInt64 expression which is the length of each list
         """
         warnings.warn(
-            "This function will be deprecated from Daft version >= 0.3.5!  Instead, please use 'length'",
+            "This function will be deprecated from Daft version >= 0.3.5!  Instead, please use 'Expression.list.length'",
             category=DeprecationWarning,
         )
 
