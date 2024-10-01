@@ -183,6 +183,10 @@ def test_deltalake_write_ignore(tmp_path):
     assert read_delta.to_pyarrow_table() == df1.to_arrow()
 
 
+@pytest.mark.skipif(
+    context.get_context().daft_execution_config.enable_native_executor is True,
+    reason="Native executor does not into_partitions",
+)
 def test_deltalake_write_with_empty_partition(tmp_path, base_table):
     deltalake = pytest.importorskip("deltalake")
     path = tmp_path / "some_table"
@@ -219,7 +223,11 @@ def check_equal_both_daft_and_delta_rs(df: daft.DataFrame, path: Path, sort_orde
         (["int"], 3),
         (["float"], 3),
         (["str"], 3),
-        pytest.param(["bin"], 3, marks=pytest.mark.xfail(reason="Binary partitioning is not yet supported")),
+        pytest.param(
+            ["bin"],
+            3,
+            marks=pytest.mark.xfail(reason="Binary partitioning is not yet supported"),
+        ),
         (["bool"], 3),
         (["datetime"], 3),
         (["date"], 3),
@@ -242,9 +250,19 @@ def test_deltalake_write_partitioned(tmp_path, partition_cols, num_partitions):
                 datetime.datetime(2024, 2, 11),
                 None,
             ],
-            "date": [datetime.date(2024, 2, 10), datetime.date(2024, 2, 10), datetime.date(2024, 2, 11), None],
+            "date": [
+                datetime.date(2024, 2, 10),
+                datetime.date(2024, 2, 10),
+                datetime.date(2024, 2, 11),
+                None,
+            ],
             "decimal": pa.array(
-                [decimal.Decimal("1111.111"), decimal.Decimal("1111.111"), decimal.Decimal("2222.222"), None],
+                [
+                    decimal.Decimal("1111.111"),
+                    decimal.Decimal("1111.111"),
+                    decimal.Decimal("2222.222"),
+                    None,
+                ],
                 type=pa.decimal128(7, 3),
             ),
         }

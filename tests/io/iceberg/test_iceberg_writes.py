@@ -6,6 +6,8 @@ import decimal
 import pyarrow as pa
 import pytest
 
+from daft import context
+
 pyiceberg = pytest.importorskip("pyiceberg")
 
 PYARROW_LE_8_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (8, 0, 0)
@@ -201,6 +203,10 @@ def test_read_after_write_nested_fields(local_catalog):
     assert as_arrow == read_back.to_arrow()
 
 
+@pytest.mark.skipif(
+    context.get_context().daft_execution_config.enable_native_executor is True,
+    reason="Native executor does not into_partitions",
+)
 def test_read_after_write_with_empty_partition(local_catalog):
     df = daft.from_pydict({"x": [1, 2, 3]}).into_partitions(4)
     as_arrow = df.to_arrow()
