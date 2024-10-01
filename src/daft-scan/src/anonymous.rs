@@ -17,6 +17,7 @@ pub struct AnonymousScanOperator {
 }
 
 impl AnonymousScanOperator {
+    #[must_use]
     pub fn new(
         files: Vec<String>,
         schema: SchemaRef,

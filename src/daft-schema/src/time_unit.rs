@@ -14,6 +14,7 @@ pub enum TimeUnit {
 
 impl TimeUnit {
     #![allow(clippy::wrong_self_convention)]
+    #[must_use]
     pub fn to_arrow(&self) -> ArrowTimeUnit {
         match self {
             Self::Nanoseconds => ArrowTimeUnit::Nanosecond,
@@ -23,6 +24,7 @@ impl TimeUnit {
         }
     }
 
+    #[must_use]
     pub fn to_scale_factor(&self) -> i64 {
         match self {
             Self::Seconds => 1,
@@ -44,6 +46,7 @@ impl From<&ArrowTimeUnit> for TimeUnit {
     }
 }
 
+#[must_use]
 pub fn infer_timeunit_from_format_string(format: &str) -> TimeUnit {
     if format.contains("%9f") || format.contains("%.9f") {
         TimeUnit::Nanoseconds

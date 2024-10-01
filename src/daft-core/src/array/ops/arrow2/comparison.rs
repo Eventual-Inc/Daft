@@ -95,7 +95,7 @@ pub fn build_multi_array_is_equal(
     }
 
     let combined_fn = Box::new(move |a_idx: usize, b_idx: usize| -> bool {
-        for f in fn_list.iter() {
+        for f in &fn_list {
             if !f(a_idx, b_idx) {
                 return false;
             }

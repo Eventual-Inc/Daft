@@ -141,7 +141,10 @@ const THROTTLING_ERRORS: &[&str] = &[
 
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
-        use Error::*;
+        use Error::{
+            InvalidUrl, NotAFile, NotFound, UnableToHeadFile, UnableToListObjects,
+            UnableToLoadCredentials, UnableToOpenFile, UnableToReadBytes,
+        };
 
         fn classify_unhandled_error<
             E: std::error::Error + ProvideErrorMetadata + Send + Sync + 'static,
@@ -307,7 +310,7 @@ pub(crate) async fn s3_config_from_env() -> super::Result<S3Config> {
     let key_id = Some(creds.access_key_id().to_string());
     let access_key = Some(creds.secret_access_key().to_string().into());
     let session_token = creds.session_token().map(|t| t.to_string().into());
-    let region_name = s3_conf.region().map(|r| r.to_string());
+    let region_name = s3_conf.region().map(std::string::ToString::to_string);
     Ok(S3Config {
         // Do not perform auto-discovery of endpoint_url. This is possible, but requires quite a bit
         // of work that our current implementation of `build_s3_conf` does not yet do. See smithy-rs code:
@@ -442,7 +445,7 @@ async fn build_s3_conf(
                 CredentialsCache::lazy_builder()
                     .buffer_time(Duration::from_secs(*buffer_time))
                     .into_credentials_cache(),
-            )
+            );
         }
 
         loader.load().await
@@ -481,7 +484,7 @@ async fn build_s3_conf(
         } else if retry_mode.trim().eq_ignore_ascii_case("standard") {
             retry_config
         } else {
-            return Err(crate::Error::InvalidArgument { msg: format!("Invalid Retry Mode, Daft S3 client currently only supports standard and adaptive, got {}", retry_mode) });
+            return Err(crate::Error::InvalidArgument { msg: format!("Invalid Retry Mode, Daft S3 client currently only supports standard and adaptive, got {retry_mode}") });
         }
     } else {
         retry_config
@@ -507,7 +510,7 @@ async fn build_s3_conf(
     const MAX_WAITTIME_MS: u64 = 45_000;
     let check_creds = async || -> super::Result<bool> {
         use rand::Rng;
-        use CredentialsError::*;
+        use CredentialsError::{CredentialsNotLoaded, ProviderTimedOut};
         let mut attempt = 0;
         let first_attempt_time = std::time::Instant::now();
         loop {
@@ -518,22 +521,21 @@ async fn build_s3_conf(
             attempt += 1;
             match creds {
                 Ok(_) => return Ok(false),
-                Err(err @  ProviderTimedOut(..)) => {
+                Err(err @ ProviderTimedOut(..)) => {
                     let total_time_waited_ms: u64 = first_attempt_time.elapsed().as_millis().try_into().unwrap();
                     if attempt < CRED_TRIES && (total_time_waited_ms < MAX_WAITTIME_MS) {
-                        let jitter = rand::thread_rng().gen_range(0..((1<<attempt) * JITTER_MS)) as u64;
+                        let jitter = rand::thread_rng().gen_range(0..((1 << attempt) * JITTER_MS)) as u64;
                         let jitter = jitter.min(MAX_BACKOFF_MS);
                         log::warn!("S3 Credentials Provider timed out when making client for {}! Attempt {attempt} out of {CRED_TRIES} tries. Trying again in {jitter}ms. {err}", s3_conf.region().unwrap_or(&DEFAULT_REGION));
                         tokio::time::sleep(Duration::from_millis(jitter)).await;
                         continue;
-                    } else {
-                        Err(err)
                     }
+                    Err(err)
                 }
                 Err(err @ CredentialsNotLoaded(..)) => {
                     log::warn!("S3 Credentials not provided or found when making client for {}! Reverting to Anonymous mode. {err}", s3_conf.region().unwrap_or(&DEFAULT_REGION));
-                    return Ok(true)
-                },
+                    return Ok(true);
+                }
                 Err(err) => Err(err),
             }.with_context(|_| UnableToLoadCredentialsSnafu {})?;
         }
@@ -726,7 +728,7 @@ impl S3LikeSource {
     #[async_recursion]
     async fn _head_impl(
         &self,
-        _permit: SemaphorePermit<'async_recursion>,
+        permit: SemaphorePermit<'async_recursion>,
         uri: &str,
         region: &Region,
     ) -> super::Result<usize> {
@@ -794,7 +796,7 @@ impl S3LikeSource {
 
                             let new_region = Region::new(region_name);
                             log::debug!("S3 Region of {uri} different than client {:?} vs {:?} Attempting HEAD in that region with new client", new_region, region);
-                            self._head_impl(_permit, uri, &new_region).await
+                            self._head_impl(permit, uri, &new_region).await
                         }
                         _ => Err(UnableToHeadFileSnafu { path: uri }
                             .into_error(SdkError::ServiceError(err))
@@ -810,7 +812,7 @@ impl S3LikeSource {
     #[async_recursion]
     async fn _list_impl(
         &self,
-        _permit: SemaphorePermit<'async_recursion>,
+        permit: SemaphorePermit<'async_recursion>,
         scheme: &str,
         bucket: &str,
         key: &str,
@@ -875,13 +877,15 @@ impl S3LikeSource {
             Ok(v) => {
                 let dirs = v.common_prefixes();
                 let files = v.contents();
-                let continuation_token = v.next_continuation_token().map(|s| s.to_string());
+                let continuation_token = v
+                    .next_continuation_token()
+                    .map(std::string::ToString::to_string);
                 let mut total_len = 0;
                 if let Some(dirs) = dirs {
-                    total_len += dirs.len()
+                    total_len += dirs.len();
                 }
                 if let Some(files) = files {
-                    total_len += files.len()
+                    total_len += files.len();
                 }
                 let mut all_files = Vec::with_capacity(total_len);
                 if let Some(dirs) = dirs {
@@ -934,7 +938,7 @@ impl S3LikeSource {
                         let new_region = Region::new(region_name);
                         log::debug!("S3 Region of {uri} different than client {:?} vs {:?} Attempting List in that region with new client", new_region, region);
                         self._list_impl(
-                            _permit,
+                            permit,
                             scheme,
                             bucket,
                             key,
@@ -1023,7 +1027,7 @@ impl ObjectSource for S3LikeSource {
         if io_stats.is_some() {
             if let GetResult::Stream(stream, num_bytes, permit, retry_params) = get_result {
                 if let Some(is) = io_stats.as_ref() {
-                    is.mark_get_requests(1)
+                    is.mark_get_requests(1);
                 }
                 Ok(GetResult::Stream(
                     io_stats_on_bytestream(stream, io_stats),
@@ -1071,7 +1075,7 @@ impl ObjectSource for S3LikeSource {
             .context(UnableToGrabSemaphoreSnafu)?;
         let head_result = self._head_impl(permit, uri, &self.default_region).await?;
         if let Some(is) = io_stats.as_ref() {
-            is.mark_head_requests(1)
+            is.mark_head_requests(1);
         }
         Ok(head_result)
     }
@@ -1115,7 +1119,7 @@ impl ObjectSource for S3LikeSource {
             // Perform a directory-based list of entries in the next level
             // assume its a directory first
             let key = if key.is_empty() {
-                "".to_string()
+                String::new()
             } else {
                 format!("{}{S3_DELIMITER}", key.trim_end_matches(S3_DELIMITER))
             };
@@ -1139,7 +1143,7 @@ impl ObjectSource for S3LikeSource {
                 .await?
             };
             if let Some(is) = io_stats.as_ref() {
-                is.mark_list_requests(1)
+                is.mark_list_requests(1);
             }
 
             if lsr.files.is_empty() && key.contains(S3_DELIMITER) {
@@ -1163,7 +1167,7 @@ impl ObjectSource for S3LikeSource {
                     )
                     .await?;
                 if let Some(is) = io_stats.as_ref() {
-                    is.mark_list_requests(1)
+                    is.mark_list_requests(1);
                 }
                 let target_path = format!("{scheme}://{bucket}/{key}");
                 lsr.files.retain(|f| f.filepath == target_path);
@@ -1198,7 +1202,7 @@ impl ObjectSource for S3LikeSource {
                 .await?
             };
             if let Some(is) = io_stats.as_ref() {
-                is.mark_list_requests(1)
+                is.mark_list_requests(1);
             }
 
             Ok(lsr)
@@ -1208,7 +1212,6 @@ impl ObjectSource for S3LikeSource {
 
 #[cfg(test)]
 mod tests {
-
     use common_io_config::S3Config;
 
     use crate::{object_io::ObjectSource, Result, S3LikeSource};

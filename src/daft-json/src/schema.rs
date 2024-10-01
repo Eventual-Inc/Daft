@@ -81,7 +81,7 @@ pub async fn read_json_schema_bulk(
     let result = runtime_handle
         .block_on_current_thread(async {
             let task_stream = futures::stream::iter(uris.iter().map(|uri| {
-                let owned_string = uri.to_string();
+                let owned_string = (*uri).to_string();
                 let owned_client = io_client.clone();
                 let owned_io_stats = io_stats.clone();
                 let owned_parse_options = parse_options.clone();
@@ -231,7 +231,7 @@ mod tests {
         let file = format!(
             "{}/test/iris_tiny.jsonl{}",
             env!("CARGO_MANIFEST_DIR"),
-            compression.map_or("".to_string(), |ext| format!(".{}", ext))
+            compression.map_or(String::new(), |ext| format!(".{}", ext))
         );
 
         let mut io_config = IOConfig::default();
@@ -416,7 +416,7 @@ mod tests {
     ) -> DaftResult<()> {
         let file = format!(
             "s3://daft-public-data/test_fixtures/json-dev/iris_tiny.jsonl{}",
-            compression.map_or("".to_string(), |ext| format!(".{}", ext))
+            compression.map_or(String::new(), |ext| format!(".{}", ext))
         );
 
         let mut io_config = IOConfig::default();

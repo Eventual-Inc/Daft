@@ -72,6 +72,7 @@ pub struct S3Credentials {
 }
 
 /// Create configurations to be used when accessing Azure Blob Storage.
+///
 /// To authenticate with Microsoft Entra ID, `tenant_id`, `client_id`, and `client_secret` must be provided.
 /// If no credentials are provided, Daft will attempt to fetch credentials from the environment.
 ///
@@ -98,6 +99,7 @@ pub struct AzureConfig {
 }
 
 /// Create configurations to be used when accessing Google Cloud Storage.
+///
 /// Credentials may be provided directly with the `credentials` parameter, or set with the `GOOGLE_APPLICATION_CREDENTIALS_JSON` or `GOOGLE_APPLICATION_CREDENTIALS` environment variables.
 ///
 /// Args:
@@ -148,6 +150,7 @@ pub struct HTTPConfig {
 #[pymethods]
 impl IOConfig {
     #[new]
+    #[must_use]
     pub fn new(
         s3: Option<S3Config>,
         azure: Option<AzureConfig>,
@@ -164,6 +167,7 @@ impl IOConfig {
         }
     }
 
+    #[must_use]
     pub fn replace(
         &self,
         s3: Option<S3Config>,
@@ -279,8 +283,10 @@ impl S3Config {
                 region_name: region_name.or(def.region_name),
                 endpoint_url: endpoint_url.or(def.endpoint_url),
                 key_id: key_id.or(def.key_id),
-                session_token: session_token.map(|v| v.into()).or(def.session_token),
-                access_key: access_key.map(|v| v.into()).or(def.access_key),
+                session_token: session_token
+                    .map(std::convert::Into::into)
+                    .or(def.session_token),
+                access_key: access_key.map(std::convert::Into::into).or(def.access_key),
                 credentials_provider: credentials_provider
                     .map(|p| {
                         Ok::<_, PyErr>(Box::new(PyS3CredentialsProvider::new(p)?)
@@ -339,10 +345,10 @@ impl S3Config {
                 endpoint_url: endpoint_url.or_else(|| self.config.endpoint_url.clone()),
                 key_id: key_id.or_else(|| self.config.key_id.clone()),
                 session_token: session_token
-                    .map(|v| v.into())
+                    .map(std::convert::Into::into)
                     .or_else(|| self.config.session_token.clone()),
                 access_key: access_key
-                    .map(|v| v.into())
+                    .map(std::convert::Into::into)
                     .or_else(|| self.config.access_key.clone()),
                 credentials_provider: credentials_provider
                     .map(|p| {
@@ -416,7 +422,7 @@ impl S3Config {
             .config
             .session_token
             .as_ref()
-            .map(|v| v.as_string())
+            .map(super::ObfuscatedString::as_string)
             .cloned())
     }
 
@@ -427,7 +433,7 @@ impl S3Config {
             .config
             .access_key
             .as_ref()
-            .map(|v| v.as_string())
+            .map(super::ObfuscatedString::as_string)
             .cloned())
     }
 
@@ -671,7 +677,7 @@ impl S3CredentialsProvider for PyS3CredentialsProvider {
     }
 
     fn dyn_hash(&self, mut state: &mut dyn Hasher) {
-        self.hash(&mut state)
+        self.hash(&mut state);
     }
 }
 
@@ -679,6 +685,7 @@ impl S3CredentialsProvider for PyS3CredentialsProvider {
 impl AzureConfig {
     #[allow(clippy::too_many_arguments)]
     #[new]
+    #[must_use]
     pub fn new(
         storage_account: Option<String>,
         access_key: Option<String>,
@@ -696,12 +703,14 @@ impl AzureConfig {
         Self {
             config: crate::AzureConfig {
                 storage_account: storage_account.or(def.storage_account),
-                access_key: access_key.map(|v| v.into()).or(def.access_key),
+                access_key: access_key.map(std::convert::Into::into).or(def.access_key),
                 sas_token: sas_token.or(def.sas_token),
                 bearer_token: bearer_token.or(def.bearer_token),
                 tenant_id: tenant_id.or(def.tenant_id),
                 client_id: client_id.or(def.client_id),
-                client_secret: client_secret.map(|v| v.into()).or(def.client_secret),
+                client_secret: client_secret
+                    .map(std::convert::Into::into)
+                    .or(def.client_secret),
                 use_fabric_endpoint: use_fabric_endpoint.unwrap_or(def.use_fabric_endpoint),
                 anonymous: anonymous.unwrap_or(def.anonymous),
                 endpoint_url: endpoint_url.or(def.endpoint_url),
@@ -711,6 +720,7 @@ impl AzureConfig {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[must_use]
     pub fn replace(
         &self,
         storage_account: Option<String>,
@@ -729,14 +739,14 @@ impl AzureConfig {
             config: crate::AzureConfig {
                 storage_account: storage_account.or_else(|| self.config.storage_account.clone()),
                 access_key: access_key
-                    .map(|v| v.into())
+                    .map(std::convert::Into::into)
                     .or_else(|| self.config.access_key.clone()),
                 sas_token: sas_token.or_else(|| self.config.sas_token.clone()),
                 bearer_token: bearer_token.or_else(|| self.config.bearer_token.clone()),
                 tenant_id: tenant_id.or_else(|| self.config.tenant_id.clone()),
                 client_id: client_id.or_else(|| self.config.client_id.clone()),
                 client_secret: client_secret
-                    .map(|v| v.into())
+                    .map(std::convert::Into::into)
                     .or_else(|| self.config.client_secret.clone()),
                 use_fabric_endpoint: use_fabric_endpoint.unwrap_or(self.config.use_fabric_endpoint),
                 anonymous: anonymous.unwrap_or(self.config.anonymous),
@@ -763,7 +773,7 @@ impl AzureConfig {
             .config
             .access_key
             .as_ref()
-            .map(|v| v.as_string())
+            .map(super::ObfuscatedString::as_string)
             .cloned())
     }
 
@@ -795,7 +805,7 @@ impl AzureConfig {
             .config
             .client_secret
             .as_ref()
-            .map(|v| v.as_string())
+            .map(super::ObfuscatedString::as_string)
             .cloned())
     }
 
@@ -828,6 +838,7 @@ impl AzureConfig {
 impl GCSConfig {
     #[allow(clippy::too_many_arguments)]
     #[new]
+    #[must_use]
     pub fn new(
         project_id: Option<String>,
         credentials: Option<String>,
@@ -838,13 +849,16 @@ impl GCSConfig {
         Self {
             config: crate::GCSConfig {
                 project_id: project_id.or(def.project_id),
-                credentials: credentials.map(|v| v.into()).or(def.credentials),
+                credentials: credentials
+                    .map(std::convert::Into::into)
+                    .or(def.credentials),
                 token: token.or(def.token),
                 anonymous: anonymous.unwrap_or(def.anonymous),
             },
         }
     }
 
+    #[must_use]
     pub fn replace(
         &self,
         project_id: Option<String>,
@@ -856,7 +870,7 @@ impl GCSConfig {
             config: crate::GCSConfig {
                 project_id: project_id.or_else(|| self.config.project_id.clone()),
                 credentials: credentials
-                    .map(|v| v.into())
+                    .map(std::convert::Into::into)
                     .or_else(|| self.config.credentials.clone()),
                 token: token.or_else(|| self.config.token.clone()),
                 anonymous: anonymous.unwrap_or(self.config.anonymous),
@@ -906,6 +920,7 @@ impl From<config::IOConfig> for IOConfig {
 #[pymethods]
 impl HTTPConfig {
     #[new]
+    #[must_use]
     pub fn new(bearer_token: Option<String>) -> Self {
         Self {
             config: crate::HTTPConfig::new(bearer_token),

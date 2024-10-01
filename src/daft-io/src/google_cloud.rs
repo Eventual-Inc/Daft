@@ -52,13 +52,16 @@ enum Error {
 
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
-        use Error::*;
+        use Error::{
+            InvalidUrl, NotAFile, NotFound, UnableToListObjects, UnableToLoadCredentials,
+            UnableToOpenFile, UnableToReadBytes,
+        };
         match error {
             UnableToReadBytes { path, source }
             | UnableToOpenFile { path, source }
             | UnableToListObjects { path, source } => match source {
                 GError::HttpClient(err) => match err.status().map(|s| s.as_u16()) {
-                    Some(404) | Some(410) => Self::NotFound {
+                    Some(404 | 410) => Self::NotFound {
                         path,
                         source: err.into(),
                     },
@@ -164,7 +167,7 @@ impl GCSClientWrapper {
             .into()
         });
         if let Some(is) = io_stats.as_ref() {
-            is.mark_get_requests(1)
+            is.mark_get_requests(1);
         }
         Ok(GetResult::Stream(
             io_stats_on_bytestream(response, io_stats),
@@ -194,7 +197,7 @@ impl GCSClientWrapper {
                 path: uri.to_string(),
             })?;
         if let Some(is) = io_stats.as_ref() {
-            is.mark_head_requests(1)
+            is.mark_head_requests(1);
         }
         Ok(response.size as usize)
     }
@@ -214,8 +217,8 @@ impl GCSClientWrapper {
             prefix: Some(key.to_string()),
             end_offset: None,
             start_offset: None,
-            page_token: continuation_token.map(|s| s.to_string()),
-            delimiter: delimiter.map(|d| d.to_string()), // returns results in "directory mode" if delimiter is provided
+            page_token: continuation_token.map(std::string::ToString::to_string),
+            delimiter: delimiter.map(std::string::ToString::to_string), // returns results in "directory mode" if delimiter is provided
             max_results: page_size,
             include_trailing_delimiter: Some(false), // This will not populate "directories" in the response's .item[]
             projection: None,
@@ -225,10 +228,10 @@ impl GCSClientWrapper {
             .list_objects(&req)
             .await
             .context(UnableToListObjectsSnafu {
-                path: format!("{GCS_SCHEME}://{}/{}", bucket, key),
+                path: format!("{GCS_SCHEME}://{bucket}/{key}"),
             })?;
         if let Some(is) = io_stats.as_ref() {
-            is.mark_list_requests(1)
+            is.mark_list_requests(1);
         }
 
         let response_items = ls_response.items.unwrap_or_default();
@@ -239,7 +242,7 @@ impl GCSClientWrapper {
             filetype: FileType::File,
         });
         let dirs = response_prefixes.iter().map(|pref| FileMetadata {
-            filepath: format!("{GCS_SCHEME}://{}/{}", bucket, pref),
+            filepath: format!("{GCS_SCHEME}://{bucket}/{pref}"),
             size: None,
             filetype: FileType::Directory,
         });
@@ -264,7 +267,7 @@ impl GCSClientWrapper {
         if posix {
             // Attempt to forcefully ls the key as a directory (by ensuring a "/" suffix)
             let forced_directory_key = if key.is_empty() {
-                "".to_string()
+                String::new()
             } else {
                 format!("{}{GCS_DELIMITER}", key.trim_end_matches(GCS_DELIMITER))
             };

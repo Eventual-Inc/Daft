@@ -25,24 +25,25 @@ pub enum FileFormatConfig {
 }
 
 impl FileFormatConfig {
+    #[must_use]
     pub fn file_format(&self) -> FileFormat {
         self.into()
     }
 
+    #[must_use]
     pub fn var_name(&self) -> &'static str {
-        use FileFormatConfig::*;
-
         match self {
-            Parquet(_) => "Parquet",
-            Csv(_) => "Csv",
-            Json(_) => "Json",
+            Self::Parquet(_) => "Parquet",
+            Self::Csv(_) => "Csv",
+            Self::Json(_) => "Json",
             #[cfg(feature = "python")]
-            Database(_) => "Database",
+            Self::Database(_) => "Database",
             #[cfg(feature = "python")]
-            PythonFunction => "PythonFunction",
+            Self::PythonFunction => "PythonFunction",
         }
     }
 
+    #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
         match self {
             Self::Parquet(source) => source.multiline_display(),
@@ -76,6 +77,7 @@ pub struct ParquetSourceConfig {
 }
 
 impl ParquetSourceConfig {
+    #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         res.push(format!(
@@ -101,7 +103,7 @@ impl ParquetSourceConfig {
                         rg.as_ref()
                             .map(|rg| {
                                 rg.iter()
-                                    .map(|i| i.to_string())
+                                    .map(std::string::ToString::to_string)
                                     .collect::<Vec<String>>()
                                     .join(",")
                             })
@@ -130,11 +132,8 @@ impl ParquetSourceConfig {
             coerce_int96_timestamp_unit: coerce_int96_timestamp_unit
                 .unwrap_or(TimeUnit::Nanoseconds.into())
                 .into(),
-            field_id_mapping: field_id_mapping.map(|map| {
-                Arc::new(BTreeMap::from_iter(
-                    map.into_iter().map(|(k, v)| (k, v.field)),
-                ))
-            }),
+            field_id_mapping: field_id_mapping
+                .map(|map| Arc::new(map.into_iter().map(|(k, v)| (k, v.field)).collect())),
             row_groups,
             chunk_size,
         }
@@ -164,31 +163,32 @@ pub struct CsvSourceConfig {
 }
 
 impl CsvSourceConfig {
+    #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         if let Some(delimiter) = self.delimiter {
-            res.push(format!("Delimiter = {}", delimiter));
+            res.push(format!("Delimiter = {delimiter}"));
         }
         res.push(format!("Has headers = {}", self.has_headers));
         res.push(format!("Double quote = {}", self.double_quote));
         if let Some(quote) = self.quote {
-            res.push(format!("Quote = {}", quote));
+            res.push(format!("Quote = {quote}"));
         }
         if let Some(escape_char) = self.escape_char {
-            res.push(format!("Escape char = {}", escape_char));
+            res.push(format!("Escape char = {escape_char}"));
         }
         if let Some(comment) = self.comment {
-            res.push(format!("Comment = {}", comment));
+            res.push(format!("Comment = {comment}"));
         }
         res.push(format!(
             "Allow_variable_columns = {}",
             self.allow_variable_columns
         ));
         if let Some(buffer_size) = self.buffer_size {
-            res.push(format!("Buffer size = {}", buffer_size));
+            res.push(format!("Buffer size = {buffer_size}"));
         }
         if let Some(chunk_size) = self.chunk_size {
-            res.push(format!("Chunk size = {}", chunk_size));
+            res.push(format!("Chunk size = {chunk_size}"));
         }
         res
     }
@@ -243,6 +243,7 @@ pub struct JsonSourceConfig {
 }
 
 impl JsonSourceConfig {
+    #[must_use]
     pub fn new_internal(buffer_size: Option<usize>, chunk_size: Option<usize>) -> Self {
         Self {
             buffer_size,
@@ -250,13 +251,14 @@ impl JsonSourceConfig {
         }
     }
 
+    #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         if let Some(buffer_size) = self.buffer_size {
-            res.push(format!("Buffer size = {}", buffer_size));
+            res.push(format!("Buffer size = {buffer_size}"));
         }
         if let Some(chunk_size) = self.chunk_size {
-            res.push(format!("Chunk size = {}", chunk_size));
+            res.push(format!("Chunk size = {chunk_size}"));
         }
         res
     }
@@ -323,10 +325,12 @@ impl Hash for DatabaseSourceConfig {
 
 #[cfg(feature = "python")]
 impl DatabaseSourceConfig {
+    #[must_use]
     pub fn new_internal(sql: String, conn: PyObject) -> Self {
         Self { sql, conn }
     }
 
+    #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         res.push(format!("SQL = \"{}\"", self.sql));

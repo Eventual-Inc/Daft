@@ -52,13 +52,12 @@ where
         );
 
         if let Ok(arrow_dtype) = field.dtype.to_physical().to_arrow() {
-            if !arrow_dtype.eq(data.data_type()) {
-                panic!(
-                    "expected {:?}, got {:?} when creating a new DataArray",
-                    arrow_dtype,
-                    data.data_type()
-                )
-            }
+            assert!(
+                arrow_dtype.eq(data.data_type()),
+                "expected {:?}, got {:?} when creating a new DataArray",
+                arrow_dtype,
+                data.data_type()
+            );
         }
 
         Ok(Self {

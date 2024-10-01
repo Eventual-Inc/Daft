@@ -39,7 +39,7 @@ impl ImageFormat {
 
 impl ImageFormat {
     pub fn iterator() -> std::slice::Iter<'static, Self> {
-        use ImageFormat::*;
+        use ImageFormat::{BMP, GIF, JPEG, PNG, TIFF};
 
         static FORMATS: [ImageFormat; 5] = [PNG, JPEG, TIFF, GIF, BMP];
         FORMATS.iter()
@@ -50,7 +50,7 @@ impl FromStr for ImageFormat {
     type Err = DaftError;
 
     fn from_str(format: &str) -> DaftResult<Self> {
-        use ImageFormat::*;
+        use ImageFormat::{BMP, GIF, JPEG, PNG, TIFF};
 
         match format {
             "PNG" => Ok(PNG),

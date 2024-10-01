@@ -63,7 +63,7 @@ impl TryFrom<SQLFunctionArguments> for MinHashFunction {
             .get_named("num_hashes")
             .ok_or_else(|| PlannerError::invalid_operation("num_hashes is required"))?
             .as_literal()
-            .and_then(|lit| lit.as_i64())
+            .and_then(daft_dsl::LiteralValue::as_i64)
             .ok_or_else(|| PlannerError::invalid_operation("num_hashes must be an integer"))?
             as usize;
 
@@ -71,14 +71,14 @@ impl TryFrom<SQLFunctionArguments> for MinHashFunction {
             .get_named("ngram_size")
             .ok_or_else(|| PlannerError::invalid_operation("ngram_size is required"))?
             .as_literal()
-            .and_then(|lit| lit.as_i64())
+            .and_then(daft_dsl::LiteralValue::as_i64)
             .ok_or_else(|| PlannerError::invalid_operation("ngram_size must be an integer"))?
             as usize;
         let seed = args
             .get_named("seed")
             .map(|arg| {
                 arg.as_literal()
-                    .and_then(|lit| lit.as_i64())
+                    .and_then(daft_dsl::LiteralValue::as_i64)
                     .ok_or_else(|| PlannerError::invalid_operation("num_hashes must be an integer"))
             })
             .transpose()?

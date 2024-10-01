@@ -155,7 +155,7 @@ pub(crate) fn build_row_ranges(
     } else {
         let mut rows_to_add = limit.unwrap_or(metadata.num_rows as i64);
 
-        for (i, rg) in metadata.row_groups.iter() {
+        for (i, rg) in &metadata.row_groups {
             if (curr_row_index + rg.num_rows()) < row_start_offset {
                 curr_row_index += rg.num_rows();
                 continue;
@@ -351,7 +351,7 @@ impl ParquetFileReader {
                 .unwrap();
 
             let columns = rg.columns();
-            for field in arrow_fields.iter() {
+            for field in arrow_fields {
                 let field_name = field.name.clone();
                 let filtered_cols = columns
                     .iter()
@@ -454,7 +454,7 @@ impl ParquetFileReader {
                                     Vec::with_capacity(filtered_columns.len());
                                 let mut ptypes = Vec::with_capacity(filtered_columns.len());
                                 let mut num_values = Vec::with_capacity(filtered_columns.len());
-                                for col in filtered_columns.into_iter() {
+                                for col in filtered_columns {
                                     num_values.push(col.metadata().num_values as usize);
                                     ptypes.push(col.descriptor().descriptor.primitive_type.clone());
 
@@ -481,8 +481,10 @@ impl ParquetFileReader {
                                     let page_stream =
                                         streaming_decompression(compressed_page_stream);
                                     let pinned_stream = Box::pin(page_stream);
-                                    decompressed_iters
-                                        .push(StreamIterator::new(pinned_stream, rt_handle.clone()))
+                                    decompressed_iters.push(StreamIterator::new(
+                                        pinned_stream,
+                                        rt_handle.clone(),
+                                    ));
                                 }
                                 let arr_iter = column_iter_to_arrays(
                                     decompressed_iters,
@@ -605,9 +607,9 @@ impl ParquetFileReader {
                         let handle = tokio::task::spawn(async move {
                             let mut range_readers = Vec::with_capacity(filtered_cols_idx.len());
 
-                            for range in needed_byte_ranges.into_iter() {
+                            for range in needed_byte_ranges {
                                 let range_reader = ranges.get_range_reader(range).await?;
-                                range_readers.push(Box::pin(range_reader))
+                                range_readers.push(Box::pin(range_reader));
                             }
 
                             let mut decompressed_iters =
@@ -643,7 +645,7 @@ impl ParquetFileReader {
                                 let page_stream = streaming_decompression(compressed_page_stream);
                                 let pinned_stream = Box::pin(page_stream);
                                 decompressed_iters
-                                    .push(StreamIterator::new(pinned_stream, rt_handle.clone()))
+                                    .push(StreamIterator::new(pinned_stream, rt_handle.clone()));
                             }
 
                             let (send, recv) = tokio::sync::oneshot::channel();
@@ -788,9 +790,9 @@ impl ParquetFileReader {
                         let handle = tokio::task::spawn(async move {
                             let mut range_readers = Vec::with_capacity(filtered_cols_idx.len());
 
-                            for range in needed_byte_ranges.into_iter() {
+                            for range in needed_byte_ranges {
                                 let range_reader = ranges.get_range_reader(range).await?;
-                                range_readers.push(Box::pin(range_reader))
+                                range_readers.push(Box::pin(range_reader));
                             }
 
                             let mut decompressed_iters =
@@ -827,7 +829,7 @@ impl ParquetFileReader {
                                 let page_stream = streaming_decompression(compressed_page_stream);
                                 let pinned_stream = Box::pin(page_stream);
                                 decompressed_iters
-                                    .push(StreamIterator::new(pinned_stream, rt_handle.clone()))
+                                    .push(StreamIterator::new(pinned_stream, rt_handle.clone()));
                             }
 
                             let (send, recv) = tokio::sync::oneshot::channel();

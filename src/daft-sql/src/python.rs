@@ -23,6 +23,7 @@ pub fn sql_expr(sql: &str) -> PyResult<PyExpr> {
 }
 
 #[pyfunction]
+#[must_use]
 pub fn list_sql_functions() -> Vec<String> {
     SQL_FUNCTIONS.map.keys().cloned().collect()
 }
@@ -38,6 +39,7 @@ pub struct PyCatalog {
 impl PyCatalog {
     /// Construct an empty PyCatalog.
     #[staticmethod]
+    #[must_use]
     pub fn new() -> Self {
         Self {
             catalog: SQLCatalog::new(),

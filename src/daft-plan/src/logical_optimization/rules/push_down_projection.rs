@@ -65,7 +65,7 @@ impl PushDownProjection {
             let upstream_computations = upstream_projection
                 .projection
                 .iter()
-                .flat_map(|e| {
+                .filter_map(|e| {
                     e.input_mapping().map_or_else(
                         // None means computation required -> Some(colname)
                         || Some(e.name().to_string()),
@@ -76,7 +76,7 @@ impl PushDownProjection {
                 .collect::<IndexSet<_>>();
 
             // For each of them, make sure they are used only once in this downstream projection.
-            let mut exprs_to_walk: Vec<Arc<Expr>> = projection.projection.to_vec();
+            let mut exprs_to_walk: Vec<Arc<Expr>> = projection.projection.clone();
 
             let mut upstream_computations_used = IndexSet::new();
             let mut okay_to_merge = true;
@@ -91,8 +91,8 @@ impl PushDownProjection {
                             && let Expr::Column(name) = expr.as_ref()
                             && upstream_computations.contains(name.as_ref())
                         {
-                            okay_to_merge =
-                                okay_to_merge && upstream_computations_used.insert(name.to_string())
+                            okay_to_merge = okay_to_merge
+                                && upstream_computations_used.insert(name.to_string());
                         };
                         if okay_to_merge {
                             expr.children()

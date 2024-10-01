@@ -23,6 +23,7 @@ fn inner_compress<G: Fn(usize) -> Result<usize>, F: Fn(&[u8], &mut [u8]) -> Resu
 
 /// Compresses data stored in slice `input_buf` and writes the compressed result
 /// to `output_buf`.
+///
 /// Note that you'll need to call `clear()` before reusing the same `output_buf`
 /// across different `compress` calls.
 pub fn compress(

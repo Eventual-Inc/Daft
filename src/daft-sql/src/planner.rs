@@ -320,7 +320,13 @@ impl SQLPlanner {
         let mut left_rel = self.plan_relation(&relation)?;
 
         for join in &from.joins {
-            use sqlparser::ast::{JoinConstraint, JoinOperator::*};
+            use sqlparser::ast::{
+                JoinConstraint,
+                JoinOperator::{
+                    AsOf, CrossApply, CrossJoin, FullOuter, Inner, LeftAnti, LeftOuter, LeftSemi,
+                    OuterApply, RightAnti, RightOuter, RightSemi,
+                },
+            };
             let Relation {
                 inner: right_plan,
                 name: right_name,
@@ -476,16 +482,18 @@ impl SQLPlanner {
                         }
                     };
 
-                    use sqlparser::ast::ExcludeSelectItem::*;
-                    return match exclude {
+                    use sqlparser::ast::ExcludeSelectItem::{Multiple, Single};
+                    match exclude {
                         Single(item) => current_relation
                             .inner
                             .schema()
                             .exclude(&[&item.to_string()]),
 
                         Multiple(items) => {
-                            let items =
-                                items.iter().map(|i| i.to_string()).collect::<Vec<String>>();
+                            let items = items
+                                .iter()
+                                .map(std::string::ToString::to_string)
+                                .collect::<Vec<String>>();
 
                             current_relation.inner.schema().exclude(items.as_slice())
                         }
@@ -497,7 +505,7 @@ impl SQLPlanner {
                             .map(|n| col(n.as_ref()))
                             .collect::<Vec<_>>()
                     })
-                    .map_err(|e| e.into());
+                    .map_err(std::convert::Into::into)
                 } else {
                     Ok(vec![col("*")])
                 }
@@ -515,8 +523,7 @@ impl SQLPlanner {
                 .or_else(|_| n.parse::<f64>().map(LiteralValue::Float64))
                 .map_err(|_| {
                     PlannerError::invalid_operation(format!(
-                        "could not parse number literal '{:?}'",
-                        n
+                        "could not parse number literal '{n:?}'"
                     ))
                 })?,
             Value::Boolean(b) => LiteralValue::Boolean(*b),
@@ -770,10 +777,10 @@ impl SQLPlanner {
             // ---------------------------------
             // array/list
             // ---------------------------------
-            SQLDataType::Array(ArrayElemTypeDef::AngleBracket(inner_type))
-            | SQLDataType::Array(ArrayElemTypeDef::SquareBracket(inner_type, None)) => {
-                DataType::List(Box::new(self.sql_dtype_to_dtype(inner_type)?))
-            }
+            SQLDataType::Array(
+                ArrayElemTypeDef::AngleBracket(inner_type)
+                | ArrayElemTypeDef::SquareBracket(inner_type, None),
+            ) => DataType::List(Box::new(self.sql_dtype_to_dtype(inner_type)?)),
             SQLDataType::Array(ArrayElemTypeDef::SquareBracket(inner_type, Some(size))) => {
                 DataType::FixedSizeList(
                     Box::new(self.sql_dtype_to_dtype(inner_type)?),
@@ -887,7 +894,7 @@ impl SQLPlanner {
                             let dtype = self.sql_dtype_to_dtype(field_type)?;
                             let name = match field_name {
                                 Some(name) => name.to_string(),
-                                None => format!("col_{}", idx),
+                                None => format!("col_{idx}"),
                             };
 
                             Ok(Field::new(name, dtype))
@@ -952,7 +959,7 @@ impl SQLPlanner {
                     .ok_or_else(|| {
                         PlannerError::invalid_operation("subscript without a current relation")
                     })
-                    .map(|p| p.schema())?;
+                    .map(Relation::schema)?;
                 let expr_field = expr.to_field(schema.as_ref())?;
                 match expr_field.dtype {
                     DataType::List(_) | DataType::FixedSizeList(_, _) => {

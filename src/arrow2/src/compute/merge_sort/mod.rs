@@ -71,6 +71,7 @@ pub use crate::compute::sort::SortOptions;
 use crate::error::Result;
 
 /// A slice denoting `(array_index, start, len)` representing a slice from one of N arrays.
+///
 /// This is used to keep track of contiguous blocks of slots.
 /// An array of MergeSlice, `[MergeSlice]`, represents inter-leaved array slices.
 /// For example, `[(0, 0, 2), (1, 0, 1), (0, 2, 3)]` represents 2 arrays (a0 and a1) arranged as follows:
@@ -82,6 +83,7 @@ pub type MergeSlice = (usize, usize, usize);
 
 /// Takes N arrays together through `slices` under the assumption that the slices have
 /// a total coverage of the arrays.
+///
 /// I.e. they are such that all elements on all arrays are picked (which is the case in sorting).
 /// # Panic
 /// This function panics if:
@@ -448,9 +450,11 @@ where
     }
 }
 
-/// Given two iterators of slices representing two sets of sorted [`Array`]s, and a `comparator` bound to those [`Array`]s,
-/// returns a new iterator of slices denoting how to `take` slices from each of the arrays such that the resulting
-/// array is sorted according to `comparator`
+/// Merges two sorted [`Array`] iterators into a single sorted iterator.
+///
+/// Takes two iterators of slices representing sorted [`Array`]s and a `comparator`.
+/// Returns a new iterator of slices indicating how to `take` from each input
+/// to produce a sorted result according to `comparator`.
 pub fn merge_sort_slices<
     'a,
     L: Iterator<Item = &'a MergeSlice>,

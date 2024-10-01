@@ -99,7 +99,7 @@ impl Project {
         // all existing names must also be converted to semantic IDs.
         let mut column_name_substitutions = IndexMap::new();
 
-        let mut exprs_to_walk: Vec<Arc<Expr>> = exprs.to_vec();
+        let mut exprs_to_walk: Vec<Arc<Expr>> = exprs.clone();
         while !exprs_to_walk.is_empty() {
             exprs_to_walk = exprs_to_walk
                 .iter()
@@ -133,7 +133,7 @@ impl Project {
         }
 
         if subexpressions_to_cache.is_empty() {
-            (exprs.to_vec(), IndexMap::new())
+            (exprs.clone(), IndexMap::new())
         } else {
             // Then, substitute all the cached subexpressions in the original expressions.
             let subexprs_to_replace = subexpressions_to_cache

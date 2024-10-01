@@ -268,6 +268,7 @@ fn new_utf8_serializer<'a, O: Offset>(
 }
 
 /// Returns a [`StreamingIterator`] that yields `&[u8]` serialized from `array` according to `options`.
+///
 /// For numeric types, this serializes as usual. For dates, times and timestamps, it uses `options` to
 /// Supported types:
 /// * boolean

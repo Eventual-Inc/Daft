@@ -20,6 +20,7 @@ enum State {
 }
 
 /// A fallible [`Iterator`] of [`CompressedPage`]. This iterator leverages page indexes
+///
 /// to skip pages that are not needed. Consequently, the pages from this
 /// iterator always have [`Some`] [`crate::page::CompressedDataPage::selected_rows()`]
 pub struct IndexedPageReader<R: Read + Seek> {

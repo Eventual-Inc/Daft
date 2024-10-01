@@ -16,7 +16,7 @@ impl MicroPartition {
             let folded_expr = predicate
                 .iter()
                 .cloned()
-                .reduce(|a, b| a.and(b))
+                .reduce(daft_dsl::Expr::and)
                 .expect("should have at least 1 expr");
             let eval_result = statistics.eval_expression(&folded_expr)?;
             let tv = eval_result.to_truth_value();

@@ -46,7 +46,7 @@ impl MapArray {
         match key_to_get.len() {
             1 => {
                 let mut result = Vec::with_capacity(self.len());
-                for series in self.physical.into_iter() {
+                for series in &self.physical {
                     match series {
                         Some(s) if !s.is_empty() => result.push(single_map_get(&s, key_to_get)?),
                         _ => result.push(Series::full_null("value", &value_type, 1)),

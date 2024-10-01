@@ -109,8 +109,9 @@ where
     binary(lhs, rhs, lhs.data_type().clone(), op)
 }
 
-/// Overflowing addition of two primitive arrays. If the result from the sum is
-/// larger than the possible number for this type, the result for the operation
+/// Overflowing addition of two primitive arrays.
+///
+/// If the result from the sum is larger than the possible number for this type, the result for the operation
 /// will be an array with overflowed values and a  validity array indicating
 /// the overflowing elements from the array.
 ///
@@ -275,8 +276,9 @@ where
     unary(lhs, op, lhs.data_type().clone())
 }
 
-/// Overflowing addition of a scalar T to a primitive array of type T. If the
-/// result from the sum is larger than the possible number for this type, then
+/// Overflowing addition of a scalar T to a primitive array of type T.
+///
+/// If the result from the sum is larger than the possible number for this type, then
 /// the result will be an array with overflowed values and a validity array
 /// indicating the overflowing elements from the array
 ///

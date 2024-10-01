@@ -16,7 +16,7 @@ fn infer_schema(exprs: &[ExprRef], schema: &Schema) -> DaftResult<Schema> {
         .collect::<crate::Result<Vec<_>>>()?;
 
     let mut seen: HashSet<String> = HashSet::new();
-    for field in fields.iter() {
+    for field in &fields {
         let name = &field.name;
         if seen.contains(name) {
             return Err(DaftError::ValueError(format!(
@@ -63,7 +63,7 @@ impl MicroPartition {
         let expected_new_columns = infer_schema(exprs, &self.schema)?;
         let eval_stats = if let Some(stats) = &self.statistics {
             let mut new_stats = stats.columns.clone();
-            for (name, _) in expected_new_columns.fields.iter() {
+            for (name, _) in &expected_new_columns.fields {
                 if let Some(v) = new_stats.get_mut(name) {
                     *v = ColumnRangeStatistics::Missing;
                 } else {
@@ -77,7 +77,7 @@ impl MicroPartition {
 
         let mut expected_schema =
             Schema::new(self.schema.fields.values().cloned().collect::<Vec<_>>())?;
-        for (name, field) in expected_new_columns.fields.into_iter() {
+        for (name, field) in expected_new_columns.fields {
             if let Some(v) = expected_schema.fields.get_mut(&name) {
                 *v = field;
             } else {

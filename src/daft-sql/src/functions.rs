@@ -9,7 +9,11 @@ use sqlparser::ast::{
 
 use crate::{
     error::{PlannerError, SQLPlannerResult},
-    modules::*,
+    modules::{
+        hashing, SQLModule, SQLModuleAggs, SQLModuleFloat, SQLModuleImage, SQLModuleJson,
+        SQLModuleList, SQLModuleMap, SQLModuleNumeric, SQLModulePartitioning, SQLModulePython,
+        SQLModuleSketch, SQLModuleStructs, SQLModuleTemporal, SQLModuleUtf8,
+    },
     planner::SQLPlanner,
     unsupported_sql_err,
 };
@@ -139,7 +143,7 @@ impl SQLLiteral for i64 {
         Self: Sized,
     {
         expr.as_literal()
-            .and_then(|lit| lit.as_i64())
+            .and_then(daft_dsl::LiteralValue::as_i64)
             .ok_or_else(|| PlannerError::invalid_operation("Expected an integer literal"))
     }
 }
@@ -150,13 +154,14 @@ impl SQLLiteral for bool {
         Self: Sized,
     {
         expr.as_literal()
-            .and_then(|lit| lit.as_bool())
+            .and_then(daft_dsl::LiteralValue::as_bool)
             .ok_or_else(|| PlannerError::invalid_operation("Expected a boolean literal"))
     }
 }
 
 impl SQLFunctions {
     /// Create a new [SQLFunctions] instance.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             map: HashMap::new(),
@@ -174,6 +179,7 @@ impl SQLFunctions {
     }
 
     /// Get a function by name from the [SQLFunctions] instance.
+    #[must_use]
     pub fn get(&self, name: &str) -> Option<&Arc<dyn SQLFunction>> {
         self.map.get(name)
     }

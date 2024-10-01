@@ -275,9 +275,9 @@ fn substring(s: &str, start: usize, len: Option<usize>) -> Option<&str> {
             Some(len) => {
                 if len == 0 {
                     return None;
-                } else {
-                    len
                 }
+
+                len
             }
             None => {
                 return Some(&s[start_pos..]);
@@ -438,7 +438,7 @@ impl Utf8Array {
                     &mut splits,
                     &mut offsets,
                     &mut validity,
-                )?
+                )?;
             }
             (true, _) => {
                 let regex_iter = pattern
@@ -451,7 +451,7 @@ impl Utf8Array {
                     &mut splits,
                     &mut offsets,
                     &mut validity,
-                )?
+                )?;
             }
             (false, _) => {
                 let pattern_iter = create_broadcasted_str_iter(pattern, expected_size);
@@ -461,7 +461,7 @@ impl Utf8Array {
                     &mut splits,
                     &mut offsets,
                     &mut validity,
-                )?
+                )?;
             }
         }
         // Shrink splits capacity to current length, since we will have overallocated if any of the patterns actually occurred in the strings.
@@ -1389,7 +1389,7 @@ impl Utf8Array {
                             // ensure this match is a whole word (or set of words)
                             // don't want to filter out things like "brass"
                             let prev_char = s.get(m.start() - 1..m.start());
-                            let next_char = s.get(m.end()..m.end() + 1);
+                            let next_char = s.get(m.end()..=m.end());
                             !(prev_char.is_some_and(|s| s.chars().next().unwrap().is_alphabetic())
                                 || next_char
                                     .is_some_and(|s| s.chars().next().unwrap().is_alphabetic()))

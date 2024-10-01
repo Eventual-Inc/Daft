@@ -60,6 +60,7 @@ impl Default for HyperLogLog<'_> {
 }
 
 impl<'a> HyperLogLog<'a> {
+    #[must_use]
     pub fn new_with_byte_slice(slice: &'a [u8]) -> Self {
         assert_eq!(
             slice.len(),
@@ -77,6 +78,7 @@ impl<'a> HyperLogLog<'a> {
 
 impl HyperLogLog<'_> {
     /// Creates a new, empty HyperLogLog.
+    #[must_use]
     pub fn new() -> Self {
         let registers = [0; NUM_REGISTERS];
         Self::new_with_registers(registers)
@@ -85,6 +87,7 @@ impl HyperLogLog<'_> {
     /// Creates a HyperLogLog from already populated registers
     /// note that this method should not be invoked in untrusted environment
     /// because the internal structure of registers are not examined.
+    #[must_use]
     pub fn new_with_registers(registers: [u8; NUM_REGISTERS]) -> Self {
         Self {
             registers: Cow::Owned(registers),
@@ -127,15 +130,16 @@ impl HyperLogLog<'_> {
     }
 
     /// Guess the number of unique elements seen by the HyperLogLog.
+    #[must_use]
     pub fn count(&self) -> usize {
         let histogram = self.get_histogram();
         let m = NUM_REGISTERS as f64;
-        let mut z = m * hll_tau((m - histogram[HLL_Q + 1] as f64) / m);
+        let mut z = m * hll_tau((m - f64::from(histogram[HLL_Q + 1])) / m);
         for i in histogram[1..=HLL_Q].iter().rev() {
-            z += *i as f64;
+            z += f64::from(*i);
             z *= 0.5;
         }
-        z += m * hll_sigma(histogram[0] as f64 / m);
+        z += m * hll_sigma(f64::from(histogram[0]) / m);
         (0.5 / 2_f64.ln() * m * m / z).round() as usize
     }
 }

@@ -113,16 +113,13 @@ impl GlobFragment {
         let mut ptr = 0;
         while ptr < data.len() {
             let remaining = &data[ptr..];
-            match remaining.find(r"\\") {
-                Some(backslash_idx) => {
-                    escaped_data.push_str(&remaining[..backslash_idx].replace('\\', ""));
-                    escaped_data.extend(std::iter::once('\\'));
-                    ptr += backslash_idx + 2;
-                }
-                None => {
-                    escaped_data.push_str(&remaining.replace('\\', ""));
-                    break;
-                }
+            if let Some(backslash_idx) = remaining.find(r"\\") {
+                escaped_data.push_str(&remaining[..backslash_idx].replace('\\', ""));
+                escaped_data.extend(std::iter::once('\\'));
+                ptr += backslash_idx + 2;
+            } else {
+                escaped_data.push_str(&remaining.replace('\\', ""));
+                break;
             }
         }
 
@@ -286,10 +283,7 @@ async fn ls_with_prefix_fallback(
                 // STOP EARLY!!
                 // If the number of directory results are more than `max_dirs`, we terminate the function early,
                 // throw away our results buffer and return a stream of FileType::File files using `prefix_ls` instead
-                if max_dirs
-                    .map(|max_dirs| dir_count_so_far > max_dirs)
-                    .unwrap_or(false)
-                {
+                if max_dirs.is_some_and(|max_dirs| dir_count_so_far > max_dirs) {
                     return (
                         prefix_ls(source.clone(), uri.to_string(), page_size, io_stats),
                         0,
@@ -385,7 +379,7 @@ pub(crate) async fn glob(
             }
             if attempt_as_dir {
                 let mut results = source.iter_dir(glob.as_str(), true, page_size, io_stats).await?;
-                while let Some(result) = results.next().await && remaining_results.map(|rr| rr > 0).unwrap_or(true) {
+                while let Some(result) = results.next().await && remaining_results.map_or(true, |rr| rr > 0) {
                     match result {
                         Ok(fm) => {
                             if _should_return(&fm) {
@@ -560,7 +554,7 @@ pub(crate) async fn glob(
             } else if current_fragment.has_special_character() {
                 let partial_glob_matcher = GlobBuilder::new(
                     GlobFragment::join(
-                        &state.glob_fragments[..state.current_fragment_idx + 1],
+                        &state.glob_fragments[..=state.current_fragment_idx],
                         GLOB_DELIMITER,
                     )
                     .raw_str(),
@@ -641,7 +635,7 @@ pub(crate) async fn glob(
         to_rtn_tx,
         source.clone(),
         GlobState {
-            current_path: "".to_string(),
+            current_path: String::new(),
             current_fragment_idx: 0,
             glob_fragments: Arc::new(glob_fragments),
             full_glob_matcher: Arc::new(full_glob_matcher),
@@ -655,7 +649,7 @@ pub(crate) async fn glob(
 
     let to_rtn_stream = stream! {
         let mut remaining_results = limit;
-        while remaining_results.map(|rr| rr > 0).unwrap_or(true) && let Some(v) = to_rtn_rx.recv().await {
+        while remaining_results.map_or(true, |rr| rr > 0) && let Some(v) = to_rtn_rx.recv().await {
 
             if v.as_ref().is_ok_and(|v| !_should_return(v)) {
                 continue

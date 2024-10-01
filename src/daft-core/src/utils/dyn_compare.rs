@@ -18,18 +18,17 @@ pub fn build_dyn_compare(
     nulls_equal: bool,
     nans_equal: bool,
 ) -> DaftResult<DynArrayComparator> {
-    if left != right {
-        Err(DaftError::TypeError(format!(
-            "Types do not match when creating comparator {} vs {}",
-            left, right
-        )))
-    } else {
+    if left == right {
         Ok(build_dyn_array_compare(
             &left.to_physical().to_arrow()?,
             &right.to_physical().to_arrow()?,
             nulls_equal,
             nans_equal,
         )?)
+    } else {
+        Err(DaftError::TypeError(format!(
+            "Types do not match when creating comparator {left} vs {right}",
+        )))
     }
 }
 

@@ -700,7 +700,7 @@ fn extract_python_to_vec<
                     };
 
                     if collected.is_err() {
-                        log::warn!("Could not convert python object to list at index: {i} for input series: {}", python_objects.name())
+                        log::warn!("Could not convert python object to list at index: {i} for input series: {}", python_objects.name());
                     }
                     let collected: Vec<Tgt> = collected?;
                     if let Some(list_size) = list_size {
@@ -1351,7 +1351,7 @@ impl TensorArray {
                             .call_method1(pyo3::intern!(py, "reshape"), (shape,))?;
                         ndarrays.push(py_array.unbind());
                     } else {
-                        ndarrays.push(py.None())
+                        ndarrays.push(py.None());
                     }
                 }
                 let values_array =
@@ -1635,7 +1635,7 @@ impl SparseTensorArray {
                         })
                     })
                     .collect();
-                let offsets: Offsets<i64> = Offsets::try_from_iter(sizes_vec.iter().cloned())?;
+                let offsets: Offsets<i64> = Offsets::try_from_iter(sizes_vec.iter().copied())?;
                 let n_values = sizes_vec.iter().sum::<usize>();
                 let validity = non_zero_indices_array.validity();
                 let item = cast_sparse_to_dense_for_inner_dtype(

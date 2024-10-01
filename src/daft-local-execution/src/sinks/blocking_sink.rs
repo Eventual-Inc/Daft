@@ -51,13 +51,11 @@ impl TreeDisplay for BlockingSinkNode {
         use std::fmt::Write;
         let mut display = String::new();
         writeln!(display, "{}", self.name()).unwrap();
-        use common_display::DisplayLevel::*;
-        match level {
-            Compact => {}
-            _ => {
-                let rt_result = self.runtime_stats.result();
-                rt_result.display(&mut display, true, true, true).unwrap();
-            }
+        use common_display::DisplayLevel::Compact;
+        if let Compact = level {
+        } else {
+            let rt_result = self.runtime_stats.result();
+            rt_result.display(&mut display, true, true, true).unwrap();
         }
         display
     }

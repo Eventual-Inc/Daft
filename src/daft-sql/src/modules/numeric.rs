@@ -180,8 +180,8 @@ fn to_expr(expr: &SQLNumericExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef>
                 .as_literal()
                 .and_then(|lit| match lit {
                     LiteralValue::Float64(f) => Some(*f),
-                    LiteralValue::Int32(i) => Some(*i as f64),
-                    LiteralValue::UInt32(u) => Some(*u as f64),
+                    LiteralValue::Int32(i) => Some(f64::from(*i)),
+                    LiteralValue::UInt32(u) => Some(f64::from(*u)),
                     LiteralValue::Int64(i) => Some(*i as f64),
                     LiteralValue::UInt64(u) => Some(*u as f64),
                     _ => None,

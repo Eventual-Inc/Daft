@@ -40,13 +40,10 @@ impl FixedSizeListArray {
                         (validity.len() * size),
                     )
                 }
-                if child_dtype.as_ref() != flat_child.data_type() {
-                    panic!(
-                        "FixedSizeListArray::new expects the child series to have dtype {}, but received: {}",
+                assert!(!(child_dtype.as_ref() != flat_child.data_type()), "FixedSizeListArray::new expects the child series to have dtype {}, but received: {}",
                         child_dtype,
                         flat_child.data_type(),
-                    )
-                }
+                );
             }
             _ => panic!(
                 "FixedSizeListArray::new expected FixedSizeList datatype, but received field: {}",
@@ -105,10 +102,12 @@ impl FixedSizeListArray {
         &self.field.name
     }
 
+    #[must_use]
     pub fn data_type(&self) -> &DataType {
         &self.field.dtype
     }
 
+    #[must_use]
     pub fn child_data_type(&self) -> &DataType {
         match &self.field.dtype {
             DataType::FixedSizeList(child, _) => child.as_ref(),
@@ -116,6 +115,7 @@ impl FixedSizeListArray {
         }
     }
 
+    #[must_use]
     pub fn rename(&self, name: &str) -> Self {
         Self::new(
             Field::new(name, self.data_type().clone()),

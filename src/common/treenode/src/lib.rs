@@ -623,6 +623,7 @@ impl<T> Transformed<T> {
     }
 
     /// Returns self if self is transformed, otherwise returns other.
+    #[must_use]
     pub fn or(self, other: Self) -> Self {
         if self.transformed {
             self
@@ -840,7 +841,9 @@ impl<T> TransformedResult<T> for Result<Transformed<T>> {
 }
 
 /// Helper trait for implementing [`TreeNode`] that have children stored as
-/// `Arc`s. If some trait object, such as `dyn T`, implements this trait,
+/// `Arc`s.
+///
+/// If some trait object, such as `dyn T`, implements this trait,
 /// its related `Arc<dyn T>` will automatically implement [`TreeNode`].
 pub trait DynTreeNode {
     /// Returns all children of the specified `TreeNode`.
@@ -864,7 +867,9 @@ impl<T: DynTreeNode + ?Sized> TreeNode for Arc<T> {
         f: F,
     ) -> Result<Transformed<Self>> {
         let children = self.arc_children();
-        if !children.is_empty() {
+        if children.is_empty() {
+            Ok(Transformed::no(self))
+        } else {
             let new_children = children.into_iter().map_until_stop_and_collect(f)?;
             // Propagate up `new_children.transformed` and `new_children.tnr`
             // along with the node containing transformed children.
@@ -873,14 +878,14 @@ impl<T: DynTreeNode + ?Sized> TreeNode for Arc<T> {
             } else {
                 Ok(Transformed::new(self, false, new_children.tnr))
             }
-        } else {
-            Ok(Transformed::no(self))
         }
     }
 }
 
 /// Instead of implementing [`TreeNode`], it's recommended to implement a [`ConcreteTreeNode`] for
-/// trees that contain nodes with payloads. This approach ensures safe execution of algorithms
+/// trees that contain nodes with payloads.
+///
+/// This approach ensures safe execution of algorithms
 /// involving payloads, by enforcing rules for detaching and reattaching child nodes.
 pub trait ConcreteTreeNode: Sized {
     /// Provides read-only access to child nodes.
@@ -906,13 +911,13 @@ impl<T: ConcreteTreeNode> TreeNode for T {
         f: F,
     ) -> Result<Transformed<Self>> {
         let (new_self, children) = self.take_children();
-        if !children.is_empty() {
+        if children.is_empty() {
+            Ok(Transformed::no(new_self))
+        } else {
             let new_children = children.into_iter().map_until_stop_and_collect(f)?;
             // Propagate up `new_children.transformed` and `new_children.tnr` along with
             // the node containing transformed children.
             new_children.map_data(|new_children| new_self.with_new_children(new_children))
-        } else {
-            Ok(Transformed::no(new_self))
         }
     }
 }
@@ -1013,7 +1018,7 @@ mod tests {
             "f_up(j)",
         ]
         .into_iter()
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .collect()
     }
 
@@ -1084,7 +1089,7 @@ mod tests {
             "f_up(j)",
         ]
         .into_iter()
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .collect()
     }
 
@@ -1118,7 +1123,7 @@ mod tests {
             "f_up(j)",
         ]
         .into_iter()
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .collect()
     }
 
@@ -1170,7 +1175,7 @@ mod tests {
             "f_up(j)",
         ]
         .into_iter()
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .collect()
     }
 
@@ -1225,7 +1230,7 @@ mod tests {
             "f_up(j)",
         ]
         .into_iter()
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .collect()
     }
 
@@ -1252,7 +1257,7 @@ mod tests {
             "f_down(a)",
         ]
         .into_iter()
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .collect()
     }
 
@@ -1286,7 +1291,7 @@ mod tests {
     fn f_down_stop_on_e_visits() -> Vec<String> {
         vec!["f_down(j)", "f_down(i)", "f_down(f)", "f_down(e)"]
             .into_iter()
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
             .collect()
     }
 
@@ -1331,7 +1336,7 @@ mod tests {
             "f_up(a)",
         ]
         .into_iter()
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .collect()
     }
 
@@ -1379,7 +1384,7 @@ mod tests {
             "f_up(e)",
         ]
         .into_iter()
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .collect()
     }
 

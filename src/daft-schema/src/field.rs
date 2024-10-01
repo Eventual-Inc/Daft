@@ -68,10 +68,11 @@ impl Field {
         Self {
             name,
             dtype,
-            metadata: Default::default(),
+            metadata: Arc::default(),
         }
     }
 
+    #[must_use]
     pub fn with_metadata<M: Into<Arc<Metadata>>>(self, metadata: M) -> Self {
         Self {
             name: self.name,
@@ -87,6 +88,7 @@ impl Field {
         )
     }
 
+    #[must_use]
     pub fn rename<S: Into<String>>(&self, name: S) -> Self {
         Self {
             name: name.into(),

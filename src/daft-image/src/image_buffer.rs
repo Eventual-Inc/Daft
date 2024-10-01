@@ -46,7 +46,7 @@ macro_rules! with_method_on_image_buffer {
 
 impl<'a> DaftImageBuffer<'a> {
     pub fn from_raw(mode: &ImageMode, width: u32, height: u32, data: Cow<'a, [u8]>) -> Self {
-        use DaftImageBuffer::*;
+        use DaftImageBuffer::{L, LA, RGB, RGBA};
         match mode {
             ImageMode::L => L(ImageBuffer::from_raw(width, height, data).unwrap()),
             ImageMode::LA => LA(ImageBuffer::from_raw(width, height, data).unwrap()),
@@ -64,7 +64,7 @@ impl<'a> DaftImageBuffer<'a> {
     }
 
     pub fn as_u8_slice(&self) -> &[u8] {
-        use DaftImageBuffer::*;
+        use DaftImageBuffer::{L, LA, RGB, RGBA};
         match self {
             L(img) => img.as_raw(),
             LA(img) => img.as_raw(),
@@ -74,7 +74,7 @@ impl<'a> DaftImageBuffer<'a> {
         }
     }
     pub fn mode(&self) -> ImageMode {
-        use DaftImageBuffer::*;
+        use DaftImageBuffer::{L, L16, LA, LA16, RGB, RGB16, RGB32F, RGBA, RGBA16, RGBA32F};
 
         match self {
             L(..) => ImageMode::L,
@@ -91,7 +91,7 @@ impl<'a> DaftImageBuffer<'a> {
     }
     pub fn color(&self) -> ColorType {
         let mode = DaftImageBuffer::mode(self);
-        use ImageMode::*;
+        use ImageMode::{L, L16, LA, LA16, RGB, RGB16, RGB32F, RGBA, RGBA16, RGBA32F};
         match mode {
             L => ColorType::L8,
             LA => ColorType::La8,
@@ -108,8 +108,8 @@ impl<'a> DaftImageBuffer<'a> {
 
     pub fn decode(bytes: &[u8]) -> DaftResult<Self> {
         image::load_from_memory(bytes)
-            .map(|v| v.into())
-            .map_err(|e| DaftError::ValueError(format!("Decoding image from bytes failed: {}", e)))
+            .map(std::convert::Into::into)
+            .map_err(|e| DaftError::ValueError(format!("Decoding image from bytes failed: {e}")))
     }
 
     pub fn encode<W>(&self, image_format: ImageFormat, writer: &mut W) -> DaftResult<()>
@@ -126,8 +126,7 @@ impl<'a> DaftImageBuffer<'a> {
         )
         .map_err(|e| {
             DaftError::ValueError(format!(
-                "Encoding image into file format {} failed: {}",
-                image_format, e
+                "Encoding image into file format {image_format} failed: {e}"
             ))
         })
     }
@@ -135,18 +134,18 @@ impl<'a> DaftImageBuffer<'a> {
     pub fn fit_to(&self, w: u32, h: u32) -> Self {
         // Preserving aspect ratio, resize an image to fit within the specified dimensions.
         let scale_factor = {
-            let width_scale = w as f64 / self.width() as f64;
-            let height_scale = h as f64 / self.height() as f64;
+            let width_scale = f64::from(w) / f64::from(self.width());
+            let height_scale = f64::from(h) / f64::from(self.height());
             width_scale.min(height_scale)
         };
-        let new_w = self.width() as f64 * scale_factor;
-        let new_h = self.height() as f64 * scale_factor;
+        let new_w = f64::from(self.width()) * scale_factor;
+        let new_h = f64::from(self.height()) * scale_factor;
 
         self.resize(new_w.floor() as u32, new_h.floor() as u32)
     }
 
     pub fn resize(&self, w: u32, h: u32) -> Self {
-        use DaftImageBuffer::*;
+        use DaftImageBuffer::{L, LA, RGB, RGBA};
         match self {
             L(imgbuf) => {
                 let result =

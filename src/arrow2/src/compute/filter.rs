@@ -208,6 +208,7 @@ fn filter_growable<'a>(growable: &mut impl Growable<'a>, chunks: &[(usize, usize
 }
 
 /// Returns a prepared function optimized to filter multiple arrays.
+///
 /// Creating this function requires time, but using it is faster than [filter] when the
 /// same filter needs to be applied to multiple arrays (e.g. a multiple columns).
 pub fn build_filter(filter: &BooleanArray) -> Result<Filter> {

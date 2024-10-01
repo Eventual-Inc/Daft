@@ -127,7 +127,7 @@ impl<'a> JsonReader<'a> {
 
                 if n_bytes < bytes.len() {
                     if let Some(pos) = next_line_position(&bytes[n_bytes..]) {
-                        bytes = &bytes[..n_bytes + pos]
+                        bytes = &bytes[..n_bytes + pos];
                     }
                 }
             }
@@ -197,7 +197,7 @@ impl<'a> JsonReader<'a> {
 
             match v {
                 Value::Object(record) => {
-                    for (s, inner) in columns.iter_mut() {
+                    for (s, inner) in &mut columns {
                         match record.get(s) {
                             Some(value) => {
                                 deserialize_into(inner, &[value]);
@@ -368,8 +368,8 @@ fn get_line_stats_json(bytes: &[u8], n_lines: usize) -> Option<(f32, f32)> {
     let n_samples = lengths.len();
     let mean = (n_read as f32) / (n_samples as f32);
     let mut std = 0.0;
-    for &len in lengths.iter() {
-        std += (len as f32 - mean).pow(2.0)
+    for &len in &lengths {
+        std += (len as f32 - mean).pow(2.0);
     }
     std = (std / n_samples as f32).sqrt();
     Some((mean, std))
@@ -463,7 +463,7 @@ mod tests {
 
     #[test]
     fn test_infer_schema_empty() {
-        let json = r#""#;
+        let json = r"";
 
         let result = infer_schema(json.as_bytes(), None, None);
         let expected_schema = ArrowSchema::from(vec![]);

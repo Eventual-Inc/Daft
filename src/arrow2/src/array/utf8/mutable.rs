@@ -521,10 +521,7 @@ impl<O: Offset, T: AsRef<str>> TryPush<Option<T>> for MutableUtf8Array<O> {
             Some(value) => {
                 self.values.try_push(value.as_ref())?;
 
-                match &mut self.validity {
-                    Some(validity) => validity.push(true),
-                    None => {}
-                }
+                if let Some(validity) = &mut self.validity { validity.push(true) }
             }
             None => {
                 self.values.push("");

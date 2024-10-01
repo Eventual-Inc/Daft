@@ -29,7 +29,8 @@ impl PyTable {
     }
 
     pub fn eval_expression_list(&self, py: Python, exprs: Vec<PyExpr>) -> PyResult<Self> {
-        let converted_exprs: Vec<daft_dsl::ExprRef> = exprs.into_iter().map(|e| e.into()).collect();
+        let converted_exprs: Vec<daft_dsl::ExprRef> =
+            exprs.into_iter().map(std::convert::Into::into).collect();
         py.allow_threads(|| {
             Ok(self
                 .table
@@ -43,7 +44,8 @@ impl PyTable {
     }
 
     pub fn filter(&self, py: Python, exprs: Vec<PyExpr>) -> PyResult<Self> {
-        let converted_exprs: Vec<daft_dsl::ExprRef> = exprs.into_iter().map(|e| e.into()).collect();
+        let converted_exprs: Vec<daft_dsl::ExprRef> =
+            exprs.into_iter().map(std::convert::Into::into).collect();
         py.allow_threads(|| Ok(self.table.filter(converted_exprs.as_slice())?.into()))
     }
 
@@ -53,8 +55,10 @@ impl PyTable {
         sort_keys: Vec<PyExpr>,
         descending: Vec<bool>,
     ) -> PyResult<Self> {
-        let converted_exprs: Vec<daft_dsl::ExprRef> =
-            sort_keys.into_iter().map(|e| e.into()).collect();
+        let converted_exprs: Vec<daft_dsl::ExprRef> = sort_keys
+            .into_iter()
+            .map(std::convert::Into::into)
+            .collect();
         py.allow_threads(|| {
             Ok(self
                 .table
@@ -69,8 +73,10 @@ impl PyTable {
         sort_keys: Vec<PyExpr>,
         descending: Vec<bool>,
     ) -> PyResult<PySeries> {
-        let converted_exprs: Vec<daft_dsl::ExprRef> =
-            sort_keys.into_iter().map(|e| e.into()).collect();
+        let converted_exprs: Vec<daft_dsl::ExprRef> = sort_keys
+            .into_iter()
+            .map(std::convert::Into::into)
+            .collect();
         py.allow_threads(|| {
             Ok(self
                 .table
@@ -81,9 +87,9 @@ impl PyTable {
 
     pub fn agg(&self, py: Python, to_agg: Vec<PyExpr>, group_by: Vec<PyExpr>) -> PyResult<Self> {
         let converted_to_agg: Vec<daft_dsl::ExprRef> =
-            to_agg.into_iter().map(|e| e.into()).collect();
+            to_agg.into_iter().map(std::convert::Into::into).collect();
         let converted_group_by: Vec<daft_dsl::ExprRef> =
-            group_by.into_iter().map(|e| e.into()).collect();
+            group_by.into_iter().map(std::convert::Into::into).collect();
         py.allow_threads(|| {
             Ok(self
                 .table
@@ -101,7 +107,7 @@ impl PyTable {
         names: Vec<String>,
     ) -> PyResult<Self> {
         let converted_group_by: Vec<daft_dsl::ExprRef> =
-            group_by.into_iter().map(|e| e.into()).collect();
+            group_by.into_iter().map(std::convert::Into::into).collect();
         let converted_pivot_col: daft_dsl::ExprRef = pivot_col.into();
         let converted_values_col: daft_dsl::ExprRef = values_col.into();
         py.allow_threads(|| {
@@ -125,8 +131,10 @@ impl PyTable {
         right_on: Vec<PyExpr>,
         how: JoinType,
     ) -> PyResult<Self> {
-        let left_exprs: Vec<daft_dsl::ExprRef> = left_on.into_iter().map(|e| e.into()).collect();
-        let right_exprs: Vec<daft_dsl::ExprRef> = right_on.into_iter().map(|e| e.into()).collect();
+        let left_exprs: Vec<daft_dsl::ExprRef> =
+            left_on.into_iter().map(std::convert::Into::into).collect();
+        let right_exprs: Vec<daft_dsl::ExprRef> =
+            right_on.into_iter().map(std::convert::Into::into).collect();
         py.allow_threads(|| {
             Ok(self
                 .table
@@ -148,8 +156,10 @@ impl PyTable {
         right_on: Vec<PyExpr>,
         is_sorted: bool,
     ) -> PyResult<Self> {
-        let left_exprs: Vec<daft_dsl::ExprRef> = left_on.into_iter().map(|e| e.into()).collect();
-        let right_exprs: Vec<daft_dsl::ExprRef> = right_on.into_iter().map(|e| e.into()).collect();
+        let left_exprs: Vec<daft_dsl::ExprRef> =
+            left_on.into_iter().map(std::convert::Into::into).collect();
+        let right_exprs: Vec<daft_dsl::ExprRef> =
+            right_on.into_iter().map(std::convert::Into::into).collect();
         py.allow_threads(|| {
             Ok(self
                 .table
@@ -254,13 +264,14 @@ impl PyTable {
                 "Can not partition into negative number of partitions: {num_partitions}"
             )));
         }
-        let exprs: Vec<daft_dsl::ExprRef> = exprs.into_iter().map(|e| e.into()).collect();
+        let exprs: Vec<daft_dsl::ExprRef> =
+            exprs.into_iter().map(std::convert::Into::into).collect();
         py.allow_threads(|| {
             Ok(self
                 .table
                 .partition_by_hash(exprs.as_slice(), num_partitions as usize)?
                 .into_iter()
-                .map(|t| t.into())
+                .map(std::convert::Into::into)
                 .collect::<Vec<Self>>())
         })
     }
@@ -287,7 +298,7 @@ impl PyTable {
                 .table
                 .partition_by_random(num_partitions as usize, seed as u64)?
                 .into_iter()
-                .map(|t| t.into())
+                .map(std::convert::Into::into)
                 .collect::<Vec<Self>>())
         })
     }
@@ -299,13 +310,16 @@ impl PyTable {
         boundaries: &Self,
         descending: Vec<bool>,
     ) -> PyResult<Vec<Self>> {
-        let exprs: Vec<daft_dsl::ExprRef> = partition_keys.into_iter().map(|e| e.into()).collect();
+        let exprs: Vec<daft_dsl::ExprRef> = partition_keys
+            .into_iter()
+            .map(std::convert::Into::into)
+            .collect();
         py.allow_threads(|| {
             Ok(self
                 .table
                 .partition_by_range(exprs.as_slice(), &boundaries.table, descending.as_slice())?
                 .into_iter()
-                .map(|t| t.into())
+                .map(std::convert::Into::into)
                 .collect::<Vec<Self>>())
         })
     }
@@ -315,10 +329,16 @@ impl PyTable {
         py: Python,
         partition_keys: Vec<PyExpr>,
     ) -> PyResult<(Vec<Self>, Self)> {
-        let exprs: Vec<daft_dsl::ExprRef> = partition_keys.into_iter().map(|e| e.into()).collect();
+        let exprs: Vec<daft_dsl::ExprRef> = partition_keys
+            .into_iter()
+            .map(std::convert::Into::into)
+            .collect();
         py.allow_threads(|| {
             let (tables, values) = self.table.partition_by_value(exprs.as_slice())?;
-            let pytables = tables.into_iter().map(|t| t.into()).collect::<Vec<Self>>();
+            let pytables = tables
+                .into_iter()
+                .map(std::convert::Into::into)
+                .collect::<Vec<Self>>();
             let values = values.into();
             Ok((pytables, values))
         })
@@ -346,6 +366,7 @@ impl PyTable {
         Ok(self.table.size_bytes()?)
     }
 
+    #[must_use]
     pub fn column_names(&self) -> Vec<String> {
         self.table.column_names()
     }
@@ -414,13 +435,13 @@ impl PyTable {
         fields.reserve(dict.len());
         columns.reserve(dict.len());
 
-        for (name, series) in dict.into_iter() {
+        for (name, series) in dict {
             let series = series.series;
             fields.push(Field::new(name.as_str(), series.data_type().clone()));
             columns.push(series.rename(name));
         }
 
-        let num_rows = columns.first().map(|s| s.len()).unwrap_or(0);
+        let num_rows = columns.first().map_or(0, daft_core::series::Series::len);
         if !columns.is_empty() {
             let first = columns.first().unwrap();
             for s in columns.iter().skip(1) {

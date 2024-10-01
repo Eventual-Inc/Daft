@@ -261,7 +261,7 @@ pub fn physical_plan_to_pipeline(
             let probe_schema = probe_child.schema();
             let probe_node = || -> DaftResult<_> {
                 let common_join_keys: IndexSet<_> = get_common_join_keys(left_on, right_on)
-                    .map(|k| k.to_string())
+                    .map(std::string::ToString::to_string)
                     .collect();
                 let build_key_fields = build_on
                     .iter()

@@ -24,7 +24,7 @@ impl TreeNode for ParquetTypeWrapper {
         match &self.0 {
             ParquetType::PrimitiveType(..) => Ok(TreeNodeRecursion::Jump),
             ParquetType::GroupType { fields, .. } => {
-                for child in fields.iter() {
+                for child in fields {
                     // TODO: Expensive clone here because of ParquetTypeWrapper type, can we get rid of this?
                     match op(&Self(child.clone()))? {
                         TreeNodeRecursion::Continue => {}
@@ -105,8 +105,7 @@ fn rewrite_parquet_type_with_field_id_mapping(
                         fields.retain(|f| {
                             f.get_field_info()
                                 .id
-                                .map(|field_id| field_id_mapping.contains_key(&field_id))
-                                .unwrap_or(false)
+                                .is_some_and(|field_id| field_id_mapping.contains_key(&field_id))
                         });
                     }
                 };
@@ -125,10 +124,7 @@ fn apply_field_ids_to_parquet_type(
     field_id_mapping: &BTreeMap<i32, Field>,
 ) -> Option<ParquetType> {
     let field_id = parquet_type.get_field_info().id;
-    if field_id
-        .map(|field_id| field_id_mapping.contains_key(&field_id))
-        .unwrap_or(false)
-    {
+    if field_id.is_some_and(|field_id| field_id_mapping.contains_key(&field_id)) {
         let rewritten_pq_type = ParquetTypeWrapper(parquet_type)
             .transform(&|pq_type| {
                 rewrite_parquet_type_with_field_id_mapping(pq_type, field_id_mapping)

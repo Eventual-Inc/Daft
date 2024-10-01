@@ -52,7 +52,7 @@ impl ProbeTable {
     fn probe<'a>(
         &'a self,
         input: &'a Table,
-    ) -> DaftResult<impl Iterator<Item = Option<&[u64]>> + 'a> {
+    ) -> DaftResult<impl Iterator<Item = Option<&'a [u64]>> + 'a> {
         assert_eq!(self.schema.len(), input.schema.len());
         assert!(self
             .schema

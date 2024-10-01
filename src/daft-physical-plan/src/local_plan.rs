@@ -46,11 +46,13 @@ pub enum LocalPhysicalPlan {
 }
 
 impl LocalPhysicalPlan {
+    #[must_use]
     pub fn name(&self) -> &'static str {
         // uses strum::IntoStaticStr
         self.into()
     }
 
+    #[must_use]
     pub fn arced(self) -> LocalPhysicalPlanRef {
         self.into()
     }
@@ -190,6 +192,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    #[must_use]
     pub fn schema(&self) -> &SchemaRef {
         match self {
             Self::PhysicalScan(PhysicalScan { schema, .. })

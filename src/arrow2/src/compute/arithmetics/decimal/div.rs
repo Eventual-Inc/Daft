@@ -15,7 +15,9 @@ use crate::{
 
 use super::{adjusted_precision_scale, get_parameters, max_value, number_digits};
 
-/// Divide two decimal primitive arrays with the same precision and scale. If
+/// Divide two decimal primitive arrays with the same precision and scale.
+///
+/// If
 /// the precision and scale is different, then an InvalidArgumentError is
 /// returned. This function panics if the dividend is divided by 0 or None.
 /// This function also panics if the division produces a number larger
@@ -66,7 +68,9 @@ pub fn div(lhs: &PrimitiveArray<i128>, rhs: &PrimitiveArray<i128>) -> PrimitiveA
     binary(lhs, rhs, lhs.data_type().clone(), op)
 }
 
-/// Multiply a decimal [`PrimitiveArray`] with a [`PrimitiveScalar`] with the same precision and scale. If
+/// Multiply a decimal [`PrimitiveArray`] with a [`PrimitiveScalar`] with the same precision and scale.
+///
+/// If
 /// the precision and scale is different, then an InvalidArgumentError is
 /// returned. This function panics if the multiplied numbers result in a number
 /// larger than the possible number for the selected precision.
@@ -109,7 +113,9 @@ pub fn div_scalar(lhs: &PrimitiveArray<i128>, rhs: &PrimitiveScalar<i128>) -> Pr
 }
 
 /// Saturated division of two decimal primitive arrays with the same
-/// precision and scale. If the precision and scale is different, then an
+/// precision and scale.
+///
+/// If the precision and scale is different, then an
 /// InvalidArgumentError is returned. If the result from the division is
 /// larger than the possible number with the selected precision then the
 /// resulted number in the arrow array is the maximum number for the selected
@@ -160,7 +166,9 @@ pub fn saturating_div(
 }
 
 /// Checked division of two decimal primitive arrays with the same precision
-/// and scale. If the precision and scale is different, then an
+/// and scale.
+///
+/// If the precision and scale is different, then an
 /// InvalidArgumentError is returned. If the divisor is zero, then the
 /// validity for that index is changed to None
 ///
@@ -214,7 +222,9 @@ impl ArrayCheckedDiv<PrimitiveArray<i128>> for PrimitiveArray<i128> {
 }
 
 /// Adaptive division of two decimal primitive arrays with different precision
-/// and scale. If the precision and scale is different, then the smallest scale
+/// and scale.
+///
+/// If the precision and scale is different, then the smallest scale
 /// and precision is adjusted to the largest precision and scale. If during the
 /// division one of the results is larger than the max possible value, the
 /// result precision is changed to the precision of the max value. The function

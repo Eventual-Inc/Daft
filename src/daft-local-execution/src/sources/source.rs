@@ -33,22 +33,20 @@ impl TreeDisplay for SourceNode {
         use std::fmt::Write;
         let mut display = String::new();
         writeln!(display, "{}", self.name()).unwrap();
-        use common_display::DisplayLevel::*;
-        match level {
-            Compact => {}
-            _ => {
-                let rt_result = self.runtime_stats.result();
+        use common_display::DisplayLevel::Compact;
+        if let Compact = level {
+        } else {
+            let rt_result = self.runtime_stats.result();
 
-                writeln!(display).unwrap();
-                rt_result.display(&mut display, false, true, false).unwrap();
-                let bytes_read = self.io_stats.load_bytes_read();
-                writeln!(
-                    display,
-                    "bytes read = {}",
-                    bytes_to_human_readable(bytes_read)
-                )
-                .unwrap();
-            }
+            writeln!(display).unwrap();
+            rt_result.display(&mut display, false, true, false).unwrap();
+            let bytes_read = self.io_stats.load_bytes_read();
+            writeln!(
+                display,
+                "bytes read = {}",
+                bytes_to_human_readable(bytes_read)
+            )
+            .unwrap();
         }
         display
     }

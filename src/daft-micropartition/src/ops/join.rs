@@ -24,12 +24,9 @@ impl MicroPartition {
     {
         let join_schema = infer_join_schema(&self.schema, &right.schema, left_on, right_on, how)?;
         match (how, self.len(), right.len()) {
-            (JoinType::Inner, 0, _)
-            | (JoinType::Inner, _, 0)
-            | (JoinType::Left, 0, _)
-            | (JoinType::Right, _, 0)
-            | (JoinType::Outer, 0, 0)
-            | (JoinType::Semi, 0, _) => {
+            (JoinType::Inner | JoinType::Left | JoinType::Semi, 0, _)
+            | (JoinType::Inner | JoinType::Right, _, 0)
+            | (JoinType::Outer, 0, 0) => {
                 return Ok(Self::empty(Some(join_schema)));
             }
             _ => {}

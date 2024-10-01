@@ -130,9 +130,9 @@ impl FromStr for HFPathParts {
             } else {
                 return Some(Self {
                     bucket: bucket.to_string(),
-                    repository: format!("{}/{}", username, uri),
+                    repository: format!("{username}/{uri}"),
                     revision: "main".to_string(),
-                    path: "".to_string(),
+                    path: String::new(),
                 });
             };
 
@@ -145,7 +145,7 @@ impl FromStr for HFPathParts {
             };
 
             // {username}/{reponame}
-            let repository = format!("{}/{}", username, repository);
+            let repository = format!("{username}/{repository}");
             // {path from root}
             // ^--------------^
             let path = uri.to_string().trim_end_matches('/').to_string();
@@ -218,10 +218,10 @@ impl From<HttpSource> for HFSource {
 
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
-        use Error::*;
+        use Error::{UnableToDetermineSize, UnableToOpenFile};
         match error {
             UnableToOpenFile { path, source } => match source.status().map(|v| v.as_u16()) {
-                Some(404) | Some(410) => Self::NotFound {
+                Some(404 | 410) => Self::NotFound {
                     path,
                     source: source.into(),
                 },
@@ -305,7 +305,7 @@ impl ObjectSource for HFSource {
         })?;
 
         if let Some(is) = io_stats.as_ref() {
-            is.mark_get_requests(1)
+            is.mark_get_requests(1);
         }
         let size_bytes = response.content_length().map(|s| s as usize);
         let stream = response.bytes_stream();
@@ -355,7 +355,7 @@ impl ObjectSource for HFSource {
         })?;
 
         if let Some(is) = io_stats.as_ref() {
-            is.mark_head_requests(1)
+            is.mark_head_requests(1);
         }
 
         let headers = response.headers();
@@ -444,7 +444,7 @@ impl ObjectSource for HFSource {
         })?;
 
         if let Some(is) = io_stats.as_ref() {
-            is.mark_list_requests(1)
+            is.mark_list_requests(1);
         }
         let response = response
             .json::<Vec<Item>>()
@@ -527,7 +527,7 @@ async fn try_parquet_api(
             })?;
 
         if let Some(is) = io_stats.as_ref() {
-            is.mark_list_requests(1)
+            is.mark_list_requests(1);
         }
 
         // {<dataset_name>: {<split_name>: [<uri>, ...]}}
@@ -541,7 +541,7 @@ async fn try_parquet_api(
 
         let files = body
             .into_values()
-            .flat_map(|splits| splits.into_values())
+            .flat_map(std::collections::HashMap::into_values)
             .flatten()
             .map(|uri| {
                 Ok(FileMetadata {
@@ -551,9 +551,9 @@ async fn try_parquet_api(
                 })
             });
 
-        return Ok(Some(
+        Ok(Some(
             stream::iter(files).take(limit.unwrap_or(16 * 1024)).boxed(),
-        ));
+        ))
     } else {
         Ok(None)
     }

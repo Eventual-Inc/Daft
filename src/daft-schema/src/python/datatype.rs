@@ -53,6 +53,7 @@ impl PyTimeUnit {
             _ => Err(pyo3::exceptions::PyNotImplementedError::new_err(())),
         }
     }
+    #[must_use]
     pub fn __hash__(&self) -> u64 {
         use std::{
             collections::hash_map::DefaultHasher,
@@ -145,8 +146,7 @@ impl PyDataType {
     pub fn fixed_size_binary(size: i64) -> PyResult<Self> {
         if size <= 0 {
             return Err(PyValueError::new_err(format!(
-                "The size for fixed-size binary types must be a positive integer, but got: {}",
-                size
+                "The size for fixed-size binary types must be a positive integer, but got: {size}"
             )));
         }
         Ok(DataType::FixedSizeBinary(usize::try_from(size)?).into())
@@ -200,8 +200,7 @@ impl PyDataType {
     pub fn fixed_size_list(data_type: Self, size: i64) -> PyResult<Self> {
         if size <= 0 {
             return Err(PyValueError::new_err(format!(
-                "The size for fixed-size list types must be a positive integer, but got: {}",
-                size
+                "The size for fixed-size list types must be a positive integer, but got: {size}"
             )));
         }
         Ok(DataType::FixedSizeList(Box::new(data_type.dtype), usize::try_from(size)?).into())
@@ -217,6 +216,7 @@ impl PyDataType {
     }
 
     #[staticmethod]
+    #[must_use]
     pub fn r#struct(fields: IndexMap<String, Self>) -> Self {
         DataType::Struct(
             fields
@@ -236,7 +236,7 @@ impl PyDataType {
         Ok(DataType::Extension(
             name.to_string(),
             Box::new(storage_data_type.dtype),
-            metadata.map(|s| s.to_string()),
+            metadata.map(std::string::ToString::to_string),
         )
         .into())
     }
@@ -245,8 +245,7 @@ impl PyDataType {
     pub fn embedding(data_type: Self, size: i64) -> PyResult<Self> {
         if size <= 0 {
             return Err(PyValueError::new_err(format!(
-                "The size for embedding types must be a positive integer, but got: {}",
-                size
+                "The size for embedding types must be a positive integer, but got: {size}"
             )));
         }
         if !data_type.dtype.is_numeric() {
@@ -273,7 +272,7 @@ impl PyDataType {
                 Ok(DataType::FixedShapeImage(image_mode, height, width).into())
             }
             (None, None) => Ok(DataType::Image(mode).into()),
-            (_, _) => Err(PyValueError::new_err(format!("Height and width for image type must both be specified or both not specified, but got: height={:?}, width={:?}", height, width))),
+            (_, _) => Err(PyValueError::new_err(format!("Height and width for image type must both be specified or both not specified, but got: height={height:?}, width={width:?}"))),
         }
     }
 
@@ -408,6 +407,7 @@ impl PyDataType {
         Ok(DataType::from_json(serialized)?.into())
     }
 
+    #[must_use]
     pub fn __hash__(&self) -> u64 {
         use std::{
             collections::hash_map::DefaultHasher,

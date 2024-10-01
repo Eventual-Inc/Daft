@@ -511,6 +511,7 @@ fn can_partial_eq_scalar(data_type: &DataType) -> bool {
 }
 
 /// Utility for low level end users that implement their own comparison functions
+///
 /// A comparison on the data column can be applied on masked out values
 /// This function will correct equality for the validities.
 pub fn finish_eq_validities(
@@ -571,6 +572,7 @@ pub fn finish_eq_validities(
 }
 
 /// Utility for low level end users that implement their own comparison functions
+///
 /// A comparison on the data column can be applied on masked out values
 /// This function will correct non-equality for the validities.
 pub fn finish_neq_validities(

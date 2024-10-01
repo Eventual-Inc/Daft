@@ -23,7 +23,11 @@ pub struct SQLModuleUtf8;
 
 impl SQLModule for SQLModuleUtf8 {
     fn register(parent: &mut crate::functions::SQLFunctions) {
-        use Utf8Expr::*;
+        use Utf8Expr::{
+            Capitalize, Contains, EndsWith, Extract, ExtractAll, Find, Left, Length, LengthBytes,
+            Lower, Lpad, Lstrip, Match, Repeat, Replace, Reverse, Right, Rpad, Rstrip, Split,
+            StartsWith, ToDate, ToDatetime, Upper,
+        };
         parent.add_fn("ends_with", EndsWith);
         parent.add_fn("starts_with", StartsWith);
         parent.add_fn("contains", Contains);
@@ -52,8 +56,8 @@ impl SQLModule for SQLModuleUtf8 {
         parent.add_fn("lpad", Lpad);
         parent.add_fn("repeat", Repeat);
 
-        parent.add_fn("to_date", ToDate("".to_string()));
-        parent.add_fn("to_datetime", ToDatetime("".to_string(), None));
+        parent.add_fn("to_date", ToDate(String::new()));
+        parent.add_fn("to_datetime", ToDatetime(String::new(), None));
         parent.add_fn("count_matches", SQLCountMatches);
         parent.add_fn("normalize", SQLNormalize);
         parent.add_fn("tokenize_encode", SQLTokenizeEncode);
@@ -75,8 +79,16 @@ impl SQLFunction for Utf8Expr {
 }
 
 fn to_expr(expr: &Utf8Expr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
-    use functions::utf8::*;
-    use Utf8Expr::*;
+    use functions::utf8::{
+        capitalize, contains, endswith, extract, extract_all, find, left, length, length_bytes,
+        lower, lpad, lstrip, match_, repeat, replace, reverse, right, rpad, rstrip, split,
+        startswith, to_date, to_datetime, upper, Utf8Expr,
+    };
+    use Utf8Expr::{
+        Capitalize, Contains, EndsWith, Extract, ExtractAll, Find, Ilike, Left, Length,
+        LengthBytes, Like, Lower, Lpad, Lstrip, Match, Normalize, Repeat, Replace, Reverse, Right,
+        Rpad, Rstrip, Split, StartsWith, Substr, ToDate, ToDatetime, Upper,
+    };
     match expr {
         EndsWith => {
             ensure!(args.len() == 2, "endswith takes exactly two arguments");
@@ -105,8 +117,8 @@ fn to_expr(expr: &Utf8Expr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
         Extract(_) => match args {
             [input, pattern] => Ok(extract(input.clone(), pattern.clone(), 0)),
             [input, pattern, idx] => {
-                let idx = idx.as_literal().and_then(|lit| lit.as_i64()).ok_or_else(|| {
-                   PlannerError::invalid_operation(format!("Expected a literal integer for the third argument of regexp_extract, found {:?}", idx))
+                let idx = idx.as_literal().and_then(daft_dsl::LiteralValue::as_i64).ok_or_else(|| {
+                   PlannerError::invalid_operation(format!("Expected a literal integer for the third argument of regexp_extract, found {idx:?}"))
                })?;
 
                 Ok(extract(input.clone(), pattern.clone(), idx as usize))
@@ -118,8 +130,8 @@ fn to_expr(expr: &Utf8Expr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
         ExtractAll(_) => match args {
             [input, pattern] => Ok(extract_all(input.clone(), pattern.clone(), 0)),
             [input, pattern, idx] => {
-                let idx = idx.as_literal().and_then(|lit| lit.as_i64()).ok_or_else(|| {
-                   PlannerError::invalid_operation(format!("Expected a literal integer for the third argument of regexp_extract, found {:?}", idx))
+                let idx = idx.as_literal().and_then(daft_dsl::LiteralValue::as_i64).ok_or_else(|| {
+                   PlannerError::invalid_operation(format!("Expected a literal integer for the third argument of regexp_extract, found {idx:?}"))
                })?;
 
                 Ok(extract_all(input.clone(), pattern.clone(), idx as usize))

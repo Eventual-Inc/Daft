@@ -109,7 +109,9 @@ where
     binary(lhs, rhs, lhs.data_type().clone(), op)
 }
 
-/// Overflowing subtraction of two primitive arrays. If the result from the sub
+/// Overflowing subtraction of two primitive arrays.
+///
+/// If the result from the sub
 /// is smaller than the possible number for this type, the result for the
 /// operation will be an array with overflowed values and a validity array
 /// indicating the overflowing elements from the array.
@@ -275,8 +277,9 @@ where
     unary(lhs, op, lhs.data_type().clone())
 }
 
-/// Overflowing subtraction of a scalar T to a primitive array of type T. If
-/// the result from the sub is smaller than the possible number for this type,
+/// Overflowing subtraction of a scalar T to a primitive array of type T.
+///
+/// If the result from the sub is smaller than the possible number for this type,
 /// then the result will be an array with overflowed values and a validity
 /// array indicating the overflowing elements from the array
 ///

@@ -181,14 +181,17 @@ impl DataTypePayload {
 const DAFT_SUPER_EXTENSION_NAME: &str = "daft.super_extension";
 
 impl DataType {
+    #[must_use]
     pub fn new_null() -> Self {
         Self::Null
     }
 
+    #[must_use]
     pub fn new_list(datatype: Self) -> Self {
         Self::List(Box::new(datatype))
     }
 
+    #[must_use]
     pub fn new_fixed_size_list(datatype: Self, size: usize) -> Self {
         Self::FixedSizeList(Box::new(datatype), size)
     }
@@ -244,7 +247,7 @@ impl DataType {
             Self::Struct(fields) => Ok({
                 let fields = fields
                     .iter()
-                    .map(|f| f.to_arrow())
+                    .map(super::field::Field::to_arrow)
                     .collect::<DaftResult<Vec<arrow2::datatypes::Field>>>()?;
                 ArrowType::Struct(fields)
             }),
@@ -278,8 +281,13 @@ impl DataType {
         }
     }
 
+    #[must_use]
     pub fn to_physical(&self) -> Self {
-        use DataType::*;
+        use DataType::{
+            Date, Decimal128, Duration, Embedding, FixedShapeImage, FixedShapeSparseTensor,
+            FixedShapeTensor, FixedSizeList, Image, Int128, Int32, Int64, List, Map, SparseTensor,
+            Struct, Tensor, Time, Timestamp, UInt16, UInt32, UInt8,
+        };
         match self {
             Decimal128(..) => Int128,
             Date => Int32,
@@ -302,7 +310,7 @@ impl DataType {
             ]),
             FixedShapeImage(mode, height, width) => FixedSizeList(
                 Box::new(mode.get_dtype()),
-                usize::try_from(mode.num_channels() as u32 * height * width).unwrap(),
+                usize::try_from(u32::from(mode.num_channels()) * height * width).unwrap(),
             ),
             Tensor(dtype) => Struct(vec![
                 Field::new("data", List(Box::new(*dtype.clone()))),
@@ -329,6 +337,7 @@ impl DataType {
     }
 
     #[inline]
+    #[must_use]
     pub fn nested_dtype(&self) -> Option<&Self> {
         match self {
             Self::Map(dtype)
@@ -343,11 +352,13 @@ impl DataType {
     }
 
     #[inline]
+    #[must_use]
     pub fn is_arrow(&self) -> bool {
         self.to_arrow().is_ok()
     }
 
     #[inline]
+    #[must_use]
     pub fn is_numeric(&self) -> bool {
         match self {
              Self::Int8
@@ -368,6 +379,7 @@ impl DataType {
     }
 
     #[inline]
+    #[must_use]
     pub fn is_fixed_size_numeric(&self) -> bool {
         match self {
             Self::FixedSizeList(dtype, ..)
@@ -379,6 +391,7 @@ impl DataType {
     }
 
     #[inline]
+    #[must_use]
     pub fn fixed_size(&self) -> Option<usize> {
         match self {
             Self::FixedSizeList(_, size) => Some(*size),
@@ -388,6 +401,7 @@ impl DataType {
     }
 
     #[inline]
+    #[must_use]
     pub fn is_integer(&self) -> bool {
         matches!(
             self,
@@ -404,6 +418,7 @@ impl DataType {
     }
 
     #[inline]
+    #[must_use]
     pub fn is_floating(&self) -> bool {
         matches!(
             self,
@@ -413,6 +428,7 @@ impl DataType {
     }
 
     #[inline]
+    #[must_use]
     pub fn is_temporal(&self) -> bool {
         match self {
             Self::Date | Self::Timestamp(..) => true,
@@ -422,56 +438,67 @@ impl DataType {
     }
 
     #[inline]
+    #[must_use]
     pub fn is_tensor(&self) -> bool {
         matches!(self, Self::Tensor(..))
     }
 
     #[inline]
+    #[must_use]
     pub fn is_sparse_tensor(&self) -> bool {
         matches!(self, Self::SparseTensor(..))
     }
 
     #[inline]
+    #[must_use]
     pub fn is_fixed_shape_tensor(&self) -> bool {
         matches!(self, Self::FixedShapeTensor(..))
     }
 
     #[inline]
+    #[must_use]
     pub fn is_fixed_shape_sparse_tensor(&self) -> bool {
         matches!(self, Self::FixedShapeSparseTensor(..))
     }
 
     #[inline]
+    #[must_use]
     pub fn is_image(&self) -> bool {
         matches!(self, Self::Image(..))
     }
 
     #[inline]
+    #[must_use]
     pub fn is_fixed_shape_image(&self) -> bool {
         matches!(self, Self::FixedShapeImage(..))
     }
 
     #[inline]
+    #[must_use]
     pub fn is_map(&self) -> bool {
         matches!(self, Self::Map(..))
     }
 
     #[inline]
+    #[must_use]
     pub fn is_list(&self) -> bool {
         matches!(self, Self::List(..))
     }
 
     #[inline]
+    #[must_use]
     pub fn is_string(&self) -> bool {
         matches!(self, Self::Utf8)
     }
 
     #[inline]
+    #[must_use]
     pub fn is_boolean(&self) -> bool {
         matches!(self, Self::Boolean)
     }
 
     #[inline]
+    #[must_use]
     pub fn is_null(&self) -> bool {
         match self {
             Self::Null => true,
@@ -481,11 +508,13 @@ impl DataType {
     }
 
     #[inline]
+    #[must_use]
     pub fn is_extension(&self) -> bool {
         matches!(self, Self::Extension(..))
     }
 
     #[inline]
+    #[must_use]
     pub fn is_python(&self) -> bool {
         match self {
             #[cfg(feature = "python")]
@@ -514,14 +543,14 @@ impl DataType {
 
             _ => {
                 return Err(DaftError::TypeError(format!(
-                    "Expected input to be numeric, instead got {}",
-                    self,
+                    "Expected input to be numeric, instead got {self}",
                 )))
             }
         };
         Ok(data_type)
     }
 
+    #[must_use]
     pub fn estimate_size_bytes(&self) -> Option<f64> {
         const VARIABLE_TYPE_SIZE: f64 = 20.;
         const DEFAULT_LIST_LEN: f64 = 4.;
@@ -561,6 +590,7 @@ impl DataType {
     }
 
     #[inline]
+    #[must_use]
     pub fn is_logical(&self) -> bool {
         matches!(
             self,
@@ -581,11 +611,13 @@ impl DataType {
     }
 
     #[inline]
+    #[must_use]
     pub fn is_physical(&self) -> bool {
         !self.is_logical()
     }
 
     #[inline]
+    #[must_use]
     pub fn is_nested(&self) -> bool {
         let p: Self = self.to_physical();
         matches!(
@@ -640,7 +672,7 @@ impl From<&ArrowType> for DataType {
             }
             ArrowType::Map(field, ..) => Self::Map(Box::new(field.as_ref().data_type().into())),
             ArrowType::Struct(fields) => {
-                let fields: Vec<Field> = fields.iter().map(|fld| fld.into()).collect();
+                let fields: Vec<Field> = fields.iter().map(std::convert::Into::into).collect();
                 Self::Struct(fields)
             }
             ArrowType::Extension(name, dtype, metadata) => {
@@ -665,7 +697,7 @@ impl From<&ArrowType> for DataType {
 
 impl From<&ImageMode> for DataType {
     fn from(mode: &ImageMode) -> Self {
-        use ImageMode::*;
+        use ImageMode::{L16, LA16, RGB16, RGB32F, RGBA16, RGBA32F};
 
         match mode {
             L16 | LA16 | RGB16 | RGBA16 => Self::UInt16,

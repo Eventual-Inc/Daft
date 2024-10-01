@@ -32,7 +32,7 @@ fn compile_filter(query: &str) -> DaftResult<Filter> {
     if !errs.is_empty() {
         return Err(DaftError::ValueError(format!(
             "Error parsing json query ({query}): {}",
-            errs.iter().map(|e| e.to_string()).join(", ")
+            errs.iter().map(std::string::ToString::to_string).join(", ")
         )));
     }
 
@@ -92,8 +92,7 @@ pub fn json_query_series(s: &Series, query: &str) -> DaftResult<Series> {
             json_query_impl(arr, query).map(daft_core::series::IntoSeries::into_series)
         }
         dt => Err(DaftError::TypeError(format!(
-            "json query not implemented for {}",
-            dt
+            "json query not implemented for {dt}"
         ))),
     }
 }
@@ -108,6 +107,7 @@ pub fn json_query_series(s: &Series, query: &str) -> DaftResult<Series> {
 /// # Returns
 ///
 /// A `DaftResult` containing the resulting UTF-8 array after applying the query.
+#[must_use]
 pub fn json_query(input: ExprRef, query: &str) -> ExprRef {
     ScalarFunction::new(
         JsonQuery {
@@ -153,7 +153,7 @@ mod tests {
             .into_iter(),
         );
 
-        let query = r#".foo.bar"#;
+        let query = r".foo.bar";
         let result = json_query_impl(&data, query)?;
         assert_eq!(result.len(), 3);
         assert_eq!(result.as_arrow().value(0), "1");

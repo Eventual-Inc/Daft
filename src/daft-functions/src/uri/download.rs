@@ -52,8 +52,7 @@ impl ScalarUDF for DownloadFunction {
                     Ok(result.into_series())
                 }
                 _ => Err(DaftError::TypeError(format!(
-                    "Download can only download uris from Utf8Array, got {}",
-                    input
+                    "Download can only download uris from Utf8Array, got {input}"
                 ))),
             },
             _ => Err(DaftError::ValueError(format!(
@@ -71,8 +70,7 @@ impl ScalarUDF for DownloadFunction {
                 match &field.dtype {
                     DataType::Utf8 => Ok(Field::new(field.name, DataType::Binary)),
                     _ => Err(DaftError::TypeError(format!(
-                        "Download can only download uris from Utf8Array, got {}",
-                        field
+                        "Download can only download uris from Utf8Array, got {field}"
                     ))),
                 }
             }
@@ -112,7 +110,7 @@ fn url_download(
         let urls = owned_array
             .as_arrow()
             .into_iter()
-            .map(|s| s.map(|s| s.to_string()))
+            .map(|s| s.map(std::string::ToString::to_string))
             .collect::<Vec<_>>();
 
         let stream = futures::stream::iter(urls.into_iter().enumerate().map(move |(i, url)| {
@@ -146,20 +144,17 @@ fn url_download(
 
     let cap_needed: usize = results
         .iter()
-        .filter_map(|f| f.1.as_ref().map(|f| f.len()))
+        .filter_map(|f| f.1.as_ref().map(bytes::Bytes::len))
         .sum();
     let mut data = Vec::with_capacity(cap_needed);
-    for (_, b) in results.into_iter() {
-        match b {
-            Some(b) => {
-                data.extend(b.as_ref());
-                offsets.push(b.len() as i64 + offsets.last().unwrap());
-                valid.push(true);
-            }
-            None => {
-                offsets.push(*offsets.last().unwrap());
-                valid.push(false);
-            }
+    for (_, b) in results {
+        if let Some(b) = b {
+            data.extend(b.as_ref());
+            offsets.push(b.len() as i64 + offsets.last().unwrap());
+            valid.push(true);
+        } else {
+            offsets.push(*offsets.last().unwrap());
+            valid.push(false);
         }
     }
     Ok(BinaryArray::try_from((name, data, offsets))?

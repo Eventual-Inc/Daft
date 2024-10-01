@@ -25,7 +25,7 @@ fn join_arrow_list_of_utf8s(
                 .downcast_ref::<arrow2::array::Utf8Array<i64>>()
                 .unwrap()
                 .iter()
-                .fold(String::from(""), |acc, str_item| {
+                .fold(String::new(), |acc, str_item| {
                     acc + str_item.unwrap_or("") + delimiter_str
                 })
             // Remove trailing `delimiter_str`
@@ -43,7 +43,7 @@ fn join_arrow_list_of_utf8s(
 // Given an i64 array that may have either 1 or `self.len()` elements, create an iterator with
 // `self.len()` elements. If there was originally 1 element, we repeat this element `self.len()`
 // times, otherwise we simply take the original array.
-fn create_iter<'a>(arr: &'a Int64Array, len: usize) -> Box<dyn Iterator<Item = i64> + '_> {
+fn create_iter<'a>(arr: &'a Int64Array, len: usize) -> Box<dyn Iterator<Item = i64> + 'a> {
     match arr.len() {
         1 => Box::new(repeat(arr.get(0).unwrap()).take(len)),
         arr_len => {

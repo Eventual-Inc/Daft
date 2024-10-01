@@ -23,10 +23,10 @@ impl ScalarUDF for ListSort {
         match inputs {
             [data, desc] => match (data.to_field(schema), desc.to_field(schema)) {
                 (Ok(field), Ok(desc_field)) => match (&field.dtype, &desc_field.dtype) {
-                    (l @ DataType::List(_), DataType::Boolean)
-                    | (l @ DataType::FixedSizeList(_, _), DataType::Boolean) => {
-                        Ok(Field::new(field.name, l.clone()))
-                    }
+                    (
+                        l @ (DataType::List(_) | DataType::FixedSizeList(_, _)),
+                        DataType::Boolean,
+                    ) => Ok(Field::new(field.name, l.clone())),
                     (a, b) => Err(DaftError::TypeError(format!(
                         "Expects inputs to list_sort to be list and bool, but received {a} and {b}",
                     ))),
@@ -51,6 +51,7 @@ impl ScalarUDF for ListSort {
     }
 }
 
+#[must_use]
 pub fn list_sort(input: ExprRef, desc: Option<ExprRef>) -> ExprRef {
     let desc = desc.unwrap_or_else(|| lit(false));
     ScalarFunction::new(ListSort {}, vec![input, desc]).into()

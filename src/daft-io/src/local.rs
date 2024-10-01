@@ -82,10 +82,13 @@ enum Error {
 
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
-        use Error::*;
+        use Error::{
+            UnableToFetchDirectoryEntries, UnableToFetchFileMetadata, UnableToOpenFile,
+            UnableToOpenFileForWriting, UnableToReadBytes, UnableToWriteToFile,
+        };
         match error {
             UnableToOpenFile { path, source } | UnableToFetchDirectoryEntries { path, source } => {
-                use std::io::ErrorKind::*;
+                use std::io::ErrorKind::NotFound;
                 match source.kind() {
                     NotFound => Self::NotFound {
                         path,
@@ -98,7 +101,7 @@ impl From<Error> for super::Error {
                 }
             }
             UnableToFetchFileMetadata { path, source } => {
-                use std::io::ErrorKind::*;
+                use std::io::ErrorKind::{IsADirectory, NotFound};
                 match source.kind() {
                     NotFound | IsADirectory => Self::NotFound {
                         path,
@@ -277,7 +280,7 @@ impl ObjectSource for LocalSource {
         if meta.file_type().is_file() {
             // Provided uri points to a file, so only return that file.
             return Ok(futures::stream::iter([Ok(FileMetadata {
-                filepath: format!("{}{}", LOCAL_PROTOCOL, uri),
+                filepath: format!("{LOCAL_PROTOCOL}{uri}"),
                 size: Some(meta.len()),
                 filetype: object_io::FileType::File,
             })])

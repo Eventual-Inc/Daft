@@ -9,8 +9,9 @@ use crate::{
     types::NativeType,
 };
 
-/// Applies an unary and infallible function to a [`PrimitiveArray`]. This is the
-/// fastest way to perform an operation on a [`PrimitiveArray`] when the benefits
+/// Applies an unary and infallible function to a [`PrimitiveArray`].
+///
+/// This is the fastest way to perform an operation on a [`PrimitiveArray`] when the benefits
 /// of a vectorized operation outweighs the cost of branching nulls and
 /// non-nulls.
 ///
@@ -119,8 +120,9 @@ where
     PrimitiveArray::<O>::new(data_type, values, validity)
 }
 
-/// Applies a binary operations to two primitive arrays. This is the fastest
-/// way to perform an operation on two primitive array when the benefits of a
+/// Applies a binary operations to two primitive arrays.
+///
+/// This is the fastest way to perform an operation on two primitive array when the benefits of a
 /// vectorized operation outweighs the cost of branching nulls and non-nulls.
 /// # Errors
 /// This function errors iff the arrays have a different length.

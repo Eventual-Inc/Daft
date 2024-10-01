@@ -67,7 +67,10 @@ pub(crate) fn arrow_column_iters_to_table_iter(
         type Item = arrow2::error::Result<ArrowChunk>;
 
         fn next(&mut self) -> Option<Self::Item> {
-            self.iters.par_iter_mut().map(|iter| iter.next()).collect()
+            self.iters
+                .par_iter_mut()
+                .map(std::iter::Iterator::next)
+                .collect()
         }
     }
     let par_lock_step_iter = ParallelLockStepIter { iters: arr_iters };
@@ -101,7 +104,7 @@ pub(crate) fn arrow_column_iters_to_table_iter(
 
         let len = all_series
             .first()
-            .map(|s| s.len())
+            .map(daft_core::series::Series::len)
             .expect("All series should not be empty when creating table from parquet chunks");
         if all_series.iter().any(|s| s.len() != len) {
             return Err(super::Error::ParquetColumnsDontHaveEqualRows { path: uri.clone() }.into());
@@ -176,7 +179,7 @@ where
 
 impl<R> Drop for CountingReader<R> {
     fn drop(&mut self) {
-        self.update_count()
+        self.update_count();
     }
 }
 
@@ -201,7 +204,7 @@ pub(crate) fn local_parquet_read_into_column_iters(
     const LOCAL_PROTOCOL: &str = "file://";
     let uri = uri
         .strip_prefix(LOCAL_PROTOCOL)
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .unwrap_or(uri.to_string());
 
     let reader = File::open(uri.clone()).with_context(|_| super::InternalIOSnafu {

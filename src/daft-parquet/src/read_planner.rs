@@ -68,7 +68,7 @@ impl ReadPlanPass for SplitLargeRequestPass {
         }
 
         let mut new_ranges = vec![];
-        for range in ranges.iter() {
+        for range in &ranges {
             if (range.end - range.start) > self.split_threshold {
                 let mut curr_start = range.start;
                 while curr_start < range.end {
@@ -99,8 +99,8 @@ struct RangeCacheEntry {
 impl RangeCacheEntry {
     async fn get_or_wait(&self, range: Range<usize>) -> std::result::Result<Bytes, daft_io::Error> {
         {
-            let mut _guard = self.state.lock().await;
-            match &mut *_guard {
+            let mut guard = self.state.lock().await;
+            match &mut *guard {
                 RangeCacheState::InFlight(f) => {
                     // TODO(sammy): thread in url for join error
                     let v = f
@@ -112,7 +112,7 @@ impl RangeCacheEntry {
                         .as_ref()
                         .map(|b| b.slice(range))
                         .map_err(|e| daft_io::Error::CachedError { source: e.clone() });
-                    *_guard = RangeCacheState::Ready(v);
+                    *guard = RangeCacheState::Ready(v);
                     sliced
                 }
                 RangeCacheState::Ready(v) => v
@@ -148,7 +148,7 @@ impl ReadPlanner {
     }
 
     pub fn run_passes(&mut self) -> super::Result<()> {
-        for pass in self.passes.iter() {
+        for pass in &self.passes {
             let (changed, ranges) = pass.run(&self.ranges)?;
             if changed {
                 self.ranges = ranges;
@@ -280,7 +280,7 @@ impl RangesContainer {
 impl Display for ReadPlanner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "ReadPlanBuilder: {} ranges", self.ranges.len())?;
-        for range in self.ranges.iter() {
+        for range in &self.ranges {
             writeln!(
                 f,
                 "{}-{}, {}",

@@ -57,7 +57,7 @@ impl PushDownFilter {
 
                 // Split predicate expression on conjunctions (ANDs).
                 let parent_predicates = split_conjuction(&filter.predicate);
-                let predicate_set: HashSet<&ExprRef> = parent_predicates.iter().cloned().collect();
+                let predicate_set: HashSet<&ExprRef> = parent_predicates.iter().copied().collect();
                 // Add child predicate expressions to parent predicate expressions, eliminating duplicates.
                 let new_predicates: Vec<ExprRef> = parent_predicates
                     .iter()

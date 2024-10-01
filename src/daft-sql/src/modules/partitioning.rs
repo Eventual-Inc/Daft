@@ -42,14 +42,14 @@ impl SQLFunction for PartitioningExpr {
                 let n = planner
                     .plan_function_arg(&args[1])?
                     .as_literal()
-                    .and_then(|l| l.as_i64())
+                    .and_then(daft_dsl::LiteralValue::as_i64)
                     .ok_or_else(|| {
                         crate::error::PlannerError::unsupported_sql(
                             "Expected integer literal".to_string(),
                         )
                     })
                     .and_then(|n| {
-                        if n > i32::MAX as i64 {
+                        if n > i64::from(i32::MAX) {
                             Err(crate::error::PlannerError::unsupported_sql(
                                 "Integer literal too large".to_string(),
                             ))
@@ -69,7 +69,7 @@ impl SQLFunction for PartitioningExpr {
                 let w = planner
                     .plan_function_arg(&args[1])?
                     .as_literal()
-                    .and_then(|l| l.as_i64())
+                    .and_then(daft_dsl::LiteralValue::as_i64)
                     .ok_or_else(|| {
                         crate::error::PlannerError::unsupported_sql(
                             "Expected integer literal".to_string(),

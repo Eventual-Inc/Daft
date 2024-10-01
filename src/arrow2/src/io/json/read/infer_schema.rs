@@ -171,7 +171,7 @@ pub(crate) fn coerce_data_type<A: Borrow<DataType>>(datatypes: &[A]) -> DataType
     }
     let (lhs, rhs) = (datatypes[0].borrow(), datatypes[1].borrow());
 
-    return match (lhs, rhs) {
+    match (lhs, rhs) {
         (lhs, rhs) if lhs == rhs => lhs.clone(),
         (List(lhs), List(rhs)) => {
             let inner = coerce_data_type(&[lhs.data_type(), rhs.data_type()]);
@@ -190,7 +190,7 @@ pub(crate) fn coerce_data_type<A: Borrow<DataType>>(datatypes: &[A]) -> DataType
         (Int64, Boolean) => Int64,
         (Boolean, Int64) => Int64,
         (_, _) => Utf8,
-    };
+    }
 }
 
 #[cfg(test)]

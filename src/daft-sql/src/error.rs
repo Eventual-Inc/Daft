@@ -57,6 +57,7 @@ impl PlannerError {
         }
     }
 
+    #[must_use]
     pub fn unsupported_sql(sql: String) -> Self {
         Self::UnsupportedSQL { message: sql }
     }

@@ -55,6 +55,7 @@ impl ScalarUDF for MinHashFunction {
     }
 }
 
+#[must_use]
 pub fn minhash(input: ExprRef, num_hashes: usize, ngram_size: usize, seed: u32) -> ExprRef {
     ScalarFunction::new(
         MinHashFunction {

@@ -57,6 +57,9 @@ pub fn make_comfy_table<S: AsRef<str>>(
     num_rows: Option<usize>,
     max_col_width: Option<usize>,
 ) -> comfy_table::Table {
+    const DOTS: &str = "…";
+    const TOTAL_ROWS: usize = 10;
+
     let mut table = comfy_table::Table::new();
 
     let default_width_if_no_tty = 120usize;
@@ -74,8 +77,7 @@ pub fn make_comfy_table<S: AsRef<str>>(
 
     let expected_col_width = 18usize;
 
-    let max_cols = (((terminal_width + expected_col_width - 1) / expected_col_width) - 1).max(1);
-    const DOTS: &str = "…";
+    let max_cols = (terminal_width.div_ceil(expected_col_width) - 1).max(1);
     let num_columns = fields.len();
 
     let head_cols;
@@ -98,12 +100,8 @@ pub fn make_comfy_table<S: AsRef<str>>(
     if tail_cols > 0 {
         let unseen_cols = num_columns - (head_cols + tail_cols);
         header.push(
-            create_table_cell(&format!(
-                "{DOTS}\n\n({unseen_cols} hidden)",
-                DOTS = DOTS,
-                unseen_cols = unseen_cols
-            ))
-            .set_alignment(comfy_table::CellAlignment::Center),
+            create_table_cell(&format!("{DOTS}\n\n({unseen_cols} hidden)"))
+                .set_alignment(comfy_table::CellAlignment::Center),
         );
         header.extend(
             fields
@@ -118,7 +116,6 @@ pub fn make_comfy_table<S: AsRef<str>>(
     {
         table.set_header(header);
         let len = num_rows.expect("if columns are set, so should `num_rows`");
-        const TOTAL_ROWS: usize = 10;
         let head_rows;
         let tail_rows;
 

@@ -16,7 +16,7 @@ pub struct SQLModuleAggs;
 
 impl SQLModule for SQLModuleAggs {
     fn register(parent: &mut SQLFunctions) {
-        use AggExpr::*;
+        use AggExpr::{Count, Max, Mean, Min, Sum};
         // HACK TO USE AggExpr as an enum rather than a
         let nil = Arc::new(Expr::Literal(LiteralValue::Null));
         parent.add_fn(

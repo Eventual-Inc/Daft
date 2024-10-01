@@ -862,6 +862,7 @@ fn transverse_recursive<T, F: Fn(&DataType) -> T + Clone>(
 
 /// Transverses the `data_type` up to its (parquet) columns and returns a vector of
 /// items based on `map`.
+///
 /// This is used to assign an [`Encoding`] to every parquet column based on the columns' type (see example)
 /// # Example
 /// ```

@@ -13,7 +13,7 @@ impl std::hash::Hash for HashableVecPercentiles {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.0
             .iter()
-            .for_each(|p| p.to_be_bytes().iter().for_each(|&b| state.write_u8(b)))
+            .for_each(|p| p.to_be_bytes().iter().for_each(|&b| state.write_u8(b)));
     }
 }
 
