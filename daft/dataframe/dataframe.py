@@ -907,7 +907,6 @@ class DataFrame:
         write_df.collect()
 
         write_result = write_df.to_pydict()
-        print(write_result)
         assert "add_action" in write_result
         add_actions: List[AddAction] = write_result["add_action"]
 

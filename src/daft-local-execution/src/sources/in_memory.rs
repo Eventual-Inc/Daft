@@ -17,7 +17,6 @@ impl InMemorySource {
     pub fn new(data: Vec<Arc<MicroPartition>>, schema: SchemaRef) -> Self {
         Self { data, schema }
     }
-
     pub fn boxed(self) -> Box<dyn Source> {
         Box::new(self) as Box<dyn Source>
     }
@@ -33,7 +32,7 @@ impl Source for InMemorySource {
     ) -> crate::Result<SourceStream<'static>> {
         if self.data.is_empty() {
             let empty = Arc::new(MicroPartition::empty(Some(self.schema.clone())));
-            return Ok(Box::pin(futures::stream::iter(vec![empty])));
+            return Ok(Box::pin(futures::stream::once(async { empty })));
         }
         Ok(Box::pin(futures::stream::iter(self.data.clone())))
     }
