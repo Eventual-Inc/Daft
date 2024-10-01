@@ -41,6 +41,26 @@ impl SQLFunction for AggExpr {
             to_expr(self, inputs.as_slice())
         }
     }
+
+    fn docstrings(&self, alias: &str) -> String {
+        match self {
+            Self::Count(_, _) => static_docs::COUNT_DOCSTRING.to_string(),
+            Self::Sum(_) => static_docs::SUM_DOCSTRING.to_string(),
+            Self::Mean(_) => static_docs::AVG_DOCSTRING.replace("{}", alias),
+            Self::Min(_) => static_docs::MIN_DOCSTRING.to_string(),
+            Self::Max(_) => static_docs::MAX_DOCSTRING.to_string(),
+            e => unimplemented!("Need to implement docstrings for {e}"),
+        }
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        match self {
+            Self::Count(_, _) | Self::Sum(_) | Self::Mean(_) | Self::Min(_) | Self::Max(_) => {
+                &["input"]
+            }
+            e => unimplemented!("Need to implement arg names for {e}"),
+        }
+    }
 }
 
 fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
@@ -102,4 +122,202 @@ pub(crate) fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<Expr
         AggExpr::Concat(_) => unsupported_sql_err!("concat"),
         AggExpr::MapGroups { .. } => unsupported_sql_err!("map_groups"),
     }
+}
+
+mod static_docs {
+    pub(crate) const COUNT_DOCSTRING: &str =
+        "Counts the number of non-null elements in the input expression.
+
+Example:
+
+.. code-block:: sql
+    :caption: SQL
+
+    SELECT count(x) FROM tbl
+
+.. code-block:: text
+    :caption: Input
+
+    ╭───────╮
+    │ x     │
+    │ ---   │
+    │ Int64 │
+    ╞═══════╡
+    │ 100   │
+    ├╌╌╌╌╌╌╌┤
+    │ 200   │
+    ├╌╌╌╌╌╌╌┤
+    │ null  │
+    ╰───────╯
+    (Showing first 3 of 3 rows)
+
+.. code-block:: text
+    :caption: Output
+
+    ╭───────╮
+    │ x     │
+    │ ---   │
+    │ Int64 │
+    ╞═══════╡
+    │ 1     │
+    ╰───────╯
+    (Showing first 1 of 1 rows)";
+
+    pub(crate) const SUM_DOCSTRING: &str =
+        "Calculates the sum of non-null elements in the input expression.
+
+Example:
+
+.. code-block:: sql
+    :caption: SQL
+
+    SELECT sum(x) FROM tbl
+
+.. code-block:: text
+    :caption: Input
+
+    ╭───────╮
+    │ x     │
+    │ ---   │
+    │ Int64 │
+    ╞═══════╡
+    │ 100   │
+    ├╌╌╌╌╌╌╌┤
+    │ 200   │
+    ├╌╌╌╌╌╌╌┤
+    │ null  │
+    ╰───────╯
+    (Showing first 3 of 3 rows)
+
+.. code-block:: text
+    :caption: Output
+
+    ╭───────╮
+    │ x     │
+    │ ---   │
+    │ Int64 │
+    ╞═══════╡
+    │ 300   │
+    ╰───────╯
+    (Showing first 1 of 1 rows)";
+
+    pub(crate) const AVG_DOCSTRING: &str =
+        "Calculates the average (mean) of non-null elements in the input expression.
+
+.. seealso::
+    This SQL Function has aliases.
+
+    * :func:`~daft.sql._sql_funcs.mean`
+    * :func:`~daft.sql._sql_funcs.avg`
+
+Example:
+
+.. code-block:: sql
+    :caption: SQL
+
+    SELECT {}(x) FROM tbl
+
+.. code-block:: text
+    :caption: Input
+
+    ╭───────╮
+    │ x     │
+    │ ---   │
+    │ Int64 │
+    ╞═══════╡
+    │ 100   │
+    ├╌╌╌╌╌╌╌┤
+    │ 200   │
+    ├╌╌╌╌╌╌╌┤
+    │ null  │
+    ╰───────╯
+    (Showing first 3 of 3 rows)
+
+.. code-block:: text
+    :caption: Output
+
+    ╭───────────╮
+    │ x         │
+    │ ---       │
+    │ Float64   │
+    ╞═══════════╡
+    │ 150.0     │
+    ╰───────────╯
+    (Showing first 1 of 1 rows)";
+
+    pub(crate) const MIN_DOCSTRING: &str =
+        "Finds the minimum value among non-null elements in the input expression.
+
+Example:
+
+.. code-block:: sql
+    :caption: SQL
+
+    SELECT min(x) FROM tbl
+
+.. code-block:: text
+    :caption: Input
+
+    ╭───────╮
+    │ x     │
+    │ ---   │
+    │ Int64 │
+    ╞═══════╡
+    │ 100   │
+    ├╌╌╌╌╌╌╌┤
+    │ 200   │
+    ├╌╌╌╌╌╌╌┤
+    │ null  │
+    ╰───────╯
+    (Showing first 3 of 3 rows)
+
+.. code-block:: text
+    :caption: Output
+
+    ╭───────╮
+    │ x     │
+    │ ---   │
+    │ Int64 │
+    ╞═══════╡
+    │ 100   │
+    ╰───────╯
+    (Showing first 1 of 1 rows)";
+
+    pub(crate) const MAX_DOCSTRING: &str =
+        "Finds the maximum value among non-null elements in the input expression.
+
+Example:
+
+.. code-block:: sql
+    :caption: SQL
+
+    SELECT max(x) FROM tbl
+
+.. code-block:: text
+    :caption: Input
+
+    ╭───────╮
+    │ x     │
+    │ ---   │
+    │ Int64 │
+    ╞═══════╡
+    │ 100   │
+    ├╌╌╌╌╌╌╌┤
+    │ 200   │
+    ├╌╌╌╌╌╌╌┤
+    │ null  │
+    ╰───────╯
+    (Showing first 3 of 3 rows)
+
+.. code-block:: text
+    :caption: Output
+
+    ╭───────╮
+    │ x     │
+    │ ---   │
+    │ Int64 │
+    ╞═══════╡
+    │ 200   │
+    ╰───────╯
+    (Showing first 1 of 1 rows)";
 }

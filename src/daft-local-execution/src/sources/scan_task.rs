@@ -137,162 +137,140 @@ async fn stream_scan_task(
     }
     let source = scan_task.sources.first().unwrap();
     let url = source.get_path();
-    let table_stream = match scan_task.storage_config.as_ref() {
-        StorageConfig::Native(native_storage_config) => {
-            let io_config = Arc::new(
-                native_storage_config
-                    .io_config
-                    .as_ref()
-                    .cloned()
-                    .unwrap_or_default(),
-            );
-            let multi_threaded_io = native_storage_config.multithreaded_io;
-            let io_client = daft_io::get_io_client(multi_threaded_io, io_config)?;
+    let (io_config, multi_threaded_io) = match scan_task.storage_config.as_ref() {
+        StorageConfig::Native(native_storage_config) => (
+            native_storage_config.io_config.as_ref(),
+            native_storage_config.multithreaded_io,
+        ),
 
-            match scan_task.file_format_config.as_ref() {
-                // ********************
-                // Native Parquet Reads
-                // ********************
-                FileFormatConfig::Parquet(ParquetSourceConfig {
-                    coerce_int96_timestamp_unit,
-                    field_id_mapping,
-                    ..
-                }) => {
-                    let inference_options =
-                        ParquetSchemaInferenceOptions::new(Some(*coerce_int96_timestamp_unit));
+        #[cfg(feature = "python")]
+        StorageConfig::Python(python_storage_config) => {
+            (python_storage_config.io_config.as_ref(), true)
+        }
+    };
+    let io_config = Arc::new(io_config.cloned().unwrap_or_default());
+    let io_client = daft_io::get_io_client(multi_threaded_io, io_config)?;
+    let table_stream = match scan_task.file_format_config.as_ref() {
+        FileFormatConfig::Parquet(ParquetSourceConfig {
+            coerce_int96_timestamp_unit,
+            field_id_mapping,
+            ..
+        }) => {
+            let inference_options =
+                ParquetSchemaInferenceOptions::new(Some(*coerce_int96_timestamp_unit));
 
-                    if source.get_iceberg_delete_files().is_some() {
-                        return Err(common_error::DaftError::TypeError(
-                            "Streaming reads not supported for Iceberg delete files".to_string(),
-                        ));
-                    }
-
-                    let row_groups =
-                        if let Some(ChunkSpec::Parquet(row_groups)) = source.get_chunk_spec() {
-                            Some(row_groups.clone())
-                        } else {
-                            None
-                        };
-                    let metadata = scan_task
-                        .sources
-                        .first()
-                        .and_then(|s| s.get_parquet_metadata().cloned());
-                    daft_parquet::read::stream_parquet(
-                        url,
-                        file_column_names.as_deref(),
-                        None,
-                        scan_task.pushdowns.limit,
-                        row_groups,
-                        scan_task.pushdowns.filters.clone(),
-                        io_client.clone(),
-                        io_stats,
-                        &inference_options,
-                        field_id_mapping.clone(),
-                        metadata,
-                        maintain_order,
-                    )
-                    .await?
-                }
-
-                // ****************
-                // Native CSV Reads
-                // ****************
-                FileFormatConfig::Csv(cfg) => {
-                    let schema_of_file = scan_task.schema.clone();
-                    let col_names = if !cfg.has_headers {
-                        Some(
-                            schema_of_file
-                                .fields
-                                .values()
-                                .map(|f| f.name.as_str())
-                                .collect::<Vec<_>>(),
-                        )
-                    } else {
-                        None
-                    };
-                    let convert_options = CsvConvertOptions::new_internal(
-                        scan_task.pushdowns.limit,
-                        file_column_names
-                            .as_ref()
-                            .map(|cols| cols.iter().map(|col| col.to_string()).collect()),
-                        col_names
-                            .as_ref()
-                            .map(|cols| cols.iter().map(|col| col.to_string()).collect()),
-                        Some(schema_of_file),
-                        scan_task.pushdowns.filters.clone(),
-                    );
-                    let parse_options = CsvParseOptions::new_with_defaults(
-                        cfg.has_headers,
-                        cfg.delimiter,
-                        cfg.double_quote,
-                        cfg.quote,
-                        cfg.allow_variable_columns,
-                        cfg.escape_char,
-                        cfg.comment,
-                    )?;
-                    let read_options =
-                        CsvReadOptions::new_internal(cfg.buffer_size, cfg.chunk_size);
-                    daft_csv::stream_csv(
-                        url.to_string(),
-                        Some(convert_options),
-                        Some(parse_options),
-                        Some(read_options),
-                        io_client.clone(),
-                        io_stats.clone(),
-                        None,
-                        // maintain_order, TODO: Implement maintain_order for CSV
-                    )
-                    .await?
-                }
-
-                // ****************
-                // Native JSON Reads
-                // ****************
-                FileFormatConfig::Json(cfg) => {
-                    let schema_of_file = scan_task.schema.clone();
-                    let convert_options = JsonConvertOptions::new_internal(
-                        scan_task.pushdowns.limit,
-                        file_column_names
-                            .as_ref()
-                            .map(|cols| cols.iter().map(|col| col.to_string()).collect()),
-                        Some(schema_of_file),
-                        scan_task.pushdowns.filters.clone(),
-                    );
-                    // let
-                    let parse_options = JsonParseOptions::new_internal();
-                    let read_options =
-                        JsonReadOptions::new_internal(cfg.buffer_size, cfg.chunk_size);
-
-                    daft_json::read::stream_json(
-                        url.to_string(),
-                        Some(convert_options),
-                        Some(parse_options),
-                        Some(read_options),
-                        io_client,
-                        io_stats,
-                        None,
-                        // maintain_order, TODO: Implement maintain_order for JSON
-                    )
-                    .await?
-                }
-                #[cfg(feature = "python")]
-                FileFormatConfig::Database(_) => {
-                    return Err(common_error::DaftError::TypeError(
-                        "Native reads for Database file format not implemented".to_string(),
-                    ));
-                }
-                #[cfg(feature = "python")]
-                FileFormatConfig::PythonFunction => {
-                    return Err(common_error::DaftError::TypeError(
-                        "Native reads for PythonFunction file format not implemented".to_string(),
-                    ));
-                }
+            if source.get_iceberg_delete_files().is_some() {
+                return Err(common_error::DaftError::TypeError(
+                    "Streaming reads not supported for Iceberg delete files".to_string(),
+                ));
             }
+
+            let row_groups = if let Some(ChunkSpec::Parquet(row_groups)) = source.get_chunk_spec() {
+                Some(row_groups.clone())
+            } else {
+                None
+            };
+            let metadata = scan_task
+                .sources
+                .first()
+                .and_then(|s| s.get_parquet_metadata().cloned());
+            daft_parquet::read::stream_parquet(
+                url,
+                file_column_names.as_deref(),
+                None,
+                scan_task.pushdowns.limit,
+                row_groups,
+                scan_task.pushdowns.filters.clone(),
+                io_client,
+                io_stats,
+                &inference_options,
+                field_id_mapping.clone(),
+                metadata,
+                maintain_order,
+            )
+            .await?
+        }
+        FileFormatConfig::Csv(cfg) => {
+            let schema_of_file = scan_task.schema.clone();
+            let col_names = if !cfg.has_headers {
+                Some(
+                    schema_of_file
+                        .fields
+                        .values()
+                        .map(|f| f.name.as_str())
+                        .collect::<Vec<_>>(),
+                )
+            } else {
+                None
+            };
+            let convert_options = CsvConvertOptions::new_internal(
+                scan_task.pushdowns.limit,
+                file_column_names
+                    .as_ref()
+                    .map(|cols| cols.iter().map(|col| col.to_string()).collect()),
+                col_names
+                    .as_ref()
+                    .map(|cols| cols.iter().map(|col| col.to_string()).collect()),
+                Some(schema_of_file),
+                scan_task.pushdowns.filters.clone(),
+            );
+            let parse_options = CsvParseOptions::new_with_defaults(
+                cfg.has_headers,
+                cfg.delimiter,
+                cfg.double_quote,
+                cfg.quote,
+                cfg.allow_variable_columns,
+                cfg.escape_char,
+                cfg.comment,
+            )?;
+            let read_options = CsvReadOptions::new_internal(cfg.buffer_size, cfg.chunk_size);
+            daft_csv::stream_csv(
+                url.to_string(),
+                Some(convert_options),
+                Some(parse_options),
+                Some(read_options),
+                io_client,
+                io_stats.clone(),
+                None,
+                // maintain_order, TODO: Implement maintain_order for CSV
+            )
+            .await?
+        }
+        FileFormatConfig::Json(cfg) => {
+            let schema_of_file = scan_task.schema.clone();
+            let convert_options = JsonConvertOptions::new_internal(
+                scan_task.pushdowns.limit,
+                file_column_names
+                    .as_ref()
+                    .map(|cols| cols.iter().map(|col| col.to_string()).collect()),
+                Some(schema_of_file),
+                scan_task.pushdowns.filters.clone(),
+            );
+            let parse_options = JsonParseOptions::new_internal();
+            let read_options = JsonReadOptions::new_internal(cfg.buffer_size, cfg.chunk_size);
+
+            daft_json::read::stream_json(
+                url.to_string(),
+                Some(convert_options),
+                Some(parse_options),
+                Some(read_options),
+                io_client,
+                io_stats,
+                None,
+                // maintain_order, TODO: Implement maintain_order for JSON
+            )
+            .await?
         }
         #[cfg(feature = "python")]
-        StorageConfig::Python(_) => {
+        FileFormatConfig::Database(_) => {
             return Err(common_error::DaftError::TypeError(
-                "Streaming reads not supported for Python storage config".to_string(),
+                "Database file format not implemented".to_string(),
+            ));
+        }
+        #[cfg(feature = "python")]
+        FileFormatConfig::PythonFunction => {
+            return Err(common_error::DaftError::TypeError(
+                "PythonFunction file format not implemented".to_string(),
             ));
         }
     };

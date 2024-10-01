@@ -64,4 +64,12 @@ impl SQLFunction for SQLImageResize {
             _ => unsupported_sql_err!("Invalid arguments for image_resize: '{inputs:?}'"),
         }
     }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Resizes an image to the specified width and height.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input_image", "width", "height"]
+    }
 }

@@ -1,7 +1,7 @@
 # isort: dont-add-import: from __future__ import annotations
 
 import inspect
-from typing import Optional, overload
+from typing import Optional
 
 from daft.api_annotations import PublicAPI
 from daft.context import get_context
@@ -38,22 +38,120 @@ class SQLCatalog:
 
 @PublicAPI
 def sql_expr(sql: str) -> Expression:
+    """Parses a SQL string into a Daft Expression
+
+    This function allows you to create Daft Expressions from SQL snippets, which can then be used
+    in Daft operations or combined with other Daft Expressions.
+
+    Args:
+        sql (str): A SQL string to be parsed into a Daft Expression.
+
+    Returns:
+        Expression: A Daft Expression representing the parsed SQL.
+
+    Examples:
+        Create a simple SQL expression:
+
+        >>> import daft
+        >>> expr = daft.sql_expr("1 + 2")
+        >>> print(expr)
+        lit(1) + lit(2)
+
+        Use SQL expression in a Daft DataFrame operation:
+
+        >>> df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
+        >>> df = df.with_column("c", daft.sql_expr("a + b"))
+        >>> df.show()
+        ╭───────┬───────┬───────╮
+        │ a     ┆ b     ┆ c     │
+        │ ---   ┆ ---   ┆ ---   │
+        │ Int64 ┆ Int64 ┆ Int64 │
+        ╞═══════╪═══════╪═══════╡
+        │ 1     ┆ 4     ┆ 5     │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 2     ┆ 5     ┆ 7     │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 3     ┆ 6     ┆ 9     │
+        ╰───────┴───────┴───────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+        `daft.sql_expr` is also called automatically for you in some DataFrame operations such as filters:
+
+        >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+        >>> result = df.where("x < 3 AND y > 4")
+        >>> result.show()
+        ╭───────┬───────╮
+        │ x     ┆ y     │
+        │ ---   ┆ ---   │
+        │ Int64 ┆ Int64 │
+        ╞═══════╪═══════╡
+        │ 2     ┆ 5     │
+        ╰───────┴───────╯
+        <BLANKLINE>
+        (Showing first 1 of 1 rows)
+    """
     return Expression._from_pyexpr(_sql_expr(sql))
-
-
-@overload
-def sql(sql: str) -> DataFrame: ...
-
-
-@overload
-def sql(sql: str, catalog: SQLCatalog, register_globals: bool = ...) -> DataFrame: ...
 
 
 @PublicAPI
 def sql(sql: str, catalog: Optional[SQLCatalog] = None, register_globals: bool = True) -> DataFrame:
-    """Create a DataFrame from an SQL query.
+    """Run a SQL query, returning the results as a DataFrame
 
-    EXPERIMENTAL: This features is early in development and will change.
+    .. WARNING::
+        This features is early in development and will likely experience API changes.
+
+    Examples:
+
+        A simple example joining 2 dataframes together using a SQL statement, relying on Daft to detect the names of
+        SQL tables using their corresponding Python variable names.
+
+        >>> import daft
+        >>>
+        >>> df1 = daft.from_pydict({"a": [1, 2, 3], "b": ["foo", "bar", "baz"]})
+        >>> df2 = daft.from_pydict({"a": [1, 2, 3], "c": ["daft", None, None]})
+        >>>
+        >>> # Daft automatically detects `df1` and `df2` from your Python global namespace
+        >>> result_df = daft.sql("SELECT * FROM df1 JOIN df2 ON df1.a = df2.a")
+        >>> result_df.show()
+        ╭───────┬──────┬──────╮
+        │ a     ┆ b    ┆ c    │
+        │ ---   ┆ ---  ┆ ---  │
+        │ Int64 ┆ Utf8 ┆ Utf8 │
+        ╞═══════╪══════╪══════╡
+        │ 1     ┆ foo  ┆ daft │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 2     ┆ bar  ┆ None │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 3     ┆ baz  ┆ None │
+        ╰───────┴──────┴──────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+        A more complex example using a SQLCatalog to create a named table called `"my_table"`, which can then be referenced from inside your SQL statement.
+
+        >>> import daft
+        >>> from daft.sql import SQLCatalog
+        >>>
+        >>> df = daft.from_pydict({"a": [1, 2, 3], "b": ["foo", "bar", "baz"]})
+        >>>
+        >>> # Register dataframes as tables in SQL explicitly with names
+        >>> catalog = SQLCatalog({"my_table": df})
+        >>>
+        >>> daft.sql("SELECT a FROM my_table", catalog=catalog).show()
+        ╭───────╮
+        │ a     │
+        │ ---   │
+        │ Int64 │
+        ╞═══════╡
+        │ 1     │
+        ├╌╌╌╌╌╌╌┤
+        │ 2     │
+        ├╌╌╌╌╌╌╌┤
+        │ 3     │
+        ╰───────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
 
     Args:
         sql (str): SQL query to execute

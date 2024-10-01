@@ -50,6 +50,16 @@ macro_rules! temporal {
                     ),
                 }
             }
+            fn docstrings(&self, _alias: &str) -> String {
+                format!(
+                    "Extracts the {} component from a datetime expression.",
+                    stringify!($fn_name).replace("dt_", "")
+                )
+            }
+
+            fn arg_names(&self) -> &'static [&'static str] {
+                &["input"]
+            }
         }
     };
 }

@@ -30,4 +30,23 @@ impl SQLFunction for MapGet {
             _ => invalid_operation_err!("Expected 2 input args"),
         }
     }
+
+    fn docstrings(&self, alias: &str) -> String {
+        static_docs::MAP_GET_DOCSTRING.replace("{}", alias)
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input", "key"]
+    }
+}
+
+mod static_docs {
+    pub(crate) const MAP_GET_DOCSTRING: &str =
+        "Retrieves the value associated with a given key from a map.
+
+.. seealso::
+
+    * :func:`~daft.sql._sql_funcs.map_get`
+    * :func:`~daft.sql._sql_funcs.map_extract`
+";
 }

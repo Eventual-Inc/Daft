@@ -931,9 +931,14 @@ class DaftRayActor:
             for name, psu in extract_partial_stateful_udf_py(expr._expr).items()
         }
         logger.info("Initializing stateful UDFs: %s", ", ".join(partial_stateful_udfs.keys()))
-        self.initialized_stateful_udfs = {
-            name: partial_udf.func_cls() for name, partial_udf in partial_stateful_udfs.items()
-        }
+
+        self.initialized_stateful_udfs = {}
+        for name, (partial_udf, init_args) in partial_stateful_udfs.items():
+            if init_args is None:
+                self.initialized_stateful_udfs[name] = partial_udf.func_cls()
+            else:
+                args, kwargs = init_args
+                self.initialized_stateful_udfs[name] = partial_udf.func_cls(*args, **kwargs)
 
     @ray.method(num_returns=2)
     def run(

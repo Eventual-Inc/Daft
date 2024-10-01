@@ -27,11 +27,19 @@ impl PyDaftPlanningConfig {
         }
     }
 
-    fn with_config_values(&mut self, default_io_config: Option<PyIOConfig>) -> PyResult<Self> {
+    fn with_config_values(
+        &mut self,
+        default_io_config: Option<PyIOConfig>,
+        enable_actor_pool_projections: Option<bool>,
+    ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
         if let Some(default_io_config) = default_io_config {
             config.default_io_config = default_io_config.config;
+        }
+
+        if let Some(enable_actor_pool_projections) = enable_actor_pool_projections {
+            config.enable_actor_pool_projections = enable_actor_pool_projections;
         }
 
         Ok(Self {

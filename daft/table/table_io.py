@@ -22,6 +22,7 @@ from daft.daft import (
     PythonStorageConfig,
     StorageConfig,
 )
+from daft.datatype import DataType
 from daft.dependencies import pa, pacsv, pads, pajson, pq
 from daft.expressions import ExpressionsProjection, col
 from daft.filesystem import (
@@ -29,6 +30,7 @@ from daft.filesystem import (
     canonicalize_protocol,
     get_protocol_from_path,
 )
+from daft.io.common import _get_schema_from_dict
 from daft.logical.schema import Schema
 from daft.runners.partitioning import (
     TableParseCSVOptions,
@@ -426,16 +428,22 @@ class TabularWriteVisitors:
             self.parent.paths.append(written_file.path)
             self.parent.partition_indices.append(self.idx)
 
-    def __init__(self, partition_values: MicroPartition | None, path_key: str = "path"):
+    def __init__(self, partition_values: MicroPartition | None, schema: Schema):
         self.paths: list[str] = []
         self.partition_indices: list[int] = []
         self.partition_values = partition_values
-        self.path_key = path_key
+        self.path_key = schema.column_names()[
+            0
+        ]  # I kept this from our original code, but idk why it's the first column name -kevin
+        self.schema = schema
 
     def visitor(self, partition_idx: int) -> TabularWriteVisitors.FileVisitor:
         return self.FileVisitor(self, partition_idx)
 
     def to_metadata(self) -> MicroPartition:
+        if len(self.paths) == 0:
+            return MicroPartition.empty(self.schema)
+
         metadata: dict[str, Any] = {self.path_key: self.paths}
 
         if self.partition_values:
@@ -488,10 +496,7 @@ def write_tabular(
 
     partitioned = PartitionedTable(table, partition_cols)
 
-    # I kept this from our original code, but idk why it's the first column name -kevin
-    path_key = schema.column_names()[0]
-
-    visitors = TabularWriteVisitors(partitioned.partition_values(), path_key)
+    visitors = TabularWriteVisitors(partitioned.partition_values(), schema)
 
     for i, (part_table, part_path) in enumerate(partitioned_table_to_hive_iter(partitioned, resolved_path)):
         size_bytes = part_table.nbytes
@@ -686,7 +691,10 @@ class DeltaLakeWriteVisitors:
         return self.FileVisitor(self, partition_values)
 
     def to_metadata(self) -> MicroPartition:
-        return MicroPartition.from_pydict({"add_action": self.add_actions})
+        col_name = "add_action"
+        if len(self.add_actions) == 0:
+            return MicroPartition.empty(_get_schema_from_dict({col_name: DataType.python()}))
+        return MicroPartition.from_pydict({col_name: self.add_actions})
 
 
 def write_deltalake(
