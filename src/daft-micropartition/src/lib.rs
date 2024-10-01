@@ -130,7 +130,6 @@ pub fn create_deltalake_file_writer(
     large_dtypes: bool,
     io_config: &Option<daft_io::IOConfig>,
     partition_value: Option<&Table>,
-    postfix: &str,
 ) -> DaftResult<Box<dyn FileWriter>> {
     Ok(Box::new(py_writers::DeltalakeWriter::new(
         root_dir,
@@ -138,7 +137,6 @@ pub fn create_deltalake_file_writer(
         version,
         large_dtypes,
         partition_value,
-        postfix,
         io_config,
     )?))
 }

@@ -1,5 +1,5 @@
 import uuid
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Dict, List, Optional, Union
 
 from daft.context import get_context
 from daft.daft import IOConfig, PyTable
@@ -23,24 +23,62 @@ if TYPE_CHECKING:
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
 
+def partition_values_to_str_mapping(
+    partition_values: Table,
+) -> Dict[str, str]:
+    null_part = Series.from_pylist([None])
+    pkey_names = partition_values.column_names()
+
+    partition_strings = {}
+
+    for c in pkey_names:
+        column = partition_values.get_column(c)
+        string_names = column._to_str_values()
+        null_filled = column.is_null().if_else(null_part, string_names)
+        partition_strings[c] = null_filled.to_pylist()[0]
+
+    return partition_strings
+
+
+def partition_string_mapping_to_postfix(
+    partition_strings: Dict[str, str],
+    default_partition_fallback: str,
+) -> str:
+    postfix = "/".join(
+        f"{k}={v if v is not None else default_partition_fallback}" for k, v in partition_strings.items()
+    )
+    return postfix
+
+
 class FileWriterBase:
     def __init__(
         self,
         root_dir: str,
         file_idx: int,
         file_format: str,
+        partition_values: Optional[PyTable] = None,
         compression: Optional[str] = None,
         io_config: Optional[IOConfig] = None,
+        default_partition_fallback: str = "__HIVE_DEFAULT_PARTITION__",
     ):
         [self.resolved_path], self.fs = _resolve_paths_and_filesystem(root_dir, io_config=io_config)
         protocol = get_protocol_from_path(root_dir)
         canonicalized_protocol = canonicalize_protocol(protocol)
         is_local_fs = canonicalized_protocol == "file"
-        if is_local_fs:
-            self.fs.create_dir(self.resolved_path, recursive=True)
 
         self.file_name = f"{uuid.uuid4()}-{file_idx}.{file_format}"
-        self.full_path = f"{self.resolved_path}/{self.file_name}"
+        self.partition_values = Table._from_pytable(partition_values) if partition_values is not None else None
+        if self.partition_values is not None:
+            partition_strings = partition_values_to_str_mapping(self.partition_values)
+            postfix = partition_string_mapping_to_postfix(partition_strings, default_partition_fallback)
+            self.dir_path = f"{self.resolved_path}/{postfix}"
+        else:
+            self.dir_path = f"{self.resolved_path}"
+
+        self.full_path = f"{self.dir_path}/{self.file_name}"
+        if is_local_fs:
+            self.fs.create_dir(self.dir_path, recursive=True)
+
         self.compression = compression if compression is not None else "none"
         self.current_writer: Optional[Union[pq.ParquetWriter, pacsv.CSVWriter]] = None
 
@@ -52,11 +90,15 @@ class FileWriterBase:
             self.current_writer = self._create_writer(table.schema().to_pyarrow_schema())
         self.current_writer.write_table(table.to_arrow())
 
-    def close(self) -> Optional[Any]:
-        if self.current_writer is None:
-            return None
-        self.current_writer.close()
-        return self.full_path
+    def close(self) -> PyTable:
+        if self.current_writer is not None:
+            self.current_writer.close()
+
+        metadata = {"path": Series.from_pylist([self.full_path])}
+        if self.partition_values is not None:
+            for col_name in self.partition_values.column_names():
+                metadata[col_name] = self.partition_values.get_column(col_name)
+        return Table.from_pydict(metadata)._table
 
 
 class ParquetFileWriter(FileWriterBase):
@@ -64,10 +106,11 @@ class ParquetFileWriter(FileWriterBase):
         self,
         root_dir: str,
         file_idx: int,
+        partition_values: Optional[PyTable] = None,
         compression: str = "none",
         io_config: Optional[IOConfig] = None,
     ):
-        super().__init__(root_dir, file_idx, "parquet", compression, io_config)
+        super().__init__(root_dir, file_idx, "parquet", partition_values, compression, io_config)
 
     def _create_writer(self, schema: pa.Schema) -> pq.ParquetWriter:
         return pq.ParquetWriter(
@@ -80,8 +123,20 @@ class ParquetFileWriter(FileWriterBase):
 
 
 class CSVFileWriter(FileWriterBase):
-    def __init__(self, root_dir: str, file_idx: int, io_config: Optional[IOConfig] = None):
-        super().__init__(root_dir, file_idx, "csv", None, io_config)
+    def __init__(
+        self,
+        root_dir: str,
+        file_idx: int,
+        partition_values: Optional[PyTable] = None,
+        io_config: Optional[IOConfig] = None,
+    ):
+        super().__init__(
+            root_dir,
+            file_idx,
+            "csv",
+            partition_values=partition_values,
+            io_config=io_config,
+        )
 
     def _create_writer(self, schema: pa.Schema) -> pacsv.CSVWriter:
         file_path = f"{self.resolved_path}/{self.file_name}"
@@ -106,7 +161,8 @@ class IcebergFileWriter(FileWriterBase):
         from pyiceberg.io.pyarrow import schema_to_pyarrow
         from pyiceberg.typedef import Record as IcebergRecord
 
-        super().__init__(root_dir, file_idx, "parquet", compression, io_config)
+        super().__init__(root_dir, file_idx, "parquet", partition_values, compression, io_config, "null")
+
         if partition_values is None:
             self.part_record = IcebergRecord()
         else:
@@ -145,12 +201,12 @@ class IcebergFileWriter(FileWriterBase):
         from pyiceberg.manifest import DataFile, DataFileContent
         from pyiceberg.manifest import FileFormat as IcebergFileFormat
 
-        file_path = super().close()
+        super().close()
         metadata = self.metadata_collector[0]
-        size = self.fs.get_file_info(file_path).size
+        size = self.fs.get_file_info(self.full_path).size
         kwargs = {
             "content": DataFileContent.DATA,
-            "file_path": file_path,
+            "file_path": self.full_path,
             "file_format": IcebergFileFormat.PARQUET,
             "partition": self.part_record,
             "file_size_in_bytes": size,
@@ -200,7 +256,6 @@ class DeltalakeFileWriter(FileWriterBase):
         version: int,
         large_dtypes: bool,
         partition_values: Optional[PyTable] = None,
-        postfix: str = "",
         io_config: Optional[IOConfig] = None,
     ):
         from deltalake.writer import DeltaStorageHandler
@@ -219,37 +274,19 @@ class DeltalakeFileWriter(FileWriterBase):
             self.fs.create_dir(root_dir, recursive=True)
 
         self.file_name = f"{version}-{uuid.uuid4()}-{file_idx}.parquet"
-        self.full_path = f"{postfix}/{self.file_name}"
-        self.postfix = postfix
+        if partition_values is not None:
+            self.partition_values = Table._from_pytable(partition_values)
+            self.partition_str_mapping = partition_values_to_str_mapping(self.partition_values)
+            postfix = partition_string_mapping_to_postfix(self.partition_str_mapping, "__HIVE_DEFAULT_PARTITION__")
+            self.full_path = f"{postfix}/{self.file_name}"
+        else:
+            self.partition_values = None
+            self.partition_str_mapping = {}
+            self.full_path = self.file_name
+
         self.current_writer: Optional[pq.ParquetWriter] = None
-        self.version = version
         self.large_dtypes = large_dtypes
         self.metadata_collector: List[pq.FileMetaData] = []
-        self.partition_values = partition_values
-        if self.partition_values is None:
-            self.partition_value_mapping = {}
-        else:
-            self.partition_value_mapping = self.partition_values_str(Table._from_pytable(self.partition_values))
-
-    @staticmethod
-    def partition_values_str(partition_values: Table) -> Dict[str, str]:
-        """
-        Returns the partition values converted to human-readable strings, keeping null values as null.
-
-        If the table is not partitioned, returns None.
-        """
-        null_part = Series.from_pylist([None])
-        pkey_names = partition_values.column_names()
-
-        partition_strings = {}
-
-        for c in pkey_names:
-            column = partition_values.get_column(c)
-            string_names = column._to_str_values()
-            null_filled = column.is_null().if_else(null_part, string_names)
-            partition_strings[c] = null_filled.to_pylist()[0]
-
-        return partition_strings
 
     def _create_writer(self, schema: pa.Schema) -> pq.ParquetWriter:
         return pq.ParquetWriter(
@@ -295,15 +332,14 @@ class DeltalakeFileWriter(FileWriterBase):
         else:
             file_stats_args = {"num_indexed_cols": -1, "columns_to_collect_stats": None}
 
-        file_path = super().close()
+        super().close()
         metadata = self.metadata_collector[0]
         stats = get_file_stats_from_metadata(metadata, **file_stats_args)
-        size = self.fs.get_file_info(file_path).size
-        print("mapping", self.partition_value_mapping)
+        size = self.fs.get_file_info(self.full_path).size
         add_action = AddAction(
-            file_path,
+            self.full_path,
             size,
-            self.partition_value_mapping,
+            self.partition_str_mapping,
             int(datetime.now().timestamp() * 1000),
             True,
             json.dumps(stats, cls=DeltaJSONEncoder),

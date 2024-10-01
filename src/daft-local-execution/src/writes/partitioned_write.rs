@@ -2,57 +2,48 @@ use std::{collections::HashMap, sync::Arc};
 
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
-use daft_core::{
-    prelude::{SchemaRef, Utf8Array},
-    series::{IntoSeries, Series},
-};
+use daft_core::prelude::{AsArrow, SchemaRef};
 use daft_dsl::ExprRef;
 use daft_io::IOStatsContext;
 use daft_micropartition::{FileWriter, MicroPartition};
 use daft_table::Table;
 use snafu::ResultExt;
 
-use super::unpartitioned_write::WriteOperator;
+use super::WriteOperator;
 use crate::{
     buffer::RowBasedBuffer,
     channel::{create_channel, PipelineChannel, Receiver, Sender},
+    create_task_set,
     pipeline::PipelineNode,
     runtime_stats::{CountingReceiver, RuntimeStatsContext},
     ExecutionRuntimeHandle, JoinSnafu, NUM_CPUS,
 };
 
 struct PerPartitionWriter {
-    write_operator: Arc<dyn WriteOperator>,
     writer: Box<dyn FileWriter>,
-    target_file_rows: usize,
-    results: Vec<Table>,
-    written_rows_so_far: usize,
+    write_operator: Arc<dyn WriteOperator>,
+    partition_values: Table,
     buffer: RowBasedBuffer,
-    partition_value: Table,
-    partition_postfix: Arc<str>,
+    target_file_rows: usize,
+    written_rows_so_far: usize,
+    results: Vec<Table>,
 }
 
 impl PerPartitionWriter {
     fn new(
         write_operator: Arc<dyn WriteOperator>,
-        partition_value: Table,
-        partition_postfix: Arc<str>,
+        partition_values: Table,
         target_file_rows: usize,
         target_chunk_rows: usize,
     ) -> DaftResult<Self> {
         Ok(Self {
-            writer: write_operator.create_partitioned_writer(
-                0,
-                &partition_value,
-                &partition_postfix,
-            )?,
+            writer: write_operator.create_writer(0, Some(&partition_values))?,
             write_operator,
-            target_file_rows,
-            results: vec![],
-            written_rows_so_far: 0,
+            partition_values,
             buffer: RowBasedBuffer::new(target_chunk_rows),
-            partition_value,
-            partition_postfix,
+            target_file_rows,
+            written_rows_so_far: 0,
+            results: vec![],
         })
     }
 
@@ -78,11 +69,9 @@ impl PerPartitionWriter {
                 self.results.push(result);
             }
             self.written_rows_so_far = 0;
-            self.writer = self.write_operator.create_partitioned_writer(
-                self.results.len(),
-                &self.partition_value,
-                &self.partition_postfix,
-            )?;
+            self.writer = self
+                .write_operator
+                .create_writer(self.results.len(), Some(&self.partition_values))?
         }
         Ok(())
     }
@@ -107,7 +96,6 @@ pub(crate) struct PartitionedWriteNode {
     runtime_stats: Arc<RuntimeStatsContext>,
     write_operator: Arc<dyn WriteOperator>,
     partition_cols: Vec<ExprRef>,
-    default_partition_fallback: Arc<str>,
     target_file_rows: usize,
     target_chunk_rows: usize,
     file_schema: SchemaRef,
@@ -118,7 +106,6 @@ impl PartitionedWriteNode {
         child: Box<dyn PipelineNode>,
         write_operator: Arc<dyn WriteOperator>,
         partition_cols: Vec<ExprRef>,
-        default_partition_fallback: Arc<str>,
         target_file_rows: usize,
         target_chunk_rows: usize,
         file_schema: SchemaRef,
@@ -128,7 +115,6 @@ impl PartitionedWriteNode {
             runtime_stats: RuntimeStatsContext::new(),
             partition_cols,
             write_operator,
-            default_partition_fallback,
             target_file_rows,
             target_chunk_rows,
             file_schema,
@@ -141,77 +127,55 @@ impl PartitionedWriteNode {
 
     fn partition(
         partition_cols: &[ExprRef],
-        default_partition_fallback: &Arc<str>,
         data: &Arc<MicroPartition>,
-    ) -> DaftResult<(Vec<MicroPartition>, Table, Vec<Series>)> {
-        let (split_tables, partition_values) = data.partition_by_value(partition_cols)?;
-        let concated = partition_values
-            .concat_or_get(IOStatsContext::new("MicroPartition::partition_by_value"))?;
-        let partition_values_table = concated.first().unwrap();
-        let pkey_names = partition_values_table.column_names();
-
-        let mut values_string_values = Vec::with_capacity(pkey_names.len());
-        for name in pkey_names.iter() {
-            let column = partition_values_table.get_column(name)?;
-            let string_names = column.to_str_values()?;
-            let default_part = Utf8Array::from_iter(
-                "default",
-                std::iter::once(Some(default_partition_fallback.clone())),
-            )
-            .into_series();
-            let null_filled = string_names.if_else(&default_part, &column.not_null()?)?;
-            values_string_values.push(null_filled);
-        }
-
-        Ok((
-            split_tables,
-            partition_values_table.clone(),
-            values_string_values,
-        ))
+    ) -> DaftResult<(Vec<Table>, Table)> {
+        let data = data.concat_or_get(IOStatsContext::new("MicroPartition::partition_by_value"))?;
+        let table = data.first().unwrap();
+        let (split_tables, partition_values) = table.partition_by_value(partition_cols)?;
+        Ok((split_tables, partition_values))
     }
 
     async fn run_writer(
         mut input_receiver: Receiver<Arc<MicroPartition>>,
         write_operator: Arc<dyn WriteOperator>,
         partition_cols: Vec<ExprRef>,
-        default_partition_fallback: Arc<str>,
         target_chunk_rows: usize,
         target_file_rows: usize,
     ) -> DaftResult<Vec<Table>> {
-        let mut per_partition_writers = HashMap::new();
+        // dis ain't gon work
+        let mut per_partition_writers: HashMap<u64, PerPartitionWriter> = HashMap::new();
         while let Some(data) = input_receiver.recv().await {
-            let (split_tables, partition_values, partition_values_strs) =
-                Self::partition(&partition_cols, &default_partition_fallback, &data)?;
-            for (idx, partition) in split_tables.into_iter().enumerate() {
-                let postfix = partition_values
-                    .column_names()
-                    .iter()
-                    .zip(partition_values_strs.iter())
-                    .map(|(pkey, values)| {
-                        format!("{}={}", pkey, values.utf8().unwrap().get(idx).unwrap())
-                    })
-                    .collect::<Vec<_>>()
-                    .join("/");
-                let per_partition_writer = if !per_partition_writers.contains_key(&postfix) {
+            let (split_tables, partition_values) = Self::partition(&partition_cols, &data)?;
+            let hashes = partition_values.hash_rows()?;
+            for (idx, (partition, hash)) in split_tables
+                .into_iter()
+                .zip(hashes.as_arrow().values_iter())
+                .enumerate()
+            {
+                let per_partition_writer = if !per_partition_writers.contains_key(hash) {
                     let partition_value_row = partition_values.slice(idx, idx + 1)?;
                     per_partition_writers.insert(
-                        postfix.clone(),
+                        *hash,
                         PerPartitionWriter::new(
                             write_operator.clone(),
                             partition_value_row,
-                            postfix.clone().into(),
                             target_file_rows,
                             target_chunk_rows,
                         )?,
                     );
-                    per_partition_writers.get_mut(&postfix).unwrap()
+                    per_partition_writers.get_mut(hash).unwrap()
                 } else {
-                    per_partition_writers.get_mut(&postfix).unwrap()
+                    per_partition_writers.get_mut(hash).unwrap()
                 };
 
-                per_partition_writer.submit(&Arc::new(partition))?;
+                per_partition_writer.submit(&Arc::new(MicroPartition::new_loaded(
+                    partition.schema.clone(),
+                    vec![partition].into(),
+                    None,
+                )))?
             }
         }
+
         let mut results = vec![];
         for writer in per_partition_writers.values_mut() {
             let res = writer.finalize()?;
@@ -225,7 +189,6 @@ impl PartitionedWriteNode {
         task_set: &mut tokio::task::JoinSet<DaftResult<Vec<Table>>>,
         write_operator: Arc<dyn WriteOperator>,
         partition_cols: Vec<ExprRef>,
-        default_partition_fallback: Arc<str>,
         target_chunk_rows: usize,
         target_file_rows: usize,
     ) -> Vec<Sender<Arc<MicroPartition>>> {
@@ -236,7 +199,6 @@ impl PartitionedWriteNode {
                 writer_receiver,
                 write_operator.clone(),
                 partition_cols.clone(),
-                default_partition_fallback.clone(),
                 target_chunk_rows,
                 target_file_rows,
             ));
@@ -298,32 +260,37 @@ impl PipelineNode for PartitionedWriteNode {
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
     ) -> crate::Result<PipelineChannel> {
+        // Start children
         let child = self.child.as_mut();
         let child_results_receiver = child
             .start(false, runtime_handle)?
             .get_receiver_with_stats(&self.runtime_stats);
 
+        // Initialize destination channels
         let mut destination_channel = PipelineChannel::new(1, maintain_order);
         let destination_sender =
             destination_channel.get_next_sender_with_stats(&self.runtime_stats);
-        let target_chunk_rows = self.target_chunk_rows;
-        let target_file_rows = self.target_file_rows;
-        let partition_cols = self.partition_cols.clone();
-        let schema = self.file_schema.clone();
-        let mut task_set = tokio::task::JoinSet::new();
+
+        // Start writers
+        let mut task_set = create_task_set();
         let writer_senders = Self::spawn_writers(
             *NUM_CPUS,
             &mut task_set,
             self.write_operator.clone(),
             self.partition_cols.clone(),
-            self.default_partition_fallback.clone(),
-            target_chunk_rows,
-            target_file_rows,
+            self.target_chunk_rows,
+            self.target_file_rows,
         );
+
+        // Start dispatch
+        let partition_cols = self.partition_cols.clone();
         runtime_handle.spawn(
             Self::dispatch(child_results_receiver, writer_senders, partition_cols),
             self.name(),
         );
+
+        // Join writers, receive results, and send to destination
+        let schema = self.file_schema.clone();
         runtime_handle.spawn(
             async move {
                 let mut results = vec![];

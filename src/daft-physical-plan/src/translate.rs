@@ -117,7 +117,6 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                     info.clone(),
                 )),
                 #[cfg(feature = "python")]
-                #[cfg(feature = "python")]
                 SinkInfo::CatalogInfo(catalog_info) => match &catalog_info.catalog {
                     daft_plan::CatalogType::Iceberg(iceberg_info) => {
                         Ok(LocalPhysicalPlan::iceberg_write(
@@ -135,7 +134,9 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                             deltalake_info.clone(),
                         ))
                     }
-                    _ => todo!("{} not yet implemented", plan.name()),
+                    daft_plan::CatalogType::Lance(_) => {
+                        todo!("Lance Sink not yet implemented")
+                    }
                 },
             }
         }

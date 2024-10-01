@@ -351,25 +351,33 @@ pub fn physical_plan_to_pipeline(
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
-            let (inflation_factor, target_file_size) = match file_info.file_format {
-                FileFormat::Parquet => (cfg.parquet_inflation_factor, cfg.parquet_target_filesize),
-                FileFormat::Csv => (cfg.csv_inflation_factor, cfg.csv_target_filesize),
-                _ => unreachable!("Unsupported file format"),
-            };
             let estimated_row_size_bytes = data_schema.estimate_row_size_bytes();
+            let (inflation_factor, target_file_size, target_chunk_size) =
+                match file_info.file_format {
+                    FileFormat::Parquet => (
+                        cfg.parquet_inflation_factor,
+                        cfg.parquet_target_filesize,
+                        cfg.parquet_target_row_group_size,
+                    ),
+                    FileFormat::Csv => (
+                        cfg.csv_inflation_factor,
+                        cfg.csv_target_filesize,
+                        cfg.parquet_target_row_group_size, // Just assume same chunk size for CSV and Parquet for now
+                    ),
+                    _ => unreachable!("Physical write should only support Parquet and CSV"),
+                };
+            let file_size = target_file_size as f64 * inflation_factor;
             let target_file_rows = if estimated_row_size_bytes > 0.0 {
-                target_file_size as f64 * inflation_factor / estimated_row_size_bytes
+                file_size / estimated_row_size_bytes
             } else {
-                target_file_size as f64 * inflation_factor
+                file_size
             } as usize;
-            // Just assume same chunk size for CSV and Parquet for now
             let target_chunk_rows = min(
                 target_file_rows,
                 if estimated_row_size_bytes > 0.0 {
-                    cfg.parquet_target_row_group_size as f64 * inflation_factor
-                        / estimated_row_size_bytes
+                    target_chunk_size as f64 / estimated_row_size_bytes
                 } else {
-                    cfg.parquet_target_row_group_size as f64 * inflation_factor
+                    target_chunk_size as f64
                 } as usize,
             );
             let write_op = PhysicalWriteOperator::new(file_info.clone());
@@ -378,7 +386,6 @@ pub fn physical_plan_to_pipeline(
                     child_node,
                     Arc::new(write_op),
                     part_cols.clone(),
-                    "__HIVE_DEFAULT_PARTITION__".into(),
                     target_file_rows,
                     target_chunk_rows,
                     file_schema.clone(),
@@ -389,6 +396,7 @@ pub fn physical_plan_to_pipeline(
                     Arc::new(write_op),
                     target_file_rows,
                     target_chunk_rows,
+                    file_schema.clone(),
                 )
                 .boxed(),
             }
@@ -403,22 +411,24 @@ pub fn physical_plan_to_pipeline(
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
             let estimated_row_size_bytes = data_schema.estimate_row_size_bytes();
+            let file_size = cfg.parquet_target_filesize as f64 * cfg.parquet_inflation_factor;
+            let row_group_size =
+                cfg.parquet_target_row_group_size as f64 * cfg.parquet_inflation_factor;
+
             let target_file_rows = if estimated_row_size_bytes > 0.0 {
-                cfg.parquet_target_filesize as f64 * cfg.parquet_inflation_factor
-                    / estimated_row_size_bytes
+                file_size / estimated_row_size_bytes
             } else {
-                cfg.parquet_target_filesize as f64 * cfg.parquet_inflation_factor
+                file_size
             } as usize;
-            // Just assume same chunk size for CSV and Parquet for now
             let target_chunk_rows = min(
                 target_file_rows,
                 if estimated_row_size_bytes > 0.0 {
-                    cfg.parquet_target_row_group_size as f64 * cfg.parquet_inflation_factor
-                        / estimated_row_size_bytes
+                    row_group_size / estimated_row_size_bytes
                 } else {
-                    cfg.parquet_target_row_group_size as f64 * cfg.parquet_inflation_factor
+                    row_group_size
                 } as usize,
             );
+
             let missing_cols = iceberg_info
                 .daft_iceberg_schema
                 .fields
@@ -447,6 +457,7 @@ pub fn physical_plan_to_pipeline(
                     Arc::new(write_op),
                     target_file_rows,
                     target_chunk_rows,
+                    file_schema.clone(),
                 )
                 .boxed()
             } else {
@@ -454,7 +465,6 @@ pub fn physical_plan_to_pipeline(
                     child_node,
                     Arc::new(write_op),
                     iceberg_info.partition_cols.clone(),
-                    "null".into(),
                     target_file_rows,
                     target_chunk_rows,
                     file_schema.clone(),
@@ -472,22 +482,24 @@ pub fn physical_plan_to_pipeline(
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
             let estimated_row_size_bytes = data_schema.estimate_row_size_bytes();
+            let file_size = cfg.parquet_target_filesize as f64 * cfg.parquet_inflation_factor;
+            let row_group_size =
+                cfg.parquet_target_row_group_size as f64 * cfg.parquet_inflation_factor;
+
             let target_file_rows = if estimated_row_size_bytes > 0.0 {
-                cfg.parquet_target_filesize as f64 * cfg.parquet_inflation_factor
-                    / estimated_row_size_bytes
+                file_size / estimated_row_size_bytes
             } else {
-                cfg.parquet_target_filesize as f64 * cfg.parquet_inflation_factor
+                file_size
             } as usize;
-            // Just assume same chunk size for CSV and Parquet for now
             let target_chunk_rows = min(
                 target_file_rows,
                 if estimated_row_size_bytes > 0.0 {
-                    cfg.parquet_target_row_group_size as f64 * cfg.parquet_inflation_factor
-                        / estimated_row_size_bytes
+                    row_group_size / estimated_row_size_bytes
                 } else {
-                    cfg.parquet_target_row_group_size as f64 * cfg.parquet_inflation_factor
+                    row_group_size
                 } as usize,
             );
+
             let write_op =
                 crate::writes::deltalake_write::DeltalakeWriteOperator::new(deltalake_info.clone());
             if let Some(partition_cols) = &deltalake_info.partition_cols
@@ -501,7 +513,6 @@ pub fn physical_plan_to_pipeline(
                     child_node,
                     Arc::new(write_op),
                     partition_col_exprs,
-                    "null".into(),
                     target_file_rows,
                     target_chunk_rows,
                     file_schema.clone(),
@@ -513,6 +524,7 @@ pub fn physical_plan_to_pipeline(
                     Arc::new(write_op),
                     target_file_rows,
                     target_chunk_rows,
+                    file_schema.clone(),
                 )
                 .boxed()
             }
