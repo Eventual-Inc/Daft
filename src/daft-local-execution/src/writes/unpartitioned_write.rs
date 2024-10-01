@@ -81,10 +81,11 @@ impl UnpartitionedWriteNode {
         num_writers: usize,
         task_set: &mut TaskSet<DaftResult<Vec<Table>>>,
         write_operator: &Arc<dyn WriteOperator>,
+        channel_size: usize,
     ) -> Vec<Sender<(Arc<MicroPartition>, usize)>> {
         let mut writer_senders = Vec::with_capacity(num_writers);
         for _ in 0..num_writers {
-            let (writer_sender, writer_receiver) = create_channel(1);
+            let (writer_sender, writer_receiver) = create_channel(channel_size);
             task_set.spawn(Self::run_writer(writer_receiver, write_operator.clone()));
             writer_senders.push(writer_sender);
         }
@@ -121,7 +122,9 @@ impl UnpartitionedWriteNode {
             }
         }
         if let Some(leftover) = buffer.pop_all()? {
-            let _ = senders[curr_file_idx].send((leftover, curr_file_idx)).await;
+            let _ = senders[curr_sender_idx]
+                .send((leftover, curr_file_idx))
+                .await;
         }
         Ok(())
     }
@@ -176,7 +179,13 @@ impl PipelineNode for UnpartitionedWriteNode {
         // Start writers
         let write_operator = self.write_operator.clone();
         let mut task_set = create_task_set();
-        let writer_senders = Self::spawn_writers(*NUM_CPUS, &mut task_set, &write_operator);
+        let writer_senders = Self::spawn_writers(
+            *NUM_CPUS,
+            &mut task_set,
+            &write_operator,
+            (self.target_in_memory_file_rows + self.target_in_memory_chunk_rows + 1)
+                / self.target_in_memory_chunk_rows,
+        );
 
         // Start dispatch
         let (target_file_rows, target_chunk_rows) = (

@@ -139,9 +139,8 @@ class CSVFileWriter(FileWriterBase):
         )
 
     def _create_writer(self, schema: pa.Schema) -> pacsv.CSVWriter:
-        file_path = f"{self.resolved_path}/{self.file_name}"
         return pacsv.CSVWriter(
-            file_path,
+            self.full_path,
             schema,
         )
 
