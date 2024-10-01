@@ -1,9 +1,6 @@
 SQL
 ===
 
-SQL Functions
--------------
-
 .. autofunction:: daft.sql
 
 .. autofunction:: daft.sql_expr
