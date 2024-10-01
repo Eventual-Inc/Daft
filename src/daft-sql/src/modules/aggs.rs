@@ -41,8 +41,6 @@ Example:
     ╰───────╯
     (Showing first 3 of 3 rows)
 
-Result:
-
 .. code-block:: text
     :caption: Output
 
@@ -81,8 +79,6 @@ Example:
     ╰───────╯
     (Showing first 3 of 3 rows)
 
-Result:
-
 .. code-block:: text
     :caption: Output
 
@@ -101,8 +97,8 @@ Result:
 .. seealso::
     This SQL Function has aliases.
 
-    :function:`daft.sql._sql_funcs.mean`
-    :function:`daft.sql._sql_funcs.avg`
+    * :func:`~daft.sql._sql_funcs.mean`
+    * :func:`~daft.sql._sql_funcs.avg`
 
 Example:
 
@@ -126,8 +122,6 @@ Example:
     │ null  │
     ╰───────╯
     (Showing first 3 of 3 rows)
-
-Result:
 
 .. code-block:: text
     :caption: Output
@@ -167,8 +161,6 @@ Example:
     ╰───────╯
     (Showing first 3 of 3 rows)
 
-Result:
-
 .. code-block:: text
     :caption: Output
 
@@ -206,8 +198,6 @@ Example:
     │ null  │
     ╰───────╯
     (Showing first 3 of 3 rows)
-
-Result:
 
 .. code-block:: text
     :caption: Output

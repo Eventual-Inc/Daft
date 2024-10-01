@@ -11,9 +11,9 @@ TOCTREE = "doc_gen/sql_funcs"
 SQL_MODULE_NAME = "daft.sql._sql_funcs"
 
 STUB_TEMPLATE = """
-.. currentmodule:: {module_name}
+.. currentmodule:: None
 
-.. autofunction:: {name}
+.. autofunction:: {module_name}.{name}
 """
 
 

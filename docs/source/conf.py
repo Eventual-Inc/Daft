@@ -56,6 +56,8 @@ extensions = [
 
 templates_path = ["_templates", sphinx_autosummary_accessors.templates_path]
 
+# Removes module names that prefix our classes
+add_module_names = False
 
 # -- Options for Notebook rendering
 # https://myst-nb.readthedocs.io/en/latest/configuration.html?highlight=nb_execution_mode#execution
