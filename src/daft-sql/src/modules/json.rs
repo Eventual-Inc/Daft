@@ -47,40 +47,5 @@ impl SQLFunction for JsonQuery {
 
 mod static_docs {
     pub(crate) const JSON_QUERY_DOCSTRING: &str =
-        "Extracts a JSON object from a JSON string using a JSONPath expression.
-
-Example:
-
-.. code-block:: sql
-    :caption: SQL
-
-    SELECT json_query(data, '$.store.book[0].title') FROM json_table
-
-.. code-block:: text
-    :caption: Input
-
-    ╭────────────────────────────────────────────────────────────────────╮
-    │ data                                                               │
-    │ ----                                                               │
-    │ String                                                             │
-    ╞════════════════════════════════════════════════════════════════════╡
-    │ {\"store\": {\"book\": [{\"title\": \"Sayings of the Century\"}]}} │
-    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-    │ {\"store\": {\"book\": [{\"title\": \"Sword of Honour\"}]}}        │
-    ╰────────────────────────────────────────────────────────────────────╯
-    (Showing first 2 of 2 rows)
-
-.. code-block:: text
-    :caption: Output
-
-    ╭────────────────────────────╮
-    │ data                       │
-    │ -------------------------- │
-    │ String                     │
-    ╞════════════════════════════╡
-    │ Sayings of the Century     │
-    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌--╌╌┤
-    │ Sword of Honour            │
-    ╰────────────────────────────╯
-    (Showing first 2 of 2 rows)";
+        "Extracts a JSON object from a JSON string using a JSONPath expression.";
 }

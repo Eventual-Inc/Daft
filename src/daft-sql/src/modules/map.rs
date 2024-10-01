@@ -40,8 +40,6 @@ impl SQLFunction for MapGet {
     }
 }
 
-// ... existing code ...
-
 mod static_docs {
     pub(crate) const MAP_GET_DOCSTRING: &str =
         "Retrieves the value associated with a given key from a map.
@@ -50,37 +48,5 @@ mod static_docs {
 
     * :func:`~daft.sql._sql_funcs.map_get`
     * :func:`~daft.sql._sql_funcs.map_extract`
-
-Example:
-
-.. code-block:: sql
-    :caption: SQL
-
-    SELECT {}(user_data, 'age') FROM users_table
-
-.. code-block:: text
-    :caption: Input
-
-    ╭───────────────────────────────╮
-    │ user_data                     │
-    │ ---------                     │
-    │ Map[Utf8, Int64]              │
-    ╞═══════════════════════════════╡
-    │ {'name': 'Alice', 'age': 30}  │
-    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-    │ {'name': 'Bob', 'age': 25}    │
-    ╰───────────────────────────────╯
-
-.. code-block:: text
-    :caption: Output
-
-    ╭───────╮
-    │ age   │
-    │ ---   │
-    │ Int64 │
-    ╞═══════╡
-    │ 30    │
-    ├╌╌╌╌╌╌╌┤
-    │ 25    │
-    ╰───────╯";
+";
 }
