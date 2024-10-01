@@ -626,7 +626,26 @@ impl SQLPlanner {
             SQLExpr::Ceil { expr, .. } => Ok(ceil(self.plan_expr(expr)?)),
             SQLExpr::Floor { expr, .. } => Ok(floor(self.plan_expr(expr)?)),
             SQLExpr::Position { .. } => unsupported_sql_err!("POSITION"),
-            SQLExpr::Substring { .. } => unsupported_sql_err!("SUBSTRING"),
+            SQLExpr::Substring {
+                expr,
+                substring_from,
+                substring_for,
+                special: true, // We only support SUBSTRING(expr, start, length) syntax
+            } => {
+                let (Some(substring_from), Some(substring_for)) = (substring_from, substring_for)
+                else {
+                    unsupported_sql_err!("SUBSTRING")
+                };
+
+                let expr = self.plan_expr(expr)?;
+                let start = self.plan_expr(substring_from)?;
+                let length = self.plan_expr(substring_for)?;
+
+                Ok(daft_dsl::functions::utf8::substr(expr, start, length))
+            }
+            SQLExpr::Substring { special: false, .. } => {
+                unsupported_sql_err!("`SUBSTRING(expr [FROM start] [FOR len])` syntax")
+            }
             SQLExpr::Trim { .. } => unsupported_sql_err!("TRIM"),
             SQLExpr::Overlay { .. } => unsupported_sql_err!("OVERLAY"),
             SQLExpr::Collate { .. } => unsupported_sql_err!("COLLATE"),
