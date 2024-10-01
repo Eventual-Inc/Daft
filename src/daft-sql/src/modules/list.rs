@@ -12,20 +12,20 @@ pub struct SQLModuleList;
 
 impl SQLModule for SQLModuleList {
     fn register(parent: &mut SQLFunctions) {
-        parent.add_fn("list_chunk", SQLListChunk, "TODO: Docstring", &["TODO"]);
-        parent.add_fn("list_count", SQLListCount, "TODO: Docstring", &["TODO"]);
-        parent.add_fn("explode", SQLExplode, "TODO: Docstring", &["TODO"]);
-        parent.add_fn("unnest", SQLExplode, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("list_chunk", SQLListChunk);
+        parent.add_fn("list_count", SQLListCount);
+        parent.add_fn("explode", SQLExplode);
+        parent.add_fn("unnest", SQLExplode);
         // this is commonly called `array_to_string` in other SQL dialects
-        parent.add_fn("array_to_string", SQLListJoin, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("array_to_string", SQLListJoin);
         // but we also want to support our `list_join` alias as well
-        parent.add_fn("list_join", SQLListJoin, "TODO: Docstring", &["TODO"]);
-        parent.add_fn("list_max", SQLListMax, "TODO: Docstring", &["TODO"]);
-        parent.add_fn("list_min", SQLListMin, "TODO: Docstring", &["TODO"]);
-        parent.add_fn("list_sum", SQLListSum, "TODO: Docstring", &["TODO"]);
-        parent.add_fn("list_mean", SQLListMean, "TODO: Docstring", &["TODO"]);
-        parent.add_fn("list_slice", SQLListSlice, "TODO: Docstring", &["TODO"]);
-        parent.add_fn("list_sort", SQLListSort, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("list_join", SQLListJoin);
+        parent.add_fn("list_max", SQLListMax);
+        parent.add_fn("list_min", SQLListMin);
+        parent.add_fn("list_sum", SQLListSum);
+        parent.add_fn("list_mean", SQLListMean);
+        parent.add_fn("list_slice", SQLListSlice);
+        parent.add_fn("list_sort", SQLListSort);
 
         // TODO
     }

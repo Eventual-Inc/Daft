@@ -8,7 +8,7 @@ pub struct SQLModuleJson;
 
 impl SQLModule for SQLModuleJson {
     fn register(parent: &mut SQLFunctions) {
-        parent.add_fn("json_query", JsonQuery, "TODO: Docstring", &["TODO"]);
+        parent.add_fn("json_query", JsonQuery);
     }
 }
 

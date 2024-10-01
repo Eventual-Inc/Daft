@@ -10,41 +10,17 @@ pub struct SQLModulePartitioning;
 
 impl SQLModule for SQLModulePartitioning {
     fn register(parent: &mut SQLFunctions) {
-        parent.add_fn(
-            "partitioning_years",
-            PartitioningExpr::Years,
-            "TODO: Docstring",
-            &["TODO"],
-        );
-        parent.add_fn(
-            "partitioning_months",
-            PartitioningExpr::Months,
-            "TODO: Docstring",
-            &["TODO"],
-        );
-        parent.add_fn(
-            "partitioning_days",
-            PartitioningExpr::Days,
-            "TODO: Docstring",
-            &["TODO"],
-        );
-        parent.add_fn(
-            "partitioning_hours",
-            PartitioningExpr::Hours,
-            "TODO: Docstring",
-            &["TODO"],
-        );
+        parent.add_fn("partitioning_years", PartitioningExpr::Years);
+        parent.add_fn("partitioning_months", PartitioningExpr::Months);
+        parent.add_fn("partitioning_days", PartitioningExpr::Days);
+        parent.add_fn("partitioning_hours", PartitioningExpr::Hours);
         parent.add_fn(
             "partitioning_iceberg_bucket",
             PartitioningExpr::IcebergBucket(0),
-            "TODO: Docstring",
-            &["TODO"],
         );
         parent.add_fn(
             "partitioning_iceberg_truncate",
             PartitioningExpr::IcebergTruncate(0),
-            "TODO: Docstring",
-            &["TODO"],
         );
     }
 }

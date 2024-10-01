@@ -82,6 +82,16 @@ pub trait SQLFunction: Send + Sync {
     }
 
     fn to_expr(&self, inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef>;
+
+    /// Produce the docstrings for this SQL function, parametrized by an alias which is the function name to invoke this in SQL
+    fn docstrings(&self, alias: &str) -> String {
+        format!("{alias}: No docstring available")
+    }
+
+    /// Produce the docstrings for this SQL function, parametrized by an alias which is the function name to invoke this in SQL
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["todo"]
+    }
 }
 
 /// TODOs
@@ -89,7 +99,7 @@ pub trait SQLFunction: Send + Sync {
 ///   - Add more functions..
 pub struct SQLFunctions {
     pub(crate) map: HashMap<String, Arc<dyn SQLFunction>>,
-    pub(crate) docsmap: HashMap<String, (&'static str, &'static [&'static str])>,
+    pub(crate) docsmap: HashMap<String, (String, &'static [&'static str])>,
 }
 
 pub(crate) struct SQLFunctionArguments {
@@ -121,15 +131,10 @@ impl SQLFunctions {
     }
 
     /// Add a [FunctionExpr] to the [SQLFunctions] instance.
-    pub fn add_fn<F: SQLFunction + 'static>(
-        &mut self,
-        name: &str,
-        func: F,
-        docstring: &'static str,
-        args: &'static [&'static str],
-    ) {
+    pub fn add_fn<F: SQLFunction + 'static>(&mut self, name: &str, func: F) {
+        self.docsmap
+            .insert(name.to_string(), (func.docstrings(name), func.arg_names()));
         self.map.insert(name.to_string(), Arc::new(func));
-        self.docsmap.insert(name.to_string(), (docstring, args));
     }
 
     /// Get a function by name from the [SQLFunctions] instance.
