@@ -66,11 +66,11 @@ fn tokenize_decode_series(
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub(super) struct TokenizeDecodeFunction {
-    pub(super) tokens_path: String,
-    pub(super) io_config: Option<Arc<IOConfig>>,
-    pub(super) pattern: Option<String>,
-    pub(super) special_tokens: Option<String>,
+pub struct TokenizeDecodeFunction {
+    pub tokens_path: String,
+    pub io_config: Option<Arc<IOConfig>>,
+    pub pattern: Option<String>,
+    pub special_tokens: Option<String>,
 }
 
 #[typetag::serde]

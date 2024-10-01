@@ -2,6 +2,7 @@ use crate::functions::SQLFunctions;
 
 pub mod aggs;
 pub mod float;
+pub mod hashing;
 pub mod image;
 pub mod json;
 pub mod list;

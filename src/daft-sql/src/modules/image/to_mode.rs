@@ -41,4 +41,12 @@ impl SQLFunction for SQLImageToMode {
             _ => unsupported_sql_err!("Invalid arguments for image_encode: '{inputs:?}'"),
         }
     }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Converts an image to the specified mode (e.g. RGB, RGBA, Grayscale).".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input_image", "mode"]
+    }
 }

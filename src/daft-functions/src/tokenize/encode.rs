@@ -70,12 +70,12 @@ fn tokenize_encode_series(
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub(super) struct TokenizeEncodeFunction {
-    pub(super) tokens_path: String,
-    pub(super) io_config: Option<Arc<IOConfig>>,
-    pub(super) pattern: Option<String>,
-    pub(super) special_tokens: Option<String>,
-    pub(super) use_special_tokens: bool,
+pub struct TokenizeEncodeFunction {
+    pub tokens_path: String,
+    pub io_config: Option<Arc<IOConfig>>,
+    pub pattern: Option<String>,
+    pub special_tokens: Option<String>,
+    pub use_special_tokens: bool,
 }
 
 #[typetag::serde]
