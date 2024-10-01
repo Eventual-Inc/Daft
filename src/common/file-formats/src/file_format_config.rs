@@ -115,6 +115,17 @@ impl ParquetSourceConfig {
     }
 }
 
+impl Default for ParquetSourceConfig {
+    fn default() -> Self {
+        Self {
+            coerce_int96_timestamp_unit: TimeUnit::Nanoseconds,
+            field_id_mapping: None,
+            row_groups: None,
+            chunk_size: None,
+        }
+    }
+}
+
 #[cfg(feature = "python")]
 #[pymethods]
 impl ParquetSourceConfig {

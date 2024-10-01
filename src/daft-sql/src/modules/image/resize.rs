@@ -16,7 +16,7 @@ impl TryFrom<SQLFunctionArguments> for ImageResize {
     fn try_from(args: SQLFunctionArguments) -> Result<Self, Self::Error> {
         let width = args
             .get_named("w")
-            .or_else(|| args.get_unnamed(0))
+            .or_else(|| args.get_positional(0))
             .map(|arg| match arg.as_ref() {
                 Expr::Literal(LiteralValue::Int64(i)) => Ok(*i),
                 _ => unsupported_sql_err!("Expected width to be a number"),
@@ -28,7 +28,7 @@ impl TryFrom<SQLFunctionArguments> for ImageResize {
 
         let height = args
             .get_named("h")
-            .or_else(|| args.get_unnamed(1))
+            .or_else(|| args.get_positional(1))
             .map(|arg| match arg.as_ref() {
                 Expr::Literal(LiteralValue::Int64(i)) => Ok(*i),
                 _ => unsupported_sql_err!("Expected height to be a number"),

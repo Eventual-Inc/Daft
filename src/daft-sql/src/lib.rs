@@ -3,9 +3,9 @@ pub mod error;
 pub mod functions;
 mod modules;
 mod planner;
-
 #[cfg(feature = "python")]
 pub mod python;
+mod table_provider;
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;

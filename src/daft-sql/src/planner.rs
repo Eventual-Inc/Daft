@@ -397,7 +397,19 @@ impl SQLPlanner {
 
     fn plan_relation(&self, rel: &sqlparser::ast::TableFactor) -> SQLPlannerResult<Relation> {
         match rel {
-            sqlparser::ast::TableFactor::Table { name, .. } => {
+            sqlparser::ast::TableFactor::Table {
+                name,
+                args: Some(args),
+                alias,
+                ..
+            } => {
+                let tbl_fn = name.0.first().unwrap().value.as_str();
+
+                self.plan_table_function(tbl_fn, args, alias)
+            }
+            sqlparser::ast::TableFactor::Table {
+                name, args: None, ..
+            } => {
                 let table_name = name.to_string();
                 let plan = self
                     .catalog
@@ -728,7 +740,22 @@ impl SQLPlanner {
             }
             SQLExpr::Struct { .. } => unsupported_sql_err!("STRUCT"),
             SQLExpr::Named { .. } => unsupported_sql_err!("NAMED"),
-            SQLExpr::Dictionary(_) => unsupported_sql_err!("DICTIONARY"),
+            SQLExpr::Dictionary(dict) => {
+                let entries = dict
+                    .iter()
+                    .map(|entry| {
+                        let key = entry.key.value.clone();
+                        let value = self.plan_expr(&entry.value)?;
+                        let value = value.as_literal().ok_or_else(|| {
+                            PlannerError::invalid_operation("Dictionary value is not a literal")
+                        })?;
+                        let struct_field = Field::new(key, value.get_type());
+                        Ok((struct_field, value.clone()))
+                    })
+                    .collect::<SQLPlannerResult<_>>()?;
+
+                Ok(Expr::Literal(LiteralValue::Struct(entries)).arced())
+            }
             SQLExpr::Map(_) => unsupported_sql_err!("MAP"),
             SQLExpr::Subscript { expr, subscript } => self.plan_subscript(expr, subscript.as_ref()),
             SQLExpr::Array(_) => unsupported_sql_err!("ARRAY"),

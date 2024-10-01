@@ -12,6 +12,8 @@ pub enum PlannerError {
     ParseError { message: String },
     #[snafu(display("Invalid operation: {message}"))]
     InvalidOperation { message: String },
+    #[snafu(display("Invalid argument ({message}) for function '{function}'"))]
+    InvalidFunctionArgument { message: String, function: String },
     #[snafu(display("Table not found: {message}"))]
     TableNotFound { message: String },
     #[snafu(display("Column {column_name} not found in {relation}"))]
@@ -64,6 +66,13 @@ impl PlannerError {
     pub fn invalid_operation<S: Into<String>>(message: S) -> Self {
         Self::InvalidOperation {
             message: message.into(),
+        }
+    }
+
+    pub fn invalid_argument<S: Into<String>, F: Into<String>>(arg: S, function: F) -> Self {
+        Self::InvalidFunctionArgument {
+            message: arg.into(),
+            function: function.into(),
         }
     }
 }
