@@ -161,9 +161,9 @@ impl LogicalPlanBuilder {
                 Arc::new(StorageConfig::Native(Arc::new(native_storage_config))).into();
 
             // let py_io_config = PyIOConfig { config: io_config };
-            let daft = PyModule::import_bound(py, "daft.delta_lake.delta_lake_scan")?;
+            let delta_lake_scan = PyModule::import_bound(py, "daft.delta_lake.delta_lake_scan")?;
             let delta_lake_scan_operator =
-                daft.getattr(pyo3::intern!(py, "DeltaLakeScanOperator"))?;
+                delta_lake_scan.getattr(pyo3::intern!(py, "DeltaLakeScanOperator"))?;
             let delta_lake_operator = delta_lake_scan_operator
                 .call1((glob_path.as_ref(), py_storage_config))?
                 .to_object(py);
