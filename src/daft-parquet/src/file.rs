@@ -403,15 +403,8 @@ impl ParquetFileReader {
             self.arrow_schema.as_ref(),
         )?);
 
-        let chunk_size = self.chunk_size.unwrap_or(Self::DEFAULT_CHUNK_SIZE);
-        let (senders, receivers): (Vec<_>, Vec<_>) = self
-            .row_ranges
-            .iter()
-            .map(|rg_range| {
-                let expected_num_chunks =
-                    f32::ceil(rg_range.num_rows as f32 / chunk_size as f32) as usize;
-                crossbeam_channel::bounded(expected_num_chunks)
-            })
+        let (senders, receivers): (Vec<_>, Vec<_>) = (0..self.row_ranges.len())
+            .map(|_| tokio::sync::mpsc::channel(1))
             .unzip();
 
         let table_iter_handles =
@@ -502,7 +495,7 @@ impl ParquetFileReader {
                             .into_iter()
                             .collect::<DaftResult<Vec<_>>>()?;
 
-                        rayon::spawn(move || {
+                        tokio::spawn(async move {
                             // Even if there are no columns to read, we still need to create a empty table with the correct number of rows
                             // This is because the columns may be present in other files. See https://github.com/Eventual-Inc/Daft/pull/2514
                             let table_iter = arrow_column_iters_to_table_iter(
@@ -517,20 +510,12 @@ impl ParquetFileReader {
                             if table_iter.is_none() {
                                 let table =
                                     Table::new_with_size(daft_schema, vec![], row_range.num_rows);
-                                if let Err(crossbeam_channel::TrySendError::Full(_)) =
-                                    sender.try_send(table)
-                                {
-                                    panic!("Parquet stream channel should not be full")
-                                }
+                                let _ = sender.send(table).await;
                                 return;
                             }
                             for table_result in table_iter.unwrap() {
                                 let is_err = table_result.is_err();
-                                if let Err(crossbeam_channel::TrySendError::Full(_)) =
-                                    sender.try_send(table_result)
-                                {
-                                    panic!("Parquet stream channel should not be full")
-                                }
+                                let _ = sender.send(table_result).await;
                                 if is_err {
                                     break;
                                 }
@@ -546,8 +531,11 @@ impl ParquetFileReader {
             .into_iter()
             .collect::<DaftResult<Vec<_>>>()?;
 
-        let combined_stream =
-            futures::stream::iter(receivers.into_iter().map(futures::stream::iter));
+        let combined_stream = futures::stream::iter(
+            receivers
+                .into_iter()
+                .map(tokio_stream::wrappers::ReceiverStream::new),
+        );
         match maintain_order {
             true => Ok(Box::pin(combined_stream.flatten())),
             false => Ok(Box::pin(combined_stream.flatten_unordered(None))),

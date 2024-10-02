@@ -6,12 +6,97 @@ mod run;
 mod runtime_stats;
 mod sinks;
 mod sources;
+use std::{
+    future::Future,
+    panic::AssertUnwindSafe,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, OnceLock,
+    },
+};
+
 use common_error::{DaftError, DaftResult};
+use futures::FutureExt;
 use lazy_static::lazy_static;
 pub use run::NativeExecutor;
 use snafu::{futures::TryFutureExt, Snafu};
 lazy_static! {
     pub static ref NUM_CPUS: usize = std::thread::available_parallelism().unwrap().get();
+}
+
+static COMPUTE_RUNTIME: OnceLock<RuntimeRef> = OnceLock::new();
+
+pub type RuntimeRef = Arc<Runtime>;
+
+pub struct Runtime {
+    runtime: tokio::runtime::Runtime,
+}
+
+impl Runtime {
+    fn new(runtime: tokio::runtime::Runtime) -> RuntimeRef {
+        Arc::new(Self { runtime })
+    }
+
+    pub async fn block_on_compute_pool<F>(&self, future: F) -> DaftResult<F::Output>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _join_handle = self.spawn(async move {
+            let task_output = AssertUnwindSafe(future).catch_unwind().await.map_err(|e| {
+                let s = if let Some(s) = e.downcast_ref::<String>() {
+                    s.clone()
+                } else if let Some(s) = e.downcast_ref::<&str>() {
+                    s.to_string()
+                } else {
+                    "unknown internal error".to_string()
+                };
+                DaftError::ComputeError(format!(
+                    "Caught panic when spawning blocking task in compute pool {s})"
+                ))
+            });
+
+            if tx.send(task_output).is_err() {
+                log::warn!("Spawned task output ignored: receiver dropped")
+            }
+        });
+        rx.await.expect("Compute pool receiver dropped")
+    }
+
+    pub fn spawn<F>(&self, future: F) -> JoinHandle<F::Output>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
+        self.runtime.spawn(future)
+    }
+}
+
+fn init_runtime(num_threads: usize) -> Arc<Runtime> {
+    std::thread::spawn(move || {
+        Runtime::new(
+            tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(num_threads)
+                .enable_all()
+                .thread_name_fn(|| {
+                    static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
+                    let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
+                    format!("Executor-Worker-{}", id)
+                })
+                .build()
+                .unwrap(),
+        )
+    })
+    .join()
+    .unwrap()
+}
+
+pub fn get_compute_runtime() -> DaftResult<RuntimeRef> {
+    let runtime = COMPUTE_RUNTIME
+        .get_or_init(|| init_runtime(*NUM_CPUS))
+        .clone();
+    Ok(runtime)
 }
 
 pub struct ExecutionRuntimeHandle {
@@ -51,6 +136,7 @@ impl ExecutionRuntimeHandle {
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
+use tokio::task::JoinHandle;
 
 #[derive(Debug, Snafu)]
 pub enum Error {

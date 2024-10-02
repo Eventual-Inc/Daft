@@ -465,6 +465,25 @@ impl Runtime {
         Arc::new(Self { runtime })
     }
 
+    async fn execute_io_task<F>(future: F) -> DaftResult<F::Output>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
+        AssertUnwindSafe(future).catch_unwind().await.map_err(|e| {
+            let s = if let Some(s) = e.downcast_ref::<String>() {
+                s.clone()
+            } else if let Some(s) = e.downcast_ref::<&str>() {
+                s.to_string()
+            } else {
+                "unknown internal error".to_string()
+            };
+            DaftError::ComputeError(format!(
+                "Caught panic when spawning blocking task in io pool {s})"
+            ))
+        })
+    }
+
     /// Similar to tokio's Runtime::block_on but requires static lifetime + Send
     /// You should use this when you are spawning IO tasks from an Expression Evaluator or in the Executor
     pub fn block_on_io_pool<F>(&self, future: F) -> DaftResult<F::Output>
@@ -474,24 +493,28 @@ impl Runtime {
     {
         let (tx, rx) = oneshot::channel();
         let _join_handle = self.spawn(async move {
-            let task_output = AssertUnwindSafe(future).catch_unwind().await.map_err(|e| {
-                let s = if let Some(s) = e.downcast_ref::<String>() {
-                    s.clone()
-                } else if let Some(s) = e.downcast_ref::<&str>() {
-                    s.to_string()
-                } else {
-                    "unknown internal error".to_string()
-                };
-                DaftError::ComputeError(format!(
-                    "Caught panic when spawning blocking task in io pool {s})"
-                ))
-            });
-
+            let task_output = Self::execute_io_task(future).await;
             if tx.send(task_output).is_err() {
-                log::warn!("Spawned task output ignored: receiver dropped")
+                log::warn!("Spawned task output ignored: receiver dropped");
             }
         });
         rx.recv().expect("Spawned task transmitter dropped")
+    }
+
+    /// Similar to block_on_io_pool, but is async and can be awaited
+    pub async fn block_on_io_pool_async<F>(&self, future: F) -> DaftResult<F::Output>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
+        let (tx, rx) = oneshot::channel();
+        let _join_handle = self.spawn(async move {
+            let task_output = Self::execute_io_task(future).await;
+            if tx.send(task_output).is_err() {
+                log::warn!("Spawned task output ignored: receiver dropped");
+            }
+        });
+        rx.await.expect("Spawned task transmitter dropped")
     }
 
     /// Blocks current thread to compute future. Can not be called in tokio runtime context

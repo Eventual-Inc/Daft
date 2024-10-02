@@ -231,12 +231,11 @@ impl IntermediateOperator for HashJoinProbeOperator {
         &self,
         idx: usize,
         input: &PipelineResultType,
-        state: Option<&mut Box<dyn IntermediateOperatorState>>,
+        state: &mut dyn IntermediateOperatorState,
     ) -> DaftResult<IntermediateOperatorResult> {
         match idx {
             0 => {
                 let state = state
-                    .expect("HashJoinProbeOperator should have state")
                     .as_any_mut()
                     .downcast_mut::<HashJoinProbeState>()
                     .expect("HashJoinProbeOperator state should be HashJoinProbeState");
@@ -246,7 +245,6 @@ impl IntermediateOperator for HashJoinProbeOperator {
             }
             _ => {
                 let state = state
-                    .expect("HashJoinProbeOperator should have state")
                     .as_any_mut()
                     .downcast_mut::<HashJoinProbeState>()
                     .expect("HashJoinProbeOperator state should be HashJoinProbeState");
@@ -267,7 +265,7 @@ impl IntermediateOperator for HashJoinProbeOperator {
         "HashJoinProbeOperator"
     }
 
-    fn make_state(&self) -> Option<Box<dyn IntermediateOperatorState>> {
-        Some(Box::new(HashJoinProbeState::Building))
+    fn make_state(&self) -> Box<dyn IntermediateOperatorState> {
+        Box::new(HashJoinProbeState::Building)
     }
 }

@@ -7,6 +7,7 @@ use tracing::info_span;
 
 use crate::{
     channel::PipelineChannel,
+    get_compute_runtime,
     pipeline::{PipelineNode, PipelineResultType},
     runtime_stats::RuntimeStatsContext,
     ExecutionRuntimeHandle,
@@ -94,18 +95,28 @@ impl PipelineNode for BlockingSinkNode {
         runtime_handle.spawn(
             async move {
                 let span = info_span!("BlockingSinkNode::execute");
-                let mut guard = op.lock().await;
+                let compute_runtime = get_compute_runtime()?;
                 while let Some(val) = child_results_receiver.recv().await {
-                    if let BlockingSinkStatus::Finished =
-                        rt_context.in_span(&span, || guard.sink(val.as_data()))?
-                    {
+                    let op = op.clone();
+                    let span = span.clone();
+                    let rt_context = rt_context.clone();
+                    let fut = async move {
+                        let mut guard = op.lock().await;
+                        rt_context.in_span(&span, || guard.sink(val.as_data()))
+                    };
+                    let result = compute_runtime.block_on_compute_pool(fut).await??;
+                    if let BlockingSinkStatus::Finished = result {
                         break;
                     }
                 }
-                let finalized_result = rt_context
-                    .in_span(&info_span!("BlockingSinkNode::finalize"), || {
-                        guard.finalize()
-                    })?;
+                let finalized_result = compute_runtime
+                    .block_on_compute_pool(async move {
+                        let mut guard = op.lock().await;
+                        rt_context.in_span(&info_span!("BlockingSinkNode::finalize"), || {
+                            guard.finalize()
+                        })
+                    })
+                    .await??;
                 if let Some(part) = finalized_result {
                     let _ = destination_sender.send(part).await;
                 }

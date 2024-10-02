@@ -521,25 +521,24 @@ pub(crate) fn local_parquet_stream(
 
     // Create a channel for each row group to send the processed tables to the stream
     // Each channel is expected to have a number of chunks equal to the number of chunks in the row group
-    let (senders, receivers): (Vec<_>, Vec<_>) = row_ranges
-        .iter()
-        .map(|rg_range| {
-            let expected_num_chunks =
-                f32::ceil(rg_range.num_rows as f32 / chunk_size as f32) as usize;
-            crossbeam_channel::bounded(expected_num_chunks)
-        })
+    let (senders, receivers): (Vec<_>, Vec<_>) = (0..row_ranges.len())
+        .map(|_| tokio::sync::mpsc::channel(1))
         .unzip();
 
     let owned_uri = uri.to_string();
 
-    rayon::spawn(move || {
-        // Once a row group has been read into memory and we have the column iterators,
-        // we can start processing them in parallel.
-        let par_column_iters = column_iters.zip(row_ranges).zip(senders).par_bridge();
+    // Once a row group has been read into memory and we have the column iterators,
+    // we can start processing them in parallel.
+    let par_column_iters = column_iters.zip(row_ranges).zip(senders);
 
-        // For each vec of column iters, iterate through them in parallel lock step such that each iteration
-        // produces a chunk of the row group that can be converted into a table.
-        par_column_iters.for_each(move |((rg_column_iters_result, rg_range), tx)| {
+    // For each vec of column iters, iterate through them in parallel lock step such that each iteration
+    // produces a chunk of the row group that can be converted into a table.
+    par_column_iters.for_each(move |((rg_column_iters_result, rg_range), tx)| {
+        let schema_ref = schema_ref.clone();
+        let predicate = predicate.clone();
+        let owned_uri = owned_uri.clone();
+        let original_columns = original_columns.clone();
+        tokio::spawn(async move {
             let table_iter = match rg_column_iters_result {
                 Ok(rg_column_iters) => {
                     let table_iter = arrow_column_iters_to_table_iter(
@@ -558,22 +557,18 @@ pub(crate) fn local_parquet_stream(
                     } else {
                         let table =
                             Table::new_with_size(schema_ref.clone(), vec![], rg_range.num_rows);
-                        if let Err(crossbeam_channel::TrySendError::Full(_)) = tx.try_send(table) {
-                            panic!("Parquet stream channel should not be full")
-                        }
+                        let _ = tx.send(table).await;
                         return;
                     }
                 }
                 Err(e) => {
-                    let _ = tx.send(Err(e.into()));
+                    let _ = tx.send(Err(e.into())).await;
                     return;
                 }
             };
             for table_result in table_iter {
                 let table_err = table_result.is_err();
-                if let Err(crossbeam_channel::TrySendError::Full(_)) = tx.try_send(table_result) {
-                    panic!("Parquet stream channel should not be full")
-                }
+                let _ = tx.send(table_result).await;
                 if table_err {
                     break;
                 }
@@ -581,7 +576,11 @@ pub(crate) fn local_parquet_stream(
         });
     });
 
-    let result_stream = futures::stream::iter(receivers.into_iter().map(futures::stream::iter));
+    let result_stream = futures::stream::iter(
+        receivers
+            .into_iter()
+            .map(tokio_stream::wrappers::ReceiverStream::new),
+    );
 
     match maintain_order {
         true => Ok((metadata, Box::pin(result_stream.flatten()))),

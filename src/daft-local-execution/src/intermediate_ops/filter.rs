@@ -25,7 +25,7 @@ impl IntermediateOperator for FilterOperator {
         &self,
         _idx: usize,
         input: &PipelineResultType,
-        _state: Option<&mut Box<dyn IntermediateOperatorState>>,
+        _state: &mut dyn IntermediateOperatorState,
     ) -> DaftResult<IntermediateOperatorResult> {
         let out = input.as_data().filter(&[self.predicate.clone()])?;
         Ok(IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
+use tokio::sync::Mutex;
 use tracing::{info_span, instrument};
 
 use super::buffer::OperatorBuffer;
@@ -16,6 +17,12 @@ use crate::{
 pub trait IntermediateOperatorState: Send + Sync {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
 }
+pub struct DefaultIntermediateOperatorState {}
+impl IntermediateOperatorState for DefaultIntermediateOperatorState {
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
 
 pub enum IntermediateOperatorResult {
     NeedMoreInput(Option<Arc<MicroPartition>>),
@@ -28,11 +35,11 @@ pub trait IntermediateOperator: Send + Sync {
         &self,
         idx: usize,
         input: &PipelineResultType,
-        state: Option<&mut Box<dyn IntermediateOperatorState>>,
+        state: &mut dyn IntermediateOperatorState,
     ) -> DaftResult<IntermediateOperatorResult>;
     fn name(&self) -> &'static str;
-    fn make_state(&self) -> Option<Box<dyn IntermediateOperatorState>> {
-        None
+    fn make_state(&self) -> Box<dyn IntermediateOperatorState> {
+        Box::new(DefaultIntermediateOperatorState {})
     }
 }
 
@@ -75,11 +82,20 @@ impl IntermediateNode {
         rt_context: Arc<RuntimeStatsContext>,
     ) -> DaftResult<()> {
         let span = info_span!("IntermediateOp::execute");
-        let mut state = op.make_state();
+        let compute_runtime = crate::get_compute_runtime()?;
+        let state = Arc::new(Mutex::new(op.make_state()));
         while let Some((idx, morsel)) = receiver.recv().await {
             loop {
-                let result =
-                    rt_context.in_span(&span, || op.execute(idx, &morsel, state.as_mut()))?;
+                let state = state.clone();
+                let op = op.clone();
+                let morsel = morsel.clone();
+                let span = span.clone();
+                let rt_context = rt_context.clone();
+                let fut = async move {
+                    let mut state_guard = state.lock().await;
+                    rt_context.in_span(&span, || op.execute(idx, &morsel, state_guard.as_mut()))
+                };
+                let result = compute_runtime.block_on_compute_pool(fut).await??;
                 match result {
                     IntermediateOperatorResult::NeedMoreInput(Some(mp)) => {
                         let _ = sender.send(mp.into()).await;

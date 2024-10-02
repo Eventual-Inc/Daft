@@ -2,10 +2,7 @@ use std::{
     collections::HashMap,
     fs::File,
     io::Write,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
+    sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -124,14 +121,8 @@ pub fn run_local(
     let mut pipeline = physical_plan_to_pipeline(physical_plan, &psets)?;
     let (tx, rx) = create_channel(results_buffer_size.unwrap_or(1));
     let handle = std::thread::spawn(move || {
-        let runtime = tokio::runtime::Builder::new_multi_thread()
+        let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
-            .max_blocking_threads(10)
-            .thread_name_fn(|| {
-                static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
-                let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
-                format!("Executor-Worker-{}", id)
-            })
             .build()
             .expect("Failed to create tokio runtime");
         runtime.block_on(async {

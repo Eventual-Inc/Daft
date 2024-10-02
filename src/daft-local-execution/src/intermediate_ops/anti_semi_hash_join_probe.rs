@@ -100,12 +100,11 @@ impl IntermediateOperator for AntiSemiProbeOperator {
         &self,
         idx: usize,
         input: &PipelineResultType,
-        state: Option<&mut Box<dyn IntermediateOperatorState>>,
+        state: &mut dyn IntermediateOperatorState,
     ) -> DaftResult<IntermediateOperatorResult> {
         match idx {
             0 => {
                 let state = state
-                    .expect("AntiSemiProbeOperator should have state")
                     .as_any_mut()
                     .downcast_mut::<AntiSemiProbeState>()
                     .expect("AntiSemiProbeOperator state should be AntiSemiProbeState");
@@ -115,7 +114,6 @@ impl IntermediateOperator for AntiSemiProbeOperator {
             }
             _ => {
                 let state = state
-                    .expect("AntiSemiProbeOperator should have state")
                     .as_any_mut()
                     .downcast_mut::<AntiSemiProbeState>()
                     .expect("AntiSemiProbeOperator state should be AntiSemiProbeState");
@@ -133,7 +131,7 @@ impl IntermediateOperator for AntiSemiProbeOperator {
         "AntiSemiProbeOperator"
     }
 
-    fn make_state(&self) -> Option<Box<dyn IntermediateOperatorState>> {
-        Some(Box::new(AntiSemiProbeState::Building))
+    fn make_state(&self) -> Box<dyn IntermediateOperatorState> {
+        Box::new(AntiSemiProbeState::Building)
     }
 }
