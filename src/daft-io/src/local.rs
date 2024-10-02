@@ -82,9 +82,9 @@ enum Error {
 
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
-        use Error::*;
         match error {
-            UnableToOpenFile { path, source } | UnableToFetchDirectoryEntries { path, source } => {
+            Error::UnableToOpenFile { path, source }
+            | Error::UnableToFetchDirectoryEntries { path, source } => {
                 use std::io::ErrorKind::*;
                 match source.kind() {
                     NotFound => Self::NotFound {
@@ -97,7 +97,7 @@ impl From<Error> for super::Error {
                     },
                 }
             }
-            UnableToFetchFileMetadata { path, source } => {
+            Error::UnableToFetchFileMetadata { path, source } => {
                 use std::io::ErrorKind::*;
                 match source.kind() {
                     NotFound | IsADirectory => Self::NotFound {
@@ -110,8 +110,9 @@ impl From<Error> for super::Error {
                     },
                 }
             }
-            UnableToReadBytes { path, source } => Self::UnableToReadBytes { path, source },
-            UnableToWriteToFile { path, source } | UnableToOpenFileForWriting { path, source } => {
+            Error::UnableToReadBytes { path, source } => Self::UnableToReadBytes { path, source },
+            Error::UnableToWriteToFile { path, source }
+            | Error::UnableToOpenFileForWriting { path, source } => {
                 Self::UnableToWriteToFile { path, source }
             }
             _ => Self::Generic {

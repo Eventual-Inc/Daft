@@ -106,9 +106,9 @@ fn parse_azure_uri(uri: &str) -> super::Result<(String, Option<(String, String)>
 
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
-        use Error::*;
         match error {
-            UnableToReadBytes { path, source } | UnableToOpenFile { path, source } => {
+            Error::UnableToReadBytes { path, source }
+            | Error::UnableToOpenFile { path, source } => {
                 match source.as_http_error().map(|v| v.status().into()) {
                     Some(404) | Some(410) => Self::NotFound {
                         path,
@@ -125,11 +125,11 @@ impl From<Error> for super::Error {
                     },
                 }
             }
-            NotFound { ref path } => Self::NotFound {
+            Error::NotFound { ref path } => Self::NotFound {
                 path: path.into(),
                 source: error.into(),
             },
-            NotAFile { path } => Self::NotAFile { path },
+            Error::NotAFile { path } => Self::NotAFile { path },
             _ => Self::Generic {
                 store: super::SourceType::AzureBlob,
                 source: error.into(),

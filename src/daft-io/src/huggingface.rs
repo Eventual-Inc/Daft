@@ -218,9 +218,8 @@ impl From<HttpSource> for HFSource {
 
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
-        use Error::*;
         match error {
-            UnableToOpenFile { path, source } => match source.status().map(|v| v.as_u16()) {
+            Error::UnableToOpenFile { path, source } => match source.status().map(|v| v.as_u16()) {
                 Some(404) | Some(410) => Self::NotFound {
                     path,
                     source: source.into(),
@@ -230,7 +229,7 @@ impl From<Error> for super::Error {
                     source: source.into(),
                 },
             },
-            UnableToDetermineSize { path } => Self::UnableToDetermineSize { path },
+            Error::UnableToDetermineSize { path } => Self::UnableToDetermineSize { path },
             _ => Self::Generic {
                 store: super::SourceType::Http,
                 source: error.into(),

@@ -77,11 +77,10 @@ where
 
 impl GetResult {
     pub async fn bytes(self) -> super::Result<Bytes> {
-        use GetResult::*;
         let mut get_result = self;
         match get_result {
-            File(f) => collect_file(f).await,
-            Stream(stream, size, permit, retry_params) => {
+            Self::File(f) => collect_file(f).await,
+            Self::Stream(stream, size, permit, retry_params) => {
                 use rand::Rng;
                 const NUM_TRIES: u64 = 3;
                 const JITTER_MS: u64 = 2_500;

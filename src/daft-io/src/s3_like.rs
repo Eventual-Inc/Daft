@@ -141,8 +141,6 @@ const THROTTLING_ERRORS: &[&str] = &[
 
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
-        use Error::*;
-
         fn classify_unhandled_error<
             E: std::error::Error + ProvideErrorMetadata + Send + Sync + 'static,
         >(
@@ -166,7 +164,7 @@ impl From<Error> for super::Error {
         }
 
         match error {
-            UnableToOpenFile { path, source } => match source {
+            Error::UnableToOpenFile { path, source } => match source {
                 SdkError::TimeoutError(_) => Self::ReadTimeout {
                     path,
                     source: source.into(),
@@ -199,7 +197,7 @@ impl From<Error> for super::Error {
                     err => classify_unhandled_error(path, err),
                 },
             },
-            UnableToHeadFile { path, source } => match source {
+            Error::UnableToHeadFile { path, source } => match source {
                 SdkError::TimeoutError(_) => Self::ReadTimeout {
                     path,
                     source: source.into(),
@@ -231,7 +229,7 @@ impl From<Error> for super::Error {
                     err => classify_unhandled_error(path, err),
                 },
             },
-            UnableToListObjects { path, source } => match source {
+            Error::UnableToListObjects { path, source } => match source {
                 SdkError::TimeoutError(_) => Self::ReadTimeout {
                     path,
                     source: source.into(),
@@ -263,8 +261,8 @@ impl From<Error> for super::Error {
                     err => classify_unhandled_error(path, err),
                 },
             },
-            InvalidUrl { path, source } => Self::InvalidUrl { path, source },
-            UnableToReadBytes { path, source } => {
+            Error::InvalidUrl { path, source } => Self::InvalidUrl { path, source },
+            Error::UnableToReadBytes { path, source } => {
                 use std::error::Error;
                 let io_error = if let Some(source) = source.source() {
                     // if we have a source, lets extract out the error as a string rather than rely on the aws-sdk fmt.
@@ -278,12 +276,12 @@ impl From<Error> for super::Error {
                     source: io_error,
                 }
             }
-            NotAFile { path } => Self::NotAFile { path },
-            UnableToLoadCredentials { source } => Self::UnableToLoadCredentials {
+            Error::NotAFile { path } => Self::NotAFile { path },
+            Error::UnableToLoadCredentials { source } => Self::UnableToLoadCredentials {
                 store: SourceType::S3,
                 source: source.into(),
             },
-            NotFound { ref path } => Self::NotFound {
+            Error::NotFound { ref path } => Self::NotFound {
                 path: path.into(),
                 source: error.into(),
             },
@@ -507,7 +505,6 @@ async fn build_s3_conf(
     const MAX_WAITTIME_MS: u64 = 45_000;
     let check_creds = async || -> super::Result<bool> {
         use rand::Rng;
-        use CredentialsError::*;
         let mut attempt = 0;
         let first_attempt_time = std::time::Instant::now();
         loop {
@@ -518,7 +515,7 @@ async fn build_s3_conf(
             attempt += 1;
             match creds {
                 Ok(_) => return Ok(false),
-                Err(err @  ProviderTimedOut(..)) => {
+                Err(err @  CredentialsError::ProviderTimedOut(..)) => {
                     let total_time_waited_ms: u64 = first_attempt_time.elapsed().as_millis().try_into().unwrap();
                     if attempt < CRED_TRIES && (total_time_waited_ms < MAX_WAITTIME_MS) {
                         let jitter = rand::thread_rng().gen_range(0..((1<<attempt) * JITTER_MS)) as u64;
@@ -530,7 +527,7 @@ async fn build_s3_conf(
                         Err(err)
                     }
                 }
-                Err(err @ CredentialsNotLoaded(..)) => {
+                Err(err @ CredentialsError::CredentialsNotLoaded(..)) => {
                     log::warn!("S3 Credentials not provided or found when making client for {}! Reverting to Anonymous mode. {err}", s3_conf.region().unwrap_or(&DEFAULT_REGION));
                     return Ok(true)
                 },

@@ -149,27 +149,26 @@ pub enum Error {
 
 impl From<Error> for DaftError {
     fn from(err: Error) -> Self {
-        use Error::*;
         match err {
-            NotFound { path, source } => Self::FileNotFound { path, source },
-            ConnectTimeout { .. } => Self::ConnectTimeout(err.into()),
-            ReadTimeout { .. } => Self::ReadTimeout(err.into()),
-            UnableToReadBytes { .. } => Self::ByteStreamError(err.into()),
-            SocketError { .. } => Self::SocketError(err.into()),
-            Throttled { .. } => Self::ThrottledIo(err.into()),
-            MiscTransient { .. } => Self::MiscTransient(err.into()),
+            Error::NotFound { path, source } => Self::FileNotFound { path, source },
+            Error::ConnectTimeout { .. } => Self::ConnectTimeout(err.into()),
+            Error::ReadTimeout { .. } => Self::ReadTimeout(err.into()),
+            Error::UnableToReadBytes { .. } => Self::ByteStreamError(err.into()),
+            Error::SocketError { .. } => Self::SocketError(err.into()),
+            Error::Throttled { .. } => Self::ThrottledIo(err.into()),
+            Error::MiscTransient { .. } => Self::MiscTransient(err.into()),
             // We have to repeat everything above for the case we have an Arc since we can't move the error.
-            CachedError { ref source } => match source.as_ref() {
-                NotFound { path, source: _ } => Self::FileNotFound {
+            Error::CachedError { ref source } => match source.as_ref() {
+                Error::NotFound { path, source: _ } => Self::FileNotFound {
                     path: path.clone(),
                     source: err.into(),
                 },
-                ConnectTimeout { .. } => Self::ConnectTimeout(err.into()),
-                ReadTimeout { .. } => Self::ReadTimeout(err.into()),
-                UnableToReadBytes { .. } => Self::ByteStreamError(err.into()),
-                SocketError { .. } => Self::SocketError(err.into()),
-                Throttled { .. } => Self::ThrottledIo(err.into()),
-                MiscTransient { .. } => Self::MiscTransient(err.into()),
+                Error::ConnectTimeout { .. } => Self::ConnectTimeout(err.into()),
+                Error::ReadTimeout { .. } => Self::ReadTimeout(err.into()),
+                Error::UnableToReadBytes { .. } => Self::ByteStreamError(err.into()),
+                Error::SocketError { .. } => Self::SocketError(err.into()),
+                Error::Throttled { .. } => Self::ThrottledIo(err.into()),
+                Error::MiscTransient { .. } => Self::MiscTransient(err.into()),
                 _ => Self::External(err.into()),
             },
             _ => Self::External(err.into()),

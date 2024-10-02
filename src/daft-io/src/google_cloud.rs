@@ -52,11 +52,10 @@ enum Error {
 
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
-        use Error::*;
         match error {
-            UnableToReadBytes { path, source }
-            | UnableToOpenFile { path, source }
-            | UnableToListObjects { path, source } => match source {
+            Error::UnableToReadBytes { path, source }
+            | Error::UnableToOpenFile { path, source }
+            | Error::UnableToListObjects { path, source } => match source {
                 GError::HttpClient(err) => match err.status().map(|s| s.as_u16()) {
                     Some(404) | Some(410) => Self::NotFound {
                         path,
@@ -92,16 +91,16 @@ impl From<Error> for super::Error {
                     source: err,
                 },
             },
-            NotFound { ref path } => Self::NotFound {
+            Error::NotFound { ref path } => Self::NotFound {
                 path: path.into(),
                 source: error.into(),
             },
-            InvalidUrl { path, source } => Self::InvalidUrl { path, source },
-            UnableToLoadCredentials { source } => Self::UnableToLoadCredentials {
+            Error::InvalidUrl { path, source } => Self::InvalidUrl { path, source },
+            Error::UnableToLoadCredentials { source } => Self::UnableToLoadCredentials {
                 store: super::SourceType::GCS,
                 source: source.into(),
             },
-            NotAFile { path } => Self::NotAFile { path },
+            Error::NotAFile { path } => Self::NotAFile { path },
         }
     }
 }
