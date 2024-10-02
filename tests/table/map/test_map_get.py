@@ -62,7 +62,6 @@ def test_map_get_logical_type():
     first_map = first_elem.get_column("map_col")
     print("First map:", type(first_map))
 
-
     map = col("map_col").map
 
     result = table.eval_expression_list([map.get("foo")])

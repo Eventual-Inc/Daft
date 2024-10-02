@@ -98,11 +98,11 @@ impl TableStatistics {
                 } else {
                     None
                 }
-                    .or_else(|| {
-                        // failover to use dtype estimate
-                        field.dtype.estimate_size_bytes()
-                    })
-                    .unwrap_or(0.);
+                .or_else(|| {
+                    // failover to use dtype estimate
+                    field.dtype.estimate_size_bytes()
+                })
+                .unwrap_or(0.);
                 sum_so_far += elem_size;
             }
         } else {
@@ -122,7 +122,7 @@ impl TableStatistics {
                 let Some(col) = col else {
                     return Err(crate::Error::DaftCoreCompute {
                         source: DaftError::FieldNotFound(col_name.to_string()),
-                    })
+                    });
                 };
 
                 Ok(col.clone())
@@ -206,7 +206,7 @@ mod test {
         let table = Table::from_nonempty_columns(vec![
             Int64Array::from(("a", vec![1, 2, 3, 4])).into_series()
         ])
-            .unwrap();
+        .unwrap();
         let table_stats = TableStatistics::from_table(&table);
 
         // False case
@@ -224,7 +224,7 @@ mod test {
             Table::from_nonempty_columns(
                 vec![Int64Array::from(("a", vec![0, 0, 0])).into_series()],
             )
-                .unwrap();
+            .unwrap();
         let table_stats = TableStatistics::from_table(&table);
 
         let expr = col("a").eq(lit(0));

@@ -36,7 +36,6 @@ where
 
         let physical_arrow_array = arrow_arr.convert_logical_type(target_convert_arrow.clone());
 
-
         let physical = <L::PhysicalType as DaftDataType>::ArrayType::from_arrow(
             Arc::new(target_convert),
             physical_arrow_array,
@@ -68,10 +67,12 @@ impl FromArrow for FixedSizeListArray {
 }
 
 impl FromArrow for ListArray {
-    fn from_arrow(target_field: FieldRef, arrow_arr: Box<dyn arrow2::array::Array>) -> DaftResult<Self> {
+    fn from_arrow(
+        target_field: FieldRef,
+        arrow_arr: Box<dyn arrow2::array::Array>,
+    ) -> DaftResult<Self> {
         let target_dtype = &target_field.dtype;
         let arrow_dtype = arrow_arr.data_type();
-
 
         let result = match (target_dtype, arrow_dtype) {
             (

@@ -7,6 +7,7 @@ use daft_io::IOStatsContext;
 use daft_stats::{ColumnRangeStatistics, TableStatistics};
 use snafu::ResultExt;
 use tracing::instrument;
+
 use crate::{micropartition::MicroPartition, DaftCoreComputeSnafu};
 
 fn infer_schema(exprs: &[ExprRef], schema: &Schema) -> DaftResult<Schema> {

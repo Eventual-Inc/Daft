@@ -438,10 +438,10 @@ impl Table {
             &AggExpr::Count(ref expr, mode) => self.eval_expression(expr)?.count(groups, mode),
             AggExpr::Sum(expr) => self.eval_expression(expr)?.sum(groups),
             &AggExpr::ApproxPercentile(ApproxPercentileParams {
-                                           child: ref expr,
-                                           ref percentiles,
-                                           force_list_output,
-                                       }) => {
+                child: ref expr,
+                ref percentiles,
+                force_list_output,
+            }) => {
                 let percentiles = percentiles.iter().map(|p| p.0).collect::<Vec<f64>>();
                 self.eval_expression(expr)?
                     .approx_sketch(groups)?
@@ -609,10 +609,7 @@ impl Table {
             .map(|e| self.eval_expression(e))
             .try_collect()?;
 
-        let fields: Vec<_> = result_series
-            .iter()
-            .map(|s| s.field().clone())
-            .collect();
+        let fields: Vec<_> = result_series.iter().map(|s| s.field().clone()).collect();
 
         let mut seen = HashSet::new();
 

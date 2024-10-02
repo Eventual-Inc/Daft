@@ -2,8 +2,7 @@ use std::sync::{atomic::AtomicBool, Mutex};
 
 use lazy_static::lazy_static;
 use tracing_chrome::ChromeLayerBuilder;
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::Registry;
+use tracing_subscriber::{layer::SubscriberExt, Registry};
 use tracing_tree::HierarchicalLayer;
 
 static TRACING_INIT: AtomicBool = AtomicBool::new(false);
@@ -14,7 +13,7 @@ lazy_static! {
 
 pub fn init_tracing(enable_chrome_trace: bool) {
     use std::sync::atomic::Ordering;
-    
+
     if TRACING_INIT.swap(true, Ordering::Relaxed) {
         panic!("Cannot init tracing, already initialized!");
     }
@@ -34,7 +33,6 @@ pub fn init_tracing(enable_chrome_trace: bool) {
 
     let subscriber = Registry::default().with(layer);
     tracing::subscriber::set_global_default(subscriber).unwrap();
-    
 
     // let mut mg = CHROME_GUARD_HANDLE.lock().unwrap();
     // assert!(
