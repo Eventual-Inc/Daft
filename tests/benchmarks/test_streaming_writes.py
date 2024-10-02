@@ -1,14 +1,12 @@
 import pytest
 
 import daft
+from tests.benchmarks.conftest import IS_CI
 
 ENGINES = ["native", "python"]
 
 
-@pytest.mark.skipif(
-    daft.context.get_context().runner_config.name not in {"py"},
-    reason="requires PyRunner to be in use",
-)
+@pytest.mark.skipif(IS_CI, reason="Write benchmarks are not run in CI")
 @pytest.mark.benchmark(group="write")
 @pytest.mark.parametrize("engine", ENGINES)
 @pytest.mark.parametrize(
