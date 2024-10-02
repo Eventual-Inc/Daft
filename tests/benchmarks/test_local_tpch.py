@@ -14,7 +14,7 @@ if sys.platform == "win32":
 import itertools
 
 import daft.context
-from tests.integration.conftest import check_answer  # noqa
+from tests.integration.conftest import check_answer  # noqa F401
 
 ENGINES = ["native"] if IS_CI else ["native", "python"]
 
