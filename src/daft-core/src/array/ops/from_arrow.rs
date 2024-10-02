@@ -30,7 +30,6 @@ where
     <L::PhysicalType as DaftDataType>::ArrayType: FromArrow,
 {
     fn from_arrow(field: FieldRef, arrow_arr: Box<dyn arrow2::array::Array>) -> DaftResult<Self> {
-        dbg!(&field);
         let target_convert = field.to_physical();
         let target_convert_arrow = target_convert.dtype.to_arrow()?;
 

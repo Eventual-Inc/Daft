@@ -20,7 +20,6 @@ pub fn init_tracing(enable_chrome_trace: bool) {
     if !enable_chrome_trace {
         return; // Do nothing for now
     }
-    println!("init tracing");
 
     let mut mg = CHROME_GUARD_HANDLE.lock().unwrap();
     assert!(

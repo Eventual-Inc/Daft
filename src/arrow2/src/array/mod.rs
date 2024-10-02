@@ -649,12 +649,9 @@ macro_rules! impl_common_array {
             }
 
             self.data_type = data_type.clone();
-            println!("data_type -> {data_type:?}");
-
             let mut children = self.direct_children();
 
             data_type.direct_children(|child| {
-                println!("child: {child:?}");
                 let Some(child_elem) = children.next() else {
                     return;
                 };
