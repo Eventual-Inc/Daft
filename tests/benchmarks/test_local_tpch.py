@@ -14,7 +14,7 @@ if sys.platform == "win32":
 import itertools
 
 import daft.context
-from tests.integration.conftest import check_answer
+from tests.integration.conftest import check_answer  # noqa
 
 ENGINES = ["native"] if IS_CI else ["native", "python"]
 
@@ -27,7 +27,7 @@ TPCH_QUESTIONS = list(range(1, 11))
 )
 @pytest.mark.benchmark(group="tpch")
 @pytest.mark.parametrize("engine, q", itertools.product(ENGINES, TPCH_QUESTIONS))
-def test_tpch(tmp_path, get_df, benchmark_with_memray, engine, q):
+def test_tpch(tmp_path, check_answer, get_df, benchmark_with_memray, engine, q):  # noqa F811
     get_df, num_parts = get_df
 
     def f():
