@@ -294,8 +294,7 @@ async fn stream_scan_task(
         }
         #[cfg(feature = "python")]
         FileFormatConfig::PythonFunction => {
-            let iter =
-                daft_micropartition::python::read_pyfunc_into_table_iter(&scan_task)?;
+            let iter = daft_micropartition::python::read_pyfunc_into_table_iter(&scan_task)?;
             let stream = futures::stream::iter(iter.map(|r| r.map_err(|e| e.into())));
             Box::pin(stream) as Pin<Box<dyn Stream<Item = DaftResult<Table>> + Send>>
         }
