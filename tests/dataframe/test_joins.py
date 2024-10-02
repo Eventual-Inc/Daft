@@ -53,7 +53,7 @@ def test_columns_after_join(make_df):
     assert set(joined_df2.schema().column_names()) == set(["A", "B"])
 
 
-def test_duplicate_join_keys_in_dataframe(make_df):
+def test_rename_join_keys_in_dataframe(make_df):
     df1 = make_df({"A": [1, 2], "B": [2, 2]})
 
     df2 = make_df({"A": [1, 2]})
