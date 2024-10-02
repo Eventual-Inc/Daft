@@ -30,10 +30,12 @@ where
     <L::PhysicalType as DaftDataType>::ArrayType: FromArrow,
 {
     fn from_arrow(field: FieldRef, arrow_arr: Box<dyn arrow2::array::Array>) -> DaftResult<Self> {
+        dbg!(&field);
         let target_convert = field.to_physical();
         let target_convert_arrow = target_convert.dtype.to_arrow()?;
 
         let physical_arrow_array = arrow_arr.convert_logical_type(target_convert_arrow.clone());
+
 
         let physical = <L::PhysicalType as DaftDataType>::ArrayType::from_arrow(
             Arc::new(target_convert),
@@ -66,8 +68,12 @@ impl FromArrow for FixedSizeListArray {
 }
 
 impl FromArrow for ListArray {
-    fn from_arrow(field: FieldRef, arrow_arr: Box<dyn arrow2::array::Array>) -> DaftResult<Self> {
-        match (&field.dtype, arrow_arr.data_type()) {
+    fn from_arrow(target_field: FieldRef, arrow_arr: Box<dyn arrow2::array::Array>) -> DaftResult<Self> {
+        let target_dtype = &target_field.dtype;
+        let arrow_dtype = arrow_arr.data_type();
+
+
+        let result = match (target_dtype, arrow_dtype) {
             (
                 DataType::List(daft_child_dtype),
                 arrow2::datatypes::DataType::List(arrow_child_field),
@@ -76,47 +82,38 @@ impl FromArrow for ListArray {
                 DataType::List(daft_child_dtype),
                 arrow2::datatypes::DataType::LargeList(arrow_child_field),
             ) => {
+                // unifying lists
                 let arrow_arr = arrow_arr.convert_logical_type(
                     arrow2::datatypes::DataType::LargeList(arrow_child_field.clone()),
                 );
+
                 let arrow_arr = arrow_arr
                     .as_any()
-                    .downcast_ref::<arrow2::array::ListArray<i64>>()
+                    .downcast_ref::<arrow2::array::ListArray<i64>>() // list array with i64 offsets
                     .unwrap();
+
                 let arrow_child_array = arrow_arr.values();
                 let child_series = Series::from_arrow(
                     Arc::new(Field::new("list", daft_child_dtype.as_ref().clone())),
                     arrow_child_array.clone(),
                 )?;
                 Ok(Self::new(
-                    field.clone(),
+                    target_field.clone(),
                     child_series,
                     arrow_arr.offsets().clone(),
                     arrow_arr.validity().cloned(),
                 ))
             }
             (DataType::List(daft_child_dtype), arrow2::datatypes::DataType::Map { .. }) => {
-                let map_arr = arrow_arr
-                    .as_any()
-                    .downcast_ref::<arrow2::array::MapArray>()
-                    .unwrap();
-                let arrow_child_array = map_arr.field();
-                let child_series = Series::from_arrow(
-                    Arc::new(Field::new("map", daft_child_dtype.as_ref().clone())),
-                    arrow_child_array.clone(),
-                )?;
-                Ok(Self::new(
-                    field.clone(),
-                    child_series,
-                    map_arr.offsets().into(),
-                    arrow_arr.validity().cloned(),
-                ))
+                panic!("arrow2 Map should be converted to daft Map");
             }
             (d, a) => Err(DaftError::TypeError(format!(
                 "Attempting to create Daft ListArray with type {} from arrow array with type {:?}",
                 d, a
             ))),
-        }
+        }?;
+
+        Ok(result)
     }
 }
 

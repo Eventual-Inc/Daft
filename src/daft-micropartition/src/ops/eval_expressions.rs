@@ -6,7 +6,7 @@ use daft_dsl::ExprRef;
 use daft_io::IOStatsContext;
 use daft_stats::{ColumnRangeStatistics, TableStatistics};
 use snafu::ResultExt;
-
+use tracing::instrument;
 use crate::{micropartition::MicroPartition, DaftCoreComputeSnafu};
 
 fn infer_schema(exprs: &[ExprRef], schema: &Schema) -> DaftResult<Schema> {
@@ -29,20 +29,25 @@ fn infer_schema(exprs: &[ExprRef], schema: &Schema) -> DaftResult<Schema> {
 }
 
 impl MicroPartition {
+    #[instrument(level = "trace", skip_all)]
     pub fn eval_expression_list(&self, exprs: &[ExprRef]) -> DaftResult<Self> {
         let io_stats = IOStatsContext::new("MicroPartition::eval_expression_list");
 
         let expected_schema = infer_schema(exprs, &self.schema)?;
+
+        tracing::trace!("Expected schema: {expected_schema:?}");
+
         let tables = self.tables_or_read(io_stats)?;
-        let evaluated_tables = tables
+
+        let evaluated_tables: Vec<_> = tables
             .iter()
-            .map(|t| t.eval_expression_list(exprs))
-            .collect::<DaftResult<Vec<_>>>()?;
+            .map(|table| table.eval_expression_list(exprs))
+            .try_collect()?;
 
         let eval_stats = self
             .statistics
             .as_ref()
-            .map(|s| s.eval_expression_list(exprs, &expected_schema))
+            .map(|table_statistics| table_statistics.eval_expression_list(exprs, &expected_schema))
             .transpose()?;
 
         Ok(Self::new_loaded(

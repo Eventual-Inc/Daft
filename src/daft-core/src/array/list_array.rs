@@ -203,6 +203,15 @@ impl<'a> IntoIterator for &'a ListArray {
     }
 }
 
+impl ListArray {
+    pub fn iter(&self) -> ListArrayIter<'_> {
+        ListArrayIter {
+            array: self,
+            idx: 0,
+        }
+    }
+}
+
 pub struct ListArrayIter<'a> {
     array: &'a ListArray,
     idx: usize,

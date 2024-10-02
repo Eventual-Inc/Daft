@@ -12,36 +12,38 @@ impl FunctionEvaluator for GetEvaluator {
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
-        match inputs {
-            // what is input and what is key
-            // input is a map field
-            [input, key] => match (input.to_field(schema), key.to_field(schema)) {
-                (Ok(input_field), Ok(_)) => match input_field.dtype {
-                    DataType::Map { value, .. } => {
-                        // todo: perhaps better naming
-                        Ok(Field::new("value", *value))
-                    }
-                    _ => Err(DaftError::TypeError(format!(
-                        "Expected input to be a map, got {}",
-                        input_field.dtype
-                    ))),
-                },
-                (Err(e), _) | (_, Err(e)) => Err(e),
-            },
-            _ => Err(DaftError::SchemaMismatch(format!(
+        let [input, key] = inputs else {
+            return Err(DaftError::SchemaMismatch(format!(
                 "Expected 2 input args, got {}",
                 inputs.len()
-            ))),
-        }
+            )));
+        };
+
+        let input_field = input.to_field(schema)?;
+        let _ = key.to_field(schema)?;
+
+        let DataType::Map { value, .. } = input_field.dtype else {
+            return Err(DaftError::TypeError(format!(
+                "Expected input to be a map, got {}",
+                input_field.dtype
+            )));
+        };
+
+        let field = Field::new("value", *value);
+
+        tracing::debug!("Field: {:?}", field);
+
+        Ok(field)
     }
 
     fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
-        match inputs {
-            [input, key] => input.map_get(key),
-            _ => Err(DaftError::ValueError(format!(
+        let [input, key] = inputs else {
+            return Err(DaftError::ValueError(format!(
                 "Expected 2 input args, got {}",
                 inputs.len()
-            ))),
-        }
+            )));
+        };
+
+        input.map_get(key)
     }
 }

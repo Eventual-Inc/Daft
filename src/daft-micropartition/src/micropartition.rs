@@ -403,7 +403,7 @@ fn materialize_scan_task(
                                         .with_context(|_| PyIOSnafu)
                                         .map(Into::<PyObject>::into)
                                 })
-                            },
+                            }
                             _ => unreachable!("PythonFunction file format must be paired with PythonFactoryFunction data file sources"),
                         }
                     });
@@ -709,9 +709,17 @@ impl MicroPartition {
         Ok(size_bytes)
     }
 
+    /// Retrieves tables from the MicroPartition, reading data if not already loaded.
+    ///
+    /// This method:
+    /// 1. Returns cached tables if already loaded.
+    /// 2. If unloaded, reads data from the source, caches it, and returns the new tables.
+    ///
+    /// "Reading if necessary" means I/O operations only occur for unloaded data,
+    /// optimizing performance by avoiding redundant reads.
     pub(crate) fn tables_or_read(&self, io_stats: IOStatsRef) -> crate::Result<Arc<Vec<Table>>> {
         let mut guard = self.state.lock().unwrap();
-        match guard.deref() {
+        match &*guard {
             TableState::Unloaded(scan_task) => {
                 let (tables, _) = materialize_scan_task(scan_task.clone(), Some(io_stats))?;
                 let table_values = Arc::new(tables);

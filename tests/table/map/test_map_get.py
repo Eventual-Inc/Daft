@@ -49,7 +49,23 @@ def test_map_get_logical_type():
     )
     table = MicroPartition.from_arrow(pa.table({"map_col": data}))
 
-    result = table.eval_expression_list([col("map_col").map.get("foo")])
+    print("table", table)
+
+    print("Key type:", data.type.key_type)
+    print("Item type:", data.type.item_type)
+
+    # Get the first element of the table
+    first_elem = table.slice(0, 1)
+    print("First element of table:", first_elem)
+
+    # Get the 'map_col' from the first element
+    first_map = first_elem.get_column("map_col")
+    print("First map:", type(first_map))
+
+
+    map = col("map_col").map
+
+    result = table.eval_expression_list([map.get("foo")])
 
     assert result.to_pydict() == {"value": [datetime.date(2022, 1, 1), datetime.date(2022, 1, 2), None]}
 
@@ -60,3 +76,6 @@ def test_map_get_bad_field():
 
     with pytest.raises(ValueError):
         table.eval_expression_list([col("map_col").map.get("foo")])
+
+
+test_map_get_logical_type()

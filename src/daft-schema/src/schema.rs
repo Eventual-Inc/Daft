@@ -29,15 +29,19 @@ pub struct Schema {
 
 impl Schema {
     pub fn new(fields: Vec<Field>) -> DaftResult<Self> {
-        let mut map: IndexMap<String, Field> = indexmap::IndexMap::new();
+        let mut map = IndexMap::new();
 
-        for f in fields.into_iter() {
-            let old = map.insert(f.name.clone(), f);
-            if let Some(item) = old {
-                return Err(DaftError::ValueError(format!(
-                    "Attempting to make a Schema with duplicate field names: {}",
-                    item.name
-                )));
+        for f in fields {
+            match map.entry(f.name.clone()) {
+                indexmap::map::Entry::Vacant(entry) => {
+                    entry.insert(f);
+                }
+                indexmap::map::Entry::Occupied(entry) => {
+                    return Err(DaftError::ValueError(format!(
+                        "Attempting to make a Schema with duplicate field names: {}",
+                        entry.key()
+                    )));
+                }
             }
         }
 
