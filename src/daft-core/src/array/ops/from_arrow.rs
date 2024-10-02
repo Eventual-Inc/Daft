@@ -106,7 +106,9 @@ impl FromArrow for ListArray {
                 ))
             }
             (DataType::List(daft_child_dtype), arrow2::datatypes::DataType::Map { .. }) => {
-                panic!("arrow2 Map should be converted to daft Map");
+                Err(DaftError::TypeError(format!(
+                    "Arrow Map type should be converted to Daft Map type, not List. Attempted to create Daft ListArray with type {daft_child_dtype} from Arrow Map type.",
+                )))
             }
             (d, a) => Err(DaftError::TypeError(format!(
                 "Attempting to create Daft ListArray with type {} from arrow array with type {:?}",
