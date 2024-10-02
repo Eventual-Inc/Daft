@@ -221,10 +221,6 @@ jobs:
       matrix:
         python-version: ['3.8']
         daft-runner: [py, ray]
-        enable-native-executor: [0, 1]
-        exclude:
-        - daft-runner: ray
-          enable-native-executor: 1
     steps:
     - uses: actions/checkout@v4
       with:
@@ -348,6 +344,7 @@ jobs:
         pytest tests/io -m 'integration' --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        DAFT_ENABLE_NATIVE_EXECUTOR: ${{ matrix.enable-native-executor }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.26.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
@@ -448,6 +445,7 @@ jobs:
         pytest tests/integration/io -m 'integration and not benchmark' --credentials --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        DAFT_ENABLE_NATIVE_EXECUTOR: ${{ matrix.enable-native-executor }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.26.0
       if: ${{ failure() }}
@@ -529,6 +527,7 @@ jobs:
         pytest tests/integration/iceberg -m 'integration' --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        DAFT_ENABLE_NATIVE_EXECUTOR: ${{ matrix.enable-native-executor }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.26.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
