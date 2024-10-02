@@ -1,7 +1,8 @@
 import pytest
 
 import daft
-from tests.benchmarks.test_local_tpch import ENGINES
+
+ENGINES = ["native", "python"]
 
 
 @pytest.mark.skipif(
@@ -23,6 +24,7 @@ from tests.benchmarks.test_local_tpch import ENGINES
     ],
 )
 @pytest.mark.parametrize("partition_cols", [None, ["L_SHIPMODE"]])
+@pytest.mark.parametrize("get_df", ["in-memory"], indirect=True)
 def test_streaming_write(
     tmp_path,
     get_df,
