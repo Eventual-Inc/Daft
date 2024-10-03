@@ -9,7 +9,7 @@ use arrow2::{bitmap::Bitmap, io::parquet::read};
 use common_error::DaftResult;
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
 use daft_dsl::ExprRef;
-use daft_io::{get_runtime, IOStatsRef};
+use daft_io::IOStatsRef;
 use daft_table::Table;
 use futures::{stream::BoxStream, StreamExt};
 use itertools::Itertools;
@@ -553,8 +553,7 @@ pub(crate) fn local_parquet_stream(
 
     let owned_uri = uri.to_string();
 
-    let runtime = get_runtime(true)?;
-    let _ = runtime.block_on_io_pool(async move {
+    rayon::spawn(move || {
         // Once a row group has been read into memory and we have the column iterators,
         // we can start processing them in parallel.
         let par_column_iters = column_iters.zip(row_ranges).zip(senders).par_bridge();
