@@ -138,27 +138,27 @@ impl<'a> Add for InferDataType<'a> {
                 (du_self @ &DataType::Duration(..), du_other @ &DataType::Duration(..)) => Err(DaftError::TypeError(
                     format!("Cannot add due to differing precision: {}, {}. Please explicitly cast to the precision you wish to add in.", du_self, du_other)
                 )),
-                (DataType::Null, other) | (other, DataType::Null) => {
+                (dtype @ DataType::Null, other) | (other, dtype @ DataType::Null) => {
                     match other {
                         // Condition is for backwards compatibility. TODO: remove
                         DataType::Binary | DataType::FixedSizeBinary(..) | DataType::Date => Err(DaftError::TypeError(
-                            format!("Cannot add types: {}, {}", self, other)
+                            format!("Cannot add types: {}, {}", dtype, other)
                         )),
                         other if other.is_physical() => Ok(other.clone()),
                         _ => Err(DaftError::TypeError(
-                            format!("Cannot add types: {}, {}", self, other)
+                            format!("Cannot add types: {}, {}", dtype, other)
                         )),
                     }
                 }
-                (DataType::Utf8, other) | (other, DataType::Utf8) => {
+                (dtype @ DataType::Utf8, other) | (other, dtype @ DataType::Utf8) => {
                     match other {
                         // DataType::Date condition is for backwards compatibility. TODO: remove
                         DataType::Binary | DataType::FixedSizeBinary(..) | DataType::Date => Err(DaftError::TypeError(
-                            format!("Cannot add types: {}, {}", self, other)
+                            format!("Cannot add types: {}, {}", dtype, other)
                         )),
                         other if other.is_physical() => Ok(DataType::Utf8),
                         _ => Err(DaftError::TypeError(
-                            format!("Cannot add types: {}, {}", self, other)
+                            format!("Cannot add types: {}, {}", dtype, other)
                         )),
                     }
                 }
