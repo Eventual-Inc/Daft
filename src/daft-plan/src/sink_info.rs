@@ -4,7 +4,6 @@ use common_file_formats::FileFormat;
 use common_io_config::IOConfig;
 #[cfg(feature = "python")]
 use common_py_serde::{deserialize_py_object, serialize_py_object};
-use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
 use derivative::Derivative;
 use itertools::Itertools;
@@ -57,7 +56,6 @@ pub struct IcebergCatalogInfo {
     #[derivative(PartialEq = "ignore")]
     #[derivative(Hash = "ignore")]
     pub partition_spec: PyObject,
-    pub partition_cols: Vec<ExprRef>,
     #[serde(
         serialize_with = "serialize_py_object",
         deserialize_with = "deserialize_py_object"
@@ -65,7 +63,6 @@ pub struct IcebergCatalogInfo {
     #[derivative(PartialEq = "ignore")]
     #[derivative(Hash = "ignore")]
     pub iceberg_schema: PyObject,
-    pub daft_iceberg_schema: SchemaRef,
     #[serde(
         serialize_with = "serialize_py_object",
         deserialize_with = "deserialize_py_object"
