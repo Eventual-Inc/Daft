@@ -5,8 +5,8 @@ use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 use tracing::{info_span, instrument};
 
-use super::buffer::OperatorBuffer;
 use crate::{
+    buffer::RowBasedBuffer,
     channel::{create_channel, PipelineChannel, Receiver, Sender},
     pipeline::{PipelineNode, PipelineResultType},
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
@@ -135,7 +135,7 @@ impl IntermediateNode {
         };
 
         for (idx, mut receiver) in receivers.into_iter().enumerate() {
-            let mut buffer = OperatorBuffer::new(morsel_size);
+            let mut buffer = RowBasedBuffer::new(morsel_size);
             while let Some(morsel) = receiver.recv().await {
                 if morsel.should_broadcast() {
                     for worker_sender in worker_senders.iter() {
@@ -143,18 +143,15 @@ impl IntermediateNode {
                     }
                 } else {
                     buffer.push(morsel.as_data().clone());
-                    if let Some(ready) = buffer.try_clear() {
-                        let _ = send_to_next_worker(idx, ready?.into()).await;
+                    if let Some(ready) = buffer.pop_enough()? {
+                        for part in ready {
+                            let _ = send_to_next_worker(idx, part.into()).await;
+                        }
                     }
                 }
             }
-            // Buffer may still have some morsels left above the threshold
-            while let Some(ready) = buffer.try_clear() {
-                let _ = send_to_next_worker(idx, ready?.into()).await;
-            }
-            // Clear all remaining morsels
-            if let Some(last_morsel) = buffer.clear_all() {
-                let _ = send_to_next_worker(idx, last_morsel?.into()).await;
+            if let Some(ready) = buffer.pop_all()? {
+                let _ = send_to_next_worker(idx, ready.into()).await;
             }
         }
         Ok(())
