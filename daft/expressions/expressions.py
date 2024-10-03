@@ -3417,3 +3417,7 @@ class ExpressionGeometryNamespace(ExpressionNamespace):
     def area(self) -> Expression:
         """Compute the area of a geometry"""
         return Expression._from_pyexpr(native.geo_op(self._expr, "area"))
+
+    def dist(self, rhs: Expression) -> Expression:
+        """Compute the distance between two geometries"""
+        return Expression._from_pyexpr(native.geo_op_binary(self._expr, rhs._expr, "dist"))

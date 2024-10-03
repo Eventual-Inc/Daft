@@ -38,6 +38,20 @@ impl ScalarUDF for GeoOp {
                     ))),
                 }
             }
+            [rhs, lhs] => {
+                let lhs_field = lhs.to_field(schema)?;
+                let rhs_field = rhs.to_field(schema)?;
+                match (lhs_field.dtype, rhs_field.dtype) {
+                    (DataType::Geometry, DataType::Geometry) => match self.op.as_str() {
+                        "dist" => Ok(Field::new(lhs_field.name, DataType::Float64)),
+                        _ => Err(DaftError::ValueError(format!("unsupported op {}", self.op))),
+                    },
+                    (lhs, rhs) => Err(DaftError::TypeError(format!(
+                        "GeoOps can only operate on Geometry arrays, got {} and {}",
+                        lhs, rhs
+                    ))),
+                }
+            }
             _ => Err(DaftError::SchemaMismatch(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()
@@ -53,8 +67,18 @@ impl ScalarUDF for GeoOp {
                     other => Err(DaftError::ValueError(format!("unsupported op {}", other))),
                 },
                 other => Err(DaftError::TypeError(format!(
-                    "GeoDecode can only decode Geometry arrays, got {}",
+                    "GeoOps can operate on Geometry arrays, got {}",
                     other
+                ))),
+            },
+            [lhs, rhs] => match (lhs.data_type(), rhs.data_type()) {
+                (DataType::Geometry, DataType::Geometry) => match self.op.as_str() {
+                    "dist" => utils::geo_binary_dispatch(lhs, rhs, "dist"),
+                    _ => Err(DaftError::ValueError(format!("unsupported op {}", self.op))),
+                },
+                (lhs, rhs) => Err(DaftError::TypeError(format!(
+                    "GeoOps can only operate on Geometry arrays, got {} and {}",
+                    lhs, rhs
                 ))),
             },
             _ => Err(DaftError::ValueError(format!(
@@ -67,6 +91,10 @@ impl ScalarUDF for GeoOp {
 
 pub fn geo_op(input: ExprRef, args: Option<GeoOp>) -> ExprRef {
     ScalarFunction::new(args.unwrap(), vec![input]).into()
+}
+
+pub fn geo_op_binary(lhs: ExprRef, rhs: ExprRef, args: Option<GeoOp>) -> ExprRef {
+    ScalarFunction::new(args.unwrap(), vec![lhs, rhs]).into()
 }
 
 #[cfg(feature = "python")]
@@ -82,4 +110,13 @@ pub fn py_geo_op(expr: PyExpr, op: String) -> PyResult<PyExpr> {
     let op = GeoOp { op };
 
     Ok(geo_op(expr.into(), Some(op)).into())
+}
+
+#[cfg(feature = "python")]
+#[pyfunction]
+#[pyo3(name = "geo_op_binary")]
+pub fn py_geo_op_binary(lhs: PyExpr, rhs: PyExpr, op: String) -> PyResult<PyExpr> {
+    let op = GeoOp { op };
+
+    Ok(geo_op_binary(lhs.into(), rhs.into(), Some(op)).into())
 }

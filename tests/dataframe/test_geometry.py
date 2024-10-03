@@ -19,6 +19,12 @@ def geo_input_df():
                 b"\x01\x03\x00\x00\x00\x01\x00\x00\x00\x05\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xf0?\x00\x00\x00\x00\x00\x00\xf0?\x00\x00\x00\x00\x00\x00\xf0?\x00\x00\x00\x00\x00\x00\xf0?\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
                 None,
             ],
+            "ref": [
+                "POINT (0 0)",
+                "POINT (0 0)",
+                "POINT (0 0)",
+                "POINT (0 0)",
+            ],
         }
     )
 
@@ -43,3 +49,18 @@ def test_geometry_xcode_roundtrip(geo_input_df):
     assert normalize_wkt(result["wkb_out_text"]) == normalize_wkt(result["wkt_in"])
     assert result["wkb_out_binary"] == result["wkb_in"]
     assert result["wkt_out_binary"] == result["wkb_in"]
+
+
+def test_geo_area(geo_input_df):
+    df = geo_input_df.select(daft.col("wkb_in").geo.decode().geo.area().alias("area"))
+    result = df.to_pydict()
+    assert result["area"] == [0.0, 0.0, 1.0, None]
+
+
+def test_geo_distance(geo_input_df):
+    df = geo_input_df.with_column("geo", daft.col("wkt_in").geo.decode()).with_column(
+        "ref", daft.col("ref").geo.decode()
+    )
+    df = df.select(daft.col("ref").geo.dist(daft.col("geo")).alias("dist"))
+    result = df.to_pydict()
+    assert result["dist"] == [pytest.approx(2.2360679774)] * 2 + [0, None]

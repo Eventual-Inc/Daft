@@ -8,7 +8,7 @@ use daft_core::{
     prelude::{BinaryArray, DataType, Field},
     series::{IntoSeries, Series},
 };
-use geo::{Area, Geometry};
+use geo::{Area, EuclideanDistance, Geometry};
 use geozero::{wkb, wkt, CoordDimensions, ToGeo, ToWkb, ToWkt};
 
 pub struct GeometryArrayIter<'a> {
@@ -216,12 +216,46 @@ where
     F: Fn(Geometry) -> T,
 {
     let geo_array = s.geometry()?;
-    let float_array = GeometryArrayIter::new(geo_array)
-        .map(|geo| geo.map(&op_fn))
-        .collect::<Vec<Option<T>>>();
-    let arrow_array = arrow2::array::PrimitiveArray::<T>::from(float_array);
+    let scalar_iter = GeometryArrayIter::new(geo_array).map(|geo| geo.map(&op_fn));
+    let arrow_array = arrow2::array::PrimitiveArray::<T>::from_iter(scalar_iter);
     Series::from_arrow(
-        Arc::new(Field::new(geo_array.name(), DataType::Float64)),
+        Arc::new(Field::new(
+            geo_array.name(),
+            DataType::from(arrow_array.data_type()),
+        )),
+        Box::new(arrow_array),
+    )
+}
+
+pub fn geo_binary_dispatch(lhs: &Series, rhs: &Series, op: &str) -> DaftResult<Series> {
+    match op {
+        "dist" => geo_binary_to_scalar::<f64, _>(lhs, rhs, |l, r| l.euclidean_distance(&r)),
+        _ => Err(DaftError::ValueError(format!("unsupported op {}", op))),
+    }
+}
+
+pub fn geo_binary_to_scalar<T: NativeType, F>(
+    lhs: &Series,
+    rhs: &Series,
+    op_fn: F,
+) -> DaftResult<Series>
+where
+    F: Fn(Geometry, Geometry) -> T,
+{
+    let lhs_array = lhs.geometry()?;
+    let rhs_array = rhs.geometry()?;
+    let scalar_iter = GeometryArrayIter::new(lhs_array)
+        .zip(GeometryArrayIter::new(rhs_array))
+        .map(|(lhg, rhg)| match (lhg, rhg) {
+            (Some(l), Some(r)) => Some(op_fn(l, r)),
+            _ => None,
+        });
+    let arrow_array = arrow2::array::PrimitiveArray::<T>::from_iter(scalar_iter);
+    Series::from_arrow(
+        Arc::new(Field::new(
+            rhs_array.name(),
+            DataType::from(arrow_array.data_type()),
+        )),
         Box::new(arrow_array),
     )
 }
