@@ -497,9 +497,6 @@ impl Table {
     fn eval_expression(&self, expr: &Expr) -> DaftResult<Series> {
         use crate::Expr::*;
 
-        let span = tracing::trace_span!("DataFrame::eval_expression", expr = ?expr);
-        let _guard = span.enter();
-
         let expected_field = expr.to_field(self.schema.as_ref())?;
         let series = match expr {
             Alias(child, name) => Ok(self.eval_expression(child)?.rename(name)),
@@ -577,8 +574,6 @@ impl Table {
                 }
             },
         }?;
-
-        tracing::trace!("Series of {expr:?} -> {series:#?}");
 
         if expected_field.name != series.field().name {
             return Err(DaftError::ComputeError(format!(

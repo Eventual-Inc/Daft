@@ -54,6 +54,17 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
     /// When the validity is [`None`], all slots are valid.
     fn validity(&self) -> Option<&Bitmap>;
 
+    /// Returns an iterator over the direct children of this Array.
+    ///
+    /// This method is useful for accessing child Arrays in composite types such as struct arrays.
+    /// By default, it returns an empty iterator, as most array types do not have child arrays.
+    ///
+    /// # Returns
+    /// A boxed iterator yielding mutable references to child Arrays.
+    ///
+    /// # Examples
+    /// For a StructArray, this would return an iterator over its field arrays.
+    /// For most other array types, this returns an empty iterator.
     fn direct_children<'a>(&'a mut self) -> Box<dyn Iterator<Item = &'a mut dyn Array> + 'a> {
         Box::new(core::iter::empty())
     }
@@ -636,16 +647,7 @@ macro_rules! impl_common_array {
 
         fn change_type(&mut self, data_type: DataType) {
             if data_type.to_physical_type() != self.data_type().to_physical_type() {
-                let from =                     format!("{:#?}", self.data_type());
-                let to = format!("{:#?}", data_type);
-
-
-                let diff = similar::TextDiff::from_lines(&from, &to);
-
-                let diff = diff
-                    .unified_diff();
-
-                panic!("{diff}");
+                panic!("Cannot change array type from {:?} to {:?}", self.data_type(), data_type);
             }
 
             self.data_type = data_type.clone();

@@ -1,9 +1,8 @@
 //! Contains the declaration of [`Offset`]
 use std::hint::unreachable_unchecked;
 
-use crate::buffer::Buffer;
-use crate::error::Error;
 pub use crate::types::Offset;
+use crate::{buffer::Buffer, error::Error};
 
 /// A wrapper type of [`Vec<O>`] representing the invariants of Arrow's offsets.
 /// It is guaranteed to (sound to assume that):
@@ -71,7 +70,7 @@ impl<O: Offset> Offsets<O> {
 
     /// Creates a new [`Offsets`] from an iterator of lengths
     #[inline]
-    pub fn try_from_iter<I: IntoIterator<Item=usize>>(iter: I) -> Result<Self, Error> {
+    pub fn try_from_iter<I: IntoIterator<Item = usize>>(iter: I) -> Result<Self, Error> {
         let iterator = iter.into_iter();
         let (lower, _) = iterator.size_hint();
         let mut offsets = Self::with_capacity(lower);
@@ -144,7 +143,9 @@ impl<O: Offset> Offsets<O> {
     /// Returns the last offset of this container.
     #[inline]
     pub fn last(&self) -> &O {
-        self.0.last().unwrap_or_else(|| unsafe { unreachable_unchecked() })
+        self.0
+            .last()
+            .unwrap_or_else(|| unsafe { unreachable_unchecked() })
     }
 
     /// Returns a range (start, end) corresponding to the position `index`
@@ -212,7 +213,7 @@ impl<O: Offset> Offsets<O> {
     /// # Errors
     /// This function errors iff this operation overflows for the maximum value of `O`.
     #[inline]
-    pub fn try_from_lengths<I: Iterator<Item=usize>>(lengths: I) -> Result<Self, Error> {
+    pub fn try_from_lengths<I: Iterator<Item = usize>>(lengths: I) -> Result<Self, Error> {
         let mut self_ = Self::with_capacity(lengths.size_hint().0);
         self_.try_extend_from_lengths(lengths)?;
         Ok(self_)
@@ -222,7 +223,7 @@ impl<O: Offset> Offsets<O> {
     /// # Errors
     /// This function errors iff this operation overflows for the maximum value of `O`.
     #[inline]
-    pub fn try_extend_from_lengths<I: Iterator<Item=usize>>(
+    pub fn try_extend_from_lengths<I: Iterator<Item = usize>>(
         &mut self,
         lengths: I,
     ) -> Result<(), Error> {
@@ -344,12 +345,34 @@ impl<O: Offset> Default for OffsetsBuffer<O> {
     }
 }
 
-impl <O: Copy> OffsetsBuffer<O> {
-    pub fn map<T>(&self, f: impl Fn(O) -> T) -> OffsetsBuffer<T> {
-        let buffer = self.0.iter()
-            .copied()
-            .map(f)
-            .collect();
+impl<O: Copy> OffsetsBuffer<O> {
+
+    /// Maps each offset to a new value, creating a new [`Self`].
+    ///
+    /// # Safety
+    ///
+    /// This function is marked as `unsafe` because it does not check whether the resulting offsets
+    /// maintain the invariants required by [`OffsetsBuffer`]. The caller must ensure that:
+    ///
+    /// - The resulting offsets are monotonically increasing.
+    /// - The first offset is zero.
+    /// - All offsets are non-negative.
+    ///
+    /// Violating these invariants can lead to undefined behavior when using the resulting [`OffsetsBuffer`].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use arrow2::offset::OffsetsBuffer;
+    /// # let offsets = unsafe { OffsetsBuffer::new_unchecked(vec![0, 2, 5, 7].into()) };
+    /// let doubled = unsafe { offsets.map_unchecked(|x| x * 2) };
+    /// assert_eq!(doubled.buffer().as_slice(), &[0, 4, 10, 14]);
+    /// ```
+    ///
+    /// Note that in this example, doubling the offsets maintains the required invariants,
+    /// but this may not be true for all transformations.
+    pub unsafe fn map_unchecked<T>(&self, f: impl Fn(O) -> T) -> OffsetsBuffer<T> {
+        let buffer = self.0.iter().copied().map(f).collect();
 
         OffsetsBuffer(buffer)
     }
@@ -362,7 +385,6 @@ impl<O: Offset> OffsetsBuffer<O> {
     pub unsafe fn new_unchecked(offsets: Buffer<O>) -> Self {
         Self(offsets)
     }
-
 
     /// Returns an empty [`OffsetsBuffer`] (i.e. with a single element, the zero)
     #[inline]
@@ -410,7 +432,7 @@ impl<O: Offset> OffsetsBuffer<O> {
         *self.last() - *self.first()
     }
 
-    pub fn ranges(&self) -> impl Iterator<Item=core::ops::Range<O>> + '_ {
+    pub fn ranges(&self) -> impl Iterator<Item = core::ops::Range<O>> + '_ {
         self.0.windows(2).map(|w| {
             let from = w[0];
             let to = w[1];
@@ -419,17 +441,20 @@ impl<O: Offset> OffsetsBuffer<O> {
         })
     }
 
-
     /// Returns the first offset.
     #[inline]
     pub fn first(&self) -> &O {
-        self.0.first().unwrap_or_else(|| unsafe { unreachable_unchecked() })
+        self.0
+            .first()
+            .unwrap_or_else(|| unsafe { unreachable_unchecked() })
     }
 
     /// Returns the last offset.
     #[inline]
     pub fn last(&self) -> &O {
-        self.0.last().unwrap_or_else(|| unsafe { unreachable_unchecked() })
+        self.0
+            .last()
+            .unwrap_or_else(|| unsafe { unreachable_unchecked() })
     }
 
     /// Returns a range (start, end) corresponding to the position `index`
@@ -473,7 +498,7 @@ impl<O: Offset> OffsetsBuffer<O> {
 
     /// Returns an iterator with the lengths of the offsets
     #[inline]
-    pub fn lengths(&self) -> impl Iterator<Item=usize> + '_ {
+    pub fn lengths(&self) -> impl Iterator<Item = usize> + '_ {
         self.0.windows(2).map(|w| (w[1] - w[0]).to_usize())
     }
 

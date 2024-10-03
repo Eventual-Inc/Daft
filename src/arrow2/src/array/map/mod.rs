@@ -203,7 +203,6 @@ impl Array for MapArray {
     impl_common_array!();
 
     fn convert_logical_type(&self, target: DataType) -> Box<dyn Array> {
-        tracing::trace!("converting logical type to\n{target:#?}");
         let outer_is_map = matches!(target, DataType::Map { .. });
 
         if outer_is_map {
@@ -232,7 +231,7 @@ impl Array for MapArray {
         field.change_type(target_inner.data_type.clone());
 
         let offsets = self.offsets().clone();
-        let offsets = offsets.map(|offset| offset as i64);
+        let offsets = unsafe { offsets.map_unchecked(|offset| offset as i64) };
 
         let list = ListArray::new(target, offsets, field, self.validity.clone());
 

@@ -132,14 +132,6 @@ def test_roundtrip_tensor_types(tmp_path):
     # Read the Parquet file back into a new DataFrame
     df_roundtrip = daft.read_parquet(str(tmp_path))
 
-    # Print the schema of the original DataFrame
-    print("Original DataFrame Schema:")
-    print(df_original.schema())
-
-    # Print the schema of the DataFrame after roundtrip
-    print("\nRoundtrip DataFrame Schema:")
-    print(df_roundtrip.schema())
-
     # Verify that the data type is preserved after the roundtrip
     assert df_roundtrip.schema()["tensor_col"].dtype == expected_tensor_dtype
 

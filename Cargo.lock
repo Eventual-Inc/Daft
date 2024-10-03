@@ -281,13 +281,11 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "simdutf8",
- "similar",
  "streaming-iterator",
  "strength_reduce",
  "thiserror",
  "tokio",
  "tokio-util",
- "tracing",
  "zstd 0.12.4",
 ]
 
@@ -1810,7 +1808,6 @@ dependencies = [
  "log",
  "pyo3",
  "serde",
- "tracing",
  "typetag",
 ]
 
@@ -2217,7 +2214,6 @@ dependencies = [
  "pyo3",
  "rand 0.8.5",
  "serde",
- "tracing",
 ]
 
 [[package]]
@@ -4942,12 +4938,6 @@ name = "simdutf8"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f27f6278552951f1f2b8cf9da965d10969b2efdea95a6ec47987ab46edfe263a"
-
-[[package]]
-name = "similar"
-version = "2.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1de1d4f81173b03af4c0cbed3c898f6bff5b870e4a7f5d6f4057d62a7a4b686e"
 
 [[package]]
 name = "simple_asn1"

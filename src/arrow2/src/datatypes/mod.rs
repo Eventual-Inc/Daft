@@ -5,13 +5,11 @@ mod field;
 mod physical_type;
 mod schema;
 
+use std::{collections::BTreeMap, sync::Arc};
+
 pub use field::Field;
 pub use physical_type::*;
 pub use schema::Schema;
-
-use std::collections::BTreeMap;
-use std::sync::Arc;
-
 use serde::{Deserialize, Serialize};
 
 /// typedef for [BTreeMap<String, String>] denoting [`Field`]'s and [`Schema`]'s metadata.
@@ -19,9 +17,11 @@ pub type Metadata = BTreeMap<String, String>;
 /// typedef for [Option<(String, Option<String>)>] descr
 pub(crate) type Extension = Option<(String, Option<String>)>;
 
+#[allow(unused_imports, reason = "used in documentation")]
+use crate::array::Array;
+
 pub type ArrowDataType = DataType;
 pub type ArrowField = Field;
-
 
 /// The set of supported logical types in this crate.
 ///
@@ -168,11 +168,46 @@ impl DataType {
         Self::Map(field.into(), keys_sorted)
     }
 
-    pub fn direct_children(&self, mut processor: impl FnMut(&DataType)) {
+    /// Processes the direct children data types of this DataType.
+    ///
+    /// This method is useful for traversing the structure of complex data types.
+    /// It calls the provided closure for each immediate child data type.
+    ///
+    /// This can be used in conjunction with the [`Array::direct_children`] method
+    /// to process both the data types and the corresponding array data.
+    ///
+    /// # Arguments
+    ///
+    /// * `processor` - A closure that takes a reference to a DataType as its argument.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use arrow2::datatypes::{DataType, Field};
+    ///
+    /// let struct_type = DataType::Struct(vec![
+    ///     Field::new("a", DataType::Int32, true),
+    ///     Field::new("b", DataType::Utf8, false),
+    /// ]);
+    ///
+    /// let mut child_types = Vec::new();
+    /// struct_type.direct_children(|child_type| {
+    ///     child_types.push(child_type);
+    /// });
+    ///
+    /// assert_eq!(child_types, vec![&DataType::Int32, &DataType::Utf8]);
+    /// ```
+    pub fn direct_children<'a>(&'a self, mut processor: impl FnMut(&'a DataType)) {
         match self {
-            DataType::List(field) | DataType::FixedSizeList(field, _) | DataType::LargeList(field) | DataType::Map(field, ..) => processor(&field.data_type),
-            DataType::Struct(fields) | DataType::Union(fields, _, _) => fields.iter().for_each(|field| processor(&field.data_type)),
-            _ => {} // todo: might want to add more types here
+            DataType::List(field)
+            | DataType::FixedSizeList(field, _)
+            | DataType::LargeList(field)
+            | DataType::Map(field, ..) => processor(&field.data_type),
+            DataType::Struct(fields) | DataType::Union(fields, _, _) => {
+                fields.iter().for_each(|field| processor(&field.data_type))
+            }
+            DataType::Dictionary(_, value_type, _) => processor(value_type),
+            _ => {} // Other types don't have child data types
         }
     }
 }

@@ -97,7 +97,7 @@ mod tests {
     }
 
     #[test]
-    fn test_() -> DaftResult<()> {
+    fn test_map_array_conversion() -> DaftResult<()> {
         use arrow2::array::MapArray;
 
         use super::*;

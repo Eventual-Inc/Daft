@@ -31,8 +31,6 @@ impl FunctionEvaluator for GetEvaluator {
 
         let field = Field::new("value", *value);
 
-        tracing::debug!("Field: {:?}", field);
-
         Ok(field)
     }
 

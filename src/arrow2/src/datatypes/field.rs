@@ -25,8 +25,6 @@ pub struct Field {
 impl Field {
     /// Creates a new [`Field`].
     pub fn new<T: Into<String>>(name: T, data_type: DataType, is_nullable: bool) -> Self {
-        let span = tracing::trace_span!("ArrowField::new", data_type = ?data_type, is_nullable);
-        let _guard = span.enter();
         Field {
             name: name.into(),
             data_type,
