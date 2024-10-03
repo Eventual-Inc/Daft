@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 use daft_dsl::{
     col,
@@ -11,9 +11,9 @@ use daft_functions::numeric::{ceil::ceil, floor::floor};
 use daft_plan::{LogicalPlanBuilder, LogicalPlanRef};
 use sqlparser::{
     ast::{
-        ArrayElemTypeDef, BinaryOperator, CastKind, ExactNumberInfo, GroupByExpr, Ident, Query,
-        SelectItem, Statement, StructField, Subscript, TableWithJoins, TimezoneInfo, UnaryOperator,
-        Value, WildcardAdditionalOptions,
+        ArrayElemTypeDef, BinaryOperator, CastKind, DateTimeField, ExactNumberInfo, GroupByExpr,
+        Ident, Query, SelectItem, Statement, StructField, Subscript, TableWithJoins, TimezoneInfo,
+        UnaryOperator, Value, WildcardAdditionalOptions,
     },
     dialect::GenericDialect,
     parser::{Parser, ParserOptions},
@@ -759,7 +759,48 @@ impl SQLPlanner {
             SQLExpr::Map(_) => unsupported_sql_err!("MAP"),
             SQLExpr::Subscript { expr, subscript } => self.plan_subscript(expr, subscript.as_ref()),
             SQLExpr::Array(_) => unsupported_sql_err!("ARRAY"),
-            SQLExpr::Interval(_) => unsupported_sql_err!("INTERVAL"),
+            SQLExpr::Interval(interval) => {
+                let expr = self.plan_expr(&interval.value)?;
+                let time_unit = interval.leading_field.as_ref().ok_or_else(|| {
+                    PlannerError::invalid_operation("Interval must have a leading field")
+                })?;
+
+                let expr = expr
+                    .as_literal()
+                    .and_then(|lit| lit.as_str())
+                    .ok_or_else(|| {
+                        PlannerError::invalid_operation("Interval value must be a string")
+                    })?;
+
+                let count = expr
+                    .parse::<i64>()
+                    .map_err(|e| DaftError::ValueError(format!("Invalid interval count: {e}")))?;
+                use chrono::Duration;
+
+                let duration = match time_unit {
+                    DateTimeField::Year => Duration::days(365 * count),
+                    DateTimeField::Week(_) => Duration::weeks(count),
+                    DateTimeField::Day => Duration::days(count),
+                    DateTimeField::Hour => Duration::hours(count),
+                    DateTimeField::Minute => Duration::minutes(count),
+                    DateTimeField::Second => Duration::seconds(count),
+                    DateTimeField::Microsecond => Duration::microseconds(count),
+                    DateTimeField::Microseconds => Duration::microseconds(count),
+                    DateTimeField::Millisecond => Duration::milliseconds(count),
+                    DateTimeField::Milliseconds => Duration::milliseconds(count),
+                    DateTimeField::Nanosecond => Duration::nanoseconds(count),
+                    DateTimeField::Nanoseconds => Duration::nanoseconds(count),
+                    _ => return Err(DaftError::ValueError(format!(
+                        "Invalid interval unit: {time_unit}. Expected one of: week, day, hour, minute, second, millisecond, microsecond, nanosecond"
+                    )).into()),
+                };
+                Ok(Arc::new(Expr::Literal(LiteralValue::Duration(
+                    duration
+                        .num_microseconds()
+                        .ok_or_else(|| DaftError::ValueError("Interval overflow".to_string()))?,
+                    TimeUnit::Microseconds,
+                ))))
+            }
             SQLExpr::MatchAgainst { .. } => unsupported_sql_err!("MATCH AGAINST"),
             SQLExpr::Wildcard => unsupported_sql_err!("WILDCARD"),
             SQLExpr::QualifiedWildcard(_) => unsupported_sql_err!("QUALIFIED WILDCARD"),

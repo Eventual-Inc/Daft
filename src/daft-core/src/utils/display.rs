@@ -93,6 +93,12 @@ pub fn display_decimal128(val: i128, _precision: u8, scale: i8) -> String {
     }
 }
 
+pub fn display_duration(val: i64, unit: &TimeUnit) -> String {
+    use crate::array::ops::cast::timestamp_to_str_naive;
+    // TODO: Implement display_duration
+    timestamp_to_str_naive(val, unit)
+}
+
 pub fn display_series_literal(series: &Series) -> String {
     if !series.is_empty() {
         format!(

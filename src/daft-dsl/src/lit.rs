@@ -10,8 +10,8 @@ use common_hashable_float_wrapper::FloatWrapper;
 use daft_core::{
     prelude::*,
     utils::display::{
-        display_date32, display_decimal128, display_series_literal, display_time64,
-        display_timestamp,
+        display_date32, display_decimal128, display_duration, display_series_literal,
+        display_time64, display_timestamp,
     },
 };
 use indexmap::IndexMap;
@@ -69,7 +69,7 @@ pub enum LiteralValue {
     /// Python object.
     #[cfg(feature = "python")]
     Python(PyObjectWrapper),
-
+    Duration(i64, TimeUnit),
     Struct(IndexMap<Field, LiteralValue>),
 }
 
@@ -121,6 +121,10 @@ impl Hash for LiteralValue {
                     f.hash(state);
                 });
             }
+            Duration(n, tu) => {
+                n.hash(state);
+                tu.hash(state);
+            }
         }
     }
 }
@@ -162,6 +166,7 @@ impl Display for LiteralValue {
                 }
                 write!(f, ")")
             }
+            Duration(val, tu) => write!(f, "{}", display_duration(*val, tu)),
         }
     }
 }
@@ -189,6 +194,7 @@ impl LiteralValue {
             #[cfg(feature = "python")]
             Python(_) => DataType::Python,
             Struct(entries) => DataType::Struct(entries.keys().cloned().collect()),
+            Duration(_, tu) => DataType::Duration(*tu),
         }
     }
 
@@ -230,6 +236,10 @@ impl LiteralValue {
                 let values = entries.values().map(|v| v.to_series()).collect();
                 StructArray::new(struct_field, values, None).into_series()
             }
+            Duration(val, ..) => {
+                let physical = Int64Array::from(("literal", [*val].as_slice()));
+                DurationArray::new(Field::new("literal", self.get_type()), physical).into_series()
+            }
         };
         result
     }
@@ -263,6 +273,7 @@ impl LiteralValue {
             #[cfg(feature = "python")]
             Python(..) => display_sql_err,
             Struct(..) => display_sql_err,
+            Duration(..) => display_sql_err, // TODO: Implement this
         }
     }
 
