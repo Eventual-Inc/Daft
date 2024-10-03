@@ -1,0 +1,9 @@
+[dependencies]
+
+[lints]
+workspace = true
+
+[package]
+edition = {workspace = true}
+name = "daft-connect"
+version = {workspace = true}

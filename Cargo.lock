@@ -1676,6 +1676,7 @@ dependencies = [
  "common-tracing",
  "common-version",
  "daft-compression",
+ "daft-connect",
  "daft-core",
  "daft-csv",
  "daft-dsl",
@@ -1712,6 +1713,10 @@ dependencies = [
  "tokio",
  "url",
 ]
+
+[[package]]
+name = "daft-connect"
+version = "0.3.0-dev0"
 
 [[package]]
 name = "daft-core"
