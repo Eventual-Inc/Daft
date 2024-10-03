@@ -2084,6 +2084,7 @@ dependencies = [
  "serde",
  "snafu",
  "test-log",
+ "uuid 1.10.0",
 ]
 
 [[package]]
