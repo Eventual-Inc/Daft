@@ -6,8 +6,7 @@ pub mod partitioned_write;
 pub mod physical_write;
 pub mod unpartitioned_write;
 
-pub trait WriteOperator: Send + Sync {
-    fn name(&self) -> &'static str;
+pub trait WriterFactory: Send + Sync {
     fn create_writer(
         &self,
         file_idx: usize,

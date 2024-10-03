@@ -3,22 +3,19 @@ use daft_micropartition::{create_file_writer, FileWriter};
 use daft_plan::OutputFileInfo;
 use daft_table::Table;
 
-use super::WriteOperator;
+use super::WriterFactory;
 
-pub(crate) struct PhysicalWriteOperator {
+pub(crate) struct PhysicalWriterFactory {
     output_file_info: OutputFileInfo,
 }
 
-impl PhysicalWriteOperator {
+impl PhysicalWriterFactory {
     pub(crate) fn new(output_file_info: OutputFileInfo) -> Self {
         Self { output_file_info }
     }
 }
 
-impl WriteOperator for PhysicalWriteOperator {
-    fn name(&self) -> &'static str {
-        "PhysicalWriteOperator"
-    }
+impl WriterFactory for PhysicalWriterFactory {
     fn create_writer(
         &self,
         file_idx: usize,

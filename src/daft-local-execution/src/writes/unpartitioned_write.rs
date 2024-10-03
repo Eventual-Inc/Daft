@@ -7,7 +7,7 @@ use daft_micropartition::{FileWriter, MicroPartition};
 use daft_table::Table;
 use snafu::ResultExt;
 
-use super::WriteOperator;
+use super::WriterFactory;
 use crate::{
     buffer::RowBasedBuffer,
     channel::{create_channel, PipelineChannel, Receiver, Sender},
@@ -18,9 +18,10 @@ use crate::{
 };
 
 pub(crate) struct UnpartitionedWriteNode {
+    name: &'static str,
     child: Box<dyn PipelineNode>,
     runtime_stats: Arc<RuntimeStatsContext>,
-    write_operator: Arc<dyn WriteOperator>,
+    writer_factory: Arc<dyn WriterFactory>,
     target_in_memory_file_rows: usize,
     target_in_memory_chunk_rows: usize,
     file_schema: SchemaRef,
@@ -28,16 +29,18 @@ pub(crate) struct UnpartitionedWriteNode {
 
 impl UnpartitionedWriteNode {
     pub(crate) fn new(
+        name: &'static str,
         child: Box<dyn PipelineNode>,
-        write_operator: Arc<dyn WriteOperator>,
+        writer_factory: Arc<dyn WriterFactory>,
         target_in_memory_file_rows: usize,
         target_in_memory_chunk_rows: usize,
         file_schema: SchemaRef,
     ) -> Self {
         Self {
+            name,
             child,
             runtime_stats: RuntimeStatsContext::new(),
-            write_operator,
+            writer_factory,
             target_in_memory_file_rows,
             target_in_memory_chunk_rows,
             file_schema,
@@ -48,9 +51,12 @@ impl UnpartitionedWriteNode {
         Box::new(self)
     }
 
+    // Receives data from the dispatcher and writes it.
+    // If the received file idx is different from the current file idx, this means that the current file is full and needs to be closed.
+    // Once input is exhausted, the current writer is closed and all written file paths are returned.
     async fn run_writer(
         mut input_receiver: Receiver<(Arc<MicroPartition>, usize)>,
-        write_operator: Arc<dyn WriteOperator>,
+        writer_factory: Arc<dyn WriterFactory>,
     ) -> DaftResult<Vec<Table>> {
         let mut written_file_paths = vec![];
         let mut current_writer: Option<Box<dyn FileWriter>> = None;
@@ -63,7 +69,7 @@ impl UnpartitionedWriteNode {
                     }
                 }
                 current_file_idx = Some(file_idx);
-                current_writer = Some(write_operator.create_writer(file_idx, None)?);
+                current_writer = Some(writer_factory.create_writer(file_idx, None)?);
             }
             if let Some(writer) = current_writer.as_mut() {
                 writer.write(&data)?;
@@ -80,18 +86,22 @@ impl UnpartitionedWriteNode {
     fn spawn_writers(
         num_writers: usize,
         task_set: &mut TaskSet<DaftResult<Vec<Table>>>,
-        write_operator: &Arc<dyn WriteOperator>,
+        writer_factory: &Arc<dyn WriterFactory>,
         channel_size: usize,
     ) -> Vec<Sender<(Arc<MicroPartition>, usize)>> {
         let mut writer_senders = Vec::with_capacity(num_writers);
         for _ in 0..num_writers {
             let (writer_sender, writer_receiver) = create_channel(channel_size);
-            task_set.spawn(Self::run_writer(writer_receiver, write_operator.clone()));
+            task_set.spawn(Self::run_writer(writer_receiver, writer_factory.clone()));
             writer_senders.push(writer_sender);
         }
         writer_senders
     }
 
+    // Dispatches data received from the child to the writers
+    // As data is received, it is buffered until enough data is available to fill a chunk
+    // Once a chunk is filled, it is sent to a writer
+    // If the writer has written enough rows for a file, increment the file index and switch to the next writer
     async fn dispatch(
         mut input_receiver: CountingReceiver,
         target_chunk_rows: usize,
@@ -157,7 +167,7 @@ impl PipelineNode for UnpartitionedWriteNode {
     }
 
     fn name(&self) -> &'static str {
-        self.write_operator.name()
+        self.name
     }
 
     fn start(
@@ -177,12 +187,13 @@ impl PipelineNode for UnpartitionedWriteNode {
             destination_channel.get_next_sender_with_stats(&self.runtime_stats);
 
         // Start writers
-        let write_operator = self.write_operator.clone();
+        let writer_factory = self.writer_factory.clone();
         let mut task_set = create_task_set();
         let writer_senders = Self::spawn_writers(
             *NUM_CPUS,
             &mut task_set,
-            &write_operator,
+            &writer_factory,
+            // The channel size is set to the number of chunks per file such that writes can be parallelized
             (self.target_in_memory_file_rows + self.target_in_memory_chunk_rows + 1)
                 / self.target_in_memory_chunk_rows,
         );

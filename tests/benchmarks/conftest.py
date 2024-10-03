@@ -67,10 +67,7 @@ def gen_tpch(request):
     num_parts = request.param
 
     csv_files_location = data_generation.gen_csv_files(TPCH_DBGEN_DIR, num_parts, SCALE_FACTOR)
-
-    # Disable native executor to generate parquet files, remove once native executor supports writing parquet files
-    with daft.context.execution_config_ctx(enable_native_executor=False):
-        parquet_files_location = data_generation.gen_parquet(csv_files_location)
+    parquet_files_location = data_generation.gen_parquet(csv_files_location)
 
     in_memory_tables = {}
     for tbl_name in data_generation.SCHEMA.keys():

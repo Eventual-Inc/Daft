@@ -9,7 +9,7 @@ use daft_micropartition::{FileWriter, MicroPartition};
 use daft_table::Table;
 use snafu::ResultExt;
 
-use super::WriteOperator;
+use super::WriterFactory;
 use crate::{
     buffer::RowBasedBuffer,
     channel::{create_channel, PipelineChannel, Receiver, Sender},
@@ -21,7 +21,7 @@ use crate::{
 
 struct PerPartitionWriter {
     writer: Box<dyn FileWriter>,
-    write_operator: Arc<dyn WriteOperator>,
+    writer_factory: Arc<dyn WriterFactory>,
     partition_values: Table,
     buffer: RowBasedBuffer,
     target_file_rows: usize,
@@ -31,14 +31,14 @@ struct PerPartitionWriter {
 
 impl PerPartitionWriter {
     fn new(
-        write_operator: Arc<dyn WriteOperator>,
+        writer_factory: Arc<dyn WriterFactory>,
         partition_values: Table,
         target_file_rows: usize,
         target_chunk_rows: usize,
     ) -> DaftResult<Self> {
         Ok(Self {
-            writer: write_operator.create_writer(0, Some(&partition_values))?,
-            write_operator,
+            writer: writer_factory.create_writer(0, Some(&partition_values))?,
+            writer_factory,
             partition_values,
             buffer: RowBasedBuffer::new(target_chunk_rows),
             target_file_rows,
@@ -70,7 +70,7 @@ impl PerPartitionWriter {
             }
             self.written_rows_so_far = 0;
             self.writer = self
-                .write_operator
+                .writer_factory
                 .create_writer(self.results.len(), Some(&self.partition_values))?
         }
         Ok(())
@@ -92,9 +92,10 @@ impl PerPartitionWriter {
 }
 
 pub(crate) struct PartitionedWriteNode {
+    name: &'static str,
     child: Box<dyn PipelineNode>,
     runtime_stats: Arc<RuntimeStatsContext>,
-    write_operator: Arc<dyn WriteOperator>,
+    writer_factory: Arc<dyn WriterFactory>,
     partition_cols: Vec<ExprRef>,
     target_file_rows: usize,
     target_chunk_rows: usize,
@@ -103,18 +104,20 @@ pub(crate) struct PartitionedWriteNode {
 
 impl PartitionedWriteNode {
     pub(crate) fn new(
+        name: &'static str,
         child: Box<dyn PipelineNode>,
-        write_operator: Arc<dyn WriteOperator>,
+        writer_factory: Arc<dyn WriterFactory>,
         partition_cols: Vec<ExprRef>,
         target_file_rows: usize,
         target_chunk_rows: usize,
         file_schema: SchemaRef,
     ) -> Self {
         Self {
+            name,
             child,
             runtime_stats: RuntimeStatsContext::new(),
             partition_cols,
-            write_operator,
+            writer_factory,
             target_file_rows,
             target_chunk_rows,
             file_schema,
@@ -137,7 +140,7 @@ impl PartitionedWriteNode {
 
     async fn run_writer(
         mut input_receiver: Receiver<(Table, Table)>,
-        write_operator: Arc<dyn WriteOperator>,
+        writer_factory: Arc<dyn WriterFactory>,
         target_chunk_rows: usize,
         target_file_rows: usize,
     ) -> DaftResult<Vec<Table>> {
@@ -149,7 +152,7 @@ impl PartitionedWriteNode {
                 per_partition_writers.insert(
                     partition_values_str.clone(),
                     PerPartitionWriter::new(
-                        write_operator.clone(),
+                        writer_factory.clone(),
                         partition_values,
                         target_file_rows,
                         target_chunk_rows,
@@ -182,7 +185,7 @@ impl PartitionedWriteNode {
     fn spawn_writers(
         num_writers: usize,
         task_set: &mut tokio::task::JoinSet<DaftResult<Vec<Table>>>,
-        write_operator: Arc<dyn WriteOperator>,
+        writer_factory: Arc<dyn WriterFactory>,
         target_chunk_rows: usize,
         target_file_rows: usize,
     ) -> Vec<Sender<(Table, Table)>> {
@@ -191,7 +194,7 @@ impl PartitionedWriteNode {
             let (writer_sender, writer_receiver) = create_channel(1);
             task_set.spawn(Self::run_writer(
                 writer_receiver,
-                write_operator.clone(),
+                writer_factory.clone(),
                 target_chunk_rows,
                 target_file_rows,
             ));
@@ -252,7 +255,7 @@ impl PipelineNode for PartitionedWriteNode {
     }
 
     fn name(&self) -> &'static str {
-        self.write_operator.name()
+        self.name
     }
 
     fn start(
@@ -276,7 +279,7 @@ impl PipelineNode for PartitionedWriteNode {
         let writer_senders = Self::spawn_writers(
             *NUM_CPUS,
             &mut task_set,
-            self.write_operator.clone(),
+            self.writer_factory.clone(),
             self.target_chunk_rows,
             self.target_file_rows,
         );

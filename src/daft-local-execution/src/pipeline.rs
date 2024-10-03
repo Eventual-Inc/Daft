@@ -34,7 +34,7 @@ use crate::{
     },
     sources::in_memory::InMemorySource,
     writes::{
-        partitioned_write::PartitionedWriteNode, physical_write::PhysicalWriteOperator,
+        partitioned_write::PartitionedWriteNode, physical_write::PhysicalWriterFactory,
         unpartitioned_write::UnpartitionedWriteNode,
     },
     ExecutionRuntimeHandle, PipelineCreationSnafu,
@@ -376,11 +376,19 @@ pub fn physical_plan_to_pipeline(
                     target_chunk_size as f64
                 } as usize,
             );
-            let write_op = PhysicalWriteOperator::new(file_info.clone());
+            let write_factory = PhysicalWriterFactory::new(file_info.clone());
+            let name = match (&file_info.partition_cols.is_some(), &file_info.file_format) {
+                (true, FileFormat::Parquet) => "PartitionedParquetWrite",
+                (true, FileFormat::Csv) => "PartitionedCSVWrite",
+                (false, FileFormat::Parquet) => "UnpartitionedParquetWrite",
+                (false, FileFormat::Csv) => "UnpartitionedCSVWrite",
+                _ => unreachable!("Physical write should only support Parquet and CSV"),
+            };
             match &file_info.partition_cols {
                 Some(part_cols) => PartitionedWriteNode::new(
+                    name,
                     child_node,
-                    Arc::new(write_op),
+                    Arc::new(write_factory),
                     part_cols.clone(),
                     target_file_rows,
                     target_chunk_rows,
@@ -388,8 +396,9 @@ pub fn physical_plan_to_pipeline(
                 )
                 .boxed(),
                 None => UnpartitionedWriteNode::new(
+                    name,
                     child_node,
-                    Arc::new(write_op),
+                    Arc::new(write_factory),
                     target_file_rows,
                     target_chunk_rows,
                     file_schema.clone(),
