@@ -6,7 +6,7 @@ use futures::{stream::BoxStream, TryStreamExt};
 use google_cloud_storage::{
     client::{google_cloud_auth::credentials::CredentialsFile, Client, ClientConfig},
     http::{
-        objects::{get::GetObjectRequest, list::ListObjectsRequest},
+        objects::{download::Range as GRange, get::GetObjectRequest, list::ListObjectsRequest},
         Error as GError,
     },
 };
@@ -15,6 +15,7 @@ use snafu::{IntoError, ResultExt, Snafu};
 
 use crate::{
     object_io::{FileMetadata, FileType, LSResult, ObjectSource},
+    object_store_glob::glob,
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
     FileFormat, GetResult,
@@ -257,7 +258,6 @@ impl ObjectSource for GCSSource {
             object: key.into(),
             ..Default::default()
         };
-        use google_cloud_storage::http::objects::download::Range as GRange;
         let (grange, size) = if let Some(range) = range {
             (
                 GRange(Some(range.start as u64), Some(range.end as u64)),
@@ -334,8 +334,6 @@ impl ObjectSource for GCSSource {
         io_stats: Option<IOStatsRef>,
         _file_format: Option<FileFormat>,
     ) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>> {
-        use crate::object_store_glob::glob;
-
         // Ensure fanout_limit is not None to prevent runaway concurrency
         let fanout_limit = fanout_limit.or(Some(DEFAULT_GLOB_FANOUT_LIMIT));
 
