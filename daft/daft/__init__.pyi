@@ -1745,7 +1745,7 @@ class NativeExecutor:
         logical_plan_builder: LogicalPlanBuilder,
     ) -> NativeExecutor: ...
     def run(
-        self, psets: dict[str, list[PyTable]], cfg: PyDaftExecutionConfig, results_buffer_size: int | None
+        self, psets: dict[str, list[PyMicroPartition]], cfg: PyDaftExecutionConfig, results_buffer_size: int | None
     ) -> Iterator[PyMicroPartition]: ...
 
 class PyDaftExecutionConfig:

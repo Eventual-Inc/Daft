@@ -1,4 +1,5 @@
 [dependencies]
+async-stream = {workspace = true}
 common-daft-config = {path = "../common/daft-config", default-features = false}
 common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}

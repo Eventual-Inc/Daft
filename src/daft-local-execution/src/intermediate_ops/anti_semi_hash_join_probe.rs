@@ -1,7 +1,13 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_core::{prelude::UInt64Array, series::IntoSeries};
+use daft_core::{
+    prelude::{
+        bitmap::{Bitmap, MutableBitmap},
+        BooleanArray,
+    },
+    series::IntoSeries,
+};
 use daft_dsl::ExprRef;
 use daft_plan::JoinType;
 use daft_table::{Probeable, Table};
@@ -59,7 +65,7 @@ impl AntiSemiProbeOperator {
 
         let _growables = info_span!("AntiSemiOperator::build_growables").entered();
 
-        let mut input_idx_matches = vec![];
+        let mut input_idx_matches = MutableBitmap::from_len_zeroed(input.len());
 
         drop(_growables);
         {
@@ -70,14 +76,14 @@ impl AntiSemiProbeOperator {
             for (probe_row_idx, matched) in iter.enumerate() {
                 match (self.join_type == JoinType::Semi, matched) {
                     (true, true) | (false, false) => {
-                        input_idx_matches.push(probe_row_idx as u64);
+                        input_idx_matches.set(probe_row_idx, true);
                     }
                     _ => {}
                 }
             }
         }
-        let result =
-            input.take(&UInt64Array::from(("matches", input_idx_matches)).into_series())?;
+        let bitmap: Bitmap = input_idx_matches.into();
+        let result = input.mask_filter(&BooleanArray::from(("bitmap", bitmap)).into_series())?;
         Ok(result)
     }
 }

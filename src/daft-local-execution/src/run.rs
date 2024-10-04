@@ -20,7 +20,6 @@ use {
     common_daft_config::PyDaftExecutionConfig,
     daft_micropartition::python::PyMicroPartition,
     daft_plan::PyLogicalPlanBuilder,
-    daft_table::python::PyTable,
     pyo3::{pyclass, pymethods, IntoPy, PyObject, PyRef, PyRefMut, PyResult, Python},
 };
 
@@ -73,19 +72,19 @@ impl NativeExecutor {
     pub fn run(
         &self,
         py: Python,
-        psets: HashMap<String, Vec<PyTable>>,
+        psets: HashMap<String, Vec<PyMicroPartition>>,
         cfg: PyDaftExecutionConfig,
         results_buffer_size: Option<usize>,
     ) -> PyResult<PyObject> {
-        let native_psets: HashMap<String, Vec<Arc<Table>>> = psets
+        let native_psets: HashMap<String, Vec<Arc<MicroPartition>>> = psets
             .into_iter()
             .map(|(part_id, parts)| {
                 (
                     part_id,
                     parts
                         .into_iter()
-                        .map(|part| Arc::new(part.into()))
-                        .collect::<Vec<Arc<Table>>>(),
+                        .map(|part| part.into())
+                        .collect::<Vec<Arc<MicroPartition>>>(),
                 )
             })
             .collect();
@@ -118,7 +117,7 @@ fn should_enable_explain_analyze() -> bool {
 
 pub fn run_local(
     physical_plan: &LocalPhysicalPlan,
-    psets: HashMap<String, Vec<Arc<Table>>>,
+    psets: HashMap<String, Vec<Arc<MicroPartition>>>,
     cfg: Arc<DaftExecutionConfig>,
     results_buffer_size: Option<usize>,
 ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<Arc<MicroPartition>>> + Send>> {

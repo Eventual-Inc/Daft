@@ -2,7 +2,10 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_core::{
-    prelude::{SchemaRef, UInt64Array},
+    prelude::{
+        bitmap::{Bitmap, MutableBitmap},
+        BooleanArray, SchemaRef,
+    },
     series::IntoSeries,
 };
 use daft_dsl::ExprRef;
@@ -105,7 +108,7 @@ impl HashJoinProbeOperator {
         let mut build_side_growable =
             GrowableTable::new(&tables.iter().collect::<Vec<_>>(), false, 20)?;
 
-        let mut input_idx_matches = vec![];
+        let mut input_idx_matches = MutableBitmap::from_len_zeroed(input.len());
 
         drop(_growables);
         {
@@ -121,14 +124,15 @@ impl HashJoinProbeOperator {
                             build_row_idx as usize,
                             1,
                         );
-                        input_idx_matches.push(probe_row_idx as u64);
+                        input_idx_matches.set(probe_row_idx, true);
                     }
                 }
             }
         }
         let build_side_table = build_side_growable.build()?;
+        let bitmap: Bitmap = input_idx_matches.into();
         let probe_side_table =
-            input.take(&UInt64Array::from(("matches", input_idx_matches)).into_series())?;
+            input.mask_filter(&BooleanArray::from(("bitmap", bitmap)).into_series())?;
 
         let (left_table, right_table) = if self.build_on_left {
             (build_side_table, probe_side_table)
@@ -157,7 +161,7 @@ impl HashJoinProbeOperator {
             tables.iter().map(|t| t.len()).sum(),
         )?;
 
-        let mut input_idx_matches = Vec::with_capacity(input.len());
+        let mut input_idx_matches = MutableBitmap::from_len_zeroed(input.len());
 
         drop(_growables);
         {
@@ -173,18 +177,19 @@ impl HashJoinProbeOperator {
                             build_row_idx as usize,
                             1,
                         );
-                        input_idx_matches.push(probe_row_idx as u64);
+                        input_idx_matches.set(probe_row_idx, true);
                     }
                 } else {
                     // if there's no match, we should still emit the probe side and fill the build side with nulls
                     build_side_growable.add_nulls(1);
-                    input_idx_matches.push(probe_row_idx as u64);
+                    input_idx_matches.set(probe_row_idx, true);
                 }
             }
         }
         let build_side_table = build_side_growable.build()?;
+        let bitmap: Bitmap = input_idx_matches.into();
         let probe_side_table =
-            input.take(&UInt64Array::from(("matches", input_idx_matches)).into_series())?;
+            input.mask_filter(&BooleanArray::from(("bitmap", bitmap)).into_series())?;
 
         let final_table = if self.join_type == JoinType::Left {
             let join_table = probe_side_table.get_columns(&self.common_join_keys)?;

@@ -8,6 +8,7 @@ use daft_core::{
     utils::supertype,
 };
 use daft_dsl::{col, join::get_common_join_keys, Expr};
+use daft_micropartition::MicroPartition;
 use daft_physical_plan::{
     Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, Project, Sort,
     UnGroupedAggregate,
@@ -97,7 +98,7 @@ pub(crate) fn viz_pipeline(root: &dyn PipelineNode) -> String {
 
 pub fn physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
-    psets: &HashMap<String, Vec<Arc<Table>>>,
+    psets: &HashMap<String, Vec<Arc<MicroPartition>>>,
 ) -> crate::Result<Box<dyn PipelineNode>> {
     use daft_physical_plan::PhysicalScan;
 

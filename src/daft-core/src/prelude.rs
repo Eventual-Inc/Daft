@@ -3,6 +3,8 @@
 //! This module re-exports commonly used items from the Daft core library.
 
 // Re-export core series structures
+// Re-export arrow2 bitmap
+pub use arrow2::bitmap;
 pub use daft_schema::schema::{Schema, SchemaRef};
 
 // Re-export count mode enum
