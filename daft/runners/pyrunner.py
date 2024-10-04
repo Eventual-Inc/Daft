@@ -340,7 +340,7 @@ class PyRunner(Runner[MicroPartition]):
         self,
         name: str,
         actor_resource_request: ResourceRequest,
-        _: ResourceRequest,
+        _task_resource_request: ResourceRequest,
         num_actors: int,
         projection: ExpressionsProjection,
     ) -> Iterator[str]:
