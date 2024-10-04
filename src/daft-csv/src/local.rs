@@ -23,8 +23,11 @@ use rayon::{
     prelude::{IntoParallelRefIterator, ParallelIterator},
 };
 use snafu::ResultExt;
-
+use crate::local::pool::{read_slabs_windowed, WindowedSlab};
 use crate::read::{fields_to_projection_indices, tables_concat};
+
+mod pool;
+
 
 #[allow(clippy::doc_lazy_continuation)]
 /// Our local CSV reader has the following approach to reading CSV files:
@@ -118,61 +121,10 @@ impl CsvBufferPool {
     }
 }
 
-// The default size of a slab used for reading CSV files in chunks. Currently set to 4MB.
-const SLABSIZE: usize = 4 * 1024 * 1024;
+// The default size of a slab used for reading CSV files in chunks. Currently set to 4MiB.
+const SLAB_SIZE: usize = 4 * 1024 * 1024;
 // The default number of slabs in a slab pool.
-const SLABPOOL_DEFAULT_SIZE: usize = 20;
-
-/// A pool of 4MB slabs. Used for reading CSV files in 4MB chunks.
-#[derive(Debug)]
-struct SlabPool {
-    buffers: Mutex<Vec<Arc<[u8; SLABSIZE]>>>,
-    condvar: Condvar,
-}
-
-/// A 4MB slab of bytes. Used for reading CSV files in 4MB chunks.
-#[derive(Clone)]
-struct Slab {
-    pool: Arc<SlabPool>,
-    // We wrap the Arc<buffer> in an Option so that when a Slab is being dropped, we can move the Slab's reference
-    // to the Arc<buffer> back to the slab pool.
-    buffer: Option<Arc<[u8; SLABSIZE]>>,
-}
-
-impl Drop for Slab {
-    fn drop(&mut self) {
-        // Move the buffer back to the slab pool.
-        if let Some(buffer) = self.buffer.take() {
-            self.pool.return_buffer(buffer);
-        }
-    }
-}
-
-impl SlabPool {
-    pub fn new() -> Self {
-        let chunk_buffers: Vec<Arc<[u8; SLABSIZE]>> = (0..SLABPOOL_DEFAULT_SIZE)
-            .map(|_| Arc::new([0; SLABSIZE]))
-            .collect();
-        SlabPool {
-            buffers: Mutex::new(chunk_buffers),
-            condvar: Condvar::new(),
-        }
-    }
-
-    pub fn get_buffer(self: &Arc<Self>) -> Arc<[u8; SLABSIZE]> {
-        let mut buffers = self.buffers.lock().unwrap();
-        while buffers.is_empty() {
-            buffers = self.condvar.wait(buffers).unwrap();
-        }
-        buffers.pop().unwrap()
-    }
-
-    fn return_buffer(&self, buffer: Arc<[u8; SLABSIZE]>) {
-        let mut buffers = self.buffers.lock().unwrap();
-        buffers.push(buffer);
-        self.condvar.notify_one();
-    }
-}
+const SLAB_POOL_DEFAULT_SIZE: usize = 20;
 
 /// A data structure that holds either a single slice of bytes, or a chain of two slices of bytes.
 /// See the description to `parse_json` for more details.
@@ -205,7 +157,7 @@ pub async fn read_csv_local(
         parse_options,
         read_options,
         max_chunks_in_flight,
-    )?;
+    ).await?;
     tables_concat(tables_stream_collect(Box::pin(stream)).await)
 }
 
@@ -221,15 +173,15 @@ async fn tables_stream_collect(stream: BoxStream<'static, DaftResult<Table>>) ->
         .await
 }
 
-pub fn stream_csv_local(
+pub async fn stream_csv_local(
     uri: &str,
     convert_options: Option<CsvConvertOptions>,
     parse_options: CsvParseOptions,
     read_options: Option<CsvReadOptions>,
     max_chunks_in_flight: Option<usize>,
-) -> DaftResult<impl Stream<Item = DaftResult<Table>> + Send> {
+) -> DaftResult<impl Stream<Item=DaftResult<Table>> + Send> {
     let uri = uri.trim_start_matches("file://");
-    let file = std::fs::File::open(uri)?;
+    let file = tokio::fs::File::open(uri).await?;
 
     // TODO(desmond): This logic is repeated multiple times in the csv reader files. Should dedup.
     let predicate = convert_options
@@ -259,7 +211,7 @@ pub fn stream_csv_local(
             Some(co)
         }
     }
-    .unwrap_or_default();
+        .unwrap_or_default();
     // End of `should dedup`.
 
     // TODO(desmond): We should do better schema inference here.
@@ -305,8 +257,8 @@ pub fn stream_csv_local(
     // We suppose that each slab of CSV data produces (chunk size / slab size) number of Daft tables. We
     // then double this capacity to ensure that our channel is never full and our threads won't deadlock.
     let (sender, receiver) =
-        crossbeam_channel::bounded(max_chunks_in_flight.unwrap_or(2 * chunk_size / SLABSIZE));
-    rayon::spawn(move || {
+        crossbeam_channel::bounded(max_chunks_in_flight.unwrap_or(2 * chunk_size / SLAB_SIZE));
+    tokio::spawn(async move || {
         consume_csv_file(
             file,
             buffer_pool,
@@ -330,9 +282,8 @@ pub fn stream_csv_local(
 /// Consumes the CSV file and sends the results to `sender`.
 #[allow(clippy::too_many_arguments)]
 fn consume_csv_file(
-    mut file: std::fs::File,
+    file: tokio::fs::File,
     buffer_pool: Arc<CsvBufferPool>,
-    slabpool: Arc<SlabPool>,
     parse_options: CsvParseOptions,
     projection_indices: Arc<Vec<usize>>,
     read_daft_fields: Arc<Vec<Arc<daft_core::datatypes::Field>>>,
@@ -344,189 +295,426 @@ fn consume_csv_file(
     limit: Option<usize>,
     sender: Sender<Result<Table, DaftError>>,
 ) {
-    let rows_read = Arc::new(AtomicUsize::new(0));
-    let mut has_header = parse_options.has_header;
-    let total_len = file.metadata().unwrap().len() as usize;
-    let field_delimiter = parse_options.delimiter;
-    let escape_char = parse_options.escape_char;
-    let quote_char = parse_options.quote;
-    let double_quote_escape_allowed = parse_options.double_quote;
-    let mut total_bytes_read = 0;
-    let mut next_slab = None;
-    let mut next_buffer_len = 0;
-    let mut first_buffer = true;
-    loop {
-        let limit_reached = limit.map_or(false, |limit| {
-            let current_rows_read = rows_read.load(Ordering::Relaxed);
-            current_rows_read >= limit
-        });
-        if limit_reached {
-            break;
+    let mut csv_consumer = CsvConsumer::new(
+        file,
+        buffer_pool,
+        slabpool,
+        parse_options,
+        projection_indices,
+        read_daft_fields,
+        read_schema,
+        fields,
+        num_fields,
+        include_columns.clone(),
+        predicate,
+        limit,
+        sender,
+    );
+
+    csv_consumer.consume();
+}
+
+/// A struct representing a CSV consumer that processes and parses CSV data.
+struct CsvConsumer {
+    /// The file being read.
+    file: tokio::fs::File,
+    /// Options for parsing the CSV file.
+    parse_options: CsvParseOptions,
+    /// Indices of columns to be projected (included in the output).
+    projection_indices: Arc<Vec<usize>>,
+    /// Fields to be read from the CSV, in Daft format.
+    read_daft_fields: Arc<Vec<Arc<daft_core::datatypes::Field>>>,
+    /// Schema of the data to be read.
+    read_schema: Arc<Schema>,
+    /// Fields of the CSV file.
+    fields: Vec<Field>,
+    /// Total number of fields in the CSV.
+    num_fields: usize,
+    /// Optional list of columns to include in the output.
+    include_columns: Option<Vec<String>>,
+    /// Optional predicate for filtering rows.
+    predicate: Option<Arc<Expr>>,
+    /// Optional limit on the number of rows to read.
+    limit: Option<usize>,
+    /// Channel sender for sending parsed tables or errors.
+    sender: Sender<Result<Table, DaftError>>,
+    /// Atomic counter for the number of rows read.
+    rows_read: Arc<AtomicUsize>,
+    /// Flag indicating whether the CSV has a header row.
+    has_header: bool,
+    /// Total length of the file in bytes.
+    total_len: usize,
+    /// Total number of bytes read so far.
+    total_bytes_read: usize,
+    /// Length of the next buffer to be processed.
+    next_buffer_len: usize,
+    /// Flag indicating if this is the first buffer being processed.
+    first_buffer: bool,
+}
+
+impl CsvConsumer {
+    /// Creates a new CsvConsumer instance.
+    fn new(
+        file: tokio::fs::File,
+        buffer_pool: Arc<CsvBufferPool>,
+        slabpool: Arc<SlabPool>,
+        parse_options: CsvParseOptions,
+        projection_indices: Arc<Vec<usize>>,
+        read_daft_fields: Arc<Vec<Arc<daft_core::datatypes::Field>>>,
+        read_schema: Arc<Schema>,
+        fields: Vec<Field>,
+        num_fields: usize,
+        include_columns: Option<Vec<String>>,
+        predicate: Option<Arc<Expr>>,
+        limit: Option<usize>,
+        sender: Sender<Result<Table, DaftError>>,
+    ) -> Self {
+        let total_len = file.metadata().unwrap().len() as usize;
+        let has_header = parse_options.has_header;
+        Self {
+            file,
+            buffer_pool,
+            slabpool,
+            parse_options,
+            projection_indices,
+            read_daft_fields,
+            read_schema,
+            fields,
+            num_fields,
+            include_columns,
+            predicate,
+            limit,
+            sender,
+            rows_read: Arc::new(AtomicUsize::new(0)),
+            has_header,
+            total_len,
+            total_bytes_read: 0,
+            next_slab: None,
+            next_buffer_len: 0,
+            first_buffer: true,
         }
-        let (current_slab, current_buffer_len) = match next_slab.take() {
+    }
+
+    /// Main method to consume and process the CSV file.
+    async fn consume(mut self, file: tokio::fs::File) {
+        let mut pool = read_slabs_windowed(file, SLAB_SIZE, SLAB_POOL_DEFAULT_SIZE);
+
+        loop {
+            if self.limit_reached() {
+                break;
+            }
+
+            let Some(windowed_slab) = pool.next().await else {
+                break;
+            };
+
+            if !self.process_slab(windowed_slab) {
+                break;
+            }
+            self.has_header = false;
+            if self.total_bytes_read >= self.total_len {
+                break;
+            }
+        }
+    }
+
+    /// Checks if the row limit has been reached.
+    fn limit_reached(&self) -> bool {
+        self.limit.map_or(false, |limit| {
+            let current_rows_read = self.rows_read.load(Ordering::Relaxed);
+            current_rows_read >= limit
+        })
+    }
+
+    /// Processes a single slab of data.
+    fn process_slab(&mut self, windowed_slab: WindowedSlab) -> bool {
+        let file_chunk = self.get_file_chunk(&current_slab, current_buffer_len);
+        self.first_buffer = false;
+
+        if let (None, _) = file_chunk {
+            self.slabpool.return_buffer(unsafe_clone_buffer(&current_slab.buffer));
+            return false;
+        }
+
+        self.spawn_parse_thread(current_slab, file_chunk);
+        true
+    }
+
+    /// Retrieves the current slab to be processed.
+    fn get_current_slab(&mut self) -> (Arc<Slab>, usize) {
+        match self.next_slab.take() {
             Some(next_slab) => {
-                total_bytes_read += next_buffer_len;
-                (next_slab, next_buffer_len)
+                self.total_bytes_read += self.next_buffer_len;
+                (next_slab, self.next_buffer_len)
+            }
+            None => self.read_new_slab(),
+        }
+    }
+
+    /// Reads a new slab from the file.
+    fn read_new_slab(&mut self) -> (Arc<Slab>, usize) {
+        let mut buffer = self.slabpool.get_buffer();
+        match Arc::get_mut(&mut buffer) {
+            Some(inner_buffer) => {
+                let bytes_read = self.file.read(inner_buffer).unwrap();
+                if bytes_read == 0 {
+                    self.slabpool.return_buffer(buffer);
+                    return (Arc::new(Slab {
+                        pool: Arc::clone(&self.slabpool),
+                        buffer: None,
+                    }), 0);
+                }
+                self.total_bytes_read += bytes_read;
+                (
+                    Arc::new(Slab {
+                        pool: Arc::clone(&self.slabpool),
+                        buffer: Some(buffer),
+                    }),
+                    bytes_read,
+                )
             }
             None => {
-                let mut buffer = slabpool.get_buffer();
-                match Arc::get_mut(&mut buffer) {
-                    Some(inner_buffer) => {
-                        let bytes_read = file.read(inner_buffer).unwrap();
-                        if bytes_read == 0 {
-                            slabpool.return_buffer(buffer);
-                            break;
-                        }
-                        total_bytes_read += bytes_read;
-                        (
-                            Arc::new(Slab {
-                                pool: Arc::clone(&slabpool),
-                                buffer: Some(buffer),
-                            }),
-                            bytes_read,
-                        )
-                    }
-                    None => {
-                        slabpool.return_buffer(buffer);
-                        break;
-                    }
-                }
+                self.slabpool.return_buffer(buffer);
+                (Arc::new(Slab {
+                    pool: Arc::clone(&self.slabpool),
+                    buffer: None,
+                }), 0)
             }
-        };
-        (next_slab, next_buffer_len) = if total_bytes_read < total_len {
-            let mut next_buffer = slabpool.get_buffer();
+        }
+    }
+
+    /// Prepares the next slab for processing.
+    fn prepare_next_slab(&mut self) {
+        if self.total_bytes_read < self.total_len {
+            let mut next_buffer = self.slabpool.get_buffer();
             match Arc::get_mut(&mut next_buffer) {
                 Some(inner_buffer) => {
-                    let bytes_read = file.read(inner_buffer).unwrap();
+                    let bytes_read = self.file.read(inner_buffer).unwrap();
                     if bytes_read == 0 {
-                        slabpool.return_buffer(next_buffer);
-                        (None, 0)
+                        self.slabpool.return_buffer(next_buffer);
+                        self.next_slab = None;
+                        self.next_buffer_len = 0;
                     } else {
-                        (
-                            Some(Arc::new(Slab {
-                                pool: Arc::clone(&slabpool),
-                                buffer: Some(next_buffer),
-                            })),
-                            bytes_read,
-                        )
+                        self.next_slab = Some(Arc::new(Slab {
+                            pool: Arc::clone(&self.slabpool),
+                            buffer: Some(next_buffer),
+                        }));
+                        self.next_buffer_len = bytes_read;
                     }
                 }
                 None => {
-                    slabpool.return_buffer(next_buffer);
-                    break;
+                    self.slabpool.return_buffer(next_buffer);
+                    self.next_slab = None;
+                    self.next_buffer_len = 0;
                 }
             }
         } else {
-            (None, 0)
-        };
-        let file_chunk = get_file_chunk(
-            unsafe_clone_buffer(&current_slab.buffer),
-            current_buffer_len,
-            next_slab
-                .as_ref()
-                .map(|slab| unsafe_clone_buffer(&slab.buffer)),
-            next_buffer_len,
-            first_buffer,
-            num_fields,
-            quote_char,
-            field_delimiter,
-            escape_char,
-            double_quote_escape_allowed,
-        );
-        first_buffer = false;
-        if let (None, _) = file_chunk {
-            // Return the buffer. It doesn't matter that we still have a reference to the slab. We're going to fallback
-            // and the slabs will be useless.
-            slabpool.return_buffer(unsafe_clone_buffer(&current_slab.buffer));
-            // Exit early before spawning a new thread.
-            break;
-            // TODO(desmond): we should fallback instead.
+            self.next_slab = None;
+            self.next_buffer_len = 0;
         }
+    }
+
+    /// Retrieves the chunk of the file to be processed.
+    fn get_file_chunk(&self, current_slab: &WindowedSlab, first_buffer: bool) -> (Option<usize>, Option<usize>) {
+        let (left, right) = match current_slab.as_slice() {
+            [left, right] => (left.as_slice(), Some(right.as_slice())),
+            [left] => (left.as_slice(), None),
+            _ => unreachable!("Unexpected windowed slab size"),
+        };
+
+
+        get_file_chunk(
+            left,
+            right,
+            first_buffer,
+            self.num_fields,
+            self.parse_options.quote,
+            self.parse_options.delimiter,
+            self.parse_options.escape_char,
+            self.parse_options.double_quote,
+        )
+    }
+
+    /// Spawns a new thread to parse the CSV chunk.
+    fn spawn_parse_thread(&self, current_slab: Arc<Slab>, file_chunk: (Option<usize>, Option<usize>)) {
         let current_slab_clone = Arc::clone(&current_slab);
-        let next_slab_clone = next_slab.clone();
-        let parse_options = parse_options.clone();
-        let csv_buffer = buffer_pool.get_buffer();
-        let projection_indices = projection_indices.clone();
-        let fields = fields.clone();
-        let read_daft_fields = read_daft_fields.clone();
-        let read_schema = read_schema.clone();
-        let include_columns = include_columns.clone();
-        let predicate = predicate.clone();
-        let sender = sender.clone();
-        let rows_read = Arc::clone(&rows_read);
+        let next_slab_clone = self.next_slab.clone();
+        let parse_options = self.parse_options.clone();
+        let csv_buffer = self.buffer_pool.get_buffer();
+        let projection_indices = self.projection_indices.clone();
+        let fields = self.fields.clone();
+        let read_daft_fields = self.read_daft_fields.clone();
+        let read_schema = self.read_schema.clone();
+        let include_columns = self.include_columns.clone();
+        let predicate = self.predicate.clone();
+        let sender = self.sender.clone();
+        let rows_read = Arc::clone(&self.rows_read);
+        let limit = self.limit;
+        let has_header = self.has_header;
+
         rayon::spawn(move || {
-            let limit_reached = limit.map_or(false, |limit| {
-                let current_rows_read = rows_read.load(Ordering::Relaxed);
-                current_rows_read >= limit
-            });
-            if !limit_reached {
-                match file_chunk {
-                    (Some(start), None) => {
-                        if let Some(buffer) = &current_slab_clone.buffer {
-                            let buffer_source = BufferSource::Single(Cursor::new(
-                                &buffer[start..current_buffer_len],
-                            ));
-                            dispatch_to_parse_csv(
-                                has_header,
-                                parse_options,
-                                buffer_source,
-                                projection_indices,
-                                fields,
-                                read_daft_fields,
-                                read_schema,
-                                csv_buffer,
-                                &include_columns,
-                                predicate,
-                                sender,
-                                rows_read,
-                            );
-                        } else {
-                            panic!("Trying to read from a CSV buffer that doesn't exist. Please report this issue.")
-                        }
-                    }
-                    (Some(start), Some(end)) => {
-                        if let Some(next_slab_clone) = next_slab_clone
-                            && let Some(current_buffer) = &current_slab_clone.buffer
-                            && let Some(next_buffer) = &next_slab_clone.buffer
-                        {
-                            let buffer_source = BufferSource::Chain(std::io::Read::chain(
-                                Cursor::new(&current_buffer[start..current_buffer_len]),
-                                Cursor::new(&next_buffer[..end]),
-                            ));
-                            dispatch_to_parse_csv(
-                                has_header,
-                                parse_options,
-                                buffer_source,
-                                projection_indices,
-                                fields,
-                                read_daft_fields,
-                                read_schema,
-                                csv_buffer,
-                                &include_columns,
-                                predicate,
-                                sender,
-                                rows_read,
-                            );
-                        } else {
-                            panic!("Trying to read from an overflow CSV buffer that doesn't exist. Please report this issue.")
-                        }
-                    }
-                    _ => panic!(
-                        "Something went wrong when parsing the CSV file. Please report this issue."
-                    ),
-                };
+            if !Self::thread_limit_reached(&rows_read, limit) {
+                Self::parse_chunk(
+                    has_header,
+                    parse_options,
+                    current_slab_clone,
+                    next_slab_clone,
+                    file_chunk,
+                    projection_indices,
+                    fields,
+                    read_daft_fields,
+                    read_schema,
+                    csv_buffer,
+                    &include_columns,
+                    predicate,
+                    sender,
+                    rows_read,
+                );
             }
         });
-        has_header = false;
-        if total_bytes_read >= total_len {
-            break;
+    }
+
+    /// Checks if the thread has reached its row limit.
+    fn thread_limit_reached(rows_read: &Arc<AtomicUsize>, limit: Option<usize>) -> bool {
+        limit.map_or(false, |limit| {
+            let current_rows_read = rows_read.load(Ordering::Relaxed);
+            current_rows_read >= limit
+        })
+    }
+
+    /// Parses a chunk of the CSV file.
+    #[allow(clippy::too_many_arguments)]
+    fn parse_chunk(
+        has_header: bool,
+        parse_options: CsvParseOptions,
+        current_slab: Arc<Slab>,
+        next_slab: Option<Arc<Slab>>,
+        file_chunk: (Option<usize>, Option<usize>),
+        projection_indices: Arc<Vec<usize>>,
+        fields: Vec<Field>,
+        read_daft_fields: Arc<Vec<Arc<daft_core::datatypes::Field>>>,
+        read_schema: Arc<Schema>,
+        csv_buffer: CsvBuffer,
+        include_columns: &Option<Vec<String>>,
+        predicate: Option<Arc<Expr>>,
+        sender: Sender<Result<Table, DaftError>>,
+        rows_read: Arc<AtomicUsize>,
+    ) {
+        match file_chunk {
+            (Some(start), None) => {
+                if let Some(buffer) = &current_slab.buffer {
+                    let buffer_source = BufferSource::Single(Cursor::new(
+                        &buffer[start..],
+                    ));
+                    Self::dispatch_to_parse_csv(
+                        has_header,
+                        parse_options,
+                        buffer_source,
+                        projection_indices,
+                        fields,
+                        read_daft_fields,
+                        read_schema,
+                        csv_buffer,
+                        include_columns,
+                        predicate,
+                        sender,
+                        rows_read,
+                    );
+                } else {
+                    panic!("Trying to read from a CSV buffer that doesn't exist. Please report this issue.")
+                }
+            }
+            (Some(start), Some(end)) => {
+                if let Some(next_slab) = next_slab
+                    && let Some(current_buffer) = &current_slab.buffer
+                    && let Some(next_buffer) = &next_slab.buffer
+                {
+                    let buffer_source = BufferSource::Chain(Read::chain(
+                        Cursor::new(&current_buffer[start..]),
+                        Cursor::new(&next_buffer[..end]),
+                    ));
+                    Self::dispatch_to_parse_csv(
+                        has_header,
+                        parse_options,
+                        buffer_source,
+                        projection_indices,
+                        fields,
+                        read_daft_fields,
+                        read_schema,
+                        csv_buffer,
+                        include_columns,
+                        predicate,
+                        sender,
+                        rows_read,
+                    );
+                } else {
+                    panic!("Trying to read from an overflow CSV buffer that doesn't exist. Please report this issue.")
+                }
+            }
+            _ => panic!(
+                "Something went wrong when parsing the CSV file. Please report this issue."
+            ),
+        }
+    }
+
+    /// Helper function that takes in a BufferSource, calls parse_csv() to extract table values from
+    /// the buffer source, then streams the results to `sender`.
+    #[allow(clippy::too_many_arguments)]
+    fn dispatch_to_parse_csv(
+        has_header: bool,
+        parse_options: CsvParseOptions,
+        buffer_source: BufferSource,
+        projection_indices: Arc<Vec<usize>>,
+        fields: Vec<Field>,
+        read_daft_fields: Arc<Vec<Arc<daft_core::datatypes::Field>>>,
+        read_schema: Arc<Schema>,
+        csv_buffer: CsvBuffer,
+        include_columns: &Option<Vec<String>>,
+        predicate: Option<Arc<Expr>>,
+        sender: Sender<Result<Table, DaftError>>,
+        rows_read: Arc<AtomicUsize>,
+    ) {
+        let table_results = {
+            let rdr = ReaderBuilder::new()
+                .has_headers(has_header)
+                .delimiter(parse_options.delimiter)
+                .double_quote(parse_options.double_quote)
+                .quote(parse_options.quote)
+                .escape(parse_options.escape_char)
+                .comment(parse_options.comment)
+                .flexible(parse_options.allow_variable_columns)
+                .from_reader(buffer_source);
+            parse_csv_chunk(
+                rdr,
+                projection_indices,
+                fields,
+                read_daft_fields,
+                read_schema,
+                csv_buffer,
+                include_columns,
+                predicate,
+            )
+        };
+        match table_results {
+            Ok(tables) => {
+                for table in tables {
+                    let table_len = table.len();
+                    sender.send(Ok(table)).unwrap();
+                    // Atomically update the number of rows read only after the result has
+                    // been sent. In theory we could wrap these steps in a mutex, but
+                    // applying limit at this layer can be best-effort with no adverse
+                    // side effects.
+                    rows_read.fetch_add(table_len, Ordering::Relaxed);
+                }
+            }
+            Err(e) => sender.send(Err(e)).unwrap(),
         }
     }
 }
 
 /// Unsafe helper function that extracts the buffer from an &Option<Arc<[u8]>>. Users should
 /// ensure that the buffer is Some, otherwise this function causes the process to panic.
-fn unsafe_clone_buffer(buffer: &Option<Arc<[u8; SLABSIZE]>>) -> Arc<[u8; SLABSIZE]> {
+fn unsafe_clone_buffer(buffer: &Option<Arc<[u8; SLAB_SIZE]>>) -> Arc<[u8; SLAB_SIZE]> {
     match buffer {
         Some(buffer) => Arc::clone(buffer),
         None => panic!("Tried to clone a CSV slab that doesn't exist. Please report this error."),
@@ -591,10 +779,8 @@ fn unsafe_clone_buffer(buffer: &Option<Arc<[u8; SLABSIZE]>>) -> Arc<[u8; SLABSIZ
 ///     \n character and go back to 2.
 #[allow(clippy::too_many_arguments)]
 fn get_file_chunk(
-    current_buffer: Arc<[u8; SLABSIZE]>,
-    current_buffer_len: usize,
-    next_buffer: Option<Arc<[u8; SLABSIZE]>>,
-    next_buffer_len: usize,
+    current_buffer: &[u8],
+    next_buffer: Option<&[u8]>,
     first_buffer: bool,
     num_fields: usize,
     quote_char: u8,
@@ -862,7 +1048,7 @@ fn parse_csv_chunk<R>(
     predicate: Option<Arc<Expr>>,
 ) -> DaftResult<Vec<Table>>
 where
-    R: std::io::Read,
+    R: Read,
 {
     let mut chunk_buffer = csv_buffer.buffer;
     let mut tables = vec![];

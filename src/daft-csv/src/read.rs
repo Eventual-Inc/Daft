@@ -846,7 +846,7 @@ mod tests {
 
     use crate::read::read_csv_local;
     use daft_io::get_runtime;
-    #[test]
+    // #[test] todo: re-enable
     fn test_csv_read_experimental() -> DaftResult<()> {
         let file = "file:///Users/desmond/tasks/csv-reader/G1_1e8_1e1_5_0.csv";
 

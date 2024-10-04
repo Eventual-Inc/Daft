@@ -23,6 +23,9 @@ serde = {workspace = true}
 snafu = {workspace = true}
 tokio = {workspace = true}
 tokio-util = {workspace = true}
+tokio-stream = {workspace = true}
+derive_more = { workspace = true, features = ["deref", "deref_mut"] }
+heapless = { workspace = true }
 url = {workspace = true}
 
 [dev-dependencies]
