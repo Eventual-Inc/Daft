@@ -54,7 +54,7 @@ impl<T> DataArray<T> {
 
         if let Ok(expected_arrow_physical_type) = physical_field.dtype.to_arrow()
         {
-            let arrow_data_type = arrow_array.data_type(); // logical type
+            let arrow_data_type = arrow_array.data_type();
 
             if &expected_arrow_physical_type != arrow_data_type {
                 panic!(
