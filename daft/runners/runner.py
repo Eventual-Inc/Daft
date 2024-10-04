@@ -67,7 +67,8 @@ class Runner(Generic[PartitionT]):
     def actor_pool_context(
         self,
         name: str,
-        resource_request: ResourceRequest,
+        actor_resource_request: ResourceRequest,
+        task_resource_request: ResourceRequest,
         num_actors: int,
         projection: ExpressionsProjection,
     ) -> Iterator[str]:
