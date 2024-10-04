@@ -242,13 +242,12 @@ def test_with_column_rayrunner_class(enable_actor_pool):
 @pytest.mark.skipif(get_context().runner_config.name not in {"ray"}, reason="requires RayRunner to be in use")
 def test_with_column_folded_rayrunner_class(enable_actor_pool):
     assert_resources = AssertResourcesStateful.with_concurrency(1)
-    # assert_resources = assert_resources.override_options(num_cpus=1)
 
     df = daft.from_pydict(DATA).repartition(2)
 
     df = df.with_column(
         "no_requests",
-        assert_resources(col("id"), num_cpus=1),
+        assert_resources(col("id"), num_cpus=1),  # UDFs have 1 CPU by default
     )
 
     assert_resources_1 = assert_resources.override_options(num_cpus=1, memory_bytes=5_000_000)
@@ -256,7 +255,7 @@ def test_with_column_folded_rayrunner_class(enable_actor_pool):
         "more_memory_request",
         assert_resources_1(col("id"), num_cpus=1, memory=5_000_000),
     )
-    assert_resources_2 = assert_resources.override_options(num_cpus=1)
+    assert_resources_2 = assert_resources.override_options(num_cpus=1, memory_bytes=None)
     df = df.with_column(
         "more_cpu_request",
         assert_resources_2(col("id"), num_cpus=1),
