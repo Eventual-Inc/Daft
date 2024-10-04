@@ -3418,6 +3418,18 @@ class ExpressionGeometryNamespace(ExpressionNamespace):
         """Compute the area of a geometry"""
         return Expression._from_pyexpr(native.geo_op(self._expr, "area"))
 
+    def convex_hull(self) -> Expression:
+        """Compute the area of a geometry"""
+        return Expression._from_pyexpr(native.geo_op(self._expr, "convex_hull"))
+
     def dist(self, rhs: Expression) -> Expression:
         """Compute the distance between two geometries"""
-        return Expression._from_pyexpr(native.geo_op_binary(self._expr, rhs._expr, "dist"))
+        return Expression._from_pyexpr(native.geo_op_binary(self._expr, rhs._expr, "distance"))
+
+    def intersects(self, rhs: Expression) -> Expression:
+        """Check if two geometries intersect"""
+        return Expression._from_pyexpr(native.geo_op_binary(self._expr, rhs._expr, "intersects"))
+
+    def intersection(self, rhs: Expression) -> Expression:
+        """Compute the intersection of two geometries"""
+        return Expression._from_pyexpr(native.geo_op_binary(self._expr, rhs._expr, "intersection"))

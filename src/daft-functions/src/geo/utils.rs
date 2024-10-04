@@ -8,7 +8,7 @@ use daft_core::{
     prelude::{BinaryArray, DataType, Field},
     series::{IntoSeries, Series},
 };
-use geo::{Area, EuclideanDistance, Geometry};
+use geo::{Area, BooleanOps, Contains, ConvexHull, EuclideanDistance, Geometry, Intersects};
 use geozero::{wkb, wkt, CoordDimensions, ToGeo, ToWkb, ToWkt};
 
 pub struct GeometryArrayIter<'a> {
@@ -36,7 +36,6 @@ impl<'a> Iterator for GeometryArrayIter<'a> {
             self.cursor += 1;
             match x {
                 Some(x) => {
-                    //let dsdsd = x.binary().unwrap().as_arrow().values().as_slice();
                     let bytes = x.u8().unwrap().as_slice();
                     Some(Some(wkb::Wkb(bytes).to_geo().unwrap()))
                 }
@@ -206,7 +205,8 @@ pub fn encode_series(s: &Series, text: bool) -> DaftResult<Series> {
 
 pub fn geo_unary_dispatch(s: &Series, op: &str) -> DaftResult<Series> {
     match op {
-        "area" => geo_unary_to_scalar::<f64, _>(s, |g: Geometry| g.unsigned_area()),
+        "area" => geo_unary_to_scalar::<f64, _>(s, |g| g.unsigned_area()),
+        "convex_hull" => geo_unary_to_geo(s, |g| g.convex_hull().into()),
         _ => Err(DaftError::ValueError(format!("unsupported op {}", op))),
     }
 }
@@ -227,9 +227,33 @@ where
     )
 }
 
+pub fn geo_unary_to_geo<F>(s: &Series, op_fn: F) -> DaftResult<Series>
+where
+    F: Fn(Geometry) -> Geometry,
+{
+    let geo_array = s.geometry()?;
+    let mut gh = GH::new(geo_array.len());
+    for geo in GeometryArrayIter::new(geo_array) {
+        match geo {
+            Some(g) => gh.push(op_fn(g)),
+            _ => gh.null(),
+        }
+    }
+    gh.into_series(geo_array.name())
+}
+
 pub fn geo_binary_dispatch(lhs: &Series, rhs: &Series, op: &str) -> DaftResult<Series> {
     match op {
         "dist" => geo_binary_to_scalar::<f64, _>(lhs, rhs, |l, r| l.euclidean_distance(&r)),
+        "intersects" => geo_binary_to_bool(lhs, rhs, |l, r| l.intersects(&r)),
+        "contains" => geo_binary_to_bool(lhs, rhs, |l, r| l.contains(&r)),
+        "intersection" => geo_binary_to_geo(lhs, rhs, |l, r| match (l, r) {
+            (Geometry::Polygon(l), Geometry::Polygon(r)) => Some(l.intersection(&r).into()),
+            (Geometry::MultiPolygon(l), Geometry::MultiPolygon(r)) => {
+                Some(l.intersection(&r).into())
+            }
+            _ => None,
+        }),
         _ => Err(DaftError::ValueError(format!("unsupported op {}", op))),
     }
 }
@@ -253,9 +277,47 @@ where
     let arrow_array = arrow2::array::PrimitiveArray::<T>::from_iter(scalar_iter);
     Series::from_arrow(
         Arc::new(Field::new(
-            rhs_array.name(),
+            lhs_array.name(),
             DataType::from(arrow_array.data_type()),
         )),
         Box::new(arrow_array),
     )
+}
+
+pub fn geo_binary_to_bool<F>(lhs: &Series, rhs: &Series, op_fn: F) -> DaftResult<Series>
+where
+    F: Fn(Geometry, Geometry) -> bool,
+{
+    let lhs_array = lhs.geometry()?;
+    let rhs_array = rhs.geometry()?;
+    let scalar_iter = GeometryArrayIter::new(lhs_array)
+        .zip(GeometryArrayIter::new(rhs_array))
+        .map(|(lhg, rhg)| match (lhg, rhg) {
+            (Some(l), Some(r)) => Some(op_fn(l, r)),
+            _ => None,
+        });
+    let arrow_array = arrow2::array::BooleanArray::from_iter(scalar_iter);
+    Series::from_arrow(
+        Arc::new(Field::new(lhs_array.name(), DataType::Boolean)),
+        Box::new(arrow_array),
+    )
+}
+
+pub fn geo_binary_to_geo<F>(lhs: &Series, rhs: &Series, op_fn: F) -> DaftResult<Series>
+where
+    F: Fn(Geometry, Geometry) -> Option<Geometry>,
+{
+    let lhs_array = lhs.geometry()?;
+    let rhs_array = rhs.geometry()?;
+    let mut gh = GH::new(lhs_array.len());
+    for (lhg, rhg) in GeometryArrayIter::new(lhs_array).zip(GeometryArrayIter::new(rhs_array)) {
+        match (lhg, rhg) {
+            (Some(l), Some(r)) => match op_fn(l, r) {
+                Some(g) => gh.push(g),
+                None => gh.null(),
+            },
+            _ => gh.null(),
+        }
+    }
+    gh.into_series(lhs_array.name())
 }

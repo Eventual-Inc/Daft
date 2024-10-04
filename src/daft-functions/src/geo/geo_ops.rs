@@ -30,6 +30,7 @@ impl ScalarUDF for GeoOp {
                 match field.dtype {
                     DataType::Geometry => match self.op.as_str() {
                         "area" => Ok(Field::new(field.name, DataType::Float64)),
+                        "convex_hull" => Ok(Field::new(field.name, DataType::Geometry)),
                         other => Err(DaftError::ValueError(format!("unsupported op {}", other))),
                     },
                     _ => Err(DaftError::TypeError(format!(
@@ -38,12 +39,14 @@ impl ScalarUDF for GeoOp {
                     ))),
                 }
             }
-            [rhs, lhs] => {
+            [lhs, rhs] => {
                 let lhs_field = lhs.to_field(schema)?;
                 let rhs_field = rhs.to_field(schema)?;
                 match (lhs_field.dtype, rhs_field.dtype) {
                     (DataType::Geometry, DataType::Geometry) => match self.op.as_str() {
-                        "dist" => Ok(Field::new(lhs_field.name, DataType::Float64)),
+                        "distance" => Ok(Field::new(lhs_field.name, DataType::Float64)),
+                        "intersects" => Ok(Field::new(lhs_field.name, DataType::Boolean)),
+                        "intersection" => Ok(Field::new(lhs_field.name, DataType::Geometry)),
                         _ => Err(DaftError::ValueError(format!("unsupported op {}", self.op))),
                     },
                     (lhs, rhs) => Err(DaftError::TypeError(format!(
@@ -64,6 +67,7 @@ impl ScalarUDF for GeoOp {
             [input] => match input.data_type() {
                 DataType::Geometry => match self.op.as_str() {
                     "area" => utils::geo_unary_dispatch(input, "area"),
+                    "convex_hull" => utils::geo_unary_dispatch(input, "convex_hull"),
                     other => Err(DaftError::ValueError(format!("unsupported op {}", other))),
                 },
                 other => Err(DaftError::TypeError(format!(
@@ -73,7 +77,9 @@ impl ScalarUDF for GeoOp {
             },
             [lhs, rhs] => match (lhs.data_type(), rhs.data_type()) {
                 (DataType::Geometry, DataType::Geometry) => match self.op.as_str() {
-                    "dist" => utils::geo_binary_dispatch(lhs, rhs, "dist"),
+                    "distance" => utils::geo_binary_dispatch(lhs, rhs, "distance"),
+                    "intersects" => utils::geo_binary_dispatch(lhs, rhs, "intersects"),
+                    "intersection" => utils::geo_binary_dispatch(lhs, rhs, "intersection"),
                     _ => Err(DaftError::ValueError(format!("unsupported op {}", self.op))),
                 },
                 (lhs, rhs) => Err(DaftError::TypeError(format!(

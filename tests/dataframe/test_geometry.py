@@ -63,4 +63,4 @@ def test_geo_distance(geo_input_df):
     )
     df = df.select(daft.col("ref").geo.dist(daft.col("geo")).alias("dist"))
     result = df.to_pydict()
-    assert result["dist"] == [pytest.approx(2.2360679774)] * 2 + [0, None]
+    assert result["dist"] == [pytest.approx((1**2 + 2**2) ** 0.5)] * 2 + [0, None]
