@@ -124,11 +124,11 @@ fn materialize_scan_task(
                 // Native Parquet Reads
                 // ********************
                 FileFormatConfig::Parquet(ParquetSourceConfig {
-                    coerce_int96_timestamp_unit,
-                    field_id_mapping,
-                    chunk_size,
-                    ..
-                }) => {
+                                              coerce_int96_timestamp_unit,
+                                              field_id_mapping,
+                                              chunk_size,
+                                              ..
+                                          }) => {
                     let inference_options =
                         ParquetSchemaInferenceOptions::new(Some(*coerce_int96_timestamp_unit));
 
@@ -157,7 +157,7 @@ fn materialize_scan_task(
                         multithreaded_io,
                         &inference_options,
                     )
-                    .context(DaftCoreComputeSnafu)?;
+                        .context(DaftCoreComputeSnafu)?;
 
                     let row_groups = parquet_sources_to_row_groups(scan_task.sources.as_slice());
                     let metadatas = scan_task
@@ -182,7 +182,7 @@ fn materialize_scan_task(
                         Some(delete_map),
                         *chunk_size,
                     )
-                    .context(DaftCoreComputeSnafu)?
+                        .context(DaftCoreComputeSnafu)?
                 }
 
                 // ****************
@@ -221,7 +221,7 @@ fn materialize_scan_task(
                         cfg.escape_char,
                         cfg.comment,
                     )
-                    .context(DaftCSVSnafu)?;
+                        .context(DaftCSVSnafu)?;
                     let read_options =
                         CsvReadOptions::new_internal(cfg.buffer_size, cfg.chunk_size);
                     let uris = urls.collect::<Vec<_>>();
@@ -236,7 +236,7 @@ fn materialize_scan_task(
                         None,
                         8,
                     )
-                    .context(DaftCoreComputeSnafu)?
+                        .context(DaftCoreComputeSnafu)?
                 }
 
                 // ****************
@@ -266,21 +266,21 @@ fn materialize_scan_task(
                         None,
                         8,
                     )
-                    .context(DaftCoreComputeSnafu)?
+                        .context(DaftCoreComputeSnafu)?
                 }
                 #[cfg(feature = "python")]
                 FileFormatConfig::Database(_) => {
                     return Err(common_error::DaftError::TypeError(
                         "Native reads for Database file format not implemented".to_string(),
                     ))
-                    .context(DaftCoreComputeSnafu);
+                        .context(DaftCoreComputeSnafu);
                 }
                 #[cfg(feature = "python")]
                 FileFormatConfig::PythonFunction => {
                     return Err(common_error::DaftError::TypeError(
                         "Native reads for PythonFunction file format not implemented".to_string(),
                     ))
-                    .context(DaftCoreComputeSnafu);
+                        .context(DaftCoreComputeSnafu);
                 }
             }
         }
@@ -289,9 +289,9 @@ fn materialize_scan_task(
             use pyo3::Python;
             match scan_task.file_format_config.as_ref() {
                 FileFormatConfig::Parquet(ParquetSourceConfig {
-                    coerce_int96_timestamp_unit,
-                    ..
-                }) => Python::with_gil(|py| {
+                                              coerce_int96_timestamp_unit,
+                                              ..
+                                          }) => Python::with_gil(|py| {
                     urls.map(|url| {
                         crate::python::read_parquet_into_py_table(
                             py,
@@ -306,17 +306,17 @@ fn materialize_scan_task(
                                 .map(|cols| cols.as_ref().clone()),
                             scan_task.pushdowns.limit,
                         )
-                        .map(|t| t.into())
-                        .context(PyIOSnafu)
+                            .map(|t| t.into())
+                            .context(PyIOSnafu)
                     })
-                    .collect::<crate::Result<Vec<_>>>()
+                        .collect::<crate::Result<Vec<_>>>()
                 })?,
                 FileFormatConfig::Csv(CsvSourceConfig {
-                    has_headers,
-                    delimiter,
-                    double_quote,
-                    ..
-                }) => Python::with_gil(|py| {
+                                          has_headers,
+                                          delimiter,
+                                          double_quote,
+                                          ..
+                                      }) => Python::with_gil(|py| {
                     urls.map(|url| {
                         crate::python::read_csv_into_py_table(
                             py,
@@ -333,10 +333,10 @@ fn materialize_scan_task(
                                 .map(|cols| cols.as_ref().clone()),
                             scan_task.pushdowns.limit,
                         )
-                        .map(|t| t.into())
-                        .context(PyIOSnafu)
+                            .map(|t| t.into())
+                            .context(PyIOSnafu)
                     })
-                    .collect::<crate::Result<Vec<_>>>()
+                        .collect::<crate::Result<Vec<_>>>()
                 })?,
                 FileFormatConfig::Json(_) => Python::with_gil(|py| {
                     urls.map(|url| {
@@ -352,10 +352,10 @@ fn materialize_scan_task(
                                 .map(|cols| cols.as_ref().clone()),
                             scan_task.pushdowns.limit,
                         )
-                        .map(|t| t.into())
-                        .context(PyIOSnafu)
+                            .map(|t| t.into())
+                            .context(PyIOSnafu)
                     })
-                    .collect::<crate::Result<Vec<_>>>()
+                        .collect::<crate::Result<Vec<_>>>()
                 })?,
                 FileFormatConfig::Database(DatabaseSourceConfig { sql, conn }) => {
                     let predicate = scan_task
@@ -377,8 +377,8 @@ fn materialize_scan_task(
                                 .map(|cols| cols.as_ref().clone()),
                             scan_task.pushdowns.limit,
                         )
-                        .map(|t| t.into())
-                        .context(PyIOSnafu)?;
+                            .map(|t| t.into())
+                            .context(PyIOSnafu)?;
                         Ok(vec![table])
                     })?
                 }
@@ -597,11 +597,11 @@ impl MicroPartition {
                 _,
                 _,
                 &FileFormatConfig::Parquet(ParquetSourceConfig {
-                    coerce_int96_timestamp_unit,
-                    ref field_id_mapping,
-                    chunk_size,
-                    ..
-                }),
+                                               coerce_int96_timestamp_unit,
+                                               ref field_id_mapping,
+                                               chunk_size,
+                                               ..
+                                           }),
                 StorageConfig::Native(cfg),
             ) => {
                 let uris = scan_task
@@ -654,7 +654,7 @@ impl MicroPartition {
                     parquet_metadata,
                     chunk_size,
                 )
-                .context(DaftCoreComputeSnafu)
+                    .context(DaftCoreComputeSnafu)
             }
 
             // CASE: Last resort fallback option
@@ -811,7 +811,7 @@ fn prune_fields_from_schema(
                     field: col_name.to_string(),
                     available_fields: avail_names.iter().map(|v| v.to_string()).collect(),
                 }
-                .into());
+                    .into());
             }
         }
         let filtered_columns = schema
@@ -871,7 +871,7 @@ pub(crate) fn read_csv_into_micropartition(
                 None,
                 8,
             )
-            .context(DaftCoreComputeSnafu)?;
+                .context(DaftCoreComputeSnafu)?;
 
             // Union all schemas and cast all tables to the same schema
             let unioned_schema = tables
@@ -920,7 +920,7 @@ pub(crate) fn read_json_into_micropartition(
                 None,
                 8,
             )
-            .context(DaftCoreComputeSnafu)?;
+                .context(DaftCoreComputeSnafu)?;
 
             // Union all schemas and cast all tables to the same schema
             let unioned_schema = tables
@@ -1186,7 +1186,7 @@ pub(crate) fn read_parquet_into_micropartition<T: AsRef<str>>(
                     meta_io_stats,
                     meta_field_id_mapping,
                 )
-                .await
+                    .await
             })?
             .into_iter()
             .map(Arc::new)
@@ -1290,16 +1290,16 @@ pub(crate) fn read_parquet_into_micropartition<T: AsRef<str>>(
                 row_groups,
                 chunk_size,
             })
-            .into(),
+                .into(),
             scan_task_daft_schema,
             StorageConfig::Native(
                 NativeStorageConfig::new_internal(
                     multithreaded_io,
                     Some(io_config.as_ref().clone()),
                 )
-                .into(),
+                    .into(),
             )
-            .into(),
+                .into(),
             Pushdowns::new(
                 None,
                 None,

@@ -36,8 +36,6 @@ impl MicroPartition {
 
         let expected_schema = infer_schema(exprs, &self.schema)?;
 
-        tracing::trace!("Expected schema: {expected_schema:?}");
-
         let tables = self.tables_or_read(io_stats)?;
 
         let evaluated_tables: Vec<_> = tables
