@@ -2922,7 +2922,6 @@ class ExpressionListNamespace(ExpressionNamespace):
         delimiter_expr = Expression._to_expression(delimiter)
         return Expression._from_pyexpr(native.list_join(self._expr, delimiter_expr._expr))
 
-    # todo: do we want type to be a Map expression? how should we do this?
     def value_counts(self) -> Expression:
         """Counts the occurrences of each unique value in the list.
 
