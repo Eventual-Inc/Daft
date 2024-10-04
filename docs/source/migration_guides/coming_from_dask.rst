@@ -80,7 +80,7 @@ For example:
     res = ddf.map_partitions(my_function, **kwargs)
 
 
-Daft implements two APIs for mapping computations over the data in your DataFrame in parallel: :doc:`Expressions <../user_guide/basic_concepts/expressions>` and :doc:`UDFs <../user_guide/daft_in_depth/udf>`. Expressions are most useful when you need to define computation over your columns.
+Daft implements two APIs for mapping computations over the data in your DataFrame in parallel: :doc:`Expressions <../user_guide/expressions>` and :doc:`UDFs <../user_guide/udf>`. Expressions are most useful when you need to define computation over your columns.
 
 .. code:: python
 
@@ -113,7 +113,7 @@ Daft is built as a DataFrame API for distributed Machine learning. You can use D
 Daft supports Multimodal Data Types
 -----------------------------------
 
-Dask supports the same data types as pandas. Daft is built to support many more data types, including Images, nested JSON, tensors, etc. See :doc:`the documentation <../user_guide/daft_in_depth/datatypes>` for a list of all supported data types.
+Dask supports the same data types as pandas. Daft is built to support many more data types, including Images, nested JSON, tensors, etc. See :doc:`the documentation <../user_guide/datatypes>` for a list of all supported data types.
 
 Distributed Computing and Remote Clusters
 -----------------------------------------

@@ -14,6 +14,7 @@ use daft_core::{
         display_timestamp,
     },
 };
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
@@ -68,6 +69,8 @@ pub enum LiteralValue {
     /// Python object.
     #[cfg(feature = "python")]
     Python(PyObjectWrapper),
+
+    Struct(IndexMap<Field, LiteralValue>),
 }
 
 impl Eq for LiteralValue {}
@@ -112,6 +115,12 @@ impl Hash for LiteralValue {
             }
             #[cfg(feature = "python")]
             Python(py_obj) => py_obj.hash(state),
+            Struct(entries) => {
+                entries.iter().for_each(|(v, f)| {
+                    v.hash(state);
+                    f.hash(state);
+                });
+            }
         }
     }
 }
@@ -143,6 +152,16 @@ impl Display for LiteralValue {
                 Python::with_gil(|py| pyobj.0.call_method0(py, pyo3::intern!(py, "__str__")))
                     .unwrap()
             }),
+            Struct(entries) => {
+                write!(f, "Struct(")?;
+                for (i, (field, v)) in entries.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}: {}", field.name, v)?;
+                }
+                write!(f, ")")
+            }
         }
     }
 }
@@ -169,6 +188,7 @@ impl LiteralValue {
             Series(series) => series.data_type().clone(),
             #[cfg(feature = "python")]
             Python(_) => DataType::Python,
+            Struct(entries) => DataType::Struct(entries.keys().cloned().collect()),
         }
     }
 
@@ -203,6 +223,13 @@ impl LiteralValue {
             Series(series) => series.clone().rename("literal"),
             #[cfg(feature = "python")]
             Python(val) => PythonArray::from(("literal", vec![val.0.clone()])).into_series(),
+            Struct(entries) => {
+                let struct_dtype = DataType::Struct(entries.keys().cloned().collect());
+                let struct_field = Field::new("literal", struct_dtype);
+
+                let values = entries.values().map(|v| v.to_series()).collect();
+                StructArray::new(struct_field, values, None).into_series()
+            }
         };
         result
     }
@@ -235,6 +262,7 @@ impl LiteralValue {
             Decimal(..) | Series(..) | Time(..) | Binary(..) => display_sql_err,
             #[cfg(feature = "python")]
             Python(..) => display_sql_err,
+            Struct(..) => display_sql_err,
         }
     }
 
@@ -304,49 +332,64 @@ impl LiteralValue {
     }
 }
 
-pub trait Literal {
+pub trait Literal: Sized {
     /// [Literal](Expr::Literal) expression.
-    fn lit(self) -> ExprRef;
+    fn lit(self) -> ExprRef {
+        Expr::Literal(self.literal_value()).into()
+    }
+    fn literal_value(self) -> LiteralValue;
 }
 
 impl Literal for String {
-    fn lit(self) -> ExprRef {
-        Expr::Literal(LiteralValue::Utf8(self)).into()
+    fn literal_value(self) -> LiteralValue {
+        LiteralValue::Utf8(self)
     }
 }
 
 impl<'a> Literal for &'a str {
-    fn lit(self) -> ExprRef {
-        Expr::Literal(LiteralValue::Utf8(self.to_owned())).into()
+    fn literal_value(self) -> LiteralValue {
+        LiteralValue::Utf8(self.to_owned())
     }
 }
 
 macro_rules! make_literal {
     ($TYPE:ty, $SCALAR:ident) => {
         impl Literal for $TYPE {
-            fn lit(self) -> ExprRef {
-                Expr::Literal(LiteralValue::$SCALAR(self)).into()
+            fn literal_value(self) -> LiteralValue {
+                LiteralValue::$SCALAR(self)
             }
         }
     };
 }
 
 impl<'a> Literal for &'a [u8] {
-    fn lit(self) -> ExprRef {
-        Expr::Literal(LiteralValue::Binary(self.to_vec())).into()
+    fn literal_value(self) -> LiteralValue {
+        LiteralValue::Binary(self.to_vec())
     }
 }
 
 impl Literal for Series {
-    fn lit(self) -> ExprRef {
-        Expr::Literal(LiteralValue::Series(self)).into()
+    fn literal_value(self) -> LiteralValue {
+        LiteralValue::Series(self)
     }
 }
 
 #[cfg(feature = "python")]
 impl Literal for pyo3::PyObject {
-    fn lit(self) -> ExprRef {
-        Expr::Literal(LiteralValue::Python(PyObjectWrapper(self))).into()
+    fn literal_value(self) -> LiteralValue {
+        LiteralValue::Python(PyObjectWrapper(self))
+    }
+}
+
+impl<T> Literal for Option<T>
+where
+    T: Literal,
+{
+    fn literal_value(self) -> LiteralValue {
+        match self {
+            Some(val) => val.literal_value(),
+            None => LiteralValue::Null,
+        }
     }
 }
 
@@ -359,6 +402,10 @@ make_literal!(f64, Float64);
 
 pub fn lit<L: Literal>(t: L) -> ExprRef {
     t.lit()
+}
+
+pub fn literal_value<L: Literal>(t: L) -> LiteralValue {
+    t.literal_value()
 }
 
 pub fn null_lit() -> ExprRef {

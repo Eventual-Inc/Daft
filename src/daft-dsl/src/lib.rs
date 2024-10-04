@@ -18,7 +18,7 @@ pub use expr::{
     binary_op, col, has_agg, has_stateful_udf, is_partition_compatible, AggExpr,
     ApproxPercentileParams, Expr, ExprRef, Operator, SketchType,
 };
-pub use lit::{lit, literals_to_series, null_lit, Literal, LiteralValue};
+pub use lit::{lit, literal_value, literals_to_series, null_lit, Literal, LiteralValue};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 pub use resolve_expr::{

@@ -12,8 +12,8 @@ use daft_plan::{LogicalPlanBuilder, LogicalPlanRef};
 use sqlparser::{
     ast::{
         ArrayElemTypeDef, BinaryOperator, CastKind, ExactNumberInfo, GroupByExpr, Ident, Query,
-        SelectItem, StructField, Subscript, TableWithJoins, TimezoneInfo, UnaryOperator, Value,
-        WildcardAdditionalOptions,
+        SelectItem, Statement, StructField, Subscript, TableWithJoins, TimezoneInfo, UnaryOperator,
+        Value, WildcardAdditionalOptions,
     },
     dialect::GenericDialect,
     parser::{Parser, ParserOptions},
@@ -88,9 +88,18 @@ impl SQLPlanner {
 
         let statements = parser.parse_statements()?;
 
-        match statements.as_slice() {
-            [sqlparser::ast::Statement::Query(query)] => Ok(self.plan_query(query)?.build()),
-            other => unsupported_sql_err!("{}", other[0]),
+        match statements.len() {
+            1 => Ok(self.plan_statement(&statements[0])?),
+            other => {
+                unsupported_sql_err!("Only exactly one SQL statement allowed, found {}", other)
+            }
+        }
+    }
+
+    fn plan_statement(&mut self, statement: &Statement) -> SQLPlannerResult<LogicalPlanRef> {
+        match statement {
+            Statement::Query(query) => Ok(self.plan_query(query)?.build()),
+            other => unsupported_sql_err!("{}", other),
         }
     }
 
@@ -388,7 +397,19 @@ impl SQLPlanner {
 
     fn plan_relation(&self, rel: &sqlparser::ast::TableFactor) -> SQLPlannerResult<Relation> {
         match rel {
-            sqlparser::ast::TableFactor::Table { name, .. } => {
+            sqlparser::ast::TableFactor::Table {
+                name,
+                args: Some(args),
+                alias,
+                ..
+            } => {
+                let tbl_fn = name.0.first().unwrap().value.as_str();
+
+                self.plan_table_function(tbl_fn, args, alias)
+            }
+            sqlparser::ast::TableFactor::Table {
+                name, args: None, ..
+            } => {
                 let table_name = name.to_string();
                 let plan = self
                     .catalog
@@ -489,9 +510,9 @@ impl SQLPlanner {
                             .collect::<Vec<_>>()
                     })
                     .map_err(|e| e.into());
+                } else {
+                    Ok(vec![col("*")])
                 }
-
-                Ok(vec![])
             }
             _ => todo!(),
         }
@@ -617,11 +638,30 @@ impl SQLPlanner {
             SQLExpr::Ceil { expr, .. } => Ok(ceil(self.plan_expr(expr)?)),
             SQLExpr::Floor { expr, .. } => Ok(floor(self.plan_expr(expr)?)),
             SQLExpr::Position { .. } => unsupported_sql_err!("POSITION"),
-            SQLExpr::Substring { .. } => unsupported_sql_err!("SUBSTRING"),
+            SQLExpr::Substring {
+                expr,
+                substring_from,
+                substring_for,
+                special: true, // We only support SUBSTRING(expr, start, length) syntax
+            } => {
+                let (Some(substring_from), Some(substring_for)) = (substring_from, substring_for)
+                else {
+                    unsupported_sql_err!("SUBSTRING")
+                };
+
+                let expr = self.plan_expr(expr)?;
+                let start = self.plan_expr(substring_from)?;
+                let length = self.plan_expr(substring_for)?;
+
+                Ok(daft_dsl::functions::utf8::substr(expr, start, length))
+            }
+            SQLExpr::Substring { special: false, .. } => {
+                unsupported_sql_err!("`SUBSTRING(expr [FROM start] [FOR len])` syntax")
+            }
             SQLExpr::Trim { .. } => unsupported_sql_err!("TRIM"),
             SQLExpr::Overlay { .. } => unsupported_sql_err!("OVERLAY"),
             SQLExpr::Collate { .. } => unsupported_sql_err!("COLLATE"),
-            SQLExpr::Nested(_) => unsupported_sql_err!("NESTED"),
+            SQLExpr::Nested(e) => self.plan_expr(e),
             SQLExpr::IntroducedString { .. } => unsupported_sql_err!("INTRODUCED STRING"),
             SQLExpr::TypedString { data_type, value } => match data_type {
                 sqlparser::ast::DataType::Date => Ok(to_date(lit(value.as_str()), "%Y-%m-%d")),
@@ -700,7 +740,22 @@ impl SQLPlanner {
             }
             SQLExpr::Struct { .. } => unsupported_sql_err!("STRUCT"),
             SQLExpr::Named { .. } => unsupported_sql_err!("NAMED"),
-            SQLExpr::Dictionary(_) => unsupported_sql_err!("DICTIONARY"),
+            SQLExpr::Dictionary(dict) => {
+                let entries = dict
+                    .iter()
+                    .map(|entry| {
+                        let key = entry.key.value.clone();
+                        let value = self.plan_expr(&entry.value)?;
+                        let value = value.as_literal().ok_or_else(|| {
+                            PlannerError::invalid_operation("Dictionary value is not a literal")
+                        })?;
+                        let struct_field = Field::new(key, value.get_type());
+                        Ok((struct_field, value.clone()))
+                    })
+                    .collect::<SQLPlannerResult<_>>()?;
+
+                Ok(Expr::Literal(LiteralValue::Struct(entries)).arced())
+            }
             SQLExpr::Map(_) => unsupported_sql_err!("MAP"),
             SQLExpr::Subscript { expr, subscript } => self.plan_subscript(expr, subscript.as_ref()),
             SQLExpr::Array(_) => unsupported_sql_err!("ARRAY"),

@@ -342,7 +342,7 @@ pub enum PadPlacement {
     Right,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, Default)]
 pub struct Utf8NormalizeOptions {
     pub remove_punct: bool,
     pub lowercase: bool,

@@ -2084,6 +2084,7 @@ dependencies = [
  "serde",
  "snafu",
  "test-log",
+ "uuid 1.10.0",
 ]
 
 [[package]]
@@ -2170,6 +2171,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "common-daft-config",
  "common-error",
+ "common-io-config",
  "daft-core",
  "daft-dsl",
  "daft-functions",

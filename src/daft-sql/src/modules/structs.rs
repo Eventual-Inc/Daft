@@ -34,4 +34,12 @@ impl SQLFunction for StructGet {
             _ => invalid_operation_err!("Expected 2 input args"),
         }
     }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Extracts a field from a struct expression by name.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input", "field"]
+    }
 }
