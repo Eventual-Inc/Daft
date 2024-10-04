@@ -318,7 +318,12 @@ impl ListArray {
                 }
             }
 
-            // indexmap so ordered
+            // IndexMap maintains insertion order, so we iterate over its values
+            // in the same order that elements were added. This ensures that
+            // the count_array values correspond to the same order in which
+            // the include_mask was set earlier in the loop. Each 'true' in
+            // include_mask represents a unique key, and its corresponding
+            // count is now added to count_array in the same sequence.
             for v in map.values() {
                 count_array.push(*v);
             }

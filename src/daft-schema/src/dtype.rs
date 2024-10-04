@@ -257,7 +257,6 @@ impl DataType {
                     arrow2::datatypes::Field::new("value", value.to_arrow()?, true),
                 ]);
 
-                // entries
                 let struct_field =
                     arrow2::datatypes::Field::new("entries", struct_type.clone(), true);
 
