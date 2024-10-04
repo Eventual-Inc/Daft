@@ -6,7 +6,6 @@ use daft_dsl::ExprRef;
 use daft_io::IOStatsContext;
 use daft_stats::{ColumnRangeStatistics, TableStatistics};
 use snafu::ResultExt;
-use tracing::instrument;
 
 use crate::{micropartition::MicroPartition, DaftCoreComputeSnafu};
 
@@ -30,7 +29,6 @@ fn infer_schema(exprs: &[ExprRef], schema: &Schema) -> DaftResult<Schema> {
 }
 
 impl MicroPartition {
-    #[instrument(level = "trace", skip_all)]
     pub fn eval_expression_list(&self, exprs: &[ExprRef]) -> DaftResult<Self> {
         let io_stats = IOStatsContext::new("MicroPartition::eval_expression_list");
 
