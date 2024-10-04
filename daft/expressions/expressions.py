@@ -211,6 +211,7 @@ class Expression:
 
     @property
     def geo(self) -> ExpressionGeometryNamespace:
+        """Access methods that work on columns of geometries"""
         return ExpressionGeometryNamespace.from_expression(self)
 
     @property
