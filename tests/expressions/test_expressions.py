@@ -516,7 +516,7 @@ def test_list_value_counts():
         {"list_col": [["a", "b", "a", "c"], ["b", "b", "c"], ["a", "a", "a"], [], ["d", None, "d"]]}
     )
 
-    # # Apply list_value_counts operation
+    # Apply list_value_counts operation
     result = mp.eval_expression_list([col("list_col").list.value_counts().alias("value_counts")])
     value_counts = result.to_pydict()["value_counts"]
 

@@ -53,11 +53,10 @@ impl<T> DataArray<T> {
         );
 
         if let Ok(expected_arrow_physical_type) = physical_field.dtype.to_arrow()
-        // For instance Int32 -> Int 32
         {
             let arrow_data_type = arrow_array.data_type(); // logical type
 
-            if !expected_arrow_physical_type.eq(arrow_data_type) {
+            if &expected_arrow_physical_type != arrow_data_type {
                 panic!(
                     "Mismatch between expected and actual Arrow types for DataArray.\n\
                 Field name: {}\n\
