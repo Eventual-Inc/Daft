@@ -332,9 +332,9 @@ impl ListArray {
         }
 
         let values = UInt64Array::from(("count", count_array)).into_series();
-        let boolean_array = BooleanArray::from(("boolean", include_mask.as_slice()));
+        let include_mask = BooleanArray::from(("boolean", include_mask.as_slice()));
 
-        let keys = self.flat_child.filter(&boolean_array)?;
+        let keys = self.flat_child.filter(&include_mask)?;
 
         let keys = Series::try_from_field_and_arrow_array(
             Field::new("key", key_type.clone()),
