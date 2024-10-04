@@ -134,12 +134,12 @@ impl HyperLogLog<'_> {
     pub fn count(&self) -> usize {
         let histogram = self.get_histogram();
         let m = NUM_REGISTERS as f64;
-        let mut z = m * hll_tau((m - f64::from(histogram[HLL_Q + 1])) / m);
+        let mut z = m * hll_tau((m - histogram[HLL_Q + 1] as f64) / m);
         for i in histogram[1..=HLL_Q].iter().rev() {
-            z += f64::from(*i);
+            z += *i as f64;
             z *= 0.5;
         }
-        z += m * hll_sigma(f64::from(histogram[0]) / m);
+        z += m * hll_sigma(histogram[0] as f64 / m);
         (0.5 / 2_f64.ln() * m * m / z).round() as usize
     }
 }

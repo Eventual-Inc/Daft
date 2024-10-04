@@ -34,23 +34,11 @@ unsafe fn multicol_search_sorted(
     keys: &[Series],
     descending: &[bool],
 ) -> DaftResult<UInt64Array> {
-    let data_arrow_vec: Vec<_> = data
-        .iter()
-        .map(daft_core::series::Series::to_arrow)
-        .collect();
-    let keys_arrow_vec: Vec<_> = keys
-        .iter()
-        .map(daft_core::series::Series::to_arrow)
-        .collect();
+    let data_arrow_vec: Vec<_> = data.iter().map(|s| s.to_arrow()).collect();
+    let keys_arrow_vec: Vec<_> = keys.iter().map(|s| s.to_arrow()).collect();
 
-    let data_arrow_ref_vec = data_arrow_vec
-        .iter()
-        .map(std::convert::AsRef::as_ref)
-        .collect();
-    let keys_arrow_ref_vec = keys_arrow_vec
-        .iter()
-        .map(std::convert::AsRef::as_ref)
-        .collect();
+    let data_arrow_ref_vec = data_arrow_vec.iter().map(|s| s.as_ref()).collect();
+    let keys_arrow_ref_vec = keys_arrow_vec.iter().map(|s| s.as_ref()).collect();
 
     let indices = search_sorted_multi_array(
         &data_arrow_ref_vec,

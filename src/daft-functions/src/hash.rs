@@ -21,9 +21,7 @@ impl ScalarUDF for HashFunction {
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
-            [input] => input
-                .hash(None)
-                .map(daft_core::series::IntoSeries::into_series),
+            [input] => input.hash(None).map(|arr| arr.into_series()),
             [input, seed] => {
                 match seed.len() {
                     1 => {

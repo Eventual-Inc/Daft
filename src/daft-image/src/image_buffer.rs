@@ -134,12 +134,12 @@ impl<'a> DaftImageBuffer<'a> {
     pub fn fit_to(&self, w: u32, h: u32) -> Self {
         // Preserving aspect ratio, resize an image to fit within the specified dimensions.
         let scale_factor = {
-            let width_scale = f64::from(w) / f64::from(self.width());
-            let height_scale = f64::from(h) / f64::from(self.height());
+            let width_scale = w as f64 / self.width() as f64;
+            let height_scale = h as f64 / self.height() as f64;
             width_scale.min(height_scale)
         };
-        let new_w = f64::from(self.width()) * scale_factor;
-        let new_h = f64::from(self.height()) * scale_factor;
+        let new_w = self.width() as f64 * scale_factor;
+        let new_h = self.height() as f64 * scale_factor;
 
         self.resize(new_w.floor() as u32, new_h.floor() as u32)
     }

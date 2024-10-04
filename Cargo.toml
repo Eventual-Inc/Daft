@@ -229,6 +229,7 @@ features = ["derive", "rc"]
 version = "1.0.200"
 
 [workspace.lints.clippy]
+as_conversions = "allow"
 cast-sign-loss = "allow"
 cast_lossless = "allow"
 cast_possible_truncation = "allow"
@@ -269,6 +270,7 @@ only_used_in_recursion = "allow"
 option_if_let_else = "allow"
 pedantic = {level = "deny", priority = -1}
 perf = {level = "deny", priority = -1}
+redundant_closure = "allow"
 redundant_closure_for_method_calls = "allow"
 redundant_else = "allow"
 redundant_pub_crate = "allow"
