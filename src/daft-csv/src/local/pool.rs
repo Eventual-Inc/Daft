@@ -1,8 +1,7 @@
 use core::mem::ManuallyDrop;
-use std::pin::pin;
 use futures::Stream;
+use std::pin::pin;
 use std::sync::Arc;
-use tokio::fs::File;
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::sync::mpsc::{self, Receiver, Sender};
 
@@ -84,7 +83,7 @@ pub fn read_slabs<R: AsyncRead + Unpin + Send + 'static>(
     mut file: R,
     buffer_size: usize,
     pool_size: usize,
-) -> impl Stream<Item=Slab> {
+) -> impl Stream<Item = Slab> {
     let (tx, rx) = mpsc::channel::<Slab>(pool_size);
     let pool = SlabPool::new(pool_size, buffer_size);
     tokio::spawn(async move {
@@ -119,16 +118,17 @@ pub fn read_slabs<R: AsyncRead + Unpin + Send + 'static>(
             }
 
             // Update the length of the slab with the actual number of bytes read
-            debug_assert_eq!(total_read, slab.len(), "Slab length should be equal to the number of bytes read");
+            debug_assert_eq!(
+                total_read,
+                slab.len(),
+                "Slab length should be equal to the number of bytes read"
+            );
             tx.send(slab).await.expect("Failed to send slab to stream");
         }
     });
 
     ReceiverStream::new(rx)
 }
-
-use crate::local::pool::fixed_capacity_vec::FixedCapacityVec;
-use futures::stream::StreamExt;
 
 pub type WindowedSlab = heapless::Vec<SharedSlab, 2>;
 
@@ -151,11 +151,11 @@ pub fn read_slabs_windowed<R: AsyncRead + Unpin + Send + 'static>(
     file: R,
     buffer_size: usize,
     pool_size: usize,
-) -> impl Stream<Item=WindowedSlab> {
-    let mut slab_stream = read_slabs(file, buffer_size, pool_size);
+) -> impl Stream<Item = WindowedSlab> {
+    let slab_stream = read_slabs(file, buffer_size, pool_size);
 
-    use tokio_stream::StreamExt;
     use tokio::sync::mpsc;
+    use tokio_stream::StreamExt;
 
     let (tx, rx) = mpsc::channel(pool_size);
 
@@ -185,12 +185,10 @@ pub fn read_slabs_windowed<R: AsyncRead + Unpin + Send + 'static>(
     ReceiverStream::new(rx)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::io::Cursor;
-    use futures::StreamExt;
 
     #[tokio::test]
     async fn test_read_slabs() {
@@ -244,4 +242,3 @@ mod tests {
         assert_eq!(left_total, data_len);
     }
 }
-

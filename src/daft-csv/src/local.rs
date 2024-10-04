@@ -1036,11 +1036,11 @@ fn dispatch_to_parse_csv(
 }
 
 /// Helper function that consumes a CSV reader and turns it into a vector of Daft tables.
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 fn parse_csv_chunk<R>(
     mut reader: Reader<R>,
     projection_indices: Arc<Vec<usize>>,
-    fields: Vec<arrow2::datatypes::Field>,
+    fields: Vec<Field>,
     read_daft_fields: Arc<Vec<Arc<daft_core::datatypes::Field>>>,
     read_schema: Arc<Schema>,
     csv_buffer: CsvBuffer,
