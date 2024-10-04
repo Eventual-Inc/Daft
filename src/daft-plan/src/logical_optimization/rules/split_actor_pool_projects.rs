@@ -371,8 +371,9 @@ fn try_optimize_project(
     projection: &Project,
     plan: Arc<LogicalPlan>,
 ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
-    // We need to add aliases to the expressions since when we split stateful UDFs,
-    //we create new names for intermediates, but we would like to preserve the original names
+    // Add aliases to the expressions in the projection to preserve original names when splitting stateful UDFs.
+    // This is needed because when we split stateful UDFs, we create new names for intermediates, but we would like
+    // to have the same expression names as the original projection.
     let aliased_projection_exprs = projection
         .projection
         .iter()
