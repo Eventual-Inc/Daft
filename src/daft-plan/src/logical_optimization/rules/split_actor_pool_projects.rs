@@ -376,7 +376,13 @@ fn try_optimize_project(
     let aliased_projection_exprs = projection
         .projection
         .iter()
-        .map(|e| e.alias(e.name()))
+        .map(|e| {
+            if has_stateful_udf(e) && !matches!(e.as_ref(), Expr::Alias(..)) {
+                e.alias(e.name())
+            } else {
+                e.clone()
+            }
+        })
         .collect();
 
     let aliased_projection = Project::try_new(projection.input.clone(), aliased_projection_exprs)?;
