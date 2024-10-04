@@ -80,6 +80,28 @@ impl SQLFunction for PartitioningExpr {
             }
         }
     }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        match self {
+            Self::Years => "Extracts the number of years since epoch time from a datetime expression.".to_string(),
+            Self::Months => "Extracts the number of months since epoch time from a datetime expression.".to_string(),
+            Self::Days => "Extracts the number of days since epoch time from a datetime expression.".to_string(),
+            Self::Hours => "Extracts the number of hours since epoch time from a datetime expression.".to_string(),
+            Self::IcebergBucket(_) => "Computes a bucket number for the input expression based the specified number of buckets using an Iceberg-specific hash.".to_string(),
+            Self::IcebergTruncate(_) => "Truncates the input expression to a specified width.".to_string(),
+        }
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        match self {
+            Self::Years => &["input"],
+            Self::Months => &["input"],
+            Self::Days => &["input"],
+            Self::Hours => &["input"],
+            Self::IcebergBucket(_) => &["input", "num_buckets"],
+            Self::IcebergTruncate(_) => &["input", "width"],
+        }
+    }
 }
 
 fn partitioning_helper<F: FnOnce(daft_dsl::ExprRef) -> daft_dsl::ExprRef>(
