@@ -10,6 +10,20 @@ use daft_core::{
 };
 use geo::{Area, BooleanOps, Contains, ConvexHull, EuclideanDistance, Geometry, Intersects};
 use geozero::{wkb, wkt, CoordDimensions, ToGeo, ToWkb, ToWkt};
+#[cfg(feature = "python")]
+use pyo3::prelude::*;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
+pub enum GeoOperation {
+    Area,
+    ConvexHull,
+    Distance,
+    Intersects,
+    Intersection,
+    Contains,
+}
 
 pub struct GeometryArrayIter<'a> {
     cursor: usize,
@@ -203,11 +217,29 @@ pub fn encode_series(s: &Series, text: bool) -> DaftResult<Series> {
     }
 }
 
-pub fn geo_unary_dispatch(s: &Series, op: &str) -> DaftResult<Series> {
+pub fn geo_unary_dispatch(s: &Series, op: GeoOperation) -> DaftResult<Series> {
     match op {
-        "area" => geo_unary_to_scalar::<f64, _>(s, |g| g.unsigned_area()),
-        "convex_hull" => geo_unary_to_geo(s, |g| g.convex_hull().into()),
-        _ => Err(DaftError::ValueError(format!("unsupported op {}", op))),
+        GeoOperation::Area => geo_unary_to_scalar::<f64, _>(s, |g| g.unsigned_area()),
+        GeoOperation::ConvexHull => geo_unary_to_geo(s, |g| g.convex_hull().into()),
+        _ => Err(DaftError::ValueError(format!("unsupported op {:?}", op))),
+    }
+}
+
+pub fn geo_binary_dispatch(lhs: &Series, rhs: &Series, op: GeoOperation) -> DaftResult<Series> {
+    match op {
+        GeoOperation::Distance => {
+            geo_binary_to_scalar::<f64, _>(lhs, rhs, |l, r| l.euclidean_distance(&r))
+        }
+        GeoOperation::Intersects => geo_binary_to_bool(lhs, rhs, |l, r| l.intersects(&r)),
+        GeoOperation::Contains => geo_binary_to_bool(lhs, rhs, |l, r| l.contains(&r)),
+        GeoOperation::Intersection => geo_binary_to_geo(lhs, rhs, |l, r| match (l, r) {
+            (Geometry::Polygon(l), Geometry::Polygon(r)) => Some(l.intersection(&r).into()),
+            (Geometry::MultiPolygon(l), Geometry::MultiPolygon(r)) => {
+                Some(l.intersection(&r).into())
+            }
+            _ => None,
+        }),
+        _ => Err(DaftError::ValueError(format!("unsupported op {:?}", op))),
     }
 }
 
@@ -240,22 +272,6 @@ where
         }
     }
     gh.into_series(geo_array.name())
-}
-
-pub fn geo_binary_dispatch(lhs: &Series, rhs: &Series, op: &str) -> DaftResult<Series> {
-    match op {
-        "dist" => geo_binary_to_scalar::<f64, _>(lhs, rhs, |l, r| l.euclidean_distance(&r)),
-        "intersects" => geo_binary_to_bool(lhs, rhs, |l, r| l.intersects(&r)),
-        "contains" => geo_binary_to_bool(lhs, rhs, |l, r| l.contains(&r)),
-        "intersection" => geo_binary_to_geo(lhs, rhs, |l, r| match (l, r) {
-            (Geometry::Polygon(l), Geometry::Polygon(r)) => Some(l.intersection(&r).into()),
-            (Geometry::MultiPolygon(l), Geometry::MultiPolygon(r)) => {
-                Some(l.intersection(&r).into())
-            }
-            _ => None,
-        }),
-        _ => Err(DaftError::ValueError(format!("unsupported op {}", op))),
-    }
 }
 
 pub fn geo_binary_to_scalar<T: NativeType, F>(

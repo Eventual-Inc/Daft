@@ -17,7 +17,7 @@ from typing import (
 
 import daft.daft as native
 from daft import context
-from daft.daft import CountMode, ImageFormat, ImageMode, ResourceRequest, bind_stateful_udfs
+from daft.daft import CountMode, GeoOperation, ImageFormat, ImageMode, ResourceRequest, bind_stateful_udfs
 from daft.daft import PyExpr as _PyExpr
 from daft.daft import col as _col
 from daft.daft import date_lit as _date_lit
@@ -3416,20 +3416,25 @@ class ExpressionGeometryNamespace(ExpressionNamespace):
 
     def area(self) -> Expression:
         """Compute the area of a geometry"""
-        return Expression._from_pyexpr(native.geo_op(self._expr, "area"))
+        op = GeoOperation.Area  # type: ignore[attr-defined]
+        return Expression._from_pyexpr(native.geo_op(self._expr, op))
 
     def convex_hull(self) -> Expression:
         """Compute the area of a geometry"""
-        return Expression._from_pyexpr(native.geo_op(self._expr, "convex_hull"))
+        op = GeoOperation.ConvexHull  # type: ignore[attr-defined]
+        return Expression._from_pyexpr(native.geo_op(self._expr, op))
 
-    def dist(self, rhs: Expression) -> Expression:
+    def distance(self, rhs: Expression) -> Expression:
         """Compute the distance between two geometries"""
-        return Expression._from_pyexpr(native.geo_op_binary(self._expr, rhs._expr, "distance"))
+        op = GeoOperation.Distance  # type: ignore[attr-defined]
+        return Expression._from_pyexpr(native.geo_op_binary(self._expr, rhs._expr, op))
 
     def intersects(self, rhs: Expression) -> Expression:
         """Check if two geometries intersect"""
-        return Expression._from_pyexpr(native.geo_op_binary(self._expr, rhs._expr, "intersects"))
+        op = GeoOperation.Intersects  # type: ignore[attr-defined]
+        return Expression._from_pyexpr(native.geo_op_binary(self._expr, rhs._expr, op))
 
     def intersection(self, rhs: Expression) -> Expression:
         """Compute the intersection of two geometries"""
-        return Expression._from_pyexpr(native.geo_op_binary(self._expr, rhs._expr, "intersection"))
+        op = GeoOperation.Intersection  # type: ignore[attr-defined]
+        return Expression._from_pyexpr(native.geo_op_binary(self._expr, rhs._expr, op))

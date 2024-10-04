@@ -13,5 +13,6 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction_bound!(encode::py_encode, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(geo_ops::py_geo_op, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(geo_ops::py_geo_op_binary, parent)?)?;
+    parent.add_class::<utils::GeoOperation>()?;
     Ok(())
 }
