@@ -158,45 +158,50 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
     /// Clone a `&dyn Array` to an owned `Box<dyn Array>`.
     fn to_boxed(&self) -> Box<dyn Array>;
 
-    /// Overwrites [`Array`]'s type with a different logical type.
+    /// Changes the logical type of this array in-place.
     ///
-    /// This function is useful to assign a different [`DataType`] to the array.
-    /// Used to change the arrays' logical type (see example). This updates the array
-    /// in place and does not clone the array.
-    /// # Example
-    /// ```rust,ignore
-    /// use arrow2::array::Int32Array;
-    /// use arrow2::datatypes::DataType;
+    /// This method modifies the array's `DataType` without changing its underlying data.
+    /// It's useful for reinterpreting the logical meaning of the data (e.g., from Int32 to Date32).
     ///
-    /// let &mut array = Int32Array::from(&[Some(1), None, Some(2)])
-    /// array.to(DataType::Date32);
-    /// assert_eq!(
-    ///    format!("{:?}", array),
-    ///    "Date32[1970-01-02, None, 1970-01-03]"
-    /// );
-    /// ```
+    /// # Arguments
+    /// * `data_type` - The new [`DataType`] to assign to this array.
+    ///
     /// # Panics
-    /// Panics iff the `data_type`'s [`PhysicalType`] is not equal to array's `PhysicalType`.
+    /// Panics if the new `data_type`'s [`PhysicalType`] is not equal to the array's current [`PhysicalType`].
+    ///
+    /// # Example
+    /// ```
+    /// # use arrow2::array::{Array, Int32Array};
+    /// # use arrow2::datatypes::DataType;
+    /// let mut array = Int32Array::from(&[Some(1), None, Some(2)]);
+    /// array.change_type(DataType::Date32);
+    /// assert_eq!(array.data_type(), &DataType::Date32);
+    /// ```
     fn change_type(&mut self, data_type: DataType);
 
-    /// Returns a new [`Array`] with a different logical type.
+    /// Creates a new [`Array`] with a different logical type.
     ///
-    /// This function is useful to assign a different [`DataType`] to the array.
-    /// Used to change the arrays' logical type (see example). Unlike, this clones the array
-    /// in order to return a new array.
-    /// # Example
-    /// ```rust,ignore
-    /// use arrow2::array::Int32Array;
-    /// use arrow2::datatypes::DataType;
+    /// This method returns a new array with the specified `DataType`, leaving the original array unchanged.
+    /// It's useful for creating a new view of the data with a different logical interpretation.
     ///
-    /// let array = Int32Array::from(&[Some(1), None, Some(2)]).to(DataType::Date32);
-    /// assert_eq!(
-    ///    format!("{:?}", array),
-    ///    "Date32[1970-01-02, None, 1970-01-03]"
-    /// );
-    /// ```
+    /// # Arguments
+    /// * `data_type` - The [`DataType`] for the new array.
+    ///
+    /// # Returns
+    /// A new `Box<dyn Array>` with the specified `DataType`.
+    ///
     /// # Panics
-    /// Panics iff the `data_type`'s [`PhysicalType`] is not equal to array's `PhysicalType`.
+    /// Panics if the new `data_type`'s [`PhysicalType`] is not equal to the array's current [`PhysicalType`].
+    ///
+    /// # Example
+    /// ```
+    /// # use arrow2::array::Int32Array;
+    /// # use arrow2::datatypes::DataType;
+    /// let array = Int32Array::from(&[Some(1), None, Some(2)]);
+    /// let new_array = array.convert_logical_type(DataType::Date32);
+    /// assert_eq!(new_array.data_type(), &DataType::Date32);
+    /// assert_eq!(array.data_type(), &DataType::Int32); // Original array unchanged
+    /// ```
     fn convert_logical_type(&self, data_type: DataType) -> Box<dyn Array> {
         let mut new = self.to_boxed();
         new.change_type(data_type);
@@ -647,7 +652,11 @@ macro_rules! impl_common_array {
 
         fn change_type(&mut self, data_type: DataType) {
             if data_type.to_physical_type() != self.data_type().to_physical_type() {
-                panic!("Cannot change array type from {:?} to {:?}", self.data_type(), data_type);
+                panic!(
+                    "Cannot change array type from {:?} to {:?}",
+                    self.data_type(),
+                    data_type
+                );
             }
 
             self.data_type = data_type.clone();

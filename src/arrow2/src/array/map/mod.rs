@@ -12,7 +12,6 @@ mod iterator;
 #[allow(unused)]
 pub use iterator::*;
 
-
 /// An array representing a (key, value), both of arbitrary logical types.
 #[derive(Clone)]
 pub struct MapArray {
@@ -202,40 +201,55 @@ impl MapArray {
 impl Array for MapArray {
     impl_common_array!();
 
-    fn convert_logical_type(&self, target: DataType) -> Box<dyn Array> {
-        let outer_is_map = matches!(target, DataType::Map { .. });
+    fn convert_logical_type(&self, target_data_type: DataType) -> Box<dyn Array> {
+        let is_target_map = matches!(target_data_type, DataType::Map { .. });
 
-        if outer_is_map {
-            // we can do simple conversion
-            let mut new = self.to_boxed();
-            new.change_type(target);
-            return new;
-        }
-
-        let DataType::LargeList(target_inner) = &target else {
-            panic!("MapArray can only be converted to Map or LargeList");
+        let DataType::Map(current_field, _) = self.data_type() else {
+            unreachable!(
+                "Expected MapArray to have Map data type, but found {:?}",
+                self.data_type()
+            );
         };
 
-        let DataType::Map(current_inner, _) = self.data_type() else {
-            unreachable!("Somehow DataType is not Map for a MapArray");
+        if is_target_map {
+            // For Map-to-Map conversions, we can clone 
+            // (same top level representation we are still a Map). and then change the subtype in
+            // place.
+            let mut converted_array = self.to_boxed();
+            converted_array.change_type(target_data_type);
+            return converted_array;
+        }
+        
+        // Target type is a LargeList, so we need to convert to a ListArray before converting
+        let DataType::LargeList(target_field) = &target_data_type else {
+            panic!("MapArray can only be converted to Map or LargeList, but target type is {target_data_type:?}");
         };
 
-        let current_inner_physical = current_inner.data_type.to_physical_type();
-        let target_inner_physical = target_inner.data_type.to_physical_type();
 
-        if current_inner_physical != target_inner_physical {
-            panic!("inner types are not equal");
+        let current_physical_type = current_field.data_type.to_physical_type();
+        let target_physical_type = target_field.data_type.to_physical_type();
+
+        if current_physical_type != target_physical_type {
+            panic!(
+                "Inner physical types must be equal for conversion. Current: {:?}, Target: {:?}",
+                current_physical_type, target_physical_type
+            );
         }
 
-        let mut field = self.field.clone();
-        field.change_type(target_inner.data_type.clone());
+        let mut converted_field = self.field.clone();
+        converted_field.change_type(target_field.data_type.clone());
 
-        let offsets = self.offsets().clone();
-        let offsets = unsafe { offsets.map_unchecked(|offset| offset as i64) };
+        let original_offsets = self.offsets().clone();
+        let converted_offsets = unsafe { original_offsets.map_unchecked(|offset| offset as i64) };
 
-        let list = ListArray::new(target, offsets, field, self.validity.clone());
+        let converted_list = ListArray::new(
+            target_data_type,
+            converted_offsets,
+            converted_field,
+            self.validity.clone(),
+        );
 
-        Box::new(list)
+        Box::new(converted_list)
     }
 
     fn validity(&self) -> Option<&Bitmap> {
