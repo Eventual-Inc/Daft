@@ -9,7 +9,10 @@ def _raw_device_count_nvml() -> int:
     """
     from ctypes import CDLL, byref, c_int
 
-    nvml_h = CDLL("libnvidia-ml.so.1")
+    try:
+        nvml_h = CDLL("libnvidia-ml.so.1")
+    except OSError:
+        return 0
     rc = nvml_h.nvmlInit()
     if rc != 0:
         return 0

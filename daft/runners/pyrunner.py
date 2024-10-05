@@ -206,12 +206,16 @@ class PyStatefulActor:
     @staticmethod
     def initialize_actor_global_state(
         uninitialized_projection: ExpressionsProjection,
+        resource_request: ResourceRequest,
         rank_queue: mp.Queue[int],
         cuda_device_queue: mp.Queue[str],
     ):
         import os
 
+        from daft.context import _set_actor_context
         from daft.daft import extract_partial_stateful_udf_py
+
+        _set_actor_context(rank=rank_queue.get_nowait(), resource_request=resource_request)
 
         os.environ["CUDA_VISIBLE_DEVICES"] = cuda_device_queue.get_nowait()
 
@@ -259,11 +263,13 @@ class PyActorPool:
         self,
         pool_id: str,
         num_actors: int,
+        resource_request_per_actor: ResourceRequest,
         resources: list[PyRunnerResources],
         projection: ExpressionsProjection,
     ):
         self._pool_id = pool_id
         self._num_actors = num_actors
+        self._resource_request_per_actor = resource_request_per_actor
         self._resources = resources
         self._executor: futures.ProcessPoolExecutor | None = None
         self._projection = projection
@@ -315,7 +321,7 @@ class PyActorPool:
         self._executor = futures.ProcessPoolExecutor(
             self._num_actors,
             initializer=PyStatefulActor.initialize_actor_global_state,
-            initargs=(self._projection, rank_queue, cuda_device_queue),
+            initargs=(self._projection, self._resource_request_per_actor, rank_queue, cuda_device_queue),
         )
 
 
@@ -454,7 +460,7 @@ class PyRunner(Runner[MicroPartition]):
         self,
         name: str,
         actor_resource_request: ResourceRequest,
-        _task_resource_request: ResourceRequest,
+        task_resource_request: ResourceRequest,
         num_actors: int,
         projection: ExpressionsProjection,
     ) -> Iterator[str]:
@@ -468,7 +474,14 @@ class PyRunner(Runner[MicroPartition]):
             )
 
         try:
-            self._actor_pools[actor_pool_id] = PyActorPool(actor_pool_id, num_actors, resources, projection)  # type: ignore
+            resource_request = actor_resource_request + task_resource_request
+            self._actor_pools[actor_pool_id] = PyActorPool(
+                actor_pool_id,
+                num_actors,
+                resource_request,
+                resources,  # type: ignore
+                projection,
+            )
             self._actor_pools[actor_pool_id].setup()
             logger.debug(
                 "Created actor pool %s with %s actors, each with resources: %s",
