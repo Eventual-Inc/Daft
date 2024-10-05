@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import os
+import warnings
 from datetime import date, datetime, time
 from decimal import Decimal
 from typing import (
@@ -2934,6 +2935,21 @@ class ExpressionListNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.list_count(self._expr, mode))
 
     def lengths(self) -> Expression:
+        """Gets the length of each list
+
+        (DEPRECATED) Please use Expression.list.length instead
+
+        Returns:
+            Expression: a UInt64 expression which is the length of each list
+        """
+        warnings.warn(
+            "This function will be deprecated from Daft version >= 0.3.5!  Instead, please use 'Expression.list.length'",
+            category=DeprecationWarning,
+        )
+
+        return Expression._from_pyexpr(native.list_count(self._expr, CountMode.All))
+
+    def length(self) -> Expression:
         """Gets the length of each list
 
         Returns:
