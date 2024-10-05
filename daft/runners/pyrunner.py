@@ -138,10 +138,15 @@ class PyActorPool:
 
             logger.info("Initializing stateful UDFs: %s", ", ".join(partial_stateful_udfs.keys()))
 
-            # TODO: Account for Stateful Actor initialization arguments as well as user-provided batch_size
-            PyActorPool.initialized_stateful_udfs_process_singleton = {
-                name: partial_udf.func_cls() for name, partial_udf in partial_stateful_udfs.items()
-            }
+            PyActorPool.initialized_stateful_udfs_process_singleton = {}
+            for name, (partial_udf, init_args) in partial_stateful_udfs.items():
+                if init_args is None:
+                    PyActorPool.initialized_stateful_udfs_process_singleton[name] = partial_udf.func_cls()
+                else:
+                    args, kwargs = init_args
+                    PyActorPool.initialized_stateful_udfs_process_singleton[name] = partial_udf.func_cls(
+                        *args, **kwargs
+                    )
 
     @staticmethod
     def build_partitions_with_stateful_project(

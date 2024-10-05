@@ -55,6 +55,14 @@ impl SQLFunction for SQLListChunk {
             ),
         }
     }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        static_docs::LIST_CHUNK_DOCSTRING.to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input", "chunk_size"]
+    }
 }
 
 pub struct SQLListCount;
@@ -86,6 +94,14 @@ impl SQLFunction for SQLListCount {
             _ => unsupported_sql_err!("invalid arguments for list_count. Expected either list_count(expr) or list_count(expr, mode)"),
         }
     }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        static_docs::LIST_COUNT_DOCSTRING.to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input", "mode"]
+    }
 }
 
 pub struct SQLExplode;
@@ -103,6 +119,14 @@ impl SQLFunction for SQLExplode {
             }
             _ => unsupported_sql_err!("Expected 1 argument"),
         }
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        static_docs::EXPLODE_DOCSTRING.to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input"]
     }
 }
 
@@ -125,6 +149,14 @@ impl SQLFunction for SQLListJoin {
             ),
         }
     }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        static_docs::LIST_JOIN_DOCSTRING.to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input", "separator"]
+    }
 }
 
 pub struct SQLListMax;
@@ -142,6 +174,14 @@ impl SQLFunction for SQLListMax {
             }
             _ => unsupported_sql_err!("invalid arguments for list_max. Expected list_max(expr)"),
         }
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        static_docs::LIST_MAX_DOCSTRING.to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input"]
     }
 }
 
@@ -161,6 +201,14 @@ impl SQLFunction for SQLListMean {
             _ => unsupported_sql_err!("invalid arguments for list_mean. Expected list_mean(expr)"),
         }
     }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        static_docs::LIST_MEAN_DOCSTRING.to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input"]
+    }
 }
 
 pub struct SQLListMin;
@@ -179,6 +227,14 @@ impl SQLFunction for SQLListMin {
             _ => unsupported_sql_err!("invalid arguments for list_min. Expected list_min(expr)"),
         }
     }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        static_docs::LIST_MIN_DOCSTRING.to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input"]
+    }
 }
 
 pub struct SQLListSum;
@@ -196,6 +252,14 @@ impl SQLFunction for SQLListSum {
             }
             _ => unsupported_sql_err!("invalid arguments for list_sum. Expected list_sum(expr)"),
         }
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        static_docs::LIST_SUM_DOCSTRING.to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input"]
     }
 }
 
@@ -218,6 +282,14 @@ impl SQLFunction for SQLListSlice {
                 "invalid arguments for list_slice. Expected list_slice(expr, start, end)"
             ),
         }
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        static_docs::LIST_SLICE_DOCSTRING.to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input", "start", "end"]
     }
 }
 
@@ -258,4 +330,38 @@ impl SQLFunction for SQLListSort {
             ),
         }
     }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        static_docs::LIST_SORT_DOCSTRING.to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input", "order"]
+    }
+}
+
+mod static_docs {
+    pub(crate) const LIST_CHUNK_DOCSTRING: &str = "Splits a list into chunks of a specified size.";
+
+    pub(crate) const LIST_COUNT_DOCSTRING: &str = "Counts the number of elements in a list.";
+
+    pub(crate) const EXPLODE_DOCSTRING: &str = "Expands a list column into multiple rows.";
+
+    pub(crate) const LIST_JOIN_DOCSTRING: &str =
+        "Joins elements of a list into a single string using a specified separator.";
+
+    pub(crate) const LIST_MAX_DOCSTRING: &str = "Returns the maximum value in a list.";
+
+    pub(crate) const LIST_MEAN_DOCSTRING: &str =
+        "Calculates the mean (average) of values in a list.";
+
+    pub(crate) const LIST_MIN_DOCSTRING: &str = "Returns the minimum value in a list.";
+
+    pub(crate) const LIST_SUM_DOCSTRING: &str = "Calculates the sum of values in a list.";
+
+    pub(crate) const LIST_SLICE_DOCSTRING: &str =
+        "Extracts a portion of a list from a start index to an end index.";
+
+    pub(crate) const LIST_SORT_DOCSTRING: &str =
+        "Sorts the elements of a list in ascending or descending order.";
 }

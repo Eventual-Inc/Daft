@@ -88,6 +88,67 @@ impl SQLFunction for SQLNumericExpr {
         let inputs = self.args_to_expr_unnamed(inputs, planner)?;
         to_expr(self, inputs.as_slice())
     }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        let docstring = match self {
+            Self::Abs => "Gets the absolute value of a number.",
+            Self::Ceil => "Rounds a number up to the nearest integer.",
+            Self::Exp => "Calculates the exponential of a number (e^x).",
+            Self::Floor => "Rounds a number down to the nearest integer.",
+            Self::Round => "Rounds a number to a specified number of decimal places.",
+            Self::Sign => "Returns the sign of a number (-1, 0, or 1).",
+            Self::Sqrt => "Calculates the square root of a number.",
+            Self::Sin => "Calculates the sine of an angle in radians.",
+            Self::Cos => "Calculates the cosine of an angle in radians.",
+            Self::Tan => "Calculates the tangent of an angle in radians.",
+            Self::Cot => "Calculates the cotangent of an angle in radians.",
+            Self::ArcSin => "Calculates the inverse sine (arc sine) of a number.",
+            Self::ArcCos => "Calculates the inverse cosine (arc cosine) of a number.",
+            Self::ArcTan => "Calculates the inverse tangent (arc tangent) of a number.",
+            Self::ArcTan2 => {
+                "Calculates the angle between the positive x-axis and the ray from (0,0) to (x,y)."
+            }
+            Self::Radians => "Converts an angle from degrees to radians.",
+            Self::Degrees => "Converts an angle from radians to degrees.",
+            Self::Log => "Calculates the natural logarithm of a number.",
+            Self::Log2 => "Calculates the base-2 logarithm of a number.",
+            Self::Log10 => "Calculates the base-10 logarithm of a number.",
+            Self::Ln => "Calculates the natural logarithm of a number.",
+            Self::ArcTanh => "Calculates the inverse hyperbolic tangent of a number.",
+            Self::ArcCosh => "Calculates the inverse hyperbolic cosine of a number.",
+            Self::ArcSinh => "Calculates the inverse hyperbolic sine of a number.",
+        };
+        docstring.to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        match self {
+            Self::Abs
+            | Self::Ceil
+            | Self::Floor
+            | Self::Sign
+            | Self::Sqrt
+            | Self::Sin
+            | Self::Cos
+            | Self::Tan
+            | Self::Cot
+            | Self::ArcSin
+            | Self::ArcCos
+            | Self::ArcTan
+            | Self::Radians
+            | Self::Degrees
+            | Self::Log2
+            | Self::Log10
+            | Self::Ln
+            | Self::ArcTanh
+            | Self::ArcCosh
+            | Self::ArcSinh => &["input"],
+            Self::Log => &["input", "base"],
+            Self::Round => &["input", "precision"],
+            Self::Exp => &["input", "exponent"],
+            Self::ArcTan2 => &["y", "x"],
+        }
+    }
 }
 
 fn to_expr(expr: &SQLNumericExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {

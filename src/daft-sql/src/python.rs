@@ -3,7 +3,32 @@ use daft_dsl::python::PyExpr;
 use daft_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
 use pyo3::prelude::*;
 
-use crate::{catalog::SQLCatalog, planner::SQLPlanner};
+use crate::{catalog::SQLCatalog, functions::SQL_FUNCTIONS, planner::SQLPlanner};
+
+#[pyclass]
+pub struct SQLFunctionStub {
+    name: String,
+    docstring: String,
+    arg_names: Vec<&'static str>,
+}
+
+#[pymethods]
+impl SQLFunctionStub {
+    #[getter]
+    fn name(&self) -> PyResult<String> {
+        Ok(self.name.clone())
+    }
+
+    #[getter]
+    fn docstring(&self) -> PyResult<String> {
+        Ok(self.docstring.clone())
+    }
+
+    #[getter]
+    fn arg_names(&self) -> PyResult<Vec<&'static str>> {
+        Ok(self.arg_names.clone())
+    }
+}
 
 #[pyfunction]
 pub fn sql(
@@ -20,6 +45,23 @@ pub fn sql(
 pub fn sql_expr(sql: &str) -> PyResult<PyExpr> {
     let expr = crate::planner::sql_expr(sql)?;
     Ok(PyExpr { expr })
+}
+
+#[pyfunction]
+pub fn list_sql_functions() -> Vec<SQLFunctionStub> {
+    SQL_FUNCTIONS
+        .map
+        .keys()
+        .cloned()
+        .map(|name| {
+            let (docstring, args) = SQL_FUNCTIONS.docsmap.get(&name).unwrap();
+            SQLFunctionStub {
+                name,
+                docstring: docstring.to_string(),
+                arg_names: args.to_vec(),
+            }
+        })
+        .collect()
 }
 
 /// PyCatalog is the Python interface to the Catalog.
