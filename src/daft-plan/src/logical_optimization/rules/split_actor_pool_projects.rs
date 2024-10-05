@@ -826,7 +826,6 @@ mod tests {
             .select(vec![stacked_stateful_project_expr.clone()])?
             .build();
 
-
         let intermediate_name = "__TruncateRootStatefulUDF_0-0-0__";
 
         let expected = scan_plan.select(vec![col("a")])?.build();
