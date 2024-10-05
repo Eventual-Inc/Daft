@@ -142,6 +142,8 @@ def test_stateful_udf_fractional_gpu():
 
             return [self.cuda_visible_devices] * len(data)
 
+    FractionalGpuUdf = FractionalGpuUdf.with_concurrency(2)
+
     df = daft.from_pydict({"x": [1, 2]})
     df = df.into_partitions(2)
     df = df.select(FractionalGpuUdf(df["x"]))
