@@ -558,3 +558,27 @@ def test_list_value_counts_nested():
 
     # Check the exception message
     assert "DaftError::ArrowError Invalid argument error: The data type type LargeList(Field { name: \"item\", data_type: Int64, is_nullable: true, metadata: {} }) has no natural order" in str(exc_info.value)
+
+def test_list_value_counts_degenerate():
+    import pyarrow as pa
+    # Create a MicroPartition with an empty list column of specified type
+    empty_mp = MicroPartition.from_pydict(
+        {"empty_list_col": pa.array([], type=pa.list_(pa.string()))}
+    )
+
+    # Apply list_value_counts operation
+    result = empty_mp.eval_expression_list([col("empty_list_col").list.value_counts().alias("value_counts")])
+
+    # Check the result
+    assert result.to_pydict() == {"value_counts": []}
+
+    # Test with null values
+    null_mp = MicroPartition.from_pydict(
+        {"null_list_col": pa.array([None, None], type=pa.list_(pa.string()))}
+    )
+
+    result_null = null_mp.eval_expression_list([col("null_list_col").list.value_counts().alias("value_counts")])
+
+    # Check the result for null values
+    assert result_null.to_pydict() == {"value_counts": [[], []]}
+
