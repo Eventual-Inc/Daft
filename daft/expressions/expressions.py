@@ -2937,6 +2937,8 @@ class ExpressionListNamespace(ExpressionNamespace):
     def lengths(self) -> Expression:
         """Gets the length of each list
 
+        (DEPRECATED) Please use Expression.list.length instead
+
         Returns:
             Expression: a UInt64 expression which is the length of each list
         """
