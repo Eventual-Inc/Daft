@@ -3,6 +3,7 @@ use std::{
     ops::Add,
 };
 
+use common_error::{DaftError, DaftResult};
 use common_hashable_float_wrapper::FloatWrapper;
 use common_py_serde::impl_bincode_py_state_serialization;
 #[cfg(feature = "python")]
@@ -19,9 +20,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub struct ResourceRequest {
-    pub num_cpus: Option<f64>,
-    pub num_gpus: Option<f64>,
-    pub memory_bytes: Option<usize>,
+    num_cpus: Option<f64>,
+    num_gpus: Option<f64>,
+    memory_bytes: Option<usize>,
 }
 
 impl ResourceRequest {
@@ -29,37 +30,48 @@ impl ResourceRequest {
         num_cpus: Option<f64>,
         num_gpus: Option<f64>,
         memory_bytes: Option<usize>,
-    ) -> Self {
-        Self {
+    ) -> DaftResult<Self> {
+        if let Some(num_gpus) = num_gpus {
+            if num_gpus < 0.0 {
+                return Err(DaftError::ValueError(format!(
+                    "ResourceRequest num_gpus must be nonnegative, got {}",
+                    num_gpus
+                )));
+            }
+
+            if num_gpus > 1.0 && num_gpus.fract() != 0.0 {
+                return Err(DaftError::ValueError(format!(
+                    "ResourceRequest num_gpus greater than 1 must be an integer, got {}",
+                    num_gpus
+                )));
+            }
+        }
+
+        Ok(Self {
             num_cpus,
             num_gpus,
             memory_bytes,
-        }
+        })
     }
 
     pub fn default_cpu() -> Self {
-        Self::new_internal(Some(1.0), None, None)
+        Self::new_internal(Some(1.0), None, None).unwrap()
     }
 
-    pub fn or_num_cpus(&self, num_cpus: Option<f64>) -> Self {
-        Self {
-            num_cpus: self.num_cpus.or(num_cpus),
-            ..self.clone()
-        }
+    pub fn or_num_cpus(&self, num_cpus: Option<f64>) -> DaftResult<Self> {
+        Self::new_internal(self.num_cpus.or(num_cpus), self.num_gpus, self.memory_bytes)
     }
 
-    pub fn or_num_gpus(&self, num_gpus: Option<f64>) -> Self {
-        Self {
-            num_gpus: self.num_gpus.or(num_gpus),
-            ..self.clone()
-        }
+    pub fn or_num_gpus(&self, num_gpus: Option<f64>) -> DaftResult<Self> {
+        Self::new_internal(self.num_cpus, self.num_gpus.or(num_gpus), self.memory_bytes)
     }
 
-    pub fn or_memory_bytes(&self, memory_bytes: Option<usize>) -> Self {
-        Self {
-            memory_bytes: self.memory_bytes.or(memory_bytes),
-            ..self.clone()
-        }
+    pub fn or_memory_bytes(&self, memory_bytes: Option<usize>) -> DaftResult<Self> {
+        Self::new_internal(
+            self.num_cpus,
+            self.num_gpus,
+            self.memory_bytes.or(memory_bytes),
+        )
     }
 
     pub fn has_any(&self) -> bool {
@@ -104,7 +116,7 @@ impl ResourceRequest {
         let max_num_cpus = lift(float_max, self.num_cpus, other.num_cpus);
         let max_num_gpus = lift(float_max, self.num_gpus, other.num_gpus);
         let max_memory_bytes = lift(std::cmp::max, self.memory_bytes, other.memory_bytes);
-        Self::new_internal(max_num_cpus, max_num_gpus, max_memory_bytes)
+        Self::new_internal(max_num_cpus, max_num_gpus, max_memory_bytes).unwrap()
     }
 
     pub fn max_all<ResourceRequestAsRef: AsRef<Self>>(
@@ -115,7 +127,7 @@ impl ResourceRequest {
             .fold(Default::default(), |acc, e| acc.max(e.as_ref()))
     }
 
-    pub fn multiply(&self, factor: f64) -> Self {
+    pub fn multiply(&self, factor: f64) -> DaftResult<Self> {
         Self::new_internal(
             self.num_cpus.map(|x| x * factor),
             self.num_gpus.map(|x| x * factor),
@@ -125,9 +137,9 @@ impl ResourceRequest {
 }
 
 impl Add for &ResourceRequest {
-    type Output = ResourceRequest;
+    type Output = DaftResult<ResourceRequest>;
     fn add(self, other: Self) -> Self::Output {
-        Self::Output::new_internal(
+        ResourceRequest::new_internal(
             lift(Add::add, self.num_cpus, other.num_cpus),
             lift(Add::add, self.num_gpus, other.num_gpus),
             lift(Add::add, self.memory_bytes, other.memory_bytes),
@@ -136,8 +148,8 @@ impl Add for &ResourceRequest {
 }
 
 impl Add for ResourceRequest {
-    type Output = Self;
-    fn add(self, other: Self) -> Self {
+    type Output = DaftResult<Self>;
+    fn add(self, other: Self) -> Self::Output {
         &self + &other
     }
 }
@@ -174,8 +186,12 @@ fn float_max(left: f64, right: f64) -> f64 {
 #[pymethods]
 impl ResourceRequest {
     #[new]
-    pub fn new(num_cpus: Option<f64>, num_gpus: Option<f64>, memory_bytes: Option<usize>) -> Self {
-        Self::new_internal(num_cpus, num_gpus, memory_bytes)
+    pub fn new(
+        num_cpus: Option<f64>,
+        num_gpus: Option<f64>,
+        memory_bytes: Option<usize>,
+    ) -> PyResult<Self> {
+        Ok(Self::new_internal(num_cpus, num_gpus, memory_bytes)?)
     }
 
     /// Take a field-wise max of the list of resource requests.
@@ -199,33 +215,24 @@ impl ResourceRequest {
         Ok(self.memory_bytes)
     }
 
-    pub fn with_num_cpus(&self, num_cpus: Option<f64>) -> Self {
-        Self {
-            num_cpus,
-            ..self.clone()
-        }
+    pub fn with_num_cpus(&self, num_cpus: Option<f64>) -> DaftResult<Self> {
+        Self::new_internal(num_cpus, self.num_gpus, self.memory_bytes)
     }
 
-    pub fn with_num_gpus(&self, num_gpus: Option<f64>) -> Self {
-        Self {
-            num_gpus,
-            ..self.clone()
-        }
+    pub fn with_num_gpus(&self, num_gpus: Option<f64>) -> DaftResult<Self> {
+        Self::new_internal(self.num_cpus, num_gpus, self.memory_bytes)
     }
 
-    pub fn with_memory_bytes(&self, memory_bytes: Option<usize>) -> Self {
-        Self {
-            memory_bytes,
-            ..self.clone()
-        }
+    pub fn with_memory_bytes(&self, memory_bytes: Option<usize>) -> DaftResult<Self> {
+        Self::new_internal(self.num_cpus, self.num_gpus, memory_bytes)
     }
 
-    fn __add__(&self, other: &Self) -> Self {
-        self + other
+    fn __add__(&self, other: &Self) -> PyResult<Self> {
+        Ok((self + other)?)
     }
 
-    fn __mul__(&self, factor: f64) -> Self {
-        self.multiply(factor)
+    fn __mul__(&self, factor: f64) -> PyResult<Self> {
+        Ok(self.multiply(factor)?)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp) -> bool {

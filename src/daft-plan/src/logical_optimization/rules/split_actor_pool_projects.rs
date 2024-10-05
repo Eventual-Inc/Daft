@@ -588,11 +588,7 @@ mod tests {
     }
 
     fn create_resource_request() -> ResourceRequest {
-        ResourceRequest {
-            num_cpus: Some(8.),
-            num_gpus: Some(1.),
-            memory_bytes: None,
-        }
+        ResourceRequest::new_internal(Some(8.), Some(1.), None).unwrap()
     }
 
     #[test]

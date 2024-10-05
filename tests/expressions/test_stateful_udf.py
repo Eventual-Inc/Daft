@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import pytest
 
 import daft
@@ -95,8 +97,6 @@ def test_stateful_udf_cuda_env_var(concurrency, num_gpus):
     if concurrency * num_gpus > len(cuda_visible_devices()):
         pytest.skip("Not enough GPUs available")
 
-    import os
-
     @udf(return_dtype=DataType.string(), num_gpus=num_gpus)
     class GetCudaVisibleDevices:
         def __init__(self):
@@ -124,3 +124,29 @@ def test_stateful_udf_cuda_env_var(concurrency, num_gpus):
 
     all_devices = (",".join(unique_visible_devices)).split(",")
     assert len(all_devices) == concurrency * num_gpus
+
+
+@pytest.mark.skipif(len(cuda_visible_devices()) == 0, reason="No GPUs available")
+def test_stateful_udf_fractional_gpu():
+    @udf(return_dtype=DataType.string(), num_gpus=0.5)
+    class FractionalGpuUdf:
+        def __init__(self):
+            self.cuda_visible_devices = os.environ["CUDA_VISIBLE_DEVICES"]
+
+        def __call__(self, data):
+            assert os.environ["CUDA_VISIBLE_DEVICES"] == self.cuda_visible_devices
+
+            import time
+
+            time.sleep(0.1)
+
+            return [self.cuda_visible_devices] * len(data)
+
+    df = daft.from_pydict({"x": [1, 2]})
+    df = df.into_partitions(2)
+    df = df.select(FractionalGpuUdf(df["x"]))
+
+    result = df.to_pydict()
+
+    unique_visible_devices = set(result["x"])
+    assert len(unique_visible_devices) == 1
