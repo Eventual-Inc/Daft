@@ -209,7 +209,7 @@ _DaftActorContext = DaftActorContext()
 
 def get_actor_context() -> DaftActorContext:
     if not _DaftActorContext._running_in_actor:
-        raise RuntimeError("get_actor_context() can only be called in an actor")
+        raise RuntimeError("get_actor_context() can only be called inside a stateful UDF")
     return _DaftActorContext
 
 
