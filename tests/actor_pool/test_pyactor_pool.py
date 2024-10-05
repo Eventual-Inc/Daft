@@ -64,14 +64,20 @@ def test_pyactor_pool():
 
 @pytest.mark.skipif(get_context().runner_config.name != "py", reason="Test can only be run on PyRunner")
 def test_pyactor_pool_not_enough_resources():
+    from copy import deepcopy
+
     cpu_count = multiprocessing.cpu_count()
     projection = ExpressionsProjection([MyStatefulUDF(daft.col("x"))])
 
     runner = get_context().runner()
     assert isinstance(runner, PyRunner)
 
+    original_resources = deepcopy(runner._available_resources)
+
     with pytest.raises(RuntimeError, match=f"Not enough resources available to admit {cpu_count + 1} actors"):
         with runner.actor_pool_context(
             "my-pool", ResourceRequest(num_cpus=1), ResourceRequest(), cpu_count + 1, projection
         ) as _:
             pass
+
+    assert runner._available_resources == original_resources

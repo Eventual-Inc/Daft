@@ -469,6 +469,10 @@ class PyRunner(Runner[MicroPartition]):
         resources = [self._attempt_admit_task(actor_resource_request) for _ in range(num_actors)]
 
         if any(r is None for r in resources):
+            for r in resources:
+                if r is not None:
+                    self._release_resources(r)
+
             raise RuntimeError(
                 f"Not enough resources available to admit {num_actors} actors, each with resource request: {actor_resource_request}"
             )
