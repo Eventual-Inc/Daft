@@ -63,4 +63,3 @@ def test_map_get_bad_field():
         table.eval_expression_list([col("map_col").map.get("foo")])
 
 
-test_map_get_logical_type()

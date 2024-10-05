@@ -6,6 +6,7 @@ from datetime import date, datetime, time, timedelta, timezone
 import pytest
 import pytz
 
+import daft
 from daft.datatype import DataType, TimeUnit
 from daft.expressions import col, lit
 from daft.expressions.testing import expr_structurally_equal
@@ -535,3 +536,25 @@ def test_list_value_counts():
     none_mp = MicroPartition.from_pydict({"list_col": [None, None, None]})
     with pytest.raises(ValueError):
         none_mp.eval_expression_list([col("list_col").list.value_counts().alias("value_counts")])
+
+def test_list_value_counts_nested():
+    # Create a MicroPartition with a nested list column
+    mp = MicroPartition.from_pydict(
+        {
+            "nested_list_col": [
+                [[1, 2], [3, 4]],
+                [[1, 2], [5, 6]],
+                [[3, 4], [1, 2]],
+                [],
+                None,
+                [[1, 2], [1, 2]],
+            ]
+        }
+    )
+
+    # Apply list_value_counts operation and expect an exception
+    with pytest.raises(daft.exceptions.DaftCoreException) as exc_info:
+        mp.eval_expression_list([col("nested_list_col").list.value_counts().alias("value_counts")])
+
+    # Check the exception message
+    assert "DaftError::ArrowError Invalid argument error: The data type type LargeList(Field { name: \"item\", data_type: Int64, is_nullable: true, metadata: {} }) has no natural order" in str(exc_info.value)
