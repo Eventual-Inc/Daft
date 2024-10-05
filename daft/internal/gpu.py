@@ -1,18 +1,41 @@
 from __future__ import annotations
 
-import subprocess
 
-from daft.dependencies import ET
+def _raw_device_count_nvml() -> int:
+    """
+    Return number of devices as reported by NVML or zero if NVML discovery/initialization failed.
 
+    Inspired by PyTorch: https://github.com/pytorch/pytorch/blob/88e54de21976aa504e797e47f06b480b9108ef5c/torch/cuda/__init__.py#L711
+    """
+    from ctypes import CDLL, byref, c_int
 
-def cuda_device_count():
-    """Returns the number of CUDA devices detected by nvidia-smi command"""
-    try:
-        nvidia_smi_output = subprocess.check_output(["nvidia-smi", "-x", "-q"])
-    except Exception:
+    nvml_h = CDLL("libnvidia-ml.so.1")
+    rc = nvml_h.nvmlInit()
+    if rc != 0:
         return 0
-    root = ET.fromstring(nvidia_smi_output.decode("utf-8"))
-    attached_gpus = root.find("attached_gpus")
-    if attached_gpus is None:
+    dev_count = c_int(0)
+    rc = nvml_h.nvmlDeviceGetCount_v2(byref(dev_count))
+    if rc != 0:
         return 0
-    return int(attached_gpus.text)
+    del nvml_h
+    return dev_count.value
+
+
+def _parse_visible_devices() -> list[str] | None:
+    """Parse CUDA_VISIBLE_DEVICES environment variable. Returns None if not set."""
+    import os
+
+    var = os.getenv("CUDA_VISIBLE_DEVICES")
+    if var is None:
+        return None
+    else:
+        return [device.strip() for device in var.split(",") if device.strip()]
+
+
+def cuda_visible_devices() -> list[str]:
+    """Get the list of CUDA devices visible to the current process."""
+    visible_devices = _parse_visible_devices()
+    if visible_devices is not None:
+        return visible_devices
+    else:
+        return [str(i) for i in range(_raw_device_count_nvml())]
