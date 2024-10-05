@@ -2930,6 +2930,10 @@ class ExpressionListNamespace(ExpressionNamespace):
                         original list of type X, and the values are UInt64 counts representing
                         the number of times each element appears in the list.
 
+        Note:
+            This function does not work for nested types. For example, it will not produce a map
+            with lists as keys.
+
         Example:
             >>> import daft
             >>> df = daft.from_pydict({"letters": [["a", "b", "a"], ["b", "c", "b", "c"]]})
