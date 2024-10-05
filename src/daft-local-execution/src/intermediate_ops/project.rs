@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_dsl::ExprRef;
+use daft_table::Table;
 use tracing::instrument;
 
 use super::intermediate_op::{
@@ -27,7 +28,11 @@ impl IntermediateOperator for ProjectOperator {
         input: &PipelineResultType,
         _state: Option<&mut Box<dyn IntermediateOperatorState>>,
     ) -> DaftResult<IntermediateOperatorResult> {
-        let out = input.as_data().eval_expression_list(&self.projection)?;
+        let out = input
+            .as_data()
+            .iter()
+            .map(|t| t.eval_expression_list(&self.projection))
+            .collect::<DaftResult<Vec<Table>>>()?;
         Ok(IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(
             out,
         ))))

@@ -36,12 +36,12 @@ use crate::{
 
 #[derive(Clone)]
 pub enum PipelineResultType {
-    Data(Arc<Table>),
+    Data(Arc<Vec<Table>>),
     ProbeTable(Arc<dyn Probeable>, Arc<Vec<Table>>),
 }
 
-impl From<Arc<Table>> for PipelineResultType {
-    fn from(data: Arc<Table>) -> Self {
+impl From<Arc<Vec<Table>>> for PipelineResultType {
+    fn from(data: Arc<Vec<Table>>) -> Self {
         Self::Data(data)
     }
 }
@@ -53,7 +53,7 @@ impl From<(Arc<dyn Probeable>, Arc<Vec<Table>>)> for PipelineResultType {
 }
 
 impl PipelineResultType {
-    pub fn as_data(&self) -> &Arc<Table> {
+    pub fn as_data(&self) -> &Arc<Vec<Table>> {
         match self {
             Self::Data(data) => data,
             _ => panic!("Expected data"),

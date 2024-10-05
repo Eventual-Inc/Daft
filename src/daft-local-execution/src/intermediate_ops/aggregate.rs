@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_dsl::ExprRef;
+use daft_table::Table;
 use tracing::instrument;
 
 use super::intermediate_op::{
@@ -31,9 +32,10 @@ impl IntermediateOperator for AggregateOperator {
         input: &PipelineResultType,
         _state: Option<&mut Box<dyn IntermediateOperatorState>>,
     ) -> DaftResult<IntermediateOperatorResult> {
-        let out = input.as_data().agg(&self.agg_exprs, &self.group_by)?;
+        let input = Table::concat(input.as_data())?;
+        let out = input.agg(&self.agg_exprs, &self.group_by)?;
         Ok(IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(
-            out,
+            vec![out; 1],
         ))))
     }
 

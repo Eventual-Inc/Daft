@@ -14,7 +14,7 @@ pub struct SortSink {
 }
 
 enum SortState {
-    Building(Vec<Arc<Table>>),
+    Building(Vec<Table>),
     #[allow(dead_code)]
     Done(Table),
 }
@@ -34,9 +34,11 @@ impl SortSink {
 
 impl BlockingSink for SortSink {
     #[instrument(skip_all, name = "SortSink::sink")]
-    fn sink(&mut self, input: &Arc<Table>) -> DaftResult<BlockingSinkStatus> {
+    fn sink(&mut self, input: &[Table]) -> DaftResult<BlockingSinkStatus> {
         if let SortState::Building(parts) = &mut self.state {
-            parts.push(input.clone());
+            for t in input {
+                parts.push(t.clone());
+            }
         } else {
             panic!("SortSink should be in Building state");
         }
@@ -53,7 +55,7 @@ impl BlockingSink for SortSink {
             let concated = Table::concat(parts)?;
             let sorted = concated.sort(&self.sort_by, &self.descending)?;
             self.state = SortState::Done(sorted.clone());
-            Ok(Some(Arc::new(sorted).into()))
+            Ok(Some(Arc::new(vec![sorted; 1]).into()))
         } else {
             panic!("SortSink should be in Building state");
         }

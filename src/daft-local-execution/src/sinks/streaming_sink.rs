@@ -11,14 +11,14 @@ use crate::{
 };
 
 pub enum StreamSinkOutput {
-    NeedMoreInput(Option<Arc<Table>>),
+    NeedMoreInput(Option<Arc<Vec<Table>>>),
     #[allow(dead_code)]
-    HasMoreOutput(Arc<Table>),
-    Finished(Option<Arc<Table>>),
+    HasMoreOutput(Arc<Vec<Table>>),
+    Finished(Option<Arc<Vec<Table>>>),
 }
 
 pub trait StreamingSink: Send + Sync {
-    fn execute(&mut self, index: usize, input: &Arc<Table>) -> DaftResult<StreamSinkOutput>;
+    fn execute(&mut self, index: usize, input: &[Table]) -> DaftResult<StreamSinkOutput>;
     #[allow(dead_code)]
     fn name(&self) -> &'static str;
 }

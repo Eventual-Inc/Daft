@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use common_error::DaftResult;
 use daft_table::Table;
 use tracing::instrument;
@@ -26,27 +24,33 @@ impl LimitSink {
 
 impl StreamingSink for LimitSink {
     #[instrument(skip_all, name = "LimitSink::sink")]
-    fn execute(&mut self, index: usize, input: &Arc<Table>) -> DaftResult<StreamSinkOutput> {
+    fn execute(&mut self, index: usize, input: &[Table]) -> DaftResult<StreamSinkOutput> {
         assert_eq!(index, 0);
-
-        let input_num_rows = input.len();
-
         use std::cmp::Ordering::*;
-        match input_num_rows.cmp(&self.remaining) {
-            Less => {
-                self.remaining -= input_num_rows;
-                Ok(StreamSinkOutput::NeedMoreInput(Some(input.clone())))
-            }
-            Equal => {
-                self.remaining = 0;
-                Ok(StreamSinkOutput::Finished(Some(input.clone())))
-            }
-            Greater => {
-                let taken = input.head(self.remaining)?;
-                self.remaining -= taken.len();
-                Ok(StreamSinkOutput::Finished(Some(taken.into())))
+
+        let mut result = vec![];
+        for t in input {
+            let input_num_rows = t.len();
+
+            match input_num_rows.cmp(&self.remaining) {
+                Less => {
+                    result.push(t.clone());
+                    self.remaining -= input_num_rows;
+                }
+                Equal => {
+                    self.remaining = 0;
+                    result.push(t.clone());
+                    return Ok(StreamSinkOutput::Finished(Some(result.into())));
+                }
+                Greater => {
+                    let taken = t.head(self.remaining)?;
+                    self.remaining -= taken.len();
+                    result.push(taken.clone());
+                    return Ok(StreamSinkOutput::Finished(Some(result.into())));
+                }
             }
         }
+        Ok(StreamSinkOutput::NeedMoreInput(Some(result.into())))
     }
 
     fn name(&self) -> &'static str {

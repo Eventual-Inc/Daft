@@ -169,7 +169,7 @@ pub fn run_local(
     });
 
     struct ReceiverIterator {
-        receiver: Receiver<Arc<Table>>,
+        receiver: Receiver<Arc<Vec<Table>>>,
         handle: Option<std::thread::JoinHandle<DaftResult<()>>>,
     }
 
@@ -178,12 +178,14 @@ pub fn run_local(
 
         fn next(&mut self) -> Option<Self::Item> {
             match self.receiver.blocking_recv() {
-                Some(part) => Some(Ok(Arc::new(MicroPartition::new_loaded(
-                    part.schema.clone(),
-                    vec![part.as_ref().clone()].into(),
-                    None,
-                )))),
-                None => {
+                Some(part) if !part.is_empty() && !part.first().unwrap().is_empty() => {
+                    Some(Ok(Arc::new(MicroPartition::new_loaded(
+                        part.first().unwrap().schema.clone(),
+                        part,
+                        None,
+                    ))))
+                }
+                _ => {
                     if self.handle.is_some() {
                         let join_result = self
                             .handle

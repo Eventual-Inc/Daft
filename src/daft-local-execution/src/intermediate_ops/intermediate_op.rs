@@ -18,9 +18,9 @@ pub trait IntermediateOperatorState: Send + Sync {
 }
 
 pub enum IntermediateOperatorResult {
-    NeedMoreInput(Option<Arc<Table>>),
+    NeedMoreInput(Option<Arc<Vec<Table>>>),
     #[allow(dead_code)]
-    HasMoreOutput(Arc<Table>),
+    HasMoreOutput(Arc<Vec<Table>>),
 }
 
 pub trait IntermediateOperator: Send + Sync {
@@ -142,19 +142,19 @@ impl IntermediateNode {
                         let _ = worker_sender.send((idx, morsel.clone())).await;
                     }
                 } else {
-                    buffer.push(morsel.as_data().clone());
+                    buffer.push(morsel.as_data());
                     if let Some(ready) = buffer.try_clear() {
-                        let _ = send_to_next_worker(idx, ready?.into()).await;
+                        let _ = send_to_next_worker(idx, Arc::new(ready?).into()).await;
                     }
                 }
             }
             // Buffer may still have some morsels left above the threshold
             while let Some(ready) = buffer.try_clear() {
-                let _ = send_to_next_worker(idx, ready?.into()).await;
+                let _ = send_to_next_worker(idx, Arc::new(ready?).into()).await;
             }
             // Clear all remaining morsels
             if let Some(last_morsel) = buffer.clear_all() {
-                let _ = send_to_next_worker(idx, last_morsel?.into()).await;
+                let _ = send_to_next_worker(idx, Arc::new(last_morsel?).into()).await;
             }
         }
         Ok(())

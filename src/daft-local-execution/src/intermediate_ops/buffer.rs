@@ -1,10 +1,10 @@
-use std::{cmp::Ordering::*, collections::VecDeque, sync::Arc};
+use std::{cmp::Ordering::*, collections::VecDeque};
 
 use common_error::DaftResult;
 use daft_table::Table;
 
 pub struct OperatorBuffer {
-    pub buffer: VecDeque<Arc<Table>>,
+    pub buffer: VecDeque<Table>,
     pub curr_len: usize,
     pub threshold: usize,
 }
@@ -19,12 +19,14 @@ impl OperatorBuffer {
         }
     }
 
-    pub fn push(&mut self, part: Arc<Table>) {
-        self.curr_len += part.len();
-        self.buffer.push_back(part);
+    pub fn push(&mut self, parts: &[Table]) {
+        for part in parts {
+            self.buffer.push_back(part.clone());
+            self.curr_len += part.len();
+        }
     }
 
-    pub fn try_clear(&mut self) -> Option<DaftResult<Arc<Table>>> {
+    pub fn try_clear(&mut self) -> Option<DaftResult<Vec<Table>>> {
         match self.curr_len.cmp(&self.threshold) {
             Less => None,
             Equal => self.clear_all(),
@@ -32,9 +34,8 @@ impl OperatorBuffer {
         }
     }
 
-    fn clear_enough(&mut self) -> DaftResult<Arc<Table>> {
+    fn clear_enough(&mut self) -> DaftResult<Vec<Table>> {
         assert!(self.curr_len > self.threshold);
-
         let mut to_concat = Vec::with_capacity(self.buffer.len());
         let mut remaining = self.threshold;
 
@@ -47,28 +48,28 @@ impl OperatorBuffer {
             } else {
                 let (head, tail) = part.split_at(remaining)?;
                 remaining = 0;
-                to_concat.push(Arc::new(head));
-                self.buffer.push_front(Arc::new(tail));
+                to_concat.push(head);
+                self.buffer.push_front(tail);
                 break;
             }
         }
         assert_eq!(remaining, 0);
 
         self.curr_len -= self.threshold;
-        match to_concat.len() {
-            1 => Ok(to_concat.pop().unwrap()),
-            _ => Ok(Arc::new(Table::concat(&to_concat)?)),
-        }
+        Ok(to_concat)
     }
 
-    pub fn clear_all(&mut self) -> Option<DaftResult<Arc<Table>>> {
+    pub fn clear_all(&mut self) -> Option<DaftResult<Vec<Table>>> {
         if self.buffer.is_empty() {
             return None;
         }
 
-        let concated = Table::concat(&std::mem::take(&mut self.buffer).iter().collect::<Vec<_>>())
-            .map(Arc::new);
         self.curr_len = 0;
-        Some(concated)
+        Some(
+            std::mem::take(&mut self.buffer)
+                .into_iter()
+                .map(Ok)
+                .collect(),
+        )
     }
 }

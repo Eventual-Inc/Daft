@@ -18,7 +18,7 @@ pub enum BlockingSinkStatus {
 }
 
 pub trait BlockingSink: Send + Sync {
-    fn sink(&mut self, input: &Arc<Table>) -> DaftResult<BlockingSinkStatus>;
+    fn sink(&mut self, input: &[Table]) -> DaftResult<BlockingSinkStatus>;
     fn finalize(&mut self) -> DaftResult<Option<PipelineResultType>>;
     fn name(&self) -> &'static str;
 }

@@ -11,7 +11,7 @@ use crate::{
     ExecutionRuntimeHandle,
 };
 
-pub type SourceStream<'a> = BoxStream<'a, DaftResult<Arc<Table>>>;
+pub type SourceStream<'a> = BoxStream<'a, DaftResult<Arc<Vec<Table>>>>;
 
 pub(crate) trait Source: Send + Sync {
     fn name(&self) -> &'static str;

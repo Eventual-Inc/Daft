@@ -1,10 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_core::{
-    prelude::{SchemaRef, UInt64Array},
-    series::IntoSeries,
-};
+use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
 use daft_plan::JoinType;
 use daft_table::{GrowableTable, Probeable, Table};
@@ -97,7 +94,7 @@ impl HashJoinProbeOperator {
         }
     }
 
-    fn probe_inner(&self, input: &Table, state: &mut HashJoinProbeState) -> DaftResult<Table> {
+    fn probe_inner(&self, input: &[Table], state: &mut HashJoinProbeState) -> DaftResult<Table> {
         let (probe_table, tables) = state.get_probeable_and_table();
 
         let _growables = info_span!("HashJoinOperator::build_growables").entered();
@@ -105,30 +102,34 @@ impl HashJoinProbeOperator {
         let mut build_side_growable =
             GrowableTable::new(&tables.iter().collect::<Vec<_>>(), false, 20)?;
 
-        let mut input_idx_matches = vec![];
+        let mut probe_side_growable =
+            GrowableTable::new(&input.iter().collect::<Vec<_>>(), false, 20)?;
 
         drop(_growables);
         {
             let _loop = info_span!("HashJoinOperator::eval_and_probe").entered();
-            let join_keys = input.eval_expression_list(&self.probe_on)?;
-            let idx_mapper = probe_table.probe_indices(&join_keys)?;
+            for (probe_side_table_idx, table) in input.iter().enumerate() {
+                // we should emit one table at a time when this is streaming
+                let join_keys = table.eval_expression_list(&self.probe_on)?;
+                let idx_mapper = probe_table.probe_indices(&join_keys)?;
 
-            for (probe_row_idx, inner_iter) in idx_mapper.make_iter().enumerate() {
-                if let Some(inner_iter) = inner_iter {
-                    for (build_side_table_idx, build_row_idx) in inner_iter {
-                        build_side_growable.extend(
-                            build_side_table_idx as usize,
-                            build_row_idx as usize,
-                            1,
-                        );
-                        input_idx_matches.push(probe_row_idx as u64);
+                for (probe_row_idx, inner_iter) in idx_mapper.make_iter().enumerate() {
+                    if let Some(inner_iter) = inner_iter {
+                        for (build_side_table_idx, build_row_idx) in inner_iter {
+                            build_side_growable.extend(
+                                build_side_table_idx as usize,
+                                build_row_idx as usize,
+                                1,
+                            );
+                            // we can perform run length compression for this to make this more efficient
+                            probe_side_growable.extend(probe_side_table_idx, probe_row_idx, 1);
+                        }
                     }
                 }
             }
         }
         let build_side_table = build_side_growable.build()?;
-        let probe_side_table =
-            input.take(&UInt64Array::from(("matches", input_idx_matches)).into_series())?;
+        let probe_side_table = probe_side_growable.build()?;
 
         let (left_table, right_table) = if self.build_on_left {
             (build_side_table, probe_side_table)
@@ -139,14 +140,16 @@ impl HashJoinProbeOperator {
         let join_keys_table = left_table.get_columns(&self.common_join_keys)?;
         let left_non_join_columns = left_table.get_columns(&self.left_non_join_columns)?;
         let right_non_join_columns = right_table.get_columns(&self.right_non_join_columns)?;
-        let final_table = join_keys_table
+        join_keys_table
             .union(&left_non_join_columns)?
-            .union(&right_non_join_columns)?;
-
-        Ok(final_table)
+            .union(&right_non_join_columns)
     }
 
-    fn probe_left_right(&self, input: &Table, state: &mut HashJoinProbeState) -> DaftResult<Table> {
+    fn probe_left_right(
+        &self,
+        input: &[Table],
+        state: &mut HashJoinProbeState,
+    ) -> DaftResult<Table> {
         let (probe_table, tables) = state.get_probeable_and_table();
 
         let _growables = info_span!("HashJoinOperator::build_growables").entered();
@@ -157,47 +160,48 @@ impl HashJoinProbeOperator {
             tables.iter().map(|t| t.len()).sum(),
         )?;
 
-        let mut input_idx_matches = Vec::with_capacity(input.len());
+        let mut probe_side_growable =
+            GrowableTable::new(&input.iter().collect::<Vec<_>>(), false, input.len())?;
 
         drop(_growables);
         {
             let _loop = info_span!("HashJoinOperator::eval_and_probe").entered();
-            let join_keys = input.eval_expression_list(&self.probe_on)?;
-            let idx_mapper = probe_table.probe_indices(&join_keys)?;
+            for (probe_side_table_idx, table) in input.iter().enumerate() {
+                let join_keys = table.eval_expression_list(&self.probe_on)?;
+                let idx_mapper = probe_table.probe_indices(&join_keys)?;
 
-            for (probe_row_idx, inner_iter) in idx_mapper.make_iter().enumerate() {
-                if let Some(inner_iter) = inner_iter {
-                    for (build_side_table_idx, build_row_idx) in inner_iter {
-                        build_side_growable.extend(
-                            build_side_table_idx as usize,
-                            build_row_idx as usize,
-                            1,
-                        );
-                        input_idx_matches.push(probe_row_idx as u64);
+                for (probe_row_idx, inner_iter) in idx_mapper.make_iter().enumerate() {
+                    if let Some(inner_iter) = inner_iter {
+                        for (build_side_table_idx, build_row_idx) in inner_iter {
+                            build_side_growable.extend(
+                                build_side_table_idx as usize,
+                                build_row_idx as usize,
+                                1,
+                            );
+                            probe_side_growable.extend(probe_side_table_idx, probe_row_idx, 1);
+                        }
+                    } else {
+                        // if there's no match, we should still emit the probe side and fill the build side with nulls
+                        build_side_growable.add_nulls(1);
+                        probe_side_growable.extend(probe_side_table_idx, probe_row_idx, 1);
                     }
-                } else {
-                    // if there's no match, we should still emit the probe side and fill the build side with nulls
-                    build_side_growable.add_nulls(1);
-                    input_idx_matches.push(probe_row_idx as u64);
                 }
             }
         }
         let build_side_table = build_side_growable.build()?;
-        let probe_side_table =
-            input.take(&UInt64Array::from(("matches", input_idx_matches)).into_series())?;
+        let probe_side_table = probe_side_growable.build()?;
 
-        let final_table = if self.join_type == JoinType::Left {
+        if self.join_type == JoinType::Left {
             let join_table = probe_side_table.get_columns(&self.common_join_keys)?;
             let left = probe_side_table.get_columns(&self.left_non_join_columns)?;
             let right = build_side_table.get_columns(&self.right_non_join_columns)?;
-            join_table.union(&left)?.union(&right)?
+            join_table.union(&left)?.union(&right)
         } else {
             let join_table = probe_side_table.get_columns(&self.common_join_keys)?;
             let left = build_side_table.get_columns(&self.left_non_join_columns)?;
             let right = probe_side_table.get_columns(&self.right_non_join_columns)?;
-            join_table.union(&left)?.union(&right)?
-        };
-        Ok(final_table)
+            join_table.union(&left)?.union(&right)
+        }
     }
 }
 
@@ -235,7 +239,7 @@ impl IntermediateOperator for HashJoinProbeOperator {
                     }
                 }?;
                 Ok(IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(
-                    out,
+                    vec![out; 1],
                 ))))
             }
         }

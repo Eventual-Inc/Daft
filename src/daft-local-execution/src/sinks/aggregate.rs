@@ -9,7 +9,7 @@ use super::blocking_sink::{BlockingSink, BlockingSinkStatus};
 use crate::pipeline::PipelineResultType;
 
 enum AggregateState {
-    Accumulating(Vec<Arc<Table>>),
+    Accumulating(Vec<Table>),
     #[allow(dead_code)]
     Done(Table),
 }
@@ -36,9 +36,11 @@ impl AggregateSink {
 
 impl BlockingSink for AggregateSink {
     #[instrument(skip_all, name = "AggregateSink::sink")]
-    fn sink(&mut self, input: &Arc<Table>) -> DaftResult<BlockingSinkStatus> {
+    fn sink(&mut self, input: &[Table]) -> DaftResult<BlockingSinkStatus> {
         if let AggregateState::Accumulating(parts) = &mut self.state {
-            parts.push(input.clone());
+            for t in input {
+                parts.push(t.clone());
+            }
             Ok(BlockingSinkStatus::NeedMoreInput)
         } else {
             panic!("AggregateSink should be in Accumulating state");
@@ -55,7 +57,7 @@ impl BlockingSink for AggregateSink {
             let concated = Table::concat(parts)?;
             let agged = concated.agg(&self.agg_exprs, &self.group_by)?;
             self.state = AggregateState::Done(agged.clone());
-            Ok(Some(Arc::new(agged).into()))
+            Ok(Some(Arc::new(vec![agged; 1]).into()))
         } else {
             panic!("AggregateSink should be in Accumulating state");
         }

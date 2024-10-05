@@ -97,8 +97,10 @@ impl BlockingSink for HashJoinBuildSink {
         "HashJoinBuildSink"
     }
 
-    fn sink(&mut self, input: &Arc<Table>) -> DaftResult<BlockingSinkStatus> {
-        self.probe_table_state.add_tables(input)?;
+    fn sink(&mut self, input: &[Table]) -> DaftResult<BlockingSinkStatus> {
+        for t in input {
+            self.probe_table_state.add_tables(t)?;
+        }
         Ok(BlockingSinkStatus::NeedMoreInput)
     }
 

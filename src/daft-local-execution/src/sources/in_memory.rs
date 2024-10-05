@@ -33,7 +33,7 @@ impl Source for InMemorySource {
         _io_stats: IOStatsRef,
     ) -> crate::Result<SourceStream<'static>> {
         if self.data.is_empty() {
-            let empty = Table::empty(Some(self.schema.clone()));
+            let empty = vec![Table::empty(Some(self.schema.clone())); 1];
             return Ok(Box::pin(futures::stream::once(async {
                 Ok(Arc::new(empty))
             })));
@@ -41,9 +41,7 @@ impl Source for InMemorySource {
         let data = self.data.clone();
         let stream = try_stream! {
             for mp in data {
-                for table in mp.get_tables()?.iter() {
-                    yield Arc::new(table.clone());
-                }
+                yield mp.get_tables()?
             }
         };
         Ok(Box::pin(stream))
