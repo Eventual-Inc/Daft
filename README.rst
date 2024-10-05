@@ -4,13 +4,13 @@
 
 `Website <https://www.getdaft.io>`_ • `Docs <https://www.getdaft.io/projects/docs/>`_ • `Installation`_ • `10-minute tour of Daft <https://www.getdaft.io/projects/docs/en/latest/learn/10-min.html>`_ • `Community and Support <https://github.com/Eventual-Inc/Daft/discussions>`_
 
-Daft: Distributed dataframes for multimodal data
-=======================================================
+Daft: Unified Engine for Data Analytics, Engineering & ML/AI
+============================================================
 
 
-`Daft <https://www.getdaft.io>`_ is a distributed query engine for large-scale data processing in Python and is implemented in Rust.
+`Daft <https://www.getdaft.io>`_ is a distributed query engine for large-scale data processing using Python or SQL, implemented in Rust.
 
-* **Familiar interactive API:** Lazy Python Dataframe for rapid and interactive iteration
+* **Familiar interactive API:** Lazy Python Dataframe for rapid and interactive iteration, or SQL for analytical queries
 * **Focus on the what:** Powerful Query Optimizer that rewrites queries to be as efficient as possible
 * **Data Catalog integrations:** Full integration with data catalogs such as Apache Iceberg
 * **Rich multimodal type-system:** Supports multimodal types such as Images, URLs, Tensors and more
