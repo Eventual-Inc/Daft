@@ -16,14 +16,14 @@ lazy_static! {
 
 pub struct ExecutionRuntimeHandle {
     worker_set: tokio::task::JoinSet<crate::Result<()>>,
-    default_morsel_size: usize,
+    morsel_size: usize,
 }
 
 impl ExecutionRuntimeHandle {
-    pub fn new(default_morsel_size: usize) -> Self {
+    pub fn new(morsel_size: usize) -> Self {
         Self {
             worker_set: tokio::task::JoinSet::new(),
-            default_morsel_size,
+            morsel_size,
         }
     }
     pub fn spawn(
@@ -44,8 +44,8 @@ impl ExecutionRuntimeHandle {
         self.worker_set.shutdown().await;
     }
 
-    pub fn default_morsel_size(&self) -> usize {
-        self.default_morsel_size
+    pub fn morsel_size(&self) -> usize {
+        self.morsel_size
     }
 }
 

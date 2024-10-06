@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common_daft_config::DaftExecutionConfig;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
@@ -34,8 +35,8 @@ pub trait IntermediateOperator: Send + Sync {
     fn make_state(&self) -> Option<Box<dyn IntermediateOperatorState>> {
         None
     }
-    fn morsel_size(&self) -> Option<usize> {
-        None
+    fn morsel_size(&self) -> usize {
+        DaftExecutionConfig::default().morsel_size
     }
 }
 
@@ -209,14 +210,16 @@ impl PipelineNode for IntermediateNode {
 
         let worker_senders =
             self.spawn_workers(*NUM_CPUS, &mut destination_channel, runtime_handle);
+
+        // Use the intermediate_op's morsel size unless the default has been overridden
+        let morsel_size =
+            if runtime_handle.morsel_size() != DaftExecutionConfig::default().morsel_size {
+                runtime_handle.morsel_size()
+            } else {
+                self.intermediate_op.morsel_size()
+            };
         runtime_handle.spawn(
-            Self::send_to_workers(
-                child_result_receivers,
-                worker_senders,
-                self.intermediate_op
-                    .morsel_size()
-                    .unwrap_or(runtime_handle.default_morsel_size()),
-            ),
+            Self::send_to_workers(child_result_receivers, worker_senders, morsel_size),
             self.intermediate_op.name(),
         );
         Ok(destination_channel)

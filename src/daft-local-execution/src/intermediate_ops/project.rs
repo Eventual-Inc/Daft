@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use daft_dsl::{is_io_bound, ExprRef};
 use tracing::instrument;
@@ -37,12 +38,12 @@ impl IntermediateOperator for ProjectOperator {
         "ProjectOperator"
     }
 
-    fn morsel_size(&self) -> Option<usize> {
+    fn morsel_size(&self) -> usize {
         for expr in &self.projection {
             if is_io_bound(expr) {
-                return Some(10);
+                return 10;
             }
         }
-        None
+        DaftExecutionConfig::default().morsel_size
     }
 }
