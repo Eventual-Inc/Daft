@@ -37,7 +37,7 @@ impl Runtime {
         Arc::new(Self { runtime })
     }
 
-    pub async fn block_on_compute_pool<F>(&self, future: F) -> DaftResult<F::Output>
+    pub async fn await_on_compute_pool<F>(&self, future: F) -> DaftResult<F::Output>
     where
         F: Future + Send + 'static,
         F::Output: Send + 'static,

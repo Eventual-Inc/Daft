@@ -104,13 +104,13 @@ impl PipelineNode for BlockingSinkNode {
                         let mut guard = op.lock().await;
                         rt_context.in_span(&span, || guard.sink(val.as_data()))
                     };
-                    let result = compute_runtime.block_on_compute_pool(fut).await??;
+                    let result = compute_runtime.await_on_compute_pool(fut).await??;
                     if let BlockingSinkStatus::Finished = result {
                         break;
                     }
                 }
                 let finalized_result = compute_runtime
-                    .block_on_compute_pool(async move {
+                    .await_on_compute_pool(async move {
                         let mut guard = op.lock().await;
                         rt_context.in_span(&info_span!("BlockingSinkNode::finalize"), || {
                             guard.finalize()

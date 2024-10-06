@@ -502,7 +502,7 @@ impl Runtime {
     }
 
     /// Similar to block_on_io_pool, but is async and can be awaited
-    pub async fn block_on_io_pool_async<F>(&self, future: F) -> DaftResult<F::Output>
+    pub async fn await_on_io_pool<F>(&self, future: F) -> DaftResult<F::Output>
     where
         F: Future + Send + 'static,
         F::Output: Send + 'static,

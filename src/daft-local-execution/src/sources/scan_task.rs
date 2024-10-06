@@ -41,7 +41,7 @@ impl ScanTaskSource {
         let schema = scan_task.materialized_schema();
         let io_runtime = get_runtime(true)?;
         let mut stream = io_runtime
-            .block_on_io_pool_async(stream_scan_task(scan_task, Some(io_stats), maintain_order))
+            .await_on_io_pool(stream_scan_task(scan_task, Some(io_stats), maintain_order))
             .await??;
         let mut has_data = false;
         while let Some(partition) = stream.next().await {
