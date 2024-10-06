@@ -23,7 +23,7 @@ pub fn try_sum_supertype(dtype: &DataType) -> DaftResult<DataType> {
 }
 
 /// Get the data type that the mean of a column of the given data type should be casted to.
-pub fn try_mean_supertype(dtype: &DataType) -> DaftResult<DataType> {
+pub fn try_numeric_aggregation_supertype(dtype: &DataType) -> DaftResult<DataType> {
     if dtype.is_numeric() {
         Ok(DataType::Float64)
     } else {

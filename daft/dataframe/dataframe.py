@@ -2119,6 +2119,17 @@ class DataFrame:
         return self._apply_agg_fn(Expression.mean, cols)
 
     @DataframePublicAPI
+    def stddev(self, *cols: ColumnInputType) -> "DataFrame":
+        """Performs a global standard deviation on the DataFrame
+
+        Args:
+            *cols (Union[str, Expression]): columns to stddev
+        Returns:
+            DataFrame: Globally aggregated standard deviation. Should be a single row.
+        """
+        return self._apply_agg_fn(Expression.stddev, cols)
+
+    @DataframePublicAPI
     def min(self, *cols: ColumnInputType) -> "DataFrame":
         """Performs a global min on the DataFrame
 
@@ -2855,6 +2866,17 @@ class GroupedDataFrame:
             DataFrame: DataFrame with grouped mean.
         """
         return self.df._apply_agg_fn(Expression.mean, cols, self.group_by)
+
+    def stddev(self, *cols: ColumnInputType) -> "DataFrame":
+        """Performs grouped standard deviation on this GroupedDataFrame.
+
+        Args:
+            *cols (Union[str, Expression]): columns to stddev
+
+        Returns:
+            DataFrame: DataFrame with grouped standard deviation.
+        """
+        return self.df._apply_agg_fn(Expression.stddev, cols, self.group_by)
 
     def min(self, *cols: ColumnInputType) -> "DataFrame":
         """Perform grouped min on this GroupedDataFrame.

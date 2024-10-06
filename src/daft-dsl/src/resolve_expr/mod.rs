@@ -206,44 +206,47 @@ fn expand_wildcards(
 }
 
 fn extract_agg_expr(expr: &Expr) -> DaftResult<AggExpr> {
-    use crate::Expr::*;
-
     match expr {
-        Agg(agg_expr) => Ok(agg_expr.clone()),
-        Function { func, inputs } => Ok(AggExpr::MapGroups {
+        Expr::Agg(agg_expr) => Ok(agg_expr.clone()),
+        Expr::Function { func, inputs } => Ok(AggExpr::MapGroups {
             func: func.clone(),
             inputs: inputs.clone(),
         }),
-        Alias(e, name) => extract_agg_expr(e).map(|agg_expr| {
-            use crate::AggExpr::*;
-
+        Expr::Alias(e, name) => extract_agg_expr(e).map(|agg_expr| {
             // reorder expressions so that alias goes before agg
             match agg_expr {
-                Count(e, count_mode) => Count(Alias(e, name.clone()).into(), count_mode),
-                Sum(e) => Sum(Alias(e, name.clone()).into()),
-                ApproxPercentile(ApproxPercentileParams {
+                AggExpr::Count(e, count_mode) => {
+                    AggExpr::Count(Expr::Alias(e, name.clone()).into(), count_mode)
+                }
+                AggExpr::Sum(e) => AggExpr::Sum(Expr::Alias(e, name.clone()).into()),
+                AggExpr::ApproxPercentile(ApproxPercentileParams {
                     child: e,
                     percentiles,
                     force_list_output,
-                }) => ApproxPercentile(ApproxPercentileParams {
-                    child: Alias(e, name.clone()).into(),
+                }) => AggExpr::ApproxPercentile(ApproxPercentileParams {
+                    child: Expr::Alias(e, name.clone()).into(),
                     percentiles,
                     force_list_output,
                 }),
-                ApproxCountDistinct(e) => ApproxCountDistinct(Alias(e, name.clone()).into()),
-                ApproxSketch(e, sketch_type) => {
-                    ApproxSketch(Alias(e, name.clone()).into(), sketch_type)
+                AggExpr::ApproxCountDistinct(e) => {
+                    AggExpr::ApproxCountDistinct(Expr::Alias(e, name.clone()).into())
                 }
-                MergeSketch(e, sketch_type) => {
-                    MergeSketch(Alias(e, name.clone()).into(), sketch_type)
+                AggExpr::ApproxSketch(e, sketch_type) => {
+                    AggExpr::ApproxSketch(Expr::Alias(e, name.clone()).into(), sketch_type)
                 }
-                Mean(e) => Mean(Alias(e, name.clone()).into()),
-                Min(e) => Min(Alias(e, name.clone()).into()),
-                Max(e) => Max(Alias(e, name.clone()).into()),
-                AnyValue(e, ignore_nulls) => AnyValue(Alias(e, name.clone()).into(), ignore_nulls),
-                List(e) => List(Alias(e, name.clone()).into()),
-                Concat(e) => Concat(Alias(e, name.clone()).into()),
-                MapGroups { func, inputs } => MapGroups {
+                AggExpr::MergeSketch(e, sketch_type) => {
+                    AggExpr::MergeSketch(Expr::Alias(e, name.clone()).into(), sketch_type)
+                }
+                AggExpr::Mean(e) => AggExpr::Mean(Expr::Alias(e, name.clone()).into()),
+                AggExpr::Stddev(e) => AggExpr::Stddev(Expr::Alias(e, name.clone()).into()),
+                AggExpr::Min(e) => AggExpr::Min(Expr::Alias(e, name.clone()).into()),
+                AggExpr::Max(e) => AggExpr::Max(Expr::Alias(e, name.clone()).into()),
+                AggExpr::AnyValue(e, ignore_nulls) => {
+                    AggExpr::AnyValue(Expr::Alias(e, name.clone()).into(), ignore_nulls)
+                }
+                AggExpr::List(e) => AggExpr::List(Expr::Alias(e, name.clone()).into()),
+                AggExpr::Concat(e) => AggExpr::Concat(Expr::Alias(e, name.clone()).into()),
+                AggExpr::MapGroups { func, inputs } => AggExpr::MapGroups {
                     func,
                     inputs: inputs
                         .into_iter()

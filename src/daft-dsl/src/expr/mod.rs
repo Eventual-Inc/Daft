@@ -10,7 +10,7 @@ use common_error::{DaftError, DaftResult};
 use common_hashable_float_wrapper::FloatWrapper;
 use common_treenode::TreeNode;
 use daft_core::{
-    datatypes::{try_mean_supertype, try_sum_supertype, InferDataType},
+    datatypes::{try_numeric_aggregation_supertype, try_sum_supertype, InferDataType},
     prelude::*,
     utils::supertype::try_get_supertype,
 };
@@ -124,6 +124,9 @@ pub enum AggExpr {
     #[display("mean({_0})")]
     Mean(ExprRef),
 
+    #[display("stddev({_0})")]
+    Stddev(ExprRef),
+
     #[display("min({_0})")]
     Min(ExprRef),
 
@@ -170,6 +173,7 @@ impl AggExpr {
             | Self::ApproxSketch(expr, _)
             | Self::MergeSketch(expr, _)
             | Self::Mean(expr)
+            | Self::Stddev(expr)
             | Self::Min(expr)
             | Self::Max(expr)
             | Self::AnyValue(expr, _)
@@ -216,6 +220,10 @@ impl AggExpr {
                     "{child_id}.local_merge_sketch(sketch_type={sketch_type:?})"
                 ))
             }
+            Self::Stddev(expr) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.local_stddev()"))
+            }
             Self::Mean(expr) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_mean()"))
@@ -255,6 +263,7 @@ impl AggExpr {
             | Self::ApproxSketch(expr, _)
             | Self::MergeSketch(expr, _)
             | Self::Mean(expr)
+            | Self::Stddev(expr)
             | Self::Min(expr)
             | Self::Max(expr)
             | Self::AnyValue(expr, _)
@@ -275,6 +284,7 @@ impl AggExpr {
             Self::Count(_, count_mode) => Self::Count(first_child(), *count_mode),
             Self::Sum(_) => Self::Sum(first_child()),
             Self::Mean(_) => Self::Mean(first_child()),
+            Self::Stddev(_) => Self::Stddev(first_child()),
             Self::Min(_) => Self::Min(first_child()),
             Self::Max(_) => Self::Max(first_child()),
             Self::AnyValue(_, ignore_nulls) => Self::AnyValue(first_child(), *ignore_nulls),
@@ -372,11 +382,11 @@ impl AggExpr {
                 };
                 Ok(Field::new(field.name, dtype))
             }
-            Self::Mean(expr) => {
+            Self::Mean(expr) | Self::Stddev(expr) => {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(
                     field.name.as_str(),
-                    try_mean_supertype(&field.dtype)?,
+                    try_numeric_aggregation_supertype(&field.dtype)?,
                 ))
             }
             Self::Min(expr) | Self::Max(expr) | Self::AnyValue(expr, _) => {
