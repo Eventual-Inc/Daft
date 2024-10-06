@@ -34,6 +34,9 @@ pub trait IntermediateOperator: Send + Sync {
     fn make_state(&self) -> Option<Box<dyn IntermediateOperatorState>> {
         None
     }
+    fn morsel_size(&self) -> Option<usize> {
+        None
+    }
 }
 
 pub(crate) struct IntermediateNode {
@@ -210,7 +213,9 @@ impl PipelineNode for IntermediateNode {
             Self::send_to_workers(
                 child_result_receivers,
                 worker_senders,
-                runtime_handle.default_morsel_size(),
+                self.intermediate_op
+                    .morsel_size()
+                    .unwrap_or(runtime_handle.default_morsel_size()),
             ),
             self.intermediate_op.name(),
         );

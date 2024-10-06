@@ -64,6 +64,10 @@ impl ScalarUDF for UploadFunction {
             ))),
         }
     }
+
+    fn is_io_bound(&self) -> bool {
+        true
+    }
 }
 
 /// Uploads data from a Binary/FixedSizeBinary/Utf8 Series to the provided folder_path

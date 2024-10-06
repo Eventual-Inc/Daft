@@ -82,6 +82,10 @@ impl ScalarUDF for DownloadFunction {
             ))),
         }
     }
+
+    fn is_io_bound(&self) -> bool {
+        true
+    }
 }
 
 fn url_download(

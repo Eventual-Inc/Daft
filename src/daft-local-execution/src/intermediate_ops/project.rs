@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_dsl::ExprRef;
+use daft_dsl::{is_io_bound, ExprRef};
 use tracing::instrument;
 
 use super::intermediate_op::{
@@ -35,5 +35,14 @@ impl IntermediateOperator for ProjectOperator {
 
     fn name(&self) -> &'static str {
         "ProjectOperator"
+    }
+
+    fn morsel_size(&self) -> Option<usize> {
+        for expr in &self.projection {
+            if is_io_bound(expr) {
+                return Some(10);
+            }
+        }
+        None
     }
 }

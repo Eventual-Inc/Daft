@@ -8,7 +8,7 @@ use common_error::DaftResult;
 use daft_core::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::{Expr, ExprRef};
+use crate::{is_io_bound, Expr, ExprRef};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScalarFunction {
@@ -31,6 +31,10 @@ impl ScalarFunction {
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
         self.udf.to_field(&self.inputs, schema)
     }
+
+    pub fn is_io_bound(&self) -> bool {
+        self.udf.is_io_bound() || self.inputs.iter().any(is_io_bound)
+    }
 }
 impl From<ScalarFunction> for ExprRef {
     fn from(func: ScalarFunction) -> Self {
@@ -44,6 +48,9 @@ pub trait ScalarUDF: Send + Sync + std::fmt::Debug {
     fn name(&self) -> &'static str;
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series>;
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field>;
+    fn is_io_bound(&self) -> bool {
+        false
+    }
 }
 
 pub fn scalar_function_semantic_id(func: &ScalarFunction, schema: &Schema) -> FieldID {

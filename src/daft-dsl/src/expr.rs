@@ -1108,6 +1108,10 @@ pub fn has_agg(expr: &ExprRef) -> bool {
     expr.exists(|e| matches!(e.as_ref(), Expr::Agg(_)))
 }
 
+pub fn is_io_bound(expr: &ExprRef) -> bool {
+    expr.exists(|e| matches!(e.as_ref(), Expr::ScalarFunction(func) if func.is_io_bound()))
+}
+
 pub fn has_stateful_udf(expr: &ExprRef) -> bool {
     expr.exists(|e| {
         matches!(
