@@ -29,6 +29,7 @@ pub struct CsvReadStats {
 }
 
 impl CsvReadStats {
+    #[must_use]
     pub fn new(
         total_bytes_read: usize,
         total_records_read: usize,
@@ -83,7 +84,7 @@ pub async fn read_csv_schema_bulk(
     let result = runtime_handle
         .block_on_current_thread(async {
             let task_stream = futures::stream::iter(uris.iter().map(|uri| {
-                let owned_string = uri.to_string();
+                let owned_string = (*uri).to_string();
                 let owned_client = io_client.clone();
                 let owned_io_stats = io_stats.clone();
                 let owned_parse_options = parse_options.clone();
@@ -134,7 +135,7 @@ pub(crate) async fn read_csv_schema_single(
                 compression_codec,
                 parse_options,
                 // Truncate max_bytes to size if both are set.
-                max_bytes.map(|m| size.map(|s| m.min(s)).unwrap_or(m)),
+                max_bytes.map(|m| size.map_or(m, |s| m.min(s))),
             )
             .await
         }
@@ -220,7 +221,7 @@ where
                 .headers()
                 .await?
                 .iter()
-                .map(|s| s.to_string())
+                .map(std::string::ToString::to_string)
                 .collect(),
             false,
         )
@@ -324,15 +325,14 @@ mod tests {
         let file = format!(
             "{}/test/iris_tiny.csv{}",
             env!("CARGO_MANIFEST_DIR"),
-            compression.map_or("".to_string(), |ext| format!(".{}", ext))
+            compression.map_or(String::new(), |ext| format!(".{ext}"))
         );
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let (schema, read_stats) =
-            read_csv_schema(file.as_ref(), None, None, io_client.clone(), None)?;
+        let (schema, read_stats) = read_csv_schema(file.as_ref(), None, None, io_client, None)?;
         assert_eq!(
             schema,
             Schema::new(vec![
@@ -364,7 +364,7 @@ mod tests {
             file.as_ref(),
             Some(CsvParseOptions::default().with_delimiter(b'|')),
             None,
-            io_client.clone(),
+            io_client,
             None,
         )?;
         assert_eq!(
@@ -391,7 +391,7 @@ mod tests {
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let (_, read_stats) = read_csv_schema(file.as_ref(), None, None, io_client.clone(), None)?;
+        let (_, read_stats) = read_csv_schema(file.as_ref(), None, None, io_client, None)?;
         assert_eq!(read_stats.total_bytes_read, 328);
         assert_eq!(read_stats.total_records_read, 20);
 
@@ -413,7 +413,7 @@ mod tests {
             file.as_ref(),
             Some(CsvParseOptions::default().with_has_header(false)),
             None,
-            io_client.clone(),
+            io_client,
             None,
         )?;
         assert_eq!(
@@ -443,8 +443,7 @@ mod tests {
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let (schema, read_stats) =
-            read_csv_schema(file.as_ref(), None, None, io_client.clone(), None)?;
+        let (schema, read_stats) = read_csv_schema(file.as_ref(), None, None, io_client, None)?;
         assert_eq!(
             schema,
             Schema::new(vec![
@@ -469,8 +468,7 @@ mod tests {
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let (schema, read_stats) =
-            read_csv_schema(file.as_ref(), None, None, io_client.clone(), None)?;
+        let (schema, read_stats) = read_csv_schema(file.as_ref(), None, None, io_client, None)?;
         assert_eq!(
             schema,
             Schema::new(vec![
@@ -498,8 +496,7 @@ mod tests {
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let (schema, read_stats) =
-            read_csv_schema(file.as_ref(), None, None, io_client.clone(), None)?;
+        let (schema, read_stats) = read_csv_schema(file.as_ref(), None, None, io_client, None)?;
         assert_eq!(
             schema,
             Schema::new(vec![
@@ -526,7 +523,7 @@ mod tests {
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
         let (schema, read_stats) =
-            read_csv_schema(file.as_ref(), None, Some(100), io_client.clone(), None)?;
+            read_csv_schema(file.as_ref(), None, Some(100), io_client, None)?;
         assert_eq!(
             schema,
             Schema::new(vec![
@@ -563,7 +560,7 @@ mod tests {
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let err = read_csv_schema(file.as_ref(), None, None, io_client.clone(), None);
+        let err = read_csv_schema(file.as_ref(), None, None, io_client, None);
         assert!(err.is_err());
         let err = err.unwrap_err();
         assert!(matches!(err, DaftError::ArrowError(_)), "{}", err);
@@ -592,7 +589,7 @@ mod tests {
             file.as_ref(),
             Some(CsvParseOptions::default().with_has_header(false)),
             None,
-            io_client.clone(),
+            io_client,
             None,
         );
         assert!(err.is_err());
@@ -634,14 +631,14 @@ mod tests {
     ) -> DaftResult<()> {
         let file = format!(
             "s3://daft-public-data/test_fixtures/csv-dev/mvp.csv{}",
-            compression.map_or("".to_string(), |ext| format!(".{}", ext))
+            compression.map_or(String::new(), |ext| format!(".{ext}"))
         );
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let (schema, _) = read_csv_schema(file.as_ref(), None, None, io_client.clone(), None)?;
+        let (schema, _) = read_csv_schema(file.as_ref(), None, None, io_client, None)?;
         assert_eq!(
             schema,
             Schema::new(vec![

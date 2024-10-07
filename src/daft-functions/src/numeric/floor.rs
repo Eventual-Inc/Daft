@@ -31,6 +31,7 @@ impl ScalarUDF for Floor {
     }
 }
 
+#[must_use]
 pub fn floor(input: ExprRef) -> ExprRef {
     ScalarFunction::new(Floor {}, vec![input]).into()
 }

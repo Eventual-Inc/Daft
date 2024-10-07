@@ -32,7 +32,7 @@ impl Table {
         let mut key_indices: Vec<u64> = Vec::with_capacity(probe_table.len());
         let mut values_indices: Vec<Vec<u64>> = Vec::with_capacity(probe_table.len());
 
-        for (idx_hash, val_idx) in probe_table.into_iter() {
+        for (idx_hash, val_idx) in probe_table {
             key_indices.push(idx_hash.idx);
             values_indices.push(val_idx);
         }

@@ -54,6 +54,7 @@ impl ScalarUDF for ListSum {
     }
 }
 
+#[must_use]
 pub fn list_sum(expr: ExprRef) -> ExprRef {
     ScalarFunction::new(ListSum {}, vec![expr]).into()
 }

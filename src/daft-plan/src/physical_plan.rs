@@ -128,7 +128,7 @@ impl PhysicalPlan {
             }) => clustering_spec.clone(),
             Self::Sample(Sample { input, .. }) => input.clustering_spec(),
             Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. }) => {
-                input.clustering_spec().clone()
+                input.clustering_spec()
             }
 
             Self::Sort(Sort {
@@ -253,7 +253,7 @@ impl PhysicalPlan {
             },
             Self::TabularScan(TabularScan { scan_tasks, .. }) => {
                 let mut stats = ApproxStats::empty();
-                for st in scan_tasks.iter() {
+                for st in scan_tasks {
                     stats.lower_bound_rows += st.num_rows().unwrap_or(0);
                     let in_memory_size = st.estimate_in_memory_size_bytes(None);
                     stats.lower_bound_bytes += in_memory_size.unwrap_or(0);

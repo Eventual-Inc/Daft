@@ -1,6 +1,6 @@
 #[cfg(feature = "python")]
 pub(super) mod python_fn;
-pub(crate) mod cast {
+pub mod cast {
     macro_rules! cast_downcast_op {
         ($lhs:expr, $rhs:expr, $ty_expr:expr, $ty_type:ty, $op:ident) => {{
             let lhs = $lhs.cast($ty_expr)?;

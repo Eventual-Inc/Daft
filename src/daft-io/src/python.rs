@@ -20,7 +20,7 @@ mod py {
     ) -> PyResult<Vec<Bound<PyDict>>> {
         let multithreaded_io = multithreaded_io.unwrap_or(true);
         let io_stats = IOStatsContext::new(format!("io_glob for {path}"));
-        let io_stats_handle = io_stats.clone();
+        let io_stats_handle = io_stats;
 
         let lsr: DaftResult<Vec<_>> = py.allow_threads(|| {
             let io_client = get_io_client(

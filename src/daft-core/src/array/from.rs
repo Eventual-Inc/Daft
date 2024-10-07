@@ -1,3 +1,8 @@
+#![expect(
+    clippy::fallible_impl_from,
+    reason = "TODO(andrewgazelka/others): This should really be changed in the future"
+)]
+
 use std::{borrow::Cow, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
@@ -106,7 +111,7 @@ impl From<(&str, &[Option<bool>])> for BooleanArray {
     fn from(item: (&str, &[Option<bool>])) -> Self {
         let (name, slice) = item;
         let arrow_array = Box::new(arrow2::array::BooleanArray::from_trusted_len_iter(
-            slice.iter().cloned(),
+            slice.iter().copied(),
         ));
         Self::new(Field::new(name, DataType::Boolean).into(), arrow_array).unwrap()
     }

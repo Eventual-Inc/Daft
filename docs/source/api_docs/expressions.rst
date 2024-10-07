@@ -214,7 +214,7 @@ List
    :template: autosummary/accessor_method.rst
 
    Expression.list.join
-   Expression.list.lengths
+   Expression.list.length
    Expression.list.get
    Expression.list.slice
    Expression.list.chunk

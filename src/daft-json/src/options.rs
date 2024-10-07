@@ -83,7 +83,7 @@ impl JsonConvertOptions {
         Self::new_internal(
             limit,
             include_columns,
-            schema.map(|s| s.into()),
+            schema.map(std::convert::Into::into),
             predicate.map(|p| p.expr),
         )
     }

@@ -60,7 +60,10 @@ pub enum Error {
 
 impl From<Error> for DaftError {
     fn from(err: Error) -> Self {
-        use Error::*;
+        use Error::{
+            BPECreation, BadToken, Base64Decode, Decode, EmptyTokenFile, InvalidTokenLine,
+            InvalidUtf8Sequence, MissingPattern, RankNumberParse, UnsupportedSpecialTokens,
+        };
         match err {
             Base64Decode { .. } => Self::ValueError(err.to_string()),
             RankNumberParse { .. } => Self::ValueError(err.to_string()),

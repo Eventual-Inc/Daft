@@ -53,6 +53,7 @@ impl ScalarUDF for FillNan {
     }
 }
 
+#[must_use]
 pub fn fill_nan(input: ExprRef, fill_value: ExprRef) -> ExprRef {
     ScalarFunction::new(FillNan {}, vec![input, fill_value]).into()
 }

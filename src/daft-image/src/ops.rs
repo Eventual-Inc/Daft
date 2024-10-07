@@ -12,7 +12,7 @@ use daft_core::{
 };
 use num_traits::FromPrimitive;
 
-use crate::{iters::*, CountingWriter, DaftImageBuffer};
+use crate::{iters::ImageBufferIter, CountingWriter, DaftImageBuffer};
 
 #[allow(clippy::len_without_is_empty)]
 pub trait AsImageObj {
@@ -45,7 +45,7 @@ pub(crate) fn image_array_from_img_buffers(
     inputs: &[Option<DaftImageBuffer<'_>>],
     image_mode: &Option<ImageMode>,
 ) -> DaftResult<ImageArray> {
-    use DaftImageBuffer::*;
+    use DaftImageBuffer::{L, LA, RGB, RGBA};
     let is_all_u8 = inputs
         .iter()
         .filter_map(|b| b.as_ref())
@@ -102,7 +102,7 @@ pub(crate) fn fixed_image_array_from_img_buffers(
     height: u32,
     width: u32,
 ) -> DaftResult<FixedShapeImageArray> {
-    use DaftImageBuffer::*;
+    use DaftImageBuffer::{L, LA, RGB, RGBA};
     let is_all_u8 = inputs
         .iter()
         .filter_map(|b| b.as_ref())
@@ -112,15 +112,15 @@ pub(crate) fn fixed_image_array_from_img_buffers(
     let num_channels = image_mode.num_channels();
     let mut data_ref = Vec::with_capacity(inputs.len());
     let mut validity = arrow2::bitmap::MutableBitmap::with_capacity(inputs.len());
-    let list_size = (height * width * num_channels as u32) as usize;
+    let list_size = (height * width * u32::from(num_channels)) as usize;
     let null_list = vec![0u8; list_size];
-    for ib in inputs.iter() {
+    for ib in inputs {
         validity.push(ib.is_some());
         let buffer = match ib {
             Some(ib) => ib.as_u8_slice(),
             None => null_list.as_slice(),
         };
-        data_ref.push(buffer)
+        data_ref.push(buffer);
     }
     let data = data_ref.concat();
     let validity: Option<arrow2::bitmap::Bitmap> = match validity.unset_bits() {
@@ -324,7 +324,7 @@ impl AsImageObj for FixedShapeImageArray {
             DataType::FixedShapeImage(mode, height, width) => {
                 let arrow_array = self.physical.flat_child.downcast::<UInt8Array>().unwrap().as_arrow();
                 let num_channels = mode.num_channels();
-                let size = height * width * num_channels as u32;
+                let size = height * width * u32::from(num_channels);
                 let start = idx * size as usize;
                 let end = (idx + 1) * size as usize;
                 let slice_data = Cow::Borrowed(&arrow_array.values().as_slice()[start..end] as &'a [u8]);
@@ -334,7 +334,7 @@ impl AsImageObj for FixedShapeImageArray {
                 assert_eq!(result.width(), *width);
                 Some(result)
             }
-            dt => panic!("FixedShapeImageArray should always have DataType::FixedShapeImage() as it's dtype, but got {}", dt),
+            dt => panic!("FixedShapeImageArray should always have DataType::FixedShapeImage() as it's dtype, but got {dt}"),
         }
     }
 }
@@ -343,83 +343,75 @@ fn encode_images<Arr: AsImageObj>(
     images: &Arr,
     image_format: ImageFormat,
 ) -> DaftResult<BinaryArray> {
-    let arrow_array = match image_format {
-        ImageFormat::TIFF => {
-            // NOTE: A single writer/buffer can't be used for TIFF files because the encoder will overwrite the
-            // IFD offset for the first image instead of writing it for all subsequent images, producing corrupted
-            // TIFF files. We work around this by writing out a new buffer for each image.
-            // TODO(Clark): Fix this in the tiff crate.
-            let values = ImageBufferIter::new(images)
-                .map(|img| {
-                    img.map(|img| {
-                        let buf = Vec::new();
-                        let mut writer: CountingWriter<std::io::BufWriter<_>> =
-                            std::io::BufWriter::new(std::io::Cursor::new(buf)).into();
-                        img.encode(image_format, &mut writer)?;
-                        // NOTE: BufWriter::into_inner() will flush the buffer.
-                        Ok(writer
-                            .into_inner()
-                            .into_inner()
-                            .map_err(|e| {
-                                DaftError::ValueError(format!(
-                                    "Encoding image into file format {} failed: {}",
-                                    image_format, e
-                                ))
-                            })?
-                            .into_inner())
-                    })
-                    .transpose()
+    let arrow_array = if image_format == ImageFormat::TIFF {
+        // NOTE: A single writer/buffer can't be used for TIFF files because the encoder will overwrite the
+        // IFD offset for the first image instead of writing it for all subsequent images, producing corrupted
+        // TIFF files. We work around this by writing out a new buffer for each image.
+        // TODO(Clark): Fix this in the tiff crate.
+        let values = ImageBufferIter::new(images)
+            .map(|img| {
+                img.map(|img| {
+                    let buf = Vec::new();
+                    let mut writer: CountingWriter<std::io::BufWriter<_>> =
+                        std::io::BufWriter::new(std::io::Cursor::new(buf)).into();
+                    img.encode(image_format, &mut writer)?;
+                    // NOTE: BufWriter::into_inner() will flush the buffer.
+                    Ok(writer
+                        .into_inner()
+                        .into_inner()
+                        .map_err(|e| {
+                            DaftError::ValueError(format!(
+                                "Encoding image into file format {image_format} failed: {e}"
+                            ))
+                        })?
+                        .into_inner())
                 })
-                .collect::<DaftResult<Vec<_>>>()?;
-            arrow2::array::BinaryArray::<i64>::from_iter(values)
-        }
-        _ => {
-            let mut offsets = Vec::with_capacity(images.len() + 1);
-            offsets.push(0i64);
-            let mut validity = arrow2::bitmap::MutableBitmap::with_capacity(images.len());
-            let buf = Vec::new();
-            let mut writer: CountingWriter<std::io::BufWriter<_>> =
-                std::io::BufWriter::new(std::io::Cursor::new(buf)).into();
-            ImageBufferIter::new(images)
-                .map(|img| {
-                    match img {
-                        Some(img) => {
-                            img.encode(image_format, &mut writer)?;
-                            offsets.push(writer.count() as i64);
-                            validity.push(true);
-                        }
-                        None => {
-                            offsets.push(*offsets.last().unwrap());
-                            validity.push(false);
-                        }
-                    }
-                    Ok(())
-                })
-                .collect::<DaftResult<Vec<_>>>()?;
-            // NOTE: BufWriter::into_inner() will flush the buffer.
-            let values = writer
-                .into_inner()
-                .into_inner()
-                .map_err(|e| {
-                    DaftError::ValueError(format!(
-                        "Encoding image into file format {} failed: {}",
-                        image_format, e
-                    ))
-                })?
-                .into_inner();
-            let encoded_data: arrow2::buffer::Buffer<u8> = values.into();
-            let offsets_buffer = arrow2::offset::OffsetsBuffer::try_from(offsets)?;
-            let validity: Option<arrow2::bitmap::Bitmap> = match validity.unset_bits() {
-                0 => None,
-                _ => Some(validity.into()),
-            };
-            arrow2::array::BinaryArray::<i64>::new(
-                arrow2::datatypes::DataType::LargeBinary,
-                offsets_buffer,
-                encoded_data,
-                validity,
-            )
-        }
+                .transpose()
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
+        arrow2::array::BinaryArray::<i64>::from_iter(values)
+    } else {
+        let mut offsets = Vec::with_capacity(images.len() + 1);
+        offsets.push(0i64);
+        let mut validity = arrow2::bitmap::MutableBitmap::with_capacity(images.len());
+        let buf = Vec::new();
+        let mut writer: CountingWriter<std::io::BufWriter<_>> =
+            std::io::BufWriter::new(std::io::Cursor::new(buf)).into();
+        ImageBufferIter::new(images)
+            .map(|img| {
+                if let Some(img) = img {
+                    img.encode(image_format, &mut writer)?;
+                    offsets.push(writer.count() as i64);
+                    validity.push(true);
+                } else {
+                    offsets.push(*offsets.last().unwrap());
+                    validity.push(false);
+                }
+                Ok(())
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
+        // NOTE: BufWriter::into_inner() will flush the buffer.
+        let values = writer
+            .into_inner()
+            .into_inner()
+            .map_err(|e| {
+                DaftError::ValueError(format!(
+                    "Encoding image into file format {image_format} failed: {e}"
+                ))
+            })?
+            .into_inner();
+        let encoded_data: arrow2::buffer::Buffer<u8> = values.into();
+        let offsets_buffer = arrow2::offset::OffsetsBuffer::try_from(offsets)?;
+        let validity: Option<arrow2::bitmap::Bitmap> = match validity.unset_bits() {
+            0 => None,
+            _ => Some(validity.into()),
+        };
+        arrow2::array::BinaryArray::<i64>::new(
+            arrow2::datatypes::DataType::LargeBinary,
+            offsets_buffer,
+            encoded_data,
+            validity,
+        )
     };
     BinaryArray::new(
         Field::new(images.name(), arrow_array.data_type().into()).into(),
@@ -449,6 +441,7 @@ where
         .collect::<Vec<_>>()
 }
 
+#[must_use]
 pub fn image_html_value(arr: &ImageArray, idx: usize) -> String {
     let maybe_image = arr.as_image_obj(idx);
     let str_val = arr.str_value(idx).unwrap();
@@ -470,6 +463,7 @@ pub fn image_html_value(arr: &ImageArray, idx: usize) -> String {
     }
 }
 
+#[must_use]
 pub fn fixed_image_html_value(arr: &FixedShapeImageArray, idx: usize) -> String {
     let maybe_image = arr.as_image_obj(idx);
     let str_val = arr.str_value(idx).unwrap();

@@ -54,6 +54,7 @@ impl ResourceRequest {
         })
     }
 
+    #[must_use]
     pub fn default_cpu() -> Self {
         Self::new_internal(Some(1.0), None, None).unwrap()
     }
@@ -74,20 +75,22 @@ impl ResourceRequest {
         )
     }
 
+    #[must_use]
     pub fn has_any(&self) -> bool {
         self.num_cpus.is_some() || self.num_gpus.is_some() || self.memory_bytes.is_some()
     }
 
+    #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
         let mut requests = vec![];
         if let Some(num_cpus) = self.num_cpus {
-            requests.push(format!("num_cpus = {}", num_cpus));
+            requests.push(format!("num_cpus = {num_cpus}"));
         }
         if let Some(num_gpus) = self.num_gpus {
-            requests.push(format!("num_gpus = {}", num_gpus));
+            requests.push(format!("num_gpus = {num_gpus}"));
         }
         if let Some(memory_bytes) = self.memory_bytes {
-            requests.push(format!("memory_bytes = {}", memory_bytes));
+            requests.push(format!("memory_bytes = {memory_bytes}"));
         }
         requests
     }
@@ -97,6 +100,7 @@ impl ResourceRequest {
     ///
     /// Currently, this returns true unless one resource request has a non-zero CPU request and the other task has a
     /// non-zero GPU request.
+    #[must_use]
     pub fn is_pipeline_compatible_with(&self, other: &Self) -> bool {
         let self_num_cpus = self.num_cpus;
         let self_num_gpus = self.num_gpus;
@@ -112,6 +116,7 @@ impl ResourceRequest {
         }
     }
 
+    #[must_use]
     pub fn max(&self, other: &Self) -> Self {
         let max_num_cpus = lift(float_max, self.num_cpus, other.num_cpus);
         let max_num_gpus = lift(float_max, self.num_gpus, other.num_gpus);
@@ -124,7 +129,7 @@ impl ResourceRequest {
     ) -> Self {
         resource_requests
             .iter()
-            .fold(Default::default(), |acc, e| acc.max(e.as_ref()))
+            .fold(Self::default(), |acc, e| acc.max(e.as_ref()))
     }
 
     pub fn multiply(&self, factor: f64) -> DaftResult<Self> {
@@ -160,7 +165,7 @@ impl Hash for ResourceRequest {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.num_cpus.map(FloatWrapper).hash(state);
         self.num_gpus.map(FloatWrapper).hash(state);
-        self.memory_bytes.hash(state)
+        self.memory_bytes.hash(state);
     }
 }
 
@@ -196,6 +201,7 @@ impl ResourceRequest {
 
     /// Take a field-wise max of the list of resource requests.
     #[staticmethod]
+    #[must_use]
     pub fn max_resources(resource_requests: Vec<Self>) -> Self {
         Self::max_all(&resource_requests.iter().collect::<Vec<_>>())
     }
@@ -244,7 +250,7 @@ impl ResourceRequest {
     }
 
     fn __repr__(&self) -> PyResult<String> {
-        Ok(format!("{:?}", self))
+        Ok(format!("{self:?}"))
     }
 }
 impl_bincode_py_state_serialization!(ResourceRequest);
