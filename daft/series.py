@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from typing import Any, Literal, TypeVar
 
 from daft.arrow_utils import ensure_array, ensure_chunked_array
@@ -927,6 +928,14 @@ class SeriesPartitioningNamespace(SeriesNamespace):
 
 class SeriesListNamespace(SeriesNamespace):
     def lengths(self) -> Series:
+        warnings.warn(
+            "This function will be deprecated from Daft version >= 0.3.5!  Instead, please use 'length'",
+            category=DeprecationWarning,
+        )
+
+        return Series._from_pyseries(self._series.list_count(CountMode.All))
+
+    def length(self) -> Series:
         return Series._from_pyseries(self._series.list_count(CountMode.All))
 
     def get(self, idx: Series, default: Series) -> Series:

@@ -1,4 +1,7 @@
+use std::str::FromStr;
+
 use arrow2::datatypes::TimeUnit as ArrowTimeUnit;
+use common_error::DaftError;
 use derive_more::Display;
 use serde::{Deserialize, Serialize};
 
@@ -29,6 +32,19 @@ impl TimeUnit {
             Self::Milliseconds => 1000,
             Self::Microseconds => 1_000_000,
             Self::Nanoseconds => 1_000_000_000,
+        }
+    }
+}
+
+impl FromStr for TimeUnit {
+    type Err = DaftError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "ns" | "nanoseconds" => Ok(Self::Nanoseconds),
+            "us" | "microseconds" => Ok(Self::Microseconds),
+            "ms" | "milliseconds" => Ok(Self::Milliseconds),
+            "s" | "seconds" => Ok(Self::Seconds),
+            _ => Err(DaftError::ValueError("Invalid time unit".to_string())),
         }
     }
 }

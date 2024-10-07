@@ -3,9 +3,9 @@ pub mod error;
 pub mod functions;
 mod modules;
 mod planner;
-
 #[cfg(feature = "python")]
 pub mod python;
+mod table_provider;
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -15,6 +15,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<python::PyCatalog>()?;
     parent.add_function(wrap_pyfunction_bound!(python::sql, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(python::sql_expr, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(python::list_sql_functions, parent)?)?;
     Ok(())
 }
 
@@ -261,6 +262,7 @@ mod tests {
                 JoinType::Inner,
                 None,
             )?
+            .select(vec![col("*")])?
             .build();
         assert_eq!(plan, expected);
         Ok(())
@@ -293,7 +295,7 @@ mod tests {
     #[case::starts_with("select starts_with(utf8, 'a') as starts_with from tbl1")]
     #[case::contains("select contains(utf8, 'a') as contains from tbl1")]
     #[case::split("select split(utf8, '.') as split from tbl1")]
-    #[case::replace("select replace(utf8, 'a', 'b') as replace from tbl1")]
+    #[case::replace("select regexp_replace(utf8, 'a', 'b') as replace from tbl1")]
     #[case::length("select length(utf8) as length from tbl1")]
     #[case::lower("select lower(utf8) as lower from tbl1")]
     #[case::upper("select upper(utf8) as upper from tbl1")]

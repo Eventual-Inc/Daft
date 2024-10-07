@@ -1,7 +1,7 @@
 use common_error::DaftResult;
 
 #[cfg(feature = "python")]
-use crate::series::ops::py_membership_op_utilfn;
+use crate::series::utils::python_fn::py_membership_op_utilfn;
 use crate::{
     array::ops::DaftIsIn,
     datatypes::{BooleanArray, DataType, InferDataType},

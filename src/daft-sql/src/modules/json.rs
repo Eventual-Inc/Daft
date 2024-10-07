@@ -35,4 +35,17 @@ impl SQLFunction for JsonQuery {
             ),
         }
     }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        static_docs::JSON_QUERY_DOCSTRING.to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input", "query"]
+    }
+}
+
+mod static_docs {
+    pub(crate) const JSON_QUERY_DOCSTRING: &str =
+        "Extracts a JSON object from a JSON string using a JSONPath expression.";
 }

@@ -59,9 +59,7 @@ where
             let opt_lhs = lhs.get(0);
             match opt_lhs {
                 None => Ok(DataArray::full_null(rhs.name(), lhs.data_type(), rhs.len())),
-                // NOTE: naming logic here is wrong, and assigns the rhs name. However, renaming is handled at the Series level so this
-                // error is obfuscated.
-                Some(lhs) => rhs.apply(|rhs| operation(lhs, rhs)),
+                Some(scalar) => Ok(rhs.apply(|rhs| operation(scalar, rhs))?.rename(lhs.name())),
             }
         }
         (a, b) => Err(DaftError::ValueError(format!(
