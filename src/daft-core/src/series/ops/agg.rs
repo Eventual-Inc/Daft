@@ -4,7 +4,7 @@ use logical::Decimal128Array;
 
 use crate::{
     array::{
-        ops::{DaftHllMergeAggable, GroupIndices},
+        ops::{DaftHllMergeAggable, DaftMeanAggable, DaftStddevAggable, GroupIndices},
         ListArray,
     },
     count_mode::CountMode,
@@ -149,24 +149,25 @@ impl Series {
     }
 
     pub fn mean(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
-        use crate::{array::ops::DaftMeanAggable, datatypes::DataType::*};
-
         // Upcast all numeric types to float64 and use f64 mean kernel.
-        match self.data_type() {
-            dt if dt.is_numeric() => {
-                let casted = self.cast(&Float64)?;
-                match groups {
-                    Some(groups) => {
-                        Ok(DaftMeanAggable::grouped_mean(&casted.f64()?, groups)?.into_series())
-                    }
-                    None => Ok(DaftMeanAggable::mean(&casted.f64()?)?.into_series()),
-                }
-            }
-            other => Err(DaftError::TypeError(format!(
-                "Numeric mean is not implemented for type {}",
-                other
-            ))),
-        }
+        self.data_type().assert_is_numeric()?;
+        let casted = self.cast(&DataType::Float64)?;
+        let casted = casted.f64()?;
+        let series = groups
+            .map_or_else(|| casted.mean(), |groups| casted.grouped_mean(groups))?
+            .into_series();
+        Ok(series)
+    }
+
+    pub fn stddev(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
+        // Upcast all numeric types to float64 and use f64 stddev kernel.
+        self.data_type().assert_is_numeric()?;
+        let casted = self.cast(&DataType::Float64)?;
+        let casted = casted.f64()?;
+        let series = groups
+            .map_or_else(|| casted.stddev(), |groups| casted.grouped_stddev(groups))?
+            .into_series();
+        Ok(series)
     }
 
     pub fn min(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {

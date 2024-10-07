@@ -368,6 +368,18 @@ impl DataType {
     }
 
     #[inline]
+    pub fn assert_is_numeric(&self) -> DaftResult<()> {
+        if self.is_numeric() {
+            Ok(())
+        } else {
+            Err(DaftError::TypeError(format!(
+                "Numeric mean is not implemented for type {}",
+                self,
+            )))
+        }
+    }
+
+    #[inline]
     pub fn is_fixed_size_numeric(&self) -> bool {
         match self {
             Self::FixedSizeList(dtype, ..)

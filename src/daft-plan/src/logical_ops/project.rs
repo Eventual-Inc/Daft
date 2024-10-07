@@ -373,24 +373,24 @@ fn replace_column_with_semantic_id_aggexpr(
         AggExpr::Count(ref child, mode) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema).map_yes_no(
                 |transformed_child| AggExpr::Count(transformed_child, mode),
-                |_| e.clone(),
+                |_| e,
             )
         }
         AggExpr::Sum(ref child) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
-                .map_yes_no(AggExpr::Sum, |_| e.clone())
+                .map_yes_no(AggExpr::Sum, |_| e)
         }
         AggExpr::ApproxPercentile(ApproxPercentileParams {
             ref child,
             ref percentiles,
-            ref force_list_output,
+            force_list_output,
         }) => replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
             .map_yes_no(
                 |transformed_child| {
                     AggExpr::ApproxPercentile(ApproxPercentileParams {
                         child: transformed_child,
                         percentiles: percentiles.clone(),
-                        force_list_output: *force_list_output,
+                        force_list_output,
                     })
                 },
                 |_| e.clone(),
@@ -402,45 +402,44 @@ fn replace_column_with_semantic_id_aggexpr(
         AggExpr::ApproxSketch(ref child, sketch_type) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema).map_yes_no(
                 |transformed_child| AggExpr::ApproxSketch(transformed_child, sketch_type),
-                |_| e.clone(),
+                |_| e,
             )
         }
         AggExpr::MergeSketch(ref child, sketch_type) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema).map_yes_no(
                 |transformed_child| AggExpr::MergeSketch(transformed_child, sketch_type),
-                |_| e.clone(),
+                |_| e,
             )
         }
-        AggExpr::Stddev(ref _child) => {
-            todo!("stddev")
-            // replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
-            //     .map_yes_no(AggExpr::Mean, |_| e.clone())
+        AggExpr::Stddev(ref child) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                .map_yes_no(AggExpr::Stddev, |_| e)
         }
         AggExpr::Mean(ref child) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
-                .map_yes_no(AggExpr::Mean, |_| e.clone())
+                .map_yes_no(AggExpr::Mean, |_| e)
         }
         AggExpr::Min(ref child) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
-                .map_yes_no(AggExpr::Min, |_| e.clone())
+                .map_yes_no(AggExpr::Min, |_| e)
         }
         AggExpr::Max(ref child) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
-                .map_yes_no(AggExpr::Max, |_| e.clone())
+                .map_yes_no(AggExpr::Max, |_| e)
         }
         AggExpr::AnyValue(ref child, ignore_nulls) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema).map_yes_no(
                 |transformed_child| AggExpr::AnyValue(transformed_child, ignore_nulls),
-                |_| e.clone(),
+                |_| e,
             )
         }
         AggExpr::List(ref child) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
-                .map_yes_no(AggExpr::List, |_| e.clone())
+                .map_yes_no(AggExpr::List, |_| e)
         }
         AggExpr::Concat(ref child) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
-                .map_yes_no(AggExpr::Concat, |_| e.clone())
+                .map_yes_no(AggExpr::Concat, |_| e)
         }
         AggExpr::MapGroups { func, inputs } => {
             let transforms = inputs
