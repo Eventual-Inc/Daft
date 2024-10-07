@@ -75,6 +75,16 @@ pub fn display_timestamp(val: i64, unit: &TimeUnit, timezone: &Option<String>) -
     )
 }
 
+pub fn display_duration(val: i64, unit: &TimeUnit) -> String {
+    let duration = match unit {
+        TimeUnit::Nanoseconds => chrono::Duration::nanoseconds(val),
+        TimeUnit::Microseconds => chrono::Duration::microseconds(val),
+        TimeUnit::Milliseconds => chrono::Duration::milliseconds(val),
+        TimeUnit::Seconds => chrono::Duration::seconds(val),
+    };
+    format!("{duration}")
+}
+
 pub fn display_decimal128(val: i128, _precision: u8, scale: i8) -> String {
     if scale < 0 {
         unimplemented!();
