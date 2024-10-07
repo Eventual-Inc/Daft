@@ -629,7 +629,6 @@ def partitioned_table_to_deltalake_iter(
                 arrow_table_no_pkeys.schema, **large_dtypes_kwargs(large_dtypes)
             )
             converted_arrow_table = arrow_table_no_pkeys.cast(converted_schema)
-
             yield converted_arrow_table, part_path, part_strs
     else:
         arrow_table = partitioned.table.to_arrow()

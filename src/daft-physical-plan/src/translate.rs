@@ -105,6 +105,41 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             log::warn!("Repartition Not supported for Local Executor!; This will be a No-Op");
             translate(&repartition.input)
         }
+        LogicalPlan::Sink(sink) => {
+            use daft_plan::SinkInfo;
+            let input = translate(&sink.input)?;
+            let data_schema = input.schema().clone();
+            match sink.sink_info.as_ref() {
+                SinkInfo::OutputFileInfo(info) => Ok(LocalPhysicalPlan::physical_write(
+                    input,
+                    data_schema,
+                    sink.schema.clone(),
+                    info.clone(),
+                )),
+                #[cfg(feature = "python")]
+                SinkInfo::CatalogInfo(catalog_info) => match &catalog_info.catalog {
+                    daft_plan::CatalogType::Iceberg(iceberg_info) => {
+                        Ok(LocalPhysicalPlan::iceberg_write(
+                            input,
+                            data_schema,
+                            sink.schema.clone(),
+                            iceberg_info.clone(),
+                        ))
+                    }
+                    daft_plan::CatalogType::DeltaLake(deltalake_info) => {
+                        Ok(LocalPhysicalPlan::deltalake_write(
+                            input,
+                            data_schema,
+                            sink.schema.clone(),
+                            deltalake_info.clone(),
+                        ))
+                    }
+                    daft_plan::CatalogType::Lance(_) => {
+                        todo!("Lance Sink not yet implemented")
+                    }
+                },
+            }
+        }
         _ => todo!("{} not yet implemented", plan.name()),
     }
 }

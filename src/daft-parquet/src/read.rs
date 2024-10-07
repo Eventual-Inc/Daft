@@ -363,7 +363,6 @@ async fn read_parquet_single(
 async fn stream_parquet_single(
     uri: String,
     columns: Option<&[&str]>,
-    start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<Vec<i64>>,
     predicate: Option<ExprRef>,
@@ -372,6 +371,7 @@ async fn stream_parquet_single(
     schema_infer_options: ParquetSchemaInferenceOptions,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     metadata: Option<Arc<FileMetaData>>,
+    delete_rows: Option<Vec<i64>>,
     maintain_order: bool,
 ) -> DaftResult<impl Stream<Item = DaftResult<Table>> + Send> {
     let field_id_mapping_provided = field_id_mapping.is_some();
@@ -393,6 +393,12 @@ async fn stream_parquet_single(
         }
     }
 
+    // Increase the number of rows_to_read to account for deleted rows
+    // in order to have the correct number of rows in the end
+    if let Some(delete_rows) = &delete_rows {
+        num_rows_to_read = limit_with_delete_rows(delete_rows, None, num_rows_to_read);
+    }
+
     let (source_type, fixed_uri) = parse_url(uri.as_str())?;
 
     let (metadata, table_stream) = if matches!(source_type, SourceType::File) {
@@ -400,9 +406,9 @@ async fn stream_parquet_single(
             fixed_uri.as_ref(),
             columns_to_return,
             columns_to_read,
-            start_offset,
             num_rows_to_return,
             num_rows_to_read,
+            delete_rows,
             row_groups.clone(),
             predicate.clone(),
             schema_infer_options,
@@ -426,10 +432,10 @@ async fn stream_parquet_single(
             builder
         };
 
-        if row_groups.is_some() && (num_rows_to_read.is_some() || start_offset.is_some()) {
-            return Err(common_error::DaftError::ValueError("Both `row_groups` and `num_rows` or `start_offset` is set at the same time. We only support setting one set or the other.".to_string()));
+        if row_groups.is_some() && num_rows_to_read.is_some() {
+            return Err(common_error::DaftError::ValueError("Both `row_groups` and `num_rows` is set at the same time. We only support setting one set or the other.".to_string()));
         }
-        let builder = builder.limit(start_offset, num_rows_to_read)?;
+        let builder = builder.limit(None, num_rows_to_read)?;
         let metadata = builder.metadata().clone();
 
         let builder = if let Some(ref row_groups) = row_groups {
@@ -455,6 +461,7 @@ async fn stream_parquet_single(
                     predicate.clone(),
                     columns_to_return,
                     num_rows_to_return,
+                    delete_rows,
                 )
                 .await?,
         ))
@@ -764,72 +771,95 @@ pub fn read_parquet_bulk<T: AsRef<str>>(
             )));
         }
     }
-    let tables = runtime_handle
-        .block_on_current_thread(async move {
-            let task_stream = futures::stream::iter(uris.iter().enumerate().map(|(i, uri)| {
-                let uri = uri.to_string();
-                let owned_columns = columns.clone();
-                let owned_row_group = row_groups.as_ref().and_then(|rgs| rgs[i].clone());
-                let owned_predicate = predicate.clone();
-                let metadata = metadata.as_ref().map(|mds| mds[i].clone());
 
-                let io_client = io_client.clone();
-                let io_stats = io_stats.clone();
-                let schema_infer_options = *schema_infer_options;
-                let owned_field_id_mapping = field_id_mapping.clone();
-                let delete_rows = delete_map.as_ref().and_then(|m| m.get(&uri).cloned());
-                tokio::task::spawn(async move {
-                    read_parquet_single(
-                        &uri,
-                        owned_columns,
-                        start_offset,
-                        num_rows,
-                        owned_row_group,
-                        owned_predicate,
-                        io_client,
-                        io_stats,
-                        schema_infer_options,
-                        owned_field_id_mapping,
-                        metadata,
-                        delete_rows,
-                        chunk_size,
-                    )
-                    .await
-                })
-            }));
-            let mut remaining_rows = num_rows.map(|x| x as i64);
-            task_stream
-                // Limit the number of file reads we have in flight at any given time.
-                .buffered(num_parallel_tasks)
-                // Terminate the stream if we have already reached the row limit. With the upstream buffering, we will still read up to
-                // num_parallel_tasks redundant files.
-                .try_take_while(|result| {
-                    match (result, remaining_rows) {
-                        // Limit has been met, early-terminate.
-                        (_, Some(rows_left)) if rows_left <= 0 => futures::future::ready(Ok(false)),
-                        // Limit has not yet been met, update remaining limit slack and continue.
-                        (Ok(table), Some(rows_left)) => {
-                            remaining_rows = Some(rows_left - table.len() as i64);
-                            futures::future::ready(Ok(true))
-                        }
-                        // (1) No limit, never early-terminate.
-                        // (2) Encountered error, propagate error to try_collect to allow it to short-circuit.
-                        (_, None) | (Err(_), _) => futures::future::ready(Ok(true)),
-                    }
-                })
-                .try_collect::<Vec<_>>()
-                .await
-        })
-        .context(JoinSnafu { path: "UNKNOWN" })?;
-
+    let tables = runtime_handle.block_on_current_thread(read_parquet_bulk_async(
+        uris.iter().map(|s| s.to_string()).collect(),
+        columns,
+        start_offset,
+        num_rows,
+        row_groups,
+        predicate,
+        io_client,
+        io_stats,
+        num_parallel_tasks,
+        *schema_infer_options,
+        field_id_mapping,
+        metadata,
+        delete_map,
+        chunk_size,
+    ))?;
     tables.into_iter().collect::<DaftResult<Vec<_>>>()
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn read_parquet_bulk_async(
+    uris: Vec<String>,
+    columns: Option<Vec<String>>,
+    start_offset: Option<usize>,
+    num_rows: Option<usize>,
+    row_groups: Option<Vec<Option<Vec<i64>>>>,
+    predicate: Option<ExprRef>,
+    io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
+    num_parallel_tasks: usize,
+    schema_infer_options: ParquetSchemaInferenceOptions,
+    field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
+    metadata: Option<Vec<Arc<FileMetaData>>>,
+    delete_map: Option<HashMap<String, Vec<i64>>>,
+    chunk_size: Option<usize>,
+) -> DaftResult<Vec<DaftResult<Table>>> {
+    let task_stream = futures::stream::iter(uris.into_iter().enumerate().map(|(i, uri)| {
+        let owned_columns = columns.clone();
+        let owned_row_group = row_groups.as_ref().and_then(|rgs| rgs[i].clone());
+        let owned_predicate = predicate.clone();
+        let metadata = metadata.as_ref().map(|mds| mds[i].clone());
+
+        let io_client = io_client.clone();
+        let io_stats = io_stats.clone();
+        let owned_field_id_mapping = field_id_mapping.clone();
+        let delete_rows = delete_map.as_ref().and_then(|m| m.get(&uri).cloned());
+
+        tokio::task::spawn(async move {
+            read_parquet_single(
+                &uri,
+                owned_columns,
+                start_offset,
+                num_rows,
+                owned_row_group,
+                owned_predicate,
+                io_client,
+                io_stats,
+                schema_infer_options,
+                owned_field_id_mapping,
+                metadata,
+                delete_rows,
+                chunk_size,
+            )
+            .await
+        })
+    }));
+
+    let mut remaining_rows = num_rows.map(|x| x as i64);
+    let tables = task_stream
+        .buffered(num_parallel_tasks)
+        .try_take_while(|result| match (result, remaining_rows) {
+            (_, Some(rows_left)) if rows_left <= 0 => futures::future::ready(Ok(false)),
+            (Ok(table), Some(rows_left)) => {
+                remaining_rows = Some(rows_left - table.len() as i64);
+                futures::future::ready(Ok(true))
+            }
+            (_, None) | (Err(_), _) => futures::future::ready(Ok(true)),
+        })
+        .try_collect::<Vec<_>>()
+        .await
+        .context(JoinSnafu { path: "UNKNOWN" })?;
+    Ok(tables)
 }
 
 #[allow(clippy::too_many_arguments)]
 pub async fn stream_parquet(
     uri: &str,
     columns: Option<&[&str]>,
-    start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<Vec<i64>>,
     predicate: Option<ExprRef>,
@@ -839,11 +869,11 @@ pub async fn stream_parquet(
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     metadata: Option<Arc<FileMetaData>>,
     maintain_order: bool,
+    delete_rows: Option<Vec<i64>>,
 ) -> DaftResult<BoxStream<'static, DaftResult<Table>>> {
     let stream = stream_parquet_single(
         uri.to_string(),
         columns,
-        start_offset,
         num_rows,
         row_groups,
         predicate,
@@ -852,6 +882,7 @@ pub async fn stream_parquet(
         *schema_infer_options,
         field_id_mapping,
         metadata,
+        delete_rows,
         maintain_order,
     )
     .await?;
@@ -1130,13 +1161,13 @@ mod tests {
                 None,
                 None,
                 None,
-                None,
                 io_client,
                 None,
                 &Default::default(),
                 None,
                 None,
                 false,
+                None,
             )
             .await?
             .collect::<Vec<_>>()

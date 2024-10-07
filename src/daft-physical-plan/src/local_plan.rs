@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_resource_request::ResourceRequest;
 use daft_core::prelude::*;
 use daft_dsl::{AggExpr, ExprRef};
-use daft_plan::InMemoryInfo;
+use daft_plan::{InMemoryInfo, OutputFileInfo};
 use daft_scan::{ScanTask, ScanTaskRef};
 
 pub type LocalPhysicalPlanRef = Arc<LocalPhysicalPlan>;
@@ -37,10 +37,10 @@ pub enum LocalPhysicalPlan {
     PhysicalWrite(PhysicalWrite),
     // TabularWriteJson(TabularWriteJson),
     // TabularWriteCsv(TabularWriteCsv),
-    // #[cfg(feature = "python")]
-    // IcebergWrite(IcebergWrite),
-    // #[cfg(feature = "python")]
-    // DeltaLakeWrite(DeltaLakeWrite),
+    #[cfg(feature = "python")]
+    IcebergWrite(IcebergWrite),
+    #[cfg(feature = "python")]
+    DeltaLakeWrite(DeltaLakeWrite),
     // #[cfg(feature = "python")]
     // LanceWrite(LanceWrite),
 }
@@ -190,6 +190,56 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    pub(crate) fn physical_write(
+        input: LocalPhysicalPlanRef,
+        data_schema: SchemaRef,
+        file_schema: SchemaRef,
+        file_info: OutputFileInfo,
+    ) -> LocalPhysicalPlanRef {
+        Self::PhysicalWrite(PhysicalWrite {
+            input,
+            data_schema,
+            file_schema,
+            file_info,
+            plan_stats: PlanStats {},
+        })
+        .arced()
+    }
+
+    #[cfg(feature = "python")]
+    pub(crate) fn iceberg_write(
+        input: LocalPhysicalPlanRef,
+        data_schema: SchemaRef,
+        file_schema: SchemaRef,
+        iceberg_info: daft_plan::IcebergCatalogInfo,
+    ) -> LocalPhysicalPlanRef {
+        Self::IcebergWrite(IcebergWrite {
+            input,
+            iceberg_info,
+            file_schema,
+            data_schema,
+            plan_stats: PlanStats {},
+        })
+        .arced()
+    }
+
+    #[cfg(feature = "python")]
+    pub(crate) fn deltalake_write(
+        input: LocalPhysicalPlanRef,
+        data_schema: SchemaRef,
+        file_schema: SchemaRef,
+        deltalake_info: daft_plan::DeltaLakeCatalogInfo,
+    ) -> LocalPhysicalPlanRef {
+        Self::DeltaLakeWrite(DeltaLakeWrite {
+            input,
+            deltalake_info,
+            file_schema,
+            data_schema,
+            plan_stats: PlanStats {},
+        })
+        .arced()
+    }
+
     pub fn schema(&self) -> &SchemaRef {
         match self {
             Self::PhysicalScan(PhysicalScan { schema, .. })
@@ -293,7 +343,34 @@ pub struct Concat {
 
 #[derive(Debug)]
 
-pub struct PhysicalWrite {}
+pub struct PhysicalWrite {
+    pub input: LocalPhysicalPlanRef,
+    pub data_schema: SchemaRef,
+    pub file_schema: SchemaRef,
+    pub file_info: OutputFileInfo,
+    pub plan_stats: PlanStats,
+}
+
+#[cfg(feature = "python")]
+#[derive(Debug)]
+pub struct IcebergWrite {
+    pub input: LocalPhysicalPlanRef,
+    pub iceberg_info: daft_plan::IcebergCatalogInfo,
+    pub data_schema: SchemaRef,
+    pub file_schema: SchemaRef,
+    pub plan_stats: PlanStats,
+}
+
+#[cfg(feature = "python")]
+#[derive(Debug)]
+pub struct DeltaLakeWrite {
+    pub input: LocalPhysicalPlanRef,
+    pub deltalake_info: daft_plan::DeltaLakeCatalogInfo,
+    pub data_schema: SchemaRef,
+    pub file_schema: SchemaRef,
+    pub plan_stats: PlanStats,
+}
+
 #[derive(Debug)]
 
 pub struct PlanStats {}

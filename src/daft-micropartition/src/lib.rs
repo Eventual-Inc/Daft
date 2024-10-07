@@ -1,7 +1,11 @@
 #![feature(let_chains)]
 #![feature(iterator_try_reduce)]
 
-use common_error::DaftError;
+use std::sync::Arc;
+
+use common_error::{DaftError, DaftResult};
+use common_file_formats::FileFormat;
+use daft_table::Table;
 use snafu::Snafu;
 mod micropartition;
 mod ops;
@@ -12,6 +16,8 @@ pub use micropartition::MicroPartition;
 pub mod python;
 #[cfg(feature = "python")]
 use pyo3::PyErr;
+#[cfg(feature = "python")]
+pub mod py_writers;
 #[cfg(feature = "python")]
 pub use python::register_modules;
 
@@ -58,4 +64,79 @@ impl From<Error> for pyo3::PyErr {
         let daft_error: DaftError = value.into();
         daft_error.into()
     }
+}
+
+pub trait FileWriter: Send + Sync {
+    fn write(&self, data: &Arc<MicroPartition>) -> DaftResult<()>;
+    fn close(&self) -> DaftResult<Option<Table>>;
+}
+
+pub fn create_file_writer(
+    root_dir: &str,
+    file_idx: usize,
+    compression: &Option<String>,
+    io_config: &Option<daft_io::IOConfig>,
+    format: FileFormat,
+    partition: Option<&Table>,
+) -> DaftResult<Box<dyn FileWriter>> {
+    match format {
+        #[cfg(feature = "python")]
+        FileFormat::Parquet => Ok(Box::new(py_writers::PyArrowParquetWriter::new(
+            root_dir,
+            file_idx,
+            compression,
+            io_config,
+            partition,
+        )?)),
+        #[cfg(feature = "python")]
+        FileFormat::Csv => Ok(Box::new(py_writers::PyArrowCSVWriter::new(
+            root_dir, file_idx, io_config, partition,
+        )?)),
+        _ => Err(DaftError::ComputeError(
+            "Unsupported file format for physical write".to_string(),
+        )),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+#[cfg(feature = "python")]
+pub fn create_iceberg_file_writer(
+    root_dir: &str,
+    file_idx: usize,
+    compression: &Option<String>,
+    io_config: &Option<daft_io::IOConfig>,
+    schema: &pyo3::Py<pyo3::PyAny>,
+    properties: &pyo3::Py<pyo3::PyAny>,
+    partition_spec: &pyo3::Py<pyo3::PyAny>,
+    partition_values: Option<&Table>,
+) -> DaftResult<Box<dyn FileWriter>> {
+    Ok(Box::new(py_writers::IcebergWriter::new(
+        root_dir,
+        file_idx,
+        schema,
+        properties,
+        partition_spec,
+        partition_values,
+        compression,
+        io_config,
+    )?))
+}
+
+#[cfg(feature = "python")]
+pub fn create_deltalake_file_writer(
+    root_dir: &str,
+    file_idx: usize,
+    version: i32,
+    large_dtypes: bool,
+    io_config: &Option<daft_io::IOConfig>,
+    partition_value: Option<&Table>,
+) -> DaftResult<Box<dyn FileWriter>> {
+    Ok(Box::new(py_writers::DeltalakeWriter::new(
+        root_dir,
+        file_idx,
+        version,
+        large_dtypes,
+        partition_value,
+        io_config,
+    )?))
 }
