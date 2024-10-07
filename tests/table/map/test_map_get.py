@@ -61,5 +61,3 @@ def test_map_get_bad_field():
 
     with pytest.raises(ValueError):
         table.eval_expression_list([col("map_col").map.get("foo")])
-
-

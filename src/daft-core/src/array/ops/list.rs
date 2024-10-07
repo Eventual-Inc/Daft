@@ -51,7 +51,7 @@ fn join_arrow_list_of_utf8s(
 // Given an i64 array that may have either 1 or `self.len()` elements, create an iterator with
 // `self.len()` elements. If there was originally 1 element, we repeat this element `self.len()`
 // times, otherwise we simply take the original array.
-fn create_iter<'a>(arr: &'a Int64Array, len: usize) -> Box<dyn Iterator<Item=i64> + '_> {
+fn create_iter<'a>(arr: &'a Int64Array, len: usize) -> Box<dyn Iterator<Item = i64> + '_> {
     match arr.len() {
         1 => Box::new(repeat(arr.get(0).unwrap()).take(len)),
         arr_len => {
@@ -62,13 +62,13 @@ fn create_iter<'a>(arr: &'a Int64Array, len: usize) -> Box<dyn Iterator<Item=i64
 }
 
 fn get_slices_helper(
-    mut parent_offsets: impl Iterator<Item=i64>,
+    mut parent_offsets: impl Iterator<Item = i64>,
     field: Arc<Field>,
     child_data_type: &DataType,
     flat_child: &Series,
     validity: Option<&arrow2::bitmap::Bitmap>,
-    start_iter: impl Iterator<Item=i64>,
-    end_iter: impl Iterator<Item=i64>,
+    start_iter: impl Iterator<Item = i64>,
+    end_iter: impl Iterator<Item = i64>,
 ) -> DaftResult<Series> {
     let mut slicing_indexes = Vec::with_capacity(flat_child.len());
     let mut new_offsets = Vec::with_capacity(flat_child.len() + 1);
@@ -120,7 +120,7 @@ fn get_slices_helper(
         arrow2::offset::OffsetsBuffer::try_from(new_offsets)?,
         validity.cloned(),
     )
-        .into_series())
+    .into_series())
 }
 
 /// Helper function that gets chunks of a given `size` from each list in the Series. Discards excess
@@ -154,7 +154,7 @@ fn get_chunks_helper(
     validity: Option<&arrow2::bitmap::Bitmap>,
     size: usize,
     total_elements_to_skip: usize,
-    to_skip: Option<impl Iterator<Item=usize>>,
+    to_skip: Option<impl Iterator<Item = usize>>,
     new_offsets: Vec<i64>,
 ) -> DaftResult<Series> {
     if total_elements_to_skip == 0 {
@@ -163,9 +163,9 @@ fn get_chunks_helper(
             inner_list_field.clone(),
             flat_child.clone(),
             None, // Since we're creating an extra layer of lists, this layer doesn't have any
-            // validity information. The topmost list takes the parent's validity, and the
-            // child list is unaffected by the chunking operation and maintains its validity.
-            // This reasoning applies to the places that follow where validity is set.
+                  // validity information. The topmost list takes the parent's validity, and the
+                  // child list is unaffected by the chunking operation and maintains its validity.
+                  // This reasoning applies to the places that follow where validity is set.
         );
         Ok(ListArray::new(
             inner_list_field.to_list_field()?,
@@ -173,7 +173,7 @@ fn get_chunks_helper(
             arrow2::offset::OffsetsBuffer::try_from(new_offsets)?,
             validity.cloned(), // Copy the parent's validity.
         )
-            .into_series())
+        .into_series())
     } else {
         let mut growable: Box<dyn Growable> = make_growable(
             &field.name,
@@ -197,15 +197,15 @@ fn get_chunks_helper(
             arrow2::offset::OffsetsBuffer::try_from(new_offsets)?,
             validity.cloned(), // Copy the parent's validity.
         )
-            .into_series())
+        .into_series())
     }
 }
 
 fn list_sort_helper(
     flat_child: &Series,
     offsets: &OffsetsBuffer<i64>,
-    desc_iter: impl Iterator<Item=bool>,
-    validity: impl Iterator<Item=bool>,
+    desc_iter: impl Iterator<Item = bool>,
+    validity: impl Iterator<Item = bool>,
 ) -> DaftResult<Vec<Series>> {
     desc_iter
         .zip(validity)
@@ -229,8 +229,8 @@ fn list_sort_helper(
 fn list_sort_helper_fixed_size(
     flat_child: &Series,
     fixed_size: usize,
-    desc_iter: impl Iterator<Item=bool>,
-    validity: impl Iterator<Item=bool>,
+    desc_iter: impl Iterator<Item = bool>,
+    validity: impl Iterator<Item = bool>,
 ) -> DaftResult<Vec<Series>> {
     desc_iter
         .zip(validity)
@@ -272,10 +272,9 @@ impl ListArray {
         let flat_child = &*flat_child;
 
         let is_equal = build_is_equal(
-            flat_child,
-            flat_child,
+            flat_child, flat_child,
             false, // this value does not matter; invalid (= nulls) are never included
-            true, // NaNs are equal so we do not get a bunch of {Nan: 1, Nan: 1, ...}
+            true,  // NaNs are equal so we do not get a bunch of {Nan: 1, Nan: 1, ...}
         )?;
 
         let is_valid = build_is_valid(flat_child);
@@ -452,7 +451,7 @@ impl ListArray {
     pub fn join(&self, delimiter: &Utf8Array) -> DaftResult<Utf8Array> {
         assert_eq!(self.child_data_type(), &DataType::Utf8,);
 
-        let delimiter_iter: Box<dyn Iterator<Item=Option<&str>>> = if delimiter.len() == 1 {
+        let delimiter_iter: Box<dyn Iterator<Item = Option<&str>>> = if delimiter.len() == 1 {
             Box::new(repeat(delimiter.get(0)).take(self.len()))
         } else {
             assert_eq!(delimiter.len(), self.len());
@@ -477,7 +476,7 @@ impl ListArray {
 
     fn get_children_helper(
         &self,
-        idx_iter: impl Iterator<Item=i64>,
+        idx_iter: impl Iterator<Item = i64>,
         default: &Series,
     ) -> DaftResult<Series> {
         assert!(
@@ -673,7 +672,7 @@ impl FixedSizeListArray {
     pub fn join(&self, delimiter: &Utf8Array) -> DaftResult<Utf8Array> {
         assert_eq!(self.child_data_type(), &DataType::Utf8,);
 
-        let delimiter_iter: Box<dyn Iterator<Item=Option<&str>>> = if delimiter.len() == 1 {
+        let delimiter_iter: Box<dyn Iterator<Item = Option<&str>>> = if delimiter.len() == 1 {
             Box::new(repeat(delimiter.get(0)).take(self.len()))
         } else {
             assert_eq!(delimiter.len(), self.len());
@@ -698,7 +697,7 @@ impl FixedSizeListArray {
 
     fn get_children_helper(
         &self,
-        idx_iter: impl Iterator<Item=i64>,
+        idx_iter: impl Iterator<Item = i64>,
         default: &Series,
     ) -> DaftResult<Series> {
         assert!(

@@ -212,14 +212,14 @@ impl Array for MapArray {
         };
 
         if is_target_map {
-            // For Map-to-Map conversions, we can clone 
+            // For Map-to-Map conversions, we can clone
             // (same top level representation we are still a Map). and then change the subtype in
             // place.
             let mut converted_array = self.to_boxed();
             converted_array.change_type(target_data_type);
             return converted_array;
         }
-        
+
         // Target type is a LargeList, so we need to convert to a ListArray before converting
         let DataType::LargeList(target_field) = &target_data_type else {
             panic!("MapArray can only be converted to Map or LargeList, but target type is {target_data_type:?}");
