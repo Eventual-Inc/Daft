@@ -856,7 +856,9 @@ pub fn populate_aggregation_stages(
 
                 todo!("stddev")
             }
-            AggExpr::StddevMerge(..) => todo!("stddev_merge"),
+            AggExpr::StddevMerge(..) => {
+                unimplemented!("User-facing stddev_merge aggregation is not implemented")
+            }
             AggExpr::Min(e) => {
                 let min_id = agg_expr.semantic_id(schema).id;
                 let min_of_min_id = AggExpr::Min(col(min_id.clone())).semantic_id(schema).id;
