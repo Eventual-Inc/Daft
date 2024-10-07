@@ -1,5 +1,8 @@
 use daft_core::{
-    datatypes::{logical::IntervalYearMonthArray, ExtensionArray},
+    datatypes::{
+        logical::IntervalYearMonthArray, ExtensionArray, IntervalDayTimeArray,
+        IntervalMonthDayNanoArray,
+    },
     prelude::{DataType, IntervalUnit},
     series::Series,
 };
@@ -87,10 +90,12 @@ pub fn html_value(s: &Series, idx: usize) -> String {
             arr.html_value(idx)
         }
         DataType::Interval(IntervalUnit::DayTime) => {
-            todo!()
+            let arr = s.downcast::<IntervalDayTimeArray>().unwrap();
+            arr.html_value(idx)
         }
         DataType::Interval(IntervalUnit::MonthDayNano) => {
-            todo!()
+            let arr = s.downcast::<IntervalMonthDayNanoArray>().unwrap();
+            arr.html_value(idx)
         }
         DataType::Binary => {
             let arr = s.binary().unwrap();

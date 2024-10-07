@@ -21,7 +21,10 @@ use pyo3::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{Expr, ExprRef, LiteralValue};
+use crate::{
+    lit::{IntervalValue, IntervalValueBuilder},
+    Expr, ExprRef, LiteralValue,
+};
 
 #[pyfunction]
 pub fn col(name: &str) -> PyResult<PyExpr> {
@@ -49,6 +52,33 @@ pub fn timestamp_lit(val: i64, tu: PyTimeUnit, tz: Option<String>) -> PyResult<P
 #[pyfunction]
 pub fn duration_lit(val: i64, tu: PyTimeUnit) -> PyResult<PyExpr> {
     let expr = Expr::Literal(LiteralValue::Duration(val, tu.timeunit));
+    Ok(expr.into())
+}
+
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+pub fn interval_lit(
+    years: Option<i32>,
+    months: Option<i32>,
+    days: Option<i32>,
+    hours: Option<i32>,
+    minutes: Option<i32>,
+    seconds: Option<i32>,
+    millis: Option<i32>,
+    nanos: Option<i64>,
+) -> PyResult<PyExpr> {
+    let opts = IntervalValueBuilder {
+        years,
+        months,
+        days,
+        hours,
+        minutes,
+        seconds,
+        milliseconds: millis,
+        nanoseconds: nanos,
+    };
+    let iv = IntervalValue::try_new(opts)?;
+    let expr = Expr::Literal(LiteralValue::Interval(iv));
     Ok(expr.into())
 }
 

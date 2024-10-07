@@ -314,6 +314,7 @@ impl DataType {
             Decimal128(..) => Int128,
             Date => Int32,
             Duration(_) | Timestamp(..) | Time(_) => Int64,
+            Interval(IntervalUnit::YearMonth) => Int32,
             List(child_dtype) => List(Box::new(child_dtype.to_physical())),
             FixedSizeList(child_dtype, size) => {
                 FixedSizeList(Box::new(child_dtype.to_physical()), *size)
@@ -588,6 +589,7 @@ impl DataType {
                 | Self::Time(..)
                 | Self::Timestamp(..)
                 | Self::Duration(..)
+                | Self::Interval(IntervalUnit::YearMonth)
                 | Self::Embedding(..)
                 | Self::Image(..)
                 | Self::FixedShapeImage(..)

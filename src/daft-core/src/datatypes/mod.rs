@@ -17,8 +17,8 @@ pub use daft_schema::{
     field::{Field, FieldID, FieldRef},
     image_format::ImageFormat,
     image_mode::ImageMode,
-    time_unit::{infer_timeunit_from_format_string, TimeUnit},
     interval_unit::IntervalUnit,
+    time_unit::{infer_timeunit_from_format_string, TimeUnit},
 };
 pub use infer_datatype::try_physical_supertype;
 use num_traits::{Bounded, Float, FromPrimitive, Num, NumCast, ToPrimitive, Zero};

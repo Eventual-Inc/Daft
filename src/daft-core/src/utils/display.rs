@@ -1,5 +1,4 @@
 use common_display::table_display::StrValue;
-use daft_schema::interval_unit::IntervalUnit;
 use itertools::Itertools;
 
 use crate::{datatypes::TimeUnit, series::Series};
@@ -122,12 +121,6 @@ pub fn display_duration(val: i64, unit: &TimeUnit) -> String {
     }
 
     output
-}
-
-pub fn display_interval(val: i64, unit: &IntervalUnit) -> String {
-    let mut output = String::new();
-
-    todo!("Display interval")
 }
 
 pub fn display_decimal128(val: i128, _precision: u8, scale: i8) -> String {

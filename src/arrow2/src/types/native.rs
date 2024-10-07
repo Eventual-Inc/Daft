@@ -94,6 +94,12 @@ native_type!(i128, PrimitiveType::Int128);
 #[repr(C)]
 pub struct days_ms(pub i32, pub i32);
 
+impl From<(i32, i32)> for days_ms {
+    #[inline]
+    fn from((days, milliseconds): (i32, i32)) -> Self {
+        Self(days, milliseconds)
+    }
+}
 impl days_ms {
     /// A new [`days_ms`].
     #[inline]
@@ -211,6 +217,13 @@ impl months_days_ns {
     #[inline]
     pub fn ns(&self) -> i64 {
         self.2
+    }
+}
+
+impl From<(i32, i32, i64)> for months_days_ns {
+    #[inline]
+    fn from((months, days, nanoseconds): (i32, i32, i64)) -> Self {
+        Self(months, days, nanoseconds)
     }
 }
 

@@ -10,8 +10,6 @@ use super::{
 #[derive(Clone, Debug)]
 pub struct IntervalType<T>(PhantomData<T>);
 
-#[derive(Clone, Debug)]
-
 /// Value of an IntervalDayTime array
 ///
 /// ## Representation
@@ -37,6 +35,7 @@ pub struct IntervalType<T>(PhantomData<T>);
 /// Values of `IntervalDayTime` are compared using their binary representation,
 /// which can lead to surprising results. Please see the description of ordering on
 /// [`IntervalMonthDayNano`] for more details
+#[derive(Clone, Debug)]
 pub struct DayTimeType {}
 
 impl DaftDataType for DayTimeType {
@@ -44,7 +43,7 @@ impl DaftDataType for DayTimeType {
     fn get_dtype() -> DataType {
         DataType::Interval(IntervalUnit::DayTime)
     }
-    type ArrayType = DataArray<DayTimeType>;
+    type ArrayType = DataArray<Self>;
 }
 
 impl DaftArrowBackedType for DayTimeType {}
@@ -55,7 +54,7 @@ impl DaftDataType for IntervalType<DayTimeType> {
     fn get_dtype() -> DataType {
         DayTimeType::get_dtype()
     }
-    type ArrayType = logical::LogicalArray<IntervalType<DayTimeType>>;
+    type ArrayType = logical::LogicalArray<Self>;
 }
 
 impl DaftLogicalType for IntervalType<DayTimeType> {
@@ -94,7 +93,7 @@ impl DaftDataType for MonthDayNanoType {
     fn get_dtype() -> DataType {
         DataType::Interval(IntervalUnit::MonthDayNano)
     }
-    type ArrayType = DataArray<MonthDayNanoType>;
+    type ArrayType = DataArray<Self>;
 }
 
 impl DaftArrowBackedType for MonthDayNanoType {}
@@ -105,7 +104,7 @@ impl DaftDataType for IntervalType<MonthDayNanoType> {
     fn get_dtype() -> DataType {
         MonthDayNanoType::get_dtype()
     }
-    type ArrayType = logical::LogicalArray<IntervalType<MonthDayNanoType>>;
+    type ArrayType = logical::LogicalArray<Self>;
 }
 
 impl DaftLogicalType for IntervalType<MonthDayNanoType> {
@@ -118,7 +117,7 @@ impl DaftDataType for IntervalType<i32> {
     fn get_dtype() -> DataType {
         DataType::Interval(IntervalUnit::YearMonth)
     }
-    type ArrayType = logical::LogicalArray<IntervalType<i32>>;
+    type ArrayType = logical::LogicalArray<Self>;
 }
 
 impl DaftLogicalType for IntervalType<i32> {

@@ -20,9 +20,9 @@ impl IntervalUnit {
     #![allow(clippy::wrong_self_convention)]
     pub fn to_arrow(&self) -> ArrowIntervalUnit {
         match self {
-            IntervalUnit::YearMonth => ArrowIntervalUnit::YearMonth,
-            IntervalUnit::DayTime => ArrowIntervalUnit::DayTime,
-            IntervalUnit::MonthDayNano => ArrowIntervalUnit::MonthDayNano,
+            Self::YearMonth => ArrowIntervalUnit::YearMonth,
+            Self::DayTime => ArrowIntervalUnit::DayTime,
+            Self::MonthDayNano => ArrowIntervalUnit::MonthDayNano,
         }
     }
 }

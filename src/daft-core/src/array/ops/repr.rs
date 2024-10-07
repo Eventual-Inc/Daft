@@ -213,17 +213,27 @@ impl DurationArray {
 
 impl IntervalYearMonthArray {
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
-        todo!("IntervalYearMonthArray::str_value")
+        let res = self.get(idx).map_or_else(
+            || "None".to_string(),
+            |months| -> String { format!("{months}m") },
+        );
+        Ok(res)
     }
 }
 impl IntervalDayTimeArray {
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
-        todo!("IntervalDayTimeArray::str_value")
+        let res = self
+            .get(idx)
+            .map_or_else(|| "None".to_string(), |v| -> String { format!("{v}") });
+        Ok(res)
     }
 }
 impl IntervalMonthDayNanoArray {
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
-        todo!("IntervalMonthDayNanoArray::str_value")
+        let res = self
+            .get(idx)
+            .map_or_else(|| "None".to_string(), |v| -> String { format!("{v}") });
+        Ok(res)
     }
 }
 
