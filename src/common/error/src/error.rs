@@ -56,3 +56,42 @@ impl From<arrow2::error::Error> for DaftError {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::io::ErrorKind;
+
+    use super::*;
+
+    #[test]
+    fn test_arrow_io_error_conversion() {
+        // Ensure that arrow2 IO errors get converted into transient Byte Stream errors.
+        let arrow_io_error =
+            arrow2::error::Error::Io(std::io::Error::new(ErrorKind::Other, "IO error occurred"));
+        let daft_error: DaftError = arrow_io_error.into();
+        match daft_error {
+            DaftError::ByteStreamError(e) => {
+                assert_eq!(e.to_string(), "IO error occurred");
+            }
+            _ => panic!("Expected ByteStreamError"),
+        }
+    }
+
+    #[test]
+    fn test_parquet_io_error_conversion() {
+        // Ensure that parquet2 IO errors get converted into transient Byte Stream errors.
+        let parquet_io_error = parquet2::error::Error::IoError(std::io::Error::new(
+            ErrorKind::Other,
+            "IO error occurred",
+        ));
+        // let arrow_error: arrow2::error::Error = parquet_io_error.into();
+        let arrow_error = arrow2::error::Error::from(parquet_io_error);
+        let daft_error: DaftError = arrow_error.into();
+        match daft_error {
+            DaftError::ByteStreamError(e) => {
+                assert_eq!(e.to_string(), "IO error occurred");
+            }
+            _ => panic!("Expected ByteStreamError"),
+        }
+    }
+}
