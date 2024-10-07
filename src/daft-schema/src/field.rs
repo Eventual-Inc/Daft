@@ -18,6 +18,7 @@ pub struct Field {
 }
 
 pub type FieldRef = Arc<Field>;
+pub type DaftField = Field;
 
 #[derive(Clone, Display, Debug, PartialEq, Eq, Deserialize, Serialize, Hash)]
 #[display("{id}")]
@@ -68,11 +69,10 @@ impl Field {
         Self {
             name,
             dtype,
-            metadata: Arc::default(),
+            metadata: Default::default(),
         }
     }
 
-    #[must_use]
     pub fn with_metadata<M: Into<Arc<Metadata>>>(self, metadata: M) -> Self {
         Self {
             name: self.name,
@@ -88,7 +88,14 @@ impl Field {
         )
     }
 
-    #[must_use]
+    pub fn to_physical(&self) -> Self {
+        Self {
+            name: self.name.clone(),
+            dtype: self.dtype.to_physical(),
+            metadata: self.metadata.clone(),
+        }
+    }
+
     pub fn rename<S: Into<String>>(&self, name: S) -> Self {
         Self {
             name: name.into(),

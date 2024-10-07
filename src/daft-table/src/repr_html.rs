@@ -102,7 +102,7 @@ pub fn html_value(s: &Series, idx: usize) -> String {
             let arr = s.struct_().unwrap();
             arr.html_value(idx)
         }
-        DataType::Map(_) => {
+        DataType::Map { .. } => {
             let arr = s.map().unwrap();
             arr.html_value(idx)
         }

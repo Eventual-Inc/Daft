@@ -701,6 +701,14 @@ impl MicroPartition {
         Ok(size_bytes)
     }
 
+    /// Retrieves tables from the MicroPartition, reading data if not already loaded.
+    ///
+    /// This method:
+    /// 1. Returns cached tables if already loaded.
+    /// 2. If unloaded, reads data from the source, caches it, and returns the new tables.
+    ///
+    /// "Reading if necessary" means I/O operations only occur for unloaded data,
+    /// optimizing performance by avoiding redundant reads.
     pub(crate) fn tables_or_read(&self, io_stats: IOStatsRef) -> crate::Result<Arc<Vec<Table>>> {
         let mut guard = self.state.lock().unwrap();
         match &*guard {

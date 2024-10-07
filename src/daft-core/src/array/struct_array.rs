@@ -11,6 +11,8 @@ use crate::{
 #[derive(Clone, Debug)]
 pub struct StructArray {
     pub field: Arc<Field>,
+
+    /// Column representations
     pub children: Vec<Series>,
     validity: Option<arrow2::bitmap::Bitmap>,
     len: usize,

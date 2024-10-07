@@ -1,5 +1,5 @@
 use std::{
-    collections::{hash_map::DefaultHasher, BTreeMap, HashSet},
+    collections::{hash_map::DefaultHasher, HashSet},
     hash::{Hash, Hasher},
     sync::Arc,
 };
@@ -29,15 +29,19 @@ pub struct Schema {
 
 impl Schema {
     pub fn new(fields: Vec<Field>) -> DaftResult<Self> {
-        let mut map: IndexMap<String, Field> = indexmap::IndexMap::new();
+        let mut map = IndexMap::new();
 
         for f in fields {
-            let old = map.insert(f.name.clone(), f);
-            if let Some(item) = old {
-                return Err(DaftError::ValueError(format!(
-                    "Attempting to make a Schema with duplicate field names: {}",
-                    item.name
-                )));
+            match map.entry(f.name.clone()) {
+                indexmap::map::Entry::Vacant(entry) => {
+                    entry.insert(f);
+                }
+                indexmap::map::Entry::Occupied(entry) => {
+                    return Err(DaftError::ValueError(format!(
+                        "Attempting to make a Schema with duplicate field names: {}",
+                        entry.key()
+                    )));
+                }
             }
         }
 
@@ -46,10 +50,7 @@ impl Schema {
 
     pub fn exclude<S: AsRef<str>>(&self, names: &[S]) -> DaftResult<Self> {
         let mut fields = IndexMap::new();
-        let names = names
-            .iter()
-            .map(std::convert::AsRef::as_ref)
-            .collect::<HashSet<&str>>();
+        let names = names.iter().map(|s| s.as_ref()).collect::<HashSet<&str>>();
         for (name, field) in &self.fields {
             if !names.contains(&name.as_str()) {
                 fields.insert(name.clone(), field.clone());
@@ -59,7 +60,6 @@ impl Schema {
         Ok(Self { fields })
     }
 
-    #[must_use]
     pub fn empty() -> Self {
         Self {
             fields: indexmap::IndexMap::new(),
@@ -88,24 +88,21 @@ impl Schema {
         }
     }
 
-    #[must_use]
     pub fn names(&self) -> Vec<String> {
         self.fields.keys().cloned().collect()
     }
 
-    #[must_use]
     pub fn len(&self) -> usize {
         self.fields.len()
     }
 
-    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.fields.is_empty()
     }
 
     pub fn union(&self, other: &Self) -> DaftResult<Self> {
-        let self_keys: HashSet<&String> = self.fields.keys().collect();
-        let other_keys: HashSet<&String> = self.fields.keys().collect();
+        let self_keys: HashSet<&String> = HashSet::from_iter(self.fields.keys());
+        let other_keys: HashSet<&String> = HashSet::from_iter(self.fields.keys());
         match self_keys.difference(&other_keys).count() {
             0 => {
                 let mut fields = IndexMap::new();
@@ -141,11 +138,10 @@ impl Schema {
         let arrow_fields = arrow_fields?;
         Ok(arrow2::datatypes::Schema {
             fields: arrow_fields,
-            metadata: BTreeMap::default(),
+            metadata: Default::default(),
         })
     }
 
-    #[must_use]
     pub fn repr_html(&self) -> String {
         // Produces a <table> HTML element.
 
@@ -187,7 +183,6 @@ impl Schema {
         res
     }
 
-    #[must_use]
     pub fn truncated_table_html(&self) -> String {
         // Produces a <table> HTML element.
 
@@ -214,7 +209,6 @@ impl Schema {
         res
     }
 
-    #[must_use]
     pub fn short_string(&self) -> String {
         if self.is_empty() {
             return "EMPTY".to_string();
@@ -226,7 +220,6 @@ impl Schema {
             .join(", ")
     }
 
-    #[must_use]
     pub fn truncated_table_string(&self) -> String {
         let table = make_comfy_table(
             self.fields
@@ -238,10 +231,9 @@ impl Schema {
             None,
             None,
         );
-        format!("{table}\n")
+        format!("{}\n", table)
     }
 
-    #[must_use]
     pub fn estimate_row_size_bytes(&self) -> f64 {
         self.fields
             .values()
@@ -314,7 +306,7 @@ impl TryFrom<&arrow2::datatypes::Schema> for Schema {
     type Error = DaftError;
     fn try_from(arrow_schema: &arrow2::datatypes::Schema) -> DaftResult<Self> {
         let fields = &arrow_schema.fields;
-        let daft_fields: Vec<Field> = fields.iter().map(std::convert::Into::into).collect();
+        let daft_fields: Vec<Field> = fields.iter().map(|f| f.into()).collect();
         Self::new(daft_fields)
     }
 }

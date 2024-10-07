@@ -18,11 +18,12 @@ pub mod prelude;
 use std::{marker::PhantomData, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
+use daft_schema::field::DaftField;
 
 use crate::datatypes::{DaftArrayType, DaftPhysicalType, DataType, Field};
 
 #[derive(Debug)]
-pub struct DataArray<T: DaftPhysicalType> {
+pub struct DataArray<T> {
     pub field: Arc<Field>,
     pub data: Box<dyn arrow2::array::Array>,
     marker_: PhantomData<T>,
@@ -40,29 +41,42 @@ impl<T: DaftPhysicalType> DaftArrayType for DataArray<T> {
     }
 }
 
-impl<T> DataArray<T>
-where
-    T: DaftPhysicalType,
-{
-    pub fn new(field: Arc<Field>, data: Box<dyn arrow2::array::Array>) -> DaftResult<Self> {
+impl<T> DataArray<T> {
+    pub fn new(
+        physical_field: Arc<DaftField>,
+        arrow_array: Box<dyn arrow2::array::Array>,
+    ) -> DaftResult<Self> {
         assert!(
-            field.dtype.is_physical(),
+            physical_field.dtype.is_physical(),
             "Can only construct DataArray for PhysicalTypes, got {}",
-            field.dtype
+            physical_field.dtype
         );
 
-        if let Ok(arrow_dtype) = field.dtype.to_physical().to_arrow() {
-            assert!(
-                arrow_dtype.eq(data.data_type()),
-                "expected {:?}, got {:?} when creating a new DataArray",
-                arrow_dtype,
-                data.data_type()
-            );
+        if let Ok(expected_arrow_physical_type) = physical_field.dtype.to_arrow() {
+            let arrow_data_type = arrow_array.data_type();
+
+            assert!(!(&expected_arrow_physical_type != arrow_data_type), 
+                    "Mismatch between expected and actual Arrow types for DataArray.\n\
+                Field name: {}\n\
+                Logical type: {}\n\
+                Physical type: {}\n\
+                Expected Arrow physical type: {:?}\n\
+                Actual Arrow Logical type: {:?}
+
+                This error typically occurs when there's a discrepancy between the Daft DataType \
+                and the underlying Arrow representation. Please ensure that the physical type \
+                of the Daft DataType matches the Arrow type of the provided data.",
+                    physical_field.name,
+                    physical_field.dtype,
+                    physical_field.dtype.to_physical(),
+                    expected_arrow_physical_type,
+                    arrow_data_type
+                );
         }
 
         Ok(Self {
-            field,
-            data,
+            field: physical_field,
+            data: arrow_array,
             marker_: PhantomData,
         })
     }

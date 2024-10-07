@@ -1,5 +1,6 @@
 #![feature(hash_raw_entry)]
 #![feature(let_chains)]
+#![feature(iterator_try_collect)]
 
 use core::slice;
 use std::{
@@ -180,22 +181,18 @@ impl Table {
         Ok(Self::new_unchecked(schema, columns, num_rows))
     }
 
-    #[must_use]
     pub fn num_columns(&self) -> usize {
         self.columns.len()
     }
 
-    #[must_use]
     pub fn column_names(&self) -> Vec<String> {
         self.schema.names()
     }
 
-    #[must_use]
     pub fn len(&self) -> usize {
         self.num_rows
     }
 
-    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -294,11 +291,8 @@ impl Table {
     }
 
     pub fn size_bytes(&self) -> DaftResult<usize> {
-        let column_sizes: DaftResult<Vec<usize>> = self
-            .columns
-            .iter()
-            .map(daft_core::series::Series::size_bytes)
-            .collect();
+        let column_sizes: DaftResult<Vec<usize>> =
+            self.columns.iter().map(|s| s.size_bytes()).collect();
         Ok(column_sizes?.iter().sum())
     }
 
@@ -346,9 +340,8 @@ impl Table {
             // num_filtered is the number of 'false' or null values in the mask
             let num_filtered = mask
                 .validity()
-                .map_or(mask.as_bitmap().unset_bits(), |validity| {
-                    arrow2::bitmap::and(validity, mask.as_bitmap()).unset_bits()
-                });
+                .map(|validity| arrow2::bitmap::and(validity, mask.as_bitmap()).unset_bits())
+                .unwrap_or(mask.as_bitmap().unset_bits());
             mask.len() - num_filtered
         };
 
@@ -372,7 +365,7 @@ impl Table {
         let first_table = tables.first().unwrap().as_ref();
 
         let first_schema = first_table.schema.as_ref();
-        for tab in tables.iter().skip(1).map(std::convert::AsRef::as_ref) {
+        for tab in tables.iter().skip(1).map(|t| t.as_ref()) {
             if tab.schema.as_ref() != first_schema {
                 return Err(DaftError::SchemaMismatch(format!(
                     "Table concat requires all schemas to match, {} vs {}",
@@ -500,10 +493,8 @@ impl Table {
     }
 
     fn eval_expression(&self, expr: &Expr) -> DaftResult<Series> {
-        use crate::Expr::{
-            Agg, Alias, Between, BinaryOp, Cast, Column, FillNull, Function, IfElse, IsIn, IsNull,
-            Literal, Not, NotNull, ScalarFunction,
-        };
+        use crate::Expr::*;
+
         let expected_field = expr.to_field(self.schema.as_ref())?;
         let series = match expr {
             Alias(child, name) => Ok(self.eval_expression(child)?.rename(name)),
@@ -527,10 +518,7 @@ impl Table {
                 let lhs = self.eval_expression(left)?;
                 let rhs = self.eval_expression(right)?;
                 use daft_core::array::ops::{DaftCompare, DaftLogical};
-                use daft_dsl::Operator::{
-                    And, Eq, Gt, GtEq, Lt, LtEq, Minus, Modulus, Multiply, NotEq, Or, Plus,
-                    ShiftLeft, ShiftRight, TrueDivide, Xor,
-                };
+                use daft_dsl::Operator::*;
                 match op {
                     Plus => lhs + rhs,
                     Minus => lhs - rhs,
@@ -584,6 +572,7 @@ impl Table {
                 }
             },
         }?;
+
         if expected_field.name != series.field().name {
             return Err(DaftError::ComputeError(format!(
                 "Mismatch of expected expression name and name from computed series ({} vs {}) for expression: {expr}",
@@ -591,21 +580,30 @@ impl Table {
                 series.field().name
             )));
         }
-        assert!(!(expected_field.dtype != series.field().dtype), "Mismatch of expected expression data type and data type from computed series, {} vs {}", expected_field.dtype, series.field().dtype);
+
+        assert!(!(expected_field.dtype != series.field().dtype), 
+                "Data type mismatch in expression evaluation:\n\
+                 Expected type: {}\n\
+                 Computed type: {}\n\
+                 Expression: {}\n\
+                 This likely indicates an internal error in type inference or computation.",
+                expected_field.dtype,
+                series.field().dtype,
+                expr
+            );
         Ok(series)
     }
 
     pub fn eval_expression_list(&self, exprs: &[ExprRef]) -> DaftResult<Self> {
-        let result_series = exprs
+        let result_series: Vec<_> = exprs
             .iter()
             .map(|e| self.eval_expression(e))
-            .collect::<DaftResult<Vec<Series>>>()?;
+            .try_collect()?;
 
-        let fields = result_series
-            .iter()
-            .map(|s| s.field().clone())
-            .collect::<Vec<Field>>();
-        let mut seen: HashSet<String> = HashSet::new();
+        let fields: Vec<_> = result_series.iter().map(|s| s.field().clone()).collect();
+
+        let mut seen = HashSet::new();
+
         for field in &fields {
             let name = &field.name;
             if seen.contains(name) {
@@ -613,8 +611,9 @@ impl Table {
                     "Duplicate name found when evaluating expressions: {name}"
                 )));
             }
-            seen.insert(name.clone());
+            seen.insert(name);
         }
+
         let new_schema = Schema::new(fields)?;
 
         let has_agg_expr = exprs.iter().any(|e| matches!(e.as_ref(), Expr::Agg(..)));
@@ -623,7 +622,7 @@ impl Table {
             // This correctly accounts for broadcasting of literals, which can have unit length
             (false, self_len) if self_len > 0 => result_series
                 .iter()
-                .map(daft_core::series::Series::len)
+                .map(|s| s.len())
                 .chain(std::iter::once(self.len()))
                 .max()
                 .unwrap(),
@@ -632,11 +631,7 @@ impl Table {
             // "Aggregation" case: the final cardinality is the max(results' lens)
             // We discard the original self.len() because we expect aggregations to change
             // the final cardinality. Aggregations on empty tables are expected to produce unit length results.
-            (true, _) => result_series
-                .iter()
-                .map(daft_core::series::Series::len)
-                .max()
-                .unwrap(),
+            (true, _) => result_series.iter().map(|s| s.len()).max().unwrap(),
         };
 
         Self::new_with_broadcast(new_schema, result_series, num_rows)
@@ -646,7 +641,7 @@ impl Table {
         let new_series: Vec<Series> = self
             .columns
             .iter()
-            .map(daft_core::series::Series::as_physical)
+            .map(|s| s.as_physical())
             .collect::<DaftResult<Vec<_>>>()?;
         let new_schema = Schema::new(new_series.iter().map(|s| s.field().clone()).collect())?;
         Self::new_with_size(new_schema, new_series, self.len())
@@ -686,7 +681,6 @@ impl Table {
         self.eval_expression_list(&exprs)
     }
 
-    #[must_use]
     pub fn repr_html(&self) -> String {
         // Produces a <table> HTML element.
 
@@ -711,11 +705,16 @@ impl Table {
         // Begin the body.
         res.push_str("<tbody>\n");
 
-        let (head_rows, tail_rows) = if self.len() > 10 {
-            (5, 5)
+        let head_rows;
+        let tail_rows;
+
+        if self.len() > 10 {
+            head_rows = 5;
+            tail_rows = 5;
         } else {
-            (self.len(), 0)
-        };
+            head_rows = self.len();
+            tail_rows = 0;
+        }
 
         let styled_td =
             "<td><div style=\"text-align:left; max-width:192px; max-height:64px; overflow:auto\">";
@@ -762,7 +761,6 @@ impl Table {
         res
     }
 
-    #[must_use]
     pub fn to_comfy_table(&self, max_col_width: Option<usize>) -> comfy_table::Table {
         let str_values = self
             .columns

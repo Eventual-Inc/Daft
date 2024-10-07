@@ -63,6 +63,7 @@ mod tests {
             Some(validity.clone()),
         )
         .into_series();
+
         let indices_array = ListArray::new(
             Field::new("indices", DataType::List(Box::new(DataType::UInt64))),
             UInt64Array::from((
@@ -90,6 +91,7 @@ mod tests {
             Some(validity.clone()),
         )
         .into_series();
+
         let dtype = DataType::SparseTensor(Box::new(DataType::Int64));
         let struct_array = StructArray::new(
             Field::new("tensor", dtype.to_physical()),
@@ -103,9 +105,12 @@ mod tests {
         let fixed_shape_sparse_tensor_array =
             sparse_tensor_array.cast(&fixed_shape_sparse_tensor_dtype)?;
         let roundtrip_tensor = fixed_shape_sparse_tensor_array.cast(&dtype)?;
-        assert!(roundtrip_tensor
-            .to_arrow()
-            .eq(&sparse_tensor_array.to_arrow()));
+
+        let round_trip_tensor_arrow = roundtrip_tensor.to_arrow();
+        let sparse_tensor_array_arrow = sparse_tensor_array.to_arrow();
+
+        assert_eq!(round_trip_tensor_arrow, sparse_tensor_array_arrow);
+
         Ok(())
     }
 }

@@ -12,6 +12,8 @@ use crate::{
 pub struct ListArray {
     pub field: Arc<Field>,
     pub flat_child: Series,
+
+    /// Where each row starts and ends. Null rows usually have the same start/end index, but this is not guaranteed.
     offsets: arrow2::offset::OffsetsBuffer<i64>,
     validity: Option<arrow2::bitmap::Bitmap>,
 }
@@ -191,6 +193,15 @@ impl<'a> IntoIterator for &'a ListArray {
     type IntoIter = ListArrayIter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
+        ListArrayIter {
+            array: self,
+            idx: 0,
+        }
+    }
+}
+
+impl ListArray {
+    pub fn iter(&self) -> ListArrayIter<'_> {
         ListArrayIter {
             array: self,
             idx: 0,

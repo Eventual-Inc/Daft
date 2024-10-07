@@ -1,16 +1,19 @@
 use std::sync::Arc;
 
+use arrow2::offset::OffsetsBuffer;
 use common_error::{DaftError, DaftResult};
 
 use crate::{
     array::growable::{Growable, GrowableArray},
     datatypes::{DaftArrayType, DataType, Field},
+    prelude::ListArray,
     series::Series,
 };
 
 #[derive(Clone, Debug)]
 pub struct FixedSizeListArray {
     pub field: Arc<Field>,
+    /// contains all the elements of the nested lists flattened into a single contiguous array.
     pub flat_child: Series,
     validity: Option<arrow2::bitmap::Bitmap>,
 }
@@ -37,7 +40,7 @@ impl FixedSizeListArray {
                         "FixedSizeListArray::new received values with len {} but expected it to match len of validity {} * size: {}",
                         flat_child.len(),
                         validity.len(),
-                        (validity.len() * size),
+                        validity.len() * size,
                     )
                 }
                 assert!(!(child_dtype.as_ref() != flat_child.data_type()), "FixedSizeListArray::new expects the child series to have dtype {}, but received: {}",
@@ -173,6 +176,27 @@ impl FixedSizeListArray {
             self.flat_child.clone(),
             validity,
         ))
+    }
+
+    fn generate_offsets(&self) -> OffsetsBuffer<i64> {
+        let size = self.fixed_element_len();
+        let len = self.len();
+
+        // Create new offsets
+        let offsets: Vec<i64> = (0..=len)
+            .map(|i| i64::try_from(i * size).unwrap())
+            .collect();
+
+        OffsetsBuffer::try_from(offsets).expect("Failed to create OffsetsBuffer")
+    }
+
+    pub fn to_list(&self) -> ListArray {
+        ListArray::new(
+            self.field.clone(),
+            self.flat_child.clone(),
+            self.generate_offsets(),
+            self.validity.clone(),
+        )
     }
 }
 

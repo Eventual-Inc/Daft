@@ -2084,7 +2084,7 @@ impl ListArray {
                     }
                 }
             }
-            DataType::Map(..) => Ok(MapArray::new(
+            DataType::Map { .. } => Ok(MapArray::new(
                 Field::new(self.name(), dtype.clone()),
                 self.clone(),
             )
@@ -2191,7 +2191,10 @@ where
 {
     Python::with_gil(|py| {
         let arrow_dtype = array.data_type().to_arrow()?;
-        let arrow_array = array.as_arrow().to_type(arrow_dtype).with_validity(None);
+        let arrow_array = array
+            .as_arrow()
+            .convert_logical_type(arrow_dtype)
+            .with_validity(None);
         let pyarrow = py.import_bound(pyo3::intern!(py, "pyarrow"))?;
         let py_array: Vec<PyObject> = ffi::to_py_array(py, arrow_array.to_boxed(), &pyarrow)?
             .call_method0(pyo3::intern!(py, "to_pylist"))?

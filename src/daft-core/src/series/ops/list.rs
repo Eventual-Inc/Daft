@@ -7,6 +7,22 @@ use crate::{
 };
 
 impl Series {
+    pub fn list_value_counts(&self) -> DaftResult<Self> {
+        let series = match self.data_type() {
+            DataType::List(_) => self.list()?.value_counts(),
+            DataType::FixedSizeList(..) => self.fixed_size_list()?.value_counts(),
+            dt => {
+                return Err(DaftError::TypeError(format!(
+                    "List contains not implemented for {}",
+                    dt
+                )))
+            }
+        }?
+        .into_series();
+
+        Ok(series)
+    }
+
     pub fn explode(&self) -> DaftResult<Self> {
         match self.data_type() {
             DataType::List(_) => self.list()?.explode(),

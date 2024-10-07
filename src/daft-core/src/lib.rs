@@ -2,6 +2,7 @@
 #![feature(int_roundings)]
 #![feature(iterator_try_reduce)]
 #![feature(if_let_guard)]
+#![feature(hash_raw_entry)]
 
 pub mod array;
 pub mod count_mode;
