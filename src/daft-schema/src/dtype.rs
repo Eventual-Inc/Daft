@@ -253,7 +253,7 @@ impl DataType {
                     //
                     // By disallowing null keys, we encourage more robust data modeling practices and
                     // provide a clearer semantic meaning for map types in our system.
-                    arrow2::datatypes::Field::new("key", key.to_arrow()?, true),
+                    arrow2::datatypes::Field::new("key", key.to_arrow()?, false),
                     arrow2::datatypes::Field::new("value", value.to_arrow()?, true),
                 ]);
 
