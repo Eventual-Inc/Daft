@@ -46,6 +46,12 @@ pub fn timestamp_lit(val: i64, tu: PyTimeUnit, tz: Option<String>) -> PyResult<P
     Ok(expr.into())
 }
 
+#[pyfunction]
+pub fn duration_lit(val: i64, tu: PyTimeUnit) -> PyResult<PyExpr> {
+    let expr = Expr::Literal(LiteralValue::Duration(val, tu.timeunit));
+    Ok(expr.into())
+}
+
 fn decimal_from_digits(digits: Vec<u8>, exp: i32) -> Option<(i128, usize)> {
     const MAX_ABS_DEC: i128 = 10_i128.pow(38) - 1;
     let mut v = 0_i128;

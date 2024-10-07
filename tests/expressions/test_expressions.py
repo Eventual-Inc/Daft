@@ -504,6 +504,33 @@ def test_datetime_lit_different_timeunits(timeunit, expected) -> None:
     assert timestamp_repr == expected
 
 
+@pytest.mark.parametrize(
+    "input, expected",
+    [
+        (
+            timedelta(days=1),
+            "lit(1d)",
+        ),
+        (
+            timedelta(days=1, hours=12, minutes=30, seconds=59),
+            "lit(1d 12h 30m 59s)",
+        ),
+        (
+            timedelta(days=1, hours=12, minutes=30, seconds=59, microseconds=123456),
+            "lit(1d 12h 30m 59s 123456µs)",
+        ),
+        (
+            timedelta(weeks=1, days=1, hours=12, minutes=30, seconds=59, microseconds=123456),
+            "lit(8d 12h 30m 59s 123456µs)",
+        ),
+    ],
+)
+def test_duration_lit(input, expected) -> None:
+    d = lit(input)
+    output = repr(d)
+    assert output == expected
+
+
 def test_repr_series_lit() -> None:
     s = lit(Series.from_pylist([1, 2, 3]))
     output = repr(s)
