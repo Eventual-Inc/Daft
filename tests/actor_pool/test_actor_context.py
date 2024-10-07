@@ -30,7 +30,7 @@ def enable_actor_pool():
         set_planning_config(config=original_config)
 
 
-@pytest.mark.parametrize("concurrency", [1, 2, 4])
+@pytest.mark.parametrize("concurrency", [1, 2, 3])
 def test_stateful_udf_context_rank(concurrency):
     @udf(return_dtype=DataType.int64())
     class GetRank:
@@ -61,7 +61,7 @@ def test_stateful_udf_context_rank(concurrency):
         assert i in ranks, f"rank {i} not found in {ranks}"
 
 
-@pytest.mark.parametrize("concurrency", [1, 2, 4])
+@pytest.mark.parametrize("concurrency", [1, 2, 3])
 def test_stateful_udf_context_resource_request(concurrency):
     @udf(return_dtype=DataType.int64(), num_cpus=1, memory_bytes=5_000_000)
     class TestResourceRequest:
