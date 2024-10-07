@@ -4,6 +4,7 @@ futures = "0.3.31"
 tokio = { version = "1.40.0" , features = ["full"] }
 prost = "0.13.3"
 prost-types = "0.13.3"
+uuid = { version = "1.10.0", features = ["v4"] }
 
 [build-dependencies]
 tonic-build = "0.12.3"
