@@ -1,6 +1,10 @@
 use std::{borrow::Cow, sync::Arc};
 
-use arrow2::offset::OffsetsBuffer;
+use arrow2::{
+    offset::OffsetsBuffer,
+    types::{days_ms, months_days_ns},
+};
+use logical::IntervalYearMonthArray;
 // use logical::IntervalArray;
 use serde::{de::Visitor, Deserializer};
 
@@ -257,7 +261,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                     DataType::Duration(..) => {
                         type PType = <<DurationType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
                         let physical = map.next_value::<Series>()?;
-                        
+
                         Ok(
                             DurationArray::new(
                                 field,
@@ -267,13 +271,28 @@ impl<'d> serde::Deserialize<'d> for Series {
                         )
                     }
                     DataType::Interval(IntervalUnit::DayTime) => {
-                        type PType = <<IntervalDayTimeType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
-                        let physical = map.next_value::<Series>()?;
-                        let physical = physical.downcast::<IntervalDayTimeArray>().unwrap().clone();
-                        Ok(
-                            IntervalDayTimeArray::new(Arc::new(field), Box::new(physical))
-                                .into_series(),
+                        Ok(IntervalDayTimeArray::from_iter(
+                            field.name.as_str(),
+                            map.next_value::<Vec<Option<days_ms>>>()?.into_iter(),
                         )
+                        .into_series())
+                    }
+                    DataType::Interval(IntervalUnit::MonthDayNano) => {
+                        Ok(IntervalMonthDayNanoArray::from_iter(
+                            field.name.as_str(),
+                            map.next_value::<Vec<Option<months_days_ns>>>()?.into_iter(),
+                        )
+                        .into_series())
+                    }
+                    DataType::Interval(IntervalUnit::YearMonth) => {
+                        type PType = <<IntervalYearMonthType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
+                        let physical = map.next_value::<Series>()?;
+
+                        Ok(IntervalYearMonthArray::new(
+                            field,
+                            physical.downcast::<PType>().unwrap().clone(),
+                        )
+                        .into_series())
                     }
                     DataType::Embedding(..) => {
                         type PType = <<EmbeddingType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
