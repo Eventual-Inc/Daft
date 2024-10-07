@@ -8,6 +8,7 @@ use crate::{
     count_mode::CountMode,
 };
 
+#[derive(Clone, Copy, Default, Debug)]
 pub struct Stats {
     pub sum: f64,
     pub count: u64,
@@ -15,10 +16,16 @@ pub struct Stats {
 }
 
 pub fn calculate_stats(array: &Float64Array) -> DaftResult<Stats> {
-    let sum = array.sum()?.get(0).unwrap();
-    let count = array.count(CountMode::Valid)?.get(0).unwrap();
-    let mean = calculate_mean(sum, count);
-    Ok(Stats { sum, count, mean })
+    let sum = array.sum()?.get(0);
+    let count = array.count(CountMode::Valid)?.get(0);
+    let stats = sum
+        .zip(count)
+        .map_or_else(Default::default, |(sum, count)| Stats {
+            sum,
+            count,
+            mean: calculate_mean(sum, count),
+        });
+    Ok(stats)
 }
 
 pub fn grouped_stats<'a>(
@@ -47,16 +54,15 @@ impl<'a, I: Iterator<Item = (usize, &'a VecIndices)>> Iterator for GroupedStats<
 
     fn next(&mut self) -> Option<Self::Item> {
         let (index, group) = self.groups.next()?;
-        let sum = self
-            .grouped_sum
-            .get(index)
-            .expect("All values in `self.grouped_sum` must be valid");
-        let count = self
-            .grouped_count
-            .get(index)
-            .expect("All values in `self.grouped_count` must be valid");
-        let mean = calculate_mean(sum, count);
-        let stats = Stats { sum, count, mean };
+        let sum = self.grouped_sum.get(index);
+        let count = self.grouped_count.get(index);
+        let stats = sum
+            .zip(count)
+            .map_or_else(Default::default, |(sum, count)| Stats {
+                sum,
+                count,
+                mean: calculate_mean(sum, count),
+            });
         Some((stats, group))
     }
 }
