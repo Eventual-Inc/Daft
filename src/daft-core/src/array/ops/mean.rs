@@ -1,28 +1,24 @@
 use std::sync::Arc;
 
+use arrow2::array::PrimitiveArray;
 use common_error::DaftResult;
 
 use super::{as_arrow::AsArrow, DaftCountAggable, DaftMeanAggable, DaftSumAggable};
-use crate::{array::ops::GroupIndices, count_mode::CountMode, datatypes::*};
+use crate::{
+    array::ops::GroupIndices,
+    count_mode::CountMode,
+    datatypes::*,
+    utils::stats::{stats, Stats},
+};
 impl DaftMeanAggable for &DataArray<Float64Type> {
     type Output = DaftResult<DataArray<Float64Type>>;
 
     fn mean(&self) -> Self::Output {
-        let sum_value = DaftSumAggable::sum(self)?.as_arrow().value(0);
-        let count_value = DaftCountAggable::count(self, CountMode::Valid)?
-            .as_arrow()
-            .value(0);
-
-        let result = match count_value {
-            0 => None,
-            count_value => Some(sum_value / count_value as f64),
-        };
-        let arrow_array = Box::new(arrow2::array::PrimitiveArray::from([result]));
-
-        DataArray::new(
-            Arc::new(Field::new(self.field.name.clone(), DataType::Float64)),
-            arrow_array,
-        )
+        let Stats { mean, count, .. } = stats(self)?;
+        let value = mean.map(|mean| mean / count as f64);
+        let data = PrimitiveArray::from([value]).boxed();
+        let field = Arc::new(Field::new(self.field.name.clone(), DataType::Float64));
+        DataArray::new(field, data)
     }
 
     fn grouped_mean(&self, groups: &GroupIndices) -> Self::Output {
