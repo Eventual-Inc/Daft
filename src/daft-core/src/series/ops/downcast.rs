@@ -1,6 +1,7 @@
 use common_error::DaftResult;
 use logical::{
-    EmbeddingArray, FixedShapeSparseTensorArray, FixedShapeTensorArray, IntervalArray, SparseTensorArray, TensorArray
+    EmbeddingArray, FixedShapeSparseTensorArray, FixedShapeTensorArray, IntervalArray,
+    SparseTensorArray, TensorArray,
 };
 
 use self::logical::{DurationArray, ImageArray, MapArray};
