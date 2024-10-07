@@ -774,6 +774,17 @@ pub fn populate_aggregation_stages(
     // Project the aggregation results to their final output names
     let mut final_exprs: Vec<ExprRef> = group_by.iter().map(|e| col(e.name())).collect();
 
+    let get_id = |expr: &AggExpr| expr.semantic_id(schema).id;
+
+    fn add_to_stage(stage: &mut HashMap<Arc<str>, AggExpr>, id: Arc<str>, agg_expr: AggExpr) {
+        let prev_agg_expr = stage.insert(id.clone(), agg_expr);
+        assert!(
+            prev_agg_expr.is_none(),
+            "{:?} already exists in this stage but it should not",
+            id
+        );
+    }
+
     for agg_expr in aggregations {
         let output_name = agg_expr.name();
         match agg_expr {
@@ -834,7 +845,17 @@ pub fn populate_aggregation_stages(
                         .alias(output_name),
                 );
             }
-            AggExpr::Stddev(_expr) => todo!("stddev"),
+            AggExpr::Stddev(sub_expr) => {
+                // first stage
+                let sum_expr = AggExpr::Sum(sub_expr.clone());
+                let count_expr = AggExpr::Count(sub_expr.clone(), CountMode::Valid);
+                add_to_stage(&mut first_stage_aggs, get_id(&sum_expr), sum_expr);
+                add_to_stage(&mut first_stage_aggs, get_id(&count_expr), count_expr);
+
+                // second stage
+
+                todo!()
+            }
             AggExpr::Min(e) => {
                 let min_id = agg_expr.semantic_id(schema).id;
                 let min_of_min_id = AggExpr::Min(col(min_id.clone())).semantic_id(schema).id;
