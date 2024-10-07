@@ -411,13 +411,17 @@ fn replace_column_with_semantic_id_aggexpr(
                 |_| e,
             )
         }
+        AggExpr::Mean(ref child) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                .map_yes_no(AggExpr::Mean, |_| e)
+        }
         AggExpr::Stddev(ref child) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                 .map_yes_no(AggExpr::Stddev, |_| e)
         }
-        AggExpr::Mean(ref child) => {
+        AggExpr::StddevMerge(ref child) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
-                .map_yes_no(AggExpr::Mean, |_| e)
+                .map_yes_no(AggExpr::StddevMerge, |_| e)
         }
         AggExpr::Min(ref child) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)

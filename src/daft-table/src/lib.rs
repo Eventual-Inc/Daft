@@ -481,6 +481,7 @@ impl Table {
             }
             AggExpr::Mean(expr) => self.eval_expression(expr)?.mean(groups),
             AggExpr::Stddev(expr) => self.eval_expression(expr)?.stddev(groups),
+            AggExpr::StddevMerge(..) => todo!("stddev merge"),
             AggExpr::Min(expr) => self.eval_expression(expr)?.min(groups),
             AggExpr::Max(expr) => self.eval_expression(expr)?.max(groups),
             &AggExpr::AnyValue(ref expr, ignore_nulls) => {

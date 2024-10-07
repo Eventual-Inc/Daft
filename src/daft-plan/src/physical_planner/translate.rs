@@ -854,8 +854,9 @@ pub fn populate_aggregation_stages(
 
                 // second stage
 
-                todo!()
+                todo!("stddev")
             }
+            AggExpr::StddevMerge(..) => todo!("stddev_merge"),
             AggExpr::Min(e) => {
                 let min_id = agg_expr.semantic_id(schema).id;
                 let min_of_min_id = AggExpr::Min(col(min_id.clone())).semantic_id(schema).id;

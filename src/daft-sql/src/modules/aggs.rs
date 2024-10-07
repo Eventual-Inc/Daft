@@ -109,7 +109,8 @@ pub(crate) fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<Expr
             ensure!(args.len() == 1, "mean takes exactly one argument");
             Ok(args[0].clone().mean())
         }
-        AggExpr::Stddev(_) => todo!(),
+        AggExpr::Stddev(..) => todo!("stddev"),
+        AggExpr::StddevMerge(..) => todo!("stddev_merge"),
         AggExpr::Min(_) => {
             ensure!(args.len() == 1, "min takes exactly one argument");
             Ok(args[0].clone().min())

@@ -239,6 +239,9 @@ fn extract_agg_expr(expr: &Expr) -> DaftResult<AggExpr> {
                 }
                 AggExpr::Mean(e) => AggExpr::Mean(Expr::Alias(e, name.clone()).into()),
                 AggExpr::Stddev(e) => AggExpr::Stddev(Expr::Alias(e, name.clone()).into()),
+                AggExpr::StddevMerge(e) => {
+                    AggExpr::StddevMerge(Expr::Alias(e, name.clone()).into())
+                }
                 AggExpr::Min(e) => AggExpr::Min(Expr::Alias(e, name.clone()).into()),
                 AggExpr::Max(e) => AggExpr::Max(Expr::Alias(e, name.clone()).into()),
                 AggExpr::AnyValue(e, ignore_nulls) => {

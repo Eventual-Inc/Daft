@@ -127,6 +127,9 @@ pub enum AggExpr {
     #[display("stddev({_0})")]
     Stddev(ExprRef),
 
+    #[display("stddev_merge({_0})")]
+    StddevMerge(ExprRef),
+
     #[display("min({_0})")]
     Min(ExprRef),
 
@@ -174,6 +177,7 @@ impl AggExpr {
             | Self::MergeSketch(expr, _)
             | Self::Mean(expr)
             | Self::Stddev(expr)
+            | Self::StddevMerge(expr)
             | Self::Min(expr)
             | Self::Max(expr)
             | Self::AnyValue(expr, _)
@@ -220,13 +224,17 @@ impl AggExpr {
                     "{child_id}.local_merge_sketch(sketch_type={sketch_type:?})"
                 ))
             }
+            Self::Mean(expr) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.local_mean()"))
+            }
             Self::Stddev(expr) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_stddev()"))
             }
-            Self::Mean(expr) => {
+            Self::StddevMerge(expr) => {
                 let child_id = expr.semantic_id(schema);
-                FieldID::new(format!("{child_id}.local_mean()"))
+                FieldID::new(format!("{child_id}.local_stddev_merge()"))
             }
             Self::Min(expr) => {
                 let child_id = expr.semantic_id(schema);
@@ -264,6 +272,7 @@ impl AggExpr {
             | Self::MergeSketch(expr, _)
             | Self::Mean(expr)
             | Self::Stddev(expr)
+            | Self::StddevMerge(expr)
             | Self::Min(expr)
             | Self::Max(expr)
             | Self::AnyValue(expr, _)
@@ -285,6 +294,7 @@ impl AggExpr {
             Self::Sum(_) => Self::Sum(first_child()),
             Self::Mean(_) => Self::Mean(first_child()),
             Self::Stddev(_) => Self::Stddev(first_child()),
+            Self::StddevMerge(_) => Self::StddevMerge(first_child()),
             Self::Min(_) => Self::Min(first_child()),
             Self::Max(_) => Self::Max(first_child()),
             Self::AnyValue(_, ignore_nulls) => Self::AnyValue(first_child(), *ignore_nulls),
@@ -382,7 +392,7 @@ impl AggExpr {
                 };
                 Ok(Field::new(field.name, dtype))
             }
-            Self::Mean(expr) | Self::Stddev(expr) => {
+            Self::Mean(expr) | Self::Stddev(expr) | Self::StddevMerge(expr) => {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(
                     field.name.as_str(),
