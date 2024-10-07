@@ -14,7 +14,7 @@ pub enum DaftError {
     #[error("DaftError::ComputeError {0}")]
     ComputeError(String),
     #[error("DaftError::ArrowError {0}")]
-    ArrowError(#[from] arrow2::error::Error),
+    ArrowError(String),
     #[error("DaftError::ValueError {0}")]
     ValueError(String),
     #[cfg(feature = "python")]
@@ -46,4 +46,13 @@ pub enum DaftError {
     FmtError(#[from] std::fmt::Error),
     #[error("DaftError::RegexError {0}")]
     RegexError(#[from] regex::Error),
+}
+
+impl From<arrow2::error::Error> for DaftError {
+    fn from(error: arrow2::error::Error) -> Self {
+        match error {
+            arrow2::error::Error::Io(_) => Self::ByteStreamError(error.into()),
+            _ => Self::ArrowError(error.to_string()),
+        }
+    }
 }
