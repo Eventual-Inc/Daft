@@ -30,7 +30,9 @@ impl ScalarUDF for GeoOp {
                 match field.dtype {
                     DataType::Geometry => match self.op {
                         GeoOperation::Area => Ok(Field::new(field.name, DataType::Float64)),
-                        GeoOperation::ConvexHull => Ok(Field::new(field.name, DataType::Geometry)),
+                        GeoOperation::ConvexHull | GeoOperation::Centroid => {
+                            Ok(Field::new(field.name, DataType::Geometry))
+                        }
                         _ => Err(DaftError::ValueError(format!(
                             "unsupported op {:?}",
                             self.op
@@ -79,6 +81,9 @@ impl ScalarUDF for GeoOp {
                     GeoOperation::Area => utils::geo_unary_dispatch(input, GeoOperation::Area),
                     GeoOperation::ConvexHull => {
                         utils::geo_unary_dispatch(input, GeoOperation::ConvexHull)
+                    }
+                    GeoOperation::Centroid => {
+                        utils::geo_unary_dispatch(input, GeoOperation::Centroid)
                     }
                     _ => Err(DaftError::ValueError(format!(
                         "unsupported op {:?}",

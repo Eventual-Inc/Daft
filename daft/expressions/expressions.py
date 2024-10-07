@@ -3425,6 +3425,11 @@ class ExpressionGeometryNamespace(ExpressionNamespace):
         op = GeoOperation.ConvexHull  # type: ignore[attr-defined]
         return Expression._from_pyexpr(native.geo_op(self._expr, op))
 
+    def centroid(self) -> Expression:
+        """Compute the centroid of a geometry"""
+        op = GeoOperation.Centroid  # type: ignore[attr-defined]
+        return Expression._from_pyexpr(native.geo_op(self._expr, op))
+
     def distance(self, rhs: Expression) -> Expression:
         """Compute the distance between two geometries"""
         op = GeoOperation.Distance  # type: ignore[attr-defined]

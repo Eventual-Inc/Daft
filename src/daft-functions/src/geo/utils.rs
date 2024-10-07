@@ -8,7 +8,9 @@ use daft_core::{
     prelude::{BinaryArray, DataType, Field},
     series::{IntoSeries, Series},
 };
-use geo::{Area, BooleanOps, Contains, ConvexHull, EuclideanDistance, Geometry, Intersects};
+use geo::{
+    Area, BooleanOps, Centroid, Contains, ConvexHull, EuclideanDistance, Geometry, Intersects,
+};
 use geozero::{wkb, wkt, CoordDimensions, ToGeo, ToWkb, ToWkt};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -23,6 +25,7 @@ pub enum GeoOperation {
     Intersects,
     Intersection,
     Contains,
+    Centroid,
 }
 
 pub struct GeometryArrayIter<'a> {
@@ -220,7 +223,8 @@ pub fn encode_series(s: &Series, text: bool) -> DaftResult<Series> {
 pub fn geo_unary_dispatch(s: &Series, op: GeoOperation) -> DaftResult<Series> {
     match op {
         GeoOperation::Area => geo_unary_to_scalar::<f64, _>(s, |g| g.unsigned_area()),
-        GeoOperation::ConvexHull => geo_unary_to_geo(s, |g| g.convex_hull().into()),
+        GeoOperation::ConvexHull => geo_unary_to_geo(s, |g| Some(g.convex_hull().into())),
+        GeoOperation::Centroid => geo_unary_to_geo(s, |g| g.centroid().map(|c| c.into())),
         _ => Err(DaftError::ValueError(format!("unsupported op {:?}", op))),
     }
 }
@@ -261,13 +265,16 @@ where
 
 pub fn geo_unary_to_geo<F>(s: &Series, op_fn: F) -> DaftResult<Series>
 where
-    F: Fn(Geometry) -> Geometry,
+    F: Fn(Geometry) -> Option<Geometry>,
 {
     let geo_array = s.geometry()?;
     let mut gh = GH::new(geo_array.len());
     for geo in GeometryArrayIter::new(geo_array) {
         match geo {
-            Some(g) => gh.push(op_fn(g)),
+            Some(g) => match op_fn(g) {
+                Some(result) => gh.push(result),
+                None => gh.null(),
+            },
             _ => gh.null(),
         }
     }
