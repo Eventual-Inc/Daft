@@ -55,8 +55,9 @@ impl<T> DataArray<T> {
         if let Ok(expected_arrow_physical_type) = physical_field.dtype.to_arrow() {
             let arrow_data_type = arrow_array.data_type();
 
-            assert!(!(&expected_arrow_physical_type != arrow_data_type), 
-                    "Mismatch between expected and actual Arrow types for DataArray.\n\
+            assert!(
+                !(&expected_arrow_physical_type != arrow_data_type),
+                "Mismatch between expected and actual Arrow types for DataArray.\n\
                 Field name: {}\n\
                 Logical type: {}\n\
                 Physical type: {}\n\
@@ -66,12 +67,12 @@ impl<T> DataArray<T> {
                 This error typically occurs when there's a discrepancy between the Daft DataType \
                 and the underlying Arrow representation. Please ensure that the physical type \
                 of the Daft DataType matches the Arrow type of the provided data.",
-                    physical_field.name,
-                    physical_field.dtype,
-                    physical_field.dtype.to_physical(),
-                    expected_arrow_physical_type,
-                    arrow_data_type
-                );
+                physical_field.name,
+                physical_field.dtype,
+                physical_field.dtype.to_physical(),
+                expected_arrow_physical_type,
+                arrow_data_type
+            );
         }
 
         Ok(Self {

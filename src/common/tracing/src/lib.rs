@@ -13,7 +13,10 @@ lazy_static! {
 pub fn init_tracing(enable_chrome_trace: bool) {
     use std::sync::atomic::Ordering;
 
-    assert!(!TRACING_INIT.swap(true, Ordering::Relaxed), "Cannot init tracing, already initialized!");
+    assert!(
+        !TRACING_INIT.swap(true, Ordering::Relaxed),
+        "Cannot init tracing, already initialized!"
+    );
 
     if !enable_chrome_trace {
         return; // Do nothing for now

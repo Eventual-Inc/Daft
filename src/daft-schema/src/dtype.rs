@@ -257,8 +257,7 @@ impl DataType {
                     arrow2::datatypes::Field::new("value", value.to_arrow()?, true),
                 ]);
 
-                let struct_field =
-                    arrow2::datatypes::Field::new("entries", struct_type, true);
+                let struct_field = arrow2::datatypes::Field::new("entries", struct_type, true);
 
                 Ok(ArrowType::map(struct_field, false))
             }
@@ -615,6 +614,10 @@ impl DataType {
     }
 }
 
+#[expect(
+    clippy::fallible_impl_from,
+    reason = "https://github.com/Eventual-Inc/Daft/issues/3015"
+)]
 impl From<&ArrowType> for DataType {
     fn from(item: &ArrowType) -> Self {
         let result = match item {

@@ -341,7 +341,7 @@ impl Table {
             let num_filtered = mask
                 .validity()
                 .map(|validity| arrow2::bitmap::and(validity, mask.as_bitmap()).unset_bits())
-                .unwrap_or(mask.as_bitmap().unset_bits());
+                .unwrap_or_else(|| mask.as_bitmap().unset_bits());
             mask.len() - num_filtered
         };
 
@@ -581,16 +581,17 @@ impl Table {
             )));
         }
 
-        assert!(!(expected_field.dtype != series.field().dtype), 
-                "Data type mismatch in expression evaluation:\n\
+        assert!(
+            !(expected_field.dtype != series.field().dtype),
+            "Data type mismatch in expression evaluation:\n\
                  Expected type: {}\n\
                  Computed type: {}\n\
                  Expression: {}\n\
                  This likely indicates an internal error in type inference or computation.",
-                expected_field.dtype,
-                series.field().dtype,
-                expr
-            );
+            expected_field.dtype,
+            series.field().dtype,
+            expr
+        );
         Ok(series)
     }
 
@@ -705,16 +706,11 @@ impl Table {
         // Begin the body.
         res.push_str("<tbody>\n");
 
-        let head_rows;
-        let tail_rows;
-
-        if self.len() > 10 {
-            head_rows = 5;
-            tail_rows = 5;
+        let (head_rows, tail_rows) = if self.len() > 10 {
+            (5, 5)
         } else {
-            head_rows = self.len();
-            tail_rows = 0;
-        }
+            (self.len(), 0)
+        };
 
         let styled_td =
             "<td><div style=\"text-align:left; max-width:192px; max-height:64px; overflow:auto\">";
