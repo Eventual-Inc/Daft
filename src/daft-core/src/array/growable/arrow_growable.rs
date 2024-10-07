@@ -1,11 +1,12 @@
 use std::{marker::PhantomData, sync::Arc};
 
+use arrow2::types::{days_ms, months_days_ns};
 use common_error::DaftResult;
 
 use super::Growable;
 use crate::{
     array::prelude::*,
-    datatypes::prelude::*,
+    datatypes::{prelude::*, DayTimeType, MonthDayNanoType},
     series::{IntoSeries, Series},
 };
 
@@ -160,6 +161,16 @@ impl_arrow_backed_data_array_growable!(
     ArrowUtf8Growable,
     Utf8Type,
     arrow2::array::growable::GrowableUtf8<'a, i64>
+);
+impl_arrow_backed_data_array_growable!(
+    ArrowDayTimeIntervalGrowable,
+    DayTimeType,
+    arrow2::array::growable::GrowablePrimitive<'a, days_ms>
+);
+impl_arrow_backed_data_array_growable!(
+    ArrowMonthDayNanoIntervalGrowable,
+    MonthDayNanoType,
+    arrow2::array::growable::GrowablePrimitive<'a, months_days_ns>
 );
 
 /// ExtensionTypes are slightly different, because they have a dynamic inner type

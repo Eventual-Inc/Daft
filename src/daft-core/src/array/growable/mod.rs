@@ -2,7 +2,10 @@ use common_error::DaftResult;
 
 use crate::{
     array::{prelude::*, FixedSizeListArray, ListArray, StructArray},
-    datatypes::{logical::IntervalArray, prelude::*},
+    datatypes::{
+        logical::IntervalYearMonthArray, prelude::*, IntervalDayTimeArray,
+        IntervalMonthDayNanoArray,
+    },
     series::Series,
     with_match_daft_types,
 };
@@ -188,7 +191,19 @@ impl_growable_array!(
     logical_growable::LogicalTimestampGrowable<'a>
 );
 impl_growable_array!(DurationArray, logical_growable::LogicalDurationGrowable<'a>);
-impl_growable_array!(IntervalArray, logical_growable::LogicalIntervalGrowable<'a>);
+impl_growable_array!(
+    IntervalYearMonthArray,
+    logical_growable::LogicalIntervalYearMonthGrowable<'a>
+);
+impl_growable_array!(
+    IntervalDayTimeArray,
+    arrow_growable::ArrowDayTimeIntervalGrowable<'a>
+);
+impl_growable_array!(
+    IntervalMonthDayNanoArray,
+    arrow_growable::ArrowMonthDayNanoIntervalGrowable<'a>
+);
+
 impl_growable_array!(DateArray, logical_growable::LogicalDateGrowable<'a>);
 impl_growable_array!(TimeArray, logical_growable::LogicalTimeGrowable<'a>);
 impl_growable_array!(

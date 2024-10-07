@@ -8,10 +8,11 @@ use std::{
 use common_error::{DaftError, DaftResult};
 use common_hashable_float_wrapper::FloatWrapper;
 use daft_core::{
+    datatypes::logical::IntervalYearMonthArray,
     prelude::*,
     utils::display::{
-        display_date32, display_decimal128, display_duration, display_series_literal,
-        display_time64, display_timestamp,
+        display_date32, display_decimal128, display_duration, display_interval,
+        display_series_literal, display_time64, display_timestamp,
     },
 };
 use indexmap::IndexMap;
@@ -20,6 +21,13 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
 use crate::pyobj_serde::PyObjectWrapper;
 use crate::{expr::Expr, ExprRef};
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Hash)]
+pub enum IntervalValue {
+    YearMonth(i32),
+    DayTime(i32, i32),
+    MonthDayNano(i32, i32, i64),
+}
 
 /// Stores a literal value for queries and computations.
 /// We only need to support the limited types below since those are the types that we would get from python.
@@ -62,6 +70,15 @@ pub enum LiteralValue {
     Time(i64, TimeUnit),
     /// An [`i64`] representing a measure of elapsed time. This elapsed time is a physical duration (i.e. 1s as defined in S.I.)
     Duration(i64, TimeUnit),
+    /// Number of elapsed whole months
+    Interval(IntervalValue),
+    /// Number of elapsed days and milliseconds (no leap seconds)
+    /// stored as 2 contiguous 32-bit signed integers
+    // IntervalDayTime(Option<IntervalDayTime>),
+    /// A triple of the number of elapsed months, days, and nanoseconds.
+    /// Months and days are encoded as 32-bit signed integers.
+    /// Nanoseconds is encoded as a 64-bit signed integer (no leap seconds).
+    // IntervalMonthDayNano(Option<IntervalMonthDayNano>),
     /// A 64-bit floating point number.
     Float64(f64),
     /// An [`i128`] representing a decimal number with the provided precision and scale.
@@ -104,6 +121,9 @@ impl Hash for LiteralValue {
             Duration(n, tu) => {
                 n.hash(state);
                 tu.hash(state);
+            }
+            Interval(n) => {
+                n.hash(state);
             }
             // Wrap float64 in hashable newtype.
             Float64(n) => FloatWrapper(*n).hash(state),
@@ -148,6 +168,7 @@ impl Display for LiteralValue {
             Time(val, tu) => write!(f, "{}", display_time64(*val, tu)),
             Timestamp(val, tu, tz) => write!(f, "{}", display_timestamp(*val, tu, tz)),
             Duration(val, tu) => write!(f, "{}", display_duration(*val, tu)),
+            Interval(val) => todo!("display IntervalYearMonth"),
             Float64(val) => write!(f, "{val:.1}"),
             Decimal(val, precision, scale) => {
                 write!(f, "{}", display_decimal128(*val, *precision, *scale))
@@ -193,6 +214,11 @@ impl LiteralValue {
             Decimal(_, precision, scale) => {
                 DataType::Decimal128(*precision as usize, *scale as usize)
             }
+            Interval(IntervalValue::YearMonth(_)) => DataType::Interval(IntervalUnit::YearMonth),
+            Interval(IntervalValue::DayTime(..)) => DataType::Interval(IntervalUnit::DayTime),
+            Interval(IntervalValue::MonthDayNano(..)) => {
+                DataType::Interval(IntervalUnit::MonthDayNano)
+            }
             Series(series) => series.data_type().clone(),
             #[cfg(feature = "python")]
             Python(_) => DataType::Python,
@@ -227,6 +253,12 @@ impl LiteralValue {
                 let physical = Int64Array::from(("literal", [*val].as_slice()));
                 DurationArray::new(Field::new("literal", self.get_type()), physical).into_series()
             }
+            Interval(IntervalValue::YearMonth(val)) => {
+                let physical = Int32Array::from(("literal", [*val].as_slice()));
+                IntervalYearMonthArray::new(Field::new("literal", self.get_type()), physical)
+                    .into_series()
+            }
+            Interval(_) => todo!("IntervalDayTime | MonthDayNano"),
             Float64(val) => Float64Array::from(("literal", [*val].as_slice())).into_series(),
             Decimal(val, ..) => {
                 let physical = Int128Array::from(("literal", [*val].as_slice()));
@@ -272,6 +304,7 @@ impl LiteralValue {
             ),
             // TODO(Colin): Implement the rest of the types in future work for SQL pushdowns.
             Decimal(..) | Series(..) | Time(..) | Binary(..) | Duration(..) => display_sql_err,
+            Interval(..) => todo!("IntervalYearMonth not yet implemented"),
             #[cfg(feature = "python")]
             Python(..) => display_sql_err,
             Struct(..) => display_sql_err,

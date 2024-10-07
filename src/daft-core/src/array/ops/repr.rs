@@ -6,11 +6,11 @@ use crate::{
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, IntervalArray,
+            FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, IntervalYearMonthArray,
             MapArray, SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
         BinaryArray, BooleanArray, DaftNumericType, DataType, ExtensionArray, FixedSizeBinaryArray,
-        NullArray, UInt64Array, Utf8Array,
+        IntervalDayTimeArray, IntervalMonthDayNanoArray, NullArray, UInt64Array, Utf8Array,
     },
     series::Series,
     utils::display::{
@@ -36,8 +36,6 @@ macro_rules! impl_array_str_value {
 
 impl_array_str_value!(BooleanArray, "{}");
 impl_array_str_value!(ExtensionArray, "{:?}");
-impl_array_str_value!(DurationArray, "{}");
-impl_array_str_value!(IntervalArray, "{}");
 
 fn pretty_print_bytes(bytes: &[u8], max_len: usize) -> DaftResult<String> {
     /// influenced by pythons bytes repr
@@ -207,6 +205,22 @@ impl DurationArray {
             },
         );
         Ok(res)
+    }
+}
+
+impl IntervalYearMonthArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        todo!("IntervalYearMonthArray::str_value")
+    }
+}
+impl IntervalDayTimeArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        todo!("IntervalDayTimeArray::str_value")
+    }
+}
+impl IntervalMonthDayNanoArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        todo!("IntervalMonthDayNanoArray::str_value")
     }
 }
 
@@ -428,7 +442,9 @@ impl_array_html_value!(Decimal128Array);
 impl_array_html_value!(DateArray);
 impl_array_html_value!(TimeArray);
 impl_array_html_value!(DurationArray);
-impl_array_html_value!(IntervalArray);
+impl_array_html_value!(IntervalYearMonthArray);
+impl_array_html_value!(IntervalDayTimeArray);
+impl_array_html_value!(IntervalMonthDayNanoArray);
 impl_array_html_value!(TimestampArray);
 impl_array_html_value!(EmbeddingArray);
 

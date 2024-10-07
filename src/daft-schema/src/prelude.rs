@@ -5,4 +5,5 @@ pub use crate::{
     image_mode::ImageMode,
     schema::{Schema, SchemaRef},
     time_unit::{infer_timeunit_from_format_string, TimeUnit},
+    interval_unit::IntervalUnit,
 };

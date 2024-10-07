@@ -38,7 +38,7 @@ use crate::{
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, IntervalArray,
+            FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, IntervalYearMonthArray,
             LogicalArray, MapArray, SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
         DaftArrayType, DaftArrowBackedType, DaftLogicalType, DataType, Field, ImageMode,
@@ -416,7 +416,7 @@ impl DurationArray {
     }
 }
 
-impl IntervalArray {
+impl IntervalYearMonthArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         match dtype {
             DataType::Null => {
@@ -424,12 +424,9 @@ impl IntervalArray {
             }
             dtype if dtype == self.data_type() => Ok(self.clone().into_series()),
             dtype if dtype.is_numeric() => self.physical.cast(dtype),
-            DataType::Int64 => Ok(self.physical.clone().into_series()),
+            DataType::Int32 => Ok(self.physical.clone().into_series()),
             #[cfg(feature = "python")]
-            DataType::Python => {
-                todo!()
-                // cast_logical_to_python_array(self, dtype)
-            }
+            DataType::Python => cast_logical_to_python_array(self, dtype),
             _ => Err(DaftError::TypeError(format!(
                 "Cannot cast Duration to {}",
                 dtype

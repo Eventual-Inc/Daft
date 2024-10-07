@@ -1,4 +1,7 @@
-use arrow2::array;
+use arrow2::{
+    array,
+    types::{days_ms, months_days_ns},
+};
 
 #[cfg(feature = "python")]
 use crate::array::pseudo_arrow::PseudoArrowArray;
@@ -8,9 +11,11 @@ use crate::{
     array::DataArray,
     datatypes::{
         logical::{
-            DateArray, Decimal128Array, DurationArray, IntervalArray, TimeArray, TimestampArray,
+            DateArray, Decimal128Array, DurationArray, IntervalYearMonthArray, TimeArray,
+            TimestampArray,
         },
-        BinaryArray, BooleanArray, DaftNumericType, FixedSizeBinaryArray, NullArray, Utf8Array,
+        BinaryArray, BooleanArray, DaftNumericType, FixedSizeBinaryArray, IntervalDayTimeArray,
+        IntervalMonthDayNanoArray, NullArray, Utf8Array,
     },
 };
 
@@ -62,6 +67,11 @@ impl_asarrow_dataarray!(Utf8Array, array::Utf8Array<i64>);
 impl_asarrow_dataarray!(BooleanArray, array::BooleanArray);
 impl_asarrow_dataarray!(BinaryArray, array::BinaryArray<i64>);
 impl_asarrow_dataarray!(FixedSizeBinaryArray, array::FixedSizeBinaryArray);
+impl_asarrow_dataarray!(IntervalDayTimeArray, array::PrimitiveArray<days_ms>);
+impl_asarrow_dataarray!(
+    IntervalMonthDayNanoArray,
+    array::PrimitiveArray<months_days_ns>
+);
 
 #[cfg(feature = "python")]
 impl_asarrow_dataarray!(PythonArray, PseudoArrowArray<pyo3::PyObject>);
@@ -70,5 +80,6 @@ impl_asarrow_logicalarray!(Decimal128Array, array::PrimitiveArray<i128>);
 impl_asarrow_logicalarray!(DateArray, array::PrimitiveArray<i32>);
 impl_asarrow_logicalarray!(TimeArray, array::PrimitiveArray<i64>);
 impl_asarrow_logicalarray!(DurationArray, array::PrimitiveArray<i64>);
-impl_asarrow_logicalarray!(IntervalArray, array::PrimitiveArray<i64>);
+impl_asarrow_logicalarray!(IntervalYearMonthArray, array::PrimitiveArray<i32>);
+
 impl_asarrow_logicalarray!(TimestampArray, array::PrimitiveArray<i64>);

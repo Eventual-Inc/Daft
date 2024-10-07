@@ -6,6 +6,7 @@ pub use daft_schema::{
     field::{Field, FieldID, FieldRef},
     image_format::ImageFormat,
     image_mode::ImageMode,
+    interval_unit::IntervalUnit,
     time_unit::TimeUnit,
 };
 
@@ -24,6 +25,7 @@ pub use super::{
 };
 pub use crate::datatypes::{
     logical::DaftImageryType, DateType, Decimal128Type, DurationType, EmbeddingType,
-    FixedShapeImageType, FixedShapeSparseTensorType, FixedShapeTensorType, ImageType, MapType,
+    FixedShapeImageType, FixedShapeSparseTensorType, FixedShapeTensorType, ImageType,
+    IntervalDayTimeType, IntervalMonthDayNanoType, IntervalYearMonthType, MapType,
     SparseTensorType, TensorType, TimeType, TimestampType,
 };

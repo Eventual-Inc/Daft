@@ -5,7 +5,7 @@ use common_error::DaftResult;
 use super::{Growable, GrowableArray};
 use crate::{
     array::prelude::*,
-    datatypes::{prelude::*, IntervalType},
+    datatypes::{prelude::*, IntervalYearMonthType},
     series::{IntoSeries, Series},
 };
 
@@ -72,7 +72,7 @@ macro_rules! impl_logical_growable {
 
 impl_logical_growable!(LogicalTimestampGrowable, TimestampType);
 impl_logical_growable!(LogicalDurationGrowable, DurationType);
-impl_logical_growable!(LogicalIntervalGrowable, IntervalType);
+impl_logical_growable!(LogicalIntervalYearMonthGrowable, IntervalYearMonthType);
 impl_logical_growable!(LogicalDateGrowable, DateType);
 impl_logical_growable!(LogicalTimeGrowable, TimeType);
 impl_logical_growable!(LogicalEmbeddingGrowable, EmbeddingType);

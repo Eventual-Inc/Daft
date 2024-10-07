@@ -7,7 +7,10 @@ use crate::{
         growable::{Growable, GrowableArray},
         prelude::*,
     },
-    datatypes::{logical::IntervalArray, prelude::*},
+    datatypes::{
+        logical::IntervalYearMonthArray, prelude::*, IntervalDayTimeArray,
+        IntervalMonthDayNanoArray,
+    },
 };
 
 impl<T> DataArray<T>
@@ -60,11 +63,15 @@ impl_dataarray_take!(BooleanArray);
 impl_dataarray_take!(BinaryArray);
 impl_dataarray_take!(NullArray);
 impl_dataarray_take!(ExtensionArray);
+impl_dataarray_take!(IntervalDayTimeArray);
+impl_dataarray_take!(IntervalMonthDayNanoArray);
+
 impl_logicalarray_take!(Decimal128Array);
 impl_logicalarray_take!(DateArray);
 impl_logicalarray_take!(TimeArray);
 impl_logicalarray_take!(DurationArray);
-impl_logicalarray_take!(IntervalArray);
+impl_logicalarray_take!(IntervalYearMonthArray);
+
 impl_logicalarray_take!(TimestampArray);
 impl_logicalarray_take!(EmbeddingArray);
 impl_logicalarray_take!(ImageArray);

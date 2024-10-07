@@ -5,7 +5,8 @@ use common_error::DaftResult;
 use super::{
     DaftArrayType, DaftDataType, DataArray, DataType, Decimal128Type, DurationType, EmbeddingType,
     FixedShapeImageType, FixedShapeSparseTensorType, FixedShapeTensorType, FixedSizeListArray,
-    ImageType, IntervalType, MapType, SparseTensorType, TensorType, TimeType, TimestampType,
+    ImageType, IntervalDayTimeType, IntervalMonthDayNanoType, IntervalYearMonthType, MapType,
+    SparseTensorType, TensorType, TimeType, TimestampType,
 };
 use crate::{
     array::{ListArray, StructArray},
@@ -167,7 +168,7 @@ pub type Decimal128Array = LogicalArray<Decimal128Type>;
 pub type DateArray = LogicalArray<DateType>;
 pub type TimeArray = LogicalArray<TimeType>;
 pub type DurationArray = LogicalArray<DurationType>;
-pub type IntervalArray = LogicalArray<IntervalType>;
+pub type IntervalYearMonthArray = LogicalArray<IntervalYearMonthType>;
 pub type ImageArray = LogicalArray<ImageType>;
 pub type TimestampArray = LogicalArray<TimestampType>;
 pub type TensorArray = LogicalArray<TensorType>;

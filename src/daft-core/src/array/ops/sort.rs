@@ -12,11 +12,12 @@ use crate::{
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, IntervalArray,
+            FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, IntervalYearMonthArray,
             MapArray, SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
         BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, ExtensionArray,
-        FixedSizeBinaryArray, Float32Array, Float64Array, NullArray, Utf8Array,
+        FixedSizeBinaryArray, Float32Array, Float64Array, IntervalDayTimeArray,
+        IntervalMonthDayNanoArray, NullArray, Utf8Array,
     },
     kernels::search_sorted::{build_compare_with_nulls, cmp_float},
     series::Series,
@@ -613,6 +614,18 @@ impl ExtensionArray {
     }
 }
 
+impl IntervalDayTimeArray {
+    pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
+        todo!("impl sort for IntervalDayTimeArray")
+    }
+}
+
+impl IntervalMonthDayNanoArray {
+    pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
+        todo!("impl sort for IntervalMonthDayNanoArray")
+    }
+}
+
 #[cfg(feature = "python")]
 impl PythonArray {
     pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
@@ -648,7 +661,7 @@ impl DurationArray {
     }
 }
 
-impl IntervalArray {
+impl IntervalYearMonthArray {
     pub fn sort(&self, descending: bool) -> DaftResult<Self> {
         let new_array = self.physical.sort(descending)?;
         Ok(Self::new(self.field.clone(), new_array))
