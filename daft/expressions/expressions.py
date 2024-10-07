@@ -72,7 +72,6 @@ elif os.getenv("DAFT_SPHINX_BUILD") == "1":
 
 
 def lit(value: object) -> Expression:
-    print("lit: ", value)
     """Creates an Expression representing a column with every value set to the provided value
 
     Example:
