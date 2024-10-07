@@ -58,6 +58,7 @@ impl From<arrow2::error::Error> for DaftError {
 }
 
 #[cfg(test)]
+#[cfg(feature = "io_parquet")]
 mod tests {
     use std::io::ErrorKind;
 

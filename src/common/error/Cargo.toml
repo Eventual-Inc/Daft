@@ -1,6 +1,5 @@
 [dependencies]
-arrow2 = {workspace = true}
-parquet2 = {workspace = true}
+arrow2 = {workspace = true, features = ["io_parquet"]}
 pyo3 = {workspace = true, optional = true}
 regex = {workspace = true}
 serde_json = {workspace = true}

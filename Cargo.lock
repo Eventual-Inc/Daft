@@ -1324,7 +1324,6 @@ name = "common-error"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow2",
- "parquet2",
  "pyo3",
  "regex",
  "serde_json",
