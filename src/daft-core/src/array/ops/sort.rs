@@ -12,8 +12,8 @@ use crate::{
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
-            SparseTensorArray, TensorArray, TimeArray, TimestampArray,
+            FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, IntervalArray,
+            MapArray, SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
         BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, ExtensionArray,
         FixedSizeBinaryArray, Float32Array, Float64Array, NullArray, Utf8Array,
@@ -642,6 +642,13 @@ impl TimeArray {
 }
 
 impl DurationArray {
+    pub fn sort(&self, descending: bool) -> DaftResult<Self> {
+        let new_array = self.physical.sort(descending)?;
+        Ok(Self::new(self.field.clone(), new_array))
+    }
+}
+
+impl IntervalArray {
     pub fn sort(&self, descending: bool) -> DaftResult<Self> {
         let new_array = self.physical.sort(descending)?;
         Ok(Self::new(self.field.clone(), new_array))

@@ -5,7 +5,9 @@ use common_error::{DaftError, DaftResult};
 use derive_more::Display;
 use serde::{Deserialize, Serialize};
 
-use crate::{field::Field, image_mode::ImageMode, time_unit::TimeUnit};
+use crate::{
+    field::Field, image_mode::ImageMode, interval_unit::IntervalUnit, time_unit::TimeUnit,
+};
 
 #[derive(Clone, Debug, Display, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum DataType {
@@ -83,6 +85,12 @@ pub enum DataType {
     /// Measure of elapsed time. This elapsed time is a physical duration (i.e. 1s as defined in S.I.)
     #[display("Duration[{_0}]")]
     Duration(TimeUnit),
+
+    #[display("Interval({_0})")]
+    /// A duration of **relative** time (year, day, etc).
+    /// This is not a physical duration, but a calendar duration.
+    /// This differs from `Duration` in that it is not a fixed amount of time, and is affected by calendar events (leap years, daylight savings, etc.)
+    Interval(IntervalUnit),
 
     /// Opaque binary data of variable length whose offsets are represented as [`i64`].
     Binary,
@@ -219,6 +227,8 @@ impl DataType {
             Self::Date => Ok(ArrowType::Date32),
             Self::Time(unit) => Ok(ArrowType::Time64(unit.to_arrow())),
             Self::Duration(unit) => Ok(ArrowType::Duration(unit.to_arrow())),
+            Self::Interval(unit) => Ok(ArrowType::Interval(unit.to_arrow())),
+
             Self::Binary => Ok(ArrowType::LargeBinary),
             Self::FixedSizeBinary(size) => Ok(ArrowType::FixedSizeBinary(*size)),
             Self::Utf8 => Ok(ArrowType::LargeUtf8),

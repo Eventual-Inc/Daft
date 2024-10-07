@@ -78,6 +78,10 @@ pub fn html_value(s: &Series, idx: usize) -> String {
             let arr = s.duration().unwrap();
             arr.html_value(idx)
         }
+        DataType::Interval(_) => {
+            let arr = s.interval().unwrap();
+            arr.html_value(idx)
+        }
         DataType::Binary => {
             let arr = s.binary().unwrap();
             arr.html_value(idx)

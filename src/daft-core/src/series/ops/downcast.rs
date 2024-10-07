@@ -1,7 +1,6 @@
 use common_error::DaftResult;
 use logical::{
-    EmbeddingArray, FixedShapeSparseTensorArray, FixedShapeTensorArray, SparseTensorArray,
-    TensorArray,
+    EmbeddingArray, FixedShapeSparseTensorArray, FixedShapeTensorArray, IntervalArray, SparseTensorArray, TensorArray
 };
 
 use self::logical::{DurationArray, ImageArray, MapArray};
@@ -133,6 +132,10 @@ impl Series {
     }
 
     pub fn duration(&self) -> DaftResult<&DurationArray> {
+        self.downcast()
+    }
+
+    pub fn interval(&self) -> DaftResult<&IntervalArray> {
         self.downcast()
     }
 

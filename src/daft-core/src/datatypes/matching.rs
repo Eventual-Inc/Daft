@@ -25,6 +25,7 @@ macro_rules! with_match_daft_types {(
         Date => __with_ty__! { DateType },
         Time(_) => __with_ty__! { TimeType },
         Duration(_) => __with_ty__! { DurationType },
+        Interval(_) => __with_ty__! { IntervalType },
         Binary => __with_ty__! { BinaryType },
         FixedSizeBinary(_) => __with_ty__! { FixedSizeBinaryType },
         Utf8 => __with_ty__! { Utf8Type },

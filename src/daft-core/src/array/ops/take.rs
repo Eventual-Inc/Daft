@@ -7,7 +7,7 @@ use crate::{
         growable::{Growable, GrowableArray},
         prelude::*,
     },
-    datatypes::prelude::*,
+    datatypes::{logical::IntervalArray, prelude::*},
 };
 
 impl<T> DataArray<T>
@@ -64,6 +64,7 @@ impl_logicalarray_take!(Decimal128Array);
 impl_logicalarray_take!(DateArray);
 impl_logicalarray_take!(TimeArray);
 impl_logicalarray_take!(DurationArray);
+impl_logicalarray_take!(IntervalArray);
 impl_logicalarray_take!(TimestampArray);
 impl_logicalarray_take!(EmbeddingArray);
 impl_logicalarray_take!(ImageArray);

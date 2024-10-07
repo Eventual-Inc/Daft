@@ -3,7 +3,7 @@ use std::sync::Arc;
 use super::{ArrayWrapper, IntoSeries, Series};
 use crate::{
     array::{ops::GroupIndices, prelude::*},
-    datatypes::prelude::*,
+    datatypes::{logical::IntervalArray, prelude::*},
     series::{DaftResult, SeriesLike},
     with_match_integer_daft_types,
 };
@@ -173,6 +173,7 @@ impl_series_like_for_logical_array!(Decimal128Array);
 impl_series_like_for_logical_array!(DateArray);
 impl_series_like_for_logical_array!(TimeArray);
 impl_series_like_for_logical_array!(DurationArray);
+impl_series_like_for_logical_array!(IntervalArray);
 impl_series_like_for_logical_array!(TimestampArray);
 impl_series_like_for_logical_array!(ImageArray);
 impl_series_like_for_logical_array!(FixedShapeImageArray);

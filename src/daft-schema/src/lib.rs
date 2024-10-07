@@ -8,3 +8,4 @@ pub mod prelude;
 pub mod python;
 pub mod schema;
 pub mod time_unit;
+pub mod interval_unit;
