@@ -38,3 +38,19 @@ def test_stddev(data_and_expected):
         pass
 
     assert stddev["a"] == expected
+
+
+@pytest.mark.parametrize("data_and_expected", TESTS)
+def test_stddev_with_multiple_partitions(data_and_expected):
+    data, expected = data_and_expected
+    df = daft.from_pydict({"a": data}).into_partitions(2)
+    result = df.agg(daft.col("a").stddev()).collect()
+    rows = result.iter_rows()
+    stddev = next(rows)
+    try:
+        next(rows)
+        assert False
+    except StopIteration:
+        pass
+
+    assert stddev["a"] == expected
