@@ -327,6 +327,10 @@ impl PyExpr {
         Ok(self.expr.clone().mean().into())
     }
 
+    pub fn stddev(&self) -> PyResult<Self> {
+        Ok(self.expr.clone().stddev().into())
+    }
+
     pub fn min(&self) -> PyResult<Self> {
         Ok(self.expr.clone().min().into())
     }

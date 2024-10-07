@@ -505,6 +505,10 @@ impl Expr {
         Self::Agg(AggExpr::Mean(self)).into()
     }
 
+    pub fn stddev(self: ExprRef) -> ExprRef {
+        Self::Agg(AggExpr::Stddev(self)).into()
+    }
+
     pub fn min(self: ExprRef) -> ExprRef {
         Self::Agg(AggExpr::Min(self)).into()
     }
