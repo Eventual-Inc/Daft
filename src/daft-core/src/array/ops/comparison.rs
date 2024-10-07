@@ -766,7 +766,7 @@ impl DaftLogical<bool> for BooleanArray {
                 Bitmap::new_zeroed(self.len()),
                 validity.cloned(),
             );
-            return Ok(Self::from((self.name(), arrow_array)));
+            Ok(Self::from((self.name(), arrow_array)))
         }
     }
 
@@ -780,9 +780,9 @@ impl DaftLogical<bool> for BooleanArray {
                 validity.cloned(),
             );
             return Ok(Self::from((self.name(), arrow_array)));
-        } else {
-            Ok(self.clone())
         }
+
+        Ok(self.clone())
     }
 
     fn xor(&self, rhs: bool) -> Self::Output {

@@ -10,12 +10,14 @@ pub struct PartitionSpec {
 }
 
 impl PartitionSpec {
+    #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         res.push(format!("Keys = {}", self.keys));
         res
     }
 
+    #[must_use]
     pub fn to_fill_map(&self) -> HashMap<&str, ExprRef> {
         self.keys
             .schema

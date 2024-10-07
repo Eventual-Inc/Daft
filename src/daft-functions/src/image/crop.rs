@@ -42,8 +42,7 @@ impl ScalarUDF for ImageCrop {
                     dtype => {
                         return Err(DaftError::TypeError(
                             format!(
-                            "bbox list field must be List with numeric child type or FixedSizeList with size 4, got {}",
-                dtype
+                            "bbox list field must be List with numeric child type or FixedSizeList with size 4, got {dtype}"
                             )
                         ));
                     }
@@ -56,8 +55,7 @@ impl ScalarUDF for ImageCrop {
                         Ok(Field::new(input_field.name, DataType::Image(Some(*mode))))
                     }
                     _ => Err(DaftError::TypeError(format!(
-                        "Image crop can only crop ImageArrays and FixedShapeImage, got {}",
-                        input_field
+                        "Image crop can only crop ImageArrays and FixedShapeImage, got {input_field}"
                     ))),
                 }
             }
@@ -79,6 +77,7 @@ impl ScalarUDF for ImageCrop {
     }
 }
 
+#[must_use]
 pub fn crop(input: ExprRef, bbox: ExprRef) -> ExprRef {
     ScalarFunction::new(ImageCrop {}, vec![input, bbox]).into()
 }

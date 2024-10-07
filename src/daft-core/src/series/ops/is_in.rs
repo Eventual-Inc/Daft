@@ -28,7 +28,7 @@ impl Series {
             (self.clone(), items.clone())
         };
 
-        if let DataType::Boolean = output_type {
+        if output_type == DataType::Boolean {
             match comp_type {
                 #[cfg(feature = "python")]
                 DataType::Python => Ok(py_membership_op_utilfn(self, items)?

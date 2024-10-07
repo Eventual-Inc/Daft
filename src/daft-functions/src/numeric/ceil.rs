@@ -30,6 +30,7 @@ impl ScalarUDF for Ceil {
     }
 }
 
+#[must_use]
 pub fn ceil(input: ExprRef) -> ExprRef {
     ScalarFunction::new(Ceil {}, vec![input]).into()
 }

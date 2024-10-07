@@ -1,7 +1,7 @@
-use std::ops::Neg;
-use std::panic::RefUnwindSafe;
+use std::{ops::Neg, panic::RefUnwindSafe};
 
 use bytemuck::{Pod, Zeroable};
+use serde::{Deserialize, Serialize};
 
 use super::PrimitiveType;
 
@@ -87,7 +87,9 @@ native_type!(f64, PrimitiveType::Float64);
 native_type!(i128, PrimitiveType::Int128);
 
 /// The in-memory representation of the DayMillisecond variant of arrow's "Interval" logical type.
-#[derive(Debug, Copy, Clone, Default, PartialEq, Eq, Hash, Zeroable, Pod)]
+#[derive(
+    Debug, Copy, Clone, Default, PartialEq, Eq, Hash, Zeroable, Pod, Serialize, Deserialize,
+)]
 #[allow(non_camel_case_types)]
 #[repr(C)]
 pub struct days_ms(pub i32, pub i32);
@@ -179,7 +181,9 @@ impl NativeType for days_ms {
 }
 
 /// The in-memory representation of the MonthDayNano variant of the "Interval" logical type.
-#[derive(Debug, Copy, Clone, Default, PartialEq, Eq, Hash, Zeroable, Pod)]
+#[derive(
+    Debug, Copy, Clone, Default, PartialEq, Eq, Hash, Zeroable, Pod, Serialize, Deserialize,
+)]
 #[allow(non_camel_case_types)]
 #[repr(C)]
 pub struct months_days_ns(pub i32, pub i32, pub i64);

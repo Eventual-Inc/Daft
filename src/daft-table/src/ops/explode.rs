@@ -73,7 +73,7 @@ impl Table {
         }
         let mut exploded_columns = evaluated_columns
             .iter()
-            .map(|c| c.explode())
+            .map(daft_core::series::Series::explode)
             .collect::<DaftResult<Vec<_>>>()?;
 
         let capacity_expected = exploded_columns.first().unwrap().len();

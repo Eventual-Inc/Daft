@@ -16,11 +16,13 @@ pub struct PyDaftPlanningConfig {
 #[pymethods]
 impl PyDaftPlanningConfig {
     #[new]
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     #[staticmethod]
+    #[must_use]
     pub fn from_env() -> Self {
         Self {
             config: Arc::new(DaftPlanningConfig::from_env()),
@@ -71,11 +73,13 @@ pub struct PyDaftExecutionConfig {
 #[pymethods]
 impl PyDaftExecutionConfig {
     #[new]
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     #[staticmethod]
+    #[must_use]
     pub fn from_env() -> Self {
         Self {
             config: Arc::new(DaftExecutionConfig::from_env()),

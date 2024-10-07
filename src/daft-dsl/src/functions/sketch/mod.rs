@@ -13,7 +13,7 @@ impl std::hash::Hash for HashableVecPercentiles {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.0
             .iter()
-            .for_each(|p| p.to_be_bytes().iter().for_each(|&b| state.write_u8(b)))
+            .for_each(|p| p.to_be_bytes().iter().for_each(|&b| state.write_u8(b)));
     }
 }
 
@@ -43,7 +43,7 @@ pub fn sketch_percentile(input: ExprRef, percentiles: &[f64], force_list_output:
             percentiles: HashableVecPercentiles(percentiles.to_vec()),
             force_list_output,
         }),
-        inputs: vec![input.clone()],
+        inputs: vec![input],
     }
     .into()
 }

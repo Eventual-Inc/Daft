@@ -29,7 +29,7 @@ where
     }
     #[inline]
     fn add_nulls(&mut self, additional: usize) {
-        self.physical_growable.add_nulls(additional)
+        self.physical_growable.add_nulls(additional);
     }
     #[inline]
     fn build(&mut self) -> DaftResult<Series> {

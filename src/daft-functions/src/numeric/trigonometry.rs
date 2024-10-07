@@ -56,6 +56,7 @@ macro_rules! trigonometry {
             }
         }
 
+        #[must_use]
         pub fn $name(input: ExprRef) -> ExprRef {
             ScalarFunction::new($variant, vec![input]).into()
         }
@@ -102,8 +103,7 @@ impl ScalarUDF for Atan2 {
             (dt1, dt2) if dt1.is_numeric() && dt2.is_numeric() => DataType::Float64,
             (dt1, dt2) => {
                 return Err(DaftError::TypeError(format!(
-                    "Expected inputs to atan2 to be numeric, got {} and {}",
-                    dt1, dt2
+                    "Expected inputs to atan2 to be numeric, got {dt1} and {dt2}"
                 )))
             }
         };
@@ -121,6 +121,7 @@ impl ScalarUDF for Atan2 {
     }
 }
 
+#[must_use]
 pub fn atan2(x: ExprRef, y: ExprRef) -> ExprRef {
     ScalarFunction::new(Atan2 {}, vec![x, y]).into()
 }

@@ -1,5 +1,10 @@
+use arrow2::types::{days_ms, months_days_ns};
+
 use super::DataArray;
-use crate::{array::prelude::*, datatypes::prelude::*};
+use crate::{
+    array::prelude::*,
+    datatypes::{prelude::*, IntervalDayTimeArray, IntervalMonthDayNanoArray},
+};
 
 impl<T> DataArray<T>
 where
@@ -120,5 +125,35 @@ impl BooleanArray {
             iter,
         ));
         Self::new(Field::new(name, DataType::Boolean).into(), arrow_array).unwrap()
+    }
+}
+
+impl IntervalDayTimeArray {
+    pub fn from_iter(
+        name: &str,
+        iter: impl arrow2::trusted_len::TrustedLen<Item = Option<days_ms>>,
+    ) -> Self {
+        let arrow_array = Box::new(arrow2::array::DaysMsArray::from_trusted_len_iter(iter));
+        Self::new(
+            Field::new(name, DataType::Interval(IntervalUnit::DayTime)).into(),
+            arrow_array,
+        )
+        .unwrap()
+    }
+}
+
+impl IntervalMonthDayNanoArray {
+    pub fn from_iter(
+        name: &str,
+        iter: impl arrow2::trusted_len::TrustedLen<Item = Option<months_days_ns>>,
+    ) -> Self {
+        let arrow_array = Box::new(arrow2::array::MonthsDaysNsArray::from_trusted_len_iter(
+            iter,
+        ));
+        Self::new(
+            Field::new(name, DataType::Interval(IntervalUnit::MonthDayNano)).into(),
+            arrow_array,
+        )
+        .unwrap()
     }
 }

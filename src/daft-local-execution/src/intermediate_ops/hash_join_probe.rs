@@ -21,7 +21,7 @@ enum HashJoinProbeState {
 
 impl HashJoinProbeState {
     fn set_table(&mut self, table: &Arc<dyn Probeable>, tables: &Arc<Vec<Table>>) {
-        if let Self::Building = self {
+        if matches!(self, Self::Building) {
             *self = Self::ReadyToProbe(table.clone(), tables.clone());
         } else {
             panic!("HashJoinProbeState should only be in Building state when setting table")
@@ -98,7 +98,7 @@ impl HashJoinProbeOperator {
     fn probe_inner(
         &self,
         input: &Arc<MicroPartition>,
-        state: &mut HashJoinProbeState,
+        state: &HashJoinProbeState,
     ) -> DaftResult<Arc<MicroPartition>> {
         let (probe_table, tables) = state.get_probeable_and_table();
 
@@ -161,7 +161,7 @@ impl HashJoinProbeOperator {
     fn probe_left_right(
         &self,
         input: &Arc<MicroPartition>,
-        state: &mut HashJoinProbeState,
+        state: &HashJoinProbeState,
     ) -> DaftResult<Arc<MicroPartition>> {
         let (probe_table, tables) = state.get_probeable_and_table();
 
@@ -170,7 +170,7 @@ impl HashJoinProbeOperator {
         let mut build_side_growable = GrowableTable::new(
             &tables.iter().collect::<Vec<_>>(),
             true,
-            tables.iter().map(|t| t.len()).sum(),
+            tables.iter().map(daft_table::Table::len).sum(),
         )?;
 
         let input_tables = input.get_tables()?;
@@ -233,33 +233,28 @@ impl IntermediateOperator for HashJoinProbeOperator {
         input: &PipelineResultType,
         state: Option<&mut Box<dyn IntermediateOperatorState>>,
     ) -> DaftResult<IntermediateOperatorResult> {
-        match idx {
-            0 => {
-                let state = state
-                    .expect("HashJoinProbeOperator should have state")
-                    .as_any_mut()
-                    .downcast_mut::<HashJoinProbeState>()
-                    .expect("HashJoinProbeOperator state should be HashJoinProbeState");
-                let (probe_table, tables) = input.as_probe_table();
-                state.set_table(probe_table, tables);
-                Ok(IntermediateOperatorResult::NeedMoreInput(None))
-            }
-            _ => {
-                let state = state
-                    .expect("HashJoinProbeOperator should have state")
-                    .as_any_mut()
-                    .downcast_mut::<HashJoinProbeState>()
-                    .expect("HashJoinProbeOperator state should be HashJoinProbeState");
-                let input = input.as_data();
-                let out = match self.join_type {
-                    JoinType::Inner => self.probe_inner(input, state),
-                    JoinType::Left | JoinType::Right => self.probe_left_right(input, state),
-                    _ => {
-                        unimplemented!("Only Inner, Left, and Right joins are supported in HashJoinProbeOperator")
-                    }
-                }?;
-                Ok(IntermediateOperatorResult::NeedMoreInput(Some(out)))
-            }
+        let state = state
+            .expect("HashJoinProbeOperator should have state")
+            .as_any_mut()
+            .downcast_mut::<HashJoinProbeState>()
+            .expect("HashJoinProbeOperator state should be HashJoinProbeState");
+
+        if idx == 0 {
+            let (probe_table, tables) = input.as_probe_table();
+            state.set_table(probe_table, tables);
+            Ok(IntermediateOperatorResult::NeedMoreInput(None))
+        } else {
+            let input = input.as_data();
+            let out = match self.join_type {
+                JoinType::Inner => self.probe_inner(input, state),
+                JoinType::Left | JoinType::Right => self.probe_left_right(input, state),
+                _ => {
+                    unimplemented!(
+                        "Only Inner, Left, and Right joins are supported in HashJoinProbeOperator"
+                    )
+                }
+            }?;
+            Ok(IntermediateOperatorResult::NeedMoreInput(Some(out)))
         }
     }
 

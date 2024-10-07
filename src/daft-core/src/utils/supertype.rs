@@ -21,6 +21,7 @@ pub fn try_get_supertype(l: &DataType, r: &DataType) -> DaftResult<DataType> {
     }
 }
 
+#[must_use]
 pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
     fn inner(l: &DataType, r: &DataType) -> Option<DataType> {
         if l == r {

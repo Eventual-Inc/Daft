@@ -45,6 +45,7 @@ impl<L: DaftLogicalType, P: DaftArrayType> LogicalArrayImpl<L, P> {
             &field.dtype.to_physical(),
             physical.data_type()
         );
+
         Self {
             physical,
             field,

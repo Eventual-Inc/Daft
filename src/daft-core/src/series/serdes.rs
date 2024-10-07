@@ -159,12 +159,13 @@ impl<'d> serde::Deserialize<'d> for Series {
                     DataType::Extension(..) => {
                         let physical = map.next_value::<Series>()?;
                         let physical = physical.to_arrow();
-                        let ext_array = physical.to_type(field.dtype.to_arrow().unwrap());
+                        let ext_array =
+                            physical.convert_logical_type(field.dtype.to_arrow().unwrap());
                         Ok(ExtensionArray::new(Arc::new(field), ext_array)
                             .unwrap()
                             .into_series())
                     }
-                    DataType::Map(..) => {
+                    DataType::Map { .. } => {
                         let physical = map.next_value::<Series>()?;
                         Ok(MapArray::new(
                             Arc::new(field),
@@ -256,6 +257,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                     DataType::Duration(..) => {
                         type PType = <<DurationType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
                         let physical = map.next_value::<Series>()?;
+                        
                         Ok(
                             DurationArray::new(
                                 field,
@@ -264,17 +266,14 @@ impl<'d> serde::Deserialize<'d> for Series {
                             .into_series(),
                         )
                     }
-                    DataType::Interval(..) => {
-                        todo!()
-                        // type PType = <<IntervalType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
-                        // let physical = map.next_value::<Series>()?;
-                        // Ok(
-                        //     IntervalArray::new(
-                        //         field,
-                        //         physical.downcast::<PType>().unwrap().clone(),
-                        //     )
-                        //     .into_series(),
-                        // )
+                    DataType::Interval(IntervalUnit::DayTime) => {
+                        type PType = <<IntervalDayTimeType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
+                        let physical = map.next_value::<Series>()?;
+                        let physical = physical.downcast::<IntervalDayTimeArray>().unwrap().clone();
+                        Ok(
+                            IntervalDayTimeArray::new(Arc::new(field), Box::new(physical))
+                                .into_series(),
+                        )
                     }
                     DataType::Embedding(..) => {
                         type PType = <<EmbeddingType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
