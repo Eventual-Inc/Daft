@@ -57,8 +57,9 @@ if TYPE_CHECKING:
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
-    from daft.daft import FileFormat, IOConfig, JoinType
+    from daft.daft import FileFormat, IOConfig, JoinType, PyExpr
     from daft.logical.schema import Schema
+    from daft.runners.partitioning import PartialPartitionMetadata
 
 
 # A PhysicalPlan that is still being built - may yield both PartitionTaskBuilders and PartitionTasks.
@@ -1614,6 +1615,194 @@ def fanout_random(child_plan: InProgressPhysicalPlan[PartitionT], num_partitions
             step = step.add_instruction(instruction)
         yield step
         seed += 1
+
+
+def fully_materializing_push_exchange_op(
+    child_plan: InProgressPhysicalPlan[PartitionT], partition_by: list[PyExpr], num_partitions: int
+) -> InProgressPhysicalPlan[PartitionT]:
+    from daft.expressions import Expression
+
+    # Step 1: Naively materialize all child partitions
+    stage_id_children = next(stage_id_counter)
+    materialized_partitions: list[SingleOutputPartitionTask] = []
+    for step in child_plan:
+        if isinstance(step, PartitionTaskBuilder):
+            task = step.finalize_partition_task_single_output(stage_id=stage_id_children)
+            materialized_partitions.append(task)
+            yield task
+        elif isinstance(step, PartitionTask):
+            yield step
+        elif step is None:
+            yield None
+        else:
+            yield step
+
+    # Step 2: Wait for all partitions to be done
+    while any(not p.done() for p in materialized_partitions):
+        yield None
+
+    with get_context().shuffle_service_factory().push_based_shuffle_service_context(
+        num_partitions, partition_by=ExpressionsProjection([Expression._from_pyexpr(e) for e in partition_by])
+    ) as shuffle_service:
+        results = shuffle_service.run([p.partition() for p in materialized_partitions])
+
+    for reduced_data in results:
+        reduce_task = PartitionTaskBuilder(
+            inputs=[reduced_data],
+            partial_metadatas=None,
+            resource_request=ResourceRequest(),
+        )
+        yield reduce_task
+
+
+def fully_materializing_exchange_op(
+    child_plan: InProgressPhysicalPlan[PartitionT], partition_by: list[PyExpr], num_partitions: int
+) -> InProgressPhysicalPlan[PartitionT]:
+    from daft.expressions import Expression
+
+    # Step 1: Naively materialize all child partitions
+    stage_id_children = next(stage_id_counter)
+    materialized_partitions: list[SingleOutputPartitionTask] = []
+    for step in child_plan:
+        if isinstance(step, PartitionTaskBuilder):
+            task = step.finalize_partition_task_single_output(stage_id=stage_id_children)
+            materialized_partitions.append(task)
+            yield task
+        elif isinstance(step, PartitionTask):
+            yield step
+        elif step is None:
+            yield None
+        else:
+            yield step
+
+    # Step 2: Wait for all partitions to be done
+    while any(not p.done() for p in materialized_partitions):
+        yield None
+
+    # Step 3: Yield the map tasks
+    stage_id_map_tasks = next(stage_id_counter)
+    materialized_map_partitions: list[MultiOutputPartitionTask] = []
+    while materialized_partitions:
+        materialized_child_partition = materialized_partitions.pop(0)
+        map_task = (
+            PartitionTaskBuilder(
+                inputs=[materialized_child_partition.partition()],
+                partial_metadatas=materialized_child_partition.partial_metadatas,
+                resource_request=ResourceRequest(),
+            )
+            .add_instruction(
+                execution_step.FanoutHash(
+                    _num_outputs=num_partitions,
+                    partition_by=ExpressionsProjection([Expression._from_pyexpr(expr) for expr in partition_by]),
+                ),
+                ResourceRequest(),
+            )
+            .finalize_partition_task_multi_output(stage_id=stage_id_map_tasks)
+        )
+        materialized_map_partitions.append(map_task)
+        yield map_task
+
+    # Step 4: Wait on all the map tasks to complete
+    while any(not p.done() for p in materialized_map_partitions):
+        yield None
+
+    # Step 5: "Transpose the results" and run reduce tasks
+    transposed_results: list[list[tuple[PartitionT, PartialPartitionMetadata]]] = [[] for _ in range(num_partitions)]
+    for map_task in materialized_map_partitions:
+        partitions = map_task.partitions()
+        partition_metadatas = map_task.partial_metadatas
+        for i, (partition, meta) in enumerate(zip(partitions, partition_metadatas)):
+            transposed_results[i].append((partition, meta))
+
+    for i, partitions in enumerate(transposed_results):
+        reduce_task = PartitionTaskBuilder(
+            inputs=[p for p, _ in partitions],
+            partial_metadatas=[m for _, m in partitions],
+            resource_request=ResourceRequest(),
+        ).add_instruction(
+            instruction=execution_step.ReduceMerge(),
+        )
+        yield reduce_task
+
+
+# This was the complicated one...
+#
+# def fully_materializing_exchange_op(
+#     child_plan: InProgressPhysicalPlan[PartitionT], partition_by: list[PyExpr], num_partitions: int
+# ) -> InProgressPhysicalPlan[PartitionT]:
+#     from daft.execution.physical_plan_shuffles import HashPartitionRequest
+
+#     prior_stage_id = next(stage_id_counter)
+
+#     # Yield children stuff and avoid creating the shuffle service until we start running
+#     # tasks in the stage directly prior to this
+#     child_task = None
+#     while child_task is None:
+#         step = next(child_plan)
+#         if step is None:
+#             yield None
+#             continue
+#         elif isinstance(step, PartitionTask):
+#             yield step
+#             continue
+#         else:
+#             assert isinstance(step, PartitionTaskBuilder)
+#             child_task = step.finalize_partition_task_single_output(prior_stage_id)
+#             break
+
+#     materializations: deque[SingleOutputPartitionTask] = deque()
+#     materializations.append(child_task)
+#     yield child_task
+
+#     MAX_NUM_CHILD_INFLIGHT_TASKS_BEFORE_INGESTION = 128
+
+#     # Create the shuffle service and start materializing children and sending data to the service
+#     with get_context().shuffle_service_factory().fully_materializing_shuffle_service_context(
+#         num_partitions,
+#         [c.name() for c in partition_by],  # TODO: Assume no-op here for now, YOLO!
+#     ) as shuffle_service:
+#         child_plan_exhausted = False
+#         while not child_plan_exhausted or len(materializations) > 0:
+#             # Ingest as many materialized results as possible
+#             materialized: list[SingleOutputPartitionTask] = []
+#             while len(materializations) > 0 and materializations[0].done():
+#                 materialized.append(materializations.popleft())
+#             results = [done_task.result() for done_task in materialized]
+#             if len(results) > 0:
+#                 _ingest_results = shuffle_service.ingest([r.partition for r in results])
+
+#             # Keep pulling steps from children until either:
+#             # 1. We hit `MAX_NUM_CHILD_INFLIGHT_TASKS_BEFORE_INGESTION` and want to chill a bit to ingest the data
+#             # 2. We exhaust the child plan
+#             while len(materializations) < MAX_NUM_CHILD_INFLIGHT_TASKS_BEFORE_INGESTION:
+#                 try:
+#                     step = next(child_plan)
+#                 except StopIteration:
+#                     child_plan_exhausted = True
+#                     break
+#                 if step is None:
+#                     yield step
+#                 elif isinstance(step, PartitionTask):
+#                     yield step
+#                 else:
+#                     assert isinstance(step, PartitionTaskBuilder)
+#                     child_task = step.finalize_partition_task_single_output(prior_stage_id)
+#                     materializations.append(child_task)
+#                     yield child_task
+
+#         # Read from the shuffle service in chunks of 1GB
+#         MAX_SIZE_BYTES = 1024 * 1024 * 1024
+#         partition_requests = [
+#             list(shuffle_service.read(HashPartitionRequest(type_="hash", bucket=i), MAX_SIZE_BYTES))
+#             for i in range(num_partitions)
+#         ]
+
+#         for partition_chunks in partition_requests:
+#             yield PartitionTaskBuilder[PartitionT](
+#                 inputs=partition_chunks,
+#                 partial_metadatas=None,
+#                 resource_request=ResourceRequest(),
+#             )
 
 
 def _best_effort_next_step(

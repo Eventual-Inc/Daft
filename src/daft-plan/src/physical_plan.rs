@@ -45,6 +45,7 @@ pub enum PhysicalPlan {
     TabularWriteParquet(TabularWriteParquet),
     TabularWriteJson(TabularWriteJson),
     TabularWriteCsv(TabularWriteCsv),
+    ExchangeOp(ExchangeOp),
     #[cfg(feature = "python")]
     IcebergWrite(IcebergWrite),
     #[cfg(feature = "python")]
@@ -240,6 +241,14 @@ impl PhysicalPlan {
             Self::IcebergWrite(_) | Self::DeltaLakeWrite(_) | Self::LanceWrite(_) => {
                 ClusteringSpec::Unknown(UnknownClusteringConfig::new(1)).into()
             }
+            Self::ExchangeOp(ExchangeOp {
+                strategy: ExchangeOpStrategy::FullyMaterializingPull { target_spec },
+                ..
+            })
+            | Self::ExchangeOp(ExchangeOp {
+                strategy: ExchangeOpStrategy::FullyMaterializingPush { target_spec },
+                ..
+            }) => target_spec.clone(),
         }
     }
 
@@ -408,6 +417,7 @@ impl PhysicalPlan {
             Self::IcebergWrite(_) | Self::DeltaLakeWrite(_) | Self::LanceWrite(_) => {
                 ApproxStats::empty()
             }
+            Self::ExchangeOp(ExchangeOp { input, .. }) => input.approximate_stats(),
         }
     }
 
@@ -454,6 +464,7 @@ impl PhysicalPlan {
             Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. }) => {
                 vec![input]
             }
+            Self::ExchangeOp(ExchangeOp { input, .. }) => vec![input],
         }
     }
 
@@ -493,6 +504,7 @@ impl PhysicalPlan {
                 Self::DeltaLakeWrite(DeltaLakeWrite {schema, delta_lake_info, .. }) => Self::DeltaLakeWrite(DeltaLakeWrite::new(schema.clone(), delta_lake_info.clone(), input.clone())),
                 #[cfg(feature = "python")]
                 Self::LanceWrite(LanceWrite { schema, lance_info, .. }) => Self::LanceWrite(LanceWrite::new(schema.clone(), lance_info.clone(), input.clone())),
+                Self::ExchangeOp(ExchangeOp{strategy, ..}) => Self::ExchangeOp(ExchangeOp{ input: input.clone(), strategy: strategy.clone()}),
                 Self::Concat(_) | Self::HashJoin(_) | Self::SortMergeJoin(_) | Self::BroadcastJoin(_) => panic!("{} requires more than 1 input, but received: {}", self, children.len()),
             },
             [input1, input2] => match self {
@@ -552,6 +564,14 @@ impl PhysicalPlan {
             Self::DeltaLakeWrite(..) => "DeltaLakeWrite",
             #[cfg(feature = "python")]
             Self::LanceWrite(..) => "LanceWrite",
+            Self::ExchangeOp(ExchangeOp {
+                strategy: ExchangeOpStrategy::FullyMaterializingPull { .. },
+                ..
+            }) => "ExchangeOp[FullyMaterializing]",
+            Self::ExchangeOp(ExchangeOp {
+                strategy: ExchangeOpStrategy::FullyMaterializingPush { .. },
+                ..
+            }) => "ExchangeOp[FullyMaterializingPush]",
         };
         name.to_string()
     }
@@ -596,6 +616,7 @@ impl PhysicalPlan {
             Self::DeltaLakeWrite(delta_lake_info) => delta_lake_info.multiline_display(),
             #[cfg(feature = "python")]
             Self::LanceWrite(lance_info) => lance_info.multiline_display(),
+            Self::ExchangeOp(exchange_op) => exchange_op.multiline_display(),
         }
     }
 

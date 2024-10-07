@@ -122,6 +122,11 @@ class DaftContext:
         with self._lock:
             return self._get_runner()
 
+    def shuffle_service_factory(self):
+        from daft.runners.ray_runner import RayShuffleServiceFactory
+
+        return RayShuffleServiceFactory()
+
     @property
     def daft_execution_config(self) -> PyDaftExecutionConfig:
         with self._lock:

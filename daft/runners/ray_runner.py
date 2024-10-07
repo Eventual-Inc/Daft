@@ -13,11 +13,13 @@ from typing import TYPE_CHECKING, Any, Generator, Iterable, Iterator
 # import times. If this changes, we first need to make the daft.lazy_import.LazyImport class
 # serializable before importing pa from daft.dependencies.
 import pyarrow as pa  # noqa: TID253
+import ray.experimental  # noqa: TID253
 
 from daft.arrow_utils import ensure_array
 from daft.context import execution_config_ctx, get_context
 from daft.daft import PyTable as _PyTable
 from daft.dependencies import np
+from daft.expressions import ExpressionsProjection
 from daft.runners.progress_bar import ProgressBar
 from daft.series import Series, item_to_series
 from daft.table import Table
@@ -51,7 +53,6 @@ from daft.execution.execution_step import (
     SingleOutputPartitionTask,
     StatefulUDFProject,
 )
-from daft.expressions import ExpressionsProjection
 from daft.filesystem import glob_path_with_stats
 from daft.runners import runner_io
 from daft.runners.partitioning import (
@@ -1264,3 +1265,404 @@ class PartitionMetadataAccessor:
         accessor = cls(ref)
         accessor._metadatas = meta
         return accessor
+
+
+###
+# ShuffleService
+###
+
+
+from daft.execution.physical_plan_shuffles import (
+    HashPartitionRequest,
+    PartitioningSpec,
+    PartitionRequest,
+    ShuffleServiceInterface,
+)
+
+ray.ObjectRef = ray.ObjectRef
+
+
+@ray.remote
+class ShuffleServiceActor:
+    """An actor that is part of the ShuffleService. This is meant to be spun up one-per-node"""
+
+    def __init__(self, partition_spec: PartitioningSpec):
+        assert partition_spec.type_ == "hash", "Only hash partitioning is currently supported"
+        self._output_partitioning = partition_spec
+        hash_spec = self._output_partitioning.to_hash_pspec()
+
+        # TODO: These can be made much more sophisticated, performing things such as disk/remote spilling
+        # as necessary.
+        self._unpartitioned_data_buffer: list[MicroPartition] = []
+        self._partitioned_data_buffer: dict[PartitionRequest, list[MicroPartition]] = {
+            HashPartitionRequest(type_="hash", bucket=i): [] for i in range(hash_spec.num_partitions)
+        }
+
+    @ray.method(num_returns=2)
+    def read(self, request: PartitionRequest, chunk_size_bytes: int) -> tuple[MicroPartition | None, int]:
+        """Retrieves ShuffleData from the shuffle service for the specified partition"""
+        if len(self._unpartitioned_data_buffer) > 0:
+            self._run_partitioning()
+
+        assert request in self._partitioned_data_buffer, f"PartitionRequest must be in the buffer: {request}"
+
+        buffer = self._partitioned_data_buffer[request]
+        if buffer:
+            result = buffer.pop(0)
+
+            # Perform merging of result with the next results in the buffer
+            result_size: int = result.size_bytes()  # type: ignore
+            assert (
+                result_size is not None
+            ), "We really need the size here, but looks like lazy MPs without stats don't give us the size"
+
+            while result_size < chunk_size_bytes and buffer:
+                next_partition = buffer[0]
+                next_partition_size = next_partition.size_bytes()
+
+                assert (
+                    next_partition_size is not None
+                ), "We really need the size here, but looks like lazy MPs without stats don't give us the size"
+
+                if result_size + next_partition_size <= chunk_size_bytes:
+                    result = MicroPartition.concat([result, buffer.pop(0)])
+                    result_size = result.size_bytes()  # type: ignore
+                else:
+                    break
+
+            # Split the result if it is too large (best-effort)
+            if result_size > chunk_size_bytes:
+                rows_per_byte = len(result) / result_size
+                target_rows = int(chunk_size_bytes * rows_per_byte)
+                result, remaining = result.slice(0, target_rows), result.slice(target_rows, len(result))
+                buffer.insert(0, remaining)
+
+            return (result, result.size_bytes())  # type: ignore
+        else:
+            return (None, 0)
+
+    def ingest(self, data: list[MicroPartition]) -> None:
+        """Ingest data into the shuffle service"""
+        self._unpartitioned_data_buffer.extend(data)
+        return None
+
+    def _run_partitioning(self) -> None:
+        from daft import col
+
+        assert self._output_partitioning.type_ == "hash", "Only hash partitioning is currently supported"
+        hash_spec = self._output_partitioning.to_hash_pspec()
+
+        # Drain `self._unpartitioned_data_buffer`, partitioning the data and placing it into `self._partitioned_data_buffer`
+        while self._unpartitioned_data_buffer:
+            micropartition = self._unpartitioned_data_buffer.pop(0)
+            partitions = micropartition.partition_by_hash(
+                ExpressionsProjection([col(c) for c in hash_spec.columns]), hash_spec.num_partitions
+            )
+            for partition_request, partition in zip(self._partitioned_data_buffer.keys(), partitions):
+                self._partitioned_data_buffer[partition_request].append(partition)
+
+
+class RayPerNodeActorFullyMaterializingShuffleService(ShuffleServiceInterface[ray.ObjectRef, ray.ObjectRef]):
+    """A ShuffleService implementation in Ray that utilizes Ray Actors on each node to perform a shuffle
+
+    This is nice because it lets us `.ingest` data into each node's Actor before actually performing the shuffle,
+    reducing the complexity of the operation to O(num_nodes^2) instead of O(input_partitions * output_partitions)
+    """
+
+    # Default amount of bytes to request from Ray for each ShuffleActor
+    DEFAULT_SHUFFLE_ACTOR_MEMORY_REQUEST_BYTES: int = 1024 * 1024 * 1024
+
+    def __init__(
+        self,
+        output_partition_spec: PartitioningSpec,
+        per_actor_memory_request_bytes: int = DEFAULT_SHUFFLE_ACTOR_MEMORY_REQUEST_BYTES,
+    ):
+        self._input_stage_completed = False
+        self._output_partitioning_spec = output_partition_spec
+
+        # Mapping of {node_id (str): Actor}, create one Actor per node
+        self._actors: dict[str, ShuffleServiceActor] = {}
+        self._placement_groups: dict[str, ray.util.placement_group.PlacementGroup] = {}
+        nodes = ray.nodes()
+        for node in nodes:
+            node_id = node["NodeID"]
+            pg = ray.util.placement_group(
+                [
+                    {"CPU": 0.01, "memory": per_actor_memory_request_bytes}
+                ],  # Use minimal CPU and 100MB memory to avoid interfering with other tasks
+                strategy="STRICT_SPREAD",
+            )
+            ray.get(pg.ready())
+            self._placement_groups[node_id] = pg
+        for node_id, pg in self._placement_groups.items():
+            actor = ShuffleServiceActor.options(  # type: ignore
+                num_cpus=0.01, placement_group=pg, placement_group_bundle_index=0
+            ).remote(self._output_partitioning_spec)
+            self._actors[node_id] = actor
+
+    def teardown(self) -> None:
+        for actor in self._actors.values():
+            ray.kill(actor)
+        for pg in self._placement_groups.values():
+            ray.util.remove_placement_group(pg)
+        self._actors.clear()
+        self._placement_groups.clear()
+
+    def ingest(self, data: Iterator[ray.ObjectRef]) -> list[ray.ObjectRef[None]]:
+        """Receive some data
+
+        NOTE: This will throw an error if called after `.close_ingest` has been called.
+        """
+        if self._input_stage_completed:
+            raise RuntimeError("Cannot ingest data after input stage is completed.")
+
+        data_list = list(data)
+        best_effort_object_locations = ray.experimental.get_object_locations(data_list)
+
+        # Get the corresponding actor for this node
+        ingestion_results = []
+        for objref in data_list:
+            best_effort_node_id = best_effort_object_locations.get(objref)
+            if best_effort_node_id is None:
+                raise NotImplementedError(
+                    "Need to implement fallback logic when location information unavailable in Ray for a partition. We can probably just do a separate round-robin assignment of shuffle Actors. This is expected to happen when the partition is small I think (< 100KB) since then it wouldn't be located in the plasma store, and won't have location info."
+                )
+            if best_effort_node_id not in self._actors:
+                raise RuntimeError(f"No ShuffleServiceActor found for node {best_effort_node_id}")
+            actor = self._actors[best_effort_node_id]
+            ingestion_results.append(actor.ingest.remote(data_list))  # type: ignore
+
+        return ingestion_results
+
+    def set_input_stage_completed(self) -> None:
+        """Inform the ShuffleService that all data from the previous stage has been ingested"""
+        self._input_stage_completed = True
+
+    def is_input_stage_completed(self) -> bool:
+        """Query whether or not the previous stage has completed ingestion"""
+        return self._input_stage_completed
+
+    def read(self, request: PartitionRequest, chunk_size_bytes: int) -> Iterator[ray.ObjectRef]:
+        """Retrieves ShuffleData from the shuffle service for the specified partition.
+
+        NOTE: This will throw an error if called before `set_output_partitioning` is called.
+        """
+        # TODO: We currently enforce full materialization of the previous stage's outputs before allowing
+        # The subsequent stage to start reading data.
+        #
+        # This is also called a "pipeline breaker".
+        if not self.is_input_stage_completed():
+            return None
+
+        # Validate that the PartitionRequest matches the provided spec
+        if self._output_partitioning_spec.type_ != request.type_:
+            raise ValueError(
+                f"PartitionRequest type '{request.type_}' does not match the partitioning spec type '{self._output_partitioning_spec.type_}'"
+            )
+
+        # Validate the incoming PartitionRequest
+        hash_spec = self._output_partitioning_spec.to_hash_pspec()
+        hash_request = request.to_hash_request()
+        if hash_request.bucket >= hash_spec.num_partitions:
+            raise ValueError(
+                f"Requested bucket {hash_request.bucket} is out of range for {hash_spec.num_partitions} partitions"
+            )
+
+        # Iterate through all actors and yield ray.ObjectRef
+        for actor in self._actors.values():
+            while True:
+                # Request data from the actor
+                (micropartition_ref, actual_bytes_read) = actor.read.remote(request, chunk_size_bytes)
+
+                # TODO: Pretty sure this is really slow. Not sure what a good workaround is though since
+                # There is't a great mechanism to query the actors quickly regarding the remaining state
+                #
+                # Because we know that `self.is_input_stage_completed() == True`,
+                # we know that there won't be any more data coming in. So we can YOLO and stop
+                # the iteration.
+                actual_bytes_read = ray.get(actual_bytes_read)
+                if actual_bytes_read == 0:
+                    break
+
+                yield micropartition_ref
+
+        # After all actors are exhausted, we're done
+        return
+
+
+class RayShuffleServiceFactory:
+    @contextlib.contextmanager
+    def fully_materializing_shuffle_service_context(
+        self,
+        num_partitions: int,
+        columns: list[str],
+    ) -> Iterator[RayPerNodeActorFullyMaterializingShuffleService]:
+        from daft.execution.physical_plan_shuffles import HashPartitioningSpec
+
+        shuffle_service = RayPerNodeActorFullyMaterializingShuffleService(
+            HashPartitioningSpec(type_="hash", num_partitions=num_partitions, columns=columns)
+        )
+        yield shuffle_service
+        shuffle_service.teardown()
+
+    @contextlib.contextmanager
+    def push_based_shuffle_service_context(
+        self,
+        num_partitions: int,
+        partition_by: ExpressionsProjection,
+    ) -> Iterator[RayPushBasedShuffle]:
+        num_cpus = int(ray.cluster_resources()["CPU"])
+
+        # Number of mappers is ~2x number of mergers
+        num_merge_tasks = num_cpus // 3
+        num_map_tasks = num_merge_tasks * 2 + (num_cpus % 3)
+
+        yield RayPushBasedShuffle(num_map_tasks, num_merge_tasks, num_partitions, partition_by)
+
+
+@ray.remote
+def map_fn(
+    map_input: MicroPartition, num_mergers: int, partition_by: ExpressionsProjection, num_partitions: int
+) -> list[list[MicroPartition]]:
+    """Returns `N` number of inputs, where `N` is the number of mergers"""
+    # Partition the input data based on the partitioning spec
+    partitioned_data = map_input.partition_by_hash(partition_by, num_partitions)
+
+    outputs: list[list[MicroPartition]] = [[] for _ in range(num_mergers)]
+
+    # Calculate the base number of partitions per merger and the number of mergers that get an extra partition
+    base_partitions_per_merger = num_partitions // num_mergers
+    extra_partitions = num_partitions % num_mergers
+
+    num_mergers_with_extra_partitions = extra_partitions
+    num_partitions_assigned_to_mergers_with_extra_partitions = (base_partitions_per_merger + 1) * extra_partitions
+
+    # Distribute the partitioned data across the mergers
+    for partition_idx, partition in enumerate(partitioned_data):
+        if partition_idx < num_partitions_assigned_to_mergers_with_extra_partitions:
+            # For the first 'extra_partitions' mergers, assign base + 1 partitions
+            merger_idx = partition_idx // (base_partitions_per_merger + 1)
+        else:
+            # For the remaining mergers, assign base partitions
+            merger_idx = (
+                num_mergers_with_extra_partitions
+                + (partition_idx - num_partitions_assigned_to_mergers_with_extra_partitions)
+                // base_partitions_per_merger
+            )
+
+        outputs[merger_idx].append(partition)
+
+    return outputs
+
+
+@ray.remote
+def merge_fn(*merger_inputs_across_mappers: list[MicroPartition]) -> list[MicroPartition]:
+    """Returns `P` number of inputs, where `P` is the number of reducers assigned to this merger"""
+    num_partitions_for_this_merger = len(merger_inputs_across_mappers[0])
+    merged_partitions = []
+    for partition_idx in range(num_partitions_for_this_merger):
+        partitions_to_merge = [data[partition_idx] for data in merger_inputs_across_mappers]
+        merged_partition = MicroPartition.concat(partitions_to_merge)
+        merged_partitions.append(merged_partition)
+    return merged_partitions
+
+
+@ray.remote
+def reduce_fn(*reduce_inputs_across_rounds: MicroPartition) -> MicroPartition:
+    """Returns 1 output, which is the reduced data across rounds"""
+    # Concatenate all input MicroPartitions across rounds
+    reduced_partition = MicroPartition.concat(list(reduce_inputs_across_rounds))
+
+    # Return the result as a list containing a single MicroPartition
+    return reduced_partition
+
+
+class RayPushBasedShuffle:
+    def __init__(self, num_mappers: int, num_mergers: int, num_reducers: int, partition_by: ExpressionsProjection):
+        self._num_mappers = num_mappers
+        self._num_mergers = num_mergers
+        self._num_reducers = num_reducers
+        self._partition_by = partition_by
+
+    def _num_reducers_for_merger(self, merger_idx: int) -> int:
+        base_num = self._num_reducers // self._num_mergers
+        extra = self._num_reducers % self._num_mergers
+        if merger_idx < extra:
+            return base_num + 1
+        return base_num
+
+    def _get_reducer_inputs_location(self, reducer_idx: int) -> tuple[int, int]:
+        """Returns the (merger_idx, offset) of where the inputs to a given reducer should live"""
+        for merger_idx in range(self._num_mergers):
+            num_reducers = self._num_reducers_for_merger(merger_idx)
+            if num_reducers > reducer_idx:
+                return merger_idx, reducer_idx
+            else:
+                reducer_idx -= num_reducers
+        raise ValueError(f"Cannot find merger for reducer_idx: {reducer_idx}")
+
+    def _merger_options(self, merger_idx: int) -> dict[str, Any]:
+        num_nodes = len(ray.nodes())
+        node_id = ray.nodes()[merger_idx % num_nodes]["NodeID"]
+        return {
+            "scheduling_strategy": ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(node_id, soft=True)
+        }
+
+    def _reduce_options(self, reducer_idx: int) -> dict[str, Any]:
+        assigned_merger_idx, _ = self._get_reducer_inputs_location(reducer_idx)
+        return self._merger_options(assigned_merger_idx)
+
+    def run(self, materialized_inputs: list[ray.ObjectRef]) -> list[ray.ObjectRef]:
+        """Runs the Mappers and Mergers in a 2-stage pipeline until all mergers are materialized
+
+        There are `R` reducers.
+        There are `N` mergers. Each merger is "responsible" for `R / N` reducers.
+        Each Mapper then should run partitioning on the data into `N` chunks.
+        """
+        # [N_ROUNDS, N_MERGERS, N_REDUCERS_PER_MERGER] list of outputs
+        total_merge_results: list[list[list[ray.ObjectRef]]] = []
+        map_results_buffer: list[ray.ObjectRef] = []
+
+        # Keep running the pipeline while there is still work to do
+        while materialized_inputs or map_results_buffer:
+            # Drain the map_results_buffer, running merge tasks
+            per_round_merge_results = []
+            if map_results_buffer:
+                for merger_idx in range(self._num_mergers):
+                    merger_input = [mapper_results[merger_idx] for mapper_results in map_results_buffer]
+                    merge_results = merge_fn.options(
+                        **self._merger_options(merger_idx), num_returns=self._num_reducers_for_merger(merger_idx)
+                    ).remote(*merger_input)
+                    per_round_merge_results.append(merge_results)
+                total_merge_results.append(per_round_merge_results)
+
+            # Run map tasks:
+            map_results_buffer = []
+            for i in range(self._num_mappers):
+                if len(materialized_inputs) == 0:
+                    break
+                else:
+                    map_input = materialized_inputs.pop(0)
+                    map_results = map_fn.options(num_returns=self._num_mergers).remote(
+                        map_input, self._num_mergers, self._partition_by, self._num_reducers
+                    )
+                    map_results_buffer.append(map_results)
+
+            # Wait for all tasks in this wave to complete
+            for results in per_round_merge_results:
+                ray.wait(results)
+            for results in map_results_buffer:
+                ray.wait(results)
+
+        # INVARIANT: At this point, the map/merge step is done
+        # Start running all the reduce functions
+        # TODO: we could stagger this by num CPUs as well, but here we just YOLO run all
+        reduce_results = []
+        for reducer_idx in range(self._num_reducers):
+            assigned_merger_idx, offset = self._get_reducer_inputs_location(reducer_idx)
+            reducer_inputs = [
+                total_merge_results[round][assigned_merger_idx][offset] for round in range(len(total_merge_results))
+            ]
+            res = reduce_fn.options(**self._reduce_options(reducer_idx)).remote(*reducer_inputs)
+            reduce_results.append(res)
+        return reduce_results

@@ -8,6 +8,7 @@ mod csv;
 mod deltalake_write;
 
 mod empty_scan;
+mod exchange_op;
 mod explode;
 mod fanout;
 mod filter;
@@ -41,6 +42,7 @@ pub use csv::TabularWriteCsv;
 #[cfg(feature = "python")]
 pub use deltalake_write::DeltaLakeWrite;
 pub use empty_scan::EmptyScan;
+pub use exchange_op::{ExchangeOp, ExchangeOpStrategy};
 pub use explode::Explode;
 pub use fanout::{FanoutByHash, FanoutByRange, FanoutRandom};
 pub use filter::Filter;
