@@ -1,8 +1,15 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{hash_map::RawEntryMut, HashMap},
+    hash::{Hash, Hasher},
+    sync::Arc,
+};
 
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
-use daft_core::prelude::{AsArrow as _, SchemaRef};
+use daft_core::{
+    prelude::{AsArrow as _, SchemaRef},
+    utils::identity_hash_set::IdentityBuildHasher,
+};
 use daft_dsl::ExprRef;
 use daft_io::IOStatsContext;
 use daft_micropartition::{FileWriter, MicroPartition};
@@ -18,6 +25,17 @@ use crate::{
     runtime_stats::{CountingReceiver, RuntimeStatsContext},
     ExecutionRuntimeHandle, JoinSnafu, NUM_CPUS,
 };
+
+pub struct IndexHash {
+    pub idx: u64,
+    pub hash: u64,
+}
+
+impl Hash for IndexHash {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_u64(self.hash)
+    }
+}
 
 struct PerPartitionWriter {
     writer: Box<dyn FileWriter>,
@@ -144,34 +162,56 @@ impl PartitionedWriteNode {
         target_chunk_rows: usize,
         target_file_rows: usize,
     ) -> DaftResult<Vec<Table>> {
-        let mut per_partition_writers = HashMap::new();
+        let mut per_partition_writers =
+            HashMap::<IndexHash, PerPartitionWriter, IdentityBuildHasher>::with_capacity_and_hasher(
+                20,
+                Default::default(),
+            );
+        let mut saved_partition_values = vec![];
         while let Some((data, partition_values)) = input_receiver.recv().await {
-            let partition_values_str = partition_values.to_string(); // TODO (Colin): Figure out how to map a partition to a writer without using String as key
-            let per_partition_writer = if !per_partition_writers.contains_key(&partition_values_str)
-            {
-                per_partition_writers.insert(
-                    partition_values_str.clone(),
-                    PerPartitionWriter::new(
+            assert!(partition_values.len() == 1);
+            let hash = partition_values.hash_rows()?.get(0).unwrap();
+            let entry = per_partition_writers
+                .raw_entry_mut()
+                .from_hash(hash, |other| {
+                    (hash == other.hash) && {
+                        let other_table = saved_partition_values.get(other.idx as usize).unwrap();
+                        other_table == &partition_values
+                    }
+                });
+            match entry {
+                RawEntryMut::Vacant(entry) => {
+                    let mut new_partition_writer = PerPartitionWriter::new(
                         writer_factory.clone(),
-                        partition_values,
+                        partition_values.clone(),
                         target_file_rows,
                         target_chunk_rows,
-                    )?,
-                );
-                per_partition_writers
-                    .get_mut(&partition_values_str)
-                    .unwrap()
-            } else {
-                per_partition_writers
-                    .get_mut(&partition_values_str)
-                    .unwrap()
-            };
-
-            per_partition_writer.submit(&Arc::new(MicroPartition::new_loaded(
-                data.schema.clone(),
-                vec![data].into(),
-                None,
-            )))?
+                    )?;
+                    new_partition_writer.submit(&Arc::new(MicroPartition::new_loaded(
+                        data.schema.clone(),
+                        vec![data].into(),
+                        None,
+                    )))?;
+                    entry.insert_hashed_nocheck(
+                        hash,
+                        IndexHash {
+                            idx: saved_partition_values.len() as u64,
+                            hash,
+                        },
+                        new_partition_writer,
+                    );
+                    saved_partition_values.push(partition_values);
+                }
+                RawEntryMut::Occupied(mut entry) => {
+                    entry
+                        .get_mut()
+                        .submit(&Arc::new(MicroPartition::new_loaded(
+                            data.schema.clone(),
+                            vec![data].into(),
+                            None,
+                        )))?;
+                }
+            }
         }
 
         let mut results = vec![];

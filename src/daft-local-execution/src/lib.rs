@@ -1,4 +1,5 @@
 #![feature(let_chains)]
+#![feature(hash_raw_entry)]
 mod buffer;
 mod channel;
 mod intermediate_ops;

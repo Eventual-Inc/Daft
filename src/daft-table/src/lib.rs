@@ -773,6 +773,23 @@ impl Table {
     }
 }
 
+impl PartialEq for Table {
+    fn eq(&self, other: &Self) -> bool {
+        if self.schema != other.schema {
+            return false;
+        }
+        if self.len() != other.len() {
+            return false;
+        }
+        for (lhs, rhs) in self.columns.iter().zip(other.columns.iter()) {
+            if lhs != rhs {
+                return false;
+            }
+        }
+        true
+    }
+}
+
 impl Display for Table {
     // `f` is a buffer, and this method must write the formatted string into it
     fn fmt(&self, f: &mut Formatter) -> Result {
