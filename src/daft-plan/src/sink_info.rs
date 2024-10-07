@@ -63,7 +63,6 @@ pub struct IcebergCatalogInfo {
     #[derivative(PartialEq = "ignore")]
     #[derivative(Hash = "ignore")]
     pub iceberg_schema: PyObject,
-
     #[serde(
         serialize_with = "serialize_py_object",
         deserialize_with = "deserialize_py_object"
