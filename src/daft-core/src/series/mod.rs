@@ -87,6 +87,7 @@ impl Series {
         self.inner.name()
     }
 
+    #[must_use]
     pub fn rename<S: AsRef<str>>(&self, name: S) -> Self {
         self.inner.rename(name.as_ref())
     }

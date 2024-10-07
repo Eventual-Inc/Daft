@@ -21,7 +21,7 @@ where
 
 impl<T: DaftPhysicalType> FromArrow for DataArray<T> {
     fn from_arrow(field: FieldRef, arrow_arr: Box<dyn arrow2::array::Array>) -> DaftResult<Self> {
-        Self::try_from((field.clone(), arrow_arr))
+        Self::try_from((field, arrow_arr))
     }
 }
 
@@ -33,13 +33,13 @@ where
         let target_convert = field.to_physical();
         let target_convert_arrow = target_convert.dtype.to_arrow()?;
 
-        let physical_arrow_array = arrow_arr.convert_logical_type(target_convert_arrow.clone());
+        let physical_arrow_array = arrow_arr.convert_logical_type(target_convert_arrow);
 
         let physical = <L::PhysicalType as DaftDataType>::ArrayType::from_arrow(
             Arc::new(target_convert),
             physical_arrow_array,
         )?;
-        Ok(Self::new(field.clone(), physical))
+        Ok(Self::new(field, physical))
     }
 }
 

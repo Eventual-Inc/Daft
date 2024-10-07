@@ -146,9 +146,9 @@ impl Table {
     pub fn empty(schema: Option<SchemaRef>) -> DaftResult<Self> {
         let schema = schema.unwrap_or_else(|| Schema::empty().into());
         let mut columns: Vec<Series> = Vec::with_capacity(schema.names().len());
-        for (field_name, field) in schema.fields.iter() {
+        for (field_name, field) in &schema.fields {
             let series = Series::empty(field_name, &field.dtype);
-            columns.push(series)
+            columns.push(series);
         }
         Ok(Self::new_unchecked(schema, columns, 0))
     }
@@ -161,9 +161,7 @@ impl Table {
     ///
     /// * `columns` - Columns to crate a table from as [`Series`] objects
     pub fn from_nonempty_columns(columns: Vec<Series>) -> DaftResult<Self> {
-        if columns.is_empty() {
-            panic!("Cannot call Table::new() with empty columns. This indicates an internal error, please file an issue.");
-        }
+        assert!(!columns.is_empty(), "Cannot call Table::new() with empty columns. This indicates an internal error, please file an issue.");
 
         let schema = Schema::new(columns.iter().map(|s| s.field().clone()).collect())?;
         let schema: SchemaRef = schema.into();
@@ -343,7 +341,7 @@ impl Table {
             let num_filtered = mask
                 .validity()
                 .map(|validity| arrow2::bitmap::and(validity, mask.as_bitmap()).unset_bits())
-                .unwrap_or(mask.as_bitmap().unset_bits());
+                .unwrap_or_else(|| mask.as_bitmap().unset_bits());
             mask.len() - num_filtered
         };
 
@@ -583,18 +581,17 @@ impl Table {
             )));
         }
 
-        if expected_field.dtype != series.field().dtype {
-            panic!(
-                "Data type mismatch in expression evaluation:\n\
+        assert!(
+            !(expected_field.dtype != series.field().dtype),
+            "Data type mismatch in expression evaluation:\n\
                  Expected type: {}\n\
                  Computed type: {}\n\
                  Expression: {}\n\
                  This likely indicates an internal error in type inference or computation.",
-                expected_field.dtype,
-                series.field().dtype,
-                expr
-            );
-        }
+            expected_field.dtype,
+            series.field().dtype,
+            expr
+        );
         Ok(series)
     }
 
@@ -709,16 +706,11 @@ impl Table {
         // Begin the body.
         res.push_str("<tbody>\n");
 
-        let head_rows;
-        let tail_rows;
-
-        if self.len() > 10 {
-            head_rows = 5;
-            tail_rows = 5;
+        let (head_rows, tail_rows) = if self.len() > 10 {
+            (5, 5)
         } else {
-            head_rows = self.len();
-            tail_rows = 0;
-        }
+            (self.len(), 0)
+        };
 
         let styled_td =
             "<td><div style=\"text-align:left; max-width:192px; max-height:64px; overflow:auto\">";
@@ -727,7 +719,7 @@ impl Table {
             // Begin row.
             res.push_str("<tr>");
 
-            for col in self.columns.iter() {
+            for col in &self.columns {
                 res.push_str(styled_td);
                 res.push_str(&html_value(col, i));
                 res.push_str("</div></td>");
@@ -739,7 +731,7 @@ impl Table {
 
         if tail_rows != 0 {
             res.push_str("<tr>");
-            for _ in self.columns.iter() {
+            for _ in &self.columns {
                 res.push_str("<td>...</td>");
             }
             res.push_str("</tr>\n");
@@ -749,7 +741,7 @@ impl Table {
             // Begin row.
             res.push_str("<tr>");
 
-            for col in self.columns.iter() {
+            for col in &self.columns {
                 res.push_str(styled_td);
                 res.push_str(&html_value(col, i));
                 res.push_str("</td>");

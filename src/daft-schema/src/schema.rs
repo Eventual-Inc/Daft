@@ -51,7 +51,7 @@ impl Schema {
     pub fn exclude<S: AsRef<str>>(&self, names: &[S]) -> DaftResult<Self> {
         let mut fields = IndexMap::new();
         let names = names.iter().map(|s| s.as_ref()).collect::<HashSet<&str>>();
-        for (name, field) in self.fields.iter() {
+        for (name, field) in &self.fields {
             if !names.contains(&name.as_str()) {
                 fields.insert(name.clone(), field.clone());
             }
@@ -261,7 +261,7 @@ impl Schema {
 
 impl Hash for Schema {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        state.write_u64(hash_index_map(&self.fields))
+        state.write_u64(hash_index_map(&self.fields));
     }
 }
 

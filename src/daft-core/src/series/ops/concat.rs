@@ -16,7 +16,7 @@ impl Series {
             [single_series] => Ok((*single_series).clone()),
             [first, rest @ ..] => {
                 let first_dtype = first.data_type();
-                for s in rest.iter() {
+                for s in rest {
                     if first_dtype != s.data_type() {
                         return Err(DaftError::TypeError(format!(
                             "Series concat requires all data types to match. Found mismatched types. All types: {:?}",

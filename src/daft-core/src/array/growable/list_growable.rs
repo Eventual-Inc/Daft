@@ -71,9 +71,8 @@ impl<'a> Growable for ListGrowable<'a> {
             (end_offset - start_offset).to_usize(),
         );
 
-        match &mut self.growable_validity {
-            Some(growable_validity) => growable_validity.extend(index, start, len),
-            None => (),
+        if let Some(growable_validity) = &mut self.growable_validity {
+            growable_validity.extend(index, start, len);
         }
 
         self.growable_offsets
@@ -82,9 +81,8 @@ impl<'a> Growable for ListGrowable<'a> {
     }
 
     fn add_nulls(&mut self, additional: usize) {
-        match &mut self.growable_validity {
-            Some(growable_validity) => growable_validity.add_nulls(additional),
-            None => (),
+        if let Some(growable_validity) = &mut self.growable_validity {
+            growable_validity.add_nulls(additional);
         }
         self.growable_offsets.extend_constant(additional);
     }

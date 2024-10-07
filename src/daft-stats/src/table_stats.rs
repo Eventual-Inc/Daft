@@ -34,6 +34,7 @@ impl TableStatistics {
         Ok(Self { columns })
     }
 
+    #[must_use]
     pub fn from_table(table: &Table) -> Self {
         let mut columns = IndexMap::with_capacity(table.num_columns());
         for name in table.column_names() {
@@ -106,7 +107,11 @@ impl TableStatistics {
                 sum_so_far += elem_size;
             }
         } else {
-            for elem_size in self.columns.values().map(|c| c.element_size()) {
+            for elem_size in self
+                .columns
+                .values()
+                .map(super::column_stats::ColumnRangeStatistics::element_size)
+            {
                 sum_so_far += elem_size?.unwrap_or(0.);
             }
         }
@@ -132,7 +137,7 @@ impl TableStatistics {
             Expr::BinaryOp { op, left, right } => {
                 let lhs = self.eval_expression(left)?;
                 let rhs = self.eval_expression(right)?;
-                use daft_dsl::Operator::*;
+                use daft_dsl::Operator::{And, Eq, Gt, GtEq, Lt, LtEq, Minus, NotEq, Or, Plus};
                 match op {
                     Lt => lhs.lt(&rhs),
                     LtEq => lhs.lte(&rhs),
@@ -161,7 +166,7 @@ impl TableStatistics {
         fill_map: Option<&HashMap<&str, ExprRef>>,
     ) -> crate::Result<Self> {
         let mut columns = IndexMap::new();
-        for (field_name, field) in schema.fields.iter() {
+        for (field_name, field) in &schema.fields {
             let crs = match self.columns.get(field_name) {
                 Some(column_stat) => column_stat
                     .cast(&field.dtype)

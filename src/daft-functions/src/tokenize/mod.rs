@@ -19,7 +19,7 @@ pub fn tokenize_encode(
     ScalarFunction::new(
         TokenizeEncodeFunction {
             tokens_path: tokens_path.to_string(),
-            io_config: io_config.map(|x| x.into()),
+            io_config: io_config.map(std::convert::Into::into),
             pattern: pattern.map(str::to_string),
             special_tokens: special_tokens.map(str::to_string),
             use_special_tokens,
@@ -39,7 +39,7 @@ pub fn tokenize_decode(
     ScalarFunction::new(
         TokenizeDecodeFunction {
             tokens_path: tokens_path.to_string(),
-            io_config: io_config.map(|x| x.into()),
+            io_config: io_config.map(std::convert::Into::into),
             pattern: pattern.map(str::to_string),
             special_tokens: special_tokens.map(str::to_string),
         },

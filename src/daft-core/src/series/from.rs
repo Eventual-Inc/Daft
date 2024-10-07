@@ -53,7 +53,7 @@ impl TryFrom<(&str, Box<dyn arrow2::array::Array>)> for Series {
         let source_arrow_type: &ArrowDataType = array.data_type();
         let dtype = DaftDataType::from(source_arrow_type);
 
-        let field = Arc::new(Field::new(name, dtype.clone()));
+        let field = Arc::new(Field::new(name, dtype));
         Self::try_from_field_and_arrow_array(field, array)
     }
 }
@@ -93,7 +93,7 @@ mod tests {
                 key: Box::new(DataType::Utf8),
                 value: Box::new(DataType::Date),
             },
-        )
+        );
     }
 
     #[test]

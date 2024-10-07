@@ -49,6 +49,7 @@ impl ScalarUDF for Exp {
     }
 }
 
+#[must_use]
 pub fn exp(input: ExprRef) -> ExprRef {
     ScalarFunction::new(Exp {}, vec![input]).into()
 }

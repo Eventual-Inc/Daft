@@ -802,10 +802,9 @@ mod tests {
     use super::*;
     use crate::{
         array::{
-            BooleanArray, Float32Array, Int32Array, Int64Array, ListArray, MapArray, StructArray,
-            UnionArray, Utf8Array,
+            BooleanArray, Int32Array, Int64Array, ListArray, StructArray,
         },
-        datatypes::{DataType, Field, IntervalUnit, TimeUnit},
+        datatypes::{DataType, Field, TimeUnit},
     };
 
     #[test]

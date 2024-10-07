@@ -57,6 +57,7 @@ impl ScalarUDF for ListCount {
     }
 }
 
+#[must_use]
 pub fn list_count(expr: ExprRef, mode: CountMode) -> ExprRef {
     ScalarFunction::new(ListCount { mode }, vec![expr]).into()
 }

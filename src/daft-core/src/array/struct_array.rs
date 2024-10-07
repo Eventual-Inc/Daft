@@ -33,16 +33,15 @@ impl StructArray {
         let field: Arc<Field> = field.into();
         match &field.as_ref().dtype {
             DataType::Struct(fields) => {
-                if fields.len() != children.len() {
-                    panic!("StructArray::new received {} children arrays but expected {} for specified dtype: {}", children.len(), fields.len(), &field.as_ref().dtype)
-                }
+                assert!(fields.len() == children.len(), "StructArray::new received {} children arrays but expected {} for specified dtype: {}", children.len(), fields.len(), &field.as_ref().dtype);
                 for (dtype_field, series) in fields.iter().zip(children.iter()) {
-                    if &dtype_field.dtype != series.data_type() {
-                        panic!("StructArray::new received an array with dtype: {} but expected child field: {}", series.data_type(), dtype_field)
-                    }
-                    if dtype_field.name != series.name() {
-                        panic!("StructArray::new received a series with name: {} but expected name: {}", series.name(), &dtype_field.name)
-                    }
+                    assert!(!(&dtype_field.dtype != series.data_type()), "StructArray::new received an array with dtype: {} but expected child field: {}", series.data_type(), dtype_field);
+                    assert!(
+                        dtype_field.name == series.name(),
+                        "StructArray::new received a series with name: {} but expected name: {}",
+                        series.name(),
+                        &dtype_field.name
+                    );
                 }
 
                 let len = if !children.is_empty() {
@@ -51,10 +50,8 @@ impl StructArray {
                     0
                 };
 
-                for s in children.iter() {
-                    if s.len() != len {
-                        panic!("StructArray::new expects all children to have the same length, but received: {} vs {}", s.len(), len)
-                    }
+                for s in &children {
+                    assert!(s.len() == len, "StructArray::new expects all children to have the same length, but received: {} vs {}", s.len(), len);
                 }
                 if let Some(some_validity) = &validity
                     && some_validity.len() != len

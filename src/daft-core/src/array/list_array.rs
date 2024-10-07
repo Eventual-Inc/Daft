@@ -39,16 +39,13 @@ impl ListArray {
                 {
                     panic!("ListArray::new validity length does not match computed length from offsets")
                 }
-                if child_dtype.as_ref() != flat_child.data_type() {
-                    panic!(
-                        "ListArray::new expects the child series to have field {}, but received: {}",
-                        child_dtype,
-                        flat_child.data_type(),
-                    )
-                }
-                if *offsets.last() > flat_child.len() as i64 {
-                    panic!("ListArray::new received offsets with last value {}, but child series has length {}", offsets.last(), flat_child.len())
-                }
+                assert!(
+                    !(child_dtype.as_ref() != flat_child.data_type()),
+                    "ListArray::new expects the child series to have field {}, but received: {}",
+                    child_dtype,
+                    flat_child.data_type(),
+                );
+                assert!(*offsets.last() <= flat_child.len() as i64, "ListArray::new received offsets with last value {}, but child series has length {}", offsets.last(), flat_child.len());
             }
             _ => panic!(
                 "ListArray::new expected List datatype, but received field: {}",

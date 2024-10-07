@@ -33,6 +33,7 @@ impl ScalarUDF for Sqrt {
     }
 }
 
+#[must_use]
 pub fn sqrt(input: ExprRef) -> ExprRef {
     ScalarFunction::new(Sqrt {}, vec![input]).into()
 }

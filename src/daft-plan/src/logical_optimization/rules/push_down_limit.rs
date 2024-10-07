@@ -106,8 +106,7 @@ impl PushDownLimit {
                         let optimized = self
                             .try_optimize_node(new_plan.clone())?
                             .or(Transformed::yes(new_plan))
-                            .data
-                            .clone();
+                            .data;
                         Ok(Transformed::yes(optimized))
                     }
                     _ => Ok(Transformed::no(plan)),

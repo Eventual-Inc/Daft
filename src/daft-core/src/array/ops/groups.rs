@@ -1,6 +1,6 @@
 use std::{
     collections::hash_map::Entry::{Occupied, Vacant},
-    hash::Hash,
+    hash::{BuildHasherDefault, Hash},
 };
 
 use arrow2::array::Array;
@@ -42,7 +42,7 @@ where
     const DEFAULT_SIZE: usize = 256;
     let mut tbl = FnvHashMap::<T, (u64, Vec<u64>)>::with_capacity_and_hasher(
         DEFAULT_SIZE,
-        Default::default(),
+        BuildHasherDefault::default(),
     );
     for (idx, val) in iter.enumerate() {
         let idx = idx as u64;

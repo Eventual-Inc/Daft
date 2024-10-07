@@ -19,19 +19,16 @@ pub struct PipelineChannel {
 
 impl PipelineChannel {
     pub fn new(buffer_size: usize, in_order: bool) -> Self {
-        match in_order {
-            true => {
-                let (senders, receivers) = (0..buffer_size).map(|_| create_channel(1)).unzip();
-                let sender = PipelineSender::InOrder(RoundRobinSender::new(senders));
-                let receiver = PipelineReceiver::InOrder(RoundRobinReceiver::new(receivers));
-                Self { sender, receiver }
-            }
-            false => {
-                let (sender, receiver) = create_channel(buffer_size);
-                let sender = PipelineSender::OutOfOrder(sender);
-                let receiver = PipelineReceiver::OutOfOrder(receiver);
-                Self { sender, receiver }
-            }
+        if in_order {
+            let (senders, receivers) = (0..buffer_size).map(|_| create_channel(1)).unzip();
+            let sender = PipelineSender::InOrder(RoundRobinSender::new(senders));
+            let receiver = PipelineReceiver::InOrder(RoundRobinReceiver::new(receivers));
+            Self { sender, receiver }
+        } else {
+            let (sender, receiver) = create_channel(buffer_size);
+            let sender = PipelineSender::OutOfOrder(sender);
+            let receiver = PipelineReceiver::OutOfOrder(receiver);
+            Self { sender, receiver }
         }
     }
 

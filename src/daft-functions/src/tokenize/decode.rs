@@ -59,8 +59,7 @@ fn tokenize_decode_series(
         )?
         .into_series()),
         dt => Err(DaftError::TypeError(format!(
-            "Tokenize decode not implemented for type {}",
-            dt
+            "Tokenize decode not implemented for type {dt}"
         ))),
     }
 }

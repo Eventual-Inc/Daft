@@ -51,7 +51,7 @@ impl<'a> GrowableTable<'a> {
         if !self.growables.is_empty() {
             self.growables
                 .iter_mut()
-                .for_each(|g| g.extend(index, start, len))
+                .for_each(|g| g.extend(index, start, len));
         }
     }
 
@@ -60,7 +60,7 @@ impl<'a> GrowableTable<'a> {
         if !self.growables.is_empty() {
             self.growables
                 .iter_mut()
-                .for_each(|g| g.add_nulls(additional))
+                .for_each(|g| g.add_nulls(additional));
         }
     }
 

@@ -2,7 +2,7 @@ use std::{ops::Range, sync::Arc};
 
 use async_trait::async_trait;
 use azure_core::{auth::TokenCredential, new_http_client};
-use azure_identity::{ClientSecretCredential, DefaultAzureCredential};
+use azure_identity::{ClientSecretCredential, DefaultAzureCredential, TokenCredentialOptions};
 use azure_storage::{prelude::*, CloudLocation};
 use azure_storage_blobs::{
     blob::operations::GetBlobResponse,
@@ -106,11 +106,11 @@ fn parse_azure_uri(uri: &str) -> super::Result<(String, Option<(String, String)>
 
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
-        use Error::*;
+        use Error::{NotAFile, NotFound, UnableToOpenFile, UnableToReadBytes};
         match error {
             UnableToReadBytes { path, source } | UnableToOpenFile { path, source } => {
                 match source.as_http_error().map(|v| v.status().into()) {
-                    Some(404) | Some(410) => Self::NotFound {
+                    Some(404 | 410) => Self::NotFound {
                         path,
                         source: source.into(),
                     },
@@ -138,7 +138,7 @@ impl From<Error> for super::Error {
     }
 }
 
-pub(crate) struct AzureBlobSource {
+pub struct AzureBlobSource {
     blob_client: Arc<BlobServiceClient>,
 }
 
@@ -153,10 +153,11 @@ impl AzureBlobSource {
             return Err(Error::StorageAccountNotSet.into());
         };
 
-        let access_key = config
-            .access_key
-            .clone()
-            .or_else(|| std::env::var("AZURE_STORAGE_KEY").ok().map(|v| v.into()));
+        let access_key = config.access_key.clone().or_else(|| {
+            std::env::var("AZURE_STORAGE_KEY")
+                .ok()
+                .map(std::convert::Into::into)
+        });
         let sas_token = config
             .sas_token
             .clone()
@@ -184,7 +185,7 @@ impl AzureBlobSource {
                 tenant_id.clone(),
                 client_id.clone(),
                 client_secret.as_string().clone(),
-                Default::default(),
+                TokenCredentialOptions::default(),
             )))
         } else {
             let default_creds = Arc::new(DefaultAzureCredential::default());
@@ -216,7 +217,7 @@ impl AzureBlobSource {
         } else if config.use_fabric_endpoint {
             ClientBuilder::with_location(
                 CloudLocation::Custom {
-                    uri: format!("https://{}.blob.fabric.microsoft.com", storage_account),
+                    uri: format!("https://{storage_account}.blob.fabric.microsoft.com"),
                 },
                 storage_credentials,
             )
@@ -250,7 +251,7 @@ impl AzureBlobSource {
         responses_stream
             .map(move |response| {
                 if let Some(is) = io_stats.clone() {
-                    is.mark_list_requests(1)
+                    is.mark_list_requests(1);
                 }
                 (response, protocol.clone())
             })
@@ -294,7 +295,7 @@ impl AzureBlobSource {
             "{}{AZURE_DELIMITER}",
             prefix.trim_end_matches(&AZURE_DELIMITER)
         );
-        let full_path = format!("{}://{}{}", protocol, container_name, prefix);
+        let full_path = format!("{protocol}://{container_name}{prefix}");
         let full_path_with_trailing_delimiter = format!(
             "{}://{}{}",
             protocol, container_name, &prefix_with_delimiter
@@ -333,10 +334,10 @@ impl AzureBlobSource {
 
         // Make sure the stream is pollable even if empty,
         // since we will chain it later with the two items we already popped.
-        let unchecked_results = if !stream_exhausted {
-            unchecked_results
-        } else {
+        let unchecked_results = if stream_exhausted {
             futures::stream::iter(vec![]).boxed()
+        } else {
+            unchecked_results
         };
 
         match &maybe_first_two_items[..] {
@@ -430,7 +431,7 @@ impl AzureBlobSource {
         responses_stream
             .map(move |response| {
                 if let Some(is) = io_stats.clone() {
-                    is.mark_list_requests(1)
+                    is.mark_list_requests(1);
                 }
                 (response, protocol.clone(), container_name.clone())
             })
@@ -528,7 +529,7 @@ impl ObjectSource for AzureBlobSource {
                 .into()
             });
         if let Some(is) = io_stats.as_ref() {
-            is.mark_get_requests(1)
+            is.mark_get_requests(1);
         }
         Ok(GetResult::Stream(
             io_stats_on_bytestream(Box::pin(stream), io_stats),
@@ -565,7 +566,7 @@ impl ObjectSource for AzureBlobSource {
             .await
             .context(UnableToOpenFileSnafu::<String> { path: uri.into() })?;
         if let Some(is) = io_stats.as_ref() {
-            is.mark_head_requests(1)
+            is.mark_head_requests(1);
         }
 
         Ok(metadata.blob.properties.content_length as usize)

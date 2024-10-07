@@ -1,6 +1,9 @@
 use arrow2::{
-    array::*,
-    datatypes::*,
+    array::{
+        Array, BinaryArray, BooleanArray, MutableBinaryArray, MutableUtf8Array, NullArray,
+        PrimitiveArray, Utf8Array,
+    },
+    datatypes::{DataType, TimeUnit},
     error::{Error, Result},
     offset::Offset,
     temporal_conversions,
@@ -72,7 +75,7 @@ where
 
 #[inline]
 fn significant_bytes(bytes: &[u8]) -> usize {
-    bytes.iter().map(|byte| (*byte != b'0') as usize).sum()
+    bytes.iter().map(|byte| usize::from(*byte != b'0')).sum()
 }
 
 /// Deserializes bytes to a single i128 representing a decimal
@@ -230,14 +233,17 @@ pub fn deserialize_datetime<T: chrono::TimeZone>(
 
 /// Deserializes `column` of `rows` into an [`Array`] of [`DataType`] `datatype`.
 #[inline]
-
 pub fn deserialize_column<B: ByteRecordGeneric>(
     rows: &[B],
     column: usize,
     datatype: DataType,
     _line_number: usize,
 ) -> Result<Box<dyn Array>> {
-    use DataType::*;
+    use DataType::{
+        Binary, Boolean, Date32, Date64, Decimal, Float32, Float64, Int16, Int32, Int64, Int8,
+        LargeBinary, LargeUtf8, Null, Time32, Time64, Timestamp, UInt16, UInt32, UInt64, UInt8,
+        Utf8,
+    };
     Ok(match datatype {
         Boolean => deserialize_boolean(rows, column, |bytes| {
             if bytes.eq_ignore_ascii_case(b"false") {
@@ -306,10 +312,10 @@ pub fn deserialize_column<B: ByteRecordGeneric>(
             to_utf8(bytes)
                 .and_then(|x| x.parse::<chrono::NaiveTime>().ok())
                 .map(|x| {
-                    (x.hour() as u64 * 3_600 * factor
-                        + x.minute() as u64 * 60 * factor
-                        + x.second() as u64 * factor
-                        + x.nanosecond() as u64 / (1_000_000_000 / factor))
+                    (u64::from(x.hour()) * 3_600 * factor
+                        + u64::from(x.minute()) * 60 * factor
+                        + u64::from(x.second()) * factor
+                        + u64::from(x.nanosecond()) / (1_000_000_000 / factor))
                         as i64
                 })
         }),
@@ -357,6 +363,7 @@ pub fn deserialize_column<B: ByteRecordGeneric>(
 }
 
 // Return the factor by how small is a time unit compared to seconds
+#[must_use]
 pub fn get_factor_from_timeunit(time_unit: TimeUnit) -> u32 {
     match time_unit {
         TimeUnit::Second => 1,

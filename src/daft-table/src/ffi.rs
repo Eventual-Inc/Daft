@@ -47,7 +47,7 @@ pub fn record_batches_to_table(
                     Series::try_from((names.get(i).unwrap().as_str(), cast_array))
                 })
                 .collect::<DaftResult<Vec<_>>>()?;
-            tables.push(Table::new_with_size(schema.clone(), columns, num_rows)?)
+            tables.push(Table::new_with_size(schema.clone(), columns, num_rows)?);
         }
         Ok(Table::concat(tables.as_slice())?)
     })
@@ -72,7 +72,7 @@ pub fn table_to_record_batch(
 
     let record = pyarrow
         .getattr(pyo3::intern!(py, "RecordBatch"))?
-        .call_method1(pyo3::intern!(py, "from_arrays"), (arrays, names.to_vec()))?;
+        .call_method1(pyo3::intern!(py, "from_arrays"), (arrays, names.clone()))?;
 
     Ok(record.into())
 }

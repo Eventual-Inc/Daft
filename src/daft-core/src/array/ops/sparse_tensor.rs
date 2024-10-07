@@ -96,7 +96,7 @@ mod tests {
         let struct_array = StructArray::new(
             Field::new("tensor", dtype.to_physical()),
             vec![values_array, indices_array, shapes_array],
-            Some(validity.clone()),
+            Some(validity),
         );
         let sparse_tensor_array =
             SparseTensorArray::new(Field::new(struct_array.name(), dtype.clone()), struct_array);

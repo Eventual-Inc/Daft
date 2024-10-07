@@ -118,7 +118,7 @@ fn run_glob_parallel(
     // Construct a static-lifetime BoxStreamIterator
     let iterator = BoxStreamIterator {
         boxstream,
-        runtime_handle: owned_runtime.clone(),
+        runtime_handle: owned_runtime,
     };
     Ok(iterator)
 }
@@ -148,7 +148,7 @@ impl GlobScanOperator {
             first_glob_path,
             Some(1),
             io_client.clone(),
-            io_runtime.clone(),
+            io_runtime,
             Some(io_stats.clone()),
             file_format,
         )?;
@@ -177,7 +177,7 @@ impl GlobScanOperator {
 
                         let (schema, _metadata) = daft_parquet::read::read_parquet_schema(
                             first_filepath.as_str(),
-                            io_client.clone(),
+                            io_client,
                             Some(io_stats),
                             ParquetSchemaInferenceOptions {
                                 coerce_int96_timestamp_unit,
@@ -313,9 +313,9 @@ impl ScanOperator for GlobScanOperator {
 
         let files = run_glob_parallel(
             self.glob_paths.clone(),
-            io_client.clone(),
-            io_runtime.clone(),
-            Some(io_stats.clone()),
+            io_client,
+            io_runtime,
+            Some(io_stats),
             file_format,
         )?;
 
@@ -348,7 +348,7 @@ impl ScanOperator for GlobScanOperator {
             let chunk_spec = row_group.map(ChunkSpec::Parquet);
             Ok(ScanTask::new(
                 vec![DataSource::File {
-                    path: path.to_string(),
+                    path,
                     chunk_spec,
                     size_bytes,
                     iceberg_delete_files: None,
