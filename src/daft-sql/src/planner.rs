@@ -992,7 +992,7 @@ impl SQLPlanner {
                             invalid_operation_err!("Index must be a string literal")
                         }
                     }
-                    DataType::Map(_) => Ok(daft_dsl::functions::map::get(expr, index)),
+                    DataType::Map { .. } => Ok(daft_dsl::functions::map::get(expr, index)),
                     dtype => {
                         invalid_operation_err!("nested access on column with type: {}", dtype)
                     }

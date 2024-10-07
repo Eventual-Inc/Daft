@@ -209,10 +209,10 @@ impl PyDataType {
 
     #[staticmethod]
     pub fn map(key_type: Self, value_type: Self) -> PyResult<Self> {
-        Ok(DataType::Map(Box::new(DataType::Struct(vec![
-            Field::new("key", key_type.dtype),
-            Field::new("value", value_type.dtype),
-        ])))
+        Ok(DataType::Map {
+            key: Box::new(key_type.dtype),
+            value: Box::new(value_type.dtype),
+        }
         .into())
     }
 

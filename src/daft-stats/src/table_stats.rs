@@ -119,13 +119,13 @@ impl TableStatistics {
             Expr::Alias(col, _) => self.eval_expression(col.as_ref()),
             Expr::Column(col_name) => {
                 let col = self.columns.get(col_name.as_ref());
-                if let Some(col) = col {
-                    Ok(col.clone())
-                } else {
-                    Err(crate::Error::DaftCoreCompute {
+                let Some(col) = col else {
+                    return Err(crate::Error::DaftCoreCompute {
                         source: DaftError::FieldNotFound(col_name.to_string()),
-                    })
-                }
+                    });
+                };
+
+                Ok(col.clone())
             }
             Expr::Literal(lit_value) => lit_value.try_into(),
             Expr::Not(col) => self.eval_expression(col)?.not(),
@@ -194,7 +194,6 @@ impl Display for TableStatistics {
 
 #[cfg(test)]
 mod test {
-
     use daft_core::prelude::*;
     use daft_dsl::{col, lit};
     use daft_table::Table;

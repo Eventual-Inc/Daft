@@ -37,7 +37,7 @@ use crate::{
 fn make_groups<T>(iter: impl Iterator<Item = T>) -> DaftResult<super::GroupIndicesPair>
 where
     T: Hash,
-    T: std::cmp::Eq,
+    T: Eq,
 {
     const DEFAULT_SIZE: usize = 256;
     let mut tbl = FnvHashMap::<T, (u64, Vec<u64>)>::with_capacity_and_hasher(
@@ -56,15 +56,15 @@ where
             }
         }
     }
-    let mut s_indices = Vec::with_capacity(tbl.len());
-    let mut g_indices = Vec::with_capacity(tbl.len());
+    let mut sample_indices = Vec::with_capacity(tbl.len());
+    let mut group_indices = Vec::with_capacity(tbl.len());
 
-    for (s_idx, g_idx) in tbl.into_values() {
-        s_indices.push(s_idx);
-        g_indices.push(g_idx);
+    for (sample_index, group_index) in tbl.into_values() {
+        sample_indices.push(sample_index);
+        group_indices.push(group_index);
     }
 
-    Ok((s_indices, g_indices))
+    Ok((sample_indices, group_indices))
 }
 
 impl<T> IntoGroups for DataArray<T>

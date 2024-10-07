@@ -1,5 +1,6 @@
 #![feature(hash_raw_entry)]
 #![feature(let_chains)]
+#![feature(iterator_try_collect)]
 
 use core::slice;
 use std::{
@@ -495,6 +496,7 @@ impl Table {
 
     fn eval_expression(&self, expr: &Expr) -> DaftResult<Series> {
         use crate::Expr::*;
+
         let expected_field = expr.to_field(self.schema.as_ref())?;
         let series = match expr {
             Alias(child, name) => Ok(self.eval_expression(child)?.rename(name)),
@@ -572,6 +574,7 @@ impl Table {
                 }
             },
         }?;
+
         if expected_field.name != series.field().name {
             return Err(DaftError::ComputeError(format!(
                 "Mismatch of expected expression name and name from computed series ({} vs {}) for expression: {expr}",
@@ -579,32 +582,42 @@ impl Table {
                 series.field().name
             )));
         }
+
         if expected_field.dtype != series.field().dtype {
-            panic!("Mismatch of expected expression data type and data type from computed series, {} vs {}", expected_field.dtype, series.field().dtype);
+            panic!(
+                "Data type mismatch in expression evaluation:\n\
+                 Expected type: {}\n\
+                 Computed type: {}\n\
+                 Expression: {}\n\
+                 This likely indicates an internal error in type inference or computation.",
+                expected_field.dtype,
+                series.field().dtype,
+                expr
+            );
         }
         Ok(series)
     }
 
     pub fn eval_expression_list(&self, exprs: &[ExprRef]) -> DaftResult<Self> {
-        let result_series = exprs
+        let result_series: Vec<_> = exprs
             .iter()
             .map(|e| self.eval_expression(e))
-            .collect::<DaftResult<Vec<Series>>>()?;
+            .try_collect()?;
 
-        let fields = result_series
-            .iter()
-            .map(|s| s.field().clone())
-            .collect::<Vec<Field>>();
-        let mut seen: HashSet<String> = HashSet::new();
-        for field in fields.iter() {
+        let fields: Vec<_> = result_series.iter().map(|s| s.field().clone()).collect();
+
+        let mut seen = HashSet::new();
+
+        for field in &fields {
             let name = &field.name;
             if seen.contains(name) {
                 return Err(DaftError::ValueError(format!(
                     "Duplicate name found when evaluating expressions: {name}"
                 )));
             }
-            seen.insert(name.clone());
+            seen.insert(name);
         }
+
         let new_schema = Schema::new(fields)?;
 
         let has_agg_expr = exprs.iter().any(|e| matches!(e.as_ref(), Expr::Agg(..)));
