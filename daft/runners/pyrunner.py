@@ -7,7 +7,7 @@ import threading
 import uuid
 from concurrent import futures
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Iterator
+from typing import TYPE_CHECKING, Callable, Iterator
 
 from daft.context import get_context
 from daft.daft import FileFormatConfig, FileInfos, IOConfig, ResourceRequest, SystemInfo
@@ -113,9 +113,6 @@ class PyRunnerResources:
     num_cpus: float
     gpus: dict[str, float]
     memory_bytes: int
-
-    def __repr__(self) -> str:
-        return f"PyRunnerResources(num_cpus={self.num_cpus}, gpus={self.gpus}, memory_bytes={self.memory_bytes})"
 
     def __add__(self, other: PyRunnerResources) -> PyRunnerResources:
         num_cpus = self.num_cpus + other.num_cpus
@@ -600,7 +597,17 @@ class PyRunner(Runner[MicroPartition]):
                                     next_step.partial_metadatas,
                                 )
 
-                            future.add_done_callback(lambda _: self._release_resources(resources))
+                            def create_release_resources_callback(
+                                resources: PyRunnerResources,
+                            ) -> Callable[[futures.Future], None]:
+                                """We use a higher order function here to capture the value of `resources` during the creation of the callback instead of during its call."""
+
+                                def release_resources(_):
+                                    self._release_resources(resources)
+
+                                return release_resources
+
+                            future.add_done_callback(create_release_resources_callback(resources))
 
                             # Register the inflight task
                             assert (
