@@ -7,10 +7,10 @@ use tokio::sync::mpsc::{self, Receiver, Sender};
 
 mod fixed_capacity_vec;
 
-type FileSlab = Vec<u8>;
+pub type FileSlab = Vec<u8>;
 
 /// A pool of reusable memory slabs for efficient I/O operations.
-struct SlabPool<T> {
+pub struct SlabPool<T> {
     available_slabs_sender: Sender<T>,
     available_slabs: Receiver<T>,
 }
@@ -27,7 +27,11 @@ impl<T> Clearable for Vec<T> {
 
 impl<T> SlabPool<T> {
     /// Creates a new `SlabPool` with a specified number of slabs of a given size.
-    fn new(iterator: impl ExactSizeIterator<Item=T>) -> Self {
+    pub fn new<I: IntoIterator<Item=T>>(iterator: I) -> Self
+    where
+        I::IntoIter: ExactSizeIterator<Item=T>,
+    {
+        let iterator = iterator.into_iter();
         let slab_count = iterator.len();
 
         let (tx, rx) = mpsc::channel(slab_count);
@@ -167,12 +171,15 @@ pub type WindowedSlab = heapless::Vec<SharedSlab<FileSlab>, 2>;
 /// # Returns
 ///
 /// A `Stream` of `WindowedSlab`s.
-pub fn read_slabs_windowed<R>(
+pub fn read_slabs_windowed<R, I>(
     file: R,
-    iterator: impl ExactSizeIterator<Item=FileSlab> + 'static,
+    iterator: I,
 ) -> impl Stream<Item=WindowedSlab> where
     R: AsyncRead + Unpin + Send + 'static,
+    I: IntoIterator<Item=FileSlab> + 'static,
+    I::IntoIter: ExactSizeIterator<Item=FileSlab> + 'static,
 {
+    let iterator = iterator.into_iter();
     let (tx, rx) = mpsc::channel(iterator.len());
     let slab_stream = read_slabs(file, iterator);
 

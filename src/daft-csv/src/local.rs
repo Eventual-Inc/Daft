@@ -23,6 +23,7 @@ use rayon::{
     prelude::{IntoParallelRefIterator, ParallelIterator},
 };
 use snafu::ResultExt;
+use crate::local::pool::{read_slabs_windowed, FileSlab, SlabPool};
 
 mod pool;
 
@@ -121,78 +122,9 @@ impl CsvBufferPool {
 }
 
 // The default size of a slab used for reading CSV files in chunks. Currently set to 4MB.
-const SLABSIZE: usize = 4 * 1024 * 1024;
+const SLAB_SIZE: usize = 4 * 1024 * 1024;
 // The default number of slabs in a slab pool.
-const SLABPOOL_DEFAULT_SIZE: usize = 20;
-
-/// A pool of 4MB slabs. Used for reading CSV files in 4MB chunks.
-#[derive(Debug)]
-struct SlabPool {
-    buffers: Mutex<Vec<Arc<[u8; SLABSIZE]>>>,
-    condvar: Condvar,
-}
-
-/// A 4MB slab of bytes. Used for reading CSV files in 4MB chunks.
-#[derive(Clone)]
-struct Slab {
-    pool: Arc<SlabPool>,
-    // We wrap the Arc<buffer> in an Option so that when a Slab is being dropped, we can move the Slab's reference
-    // to the Arc<buffer> back to the slab pool.
-    buffer: Option<Arc<[u8; SLABSIZE]>>,
-}
-
-impl Drop for Slab {
-    fn drop(&mut self) {
-        // Move the buffer back to the slab pool.
-        if let Some(buffer) = self.buffer.take() {
-            self.pool.return_buffer(buffer);
-        }
-    }
-}
-
-impl SlabPool {
-    pub fn new() -> Self {
-        let chunk_buffers: Vec<Arc<[u8; SLABSIZE]>> = (0..SLABPOOL_DEFAULT_SIZE)
-            .map(|_| Arc::new([0; SLABSIZE]))
-            .collect();
-        SlabPool {
-            buffers: Mutex::new(chunk_buffers),
-            condvar: Condvar::new(),
-        }
-    }
-
-    pub fn get_buffer(self: &Arc<Self>) -> Arc<[u8; SLABSIZE]> {
-        let mut buffers = self.buffers.lock().unwrap();
-        while buffers.is_empty() {
-            buffers = self.condvar.wait(buffers).unwrap();
-        }
-        buffers.pop().unwrap()
-    }
-
-    fn return_buffer(&self, buffer: Arc<[u8; SLABSIZE]>) {
-        let mut buffers = self.buffers.lock().unwrap();
-        buffers.push(buffer);
-        self.condvar.notify_one();
-    }
-}
-
-/// A data structure that holds either a single slice of bytes, or a chain of two slices of bytes.
-/// See the description to `parse_json` for more details.
-#[derive(Debug)]
-enum BufferSource<'a> {
-    Single(Cursor<&'a [u8]>),
-    Chain(Chain<Cursor<&'a [u8]>, Cursor<&'a [u8]>>),
-}
-
-/// Read implementation that allows BufferSource to be used by csv::read::Reader.
-impl<'a> Read for BufferSource<'a> {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        match self {
-            BufferSource::Single(cursor) => std::io::Read::read(cursor, buf),
-            BufferSource::Chain(chain) => chain.read(buf),
-        }
-    }
-}
+const SLAB_POOL_DEFAULT_SIZE: usize = 20;
 
 pub async fn read_csv_local(
     uri: &str,
@@ -207,7 +139,7 @@ pub async fn read_csv_local(
         parse_options,
         read_options,
         max_chunks_in_flight,
-    )?;
+    ).await?;
     tables_concat(tables_stream_collect(Box::pin(stream)).await)
 }
 
@@ -223,15 +155,15 @@ async fn tables_stream_collect(stream: BoxStream<'static, DaftResult<Table>>) ->
         .await
 }
 
-pub fn stream_csv_local(
+pub async fn stream_csv_local(
     uri: &str,
     convert_options: Option<CsvConvertOptions>,
     parse_options: CsvParseOptions,
     read_options: Option<CsvReadOptions>,
     max_chunks_in_flight: Option<usize>,
-) -> DaftResult<impl Stream<Item = DaftResult<Table>> + Send> {
+) -> DaftResult<impl Stream<Item=DaftResult<Table>> + Send> {
     let uri = uri.trim_start_matches("file://");
-    let file = std::fs::File::open(uri)?;
+    let file = tokio::fs::File::open(uri).await?;
 
     // TODO(desmond): This logic is repeated multiple times in the csv reader files. Should dedup.
     let predicate = convert_options
@@ -261,7 +193,7 @@ pub fn stream_csv_local(
             Some(co)
         }
     }
-    .unwrap_or_default();
+        .unwrap_or_default();
     // End of `should dedup`.
 
     // TODO(desmond): We should do better schema inference here.
@@ -303,16 +235,18 @@ pub fn stream_csv_local(
         chunk_size_rows,
         n_threads * 2,
     ));
-    let slabpool = Arc::new(SlabPool::new());
+
     // We suppose that each slab of CSV data produces (chunk size / slab size) number of Daft tables. We
     // then double this capacity to ensure that our channel is never full and our threads won't deadlock.
     let (sender, receiver) =
-        crossbeam_channel::bounded(max_chunks_in_flight.unwrap_or(2 * chunk_size / SLABSIZE));
+        crossbeam_channel::bounded(max_chunks_in_flight.unwrap_or(2 * chunk_size / SLAB_SIZE));
+
+    let windowed_buffers = read_slabs_windowed(file, vec![vec![0; SLAB_SIZE]; SLAB_POOL_DEFAULT_SIZE]);
     rayon::spawn(move || {
         consume_csv_file(
             file,
             buffer_pool,
-            slabpool,
+            file_slabpool,
             parse_options,
             projection_indices,
             read_daft_fields,
@@ -334,7 +268,7 @@ pub fn stream_csv_local(
 fn consume_csv_file(
     mut file: std::fs::File,
     buffer_pool: Arc<CsvBufferPool>,
-    slabpool: Arc<SlabPool>,
+    slabpool: SlabPool<FileSlab>,
     parse_options: CsvParseOptions,
     projection_indices: Arc<Vec<usize>>,
     read_daft_fields: Arc<Vec<Arc<daft_core::datatypes::Field>>>,
@@ -528,7 +462,7 @@ fn consume_csv_file(
 
 /// Unsafe helper function that extracts the buffer from an &Option<Arc<[u8]>>. Users should
 /// ensure that the buffer is Some, otherwise this function causes the process to panic.
-fn unsafe_clone_buffer(buffer: &Option<Arc<[u8; SLABSIZE]>>) -> Arc<[u8; SLABSIZE]> {
+fn unsafe_clone_buffer(buffer: &Option<Arc<[u8; SLAB_SIZE]>>) -> Arc<[u8; SLAB_SIZE]> {
     match buffer {
         Some(buffer) => Arc::clone(buffer),
         None => panic!("Tried to clone a CSV slab that doesn't exist. Please report this error."),
@@ -593,9 +527,9 @@ fn unsafe_clone_buffer(buffer: &Option<Arc<[u8; SLABSIZE]>>) -> Arc<[u8; SLABSIZ
 ///     \n character and go back to 2.
 #[allow(clippy::too_many_arguments)]
 fn get_file_chunk(
-    current_buffer: Arc<[u8; SLABSIZE]>,
+    current_buffer: Arc<[u8; SLAB_SIZE]>,
     current_buffer_len: usize,
-    next_buffer: Option<Arc<[u8; SLABSIZE]>>,
+    next_buffer: Option<Arc<[u8; SLAB_SIZE]>>,
     next_buffer_len: usize,
     first_buffer: bool,
     num_fields: usize,
