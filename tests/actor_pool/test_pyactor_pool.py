@@ -69,5 +69,7 @@ def test_pyactor_pool_not_enough_resources():
     assert isinstance(runner, PyRunner)
 
     with pytest.raises(RuntimeError, match=f"Requested {float(cpu_count + 1)} CPUs but found only"):
-        with runner.actor_pool_context("my-pool", ResourceRequest(num_cpus=1), cpu_count + 1, projection) as _:
+        with runner.actor_pool_context(
+            "my-pool", ResourceRequest(num_cpus=1), ResourceRequest(), cpu_count + 1, projection
+        ) as _:
             pass

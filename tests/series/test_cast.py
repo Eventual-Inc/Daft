@@ -262,7 +262,7 @@ def test_cast_binary_to_fixed_size_binary():
     assert casted.to_pylist() == [b"abc", b"def", None, b"bcd", None]
 
 
-def test_cast_binary_to_fixed_size_binary_fails_with_variable_lengths():
+def test_cast_binary_to_fixed_size_binary_fails_with_variable_length():
     data = [b"abc", b"def", None, b"bcd", None, b"long"]
 
     input = Series.from_pylist(data)
@@ -368,7 +368,7 @@ def test_series_cast_python_to_list(dtype) -> None:
     assert t.datatype() == target_dtype
     assert len(t) == len(data)
 
-    assert t.list.lengths().to_pylist() == [3, 3, 3, 3, 2, 2, None]
+    assert t.list.length().to_pylist() == [3, 3, 3, 3, 2, 2, None]
 
     pydata = t.to_pylist()
     assert pydata[-1] is None
@@ -397,7 +397,7 @@ def test_series_cast_python_to_fixed_size_list(dtype) -> None:
     assert t.datatype() == target_dtype
     assert len(t) == len(data)
 
-    assert t.list.lengths().to_pylist() == [3, 3, 3, 3, 3, 3, None]
+    assert t.list.length().to_pylist() == [3, 3, 3, 3, 3, 3, None]
 
     pydata = t.to_pylist()
     assert pydata[-1] is None
@@ -426,7 +426,7 @@ def test_series_cast_python_to_embedding(dtype) -> None:
     assert t.datatype() == target_dtype
     assert len(t) == len(data)
 
-    assert t.list.lengths().to_pylist() == [3, 3, 3, 3, 3, 3, None]
+    assert t.list.length().to_pylist() == [3, 3, 3, 3, 3, 3, None]
 
     pydata = t.to_pylist()
     assert pydata[-1] is None
@@ -448,7 +448,7 @@ def test_series_cast_list_to_embedding(dtype) -> None:
     assert t.datatype() == target_dtype
     assert len(t) == len(data)
 
-    assert t.list.lengths().to_pylist() == [3, 3, 3, None]
+    assert t.list.length().to_pylist() == [3, 3, 3, None]
 
     pydata = t.to_pylist()
     assert pydata[-1] is None
@@ -473,7 +473,7 @@ def test_series_cast_numpy_to_image() -> None:
     assert t.datatype() == target_dtype
     assert len(t) == len(data)
 
-    assert t.list.lengths().to_pylist() == [12, 27, None]
+    assert t.list.length().to_pylist() == [12, 27, None]
 
     pydata = t.to_pylist()
     assert pydata[-1] is None
@@ -495,7 +495,7 @@ def test_series_cast_numpy_to_image_infer_mode() -> None:
     assert t.datatype() == target_dtype
     assert len(t) == len(data)
 
-    assert t.list.lengths().to_pylist() == [4, 27, None]
+    assert t.list.length().to_pylist() == [4, 27, None]
 
     pydata = t.to_arrow().to_pylist()
     assert pydata[0] == {
@@ -536,7 +536,7 @@ def test_series_cast_python_to_fixed_shape_image() -> None:
     assert t.datatype() == target_dtype
     assert len(t) == len(data)
 
-    assert t.list.lengths().to_pylist() == [12, 12, None]
+    assert t.list.length().to_pylist() == [12, 12, None]
 
     pydata = t.to_pylist()
     assert pydata[-1] is None

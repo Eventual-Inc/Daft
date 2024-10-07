@@ -10,8 +10,8 @@ use common_hashable_float_wrapper::FloatWrapper;
 use daft_core::{
     prelude::*,
     utils::display::{
-        display_date32, display_decimal128, display_series_literal, display_time64,
-        display_timestamp,
+        display_date32, display_decimal128, display_duration, display_series_literal,
+        display_time64, display_timestamp,
     },
 };
 use indexmap::IndexMap;
@@ -60,6 +60,8 @@ pub enum LiteralValue {
     Date(i32),
     /// An [`i64`] representing a time in microseconds or nanoseconds since midnight.
     Time(i64, TimeUnit),
+    /// An [`i64`] representing a measure of elapsed time. This elapsed time is a physical duration (i.e. 1s as defined in S.I.)
+    Duration(i64, TimeUnit),
     /// A 64-bit floating point number.
     Float64(f64),
     /// An [`i128`] representing a decimal number with the provided precision and scale.
@@ -98,6 +100,10 @@ impl Hash for LiteralValue {
                 n.hash(state);
                 tu.hash(state);
                 tz.hash(state);
+            }
+            Duration(n, tu) => {
+                n.hash(state);
+                tu.hash(state);
             }
             // Wrap float64 in hashable newtype.
             Float64(n) => FloatWrapper(*n).hash(state),
@@ -141,6 +147,7 @@ impl Display for LiteralValue {
             Date(val) => write!(f, "{}", display_date32(*val)),
             Time(val, tu) => write!(f, "{}", display_time64(*val, tu)),
             Timestamp(val, tu, tz) => write!(f, "{}", display_timestamp(*val, tu, tz)),
+            Duration(val, tu) => write!(f, "{}", display_duration(*val, tu)),
             Float64(val) => write!(f, "{val:.1}"),
             Decimal(val, precision, scale) => {
                 write!(f, "{}", display_decimal128(*val, *precision, *scale))
@@ -181,6 +188,7 @@ impl LiteralValue {
             Date(_) => DataType::Date,
             Time(_, tu) => DataType::Time(*tu),
             Timestamp(_, tu, tz) => DataType::Timestamp(*tu, tz.clone()),
+            Duration(_, tu) => DataType::Duration(*tu),
             Float64(_) => DataType::Float64,
             Decimal(_, precision, scale) => {
                 DataType::Decimal128(*precision as usize, *scale as usize)
@@ -214,6 +222,10 @@ impl LiteralValue {
             Timestamp(val, ..) => {
                 let physical = Int64Array::from(("literal", [*val].as_slice()));
                 TimestampArray::new(Field::new("literal", self.get_type()), physical).into_series()
+            }
+            Duration(val, ..) => {
+                let physical = Int64Array::from(("literal", [*val].as_slice()));
+                DurationArray::new(Field::new("literal", self.get_type()), physical).into_series()
             }
             Float64(val) => Float64Array::from(("literal", [*val].as_slice())).into_series(),
             Decimal(val, ..) => {
@@ -259,7 +271,7 @@ impl LiteralValue {
                 display_timestamp(*val, tu, tz).replace('T', " ")
             ),
             // TODO(Colin): Implement the rest of the types in future work for SQL pushdowns.
-            Decimal(..) | Series(..) | Time(..) | Binary(..) => display_sql_err,
+            Decimal(..) | Series(..) | Time(..) | Binary(..) | Duration(..) => display_sql_err,
             #[cfg(feature = "python")]
             Python(..) => display_sql_err,
             Struct(..) => display_sql_err,

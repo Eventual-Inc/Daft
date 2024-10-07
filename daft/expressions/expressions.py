@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import math
 import os
-from datetime import date, datetime, time
+import warnings
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import (
     TYPE_CHECKING,
@@ -22,6 +23,7 @@ from daft.daft import PyExpr as _PyExpr
 from daft.daft import col as _col
 from daft.daft import date_lit as _date_lit
 from daft.daft import decimal_lit as _decimal_lit
+from daft.daft import duration_lit as _duration_lit
 from daft.daft import list_sort as _list_sort
 from daft.daft import lit as _lit
 from daft.daft import series_lit as _series_lit
@@ -114,6 +116,12 @@ def lit(value: object) -> Expression:
         i64_value = pa_time.cast(pa.int64()).as_py()
         time_unit = TimeUnit.from_str(pa.type_for_alias(str(pa_time.type)).unit)._timeunit
         lit_value = _time_lit(i64_value, time_unit)
+    elif isinstance(value, timedelta):
+        # pyo3 timedelta (PyDelta) is not available when running in abi3 mode, workaround
+        pa_duration = pa.scalar(value)
+        i64_value = pa_duration.cast(pa.int64()).as_py()
+        time_unit = TimeUnit.from_str(pa_duration.type.unit)._timeunit
+        lit_value = _duration_lit(i64_value, time_unit)
     elif isinstance(value, Decimal):
         sign, digits, exponent = value.as_tuple()
         assert isinstance(exponent, int)
@@ -2934,6 +2942,21 @@ class ExpressionListNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.list_count(self._expr, mode))
 
     def lengths(self) -> Expression:
+        """Gets the length of each list
+
+        (DEPRECATED) Please use Expression.list.length instead
+
+        Returns:
+            Expression: a UInt64 expression which is the length of each list
+        """
+        warnings.warn(
+            "This function will be deprecated from Daft version >= 0.3.5!  Instead, please use 'Expression.list.length'",
+            category=DeprecationWarning,
+        )
+
+        return Expression._from_pyexpr(native.list_count(self._expr, CountMode.All))
+
+    def length(self) -> Expression:
         """Gets the length of each list
 
         Returns:
