@@ -1777,6 +1777,7 @@ dependencies = [
  "tokio",
  "tonic",
  "tonic-build",
+ "uuid 1.10.0",
 ]
 
 [[package]]
