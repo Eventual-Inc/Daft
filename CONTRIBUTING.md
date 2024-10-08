@@ -54,13 +54,13 @@ The debugging feature uses a special VSCode launch configuration to start the Py
 
 #### Preparation
 
-- **CodeLLDB Extension for Visual Studio Code**:  
+- **CodeLLDB Extension for Visual Studio Code**:
 This extension is useful for debugging Rust code invoked from Python.
 
-- **Setting Up the Virtual Environment Interpreter**  
+- **Setting Up the Virtual Environment Interpreter**
 (Ctrl+Shift+P -> Python: Select Interpreter -> .venv)
 
-- **Debug Settings in launch.json**  
+- **Debug Settings in launch.json**
 This file is usually found in the `.vscode` folder of your project root. See the [official VSCode documentation](https://code.visualstudio.com/docs/editor/debugging#_launch-configurations) for more information about the launch.json file.
     <details><summary><code><b>launch.json</b></code></summary>
 
@@ -113,9 +113,9 @@ This file is usually found in the `.vscode` folder of your project root. See the
 
 At this point, your debugger should stop on breakpoints in any .rs file located within the codebase.
 
-> **Note**:  
+> **Note**:
 > On some systems, the LLDB debugger will not attach unless [ptrace protection](https://linux-audit.com/protect-ptrace-processes-kernel-yama-ptrace_scope) is disabled.
-To disable, run the following command:  
+To disable, run the following command:
 > ```shell
 > echo 0 | sudo tee /proc/sys/kernel/yama/ptrace_scope
 > ```

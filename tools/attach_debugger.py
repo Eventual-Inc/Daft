@@ -77,9 +77,7 @@ def launch_debugging() -> None:
     # Run the originally requested file by reading in the script, compiling, and
     # executing the code.
     file_to_execute = Path(sys.argv[0])
-    exec(
-        compile(script_contents, file_to_execute, mode="exec"), {"__name__": "__main__"}
-    )
+    exec(compile(script_contents, file_to_execute, mode="exec"), {"__name__": "__main__"})
 
 
 if __name__ == "__main__":
