@@ -4,6 +4,9 @@ use daft_connect::spark_connect::spark_connect_service_server::SparkConnectServi
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tracing_subscriber::fmt::init();
+
+
     let addr = "[::1]:50051".parse()?;
     let service = MySparkConnectService::default();
 
