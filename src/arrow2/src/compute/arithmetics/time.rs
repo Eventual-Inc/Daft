@@ -316,6 +316,17 @@ pub fn add_interval(
     timestamp: &PrimitiveArray<i64>,
     interval: &PrimitiveArray<months_days_ns>,
 ) -> Result<PrimitiveArray<i64>> {
+    if interval.len() == 1 {
+        let value = interval.get(0);
+        let dtype = interval.data_type().clone();
+        let scalar = PrimitiveScalar::new(dtype, value);
+        return add_interval_scalar(timestamp, &scalar);
+    }
+    if timestamp.len() != interval.len() {
+        return Err(Error::InvalidArgumentError(
+            "Timestamp and interval arrays must have the same length".to_string(),
+        ));
+    }
     match timestamp.data_type().to_logical_type() {
         DataType::Timestamp(time_unit, Some(timezone_str)) => {
             let time_unit = *time_unit;
@@ -437,6 +448,17 @@ pub fn sub_interval(
     timestamp: &PrimitiveArray<i64>,
     interval: &PrimitiveArray<months_days_ns>,
 ) -> Result<PrimitiveArray<i64>> {
+    if interval.len() == 1 {
+        let value = interval.get(0);
+        let dtype = interval.data_type().clone();
+        let scalar = PrimitiveScalar::new(dtype, value);
+        return sub_interval_scalar(timestamp, &scalar);
+    }
+    if timestamp.len() != interval.len() {
+        return Err(Error::InvalidArgumentError(
+            "Timestamp and interval arrays must have the same length".to_string(),
+        ));
+    }
     match timestamp.data_type().to_logical_type() {
         DataType::Timestamp(time_unit, Some(timezone_str)) => {
             let time_unit = *time_unit;

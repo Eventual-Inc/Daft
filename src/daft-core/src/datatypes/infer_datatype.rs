@@ -122,8 +122,10 @@ impl<'a> Add for InferDataType<'a> {
     fn add(self, other: Self) -> Self::Output {
         try_numeric_supertype(self.0, other.0).or_else(|_| try_fixed_shape_numeric_datatype(self.0, other.0, |l, r| {InferDataType::from(l) + InferDataType::from(r)})).or(
             match (self.0, other.0) {
+                // --- Python + Python = Python ---
                 #[cfg(feature = "python")]
                 (DataType::Python, _) | (_, DataType::Python) => Ok(DataType::Python),
+                // --- Timestamp + Duration = Timestamp ---
                 (DataType::Timestamp(t_unit, tz), DataType::Duration(d_unit))
                 | (DataType::Duration(d_unit), DataType::Timestamp(t_unit, tz))
                     if t_unit == d_unit => Ok(DataType::Timestamp(*t_unit, tz.clone())),
@@ -131,13 +133,21 @@ impl<'a> Add for InferDataType<'a> {
                     | (du @ DataType::Duration(..), ts @ DataType::Timestamp(..)) => Err(DaftError::TypeError(
                     format!("Cannot add due to differing precision: {}, {}. Please explicitly cast to the precision you wish to add in.", ts, du)
                 )),
+                // --- Date & Duration = Date ---
                 (DataType::Date, DataType::Duration(..)) | (DataType::Duration(..), DataType::Date) => Ok(DataType::Date),
+                // --- Duration + Duration = Duration ---
                 (DataType::Duration(d_unit_self), DataType::Duration(d_unit_other)) if d_unit_self == d_unit_other => {
                     Ok(DataType::Duration(*d_unit_self))
                 },
+                // --------
+                // Duration + other
+                // --------
                 (du_self @ &DataType::Duration(..), du_other @ &DataType::Duration(..)) => Err(DaftError::TypeError(
                     format!("Cannot add due to differing precision: {}, {}. Please explicitly cast to the precision you wish to add in.", du_self, du_other)
                 )),
+                // --------
+                // Nulls + other
+                // --------
                 (dtype @ DataType::Null, other) | (other, dtype @ DataType::Null) => {
                     match other {
                         // Condition is for backwards compatibility. TODO: remove
@@ -150,6 +160,9 @@ impl<'a> Add for InferDataType<'a> {
                         )),
                     }
                 }
+                // --------
+                // Utf8 + other
+                // --------
                 (dtype @ DataType::Utf8, other) | (other, dtype @ DataType::Utf8) => {
                     match other {
                         // DataType::Date condition is for backwards compatibility. TODO: remove
@@ -162,7 +175,9 @@ impl<'a> Add for InferDataType<'a> {
                         )),
                     }
                 },
+                // ---- Interval + temporal ----
                 (DataType::Interval, dtype) | (dtype, DataType::Interval) if dtype.is_temporal() => Ok(dtype.clone()),
+                // ---- Boolean + other ----
                 (DataType::Boolean, other) | (other, DataType::Boolean)
                     if other.is_numeric() => Ok(other.clone()),
                 _ => Err(DaftError::TypeError(

@@ -3,11 +3,10 @@ use std::sync::Arc;
 use arrow2::{
     array::{Array, PrimitiveArray},
     compute::arithmetics::{
-        time::{add_interval, add_interval_scalar, sub_interval, sub_interval_scalar},
+        time::{add_interval, sub_interval},
         ArraySub,
     },
     datatypes::ArrowDataType,
-    scalar::PrimitiveScalar,
     types::months_days_ns,
 };
 use chrono::{Duration, NaiveDate, NaiveTime, Timelike};
@@ -370,88 +369,40 @@ impl TimestampArray {
     }
 
     pub fn add_interval(&self, interval: &IntervalArray) -> DaftResult<Self> {
-        let arrow_interval = interval
-            .data()
-            .as_any()
-            .downcast_ref::<PrimitiveArray<months_days_ns>>()
-            .unwrap();
-
-        let arrow_type = self.data_type().to_arrow()?;
-        let mut arrow_timestamp = self
-            .physical
-            .data()
-            .as_any()
-            .downcast_ref::<PrimitiveArray<i64>>()
-            .unwrap()
-            .clone();
-
-        // `add_interval` expect the inner type to be a timestamp
-        arrow_timestamp.change_type(arrow_type);
-
-        let mut physical_res = if arrow_interval.len() == 1 {
-            let value = arrow_interval.get(0);
-            let dtype = arrow_interval.data_type().clone();
-            let scalar = PrimitiveScalar::new(dtype, value);
-            add_interval_scalar(&arrow_timestamp, &scalar).map_err(DaftError::ArrowError)
-        } else if arrow_interval.len() == arrow_timestamp.len() {
-            add_interval(&arrow_timestamp, arrow_interval).map_err(DaftError::ArrowError)
-        } else {
-            Err(DaftError::ValueError(
-                "Length mismatch between Timestamp and Interval arrays".to_string(),
-            ))
-        }?;
-
-        // but daft expects the inner type to be an int64
-        // This is because we have our own logical wrapper around the arrow array,
-        // so the physical array's dtype should always match the physical type
-        physical_res.change_type(ArrowDataType::Int64);
-        let physical_field = Arc::new(Field::new(self.name(), DataType::Int64));
-
-        Ok(Self::new(
-            self.field.clone(),
-            Int64Array::new(physical_field, Box::new(physical_res))?,
-        ))
+        self.interval_helper(interval, add_interval)
     }
 
     pub fn sub_interval(&self, interval: &IntervalArray) -> DaftResult<Self> {
-        let arrow_interval = interval
-            .data()
-            .as_any()
-            .downcast_ref::<PrimitiveArray<months_days_ns>>()
-            .unwrap();
+        self.interval_helper(interval, sub_interval)
+    }
+
+    fn interval_helper<
+        F: FnOnce(
+            &PrimitiveArray<i64>,
+            &PrimitiveArray<months_days_ns>,
+        ) -> Result<PrimitiveArray<i64>, arrow2::error::Error>,
+    >(
+        &self,
+        interval: &IntervalArray,
+        f: F,
+    ) -> DaftResult<Self> {
+        let arrow_interval = interval.as_arrow();
 
         let arrow_type = self.data_type().to_arrow()?;
-        let mut arrow_timestamp = self
-            .physical
-            .data()
-            .as_any()
-            .downcast_ref::<PrimitiveArray<i64>>()
-            .unwrap()
-            .clone();
+        let mut arrow_timestamp = self.physical.as_arrow().clone();
 
-        // `add_interval` expect the inner type to be a timestamp
+        // `f` expect the inner type to be a timestamp
         arrow_timestamp.change_type(arrow_type);
 
-        let mut physical_res = if arrow_interval.len() == 1 {
-            let value = arrow_interval.get(0);
-            let dtype = arrow_interval.data_type().clone();
-            let scalar = PrimitiveScalar::new(dtype, value);
-            sub_interval_scalar(&arrow_timestamp, &scalar).map_err(DaftError::ArrowError)
-        } else if arrow_interval.len() == arrow_timestamp.len() {
-            sub_interval(&arrow_timestamp, arrow_interval).map_err(DaftError::ArrowError)
-        } else {
-            Err(DaftError::ValueError(
-                "Length mismatch between Timestamp and Interval arrays".to_string(),
-            ))
-        }?;
-
+        let mut physical_res = f(&arrow_timestamp, arrow_interval)?;
         // but daft expects the inner type to be an int64
         // This is because we have our own logical wrapper around the arrow array,
         // so the physical array's dtype should always match the physical type
         physical_res.change_type(ArrowDataType::Int64);
+
         let physical_field = Arc::new(Field::new(self.name(), DataType::Int64));
 
-        Ok(TimestampArray::new(
+        Ok(Self::new(
             self.field.clone(),
             Int64Array::new(physical_field, Box::new(physical_res))?,
         ))
