@@ -1,5 +1,6 @@
 import functools
 import math
+from typing import Any, List, Tuple
 
 import pandas as pd
 import pytest
@@ -7,7 +8,7 @@ import pytest
 import daft
 
 
-def grouped_stddev(rows) -> tuple[list[any], list[any]]:
+def grouped_stddev(rows) -> Tuple[List[Any], List[Any]]:
     map = {}
     for key, data in rows:
         if key not in map:
@@ -88,7 +89,7 @@ GROUPED_TESTS = [
 ]
 
 
-def unzip_rows(rows: list) -> tuple[list, list]:
+def unzip_rows(rows: list) -> Tuple[List, List]:
     keys = []
     nums = []
     for key, data in rows:
