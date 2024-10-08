@@ -34,11 +34,8 @@ pub fn grouped_stats<'a>(
 ) -> DaftResult<impl Iterator<Item = (Stats, &'a VecIndices)>> {
     let grouped_sum = array.grouped_sum(groups)?;
     let grouped_count = array.grouped_count(groups, CountMode::Valid)?;
-    #[cfg(debug_assertions)]
-    {
-        assert_eq!(grouped_sum.len(), grouped_count.len());
-        assert_eq!(grouped_sum.len(), groups.len());
-    };
+    debug_assert_eq!(grouped_sum.len(), grouped_count.len());
+    debug_assert_eq!(grouped_sum.len(), groups.len());
     Ok(GroupedStats {
         grouped_sum,
         grouped_count,
