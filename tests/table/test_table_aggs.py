@@ -669,6 +669,32 @@ def test_global_pyobj_list_aggs() -> None:
     assert result.to_pydict()["list"][0] == input
 
 
+def test_global_list_list_aggs() -> None:
+    input = [[1], [2, 3, 4], [5, None], [], None]
+    table = MicroPartition.from_pydict({"input": input})
+    result = table.eval_expression_list([col("input").alias("list").agg_list()])
+    assert result.get_column("list").datatype() == DataType.list(DataType.list(DataType.int64()))
+    assert result.to_pydict()["list"][0] == input
+
+
+def test_global_fixed_size_list_list_aggs() -> None:
+    input = Series.from_pylist([[1, 2], [3, 4], [5, None], None]).cast(DataType.fixed_size_list(DataType.int64(), 2))
+    table = MicroPartition.from_pydict({"input": input})
+    result = table.eval_expression_list([col("input").alias("list").agg_list()])
+    assert result.get_column("list").datatype() == DataType.list(DataType.fixed_size_list(DataType.int64(), 2))
+    assert result.to_pydict()["list"][0] == [[1, 2], [3, 4], [5, None], None]
+
+
+def test_global_struct_list_aggs() -> None:
+    input = [{"a": 1, "b": 2}, {"a": 3, "b": None}, None]
+    table = MicroPartition.from_pydict({"input": input})
+    result = table.eval_expression_list([col("input").alias("list").agg_list()])
+    assert result.get_column("list").datatype() == DataType.list(
+        DataType.struct({"a": DataType.int64(), "b": DataType.int64()})
+    )
+    assert result.to_pydict()["list"][0] == input
+
+
 @pytest.mark.parametrize(
     "dtype", daft_nonnull_types + daft_null_types, ids=[f"{_}" for _ in daft_nonnull_types + daft_null_types]
 )
@@ -698,6 +724,58 @@ def test_grouped_pyobj_list_aggs() -> None:
     daft_table = MicroPartition.from_pydict({"groups": groups, "input": input})
     result = daft_table.agg([col("input").alias("list").agg_list()], group_by=[col("groups")]).sort([col("groups")])
     expected_groups = [[input[i] for i in group] for group in expected_idx]
+    assert result.to_pydict() == {"groups": [1, 2, None], "list": expected_groups}
+
+
+def test_grouped_list_list_aggs() -> None:
+    groups = [None, 1, None, 1, 2, 2]
+    input = [[1], [2, 3, 4], [5, None], None, [], [8, 9]]
+    expected_idx = [[1, 3], [4, 5], [0, 2]]
+
+    daft_table = MicroPartition.from_pydict({"groups": groups, "input": input})
+    daft_table = daft_table.eval_expression_list([col("groups"), col("input")])
+    result = daft_table.agg([col("input").alias("list").agg_list()], group_by=[col("groups")]).sort([col("groups")])
+    assert result.get_column("list").datatype() == DataType.list(DataType.list(DataType.int64()))
+
+    input_as_dtype = daft_table.get_column("input").to_pylist()
+    expected_groups = [[input_as_dtype[i] for i in group] for group in expected_idx]
+
+    assert result.to_pydict() == {"groups": [1, 2, None], "list": expected_groups}
+
+
+def test_grouped_fixed_size_list_list_aggs() -> None:
+    groups = [None, 1, None, 1, 2, 2]
+    input = Series.from_pylist([[1, 2], [3, 4], [5, None], None, [6, 7], [8, 9]]).cast(
+        DataType.fixed_size_list(DataType.int64(), 2)
+    )
+    expected_idx = [[1, 3], [4, 5], [0, 2]]
+
+    daft_table = MicroPartition.from_pydict({"groups": groups, "input": input})
+    daft_table = daft_table.eval_expression_list([col("groups"), col("input")])
+    result = daft_table.agg([col("input").alias("list").agg_list()], group_by=[col("groups")]).sort([col("groups")])
+    assert result.get_column("list").datatype() == DataType.list(DataType.fixed_size_list(DataType.int64(), 2))
+
+    input_as_dtype = daft_table.get_column("input").to_pylist()
+    expected_groups = [[input_as_dtype[i] for i in group] for group in expected_idx]
+
+    assert result.to_pydict() == {"groups": [1, 2, None], "list": expected_groups}
+
+
+def test_grouped_struct_list_aggs() -> None:
+    groups = [None, 1, None, 1, 2, 2]
+    input = [{"x": 1, "y": 2}, {"x": 3, "y": 4}, {"x": 5, "y": None}, None, {"x": 6, "y": 7}, {"x": 8, "y": 9}]
+    expected_idx = [[1, 3], [4, 5], [0, 2]]
+
+    daft_table = MicroPartition.from_pydict({"groups": groups, "input": input})
+    daft_table = daft_table.eval_expression_list([col("groups"), col("input")])
+    result = daft_table.agg([col("input").alias("list").agg_list()], group_by=[col("groups")]).sort([col("groups")])
+    assert result.get_column("list").datatype() == DataType.list(
+        DataType.struct({"x": DataType.int64(), "y": DataType.int64()})
+    )
+
+    input_as_dtype = daft_table.get_column("input").to_pylist()
+    expected_groups = [[input_as_dtype[i] for i in group] for group in expected_idx]
+
     assert result.to_pydict() == {"groups": [1, 2, None], "list": expected_groups}
 
 
