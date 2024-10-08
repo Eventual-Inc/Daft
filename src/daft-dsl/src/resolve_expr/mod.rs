@@ -218,7 +218,6 @@ fn extract_agg_expr(expr: &Expr) -> DaftResult<AggExpr> {
                     AggExpr::Count(Expr::Alias(e, name.clone()).into(), count_mode)
                 }
                 AggExpr::Sum(e) => AggExpr::Sum(Expr::Alias(e, name.clone()).into()),
-                AggExpr::SquareSum(e) => AggExpr::SquareSum(e.alias(name.clone())),
                 AggExpr::ApproxPercentile(ApproxPercentileParams {
                     child: e,
                     percentiles,

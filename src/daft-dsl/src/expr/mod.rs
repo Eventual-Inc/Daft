@@ -109,9 +109,6 @@ pub enum AggExpr {
     #[display("sum({_0})")]
     Sum(ExprRef),
 
-    #[display("square_sum({_0})")]
-    SquareSum(ExprRef),
-
     #[display("approx_percentile({}, percentiles={:?}, force_list_output={})", _0.child, _0.percentiles, _0.force_list_output)]
     ApproxPercentile(ApproxPercentileParams),
 
@@ -171,7 +168,6 @@ impl AggExpr {
         match self {
             Self::Count(expr, ..)
             | Self::Sum(expr)
-            | Self::SquareSum(expr)
             | Self::ApproxPercentile(ApproxPercentileParams { child: expr, .. })
             | Self::ApproxCountDistinct(expr)
             | Self::ApproxSketch(expr, _)
@@ -196,10 +192,6 @@ impl AggExpr {
             Self::Sum(expr) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_sum()"))
-            }
-            Self::SquareSum(expr) => {
-                let child_id = expr.semantic_id(schema);
-                FieldID::new(format!("{child_id}.local_square_sum()"))
             }
             Self::ApproxPercentile(ApproxPercentileParams {
                 child: expr,
@@ -266,7 +258,6 @@ impl AggExpr {
         match self {
             Self::Count(expr, ..)
             | Self::Sum(expr)
-            | Self::SquareSum(expr)
             | Self::ApproxPercentile(ApproxPercentileParams { child: expr, .. })
             | Self::ApproxCountDistinct(expr)
             | Self::ApproxSketch(expr, _)
@@ -292,7 +283,6 @@ impl AggExpr {
         match self {
             Self::Count(_, count_mode) => Self::Count(first_child(), *count_mode),
             Self::Sum(_) => Self::Sum(first_child()),
-            Self::SquareSum(_) => Self::SquareSum(first_child()),
             Self::Mean(_) => Self::Mean(first_child()),
             Self::Stddev(_) => Self::Stddev(first_child()),
             Self::Min(_) => Self::Min(first_child()),
@@ -332,10 +322,7 @@ impl AggExpr {
                     try_sum_supertype(&field.dtype)?,
                 ))
             }
-            Self::SquareSum(expr) => {
-                let field = expr.to_field(schema)?;
-                Ok(Field::new(field.name.as_str(), DataType::Float64))
-            }
+
             Self::ApproxPercentile(ApproxPercentileParams {
                 child: expr,
                 percentiles,

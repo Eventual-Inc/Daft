@@ -5,8 +5,8 @@ use logical::Decimal128Array;
 use crate::{
     array::{
         ops::{
-            DaftApproxSketchAggable, DaftHllMergeAggable, DaftMeanAggable, DaftSquareSumAggable,
-            DaftStddevAggable, DaftSumAggable, GroupIndices,
+            DaftApproxSketchAggable, DaftHllMergeAggable, DaftMeanAggable, DaftStddevAggable,
+            DaftSumAggable, GroupIndices,
         },
         ListArray,
     },
@@ -93,19 +93,6 @@ impl Series {
                 other
             ))),
         }
-    }
-
-    pub fn square_sum(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
-        self.data_type().assert_is_numeric()?;
-        let casted = self.cast(&DataType::Float64)?;
-        let casted = casted.f64()?;
-        let series = groups
-            .map_or_else(
-                || casted.square_sum(),
-                |groups| casted.grouped_square_sum(groups),
-            )?
-            .into_series();
-        Ok(series)
     }
 
     pub fn approx_sketch(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {

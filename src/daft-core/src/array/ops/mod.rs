@@ -49,7 +49,6 @@ mod sketch_percentile;
 mod sort;
 pub(crate) mod sparse_tensor;
 mod sqrt;
-mod square_sum;
 mod stddev;
 mod struct_;
 mod sum;
@@ -171,12 +170,6 @@ pub trait DaftSumAggable {
     type Output;
     fn sum(&self) -> Self::Output;
     fn grouped_sum(&self, groups: &GroupIndices) -> Self::Output;
-}
-
-pub trait DaftSquareSumAggable {
-    type Output;
-    fn square_sum(&self) -> Self::Output;
-    fn grouped_square_sum(&self, groups: &GroupIndices) -> Self::Output;
 }
 
 pub trait DaftApproxSketchAggable {

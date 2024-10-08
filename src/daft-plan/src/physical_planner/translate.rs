@@ -824,9 +824,6 @@ pub fn populate_aggregation_stages(
                     ));
                 final_exprs.push(col(sum_of_sum_id.clone()).alias(output_name));
             }
-            AggExpr::SquareSum(..) => {
-                unimplemented!("User-facing square_sum aggregation is not implemented")
-            }
             AggExpr::Mean(e) => {
                 let sum_id = AggExpr::Sum(e.clone()).semantic_id(schema).id;
                 let count_id = AggExpr::Count(e.clone(), CountMode::Valid)
@@ -867,7 +864,7 @@ pub fn populate_aggregation_stages(
                     &mut first_stage_aggs,
                 );
                 let sq_sum_id = add_to_stage(
-                    AggExpr::SquareSum,
+                    |sub_expr| AggExpr::Sum(sub_expr.clone().mul(sub_expr)),
                     sub_expr.clone(),
                     schema,
                     &mut first_stage_aggs,
