@@ -31,6 +31,7 @@ impl ScalarUDF for Sign {
     }
 }
 
+#[must_use]
 pub fn sign(input: ExprRef) -> ExprRef {
     ScalarFunction::new(Sign {}, vec![input]).into()
 }

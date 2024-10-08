@@ -16,22 +16,32 @@ pub struct PyDaftPlanningConfig {
 #[pymethods]
 impl PyDaftPlanningConfig {
     #[new]
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     #[staticmethod]
+    #[must_use]
     pub fn from_env() -> Self {
         Self {
             config: Arc::new(DaftPlanningConfig::from_env()),
         }
     }
 
-    fn with_config_values(&mut self, default_io_config: Option<PyIOConfig>) -> PyResult<Self> {
+    fn with_config_values(
+        &mut self,
+        default_io_config: Option<PyIOConfig>,
+        enable_actor_pool_projections: Option<bool>,
+    ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
         if let Some(default_io_config) = default_io_config {
             config.default_io_config = default_io_config.config;
+        }
+
+        if let Some(enable_actor_pool_projections) = enable_actor_pool_projections {
+            config.enable_actor_pool_projections = enable_actor_pool_projections;
         }
 
         Ok(Self {
@@ -63,11 +73,13 @@ pub struct PyDaftExecutionConfig {
 #[pymethods]
 impl PyDaftExecutionConfig {
     #[new]
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     #[staticmethod]
+    #[must_use]
     pub fn from_env() -> Self {
         Self {
             config: Arc::new(DaftExecutionConfig::from_env()),

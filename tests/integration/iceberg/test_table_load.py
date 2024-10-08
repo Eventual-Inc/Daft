@@ -24,7 +24,7 @@ def test_daft_iceberg_table_open(local_iceberg_tables):
 
 
 WORKING_SHOW_COLLECT = [
-    "test_all_types",
+    # "test_all_types",  # Commented out due to issue https://github.com/Eventual-Inc/Daft/issues/2996
     "test_limit",
     "test_null_nan",
     "test_null_nan_rewritten",

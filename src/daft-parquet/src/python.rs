@@ -46,7 +46,7 @@ pub mod pylib {
                 row_groups,
                 predicate.map(|e| e.expr),
                 io_client,
-                Some(io_stats.clone()),
+                Some(io_stats),
                 multithreaded_io.unwrap_or(true),
                 schema_infer_options,
                 None,
@@ -74,7 +74,7 @@ pub mod pylib {
             .into_iter()
             .map(|v| {
                 v.into_iter()
-                    .map(|a| to_py_array(py, a, pyarrow).map(|pyarray| pyarray.unbind()))
+                    .map(|a| to_py_array(py, a, pyarrow).map(pyo3::Bound::unbind))
                     .collect::<PyResult<Vec<_>>>()
             })
             .collect::<PyResult<Vec<_>>>()?;
@@ -172,7 +172,7 @@ pub mod pylib {
                 None,
             )?
             .into_iter()
-            .map(|v| v.into())
+            .map(std::convert::Into::into)
             .collect())
         })
     }

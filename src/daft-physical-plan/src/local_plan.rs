@@ -46,11 +46,13 @@ pub enum LocalPhysicalPlan {
 }
 
 impl LocalPhysicalPlan {
+    #[must_use]
     pub fn name(&self) -> &'static str {
         // uses strum::IntoStaticStr
         self.into()
     }
 
+    #[must_use]
     pub fn arced(self) -> LocalPhysicalPlanRef {
         self.into()
     }
@@ -198,6 +200,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    #[must_use]
     pub fn schema(&self) -> &SchemaRef {
         match self {
             Self::PhysicalScan(PhysicalScan { schema, .. })
@@ -217,13 +220,12 @@ impl LocalPhysicalPlan {
 }
 
 #[derive(Debug)]
-
 pub struct InMemoryScan {
     pub info: InMemoryInfo,
     pub plan_stats: PlanStats,
 }
-#[derive(Debug)]
 
+#[derive(Debug)]
 pub struct PhysicalScan {
     pub scan_tasks: Vec<ScanTaskRef>,
     pub schema: SchemaRef,
@@ -231,37 +233,36 @@ pub struct PhysicalScan {
 }
 
 #[derive(Debug)]
-
 pub struct EmptyScan {
     pub schema: SchemaRef,
     pub plan_stats: PlanStats,
 }
-#[derive(Debug)]
 
+#[derive(Debug)]
 pub struct Project {
     pub input: LocalPhysicalPlanRef,
     pub projection: Vec<ExprRef>,
     pub schema: SchemaRef,
     pub plan_stats: PlanStats,
 }
-#[derive(Debug)]
 
+#[derive(Debug)]
 pub struct Filter {
     pub input: LocalPhysicalPlanRef,
     pub predicate: ExprRef,
     pub schema: SchemaRef,
     pub plan_stats: PlanStats,
 }
-#[derive(Debug)]
 
+#[derive(Debug)]
 pub struct Limit {
     pub input: LocalPhysicalPlanRef,
     pub num_rows: i64,
     pub schema: SchemaRef,
     pub plan_stats: PlanStats,
 }
-#[derive(Debug)]
 
+#[derive(Debug)]
 pub struct Sort {
     pub input: LocalPhysicalPlanRef,
     pub sort_by: Vec<ExprRef>,
@@ -269,16 +270,16 @@ pub struct Sort {
     pub schema: SchemaRef,
     pub plan_stats: PlanStats,
 }
-#[derive(Debug)]
 
+#[derive(Debug)]
 pub struct UnGroupedAggregate {
     pub input: LocalPhysicalPlanRef,
     pub aggregations: Vec<AggExpr>,
     pub schema: SchemaRef,
     pub plan_stats: PlanStats,
 }
-#[derive(Debug)]
 
+#[derive(Debug)]
 pub struct HashAggregate {
     pub input: LocalPhysicalPlanRef,
     pub aggregations: Vec<AggExpr>,
@@ -288,7 +289,6 @@ pub struct HashAggregate {
 }
 
 #[derive(Debug)]
-
 pub struct HashJoin {
     pub left: LocalPhysicalPlanRef,
     pub right: LocalPhysicalPlanRef,
@@ -299,7 +299,6 @@ pub struct HashJoin {
 }
 
 #[derive(Debug)]
-
 pub struct Concat {
     pub input: LocalPhysicalPlanRef,
     pub other: LocalPhysicalPlanRef,
@@ -308,8 +307,7 @@ pub struct Concat {
 }
 
 #[derive(Debug)]
-
 pub struct PhysicalWrite {}
-#[derive(Debug)]
 
+#[derive(Debug)]
 pub struct PlanStats {}

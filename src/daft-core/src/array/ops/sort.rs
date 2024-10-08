@@ -45,7 +45,7 @@ pub fn build_multi_array_bicompare(
     }
 
     let combined_comparator = Box::new(move |a_idx: usize, b_idx: usize| -> std::cmp::Ordering {
-        for comparator in cmp_list.iter() {
+        for comparator in &cmp_list {
             match comparator(a_idx, b_idx) {
                 std::cmp::Ordering::Equal => continue,
                 other => return other,

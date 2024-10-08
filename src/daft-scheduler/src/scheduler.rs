@@ -5,9 +5,17 @@ use common_error::DaftResult;
 use common_file_formats::FileFormat;
 use common_py_serde::impl_bincode_py_state_serialization;
 use daft_dsl::ExprRef;
+#[cfg(feature = "python")]
+use daft_plan::physical_ops::{DeltaLakeWrite, IcebergWrite, LanceWrite};
 use daft_plan::{
-    logical_to_physical, physical_ops::*, InMemoryInfo, PhysicalPlan, PhysicalPlanRef,
-    QueryStageOutput,
+    logical_to_physical,
+    physical_ops::{
+        ActorPoolProject, Aggregate, BroadcastJoin, Coalesce, Concat, EmptyScan, Explode,
+        FanoutByHash, FanoutRandom, Filter, Flatten, HashJoin, InMemoryScan, Limit,
+        MonotonicallyIncreasingId, Pivot, Project, ReduceMerge, Sample, Sort, SortMergeJoin, Split,
+        TabularScan, TabularWriteCsv, TabularWriteJson, TabularWriteParquet, Unpivot,
+    },
+    InMemoryInfo, PhysicalPlan, PhysicalPlanRef, QueryStageOutput,
 };
 #[cfg(feature = "python")]
 use daft_plan::{DeltaLakeCatalogInfo, IcebergCatalogInfo, LanceCatalogInfo};

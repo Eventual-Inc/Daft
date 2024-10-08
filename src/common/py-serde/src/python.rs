@@ -7,8 +7,8 @@ use serde::{
     ser::Error as SerError,
     Deserializer, Serializer,
 };
-#[cfg(feature = "python")]
 
+#[cfg(feature = "python")]
 pub fn serialize_py_object<S>(obj: &PyObject, s: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
@@ -23,10 +23,9 @@ where
     s.serialize_bytes(bytes.as_slice())
 }
 #[cfg(feature = "python")]
-
 struct PyObjectVisitor;
-#[cfg(feature = "python")]
 
+#[cfg(feature = "python")]
 impl<'de> Visitor<'de> for PyObjectVisitor {
     type Value = PyObject;
 

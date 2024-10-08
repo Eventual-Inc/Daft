@@ -64,19 +64,18 @@ impl Source for ScanTaskSource {
         runtime_handle: &mut ExecutionRuntimeHandle,
         io_stats: IOStatsRef,
     ) -> crate::Result<SourceStream<'static>> {
-        let (senders, receivers): (Vec<_>, Vec<_>) = match maintain_order {
-            true => (0..self.scan_tasks.len())
+        let (senders, receivers): (Vec<_>, Vec<_>) = if maintain_order {
+            (0..self.scan_tasks.len())
                 .map(|_| create_channel(1))
-                .unzip(),
-            false => {
-                let (sender, receiver) = create_channel(self.scan_tasks.len());
-                (
-                    std::iter::repeat(sender)
-                        .take(self.scan_tasks.len())
-                        .collect(),
-                    vec![receiver],
-                )
-            }
+                .unzip()
+        } else {
+            let (sender, receiver) = create_channel(self.scan_tasks.len());
+            (
+                std::iter::repeat(sender)
+                    .take(self.scan_tasks.len())
+                    .collect(),
+                vec![receiver],
+            )
         };
         for (scan_task, sender) in self.scan_tasks.iter().zip(senders) {
             runtime_handle.spawn(
@@ -103,18 +102,18 @@ async fn stream_scan_task(
     io_stats: Option<IOStatsRef>,
     maintain_order: bool,
 ) -> DaftResult<impl Stream<Item = DaftResult<Arc<MicroPartition>>> + Send> {
-    let pushdown_columns = scan_task
-        .pushdowns
-        .columns
-        .as_ref()
-        .map(|v| v.iter().map(|s| s.as_str()).collect::<Vec<&str>>());
+    let pushdown_columns = scan_task.pushdowns.columns.as_ref().map(|v| {
+        v.iter()
+            .map(std::string::String::as_str)
+            .collect::<Vec<&str>>()
+    });
 
     let file_column_names = match (
         pushdown_columns,
         scan_task.partition_spec().map(|ps| ps.to_fill_map()),
     ) {
         (None, _) => None,
-        (Some(columns), None) => Some(columns.to_vec()),
+        (Some(columns), None) => Some(columns.clone()),
 
         // If the ScanTask has a partition_spec, we elide reads of partition columns from the file
         (Some(columns), Some(partition_fillmap)) => Some(
@@ -208,10 +207,10 @@ async fn stream_scan_task(
                 scan_task.pushdowns.limit,
                 file_column_names
                     .as_ref()
-                    .map(|cols| cols.iter().map(|col| col.to_string()).collect()),
+                    .map(|cols| cols.iter().map(|col| (*col).to_string()).collect()),
                 col_names
                     .as_ref()
-                    .map(|cols| cols.iter().map(|col| col.to_string()).collect()),
+                    .map(|cols| cols.iter().map(|col| (*col).to_string()).collect()),
                 Some(schema_of_file),
                 scan_task.pushdowns.filters.clone(),
             );
@@ -243,7 +242,7 @@ async fn stream_scan_task(
                 scan_task.pushdowns.limit,
                 file_column_names
                     .as_ref()
-                    .map(|cols| cols.iter().map(|col| col.to_string()).collect()),
+                    .map(|cols| cols.iter().map(|col| (*col).to_string()).collect()),
                 Some(schema_of_file),
                 scan_task.pushdowns.filters.clone(),
             );
@@ -310,7 +309,7 @@ async fn stream_scan_task(
                 .as_ref(),
         )?;
         let mp = Arc::new(MicroPartition::new_loaded(
-            scan_task.materialized_schema().clone(),
+            scan_task.materialized_schema(),
             Arc::new(vec![casted_table]),
             scan_task.statistics.clone(),
         ));

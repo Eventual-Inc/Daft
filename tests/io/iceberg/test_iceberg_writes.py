@@ -209,6 +209,18 @@ def test_read_after_write_nested_fields(local_catalog):
     assert as_arrow == read_back.to_arrow()
 
 
+def test_read_after_write_with_empty_partition(local_catalog):
+    df = daft.from_pydict({"x": [1, 2, 3]}).into_partitions(4)
+    as_arrow = df.to_arrow()
+    table = local_catalog.create_table("default.test", as_arrow.schema)
+    result = df.write_iceberg(table)
+    as_dict = result.to_pydict()
+    assert as_dict["operation"] == ["ADD", "ADD", "ADD"]
+    assert as_dict["rows"] == [1, 1, 1]
+    read_back = daft.read_iceberg(table)
+    assert as_arrow == read_back.to_arrow()
+
+
 @pytest.fixture
 def complex_table() -> tuple[pa.Table, Schema]:
     table = pa.table(
