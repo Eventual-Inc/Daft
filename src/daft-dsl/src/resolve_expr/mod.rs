@@ -219,6 +219,7 @@ fn extract_agg_expr(expr: &Expr) -> DaftResult<AggExpr> {
                     AggExpr::Count(Expr::Alias(e, name.clone()).into(), count_mode)
                 }
                 AggExpr::Sum(e) => AggExpr::Sum(Expr::Alias(e, name.clone()).into()),
+                AggExpr::SquareSum(e) => AggExpr::SquareSum(e.alias(name.clone())),
                 AggExpr::ApproxPercentile(ApproxPercentileParams {
                     child: e,
                     percentiles,
@@ -239,9 +240,6 @@ fn extract_agg_expr(expr: &Expr) -> DaftResult<AggExpr> {
                 }
                 AggExpr::Mean(e) => AggExpr::Mean(Expr::Alias(e, name.clone()).into()),
                 AggExpr::Stddev(e) => AggExpr::Stddev(Expr::Alias(e, name.clone()).into()),
-                AggExpr::StddevMerge(e) => {
-                    AggExpr::StddevMerge(Expr::Alias(e, name.clone()).into())
-                }
                 AggExpr::Min(e) => AggExpr::Min(Expr::Alias(e, name.clone()).into()),
                 AggExpr::Max(e) => AggExpr::Max(Expr::Alias(e, name.clone()).into()),
                 AggExpr::AnyValue(e, ignore_nulls) => {

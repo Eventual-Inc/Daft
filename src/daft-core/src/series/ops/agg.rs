@@ -4,7 +4,10 @@ use logical::Decimal128Array;
 
 use crate::{
     array::{
-        ops::{DaftHllMergeAggable, DaftMeanAggable, DaftStddevAggable, GroupIndices},
+        ops::{
+            DaftApproxSketchAggable, DaftHllMergeAggable, DaftMeanAggable, DaftSquareSumAggable,
+            DaftStddevAggable, DaftSumAggable, GroupIndices,
+        },
         ListArray,
     },
     count_mode::CountMode,
@@ -26,12 +29,10 @@ impl Series {
     }
 
     pub fn sum(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
-        use crate::{array::ops::DaftSumAggable, datatypes::DataType::*};
-
         match self.data_type() {
             // intX -> int64 (in line with numpy)
-            Int8 | Int16 | Int32 | Int64 => {
-                let casted = self.cast(&Int64)?;
+            DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => {
+                let casted = self.cast(&DataType::Int64)?;
                 match groups {
                     Some(groups) => {
                         Ok(DaftSumAggable::grouped_sum(&casted.i64()?, groups)?.into_series())
@@ -40,8 +41,8 @@ impl Series {
                 }
             }
             // uintX -> uint64 (in line with numpy)
-            UInt8 | UInt16 | UInt32 | UInt64 => {
-                let casted = self.cast(&UInt64)?;
+            DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 => {
+                let casted = self.cast(&DataType::UInt64)?;
                 match groups {
                     Some(groups) => {
                         Ok(DaftSumAggable::grouped_sum(&casted.u64()?, groups)?.into_series())
@@ -50,7 +51,7 @@ impl Series {
                 }
             }
             // floatX -> floatX (in line with numpy)
-            Float32 => match groups {
+            DataType::Float32 => match groups {
                 Some(groups) => Ok(DaftSumAggable::grouped_sum(
                     &self.downcast::<Float32Array>()?,
                     groups,
@@ -58,7 +59,7 @@ impl Series {
                 .into_series()),
                 None => Ok(DaftSumAggable::sum(&self.downcast::<Float32Array>()?)?.into_series()),
             },
-            Float64 => match groups {
+            DataType::Float64 => match groups {
                 Some(groups) => Ok(DaftSumAggable::grouped_sum(
                     &self.downcast::<Float64Array>()?,
                     groups,
@@ -66,7 +67,7 @@ impl Series {
                 .into_series()),
                 None => Ok(DaftSumAggable::sum(&self.downcast::<Float64Array>()?)?.into_series()),
             },
-            Decimal128(_, _) => match groups {
+            DataType::Decimal128(_, _) => match groups {
                 Some(groups) => Ok(Decimal128Array::new(
                     Field {
                         dtype: try_sum_supertype(self.data_type())?,
@@ -94,13 +95,24 @@ impl Series {
         }
     }
 
-    pub fn approx_sketch(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
-        use crate::{array::ops::DaftApproxSketchAggable, datatypes::DataType::*};
+    pub fn square_sum(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
+        self.data_type().assert_is_numeric()?;
+        let casted = self.cast(&DataType::Float64)?;
+        let casted = casted.f64()?;
+        let series = groups
+            .map_or_else(
+                || casted.square_sum(),
+                |groups| casted.grouped_square_sum(groups),
+            )?
+            .into_series();
+        Ok(series)
+    }
 
+    pub fn approx_sketch(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
         // Upcast all numeric types to float64 and compute approx_sketch.
         match self.data_type() {
             dt if dt.is_numeric() => {
-                let casted = self.cast(&Float64)?;
+                let casted = self.cast(&DataType::Float64)?;
                 match groups {
                     Some(groups) => Ok(DaftApproxSketchAggable::grouped_approx_sketch(
                         &casted.f64()?,

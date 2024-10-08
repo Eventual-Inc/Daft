@@ -101,6 +101,7 @@ pub(crate) fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<Expr
             ensure!(args.len() == 1, "sum takes exactly one argument");
             Ok(args[0].clone().sum())
         }
+        AggExpr::SquareSum(_) => unsupported_sql_err!("square_sum"),
         AggExpr::ApproxCountDistinct(_) => unsupported_sql_err!("approx_percentile"),
         AggExpr::ApproxPercentile(_) => unsupported_sql_err!("approx_percentile"),
         AggExpr::ApproxSketch(_, _) => unsupported_sql_err!("approx_sketch"),
@@ -109,8 +110,10 @@ pub(crate) fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<Expr
             ensure!(args.len() == 1, "mean takes exactly one argument");
             Ok(args[0].clone().mean())
         }
-        AggExpr::Stddev(..) => todo!("stddev"),
-        AggExpr::StddevMerge(..) => todo!("stddev_merge"),
+        AggExpr::Stddev(_) => {
+            ensure!(args.len() == 1, "stddev takes exactly one argument");
+            Ok(args[0].clone().stddev())
+        }
         AggExpr::Min(_) => {
             ensure!(args.len() == 1, "min takes exactly one argument");
             Ok(args[0].clone().min())

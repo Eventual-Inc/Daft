@@ -380,6 +380,10 @@ fn replace_column_with_semantic_id_aggexpr(
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                 .map_yes_no(AggExpr::Sum, |_| e)
         }
+        AggExpr::SquareSum(ref child) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                .map_yes_no(AggExpr::SquareSum, |_| e)
+        }
         AggExpr::ApproxPercentile(ApproxPercentileParams {
             ref child,
             ref percentiles,
@@ -418,10 +422,6 @@ fn replace_column_with_semantic_id_aggexpr(
         AggExpr::Stddev(ref child) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                 .map_yes_no(AggExpr::Stddev, |_| e)
-        }
-        AggExpr::StddevMerge(ref child) => {
-            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
-                .map_yes_no(AggExpr::StddevMerge, |_| e)
         }
         AggExpr::Min(ref child) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)

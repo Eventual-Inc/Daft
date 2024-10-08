@@ -814,6 +814,9 @@ pub fn populate_aggregation_stages(
                     ));
                 final_exprs.push(col(sum_of_sum_id.clone()).alias(output_name));
             }
+            AggExpr::SquareSum(..) => {
+                unimplemented!("User-facing square_sum aggregation is not implemented")
+            }
             AggExpr::Mean(e) => {
                 let sum_id = AggExpr::Sum(e.clone()).semantic_id(schema).id;
                 let count_id = AggExpr::Count(e.clone(), CountMode::Valid)
@@ -846,18 +849,50 @@ pub fn populate_aggregation_stages(
                 );
             }
             AggExpr::Stddev(sub_expr) => {
-                // first stage
+                // first stage aggregation
                 let sum_expr = AggExpr::Sum(sub_expr.clone());
+                let sq_sum_expr = AggExpr::SquareSum(sub_expr.clone());
                 let count_expr = AggExpr::Count(sub_expr.clone(), CountMode::Valid);
-                add_to_stage(&mut first_stage_aggs, get_id(&sum_expr), sum_expr);
-                add_to_stage(&mut first_stage_aggs, get_id(&count_expr), count_expr);
+                let sum_id = get_id(&sum_expr);
+                let sq_sum_id = get_id(&sq_sum_expr);
+                let count_id = get_id(&count_expr);
+                add_to_stage(&mut first_stage_aggs, sum_id.clone(), sum_expr);
+                add_to_stage(&mut first_stage_aggs, sq_sum_id.clone(), sq_sum_expr);
+                add_to_stage(&mut first_stage_aggs, count_id.clone(), count_expr);
 
-                // second stage
+                // second stage aggregation
+                let global_sum_expr = AggExpr::Sum(col(sum_id));
+                let global_sq_sum_expr = AggExpr::Sum(col(sq_sum_id));
+                let global_count_expr = AggExpr::Sum(col(count_id));
+                let global_sum_id = get_id(&global_sum_expr);
+                let global_sq_sum_id = get_id(&global_sq_sum_expr);
+                let global_count_id = get_id(&global_count_expr);
+                add_to_stage(
+                    &mut second_stage_aggs,
+                    global_sum_id.clone(),
+                    global_sum_expr,
+                );
+                add_to_stage(
+                    &mut second_stage_aggs,
+                    global_sq_sum_id.clone(),
+                    global_sq_sum_expr,
+                );
+                add_to_stage(
+                    &mut second_stage_aggs,
+                    global_count_id.clone(),
+                    global_count_expr,
+                );
 
-                todo!("stddev")
-            }
-            AggExpr::StddevMerge(..) => {
-                unimplemented!("User-facing stddev_merge aggregation is not implemented")
+                // final projection
+                let g_sq_sum = col(global_sq_sum_id);
+                let g_sum = col(global_sum_id);
+                let g_count = col(global_count_id);
+                let left = g_sq_sum.div(g_count.clone());
+                let right = g_sum.div(g_count);
+                let right = right.clone().mul(right);
+                let result = left.sub(right);
+
+                final_exprs.push(result);
             }
             AggExpr::Min(e) => {
                 let min_id = agg_expr.semantic_id(schema).id;

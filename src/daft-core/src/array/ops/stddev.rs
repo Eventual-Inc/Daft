@@ -1,8 +1,5 @@
-use std::sync::Arc;
-
 use arrow2::array::PrimitiveArray;
 use common_error::DaftResult;
-use daft_schema::{dtype::DataType, field::Field};
 
 use crate::{
     array::{
@@ -20,7 +17,7 @@ impl DaftStddevAggable for DataArray<Float64Type> {
         let stats = stats::calculate_stats(self)?;
         let values = self.into_iter().flatten().copied();
         let stddev = stats::calculate_stddev(stats, values);
-        let field = Arc::new(Field::new(self.field.name.clone(), DataType::Float64));
+        let field = self.field.clone();
         let data = PrimitiveArray::<f64>::from([stddev]).boxed();
         Self::new(field, data)
     }
@@ -30,7 +27,7 @@ impl DaftStddevAggable for DataArray<Float64Type> {
             let values = group.iter().filter_map(|&index| self.get(index as _));
             stats::calculate_stddev(stats, values)
         });
-        let field = Arc::new(Field::new(self.field.name.clone(), DataType::Float64));
+        let field = self.field.clone();
         let data = PrimitiveArray::<f64>::from_iter(grouped_stddevs_iter).boxed();
         Self::new(field, data)
     }
