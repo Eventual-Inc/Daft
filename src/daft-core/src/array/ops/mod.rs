@@ -197,9 +197,51 @@ pub trait DaftCompareAggable {
     fn grouped_max(&self, groups: &GroupIndices) -> Self::Output;
 }
 
+/// Trait for types that can be aggregated into list-like structures.
 pub trait DaftListAggable {
+    /// The output type of the list aggregation operations.
     type Output;
+
+    /// Converts the current data into a list-like structure.
     fn list(&self) -> Self::Output;
+
+    /// Groups elements of the current data structure according to the provided group indices.
+    ///
+    /// This method creates a new list-like structure where each group of indices from the input
+    /// becomes a single element in the output. The grouping is defined by `GroupIndices`, which
+    /// is a vector of index vectors.
+    ///
+    /// # Arguments
+    ///
+    /// * `groups` - A reference to `GroupIndices`, which is a `Vec<Vec<u64>>`. Each inner `Vec<u64>`
+    ///   represents a group of indices that should be combined into a single element in the output.
+    ///
+    /// # Returns
+    ///
+    /// Returns a new instance of `Self::Output`, which is a list-like structure where each element
+    /// corresponds to a group from the input `groups`.
+    ///
+    /// # Example
+    ///
+    /// Suppose we have an array of integers: `[10, 20, 30, 40, 50]`
+    /// And we call `grouped_list` with the following groups:
+    ///
+    /// ```
+    /// use daft_core::array::ops::GroupIndices;
+    /// let groups: GroupIndices = vec![
+    ///     vec![0, 2],    // Group 1: indices 0 and 2
+    ///     vec![1, 3, 4]  // Group 2: indices 1, 3, and 4
+    /// ];
+    /// ```
+    ///
+    /// The resulting output would be a list-like structure conceptually represented as:
+    /// `[[10, 30], [20, 40, 50]]`
+    ///
+    /// Where:
+    /// - The first element `[10, 30]` corresponds to group 1 (indices 0 and 2)
+    /// - The second element `[20, 40, 50]` corresponds to group 2 (indices 1, 3, and 4)
+    ///
+    /// The actual representation may vary depending on the implementing type.
     fn grouped_list(&self, groups: &GroupIndices) -> Self::Output;
 }
 
