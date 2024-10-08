@@ -4,10 +4,7 @@ use indexmap::IndexMap;
 use pyo3::{class::basic::CompareOp, exceptions::PyValueError, prelude::*};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    dtype::DataType, field::Field, image_mode::ImageMode, interval_unit::IntervalUnit,
-    time_unit::TimeUnit,
-};
+use crate::{dtype::DataType, field::Field, image_mode::ImageMode, time_unit::TimeUnit};
 
 #[pyclass]
 #[derive(Clone)]
@@ -64,64 +61,6 @@ impl PyTimeUnit {
         };
         let mut hasher = DefaultHasher::new();
         self.timeunit.hash(&mut hasher);
-        hasher.finish()
-    }
-}
-#[pyclass]
-#[derive(Clone)]
-pub struct PyIntervalUnit {
-    pub unit: IntervalUnit,
-}
-
-impl From<IntervalUnit> for PyIntervalUnit {
-    fn from(value: IntervalUnit) -> Self {
-        Self { unit: value }
-    }
-}
-
-impl From<PyIntervalUnit> for IntervalUnit {
-    fn from(item: PyIntervalUnit) -> Self {
-        item.unit
-    }
-}
-
-#[pymethods]
-impl PyIntervalUnit {
-    #[staticmethod]
-    pub fn year_month() -> PyResult<Self> {
-        Ok(IntervalUnit::YearMonth.into())
-    }
-    #[staticmethod]
-    pub fn day_time() -> PyResult<Self> {
-        Ok(IntervalUnit::DayTime.into())
-    }
-
-    #[staticmethod]
-    pub fn month_day_nano() -> PyResult<Self> {
-        Ok(IntervalUnit::MonthDayNano.into())
-    }
-
-    pub fn __repr__(&self) -> PyResult<String> {
-        Ok(format!("{:?}", self.unit))
-    }
-
-    pub fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<bool> {
-        //https://pyo3.rs/v0.19.0/class/object.html
-        match op {
-            CompareOp::Eq => Ok(self.unit == other.unit),
-            CompareOp::Ne => Ok(self.unit != other.unit),
-            _ => Err(pyo3::exceptions::PyNotImplementedError::new_err(())),
-        }
-    }
-
-    #[must_use]
-    pub fn __hash__(&self) -> u64 {
-        use std::{
-            collections::hash_map::DefaultHasher,
-            hash::{Hash, Hasher},
-        };
-        let mut hasher = DefaultHasher::new();
-        self.unit.hash(&mut hasher);
         hasher.finish()
     }
 }
@@ -252,8 +191,8 @@ impl PyDataType {
         Ok(DataType::Duration(timeunit.timeunit).into())
     }
     #[staticmethod]
-    pub fn interval(unit: PyIntervalUnit) -> PyResult<Self> {
-        Ok(DataType::Interval(unit.unit).into())
+    pub fn interval() -> PyResult<Self> {
+        Ok(DataType::Interval.into())
     }
 
     #[staticmethod]

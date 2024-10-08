@@ -315,3 +315,53 @@ def test_join_timestamp_same_timezone(tu1, tu2, tz_repr):
         "x": [1],
         "y": [4],
     }
+
+
+def test_intervals():
+    expected = {
+        "add 1 year": [datetime(2022, 1, 1, 0, 0), datetime(2022, 1, 2, 0, 0)],
+        "add 1 month": [datetime(2021, 2, 1, 0, 0), datetime(2021, 2, 2, 0, 0)],
+        "add 1 day": [datetime(2021, 1, 2, 0, 0), datetime(2021, 1, 3, 0, 0)],
+        "add 1 hour": [datetime(2021, 1, 1, 1, 0), datetime(2021, 1, 2, 1, 0)],
+        "add 1 minute": [datetime(2021, 1, 1, 0, 1), datetime(2021, 1, 2, 0, 1)],
+        "add 1 second": [datetime(2021, 1, 1, 0, 0, 1), datetime(2021, 1, 2, 0, 0, 1)],
+        "add 1 millisecond": [datetime(2021, 1, 1, 0, 0, 0, 1000), datetime(2021, 1, 2, 0, 0, 0, 1000)],
+        "sub 1 year": [datetime(2020, 1, 2, 0, 0), datetime(2020, 1, 3, 0, 0)],
+        "sub 1 month": [datetime(2020, 12, 1, 0, 0), datetime(2020, 12, 2, 0, 0)],
+        "sub 1 day": [datetime(2021, 1, 2, 0, 0), datetime(2021, 1, 3, 0, 0)],
+        "sub 1 hour": [datetime(2020, 12, 31, 23, 0), datetime(2021, 1, 1, 23, 0)],
+        "sub 1 minute": [datetime(2020, 12, 31, 23, 59), datetime(2021, 1, 1, 23, 59)],
+        "sub 1 second": [datetime(2020, 12, 31, 23, 59, 59), datetime(2021, 1, 1, 23, 59, 59)],
+        "sub 1 millisecond": [datetime(2020, 12, 31, 23, 59, 59, 999000), datetime(2021, 1, 1, 23, 59, 59, 999000)],
+    }
+
+    actual = (
+        daft.from_pydict(
+            {
+                "datetimes": [
+                    datetime(2021, 1, 1, 0, 0, 0),
+                    datetime(2021, 1, 2, 0, 0, 0),
+                ]
+            }
+        )
+        .select(
+            (col("datetimes") + daft.interval(years=1)).alias("add 1 year"),
+            (col("datetimes") + daft.interval(months=1)).alias("add 1 month"),
+            (col("datetimes") + daft.interval(days=1)).alias("add 1 day"),
+            (col("datetimes") + daft.interval(hours=1)).alias("add 1 hour"),
+            (col("datetimes") + daft.interval(minutes=1)).alias("add 1 minute"),
+            (col("datetimes") + daft.interval(seconds=1)).alias("add 1 second"),
+            (col("datetimes") + daft.interval(millis=1)).alias("add 1 millisecond"),
+            (col("datetimes") - daft.interval(years=1)).alias("sub 1 year"),
+            (col("datetimes") - daft.interval(months=1)).alias("sub 1 month"),
+            (col("datetimes") - daft.interval(days=1)).alias("sub 1 day"),
+            (col("datetimes") - daft.interval(hours=1)).alias("sub 1 hour"),
+            (col("datetimes") - daft.interval(minutes=1)).alias("sub 1 minute"),
+            (col("datetimes") - daft.interval(seconds=1)).alias("sub 1 second"),
+            (col("datetimes") - daft.interval(millis=1)).alias("sub 1 millisecond"),
+        )
+        .collect()
+        .to_pydict()
+    )
+
+    assert actual == expected

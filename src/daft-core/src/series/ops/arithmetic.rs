@@ -56,7 +56,8 @@ impl Add for &Series {
                 fixed_size_binary_op(lhs, rhs, output_type, FixedSizeBinaryOp::Add)
             }
             output_type
-                if output_type.is_temporal() || matches!(output_type, DataType::Duration(..)) =>
+                if output_type.is_temporal()
+                    || matches!(output_type, DataType::Duration(..) | DataType::Interval) =>
             {
                 match (self.data_type(), rhs.data_type()) {
                     (DataType::Date, DataType::Duration(..)) => {
@@ -84,6 +85,28 @@ impl Add for &Series {
                             lhs.duration()?.physical.add(&rhs.timestamp()?.physical)?;
                         physical_result.cast(output_type)
                     }
+                    // ----------------
+                    // Interval
+                    // ----------------
+                    (DataType::Timestamp(..), DataType::Interval) => {
+                        let ts = self.timestamp()?.add_interval(rhs.interval()?)?;
+                        ts.cast(output_type)
+                    }
+                    (DataType::Interval, DataType::Timestamp(..)) => {
+                        let ts = rhs.timestamp()?.add_interval(self.interval()?)?;
+                        ts.cast(output_type)
+                    }
+                    (DataType::Date, DataType::Interval) => {
+                        let ts = self.cast(&DataType::Timestamp(TimeUnit::Milliseconds, None))?;
+                        let ts = ts.timestamp()?.add_interval(rhs.interval()?)?;
+                        ts.cast(output_type)
+                    }
+                    (DataType::Interval, DataType::Date) => {
+                        let ts = rhs.cast(&DataType::Timestamp(TimeUnit::Milliseconds, None))?;
+                        let ts = ts.timestamp()?.add_interval(self.interval()?)?;
+                        ts.cast(output_type)
+                    }
+
                     _ => arithmetic_op_not_implemented!(self, "+", rhs, output_type),
                 }
             }
@@ -107,7 +130,8 @@ impl Sub for &Series {
                 })
             }
             output_type
-                if output_type.is_temporal() || matches!(output_type, DataType::Duration(..)) =>
+                if output_type.is_temporal()
+                    || matches!(output_type, DataType::Duration(..) | DataType::Interval) =>
             {
                 match (self.data_type(), rhs.data_type()) {
                     (DataType::Date, DataType::Duration(..)) => {
@@ -133,6 +157,27 @@ impl Sub for &Series {
                         let physical_result =
                             self.timestamp()?.physical.sub(&rhs.timestamp()?.physical)?;
                         physical_result.cast(output_type)
+                    }
+                    // ----------------
+                    // Interval
+                    // ----------------
+                    (DataType::Timestamp(..), DataType::Interval) => {
+                        let ts = self.timestamp()?.sub_interval(rhs.interval()?)?;
+                        ts.cast(output_type)
+                    }
+                    (DataType::Interval, DataType::Timestamp(..)) => {
+                        let ts = rhs.timestamp()?.sub_interval(self.interval()?)?;
+                        ts.cast(output_type)
+                    }
+                    (DataType::Date, DataType::Interval) => {
+                        let ts = self.cast(&DataType::Timestamp(TimeUnit::Milliseconds, None))?;
+                        let ts = ts.timestamp()?.sub_interval(rhs.interval()?)?;
+                        ts.cast(output_type)
+                    }
+                    (DataType::Interval, DataType::Date) => {
+                        let ts = rhs.cast(&DataType::Timestamp(TimeUnit::Milliseconds, None))?;
+                        let ts = ts.timestamp()?.sub_interval(self.interval()?)?;
+                        ts.cast(output_type)
                     }
                     _ => arithmetic_op_not_implemented!(self, "-", rhs, output_type),
                 }

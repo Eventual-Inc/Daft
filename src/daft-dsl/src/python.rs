@@ -10,6 +10,7 @@ use common_py_serde::impl_bincode_py_state_serialization;
 use common_resource_request::ResourceRequest;
 use daft_core::{
     array::ops::Utf8NormalizeOptions,
+    datatypes::{IntervalValue, IntervalValueBuilder},
     prelude::*,
     python::{PyDataType, PyField, PySchema, PySeries, PyTimeUnit},
 };
@@ -21,10 +22,7 @@ use pyo3::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    lit::{IntervalValue, IntervalValueBuilder},
-    Expr, ExprRef, LiteralValue,
-};
+use crate::{Expr, ExprRef, LiteralValue};
 
 #[pyfunction]
 pub fn col(name: &str) -> PyResult<PyExpr> {

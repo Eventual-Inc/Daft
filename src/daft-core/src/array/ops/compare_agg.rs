@@ -511,61 +511,7 @@ impl_todo_daft_comparable!(StructArray);
 impl_todo_daft_comparable!(FixedSizeListArray);
 impl_todo_daft_comparable!(ListArray);
 impl_todo_daft_comparable!(ExtensionArray);
-impl DaftCompareAggable for DataArray<DayTimeType> {
-    type Output = DaftResult<Self>;
-    fn min(&self) -> Self::Output {
-        todo!(
-            "TODO need to impl DaftCompareAggable for {}",
-            self.data_type()
-        )
-    }
-    fn max(&self) -> Self::Output {
-        todo!(
-            "TODO need to impl DaftCompareAggable for {}",
-            self.data_type()
-        )
-    }
-    fn grouped_min(&self, _groups: &super::GroupIndices) -> Self::Output {
-        todo!(
-            "TODO need to impl DaftCompareAggable for {}",
-            self.data_type()
-        )
-    }
-    fn grouped_max(&self, _groups: &super::GroupIndices) -> Self::Output {
-        todo!(
-            "TODO need to impl DaftCompareAggable for {}",
-            self.data_type()
-        )
-    }
-}
-
-impl DaftCompareAggable for DataArray<MonthDayNanoType> {
-    type Output = DaftResult<Self>;
-    fn min(&self) -> Self::Output {
-        todo!(
-            "TODO need to impl DaftCompareAggable for {}",
-            self.data_type()
-        )
-    }
-    fn max(&self) -> Self::Output {
-        todo!(
-            "TODO need to impl DaftCompareAggable for {}",
-            self.data_type()
-        )
-    }
-    fn grouped_min(&self, _groups: &super::GroupIndices) -> Self::Output {
-        todo!(
-            "TODO need to impl DaftCompareAggable for {}",
-            self.data_type()
-        )
-    }
-    fn grouped_max(&self, _groups: &super::GroupIndices) -> Self::Output {
-        todo!(
-            "TODO need to impl DaftCompareAggable for {}",
-            self.data_type()
-        )
-    }
-}
+impl_todo_daft_comparable!(IntervalArray);
 
 #[cfg(feature = "python")]
 impl_todo_daft_comparable!(PythonArray);

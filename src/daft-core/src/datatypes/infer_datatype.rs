@@ -161,11 +161,12 @@ impl<'a> Add for InferDataType<'a> {
                             format!("Cannot add types: {}, {}", dtype, other)
                         )),
                     }
-                }
+                },
+                (DataType::Interval, dtype) | (dtype, DataType::Interval) if dtype.is_temporal() => Ok(dtype.clone()),
                 (DataType::Boolean, other) | (other, DataType::Boolean)
                     if other.is_numeric() => Ok(other.clone()),
                 _ => Err(DaftError::TypeError(
-                    format!("Cannot add types: {}, {}", self, other)
+                    format!("Cannot infer supertypes for addition on types: {}, {}", self, other)
                 ))
             }
         )
@@ -198,6 +199,7 @@ impl<'a> Sub for InferDataType<'a> {
                 (du_self @ &DataType::Duration(..), du_other @ &DataType::Duration(..)) => Err(DaftError::TypeError(
                     format!("Cannot subtract due to differing precision: {}, {}. Please explicitly cast to the precision you wish to add in.", du_self, du_other)
                 )),
+                (DataType::Interval, dtype) | (dtype, DataType::Interval) if dtype.is_temporal() => Ok(dtype.clone()),
                 _ => Err(DaftError::TypeError(
                     format!("Cannot subtract types: {}, {}", self, other)
                 ))

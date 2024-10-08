@@ -6,11 +6,11 @@ use crate::{
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, IntervalYearMonthArray,
-            MapArray, SparseTensorArray, TensorArray, TimeArray, TimestampArray,
+            FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
+            SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
         BinaryArray, BooleanArray, DaftNumericType, DataType, ExtensionArray, FixedSizeBinaryArray,
-        IntervalDayTimeArray, IntervalMonthDayNanoArray, NullArray, UInt64Array, Utf8Array,
+        IntervalArray, IntervalValue, NullArray, UInt64Array, Utf8Array,
     },
     series::Series,
     utils::display::{
@@ -211,28 +211,15 @@ impl DurationArray {
     }
 }
 
-impl IntervalYearMonthArray {
+impl IntervalArray {
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
         let res = self.get(idx).map_or_else(
             || "None".to_string(),
-            |months| -> String { format!("{months}m") },
+            |v| -> String {
+                let value: IntervalValue = v.into();
+                format!("{value}")
+            },
         );
-        Ok(res)
-    }
-}
-impl IntervalDayTimeArray {
-    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
-        let res = self
-            .get(idx)
-            .map_or_else(|| "None".to_string(), |v| -> String { format!("{v}") });
-        Ok(res)
-    }
-}
-impl IntervalMonthDayNanoArray {
-    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
-        let res = self
-            .get(idx)
-            .map_or_else(|| "None".to_string(), |v| -> String { format!("{v}") });
         Ok(res)
     }
 }
@@ -455,9 +442,7 @@ impl_array_html_value!(Decimal128Array);
 impl_array_html_value!(DateArray);
 impl_array_html_value!(TimeArray);
 impl_array_html_value!(DurationArray);
-impl_array_html_value!(IntervalYearMonthArray);
-impl_array_html_value!(IntervalDayTimeArray);
-impl_array_html_value!(IntervalMonthDayNanoArray);
+impl_array_html_value!(IntervalArray);
 impl_array_html_value!(TimestampArray);
 impl_array_html_value!(EmbeddingArray);
 

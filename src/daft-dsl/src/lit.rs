@@ -8,7 +8,7 @@ use std::{
 use common_error::{DaftError, DaftResult};
 use common_hashable_float_wrapper::FloatWrapper;
 use daft_core::{
-    datatypes::{logical::IntervalYearMonthArray, IntervalDayTimeArray, IntervalMonthDayNanoArray},
+    datatypes::IntervalValue,
     prelude::*,
     utils::display::{
         display_date32, display_decimal128, display_duration, display_series_literal,
@@ -16,186 +16,11 @@ use daft_core::{
     },
 };
 use indexmap::IndexMap;
-#[cfg(feature = "python")]
-use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
 use crate::pyobj_serde::PyObjectWrapper;
 use crate::{expr::Expr, ExprRef};
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-/// A literal "interval" value.
-pub enum IntervalValue {
-    /// Number of elapsed months (represented as a single 32-bit signed integer)
-    YearMonth(i32),
-    /// 1. the number of elapsed days
-    /// 2. the number of elapsed milliseconds (no leap seconds)
-    DayTime(i32, i32),
-    /// 1. The number of months (32 bits)
-    /// 2. The number days (32 bits)
-    /// 2. The number of nanoseconds (64 bits).
-    MonthDayNano(i32, i32, i64),
-}
-
-#[cfg_attr(feature = "python", pyclass)]
-#[derive(Debug, Default, Clone)]
-pub struct IntervalValueBuilder {
-    pub years: Option<i32>,
-    pub months: Option<i32>,
-    pub days: Option<i32>,
-    pub hours: Option<i32>,
-    pub minutes: Option<i32>,
-    pub seconds: Option<i32>,
-    pub milliseconds: Option<i32>,
-    pub nanoseconds: Option<i64>,
-}
-
-impl IntervalValueBuilder {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn years(self, years: i32) -> Self {
-        Self {
-            years: Some(years),
-            ..self
-        }
-    }
-
-    pub fn months(self, months: i32) -> Self {
-        Self {
-            months: Some(months),
-            ..self
-        }
-    }
-
-    pub fn days(self, days: i32) -> Self {
-        Self {
-            days: Some(days),
-            ..self
-        }
-    }
-
-    pub fn hours(self, hours: i32) -> Self {
-        Self {
-            hours: Some(hours),
-            ..self
-        }
-    }
-
-    pub fn minutes(self, minutes: i32) -> Self {
-        Self {
-            minutes: Some(minutes),
-            ..self
-        }
-    }
-
-    pub fn seconds(self, seconds: i32) -> Self {
-        Self {
-            seconds: Some(seconds),
-            ..self
-        }
-    }
-
-    pub fn milliseconds(self, milliseconds: i32) -> Self {
-        Self {
-            milliseconds: Some(milliseconds),
-            ..self
-        }
-    }
-
-    pub fn nanoseconds(self, nanoseconds: i64) -> Self {
-        Self {
-            nanoseconds: Some(nanoseconds),
-            ..self
-        }
-    }
-
-    pub fn build(self) -> DaftResult<IntervalValue> {
-        IntervalValue::try_new(self)
-    }
-}
-
-impl IntervalValue {
-    const MILLIS_PER_HOUR: i32 = 3_600_000;
-    const MILLIS_PER_MINUTE: i32 = 60_000;
-    const MILLIS_PER_SECOND: i32 = 1_000;
-    const NANOS_PER_HOUR: i64 = 3_600_000_000_000;
-    const NANOS_PER_MINUTE: i64 = 60_000_000_000;
-    const NANOS_PER_MILLIS: i64 = 1_000_000;
-    const NANOS_PER_SECOND: i64 = 1_000_000_000;
-    pub fn try_new(opts: IntervalValueBuilder) -> DaftResult<Self> {
-        match opts {
-            IntervalValueBuilder {
-                years,
-                months,
-                days: None,
-                hours: None,
-                minutes: None,
-                seconds: None,
-                milliseconds: None,
-                nanoseconds: None,
-            } => {
-                let years = years.unwrap_or(0);
-                let months = months.unwrap_or(0);
-                Ok(Self::YearMonth(years * 12 + months))
-            }
-            IntervalValueBuilder {
-                years: None,
-                months: None,
-                days,
-                hours,
-                minutes,
-                seconds,
-                milliseconds,
-                nanoseconds: None,
-            } => {
-                let days = days.unwrap_or(0);
-                let milliseconds = milliseconds.unwrap_or(0);
-                let minutes = minutes.unwrap_or(0) * Self::MILLIS_PER_MINUTE;
-                let hours = hours.unwrap_or(0) * Self::MILLIS_PER_HOUR;
-                let seconds = seconds.unwrap_or(0) * Self::MILLIS_PER_SECOND;
-                Ok(Self::DayTime(
-                    days,
-                    milliseconds + hours + minutes + seconds,
-                ))
-            }
-            IntervalValueBuilder {
-                years: None,
-                months: Some(months),
-                days: Some(days),
-                hours: None,
-                minutes: None,
-                seconds: None,
-                milliseconds: None,
-                nanoseconds: Some(nanoseconds),
-            } => Ok(Self::MonthDayNano(months, days, nanoseconds)),
-
-            IntervalValueBuilder {
-                years,
-                months,
-                days,
-                hours,
-                minutes,
-                seconds,
-                milliseconds,
-                nanoseconds,
-            } => {
-                let years = years.unwrap_or(0);
-                let months = months.unwrap_or(0);
-                let days = days.unwrap_or(0);
-                let hours = hours.unwrap_or(0) as i64 * Self::NANOS_PER_HOUR;
-                let millis = milliseconds.unwrap_or(0) as i64 * Self::NANOS_PER_MILLIS;
-                let minutes = minutes.unwrap_or(0) as i64 * Self::NANOS_PER_MINUTE;
-                let seconds = seconds.unwrap_or(0) as i64 * Self::NANOS_PER_SECOND;
-                let nanos = nanoseconds.unwrap_or(0) + millis + hours + minutes + seconds;
-
-                Ok(Self::MonthDayNano((years * 12) + months, days, nanos))
-            }
-        }
-    }
-}
 
 /// Stores a literal value for queries and computations.
 /// We only need to support the limited types below since those are the types that we would get from python.
@@ -336,15 +161,7 @@ impl Display for LiteralValue {
             Time(val, tu) => write!(f, "{}", display_time64(*val, tu)),
             Timestamp(val, tu, tz) => write!(f, "{}", display_timestamp(*val, tu, tz)),
             Duration(val, tu) => write!(f, "{}", display_duration(*val, tu)),
-            Interval(IntervalValue::DayTime(days, ms)) => {
-                write!(f, "{days}d{ms}ms")
-            }
-            Interval(IntervalValue::YearMonth(months)) => {
-                write!(f, "{months}m")
-            }
-            Interval(IntervalValue::MonthDayNano(months, days, ns)) => {
-                write!(f, "{months}m{days}d{ns}ns")
-            }
+            Interval(value) => write!(f, "{value}"),
             Float64(val) => write!(f, "{val:.1}"),
             Decimal(val, precision, scale) => {
                 write!(f, "{}", display_decimal128(*val, *precision, *scale))
@@ -390,11 +207,7 @@ impl LiteralValue {
             Decimal(_, precision, scale) => {
                 DataType::Decimal128(*precision as usize, *scale as usize)
             }
-            Interval(IntervalValue::YearMonth(_)) => DataType::Interval(IntervalUnit::YearMonth),
-            Interval(IntervalValue::DayTime(..)) => DataType::Interval(IntervalUnit::DayTime),
-            Interval(IntervalValue::MonthDayNano(..)) => {
-                DataType::Interval(IntervalUnit::MonthDayNano)
-            }
+            Interval(_) => DataType::Interval,
             Series(series) => series.data_type().clone(),
             #[cfg(feature = "python")]
             Python(_) => DataType::Python,
@@ -429,23 +242,11 @@ impl LiteralValue {
                 let physical = Int64Array::from(("literal", [*val].as_slice()));
                 DurationArray::new(Field::new("literal", self.get_type()), physical).into_series()
             }
-            Interval(IntervalValue::YearMonth(val)) => {
-                let physical = Int32Array::from(("literal", [*val].as_slice()));
-                IntervalYearMonthArray::new(Field::new("literal", self.get_type()), physical)
-                    .into_series()
-            }
-            Interval(IntervalValue::DayTime(days, ms)) => {
-                IntervalDayTimeArray::from_values("literal", std::iter::once((*days, *ms)))
-                    .into_series()
-            }
-
-            Interval(IntervalValue::MonthDayNano(months, days, nanos)) => {
-                IntervalMonthDayNanoArray::from_values(
-                    "literal",
-                    std::iter::once((*months, *days, *nanos)),
-                )
-                .into_series()
-            }
+            Interval(val) => IntervalArray::from_values(
+                "literal",
+                std::iter::once((val.months, val.days, val.nanoseconds)),
+            )
+            .into_series(),
             Float64(val) => Float64Array::from(("literal", [*val].as_slice())).into_series(),
             Decimal(val, ..) => {
                 let physical = Int128Array::from(("literal", [*val].as_slice()));
@@ -491,7 +292,7 @@ impl LiteralValue {
             ),
             // TODO(Colin): Implement the rest of the types in future work for SQL pushdowns.
             Decimal(..) | Series(..) | Time(..) | Binary(..) | Duration(..) => display_sql_err,
-            Interval(..) => todo!("IntervalYearMonth not yet implemented"),
+            Interval(..) => todo!("Interval not yet implemented"),
             #[cfg(feature = "python")]
             Python(..) => display_sql_err,
             Struct(..) => display_sql_err,
@@ -709,33 +510,13 @@ pub fn literals_to_series(values: &[LiteralValue]) -> DaftResult<Series> {
             let data = values.iter().map(|lit| unwrap_unchecked!(lit, UInt64));
             UInt64Array::from_values("literal", data).into_series()
         }
-        DataType::Interval(IntervalUnit::DayTime) => {
+        DataType::Interval => {
             let data = values.iter().map(|lit| match lit {
-                LiteralValue::Interval(IntervalValue::DayTime(days, microseconds)) => {
-                    (*days, *microseconds)
-                }
+                LiteralValue::Interval(iv) => (iv.months, iv.days, iv.nanoseconds),
                 _ => unreachable!("datatype is already checked"),
             });
-            IntervalDayTimeArray::from_values("literal", data).into_series()
+            IntervalArray::from_values("literal", data).into_series()
         }
-        DataType::Interval(IntervalUnit::MonthDayNano) => {
-            let data = values.iter().map(|lit| match lit {
-                LiteralValue::Interval(IntervalValue::MonthDayNano(months, days, nanoseconds)) => {
-                    (*months, *days, *nanoseconds)
-                }
-                _ => unreachable!("datatype is already checked"),
-            });
-            IntervalMonthDayNanoArray::from_values("literal", data).into_series()
-        }
-        DataType::Interval(IntervalUnit::YearMonth) => {
-            let data = values.iter().map(|lit| match lit {
-                LiteralValue::Interval(IntervalValue::YearMonth(i)) => *i,
-                _ => unreachable!("datatype is already checked"),
-            });
-            let physical = Int32Array::from_values("literal", data);
-            IntervalYearMonthArray::new(Field::new("literal", dtype), physical).into_series()
-        }
-
         dtype @ DataType::Timestamp(_, _) => {
             let data = values.iter().map(|lit| unwrap_unchecked!(lit, Timestamp));
             let physical = Int64Array::from_values("literal", data);
@@ -773,10 +554,9 @@ pub fn literals_to_series(values: &[LiteralValue]) -> DaftResult<Series> {
 
 #[cfg(test)]
 mod test {
-    use common_error::DaftResult;
     use daft_core::prelude::*;
 
-    use super::{IntervalValue, IntervalValueBuilder, LiteralValue};
+    use super::LiteralValue;
 
     #[test]
     fn test_literals_to_series() {
@@ -811,70 +591,5 @@ mod test {
         ];
         let actual = super::literals_to_series(&values);
         assert!(actual.is_err());
-    }
-
-    #[test]
-    fn test_interval_value() -> DaftResult<()> {
-        let cases = vec![
-            (
-                IntervalValue::YearMonth(12),
-                IntervalValueBuilder::new().years(1).build()?,
-            ),
-            (
-                IntervalValue::YearMonth(13),
-                IntervalValueBuilder::new().years(1).months(1).build()?,
-            ),
-            (
-                IntervalValue::DayTime(1, 2),
-                IntervalValueBuilder::new()
-                    .days(1)
-                    .milliseconds(2)
-                    .build()?,
-            ),
-            (
-                IntervalValue::DayTime(1, 3_600_000),
-                IntervalValueBuilder::new().days(1).hours(1).build()?,
-            ),
-            (
-                IntervalValue::DayTime(1, 3_600_001),
-                IntervalValueBuilder::new()
-                    .days(1)
-                    .hours(1)
-                    .milliseconds(1)
-                    .build()?,
-            ),
-            (
-                IntervalValue::MonthDayNano(1, 2, 3),
-                IntervalValueBuilder::new()
-                    .months(1)
-                    .days(2)
-                    .nanoseconds(3)
-                    .build()?,
-            ),
-            (
-                IntervalValue::MonthDayNano(1, 2, 1_000_000),
-                IntervalValueBuilder::new()
-                    .months(1)
-                    .days(2)
-                    .milliseconds(1)
-                    .build()?,
-            ),
-            (
-                IntervalValue::MonthDayNano(1, 2, 3_600_001_000_001),
-                IntervalValueBuilder::new()
-                    .months(1)
-                    .days(2)
-                    .hours(1)
-                    .milliseconds(1)
-                    .nanoseconds(1)
-                    .build()?,
-            ),
-        ];
-
-        for (expected, actual) in cases {
-            assert_eq!(expected, actual);
-        }
-
-        Ok(())
     }
 }

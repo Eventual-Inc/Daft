@@ -5,9 +5,7 @@ use common_error::{DaftError, DaftResult};
 use derive_more::Display;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    field::Field, image_mode::ImageMode, interval_unit::IntervalUnit, time_unit::TimeUnit,
-};
+use crate::{field::Field, image_mode::ImageMode, time_unit::TimeUnit};
 
 pub type DaftDataType = DataType;
 
@@ -88,11 +86,11 @@ pub enum DataType {
     #[display("Duration[{_0}]")]
     Duration(TimeUnit),
 
-    #[display("Interval({_0})")]
     /// A duration of **relative** time (year, day, etc).
     /// This is not a physical duration, but a calendar duration.
     /// This differs from `Duration` in that it is not a fixed amount of time, and is affected by calendar events (leap years, daylight savings, etc.)
-    Interval(IntervalUnit),
+    #[display("Interval")]
+    Interval,
 
     /// Opaque binary data of variable length whose offsets are represented as [`i64`].
     Binary,
@@ -232,7 +230,9 @@ impl DataType {
             Self::Date => Ok(ArrowType::Date32),
             Self::Time(unit) => Ok(ArrowType::Time64(unit.to_arrow())),
             Self::Duration(unit) => Ok(ArrowType::Duration(unit.to_arrow())),
-            Self::Interval(unit) => Ok(ArrowType::Interval(unit.to_arrow())),
+            Self::Interval => Ok(ArrowType::Interval(
+                arrow2::datatypes::IntervalUnit::MonthDayNano,
+            )),
 
             Self::Binary => Ok(ArrowType::LargeBinary),
             Self::FixedSizeBinary(size) => Ok(ArrowType::FixedSizeBinary(*size)),
@@ -314,7 +314,7 @@ impl DataType {
             Decimal128(..) => Int128,
             Date => Int32,
             Duration(_) | Timestamp(..) | Time(_) => Int64,
-            Interval(IntervalUnit::YearMonth) => Int32,
+
             List(child_dtype) => List(Box::new(child_dtype.to_physical())),
             FixedSizeList(child_dtype, size) => {
                 FixedSizeList(Box::new(child_dtype.to_physical()), *size)
@@ -589,7 +589,6 @@ impl DataType {
                 | Self::Time(..)
                 | Self::Timestamp(..)
                 | Self::Duration(..)
-                | Self::Interval(IntervalUnit::YearMonth)
                 | Self::Embedding(..)
                 | Self::Image(..)
                 | Self::FixedShapeImage(..)

@@ -17,7 +17,6 @@ pub use daft_schema::{
     field::{Field, FieldID, FieldRef},
     image_format::ImageFormat,
     image_mode::ImageMode,
-    interval_unit::IntervalUnit,
     time_unit::{infer_timeunit_from_format_string, TimeUnit},
 };
 pub use infer_datatype::try_physical_supertype;
@@ -360,8 +359,7 @@ pub type BinaryArray = DataArray<BinaryType>;
 pub type FixedSizeBinaryArray = DataArray<FixedSizeBinaryType>;
 pub type Utf8Array = DataArray<Utf8Type>;
 pub type ExtensionArray = DataArray<ExtensionType>;
-pub type IntervalDayTimeArray = DataArray<DayTimeType>;
-pub type IntervalMonthDayNanoArray = DataArray<MonthDayNanoType>;
+pub type IntervalArray = DataArray<IntervalType>;
 
 #[cfg(feature = "python")]
 pub type PythonArray = DataArray<PythonType>;

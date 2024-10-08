@@ -1,11 +1,4 @@
-use daft_core::{
-    datatypes::{
-        logical::IntervalYearMonthArray, ExtensionArray, IntervalDayTimeArray,
-        IntervalMonthDayNanoArray,
-    },
-    prelude::{DataType, IntervalUnit},
-    series::Series,
-};
+use daft_core::{datatypes::ExtensionArray, prelude::DataType, series::Series};
 
 pub fn html_value(s: &Series, idx: usize) -> String {
     match s.data_type() {
@@ -85,18 +78,11 @@ pub fn html_value(s: &Series, idx: usize) -> String {
             let arr = s.duration().unwrap();
             arr.html_value(idx)
         }
-        DataType::Interval(IntervalUnit::YearMonth) => {
-            let arr = s.downcast::<IntervalYearMonthArray>().unwrap();
+        DataType::Interval => {
+            let arr = s.interval().unwrap();
             arr.html_value(idx)
         }
-        DataType::Interval(IntervalUnit::DayTime) => {
-            let arr = s.downcast::<IntervalDayTimeArray>().unwrap();
-            arr.html_value(idx)
-        }
-        DataType::Interval(IntervalUnit::MonthDayNano) => {
-            let arr = s.downcast::<IntervalMonthDayNanoArray>().unwrap();
-            arr.html_value(idx)
-        }
+
         DataType::Binary => {
             let arr = s.binary().unwrap();
             arr.html_value(idx)

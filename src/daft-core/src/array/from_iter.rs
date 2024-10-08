@@ -1,10 +1,7 @@
-use arrow2::types::{days_ms, months_days_ns};
+use arrow2::types::months_days_ns;
 
 use super::DataArray;
-use crate::{
-    array::prelude::*,
-    datatypes::{prelude::*, IntervalDayTimeArray, IntervalMonthDayNanoArray},
-};
+use crate::{array::prelude::*, datatypes::prelude::*};
 
 impl<T> DataArray<T>
 where
@@ -128,38 +125,7 @@ impl BooleanArray {
     }
 }
 
-impl IntervalDayTimeArray {
-    pub fn from_iter<S: Into<days_ms>>(
-        name: &str,
-        iter: impl arrow2::trusted_len::TrustedLen<Item = Option<S>>,
-    ) -> Self {
-        let arrow_array = Box::new(arrow2::array::DaysMsArray::from_trusted_len_iter(
-            iter.map(|x| x.map(|x| x.into())),
-        ));
-        Self::new(
-            Field::new(name, DataType::Interval(IntervalUnit::DayTime)).into(),
-            arrow_array,
-        )
-        .unwrap()
-    }
-}
-impl IntervalDayTimeArray {
-    pub fn from_values<S: Into<days_ms>>(
-        name: &str,
-        iter: impl arrow2::trusted_len::TrustedLen<Item = S>,
-    ) -> Self {
-        let arrow_array = Box::new(arrow2::array::DaysMsArray::from_trusted_len_values_iter(
-            iter.map(|x| x.into()),
-        ));
-        Self::new(
-            Field::new(name, DataType::Interval(IntervalUnit::DayTime)).into(),
-            arrow_array,
-        )
-        .unwrap()
-    }
-}
-
-impl IntervalMonthDayNanoArray {
+impl IntervalArray {
     pub fn from_iter<S: Into<months_days_ns>>(
         name: &str,
         iter: impl arrow2::trusted_len::TrustedLen<Item = Option<S>>,
@@ -167,15 +133,11 @@ impl IntervalMonthDayNanoArray {
         let arrow_array = Box::new(arrow2::array::MonthsDaysNsArray::from_trusted_len_iter(
             iter.map(|x| x.map(|x| x.into())),
         ));
-        Self::new(
-            Field::new(name, DataType::Interval(IntervalUnit::MonthDayNano)).into(),
-            arrow_array,
-        )
-        .unwrap()
+        Self::new(Field::new(name, DataType::Interval).into(), arrow_array).unwrap()
     }
 }
 
-impl IntervalMonthDayNanoArray {
+impl IntervalArray {
     pub fn from_values<S: Into<months_days_ns>>(
         name: &str,
         iter: impl arrow2::trusted_len::TrustedLen<Item = S>,
@@ -183,10 +145,6 @@ impl IntervalMonthDayNanoArray {
         let arrow_array = Box::new(
             arrow2::array::MonthsDaysNsArray::from_trusted_len_values_iter(iter.map(|x| x.into())),
         );
-        Self::new(
-            Field::new(name, DataType::Interval(IntervalUnit::MonthDayNano)).into(),
-            arrow_array,
-        )
-        .unwrap()
+        Self::new(Field::new(name, DataType::Interval).into(), arrow_array).unwrap()
     }
 }

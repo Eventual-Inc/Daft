@@ -1,16 +1,15 @@
-use arrow2::types::{days_ms, months_days_ns};
+use arrow2::types::months_days_ns;
 
 use super::as_arrow::AsArrow;
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray},
     datatypes::{
         logical::{
-            DateArray, Decimal128Array, DurationArray, IntervalYearMonthArray, LogicalArrayImpl,
-            MapArray, TimeArray, TimestampArray,
+            DateArray, Decimal128Array, DurationArray, LogicalArrayImpl, MapArray, TimeArray,
+            TimestampArray,
         },
         BinaryArray, BooleanArray, DaftLogicalType, DaftNumericType, ExtensionArray,
-        FixedSizeBinaryArray, IntervalDayTimeArray, IntervalMonthDayNanoArray, NullArray,
-        Utf8Array,
+        FixedSizeBinaryArray, IntervalArray, NullArray, Utf8Array,
     },
     series::Series,
 };
@@ -77,9 +76,7 @@ impl_array_arrow_get!(Decimal128Array, i128);
 impl_array_arrow_get!(DateArray, i32);
 impl_array_arrow_get!(TimeArray, i64);
 impl_array_arrow_get!(DurationArray, i64);
-impl_array_arrow_get!(IntervalYearMonthArray, i32);
-impl_array_arrow_get!(IntervalDayTimeArray, days_ms);
-impl_array_arrow_get!(IntervalMonthDayNanoArray, months_days_ns);
+impl_array_arrow_get!(IntervalArray, months_days_ns);
 impl_array_arrow_get!(TimestampArray, i64);
 
 impl NullArray {

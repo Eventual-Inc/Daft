@@ -1,11 +1,6 @@
 use std::{borrow::Cow, sync::Arc};
 
-use arrow2::{
-    offset::OffsetsBuffer,
-    types::{days_ms, months_days_ns},
-};
-use logical::IntervalYearMonthArray;
-// use logical::IntervalArray;
+use arrow2::{offset::OffsetsBuffer, types::months_days_ns};
 use serde::{de::Visitor, Deserializer};
 
 use crate::{
@@ -270,30 +265,12 @@ impl<'d> serde::Deserialize<'d> for Series {
                             .into_series(),
                         )
                     }
-                    DataType::Interval(IntervalUnit::DayTime) => {
-                        Ok(IntervalDayTimeArray::from_iter(
-                            field.name.as_str(),
-                            map.next_value::<Vec<Option<days_ms>>>()?.into_iter(),
-                        )
-                        .into_series())
-                    }
-                    DataType::Interval(IntervalUnit::MonthDayNano) => {
-                        Ok(IntervalMonthDayNanoArray::from_iter(
-                            field.name.as_str(),
-                            map.next_value::<Vec<Option<months_days_ns>>>()?.into_iter(),
-                        )
-                        .into_series())
-                    }
-                    DataType::Interval(IntervalUnit::YearMonth) => {
-                        type PType = <<IntervalYearMonthType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
-                        let physical = map.next_value::<Series>()?;
+                    DataType::Interval => Ok(IntervalArray::from_iter(
+                        field.name.as_str(),
+                        map.next_value::<Vec<Option<months_days_ns>>>()?.into_iter(),
+                    )
+                    .into_series()),
 
-                        Ok(IntervalYearMonthArray::new(
-                            field,
-                            physical.downcast::<PType>().unwrap().clone(),
-                        )
-                        .into_series())
-                    }
                     DataType::Embedding(..) => {
                         type PType = <<EmbeddingType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
                         let physical = map.next_value::<Series>()?;

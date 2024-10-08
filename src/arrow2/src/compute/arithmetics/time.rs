@@ -432,3 +432,124 @@ pub fn add_interval_scalar(
         )),
     }
 }
+
+pub fn sub_interval(
+    timestamp: &PrimitiveArray<i64>,
+    interval: &PrimitiveArray<months_days_ns>,
+) -> Result<PrimitiveArray<i64>> {
+    match timestamp.data_type().to_logical_type() {
+        DataType::Timestamp(time_unit, Some(timezone_str)) => {
+            let time_unit = *time_unit;
+            let timezone = temporal_conversions::parse_offset(timezone_str);
+            match timezone {
+                Ok(timezone) => Ok(binary(
+                    timestamp,
+                    interval,
+                    timestamp.data_type().clone(),
+                    |timestamp, interval| {
+                        temporal_conversions::sub_interval(
+                            timestamp, time_unit, interval, &timezone,
+                        )
+                    },
+                )),
+                #[cfg(feature = "chrono-tz")]
+                Err(_) => {
+                    let timezone = temporal_conversions::parse_offset_tz(timezone_str)?;
+                    Ok(binary(
+                        timestamp,
+                        interval,
+                        timestamp.data_type().clone(),
+                        |timestamp, interval| {
+                            temporal_conversions::sub_interval(
+                                timestamp, time_unit, interval, &timezone,
+                            )
+                        },
+                    ))
+                }
+                #[cfg(not(feature = "chrono-tz"))]
+                _ => Err(Error::InvalidArgumentError(format!(
+                    "timezone \"{}\" cannot be parsed (feature chrono-tz is not active)",
+                    timezone_str
+                ))),
+            }
+        }
+        DataType::Timestamp(time_unit, None) => {
+            let time_unit = *time_unit;
+            Ok(binary(
+                timestamp,
+                interval,
+                timestamp.data_type().clone(),
+                |timestamp, interval| {
+                    temporal_conversions::sub_naive_interval(timestamp, time_unit, interval)
+                },
+            ))
+        }
+        _ => Err(Error::InvalidArgumentError(
+            "Adding an interval is only supported for `DataType::Timestamp`".to_string(),
+        )),
+    }
+}
+
+/// Adds an interval to a [`DataType::Timestamp`].
+pub fn sub_interval_scalar(
+    timestamp: &PrimitiveArray<i64>,
+    interval: &PrimitiveScalar<months_days_ns>,
+) -> Result<PrimitiveArray<i64>> {
+    let interval = if let Some(interval) = *interval.value() {
+        interval
+    } else {
+        return Ok(PrimitiveArray::<i64>::new_null(
+            timestamp.data_type().clone(),
+            timestamp.len(),
+        ));
+    };
+
+    match timestamp.data_type().to_logical_type() {
+        DataType::Timestamp(time_unit, Some(timezone_str)) => {
+            let time_unit = *time_unit;
+            let timezone = temporal_conversions::parse_offset(timezone_str);
+            match timezone {
+                Ok(timezone) => Ok(unary(
+                    timestamp,
+                    |timestamp| {
+                        temporal_conversions::sub_interval(
+                            timestamp, time_unit, interval, &timezone,
+                        )
+                    },
+                    timestamp.data_type().clone(),
+                )),
+                #[cfg(feature = "chrono-tz")]
+                Err(_) => {
+                    let timezone = temporal_conversions::parse_offset_tz(timezone_str)?;
+                    Ok(unary(
+                        timestamp,
+                        |timestamp| {
+                            temporal_conversions::sub_interval(
+                                timestamp, time_unit, interval, &timezone,
+                            )
+                        },
+                        timestamp.data_type().clone(),
+                    ))
+                }
+                #[cfg(not(feature = "chrono-tz"))]
+                _ => Err(Error::InvalidArgumentError(format!(
+                    "timezone \"{}\" cannot be parsed (feature chrono-tz is not active)",
+                    timezone_str
+                ))),
+            }
+        }
+        DataType::Timestamp(time_unit, None) => {
+            let time_unit = *time_unit;
+            Ok(unary(
+                timestamp,
+                |timestamp| {
+                    temporal_conversions::sub_naive_interval(timestamp, time_unit, interval)
+                },
+                timestamp.data_type().clone(),
+            ))
+        }
+        _ => Err(Error::InvalidArgumentError(
+            "Adding an interval is only supported for `DataType::Timestamp`".to_string(),
+        )),
+    }
+}

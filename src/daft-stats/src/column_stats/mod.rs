@@ -68,7 +68,7 @@ impl ColumnRangeStatistics {
             DataType::Utf8 | DataType::Binary | DataType::FixedSizeBinary(..) |
 
             // Temporal types
-            DataType::Date | DataType::Time(..) | DataType::Timestamp(..) | DataType::Duration(..) | DataType::Interval(..) => true,
+            DataType::Date | DataType::Time(..) | DataType::Timestamp(..) | DataType::Duration(..) | DataType::Interval => true,
 
             // UNSUPPORTED TYPES:
             // Types that don't support comparisons and can't be used as ColumnRangeStatistics

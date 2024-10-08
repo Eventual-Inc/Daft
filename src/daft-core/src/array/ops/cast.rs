@@ -38,8 +38,8 @@ use crate::{
     datatypes::{
         logical::{
             DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, IntervalYearMonthArray,
-            LogicalArray, MapArray, SparseTensorArray, TensorArray, TimeArray, TimestampArray,
+            FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, LogicalArray, MapArray,
+            SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
         DaftArrayType, DaftArrowBackedType, DaftLogicalType, DataType, Field, ImageMode,
         Int32Array, Int64Array, NullArray, TimeUnit, UInt64Array, Utf8Array,
@@ -409,25 +409,6 @@ impl DurationArray {
             },
         )?;
         Int32Array::from_arrow(Field::new(self.name(), DataType::Int32).into(), days_i32)
-    }
-}
-
-impl IntervalYearMonthArray {
-    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
-        match dtype {
-            DataType::Null => {
-                Ok(NullArray::full_null(self.name(), dtype, self.len()).into_series())
-            }
-            dtype if dtype == self.data_type() => Ok(self.clone().into_series()),
-            dtype if dtype.is_numeric() => self.physical.cast(dtype),
-            DataType::Int32 => Ok(self.physical.clone().into_series()),
-            #[cfg(feature = "python")]
-            DataType::Python => cast_logical_to_python_array(self, dtype),
-            _ => Err(DaftError::TypeError(format!(
-                "Cannot cast Duration to {}",
-                dtype
-            ))),
-        }
     }
 }
 

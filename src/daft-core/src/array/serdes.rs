@@ -8,8 +8,8 @@ use crate::datatypes::PythonArray;
 use crate::{
     datatypes::{
         logical::LogicalArray, BinaryArray, BooleanArray, DaftLogicalType, DaftNumericType,
-        DataType, ExtensionArray, FixedSizeBinaryArray, Int64Array, IntervalDayTimeArray,
-        IntervalMonthDayNanoArray, NullArray, Utf8Array,
+        DataType, ExtensionArray, FixedSizeBinaryArray, Int64Array, IntervalArray, NullArray,
+        Utf8Array,
     },
     series::{IntoSeries, Series},
 };
@@ -237,19 +237,7 @@ where
     }
 }
 
-impl serde::Serialize for IntervalDayTimeArray {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let mut s = serializer.serialize_map(Some(2))?;
-        s.serialize_entry("field", self.field())?;
-        s.serialize_entry("values", &IterSer::new(self.as_arrow().iter()))?;
-        s.end()
-    }
-}
-
-impl serde::Serialize for IntervalMonthDayNanoArray {
+impl serde::Serialize for IntervalArray {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
