@@ -1831,6 +1831,7 @@ impl FixedShapeSparseTensorArray {
                     FixedShapeTensorArray::new(Field::new(self.name(), dtype.clone()), physical);
                 Ok(fixed_shape_tensor_array.into_series())
             }
+            #[cfg(feature = "python")]
             (
                 DataType::Python,
                 DataType::FixedShapeSparseTensor(inner_dtype, _),
