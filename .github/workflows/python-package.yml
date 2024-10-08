@@ -497,7 +497,7 @@ jobs:
         uv pip install -r requirements-dev.txt dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
         rm -rf daft
     - uses: docker/setup-buildx-action@v3
-    - uses: docker/build-push-action@v5
+    - uses: docker/build-push-action@v6
       with:
         context: ./tests/integration/iceberg/docker-compose/
         file: ./tests/integration/iceberg/docker-compose/Dockerfile
