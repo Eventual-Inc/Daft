@@ -190,6 +190,10 @@ impl PyDataType {
     pub fn duration(timeunit: PyTimeUnit) -> PyResult<Self> {
         Ok(DataType::Duration(timeunit.timeunit).into())
     }
+    #[staticmethod]
+    pub fn interval() -> PyResult<Self> {
+        Ok(DataType::Interval.into())
+    }
 
     #[staticmethod]
     pub fn list(data_type: Self) -> PyResult<Self> {

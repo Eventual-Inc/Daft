@@ -136,6 +136,10 @@ impl Series {
         self.downcast()
     }
 
+    pub fn interval(&self) -> DaftResult<&IntervalArray> {
+        self.downcast()
+    }
+
     pub fn decimal128(&self) -> DaftResult<&Decimal128Array> {
         self.downcast()
     }

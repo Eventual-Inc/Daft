@@ -511,6 +511,7 @@ impl_todo_daft_comparable!(StructArray);
 impl_todo_daft_comparable!(FixedSizeListArray);
 impl_todo_daft_comparable!(ListArray);
 impl_todo_daft_comparable!(ExtensionArray);
+impl_todo_daft_comparable!(IntervalArray);
 
 #[cfg(feature = "python")]
 impl_todo_daft_comparable!(PythonArray);

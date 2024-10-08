@@ -2,20 +2,17 @@ use std::hash::Hash;
 
 use num_traits::{AsPrimitive, Float, ToPrimitive};
 
-use crate::datatypes::IntervalUnit;
-use crate::error::Result;
-use crate::offset::{Offset, Offsets};
-use crate::types::{days_ms, f16, months_days_ns};
+use super::CastOptions;
 use crate::{
     array::*,
     bitmap::Bitmap,
     compute::arity::unary,
-    datatypes::{DataType, TimeUnit},
+    datatypes::{DataType, IntervalUnit, TimeUnit},
+    error::Result,
+    offset::{Offset, Offsets},
     temporal_conversions::*,
-    types::NativeType,
+    types::{days_ms, f16, months_days_ns, NativeType},
 };
-
-use super::CastOptions;
 
 /// Returns a [`BinaryArray`] where every element is the binary representation of the number.
 pub fn primitive_to_binary<T: NativeType + lexical_core::ToLexical, O: Offset>(

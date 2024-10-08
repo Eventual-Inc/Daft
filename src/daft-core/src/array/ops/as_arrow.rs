@@ -1,4 +1,4 @@
-use arrow2::array;
+use arrow2::{array, types::months_days_ns};
 
 #[cfg(feature = "python")]
 use crate::array::pseudo_arrow::PseudoArrowArray;
@@ -8,7 +8,8 @@ use crate::{
     array::DataArray,
     datatypes::{
         logical::{DateArray, Decimal128Array, DurationArray, TimeArray, TimestampArray},
-        BinaryArray, BooleanArray, DaftNumericType, FixedSizeBinaryArray, NullArray, Utf8Array,
+        BinaryArray, BooleanArray, DaftNumericType, FixedSizeBinaryArray, IntervalArray, NullArray,
+        Utf8Array,
     },
 };
 
@@ -60,6 +61,7 @@ impl_asarrow_dataarray!(Utf8Array, array::Utf8Array<i64>);
 impl_asarrow_dataarray!(BooleanArray, array::BooleanArray);
 impl_asarrow_dataarray!(BinaryArray, array::BinaryArray<i64>);
 impl_asarrow_dataarray!(FixedSizeBinaryArray, array::FixedSizeBinaryArray);
+impl_asarrow_dataarray!(IntervalArray, array::PrimitiveArray<months_days_ns>);
 
 #[cfg(feature = "python")]
 impl_asarrow_dataarray!(PythonArray, PseudoArrowArray<pyo3::PyObject>);

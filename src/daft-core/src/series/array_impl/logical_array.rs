@@ -173,6 +173,7 @@ impl_series_like_for_logical_array!(Decimal128Array);
 impl_series_like_for_logical_array!(DateArray);
 impl_series_like_for_logical_array!(TimeArray);
 impl_series_like_for_logical_array!(DurationArray);
+
 impl_series_like_for_logical_array!(TimestampArray);
 impl_series_like_for_logical_array!(ImageArray);
 impl_series_like_for_logical_array!(FixedShapeImageArray);

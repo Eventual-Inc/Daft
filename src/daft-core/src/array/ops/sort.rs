@@ -16,7 +16,7 @@ use crate::{
             SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
         BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, ExtensionArray,
-        FixedSizeBinaryArray, Float32Array, Float64Array, NullArray, Utf8Array,
+        FixedSizeBinaryArray, Float32Array, Float64Array, IntervalArray, NullArray, Utf8Array,
     },
     kernels::search_sorted::{build_compare_with_nulls, cmp_float},
     series::Series,
@@ -610,6 +610,12 @@ impl StructArray {
 impl ExtensionArray {
     pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
         todo!("impl sort for ExtensionArray")
+    }
+}
+
+impl IntervalArray {
+    pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
+        todo!("impl sort for IntervalArray")
     }
 }
 

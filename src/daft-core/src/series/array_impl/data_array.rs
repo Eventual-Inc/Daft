@@ -11,7 +11,7 @@ use crate::{
         prelude::*,
         DataArray,
     },
-    datatypes::{DaftArrowBackedType, DataType, FixedSizeBinaryArray},
+    datatypes::{DaftArrowBackedType, DataType, FixedSizeBinaryArray, IntervalArray},
     series::series_like::SeriesLike,
     with_match_integer_daft_types,
 };
@@ -180,5 +180,6 @@ impl_series_like_for_data_array!(Float32Array);
 impl_series_like_for_data_array!(Float64Array);
 impl_series_like_for_data_array!(Utf8Array);
 impl_series_like_for_data_array!(ExtensionArray);
+impl_series_like_for_data_array!(IntervalArray);
 #[cfg(feature = "python")]
 impl_series_like_for_data_array!(PythonArray);

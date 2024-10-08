@@ -166,6 +166,26 @@ def col(name: str) -> Expression:
     return Expression._from_pyexpr(_col(name))
 
 
+def interval(
+    years: int | None = None,
+    months: int | None = None,
+    days: int | None = None,
+    hours: int | None = None,
+    minutes: int | None = None,
+    seconds: int | None = None,
+    millis: int | None = None,
+    nanos: int | None = None,
+) -> Expression:
+    """
+    Creates an Expression representing an interval.
+
+    """
+    lit_value = native.interval_lit(
+        years=years, months=months, days=days, hours=hours, minutes=minutes, seconds=seconds, millis=millis, nanos=nanos
+    )
+    return Expression._from_pyexpr(lit_value)
+
+
 class Expression:
     _expr: _PyExpr = None  # type: ignore
 

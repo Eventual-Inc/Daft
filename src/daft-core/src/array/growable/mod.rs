@@ -188,6 +188,12 @@ impl_growable_array!(
     logical_growable::LogicalTimestampGrowable<'a>
 );
 impl_growable_array!(DurationArray, logical_growable::LogicalDurationGrowable<'a>);
+
+impl_growable_array!(
+    IntervalArray,
+    arrow_growable::ArrowMonthDayNanoIntervalGrowable<'a>
+);
+
 impl_growable_array!(DateArray, logical_growable::LogicalDateGrowable<'a>);
 impl_growable_array!(TimeArray, logical_growable::LogicalTimeGrowable<'a>);
 impl_growable_array!(

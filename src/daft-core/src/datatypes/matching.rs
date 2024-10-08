@@ -29,6 +29,7 @@ macro_rules! with_match_daft_types {(
         Int32 => __with_ty__! { Int32Type },
         Int64 => __with_ty__! { Int64Type },
         Int8 => __with_ty__! { Int8Type },
+        Interval => __with_ty__! { IntervalType },
         List(_) => __with_ty__! { ListType },
         Map{..} => __with_ty__! { MapType },
         Null => __with_ty__! { NullType },
@@ -51,7 +52,6 @@ macro_rules! with_match_daft_types {(
         // _ => panic!("{:?} not implemented for with_match_daft_types", $key_type)
     }
 })}
-
 #[macro_export]
 macro_rules! with_match_physical_daft_types {(
     $key_type:expr, | $_:tt $T:ident | $($body:tt)*
@@ -83,6 +83,7 @@ macro_rules! with_match_physical_daft_types {(
         List(_) => __with_ty__! { ListType },
         Struct(_) => __with_ty__! { StructType },
         Extension(_, _, _) => __with_ty__! { ExtensionType },
+        Interval => __with_ty__! { IntervalType },
         #[cfg(feature = "python")]
         Python => __with_ty__! { PythonType },
         _ => panic!("{:?} not implemented for with_match_physical_daft_types", $key_type)

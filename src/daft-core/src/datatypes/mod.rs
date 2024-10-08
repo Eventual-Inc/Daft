@@ -26,7 +26,9 @@ use serde::Serialize;
 use crate::array::{ops::as_arrow::AsArrow, ListArray, StructArray};
 pub use crate::array::{DataArray, FixedSizeListArray};
 
+pub mod interval;
 pub mod logical;
+pub use interval::*;
 
 /// Trait that is implemented by all Array types
 ///
@@ -201,6 +203,7 @@ impl_daft_logical_data_array_datatype!(TimestampType, Unknown, Int64Type);
 impl_daft_logical_data_array_datatype!(DateType, Date, Int32Type);
 impl_daft_logical_data_array_datatype!(TimeType, Unknown, Int64Type);
 impl_daft_logical_data_array_datatype!(DurationType, Unknown, Int64Type);
+
 impl_daft_logical_data_array_datatype!(ImageType, Unknown, StructType);
 impl_daft_logical_data_array_datatype!(TensorType, Unknown, StructType);
 impl_daft_logical_data_array_datatype!(SparseTensorType, Unknown, StructType);
@@ -356,6 +359,7 @@ pub type BinaryArray = DataArray<BinaryType>;
 pub type FixedSizeBinaryArray = DataArray<FixedSizeBinaryType>;
 pub type Utf8Array = DataArray<Utf8Type>;
 pub type ExtensionArray = DataArray<ExtensionType>;
+pub type IntervalArray = DataArray<IntervalType>;
 
 #[cfg(feature = "python")]
 pub type PythonArray = DataArray<PythonType>;
