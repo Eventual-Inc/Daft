@@ -288,6 +288,7 @@ async fn stream_scan_task(
                 .map(|t| t.into())
                 .context(PyIOSnafu)
             })?;
+            // SQL Scan cannot be streamed at the moment, so we just return the table
             Box::pin(futures::stream::once(async { Ok(table) }))
         }
         #[cfg(feature = "python")]
