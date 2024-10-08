@@ -3,6 +3,7 @@ use std::io::{Chain, Cursor, Read};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{num::NonZeroUsize, sync::Arc, sync::Condvar, sync::Mutex};
 
+use crate::local::pool::{read_slabs_windowed, FileSlab, SlabPool};
 use crate::ArrowSnafu;
 use crate::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use arrow2::{
@@ -18,12 +19,12 @@ use daft_decoding::deserialize::deserialize_column;
 use daft_dsl::{optimization::get_required_columns, Expr};
 use daft_table::Table;
 use futures::{stream::BoxStream, Stream, StreamExt};
+use pool::WindowedSlab;
 use rayon::{
     iter::IndexedParallelIterator,
     prelude::{IntoParallelRefIterator, ParallelIterator},
 };
 use snafu::ResultExt;
-use crate::local::pool::{read_slabs_windowed, FileSlab, SlabPool};
 
 mod pool;
 
@@ -139,7 +140,8 @@ pub async fn read_csv_local(
         parse_options,
         read_options,
         max_chunks_in_flight,
-    ).await?;
+    )
+    .await?;
     tables_concat(tables_stream_collect(Box::pin(stream)).await)
 }
 
@@ -161,7 +163,7 @@ pub async fn stream_csv_local(
     parse_options: CsvParseOptions,
     read_options: Option<CsvReadOptions>,
     max_chunks_in_flight: Option<usize>,
-) -> DaftResult<impl Stream<Item=DaftResult<Table>> + Send> {
+) -> DaftResult<impl Stream<Item = DaftResult<Table>> + Send> {
     let uri = uri.trim_start_matches("file://");
     let file = tokio::fs::File::open(uri).await?;
 
@@ -193,7 +195,7 @@ pub async fn stream_csv_local(
             Some(co)
         }
     }
-        .unwrap_or_default();
+    .unwrap_or_default();
     // End of `should dedup`.
 
     // TODO(desmond): We should do better schema inference here.
@@ -241,12 +243,14 @@ pub async fn stream_csv_local(
     let (sender, receiver) =
         crossbeam_channel::bounded(max_chunks_in_flight.unwrap_or(2 * chunk_size / SLAB_SIZE));
 
-    let windowed_buffers = read_slabs_windowed(file, vec![vec![0; SLAB_SIZE]; SLAB_POOL_DEFAULT_SIZE]);
+    let total_len = file.metadata().unwrap().len() as usize;
+    let windowed_buffers =
+        read_slabs_windowed(file, vec![vec![0; SLAB_SIZE]; SLAB_POOL_DEFAULT_SIZE]);
     rayon::spawn(move || {
         consume_csv_file(
-            file,
             buffer_pool,
-            file_slabpool,
+            windowed_buffers,
+            total_len,
             parse_options,
             projection_indices,
             read_daft_fields,
@@ -265,10 +269,10 @@ pub async fn stream_csv_local(
 
 /// Consumes the CSV file and sends the results to `sender`.
 #[allow(clippy::too_many_arguments)]
-fn consume_csv_file(
-    mut file: std::fs::File,
+async fn consume_csv_file(
     buffer_pool: Arc<CsvBufferPool>,
-    slabpool: SlabPool<FileSlab>,
+    window_stream: impl Stream<Item = WindowedSlab>,
+    total_len: usize,
     parse_options: CsvParseOptions,
     projection_indices: Arc<Vec<usize>>,
     read_daft_fields: Arc<Vec<Arc<daft_core::datatypes::Field>>>,
@@ -282,7 +286,6 @@ fn consume_csv_file(
 ) {
     let rows_read = Arc::new(AtomicUsize::new(0));
     let mut has_header = parse_options.has_header;
-    let total_len = file.metadata().unwrap().len() as usize;
     let field_delimiter = parse_options.delimiter;
     let escape_char = parse_options.escape_char;
     let quote_char = parse_options.quote;
@@ -290,7 +293,7 @@ fn consume_csv_file(
     let mut total_bytes_read = 0;
     let mut next_slab = None;
     let mut next_buffer_len = 0;
-    let mut first_buffer = true;
+    let mut is_first_buffer = true;
     loop {
         let limit_reached = limit.map_or(false, |limit| {
             let current_rows_read = rows_read.load(Ordering::Relaxed);
@@ -299,87 +302,26 @@ fn consume_csv_file(
         if limit_reached {
             break;
         }
-        let (current_slab, current_buffer_len) = match next_slab.take() {
-            Some(next_slab) => {
-                total_bytes_read += next_buffer_len;
-                (next_slab, next_buffer_len)
-            }
-            None => {
-                let mut buffer = slabpool.get_buffer();
-                match Arc::get_mut(&mut buffer) {
-                    Some(inner_buffer) => {
-                        let bytes_read = file.read(inner_buffer).unwrap();
-                        if bytes_read == 0 {
-                            slabpool.return_buffer(buffer);
-                            break;
-                        }
-                        total_bytes_read += bytes_read;
-                        (
-                            Arc::new(Slab {
-                                pool: Arc::clone(&slabpool),
-                                buffer: Some(buffer),
-                            }),
-                            bytes_read,
-                        )
-                    }
-                    None => {
-                        slabpool.return_buffer(buffer);
-                        break;
-                    }
-                }
-            }
-        };
-        (next_slab, next_buffer_len) = if total_bytes_read < total_len {
-            let mut next_buffer = slabpool.get_buffer();
-            match Arc::get_mut(&mut next_buffer) {
-                Some(inner_buffer) => {
-                    let bytes_read = file.read(inner_buffer).unwrap();
-                    if bytes_read == 0 {
-                        slabpool.return_buffer(next_buffer);
-                        (None, 0)
-                    } else {
-                        (
-                            Some(Arc::new(Slab {
-                                pool: Arc::clone(&slabpool),
-                                buffer: Some(next_buffer),
-                            })),
-                            bytes_read,
-                        )
-                    }
-                }
-                None => {
-                    slabpool.return_buffer(next_buffer);
-                    break;
-                }
-            }
-        } else {
-            (None, 0)
-        };
+        let window: WindowedSlab = window_stream.next().await?;
+        let first_buffer = &window[0];
+        let second_buffer = window.get(1).map(|slab| &****slab);
+
         let file_chunk = get_file_chunk(
-            unsafe_clone_buffer(&current_slab.buffer),
-            current_buffer_len,
-            next_slab
-                .as_ref()
-                .map(|slab| unsafe_clone_buffer(&slab.buffer)),
-            next_buffer_len,
             first_buffer,
+            second_buffer,
+            is_first_buffer,
             num_fields,
             quote_char,
             field_delimiter,
             escape_char,
             double_quote_escape_allowed,
         );
-        first_buffer = false;
+        is_first_buffer = false;
         if let (None, _) = file_chunk {
-            // Return the buffer. It doesn't matter that we still have a reference to the slab. We're going to fallback
-            // and the slabs will be useless.
-            slabpool.return_buffer(unsafe_clone_buffer(&current_slab.buffer));
             // Exit early before spawning a new thread.
-            break;
             // TODO(desmond): we should fallback instead.
+            break;
         }
-        let current_slab_clone = Arc::clone(&current_slab);
-        let next_slab_clone = next_slab.clone();
         let parse_options = parse_options.clone();
         let csv_buffer = buffer_pool.get_buffer();
         let projection_indices = projection_indices.clone();
@@ -398,27 +340,21 @@ fn consume_csv_file(
             if !limit_reached {
                 match file_chunk {
                     (Some(start), None) => {
-                        if let Some(buffer) = &current_slab_clone.buffer {
-                            let buffer_source = BufferSource::Single(Cursor::new(
-                                &buffer[start..current_buffer_len],
-                            ));
-                            dispatch_to_parse_csv(
-                                has_header,
-                                parse_options,
-                                buffer_source,
-                                projection_indices,
-                                fields,
-                                read_daft_fields,
-                                read_schema,
-                                csv_buffer,
-                                &include_columns,
-                                predicate,
-                                sender,
-                                rows_read,
-                            );
-                        } else {
-                            panic!("Trying to read from a CSV buffer that doesn't exist. Please report this issue.")
-                        }
+                        let buffer_source = Cursor::new(&first_buffer[start..]);
+                        dispatch_to_parse_csv(
+                            has_header,
+                            parse_options,
+                            buffer_source,
+                            projection_indices,
+                            fields,
+                            read_daft_fields,
+                            read_schema,
+                            csv_buffer,
+                            &include_columns,
+                            predicate,
+                            sender,
+                            rows_read,
+                        );
                     }
                     (Some(start), Some(end)) => {
                         if let Some(next_slab_clone) = next_slab_clone
@@ -527,11 +463,9 @@ fn unsafe_clone_buffer(buffer: &Option<Arc<[u8; SLAB_SIZE]>>) -> Arc<[u8; SLAB_S
 ///     \n character and go back to 2.
 #[allow(clippy::too_many_arguments)]
 fn get_file_chunk(
-    current_buffer: Arc<[u8; SLAB_SIZE]>,
-    current_buffer_len: usize,
-    next_buffer: Option<Arc<[u8; SLAB_SIZE]>>,
-    next_buffer_len: usize,
-    first_buffer: bool,
+    current_buffer: &[u8],
+    next_buffer: Option<&[u8]>,
+    is_first_buffer: bool,
     num_fields: usize,
     quote_char: u8,
     field_delimiter: u8,
@@ -539,9 +473,9 @@ fn get_file_chunk(
     double_quote_escape_allowed: bool,
 ) -> (Option<usize>, Option<usize>) {
     // TODO(desmond): There is a potential fast path here when `escape_char` is None: simply check for \n characters.
-    let start = if !first_buffer {
+    let start = if !is_first_buffer {
         let start = next_line_position(
-            &current_buffer[..current_buffer_len],
+            current_buffer,
             0,
             num_fields,
             quote_char,
@@ -559,7 +493,7 @@ fn get_file_chunk(
     // If there is a next buffer, find the adjusted chunk in that buffer. If there's no next buffer, we're at the end of the file.
     let end = if let Some(next_buffer) = next_buffer {
         let end = next_line_position(
-            &next_buffer[..next_buffer_len],
+            next_buffer,
             0,
             num_fields,
             quote_char,

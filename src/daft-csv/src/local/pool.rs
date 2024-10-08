@@ -27,9 +27,9 @@ impl<T> Clearable for Vec<T> {
 
 impl<T> SlabPool<T> {
     /// Creates a new `SlabPool` with a specified number of slabs of a given size.
-    pub fn new<I: IntoIterator<Item=T>>(iterator: I) -> Self
+    pub fn new<I: IntoIterator<Item = T>>(iterator: I) -> Self
     where
-        I::IntoIter: ExactSizeIterator<Item=T>,
+        I::IntoIter: ExactSizeIterator<Item = T>,
     {
         let iterator = iterator.into_iter();
         let slab_count = iterator.len();
@@ -37,8 +37,7 @@ impl<T> SlabPool<T> {
         let (tx, rx) = mpsc::channel(slab_count);
 
         for slab in iterator {
-            tx.try_send(slab)
-                .expect("Failed to send slab to pool");
+            tx.try_send(slab).expect("Failed to send slab to pool");
 
             // todo: maybe assert that slab_count is correct or use TrustedLen
         }
@@ -103,8 +102,9 @@ use tokio_stream::wrappers::ReceiverStream;
 /// Asynchronously reads slabs from a file and returns a stream of SharedSlabs.
 pub fn read_slabs<R>(
     mut file: R,
-    iterator: impl ExactSizeIterator<Item=FileSlab>,
-) -> impl Stream<Item=Slab<FileSlab>> where
+    iterator: impl ExactSizeIterator<Item = FileSlab>,
+) -> impl Stream<Item = Slab<FileSlab>>
+where
     R: AsyncRead + Unpin + Send + 'static,
 {
     let (tx, rx) = mpsc::channel::<Slab<FileSlab>>(iterator.len());
@@ -171,13 +171,11 @@ pub type WindowedSlab = heapless::Vec<SharedSlab<FileSlab>, 2>;
 /// # Returns
 ///
 /// A `Stream` of `WindowedSlab`s.
-pub fn read_slabs_windowed<R, I>(
-    file: R,
-    iterator: I,
-) -> impl Stream<Item=WindowedSlab> where
+pub fn read_slabs_windowed<R, I>(file: R, iterator: I) -> impl Stream<Item = WindowedSlab>
+where
     R: AsyncRead + Unpin + Send + 'static,
-    I: IntoIterator<Item=FileSlab> + 'static,
-    I::IntoIter: ExactSizeIterator<Item=FileSlab> + 'static,
+    I: IntoIterator<Item = FileSlab> + 'static,
+    I::IntoIter: ExactSizeIterator<Item = FileSlab> + 'static,
 {
     let iterator = iterator.into_iter();
     let (tx, rx) = mpsc::channel(iterator.len());
@@ -226,7 +224,9 @@ mod tests {
         let buffer_size = 100;
         let pool_size = 5;
 
-        let slabs = (0..pool_size).map(|_| vec![0; buffer_size]).collect::<Vec<_>>();
+        let slabs = (0..pool_size)
+            .map(|_| vec![0; buffer_size])
+            .collect::<Vec<_>>();
         let mut stream = read_slabs(cursor, slabs.into_iter());
         let mut total_bytes = 0;
 
@@ -245,28 +245,28 @@ mod tests {
     //     let cursor = Cursor::new(data);
     //     let buffer_size = 100;
     //     let pool_size = 5;
-    // 
+    //
     //     let slabs = (0..pool_size).map(|_| vec![0; buffer_size]).collect::<Vec<_>>();
     //     let mut stream = read_slabs_windowed(cursor, slabs.into_iter());
     //     let mut total_bytes = 0;
     //     let mut previous_slab: Option<SharedSlab<FileSlab>> = None;
-    // 
+    //
     //     let mut left_total = 0;
     //     let mut right_total = 0;
-    // 
+    //
     //     while let Some(windowed_slab) = stream.next().await {
     //         assert_eq!(windowed_slab.len(), 2);
-    // 
+    //
     //         if let Some(prev) = &previous_slab {
     //             assert!(Arc::ptr_eq(prev, &windowed_slab[0]));
     //         }
-    // 
+    //
     //         left_total += windowed_slab[0].len();
     //         right_total += windowed_slab[1].len();
     //         total_bytes += windowed_slab[1].len();
     //         previous_slab = Some(windowed_slab[1].clone());
     //     }
-    // 
+    //
     //     assert_eq!(total_bytes, data_len);
     //     assert_eq!(left_total, right_total);
     //     assert_eq!(left_total, data_len);
