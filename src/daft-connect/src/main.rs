@@ -1,14 +1,26 @@
 use tonic::transport::Server;
-use daft_connect::MySparkConnectService;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::{EnvFilter, Registry};
+use tracing_tree::HierarchicalLayer;
+use daft_connect::DaftSparkConnectService;
 use daft_connect::spark_connect::spark_connect_service_server::SparkConnectServiceServer;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt::init();
+    let env_filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("info"));
+
+    let fmt_layer = HierarchicalLayer::new(2);
+
+    let subscriber = Registry::default()
+        .with(env_filter)
+        .with(fmt_layer);
+    
+    tracing::subscriber::set_global_default(subscriber).unwrap();
 
 
     let addr = "[::1]:50051".parse()?;
-    let service = MySparkConnectService::default();
+    let service = DaftSparkConnectService::default();
 
     println!("Daft-Connect server listening on {}", addr);
 

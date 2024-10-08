@@ -7,7 +7,8 @@ prost-types = "0.13.3"
 uuid = { version = "1.10.0", features = ["v4"] }
 dashmap = "6.1.0"
 tracing.workspace = true
-tracing-subscriber = "0.3.18"
+tracing-subscriber = { version = "0.3.18" , features = ["env-filter"] }
+tracing-tree = "0.4.0"
 
 [build-dependencies]
 tonic-build = "0.12.3"
