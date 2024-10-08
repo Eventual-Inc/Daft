@@ -34,18 +34,18 @@ use crate::{metadata::read_csv_schema_single, CsvConvertOptions, CsvParseOptions
 use daft_compression::CompressionCodec;
 use daft_decoding::deserialize::deserialize_column;
 
-trait ByteRecordChunkStream: Stream<Item = super::Result<Vec<read_async::ByteRecord>>> {}
-impl<S> ByteRecordChunkStream for S where
-    S: Stream<Item = super::Result<Vec<read_async::ByteRecord>>>
-{
-}
+trait ByteRecordChunkStream: Stream<Item=super::Result<Vec<read_async::ByteRecord>>> {}
+impl<S> ByteRecordChunkStream for S
+where
+    S: Stream<Item=super::Result<Vec<read_async::ByteRecord>>>,
+{}
 
 use crate::{local::read_csv_local, local::stream_csv_local};
 
 type TableChunkResult =
-    super::Result<Context<JoinHandle<DaftResult<Table>>, super::JoinSnafu, super::Error>>;
-trait TableStream: Stream<Item = TableChunkResult> {}
-impl<S> TableStream for S where S: Stream<Item = TableChunkResult> {}
+super::Result<Context<JoinHandle<DaftResult<Table>>, super::JoinSnafu, super::Error>>;
+trait TableStream: Stream<Item=TableChunkResult> {}
+impl<S> TableStream for S where S: Stream<Item=TableChunkResult> {}
 
 #[allow(clippy::too_many_arguments)]
 pub fn read_csv(
@@ -70,7 +70,7 @@ pub fn read_csv(
             io_stats,
             max_chunks_in_flight,
         )
-        .await
+            .await
     })
 }
 
@@ -109,9 +109,9 @@ pub fn read_csv_bulk(
                     io_stats,
                     max_chunks_in_flight,
                 )
-                .await
+                    .await
             })
-            .context(super::JoinSnafu {})
+                .context(super::JoinSnafu {})
         }));
         let mut remaining_rows = convert_options
             .as_ref()
@@ -155,15 +155,14 @@ pub async fn stream_csv(
     let uri = uri.as_str();
     let (source_type, _) = parse_url(uri)?;
     let is_compressed = CompressionCodec::from_uri(uri).is_some();
-    let use_local = false;
-    if matches!(source_type, SourceType::File) && !is_compressed && use_local {
+    if matches!(source_type, SourceType::File) && !is_compressed {
         let stream = stream_csv_local(
             uri,
             convert_options,
             parse_options.unwrap_or_default(),
             read_options,
             max_chunks_in_flight,
-        )?;
+        ).await?;
         Ok(Box::pin(stream))
     } else {
         let stream = stream_csv_single(
@@ -175,7 +174,7 @@ pub async fn stream_csv(
             io_stats,
             max_chunks_in_flight,
         )
-        .await?;
+            .await?;
         Ok(Box::pin(stream))
     }
 }
@@ -229,8 +228,7 @@ async fn read_csv_single_into_table(
 ) -> DaftResult<Table> {
     let (source_type, _) = parse_url(uri)?;
     let is_compressed = CompressionCodec::from_uri(uri).is_some();
-    let use_local = false;
-    if matches!(source_type, SourceType::File) && !is_compressed && use_local {
+    if matches!(source_type, SourceType::File) && !is_compressed {
         return read_csv_local(
             uri,
             convert_options,
@@ -238,7 +236,7 @@ async fn read_csv_single_into_table(
             read_options,
             max_chunks_in_flight,
         )
-        .await;
+            .await;
     }
 
     let predicate = convert_options
@@ -277,7 +275,7 @@ async fn read_csv_single_into_table(
         io_client,
         io_stats,
     )
-    .await?;
+        .await?;
     // Default max chunks in flight is set to 2x the number of cores, which should ensure pipelining of reading chunks
     // with the parsing of chunks on the rayon threadpool.
     let max_chunks_in_flight = max_chunks_in_flight.unwrap_or_else(|| {
@@ -366,7 +364,7 @@ async fn stream_csv_single(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
-) -> DaftResult<impl Stream<Item = DaftResult<Table>> + Send> {
+) -> DaftResult<impl Stream<Item=DaftResult<Table>> + Send> {
     let predicate = convert_options
         .as_ref()
         .and_then(|opts| opts.predicate.clone());
@@ -403,7 +401,7 @@ async fn stream_csv_single(
         io_client,
         io_stats,
     )
-    .await?;
+        .await?;
     // Default max chunks in flight is set to 2x the number of cores, which should ensure pipelining of reading chunks
     // with the parsing of chunks on the rayon threadpool.
     let max_chunks_in_flight = max_chunks_in_flight.unwrap_or_else(|| {
@@ -469,7 +467,7 @@ async fn read_csv_single_into_stream(
                 io_client.clone(),
                 io_stats.clone(),
             )
-            .await?;
+                .await?;
             (
                 schema.to_arrow()?,
                 Some(read_stats.mean_record_size_bytes),
@@ -667,7 +665,7 @@ fn parse_into_column_array_chunk_stream(
             });
             recv.await.context(super::OneShotRecvSnafu {})?
         })
-        .context(super::JoinSnafu {})
+            .context(super::JoinSnafu {})
     }))
 }
 
@@ -946,7 +944,7 @@ mod tests {
                 None,
                 None,
             )
-            .await
+                .await
         });
 
         assert!(
@@ -1188,7 +1186,7 @@ mod tests {
 
     #[test]
     fn test_csv_read_local_escape() -> DaftResult<()> {
-        let file = format!("{}/test/iris_tiny_escape.csv", env!("CARGO_MANIFEST_DIR"),);
+        let file = format!("{}/test/iris_tiny_escape.csv", env!("CARGO_MANIFEST_DIR"), );
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
@@ -1236,7 +1234,7 @@ mod tests {
 
     #[test]
     fn test_csv_read_local_comment() -> DaftResult<()> {
-        let file = format!("{}/test/iris_tiny_comment.csv", env!("CARGO_MANIFEST_DIR"),);
+        let file = format!("{}/test/iris_tiny_comment.csv", env!("CARGO_MANIFEST_DIR"), );
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
@@ -1283,7 +1281,7 @@ mod tests {
     }
     #[test]
     fn test_csv_read_local_limit() -> DaftResult<()> {
-        let file = format!("{}/test/iris_tiny.csv", env!("CARGO_MANIFEST_DIR"),);
+        let file = format!("{}/test/iris_tiny.csv", env!("CARGO_MANIFEST_DIR"), );
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
@@ -1331,7 +1329,7 @@ mod tests {
 
     #[test]
     fn test_csv_read_local_projection() -> DaftResult<()> {
-        let file = format!("{}/test/iris_tiny.csv", env!("CARGO_MANIFEST_DIR"),);
+        let file = format!("{}/test/iris_tiny.csv", env!("CARGO_MANIFEST_DIR"), );
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
@@ -1441,7 +1439,7 @@ mod tests {
 
     #[test]
     fn test_csv_read_local_larger_than_buffer_size() -> DaftResult<()> {
-        let file = format!("{}/test/iris_tiny.csv", env!("CARGO_MANIFEST_DIR"),);
+        let file = format!("{}/test/iris_tiny.csv", env!("CARGO_MANIFEST_DIR"), );
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
@@ -1489,7 +1487,7 @@ mod tests {
 
     #[test]
     fn test_csv_read_local_larger_than_chunk_size() -> DaftResult<()> {
-        let file = format!("{}/test/iris_tiny.csv", env!("CARGO_MANIFEST_DIR"),);
+        let file = format!("{}/test/iris_tiny.csv", env!("CARGO_MANIFEST_DIR"), );
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
@@ -1537,7 +1535,7 @@ mod tests {
 
     #[test]
     fn test_csv_read_local_throttled_streaming() -> DaftResult<()> {
-        let file = format!("{}/test/iris_tiny.csv", env!("CARGO_MANIFEST_DIR"),);
+        let file = format!("{}/test/iris_tiny.csv", env!("CARGO_MANIFEST_DIR"), );
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
@@ -1585,7 +1583,7 @@ mod tests {
 
     #[test]
     fn test_csv_read_local_nulls() -> DaftResult<()> {
-        let file = format!("{}/test/iris_tiny_nulls.csv", env!("CARGO_MANIFEST_DIR"),);
+        let file = format!("{}/test/iris_tiny_nulls.csv", env!("CARGO_MANIFEST_DIR"), );
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
@@ -1762,7 +1760,7 @@ mod tests {
 
     #[test]
     fn test_csv_read_local_wrong_type_yields_nulls() -> DaftResult<()> {
-        let file = format!("{}/test/iris_tiny.csv", env!("CARGO_MANIFEST_DIR"),);
+        let file = format!("{}/test/iris_tiny.csv", env!("CARGO_MANIFEST_DIR"), );
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;

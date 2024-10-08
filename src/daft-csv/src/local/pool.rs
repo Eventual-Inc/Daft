@@ -7,7 +7,9 @@ use tokio::sync::mpsc::{self, Receiver, Sender};
 
 mod fixed_capacity_vec;
 
-pub type FileSlab = Vec<u8>;
+pub type FileSlabData = Vec<u8>;
+
+pub type CsvSlabData = Vec<read::ByteRecord>;
 
 /// A pool of reusable memory slabs for efficient I/O operations.
 pub struct SlabPool<T> {
@@ -51,7 +53,7 @@ impl<T> SlabPool<T> {
 
 impl<T: Clearable> SlabPool<T> {
     /// Asynchronously retrieves the next available slab from the pool.
-    async fn get_next_data(&mut self) -> Slab<T> {
+    pub async fn get_next_data(&mut self) -> Slab<T> {
         let mut data = self
             .available_slabs
             .recv()
@@ -98,16 +100,17 @@ impl<T> Drop for Slab<T> {
 }
 
 use tokio_stream::wrappers::ReceiverStream;
+use arrow2::io::csv::read;
 
 /// Asynchronously reads slabs from a file and returns a stream of SharedSlabs.
 pub fn read_slabs<R>(
     mut file: R,
-    iterator: impl ExactSizeIterator<Item = FileSlab>,
-) -> impl Stream<Item = Slab<FileSlab>>
+    iterator: impl ExactSizeIterator<Item =FileSlabData>,
+) -> impl Stream<Item = Slab<FileSlabData>>
 where
     R: AsyncRead + Unpin + Send + 'static,
 {
-    let (tx, rx) = mpsc::channel::<Slab<FileSlab>>(iterator.len());
+    let (tx, rx) = mpsc::channel::<Slab<FileSlabData>>(iterator.len());
 
     let pool = SlabPool::new(iterator);
     tokio::spawn(async move {
@@ -154,7 +157,7 @@ where
     ReceiverStream::new(rx)
 }
 
-pub type WindowedSlab = heapless::Vec<SharedSlab<FileSlab>, 2>;
+pub type WindowedSlab = heapless::Vec<SharedSlab<FileSlabData>, 2>;
 
 /// Asynchronously reads slabs from a file and returns a stream of WindowedSlabs.
 ///
@@ -171,11 +174,11 @@ pub type WindowedSlab = heapless::Vec<SharedSlab<FileSlab>, 2>;
 /// # Returns
 ///
 /// A `Stream` of `WindowedSlab`s.
-pub fn read_slabs_windowed<R, I>(file: R, iterator: I) -> impl Stream<Item = WindowedSlab>
+pub fn read_slabs_windowed<R, I>(file: R, iterator: I) -> impl Stream<Item = WindowedSlab> + Unpin
 where
     R: AsyncRead + Unpin + Send + 'static,
-    I: IntoIterator<Item = FileSlab> + 'static,
-    I::IntoIter: ExactSizeIterator<Item = FileSlab> + 'static,
+    I: IntoIterator<Item =FileSlabData> + 'static,
+    I::IntoIter: ExactSizeIterator<Item =FileSlabData> + 'static,
 {
     let iterator = iterator.into_iter();
     let (tx, rx) = mpsc::channel(iterator.len());
@@ -187,7 +190,7 @@ where
     tokio::spawn(async move {
         let mut slab_stream = pin!(slab_stream);
 
-        let mut windowed_slab = heapless::Vec::<SharedSlab<FileSlab>, 2>::new();
+        let mut windowed_slab = heapless::Vec::<SharedSlab<FileSlabData>, 2>::new();
 
         let mut slab_stream = slab_stream.as_mut();
         while let Some(slab) = StreamExt::next(&mut slab_stream).await {
