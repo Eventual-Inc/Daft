@@ -9,16 +9,26 @@ use spark_connect::{
 };
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
+use dashmap::DashMap;
+use crate::spark_connect::config_request::Operation;
+use crate::spark_connect::config_request::operation::OpType;
 
 pub mod spark_connect {
     tonic::include_proto!("spark.connect");
 }
 
 #[derive(Default)]
+struct Session {
+    /// so order is preserved
+    ///
+    /// Also, <https://users.rust-lang.org/t/hashmap-vs-btreemap/13804/4>
+    values: BTreeMap<String, String>,
+}
+
+#[derive(Default)]
 pub struct MySparkConnectService {
-    sessions: Arc<Mutex<HashMap<String, String>>>, // To track session data
-    default_session_id: Arc<Mutex<Option<String>>>, // To track default session
+    client_to_server_session: DashMap<Uuid, Session>, // To track session data
 }
 
 #[tonic::async_trait]
@@ -31,27 +41,18 @@ impl SparkConnectService for MySparkConnectService {
         request: Request<ExecutePlanRequest>,
     ) -> Result<Response<Self::ExecutePlanStream>, Status> {
         let request = request.into_inner();
-        let session_id = request.session_id.clone();
 
-        println!("Received session ID: {}", session_id);
+        let client_session_id = request.session_id;
 
-        // Determine the actual session_id to use
-        let actual_session_id = if session_id.is_empty() {
-            let default_session = self.default_session_id.lock().unwrap();
-            if let Some(ref default_id) = *default_session {
-                default_id.clone()
-            } else {
-                return Err(Status::invalid_argument("No default session ID set"));
-            }
-        } else {
-            session_id.clone()
+        let Ok(client_session_id) = Uuid::parse_str(&client_session_id) else {
+            return Err(Status::invalid_argument("Invalid session_id format, must be a UUID"));
         };
 
-        // Validate session ID
-        let sessions = self.sessions.lock().unwrap();
-        if !sessions.contains_key(&actual_session_id) {
-            return Err(Status::invalid_argument("Invalid session ID"));
-        }
+
+        let Some(server_session_id) = self.client_to_server_session.get(&client_session_id).as_deref() else {
+            return Err(Status::invalid_argument("Invalid session ID; no session found for this client"));
+        };
+
 
         // Proceed with executing the plan...
         let plan = request.plan.ok_or_else(|| Status::invalid_argument("Plan is required"))?;
@@ -71,7 +72,7 @@ impl SparkConnectService for MySparkConnectService {
                 let response = ExecutePlanResponse {
                     response_type: Some(spark_connect::execute_plan_response::ResponseType::ArrowBatch(
                         spark_connect::execute_plan_response::ArrowBatch {
-                            row_count: ((end - start) / step) as i64,
+                            row_count: (end - start) / step,
                             data: dummy_data,
                             ..Default::default()
                         },
@@ -89,56 +90,47 @@ impl SparkConnectService for MySparkConnectService {
 
     async fn config(&self, request: Request<ConfigRequest>) -> Result<Response<ConfigResponse>, Status> {
         let req = request.into_inner();
+
         let session_id = req.session_id.clone();
 
-        // Determine if a new session_id needs to be generated
-        let new_session_id = if session_id.is_empty() {
-            // Generate a new unique session ID
-            let generated_session_id = Uuid::new_v4().to_string();
-
-            // Store the new session ID
-            {
-                let mut sessions = self.sessions.lock().unwrap();
-                sessions.insert(generated_session_id.clone(), generated_session_id.clone());
-            }
-
-            // Set the generated session ID as the default
-            {
-                let mut default_session = self.default_session_id.lock().unwrap();
-                *default_session = Some(generated_session_id.clone());
-            }
-
-            println!("Generated and stored new session ID: {}", generated_session_id);
-            generated_session_id
-        } else {
-            // Validate the session_id format
-            if Uuid::parse_str(&session_id).is_err() {
-                return Err(Status::invalid_argument("Invalid session_id format"));
-            }
-
-            // Store the session_id provided by the client
-            let mut sessions = self.sessions.lock().unwrap();
-            if sessions.contains_key(&session_id) {
-                println!("Session ID already exists: {}", session_id);
-                // Optionally, handle re-configuration of an existing session
-            } else {
-                sessions.insert(session_id.clone(), session_id.clone());
-                println!("Stored new session ID: {}", session_id);
-            }
-
-            // Optionally, set the first valid session as the default
-            let mut default_session = self.default_session_id.lock().unwrap();
-            if default_session.is_none() {
-                *default_session = Some(session_id.clone());
-            }
-
-            session_id.clone()
+        let Ok(session_id_uuid) = Uuid::parse_str(&session_id) else {
+            return Err(Status::invalid_argument("Invalid session_id format, must be a UUID"));
         };
+
+        let Some(operation) = req.operation.and_then(|op| op.op_type) else {
+            return Err(Status::invalid_argument("Missing operation"));
+        };
+
+        let server_session = self.client_to_server_session.entry(session_id_uuid).or_default();
+
+        use spark_connect::config_request::*;
+        use spark_connect::KeyValue;
+
+        match operation {
+            OpType::Set(Set { pairs }) => {
+                for KeyValue { key, value } in pairs {
+                    match value {
+                        None => {
+                            server_session.values.remove(&key);
+                        }
+                        Some(value) => {
+                            server_session.values.insert(key, value);
+                        }
+                    }
+                }
+            }
+            OpType::Get(_) => {}
+            OpType::GetWithDefault(_) => {}
+            OpType::GetOption(_) => {}
+            OpType::GetAll(_) => {}
+            OpType::Unset(_) => {}
+            OpType::IsModifiable(_) => {}
+        }
 
         // Create a ConfigResponse echoing back the session_id
         let response = ConfigResponse {
-            session_id: new_session_id.clone(),
-            server_side_session_id: new_session_id.clone(), // Use the same ID for simplicity
+            session_id,
+            server_side_session_id: server_session.to_string(),
             pairs: vec![],
             warnings: vec![],
         };
@@ -168,32 +160,21 @@ impl SparkConnectService for MySparkConnectService {
 
     async fn release_execute(&self, request: Request<ReleaseExecuteRequest>) -> Result<Response<ReleaseExecuteResponse>, Status> {
         let request = request.into_inner();
-        let session_id = request.session_id.clone();
+        let client_session_id = request.session_id;
 
-        println!("Received session ID for release_execute: {}", session_id);
-
-        // let actual_session_id = if session_id.is_empty() {
-        // //     let default_session = self.default_session_id.lock().unwrap();
-        // //     if let Some(ref default_id) = *default_session {
-        // //         default_id.clone()
-        // //     } else {
-        // //         return Err(Status::invalid_argument("No default session ID set"));
-        // //     }
-        // // } else {
-        // //     session_id.clone()
-        //     panic!("oof");
-        // };
-
-        // Validate session ID
-        let sessions = self.sessions.lock().unwrap();
-        let Some(server_side_session_id) = sessions.get(&session_id).cloned() else {
-            return Err(Status::invalid_argument("Invalid session ID"));
+        let Ok(client_session_id_uuid) = Uuid::parse_str(&client_session_id) else {
+            return Err(Status::invalid_argument("Invalid session_id format, must be a UUID"));
         };
+
+        let Some(server_session_id) = self.client_to_server_session.get(&client_session_id_uuid).as_deref().cloned() else {
+            return Err(Status::invalid_argument("Invalid session ID; no session found for this client"));
+        };
+
 
         // Dummy release execute implementation
         let response = ReleaseExecuteResponse {
-            session_id: server_side_session_id.clone(),
-            server_side_session_id,
+            session_id: client_session_id,
+            server_side_session_id: server_session_id.to_string(),
             operation_id: Some("dummy_operation_id".to_string()),
         };
 
