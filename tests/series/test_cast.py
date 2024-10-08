@@ -1175,7 +1175,7 @@ def to_coo_sparse_dict(ndarray: np.ndarray) -> dict[str, np.ndarray]:
 
 
 def test_series_cast_sparse_to_python() -> None:
-    data = [np.zeros(shape=(1,2), dtype=np.uint8), None, np.ones(shape=(2,2), dtype=np.uint8)]
+    data = [np.zeros(shape=(1, 2), dtype=np.uint8), None, np.ones(shape=(2, 2), dtype=np.uint8)]
     series = Series.from_pylist(data).cast(DataType.sparse_tensor(DataType.uint8()))
     assert series.datatype() == DataType.sparse_tensor(DataType.uint8())
 
@@ -1185,12 +1185,13 @@ def test_series_cast_sparse_to_python() -> None:
 
 
 def test_series_cast_fixed_shape_sparse_to_python() -> None:
-    data = [np.zeros(shape=(2,2), dtype=np.uint8), None, np.ones(shape=(2,2), dtype=np.uint8)]
-    series = (Series.from_pylist(data)
-              .cast(DataType.tensor(DataType.uint8(), shape=(2,2)))  # TODO: direct cast to fixed shape sparse
-              .cast(DataType.sparse_tensor(DataType.uint8(), shape=(2,2))))
-    
-    assert series.datatype() == DataType.sparse_tensor(DataType.uint8(), shape=(2,2))
+    data = [np.zeros(shape=(2, 2), dtype=np.uint8), None, np.ones(shape=(2, 2), dtype=np.uint8)]
+    series = (
+        Series.from_pylist(data)
+        .cast(DataType.tensor(DataType.uint8(), shape=(2, 2)))  # TODO: direct cast to fixed shape sparse
+        .cast(DataType.sparse_tensor(DataType.uint8(), shape=(2, 2)))
+    )
+    assert series.datatype() == DataType.sparse_tensor(DataType.uint8(), shape=(2, 2))
 
     given = series.to_pylist()
     expected = [to_coo_sparse_dict(ndarray) if ndarray is not None else None for ndarray in data]
