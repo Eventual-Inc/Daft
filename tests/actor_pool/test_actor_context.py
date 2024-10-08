@@ -17,7 +17,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-@pytest.fixture(scope="module", autouse=True)
+@pytest.fixture(scope="module")
 def enable_actor_pool():
     try:
         original_config = get_context().daft_planning_config
@@ -31,7 +31,7 @@ def enable_actor_pool():
 
 
 @pytest.mark.parametrize("concurrency", [1, 2, 3])
-def test_stateful_udf_context_rank(concurrency):
+def test_stateful_udf_context_rank(enable_actor_pool, concurrency):
     @udf(return_dtype=DataType.int64())
     class GetRank:
         def __init__(self):
@@ -62,7 +62,7 @@ def test_stateful_udf_context_rank(concurrency):
 
 
 @pytest.mark.parametrize("concurrency", [1, 2, 3])
-def test_stateful_udf_context_resource_request(concurrency):
+def test_stateful_udf_context_resource_request(enable_actor_pool, concurrency):
     @udf(return_dtype=DataType.int64(), num_cpus=1, memory_bytes=5_000_000)
     class TestResourceRequest:
         def __init__(self, resource_request: ResourceRequest):
@@ -93,7 +93,7 @@ def test_stateful_udf_context_resource_request(concurrency):
 
 @pytest.mark.parametrize("concurrency", [1, 2])
 @pytest.mark.parametrize("num_gpus", [1, 2])
-def test_stateful_udf_cuda_env_var(concurrency, num_gpus):
+def test_stateful_udf_cuda_env_var(enable_actor_pool, concurrency, num_gpus):
     if concurrency * num_gpus > len(cuda_visible_devices()):
         pytest.skip("Not enough GPUs available")
 
@@ -127,7 +127,7 @@ def test_stateful_udf_cuda_env_var(concurrency, num_gpus):
 
 
 @pytest.mark.skipif(len(cuda_visible_devices()) == 0, reason="No GPUs available")
-def test_stateful_udf_fractional_gpu():
+def test_stateful_udf_fractional_gpu(enable_actor_pool):
     @udf(return_dtype=DataType.string(), num_gpus=0.5)
     class FractionalGpuUdf:
         def __init__(self):

@@ -26,7 +26,7 @@ pub struct ResourceRequest {
 }
 
 impl ResourceRequest {
-    pub fn new_internal(
+    pub fn try_new_internal(
         num_cpus: Option<f64>,
         num_gpus: Option<f64>,
         memory_bytes: Option<usize>,
@@ -56,19 +56,19 @@ impl ResourceRequest {
 
     #[must_use]
     pub fn default_cpu() -> Self {
-        Self::new_internal(Some(1.0), None, None).unwrap()
+        Self::try_new_internal(Some(1.0), None, None).unwrap()
     }
 
     pub fn or_num_cpus(&self, num_cpus: Option<f64>) -> DaftResult<Self> {
-        Self::new_internal(self.num_cpus.or(num_cpus), self.num_gpus, self.memory_bytes)
+        Self::try_new_internal(self.num_cpus.or(num_cpus), self.num_gpus, self.memory_bytes)
     }
 
     pub fn or_num_gpus(&self, num_gpus: Option<f64>) -> DaftResult<Self> {
-        Self::new_internal(self.num_cpus, self.num_gpus.or(num_gpus), self.memory_bytes)
+        Self::try_new_internal(self.num_cpus, self.num_gpus.or(num_gpus), self.memory_bytes)
     }
 
     pub fn or_memory_bytes(&self, memory_bytes: Option<usize>) -> DaftResult<Self> {
-        Self::new_internal(
+        Self::try_new_internal(
             self.num_cpus,
             self.num_gpus,
             self.memory_bytes.or(memory_bytes),
@@ -121,7 +121,7 @@ impl ResourceRequest {
         let max_num_cpus = lift(float_max, self.num_cpus, other.num_cpus);
         let max_num_gpus = lift(float_max, self.num_gpus, other.num_gpus);
         let max_memory_bytes = lift(std::cmp::max, self.memory_bytes, other.memory_bytes);
-        Self::new_internal(max_num_cpus, max_num_gpus, max_memory_bytes).unwrap()
+        Self::try_new_internal(max_num_cpus, max_num_gpus, max_memory_bytes).unwrap()
     }
 
     pub fn max_all<ResourceRequestAsRef: AsRef<Self>>(
@@ -133,7 +133,7 @@ impl ResourceRequest {
     }
 
     pub fn multiply(&self, factor: f64) -> DaftResult<Self> {
-        Self::new_internal(
+        Self::try_new_internal(
             self.num_cpus.map(|x| x * factor),
             self.num_gpus.map(|x| x * factor),
             self.memory_bytes.map(|x| x * (factor as usize)),
@@ -144,7 +144,7 @@ impl ResourceRequest {
 impl Add for &ResourceRequest {
     type Output = DaftResult<ResourceRequest>;
     fn add(self, other: Self) -> Self::Output {
-        ResourceRequest::new_internal(
+        ResourceRequest::try_new_internal(
             lift(Add::add, self.num_cpus, other.num_cpus),
             lift(Add::add, self.num_gpus, other.num_gpus),
             lift(Add::add, self.memory_bytes, other.memory_bytes),
@@ -196,7 +196,7 @@ impl ResourceRequest {
         num_gpus: Option<f64>,
         memory_bytes: Option<usize>,
     ) -> PyResult<Self> {
-        Ok(Self::new_internal(num_cpus, num_gpus, memory_bytes)?)
+        Ok(Self::try_new_internal(num_cpus, num_gpus, memory_bytes)?)
     }
 
     /// Take a field-wise max of the list of resource requests.
@@ -222,15 +222,15 @@ impl ResourceRequest {
     }
 
     pub fn with_num_cpus(&self, num_cpus: Option<f64>) -> DaftResult<Self> {
-        Self::new_internal(num_cpus, self.num_gpus, self.memory_bytes)
+        Self::try_new_internal(num_cpus, self.num_gpus, self.memory_bytes)
     }
 
     pub fn with_num_gpus(&self, num_gpus: Option<f64>) -> DaftResult<Self> {
-        Self::new_internal(self.num_cpus, num_gpus, self.memory_bytes)
+        Self::try_new_internal(self.num_cpus, num_gpus, self.memory_bytes)
     }
 
     pub fn with_memory_bytes(&self, memory_bytes: Option<usize>) -> DaftResult<Self> {
-        Self::new_internal(self.num_cpus, self.num_gpus, memory_bytes)
+        Self::try_new_internal(self.num_cpus, self.num_gpus, memory_bytes)
     }
 
     fn __add__(&self, other: &Self) -> PyResult<Self> {

@@ -615,7 +615,7 @@ mod tests {
     }
 
     fn create_resource_request() -> ResourceRequest {
-        ResourceRequest::new_internal(Some(8.), Some(1.), None).unwrap()
+        ResourceRequest::try_new_internal(Some(8.), Some(1.), None).unwrap()
     }
 
     #[test]

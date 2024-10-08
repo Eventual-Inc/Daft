@@ -114,24 +114,7 @@ class PyRunnerResources:
     gpus: dict[str, float]
     memory_bytes: int
 
-    def __add__(self, other: PyRunnerResources) -> PyRunnerResources:
-        num_cpus = self.num_cpus + other.num_cpus
-        gpus = {k: self.gpus.get(k, 0.0) + other.gpus.get(k, 0.0) for k in set(self.gpus) | set(other.gpus)}
-        memory_bytes = self.memory_bytes + other.memory_bytes
-
-        return PyRunnerResources(num_cpus, gpus, memory_bytes)
-
-    def __sub__(self, other: PyRunnerResources) -> PyRunnerResources:
-        if not (set(other.gpus) <= set(self.gpus)):
-            raise ValueError(f"Cannot subtract {other} from {self} because {other.gpus} is not a subset of {self.gpus}")
-
-        num_cpus = self.num_cpus - other.num_cpus
-        gpus = {k: self.gpus[k] - other.gpus.get(k, 0.0) for k in self.gpus}
-        memory_bytes = self.memory_bytes - other.memory_bytes
-
-        return PyRunnerResources(num_cpus, gpus, memory_bytes)
-
-    def can_acquire_resources(self, resource_request: ResourceRequest) -> bool:
+    def _can_acquire_resources(self, resource_request: ResourceRequest) -> bool:
         cpus_okay = (resource_request.num_cpus or 0) <= self.num_cpus
         memory_okay = (resource_request.memory_bytes or 0) <= self.memory_bytes
 
@@ -152,26 +135,36 @@ class PyRunnerResources:
 
         return all((cpus_okay, gpus_okay, memory_okay))
 
-    def choose_gpus_to_acquire(self, num_gpus: float) -> dict[str, float]:
-        if num_gpus == 0:
-            return {}
+    def try_acquire_resources(self, resource_request: ResourceRequest) -> PyRunnerResources | None:
+        """
+        Attempts to acquire the requested resources.
+
+        If the requested resources are available, returns a PyRunnerResources with the amount of acquired CPUs and memory, as well as the specific GPUs that were acquired.
+
+        If the requested resources are not available, returns None.
+        """
+        if not self._can_acquire_resources(resource_request):
+            return None
+
+        num_cpus = resource_request.num_cpus or 0.0
+        memory_bytes = resource_request.memory_bytes or 0
+        num_gpus = resource_request.num_gpus or 0.0
+
+        self.num_cpus -= num_cpus
+        self.memory_bytes -= memory_bytes
+
+        chosen_gpus = {}
 
         if num_gpus.is_integer():
             remaining = num_gpus
-            chosen_gpus = {}
 
             for gpu, fraction_available in self.gpus.items():
+                if remaining == 0:
+                    break
+
                 if fraction_available == 1.0:
                     chosen_gpus[gpu] = 1.0
                     remaining -= 1.0
-
-                    if remaining == 0:
-                        break
-
-            if remaining > 0:
-                raise ValueError(f"Not enough GPU resources to acquire {num_gpus} GPUs from {self}")
-
-            return chosen_gpus
         else:
             # greedily choose GPU that has lowest fraction available which can fit the requested fraction
             chosen_gpu = None
@@ -186,7 +179,16 @@ class PyRunnerResources:
             if chosen_gpu is None:
                 raise ValueError(f"Not enough GPU resources to acquire {num_gpus} GPUs from {self}")
 
-            return {chosen_gpu: num_gpus}
+            chosen_gpus[chosen_gpu] = num_gpus
+
+        return PyRunnerResources(num_cpus, chosen_gpus, memory_bytes)
+
+    def release_resources(self, resources: PyRunnerResources):
+        """Admit the resources back into the resource pool."""
+        self.num_cpus += resources.num_cpus
+        for gpu, amount in resources.gpus.items():
+            self.gpus[gpu] += amount
+        self.memory_bytes += resources.memory_bytes
 
 
 class PyStatefulActor:
@@ -681,27 +683,11 @@ class PyRunner(Runner[MicroPartition]):
         self._check_resource_requests(resource_request)
 
         with self._resource_accounting_lock:
-            # Update resource accounting if we have the resources (this is considered as the task being "admitted")
-            if self._available_resources.can_acquire_resources(resource_request):
-                num_cpus = resource_request.num_cpus or 0
-                memory_bytes = resource_request.memory_bytes or 0
-                gpus = self._available_resources.choose_gpus_to_acquire(resource_request.num_gpus or 0)
-
-                resources = PyRunnerResources(
-                    num_cpus=num_cpus,
-                    memory_bytes=memory_bytes,
-                    gpus=gpus,
-                )
-
-                self._available_resources -= resources
-
-                return resources
-            else:
-                return None
+            return self._available_resources.try_acquire_resources(resource_request)
 
     def _release_resources(self, resources: PyRunnerResources) -> None:
         with self._resource_accounting_lock:
-            self._available_resources += resources
+            self._available_resources.release_resources(resources)
 
     def build_partitions(
         self,
