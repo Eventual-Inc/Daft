@@ -1705,20 +1705,20 @@ impl SparseTensorArray {
                 let va = self.values_array();
                 let ia = self.indices_array();
                 let pyarrow = py.import_bound(pyo3::intern!(py, "pyarrow"))?;
-                for ((shape_array, values_array), indices_array) in sa
-                    .into_iter()
-                    .zip(va.into_iter())
-                    .zip(ia.into_iter())
+                for ((shape_array, values_array), indices_array) in
+                    sa.into_iter().zip(va.into_iter()).zip(ia.into_iter())
                 {
                     if let (Some(shape_array), Some(values_array), Some(indices_array)) =
                         (shape_array, values_array, indices_array)
                     {
                         let shape_array = shape_array.u64().unwrap().as_arrow();
                         let shape = shape_array.values().to_vec();
-                        let py_values_array = ffi::to_py_array(py, values_array.to_arrow(), &pyarrow)?
-                            .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?;
-                        let py_indices_array = ffi::to_py_array(py, indices_array.to_arrow(), &pyarrow)?
-                            .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?;
+                        let py_values_array =
+                            ffi::to_py_array(py, values_array.to_arrow(), &pyarrow)?
+                                .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?;
+                        let py_indices_array =
+                            ffi::to_py_array(py, indices_array.to_arrow(), &pyarrow)?
+                                .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?;
                         let pydict = pyo3::types::PyDict::new_bound(py);
                         pydict.set_item("values", py_values_array)?;
                         pydict.set_item("indices", py_indices_array)?;
@@ -1832,11 +1832,9 @@ impl FixedShapeSparseTensorArray {
                 Ok(fixed_shape_tensor_array.into_series())
             }
             #[cfg(feature = "python")]
-            (
-                DataType::Python,
-                DataType::FixedShapeSparseTensor(inner_dtype, _),
-            ) => {
-                let sparse_tensor_series = self.cast(&DataType::SparseTensor(inner_dtype.clone()))?;
+            (DataType::Python, DataType::FixedShapeSparseTensor(inner_dtype, _)) => {
+                let sparse_tensor_series =
+                    self.cast(&DataType::SparseTensor(inner_dtype.clone()))?;
                 let sparse_pytensor_series = sparse_tensor_series.cast(&DataType::Python)?;
                 Ok(sparse_pytensor_series)
             }
