@@ -176,6 +176,10 @@ def interval(
     millis: int | None = None,
     nanos: int | None = None,
 ) -> Expression:
+    """
+    Creates an Expression representing an interval.
+
+    """
     lit_value = native.interval_lit(
         years=years, months=months, days=days, hours=hours, minutes=minutes, seconds=seconds, millis=millis, nanos=nanos
     )
