@@ -1,4 +1,8 @@
-use std::{cmp::Ordering::*, collections::VecDeque, sync::Arc};
+use std::{
+    cmp::Ordering::{Equal, Greater, Less},
+    collections::VecDeque,
+    sync::Arc,
+};
 
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
@@ -57,8 +61,13 @@ impl OperatorBuffer {
         self.curr_len -= self.threshold;
         match to_concat.len() {
             1 => Ok(to_concat.pop().unwrap()),
-            _ => MicroPartition::concat(&to_concat.iter().map(|x| x.as_ref()).collect::<Vec<_>>())
-                .map(Arc::new),
+            _ => MicroPartition::concat(
+                &to_concat
+                    .iter()
+                    .map(std::convert::AsRef::as_ref)
+                    .collect::<Vec<_>>(),
+            )
+            .map(Arc::new),
         }
     }
 
@@ -67,9 +76,14 @@ impl OperatorBuffer {
             return None;
         }
 
-        let concated =
-            MicroPartition::concat(&self.buffer.iter().map(|x| x.as_ref()).collect::<Vec<_>>())
-                .map(Arc::new);
+        let concated = MicroPartition::concat(
+            &self
+                .buffer
+                .iter()
+                .map(std::convert::AsRef::as_ref)
+                .collect::<Vec<_>>(),
+        )
+        .map(Arc::new);
         self.buffer.clear();
         self.curr_len = 0;
         Some(concated)

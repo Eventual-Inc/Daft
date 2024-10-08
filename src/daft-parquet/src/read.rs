@@ -74,6 +74,7 @@ pub struct ParquetSchemaInferenceOptions {
 }
 
 impl ParquetSchemaInferenceOptions {
+    #[must_use]
     pub fn new(coerce_int96_timestamp_unit: Option<TimeUnit>) -> Self {
         let coerce_int96_timestamp_unit =
             coerce_int96_timestamp_unit.unwrap_or(TimeUnit::Nanoseconds);
@@ -124,7 +125,7 @@ fn limit_with_delete_rows(
         } else {
             delete_rows.iter().map(|r| *r as usize).collect::<Vec<_>>()
         };
-        delete_rows_sorted.sort();
+        delete_rows_sorted.sort_unstable();
         delete_rows_sorted.dedup();
 
         for r in delete_rows_sorted {
@@ -162,7 +163,7 @@ async fn read_parquet_single(
     let columns_to_return = columns;
     let num_rows_to_return = num_rows;
     let mut num_rows_to_read = num_rows;
-    let requested_columns = columns_to_read.as_ref().map(|v| v.len());
+    let requested_columns = columns_to_read.as_ref().map(std::vec::Vec::len);
     if let Some(ref pred) = predicate {
         num_rows_to_read = None;
 
@@ -375,11 +376,11 @@ async fn stream_parquet_single(
     maintain_order: bool,
 ) -> DaftResult<impl Stream<Item = DaftResult<Table>> + Send> {
     let field_id_mapping_provided = field_id_mapping.is_some();
-    let columns_to_return = columns.map(|s| s.iter().map(|s| s.to_string()).collect_vec());
+    let columns_to_return = columns.map(|s| s.iter().map(|s| (*s).to_string()).collect_vec());
     let num_rows_to_return = num_rows;
     let mut num_rows_to_read = num_rows;
-    let mut columns_to_read = columns.map(|s| s.iter().map(|s| s.to_string()).collect_vec());
-    let requested_columns = columns_to_read.as_ref().map(|v| v.len());
+    let mut columns_to_read = columns.map(|s| s.iter().map(|s| (*s).to_string()).collect_vec());
+    let requested_columns = columns_to_read.as_ref().map(std::vec::Vec::len);
     if let Some(ref pred) = predicate {
         num_rows_to_read = None;
 
@@ -575,7 +576,7 @@ async fn read_parquet_single_into_arrow(
     let rows_per_row_groups = metadata
         .row_groups
         .values()
-        .map(|m| m.num_rows())
+        .map(parquet2::metadata::RowGroupMetaData::num_rows)
         .collect::<Vec<_>>();
 
     let metadata_num_rows = metadata.num_rows;
@@ -767,7 +768,7 @@ pub fn read_parquet_bulk<T: AsRef<str>>(
     let tables = runtime_handle
         .block_on_current_thread(async move {
             let task_stream = futures::stream::iter(uris.iter().enumerate().map(|(i, uri)| {
-                let uri = uri.to_string();
+                let uri = (*uri).to_string();
                 let owned_columns = columns.clone();
                 let owned_row_group = row_groups.as_ref().and_then(|rgs| rgs[i].clone());
                 let owned_predicate = predicate.clone();
@@ -885,7 +886,7 @@ pub fn read_parquet_into_pyarrow_bulk<T: AsRef<str>>(
     let tables = runtime_handle
         .block_on_current_thread(async move {
             futures::stream::iter(uris.iter().enumerate().map(|(i, uri)| {
-                let uri = uri.to_string();
+                let uri = (*uri).to_string();
                 let owned_columns = columns.clone();
                 let owned_row_group = row_groups.as_ref().and_then(|rgs| rgs[i].clone());
 
@@ -957,7 +958,7 @@ pub async fn read_parquet_metadata_bulk(
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
 ) -> DaftResult<Vec<parquet2::metadata::FileMetaData>> {
     let handles_iter = uris.iter().map(|uri| {
-        let owned_string = uri.to_string();
+        let owned_string = (*uri).to_string();
         let owned_client = io_client.clone();
         let owned_io_stats = io_stats.clone();
         let owned_field_id_mapping = field_id_mapping.clone();
@@ -997,7 +998,7 @@ pub fn read_parquet_statistics(
     let values = path_array.as_arrow();
 
     let handles_iter = values.iter().map(|uri| {
-        let owned_string = uri.map(|v| v.to_string());
+        let owned_string = uri.map(std::string::ToString::to_string);
         let owned_client = io_client.clone();
         let io_stats = io_stats.clone();
         let owned_field_id_mapping = field_id_mapping.clone();

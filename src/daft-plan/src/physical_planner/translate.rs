@@ -218,7 +218,7 @@ pub(super) fn translate_single_logical_node(
                     let split_op = PhysicalPlan::FanoutByHash(FanoutByHash::new(
                         input_physical,
                         num_partitions,
-                        by.clone(),
+                        by,
                     ));
                     PhysicalPlan::ReduceMerge(ReduceMerge::new(split_op.into()))
                 }
@@ -451,9 +451,9 @@ pub(super) fn translate_single_logical_node(
                     left_clustering_spec.as_ref()
                 {
                     by.len() >= left_on.len()
-                    && by.iter().zip(left_on.iter()).all(|(e1, e2)| e1 == e2)
-                    // TODO(Clark): Add support for descending sort orders.
-                    && descending.iter().all(|v| !*v)
+                        && by.iter().zip(left_on.iter()).all(|(e1, e2)| e1 == e2)
+                        // TODO(Clark): Add support for descending sort orders.
+                        && descending.iter().all(|v| !*v)
                 } else {
                     false
                 };
@@ -464,9 +464,9 @@ pub(super) fn translate_single_logical_node(
                     right_clustering_spec.as_ref()
                 {
                     by.len() >= right_on.len()
-                    && by.iter().zip(right_on.iter()).all(|(e1, e2)| e1 == e2)
-                    // TODO(Clark): Add support for descending sort orders.
-                    && descending.iter().all(|v| !*v)
+                        && by.iter().zip(right_on.iter()).all(|(e1, e2)| e1 == e2)
+                        // TODO(Clark): Add support for descending sort orders.
+                        && descending.iter().all(|v| !*v)
                 } else {
                     false
                 };
@@ -589,7 +589,7 @@ pub(super) fn translate_single_logical_node(
                                 std::iter::repeat(false).take(left_on.len()).collect(),
                                 num_partitions,
                             ))
-                            .arced()
+                            .arced();
                         }
                         if !is_right_sort_partitioned {
                             right_physical = PhysicalPlan::Sort(Sort::new(
@@ -598,7 +598,7 @@ pub(super) fn translate_single_logical_node(
                                 std::iter::repeat(false).take(right_on.len()).collect(),
                                 num_partitions,
                             ))
-                            .arced()
+                            .arced();
                         }
                         false
                     };
@@ -975,7 +975,7 @@ pub fn populate_aggregation_stages(
                     .entry(func_id.clone())
                     .or_insert(AggExpr::MapGroups {
                         func: func.clone(),
-                        inputs: inputs.to_vec(),
+                        inputs: inputs.clone(),
                     });
                 final_exprs.push(col(output_name));
             }
@@ -1075,7 +1075,7 @@ mod tests {
             10
         );
         let logical_plan = builder.into_partitions(10)?.build();
-        let physical_plan = logical_to_physical(logical_plan, cfg.clone())?;
+        let physical_plan = logical_to_physical(logical_plan, cfg)?;
         // Check that the last repartition was dropped (the last op should be the filter).
         assert_matches!(physical_plan.as_ref(), PhysicalPlan::Filter(_));
         Ok(())
@@ -1099,7 +1099,7 @@ mod tests {
             1
         );
         let logical_plan = builder.hash_repartition(Some(1), vec![col("a")])?.build();
-        let physical_plan = logical_to_physical(logical_plan, cfg.clone())?;
+        let physical_plan = logical_to_physical(logical_plan, cfg)?;
         assert_matches!(physical_plan.as_ref(), PhysicalPlan::TabularScan(_));
         Ok(())
     }
@@ -1255,22 +1255,28 @@ mod tests {
             for mult in [1, 10] {
                 let plan =
                     get_hash_join_plan(cfg.clone(), l_opts.scale_by(mult), r_opts.scale_by(mult))?;
-                if !check_physical_matches(plan, l_exp, r_exp) {
-                    panic!(
-                        "Failed hash join test on case ({:?}, {:?}, {}, {}) with mult {}",
-                        l_opts, r_opts, l_exp, r_exp, mult
-                    );
-                }
+                assert!(
+                    check_physical_matches(plan, l_exp, r_exp),
+                    "Failed hash join test on case ({:?}, {:?}, {}, {}) with mult {}",
+                    l_opts,
+                    r_opts,
+                    l_exp,
+                    r_exp,
+                    mult
+                );
 
                 // reversed direction
                 let plan =
                     get_hash_join_plan(cfg.clone(), r_opts.scale_by(mult), l_opts.scale_by(mult))?;
-                if !check_physical_matches(plan, r_exp, l_exp) {
-                    panic!(
-                        "Failed hash join test on case ({:?}, {:?}, {}, {}) with mult {}",
-                        r_opts, l_opts, r_exp, l_exp, mult
-                    );
-                }
+                assert!(
+                    check_physical_matches(plan, r_exp, l_exp),
+                    "Failed hash join test on case ({:?}, {:?}, {}, {}) with mult {}",
+                    r_opts,
+                    l_opts,
+                    r_exp,
+                    l_exp,
+                    mult
+                );
             }
         }
         Ok(())
@@ -1298,7 +1304,7 @@ mod tests {
         assert!(check_physical_matches(physical_plan, false, true));
 
         let physical_plan = get_hash_join_plan(
-            cfg.clone(),
+            cfg,
             RepartitionOptions::Good(20),
             RepartitionOptions::Bad(26),
         )?;
@@ -1320,21 +1326,25 @@ mod tests {
         let cfg: Arc<DaftExecutionConfig> = DaftExecutionConfig::default().into();
         for (l_opts, r_opts, l_exp, r_exp) in cases {
             let plan = get_hash_join_plan(cfg.clone(), l_opts, r_opts)?;
-            if !check_physical_matches(plan, l_exp, r_exp) {
-                panic!(
-                    "Failed single partition hash join test on case ({:?}, {:?}, {}, {})",
-                    l_opts, r_opts, l_exp, r_exp
-                );
-            }
+            assert!(
+                check_physical_matches(plan, l_exp, r_exp),
+                "Failed single partition hash join test on case ({:?}, {:?}, {}, {})",
+                l_opts,
+                r_opts,
+                l_exp,
+                r_exp
+            );
 
             // reversed direction
             let plan = get_hash_join_plan(cfg.clone(), r_opts, l_opts)?;
-            if !check_physical_matches(plan, r_exp, l_exp) {
-                panic!(
-                    "Failed single partition hash join test on case ({:?}, {:?}, {}, {})",
-                    r_opts, l_opts, r_exp, l_exp
-                );
-            }
+            assert!(
+                check_physical_matches(plan, r_exp, l_exp),
+                "Failed single partition hash join test on case ({:?}, {:?}, {}, {})",
+                r_opts,
+                l_opts,
+                r_exp,
+                l_exp
+            );
         }
         Ok(())
     }

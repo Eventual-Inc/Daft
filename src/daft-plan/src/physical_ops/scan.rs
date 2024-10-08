@@ -51,8 +51,7 @@ Num Scan Tasks = {num_scan_tasks}
 Estimated Scan Bytes = {total_bytes}
 Clustering spec = {{ {clustering_spec} }}
 "
-            )
-            .to_string();
+            );
             #[cfg(feature = "python")]
             if let FileFormatConfig::Database(config) =
                 scan.scan_tasks[0].file_format_config.as_ref()

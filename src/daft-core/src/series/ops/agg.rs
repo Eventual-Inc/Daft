@@ -204,7 +204,7 @@ impl Series {
                     )))
                 } else {
                     Box::new(PrimitiveArray::from_trusted_len_iter(
-                        groups.iter().map(|g| g.first().cloned()),
+                        groups.iter().map(|g| g.first().copied()),
                     ))
                 }
             }

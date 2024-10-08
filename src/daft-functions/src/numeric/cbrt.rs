@@ -29,6 +29,7 @@ impl ScalarUDF for Cbrt {
     }
 }
 
+#[must_use]
 pub fn cbrt(input: ExprRef) -> ExprRef {
     ScalarFunction::new(Cbrt {}, vec![input]).into()
 }

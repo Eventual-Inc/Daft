@@ -67,6 +67,7 @@ pub use unpivot::Unpivot;
 
 #[macro_export]
 /// Implement the `common_display::tree::TreeDisplay` trait for the given struct
+///
 /// using the `get_name` method as the compact description and the `multiline_display` method for the default and verbose descriptions.
 macro_rules! impl_default_tree_display {
     ($($struct:ident),+) => {

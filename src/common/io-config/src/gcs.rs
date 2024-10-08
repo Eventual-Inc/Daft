@@ -13,10 +13,11 @@ pub struct GCSConfig {
 }
 
 impl GCSConfig {
+    #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         if let Some(project_id) = &self.project_id {
-            res.push(format!("Project ID = {}", project_id));
+            res.push(format!("Project ID = {project_id}"));
         }
         res.push(format!("Anonymous = {}", self.anonymous));
         res

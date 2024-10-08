@@ -29,15 +29,19 @@ pub struct Schema {
 
 impl Schema {
     pub fn new(fields: Vec<Field>) -> DaftResult<Self> {
-        let mut map: IndexMap<String, Field> = indexmap::IndexMap::new();
+        let mut map = IndexMap::new();
 
-        for f in fields.into_iter() {
-            let old = map.insert(f.name.clone(), f);
-            if let Some(item) = old {
-                return Err(DaftError::ValueError(format!(
-                    "Attempting to make a Schema with duplicate field names: {}",
-                    item.name
-                )));
+        for f in fields {
+            match map.entry(f.name.clone()) {
+                indexmap::map::Entry::Vacant(entry) => {
+                    entry.insert(f);
+                }
+                indexmap::map::Entry::Occupied(entry) => {
+                    return Err(DaftError::ValueError(format!(
+                        "Attempting to make a Schema with duplicate field names: {}",
+                        entry.key()
+                    )));
+                }
             }
         }
 
@@ -47,7 +51,7 @@ impl Schema {
     pub fn exclude<S: AsRef<str>>(&self, names: &[S]) -> DaftResult<Self> {
         let mut fields = IndexMap::new();
         let names = names.iter().map(|s| s.as_ref()).collect::<HashSet<&str>>();
-        for (name, field) in self.fields.iter() {
+        for (name, field) in &self.fields {
             if !names.contains(&name.as_str()) {
                 fields.insert(name.clone(), field.clone());
             }
@@ -257,7 +261,7 @@ impl Schema {
 
 impl Hash for Schema {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        state.write_u64(hash_index_map(&self.fields))
+        state.write_u64(hash_index_map(&self.fields));
     }
 }
 

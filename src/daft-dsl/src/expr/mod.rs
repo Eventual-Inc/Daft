@@ -1044,7 +1044,7 @@ impl Expr {
         let mut buffer = Vec::new();
         to_sql_inner(self, &mut buffer)
             .ok()
-            .and_then(|_| String::from_utf8(buffer).ok())
+            .and_then(|()| String::from_utf8(buffer).ok())
     }
 
     /// If the expression is a literal, return it. Otherwise, return None.

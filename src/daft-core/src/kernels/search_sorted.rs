@@ -27,7 +27,7 @@ where {
 
     let mut last_key = keys.iter().next().unwrap_or(None);
     let less = |l: &T, r: &T| l < r || (r != r && l == l);
-    for key_val in keys.iter() {
+    for key_val in keys {
         let is_last_key_lt = match (last_key, key_val) {
             (None, None) => false,
             (None, Some(_)) => input_reversed,
@@ -90,7 +90,7 @@ fn search_sorted_utf_array<O: Offset>(
 
     let mut results: Vec<u64> = Vec::with_capacity(array_size);
     let mut last_key = keys.iter().next().unwrap_or(None);
-    for key_val in keys.iter() {
+    for key_val in keys {
         let is_last_key_lt = match (last_key, key_val) {
             (None, None) => false,
             (None, Some(_)) => input_reversed,
@@ -228,7 +228,7 @@ fn search_sorted_binary_array<O: Offset>(
 
     let mut results: Vec<u64> = Vec::with_capacity(array_size);
     let mut last_key = keys.iter().next().unwrap_or(None);
-    for key_val in keys.iter() {
+    for key_val in keys {
         let is_last_key_lt = match (last_key, key_val) {
             (None, None) => false,
             (None, Some(_)) => input_reversed,
@@ -291,7 +291,7 @@ fn search_sorted_fixed_size_binary_array(
 
     let mut results: Vec<u64> = Vec::with_capacity(array_size);
     let mut last_key = keys.iter().next().unwrap_or(None);
-    for key_val in keys.iter() {
+    for key_val in keys {
         let is_last_key_lt = match (last_key, key_val) {
             (None, None) => false,
             (None, Some(_)) => input_reversed,
@@ -536,7 +536,7 @@ pub fn search_sorted_multi_array(
     }
 
     let combined_comparator = |a_idx: usize, b_idx: usize| -> Ordering {
-        for comparator in cmp_list.iter() {
+        for comparator in &cmp_list {
             match comparator(a_idx, b_idx) {
                 Ordering::Equal => continue,
                 other => return other,

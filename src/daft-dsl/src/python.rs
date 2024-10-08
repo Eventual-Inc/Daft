@@ -307,7 +307,7 @@ impl PyExpr {
             ApproxPercentileInput::Many(p) => (p, true),
         };
 
-        for &p in percentiles.iter() {
+        for &p in &percentiles {
             if !(0. ..=1.).contains(&p) {
                 return Err(PyValueError::new_err(format!(
                     "Provided percentile must be between 0 and 1: {}",

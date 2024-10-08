@@ -50,6 +50,7 @@ impl ScalarUDF for ListMean {
     }
 }
 
+#[must_use]
 pub fn list_mean(expr: ExprRef) -> ExprRef {
     ScalarFunction::new(ListMean {}, vec![expr]).into()
 }

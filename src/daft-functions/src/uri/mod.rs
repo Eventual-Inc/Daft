@@ -6,6 +6,7 @@ use daft_dsl::{functions::ScalarFunction, ExprRef};
 use download::DownloadFunction;
 use upload::UploadFunction;
 
+#[must_use]
 pub fn download(
     input: ExprRef,
     max_connections: usize,
@@ -25,6 +26,7 @@ pub fn download(
     .into()
 }
 
+#[must_use]
 pub fn upload(
     input: ExprRef,
     location: &str,

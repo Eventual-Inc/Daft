@@ -95,7 +95,7 @@ fn transform_struct_gets(
             }),
         _ => Ok(Transformed::no(e)),
     })
-    .data()
+        .data()
 }
 
 // Finds the names of all the wildcard expressions in an expression tree.
@@ -200,8 +200,7 @@ fn expand_wildcards(
                 .collect()
         }
         _ => Err(DaftError::ValueError(format!(
-            "Error resolving expression {}: cannot have multiple wildcard columns in one expression tree (found {:?})", expr, wildcards
-        )))
+            "Error resolving expression {expr}: cannot have multiple wildcard columns in one expression tree (found {wildcards:?})")))
     }
 }
 

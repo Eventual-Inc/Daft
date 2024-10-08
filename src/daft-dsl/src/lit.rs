@@ -114,7 +114,7 @@ impl Hash for LiteralValue {
                 let hash_result = series.hash(None);
                 match hash_result {
                     Ok(hash) => hash.into_iter().for_each(|i| i.hash(state)),
-                    Err(_) => panic!("Cannot hash series"),
+                    Err(..) => panic!("Cannot hash series"),
                 }
             }
             #[cfg(feature = "python")]

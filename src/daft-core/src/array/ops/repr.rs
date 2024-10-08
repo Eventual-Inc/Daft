@@ -106,9 +106,12 @@ impl Utf8Array {
 }
 impl NullArray {
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
-        if idx >= self.len() {
-            panic!("Out of bounds: {} vs len: {}", idx, self.len())
-        }
+        assert!(
+            idx < self.len(),
+            "Out of bounds: {} vs len: {}",
+            idx,
+            self.len()
+        );
         Ok("None".to_string())
     }
 }
