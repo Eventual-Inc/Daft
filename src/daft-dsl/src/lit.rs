@@ -63,15 +63,8 @@ pub enum LiteralValue {
     Time(i64, TimeUnit),
     /// An [`i64`] representing a measure of elapsed time. This elapsed time is a physical duration (i.e. 1s as defined in S.I.)
     Duration(i64, TimeUnit),
-    /// Number of elapsed whole months
+    /// Interval: relative elapsed time measured in (months, days, nanoseconds)
     Interval(IntervalValue),
-    /// Number of elapsed days and milliseconds (no leap seconds)
-    /// stored as 2 contiguous 32-bit signed integers
-    // IntervalDayTime(Option<IntervalDayTime>),
-    /// A triple of the number of elapsed months, days, and nanoseconds.
-    /// Months and days are encoded as 32-bit signed integers.
-    /// Nanoseconds is encoded as a 64-bit signed integer (no leap seconds).
-    // IntervalMonthDayNano(Option<IntervalMonthDayNano>),
     /// A 64-bit floating point number.
     Float64(f64),
     /// An [`i128`] representing a decimal number with the provided precision and scale.
