@@ -11,7 +11,7 @@ pub type LocalPhysicalPlanRef = Arc<LocalPhysicalPlan>;
 pub enum LocalPhysicalPlan {
     InMemoryScan(InMemoryScan),
     PhysicalScan(PhysicalScan),
-    // EmptyScan(EmptyScan),
+    EmptyScan(EmptyScan),
     Project(Project),
     Filter(Filter),
     Limit(Limit),
@@ -71,6 +71,14 @@ impl LocalPhysicalPlan {
     ) -> LocalPhysicalPlanRef {
         Self::PhysicalScan(PhysicalScan {
             scan_tasks,
+            schema,
+            plan_stats: PlanStats {},
+        })
+        .arced()
+    }
+
+    pub(crate) fn empty_scan(schema: SchemaRef) -> LocalPhysicalPlanRef {
+        Self::EmptyScan(EmptyScan {
             schema,
             plan_stats: PlanStats {},
         })
@@ -196,6 +204,7 @@ impl LocalPhysicalPlan {
     pub fn schema(&self) -> &SchemaRef {
         match self {
             Self::PhysicalScan(PhysicalScan { schema, .. })
+            | Self::EmptyScan(EmptyScan { schema, .. })
             | Self::Filter(Filter { schema, .. })
             | Self::Limit(Limit { schema, .. })
             | Self::Project(Project { schema, .. })
@@ -219,6 +228,12 @@ pub struct InMemoryScan {
 #[derive(Debug)]
 pub struct PhysicalScan {
     pub scan_tasks: Vec<ScanTaskRef>,
+    pub schema: SchemaRef,
+    pub plan_stats: PlanStats,
+}
+
+#[derive(Debug)]
+pub struct EmptyScan {
     pub schema: SchemaRef,
     pub plan_stats: PlanStats,
 }
