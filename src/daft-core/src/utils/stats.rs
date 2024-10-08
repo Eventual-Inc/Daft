@@ -11,7 +11,7 @@ use crate::{
 #[derive(Clone, Copy, Default, Debug)]
 pub struct Stats {
     pub sum: f64,
-    pub count: u64,
+    pub count: f64,
     pub mean: Option<f64>,
 }
 
@@ -22,7 +22,7 @@ pub fn calculate_stats(array: &Float64Array) -> DaftResult<Stats> {
         .zip(count)
         .map_or_else(Default::default, |(sum, count)| Stats {
             sum,
-            count,
+            count: count as _,
             mean: calculate_mean(sum, count),
         });
     Ok(stats)
@@ -63,7 +63,7 @@ impl<'a, I: Iterator<Item = (usize, &'a VecIndices)>> Iterator for GroupedStats<
             .zip(count)
             .map_or_else(Default::default, |(sum, count)| Stats {
                 sum,
-                count,
+                count: count as _,
                 mean: calculate_mean(sum, count),
             });
         Some((stats, group))
@@ -80,6 +80,6 @@ pub fn calculate_mean(sum: f64, count: u64) -> Option<f64> {
 pub fn calculate_stddev(stats: Stats, values: impl Iterator<Item = f64>) -> Option<f64> {
     stats.mean.map(|mean| {
         let sum_of_squares = values.map(|value| (value - mean).powi(2)).sum::<f64>();
-        (sum_of_squares / stats.count as f64).sqrt()
+        (sum_of_squares / stats.count).sqrt()
     })
 }

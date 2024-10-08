@@ -786,12 +786,7 @@ pub fn populate_aggregation_stages(
     {
         let id = f(expr.clone()).semantic_id(schema).id;
         let agg_expr = f(expr.alias(id.clone()));
-        let prev_agg_expr = stage.insert(id.clone(), agg_expr);
-        assert!(
-            prev_agg_expr.is_none(),
-            "{:?} already exists in this stage but it should not",
-            &id
-        );
+        stage.insert(id.clone(), agg_expr);
         id
     }
 
