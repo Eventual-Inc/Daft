@@ -411,21 +411,6 @@ impl AggExpr {
             Self::MapGroups { func, inputs } => func.to_field(inputs.as_slice(), schema, func),
         }
     }
-
-    pub fn from_name_and_child_expr(name: &str, child: ExprRef) -> DaftResult<Self> {
-        match name {
-            "count" => Ok(Self::Count(child, CountMode::Valid)),
-            "sum" => Ok(Self::Sum(child)),
-            "mean" => Ok(Self::Mean(child)),
-            "min" => Ok(Self::Min(child)),
-            "max" => Ok(Self::Max(child)),
-            "list" => Ok(Self::List(child)),
-            _ => Err(DaftError::ValueError(format!(
-                "{} not a valid aggregation name",
-                name
-            ))),
-        }
-    }
 }
 
 impl From<&AggExpr> for ExprRef {

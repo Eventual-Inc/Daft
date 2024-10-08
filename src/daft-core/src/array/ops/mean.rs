@@ -17,8 +17,7 @@ impl DaftMeanAggable for DataArray<Float64Type> {
 
     fn mean(&self) -> Self::Output {
         let stats = stats::calculate_stats(self)?;
-        let mean = stats::calculate_mean(stats.sum, stats.count);
-        let data = PrimitiveArray::from([mean]).boxed();
+        let data = PrimitiveArray::from([stats.mean]).boxed();
         let field = Arc::new(Field::new(self.field.name.clone(), DataType::Float64));
         Self::new(field, data)
     }
