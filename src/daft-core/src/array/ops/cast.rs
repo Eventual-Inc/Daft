@@ -1698,6 +1698,7 @@ impl SparseTensorArray {
                 );
                 Ok(sparse_tensor_array.into_series())
             }
+            #[cfg(feature = "python")]
             DataType::Python => Python::with_gil(|py| {
                 let mut pydicts: Vec<Py<PyAny>> = Vec::with_capacity(self.len());
                 let sa = self.shape_array();
