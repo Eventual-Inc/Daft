@@ -2122,6 +2122,22 @@ class DataFrame:
     def stddev(self, *cols: ColumnInputType) -> "DataFrame":
         """Performs a global standard deviation on the DataFrame
 
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"col_a":[0,1,2]})
+            >>> df = df.stddev("col_a")
+            >>> df.show()
+            ╭───────────────────╮
+            │ col_a             │
+            │ ---               │
+            │ Float64           │
+            ╞═══════════════════╡
+            │ 0.816496580927726 │
+            ╰───────────────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+
+
         Args:
             *cols (Union[str, Expression]): columns to stddev
         Returns:
@@ -2869,6 +2885,23 @@ class GroupedDataFrame:
 
     def stddev(self, *cols: ColumnInputType) -> "DataFrame":
         """Performs grouped standard deviation on this GroupedDataFrame.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"keys": ["a", "a", "a", "b"], "col_a": [0,1,2,100]})
+            >>> df = df.groupby("keys").stddev()
+            >>> df.show()
+            ╭──────┬───────────────────╮
+            │ keys ┆ col_a             │
+            │ ---  ┆ ---               │
+            │ Utf8 ┆ Float64           │
+            ╞══════╪═══════════════════╡
+            │ a    ┆ 0.816496580927726 │
+            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ b    ┆ 0                 │
+            ╰──────┴───────────────────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
 
         Args:
             *cols (Union[str, Expression]): columns to stddev
