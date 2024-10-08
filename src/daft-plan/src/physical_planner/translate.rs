@@ -851,6 +851,14 @@ pub fn populate_aggregation_stages(
                 );
             }
             AggExpr::Stddev(sub_expr) => {
+                // The stddev calculation we're performing here is:
+                // stddev(X) = sqrt(E(X^2) - E(X)^2)
+                // where X is the sub_expr.
+                //
+                // First stage, we compute `sum(X^2)`, `sum(X)` and `count(X)`.
+                // Second stage, we `global_sqsum := sum(sum(X^2))`, `global_sum := sum(sum(X))` and `global_count := sum(count(X))` in order to get the global versions of the first stage.
+                // In the final projection, we then compute `sqrt((global_sqsum / global_count) - (global_sum / global_count) ^ 2)`.
+
                 // first stage aggregation
                 let sum_id = add_to_stage(
                     AggExpr::Sum,
