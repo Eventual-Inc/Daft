@@ -10,7 +10,7 @@ use common_error::{DaftError, DaftResult};
 use common_hashable_float_wrapper::FloatWrapper;
 use common_treenode::TreeNode;
 use daft_core::{
-    datatypes::{try_numeric_aggregation_supertype, try_sum_supertype, InferDataType},
+    datatypes::{try_mean_stddev_aggregation_supertype, try_sum_supertype, InferDataType},
     prelude::*,
     utils::supertype::try_get_supertype,
 };
@@ -387,7 +387,7 @@ impl AggExpr {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(
                     field.name.as_str(),
-                    try_numeric_aggregation_supertype(&field.dtype)?,
+                    try_mean_stddev_aggregation_supertype(&field.dtype)?,
                 ))
             }
             Self::Min(expr) | Self::Max(expr) | Self::AnyValue(expr, _) => {
