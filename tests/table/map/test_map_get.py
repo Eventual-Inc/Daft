@@ -49,7 +49,8 @@ def test_map_get_logical_type():
     )
     table = MicroPartition.from_arrow(pa.table({"map_col": data}))
 
-    result = table.eval_expression_list([col("map_col").map.get("foo")])
+    map = col("map_col").map
+    result = table.eval_expression_list([map.get("foo")])
 
     assert result.to_pydict() == {"value": [datetime.date(2022, 1, 1), datetime.date(2022, 1, 2), None]}
 

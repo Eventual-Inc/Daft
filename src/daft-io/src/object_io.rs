@@ -77,7 +77,7 @@ where
 
 impl GetResult {
     pub async fn bytes(self) -> super::Result<Bytes> {
-        use GetResult::*;
+        use GetResult::{File, Stream};
         let mut get_result = self;
         match get_result {
             File(f) => collect_file(f).await,
@@ -90,10 +90,10 @@ impl GetResult {
                 let mut result = collect_bytes(stream, size, permit).await; // drop permit to ensure quota
                 for attempt in 1..NUM_TRIES {
                     match result {
-                        Err(super::Error::SocketError { .. })
-                        | Err(super::Error::UnableToReadBytes { .. })
-                            if let Some(rp) = &retry_params =>
-                        {
+                        Err(
+                            super::Error::SocketError { .. }
+                            | super::Error::UnableToReadBytes { .. },
+                        ) if let Some(rp) = &retry_params => {
                             let jitter = rand::thread_rng()
                                 .gen_range(0..((1 << (attempt - 1)) * JITTER_MS))
                                 as u64;
@@ -123,6 +123,7 @@ impl GetResult {
         }
     }
 
+    #[must_use]
     pub fn with_retry(self, params: StreamingRetryParams) -> Self {
         match self {
             Self::File(..) => self,
@@ -133,7 +134,7 @@ impl GetResult {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FileType {
     File,
     Directory,
@@ -148,7 +149,7 @@ impl TryFrom<std::fs::FileType> for FileType {
         } else if value.is_file() {
             Ok(Self::File)
         } else if value.is_symlink() {
-            Err(DaftError::InternalError(format!("Symlinks should never be encountered when constructing FileMetadata, but got: {:?}", value)))
+            Err(DaftError::InternalError(format!("Symlinks should never be encountered when constructing FileMetadata, but got: {value:?}")))
         } else {
             unreachable!(
                 "Can only be a directory, file, or symlink, but got: {:?}",
@@ -158,7 +159,7 @@ impl TryFrom<std::fs::FileType> for FileType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileMetadata {
     pub filepath: String,
     pub size: Option<u64>,
@@ -173,7 +174,7 @@ pub struct LSResult {
 use async_stream::stream;
 
 #[async_trait]
-pub(crate) trait ObjectSource: Sync + Send {
+pub trait ObjectSource: Sync + Send {
     async fn get(
         &self,
         uri: &str,

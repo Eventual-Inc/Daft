@@ -41,10 +41,10 @@ impl Aggregate {
         let output_schema = Schema::new(fields).context(CreationSnafu)?.into();
 
         Ok(Self {
+            input,
             aggregations,
             groupby,
             output_schema,
-            input,
         })
     }
 

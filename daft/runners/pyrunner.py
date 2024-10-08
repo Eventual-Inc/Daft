@@ -337,20 +337,27 @@ class PyRunner(Runner[MicroPartition]):
 
     @contextlib.contextmanager
     def actor_pool_context(
-        self, name: str, resource_request: ResourceRequest, num_actors: int, projection: ExpressionsProjection
+        self,
+        name: str,
+        actor_resource_request: ResourceRequest,
+        _task_resource_request: ResourceRequest,
+        num_actors: int,
+        projection: ExpressionsProjection,
     ) -> Iterator[str]:
         actor_pool_id = f"py_actor_pool-{name}"
 
-        total_resource_request = resource_request * num_actors
+        total_resource_request = actor_resource_request * num_actors
         admitted = self._attempt_admit_task(total_resource_request)
 
         if not admitted:
             raise RuntimeError(
-                f"Not enough resources available to admit {num_actors} actors, each with resource request: {resource_request}"
+                f"Not enough resources available to admit {num_actors} actors, each with resource request: {actor_resource_request}"
             )
 
         try:
-            self._actor_pools[actor_pool_id] = PyActorPool(actor_pool_id, num_actors, resource_request, projection)
+            self._actor_pools[actor_pool_id] = PyActorPool(
+                actor_pool_id, num_actors, actor_resource_request, projection
+            )
             self._actor_pools[actor_pool_id].setup()
             logger.debug("Created actor pool %s with resources: %s", actor_pool_id, total_resource_request)
             yield actor_pool_id

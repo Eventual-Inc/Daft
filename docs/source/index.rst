@@ -1,14 +1,53 @@
 Daft Documentation
 ==================
 
-Daft is a distributed query engine for large-scale data processing in Python and is implemented in Rust.
+Daft is a unified data engine for **data engineering, analytics and ML/AI**.
 
-* **Familiar interactive API:** Lazy Python Dataframe for rapid and interactive iteration
-* **Focus on the what:** Powerful Query Optimizer that rewrites queries to be as efficient as possible
-* **Data Catalog integrations:** Full integration with data catalogs such as Apache Iceberg
-* **Rich multimodal type-system:** Supports multimodal types such as Images, URLs, Tensors and more
-* **Seamless Interchange**: Built on the `Apache Arrow <https://arrow.apache.org/docs/index.html>`_ In-Memory Format
-* **Built for the cloud:** `Record-setting <https://blog.getdaft.io/p/announcing-daft-02-10x-faster-io>`_ I/O performance for integrations with S3 cloud storage
+Daft exposes both **SQL and Python DataFrame interfaces** as first-class citizens and is written in Rust.
+
+Daft provides a **snappy and delightful local interactive experience**, but also seamlessly **scales to petabyte-scale distributed workloads**.
+
+Use-Cases
+---------
+
+Data Engineering
+****************
+
+*Combine the performance of DuckDB, Pythonic UX of Polars and scalability of Apache Spark for data engineering from MB to PB scale*
+
+* Scale ETL workflows effortlessly from local to distributed environments
+* Enjoy a Python-first experience without JVM dependency hell
+* Leverage native integrations with cloud storage, open catalogs, and data formats
+
+Data Analytics
+**************
+
+*Blend the snappiness of DuckDB with the scalability of Spark/Trino for unified local and distributed analytics*
+
+* Utilize complementary SQL and Python interfaces for versatile analytics
+* Perform snappy local exploration with DuckDB-like performance
+* Seamlessly scale to the cloud, outperforming distributed engines like Spark and Trino
+
+ML/AI
+*****
+
+*Streamline ML/AI workflows with efficient dataloading from open formats like Parquet and JPEG*
+
+* Load data efficiently from open formats directly into PyTorch or NumPy
+* Schedule large-scale model batch inference on distributed GPU clusters
+* Optimize data curation with advanced clustering, deduplication, and filtering
+
+Technology
+----------
+
+Daft boasts strong integrations with technologies common across these workloads:
+
+* **Cloud Object Storage:** Record-setting I/O performance for integrations with S3 cloud storage, `battle-tested at exabyte-scale at Amazon <https://aws.amazon.com/blogs/opensource/amazons-exabyte-scale-migration-from-apache-spark-to-ray-on-amazon-ec2/>`_
+* **ML/AI Python Ecosystem:** first-class integrations with `PyTorch <https://pytorch.org/>`_ and `NumPy <https://numpy.org/>`_ for efficient interoperability with your ML/AI stack
+* **Data Catalogs/Table Formats:** capabilities to effectively query table formats such as `Apache Iceberg <https://iceberg.apache.org/>`_, `Delta Lake <https://delta.io/>`_ and `Apache Hudi <https://hudi.apache.org/>`_
+* **Seamless Data Interchange:** zero-copy integration with `Apache Arrow <https://arrow.apache.org/docs/index.html>`_
+* **Multimodal/ML Data:** native functionality for data modalities such as tensors, images, URLs, long-form text and embeddings
+
 
 Installing Daft
 ---------------

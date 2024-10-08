@@ -10,7 +10,7 @@ pub use table_stats::row_group_metadata_to_table_stats;
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub(crate)))]
-pub(super) enum Error {
+pub enum Error {
     #[snafu(display("MissingParquetColumnStatistics"))]
     MissingParquetColumnStatistics {},
     #[snafu(display("UnableToParseParquetColumnStatistics: {source}"))]
@@ -43,7 +43,7 @@ impl From<Error> for DaftError {
     }
 }
 
-pub(super) struct Wrap<T>(T);
+pub struct Wrap<T>(T);
 
 impl<T> From<T> for Wrap<T> {
     fn from(value: T) -> Self {

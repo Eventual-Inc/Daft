@@ -62,6 +62,7 @@ impl ScalarUDF for ListSlice {
     }
 }
 
+#[must_use]
 pub fn list_slice(expr: ExprRef, start: ExprRef, end: ExprRef) -> ExprRef {
     ScalarFunction::new(ListSlice {}, vec![expr, start, end]).into()
 }

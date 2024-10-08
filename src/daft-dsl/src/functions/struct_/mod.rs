@@ -14,9 +14,8 @@ pub enum StructExpr {
 impl StructExpr {
     #[inline]
     pub fn get_evaluator(&self) -> &dyn FunctionEvaluator {
-        use StructExpr::*;
         match self {
-            Get(_) => &GetEvaluator {},
+            Self::Get(_) => &GetEvaluator {},
         }
     }
 }

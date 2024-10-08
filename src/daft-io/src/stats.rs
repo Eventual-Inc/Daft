@@ -41,7 +41,7 @@ impl Drop for IOStatsContext {
     }
 }
 
-pub(crate) struct IOStatsByteStreamContextHandle {
+pub struct IOStatsByteStreamContextHandle {
     // do not enable Copy or Clone on this struct
     bytes_read: usize,
     inner: IOStatsRef,

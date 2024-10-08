@@ -10,8 +10,8 @@ use parquet2::{
 use snafu::{OptionExt, ResultExt};
 
 use super::{
-    utils::*, DaftStatsSnafu, MissingParquetColumnStatisticsSnafu,
-    UnableToParseUtf8FromBinarySnafu, Wrap,
+    utils::{convert_i128, convert_i96_to_i64_timestamp},
+    DaftStatsSnafu, MissingParquetColumnStatisticsSnafu, UnableToParseUtf8FromBinarySnafu, Wrap,
 };
 
 impl TryFrom<&BooleanStatistics> for Wrap<ColumnRangeStatistics> {
@@ -389,7 +389,7 @@ fn convert_int96_column_range_statistics(
     Ok(ColumnRangeStatistics::Missing)
 }
 
-pub(crate) fn parquet_statistics_to_column_range_statistics(
+pub fn parquet_statistics_to_column_range_statistics(
     pq_stats: &dyn Statistics,
     daft_dtype: &DataType,
 ) -> Result<ColumnRangeStatistics, super::Error> {

@@ -11,7 +11,7 @@ const SIMD_LANES: usize = 8;
 type S = Simd<u64, SIMD_LANES>;
 
 const MERSENNE_EXP: u64 = 61;
-const MAX_HASH: u64 = 0xffffffff;
+const MAX_HASH: u64 = 0xffff_ffff;
 const MAX_HASH_SIMD: S = S::from_array([MAX_HASH; SIMD_LANES]);
 
 // Fails with probability <= 2^-58, which is good enough for hashing
@@ -43,7 +43,7 @@ fn simd_rem(hh: u64, aa: &[S], bb: &[S], out: &mut [S]) {
 // Precalculate the SIMD vectors of the permutations, to save time.
 // Output of this should be passed into the `perm_simd` argument of minhash.
 pub fn load_simd(mut v: impl Iterator<Item = u64>, num_hashes: usize) -> Vec<S> {
-    let num_simd = (num_hashes + SIMD_LANES - 1) / SIMD_LANES;
+    let num_simd = num_hashes.div_ceil(SIMD_LANES);
 
     let mut out = Vec::with_capacity(num_simd);
     loop {
@@ -71,7 +71,7 @@ pub fn minhash(
     seed: u32,
 ) -> DaftResult<Vec<u32>> {
     let (perm_a_simd, perm_b_simd) = perm_simd;
-    let num_simd = (num_hashes + SIMD_LANES - 1) / SIMD_LANES;
+    let num_simd = num_hashes.div_ceil(SIMD_LANES);
 
     let mut out: Vec<S> = vec![MAX_HASH_SIMD; num_simd];
 
@@ -86,7 +86,7 @@ pub fn minhash(
     let s_bytes = s.as_bytes();
     if spaces.len() < ngram_size {
         // hash whole string at once
-        hashes.push(murmurhash3_x86_32(s_bytes, seed) as u64);
+        hashes.push(u64::from(murmurhash3_x86_32(s_bytes, seed)));
     } else {
         for i in 0..ngram_count {
             // looking at the substring that starts BEFORE the current space
@@ -97,7 +97,10 @@ pub fn minhash(
             } else {
                 spaces[i + ngram_size - 1]
             };
-            hashes.push(murmurhash3_x86_32(&s_bytes[start_ind..end_ind], seed) as u64);
+            hashes.push(u64::from(murmurhash3_x86_32(
+                &s_bytes[start_ind..end_ind],
+                seed,
+            )));
             if hashes.len() >= SIMD_LANES {
                 // We have enough hashes to run with SIMD
                 let hashes_simd = S::from_slice(&hashes);
@@ -113,7 +116,7 @@ pub fn minhash(
     }
     let rem_out: Vec<u32> = out
         .iter()
-        .flat_map(|x| x.as_array())
+        .flat_map(std::simd::Simd::as_array)
         .take(num_hashes)
         .map(|x| *x as u32)
         .collect();
@@ -151,7 +154,7 @@ mod tests {
         let aa = vec![simd_a];
         let simd_b = S::splat(33);
         let bb = vec![simd_b];
-        let simd_out = S::splat(123456);
+        let simd_out = S::splat(123_456);
         let mut out = vec![simd_out];
         simd_min(simd_h, &aa, &bb, &mut out);
         let out_arr = out[0].as_array();

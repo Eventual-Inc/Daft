@@ -193,7 +193,7 @@ impl TreeNodeRewriter for QueryStagePhysicalPlanTranslator {
                 _ => panic!("We shouldn't have any nodes that have more than 3 children"),
             }
         } else {
-            self.physical_children.push(translated_pplan.clone());
+            self.physical_children.push(translated_pplan);
             Ok(Transformed::no(node))
         }
     }

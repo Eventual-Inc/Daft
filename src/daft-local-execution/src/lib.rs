@@ -20,6 +20,7 @@ pub struct ExecutionRuntimeHandle {
 }
 
 impl ExecutionRuntimeHandle {
+    #[must_use]
     pub fn new(default_morsel_size: usize) -> Self {
         Self {
             worker_set: tokio::task::JoinSet::new(),
@@ -44,6 +45,7 @@ impl ExecutionRuntimeHandle {
         self.worker_set.shutdown().await;
     }
 
+    #[must_use]
     pub fn default_morsel_size(&self) -> usize {
         self.default_morsel_size
     }

@@ -740,7 +740,7 @@ fn infer_daft_dtype_for_sequence(
             .getattr(pyo3::intern!(py, "from_numpy_dtype"))?
     };
     let mut dtype: Option<DataType> = None;
-    for obj in vec_pyobj.iter() {
+    for obj in vec_pyobj {
         let obj = obj.bind(py);
         if let Ok(pil_image_type) = &py_pil_image_type
             && obj.is_instance(pil_image_type)?

@@ -206,7 +206,7 @@ impl DateArray {
 /// Formats a naive timestamp to a string in the format "%Y-%m-%d %H:%M:%S%.f".
 /// Example: 2021-01-01 00:00:00
 /// See https://docs.rs/chrono/latest/chrono/format/strftime/index.html for format string options.
-pub(crate) fn timestamp_to_str_naive(val: i64, unit: &TimeUnit) -> String {
+pub fn timestamp_to_str_naive(val: i64, unit: &TimeUnit) -> String {
     let chrono_ts = arrow2::temporal_conversions::timestamp_to_naive_datetime(val, unit.to_arrow());
     let format_str = "%Y-%m-%d %H:%M:%S%.f";
     chrono_ts.format(format_str).to_string()
@@ -215,11 +215,7 @@ pub(crate) fn timestamp_to_str_naive(val: i64, unit: &TimeUnit) -> String {
 /// Formats a timestamp with an offset to a string in the format "%Y-%m-%d %H:%M:%S%.f %:z".
 /// Example: 2021-01-01 00:00:00 -07:00
 /// See https://docs.rs/chrono/latest/chrono/format/strftime/index.html for format string options.
-pub(crate) fn timestamp_to_str_offset(
-    val: i64,
-    unit: &TimeUnit,
-    offset: &chrono::FixedOffset,
-) -> String {
+pub fn timestamp_to_str_offset(val: i64, unit: &TimeUnit, offset: &chrono::FixedOffset) -> String {
     let chrono_ts =
         arrow2::temporal_conversions::timestamp_to_datetime(val, unit.to_arrow(), offset);
     let format_str = "%Y-%m-%d %H:%M:%S%.f %:z";
@@ -229,7 +225,7 @@ pub(crate) fn timestamp_to_str_offset(
 /// Formats a timestamp with a timezone to a string in the format "%Y-%m-%d %H:%M:%S%.f %Z".
 /// Example: 2021-01-01 00:00:00 PST
 /// See https://docs.rs/chrono/latest/chrono/format/strftime/index.html for format string options.
-pub(crate) fn timestamp_to_str_tz(val: i64, unit: &TimeUnit, tz: &chrono_tz::Tz) -> String {
+pub fn timestamp_to_str_tz(val: i64, unit: &TimeUnit, tz: &chrono_tz::Tz) -> String {
     let chrono_ts = arrow2::temporal_conversions::timestamp_to_datetime(val, unit.to_arrow(), tz);
     let format_str = "%Y-%m-%d %H:%M:%S%.f %Z";
     chrono_ts.format(format_str).to_string()
@@ -647,9 +643,9 @@ fn extract_python_to_vec<
                 if let Some(list_size) = list_size {
                     if num_values != list_size {
                         return Err(DaftError::ValueError(format!(
-                                "Expected Array-like Object to have {list_size} elements but got {} at index {}",
-                                num_values, i
-                            )));
+                            "Expected Array-like Object to have {list_size} elements but got {} at index {}",
+                            num_values, i
+                        )));
                     }
                 } else {
                     offsets_vec.push(offsets_vec.last().unwrap() + num_values as i64);
@@ -700,7 +696,7 @@ fn extract_python_to_vec<
                     };
 
                     if collected.is_err() {
-                        log::warn!("Could not convert python object to list at index: {i} for input series: {}", python_objects.name())
+                        log::warn!("Could not convert python object to list at index: {i} for input series: {}", python_objects.name());
                     }
                     let collected: Vec<Tgt> = collected?;
                     if let Some(list_size) = list_size {
@@ -1351,7 +1347,7 @@ impl TensorArray {
                             .call_method1(pyo3::intern!(py, "reshape"), (shape,))?;
                         ndarrays.push(py_array.unbind());
                     } else {
-                        ndarrays.push(py.None())
+                        ndarrays.push(py.None());
                     }
                 }
                 let values_array =
@@ -1400,12 +1396,10 @@ impl TensorArray {
                 let zero_series = Int64Array::from(("item", [0].as_slice())).into_series();
                 let mut non_zero_values = Vec::new();
                 let mut non_zero_indices = Vec::new();
-                let mut offsets = Vec::<usize>::new();
                 for (i, (shape_series, data_series)) in shape_and_data_iter.enumerate() {
                     let is_valid = validity.map_or(true, |v| v.get_bit(i));
                     if !is_valid {
                         // Handle invalid row by populating dummy data.
-                        offsets.push(1);
                         non_zero_values.push(Series::empty("dummy", inner_dtype.as_ref()));
                         non_zero_indices.push(Series::empty("dummy", &DataType::UInt64));
                         continue;
@@ -1422,7 +1416,6 @@ impl TensorArray {
                     let indices = UInt64Array::arange("item", 0, data_series.len() as i64, 1)?
                         .into_series()
                         .filter(&non_zero_mask)?;
-                    offsets.push(data.len());
                     non_zero_values.push(data);
                     non_zero_indices.push(indices);
                 }
@@ -1635,7 +1628,7 @@ impl SparseTensorArray {
                         })
                     })
                     .collect();
-                let offsets: Offsets<i64> = Offsets::try_from_iter(sizes_vec.iter().cloned())?;
+                let offsets: Offsets<i64> = Offsets::try_from_iter(sizes_vec.iter().copied())?;
                 let n_values = sizes_vec.iter().sum::<usize>();
                 let validity = non_zero_indices_array.validity();
                 let item = cast_sparse_to_dense_for_inner_dtype(
@@ -1698,6 +1691,44 @@ impl SparseTensorArray {
                 );
                 Ok(sparse_tensor_array.into_series())
             }
+            #[cfg(feature = "python")]
+            DataType::Python => Python::with_gil(|py| {
+                let mut pydicts: Vec<Py<PyAny>> = Vec::with_capacity(self.len());
+                let sa = self.shape_array();
+                let va = self.values_array();
+                let ia = self.indices_array();
+                let pyarrow = py.import_bound(pyo3::intern!(py, "pyarrow"))?;
+                for ((shape_array, values_array), indices_array) in
+                    sa.into_iter().zip(va.into_iter()).zip(ia.into_iter())
+                {
+                    if let (Some(shape_array), Some(values_array), Some(indices_array)) =
+                        (shape_array, values_array, indices_array)
+                    {
+                        let shape_array = shape_array.u64().unwrap().as_arrow();
+                        let shape = shape_array.values().to_vec();
+                        let py_values_array =
+                            ffi::to_py_array(py, values_array.to_arrow(), &pyarrow)?
+                                .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?;
+                        let py_indices_array =
+                            ffi::to_py_array(py, indices_array.to_arrow(), &pyarrow)?
+                                .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?;
+                        let pydict = pyo3::types::PyDict::new_bound(py);
+                        pydict.set_item("values", py_values_array)?;
+                        pydict.set_item("indices", py_indices_array)?;
+                        pydict.set_item("shape", shape)?;
+                        pydicts.push(pydict.unbind().into());
+                    } else {
+                        pydicts.push(py.None());
+                    }
+                }
+                let py_objects_array =
+                    PseudoArrowArray::new(pydicts.into(), self.physical.validity().cloned());
+                Ok(PythonArray::new(
+                    Field::new(self.name(), dtype.clone()).into(),
+                    py_objects_array.to_boxed(),
+                )?
+                .into_series())
+            }),
             _ => self.physical.cast(dtype),
         }
     }
@@ -1793,6 +1824,13 @@ impl FixedShapeSparseTensorArray {
                     FixedShapeTensorArray::new(Field::new(self.name(), dtype.clone()), physical);
                 Ok(fixed_shape_tensor_array.into_series())
             }
+            #[cfg(feature = "python")]
+            (DataType::Python, DataType::FixedShapeSparseTensor(inner_dtype, _)) => {
+                let sparse_tensor_series =
+                    self.cast(&DataType::SparseTensor(inner_dtype.clone()))?;
+                let sparse_pytensor_series = sparse_tensor_series.cast(&DataType::Python)?;
+                Ok(sparse_pytensor_series)
+            }
             (_, _) => self.physical.cast(dtype),
         }
     }
@@ -1882,24 +1920,24 @@ impl FixedShapeTensorArray {
                 let zero_series = Int64Array::from(("item", [0].as_slice())).into_series();
                 let mut non_zero_values = Vec::new();
                 let mut non_zero_indices = Vec::new();
-                let mut offsets = Vec::<usize>::new();
                 for (i, data_series) in physical_arr.into_iter().enumerate() {
                     let is_valid = validity.map_or(true, |v| v.get_bit(i));
                     if !is_valid {
                         // Handle invalid row by populating dummy data.
-                        offsets.push(1);
                         non_zero_values.push(Series::empty("dummy", inner_dtype.as_ref()));
                         non_zero_indices.push(Series::empty("dummy", &DataType::UInt64));
                         continue;
                     }
                     let data_series = data_series.unwrap();
-                    assert!(data_series.len() == tensor_shape.iter().product::<u64>() as usize);
+                    assert_eq!(
+                        data_series.len(),
+                        tensor_shape.iter().product::<u64>() as usize
+                    );
                     let non_zero_mask = data_series.not_equal(&zero_series)?;
                     let data = data_series.filter(&non_zero_mask)?;
                     let indices = UInt64Array::arange("item", 0, data_series.len() as i64, 1)?
                         .into_series()
                         .filter(&non_zero_mask)?;
-                    offsets.push(data.len());
                     non_zero_values.push(data);
                     non_zero_indices.push(indices);
                 }
@@ -2057,7 +2095,7 @@ impl ListArray {
                         }
                         Ok(FixedSizeListArray::new(
                             Field::new(self.name(), dtype.clone()),
-                            casted_child.clone(),
+                            casted_child,
                             None,
                         )
                         .into_series())
@@ -2091,7 +2129,7 @@ impl ListArray {
                     }
                 }
             }
-            DataType::Map(..) => Ok(MapArray::new(
+            DataType::Map { .. } => Ok(MapArray::new(
                 Field::new(self.name(), dtype.clone()),
                 self.clone(),
             )
@@ -2198,7 +2236,10 @@ where
 {
     Python::with_gil(|py| {
         let arrow_dtype = array.data_type().to_arrow()?;
-        let arrow_array = array.as_arrow().to_type(arrow_dtype).with_validity(None);
+        let arrow_array = array
+            .as_arrow()
+            .convert_logical_type(arrow_dtype)
+            .with_validity(None);
         let pyarrow = py.import_bound(pyo3::intern!(py, "pyarrow"))?;
         let py_array: Vec<PyObject> = ffi::to_py_array(py, arrow_array.to_boxed(), &pyarrow)?
             .call_method0(pyo3::intern!(py, "to_pylist"))?

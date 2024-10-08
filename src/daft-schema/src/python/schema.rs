@@ -42,6 +42,7 @@ impl PySchema {
             .call1((pyarrow_fields,))
     }
 
+    #[must_use]
     pub fn names(&self) -> Vec<String> {
         self.schema.names()
     }

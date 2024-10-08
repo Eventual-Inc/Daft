@@ -21,4 +21,12 @@ impl SQLFunction for SQLImageCrop {
             _ => unsupported_sql_err!("Invalid arguments for image_crop: '{inputs:?}'"),
         }
     }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Crops an image to a specified bounding box. The bounding box is specified as [x, y, width, height].".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input_image", "bounding_box"]
+    }
 }

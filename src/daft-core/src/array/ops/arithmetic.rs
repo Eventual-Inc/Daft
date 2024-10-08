@@ -10,9 +10,6 @@ use crate::{
     kernels::utf8::add_utf8_arrays,
     series::Series,
 };
-/// Helper function to perform arithmetic operations on a DataArray
-/// Takes both Kernel (array x array operation) and operation (scalar x scalar) functions
-/// The Kernel is used for when both arrays are non-unit length and the operation is used when broadcasting
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
 // in the Software without restriction, including without limitation the rights
@@ -31,6 +28,9 @@ use crate::{
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+/// Helper function to perform arithmetic operations on a DataArray
+/// Takes both Kernel (array x array operation) and operation (scalar x scalar) functions
+/// The Kernel is used for when both arrays are non-unit length and the operation is used when broadcasting
 fn arithmetic_helper<T, Kernel, F>(
     lhs: &DataArray<T>,
     rhs: &DataArray<T>,
@@ -131,9 +131,7 @@ where
     T: arrow2::types::NativeType,
     F: Fn(T, T) -> T,
 {
-    if lhs.len() != rhs.len() {
-        panic!("expected same length")
-    }
+    assert!(lhs.len() == rhs.len(), "expected same length");
     let values = lhs.iter().zip(rhs.iter()).map(|(l, r)| match (l, r) {
         (None, _) => None,
         (_, None) => None,

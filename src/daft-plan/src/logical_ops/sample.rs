@@ -22,6 +22,7 @@ impl Hash for Sample {
         self.input.hash(state);
 
         // Convert the `f64` to a stable format with 6 decimal places.
+        #[expect(clippy::collection_is_never_read, reason = "nursery bug pretty sure")]
         let fraction_str = format!("{:.6}", self.fraction);
         fraction_str.hash(state);
 

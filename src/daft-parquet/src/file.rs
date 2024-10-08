@@ -29,7 +29,7 @@ use crate::{
     UnableToParseSchemaFromMetadataSnafu, UnableToRunExpressionOnStatsSnafu,
 };
 
-pub(crate) struct ParquetReaderBuilder {
+pub struct ParquetReaderBuilder {
     pub uri: String,
     pub metadata: parquet2::metadata::FileMetaData,
     selected_columns: Option<HashSet<String>>,
@@ -100,7 +100,7 @@ where
     }
 }
 
-pub(crate) fn build_row_ranges(
+pub fn build_row_ranges(
     limit: Option<usize>,
     row_start_offset: usize,
     row_groups: Option<&[i64]>,
@@ -155,7 +155,7 @@ pub(crate) fn build_row_ranges(
     } else {
         let mut rows_to_add = limit.unwrap_or(metadata.num_rows as i64);
 
-        for (i, rg) in metadata.row_groups.iter() {
+        for (i, rg) in &metadata.row_groups {
             if (curr_row_index + rg.num_rows()) < row_start_offset {
                 curr_row_index += rg.num_rows();
                 continue;
@@ -297,13 +297,13 @@ impl ParquetReaderBuilder {
 }
 
 #[derive(Copy, Clone)]
-pub(crate) struct RowGroupRange {
+pub struct RowGroupRange {
     pub row_group_index: usize,
     pub start: usize,
     pub num_rows: usize,
 }
 
-pub(crate) struct ParquetFileReader {
+pub struct ParquetFileReader {
     uri: String,
     metadata: Arc<parquet2::metadata::FileMetaData>,
     arrow_schema: arrow2::datatypes::SchemaRef,
@@ -351,7 +351,7 @@ impl ParquetFileReader {
                 .unwrap();
 
             let columns = rg.columns();
-            for field in arrow_fields.iter() {
+            for field in arrow_fields {
                 let field_name = field.name.clone();
                 let filtered_cols = columns
                     .iter()
@@ -456,7 +456,7 @@ impl ParquetFileReader {
                                     Vec::with_capacity(filtered_columns.len());
                                 let mut ptypes = Vec::with_capacity(filtered_columns.len());
                                 let mut num_values = Vec::with_capacity(filtered_columns.len());
-                                for col in filtered_columns.into_iter() {
+                                for col in filtered_columns {
                                     num_values.push(col.metadata().num_values as usize);
                                     ptypes.push(col.descriptor().descriptor.primitive_type.clone());
 
@@ -483,8 +483,10 @@ impl ParquetFileReader {
                                     let page_stream =
                                         streaming_decompression(compressed_page_stream);
                                     let pinned_stream = Box::pin(page_stream);
-                                    decompressed_iters
-                                        .push(StreamIterator::new(pinned_stream, rt_handle.clone()))
+                                    decompressed_iters.push(StreamIterator::new(
+                                        pinned_stream,
+                                        rt_handle.clone(),
+                                    ));
                                 }
                                 let arr_iter = column_iter_to_arrays(
                                     decompressed_iters,
@@ -608,9 +610,9 @@ impl ParquetFileReader {
                         let handle = tokio::task::spawn(async move {
                             let mut range_readers = Vec::with_capacity(filtered_cols_idx.len());
 
-                            for range in needed_byte_ranges.into_iter() {
+                            for range in needed_byte_ranges {
                                 let range_reader = ranges.get_range_reader(range).await?;
-                                range_readers.push(Box::pin(range_reader))
+                                range_readers.push(Box::pin(range_reader));
                             }
 
                             let mut decompressed_iters =
@@ -646,7 +648,7 @@ impl ParquetFileReader {
                                 let page_stream = streaming_decompression(compressed_page_stream);
                                 let pinned_stream = Box::pin(page_stream);
                                 decompressed_iters
-                                    .push(StreamIterator::new(pinned_stream, rt_handle.clone()))
+                                    .push(StreamIterator::new(pinned_stream, rt_handle.clone()));
                             }
 
                             let (send, recv) = tokio::sync::oneshot::channel();
@@ -791,9 +793,9 @@ impl ParquetFileReader {
                         let handle = tokio::task::spawn(async move {
                             let mut range_readers = Vec::with_capacity(filtered_cols_idx.len());
 
-                            for range in needed_byte_ranges.into_iter() {
+                            for range in needed_byte_ranges {
                                 let range_reader = ranges.get_range_reader(range).await?;
-                                range_readers.push(Box::pin(range_reader))
+                                range_readers.push(Box::pin(range_reader));
                             }
 
                             let mut decompressed_iters =
@@ -830,7 +832,7 @@ impl ParquetFileReader {
                                 let page_stream = streaming_decompression(compressed_page_stream);
                                 let pinned_stream = Box::pin(page_stream);
                                 decompressed_iters
-                                    .push(StreamIterator::new(pinned_stream, rt_handle.clone()))
+                                    .push(StreamIterator::new(pinned_stream, rt_handle.clone()));
                             }
 
                             let (send, recv) = tokio::sync::oneshot::channel();

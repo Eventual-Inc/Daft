@@ -138,16 +138,16 @@ fn _get_file_metadata_from_html(path: &str, text: &str) -> super::Result<Vec<Fil
     Ok(metas.into_iter().flatten().collect())
 }
 
-pub(crate) struct HttpSource {
+pub struct HttpSource {
     pub(crate) client: reqwest::Client,
 }
 
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
-        use Error::*;
+        use Error::{UnableToDetermineSize, UnableToOpenFile};
         match error {
             UnableToOpenFile { path, source } => match source.status().map(|v| v.as_u16()) {
-                Some(404) | Some(410) => Self::NotFound {
+                Some(404 | 410) => Self::NotFound {
                     path,
                     source: source.into(),
                 },
@@ -210,7 +210,7 @@ impl ObjectSource for HttpSource {
             .error_for_status()
             .context(UnableToOpenFileSnafu::<String> { path: uri.into() })?;
         if let Some(is) = io_stats.as_ref() {
-            is.mark_get_requests(1)
+            is.mark_get_requests(1);
         }
         let size_bytes = response.content_length().map(|s| s as usize);
         let stream = response.bytes_stream();
@@ -250,7 +250,7 @@ impl ObjectSource for HttpSource {
             .context(UnableToOpenFileSnafu::<String> { path: uri.into() })?;
 
         if let Some(is) = io_stats.as_ref() {
-            is.mark_head_requests(1)
+            is.mark_head_requests(1);
         }
 
         let headers = response.headers();
@@ -306,7 +306,7 @@ impl ObjectSource for HttpSource {
             .error_for_status()
             .with_context(|_| UnableToOpenFileSnafu { path })?;
         if let Some(is) = io_stats.as_ref() {
-            is.mark_list_requests(1)
+            is.mark_list_requests(1);
         }
 
         // Reconstruct the actual path of the request, which may have been redirected via a 301
