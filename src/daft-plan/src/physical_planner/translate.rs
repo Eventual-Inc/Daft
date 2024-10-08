@@ -11,6 +11,7 @@ use daft_core::prelude::*;
 use daft_dsl::{
     col, is_partition_compatible, AggExpr, ApproxPercentileParams, ExprRef, SketchType,
 };
+use daft_functions::numeric::sqrt;
 use daft_scan::PhysicalScanInfo;
 
 use crate::{
@@ -774,15 +775,24 @@ pub fn populate_aggregation_stages(
     // Project the aggregation results to their final output names
     let mut final_exprs: Vec<ExprRef> = group_by.iter().map(|e| col(e.name())).collect();
 
-    let get_id = |expr: &AggExpr| expr.semantic_id(schema).id;
-
-    fn add_to_stage(stage: &mut HashMap<Arc<str>, AggExpr>, id: Arc<str>, agg_expr: AggExpr) {
+    fn add_to_stage<F>(
+        f: F,
+        expr: ExprRef,
+        schema: &Schema,
+        stage: &mut HashMap<Arc<str>, AggExpr>,
+    ) -> Arc<str>
+    where
+        F: Fn(ExprRef) -> AggExpr,
+    {
+        let id = f(expr.clone()).semantic_id(schema).id;
+        let agg_expr = f(expr.alias(id.clone()));
         let prev_agg_expr = stage.insert(id.clone(), agg_expr);
         assert!(
             prev_agg_expr.is_none(),
             "{:?} already exists in this stage but it should not",
-            id
+            &id
         );
+        id
     }
 
     for agg_expr in aggregations {
@@ -850,37 +860,43 @@ pub fn populate_aggregation_stages(
             }
             AggExpr::Stddev(sub_expr) => {
                 // first stage aggregation
-                let sum_expr = AggExpr::Sum(sub_expr.clone());
-                let sq_sum_expr = AggExpr::SquareSum(sub_expr.clone());
-                let count_expr = AggExpr::Count(sub_expr.clone(), CountMode::Valid);
-                let sum_id = get_id(&sum_expr);
-                let sq_sum_id = get_id(&sq_sum_expr);
-                let count_id = get_id(&count_expr);
-                add_to_stage(&mut first_stage_aggs, sum_id.clone(), sum_expr);
-                add_to_stage(&mut first_stage_aggs, sq_sum_id.clone(), sq_sum_expr);
-                add_to_stage(&mut first_stage_aggs, count_id.clone(), count_expr);
+                let sum_id = add_to_stage(
+                    AggExpr::Sum,
+                    sub_expr.clone(),
+                    schema,
+                    &mut first_stage_aggs,
+                );
+                let sq_sum_id = add_to_stage(
+                    AggExpr::SquareSum,
+                    sub_expr.clone(),
+                    schema,
+                    &mut first_stage_aggs,
+                );
+                let count_id = add_to_stage(
+                    |sub_expr| AggExpr::Count(sub_expr, CountMode::Valid),
+                    sub_expr.clone(),
+                    schema,
+                    &mut first_stage_aggs,
+                );
 
                 // second stage aggregation
-                let global_sum_expr = AggExpr::Sum(col(sum_id));
-                let global_sq_sum_expr = AggExpr::Sum(col(sq_sum_id));
-                let global_count_expr = AggExpr::Sum(col(count_id));
-                let global_sum_id = get_id(&global_sum_expr);
-                let global_sq_sum_id = get_id(&global_sq_sum_expr);
-                let global_count_id = get_id(&global_count_expr);
-                add_to_stage(
+                let global_sum_id = add_to_stage(
+                    AggExpr::Sum,
+                    col(sum_id.clone()),
+                    schema,
                     &mut second_stage_aggs,
-                    global_sum_id.clone(),
-                    global_sum_expr,
                 );
-                add_to_stage(
+                let global_sq_sum_id = add_to_stage(
+                    AggExpr::Sum,
+                    col(sq_sum_id.clone()),
+                    schema,
                     &mut second_stage_aggs,
-                    global_sq_sum_id.clone(),
-                    global_sq_sum_expr,
                 );
-                add_to_stage(
+                let global_count_id = add_to_stage(
+                    AggExpr::Sum,
+                    col(count_id.clone()),
+                    schema,
                     &mut second_stage_aggs,
-                    global_count_id.clone(),
-                    global_count_expr,
                 );
 
                 // final projection
@@ -890,7 +906,7 @@ pub fn populate_aggregation_stages(
                 let left = g_sq_sum.div(g_count.clone());
                 let right = g_sum.div(g_count);
                 let right = right.clone().mul(right);
-                let result = left.sub(right).alias(output_name);
+                let result = sqrt::sqrt(left.sub(right)).alias(output_name);
 
                 final_exprs.push(result);
             }
