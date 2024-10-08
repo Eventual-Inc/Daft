@@ -11,7 +11,7 @@ use crate::{
 };
 
 macro_rules! impl_daft_list_agg {
-    ($name:ty) => {
+    () => {
         type Output = DaftResult<ListArray>;
 
         fn list(&self) -> Self::Output {
@@ -63,19 +63,19 @@ where
     Self: IntoSeries,
     Self: GrowableArray,
 {
-    impl_daft_list_agg!(DataArray);
+    impl_daft_list_agg!();
 }
 
 impl DaftListAggable for ListArray {
-    impl_daft_list_agg!(ListArray);
+    impl_daft_list_agg!();
 }
 
 impl DaftListAggable for FixedSizeListArray {
-    impl_daft_list_agg!(FixedSizeListArray);
+    impl_daft_list_agg!();
 }
 
 impl DaftListAggable for StructArray {
-    impl_daft_list_agg!(StructArray);
+    impl_daft_list_agg!();
 }
 
 #[cfg(feature = "python")]
