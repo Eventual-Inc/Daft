@@ -31,6 +31,7 @@ impl ScalarUDF for Abs {
     }
 }
 
+#[must_use]
 pub fn abs(input: ExprRef) -> ExprRef {
     ScalarFunction::new(Abs {}, vec![input]).into()
 }

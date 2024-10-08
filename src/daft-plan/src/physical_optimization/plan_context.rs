@@ -42,7 +42,7 @@ impl<T: Default> PlanContext<T> {
 impl<T: Clone> PlanContext<T> {
     // Clone the context to the children
     pub fn propagate(mut self) -> Self {
-        for child in self.children.iter_mut() {
+        for child in &mut self.children {
             child.context = self.context.clone();
         }
         self

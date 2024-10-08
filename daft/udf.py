@@ -4,7 +4,7 @@ import dataclasses
 import functools
 import inspect
 from abc import abstractmethod
-from typing import Any, Callable, Union
+from typing import Any, Callable, Dict, Optional, Tuple, Union
 
 from daft.context import get_context
 from daft.daft import PyDataType, ResourceRequest
@@ -13,6 +13,7 @@ from daft.dependencies import np, pa
 from daft.expressions import Expression
 from daft.series import PySeries, Series
 
+InitArgsType = Optional[Tuple[Tuple[Any, ...], Dict[str, Any]]]
 UserProvidedPythonFunction = Callable[..., Union[Series, "np.ndarray", list]]
 
 
@@ -294,7 +295,7 @@ class StatefulUDF(UDF):
     name: str
     cls: type
     return_dtype: DataType
-    init_args: tuple[tuple[Any, ...], dict[str, Any]] | None = None
+    init_args: InitArgsType = None
     concurrency: int | None = None
 
     def __post_init__(self):

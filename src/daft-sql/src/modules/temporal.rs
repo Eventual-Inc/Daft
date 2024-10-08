@@ -1,5 +1,7 @@
 use daft_dsl::ExprRef;
-use daft_functions::temporal::*;
+use daft_functions::temporal::{
+    dt_date, dt_day, dt_day_of_week, dt_hour, dt_minute, dt_month, dt_second, dt_time, dt_year,
+};
 use sqlparser::ast::FunctionArg;
 
 use super::SQLModule;
@@ -49,6 +51,16 @@ macro_rules! temporal {
                         stringify!($fn_name)
                     ),
                 }
+            }
+            fn docstrings(&self, _alias: &str) -> String {
+                format!(
+                    "Extracts the {} component from a datetime expression.",
+                    stringify!($fn_name).replace("dt_", "")
+                )
+            }
+
+            fn arg_names(&self) -> &'static [&'static str] {
+                &["input"]
             }
         }
     };

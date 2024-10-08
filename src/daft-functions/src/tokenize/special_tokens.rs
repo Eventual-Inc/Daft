@@ -15,7 +15,7 @@ fn get_llama3_tokens() -> Vec<String> {
     .map(str::to_string)
     .collect();
     for i in 5..256 {
-        res.push(format!("<|reserved_special_token_{}|>", i));
+        res.push(format!("<|reserved_special_token_{i}|>"));
     }
     res
 }

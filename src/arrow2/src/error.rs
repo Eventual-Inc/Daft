@@ -55,6 +55,7 @@ impl Error {
         Self::OutOfSpec(msg.into())
     }
 
+    #[allow(unused)]
     pub(crate) fn nyi<A: Into<String>>(msg: A) -> Self {
         Self::NotYetImplemented(msg.into())
     }

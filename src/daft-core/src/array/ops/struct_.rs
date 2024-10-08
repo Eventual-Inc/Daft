@@ -52,7 +52,7 @@ mod tests {
                 "foo",
                 DataType::Struct(vec![Field::new("bar", DataType::Int64)]),
             ),
-            vec![child.clone().into_series()],
+            vec![child.into_series()],
             None,
         );
 
@@ -68,7 +68,7 @@ mod tests {
         assert_eq!(old_child.get(2), None);
         assert_eq!(old_child.get(3), None);
 
-        parent = parent.with_validity(Some(parent_validity.clone()))?;
+        parent = parent.with_validity(Some(parent_validity))?;
 
         let new_child = parent.get("bar")?.i64()?.clone();
         let new_child_validity = new_child

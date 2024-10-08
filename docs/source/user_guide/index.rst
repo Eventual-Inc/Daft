@@ -6,7 +6,13 @@ Daft User Guide
     :maxdepth: 1
 
     basic_concepts
-    daft_in_depth
+    read-and-write
+    expressions
+    datatypes
+    dataframe-operations
+    sql
+    aggregations
+    udf
     poweruser
     integrations
     tutorials
@@ -14,22 +20,7 @@ Daft User Guide
 
 Welcome to **Daft**!
 
-Daft is a Python dataframe library that enables Pythonic data processing at large scale.
-
-* **Fast** - Daft kernels are written and accelerated using Rust on Apache Arrow arrays.
-
-* **Flexible** - you can work with any Python object in a Daft Dataframe.
-
-* **Interactive** - Daft provides a first-class notebook experience.
-
-* **Scalable** - Daft uses out-of-core algorithms to work with datasets that cannot fit in memory.
-
-* **Distributed** - Daft scales to a cluster of machines using Ray to crunch terabytes of data.
-
-* **Intelligent** - Daft performs query optimizations to speed up your work.
-
-The core interface provided by Daft is the *DataFrame*, which is a table of data consisting of rows and columns. This user guide
-aims to help Daft users master the usage of the Daft *DataFrame* for all your data processing needs!
+This user guide aims to help Daft users master the usage of the Daft for all your data needs.
 
 .. NOTE::
 
@@ -39,8 +30,7 @@ aims to help Daft users master the usage of the Daft *DataFrame* for all your da
     code you may wish to take a look at these resources:
 
     1. :doc:`../10-min`: Itching to run some Daft code? Hit the ground running with our 10 minute quickstart notebook.
-    2. (Coming soon!) Cheatsheet: Quick reference to commonly-used Daft APIs and usage patterns - useful to keep next to your laptop as you code!
-    3. :doc:`../api_docs/index`: Searchable documentation and reference material to Daft's public Python API.
+    2. :doc:`../api_docs/index`: Searchable documentation and reference material to Daft's public API.
 
 Table of Contents
 -----------------
@@ -52,10 +42,22 @@ The Daft User Guide is laid out as follows:
 
 High-level overview of Daft interfaces and usage to give you a better understanding of how Daft will fit into your day-to-day workflow.
 
-:doc:`Daft in Depth <daft_in_depth>`
-************************************
+Daft in Depth
+*************
 
 Core Daft concepts all Daft users will find useful to understand deeply.
+
+* :doc:`read-and-write`
+* :doc:`expressions`
+* :doc:`datatypes`
+* :doc:`dataframe-operations`
+* :doc:`aggregations`
+* :doc:`udf`
+
+:doc:`Structured Query Language (SQL) <sql>`
+********************************************
+
+A look into Daft's SQL interface and how it complements Daft's Pythonic DataFrame APIs.
 
 :doc:`The Daft Poweruser <poweruser>`
 *************************************

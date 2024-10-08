@@ -12,7 +12,10 @@ fn transpose2<T>(v: Vec<Vec<T>>) -> Vec<Vec<T>> {
         return v;
     }
     let len = v[0].len();
-    let mut iters: Vec<_> = v.into_iter().map(|n| n.into_iter()).collect();
+    let mut iters: Vec<_> = v
+        .into_iter()
+        .map(std::iter::IntoIterator::into_iter)
+        .collect();
     (0..len)
         .map(|_| {
             iters

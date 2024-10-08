@@ -85,7 +85,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             ))
         }
         LogicalPlan::Distinct(distinct) => {
-            let schema = distinct.input.schema().clone();
+            let schema = distinct.input.schema();
             let input = translate(&distinct.input)?;
             let col_exprs = input
                 .schema()

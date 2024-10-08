@@ -10,6 +10,7 @@ pub struct SQLCatalog {
 
 impl SQLCatalog {
     /// Create an empty catalog
+    #[must_use]
     pub fn new() -> Self {
         Self {
             tables: HashMap::new(),
@@ -22,13 +23,14 @@ impl SQLCatalog {
     }
 
     /// Get a table from the catalog
+    #[must_use]
     pub fn get_table(&self, name: &str) -> Option<LogicalPlanRef> {
         self.tables.get(name).cloned()
     }
 
     /// Copy from another catalog, using tables from other in case of conflict
     pub fn copy_from(&mut self, other: &Self) {
-        for (name, plan) in other.tables.iter() {
+        for (name, plan) in &other.tables {
             self.tables.insert(name.clone(), plan.clone());
         }
     }

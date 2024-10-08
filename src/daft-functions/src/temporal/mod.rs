@@ -77,7 +77,7 @@ macro_rules! impl_temporal {
                 }
             }
 
-            pub fn $dt(input: ExprRef) -> ExprRef {
+            #[must_use] pub fn $dt(input: ExprRef) -> ExprRef {
                 ScalarFunction::new($name {}, vec![input]).into()
             }
 
@@ -150,6 +150,7 @@ impl ScalarUDF for Time {
     }
 }
 
+#[must_use]
 pub fn dt_time(input: ExprRef) -> ExprRef {
     ScalarFunction::new(Time {}, vec![input]).into()
 }
@@ -182,7 +183,7 @@ mod test {
             (Arc::new(Year), "year"),
             (
                 Arc::new(Truncate {
-                    interval: "".into(),
+                    interval: String::new(),
                 }),
                 "truncate",
             ),
