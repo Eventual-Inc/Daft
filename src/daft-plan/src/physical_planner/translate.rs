@@ -890,7 +890,7 @@ pub fn populate_aggregation_stages(
                 let left = g_sq_sum.div(g_count.clone());
                 let right = g_sum.div(g_count);
                 let right = right.clone().mul(right);
-                let result = left.sub(right);
+                let result = left.sub(right).alias(output_name);
 
                 final_exprs.push(result);
             }

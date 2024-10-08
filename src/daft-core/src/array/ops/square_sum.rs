@@ -14,7 +14,7 @@ impl DaftSquareSumAggable for Float64Array {
             .into_iter()
             .flatten()
             .copied()
-            .fold(0., |acc, value| acc + value.powi(2));
+            .fold(0., |acc, value| value.mul_add(value, acc));
         let data = PrimitiveArray::from([Some(sum_square)]).boxed();
         let field = self.field.clone();
         Self::new(field, data)
@@ -26,7 +26,7 @@ impl DaftSquareSumAggable for Float64Array {
             .map(|group| {
                 group.iter().copied().fold(0., |acc, index| {
                     self.get(index as _)
-                        .map_or(acc, |value| acc + value.powi(2))
+                        .map_or(acc, |value| value.mul_add(value, acc))
                 })
             })
             .map(Some);

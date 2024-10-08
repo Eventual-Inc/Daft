@@ -325,12 +325,16 @@ impl AggExpr {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(field.name.as_str(), DataType::UInt64))
             }
-            Self::Sum(expr) | Self::SquareSum(expr) => {
+            Self::Sum(expr) => {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(
                     field.name.as_str(),
                     try_sum_supertype(&field.dtype)?,
                 ))
+            }
+            Self::SquareSum(expr) => {
+                let field = expr.to_field(schema)?;
+                Ok(Field::new(field.name.as_str(), DataType::Float64))
             }
             Self::ApproxPercentile(ApproxPercentileParams {
                 child: expr,
