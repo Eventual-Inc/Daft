@@ -109,6 +109,10 @@ pub fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
             ensure!(args.len() == 1, "mean takes exactly one argument");
             Ok(args[0].clone().mean())
         }
+        AggExpr::Stddev(_) => {
+            ensure!(args.len() == 1, "stddev takes exactly one argument");
+            Ok(args[0].clone().stddev())
+        }
         AggExpr::Min(_) => {
             ensure!(args.len() == 1, "min takes exactly one argument");
             Ok(args[0].clone().min())

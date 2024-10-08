@@ -2,9 +2,13 @@ mod runtime_py_object;
 mod udf;
 mod udf_runtime_binding;
 
-use std::{collections::HashMap, sync::Arc};
+#[cfg(feature = "python")]
+use std::collections::HashMap;
+use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
+#[cfg(feature = "python")]
+use common_error::DaftError;
+use common_error::DaftResult;
 use common_resource_request::ResourceRequest;
 use common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_core::datatypes::DataType;
