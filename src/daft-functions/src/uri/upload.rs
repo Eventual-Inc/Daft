@@ -55,7 +55,7 @@ impl ScalarUDF for UploadFunction {
                 let data_field = data.to_field(schema)?;
                 match data_field.dtype {
                     DataType::Binary | DataType::FixedSizeBinary(..) | DataType::Utf8 => Ok(Field::new(data_field.name, DataType::Utf8)),
-                    _ => Err(DaftError::TypeError(format!("Expects input to url_upload to be Binary, FixedSizeBinary or String, but received {}", data_field))),
+                    _ => Err(DaftError::TypeError(format!("Expects input to url_upload to be Binary, FixedSizeBinary or String, but received {data_field}"))),
                 }
             }
             _ => Err(DaftError::SchemaMismatch(format!(

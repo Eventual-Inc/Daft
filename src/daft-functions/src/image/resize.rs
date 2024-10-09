@@ -36,8 +36,7 @@ impl ScalarUDF for ImageResize {
                     },
                     DataType::FixedShapeImage(..) => Ok(field.clone()),
                     _ => Err(DaftError::TypeError(format!(
-                        "ImageResize can only resize ImageArrays and FixedShapeImageArrays, got {}",
-                        field
+                        "ImageResize can only resize ImageArrays and FixedShapeImageArrays, got {field}"
                     ))),
                 }
             }
@@ -59,6 +58,7 @@ impl ScalarUDF for ImageResize {
     }
 }
 
+#[must_use]
 pub fn resize(input: ExprRef, w: u32, h: u32) -> ExprRef {
     ScalarFunction::new(
         ImageResize {

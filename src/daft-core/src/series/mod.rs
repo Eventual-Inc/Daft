@@ -87,6 +87,7 @@ impl Series {
         self.inner.name()
     }
 
+    #[must_use]
     pub fn rename<S: AsRef<str>>(&self, name: S) -> Self {
         self.inner.rename(name.as_ref())
     }
@@ -121,6 +122,13 @@ impl Series {
 
     pub fn validity(&self) -> Option<&arrow2::bitmap::Bitmap> {
         self.inner.validity()
+    }
+
+    pub fn is_valid(&self, idx: usize) -> bool {
+        let Some(validity) = self.validity() else {
+            return true;
+        };
+        validity.get_bit(idx)
     }
 
     /// Attempts to downcast the Series to a primitive slice

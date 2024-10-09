@@ -66,8 +66,6 @@ fn generic_if_else<T: GrowableArray + FullNull + Clone + IntoSeries>(
                 }
             }
         }
-        growable.build()
-
     // CASE 3: predicate is not broadcastable, and does not contain nulls
     } else {
         // Helper to extend the growable, taking into account broadcast semantics
@@ -108,8 +106,9 @@ fn generic_if_else<T: GrowableArray + FullNull + Clone + IntoSeries>(
         if total_len != predicate.len() {
             extend(false, total_len, predicate.len() - total_len);
         }
-        growable.build()
     }
+
+    growable.build()
 }
 
 impl<T> DataArray<T>

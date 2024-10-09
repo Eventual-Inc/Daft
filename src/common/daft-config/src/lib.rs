@@ -14,6 +14,7 @@ pub struct DaftPlanningConfig {
 }
 
 impl DaftPlanningConfig {
+    #[must_use]
     pub fn from_env() -> Self {
         let mut cfg = Self::default();
 
@@ -84,6 +85,7 @@ impl Default for DaftExecutionConfig {
 }
 
 impl DaftExecutionConfig {
+    #[must_use]
     pub fn from_env() -> Self {
         let mut cfg = Self::default();
         let aqe_env_var_name = "DAFT_ENABLE_AQE";

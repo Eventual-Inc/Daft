@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::ClusteringSpec;
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EmptyScan {
     pub schema: SchemaRef,
     pub clustering_spec: Arc<ClusteringSpec>,

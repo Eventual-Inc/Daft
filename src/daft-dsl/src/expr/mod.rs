@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod tests;
+
 use std::{
     io::{self, Write},
     sync::Arc,
@@ -7,7 +10,7 @@ use common_error::{DaftError, DaftResult};
 use common_hashable_float_wrapper::FloatWrapper;
 use common_treenode::TreeNode;
 use daft_core::{
-    datatypes::{try_mean_supertype, try_sum_supertype, InferDataType},
+    datatypes::{try_mean_stddev_aggregation_supertype, try_sum_supertype, InferDataType},
     prelude::*,
     utils::supertype::try_get_supertype,
 };
@@ -121,6 +124,9 @@ pub enum AggExpr {
     #[display("mean({_0})")]
     Mean(ExprRef),
 
+    #[display("stddev({_0})")]
+    Stddev(ExprRef),
+
     #[display("min({_0})")]
     Min(ExprRef),
 
@@ -159,36 +165,35 @@ pub fn binary_op(op: Operator, left: ExprRef, right: ExprRef) -> ExprRef {
 
 impl AggExpr {
     pub fn name(&self) -> &str {
-        use AggExpr::*;
         match self {
-            Count(expr, ..)
-            | Sum(expr)
-            | ApproxPercentile(ApproxPercentileParams { child: expr, .. })
-            | ApproxCountDistinct(expr)
-            | ApproxSketch(expr, _)
-            | MergeSketch(expr, _)
-            | Mean(expr)
-            | Min(expr)
-            | Max(expr)
-            | AnyValue(expr, _)
-            | List(expr)
-            | Concat(expr) => expr.name(),
-            MapGroups { func: _, inputs } => inputs.first().unwrap().name(),
+            Self::Count(expr, ..)
+            | Self::Sum(expr)
+            | Self::ApproxPercentile(ApproxPercentileParams { child: expr, .. })
+            | Self::ApproxCountDistinct(expr)
+            | Self::ApproxSketch(expr, _)
+            | Self::MergeSketch(expr, _)
+            | Self::Mean(expr)
+            | Self::Stddev(expr)
+            | Self::Min(expr)
+            | Self::Max(expr)
+            | Self::AnyValue(expr, _)
+            | Self::List(expr)
+            | Self::Concat(expr) => expr.name(),
+            Self::MapGroups { func: _, inputs } => inputs.first().unwrap().name(),
         }
     }
 
     pub fn semantic_id(&self, schema: &Schema) -> FieldID {
-        use AggExpr::*;
         match self {
-            Count(expr, mode) => {
+            Self::Count(expr, mode) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_count({mode})"))
             }
-            Sum(expr) => {
+            Self::Sum(expr) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_sum()"))
             }
-            ApproxPercentile(ApproxPercentileParams {
+            Self::ApproxPercentile(ApproxPercentileParams {
                 child: expr,
                 percentiles,
                 force_list_output,
@@ -199,122 +204,126 @@ impl AggExpr {
                     percentiles,
                 ))
             }
-            ApproxCountDistinct(expr) => {
+            Self::ApproxCountDistinct(expr) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_approx_count_distinct()"))
             }
-            ApproxSketch(expr, sketch_type) => {
+            Self::ApproxSketch(expr, sketch_type) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!(
                     "{child_id}.local_approx_sketch(sketch_type={sketch_type:?})"
                 ))
             }
-            MergeSketch(expr, sketch_type) => {
+            Self::MergeSketch(expr, sketch_type) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!(
                     "{child_id}.local_merge_sketch(sketch_type={sketch_type:?})"
                 ))
             }
-            Mean(expr) => {
+            Self::Mean(expr) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_mean()"))
             }
-            Min(expr) => {
+            Self::Stddev(expr) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.local_stddev()"))
+            }
+            Self::Min(expr) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_min()"))
             }
-            Max(expr) => {
+            Self::Max(expr) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_max()"))
             }
-            AnyValue(expr, ignore_nulls) => {
+            Self::AnyValue(expr, ignore_nulls) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!(
                     "{child_id}.local_any_value(ignore_nulls={ignore_nulls})"
                 ))
             }
-            List(expr) => {
+            Self::List(expr) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_list()"))
             }
-            Concat(expr) => {
+            Self::Concat(expr) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_concat()"))
             }
-            MapGroups { func, inputs } => function_semantic_id(func, inputs, schema),
+            Self::MapGroups { func, inputs } => function_semantic_id(func, inputs, schema),
         }
     }
 
     pub fn children(&self) -> Vec<ExprRef> {
-        use AggExpr::*;
         match self {
-            Count(expr, ..)
-            | Sum(expr)
-            | ApproxPercentile(ApproxPercentileParams { child: expr, .. })
-            | ApproxCountDistinct(expr)
-            | ApproxSketch(expr, _)
-            | MergeSketch(expr, _)
-            | Mean(expr)
-            | Min(expr)
-            | Max(expr)
-            | AnyValue(expr, _)
-            | List(expr)
-            | Concat(expr) => vec![expr.clone()],
-            MapGroups { func: _, inputs } => inputs.clone(),
+            Self::Count(expr, ..)
+            | Self::Sum(expr)
+            | Self::ApproxPercentile(ApproxPercentileParams { child: expr, .. })
+            | Self::ApproxCountDistinct(expr)
+            | Self::ApproxSketch(expr, _)
+            | Self::MergeSketch(expr, _)
+            | Self::Mean(expr)
+            | Self::Stddev(expr)
+            | Self::Min(expr)
+            | Self::Max(expr)
+            | Self::AnyValue(expr, _)
+            | Self::List(expr)
+            | Self::Concat(expr) => vec![expr.clone()],
+            Self::MapGroups { func: _, inputs } => inputs.clone(),
         }
     }
 
-    pub fn with_new_children(&self, children: Vec<ExprRef>) -> Self {
-        use AggExpr::*;
-
-        if let MapGroups { func: _, inputs } = &self {
+    pub fn with_new_children(&self, mut children: Vec<ExprRef>) -> Self {
+        if let Self::MapGroups { func: _, inputs } = &self {
             assert_eq!(children.len(), inputs.len());
         } else {
             assert_eq!(children.len(), 1);
         }
+        let mut first_child = || children.pop().unwrap();
         match self {
-            Count(_, count_mode) => Count(children[0].clone(), *count_mode),
-            Sum(_) => Sum(children[0].clone()),
-            Mean(_) => Mean(children[0].clone()),
-            Min(_) => Min(children[0].clone()),
-            Max(_) => Max(children[0].clone()),
-            AnyValue(_, ignore_nulls) => AnyValue(children[0].clone(), *ignore_nulls),
-            List(_) => List(children[0].clone()),
-            Concat(_) => Concat(children[0].clone()),
-            MapGroups { func, inputs: _ } => MapGroups {
+            Self::Count(_, count_mode) => Self::Count(first_child(), *count_mode),
+            Self::Sum(_) => Self::Sum(first_child()),
+            Self::Mean(_) => Self::Mean(first_child()),
+            Self::Stddev(_) => Self::Stddev(first_child()),
+            Self::Min(_) => Self::Min(first_child()),
+            Self::Max(_) => Self::Max(first_child()),
+            Self::AnyValue(_, ignore_nulls) => Self::AnyValue(first_child(), *ignore_nulls),
+            Self::List(_) => Self::List(first_child()),
+            Self::Concat(_) => Self::Concat(first_child()),
+            Self::MapGroups { func, inputs: _ } => Self::MapGroups {
                 func: func.clone(),
                 inputs: children,
             },
-            ApproxPercentile(ApproxPercentileParams {
+            Self::ApproxPercentile(ApproxPercentileParams {
                 percentiles,
                 force_list_output,
                 ..
-            }) => ApproxPercentile(ApproxPercentileParams {
-                child: children[0].clone(),
+            }) => Self::ApproxPercentile(ApproxPercentileParams {
+                child: first_child(),
                 percentiles: percentiles.clone(),
                 force_list_output: *force_list_output,
             }),
-            ApproxCountDistinct(_) => ApproxCountDistinct(children[0].clone()),
-            &ApproxSketch(_, sketch_type) => ApproxSketch(children[0].clone(), sketch_type),
-            &MergeSketch(_, sketch_type) => MergeSketch(children[0].clone(), sketch_type),
+            Self::ApproxCountDistinct(_) => Self::ApproxCountDistinct(first_child()),
+            &Self::ApproxSketch(_, sketch_type) => Self::ApproxSketch(first_child(), sketch_type),
+            &Self::MergeSketch(_, sketch_type) => Self::MergeSketch(first_child(), sketch_type),
         }
     }
 
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
-        use AggExpr::*;
         match self {
-            Count(expr, ..) => {
+            Self::Count(expr, ..) => {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(field.name.as_str(), DataType::UInt64))
             }
-            Sum(expr) => {
+            Self::Sum(expr) => {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(
                     field.name.as_str(),
                     try_sum_supertype(&field.dtype)?,
                 ))
             }
-            ApproxPercentile(ApproxPercentileParams {
+
+            Self::ApproxPercentile(ApproxPercentileParams {
                 child: expr,
                 percentiles,
                 force_list_output,
@@ -337,11 +346,11 @@ impl AggExpr {
                     },
                 ))
             }
-            ApproxCountDistinct(expr) => {
+            Self::ApproxCountDistinct(expr) => {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(field.name.as_str(), DataType::UInt64))
             }
-            ApproxSketch(expr, sketch_type) => {
+            Self::ApproxSketch(expr, sketch_type) => {
                 let field = expr.to_field(schema)?;
                 let dtype = match sketch_type {
                     SketchType::DDSketch => {
@@ -357,7 +366,7 @@ impl AggExpr {
                 };
                 Ok(Field::new(field.name, dtype))
             }
-            MergeSketch(expr, sketch_type) => {
+            Self::MergeSketch(expr, sketch_type) => {
                 let field = expr.to_field(schema)?;
                 let dtype = match sketch_type {
                     SketchType::DDSketch => {
@@ -374,19 +383,19 @@ impl AggExpr {
                 };
                 Ok(Field::new(field.name, dtype))
             }
-            Mean(expr) => {
+            Self::Mean(expr) | Self::Stddev(expr) => {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(
                     field.name.as_str(),
-                    try_mean_supertype(&field.dtype)?,
+                    try_mean_stddev_aggregation_supertype(&field.dtype)?,
                 ))
             }
-            Min(expr) | Max(expr) | AnyValue(expr, _) => {
+            Self::Min(expr) | Self::Max(expr) | Self::AnyValue(expr, _) => {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(field.name.as_str(), field.dtype))
             }
-            List(expr) => expr.to_field(schema)?.to_list_field(),
-            Concat(expr) => {
+            Self::List(expr) => expr.to_field(schema)?.to_list_field(),
+            Self::Concat(expr) => {
                 let field = expr.to_field(schema)?;
                 match field.dtype {
                     DataType::List(..) => Ok(field),
@@ -399,23 +408,7 @@ impl AggExpr {
                     ))),
                 }
             }
-            MapGroups { func, inputs } => func.to_field(inputs.as_slice(), schema, func),
-        }
-    }
-
-    pub fn from_name_and_child_expr(name: &str, child: ExprRef) -> DaftResult<Self> {
-        use AggExpr::*;
-        match name {
-            "count" => Ok(Count(child, CountMode::Valid)),
-            "sum" => Ok(Sum(child)),
-            "mean" => Ok(Mean(child)),
-            "min" => Ok(Min(child)),
-            "max" => Ok(Max(child)),
-            "list" => Ok(List(child)),
-            _ => Err(DaftError::ValueError(format!(
-                "{} not a valid aggregation name",
-                name
-            ))),
+            Self::MapGroups { func, inputs } => func.to_field(inputs.as_slice(), schema, func),
         }
     }
 }
@@ -498,6 +491,10 @@ impl Expr {
         Self::Agg(AggExpr::Mean(self)).into()
     }
 
+    pub fn stddev(self: ExprRef) -> ExprRef {
+        Self::Agg(AggExpr::Stddev(self)).into()
+    }
+
     pub fn min(self: ExprRef) -> ExprRef {
         Self::Agg(AggExpr::Min(self)).into()
     }
@@ -576,57 +573,55 @@ impl Expr {
     }
 
     pub fn semantic_id(&self, schema: &Schema) -> FieldID {
-        use Expr::*;
         match self {
             // Base case - anonymous column reference.
             // Look up the column name in the provided schema and get its field ID.
-            Column(name) => FieldID::new(&**name),
+            Self::Column(name) => FieldID::new(&**name),
 
             // Base case - literal.
-            Literal(value) => FieldID::new(format!("Literal({value:?})")),
+            Self::Literal(value) => FieldID::new(format!("Literal({value:?})")),
 
             // Recursive cases.
-            Cast(expr, dtype) => {
+            Self::Cast(expr, dtype) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.cast({dtype})"))
             }
-            Not(expr) => {
+            Self::Not(expr) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.not()"))
             }
-            IsNull(expr) => {
+            Self::IsNull(expr) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.is_null()"))
             }
-            NotNull(expr) => {
+            Self::NotNull(expr) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.not_null()"))
             }
-            FillNull(expr, fill_value) => {
+            Self::FillNull(expr, fill_value) => {
                 let child_id = expr.semantic_id(schema);
                 let fill_value_id = fill_value.semantic_id(schema);
                 FieldID::new(format!("{child_id}.fill_null({fill_value_id})"))
             }
-            IsIn(expr, items) => {
+            Self::IsIn(expr, items) => {
                 let child_id = expr.semantic_id(schema);
                 let items_id = items.semantic_id(schema);
                 FieldID::new(format!("{child_id}.is_in({items_id})"))
             }
-            Between(expr, lower, upper) => {
+            Self::Between(expr, lower, upper) => {
                 let child_id = expr.semantic_id(schema);
                 let lower_id = lower.semantic_id(schema);
                 let upper_id = upper.semantic_id(schema);
                 FieldID::new(format!("{child_id}.between({lower_id},{upper_id})"))
             }
-            Function { func, inputs } => function_semantic_id(func, inputs, schema),
-            BinaryOp { op, left, right } => {
+            Self::Function { func, inputs } => function_semantic_id(func, inputs, schema),
+            Self::BinaryOp { op, left, right } => {
                 let left_id = left.semantic_id(schema);
                 let right_id = right.semantic_id(schema);
                 // TODO: check for symmetry here.
                 FieldID::new(format!("({left_id} {op} {right_id})"))
             }
-
-            IfElse {
+            Self::IfElse {
                 if_true,
                 if_false,
                 predicate,
@@ -636,96 +631,100 @@ impl Expr {
                 let predicate = predicate.semantic_id(schema);
                 FieldID::new(format!("({if_true} if {predicate} else {if_false})"))
             }
-
             // Alias: ID does not change.
-            Alias(expr, ..) => expr.semantic_id(schema),
-
+            Self::Alias(expr, ..) => expr.semantic_id(schema),
             // Agg: Separate path.
-            Agg(agg_expr) => agg_expr.semantic_id(schema),
-            ScalarFunction(sf) => scalar_function_semantic_id(sf, schema),
+            Self::Agg(agg_expr) => agg_expr.semantic_id(schema),
+            Self::ScalarFunction(sf) => scalar_function_semantic_id(sf, schema),
         }
     }
 
     pub fn children(&self) -> Vec<ExprRef> {
-        use Expr::*;
         match self {
             // No children.
-            Column(..) => vec![],
-            Literal(..) => vec![],
+            Self::Column(..) => vec![],
+            Self::Literal(..) => vec![],
 
             // One child.
-            Not(expr) | IsNull(expr) | NotNull(expr) | Cast(expr, ..) | Alias(expr, ..) => {
+            Self::Not(expr)
+            | Self::IsNull(expr)
+            | Self::NotNull(expr)
+            | Self::Cast(expr, ..)
+            | Self::Alias(expr, ..) => {
                 vec![expr.clone()]
             }
-            Agg(agg_expr) => agg_expr.children(),
+            Self::Agg(agg_expr) => agg_expr.children(),
 
             // Multiple children.
-            Function { inputs, .. } => inputs.clone(),
-            BinaryOp { left, right, .. } => {
+            Self::Function { inputs, .. } => inputs.clone(),
+            Self::BinaryOp { left, right, .. } => {
                 vec![left.clone(), right.clone()]
             }
-            IsIn(expr, items) => vec![expr.clone(), items.clone()],
-            Between(expr, lower, upper) => vec![expr.clone(), lower.clone(), upper.clone()],
-            IfElse {
+            Self::IsIn(expr, items) => vec![expr.clone(), items.clone()],
+            Self::Between(expr, lower, upper) => vec![expr.clone(), lower.clone(), upper.clone()],
+            Self::IfElse {
                 if_true,
                 if_false,
                 predicate,
             } => {
                 vec![if_true.clone(), if_false.clone(), predicate.clone()]
             }
-            FillNull(expr, fill_value) => vec![expr.clone(), fill_value.clone()],
-            ScalarFunction(sf) => sf.inputs.clone(),
+            Self::FillNull(expr, fill_value) => vec![expr.clone(), fill_value.clone()],
+            Self::ScalarFunction(sf) => sf.inputs.clone(),
         }
     }
 
     pub fn with_new_children(&self, children: Vec<ExprRef>) -> Self {
-        use Expr::*;
         match self {
             // no children
-            Column(..) | Literal(..) => {
+            Self::Column(..) | Self::Literal(..) => {
                 assert!(children.is_empty(), "Should have no children");
                 self.clone()
             }
             // 1 child
-            Not(..) => Not(children.first().expect("Should have 1 child").clone()),
-            Alias(.., name) => Alias(
+            Self::Not(..) => Self::Not(children.first().expect("Should have 1 child").clone()),
+            Self::Alias(.., name) => Self::Alias(
                 children.first().expect("Should have 1 child").clone(),
                 name.clone(),
             ),
-            IsNull(..) => IsNull(children.first().expect("Should have 1 child").clone()),
-            NotNull(..) => NotNull(children.first().expect("Should have 1 child").clone()),
-            Cast(.., dtype) => Cast(
+            Self::IsNull(..) => {
+                Self::IsNull(children.first().expect("Should have 1 child").clone())
+            }
+            Self::NotNull(..) => {
+                Self::NotNull(children.first().expect("Should have 1 child").clone())
+            }
+            Self::Cast(.., dtype) => Self::Cast(
                 children.first().expect("Should have 1 child").clone(),
                 dtype.clone(),
             ),
             // 2 children
-            BinaryOp { op, .. } => BinaryOp {
+            Self::BinaryOp { op, .. } => Self::BinaryOp {
                 op: *op,
                 left: children.first().expect("Should have 1 child").clone(),
                 right: children.get(1).expect("Should have 2 child").clone(),
             },
-            IsIn(..) => IsIn(
+            Self::IsIn(..) => Self::IsIn(
                 children.first().expect("Should have 1 child").clone(),
                 children.get(1).expect("Should have 2 child").clone(),
             ),
-            Between(..) => Between(
+            Self::Between(..) => Self::Between(
                 children.first().expect("Should have 1 child").clone(),
                 children.get(1).expect("Should have 2 child").clone(),
                 children.get(2).expect("Should have 3 child").clone(),
             ),
-            FillNull(..) => FillNull(
+            Self::FillNull(..) => Self::FillNull(
                 children.first().expect("Should have 1 child").clone(),
                 children.get(1).expect("Should have 2 child").clone(),
             ),
             // ternary
-            IfElse { .. } => IfElse {
+            Self::IfElse { .. } => Self::IfElse {
                 if_true: children.first().expect("Should have 1 child").clone(),
                 if_false: children.get(1).expect("Should have 2 child").clone(),
                 predicate: children.get(2).expect("Should have 3 child").clone(),
             },
             // N-ary
-            Agg(agg_expr) => Agg(agg_expr.with_new_children(children)),
-            Function {
+            Self::Agg(agg_expr) => Self::Agg(agg_expr.with_new_children(children)),
+            Self::Function {
                 func,
                 inputs: old_children,
             } => {
@@ -733,18 +732,18 @@ impl Expr {
                     children.len() == old_children.len(),
                     "Should have same number of children"
                 );
-                Function {
+                Self::Function {
                     func: func.clone(),
                     inputs: children,
                 }
             }
-            ScalarFunction(sf) => {
+            Self::ScalarFunction(sf) => {
                 assert!(
                     children.len() == sf.inputs.len(),
                     "Should have same number of children"
                 );
 
-                ScalarFunction(crate::functions::ScalarFunction {
+                Self::ScalarFunction(crate::functions::ScalarFunction {
                     udf: sf.udf.clone(),
                     inputs: children,
                 })
@@ -753,13 +752,12 @@ impl Expr {
     }
 
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
-        use Expr::*;
         match self {
-            Alias(expr, name) => Ok(Field::new(name.as_ref(), expr.get_type(schema)?)),
-            Agg(agg_expr) => agg_expr.to_field(schema),
-            Cast(expr, dtype) => Ok(Field::new(expr.name(), dtype.clone())),
-            Column(name) => Ok(schema.get_field(name).cloned()?),
-            Not(expr) => {
+            Self::Alias(expr, name) => Ok(Field::new(name.as_ref(), expr.get_type(schema)?)),
+            Self::Agg(agg_expr) => agg_expr.to_field(schema),
+            Self::Cast(expr, dtype) => Ok(Field::new(expr.name(), dtype.clone())),
+            Self::Column(name) => Ok(schema.get_field(name).cloned()?),
+            Self::Not(expr) => {
                 let child_field = expr.to_field(schema)?;
                 match child_field.dtype {
                     DataType::Boolean => Ok(Field::new(expr.name(), DataType::Boolean)),
@@ -768,9 +766,9 @@ impl Expr {
                     ))),
                 }
             }
-            IsNull(expr) => Ok(Field::new(expr.name(), DataType::Boolean)),
-            NotNull(expr) => Ok(Field::new(expr.name(), DataType::Boolean)),
-            FillNull(expr, fill_value) => {
+            Self::IsNull(expr) => Ok(Field::new(expr.name(), DataType::Boolean)),
+            Self::NotNull(expr) => Ok(Field::new(expr.name(), DataType::Boolean)),
+            Self::FillNull(expr, fill_value) => {
                 let expr_field = expr.to_field(schema)?;
                 let fill_value_field = fill_value.to_field(schema)?;
                 match try_get_supertype(&expr_field.dtype, &fill_value_field.dtype) {
@@ -780,7 +778,7 @@ impl Expr {
                     )))
                 }
             }
-            IsIn(left, right) => {
+            Self::IsIn(left, right) => {
                 let left_field = left.to_field(schema)?;
                 let right_field = right.to_field(schema)?;
                 let (result_type, _intermediate, _comp_type) =
@@ -788,7 +786,7 @@ impl Expr {
                         .membership_op(&InferDataType::from(&right_field.dtype))?;
                 Ok(Field::new(left_field.name.as_str(), result_type))
             }
-            Between(value, lower, upper) => {
+            Self::Between(value, lower, upper) => {
                 let value_field = value.to_field(schema)?;
                 let lower_field = lower.to_field(schema)?;
                 let upper_field = upper.to_field(schema)?;
@@ -803,11 +801,10 @@ impl Expr {
                         .membership_op(&InferDataType::from(&upper_result_type))?;
                 Ok(Field::new(value_field.name.as_str(), result_type))
             }
-            Literal(value) => Ok(Field::new("literal", value.get_type())),
-            Function { func, inputs } => func.to_field(inputs.as_slice(), schema, func),
-            ScalarFunction(sf) => sf.to_field(schema),
-
-            BinaryOp { op, left, right } => {
+            Self::Literal(value) => Ok(Field::new("literal", value.get_type())),
+            Self::Function { func, inputs } => func.to_field(inputs.as_slice(), schema, func),
+            Self::ScalarFunction(sf) => sf.to_field(schema),
+            Self::BinaryOp { op, left, right } => {
                 let left_field = left.to_field(schema)?;
                 let right_field = right.to_field(schema)?;
 
@@ -873,7 +870,7 @@ impl Expr {
                     }
                 }
             }
-            IfElse {
+            Self::IfElse {
                 if_true,
                 if_false,
                 predicate,
@@ -903,33 +900,32 @@ impl Expr {
     }
 
     pub fn name(&self) -> &str {
-        use Expr::*;
         match self {
-            Alias(.., name) => name.as_ref(),
-            Agg(agg_expr) => agg_expr.name(),
-            Cast(expr, ..) => expr.name(),
-            Column(name) => name.as_ref(),
-            Not(expr) => expr.name(),
-            IsNull(expr) => expr.name(),
-            NotNull(expr) => expr.name(),
-            FillNull(expr, ..) => expr.name(),
-            IsIn(expr, ..) => expr.name(),
-            Between(expr, ..) => expr.name(),
-            Literal(..) => "literal",
-            Function { func, inputs } => match func {
+            Self::Alias(.., name) => name.as_ref(),
+            Self::Agg(agg_expr) => agg_expr.name(),
+            Self::Cast(expr, ..) => expr.name(),
+            Self::Column(name) => name.as_ref(),
+            Self::Not(expr) => expr.name(),
+            Self::IsNull(expr) => expr.name(),
+            Self::NotNull(expr) => expr.name(),
+            Self::FillNull(expr, ..) => expr.name(),
+            Self::IsIn(expr, ..) => expr.name(),
+            Self::Between(expr, ..) => expr.name(),
+            Self::Literal(..) => "literal",
+            Self::Function { func, inputs } => match func {
                 FunctionExpr::Struct(StructExpr::Get(name)) => name,
                 _ => inputs.first().unwrap().name(),
             },
-            ScalarFunction(func) => match func.name() {
+            Self::ScalarFunction(func) => match func.name() {
                 "to_struct" => "struct", // FIXME: make .name() use output name from schema
                 _ => func.inputs.first().unwrap().name(),
             },
-            BinaryOp {
+            Self::BinaryOp {
                 op: _,
                 left,
                 right: _,
             } => left.name(),
-            IfElse { if_true, .. } => if_true.name(),
+            Self::IfElse { if_true, .. } => if_true.name(),
         }
     }
 
@@ -1024,7 +1020,7 @@ impl Expr {
         let mut buffer = Vec::new();
         to_sql_inner(self, &mut buffer)
             .ok()
-            .and_then(|_| String::from_utf8(buffer).ok())
+            .and_then(|()| String::from_utf8(buffer).ok())
     }
 
     /// If the expression is a literal, return it. Otherwise, return None.
@@ -1122,91 +1118,4 @@ pub fn has_stateful_udf(expr: &ExprRef) -> bool {
             }
         )
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn check_comparison_type() -> DaftResult<()> {
-        let x = lit(10.);
-        let y = lit(12);
-        let schema = Schema::empty();
-
-        let z = Expr::BinaryOp {
-            left: x,
-            right: y,
-            op: Operator::Lt,
-        };
-        assert_eq!(z.get_type(&schema)?, DataType::Boolean);
-        Ok(())
-    }
-
-    #[test]
-    fn check_alias_type() -> DaftResult<()> {
-        let a = col("a");
-        let b = a.alias("b");
-        match b.as_ref() {
-            Expr::Alias(..) => Ok(()),
-            other => Err(common_error::DaftError::ValueError(format!(
-                "expected expression to be a alias, got {other:?}"
-            ))),
-        }
-    }
-
-    #[test]
-    fn check_arithmetic_type() -> DaftResult<()> {
-        let x = lit(10.);
-        let y = lit(12);
-        let schema = Schema::empty();
-
-        let z = Expr::BinaryOp {
-            left: x,
-            right: y,
-            op: Operator::Plus,
-        };
-        assert_eq!(z.get_type(&schema)?, DataType::Float64);
-
-        let x = lit(10.);
-        let y = lit(12);
-
-        let z = Expr::BinaryOp {
-            left: y,
-            right: x,
-            op: Operator::Plus,
-        };
-        assert_eq!(z.get_type(&schema)?, DataType::Float64);
-
-        Ok(())
-    }
-
-    #[test]
-    fn check_arithmetic_type_with_columns() -> DaftResult<()> {
-        let x = col("x");
-        let y = col("y");
-        let schema = Schema::new(vec![
-            Field::new("x", DataType::Float64),
-            Field::new("y", DataType::Int64),
-        ])?;
-
-        let z = Expr::BinaryOp {
-            left: x,
-            right: y,
-            op: Operator::Plus,
-        };
-        assert_eq!(z.get_type(&schema)?, DataType::Float64);
-
-        let x = col("x");
-        let y = col("y");
-
-        let z = Expr::BinaryOp {
-            left: y,
-            right: x,
-            op: Operator::Plus,
-        };
-        assert_eq!(z.get_type(&schema)?, DataType::Float64);
-
-        Ok(())
-    }
 }

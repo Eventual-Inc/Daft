@@ -78,7 +78,7 @@ pub fn read_json_bulk(
         // Launch a read task per URI, throttling the number of concurrent file reads to num_parallel tasks.
         let task_stream = futures::stream::iter(uris.iter().map(|uri| {
             let (uri, convert_options, parse_options, read_options, io_client, io_stats) = (
-                uri.to_string(),
+                (*uri).to_string(),
                 convert_options.clone(),
                 parse_options.clone(),
                 read_options.clone(),
@@ -164,7 +164,7 @@ pub(crate) fn tables_concat(mut tables: Vec<Table>) -> DaftResult<Table> {
     Table::new_with_size(
         first_table.schema.clone(),
         new_series,
-        tables.iter().map(|t| t.len()).sum(),
+        tables.iter().map(daft_table::Table::len).sum(),
     )
 }
 
@@ -205,7 +205,7 @@ async fn read_json_single_into_table(
                 let required_columns_for_predicate = get_required_columns(predicate);
                 for rc in required_columns_for_predicate {
                     if include_columns.iter().all(|c| c.as_str() != rc.as_str()) {
-                        include_columns.push(rc)
+                        include_columns.push(rc);
                     }
                 }
             }
@@ -312,7 +312,7 @@ pub async fn stream_json(
                 let required_columns_for_predicate = get_required_columns(predicate);
                 for rc in required_columns_for_predicate {
                     if include_columns.iter().all(|c| c.as_str() != rc.as_str()) {
-                        include_columns.push(rc)
+                        include_columns.push(rc);
                     }
                 }
             }
@@ -595,7 +595,7 @@ mod tests {
         // Get consolidated schema from parsed JSON.
         let mut column_types: IndexMap<String, HashSet<arrow2::datatypes::DataType>> =
             IndexMap::new();
-        parsed.iter().for_each(|record| {
+        for record in &parsed {
             let schema = infer_records_schema(record).unwrap();
             for field in schema.fields {
                 match column_types.entry(field.name) {
@@ -609,7 +609,7 @@ mod tests {
                     }
                 }
             }
-        });
+        }
         let fields = column_types_map_to_fields(column_types);
         let schema: arrow2::datatypes::Schema = fields.into();
         // Apply projection to schema.
@@ -673,7 +673,7 @@ mod tests {
         let file = format!(
             "{}/test/iris_tiny.jsonl{}",
             env!("CARGO_MANIFEST_DIR"),
-            compression.map_or("".to_string(), |ext| format!(".{}", ext))
+            compression.map_or(String::new(), |ext| format!(".{}", ext))
         );
 
         let mut io_config = IOConfig::default();
@@ -1193,7 +1193,7 @@ mod tests {
     ) -> DaftResult<()> {
         let file = format!(
             "s3://daft-public-data/test_fixtures/json-dev/iris_tiny.jsonl{}",
-            compression.map_or("".to_string(), |ext| format!(".{}", ext))
+            compression.map_or(String::new(), |ext| format!(".{}", ext))
         );
 
         let mut io_config = IOConfig::default();

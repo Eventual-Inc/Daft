@@ -102,7 +102,7 @@ where
         if display.is_empty() {
             return Err(fmt::Error);
         }
-        writeln!(self.output, r#"{}["{}"]"#, id, display)?;
+        writeln!(self.output, r#"{id}["{display}"]"#)?;
 
         self.nodes.insert(node.id(), id);
         Ok(())
@@ -146,21 +146,18 @@ where
     }
 
     pub fn fmt(&mut self, node: &dyn TreeDisplay) -> fmt::Result {
-        match &self.subgraph_options {
-            Some(SubgraphOptions { name, subgraph_id }) => {
-                writeln!(self.output, r#"subgraph {subgraph_id}["{name}"]"#)?;
-                self.fmt_node(node)?;
-                writeln!(self.output, "end")?;
+        if let Some(SubgraphOptions { name, subgraph_id }) = &self.subgraph_options {
+            writeln!(self.output, r#"subgraph {subgraph_id}["{name}"]"#)?;
+            self.fmt_node(node)?;
+            writeln!(self.output, "end")?;
+        } else {
+            if self.bottom_up {
+                writeln!(self.output, "flowchart BT")?;
+            } else {
+                writeln!(self.output, "flowchart TD")?;
             }
-            None => {
-                if self.bottom_up {
-                    writeln!(self.output, "flowchart BT")?;
-                } else {
-                    writeln!(self.output, "flowchart TD")?;
-                }
 
-                self.fmt_node(node)?;
-            }
+            self.fmt_node(node)?;
         }
         Ok(())
     }

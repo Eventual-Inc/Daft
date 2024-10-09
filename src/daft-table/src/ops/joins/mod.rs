@@ -52,9 +52,8 @@ fn add_non_join_key_columns(
     for field in left.schema.fields.values() {
         if join_keys.contains(&field.name) {
             continue;
-        } else {
-            join_series.push(left.get_column(&field.name)?.take(&lidx)?);
         }
+        join_series.push(left.get_column(&field.name)?.take(&lidx)?);
     }
 
     drop(lidx);
@@ -62,9 +61,9 @@ fn add_non_join_key_columns(
     for field in right.schema.fields.values() {
         if join_keys.contains(&field.name) {
             continue;
-        } else {
-            join_series.push(right.get_column(&field.name)?.take(&ridx)?);
         }
+
+        join_series.push(right.get_column(&field.name)?.take(&ridx)?);
     }
 
     Ok(join_series)

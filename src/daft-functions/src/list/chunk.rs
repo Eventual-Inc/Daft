@@ -51,6 +51,7 @@ impl ScalarUDF for ListChunk {
     }
 }
 
+#[must_use]
 pub fn list_chunk(expr: ExprRef, size: usize) -> ExprRef {
     ScalarFunction::new(ListChunk { size }, vec![expr]).into()
 }

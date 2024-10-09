@@ -16,6 +16,7 @@ pub struct AdaptivePhysicalPlanScheduler {
 }
 
 impl AdaptivePhysicalPlanScheduler {
+    #[must_use]
     pub fn new(logical_plan: Arc<LogicalPlan>, cfg: Arc<DaftExecutionConfig>) -> Self {
         Self {
             planner: AdaptivePlanner::new(logical_plan, cfg),
@@ -71,8 +72,8 @@ impl AdaptivePhysicalPlanScheduler {
             );
 
             self.planner.update(MaterializedResults {
-                in_memory_info,
                 source_id,
+                in_memory_info,
             })?;
             Ok(())
         })

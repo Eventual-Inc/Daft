@@ -35,6 +35,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction_bound!(python::date_lit, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(python::time_lit, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(python::timestamp_lit, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(python::duration_lit, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(python::decimal_lit, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(python::series_lit, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(python::stateless_udf, parent)?)?;

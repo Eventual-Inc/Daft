@@ -40,7 +40,7 @@ pub trait IntermediateOperator: Send + Sync {
     }
 }
 
-pub(crate) struct IntermediateNode {
+pub struct IntermediateNode {
     intermediate_op: Arc<dyn IntermediateOperator>,
     children: Vec<Box<dyn PipelineNode>>,
     runtime_stats: Arc<RuntimeStatsContext>,
@@ -142,7 +142,7 @@ impl IntermediateNode {
             let mut buffer = OperatorBuffer::new(morsel_size);
             while let Some(morsel) = receiver.recv().await {
                 if morsel.should_broadcast() {
-                    for worker_sender in worker_senders.iter() {
+                    for worker_sender in &worker_senders {
                         let _ = worker_sender.send((idx, morsel.clone())).await;
                     }
                 } else {
@@ -170,13 +170,11 @@ impl TreeDisplay for IntermediateNode {
         use std::fmt::Write;
         let mut display = String::new();
         writeln!(display, "{}", self.intermediate_op.name()).unwrap();
-        use common_display::DisplayLevel::*;
-        match level {
-            Compact => {}
-            _ => {
-                let rt_result = self.runtime_stats.result();
-                rt_result.display(&mut display, true, true, true).unwrap();
-            }
+        use common_display::DisplayLevel::Compact;
+        if matches!(level, Compact) {
+        } else {
+            let rt_result = self.runtime_stats.result();
+            rt_result.display(&mut display, true, true, true).unwrap();
         }
         display
     }
@@ -188,7 +186,10 @@ impl TreeDisplay for IntermediateNode {
 
 impl PipelineNode for IntermediateNode {
     fn children(&self) -> Vec<&dyn PipelineNode> {
-        self.children.iter().map(|v| v.as_ref()).collect()
+        self.children
+            .iter()
+            .map(std::convert::AsRef::as_ref)
+            .collect()
     }
 
     fn name(&self) -> &'static str {
@@ -201,7 +202,7 @@ impl PipelineNode for IntermediateNode {
         runtime_handle: &mut ExecutionRuntimeHandle,
     ) -> crate::Result<PipelineChannel> {
         let mut child_result_receivers = Vec::with_capacity(self.children.len());
-        for child in self.children.iter_mut() {
+        for child in &mut self.children {
             let child_result_channel = child.start(maintain_order, runtime_handle)?;
             child_result_receivers
                 .push(child_result_channel.get_receiver_with_stats(&self.runtime_stats));

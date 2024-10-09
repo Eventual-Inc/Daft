@@ -75,6 +75,54 @@ pub fn display_timestamp(val: i64, unit: &TimeUnit, timezone: &Option<String>) -
     )
 }
 
+const UNITS: [&str; 4] = ["d", "h", "m", "s"];
+const SIZES: [[i64; 4]; 4] = [
+    [
+        86_400_000_000_000,
+        3_600_000_000_000,
+        60_000_000_000,
+        1_000_000_000,
+    ], // Nanoseconds
+    [86_400_000_000, 3_600_000_000, 60_000_000, 1_000_000], // Microseconds
+    [86_400_000, 3_600_000, 60_000, 1_000],                 // Milliseconds
+    [86_400, 3_600, 60, 1],                                 // Seconds
+];
+
+pub fn display_duration(val: i64, unit: &TimeUnit) -> String {
+    let mut output = String::new();
+    let (sizes, suffix, remainder_divisor) = match unit {
+        TimeUnit::Nanoseconds => (&SIZES[0], "ns", 1_000_000_000),
+        TimeUnit::Microseconds => (&SIZES[1], "µs", 1_000_000),
+        TimeUnit::Milliseconds => (&SIZES[2], "ms", 1_000),
+        TimeUnit::Seconds => (&SIZES[3], "s", 1),
+    };
+
+    if val == 0 {
+        return format!("0{}", suffix);
+    }
+
+    for (i, &size) in sizes.iter().enumerate() {
+        let whole_num = if i == 0 {
+            val / size
+        } else {
+            (val % sizes[i - 1]) / size
+        };
+        if whole_num != 0 {
+            output.push_str(&format!("{}{}", whole_num, UNITS[i]));
+            if val % size != 0 {
+                output.push(' ');
+            }
+        }
+    }
+
+    let remainder = val % remainder_divisor;
+    if remainder != 0 && suffix != "s" {
+        output.push_str(&format!("{}{}", remainder, suffix));
+    }
+
+    output
+}
+
 pub fn display_decimal128(val: i128, _precision: u8, scale: i8) -> String {
     if scale < 0 {
         unimplemented!();
@@ -93,6 +141,7 @@ pub fn display_decimal128(val: i128, _precision: u8, scale: i8) -> String {
     }
 }
 
+#[must_use]
 pub fn display_series_literal(series: &Series) -> String {
     if !series.is_empty() {
         format!(
