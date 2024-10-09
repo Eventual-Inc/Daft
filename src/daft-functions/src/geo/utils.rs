@@ -54,7 +54,7 @@ impl<'a> Iterator for GeometryArrayIter<'a> {
             match series {
                 Some(series) => {
                     let bytes = series.u8().unwrap().as_slice();
-                    Some(Some(wkb::Wkb(bytes).to_geo().unwrap()))
+                    Some(Some(wkb::Ewkb(bytes).to_geo().unwrap()))
                 }
                 None => Some(None),
             }
@@ -81,7 +81,8 @@ impl GeoSeriesHelper {
 
     fn push(&mut self, geo: Geometry) {
         let coord_dims = geo.dims();
-        let geo_bytes = geo.to_wkb(coord_dims).unwrap();
+        let srid = geo.srid();
+        let geo_bytes = geo.to_ewkb(coord_dims, srid).unwrap();
         self.geo_vec.extend(geo_bytes.iter());
         self.offsets
             .push(self.offsets.last().unwrap() + geo_bytes.len() as i64);
@@ -117,51 +118,51 @@ pub fn decode_series(s: &Series, raise_error_on_failure: bool) -> DaftResult<Ser
                 .as_any()
                 .downcast_ref::<arrow2::array::BinaryArray<i64>>()
                 .unwrap();
-            let mut gh = GeoSeriesHelper::new(arrow_array.len());
+            let mut geo_helper = GeoSeriesHelper::new(arrow_array.len());
             for bytes in arrow_array.iter() {
                 match bytes {
-                    Some(bytes) => match wkb::Wkb(bytes).to_geo() {
-                        Ok(geo) => gh.push(geo),
+                    Some(bytes) => match wkb::Ewkb(bytes).to_geo() {
+                        Ok(geo) => geo_helper.push(geo),
                         Err(_) => {
                             if raise_error_on_failure {
                                 return Err(DaftError::ValueError(
                                     "Could not decode WKB".to_string(),
                                 ));
                             }
-                            gh.null()
+                            geo_helper.null()
                         }
                     },
-                    None => gh.null(),
+                    None => geo_helper.null(),
                 }
             }
-            gh.into_series(binary.name())
+            geo_helper.into_series(binary.name())
         }
         DataType::Utf8 => {
-            let strings = s.utf8()?;
-            let mut gh = GeoSeriesHelper::new(strings.len());
-            let s = strings
+            let utf8 = s.utf8()?;
+            let mut geo_helper = GeoSeriesHelper::new(utf8.len());
+            let arrow_array = utf8
                 .data()
                 .as_any()
                 .downcast_ref::<arrow2::array::Utf8Array<i64>>()
                 .unwrap();
-            for x in s.iter() {
-                match x {
-                    Some(x) => match wkt::Wkt(x).to_geo() {
-                        Ok(geo) => gh.push(geo),
+            for string in arrow_array.iter() {
+                match string {
+                    Some(string) => match wkt::Wkt(string).to_geo() {
+                        Ok(geo) => geo_helper.push(geo),
                         Err(_) => {
                             if raise_error_on_failure {
                                 return Err(DaftError::ValueError(format!(
                                     "Could not decode WKT text {}",
-                                    x
+                                    string
                                 )));
                             }
-                            gh.null();
+                            geo_helper.null();
                         }
                     },
-                    None => gh.null(),
+                    None => geo_helper.null(),
                 }
             }
-            gh.into_series(strings.name())
+            geo_helper.into_series(utf8.name())
         }
         other => Err(DaftError::TypeError(format!(
             "GeoDecode can only decode Binary or Utf8 arrays, got {}",
@@ -171,32 +172,23 @@ pub fn decode_series(s: &Series, raise_error_on_failure: bool) -> DaftResult<Ser
 }
 
 fn to_wkt(s: &Series) -> DaftResult<Series> {
-    let geo = s.geometry()?;
-    let mut wkt_vec: Vec<Option<String>> = Vec::with_capacity(geo.len());
-    for g in GeometryArrayIter::new(geo) {
-        match g {
-            Some(g) => {
-                let wkt = g.to_wkt().unwrap();
-                wkt_vec.push(Some(wkt));
-            }
-            None => wkt_vec.push(None),
-        }
-    }
-    let utf8_array = arrow2::array::Utf8Array::<i64>::from(wkt_vec);
+    let geo_array = s.geometry()?;
+    let string_iter =
+        GeometryArrayIter::new(geo_array).map(|geo| geo.map(|geo| geo.to_wkt().unwrap()));
     Series::from_arrow(
-        Arc::new(Field::new(geo.name(), DataType::Utf8)),
-        Box::new(utf8_array),
+        Arc::new(Field::new(geo_array.name(), DataType::Utf8)),
+        Box::new(arrow2::array::Utf8Array::<i64>::from_iter(string_iter)),
     )
 }
 
 fn to_wkb(s: &Series) -> DaftResult<Series> {
-    let geo = s.geometry()?;
-    let bytes_iter = geo
+    let geo_array = s.geometry()?;
+    let bytes_iter = geo_array
         .physical
         .into_iter()
         .map(|x| x.map(|x| x.u8().unwrap().as_slice().to_vec()));
     Series::from_arrow(
-        Arc::new(Field::new(geo.name(), DataType::Binary)),
+        Arc::new(Field::new(geo_array.name(), DataType::Binary)),
         Box::new(arrow2::array::BinaryArray::<i64>::from_iter(bytes_iter)),
     )
 }
@@ -256,17 +248,17 @@ where
     F: Fn(Geometry) -> Option<Geometry>,
 {
     let geo_array = s.geometry()?;
-    let mut gh = GeoSeriesHelper::new(geo_array.len());
+    let mut geo_helper = GeoSeriesHelper::new(geo_array.len());
     for geo in GeometryArrayIter::new(geo_array) {
         match geo {
-            Some(g) => match op_fn(g) {
-                Some(result) => gh.push(result),
-                None => gh.null(),
+            Some(geo) => match op_fn(geo) {
+                Some(result) => geo_helper.push(result),
+                None => geo_helper.null(),
             },
-            _ => gh.null(),
+            _ => geo_helper.null(),
         }
     }
-    gh.into_series(geo_array.name())
+    geo_helper.into_series(geo_array.name())
 }
 
 fn geo_binary_to_scalar<T: NativeType, F>(
@@ -307,10 +299,9 @@ where
             (Some(l), Some(r)) => Some(op_fn(l, r)),
             _ => None,
         });
-    let arrow_array = arrow2::array::BooleanArray::from_iter(scalar_iter);
     Series::from_arrow(
         Arc::new(Field::new(lhs_array.name(), DataType::Boolean)),
-        Box::new(arrow_array),
+        Box::new(arrow2::array::BooleanArray::from_iter(scalar_iter)),
     )
 }
 
@@ -320,15 +311,15 @@ where
 {
     let lhs_array = lhs.geometry()?;
     let rhs_array = rhs.geometry()?;
-    let mut gh = GeoSeriesHelper::new(lhs_array.len());
+    let mut geo_helper = GeoSeriesHelper::new(lhs_array.len());
     for (lhg, rhg) in GeometryArrayIter::new(lhs_array).zip(GeometryArrayIter::new(rhs_array)) {
         match (lhg, rhg) {
             (Some(l), Some(r)) => match op_fn(l, r) {
-                Some(g) => gh.push(g),
-                None => gh.null(),
+                Some(geo) => geo_helper.push(geo),
+                None => geo_helper.null(),
             },
-            _ => gh.null(),
+            _ => geo_helper.null(),
         }
     }
-    gh.into_series(lhs_array.name())
+    geo_helper.into_series(lhs_array.name())
 }
