@@ -45,6 +45,8 @@ fn fmt_tree_gitstyle<'a, W: fmt::Write + 'a>(
     s: &'a mut W,
     level: crate::DisplayLevel,
 ) -> fmt::Result {
+    use terminal_size::{terminal_size, Width};
+
     // Print the current node.
     // e.g. | | * <node contents line 1>
     //      | | | <node contents line 2>
@@ -52,7 +54,6 @@ fn fmt_tree_gitstyle<'a, W: fmt::Write + 'a>(
     let desc = node.display_as(level);
     let lines = desc.lines();
 
-    use terminal_size::{terminal_size, Width};
     let size = terminal_size();
     let term_width = if let Some((Width(w), _)) = size {
         w as usize

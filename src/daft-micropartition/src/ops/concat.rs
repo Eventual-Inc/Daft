@@ -30,7 +30,7 @@ impl MicroPartition {
 
         let mut all_tables = vec![];
 
-        for m in mps.iter() {
+        for m in mps {
             let tables = m.tables_or_read(io_stats.clone())?;
             all_tables.extend_from_slice(tables.as_slice());
         }
@@ -45,7 +45,7 @@ impl MicroPartition {
                 all_stats = Some(curr_stats.union(stats)?);
             }
         }
-        let new_len = all_tables.iter().map(|t| t.len()).sum();
+        let new_len = all_tables.iter().map(daft_table::Table::len).sum();
 
         Ok(Self {
             schema: mps.first().unwrap().schema.clone(),

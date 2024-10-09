@@ -74,8 +74,8 @@ enum OuterHashJoinProbeState {
 
 impl OuterHashJoinProbeState {
     fn initialize_probe_state(&mut self, probe_state: Arc<ProbeState>, needs_bitmap: bool) {
-        let tables = probe_state.get_tables().clone();
-        if let Self::Building = self {
+        let tables = probe_state.get_tables();
+        if matches!(self, Self::Building) {
             *self = Self::ReadyToProbe(
                 probe_state,
                 if needs_bitmap {
@@ -161,7 +161,7 @@ impl OuterHashJoinProbeSink {
     fn probe_left_right(
         &self,
         input: &Arc<MicroPartition>,
-        state: &mut OuterHashJoinProbeState,
+        state: &OuterHashJoinProbeState,
     ) -> DaftResult<Arc<MicroPartition>> {
         let (probe_table, tables) = {
             let probe_state = state.get_probe_state();

@@ -13,14 +13,14 @@ use crate::{
 };
 
 #[derive(Default)]
-pub(crate) struct RuntimeStatsContext {
+pub struct RuntimeStatsContext {
     rows_received: AtomicU64,
     rows_emitted: AtomicU64,
     cpu_us: AtomicU64,
 }
 
 #[derive(Debug)]
-pub(crate) struct RuntimeStats {
+pub struct RuntimeStats {
     pub rows_received: u64,
     pub rows_emitted: u64,
     pub cpu_us: u64,
@@ -53,7 +53,7 @@ impl RuntimeStats {
 
         if cpu_time {
             let tms = (self.cpu_us as f32) / 1000f32;
-            writeln!(w, "CPU Time = {:.2}ms", tms)?;
+            writeln!(w, "CPU Time = {tms:.2}ms")?;
         }
 
         Ok(())
@@ -108,7 +108,7 @@ impl RuntimeStatsContext {
     }
 }
 
-pub(crate) struct CountingSender {
+pub struct CountingSender {
     sender: Sender<PipelineResultType>,
     rt: Arc<RuntimeStatsContext>,
 }
@@ -134,7 +134,7 @@ impl CountingSender {
     }
 }
 
-pub(crate) struct CountingReceiver {
+pub struct CountingReceiver {
     receiver: PipelineReceiver,
     rt: Arc<RuntimeStatsContext>,
 }

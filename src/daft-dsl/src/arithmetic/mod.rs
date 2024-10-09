@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod tests;
+
 use crate::{Expr, ExprRef, Operator};
 
 macro_rules! impl_expr_op {
@@ -21,23 +24,3 @@ impl_expr_op!(sub, Minus);
 impl_expr_op!(mul, Multiply);
 impl_expr_op!(div, TrueDivide);
 impl_expr_op!(rem, Modulus);
-
-#[cfg(test)]
-mod tests {
-    use common_error::{DaftError, DaftResult};
-
-    use crate::{col, Expr};
-
-    #[test]
-    fn check_add_expr_type() -> DaftResult<()> {
-        let a = col("a");
-        let b = col("b");
-        let c = a.add(b);
-        match c.as_ref() {
-            Expr::BinaryOp { .. } => Ok(()),
-            other => Err(DaftError::ValueError(format!(
-                "expected expression to be a binary op expression, got {other:?}"
-            ))),
-        }
-    }
-}

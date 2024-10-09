@@ -52,6 +52,7 @@ macro_rules! log {
             }
         }
 
+        #[must_use]
         pub fn $name(input: ExprRef) -> ExprRef {
             ScalarFunction::new($variant, vec![input]).into()
         }
@@ -101,6 +102,7 @@ impl ScalarUDF for Log {
     }
 }
 
+#[must_use]
 pub fn log(input: ExprRef, base: f64) -> ExprRef {
     ScalarFunction::new(Log(FloatWrapper(base)), vec![input]).into()
 }

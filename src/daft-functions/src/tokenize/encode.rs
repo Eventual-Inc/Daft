@@ -26,7 +26,7 @@ fn tokenize_encode_array(
     let mut offsets: Vec<i64> = Vec::with_capacity(arr.len() + 1);
     offsets.push(0);
     let self_arrow = arr.as_arrow();
-    for s_opt in self_arrow.iter() {
+    for s_opt in self_arrow {
         if let Some(s) = s_opt {
             let tokens = bpe.encode(s, use_special_tokens);
             let tokens_iter = tokens.iter().map(|t| Some(*t));
@@ -70,12 +70,12 @@ fn tokenize_encode_series(
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub(super) struct TokenizeEncodeFunction {
-    pub(super) tokens_path: String,
-    pub(super) io_config: Option<Arc<IOConfig>>,
-    pub(super) pattern: Option<String>,
-    pub(super) special_tokens: Option<String>,
-    pub(super) use_special_tokens: bool,
+pub struct TokenizeEncodeFunction {
+    pub tokens_path: String,
+    pub io_config: Option<Arc<IOConfig>>,
+    pub pattern: Option<String>,
+    pub special_tokens: Option<String>,
+    pub use_special_tokens: bool,
 }
 
 #[typetag::serde]

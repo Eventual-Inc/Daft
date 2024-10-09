@@ -51,6 +51,7 @@ impl ScalarUDF for ListMin {
     }
 }
 
+#[must_use]
 pub fn list_min(expr: ExprRef) -> ExprRef {
     ScalarFunction::new(ListMin {}, vec![expr]).into()
 }

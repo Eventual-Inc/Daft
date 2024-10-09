@@ -32,8 +32,7 @@ impl ScalarUDF for ImageToMode {
                     }
                     _ => {
                         return Err(DaftError::TypeError(format!(
-                        "ToMode can only operate on ImageArrays and FixedShapeImageArrays, got {}",
-                        field
+                        "ToMode can only operate on ImageArrays and FixedShapeImageArrays, got {field}"
                     )))
                     }
                 };
@@ -57,6 +56,7 @@ impl ScalarUDF for ImageToMode {
     }
 }
 
+#[must_use]
 pub fn image_to_mode(expr: ExprRef, mode: ImageMode) -> ExprRef {
     ScalarFunction::new(ImageToMode { mode }, vec![expr]).into()
 }

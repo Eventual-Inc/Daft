@@ -214,7 +214,7 @@ impl DaftConcatAggable for DataArray<Utf8Type> {
 
 #[cfg(test)]
 mod test {
-    use std::iter::repeat;
+    use std::{iter, iter::repeat};
 
     use common_error::DaftResult;
 
@@ -231,7 +231,9 @@ mod test {
             Field::new("foo", DataType::List(Box::new(DataType::Int64))),
             Int64Array::from((
                 "item",
-                Box::new(arrow2::array::Int64Array::from_iter([].iter())),
+                Box::new(arrow2::array::Int64Array::from_iter(iter::empty::<
+                    &Option<i64>,
+                >())),
             ))
             .into_series(),
             arrow2::offset::OffsetsBuffer::<i64>::try_from(vec![0, 0, 0, 0])?,

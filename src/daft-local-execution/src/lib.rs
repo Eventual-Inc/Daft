@@ -25,6 +25,7 @@ pub struct ExecutionRuntimeHandle {
 }
 
 impl ExecutionRuntimeHandle {
+    #[must_use]
     pub fn new(default_morsel_size: usize) -> Self {
         Self {
             worker_set: create_worker_set(),
@@ -49,6 +50,7 @@ impl ExecutionRuntimeHandle {
         self.worker_set.shutdown().await;
     }
 
+    #[must_use]
     pub fn default_morsel_size(&self) -> usize {
         self.default_morsel_size
     }
@@ -68,6 +70,9 @@ pub enum Error {
     OneShotRecvError {
         source: tokio::sync::oneshot::error::RecvError,
     },
+    #[cfg(feature = "python")]
+    #[snafu(display("PyIOError: {}", source))]
+    PyIO { source: PyErr },
     #[snafu(display("Error creating pipeline from {}: {}", plan_name, source))]
     PipelineCreationError {
         source: DaftError,

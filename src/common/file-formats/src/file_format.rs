@@ -39,7 +39,7 @@ impl FromStr for FileFormat {
     type Err = DaftError;
 
     fn from_str(file_format: &str) -> DaftResult<Self> {
-        use FileFormat::*;
+        use FileFormat::{Csv, Database, Json, Parquet};
 
         if file_format.trim().eq_ignore_ascii_case("parquet") {
             Ok(Parquet)
@@ -51,8 +51,7 @@ impl FromStr for FileFormat {
             Ok(Database)
         } else {
             Err(DaftError::TypeError(format!(
-                "FileFormat {} not supported!",
-                file_format
+                "FileFormat {file_format} not supported!"
             )))
         }
     }

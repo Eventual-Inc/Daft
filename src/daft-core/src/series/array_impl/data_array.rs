@@ -12,7 +12,7 @@ use crate::{
         DataArray,
     },
     datatypes::{DaftArrowBackedType, DataType, FixedSizeBinaryArray},
-    series::{array_impl::binary_ops::SeriesBinaryOps, series_like::SeriesLike},
+    series::series_like::SeriesLike,
     with_match_integer_daft_types,
 };
 
@@ -158,51 +158,6 @@ macro_rules! impl_series_like_for_data_array {
                     Some(groups) => Ok(self.0.grouped_list(groups)?.into_series()),
                     None => Ok(self.0.list()?.into_series()),
                 }
-            }
-
-            fn add(&self, rhs: &Series) -> DaftResult<Series> {
-                SeriesBinaryOps::add(self, rhs)
-            }
-            fn sub(&self, rhs: &Series) -> DaftResult<Series> {
-                SeriesBinaryOps::sub(self, rhs)
-            }
-            fn mul(&self, rhs: &Series) -> DaftResult<Series> {
-                SeriesBinaryOps::mul(self, rhs)
-            }
-            fn div(&self, rhs: &Series) -> DaftResult<Series> {
-                SeriesBinaryOps::div(self, rhs)
-            }
-            fn rem(&self, rhs: &Series) -> DaftResult<Series> {
-                SeriesBinaryOps::rem(self, rhs)
-            }
-
-            fn and(&self, rhs: &Series) -> DaftResult<Series> {
-                SeriesBinaryOps::and(self, rhs)
-            }
-            fn or(&self, rhs: &Series) -> DaftResult<Series> {
-                SeriesBinaryOps::or(self, rhs)
-            }
-            fn xor(&self, rhs: &Series) -> DaftResult<Series> {
-                SeriesBinaryOps::xor(self, rhs)
-            }
-
-            fn equal(&self, rhs: &Series) -> DaftResult<BooleanArray> {
-                SeriesBinaryOps::equal(self, rhs)
-            }
-            fn not_equal(&self, rhs: &Series) -> DaftResult<BooleanArray> {
-                SeriesBinaryOps::not_equal(self, rhs)
-            }
-            fn lt(&self, rhs: &Series) -> DaftResult<BooleanArray> {
-                SeriesBinaryOps::lt(self, rhs)
-            }
-            fn lte(&self, rhs: &Series) -> DaftResult<BooleanArray> {
-                SeriesBinaryOps::lte(self, rhs)
-            }
-            fn gt(&self, rhs: &Series) -> DaftResult<BooleanArray> {
-                SeriesBinaryOps::gt(self, rhs)
-            }
-            fn gte(&self, rhs: &Series) -> DaftResult<BooleanArray> {
-                SeriesBinaryOps::gte(self, rhs)
             }
         }
     };

@@ -1,5 +1,5 @@
 use common_error::{DaftError, DaftResult};
-use daft_core::{datatypes::DataType, prelude::*};
+use daft_core::prelude::*;
 #[cfg(feature = "python")]
 use pyo3::{
     types::{PyAnyMethods, PyModule},

@@ -545,6 +545,10 @@ jobs:
       matrix:
         python-version: ['3.8'] # can't use 3.7 due to requiring anon mode for adlfs
         daft-runner: [py, ray]
+        enable-native-executor: [0, 1]
+        exclude:
+        - daft-runner: ray
+          enable-native-executor: 1
     steps:
     - uses: actions/checkout@v4
       with:
@@ -583,6 +587,7 @@ jobs:
         pytest tests/integration/sql -m 'integration or not integration' --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        DAFT_ENABLE_NATIVE_EXECUTOR: ${{ matrix.enable-native-executor }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.26.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
@@ -754,7 +759,7 @@ jobs:
         channel: stable
 
     - name: Install Machete
-      run: cargo +stable install cargo-machete
+      run: cargo +stable install cargo-machete@0.7.0 --locked
     - name: Run Machete
       run: cargo machete --with-metadata
 

@@ -53,6 +53,17 @@ def test_columns_after_join(make_df):
     assert set(joined_df2.schema().column_names()) == set(["A", "B"])
 
 
+def test_rename_join_keys_in_dataframe(make_df):
+    df1 = make_df({"A": [1, 2], "B": [2, 2]})
+
+    df2 = make_df({"A": [1, 2]})
+    joined_df1 = df1.join(df2, left_on=["A", "B"], right_on=["A", "A"])
+    joined_df2 = df1.join(df2, left_on=["B", "A"], right_on=["A", "A"])
+
+    assert set(joined_df1.schema().column_names()) == set(["A", "B"])
+    assert set(joined_df2.schema().column_names()) == set(["A", "B"])
+
+
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
 @pytest.mark.parametrize(
     "join_strategy",

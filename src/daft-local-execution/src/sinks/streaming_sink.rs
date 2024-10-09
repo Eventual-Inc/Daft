@@ -43,7 +43,7 @@ pub trait StreamingSink: Send + Sync {
     }
 }
 
-pub(crate) struct StreamingSinkNode {
+pub struct StreamingSinkNode {
     op: Arc<dyn StreamingSink>,
     name: &'static str,
     children: Vec<Box<dyn PipelineNode>>,
@@ -132,7 +132,7 @@ impl StreamingSinkNode {
         for (idx, mut receiver) in receivers.into_iter().enumerate() {
             while let Some(morsel) = receiver.recv().await {
                 if morsel.should_broadcast() {
-                    for worker_sender in worker_senders.iter() {
+                    for worker_sender in &worker_senders {
                         let _ = worker_sender.send((idx, morsel.clone())).await;
                     }
                 } else {
@@ -149,13 +149,11 @@ impl TreeDisplay for StreamingSinkNode {
         use std::fmt::Write;
         let mut display = String::new();
         writeln!(display, "{}", self.name()).unwrap();
-        use common_display::DisplayLevel::*;
-        match level {
-            Compact => {}
-            _ => {
-                let rt_result = self.runtime_stats.result();
-                rt_result.display(&mut display, true, true, true).unwrap();
-            }
+        use common_display::DisplayLevel::Compact;
+        if matches!(level, Compact) {
+        } else {
+            let rt_result = self.runtime_stats.result();
+            rt_result.display(&mut display, true, true, true).unwrap();
         }
         display
     }
@@ -169,7 +167,10 @@ impl TreeDisplay for StreamingSinkNode {
 
 impl PipelineNode for StreamingSinkNode {
     fn children(&self) -> Vec<&dyn PipelineNode> {
-        self.children.iter().map(|v| v.as_ref()).collect()
+        self.children
+            .iter()
+            .map(std::convert::AsRef::as_ref)
+            .collect()
     }
 
     fn name(&self) -> &'static str {
@@ -182,7 +183,7 @@ impl PipelineNode for StreamingSinkNode {
         runtime_handle: &mut ExecutionRuntimeHandle,
     ) -> crate::Result<PipelineChannel> {
         let mut child_result_receivers = Vec::with_capacity(self.children.len());
-        for child in self.children.iter_mut() {
+        for child in &mut self.children {
             let child_result_channel = child.start(maintain_order, runtime_handle)?;
             child_result_receivers
                 .push(child_result_channel.get_receiver_with_stats(&self.runtime_stats.clone()));

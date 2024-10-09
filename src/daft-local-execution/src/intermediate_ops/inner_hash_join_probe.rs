@@ -20,7 +20,7 @@ enum InnerHashJoinProbeState {
 
 impl InnerHashJoinProbeState {
     fn set_probe_state(&mut self, probe_state: Arc<ProbeState>) {
-        if let Self::Building = self {
+        if matches!(self, Self::Building) {
             *self = Self::ReadyToProbe(probe_state);
         } else {
             panic!("InnerHashJoinProbeState should only be in Building state when setting table")
@@ -88,7 +88,7 @@ impl InnerHashJoinProbeOperator {
     fn probe_inner(
         &self,
         input: &Arc<MicroPartition>,
-        state: &mut InnerHashJoinProbeState,
+        state: &InnerHashJoinProbeState,
     ) -> DaftResult<Arc<MicroPartition>> {
         let (probe_table, tables) = {
             let probe_state = state.get_probe_state();

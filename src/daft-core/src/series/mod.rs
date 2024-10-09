@@ -3,6 +3,7 @@ mod from;
 mod ops;
 mod serdes;
 mod series_like;
+mod utils;
 use std::sync::Arc;
 
 pub use array_impl::IntoSeries;
@@ -37,6 +38,12 @@ impl PartialEq for Series {
 }
 
 impl Series {
+    /// Exports this Series into an Arrow arrow that is corrected for the Arrow type system.
+    /// For example, Daft's TimestampArray is a logical type that is backed by an Int64Array Physical array.
+    /// If we were to call `.as_arrow()` or `.physical`on the TimestampArray, we would get an Int64Array that represented the time units.
+    /// However if we want to export our Timestamp array to another arrow system like arrow2 kernels or python, duckdb or more.
+    /// We should convert it back to the canonical arrow dtype of Timestamp rather than Int64.
+    /// To get the internal physical type without conversion, see `as_arrow()`.
     pub fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
         self.inner.to_arrow()
     }
@@ -80,6 +87,7 @@ impl Series {
         self.inner.name()
     }
 
+    #[must_use]
     pub fn rename<S: AsRef<str>>(&self, name: S) -> Self {
         self.inner.rename(name.as_ref())
     }
@@ -114,6 +122,13 @@ impl Series {
 
     pub fn validity(&self) -> Option<&arrow2::bitmap::Bitmap> {
         self.inner.validity()
+    }
+
+    pub fn is_valid(&self, idx: usize) -> bool {
+        let Some(validity) = self.validity() else {
+            return true;
+        };
+        validity.get_bit(idx)
     }
 
     /// Attempts to downcast the Series to a primitive slice

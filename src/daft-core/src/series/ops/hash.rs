@@ -18,7 +18,7 @@ impl Series {
 
     pub fn hash_with_validity(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
         let hash = self.hash(seed)?;
-        let validity = if let DataType::Null = self.data_type() {
+        let validity = if matches!(self.data_type(), DataType::Null) {
             Some(Bitmap::new_zeroed(self.len()))
         } else {
             self.validity().cloned()

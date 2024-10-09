@@ -20,7 +20,7 @@ enum AntiSemiProbeState {
 
 impl AntiSemiProbeState {
     fn set_table(&mut self, table: &Arc<dyn Probeable>) {
-        if let Self::Building = self {
+        if matches!(self, Self::Building) {
             *self = Self::ReadyToProbe(table.clone());
         } else {
             panic!("AntiSemiProbeState should only be in Building state when setting table")
@@ -62,7 +62,7 @@ impl AntiSemiProbeOperator {
     fn probe_anti_semi(
         &self,
         input: &Arc<MicroPartition>,
-        state: &mut AntiSemiProbeState,
+        state: &AntiSemiProbeState,
     ) -> DaftResult<Arc<MicroPartition>> {
         let probe_set = state.get_probeable();
 
@@ -110,31 +110,24 @@ impl IntermediateOperator for AntiSemiProbeOperator {
         input: &PipelineResultType,
         state: Option<&mut Box<dyn IntermediateOperatorState>>,
     ) -> DaftResult<IntermediateOperatorResult> {
-        match idx {
-            0 => {
-                let state = state
-                    .expect("AntiSemiProbeOperator should have state")
-                    .as_any_mut()
-                    .downcast_mut::<AntiSemiProbeState>()
-                    .expect("AntiSemiProbeOperator state should be AntiSemiProbeState");
-                let probe_state = input.as_probe_state();
-                state.set_table(&probe_state.get_probeable());
-                Ok(IntermediateOperatorResult::NeedMoreInput(None))
+        let state = state
+            .expect("AntiSemiProbeOperator should have state")
+            .as_any_mut()
+            .downcast_mut::<AntiSemiProbeState>()
+            .expect("AntiSemiProbeOperator state should be AntiSemiProbeState");
+
+        if idx == 0 {
+            let probe_state = input.as_probe_state();
+            state.set_table(&probe_state.get_probeable());
+            Ok(IntermediateOperatorResult::NeedMoreInput(None))
+        } else {
+            let input = input.as_data();
+            if input.is_empty() {
+                let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));
+                return Ok(IntermediateOperatorResult::NeedMoreInput(Some(empty)));
             }
-            _ => {
-                let state = state
-                    .expect("AntiSemiProbeOperator should have state")
-                    .as_any_mut()
-                    .downcast_mut::<AntiSemiProbeState>()
-                    .expect("AntiSemiProbeOperator state should be AntiSemiProbeState");
-                let input = input.as_data();
-                if input.is_empty() {
-                    let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));
-                    return Ok(IntermediateOperatorResult::NeedMoreInput(Some(empty)));
-                }
-                let out = self.probe_anti_semi(input, state)?;
-                Ok(IntermediateOperatorResult::NeedMoreInput(Some(out)))
-            }
+            let out = self.probe_anti_semi(input, state)?;
+            Ok(IntermediateOperatorResult::NeedMoreInput(Some(out)))
         }
     }
 

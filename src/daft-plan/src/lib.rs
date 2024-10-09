@@ -19,7 +19,7 @@ pub mod source_info;
 mod test;
 mod treenode;
 
-pub use builder::{LogicalPlanBuilder, PyLogicalPlanBuilder};
+pub use builder::{LogicalPlanBuilder, ParquetScanBuilder, PyLogicalPlanBuilder};
 pub use daft_core::join::{JoinStrategy, JoinType};
 pub use logical_plan::{LogicalPlan, LogicalPlanRef};
 pub use partitioning::ClusteringSpec;
