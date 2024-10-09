@@ -31,7 +31,7 @@ impl std::ops::BitAnd for &ColumnRangeStatistics {
 
         let lt = self.to_truth_value();
         let rt = rhs.to_truth_value();
-        use TruthValue::*;
+        use TruthValue::{False, Maybe, True};
         let nv = match (lt, rt) {
             (False, _) => False,
             (_, False) => False,
@@ -55,7 +55,7 @@ impl std::ops::BitOr for &ColumnRangeStatistics {
         // +-------+-------+-------+------+
         let lt = self.to_truth_value();
         let rt = rhs.to_truth_value();
-        use TruthValue::*;
+        use TruthValue::{False, Maybe, True};
         let nv = match (lt, rt) {
             (False, False) => False,
             (True, _) => True,

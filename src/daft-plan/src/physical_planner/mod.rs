@@ -20,7 +20,7 @@ pub fn logical_to_physical(
 ) -> DaftResult<PhysicalPlanRef> {
     let mut visitor = PhysicalPlanTranslator {
         physical_children: vec![],
-        cfg: cfg.clone(),
+        cfg,
     };
     let _output = logical_plan.visit(&mut visitor)?;
     assert_eq!(

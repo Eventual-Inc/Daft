@@ -1,9 +1,8 @@
 //! Contains the declaration of [`Offset`]
 use std::hint::unreachable_unchecked;
 
-use crate::buffer::Buffer;
-use crate::error::Error;
 pub use crate::types::Offset;
+use crate::{buffer::Buffer, error::Error};
 
 /// A wrapper type of [`Vec<O>`] representing the invariants of Arrow's offsets.
 /// It is guaranteed to (sound to assume that):
@@ -144,10 +143,9 @@ impl<O: Offset> Offsets<O> {
     /// Returns the last offset of this container.
     #[inline]
     pub fn last(&self) -> &O {
-        match self.0.last() {
-            Some(element) => element,
-            None => unsafe { unreachable_unchecked() },
-        }
+        self.0
+            .last()
+            .unwrap_or_else(|| unsafe { unreachable_unchecked() })
     }
 
     /// Returns a range (start, end) corresponding to the position `index`
@@ -338,12 +336,45 @@ fn try_check_offsets<O: Offset>(offsets: &[O]) -> Result<(), Error> {
 /// * Every element is `>= 0`
 /// * element at position `i` is >= than element at position `i-1`.
 #[derive(Clone, PartialEq, Debug)]
-pub struct OffsetsBuffer<O: Offset>(Buffer<O>);
+pub struct OffsetsBuffer<O>(Buffer<O>);
 
 impl<O: Offset> Default for OffsetsBuffer<O> {
     #[inline]
     fn default() -> Self {
         Self(vec![O::zero()].into())
+    }
+}
+
+impl<O: Copy> OffsetsBuffer<O> {
+
+    /// Maps each offset to a new value, creating a new [`Self`].
+    ///
+    /// # Safety
+    ///
+    /// This function is marked as `unsafe` because it does not check whether the resulting offsets
+    /// maintain the invariants required by [`OffsetsBuffer`]. The caller must ensure that:
+    ///
+    /// - The resulting offsets are monotonically increasing.
+    /// - The first offset is zero.
+    /// - All offsets are non-negative.
+    ///
+    /// Violating these invariants can lead to undefined behavior when using the resulting [`OffsetsBuffer`].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use arrow2::offset::OffsetsBuffer;
+    /// # let offsets = unsafe { OffsetsBuffer::new_unchecked(vec![0, 2, 5, 7].into()) };
+    /// let doubled = unsafe { offsets.map_unchecked(|x| x * 2) };
+    /// assert_eq!(doubled.buffer().as_slice(), &[0, 4, 10, 14]);
+    /// ```
+    ///
+    /// Note that in this example, doubling the offsets maintains the required invariants,
+    /// but this may not be true for all transformations.
+    pub unsafe fn map_unchecked<T>(&self, f: impl Fn(O) -> T) -> OffsetsBuffer<T> {
+        let buffer = self.0.iter().copied().map(f).collect();
+
+        OffsetsBuffer(buffer)
     }
 }
 
@@ -401,22 +432,29 @@ impl<O: Offset> OffsetsBuffer<O> {
         *self.last() - *self.first()
     }
 
+    pub fn ranges(&self) -> impl Iterator<Item = core::ops::Range<O>> + '_ {
+        self.0.windows(2).map(|w| {
+            let from = w[0];
+            let to = w[1];
+            debug_assert!(from <= to, "offsets must be monotonically increasing");
+            from..to
+        })
+    }
+
     /// Returns the first offset.
     #[inline]
     pub fn first(&self) -> &O {
-        match self.0.first() {
-            Some(element) => element,
-            None => unsafe { unreachable_unchecked() },
-        }
+        self.0
+            .first()
+            .unwrap_or_else(|| unsafe { unreachable_unchecked() })
     }
 
     /// Returns the last offset.
     #[inline]
     pub fn last(&self) -> &O {
-        match self.0.last() {
-            Some(element) => element,
-            None => unsafe { unreachable_unchecked() },
-        }
+        self.0
+            .last()
+            .unwrap_or_else(|| unsafe { unreachable_unchecked() })
     }
 
     /// Returns a range (start, end) corresponding to the position `index`

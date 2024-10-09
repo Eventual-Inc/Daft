@@ -19,7 +19,7 @@ enum AntiSemiProbeState {
 
 impl AntiSemiProbeState {
     fn set_table(&mut self, table: &Arc<dyn Probeable>) {
-        if let Self::Building = self {
+        if matches!(self, Self::Building) {
             *self = Self::ReadyToProbe(table.clone());
         } else {
             panic!("AntiSemiProbeState should only be in Building state when setting table")
@@ -57,7 +57,7 @@ impl AntiSemiProbeOperator {
     fn probe_anti_semi(
         &self,
         input: &Arc<MicroPartition>,
-        state: &mut AntiSemiProbeState,
+        state: &AntiSemiProbeState,
     ) -> DaftResult<Arc<MicroPartition>> {
         let probe_set = state.get_probeable();
 

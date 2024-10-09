@@ -241,6 +241,7 @@ def actor_pool_project(
     with get_context().runner().actor_pool_context(
         actor_pool_name,
         actor_resource_request,
+        task_resource_request,
         num_actors,
         projection,
     ) as actor_pool_id:

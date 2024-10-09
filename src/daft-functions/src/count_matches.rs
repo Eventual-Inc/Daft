@@ -53,6 +53,7 @@ impl ScalarUDF for CountMatchesFunction {
     }
 }
 
+#[must_use]
 pub fn utf8_count_matches(
     input: ExprRef,
     patterns: ExprRef,

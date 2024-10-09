@@ -149,7 +149,10 @@ pub enum Error {
 
 impl From<Error> for DaftError {
     fn from(err: Error) -> Self {
-        use Error::*;
+        use Error::{
+            CachedError, ConnectTimeout, MiscTransient, NotFound, ReadTimeout, SocketError,
+            Throttled, UnableToReadBytes,
+        };
         match err {
             NotFound { path, source } => Self::FileNotFound { path, source },
             ConnectTimeout { .. } => Self::ConnectTimeout(err.into()),
@@ -316,16 +319,17 @@ impl IOClient {
 
         match value {
             Some(Ok(bytes)) => Ok(Some(bytes)),
-            Some(Err(err)) => match raise_error_on_failure {
-                true => Err(err),
-                false => {
+            Some(Err(err)) => {
+                if raise_error_on_failure {
+                    Err(err)
+                } else {
                     log::warn!(
-                        "Error occurred during url_download at index: {index} {} (falling back to Null)",
-                        err
-                    );
+                    "Error occurred during url_download at index: {index} {} (falling back to Null)",
+                    err
+                );
                     Ok(None)
                 }
-            },
+            }
             None => Ok(None),
         }
     }
@@ -390,7 +394,7 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
                 let expanded = home_dir.join(&input[2..]);
                 let input = expanded.to_str()?;
 
-                Some((SourceType::File, Cow::Owned(format!("file://{}", input))))
+                Some((SourceType::File, Cow::Owned(format!("file://{input}"))))
             })
             .ok_or_else(|| crate::Error::InvalidArgument {
                 msg: "Could not convert expanded path to string".to_string(),
@@ -447,7 +451,7 @@ pub fn get_io_client(multi_thread: bool, config: Arc<IOConfig>) -> DaftResult<Ar
         if let Some(client) = w_handle.get(&key) {
             Ok(client.clone())
         } else {
-            let client = Arc::new(IOClient::new(config.clone())?);
+            let client = Arc::new(IOClient::new(config)?);
             w_handle.insert(key, client.clone());
             Ok(client)
         }
@@ -474,7 +478,7 @@ impl Runtime {
             let s = if let Some(s) = e.downcast_ref::<String>() {
                 s.clone()
             } else if let Some(s) = e.downcast_ref::<&str>() {
-                s.to_string()
+                (*s).to_string()
             } else {
                 "unknown internal error".to_string()
             };
@@ -547,22 +551,20 @@ fn init_runtime(num_threads: usize) -> Arc<Runtime> {
 }
 
 pub fn get_runtime(multi_thread: bool) -> DaftResult<RuntimeRef> {
-    match multi_thread {
-        false => {
-            let runtime = SINGLE_THREADED_RUNTIME
-                .get_or_init(|| init_runtime(1))
-                .clone();
-            Ok(runtime)
-        }
-        true => {
-            let runtime = THREADED_RUNTIME
-                .get_or_init(|| init_runtime(*THREADED_RUNTIME_NUM_WORKER_THREADS))
-                .clone();
-            Ok(runtime)
-        }
+    if !multi_thread {
+        let runtime = SINGLE_THREADED_RUNTIME
+            .get_or_init(|| init_runtime(1))
+            .clone();
+        Ok(runtime)
+    } else {
+        let runtime = THREADED_RUNTIME
+            .get_or_init(|| init_runtime(*THREADED_RUNTIME_NUM_WORKER_THREADS))
+            .clone();
+        Ok(runtime)
     }
 }
 
+#[must_use]
 pub fn get_io_pool_num_threads() -> Option<usize> {
     match tokio::runtime::Handle::try_current() {
         Ok(handle) => {

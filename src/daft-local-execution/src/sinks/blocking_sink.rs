@@ -24,7 +24,7 @@ pub trait BlockingSink: Send + Sync {
     fn name(&self) -> &'static str;
 }
 
-pub(crate) struct BlockingSinkNode {
+pub struct BlockingSinkNode {
     // use a RW lock
     op: Arc<tokio::sync::Mutex<Box<dyn BlockingSink>>>,
     name: &'static str,
@@ -52,13 +52,11 @@ impl TreeDisplay for BlockingSinkNode {
         use std::fmt::Write;
         let mut display = String::new();
         writeln!(display, "{}", self.name()).unwrap();
-        use common_display::DisplayLevel::*;
-        match level {
-            Compact => {}
-            _ => {
-                let rt_result = self.runtime_stats.result();
-                rt_result.display(&mut display, true, true, true).unwrap();
-            }
+        use common_display::DisplayLevel::Compact;
+        if matches!(level, Compact) {
+        } else {
+            let rt_result = self.runtime_stats.result();
+            rt_result.display(&mut display, true, true, true).unwrap();
         }
         display
     }
@@ -105,7 +103,7 @@ impl PipelineNode for BlockingSinkNode {
                         rt_context.in_span(&span, || guard.sink(val.as_data()))
                     };
                     let result = compute_runtime.await_on_compute_pool(fut).await??;
-                    if let BlockingSinkStatus::Finished = result {
+                    if matches!(result, BlockingSinkStatus::Finished) {
                         break;
                     }
                 }

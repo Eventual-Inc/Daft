@@ -9,7 +9,11 @@ use sqlparser::ast::{
 
 use crate::{
     error::{PlannerError, SQLPlannerResult},
-    modules::*,
+    modules::{
+        hashing, SQLModule, SQLModuleAggs, SQLModuleConfig, SQLModuleFloat, SQLModuleImage,
+        SQLModuleJson, SQLModuleList, SQLModuleMap, SQLModuleNumeric, SQLModulePartitioning,
+        SQLModulePython, SQLModuleSketch, SQLModuleStructs, SQLModuleTemporal, SQLModuleUtf8,
+    },
     planner::SQLPlanner,
     unsupported_sql_err,
 };
@@ -31,6 +35,7 @@ pub(crate) static SQL_FUNCTIONS: Lazy<SQLFunctions> = Lazy::new(|| {
     functions.register::<SQLModuleStructs>();
     functions.register::<SQLModuleTemporal>();
     functions.register::<SQLModuleUtf8>();
+    functions.register::<SQLModuleConfig>();
     functions
 });
 
@@ -84,6 +89,16 @@ pub trait SQLFunction: Send + Sync {
     }
 
     fn to_expr(&self, inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef>;
+
+    /// Produce the docstrings for this SQL function, parametrized by an alias which is the function name to invoke this in SQL
+    fn docstrings(&self, alias: &str) -> String {
+        format!("{alias}: No docstring available")
+    }
+
+    /// Produce the docstrings for this SQL function, parametrized by an alias which is the function name to invoke this in SQL
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["todo"]
+    }
 }
 
 /// TODOs
@@ -91,6 +106,7 @@ pub trait SQLFunction: Send + Sync {
 ///   - Add more functions..
 pub struct SQLFunctions {
     pub(crate) map: HashMap<String, Arc<dyn SQLFunction>>,
+    pub(crate) docsmap: HashMap<String, (String, &'static [&'static str])>,
 }
 
 pub(crate) struct SQLFunctionArguments {
@@ -99,7 +115,7 @@ pub(crate) struct SQLFunctionArguments {
 }
 
 impl SQLFunctionArguments {
-    pub fn get_unnamed(&self, idx: usize) -> Option<&ExprRef> {
+    pub fn get_positional(&self, idx: usize) -> Option<&ExprRef> {
         self.positional.get(&idx)
     }
     pub fn get_named(&self, name: &str) -> Option<&ExprRef> {
@@ -109,6 +125,12 @@ impl SQLFunctionArguments {
     pub fn try_get_named<T: SQLLiteral>(&self, name: &str) -> Result<Option<T>, PlannerError> {
         self.named
             .get(name)
+            .map(|expr| T::from_expr(expr))
+            .transpose()
+    }
+    pub fn try_get_positional<T: SQLLiteral>(&self, idx: usize) -> Result<Option<T>, PlannerError> {
+        self.positional
+            .get(&idx)
             .map(|expr| T::from_expr(expr))
             .transpose()
     }
@@ -139,7 +161,18 @@ impl SQLLiteral for i64 {
         Self: Sized,
     {
         expr.as_literal()
-            .and_then(|lit| lit.as_i64())
+            .and_then(daft_dsl::LiteralValue::as_i64)
+            .ok_or_else(|| PlannerError::invalid_operation("Expected an integer literal"))
+    }
+}
+
+impl SQLLiteral for usize {
+    fn from_expr(expr: &ExprRef) -> Result<Self, PlannerError>
+    where
+        Self: Sized,
+    {
+        expr.as_literal()
+            .and_then(|lit| lit.as_i64().map(|v| v as Self))
             .ok_or_else(|| PlannerError::invalid_operation("Expected an integer literal"))
     }
 }
@@ -150,16 +183,18 @@ impl SQLLiteral for bool {
         Self: Sized,
     {
         expr.as_literal()
-            .and_then(|lit| lit.as_bool())
+            .and_then(daft_dsl::LiteralValue::as_bool)
             .ok_or_else(|| PlannerError::invalid_operation("Expected a boolean literal"))
     }
 }
 
 impl SQLFunctions {
     /// Create a new [SQLFunctions] instance.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             map: HashMap::new(),
+            docsmap: HashMap::new(),
         }
     }
 
@@ -170,10 +205,13 @@ impl SQLFunctions {
 
     /// Add a [FunctionExpr] to the [SQLFunctions] instance.
     pub fn add_fn<F: SQLFunction + 'static>(&mut self, name: &str, func: F) {
+        self.docsmap
+            .insert(name.to_string(), (func.docstrings(name), func.arg_names()));
         self.map.insert(name.to_string(), Arc::new(func));
     }
 
     /// Get a function by name from the [SQLFunctions] instance.
+    #[must_use]
     pub fn get(&self, name: &str) -> Option<&Arc<dyn SQLFunction>> {
         self.map.get(name)
     }
@@ -244,6 +282,15 @@ impl SQLPlanner {
     where
         T: TryFrom<SQLFunctionArguments, Error = PlannerError>,
     {
+        self.parse_function_args(args, expected_named, expected_positional)?
+            .try_into()
+    }
+    pub(crate) fn parse_function_args(
+        &self,
+        args: &[FunctionArg],
+        expected_named: &'static [&'static str],
+        expected_positional: usize,
+    ) -> SQLPlannerResult<SQLFunctionArguments> {
         let mut positional_args = HashMap::new();
         let mut named_args = HashMap::new();
         for (idx, arg) in args.iter().enumerate() {
@@ -268,11 +315,10 @@ impl SQLPlanner {
             }
         }
 
-        SQLFunctionArguments {
+        Ok(SQLFunctionArguments {
             positional: positional_args,
             named: named_args,
-        }
-        .try_into()
+        })
     }
 
     pub(crate) fn plan_function_arg(

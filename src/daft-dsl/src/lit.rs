@@ -10,10 +10,11 @@ use common_hashable_float_wrapper::FloatWrapper;
 use daft_core::{
     prelude::*,
     utils::display::{
-        display_date32, display_decimal128, display_series_literal, display_time64,
-        display_timestamp,
+        display_date32, display_decimal128, display_duration, display_series_literal,
+        display_time64, display_timestamp,
     },
 };
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
@@ -59,6 +60,8 @@ pub enum LiteralValue {
     Date(i32),
     /// An [`i64`] representing a time in microseconds or nanoseconds since midnight.
     Time(i64, TimeUnit),
+    /// An [`i64`] representing a measure of elapsed time. This elapsed time is a physical duration (i.e. 1s as defined in S.I.)
+    Duration(i64, TimeUnit),
     /// A 64-bit floating point number.
     Float64(f64),
     /// An [`i128`] representing a decimal number with the provided precision and scale.
@@ -68,50 +71,60 @@ pub enum LiteralValue {
     /// Python object.
     #[cfg(feature = "python")]
     Python(PyObjectWrapper),
+
+    Struct(IndexMap<Field, LiteralValue>),
 }
 
 impl Eq for LiteralValue {}
 
 impl Hash for LiteralValue {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        use LiteralValue::*;
-
         match self {
             // Stable hash for Null variant.
-            Null => 1.hash(state),
-            Boolean(bool) => bool.hash(state),
-            Utf8(s) => s.hash(state),
-            Binary(arr) => arr.hash(state),
-            Int32(n) => n.hash(state),
-            UInt32(n) => n.hash(state),
-            Int64(n) => n.hash(state),
-            UInt64(n) => n.hash(state),
-            Date(n) => n.hash(state),
-            Time(n, tu) => {
+            Self::Null => 1.hash(state),
+            Self::Boolean(bool) => bool.hash(state),
+            Self::Utf8(s) => s.hash(state),
+            Self::Binary(arr) => arr.hash(state),
+            Self::Int32(n) => n.hash(state),
+            Self::UInt32(n) => n.hash(state),
+            Self::Int64(n) => n.hash(state),
+            Self::UInt64(n) => n.hash(state),
+            Self::Date(n) => n.hash(state),
+            Self::Time(n, tu) => {
                 n.hash(state);
                 tu.hash(state);
             }
-            Timestamp(n, tu, tz) => {
+            Self::Timestamp(n, tu, tz) => {
                 n.hash(state);
                 tu.hash(state);
                 tz.hash(state);
             }
+            Self::Duration(n, tu) => {
+                n.hash(state);
+                tu.hash(state);
+            }
             // Wrap float64 in hashable newtype.
-            Float64(n) => FloatWrapper(*n).hash(state),
-            Decimal(n, precision, scale) => {
+            Self::Float64(n) => FloatWrapper(*n).hash(state),
+            Self::Decimal(n, precision, scale) => {
                 n.hash(state);
                 precision.hash(state);
                 scale.hash(state);
             }
-            Series(series) => {
+            Self::Series(series) => {
                 let hash_result = series.hash(None);
                 match hash_result {
                     Ok(hash) => hash.into_iter().for_each(|i| i.hash(state)),
-                    Err(_) => panic!("Cannot hash series"),
+                    Err(..) => panic!("Cannot hash series"),
                 }
             }
             #[cfg(feature = "python")]
-            Python(py_obj) => py_obj.hash(state),
+            Self::Python(py_obj) => py_obj.hash(state),
+            Self::Struct(entries) => {
+                entries.iter().for_each(|(v, f)| {
+                    v.hash(state);
+                    f.hash(state);
+                });
+            }
         }
     }
 }
@@ -119,122 +132,148 @@ impl Hash for LiteralValue {
 impl Display for LiteralValue {
     // `f` is a buffer, and this method must write the formatted string into it
     fn fmt(&self, f: &mut Formatter) -> Result {
-        use LiteralValue::*;
         match self {
-            Null => write!(f, "Null"),
-            Boolean(val) => write!(f, "{val}"),
-            Utf8(val) => write!(f, "\"{val}\""),
-            Binary(val) => write!(f, "Binary[{}]", val.len()),
-            Int32(val) => write!(f, "{val}"),
-            UInt32(val) => write!(f, "{val}"),
-            Int64(val) => write!(f, "{val}"),
-            UInt64(val) => write!(f, "{val}"),
-            Date(val) => write!(f, "{}", display_date32(*val)),
-            Time(val, tu) => write!(f, "{}", display_time64(*val, tu)),
-            Timestamp(val, tu, tz) => write!(f, "{}", display_timestamp(*val, tu, tz)),
-            Float64(val) => write!(f, "{val:.1}"),
-            Decimal(val, precision, scale) => {
+            Self::Null => write!(f, "Null"),
+            Self::Boolean(val) => write!(f, "{val}"),
+            Self::Utf8(val) => write!(f, "\"{val}\""),
+            Self::Binary(val) => write!(f, "Binary[{}]", val.len()),
+            Self::Int32(val) => write!(f, "{val}"),
+            Self::UInt32(val) => write!(f, "{val}"),
+            Self::Int64(val) => write!(f, "{val}"),
+            Self::UInt64(val) => write!(f, "{val}"),
+            Self::Date(val) => write!(f, "{}", display_date32(*val)),
+            Self::Time(val, tu) => write!(f, "{}", display_time64(*val, tu)),
+            Self::Timestamp(val, tu, tz) => write!(f, "{}", display_timestamp(*val, tu, tz)),
+            Self::Duration(val, tu) => write!(f, "{}", display_duration(*val, tu)),
+            Self::Float64(val) => write!(f, "{val:.1}"),
+            Self::Decimal(val, precision, scale) => {
                 write!(f, "{}", display_decimal128(*val, *precision, *scale))
             }
-            Series(series) => write!(f, "{}", display_series_literal(series)),
+            Self::Series(series) => write!(f, "{}", display_series_literal(series)),
             #[cfg(feature = "python")]
-            Python(pyobj) => write!(f, "PyObject({})", {
+            Self::Python(pyobj) => write!(f, "PyObject({})", {
                 use pyo3::prelude::*;
                 Python::with_gil(|py| pyobj.0.call_method0(py, pyo3::intern!(py, "__str__")))
                     .unwrap()
             }),
+            Self::Struct(entries) => {
+                write!(f, "Struct(")?;
+                for (i, (field, v)) in entries.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}: {}", field.name, v)?;
+                }
+                write!(f, ")")
+            }
         }
     }
 }
 
 impl LiteralValue {
     pub fn get_type(&self) -> DataType {
-        use LiteralValue::*;
         match self {
-            Null => DataType::Null,
-            Boolean(_) => DataType::Boolean,
-            Utf8(_) => DataType::Utf8,
-            Binary(_) => DataType::Binary,
-            Int32(_) => DataType::Int32,
-            UInt32(_) => DataType::UInt32,
-            Int64(_) => DataType::Int64,
-            UInt64(_) => DataType::UInt64,
-            Date(_) => DataType::Date,
-            Time(_, tu) => DataType::Time(*tu),
-            Timestamp(_, tu, tz) => DataType::Timestamp(*tu, tz.clone()),
-            Float64(_) => DataType::Float64,
-            Decimal(_, precision, scale) => {
+            Self::Null => DataType::Null,
+            Self::Boolean(_) => DataType::Boolean,
+            Self::Utf8(_) => DataType::Utf8,
+            Self::Binary(_) => DataType::Binary,
+            Self::Int32(_) => DataType::Int32,
+            Self::UInt32(_) => DataType::UInt32,
+            Self::Int64(_) => DataType::Int64,
+            Self::UInt64(_) => DataType::UInt64,
+            Self::Date(_) => DataType::Date,
+            Self::Time(_, tu) => DataType::Time(*tu),
+            Self::Timestamp(_, tu, tz) => DataType::Timestamp(*tu, tz.clone()),
+            Self::Duration(_, tu) => DataType::Duration(*tu),
+            Self::Float64(_) => DataType::Float64,
+            Self::Decimal(_, precision, scale) => {
                 DataType::Decimal128(*precision as usize, *scale as usize)
             }
-            Series(series) => series.data_type().clone(),
+            Self::Series(series) => series.data_type().clone(),
             #[cfg(feature = "python")]
-            Python(_) => DataType::Python,
+            Self::Python(_) => DataType::Python,
+            Self::Struct(entries) => DataType::Struct(entries.keys().cloned().collect()),
         }
     }
 
     pub fn to_series(&self) -> Series {
-        use LiteralValue::*;
-        let result = match self {
-            Null => NullArray::full_null("literal", &DataType::Null, 1).into_series(),
-            Boolean(val) => BooleanArray::from(("literal", [*val].as_slice())).into_series(),
-            Utf8(val) => Utf8Array::from(("literal", [val.as_str()].as_slice())).into_series(),
-            Binary(val) => BinaryArray::from(("literal", val.as_slice())).into_series(),
-            Int32(val) => Int32Array::from(("literal", [*val].as_slice())).into_series(),
-            UInt32(val) => UInt32Array::from(("literal", [*val].as_slice())).into_series(),
-            Int64(val) => Int64Array::from(("literal", [*val].as_slice())).into_series(),
-            UInt64(val) => UInt64Array::from(("literal", [*val].as_slice())).into_series(),
-            Date(val) => {
+        match self {
+            Self::Null => NullArray::full_null("literal", &DataType::Null, 1).into_series(),
+            Self::Boolean(val) => BooleanArray::from(("literal", [*val].as_slice())).into_series(),
+            Self::Utf8(val) => {
+                Utf8Array::from(("literal", [val.as_str()].as_slice())).into_series()
+            }
+            Self::Binary(val) => BinaryArray::from(("literal", val.as_slice())).into_series(),
+            Self::Int32(val) => Int32Array::from(("literal", [*val].as_slice())).into_series(),
+            Self::UInt32(val) => UInt32Array::from(("literal", [*val].as_slice())).into_series(),
+            Self::Int64(val) => Int64Array::from(("literal", [*val].as_slice())).into_series(),
+            Self::UInt64(val) => UInt64Array::from(("literal", [*val].as_slice())).into_series(),
+            Self::Date(val) => {
                 let physical = Int32Array::from(("literal", [*val].as_slice()));
                 DateArray::new(Field::new("literal", self.get_type()), physical).into_series()
             }
-            Time(val, ..) => {
+            Self::Time(val, ..) => {
                 let physical = Int64Array::from(("literal", [*val].as_slice()));
                 TimeArray::new(Field::new("literal", self.get_type()), physical).into_series()
             }
-            Timestamp(val, ..) => {
+            Self::Timestamp(val, ..) => {
                 let physical = Int64Array::from(("literal", [*val].as_slice()));
                 TimestampArray::new(Field::new("literal", self.get_type()), physical).into_series()
             }
-            Float64(val) => Float64Array::from(("literal", [*val].as_slice())).into_series(),
-            Decimal(val, ..) => {
+            Self::Duration(val, ..) => {
+                let physical = Int64Array::from(("literal", [*val].as_slice()));
+                DurationArray::new(Field::new("literal", self.get_type()), physical).into_series()
+            }
+            Self::Float64(val) => Float64Array::from(("literal", [*val].as_slice())).into_series(),
+            Self::Decimal(val, ..) => {
                 let physical = Int128Array::from(("literal", [*val].as_slice()));
                 Decimal128Array::new(Field::new("literal", self.get_type()), physical).into_series()
             }
-            Series(series) => series.clone().rename("literal"),
+            Self::Series(series) => series.clone().rename("literal"),
             #[cfg(feature = "python")]
-            Python(val) => PythonArray::from(("literal", vec![val.0.clone()])).into_series(),
-        };
-        result
+            Self::Python(val) => PythonArray::from(("literal", vec![val.0.clone()])).into_series(),
+            Self::Struct(entries) => {
+                let struct_dtype = DataType::Struct(entries.keys().cloned().collect());
+                let struct_field = Field::new("literal", struct_dtype);
+
+                let values = entries.values().map(|v| v.to_series()).collect();
+                StructArray::new(struct_field, values, None).into_series()
+            }
+        }
     }
 
     pub fn display_sql<W: Write>(&self, buffer: &mut W) -> io::Result<()> {
-        use LiteralValue::*;
         let display_sql_err = Err(io::Error::new(
             io::ErrorKind::Other,
             "Unsupported literal for SQL translation",
         ));
         match self {
-            Null => write!(buffer, "NULL"),
-            Boolean(v) => write!(buffer, "{}", v),
-            Int32(val) => write!(buffer, "{}", val),
-            UInt32(val) => write!(buffer, "{}", val),
-            Int64(val) => write!(buffer, "{}", val),
-            UInt64(val) => write!(buffer, "{}", val),
-            Float64(val) => write!(buffer, "{}", val),
-            Utf8(val) => write!(buffer, "'{}'", val),
-            Date(val) => write!(buffer, "DATE '{}'", display_date32(*val)),
+            Self::Null => write!(buffer, "NULL"),
+            Self::Boolean(v) => write!(buffer, "{}", v),
+            Self::Int32(val) => write!(buffer, "{}", val),
+            Self::UInt32(val) => write!(buffer, "{}", val),
+            Self::Int64(val) => write!(buffer, "{}", val),
+            Self::UInt64(val) => write!(buffer, "{}", val),
+            Self::Float64(val) => write!(buffer, "{}", val),
+            Self::Utf8(val) => write!(buffer, "'{}'", val),
+            Self::Date(val) => write!(buffer, "DATE '{}'", display_date32(*val)),
             // The `display_timestamp` function formats a timestamp in the ISO 8601 format: "YYYY-MM-DDTHH:MM:SS.fffff".
             // ANSI SQL standard uses a space instead of 'T'. Some databases do not support 'T', hence it's replaced with a space.
             // Reference: https://docs.actian.com/ingres/10s/index.html#page/SQLRef/Summary_of_ANSI_Date_2fTime_Data_Types.html
-            Timestamp(val, tu, tz) => write!(
+            Self::Timestamp(val, tu, tz) => write!(
                 buffer,
                 "TIMESTAMP '{}'",
                 display_timestamp(*val, tu, tz).replace('T', " ")
             ),
             // TODO(Colin): Implement the rest of the types in future work for SQL pushdowns.
-            Decimal(..) | Series(..) | Time(..) | Binary(..) => display_sql_err,
+            Self::Decimal(..)
+            | Self::Series(..)
+            | Self::Time(..)
+            | Self::Binary(..)
+            | Self::Duration(..) => display_sql_err,
             #[cfg(feature = "python")]
-            Python(..) => display_sql_err,
+            Self::Python(..) => display_sql_err,
+            Self::Struct(..) => display_sql_err,
         }
     }
 
@@ -304,49 +343,64 @@ impl LiteralValue {
     }
 }
 
-pub trait Literal {
+pub trait Literal: Sized {
     /// [Literal](Expr::Literal) expression.
-    fn lit(self) -> ExprRef;
+    fn lit(self) -> ExprRef {
+        Expr::Literal(self.literal_value()).into()
+    }
+    fn literal_value(self) -> LiteralValue;
 }
 
 impl Literal for String {
-    fn lit(self) -> ExprRef {
-        Expr::Literal(LiteralValue::Utf8(self)).into()
+    fn literal_value(self) -> LiteralValue {
+        LiteralValue::Utf8(self)
     }
 }
 
 impl<'a> Literal for &'a str {
-    fn lit(self) -> ExprRef {
-        Expr::Literal(LiteralValue::Utf8(self.to_owned())).into()
+    fn literal_value(self) -> LiteralValue {
+        LiteralValue::Utf8(self.to_owned())
     }
 }
 
 macro_rules! make_literal {
     ($TYPE:ty, $SCALAR:ident) => {
         impl Literal for $TYPE {
-            fn lit(self) -> ExprRef {
-                Expr::Literal(LiteralValue::$SCALAR(self)).into()
+            fn literal_value(self) -> LiteralValue {
+                LiteralValue::$SCALAR(self)
             }
         }
     };
 }
 
 impl<'a> Literal for &'a [u8] {
-    fn lit(self) -> ExprRef {
-        Expr::Literal(LiteralValue::Binary(self.to_vec())).into()
+    fn literal_value(self) -> LiteralValue {
+        LiteralValue::Binary(self.to_vec())
     }
 }
 
 impl Literal for Series {
-    fn lit(self) -> ExprRef {
-        Expr::Literal(LiteralValue::Series(self)).into()
+    fn literal_value(self) -> LiteralValue {
+        LiteralValue::Series(self)
     }
 }
 
 #[cfg(feature = "python")]
 impl Literal for pyo3::PyObject {
-    fn lit(self) -> ExprRef {
-        Expr::Literal(LiteralValue::Python(PyObjectWrapper(self))).into()
+    fn literal_value(self) -> LiteralValue {
+        LiteralValue::Python(PyObjectWrapper(self))
+    }
+}
+
+impl<T> Literal for Option<T>
+where
+    T: Literal,
+{
+    fn literal_value(self) -> LiteralValue {
+        match self {
+            Some(val) => val.literal_value(),
+            None => LiteralValue::Null,
+        }
     }
 }
 
@@ -359,6 +413,10 @@ make_literal!(f64, Float64);
 
 pub fn lit<L: Literal>(t: L) -> ExprRef {
     t.lit()
+}
+
+pub fn literal_value<L: Literal>(t: L) -> LiteralValue {
+    t.literal_value()
 }
 
 pub fn null_lit() -> ExprRef {

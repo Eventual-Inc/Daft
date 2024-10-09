@@ -21,7 +21,7 @@ enum HashJoinProbeState {
 
 impl HashJoinProbeState {
     fn set_table(&mut self, table: &Arc<dyn Probeable>, tables: &Arc<Vec<Table>>) {
-        if let Self::Building = self {
+        if matches!(self, Self::Building) {
             *self = Self::ReadyToProbe(table.clone(), tables.clone());
         } else {
             panic!("HashJoinProbeState should only be in Building state when setting table")
@@ -98,7 +98,7 @@ impl HashJoinProbeOperator {
     fn probe_inner(
         &self,
         input: &Arc<MicroPartition>,
-        state: &mut HashJoinProbeState,
+        state: &HashJoinProbeState,
     ) -> DaftResult<Arc<MicroPartition>> {
         let (probe_table, tables) = state.get_probeable_and_table();
 
@@ -161,7 +161,7 @@ impl HashJoinProbeOperator {
     fn probe_left_right(
         &self,
         input: &Arc<MicroPartition>,
-        state: &mut HashJoinProbeState,
+        state: &HashJoinProbeState,
     ) -> DaftResult<Arc<MicroPartition>> {
         let (probe_table, tables) = state.get_probeable_and_table();
 
@@ -170,7 +170,7 @@ impl HashJoinProbeOperator {
         let mut build_side_growable = GrowableTable::new(
             &tables.iter().collect::<Vec<_>>(),
             true,
-            tables.iter().map(|t| t.len()).sum(),
+            tables.iter().map(daft_table::Table::len).sum(),
         )?;
 
         let input_tables = input.get_tables()?;

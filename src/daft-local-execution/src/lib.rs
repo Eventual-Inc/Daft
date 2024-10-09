@@ -48,7 +48,7 @@ impl Runtime {
                 let s = if let Some(s) = e.downcast_ref::<String>() {
                     s.clone()
                 } else if let Some(s) = e.downcast_ref::<&str>() {
-                    s.to_string()
+                    (*s).to_string()
                 } else {
                     "unknown internal error".to_string()
                 };
@@ -58,7 +58,7 @@ impl Runtime {
             });
 
             if tx.send(task_output).is_err() {
-                log::warn!("Spawned task output ignored: receiver dropped")
+                log::warn!("Spawned task output ignored: receiver dropped");
             }
         });
         rx.await.expect("Compute pool receiver dropped")
@@ -105,6 +105,7 @@ pub struct ExecutionRuntimeHandle {
 }
 
 impl ExecutionRuntimeHandle {
+    #[must_use]
     pub fn new(default_morsel_size: usize) -> Self {
         Self {
             worker_set: tokio::task::JoinSet::new(),
@@ -129,6 +130,7 @@ impl ExecutionRuntimeHandle {
         self.worker_set.shutdown().await;
     }
 
+    #[must_use]
     pub fn default_morsel_size(&self) -> usize {
         self.default_morsel_size
     }

@@ -65,7 +65,7 @@ impl PushDownProjection {
             let upstream_computations = upstream_projection
                 .projection
                 .iter()
-                .flat_map(|e| {
+                .filter_map(|e| {
                     e.input_mapping().map_or_else(
                         // None means computation required -> Some(colname)
                         || Some(e.name().to_string()),
@@ -76,7 +76,7 @@ impl PushDownProjection {
                 .collect::<IndexSet<_>>();
 
             // For each of them, make sure they are used only once in this downstream projection.
-            let mut exprs_to_walk: Vec<Arc<Expr>> = projection.projection.to_vec();
+            let mut exprs_to_walk: Vec<Arc<Expr>> = projection.projection.clone();
 
             let mut upstream_computations_used = IndexSet::new();
             let mut okay_to_merge = true;
@@ -91,8 +91,8 @@ impl PushDownProjection {
                             && let Expr::Column(name) = expr.as_ref()
                             && upstream_computations.contains(name.as_ref())
                         {
-                            okay_to_merge =
-                                okay_to_merge && upstream_computations_used.insert(name.to_string())
+                            okay_to_merge = okay_to_merge
+                                && upstream_computations_used.insert(name.to_string());
                         };
                         if okay_to_merge {
                             expr.children()
@@ -130,7 +130,7 @@ impl PushDownProjection {
                 // Root node is changed, look at it again.
                 let new_plan = self
                     .try_optimize_node(new_plan.clone())?
-                    .or(Transformed::yes(new_plan.clone()));
+                    .or(Transformed::yes(new_plan));
                 return Ok(new_plan);
             }
         }
@@ -402,9 +402,8 @@ impl PushDownProjection {
                 let new_left_subprojection: LogicalPlan = {
                     Project::try_new(concat.input.clone(), pushdown_column_exprs.clone())?.into()
                 };
-                let new_right_subprojection: LogicalPlan = {
-                    Project::try_new(concat.other.clone(), pushdown_column_exprs.clone())?.into()
-                };
+                let new_right_subprojection: LogicalPlan =
+                    { Project::try_new(concat.other.clone(), pushdown_column_exprs)?.into() };
 
                 let new_upstream = upstream_plan.with_new_children(&[
                     new_left_subprojection.into(),
@@ -447,10 +446,8 @@ impl PushDownProjection {
                         .collect();
 
                     if combined_dependencies.len() < upstream_names.len() {
-                        let pushdown_column_exprs: Vec<ExprRef> = combined_dependencies
-                            .into_iter()
-                            .map(|d| col(d.to_string()))
-                            .collect();
+                        let pushdown_column_exprs: Vec<ExprRef> =
+                            combined_dependencies.into_iter().map(col).collect();
                         let new_project: LogicalPlan =
                             Project::try_new(side.clone(), pushdown_column_exprs)?.into();
                         Ok(Transformed::yes(new_project.into()))
@@ -474,10 +471,8 @@ impl PushDownProjection {
                     Ok(Transformed::no(plan))
                 } else {
                     // If either pushdown is possible, create a new Join node.
-                    let new_join = upstream_plan.with_new_children(&[
-                        new_left_upstream.data.clone(),
-                        new_right_upstream.data.clone(),
-                    ]);
+                    let new_join = upstream_plan
+                        .with_new_children(&[new_left_upstream.data, new_right_upstream.data]);
 
                     let new_plan = Arc::new(plan.with_new_children(&[new_join.into()]));
 
@@ -696,7 +691,7 @@ mod tests {
     /// Projection merging: Ensure factored projections do not get merged.
     #[test]
     fn test_merge_does_not_unfactor() -> DaftResult<()> {
-        let a2 = col("a").clone().add(col("a"));
+        let a2 = col("a").add(col("a"));
         let a4 = a2.clone().add(a2);
         let a8 = a4.clone().add(a4);
         let expressions = vec![a8.alias("x")];
@@ -1001,10 +996,11 @@ mod tests {
 
         // Select the `udf_results` column, so the ActorPoolProject should apply column pruning to the other columns
         let plan = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
-            scan_node.clone(),
+            scan_node,
             vec![col("a"), col("b"), mock_stateful_udf.alias("udf_results_0")],
         )?)
         .arced();
+
         let plan = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             plan,
             vec![
@@ -1015,6 +1011,7 @@ mod tests {
             ],
         )?)
         .arced();
+
         let plan = LogicalPlan::Project(Project::try_new(
             plan,
             vec![
@@ -1035,7 +1032,7 @@ mod tests {
         )?)
         .arced();
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
-            expected.clone(),
+            expected,
             vec![
                 // Absorbed a non-computational expression (alias) from the Projection
                 col("udf_results_0").alias("udf_results_0_alias"),
@@ -1086,7 +1083,7 @@ mod tests {
 
         // Select only col("a"), so the ActorPoolProject node is now redundant and should be removed
         let actor_pool_project = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
-            scan_node.clone(),
+            scan_node,
             vec![col("a"), col("b"), mock_stateful_udf.alias("udf_results")],
         )?)
         .arced();

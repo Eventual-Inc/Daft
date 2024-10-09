@@ -12,6 +12,7 @@ pub struct IOConfig {
 }
 
 impl IOConfig {
+    #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         res.push(format!(
