@@ -5,13 +5,13 @@ use common_error::{DaftError, DaftResult};
 use daft_core::{
     array::ListArray,
     datatypes::logical::GeometryArray,
-    prelude::{BinaryArray, DataType, Field},
+    prelude::{DataType, Field},
     series::{IntoSeries, Series},
 };
 use geo::{
     Area, BooleanOps, Centroid, Contains, ConvexHull, EuclideanDistance, Geometry, Intersects,
 };
-use geozero::{wkb, wkt, CoordDimensions, ToGeo, ToWkb, ToWkt};
+use geozero::{wkb, wkt, GeozeroGeometry, ToGeo, ToWkb, ToWkt};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -28,16 +28,16 @@ pub enum GeoOperation {
     Centroid,
 }
 
-pub struct GeometryArrayIter<'a> {
+struct GeometryArrayIter<'a> {
     cursor: usize,
-    physical: &'a GeometryArray,
+    series: &'a GeometryArray,
 }
 
 impl GeometryArrayIter<'_> {
-    pub fn new(physical: &GeometryArray) -> GeometryArrayIter {
+    fn new(backing: &GeometryArray) -> GeometryArrayIter {
         GeometryArrayIter {
             cursor: 0,
-            physical,
+            series: backing,
         }
     }
 }
@@ -46,14 +46,14 @@ impl<'a> Iterator for GeometryArrayIter<'a> {
     type Item = Option<Geometry>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.cursor >= self.physical.len() {
+        if self.cursor >= self.series.len() {
             None
         } else {
-            let x = self.physical.physical.get(self.cursor);
+            let series = self.series.physical.get(self.cursor);
             self.cursor += 1;
-            match x {
-                Some(x) => {
-                    let bytes = x.u8().unwrap().as_slice();
+            match series {
+                Some(series) => {
+                    let bytes = series.u8().unwrap().as_slice();
                     Some(Some(wkb::Wkb(bytes).to_geo().unwrap()))
                 }
                 None => Some(None),
@@ -62,25 +62,26 @@ impl<'a> Iterator for GeometryArrayIter<'a> {
     }
 }
 
-struct GH {
+struct GeoSeriesHelper {
     geo_vec: Vec<u8>,
     offsets: Vec<i64>,
     validity: arrow2::bitmap::MutableBitmap,
 }
 
-impl GH {
+impl GeoSeriesHelper {
     fn new(capacity: usize) -> Self {
-        let mut x = Self {
+        let mut series = Self {
             geo_vec: Vec::with_capacity(capacity),
             offsets: Vec::with_capacity(capacity + 1),
             validity: arrow2::bitmap::MutableBitmap::with_capacity(capacity),
         };
-        x.offsets.push(0i64);
-        x
+        series.offsets.push(0i64);
+        series
     }
 
     fn push(&mut self, geo: Geometry) {
-        let geo_bytes = geo.to_wkb(CoordDimensions::xy()).unwrap();
+        let coord_dims = geo.dims();
+        let geo_bytes = geo.to_wkb(coord_dims).unwrap();
         self.geo_vec.extend(geo_bytes.iter());
         self.offsets
             .push(self.offsets.last().unwrap() + geo_bytes.len() as i64);
@@ -93,22 +94,18 @@ impl GH {
     }
 
     fn into_series(self, name: &str) -> DaftResult<Series> {
-        gh_to(name, self)
+        let data_array = ListArray::new(
+            Field::new("data", DataType::List(Box::new(DataType::UInt8))),
+            Series::try_from((
+                "data",
+                Box::new(arrow2::array::PrimitiveArray::from_vec(self.geo_vec))
+                    as Box<dyn arrow2::array::Array>,
+            ))?,
+            arrow2::offset::OffsetsBuffer::try_from(self.offsets)?,
+            self.validity.into(),
+        );
+        Ok(GeometryArray::new(Field::new(name, DataType::Geometry), data_array).into_series())
     }
-}
-
-fn gh_to(name: &str, g: GH) -> DaftResult<Series> {
-    let data_array = ListArray::new(
-        Field::new("data", DataType::List(Box::new(DataType::UInt8))),
-        Series::try_from((
-            "data",
-            Box::new(arrow2::array::PrimitiveArray::from_vec(g.geo_vec))
-                as Box<dyn arrow2::array::Array>,
-        ))?,
-        arrow2::offset::OffsetsBuffer::try_from(g.offsets)?,
-        g.validity.into(),
-    );
-    Ok(GeometryArray::new(Field::new(name, DataType::Geometry), data_array).into_series())
 }
 
 pub fn decode_series(s: &Series, raise_error_on_failure: bool) -> DaftResult<Series> {
@@ -120,7 +117,7 @@ pub fn decode_series(s: &Series, raise_error_on_failure: bool) -> DaftResult<Ser
                 .as_any()
                 .downcast_ref::<arrow2::array::BinaryArray<i64>>()
                 .unwrap();
-            let mut gh = GH::new(arrow_array.len());
+            let mut gh = GeoSeriesHelper::new(arrow_array.len());
             for bytes in arrow_array.iter() {
                 match bytes {
                     Some(bytes) => match wkb::Wkb(bytes).to_geo() {
@@ -141,7 +138,7 @@ pub fn decode_series(s: &Series, raise_error_on_failure: bool) -> DaftResult<Ser
         }
         DataType::Utf8 => {
             let strings = s.utf8()?;
-            let mut gh = GH::new(strings.len());
+            let mut gh = GeoSeriesHelper::new(strings.len());
             let s = strings
                 .data()
                 .as_any()
@@ -173,7 +170,7 @@ pub fn decode_series(s: &Series, raise_error_on_failure: bool) -> DaftResult<Ser
     }
 }
 
-pub fn to_wkt(s: &Series) -> DaftResult<Series> {
+fn to_wkt(s: &Series) -> DaftResult<Series> {
     let geo = s.geometry()?;
     let mut wkt_vec: Vec<Option<String>> = Vec::with_capacity(geo.len());
     for g in GeometryArrayIter::new(geo) {
@@ -192,25 +189,16 @@ pub fn to_wkt(s: &Series) -> DaftResult<Series> {
     )
 }
 
-pub fn to_wkb(s: &Series) -> DaftResult<Series> {
+fn to_wkb(s: &Series) -> DaftResult<Series> {
     let geo = s.geometry()?;
-    let mut wkb_vec: Vec<Option<Vec<u8>>> = Vec::with_capacity(geo.len());
-    for g in GeometryArrayIter::new(geo) {
-        match g {
-            Some(g) => {
-                let wkb = g.to_wkb(CoordDimensions::xy()).unwrap();
-                wkb_vec.push(Some(wkb));
-            }
-            None => wkb_vec.push(None),
-        }
-    }
-    let bin_array = arrow2::array::BinaryArray::<i64>::from(wkb_vec);
-    Ok(BinaryArray::new(
+    let bytes_iter = geo
+        .physical
+        .into_iter()
+        .map(|x| x.map(|x| x.u8().unwrap().as_slice().to_vec()));
+    Series::from_arrow(
         Arc::new(Field::new(geo.name(), DataType::Binary)),
-        Box::new(bin_array),
+        Box::new(arrow2::array::BinaryArray::<i64>::from_iter(bytes_iter)),
     )
-    .unwrap()
-    .into_series())
 }
 
 pub fn encode_series(s: &Series, text: bool) -> DaftResult<Series> {
@@ -247,7 +235,7 @@ pub fn geo_binary_dispatch(lhs: &Series, rhs: &Series, op: GeoOperation) -> Daft
     }
 }
 
-pub fn geo_unary_to_scalar<T: NativeType, F>(s: &Series, op_fn: F) -> DaftResult<Series>
+fn geo_unary_to_scalar<T: NativeType, F>(s: &Series, op_fn: F) -> DaftResult<Series>
 where
     F: Fn(Geometry) -> T,
 {
@@ -263,12 +251,12 @@ where
     )
 }
 
-pub fn geo_unary_to_geo<F>(s: &Series, op_fn: F) -> DaftResult<Series>
+fn geo_unary_to_geo<F>(s: &Series, op_fn: F) -> DaftResult<Series>
 where
     F: Fn(Geometry) -> Option<Geometry>,
 {
     let geo_array = s.geometry()?;
-    let mut gh = GH::new(geo_array.len());
+    let mut gh = GeoSeriesHelper::new(geo_array.len());
     for geo in GeometryArrayIter::new(geo_array) {
         match geo {
             Some(g) => match op_fn(g) {
@@ -281,7 +269,7 @@ where
     gh.into_series(geo_array.name())
 }
 
-pub fn geo_binary_to_scalar<T: NativeType, F>(
+fn geo_binary_to_scalar<T: NativeType, F>(
     lhs: &Series,
     rhs: &Series,
     op_fn: F,
@@ -307,7 +295,7 @@ where
     )
 }
 
-pub fn geo_binary_to_bool<F>(lhs: &Series, rhs: &Series, op_fn: F) -> DaftResult<Series>
+fn geo_binary_to_bool<F>(lhs: &Series, rhs: &Series, op_fn: F) -> DaftResult<Series>
 where
     F: Fn(Geometry, Geometry) -> bool,
 {
@@ -326,13 +314,13 @@ where
     )
 }
 
-pub fn geo_binary_to_geo<F>(lhs: &Series, rhs: &Series, op_fn: F) -> DaftResult<Series>
+fn geo_binary_to_geo<F>(lhs: &Series, rhs: &Series, op_fn: F) -> DaftResult<Series>
 where
     F: Fn(Geometry, Geometry) -> Option<Geometry>,
 {
     let lhs_array = lhs.geometry()?;
     let rhs_array = rhs.geometry()?;
-    let mut gh = GH::new(lhs_array.len());
+    let mut gh = GeoSeriesHelper::new(lhs_array.len());
     for (lhg, rhg) in GeometryArrayIter::new(lhs_array).zip(GeometryArrayIter::new(rhs_array)) {
         match (lhg, rhg) {
             (Some(l), Some(r)) => match op_fn(l, r) {
