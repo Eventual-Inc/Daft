@@ -28,7 +28,7 @@ impl Session {
                 continue;
             };
 
-            let previous = self.values.insert(key.clone(), value.clone());
+            let previous = self.config_values.insert(key.clone(), value.clone());
             if previous.is_some() {
                 tracing::info!("Updated existing configuration value");
             } else {
@@ -46,7 +46,7 @@ impl Session {
         let _enter = span.enter();
 
         for key in operation.keys {
-            let value = self.values.get(&key).cloned();
+            let value = self.config_values.get(&key).cloned();
             response.pairs.push(KeyValue { key, value });
         }
 
@@ -60,7 +60,7 @@ impl Session {
         let _enter = span.enter();
 
         for KeyValue { key, value: default_value } in operation.pairs {
-            let value = self.values.get(&key).cloned().or(default_value);
+            let value = self.config_values.get(&key).cloned().or(default_value);
             response.pairs.push(KeyValue { key, value });
         }
 
@@ -76,7 +76,7 @@ impl Session {
         let _enter = span.enter();
 
         for key in operation.keys {
-            let value = self.values.get(&key).cloned();
+            let value = self.config_values.get(&key).cloned();
             response.pairs.push(KeyValue { key, value });
         }
 
@@ -90,13 +90,13 @@ impl Session {
         let _enter = span.enter();
 
         let Some(prefix) = operation.prefix else {
-            for (key, value) in &self.values {
+            for (key, value) in &self.config_values {
                 response.pairs.push(KeyValue { key: key.clone(), value: Some(value.clone()) });
             }
             return Ok(response);
         };
 
-        for (k, v) in prefix_search(&self.values, &prefix) {
+        for (k, v) in prefix_search(&self.config_values, &prefix) {
             response.pairs.push(KeyValue { key: k.clone(), value: Some(v.clone()) });
         }
 
@@ -110,7 +110,7 @@ impl Session {
         let _enter = span.enter();
 
         for key in operation.keys {
-            if self.values.remove(&key).is_none() {
+            if self.config_values.remove(&key).is_none() {
                 let msg = format!("Key {key} not found");
                 response.warnings.push(msg);
             } else {
