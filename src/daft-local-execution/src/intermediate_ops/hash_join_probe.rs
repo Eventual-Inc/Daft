@@ -233,31 +233,27 @@ impl IntermediateOperator for HashJoinProbeOperator {
         input: &PipelineResultType,
         state: &mut dyn IntermediateOperatorState,
     ) -> DaftResult<IntermediateOperatorResult> {
-        match idx {
-            0 => {
-                let state = state
-                    .as_any_mut()
-                    .downcast_mut::<HashJoinProbeState>()
-                    .expect("HashJoinProbeOperator state should be HashJoinProbeState");
-                let (probe_table, tables) = input.as_probe_table();
-                state.set_table(probe_table, tables);
-                Ok(IntermediateOperatorResult::NeedMoreInput(None))
-            }
-            _ => {
-                let state = state
-                    .as_any_mut()
-                    .downcast_mut::<HashJoinProbeState>()
-                    .expect("HashJoinProbeOperator state should be HashJoinProbeState");
-                let input = input.as_data();
-                let out = match self.join_type {
-                    JoinType::Inner => self.probe_inner(input, state),
-                    JoinType::Left | JoinType::Right => self.probe_left_right(input, state),
-                    _ => {
-                        unimplemented!("Only Inner, Left, and Right joins are supported in HashJoinProbeOperator")
-                    }
-                }?;
-                Ok(IntermediateOperatorResult::NeedMoreInput(Some(out)))
-            }
+        let state = state
+            .as_any_mut()
+            .downcast_mut::<HashJoinProbeState>()
+            .expect("HashJoinProbeOperator state should be HashJoinProbeState");
+
+        if idx == 0 {
+            let (probe_table, tables) = input.as_probe_table();
+            state.set_table(probe_table, tables);
+            Ok(IntermediateOperatorResult::NeedMoreInput(None))
+        } else {
+            let input = input.as_data();
+            let out = match self.join_type {
+                JoinType::Inner => self.probe_inner(input, state),
+                JoinType::Left | JoinType::Right => self.probe_left_right(input, state),
+                _ => {
+                    unimplemented!(
+                        "Only Inner, Left, and Right joins are supported in HashJoinProbeOperator"
+                    )
+                }
+            }?;
+            Ok(IntermediateOperatorResult::NeedMoreInput(Some(out)))
         }
     }
 

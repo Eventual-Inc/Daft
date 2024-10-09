@@ -102,28 +102,22 @@ impl IntermediateOperator for AntiSemiProbeOperator {
         input: &PipelineResultType,
         state: &mut dyn IntermediateOperatorState,
     ) -> DaftResult<IntermediateOperatorResult> {
-        match idx {
-            0 => {
-                let state = state
-                    .as_any_mut()
-                    .downcast_mut::<AntiSemiProbeState>()
-                    .expect("AntiSemiProbeOperator state should be AntiSemiProbeState");
-                let (probe_table, _) = input.as_probe_table();
-                state.set_table(probe_table);
-                Ok(IntermediateOperatorResult::NeedMoreInput(None))
-            }
-            _ => {
-                let state = state
-                    .as_any_mut()
-                    .downcast_mut::<AntiSemiProbeState>()
-                    .expect("AntiSemiProbeOperator state should be AntiSemiProbeState");
-                let input = input.as_data();
-                let out = match self.join_type {
-                    JoinType::Semi | JoinType::Anti => self.probe_anti_semi(input, state),
-                    _ => unreachable!("Only Semi and Anti joins are supported"),
-                }?;
-                Ok(IntermediateOperatorResult::NeedMoreInput(Some(out)))
-            }
+        let state = state
+            .as_any_mut()
+            .downcast_mut::<AntiSemiProbeState>()
+            .expect("AntiSemiProbeOperator state should be AntiSemiProbeState");
+
+        if idx == 0 {
+            let (probe_table, _) = input.as_probe_table();
+            state.set_table(probe_table);
+            Ok(IntermediateOperatorResult::NeedMoreInput(None))
+        } else {
+            let input = input.as_data();
+            let out = match self.join_type {
+                JoinType::Semi | JoinType::Anti => self.probe_anti_semi(input, state),
+                _ => unreachable!("Only Semi and Anti joins are supported"),
+            }?;
+            Ok(IntermediateOperatorResult::NeedMoreInput(Some(out)))
         }
     }
 
