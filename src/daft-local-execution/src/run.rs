@@ -126,35 +126,45 @@ pub fn run_local(
             .build()
             .expect("Failed to create tokio runtime");
         runtime.block_on(async {
-            let mut runtime_handle = ExecutionRuntimeHandle::new(cfg.default_morsel_size);
-            let mut receiver = pipeline.start(true, &mut runtime_handle)?.get_receiver();
-            while let Some(val) = receiver.recv().await {
-                let _ = tx.send(val.as_data().clone()).await;
-            }
-
-            while let Some(result) = runtime_handle.join_next().await {
-                match result {
-                    Ok(Err(e)) => {
-                        runtime_handle.shutdown().await;
-                        return DaftResult::Err(e.into());
-                    }
-                    Err(e) => {
-                        runtime_handle.shutdown().await;
-                        return DaftResult::Err(Error::JoinError { source: e }.into());
-                    }
-                    _ => {}
+            tokio::select! {
+                biased;
+                _ = tokio::signal::ctrl_c() => {
+                    log::info!("Received Ctrl-C, shutting down execution engine");
+                    Ok(())
                 }
+                result = async {
+                    let mut runtime_handle = ExecutionRuntimeHandle::new(cfg.default_morsel_size);
+                    let mut receiver = pipeline.start(true, &mut runtime_handle)?.get_receiver();
+
+                    while let Some(val) = receiver.recv().await {
+                        let _ = tx.send(val.as_data().clone()).await;
+                    }
+
+                    while let Some(result) = runtime_handle.join_next().await {
+                        match result {
+                            Ok(Err(e)) => {
+                                runtime_handle.shutdown().await;
+                                return DaftResult::Err(e.into());
+                            }
+                            Err(e) => {
+                                runtime_handle.shutdown().await;
+                                return DaftResult::Err(Error::JoinError { source: e }.into());
+                            }
+                            _ => {}
+                        }
+                    }
+                    if should_enable_explain_analyze() {
+                        let curr_ms = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .expect("Time went backwards")
+                            .as_millis();
+                        let file_name = format!("explain-analyze-{}-mermaid.md", curr_ms);
+                        let mut file = File::create(file_name)?;
+                        writeln!(file, "```mermaid\n{}\n```", viz_pipeline(pipeline.as_ref()))?;
+                    }
+                    Ok(())
+                } => result,
             }
-            if should_enable_explain_analyze() {
-                let curr_ms = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .expect("Time went backwards")
-                    .as_millis();
-                let file_name = format!("explain-analyze-{}-mermaid.md", curr_ms);
-                let mut file = File::create(file_name)?;
-                writeln!(file, "```mermaid\n{}\n```", viz_pipeline(pipeline.as_ref()))?;
-            }
-            Ok(())
         })
     });
 
