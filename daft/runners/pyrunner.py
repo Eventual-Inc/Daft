@@ -371,7 +371,6 @@ class PyRunner(Runner[MicroPartition]):
             self.num_cpus = num_cpus
 
         self.gpus = cuda_visible_devices()
-        print("gpus", self.gpus)
         self.total_bytes_memory = system_info.total_memory()
 
         # Resource accounting:
