@@ -2,18 +2,19 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import multiprocessing as mp
 import threading
 import uuid
 from concurrent import futures
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Iterator
+from typing import TYPE_CHECKING, Callable, Iterator
 
 from daft.context import get_context
 from daft.daft import FileFormatConfig, FileInfos, IOConfig, ResourceRequest, SystemInfo
 from daft.execution.native_executor import NativeExecutor
 from daft.expressions import ExpressionsProjection
 from daft.filesystem import glob_path_with_stats
-from daft.internal.gpu import cuda_device_count
+from daft.internal.gpu import cuda_visible_devices
 from daft.runners import runner_io
 from daft.runners.partitioning import (
     MaterializedResult,
@@ -107,27 +108,121 @@ class LocalPartitionSet(PartitionSet[MicroPartition]):
         pass
 
 
-class PyActorPool:
-    initialized_stateful_udfs_process_singleton: dict[str, UserProvidedPythonFunction] | None = None
+@dataclass
+class PyRunnerResources:
+    num_cpus: float
+    gpus: dict[str, float]
+    memory_bytes: int
 
-    def __init__(
-        self,
-        pool_id: str,
-        num_actors: int,
-        resource_request: ResourceRequest,
-        projection: ExpressionsProjection,
-    ):
-        self._pool_id = pool_id
-        self._num_actors = num_actors
-        self._resource_request = resource_request
-        self._executor: futures.ProcessPoolExecutor | None = None
-        self._projection = projection
+    def _can_acquire_resources(self, resource_request: ResourceRequest) -> bool:
+        cpus_okay = (resource_request.num_cpus or 0) <= self.num_cpus
+        memory_okay = (resource_request.memory_bytes or 0) <= self.memory_bytes
+
+        if not resource_request.num_gpus:
+            gpus_okay = True
+        elif resource_request.num_gpus.is_integer():
+            gpus_okay = (
+                sum(fraction_avalable == 1 for fraction_avalable in self.gpus.values()) >= resource_request.num_gpus
+            )
+        else:
+            # do not allow fractional GPUs above 1.0, similar to Ray's behavior
+            # this should have been validated when creating the resource request so we only do an assert here
+            assert 0 <= resource_request.num_gpus < 1
+
+            gpus_okay = any(
+                fraction_available >= resource_request.num_gpus for fraction_available in self.gpus.values()
+            )
+
+        return all((cpus_okay, gpus_okay, memory_okay))
+
+    def try_acquire_resources(self, resource_request: ResourceRequest) -> PyRunnerResources | None:
+        """
+        Attempts to acquire the requested resources.
+
+        If the requested resources are available, returns a PyRunnerResources with the amount of acquired CPUs and memory, as well as the specific GPUs that were acquired.
+
+        If the requested resources are not available, returns None.
+        """
+        if not self._can_acquire_resources(resource_request):
+            return None
+
+        num_cpus = resource_request.num_cpus or 0.0
+        memory_bytes = resource_request.memory_bytes or 0
+        num_gpus = resource_request.num_gpus or 0.0
+
+        self.num_cpus -= num_cpus
+        self.memory_bytes -= memory_bytes
+
+        chosen_gpus = {}
+
+        if num_gpus.is_integer():
+            remaining = num_gpus
+
+            for device in self.gpus:
+                if remaining == 0:
+                    break
+
+                if self.gpus[device] == 1.0:
+                    chosen_gpus[device] = 1.0
+                    remaining -= 1.0
+
+            assert remaining == 0
+        else:
+            # greedily choose GPU that has lowest fraction available which can fit the requested fraction
+            chosen_gpu = None
+            chosen_gpu_available = None
+
+            for device in self.gpus:
+                fraction_available = self.gpus[device]
+                if fraction_available >= num_gpus:
+                    if chosen_gpu is None or fraction_available < chosen_gpu_available:
+                        chosen_gpu = device
+                        chosen_gpu_available = fraction_available
+
+            assert chosen_gpu is not None
+            chosen_gpus[chosen_gpu] = num_gpus
+
+        for device, fraction in chosen_gpus.items():
+            self.gpus[device] -= fraction
+
+        return PyRunnerResources(num_cpus, chosen_gpus, memory_bytes)
+
+    def release_resources(self, resources: PyRunnerResources):
+        """Admit the resources back into the resource pool."""
+        self.num_cpus += resources.num_cpus
+        for gpu, amount in resources.gpus.items():
+            self.gpus[gpu] += amount
+        self.memory_bytes += resources.memory_bytes
+
+
+class PyStatefulActor:
+    """
+    This class stores the singleton `initialized_udfs` that is isolated to each Python process. It stores the stateful UDF objects of a single actor.
+
+    Currently, only one stateful UDF per actor is supported, but we allow multiple here in case we want to support multiple stateful UDFs in the future.
+
+    Note: The class methods should only be called inside of actor processes.
+    """
+
+    initialized_udfs: dict[str, UserProvidedPythonFunction] | None = None
 
     @staticmethod
-    def initialize_actor_global_state(uninitialized_projection: ExpressionsProjection):
+    def initialize_actor_global_state(
+        uninitialized_projection: ExpressionsProjection,
+        resource_request: ResourceRequest,
+        rank_queue: mp.Queue[int],
+        cuda_device_queue: mp.Queue[str],
+    ):
+        import os
+
+        from daft.context import _set_actor_context
         from daft.daft import extract_partial_stateful_udf_py
 
-        if PyActorPool.initialized_stateful_udfs_process_singleton is not None:
+        _set_actor_context(rank=rank_queue.get(timeout=1), resource_request=resource_request)
+
+        os.environ["CUDA_VISIBLE_DEVICES"] = cuda_device_queue.get(timeout=1)
+
+        if PyStatefulActor.initialized_udfs is not None:
             raise RuntimeError("Cannot initialize Python process actor twice.")
         else:
             partial_stateful_udfs = {
@@ -138,15 +233,13 @@ class PyActorPool:
 
             logger.info("Initializing stateful UDFs: %s", ", ".join(partial_stateful_udfs.keys()))
 
-            PyActorPool.initialized_stateful_udfs_process_singleton = {}
+            PyStatefulActor.initialized_udfs = {}
             for name, (partial_udf, init_args) in partial_stateful_udfs.items():
                 if init_args is None:
-                    PyActorPool.initialized_stateful_udfs_process_singleton[name] = partial_udf.func_cls()
+                    PyStatefulActor.initialized_udfs[name] = partial_udf.func_cls()
                 else:
                     args, kwargs = init_args
-                    PyActorPool.initialized_stateful_udfs_process_singleton[name] = partial_udf.func_cls(
-                        *args, **kwargs
-                    )
+                    PyStatefulActor.initialized_udfs[name] = partial_udf.func_cls(*args, **kwargs)
 
     @staticmethod
     def build_partitions_with_stateful_project(
@@ -155,7 +248,7 @@ class PyActorPool:
         partial_metadata: PartialPartitionMetadata,
     ) -> list[MaterializedResult[MicroPartition]]:
         # Bind the expressions to the initialized stateful UDFs, which should already have been initialized at process start-up
-        initialized_stateful_udfs = PyActorPool.initialized_stateful_udfs_process_singleton
+        initialized_stateful_udfs = PyStatefulActor.initialized_udfs
         assert (
             initialized_stateful_udfs is not None
         ), "PyActor process must be initialized with stateful UDFs before execution"
@@ -166,6 +259,23 @@ class PyActorPool:
         return [
             PyMaterializedResult(new_part, PartitionMetadata.from_table(new_part).merge_with_partial(partial_metadata))
         ]
+
+
+class PyActorPool:
+    def __init__(
+        self,
+        pool_id: str,
+        num_actors: int,
+        resource_request_per_actor: ResourceRequest,
+        resources: list[PyRunnerResources],
+        projection: ExpressionsProjection,
+    ):
+        self._pool_id = pool_id
+        self._num_actors = num_actors
+        self._resource_request_per_actor = resource_request_per_actor
+        self._resources = resources
+        self._executor: futures.ProcessPoolExecutor | None = None
+        self._projection = projection
 
     def submit(
         self,
@@ -189,7 +299,7 @@ class PyActorPool:
         partial_metadata = final_metadata[0]
 
         return self._executor.submit(
-            PyActorPool.build_partitions_with_stateful_project,
+            PyStatefulActor.build_partitions_with_stateful_project,
             projection,
             partition,
             partial_metadata,
@@ -202,8 +312,19 @@ class PyActorPool:
         self._executor = None
 
     def setup(self) -> None:
+        rank_queue: mp.Queue[int] = mp.Queue()
+        for i in range(self._num_actors):
+            rank_queue.put(i)
+
+        cuda_device_queue: mp.Queue[str] = mp.Queue()
+        for r in self._resources:
+            visible_device_str = ",".join(r.gpus)
+            cuda_device_queue.put(visible_device_str)
+
         self._executor = futures.ProcessPoolExecutor(
-            self._num_actors, initializer=PyActorPool.initialize_actor_global_state, initargs=(self._projection,)
+            self._num_actors,
+            initializer=PyStatefulActor.initialize_actor_global_state,
+            initargs=(self._projection, self._resource_request_per_actor, rank_queue, cuda_device_queue),
         )
 
 
@@ -249,14 +370,16 @@ class PyRunner(Runner[MicroPartition]):
         else:
             self.num_cpus = num_cpus
 
-        self.num_gpus = cuda_device_count()
+        self.gpus = cuda_visible_devices()
         self.total_bytes_memory = system_info.total_memory()
 
         # Resource accounting:
         self._resource_accounting_lock = threading.Lock()
-        self._available_bytes_memory = self.total_bytes_memory
-        self._available_cpus = float(self.num_cpus)
-        self._available_gpus = float(self.num_gpus)
+        self._available_resources = PyRunnerResources(
+            num_cpus=self.num_cpus,
+            gpus={gpu: 1.0 for gpu in self.gpus},
+            memory_bytes=self.total_bytes_memory,
+        )
 
     def runner_io(self) -> PyRunnerIO:
         return PyRunnerIO()
@@ -340,31 +463,47 @@ class PyRunner(Runner[MicroPartition]):
         self,
         name: str,
         actor_resource_request: ResourceRequest,
-        _task_resource_request: ResourceRequest,
+        task_resource_request: ResourceRequest,
         num_actors: int,
         projection: ExpressionsProjection,
     ) -> Iterator[str]:
         actor_pool_id = f"py_actor_pool-{name}"
 
-        total_resource_request = actor_resource_request * num_actors
-        admitted = self._attempt_admit_task(total_resource_request)
+        resources = [self._attempt_admit_task(actor_resource_request) for _ in range(num_actors)]
 
-        if not admitted:
+        if any(r is None for r in resources):
+            for r in resources:
+                if r is not None:
+                    self._release_resources(r)
+
+            print(self._available_resources)
+
             raise RuntimeError(
                 f"Not enough resources available to admit {num_actors} actors, each with resource request: {actor_resource_request}"
             )
 
         try:
+            resource_request = actor_resource_request + task_resource_request
             self._actor_pools[actor_pool_id] = PyActorPool(
-                actor_pool_id, num_actors, actor_resource_request, projection
+                actor_pool_id,
+                num_actors,
+                resource_request,
+                resources,  # type: ignore
+                projection,
             )
             self._actor_pools[actor_pool_id].setup()
-            logger.debug("Created actor pool %s with resources: %s", actor_pool_id, total_resource_request)
+            logger.debug(
+                "Created actor pool %s with %s actors, each with resources: %s",
+                actor_pool_id,
+                num_actors,
+                actor_resource_request,
+            )
             yield actor_pool_id
         # NOTE: Ensure that teardown always occurs regardless of any errors that occur during actor pool setup or execution
         finally:
             logger.debug("Tearing down actor pool: %s", actor_pool_id)
-            self._release_resources(total_resource_request)
+            for r in resources:
+                self._release_resources(r)  # type: ignore
             self._actor_pools[actor_pool_id].teardown()
             del self._actor_pools[actor_pool_id]
 
@@ -401,11 +540,11 @@ class PyRunner(Runner[MicroPartition]):
 
                     else:
                         # next_task is a task to run.
-                        task_admitted = self._attempt_admit_task(
+                        resources = self._attempt_admit_task(
                             next_step.resource_request,
                         )
 
-                        if not task_admitted:
+                        if resources is None:
                             # Insufficient resources; await some tasks.
                             logger.debug(
                                 "execution[%s] Skipping to wait on dispatched tasks: insufficient resources",
@@ -437,7 +576,7 @@ class PyRunner(Runner[MicroPartition]):
                                 next_step.partial_metadatas,
                             )
 
-                            self._release_resources(next_step.resource_request)
+                            self._release_resources(resources)
 
                             next_step.set_result(materialized_results)
 
@@ -466,9 +605,17 @@ class PyRunner(Runner[MicroPartition]):
                                     next_step.partial_metadatas,
                                 )
 
-                            resource_request = next_step.resource_request
+                            def create_release_resources_callback(
+                                resources: PyRunnerResources,
+                            ) -> Callable[[futures.Future], None]:
+                                """We use a higher order function here to capture the value of `resources` during the creation of the callback instead of during its call."""
 
-                            future.add_done_callback(lambda _: self._release_resources(resource_request))
+                                def release_resources(_):
+                                    self._release_resources(resources)
+
+                                return release_resources
+
+                            future.add_done_callback(create_release_resources_callback(resources))
 
                             # Register the inflight task
                             assert (
@@ -527,8 +674,8 @@ class PyRunner(Runner[MicroPartition]):
 
         if resource_request.num_cpus is not None and resource_request.num_cpus > self.num_cpus:
             raise RuntimeError(f"Requested {resource_request.num_cpus} CPUs but found only {self.num_cpus} available")
-        if resource_request.num_gpus is not None and resource_request.num_gpus > self.num_gpus:
-            raise RuntimeError(f"Requested {resource_request.num_gpus} GPUs but found only {self.num_gpus} available")
+        if resource_request.num_gpus is not None and resource_request.num_gpus > len(self.gpus):
+            raise RuntimeError(f"Requested {resource_request.num_gpus} GPUs but found only {len(self.gpus)} available")
         if resource_request.memory_bytes is not None and resource_request.memory_bytes > self.total_bytes_memory:
             raise RuntimeError(
                 f"Requested {resource_request.memory_bytes} bytes of memory but found only {self.total_bytes_memory} available"
@@ -537,28 +684,16 @@ class PyRunner(Runner[MicroPartition]):
     def _attempt_admit_task(
         self,
         resource_request: ResourceRequest,
-    ) -> bool:
+    ) -> PyRunnerResources | None:
+        """Attempts to admit a task to the resource pool. Returns the acquired resources if successful, None otherwise."""
         self._check_resource_requests(resource_request)
 
         with self._resource_accounting_lock:
-            memory_okay = (resource_request.memory_bytes or 0) <= self._available_bytes_memory
-            cpus_okay = (resource_request.num_cpus or 0) <= self._available_cpus
-            gpus_okay = (resource_request.num_gpus or 0) <= self._available_gpus
-            all_okay = all((cpus_okay, gpus_okay, memory_okay))
+            return self._available_resources.try_acquire_resources(resource_request)
 
-            # Update resource accounting if we have the resources (this is considered as the task being "admitted")
-            if all_okay:
-                self._available_bytes_memory -= resource_request.memory_bytes or 0
-                self._available_cpus -= resource_request.num_cpus or 0.0
-                self._available_gpus -= resource_request.num_gpus or 0.0
-
-            return all_okay
-
-    def _release_resources(self, resource_request: ResourceRequest) -> None:
+    def _release_resources(self, resources: PyRunnerResources) -> None:
         with self._resource_accounting_lock:
-            self._available_bytes_memory += resource_request.memory_bytes or 0
-            self._available_cpus += resource_request.num_cpus or 0.0
-            self._available_gpus += resource_request.num_gpus or 0.0
+            self._available_resources.release_resources(resources)
 
     def build_partitions(
         self,
