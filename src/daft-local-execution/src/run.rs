@@ -2,10 +2,7 @@ use std::{
     collections::HashMap,
     fs::File,
     io::Write,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
+    sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -124,46 +121,50 @@ pub fn run_local(
     let mut pipeline = physical_plan_to_pipeline(physical_plan, &psets)?;
     let (tx, rx) = create_channel(results_buffer_size.unwrap_or(1));
     let handle = std::thread::spawn(move || {
-        let runtime = tokio::runtime::Builder::new_multi_thread()
+        let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
-            .max_blocking_threads(10)
-            .thread_name_fn(|| {
-                static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
-                let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
-                format!("Executor-Worker-{id}")
-            })
             .build()
             .expect("Failed to create tokio runtime");
         runtime.block_on(async {
-            let mut runtime_handle = ExecutionRuntimeHandle::new(cfg.default_morsel_size);
-            let mut receiver = pipeline.start(true, &mut runtime_handle)?.get_receiver();
-            while let Some(val) = receiver.recv().await {
-                let _ = tx.send(val.as_data().clone()).await;
-            }
-
-            while let Some(result) = runtime_handle.join_next().await {
-                match result {
-                    Ok(Err(e)) => {
-                        runtime_handle.shutdown().await;
-                        return DaftResult::Err(e.into());
-                    }
-                    Err(e) => {
-                        runtime_handle.shutdown().await;
-                        return DaftResult::Err(Error::JoinError { source: e }.into());
-                    }
-                    _ => {}
+            tokio::select! {
+                biased;
+                _ = tokio::signal::ctrl_c() => {
+                    log::info!("Received Ctrl-C, shutting down execution engine");
+                    Ok(())
                 }
+                result = async {
+                    let mut runtime_handle = ExecutionRuntimeHandle::new(cfg.default_morsel_size);
+                    let mut receiver = pipeline.start(true, &mut runtime_handle)?.get_receiver();
+
+                    while let Some(val) = receiver.recv().await {
+                        let _ = tx.send(val.as_data().clone()).await;
+                    }
+
+                    while let Some(result) = runtime_handle.join_next().await {
+                        match result {
+                            Ok(Err(e)) => {
+                                runtime_handle.shutdown().await;
+                                return DaftResult::Err(e.into());
+                            }
+                            Err(e) => {
+                                runtime_handle.shutdown().await;
+                                return DaftResult::Err(Error::JoinError { source: e }.into());
+                            }
+                            _ => {}
+                        }
+                    }
+                    if should_enable_explain_analyze() {
+                        let curr_ms = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .expect("Time went backwards")
+                            .as_millis();
+                        let file_name = format!("explain-analyze-{curr_ms}-mermaid.md");
+                        let mut file = File::create(file_name)?;
+                        writeln!(file, "```mermaid\n{}\n```", viz_pipeline(pipeline.as_ref()))?;
+                    }
+                    Ok(())
+                } => result,
             }
-            if should_enable_explain_analyze() {
-                let curr_ms = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .expect("Time went backwards")
-                    .as_millis();
-                let file_name = format!("explain-analyze-{curr_ms}-mermaid.md");
-                let mut file = File::create(file_name)?;
-                writeln!(file, "```mermaid\n{}\n```", viz_pipeline(pipeline.as_ref()))?;
-            }
-            Ok(())
         })
     });
 
