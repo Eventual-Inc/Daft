@@ -12,6 +12,7 @@ use uuid::Uuid;
 use std::collections::{BTreeMap, HashMap};
 use dashmap::{DashMap, Entry};
 use tracing::info;
+use crate::spark_connect::analyze_plan_response::TreeString;
 use crate::spark_connect::command::CommandType;
 use crate::spark_connect::config_request::{Operation, Set};
 use crate::spark_connect::KeyValue;
@@ -28,7 +29,7 @@ struct Session {
     /// so order is preserved
     ///
     /// Also, <https://users.rust-lang.org/t/hashmap-vs-btreemap/13804/4>
-    values: BTreeMap<String, String>,
+    config_values: BTreeMap<String, String>,
 
     session_id: String,
 
@@ -50,7 +51,7 @@ impl DaftSparkConnectService {
 
         let res = self.client_to_session.entry(uuid).or_insert_with(|| {
             Session {
-                values: BTreeMap::new(),
+                config_values: BTreeMap::new(),
                 session_id: session_id.to_string(),
                 server_side_session_id: Uuid::new_v4().to_string(),
             }
@@ -78,10 +79,11 @@ impl SparkConnectService for DaftSparkConnectService {
         let plan = plan.op_type.ok_or_else(|| Status::invalid_argument("Plan operation is required"))?;
 
         use crate::spark_connect::plan::OpType;
+        println!("plan {:#?}", plan);
 
         let command = match plan {
             OpType::Root(..) => {
-                return Err(Status::unimplemented("Not yet implemented"));
+                return Err(Status::unimplemented("Root command not yet implemented"));
             }
             OpType::Command(command) => {
                 command
@@ -89,6 +91,8 @@ impl SparkConnectService for DaftSparkConnectService {
         };
 
         let command = command.command_type.ok_or_else(|| Status::invalid_argument("Command type is required"))?;
+
+        println!("command {:#?}", command);
 
         match command {
             CommandType::RegisterFunction(_) => {}
@@ -111,6 +115,8 @@ impl SparkConnectService for DaftSparkConnectService {
             CommandType::MergeIntoTableCommand(_) => {}
             CommandType::Extension(_) => {}
         }
+
+
 
         Err(Status::unimplemented("Unsupported plan type"))
     }
@@ -146,8 +152,25 @@ impl SparkConnectService for DaftSparkConnectService {
         Err(Status::unimplemented("add_artifacts operation is not yet implemented"))
     }
 
-    async fn analyze_plan(&self, _request: Request<AnalyzePlanRequest>) -> Result<Response<AnalyzePlanResponse>, Status> {
-        Err(Status::unimplemented("analyze_plan operation is not yet implemented"))
+    async fn analyze_plan(&self, request: Request<AnalyzePlanRequest>) -> Result<Response<AnalyzePlanResponse>, Status> {
+        let request = request.into_inner();
+        println!("AnalyzePlanRequest: {request:#?}");
+
+        let session = self.get_session(&request.session_id)?;
+
+        // Err(Status::unimplemented("analyze_plan operation is not yet implemented"))
+
+        use crate::spark_connect::analyze_plan_response::Result as AnalyzePlanResponseResult;
+
+        let tree_string = AnalyzePlanResponseResult::TreeString(crate::spark_connect::analyze_plan_response::TreeString { tree_string: "🤫 some schema [unimplemented] ✨ ".to_string() });
+
+        let response = AnalyzePlanResponse {
+            session_id: request.session_id.clone(),
+            server_side_session_id: request.session_id.clone(),
+            result: Some(tree_string),
+        };
+
+        Ok(Response::new(response))
     }
 
     async fn artifact_status(&self, _request: Request<ArtifactStatusesRequest>) -> Result<Response<ArtifactStatusesResponse>, Status> {
@@ -164,13 +187,18 @@ impl SparkConnectService for DaftSparkConnectService {
 
     async fn release_execute(&self, request: Request<ReleaseExecuteRequest>) -> Result<Response<ReleaseExecuteResponse>, Status> {
         let request = request.into_inner();
-        let client_session_id = request.session_id;
 
-        let Ok(client_session_id_uuid) = Uuid::parse_str(&client_session_id) else {
-            return Err(Status::invalid_argument("Invalid session_id format, must be a UUID"));
+        let session = self.get_session(&request.session_id)?;
+
+        println!("release request: {request:#?}");
+
+        let response = ReleaseExecuteResponse {
+            session_id: session.session_id.clone(),
+            server_side_session_id: session.server_side_session_id.clone(),
+            operation_id: Some(request.operation_id), // todo: impl properly
         };
 
-        todo!()
+        Ok(Response::new(response))
     }
     async fn release_session(&self, _request: Request<ReleaseSessionRequest>) -> Result<Response<ReleaseSessionResponse>, Status> {
         Err(Status::unimplemented("release_session operation is not yet implemented"))
