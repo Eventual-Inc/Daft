@@ -15,7 +15,7 @@ mod resolve_expr;
 mod treenode;
 pub use common_treenode;
 pub use expr::{
-    binary_op, col, has_agg, has_stateful_udf, is_partition_compatible, AggExpr,
+    binary_op, col, has_agg, has_stateful_udf, is_io_bound, is_partition_compatible, AggExpr,
     ApproxPercentileParams, Expr, ExprRef, Operator, SketchType,
 };
 pub use lit::{lit, literal_value, literals_to_series, null_lit, Literal, LiteralValue};
