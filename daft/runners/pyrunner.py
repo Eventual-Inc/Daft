@@ -158,28 +158,32 @@ class PyRunnerResources:
         if num_gpus.is_integer():
             remaining = num_gpus
 
-            for gpu, fraction_available in self.gpus.items():
+            for device in self.gpus:
                 if remaining == 0:
                     break
 
-                if fraction_available == 1.0:
-                    chosen_gpus[gpu] = 1.0
+                if self.gpus[device] == 1.0:
+                    chosen_gpus[device] = 1.0
                     remaining -= 1.0
+
+            assert remaining == 0
         else:
             # greedily choose GPU that has lowest fraction available which can fit the requested fraction
             chosen_gpu = None
             chosen_gpu_available = None
 
-            for gpu, fraction_available in self.gpus.items():
+            for device in self.gpus:
+                fraction_available = self.gpus[device]
                 if fraction_available >= num_gpus:
                     if chosen_gpu is None or fraction_available < chosen_gpu_available:
-                        chosen_gpu = gpu
+                        chosen_gpu = device
                         chosen_gpu_available = fraction_available
 
-            if chosen_gpu is None:
-                raise ValueError(f"Not enough GPU resources to acquire {num_gpus} GPUs from {self}")
-
+            assert chosen_gpu is not None
             chosen_gpus[chosen_gpu] = num_gpus
+
+        for device, fraction in chosen_gpus.items():
+            self.gpus[device] -= fraction
 
         return PyRunnerResources(num_cpus, chosen_gpus, memory_bytes)
 
@@ -214,9 +218,9 @@ class PyStatefulActor:
         from daft.context import _set_actor_context
         from daft.daft import extract_partial_stateful_udf_py
 
-        _set_actor_context(rank=rank_queue.get_nowait(), resource_request=resource_request)
+        _set_actor_context(rank=rank_queue.get(timeout=1), resource_request=resource_request)
 
-        os.environ["CUDA_VISIBLE_DEVICES"] = cuda_device_queue.get_nowait()
+        os.environ["CUDA_VISIBLE_DEVICES"] = cuda_device_queue.get(timeout=1)
 
         if PyStatefulActor.initialized_udfs is not None:
             raise RuntimeError("Cannot initialize Python process actor twice.")
@@ -367,6 +371,7 @@ class PyRunner(Runner[MicroPartition]):
             self.num_cpus = num_cpus
 
         self.gpus = cuda_visible_devices()
+        print("gpus", self.gpus)
         self.total_bytes_memory = system_info.total_memory()
 
         # Resource accounting:
@@ -471,6 +476,8 @@ class PyRunner(Runner[MicroPartition]):
             for r in resources:
                 if r is not None:
                     self._release_resources(r)
+
+            print(self._available_resources)
 
             raise RuntimeError(
                 f"Not enough resources available to admit {num_actors} actors, each with resource request: {actor_resource_request}"

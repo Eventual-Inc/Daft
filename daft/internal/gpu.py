@@ -24,21 +24,13 @@ def _raw_device_count_nvml() -> int:
     return dev_count.value
 
 
-def _parse_visible_devices() -> list[str] | None:
-    """Parse CUDA_VISIBLE_DEVICES environment variable. Returns None if not set."""
-    import os
-
-    var = os.getenv("CUDA_VISIBLE_DEVICES")
-    if var is None:
-        return None
-    else:
-        return [device.strip() for device in var.split(",") if device.strip()]
-
-
 def cuda_visible_devices() -> list[str]:
     """Get the list of CUDA devices visible to the current process."""
-    visible_devices = _parse_visible_devices()
-    if visible_devices is not None:
-        return visible_devices
-    else:
+    import os
+
+    visible_devices_envvar = os.getenv("CUDA_VISIBLE_DEVICES")
+
+    if visible_devices_envvar is None:
         return [str(i) for i in range(_raw_device_count_nvml())]
+
+    return [device.strip() for device in visible_devices_envvar.split(",") if device.strip()]
