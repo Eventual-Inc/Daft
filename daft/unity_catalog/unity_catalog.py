@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 
 import unitycatalog
 
-from daft.io import IOConfig, S3Config, AzureConfig
+from daft.io import AzureConfig, IOConfig, S3Config
 
 
 @dataclasses.dataclass(frozen=True)
