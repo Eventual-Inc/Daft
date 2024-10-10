@@ -1772,6 +1772,14 @@ dependencies = [
 name = "daft-connect"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow2",
+ "common-daft-config",
+ "common-error",
+ "daft-dsl",
+ "daft-local-execution",
+ "daft-physical-plan",
+ "daft-plan",
+ "daft-table",
  "dashmap",
  "futures",
  "prost 0.13.3",

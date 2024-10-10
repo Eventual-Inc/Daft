@@ -196,6 +196,14 @@ tokio-util = "0.7.11"
 tracing = "0.1"
 url = "2.4.0"
 
+daft-plan = { path = "src/daft-plan"}
+common-error = { path = "src/common/error"}
+daft-dsl = { path = "src/daft-dsl"}
+common-daft-config = { path = "src/common/daft-config"}
+daft-local-execution = { path = "src/daft-local-execution"}
+daft-table = { path = "src/daft-table"}
+daft-physical-plan = { path = "src/daft-physical-plan"}
+
 [workspace.dependencies.arrow2]
 path = "src/arrow2"
 

@@ -74,6 +74,8 @@ impl SparkConnectService for DaftSparkConnectService {
 
         let session = self.get_session(&request.session_id)?;
 
+        let operation = request.operation_id.ok_or_else(|| Status::invalid_argument("Operation ID is required"))?;
+
         // Proceed with executing the plan...
         let plan = request.plan.ok_or_else(|| Status::invalid_argument("Plan is required"))?;
         let plan = plan.op_type.ok_or_else(|| Status::invalid_argument("Plan operation is required"))?;
@@ -82,8 +84,9 @@ impl SparkConnectService for DaftSparkConnectService {
         println!("plan {:#?}", plan);
 
         let command = match plan {
-            OpType::Root(..) => {
-                return Err(Status::unimplemented("Root command not yet implemented"));
+            OpType::Root(relation) => {
+                let result = session.handle_root_command(relation, operation).await;
+                return Ok(Response::new(result));
             }
             OpType::Command(command) => {
                 command
@@ -115,7 +118,6 @@ impl SparkConnectService for DaftSparkConnectService {
             CommandType::MergeIntoTableCommand(_) => {}
             CommandType::Extension(_) => {}
         }
-
 
 
         Err(Status::unimplemented("Unsupported plan type"))
@@ -181,8 +183,19 @@ impl SparkConnectService for DaftSparkConnectService {
         Err(Status::unimplemented("interrupt operation is not yet implemented"))
     }
 
-    async fn reattach_execute(&self, _request: Request<ReattachExecuteRequest>) -> Result<Response<Self::ReattachExecuteStream>, Status> {
-        Err(Status::unimplemented("reattach_execute operation is not yet implemented"))
+    async fn reattach_execute(&self, request: Request<ReattachExecuteRequest>) -> Result<Response<Self::ReattachExecuteStream>, Status> {
+        let request = request.into_inner();
+        
+        println!("reattach_execute request: {request:#?}");
+
+        let session = self.get_session(&request.session_id)?;
+
+        
+        // Return an empty stream
+        let empty_stream = futures::stream::empty();
+        Ok(Response::new(Box::pin(empty_stream)))
+
+        
     }
 
     async fn release_execute(&self, request: Request<ReleaseExecuteRequest>) -> Result<Response<ReleaseExecuteResponse>, Status> {

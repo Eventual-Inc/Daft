@@ -1,8 +1,8 @@
 #![feature(let_chains)]
 mod channel;
 mod intermediate_ops;
-mod pipeline;
-mod run;
+pub mod pipeline;
+pub mod run; 
 mod runtime_stats;
 mod sinks;
 mod sources;

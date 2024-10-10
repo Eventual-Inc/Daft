@@ -59,6 +59,13 @@ fn _validate_schema(schema: &Schema, columns: &[Series]) -> DaftResult<()> {
 }
 
 impl Table {
+    pub fn get_inner_arrow_arrays(&self) -> Vec<Box<dyn arrow2::array::Array>> {
+        self.columns
+            .iter()
+            .map(|s| s.inner.to_arrow())
+            .collect()
+    }
+    
     /// Create a new [`Table`] and handle broadcasting of any unit-length columns
     ///
     /// Note that this function is slow. You might instead be looking for [`Table::new_with_size`] which does not perform broadcasting
