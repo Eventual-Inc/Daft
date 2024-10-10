@@ -81,6 +81,13 @@ impl StructArray {
         self.validity.as_ref()
     }
 
+    pub fn null_count(&self) -> usize {
+        match self.validity() {
+            None => 0,
+            Some(validity) => validity.unset_bits(),
+        }
+    }
+
     pub fn concat(arrays: &[&Self]) -> DaftResult<Self> {
         if arrays.is_empty() {
             return Err(DaftError::ValueError(

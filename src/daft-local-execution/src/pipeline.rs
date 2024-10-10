@@ -10,8 +10,8 @@ use daft_core::{
 use daft_dsl::{col, join::get_common_join_keys, Expr};
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{
-    Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, Project, Sort,
-    UnGroupedAggregate,
+    EmptyScan, Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, Project,
+    Sort, UnGroupedAggregate,
 };
 use daft_plan::{populate_aggregation_stages, JoinType};
 use daft_table::{Probeable, Table};
@@ -30,7 +30,7 @@ use crate::{
         hash_join_build::HashJoinBuildSink, limit::LimitSink, sort::SortSink,
         streaming_sink::StreamingSinkNode,
     },
-    sources::in_memory::InMemorySource,
+    sources::{empty_scan::EmptyScanSource, in_memory::InMemorySource},
     ExecutionRuntimeHandle, PipelineCreationSnafu,
 };
 
@@ -104,6 +104,10 @@ pub fn physical_plan_to_pipeline(
 
     use crate::sources::scan_task::ScanTaskSource;
     let out: Box<dyn PipelineNode> = match physical_plan {
+        LocalPhysicalPlan::EmptyScan(EmptyScan { schema, .. }) => {
+            let source = EmptyScanSource::new(schema.clone());
+            source.boxed().into()
+        }
         LocalPhysicalPlan::PhysicalScan(PhysicalScan { scan_tasks, .. }) => {
             let scan_task_source = ScanTaskSource::new(scan_tasks.clone());
             scan_task_source.boxed().into()

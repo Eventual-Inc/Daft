@@ -49,6 +49,7 @@ mod sketch_percentile;
 mod sort;
 pub(crate) mod sparse_tensor;
 mod sqrt;
+mod stddev;
 mod struct_;
 mod sum;
 mod take;
@@ -187,6 +188,12 @@ pub trait DaftMeanAggable {
     type Output;
     fn mean(&self) -> Self::Output;
     fn grouped_mean(&self, groups: &GroupIndices) -> Self::Output;
+}
+
+pub trait DaftStddevAggable {
+    type Output;
+    fn stddev(&self) -> Self::Output;
+    fn grouped_stddev(&self, groups: &GroupIndices) -> Self::Output;
 }
 
 pub trait DaftCompareAggable {

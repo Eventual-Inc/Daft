@@ -479,6 +479,7 @@ impl Table {
                 }
             }
             AggExpr::Mean(expr) => self.eval_expression(expr)?.mean(groups),
+            AggExpr::Stddev(expr) => self.eval_expression(expr)?.stddev(groups),
             AggExpr::Min(expr) => self.eval_expression(expr)?.min(groups),
             AggExpr::Max(expr) => self.eval_expression(expr)?.max(groups),
             &AggExpr::AnyValue(ref expr, ignore_nulls) => {
@@ -584,10 +585,10 @@ impl Table {
         assert!(
             !(expected_field.dtype != series.field().dtype),
             "Data type mismatch in expression evaluation:\n\
-                 Expected type: {}\n\
-                 Computed type: {}\n\
-                 Expression: {}\n\
-                 This likely indicates an internal error in type inference or computation.",
+                Expected type: {}\n\
+                Computed type: {}\n\
+                Expression: {}\n\
+                This likely indicates an internal error in type inference or computation.",
             expected_field.dtype,
             series.field().dtype,
             expr

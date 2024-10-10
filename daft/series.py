@@ -512,6 +512,10 @@ class Series:
         assert self._series is not None
         return Series._from_pyseries(self._series.mean())
 
+    def stddev(self) -> Series:
+        assert self._series is not None
+        return Series._from_pyseries(self._series.stddev())
+
     def sum(self) -> Series:
         assert self._series is not None
         return Series._from_pyseries(self._series.sum())

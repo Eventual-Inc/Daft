@@ -113,6 +113,7 @@ The following can be used with DataFrame.agg or GroupedDataFrame.agg
    Expression.count
    Expression.sum
    Expression.mean
+   Expression.stddev
    Expression.min
    Expression.max
    Expression.any_value
