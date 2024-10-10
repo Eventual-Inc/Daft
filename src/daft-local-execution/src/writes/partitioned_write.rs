@@ -1,6 +1,5 @@
 use std::{
     collections::{hash_map::RawEntryMut, HashMap},
-    hash::{Hash, Hasher},
     sync::Arc,
 };
 
@@ -8,12 +7,13 @@ use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use daft_core::{
     prelude::{AsArrow as _, SchemaRef},
-    utils::identity_hash_set::IdentityBuildHasher,
+    utils::identity_hash_set::{IdentityBuildHasher, IndexHash},
 };
 use daft_dsl::ExprRef;
 use daft_io::IOStatsContext;
 use daft_micropartition::{FileWriter, MicroPartition};
 use daft_table::Table;
+use itertools::Itertools;
 use snafu::ResultExt;
 
 use super::WriterFactory;
@@ -26,19 +26,8 @@ use crate::{
     ExecutionRuntimeHandle, JoinSnafu, NUM_CPUS,
 };
 
-pub struct IndexHash {
-    pub idx: u64,
-    pub hash: u64,
-}
-
-impl Hash for IndexHash {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        state.write_u64(self.hash)
-    }
-}
-
-struct PerPartitionWriter {
-    writer: Box<dyn FileWriter>,
+struct PerPartitionWriteHandler {
+    current_writer: Box<dyn FileWriter>,
     writer_factory: Arc<dyn WriterFactory>,
     partition_values: Table,
     buffer: RowBasedBuffer,
@@ -47,7 +36,7 @@ struct PerPartitionWriter {
     results: Vec<Table>,
 }
 
-impl PerPartitionWriter {
+impl PerPartitionWriteHandler {
     fn new(
         writer_factory: Arc<dyn WriterFactory>,
         partition_values: Table,
@@ -55,7 +44,7 @@ impl PerPartitionWriter {
         target_chunk_rows: usize,
     ) -> DaftResult<Self> {
         Ok(Self {
-            writer: writer_factory.create_writer(0, Some(&partition_values))?,
+            current_writer: writer_factory.create_writer(0, Some(&partition_values))?,
             writer_factory,
             partition_values,
             buffer: RowBasedBuffer::new(target_chunk_rows),
@@ -69,25 +58,25 @@ impl PerPartitionWriter {
         self.buffer.push(data.clone());
         if let Some(ready) = self.buffer.pop_enough()? {
             for part in ready {
-                self.write(&part)?;
+                self.handle_write(&part)?;
             }
         }
         Ok(())
     }
 
-    fn write(&mut self, data: &Arc<MicroPartition>) -> DaftResult<()> {
+    fn handle_write(&mut self, data: &Arc<MicroPartition>) -> DaftResult<()> {
         let len = data.len();
-        self.writer.write(data)?;
+        self.current_writer.write(data)?;
         self.written_rows_so_far += len;
 
         // Check if the file is full, close and start a new file if necessary
         if self.written_rows_so_far >= self.target_file_rows {
-            let result = self.writer.close()?;
+            let result = self.current_writer.close()?;
             if let Some(result) = result {
                 self.results.push(result);
             }
             self.written_rows_so_far = 0;
-            self.writer = self
+            self.current_writer = self
                 .writer_factory
                 .create_writer(self.results.len(), Some(&self.partition_values))?
         }
@@ -98,11 +87,11 @@ impl PerPartitionWriter {
         // Write any remaining data from the buffer
         let remaining = self.buffer.pop_all()?;
         if let Some(part) = remaining {
-            self.write(&part)?;
+            self.handle_write(&part)?;
         }
 
         // Finalize the current file and collect results
-        if let Some(result) = self.writer.close()? {
+        if let Some(result) = self.current_writer.close()? {
             self.results.push(result);
         }
         Ok(std::mem::take(&mut self.results))
@@ -146,27 +135,20 @@ impl PartitionedWriteNode {
         Box::new(self)
     }
 
-    fn partition(
-        partition_cols: &[ExprRef],
-        data: &Arc<MicroPartition>,
-    ) -> DaftResult<(Vec<Table>, Table)> {
-        let data = data.concat_or_get(IOStatsContext::new("MicroPartition::partition_by_value"))?;
-        let table = data.first().unwrap();
-        let (split_tables, partition_values) = table.partition_by_value(partition_cols)?;
-        Ok((split_tables, partition_values))
-    }
-
-    async fn run_writer(
+    // Receives data from the dispatcher and writes it.
+    // Each partition value is mapped to a PerPartitionWriteHandler, which handles the write.
+    // Each worker is responsible for a subset of partition values.
+    async fn run_worker(
         mut input_receiver: Receiver<(Table, Table)>,
         writer_factory: Arc<dyn WriterFactory>,
         target_chunk_rows: usize,
         target_file_rows: usize,
     ) -> DaftResult<Vec<Table>> {
-        let mut per_partition_writers =
-            HashMap::<IndexHash, PerPartitionWriter, IdentityBuildHasher>::with_capacity_and_hasher(
-                20,
-                Default::default(),
-            );
+        let mut per_partition_writers = HashMap::<
+            IndexHash,
+            PerPartitionWriteHandler,
+            IdentityBuildHasher,
+        >::with_capacity_and_hasher(20, Default::default());
         let mut saved_partition_values = vec![];
         while let Some((data, partition_values)) = input_receiver.recv().await {
             assert!(partition_values.len() == 1);
@@ -181,13 +163,13 @@ impl PartitionedWriteNode {
                 });
             match entry {
                 RawEntryMut::Vacant(entry) => {
-                    let mut new_partition_writer = PerPartitionWriter::new(
+                    let mut new_partition_write_handler = PerPartitionWriteHandler::new(
                         writer_factory.clone(),
                         partition_values.clone(),
                         target_file_rows,
                         target_chunk_rows,
                     )?;
-                    new_partition_writer.submit(&Arc::new(MicroPartition::new_loaded(
+                    new_partition_write_handler.submit(&Arc::new(MicroPartition::new_loaded(
                         data.schema.clone(),
                         vec![data].into(),
                         None,
@@ -198,7 +180,7 @@ impl PartitionedWriteNode {
                             idx: saved_partition_values.len() as u64,
                             hash,
                         },
-                        new_partition_writer,
+                        new_partition_write_handler,
                     );
                     saved_partition_values.push(partition_values);
                 }
@@ -214,11 +196,11 @@ impl PartitionedWriteNode {
             }
         }
 
-        let mut results = vec![];
-        for writer in per_partition_writers.values_mut() {
-            let res = writer.finalize()?;
-            results.extend(res);
-        }
+        let results = per_partition_writers
+            .values_mut()
+            .map(|writer| writer.finalize())
+            .flatten_ok()
+            .collect::<DaftResult<Vec<_>>>()?;
         Ok(results)
     }
 
@@ -232,7 +214,7 @@ impl PartitionedWriteNode {
         let mut writer_senders = Vec::with_capacity(num_writers);
         for _ in 0..num_writers {
             let (writer_sender, writer_receiver) = create_channel(1);
-            task_set.spawn(Self::run_writer(
+            task_set.spawn(Self::run_worker(
                 writer_receiver,
                 writer_factory.clone(),
                 target_chunk_rows,
@@ -243,6 +225,18 @@ impl PartitionedWriteNode {
         writer_senders
     }
 
+    fn partition(
+        partition_cols: &[ExprRef],
+        data: &Arc<MicroPartition>,
+    ) -> DaftResult<(Vec<Table>, Table)> {
+        let data = data.concat_or_get(IOStatsContext::new("MicroPartition::partition_by_value"))?;
+        let table = data.first().unwrap();
+        let (split_tables, partition_values) = table.partition_by_value(partition_cols)?;
+        Ok((split_tables, partition_values))
+    }
+
+    // Dispatches data received from the child to the writers
+    // Partition the data by the partition columns, hash the partition values, and send to the appropriate writer based on the hash
     async fn dispatch(
         mut input_receiver: CountingReceiver,
         senders: Vec<Sender<(Table, Table)>>,
