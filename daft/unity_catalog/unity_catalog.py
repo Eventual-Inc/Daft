@@ -97,7 +97,7 @@ class UnityCatalog:
 
         # Grab credentials from Unity catalog and place it into the Table
         temp_table_credentials = self._client.temporary_table_credentials.create(operation="READ", table_id=table_id)
-        
+
         scheme = urlparse(storage_location).scheme
         if scheme == "s3" or scheme == "s3a":
             aws_temp_credentials = temp_table_credentials.aws_temp_credentials
@@ -117,10 +117,8 @@ class UnityCatalog:
             pass
         elif scheme == "az" or scheme == "abfs" or scheme == "abfss":
             io_config = IOConfig(
-                    azure=AzureConfig(
-                        sas_token = temp_table_credentials.azure_user_delegation_sas.get('sas_token')
-                    )
-                )
+                azure=AzureConfig(sas_token=temp_table_credentials.azure_user_delegation_sas.get("sas_token"))
+            )
 
         return UnityCatalogTable(
             table_uri=storage_location,
