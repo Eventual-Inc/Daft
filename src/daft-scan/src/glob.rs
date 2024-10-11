@@ -352,45 +352,68 @@ impl ScanOperator for GlobScanOperator {
         };
         let file_path_column = self.file_path_column.clone();
         // Create one ScanTask per file
-        Ok(Box::new(files.enumerate().map(move |(idx, f)| {
-            let FileMetadata {
-                filepath: path,
-                size: size_bytes,
-                ..
-            } = f?;
-            let partition_spec = if let Some(fp_col) = &file_path_column {
-                let trimmed = path.trim_start_matches("file://");
-                let file_paths_column_series =
-                    Utf8Array::from_iter(fp_col, std::iter::once(Some(trimmed))).into_series();
-                Some(PartitionSpec {
-                    keys: Table::from_nonempty_columns(vec![file_paths_column_series])?,
-                })
-            } else {
-                None
-            };
-            let row_group = row_groups
-                .as_ref()
-                .and_then(|rgs| rgs.get(idx).cloned())
-                .flatten();
-            let chunk_spec = row_group.map(ChunkSpec::Parquet);
-            Ok(ScanTask::new(
-                vec![DataSource::File {
-                    path,
-                    chunk_spec,
-                    size_bytes,
-                    iceberg_delete_files: None,
-                    metadata: None,
-                    partition_spec,
-                    statistics: None,
-                    parquet_metadata: None,
-                }],
-                file_format_config.clone(),
-                schema.clone(),
-                storage_config.clone(),
-                pushdowns.clone(),
-                file_path_column.clone(),
-            )
-            .into())
+        Ok(Box::new(files.enumerate().filter_map(move |(idx, f)| {
+            let scan_task_result = (|| {
+                let FileMetadata {
+                    filepath: path,
+                    size: size_bytes,
+                    ..
+                } = f?;
+                let partition_spec = if let Some(fp_col) = &file_path_column {
+                    let trimmed = path.trim_start_matches("file://");
+                    let file_paths_column_series =
+                        Utf8Array::from_iter(fp_col, std::iter::once(Some(trimmed))).into_series();
+                    let file_paths_table =
+                        Table::from_nonempty_columns(vec![file_paths_column_series; 1])?;
+
+                    if let Some(ref partition_filters) = pushdowns.partition_filters {
+                        let eval_pred =
+                            file_paths_table.eval_expression_list(&[partition_filters.clone()])?;
+                        assert_eq!(eval_pred.num_columns(), 1);
+                        let series = eval_pred.get_column_by_index(0)?;
+                        assert_eq!(series.data_type(), &daft_core::datatypes::DataType::Boolean);
+                        let boolean = series.bool()?;
+                        assert_eq!(boolean.len(), 1);
+                        let value = boolean.get(0);
+                        match value {
+                            None | Some(false) => return Ok(None),
+                            Some(true) => {}
+                        }
+                    }
+                    Some(PartitionSpec {
+                        keys: file_paths_table,
+                    })
+                } else {
+                    None
+                };
+                let row_group = row_groups
+                    .as_ref()
+                    .and_then(|rgs| rgs.get(idx).cloned())
+                    .flatten();
+                let chunk_spec = row_group.map(ChunkSpec::Parquet);
+                Ok(Some(ScanTask::new(
+                    vec![DataSource::File {
+                        path,
+                        chunk_spec,
+                        size_bytes,
+                        iceberg_delete_files: None,
+                        metadata: None,
+                        partition_spec,
+                        statistics: None,
+                        parquet_metadata: None,
+                    }],
+                    file_format_config.clone(),
+                    schema.clone(),
+                    storage_config.clone(),
+                    pushdowns.clone(),
+                    file_path_column.clone(),
+                )))
+            })();
+            match scan_task_result {
+                Ok(Some(scan_task)) => Some(Ok(scan_task.into())),
+                Ok(None) => None,
+                Err(e) => Some(Err(e)),
+            }
         })))
     }
 }
