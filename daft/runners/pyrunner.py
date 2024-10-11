@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Iterator
 from daft.context import get_context
 from daft.daft import FileFormatConfig, FileInfos, IOConfig, ResourceRequest, SystemInfo
 from daft.execution.native_executor import NativeExecutor
+from daft.execution.physical_plan import ActorPoolManager
 from daft.expressions import ExpressionsProjection
 from daft.filesystem import glob_path_with_stats
 from daft.internal.gpu import cuda_device_count
@@ -227,7 +228,7 @@ class PyRunnerIO(runner_io.RunnerIO):
         return file_infos
 
 
-class PyRunner(Runner[MicroPartition]):
+class PyRunner(Runner[MicroPartition], ActorPoolManager):
     def __init__(self, use_thread_pool: bool | None) -> None:
         super().__init__()
 
@@ -290,6 +291,7 @@ class PyRunner(Runner[MicroPartition]):
                 # don't store partition sets in variable to avoid reference
                 tasks = plan_scheduler.to_partition_tasks(
                     {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()},
+                    self,
                     results_buffer_size,
                 )
                 del plan_scheduler
@@ -323,7 +325,7 @@ class PyRunner(Runner[MicroPartition]):
                 plan_scheduler = builder.to_physical_plan_scheduler(daft_execution_config)
                 psets = {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()}
                 # Get executable tasks from planner.
-                tasks = plan_scheduler.to_partition_tasks(psets, results_buffer_size)
+                tasks = plan_scheduler.to_partition_tasks(psets, self, results_buffer_size)
                 del psets
                 with profiler("profile_PyRunner.run_{datetime.now().isoformat()}.json"):
                     results_gen = self._physical_plan_to_partitions(execution_id, tasks)

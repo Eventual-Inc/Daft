@@ -51,6 +51,7 @@ from daft.execution.execution_step import (
     SingleOutputPartitionTask,
     StatefulUDFProject,
 )
+from daft.execution.physical_plan import ActorPoolManager
 from daft.expressions import ExpressionsProjection
 from daft.filesystem import glob_path_with_stats
 from daft.runners import runner_io
@@ -553,7 +554,7 @@ def _ray_num_cpus_provider(ttl_seconds: int = 1) -> Generator[int, None, None]:
             yield last_num_cpus_queried
 
 
-class Scheduler:
+class Scheduler(ActorPoolManager):
     def __init__(self, max_task_backlog: int | None, use_ray_tqdm: bool) -> None:
         """
         max_task_backlog: Max number of inflight tasks waiting for cores.
@@ -664,6 +665,7 @@ class Scheduler:
         results_buffer_size = self.results_buffer_size_by_df[result_uuid]
         tasks = plan_scheduler.to_partition_tasks(
             psets,
+            self,
             # Attempt to subtract 1 from results_buffer_size because the return Queue size is already 1
             # If results_buffer_size=1 though, we can't do much and the total buffer size actually has to be >= 2
             # because we have two buffers (the Queue and the buffer inside the `materialize` generator)
@@ -840,6 +842,24 @@ class Scheduler:
                 raise
 
         pbar.close()
+
+    @contextlib.contextmanager
+    def actor_pool_context(
+        self,
+        name: str,
+        actor_resource_request: ResourceRequest,
+        task_resource_request: ResourceRequest,
+        num_actors: PartID,
+        projection: ExpressionsProjection,
+    ) -> Iterator[str]:
+        # Ray runs actor methods serially, so the resource request for an actor should be both the actor's resources and the task's resources
+        resource_request = actor_resource_request + task_resource_request
+
+        execution_config = get_context().daft_execution_config
+        try:
+            yield self.get_actor_pool(name, resource_request, num_actors, projection, execution_config)
+        finally:
+            self.teardown_actor_pool(name)
 
 
 SCHEDULER_ACTOR_NAME = "scheduler"

@@ -83,6 +83,7 @@ def project(
 def actor_pool_project(
     input: physical_plan.InProgressPhysicalPlan[PartitionT],
     projection: list[PyExpr],
+    actor_pool_manager: physical_plan.ActorPoolManager,
     resource_request: ResourceRequest | None,
     num_actors: int,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
@@ -93,6 +94,7 @@ def actor_pool_project(
     return physical_plan.actor_pool_project(
         child_plan=input,
         projection=expr_projection,
+        actor_pool_manager=actor_pool_manager,
         resource_request=resource_request,
         num_actors=num_actors,
     )
