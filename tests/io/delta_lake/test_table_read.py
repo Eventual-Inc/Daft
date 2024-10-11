@@ -94,3 +94,25 @@ def test_deltalake_read_row_group_splits_with_limit(tmp_path, base_table):
         df = df.limit(2)
         df.collect()
         assert len(df) == 2, "Length of non-materialized data when read through deltalake should be correct"
+
+
+def test_deltalake_read_versioned(tmp_path, base_table):
+    deltalake = pytest.importorskip("deltalake")
+    path = tmp_path / "some_table"
+    deltalake.write_deltalake(path, base_table)
+
+    updated_columns = base_table.columns + [pa.array(["x", "y", "z"])]
+    updated_column_names = base_table.column_names + ["new_column"]
+    updated_table = pa.Table.from_arrays(updated_columns, names=updated_column_names)
+    deltalake.write_deltalake(path, updated_table, mode="overwrite", schema_mode="overwrite")
+
+    for version in [None, 1]:
+        df = daft.read_deltalake(str(path), version=version)
+        expected_schema = Schema.from_pyarrow_schema(deltalake.DeltaTable(path).schema().to_pyarrow())
+        assert df.schema() == expected_schema
+        assert_pyarrow_tables_equal(df.to_arrow(), updated_table)
+
+    df = daft.read_deltalake(str(path), version=0)
+    expected_schema = Schema.from_pyarrow_schema(deltalake.DeltaTable(path, version=0).schema().to_pyarrow())
+    assert df.schema() == expected_schema
+    assert_pyarrow_tables_equal(df.to_arrow(), base_table)

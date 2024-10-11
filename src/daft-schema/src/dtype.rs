@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{field::Field, image_mode::ImageMode, time_unit::TimeUnit};
 
+pub type DaftDataType = DataType;
+
 #[derive(Clone, Debug, Display, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum DataType {
     // ArrowTypes:
@@ -107,8 +109,11 @@ pub enum DataType {
     Struct(Vec<Field>),
 
     /// A nested [`DataType`] that is represented as List<entries: Struct<key: K, value: V>>.
-    #[display("Map[{_0}]")]
-    Map(Box<DataType>),
+    #[display("Map[{key}: {value}]")]
+    Map {
+        key: Box<DataType>,
+        value: Box<DataType>,
+    },
 
     /// Extension type.
     #[display("{_1}")]
@@ -236,14 +241,29 @@ impl DataType {
             Self::List(field) => Ok(ArrowType::LargeList(Box::new(
                 arrow2::datatypes::Field::new("item", field.to_arrow()?, true),
             ))),
-            Self::Map(field) => Ok(ArrowType::Map(
-                Box::new(arrow2::datatypes::Field::new(
-                    "item",
-                    field.to_arrow()?,
-                    true,
-                )),
-                false,
-            )),
+            Self::Map { key, value } => {
+                let struct_type = ArrowType::Struct(vec![
+                    // We never allow null keys in maps for several reasons:
+                    // 1. Null typically represents the absence of a value, which doesn't make sense for a key.
+                    // 2. Null comparisons can be problematic (similar to how f64::NAN != f64::NAN).
+                    // 3. It maintains consistency with common map implementations in arrow (no null keys).
+                    // 4. It simplifies map operations
+                    //
+                    // This decision aligns with the thoughts of team members like Jay and Sammy, who argue that:
+                    // - Nulls in keys could lead to unintuitive behavior
+                    // - If users need to count or group by null values, they can use other constructs like
+                    //   group_by operations on non-map types, which offer more explicit control.
+                    //
+                    // By disallowing null keys, we encourage more robust data modeling practices and
+                    // provide a clearer semantic meaning for map types in our system.
+                    arrow2::datatypes::Field::new("key", key.to_arrow()?, true),
+                    arrow2::datatypes::Field::new("value", value.to_arrow()?, true),
+                ]);
+
+                let struct_field = arrow2::datatypes::Field::new("entries", struct_type, true);
+
+                Ok(ArrowType::map(struct_field, false))
+            }
             Self::Struct(fields) => Ok({
                 let fields = fields
                     .iter()
@@ -292,7 +312,10 @@ impl DataType {
             FixedSizeList(child_dtype, size) => {
                 FixedSizeList(Box::new(child_dtype.to_physical()), *size)
             }
-            Map(child_dtype) => List(Box::new(child_dtype.to_physical())),
+            Map { key, value } => List(Box::new(Struct(vec![
+                Field::new("key", key.to_physical()),
+                Field::new("value", value.to_physical()),
+            ]))),
             Embedding(dtype, size) => FixedSizeList(Box::new(dtype.to_physical()), *size),
             Image(mode) => Struct(vec![
                 Field::new(
@@ -334,20 +357,6 @@ impl DataType {
     }
 
     #[inline]
-    pub fn nested_dtype(&self) -> Option<&Self> {
-        match self {
-            Self::Map(dtype)
-            | Self::List(dtype)
-            | Self::FixedSizeList(dtype, _)
-            | Self::FixedShapeTensor(dtype, _)
-            | Self::SparseTensor(dtype)
-            | Self::FixedShapeSparseTensor(dtype, _)
-            | Self::Tensor(dtype) => Some(dtype),
-            _ => None,
-        }
-    }
-
-    #[inline]
     pub fn is_arrow(&self) -> bool {
         self.to_arrow().is_ok()
     }
@@ -355,21 +364,33 @@ impl DataType {
     #[inline]
     pub fn is_numeric(&self) -> bool {
         match self {
-             Self::Int8
-             | Self::Int16
-             | Self::Int32
-             | Self::Int64
-             | Self::Int128
-             | Self::UInt8
-             | Self::UInt16
-             | Self::UInt32
-             | Self::UInt64
-             // DataType::Float16
-             | Self::Float32
-             | Self::Float64 => true,
-             Self::Extension(_, inner, _) => inner.is_numeric(),
-             _ => false
-         }
+            Self::Int8
+            | Self::Int16
+            | Self::Int32
+            | Self::Int64
+            | Self::Int128
+            | Self::UInt8
+            | Self::UInt16
+            | Self::UInt32
+            | Self::UInt64
+            // DataType::Float16
+            | Self::Float32
+            | Self::Float64 => true,
+            Self::Extension(_, inner, _) => inner.is_numeric(),
+            _ => false
+        }
+    }
+
+    #[inline]
+    pub fn assert_is_numeric(&self) -> DaftResult<()> {
+        if self.is_numeric() {
+            Ok(())
+        } else {
+            Err(DaftError::TypeError(format!(
+                "Numeric mean is not implemented for type {}",
+                self,
+            )))
+        }
     }
 
     #[inline]
@@ -463,7 +484,7 @@ impl DataType {
 
     #[inline]
     pub fn is_map(&self) -> bool {
-        matches!(self, Self::Map(..))
+        matches!(self, Self::Map { .. })
     }
 
     #[inline]
@@ -586,7 +607,7 @@ impl DataType {
                 | Self::FixedShapeTensor(..)
                 | Self::SparseTensor(..)
                 | Self::FixedShapeSparseTensor(..)
-                | Self::Map(..)
+                | Self::Map { .. }
                 | Self::Geometry
         )
     }
@@ -601,7 +622,7 @@ impl DataType {
         let p: Self = self.to_physical();
         matches!(
             p,
-            Self::List(..) | Self::FixedSizeList(..) | Self::Struct(..) | Self::Map(..)
+            Self::List(..) | Self::FixedSizeList(..) | Self::Struct(..) | Self::Map { .. }
         )
     }
 
@@ -616,9 +637,13 @@ impl DataType {
     }
 }
 
+#[expect(
+    clippy::fallible_impl_from,
+    reason = "https://github.com/Eventual-Inc/Daft/issues/3015"
+)]
 impl From<&ArrowType> for DataType {
     fn from(item: &ArrowType) -> Self {
-        match item {
+        let result = match item {
             ArrowType::Null => Self::Null,
             ArrowType::Boolean => Self::Boolean,
             ArrowType::Int8 => Self::Int8,
@@ -649,7 +674,29 @@ impl From<&ArrowType> for DataType {
             ArrowType::FixedSizeList(field, size) => {
                 Self::FixedSizeList(Box::new(field.as_ref().data_type().into()), *size)
             }
-            ArrowType::Map(field, ..) => Self::Map(Box::new(field.as_ref().data_type().into())),
+            ArrowType::Map(field, ..) => {
+                // todo: TryFrom in future? want in second pass maybe
+
+                // field should be a struct
+                let ArrowType::Struct(fields) = &field.data_type else {
+                    panic!("Map should have a struct as its key")
+                };
+
+                let [key, value] = fields.as_slice() else {
+                    panic!("Map should have two fields")
+                };
+
+                let key = &key.data_type;
+                let value = &value.data_type;
+
+                let key = Self::from(key);
+                let value = Self::from(value);
+
+                let key = Box::new(key);
+                let value = Box::new(value);
+
+                Self::Map { key, value }
+            }
             ArrowType::Struct(fields) => {
                 let fields: Vec<Field> = fields.iter().map(|fld| fld.into()).collect();
                 Self::Struct(fields)
@@ -670,7 +717,9 @@ impl From<&ArrowType> for DataType {
             }
 
             _ => panic!("DataType :{item:?} is not supported"),
-        }
+        };
+
+        result
     }
 }
 

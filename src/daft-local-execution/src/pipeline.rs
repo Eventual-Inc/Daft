@@ -10,8 +10,8 @@ use daft_core::{
 use daft_dsl::{col, join::get_common_join_keys, Expr};
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{
-    Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, Project, Sort,
-    UnGroupedAggregate,
+    EmptyScan, Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, Project,
+    Sort, UnGroupedAggregate,
 };
 use daft_plan::{populate_aggregation_stages, JoinType};
 use daft_table::{Probeable, Table};
@@ -30,7 +30,7 @@ use crate::{
         hash_join_build::HashJoinBuildSink, limit::LimitSink, sort::SortSink,
         streaming_sink::StreamingSinkNode,
     },
-    sources::in_memory::InMemorySource,
+    sources::{empty_scan::EmptyScanSource, in_memory::InMemorySource},
     ExecutionRuntimeHandle, PipelineCreationSnafu,
 };
 
@@ -84,7 +84,7 @@ pub trait PipelineNode: Sync + Send + TreeDisplay {
     fn as_tree_display(&self) -> &dyn TreeDisplay;
 }
 
-pub(crate) fn viz_pipeline(root: &dyn PipelineNode) -> String {
+pub fn viz_pipeline(root: &dyn PipelineNode) -> String {
     let mut output = String::new();
     let mut visitor = MermaidDisplayVisitor::new(
         &mut output,
@@ -104,6 +104,10 @@ pub fn physical_plan_to_pipeline(
 
     use crate::sources::scan_task::ScanTaskSource;
     let out: Box<dyn PipelineNode> = match physical_plan {
+        LocalPhysicalPlan::EmptyScan(EmptyScan { schema, .. }) => {
+            let source = EmptyScanSource::new(schema.clone());
+            source.boxed().into()
+        }
         LocalPhysicalPlan::PhysicalScan(PhysicalScan { scan_tasks, .. }) => {
             let scan_task_source = ScanTaskSource::new(scan_tasks.clone());
             scan_task_source.boxed().into()
@@ -154,7 +158,7 @@ pub fn physical_plan_to_pipeline(
                 first_stage_aggs
                     .values()
                     .cloned()
-                    .map(|e| Arc::new(Expr::Agg(e.clone())))
+                    .map(|e| Arc::new(Expr::Agg(e)))
                     .collect(),
                 vec![],
             );
@@ -166,7 +170,7 @@ pub fn physical_plan_to_pipeline(
                 second_stage_aggs
                     .values()
                     .cloned()
-                    .map(|e| Arc::new(Expr::Agg(e.clone())))
+                    .map(|e| Arc::new(Expr::Agg(e)))
                     .collect(),
                 vec![],
             );
@@ -192,7 +196,7 @@ pub fn physical_plan_to_pipeline(
                     first_stage_aggs
                         .values()
                         .cloned()
-                        .map(|e| Arc::new(Expr::Agg(e.clone())))
+                        .map(|e| Arc::new(Expr::Agg(e)))
                         .collect(),
                     group_by.clone(),
                 );
@@ -208,7 +212,7 @@ pub fn physical_plan_to_pipeline(
                 second_stage_aggs
                     .values()
                     .cloned()
-                    .map(|e| Arc::new(Expr::Agg(e.clone())))
+                    .map(|e| Arc::new(Expr::Agg(e)))
                     .collect(),
                 group_by.clone(),
             );
@@ -261,7 +265,7 @@ pub fn physical_plan_to_pipeline(
             let probe_schema = probe_child.schema();
             let probe_node = || -> DaftResult<_> {
                 let common_join_keys: IndexSet<_> = get_common_join_keys(left_on, right_on)
-                    .map(|k| k.to_string())
+                    .map(std::string::ToString::to_string)
                     .collect();
                 let build_key_fields = build_on
                     .iter()
@@ -296,8 +300,7 @@ pub fn physical_plan_to_pipeline(
                     .collect::<Vec<_>>();
 
                 // we should move to a builder pattern
-                let build_sink =
-                    HashJoinBuildSink::new(key_schema.clone(), casted_build_on, join_type)?;
+                let build_sink = HashJoinBuildSink::new(key_schema, casted_build_on, join_type)?;
                 let build_child_node = physical_plan_to_pipeline(build_child, psets)?;
                 let build_node =
                     BlockingSinkNode::new(build_sink.boxed(), build_child_node).boxed();

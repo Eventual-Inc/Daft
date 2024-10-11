@@ -19,7 +19,7 @@ pub struct IndexHash {
 
 impl Hash for IndexHash {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        state.write_u64(self.hash)
+        state.write_u64(self.hash);
     }
 }
 

@@ -1,3 +1,4 @@
+use std::ops::DerefMut;
 use crate::{
     bitmap::Bitmap,
     datatypes::{DataType, Field},
@@ -245,6 +246,14 @@ impl StructArray {
 
 impl Array for StructArray {
     impl_common_array!();
+
+    fn direct_children<'a>(&'a mut self) -> Box<dyn Iterator<Item=&'a mut dyn Array> + 'a> {
+        let iter = self.values
+            .iter_mut()
+            .map(|x| x.deref_mut());
+
+        Box::new(iter)
+    }
 
     fn validity(&self) -> Option<&Bitmap> {
         self.validity.as_ref()

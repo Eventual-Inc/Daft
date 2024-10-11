@@ -103,7 +103,7 @@ impl IntoGlobPath for &str {
 }
 impl IntoGlobPath for Vec<&str> {
     fn into_glob_path(self) -> Vec<String> {
-        self.iter().map(|s| s.to_string()).collect()
+        self.iter().map(|s| (*s).to_string()).collect()
     }
 }
 impl LogicalPlanBuilder {
@@ -135,8 +135,7 @@ impl LogicalPlanBuilder {
             num_rows,
             None, // TODO(sammy) thread through clustering spec to Python
         ));
-        let logical_plan: LogicalPlan =
-            logical_ops::Source::new(schema.clone(), source_info.into()).into();
+        let logical_plan: LogicalPlan = logical_ops::Source::new(schema, source_info.into()).into();
 
         Ok(Self::new(logical_plan.into(), None))
     }
@@ -209,7 +208,7 @@ impl LogicalPlanBuilder {
                 .collect::<Vec<_>>();
             Arc::new(Schema::new(pruned_upstream_schema)?)
         } else {
-            schema.clone()
+            schema
         };
         let logical_plan: LogicalPlan =
             logical_ops::Source::new(output_schema, source_info.into()).into();
@@ -429,7 +428,7 @@ impl LogicalPlanBuilder {
     ) -> DaftResult<Self> {
         let logical_plan: LogicalPlan = logical_ops::Join::try_new(
             self.plan.clone(),
-            right.into().clone(),
+            right.into(),
             left_on,
             right_on,
             join_type,

@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 use crate::{physical_plan::PhysicalPlanRef, sink_info::IcebergCatalogInfo};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-
 pub struct IcebergWrite {
     pub schema: SchemaRef,
     pub iceberg_info: IcebergCatalogInfo,

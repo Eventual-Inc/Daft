@@ -17,7 +17,10 @@ pub trait TreeDisplay {
     fn id(&self) -> String {
         let mut s = String::new();
         s.push_str(&self.get_name());
-        s.push_str(&format!("{:p}", self as *const Self as *const ()));
+        s.push_str(&format!(
+            "{:p}",
+            std::ptr::from_ref::<Self>(self).cast::<()>()
+        ));
         s
     }
 

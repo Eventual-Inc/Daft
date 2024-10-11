@@ -22,7 +22,7 @@ impl Series {
         } else {
             (self.clone(), lower.clone(), upper.clone())
         };
-        if let DataType::Boolean = output_type {
+        if output_type == DataType::Boolean {
             match comp_type {
                 #[cfg(feature = "python")]
                 DataType::Python => Ok(py_between_op_utilfn(self, upper, lower)?

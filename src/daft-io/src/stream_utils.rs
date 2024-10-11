@@ -3,7 +3,7 @@ use futures::{stream::BoxStream, StreamExt};
 
 use crate::stats::{IOStatsByteStreamContextHandle, IOStatsRef};
 
-pub(crate) fn io_stats_on_bytestream(
+pub fn io_stats_on_bytestream(
     mut s: impl futures::stream::Stream<Item = super::Result<Bytes>>
         + Unpin
         + std::marker::Send

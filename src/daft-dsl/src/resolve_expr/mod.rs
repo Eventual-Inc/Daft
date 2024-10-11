@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod tests;
+
 use std::{
     cmp::Ordering,
     collections::{BinaryHeap, HashMap},
@@ -92,7 +95,7 @@ fn transform_struct_gets(
             }),
         _ => Ok(Transformed::no(e)),
     })
-    .data()
+        .data()
 }
 
 // Finds the names of all the wildcard expressions in an expression tree.
@@ -197,50 +200,52 @@ fn expand_wildcards(
                 .collect()
         }
         _ => Err(DaftError::ValueError(format!(
-            "Error resolving expression {}: cannot have multiple wildcard columns in one expression tree (found {:?})", expr, wildcards
-        )))
+            "Error resolving expression {expr}: cannot have multiple wildcard columns in one expression tree (found {wildcards:?})")))
     }
 }
 
 fn extract_agg_expr(expr: &Expr) -> DaftResult<AggExpr> {
-    use crate::Expr::*;
-
     match expr {
-        Agg(agg_expr) => Ok(agg_expr.clone()),
-        Function { func, inputs } => Ok(AggExpr::MapGroups {
+        Expr::Agg(agg_expr) => Ok(agg_expr.clone()),
+        Expr::Function { func, inputs } => Ok(AggExpr::MapGroups {
             func: func.clone(),
             inputs: inputs.clone(),
         }),
-        Alias(e, name) => extract_agg_expr(e).map(|agg_expr| {
-            use crate::AggExpr::*;
-
+        Expr::Alias(e, name) => extract_agg_expr(e).map(|agg_expr| {
             // reorder expressions so that alias goes before agg
             match agg_expr {
-                Count(e, count_mode) => Count(Alias(e, name.clone()).into(), count_mode),
-                Sum(e) => Sum(Alias(e, name.clone()).into()),
-                ApproxPercentile(ApproxPercentileParams {
+                AggExpr::Count(e, count_mode) => {
+                    AggExpr::Count(Expr::Alias(e, name.clone()).into(), count_mode)
+                }
+                AggExpr::Sum(e) => AggExpr::Sum(Expr::Alias(e, name.clone()).into()),
+                AggExpr::ApproxPercentile(ApproxPercentileParams {
                     child: e,
                     percentiles,
                     force_list_output,
-                }) => ApproxPercentile(ApproxPercentileParams {
-                    child: Alias(e, name.clone()).into(),
+                }) => AggExpr::ApproxPercentile(ApproxPercentileParams {
+                    child: Expr::Alias(e, name.clone()).into(),
                     percentiles,
                     force_list_output,
                 }),
-                ApproxCountDistinct(e) => ApproxCountDistinct(Alias(e, name.clone()).into()),
-                ApproxSketch(e, sketch_type) => {
-                    ApproxSketch(Alias(e, name.clone()).into(), sketch_type)
+                AggExpr::ApproxCountDistinct(e) => {
+                    AggExpr::ApproxCountDistinct(Expr::Alias(e, name.clone()).into())
                 }
-                MergeSketch(e, sketch_type) => {
-                    MergeSketch(Alias(e, name.clone()).into(), sketch_type)
+                AggExpr::ApproxSketch(e, sketch_type) => {
+                    AggExpr::ApproxSketch(Expr::Alias(e, name.clone()).into(), sketch_type)
                 }
-                Mean(e) => Mean(Alias(e, name.clone()).into()),
-                Min(e) => Min(Alias(e, name.clone()).into()),
-                Max(e) => Max(Alias(e, name.clone()).into()),
-                AnyValue(e, ignore_nulls) => AnyValue(Alias(e, name.clone()).into(), ignore_nulls),
-                List(e) => List(Alias(e, name.clone()).into()),
-                Concat(e) => Concat(Alias(e, name.clone()).into()),
-                MapGroups { func, inputs } => MapGroups {
+                AggExpr::MergeSketch(e, sketch_type) => {
+                    AggExpr::MergeSketch(Expr::Alias(e, name.clone()).into(), sketch_type)
+                }
+                AggExpr::Mean(e) => AggExpr::Mean(Expr::Alias(e, name.clone()).into()),
+                AggExpr::Stddev(e) => AggExpr::Stddev(Expr::Alias(e, name.clone()).into()),
+                AggExpr::Min(e) => AggExpr::Min(Expr::Alias(e, name.clone()).into()),
+                AggExpr::Max(e) => AggExpr::Max(Expr::Alias(e, name.clone()).into()),
+                AggExpr::AnyValue(e, ignore_nulls) => {
+                    AggExpr::AnyValue(Expr::Alias(e, name.clone()).into(), ignore_nulls)
+                }
+                AggExpr::List(e) => AggExpr::List(Expr::Alias(e, name.clone()).into()),
+                AggExpr::Concat(e) => AggExpr::Concat(Expr::Alias(e, name.clone()).into()),
+                AggExpr::MapGroups { func, inputs } => AggExpr::MapGroups {
                     func,
                     inputs: inputs
                         .into_iter()
@@ -409,149 +414,4 @@ pub fn check_column_name_validity(name: &str, schema: &Schema) -> DaftResult<()>
     }
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn substitute_expr_getter_sugar(expr: ExprRef, schema: &Schema) -> DaftResult<ExprRef> {
-        let struct_expr_map = calculate_struct_expr_map(schema);
-        transform_struct_gets(expr, &struct_expr_map)
-    }
-
-    #[test]
-    fn test_substitute_expr_getter_sugar() -> DaftResult<()> {
-        use crate::functions::struct_::get as struct_get;
-
-        let schema = Arc::new(Schema::new(vec![Field::new("a", DataType::Int64)])?);
-
-        assert_eq!(substitute_expr_getter_sugar(col("a"), &schema)?, col("a"));
-        assert!(substitute_expr_getter_sugar(col("a.b"), &schema).is_err());
-        assert!(matches!(
-            substitute_expr_getter_sugar(col("a.b"), &schema).unwrap_err(),
-            DaftError::ValueError(..)
-        ));
-
-        let schema = Arc::new(Schema::new(vec![Field::new(
-            "a",
-            DataType::Struct(vec![Field::new("b", DataType::Int64)]),
-        )])?);
-
-        assert_eq!(substitute_expr_getter_sugar(col("a"), &schema)?, col("a"));
-        assert_eq!(
-            substitute_expr_getter_sugar(col("a.b"), &schema)?,
-            struct_get(col("a"), "b")
-        );
-        assert_eq!(
-            substitute_expr_getter_sugar(col("a.b").alias("c"), &schema)?,
-            struct_get(col("a"), "b").alias("c")
-        );
-
-        let schema = Arc::new(Schema::new(vec![Field::new(
-            "a",
-            DataType::Struct(vec![Field::new(
-                "b",
-                DataType::Struct(vec![Field::new("c", DataType::Int64)]),
-            )]),
-        )])?);
-
-        assert_eq!(
-            substitute_expr_getter_sugar(col("a.b"), &schema)?,
-            struct_get(col("a"), "b")
-        );
-        assert_eq!(
-            substitute_expr_getter_sugar(col("a.b.c"), &schema)?,
-            struct_get(struct_get(col("a"), "b"), "c")
-        );
-
-        let schema = Arc::new(Schema::new(vec![
-            Field::new(
-                "a",
-                DataType::Struct(vec![Field::new(
-                    "b",
-                    DataType::Struct(vec![Field::new("c", DataType::Int64)]),
-                )]),
-            ),
-            Field::new("a.b", DataType::Int64),
-        ])?);
-
-        assert_eq!(
-            substitute_expr_getter_sugar(col("a.b"), &schema)?,
-            col("a.b")
-        );
-        assert_eq!(
-            substitute_expr_getter_sugar(col("a.b.c"), &schema)?,
-            struct_get(struct_get(col("a"), "b"), "c")
-        );
-
-        let schema = Arc::new(Schema::new(vec![
-            Field::new(
-                "a",
-                DataType::Struct(vec![Field::new("b.c", DataType::Int64)]),
-            ),
-            Field::new(
-                "a.b",
-                DataType::Struct(vec![Field::new("c", DataType::Int64)]),
-            ),
-        ])?);
-
-        assert_eq!(
-            substitute_expr_getter_sugar(col("a.b.c"), &schema)?,
-            struct_get(col("a.b"), "c")
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_find_wildcards() -> DaftResult<()> {
-        let schema = Schema::new(vec![
-            Field::new(
-                "a",
-                DataType::Struct(vec![Field::new("b.*", DataType::Int64)]),
-            ),
-            Field::new("c.*", DataType::Int64),
-        ])?;
-        let struct_expr_map = calculate_struct_expr_map(&schema);
-
-        let wildcards = find_wildcards(col("test"), &struct_expr_map);
-        assert!(wildcards.is_empty());
-
-        let wildcards = find_wildcards(col("*"), &struct_expr_map);
-        assert!(wildcards.len() == 1 && wildcards.first().unwrap().as_ref() == "*");
-
-        let wildcards = find_wildcards(col("t*"), &struct_expr_map);
-        assert!(wildcards.len() == 1 && wildcards.first().unwrap().as_ref() == "t*");
-
-        let wildcards = find_wildcards(col("a.*"), &struct_expr_map);
-        assert!(wildcards.len() == 1 && wildcards.first().unwrap().as_ref() == "a.*");
-
-        let wildcards = find_wildcards(col("c.*"), &struct_expr_map);
-        assert!(wildcards.is_empty());
-
-        let wildcards = find_wildcards(col("a.b.*"), &struct_expr_map);
-        assert!(wildcards.is_empty());
-
-        let wildcards = find_wildcards(col("a.b*"), &struct_expr_map);
-        assert!(wildcards.len() == 1 && wildcards.first().unwrap().as_ref() == "a.b*");
-
-        // nested expression
-        let wildcards = find_wildcards(col("t*").add(col("a.*")), &struct_expr_map);
-        assert!(wildcards.len() == 2);
-        assert!(wildcards.iter().any(|s| s.as_ref() == "t*"));
-        assert!(wildcards.iter().any(|s| s.as_ref() == "a.*"));
-
-        let wildcards = find_wildcards(col("t*").add(col("a")), &struct_expr_map);
-        assert!(wildcards.len() == 1 && wildcards.first().unwrap().as_ref() == "t*");
-
-        // schema containing *
-        let schema = Schema::new(vec![Field::new("*", DataType::Int64)])?;
-        let struct_expr_map = calculate_struct_expr_map(&schema);
-
-        let wildcards = find_wildcards(col("*"), &struct_expr_map);
-        assert!(wildcards.is_empty());
-
-        Ok(())
-    }
 }

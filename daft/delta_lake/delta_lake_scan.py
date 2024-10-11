@@ -22,12 +22,15 @@ from daft.logical.schema import Schema
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
 
 class DeltaLakeScanOperator(ScanOperator):
-    def __init__(self, table_uri: str, storage_config: StorageConfig) -> None:
+    def __init__(
+        self, table_uri: str, storage_config: StorageConfig, version: int | str | datetime | None = None
+    ) -> None:
         super().__init__()
 
         # Unfortunately delta-rs doesn't do very good inference of credentials for S3. Thus the current Daft behavior of passing
@@ -66,6 +69,9 @@ class DeltaLakeScanOperator(ScanOperator):
         self._table = DeltaTable(
             table_uri, storage_options=io_config_to_storage_options(deltalake_sdk_io_config, table_uri)
         )
+
+        if version is not None:
+            self._table.load_as_version(version)
 
         self._storage_config = storage_config
         self._schema = Schema.from_pyarrow_schema(self._table.schema().to_pyarrow())

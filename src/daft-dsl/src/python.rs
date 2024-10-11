@@ -46,6 +46,12 @@ pub fn timestamp_lit(val: i64, tu: PyTimeUnit, tz: Option<String>) -> PyResult<P
     Ok(expr.into())
 }
 
+#[pyfunction]
+pub fn duration_lit(val: i64, tu: PyTimeUnit) -> PyResult<PyExpr> {
+    let expr = Expr::Literal(LiteralValue::Duration(val, tu.timeunit));
+    Ok(expr.into())
+}
+
 fn decimal_from_digits(digits: Vec<u8>, exp: i32) -> Option<(i128, usize)> {
     const MAX_ABS_DEC: i128 = 10_i128.pow(38) - 1;
     let mut v = 0_i128;
@@ -301,7 +307,7 @@ impl PyExpr {
             ApproxPercentileInput::Many(p) => (p, true),
         };
 
-        for &p in percentiles.iter() {
+        for &p in &percentiles {
             if !(0. ..=1.).contains(&p) {
                 return Err(PyValueError::new_err(format!(
                     "Provided percentile must be between 0 and 1: {}",
@@ -319,6 +325,10 @@ impl PyExpr {
 
     pub fn mean(&self) -> PyResult<Self> {
         Ok(self.expr.clone().mean().into())
+    }
+
+    pub fn stddev(&self) -> PyResult<Self> {
+        Ok(self.expr.clone().stddev().into())
     }
 
     pub fn min(&self) -> PyResult<Self> {

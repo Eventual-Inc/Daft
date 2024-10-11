@@ -1,5 +1,7 @@
 use daft_dsl::ExprRef;
-use daft_functions::temporal::*;
+use daft_functions::temporal::{
+    dt_date, dt_day, dt_day_of_week, dt_hour, dt_minute, dt_month, dt_second, dt_time, dt_year,
+};
 use sqlparser::ast::FunctionArg;
 
 use super::SQLModule;

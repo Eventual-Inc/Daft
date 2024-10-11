@@ -52,8 +52,12 @@ impl BlockingSink for AggregateSink {
                 !parts.is_empty(),
                 "We can not finalize AggregateSink with no data"
             );
-            let concated =
-                MicroPartition::concat(&parts.iter().map(|x| x.as_ref()).collect::<Vec<_>>())?;
+            let concated = MicroPartition::concat(
+                &parts
+                    .iter()
+                    .map(std::convert::AsRef::as_ref)
+                    .collect::<Vec<_>>(),
+            )?;
             let agged = Arc::new(concated.agg(&self.agg_exprs, &self.group_by)?);
             self.state = AggregateState::Done(agged.clone());
             Ok(Some(agged.into()))

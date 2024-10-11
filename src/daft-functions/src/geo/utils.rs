@@ -119,7 +119,7 @@ pub fn decode_series(s: &Series, raise_error_on_failure: bool) -> DaftResult<Ser
                 .downcast_ref::<arrow2::array::BinaryArray<i64>>()
                 .unwrap();
             let mut geo_helper = GeoSeriesHelper::new(arrow_array.len());
-            for bytes in arrow_array.iter() {
+            for bytes in arrow_array {
                 match bytes {
                     Some(bytes) => match wkb::Ewkb(bytes).to_geo() {
                         Ok(geo) => geo_helper.push(geo),
@@ -129,7 +129,7 @@ pub fn decode_series(s: &Series, raise_error_on_failure: bool) -> DaftResult<Ser
                                     "Could not decode WKB".to_string(),
                                 ));
                             }
-                            geo_helper.null()
+                            geo_helper.null();
                         }
                     },
                     None => geo_helper.null(),
@@ -145,7 +145,7 @@ pub fn decode_series(s: &Series, raise_error_on_failure: bool) -> DaftResult<Ser
                 .as_any()
                 .downcast_ref::<arrow2::array::Utf8Array<i64>>()
                 .unwrap();
-            for string in arrow_array.iter() {
+            for string in arrow_array {
                 match string {
                     Some(string) => match wkt::Wkt(string).to_geo() {
                         Ok(geo) => geo_helper.push(geo),

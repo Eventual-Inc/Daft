@@ -34,7 +34,7 @@ impl DaftMinHash for Utf8Array {
         let self_arrow = self.as_arrow();
         let mut output: MutablePrimitiveArray<u32> =
             MutablePrimitiveArray::with_capacity(num_hashes * self.len());
-        for maybe_s in self_arrow.iter() {
+        for maybe_s in self_arrow {
             if let Some(s) = maybe_s {
                 let minhash_res = daft_minhash::minhash(
                     s,

@@ -85,7 +85,7 @@ mod tests {
             .hash_repartition(Some(num_partitions2), partition_by.clone())?
             .build();
         let expected = dummy_scan_node(scan_op)
-            .hash_repartition(Some(num_partitions2), partition_by.clone())?
+            .hash_repartition(Some(num_partitions2), partition_by)?
             .build();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
