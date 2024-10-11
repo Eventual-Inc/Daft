@@ -2,10 +2,13 @@ use std::{sync::Arc, vec};
 
 use common_error::{DaftError, DaftResult};
 use common_file_formats::{CsvSourceConfig, FileFormat, FileFormatConfig, ParquetSourceConfig};
+use daft_core::{prelude::Utf8Array, series::IntoSeries};
 use daft_csv::CsvParseOptions;
 use daft_io::{parse_url, FileMetadata, IOClient, IOStatsContext, IOStatsRef, RuntimeRef};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use daft_schema::schema::SchemaRef;
+use daft_stats::PartitionSpec;
+use daft_table::Table;
 use futures::{stream::BoxStream, StreamExt, TryStreamExt};
 use snafu::Snafu;
 
@@ -346,6 +349,16 @@ impl ScanOperator for GlobScanOperator {
                 size: size_bytes,
                 ..
             } = f?;
+            let partition_spec = if let Some(fp_col) = &file_path_column {
+                let trimmed = path.trim_start_matches("file://");
+                let file_paths_column_series =
+                    Utf8Array::from_iter(fp_col, std::iter::once(Some(trimmed))).into_series();
+                Some(PartitionSpec {
+                    keys: Table::from_nonempty_columns(vec![file_paths_column_series])?,
+                })
+            } else {
+                None
+            };
             let row_group = row_groups
                 .as_ref()
                 .and_then(|rgs| rgs.get(idx).cloned())
@@ -358,7 +371,7 @@ impl ScanOperator for GlobScanOperator {
                     size_bytes,
                     iceberg_delete_files: None,
                     metadata: None,
-                    partition_spec: None,
+                    partition_spec,
                     statistics: None,
                     parquet_metadata: None,
                 }],

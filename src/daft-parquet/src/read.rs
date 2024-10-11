@@ -156,7 +156,6 @@ async fn read_parquet_single(
     metadata: Option<Arc<FileMetaData>>,
     delete_rows: Option<Vec<i64>>,
     chunk_size: Option<usize>,
-    file_path_column: Option<&str>,
 ) -> DaftResult<Table> {
     let field_id_mapping_provided = field_id_mapping.is_some();
     let mut columns_to_read = columns.clone();
@@ -355,16 +354,6 @@ async fn read_parquet_single(
             read_columns: table.num_columns(),
         }
         .into());
-    }
-
-    if let Some(file_path_col_name) = file_path_column {
-        let trimmed = uri.trim_start_matches("file://");
-        let file_paths_column = Utf8Array::from_iter(
-            file_path_col_name,
-            std::iter::repeat(Some(trimmed)).take(table.len()),
-        )
-        .into_series();
-        return table.union(&Table::from_nonempty_columns(vec![file_paths_column])?);
     }
 
     Ok(table)
@@ -694,7 +683,6 @@ pub fn read_parquet(
             metadata,
             None,
             None,
-            None,
         )
         .await
     })
@@ -763,7 +751,6 @@ pub fn read_parquet_bulk<T: AsRef<str>>(
     metadata: Option<Vec<Arc<FileMetaData>>>,
     delete_map: Option<HashMap<String, Vec<i64>>>,
     chunk_size: Option<usize>,
-    file_path_column: Option<&str>,
 ) -> DaftResult<Vec<Table>> {
     let runtime_handle = daft_io::get_runtime(multithreaded_io)?;
 
@@ -791,7 +778,6 @@ pub fn read_parquet_bulk<T: AsRef<str>>(
                 let schema_infer_options = *schema_infer_options;
                 let owned_field_id_mapping = field_id_mapping.clone();
                 let delete_rows = delete_map.as_ref().and_then(|m| m.get(&uri).cloned());
-                let owned_file_path_column = file_path_column.map(|s| s.to_string());
                 tokio::task::spawn(async move {
                     read_parquet_single(
                         &uri,
@@ -807,7 +793,6 @@ pub fn read_parquet_bulk<T: AsRef<str>>(
                         metadata,
                         delete_rows,
                         chunk_size,
-                        owned_file_path_column.as_deref(),
                     )
                     .await
                 })

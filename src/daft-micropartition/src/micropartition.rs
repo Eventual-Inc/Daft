@@ -181,7 +181,6 @@ fn materialize_scan_task(
                         metadatas,
                         Some(delete_map),
                         *chunk_size,
-                        scan_task.file_path_column.as_deref(),
                     )
                     .context(DaftCoreComputeSnafu)?
                 }
@@ -236,7 +235,6 @@ fn materialize_scan_task(
                         native_storage_config.multithreaded_io,
                         None,
                         8,
-                        scan_task.file_path_column.as_deref(),
                     )
                     .context(DaftCoreComputeSnafu)?
                 }
@@ -267,7 +265,6 @@ fn materialize_scan_task(
                         native_storage_config.multithreaded_io,
                         None,
                         8,
-                        scan_task.file_path_column.as_deref(),
                     )
                     .context(DaftCoreComputeSnafu)?
                 }
@@ -498,7 +495,7 @@ fn materialize_scan_task(
     // If there is a partition spec and partition values aren't duplicated in the data, inline the partition values
     // into the table when casting the schema.
     let fill_map = scan_task.partition_spec().map(|pspec| pspec.to_fill_map());
-
+    println!("fill_map: {:?}", fill_map);
     table_values = table_values
         .iter()
         .map(|tbl| tbl.cast_to_schema_with_fill(cast_to_schema.as_ref(), fill_map.as_ref()))
@@ -866,7 +863,6 @@ pub(crate) fn read_csv_into_micropartition(
                 multithreaded_io,
                 None,
                 8,
-                None,
             )
             .context(DaftCoreComputeSnafu)?;
 
@@ -916,7 +912,6 @@ pub(crate) fn read_json_into_micropartition(
                 multithreaded_io,
                 None,
                 8,
-                None,
             )
             .context(DaftCoreComputeSnafu)?;
 
@@ -993,7 +988,6 @@ fn _read_delete_files(
         None,
         None,
         None,
-        None,
     )?;
 
     let mut delete_map: HashMap<String, Vec<i64>> =
@@ -1039,7 +1033,6 @@ fn _read_parquet_into_loaded_micropartition<T: AsRef<str>>(
     catalog_provided_schema: Option<SchemaRef>,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     chunk_size: Option<usize>,
-    file_path_column: Option<&str>,
 ) -> DaftResult<MicroPartition> {
     let delete_map = iceberg_delete_files
         .map(|files| {
@@ -1074,7 +1067,6 @@ fn _read_parquet_into_loaded_micropartition<T: AsRef<str>>(
         None,
         delete_map,
         chunk_size,
-        file_path_column,
     )?;
 
     // Prefer using the `catalog_provided_schema` but fall back onto inferred schema from Parquet files
@@ -1162,7 +1154,6 @@ pub(crate) fn read_parquet_into_micropartition<T: AsRef<str>>(
             catalog_provided_schema,
             field_id_mapping,
             chunk_size,
-            file_path_column,
         );
     }
     let runtime_handle = get_runtime(multithreaded_io)?;
@@ -1346,7 +1337,6 @@ pub(crate) fn read_parquet_into_micropartition<T: AsRef<str>>(
             catalog_provided_schema,
             field_id_mapping,
             chunk_size,
-            file_path_column,
         )
     }
 }

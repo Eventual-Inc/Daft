@@ -56,7 +56,6 @@ pub fn read_json(
             io_client,
             io_stats,
             max_chunks_in_flight,
-            None,
         )
         .await
     })
@@ -73,28 +72,18 @@ pub fn read_json_bulk(
     multithreaded_io: bool,
     max_chunks_in_flight: Option<usize>,
     num_parallel_tasks: usize,
-    file_path_column: Option<&str>,
 ) -> DaftResult<Vec<Table>> {
     let runtime_handle = get_runtime(multithreaded_io)?;
     let tables = runtime_handle.block_on_current_thread(async move {
         // Launch a read task per URI, throttling the number of concurrent file reads to num_parallel tasks.
         let task_stream = futures::stream::iter(uris.iter().map(|uri| {
-            let (
-                uri,
-                convert_options,
-                parse_options,
-                read_options,
-                io_client,
-                io_stats,
-                file_path_column,
-            ) = (
+            let (uri, convert_options, parse_options, read_options, io_client, io_stats) = (
                 uri.to_string(),
                 convert_options.clone(),
                 parse_options.clone(),
                 read_options.clone(),
                 io_client.clone(),
                 io_stats.clone(),
-                file_path_column.map(|s| s.to_string()),
             );
             tokio::task::spawn(async move {
                 let table = read_json_single_into_table(
@@ -105,7 +94,6 @@ pub fn read_json_bulk(
                     io_client,
                     io_stats,
                     max_chunks_in_flight,
-                    file_path_column.as_deref(),
                 )
                 .await?;
                 DaftResult::Ok(table)
@@ -189,7 +177,6 @@ async fn read_json_single_into_table(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
-    file_path_column: Option<&str>,
 ) -> DaftResult<Table> {
     let (source_type, fixed_uri) = parse_url(uri)?;
     let is_compressed = CompressionCodec::from_uri(uri).is_some();
@@ -200,7 +187,6 @@ async fn read_json_single_into_table(
             parse_options,
             read_options,
             max_chunks_in_flight,
-            file_path_column,
         );
     }
 
@@ -302,15 +288,6 @@ async fn read_json_single_into_table(
             Ok(concated_table)
         }
     }?;
-    if let Some(file_path_col_name) = file_path_column {
-        let trimmed = uri.trim_start_matches("file://");
-        let file_paths_column = Utf8Array::from_iter(
-            file_path_col_name,
-            std::iter::repeat(Some(trimmed)).take(output_table.len()),
-        )
-        .into_series();
-        return output_table.union(&Table::from_nonempty_columns(vec![file_paths_column])?);
-    }
     Ok(output_table)
 }
 
