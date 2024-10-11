@@ -658,9 +658,7 @@ impl Table {
         schema: &Schema,
         fill_map: Option<&HashMap<&str, ExprRef>>,
     ) -> DaftResult<Self> {
-        println!("schema: {:?}", schema);
         let current_col_names = HashSet::<_>::from_iter(self.column_names());
-        println!("current_col_names: {:?}", current_col_names);
         let null_lit = null_lit();
         let exprs: Vec<_> = schema
             .fields

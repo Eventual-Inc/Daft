@@ -171,7 +171,7 @@ impl GlobScanOperator {
         let partitioning_keys = if let Some(fp_col) = &file_path_column {
             let partition_field =
                 PartitionField::new(Field::new(fp_col, DataType::Utf8), None, None)?;
-            vec![partition_field]
+            vec![partition_field; 1]
         } else {
             vec![]
         };
@@ -329,6 +329,7 @@ impl ScanOperator for GlobScanOperator {
             self.glob_paths
         ));
         let file_format = self.file_format_config.file_format();
+
         let files = run_glob_parallel(
             self.glob_paths.clone(),
             io_client,
