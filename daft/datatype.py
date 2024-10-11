@@ -323,6 +323,11 @@ class DataType:
         return cls._from_pydatatype(PyDataType.tensor(dtype._dtype, shape))
 
     @classmethod
+    def geometry(cls) -> DataType:
+        """Create a Geometry DataType"""
+        return cls._from_pydatatype(PyDataType.geometry())
+
+    @classmethod
     def sparse_tensor(
         cls,
         dtype: DataType,

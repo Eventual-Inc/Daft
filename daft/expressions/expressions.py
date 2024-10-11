@@ -3504,5 +3504,5 @@ class ExpressionGeometryNamespace(ExpressionNamespace):
 
     def intersection(self, rhs: Expression) -> Expression:
         """Compute the intersection of two geometries"""
-        op = GeoOperation.Intersection  # type: ignore[attr-defined]
+        op: Callable = GeoOperation.Intersection  # type: ignore[attr-defined]
         return Expression._from_pyexpr(native.geo_op_binary(self._expr, rhs._expr, op))

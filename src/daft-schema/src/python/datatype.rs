@@ -216,6 +216,11 @@ impl PyDataType {
     }
 
     #[staticmethod]
+    pub fn geometry() -> PyResult<Self> {
+        Ok(DataType::Geometry.into())
+    }
+
+    #[staticmethod]
     #[must_use]
     pub fn r#struct(fields: IndexMap<String, Self>) -> Self {
         DataType::Struct(
