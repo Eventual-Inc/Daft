@@ -1173,7 +1173,9 @@ class RayRunner(Runner[ray.ObjectRef]):
         if self.ray_client_mode:
             try:
                 yield ray.get(
-                    self.scheduler_actor.get_actor_pool.remote(name, resource_request, num_actors, projection)
+                    self.scheduler_actor.get_actor_pool.remote(
+                        name, resource_request, num_actors, projection, execution_config
+                    )
                 )
             finally:
                 self.scheduler_actor.teardown_actor_pool.remote(name)
