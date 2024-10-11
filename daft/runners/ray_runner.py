@@ -56,6 +56,7 @@ from daft.expressions import ExpressionsProjection
 from daft.filesystem import glob_path_with_stats
 from daft.runners import runner_io
 from daft.runners.partitioning import (
+    LocalPartitionSet,
     MaterializedResult,
     PartID,
     PartitionCacheEntry,
@@ -63,7 +64,6 @@ from daft.runners.partitioning import (
     PartitionSet,
 )
 from daft.runners.profiler import profiler
-from daft.runners.pyrunner import LocalPartitionSet
 from daft.runners.runner import Runner
 from daft.table import MicroPartition
 
