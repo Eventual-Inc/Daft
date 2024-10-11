@@ -168,7 +168,6 @@ pub(crate) fn tables_concat(mut tables: Vec<Table>) -> DaftResult<Table> {
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn read_json_single_into_table(
     uri: &str,
     convert_options: Option<JsonConvertOptions>,
