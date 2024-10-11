@@ -12,7 +12,6 @@ use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormatConfig;
 use daft_dsl::ExprRef;
 use daft_schema::{
-    dtype::DataType,
     field::Field,
     schema::{Schema, SchemaRef},
 };
@@ -487,41 +486,29 @@ impl ScanTask {
 
     #[must_use]
     pub fn materialized_schema(&self) -> SchemaRef {
-        match (&self.pushdowns.columns, &self.file_path_column) {
-            (None, None) => self.schema.clone(),
-            (Some(columns), file_path_column_opt) => {
-                let filtered_fields = self
-                    .schema
-                    .fields
-                    .clone()
-                    .into_iter()
-                    .filter(|(name, _)| columns.contains(name));
-
-                let fields = match file_path_column_opt {
-                    Some(file_path_column) => filtered_fields
-                        .chain(std::iter::once((
-                            file_path_column.to_string(),
-                            Field::new(file_path_column.to_string(), DataType::Utf8),
-                        )))
-                        .collect(),
-                    None => filtered_fields.collect(),
-                };
-
-                Arc::new(Schema { fields })
+        let mut fields = self.schema.fields.clone();
+        // Extend the schema with the partition spec.
+        if let Some(source) = self.sources.first() {
+            if let Some(partition_spec) = source.get_partition_spec() {
+                fields.extend(
+                    partition_spec
+                        .keys
+                        .schema
+                        .fields
+                        .iter()
+                        .map(|(name, field)| (name.clone(), field.clone())),
+                );
             }
-            (None, Some(file_path_column)) => Arc::new(Schema {
-                fields: self
-                    .schema
-                    .fields
-                    .clone()
-                    .into_iter()
-                    .chain(std::iter::once((
-                        file_path_column.to_string(),
-                        Field::new(file_path_column.to_string(), DataType::Utf8),
-                    )))
-                    .collect(),
-            }),
         }
+        // Filter the schema based on the pushdown column filters.
+        fields = match &self.pushdowns.columns {
+            None => fields,
+            Some(columns) => fields
+                .into_iter()
+                .filter(|(name, _)| columns.contains(name))
+                .collect(),
+        };
+        Arc::new(Schema { fields })
     }
 
     /// Obtain an accurate, exact num_rows from the ScanTask, or `None` if this is not possible
@@ -754,6 +741,10 @@ impl PartitionField {
                 transform,
             }),
         }
+    }
+
+    pub fn clone_field(&self) -> Field {
+        self.field.clone()
     }
 }
 
@@ -1102,6 +1093,7 @@ mod test {
             false,
             Some(Arc::new(Schema::empty())),
             None,
+            false,
         )
         .unwrap();
 

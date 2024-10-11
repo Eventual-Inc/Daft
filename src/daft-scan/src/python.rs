@@ -101,11 +101,13 @@ pub mod pylib {
         }
 
         #[staticmethod]
+        #[allow(clippy::too_many_arguments)]
         pub fn glob_scan(
             py: Python,
             glob_path: Vec<String>,
             file_format_config: PyFileFormatConfig,
             storage_config: PyStorageConfig,
+            hive_partitioning: bool,
             infer_schema: bool,
             schema: Option<PySchema>,
             file_path_column: Option<String>,
@@ -118,6 +120,7 @@ pub mod pylib {
                     infer_schema,
                     schema.map(|s| s.schema),
                     file_path_column,
+                    hive_partitioning,
                 )?);
                 Ok(Self {
                     scan_op: ScanOperatorRef(operator),
