@@ -76,7 +76,7 @@ class Series:
                 falling back to Python type representation, or ``"force"`` the data to only
                 have a Python type representation. Default is ``"allow"``.
         """
-
+        _ensure_registered_super_ext_type()
         if not isinstance(data, list):
             raise TypeError(f"expected a python list, got {type(data)}")
 
