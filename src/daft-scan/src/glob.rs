@@ -6,7 +6,7 @@ use daft_core::{prelude::Utf8Array, series::IntoSeries};
 use daft_csv::CsvParseOptions;
 use daft_io::{parse_url, FileMetadata, IOClient, IOStatsContext, IOStatsRef, RuntimeRef};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
-use daft_schema::schema::SchemaRef;
+use daft_schema::{dtype::DataType, field::Field, schema::SchemaRef};
 use daft_stats::PartitionSpec;
 use daft_table::Table;
 use futures::{stream::BoxStream, StreamExt, TryStreamExt};
@@ -23,6 +23,7 @@ pub struct GlobScanOperator {
     schema: SchemaRef,
     storage_config: Arc<StorageConfig>,
     file_path_column: Option<String>,
+    partitioning_keys: Vec<PartitionField>,
 }
 
 /// Wrapper struct that implements a sync Iterator for a BoxStream
@@ -167,6 +168,13 @@ impl GlobScanOperator {
             }
             .into()),
         }?;
+        let partitioning_keys = if let Some(fp_col) = &file_path_column {
+            let partition_field =
+                PartitionField::new(Field::new(fp_col, DataType::Utf8), None, None)?;
+            vec![partition_field]
+        } else {
+            vec![]
+        };
 
         let schema = match infer_schema {
             true => {
@@ -253,6 +261,7 @@ impl GlobScanOperator {
             schema,
             storage_config,
             file_path_column,
+            partitioning_keys,
         })
     }
 }
@@ -263,7 +272,7 @@ impl ScanOperator for GlobScanOperator {
     }
 
     fn partitioning_keys(&self) -> &[PartitionField] {
-        &[]
+        &self.partitioning_keys
     }
 
     fn file_path_column(&self) -> Option<&str> {
