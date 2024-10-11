@@ -8,7 +8,7 @@ from daft.daft import PySchema as _PySchema
 from daft.daft import read_csv_schema as _read_csv_schema
 from daft.daft import read_json_schema as _read_json_schema
 from daft.daft import read_parquet_schema as _read_parquet_schema
-from daft.datatype import DataType, TimeUnit
+from daft.datatype import DataType, TimeUnit, _ensure_registered_super_ext_type
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -82,6 +82,7 @@ class Schema:
         Returns:
             pa.Schema: PyArrow schema that corresponds to the provided Daft schema
         """
+        _ensure_registered_super_ext_type()
         return self._schema.to_pyarrow_schema()
 
     @classmethod
