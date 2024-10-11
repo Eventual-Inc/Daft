@@ -71,7 +71,10 @@ pub enum Error {
         fpc1,
         fpc2
     ))]
-    DifferingFilePathColumnsInScanTaskMerge { fpc1: String, fpc2: String },
+    DifferingFilePathColumnsInScanTaskMerge {
+        fpc1: Option<String>,
+        fpc2: Option<String>,
+    },
 
     #[snafu(display(
         "StorageConfigs were different during ScanTask::merge: {:?} vs {:?}",
@@ -464,8 +467,8 @@ impl ScanTask {
         }
         if sc1.file_path_column != sc2.file_path_column {
             return Err(Error::DifferingFilePathColumnsInScanTaskMerge {
-                ffc1: sc1.file_format_config.clone(),
-                ffc2: sc2.file_format_config.clone(),
+                fpc1: sc1.file_path_column.clone(),
+                fpc2: sc2.file_path_column.clone(),
             });
         }
         Ok(Self::new(
