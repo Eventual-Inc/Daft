@@ -610,6 +610,7 @@ pub struct ParquetScanBuilder {
     pub io_config: Option<IOConfig>,
     pub multithreaded: bool,
     pub schema: Option<SchemaRef>,
+    pub file_path_column: Option<String>,
 }
 
 impl ParquetScanBuilder {
@@ -630,6 +631,7 @@ impl ParquetScanBuilder {
             multithreaded: true,
             schema: None,
             io_config: None,
+            file_path_column: None,
         }
     }
     pub fn infer_schema(mut self, infer_schema: bool) -> Self {
@@ -667,6 +669,11 @@ impl ParquetScanBuilder {
         self
     }
 
+    pub fn file_path_column(mut self, file_path_column: String) -> Self {
+        self.file_path_column = Some(file_path_column);
+        self
+    }
+
     pub fn finish(self) -> DaftResult<LogicalPlanBuilder> {
         let cfg = ParquetSourceConfig {
             coerce_int96_timestamp_unit: self.coerce_int96_timestamp_unit,
@@ -683,7 +690,7 @@ impl ParquetScanBuilder {
             ))),
             self.infer_schema,
             self.schema,
-            None,
+            self.file_path_column,
         )?);
 
         LogicalPlanBuilder::table_scan(ScanOperatorRef(operator), None)
