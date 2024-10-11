@@ -463,7 +463,7 @@ impl ScanTask {
             });
         }
         if sc1.file_path_column != sc2.file_path_column {
-            return Err(Error::DifferingFileFormatConfigsInScanTaskMerge {
+            return Err(Error::DifferingFilePathColumnsInScanTaskMerge {
                 ffc1: sc1.file_format_config.clone(),
                 ffc2: sc2.file_format_config.clone(),
             });
