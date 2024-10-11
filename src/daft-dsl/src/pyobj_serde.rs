@@ -35,7 +35,7 @@ impl Hash for PyObjectWrapper {
             Err(_) => {
                 let hasher = HashWriter { state };
                 bincode::serialize_into(hasher, self)
-                    .expect("Pickling error occurred when computing hash of Pyobject")
+                    .expect("Pickling error occurred when computing hash of Pyobject");
             }
         }
     }

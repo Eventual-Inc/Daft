@@ -1,5 +1,6 @@
 pub mod map;
 pub mod partitioning;
+pub mod python;
 pub mod scalar;
 pub mod sketch;
 pub mod struct_;
@@ -12,6 +13,7 @@ use std::{
 
 use common_error::DaftResult;
 use daft_core::prelude::*;
+use python::PythonUDF;
 pub use scalar::*;
 use serde::{Deserialize, Serialize};
 
@@ -20,9 +22,6 @@ use self::{
     utf8::Utf8Expr,
 };
 use crate::{Expr, ExprRef, Operator};
-
-pub mod python;
-use python::PythonUDF;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum FunctionExpr {
@@ -48,14 +47,13 @@ pub trait FunctionEvaluator {
 impl FunctionExpr {
     #[inline]
     fn get_evaluator(&self) -> &dyn FunctionEvaluator {
-        use FunctionExpr::*;
         match self {
-            Utf8(expr) => expr.get_evaluator(),
-            Map(expr) => expr.get_evaluator(),
-            Sketch(expr) => expr.get_evaluator(),
-            Struct(expr) => expr.get_evaluator(),
-            Python(expr) => expr.get_evaluator(),
-            Partitioning(expr) => expr.get_evaluator(),
+            Self::Utf8(expr) => expr.get_evaluator(),
+            Self::Map(expr) => expr.get_evaluator(),
+            Self::Sketch(expr) => expr.get_evaluator(),
+            Self::Struct(expr) => expr.get_evaluator(),
+            Self::Python(expr) => expr.get_evaluator(),
+            Self::Partitioning(expr) => expr.get_evaluator(),
         }
     }
 }

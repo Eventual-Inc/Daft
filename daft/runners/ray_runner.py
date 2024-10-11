@@ -931,9 +931,14 @@ class DaftRayActor:
             for name, psu in extract_partial_stateful_udf_py(expr._expr).items()
         }
         logger.info("Initializing stateful UDFs: %s", ", ".join(partial_stateful_udfs.keys()))
-        self.initialized_stateful_udfs = {
-            name: partial_udf.func_cls() for name, partial_udf in partial_stateful_udfs.items()
-        }
+
+        self.initialized_stateful_udfs = {}
+        for name, (partial_udf, init_args) in partial_stateful_udfs.items():
+            if init_args is None:
+                self.initialized_stateful_udfs[name] = partial_udf.func_cls()
+            else:
+                args, kwargs = init_args
+                self.initialized_stateful_udfs[name] = partial_udf.func_cls(*args, **kwargs)
 
     @ray.method(num_returns=2)
     def run(
@@ -981,8 +986,12 @@ class RayRoundRobinActorPool:
         self._projection = projection
 
     def setup(self) -> None:
+        ray_options = _get_ray_task_options(self._resource_request_per_actor)
+
         self._actors = [
-            DaftRayActor.options(name=f"rank={rank}-{self._id}").remote(self._execution_config, self._projection)  # type: ignore
+            DaftRayActor.options(name=f"rank={rank}-{self._id}", **ray_options).remote(  # type: ignore
+                self._execution_config, self._projection
+            )
             for rank in range(self._num_actors)
         ]
 
@@ -1150,8 +1159,16 @@ class RayRunner(Runner[ray.ObjectRef]):
 
     @contextlib.contextmanager
     def actor_pool_context(
-        self, name: str, resource_request: ResourceRequest, num_actors: PartID, projection: ExpressionsProjection
+        self,
+        name: str,
+        actor_resource_request: ResourceRequest,
+        task_resource_request: ResourceRequest,
+        num_actors: PartID,
+        projection: ExpressionsProjection,
     ) -> Iterator[str]:
+        # Ray runs actor methods serially, so the resource request for an actor should be both the actor's resources and the task's resources
+        resource_request = actor_resource_request + task_resource_request
+
         execution_config = get_context().daft_execution_config
         if self.ray_client_mode:
             try:

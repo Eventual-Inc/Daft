@@ -9,6 +9,7 @@ mod min;
 mod slice;
 mod sort;
 mod sum;
+mod value_counts;
 
 pub use chunk::{list_chunk as chunk, ListChunk};
 pub use count::{list_count as count, ListCount};
@@ -31,6 +32,10 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction_bound!(count::py_list_count, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(get::py_list_get, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(join::py_list_join, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(
+        value_counts::py_list_value_counts,
+        parent
+    )?)?;
 
     parent.add_function(wrap_pyfunction_bound!(max::py_list_max, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(min::py_list_min, parent)?)?;

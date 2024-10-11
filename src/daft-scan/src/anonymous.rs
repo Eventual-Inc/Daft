@@ -17,6 +17,7 @@ pub struct AnonymousScanOperator {
 }
 
 impl AnonymousScanOperator {
+    #[must_use]
     pub fn new(
         files: Vec<String>,
         schema: SchemaRef,
@@ -91,7 +92,7 @@ impl ScanOperator for AnonymousScanOperator {
                 let chunk_spec = rg.map(ChunkSpec::Parquet);
                 Ok(ScanTask::new(
                     vec![DataSource::File {
-                        path: f.to_string(),
+                        path: f,
                         chunk_spec,
                         size_bytes: None,
                         iceberg_delete_files: None,

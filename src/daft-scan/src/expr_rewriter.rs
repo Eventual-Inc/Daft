@@ -24,7 +24,9 @@ fn unalias(expr: ExprRef) -> DaftResult<ExprRef> {
 }
 
 fn apply_partitioning_expr(expr: ExprRef, pfield: &PartitionField) -> Option<ExprRef> {
-    use PartitionTransform::*;
+    use PartitionTransform::{
+        Day, Hour, IcebergBucket, IcebergTruncate, Identity, Month, Void, Year,
+    };
     match pfield.transform {
         Some(Identity) => Some(
             pfield
@@ -65,6 +67,7 @@ pub struct PredicateGroups {
 }
 
 impl PredicateGroups {
+    #[must_use]
     pub fn new(
         partition_only_filter: Vec<ExprRef>,
         data_only_filter: Vec<ExprRef>,
@@ -96,7 +99,7 @@ pub fn rewrite_predicate_for_partitioning(
     // Predicates that only reference data columns (no partition column references) or only reference partition columns
     // but involve non-identity transformations.
     let mut data_preds: Vec<ExprRef> = vec![];
-    for e in data_split.into_iter() {
+    for e in data_split {
         let mut all_data_keys = true;
         let mut all_part_keys = true;
         let mut any_non_identity_part_keys = false;
@@ -150,7 +153,7 @@ pub fn rewrite_predicate_for_partitioning(
 
     let source_to_pfield = {
         let mut map = HashMap::with_capacity(pfields.len());
-        for pf in pfields.iter() {
+        for pf in pfields {
             if let Some(ref source_field) = pf.source_field {
                 let prev_value = map.insert(source_field.name.as_str(), pf);
                 if let Some(prev_value) = prev_value {
@@ -162,7 +165,7 @@ pub fn rewrite_predicate_for_partitioning(
     };
 
     let with_part_cols = predicate.transform(&|expr: ExprRef| {
-        use Operator::*;
+        use Operator::{Eq, Gt, GtEq, Lt, LtEq, NotEq};
         match expr.as_ref() {
             // Binary Op for Eq
             // All transforms should work as is
@@ -331,7 +334,7 @@ pub fn rewrite_predicate_for_partitioning(
     // Filter to predicate clauses that only involve partition columns.
     let split = split_conjuction(&with_part_cols);
     let mut part_preds: Vec<ExprRef> = vec![];
-    for e in split.into_iter() {
+    for e in split {
         let mut all_part_keys = true;
         e.apply(&mut |e: &ExprRef| {
             if let Expr::Column(col_name) = e.as_ref()

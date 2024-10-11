@@ -506,16 +506,16 @@ pub fn cast(array: &dyn Array, to_type: &DataType, options: CastOptions) -> Resu
     match (from_type, to_type) {
         (Null, _) | (_, Null) => Ok(new_null_array(to_type.clone(), array.len())),
         (Extension(_, from_inner, _), Extension(_, to_inner, _)) => {
-            let new_arr = cast(array.to_type(*from_inner.clone()).as_ref(), to_inner, options)?;
-            Ok(new_arr.to_type(to_type.clone()))
+            let new_arr = cast(array.convert_logical_type(*from_inner.clone()).as_ref(), to_inner, options)?;
+            Ok(new_arr.convert_logical_type(to_type.clone()))
         }
         (Extension(_, from_inner, _), _) => {
-            let new_arr = cast(array.to_type(*from_inner.clone()).as_ref(), to_type, options)?;
+            let new_arr = cast(array.convert_logical_type(*from_inner.clone()).as_ref(), to_type, options)?;
             Ok(new_arr)
         }
         (_, Extension(_, to_inner, _)) => {
             let new_arr = cast(array, to_inner, options)?;
-            Ok(new_arr.to_type(to_type.clone()))
+            Ok(new_arr.convert_logical_type(to_type.clone()))
         }
         (Struct(from_fields), Struct(to_fields)) => match (from_fields.len(), to_fields.len()) {
             (from_len, to_len) if from_len == to_len => {

@@ -76,7 +76,7 @@ impl ProbeTableState {
     }
 }
 
-pub(crate) struct HashJoinBuildSink {
+pub struct HashJoinBuildSink {
     probe_table_state: ProbeTableState,
 }
 

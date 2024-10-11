@@ -34,8 +34,7 @@ impl ScalarUDF for ImageEncode {
                         Ok(Field::new(field.name, DataType::Binary))
                     }
                     _ => Err(DaftError::TypeError(format!(
-                        "ImageEncode can only encode ImageArrays and FixedShapeImageArrays, got {}",
-                        field
+                        "ImageEncode can only encode ImageArrays and FixedShapeImageArrays, got {field}"
                     ))),
                 }
             }
@@ -57,6 +56,7 @@ impl ScalarUDF for ImageEncode {
     }
 }
 
+#[must_use]
 pub fn encode(input: ExprRef, image_encode: ImageEncode) -> ExprRef {
     ScalarFunction::new(image_encode, vec![input]).into()
 }

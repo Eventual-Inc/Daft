@@ -1,4 +1,4 @@
-use std::{ops::Deref, sync::Arc};
+use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
@@ -16,7 +16,7 @@ impl MicroPartition {
             .transpose()?;
 
         let guard = self.state.lock().unwrap();
-        match guard.deref() {
+        match &*guard {
             // Replace schema if Unloaded, which should be applied when data is lazily loaded
             TableState::Unloaded(scan_task) => {
                 let maybe_new_scan_task = if scan_task.schema == schema {

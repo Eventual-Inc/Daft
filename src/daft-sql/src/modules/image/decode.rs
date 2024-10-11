@@ -61,4 +61,12 @@ impl SQLFunction for SQLImageDecode {
             _ => unsupported_sql_err!("Invalid arguments for image_decode: '{inputs:?}'"),
         }
     }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Decodes an image from binary data. Optionally, you can specify the image mode and error handling behavior.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input", "mode", "on_error"]
+    }
 }

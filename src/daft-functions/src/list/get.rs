@@ -59,6 +59,7 @@ impl ScalarUDF for ListGet {
     }
 }
 
+#[must_use]
 pub fn list_get(expr: ExprRef, idx: ExprRef, default_value: ExprRef) -> ExprRef {
     ScalarFunction::new(ListGet {}, vec![expr, idx, default_value]).into()
 }

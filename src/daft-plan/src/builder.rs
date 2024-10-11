@@ -1,16 +1,23 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     sync::Arc,
 };
 
 use common_daft_config::DaftPlanningConfig;
 use common_display::mermaid::MermaidDisplayOptions;
 use common_error::DaftResult;
-use common_file_formats::FileFormat;
+use common_file_formats::{FileFormat, FileFormatConfig, ParquetSourceConfig};
 use common_io_config::IOConfig;
-use daft_core::join::{JoinStrategy, JoinType};
+use daft_core::{
+    join::{JoinStrategy, JoinType},
+    prelude::TimeUnit,
+};
 use daft_dsl::{col, ExprRef};
-use daft_scan::{PhysicalScanInfo, Pushdowns, ScanOperatorRef};
+use daft_scan::{
+    glob::GlobScanOperator,
+    storage_config::{NativeStorageConfig, StorageConfig},
+    PhysicalScanInfo, Pushdowns, ScanOperatorRef,
+};
 use daft_schema::{
     dtype::DataType,
     field::Field,
@@ -77,7 +84,29 @@ impl From<&LogicalPlanBuilder> for LogicalPlanRef {
         value.plan.clone()
     }
 }
-
+pub trait IntoGlobPath {
+    fn into_glob_path(self) -> Vec<String>;
+}
+impl IntoGlobPath for Vec<String> {
+    fn into_glob_path(self) -> Vec<String> {
+        self
+    }
+}
+impl IntoGlobPath for String {
+    fn into_glob_path(self) -> Vec<String> {
+        vec![self]
+    }
+}
+impl IntoGlobPath for &str {
+    fn into_glob_path(self) -> Vec<String> {
+        vec![self.to_string()]
+    }
+}
+impl IntoGlobPath for Vec<&str> {
+    fn into_glob_path(self) -> Vec<String> {
+        self.iter().map(|s| (*s).to_string()).collect()
+    }
+}
 impl LogicalPlanBuilder {
     /// Replace the LogicalPlanBuilder's plan with the provided plan
     pub fn with_new_plan<LP: Into<Arc<LogicalPlan>>>(&self, plan: LP) -> Self {
@@ -107,9 +136,50 @@ impl LogicalPlanBuilder {
             num_rows,
             None, // TODO(sammy) thread through clustering spec to Python
         ));
-        let logical_plan: LogicalPlan =
-            logical_ops::Source::new(schema.clone(), source_info.into()).into();
+        let logical_plan: LogicalPlan = logical_ops::Source::new(schema, source_info.into()).into();
+
         Ok(Self::new(logical_plan.into(), None))
+    }
+
+    #[cfg(feature = "python")]
+    pub fn delta_scan<T: AsRef<str>>(
+        glob_path: T,
+        io_config: Option<IOConfig>,
+        multithreaded_io: bool,
+    ) -> DaftResult<Self> {
+        use daft_scan::storage_config::{NativeStorageConfig, PyStorageConfig, StorageConfig};
+
+        Python::with_gil(|py| {
+            let io_config = io_config.unwrap_or_default();
+
+            let native_storage_config = NativeStorageConfig {
+                io_config: Some(io_config),
+                multithreaded_io,
+            };
+
+            let py_storage_config: PyStorageConfig =
+                Arc::new(StorageConfig::Native(Arc::new(native_storage_config))).into();
+
+            // let py_io_config = PyIOConfig { config: io_config };
+            let delta_lake_scan = PyModule::import_bound(py, "daft.delta_lake.delta_lake_scan")?;
+            let delta_lake_scan_operator =
+                delta_lake_scan.getattr(pyo3::intern!(py, "DeltaLakeScanOperator"))?;
+            let delta_lake_operator = delta_lake_scan_operator
+                .call1((glob_path.as_ref(), py_storage_config))?
+                .to_object(py);
+            let scan_operator_handle =
+                ScanOperatorHandle::from_python_scan_operator(delta_lake_operator, py)?;
+            Self::table_scan(scan_operator_handle.into(), None)
+        })
+    }
+
+    #[cfg(not(feature = "python"))]
+    pub fn delta_scan<T: IntoGlobPath>(
+        glob_path: T,
+        io_config: Option<IOConfig>,
+        multithreaded_io: bool,
+    ) -> DaftResult<Self> {
+        panic!("Delta Lake scan requires the 'python' feature to be enabled.")
     }
 
     pub fn table_scan(
@@ -143,7 +213,7 @@ impl LogicalPlanBuilder {
                 let finalized_fields = match file_path_column_opt {
                     Some(file_path_column) => pruned_fields
                         .chain(std::iter::once(Field::new(
-                            file_path_column.to_string(),
+                            (*file_path_column).to_string(),
                             DataType::Utf8,
                         )))
                         .collect::<Vec<_>>(),
@@ -157,17 +227,21 @@ impl LogicalPlanBuilder {
                     .values()
                     .cloned()
                     .chain(std::iter::once(Field::new(
-                        file_path_column.to_string(),
+                        (*file_path_column).to_string(),
                         DataType::Utf8,
                     )))
                     .collect::<Vec<_>>();
                 Arc::new(Schema::new(schema_with_file_path)?)
             }
-            _ => schema.clone(),
+            _ => schema,
         };
         let logical_plan: LogicalPlan =
             logical_ops::Source::new(output_schema, source_info.into()).into();
         Ok(Self::new(logical_plan.into(), None))
+    }
+
+    pub fn parquet_scan<T: IntoGlobPath>(glob_path: T) -> ParquetScanBuilder {
+        ParquetScanBuilder::new(glob_path)
     }
 
     pub fn select(&self, to_select: Vec<ExprRef>) -> DaftResult<Self> {
@@ -379,7 +453,7 @@ impl LogicalPlanBuilder {
     ) -> DaftResult<Self> {
         let logical_plan: LogicalPlan = logical_ops::Join::try_new(
             self.plan.clone(),
-            right.into().clone(),
+            right.into(),
             left_on,
             right_on,
             join_type,
@@ -523,6 +597,96 @@ impl LogicalPlanBuilder {
     pub fn repr_mermaid(&self, opts: MermaidDisplayOptions) -> String {
         use common_display::mermaid::MermaidDisplay;
         self.plan.repr_mermaid(opts)
+    }
+}
+
+pub struct ParquetScanBuilder {
+    pub glob_paths: Vec<String>,
+    pub infer_schema: bool,
+    pub coerce_int96_timestamp_unit: TimeUnit,
+    pub field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
+    pub row_groups: Option<Vec<Option<Vec<i64>>>>,
+    pub chunk_size: Option<usize>,
+    pub io_config: Option<IOConfig>,
+    pub multithreaded: bool,
+    pub schema: Option<SchemaRef>,
+}
+
+impl ParquetScanBuilder {
+    pub fn new<T: IntoGlobPath>(glob_paths: T) -> Self {
+        let glob_paths = glob_paths.into_glob_path();
+        Self::new_impl(glob_paths)
+    }
+
+    // concrete implementation to reduce LLVM code duplication
+    fn new_impl(glob_paths: Vec<String>) -> Self {
+        Self {
+            glob_paths,
+            infer_schema: true,
+            coerce_int96_timestamp_unit: TimeUnit::Nanoseconds,
+            field_id_mapping: None,
+            row_groups: None,
+            chunk_size: None,
+            multithreaded: true,
+            schema: None,
+            io_config: None,
+        }
+    }
+    pub fn infer_schema(mut self, infer_schema: bool) -> Self {
+        self.infer_schema = infer_schema;
+        self
+    }
+    pub fn coerce_int96_timestamp_unit(mut self, unit: TimeUnit) -> Self {
+        self.coerce_int96_timestamp_unit = unit;
+        self
+    }
+    pub fn field_id_mapping(mut self, field_id_mapping: Arc<BTreeMap<i32, Field>>) -> Self {
+        self.field_id_mapping = Some(field_id_mapping);
+        self
+    }
+    pub fn row_groups(mut self, row_groups: Vec<Option<Vec<i64>>>) -> Self {
+        self.row_groups = Some(row_groups);
+        self
+    }
+    pub fn chunk_size(mut self, chunk_size: usize) -> Self {
+        self.chunk_size = Some(chunk_size);
+        self
+    }
+
+    pub fn io_config(mut self, io_config: IOConfig) -> Self {
+        self.io_config = Some(io_config);
+        self
+    }
+
+    pub fn multithreaded(mut self, multithreaded: bool) -> Self {
+        self.multithreaded = multithreaded;
+        self
+    }
+    pub fn schema(mut self, schema: SchemaRef) -> Self {
+        self.schema = Some(schema);
+        self
+    }
+
+    pub fn finish(self) -> DaftResult<LogicalPlanBuilder> {
+        let cfg = ParquetSourceConfig {
+            coerce_int96_timestamp_unit: self.coerce_int96_timestamp_unit,
+            field_id_mapping: self.field_id_mapping,
+            row_groups: self.row_groups,
+            chunk_size: self.chunk_size,
+        };
+
+        let operator = Arc::new(GlobScanOperator::try_new(
+            self.glob_paths,
+            Arc::new(FileFormatConfig::Parquet(cfg)),
+            Arc::new(StorageConfig::Native(Arc::new(
+                NativeStorageConfig::new_internal(self.multithreaded, self.io_config),
+            ))),
+            self.infer_schema,
+            self.schema,
+            None,
+        )?);
+
+        LogicalPlanBuilder::table_scan(ScanOperatorRef(operator), None)
     }
 }
 

@@ -85,7 +85,7 @@ pub fn read_csv_bulk(
         // Launch a read task per URI, throttling the number of concurrent file reads to num_parallel tasks.
         let task_stream = futures::stream::iter(uris.iter().map(|uri| {
             let (uri, convert_options, parse_options, read_options, io_client, io_stats) = (
-                uri.to_string(),
+                (*uri).to_string(),
                 convert_options.clone(),
                 parse_options.clone(),
                 read_options.clone(),
@@ -195,7 +195,7 @@ fn tables_concat(mut tables: Vec<Table>) -> DaftResult<Table> {
     Table::new_with_size(
         first_table.schema.clone(),
         new_series,
-        tables.iter().map(|t| t.len()).sum(),
+        tables.iter().map(daft_table::Table::len).sum(),
     )
 }
 
@@ -227,7 +227,7 @@ async fn read_csv_single_into_table(
                 let required_columns_for_predicate = get_required_columns(predicate);
                 for rc in required_columns_for_predicate {
                     if include_columns.iter().all(|c| c.as_str() != rc.as_str()) {
-                        include_columns.push(rc)
+                        include_columns.push(rc);
                     }
                 }
             }
@@ -353,7 +353,7 @@ async fn stream_csv_single(
                 let required_columns_for_predicate = get_required_columns(predicate);
                 for rc in required_columns_for_predicate {
                     if include_columns.iter().all(|c| c.as_str() != rc.as_str()) {
-                        include_columns.push(rc)
+                        include_columns.push(rc);
                     }
                 }
             }
@@ -425,10 +425,10 @@ async fn read_csv_single_into_stream(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
 ) -> DaftResult<(impl TableStream + Send, Vec<Field>)> {
-    let (mut schema, estimated_mean_row_size, estimated_std_row_size) = match convert_options.schema
-    {
-        Some(schema) => (schema.to_arrow()?, None, None),
-        None => {
+    let (mut schema, estimated_mean_row_size, estimated_std_row_size) =
+        if let Some(schema) = convert_options.schema {
+            (schema.to_arrow()?, None, None)
+        } else {
             let (schema, read_stats) = read_csv_schema_single(
                 uri,
                 parse_options.clone(),
@@ -443,8 +443,7 @@ async fn read_csv_single_into_stream(
                 Some(read_stats.mean_record_size_bytes),
                 Some(read_stats.stddev_record_size_bytes),
             )
-        }
-    };
+        };
     // Rename fields, if necessary.
     if let Some(column_names) = convert_options.column_names {
         schema = schema
@@ -628,7 +627,7 @@ fn parse_into_column_array_chunk_stream(
                             )
                         })
                         .collect::<DaftResult<Vec<Series>>>()?;
-                    let num_rows = chunk.first().map(|s| s.len()).unwrap_or(0);
+                    let num_rows = chunk.first().map_or(0, daft_core::series::Series::len);
                     Ok(Table::new_unchecked(read_schema, chunk, num_rows))
                 })();
                 let _ = send.send(result);
@@ -768,7 +767,7 @@ mod tests {
         let file = format!(
             "{}/test/iris_tiny.csv{}",
             env!("CARGO_MANIFEST_DIR"),
-            compression.map_or("".to_string(), |ext| format!(".{}", ext))
+            compression.map_or(String::new(), |ext| format!(".{ext}"))
         );
 
         let mut io_config = IOConfig::default();
@@ -829,10 +828,9 @@ mod tests {
         ];
         let table = read_csv(
             file.as_ref(),
-            Some(
-                CsvConvertOptions::default()
-                    .with_column_names(Some(column_names.iter().map(|s| s.to_string()).collect())),
-            ),
+            Some(CsvConvertOptions::default().with_column_names(Some(
+                column_names.iter().map(|s| (*s).to_string()).collect(),
+            ))),
             Some(CsvParseOptions::default().with_has_header(false)),
             None,
             io_client,
@@ -1235,7 +1233,9 @@ mod tests {
             file.as_ref(),
             Some(
                 CsvConvertOptions::default()
-                    .with_column_names(Some(column_names.iter().map(|s| s.to_string()).collect()))
+                    .with_column_names(Some(
+                        column_names.iter().map(|s| (*s).to_string()).collect(),
+                    ))
                     .with_include_columns(Some(vec![
                         "petal.length".to_string(),
                         "petal.width".to_string(),
@@ -1861,7 +1861,7 @@ mod tests {
     ) -> DaftResult<()> {
         let file = format!(
             "s3://daft-public-data/test_fixtures/csv-dev/mvp.csv{}",
-            compression.map_or("".to_string(), |ext| format!(".{}", ext))
+            compression.map_or(String::new(), |ext| format!(".{ext}"))
         );
 
         let mut io_config = IOConfig::default();
@@ -1895,10 +1895,9 @@ mod tests {
         let column_names = ["a", "b"];
         let table = read_csv(
             file,
-            Some(
-                CsvConvertOptions::default()
-                    .with_column_names(Some(column_names.iter().map(|s| s.to_string()).collect())),
-            ),
+            Some(CsvConvertOptions::default().with_column_names(Some(
+                column_names.iter().map(|s| (*s).to_string()).collect(),
+            ))),
             Some(CsvParseOptions::default().with_has_header(false)),
             None,
             io_client,
@@ -1933,7 +1932,9 @@ mod tests {
             file,
             Some(
                 CsvConvertOptions::default()
-                    .with_column_names(Some(column_names.iter().map(|s| s.to_string()).collect()))
+                    .with_column_names(Some(
+                        column_names.iter().map(|s| (*s).to_string()).collect(),
+                    ))
                     .with_include_columns(Some(vec!["b".to_string()])),
             ),
             Some(CsvParseOptions::default().with_has_header(false)),

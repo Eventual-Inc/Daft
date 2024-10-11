@@ -12,7 +12,7 @@ use crate::{
 
 pub type SourceStream<'a> = BoxStream<'a, Arc<MicroPartition>>;
 
-pub(crate) trait Source: Send + Sync {
+pub trait Source: Send + Sync {
     fn name(&self) -> &'static str;
     fn get_data(
         &self,
@@ -33,22 +33,20 @@ impl TreeDisplay for SourceNode {
         use std::fmt::Write;
         let mut display = String::new();
         writeln!(display, "{}", self.name()).unwrap();
-        use common_display::DisplayLevel::*;
-        match level {
-            Compact => {}
-            _ => {
-                let rt_result = self.runtime_stats.result();
+        use common_display::DisplayLevel::Compact;
+        if matches!(level, Compact) {
+        } else {
+            let rt_result = self.runtime_stats.result();
 
-                writeln!(display).unwrap();
-                rt_result.display(&mut display, false, true, false).unwrap();
-                let bytes_read = self.io_stats.load_bytes_read();
-                writeln!(
-                    display,
-                    "bytes read = {}",
-                    bytes_to_human_readable(bytes_read)
-                )
-                .unwrap();
-            }
+            writeln!(display).unwrap();
+            rt_result.display(&mut display, false, true, false).unwrap();
+            let bytes_read = self.io_stats.load_bytes_read();
+            writeln!(
+                display,
+                "bytes read = {}",
+                bytes_to_human_readable(bytes_read)
+            )
+            .unwrap();
         }
         display
     }
