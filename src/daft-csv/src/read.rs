@@ -310,23 +310,20 @@ async fn read_csv_single_into_table(
         .into_iter()
         .collect::<DaftResult<Vec<_>>>()?;
     // Handle empty table case.
-    let output_table = {
-        if collected_tables.is_empty() {
-            return Table::empty(Some(schema));
-        }
+    if collected_tables.is_empty() {
+        return Table::empty(Some(schema));
+    }
 
-        // // TODO(Clark): Don't concatenate all chunks from a file into a single table, since MicroPartition is natively chunked.
-        let concated_table = tables_concat(collected_tables)?;
-        if let Some(limit) = limit
-            && concated_table.len() > limit
-        {
-            // apply head in case that last chunk went over limit
-            concated_table.head(limit)
-        } else {
-            Ok(concated_table)
-        }
-    }?;
-    Ok(output_table)
+    // // TODO(Clark): Don't concatenate all chunks from a file into a single table, since MicroPartition is natively chunked.
+    let concated_table = tables_concat(collected_tables)?;
+    if let Some(limit) = limit
+        && concated_table.len() > limit
+    {
+        // apply head in case that last chunk went over limit
+        concated_table.head(limit)
+    } else {
+        Ok(concated_table)
+    }
 }
 
 async fn stream_csv_single(

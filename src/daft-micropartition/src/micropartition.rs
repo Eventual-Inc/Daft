@@ -495,7 +495,6 @@ fn materialize_scan_task(
     // If there is a partition spec and partition values aren't duplicated in the data, inline the partition values
     // into the table when casting the schema.
     let fill_map = scan_task.partition_spec().map(|pspec| pspec.to_fill_map());
-    println!("fill_map: {:?}", fill_map);
     table_values = table_values
         .iter()
         .map(|tbl| tbl.cast_to_schema_with_fill(cast_to_schema.as_ref(), fill_map.as_ref()))
