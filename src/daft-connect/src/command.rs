@@ -5,13 +5,18 @@ use std::ops::Deref;
 use std::sync::Arc;
 use uuid::Uuid;
 use common_daft_config::DaftExecutionConfig;
+use common_display::{DisplayAs, DisplayLevel};
 use common_error::DaftResult;
+use daft_core::datatypes::{DataType, Field, Utf8Array};
+use daft_core::prelude::Schema;
+use daft_core::series::IntoSeries;
 use daft_plan::{logical_to_physical, LogicalPlanBuilder, LogicalPlanRef, ParquetScanBuilder};
 use crate::{DaftSparkConnectService, Session};
 use crate::spark_connect::spark_connect_service_server::SparkConnectService;
 use crate::spark_connect::{ExecutePlanResponse, Relation, WriteOperation};
 use daft_dsl::col;
 use daft_local_execution::run::run_local;
+use daft_table::Table;
 use crate::spark_connect::execute_plan_response::{ArrowBatch, ResponseType, ResultComplete};
 
 type DaftStream = <DaftSparkConnectService as SparkConnectService>::ExecutePlanStream;
@@ -122,6 +127,28 @@ impl Session {
 
                 for table in tables {
                     println!("table ... {table:?}");
+
+                    let before_schema = &table.schema;
+                    let display = before_schema.display_as(DisplayLevel::Default);
+
+                    let mut utf8_data = vec![None; 10];
+                    utf8_data[0] = Some(display.to_string());
+                    let utf8_array = arrow2::array::Utf8Array::<i64>::from(utf8_data).boxed();
+
+                    let field = Field::new("show_string", DataType::Utf8);
+
+                    let series = Utf8Array::try_from((Arc::new(field), utf8_array)).unwrap().into_series();
+
+
+                    let len = series.len();
+
+                    let jank = Table::new_with_size(
+                        Schema::new(vec![series.field().clone()]).unwrap(),
+                        vec![series],
+                        len,
+                    ).unwrap();
+
+                    let table = table.union(&jank).unwrap();
 
                     let schema = table.schema.to_arrow().unwrap();
                     writer.start(&schema, None).unwrap();

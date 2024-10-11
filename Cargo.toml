@@ -170,6 +170,8 @@ once_cell = "1.19.0"
 path_macro = "1.0.0"
 pretty_assertions = "1.4.0"
 rand = "^0.8"
+daft-core = {path = "src/daft-core"}
+common-display = {path = "src/common/display"}
 rayon = "1.10.0"
 regex = "1.10.4"
 rstest = "0.18.2"
