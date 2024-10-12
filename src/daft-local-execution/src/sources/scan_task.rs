@@ -1,10 +1,10 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
-use daft_core::prelude::{Int64Array, Utf8Array};
+use daft_core::prelude::{AsArrow, Int64Array, Utf8Array};
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
-use daft_io::{get_runtime, IOStatsRef};
+use daft_io::IOStatsRef;
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_micropartition::MicroPartition;
 use daft_parquet::read::{read_parquet_bulk_async, ParquetSchemaInferenceOptions};
@@ -17,7 +17,7 @@ use tracing::instrument;
 use crate::{
     channel::{create_channel, Sender},
     sources::source::{Source, SourceStream},
-    ExecutionRuntimeHandle, NUM_CPUS,
+    ExecutionRuntimeHandle, JoinSnafu, TaskSet, NUM_CPUS,
 };
 
 pub struct ScanTaskSource {
@@ -39,9 +39,11 @@ impl ScanTaskSource {
         sender: Sender<Arc<MicroPartition>>,
         maintain_order: bool,
         io_stats: IOStatsRef,
+        delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
     ) -> DaftResult<()> {
         let schema = scan_task.materialized_schema();
-        let mut stream = stream_scan_task(scan_task, Some(io_stats), maintain_order).await?;
+        let mut stream =
+            stream_scan_task(scan_task, Some(io_stats), delete_map, maintain_order).await?;
         let mut has_data = false;
         while let Some(partition) = stream.next().await {
             let _ = sender.send(partition?).await;
@@ -78,17 +80,28 @@ impl Source for ScanTaskSource {
                 vec![receiver],
             )
         };
-        for (scan_task, sender) in self.scan_tasks.iter().zip(senders) {
-            runtime_handle.spawn(
-                Self::process_scan_task_stream(
-                    scan_task.clone(),
-                    sender,
-                    maintain_order,
-                    io_stats.clone(),
-                ),
-                self.name(),
-            );
-        }
+        let scan_tasks = self.scan_tasks.clone();
+        runtime_handle.spawn(
+            async move {
+                let mut task_set = TaskSet::new();
+                let delete_map = get_delete_map(&scan_tasks).await?.map(Arc::new);
+                for (scan_task, sender) in scan_tasks.iter().zip(senders) {
+                    task_set.spawn(Self::process_scan_task_stream(
+                        scan_task.clone(),
+                        sender,
+                        maintain_order,
+                        io_stats.clone(),
+                        delete_map.clone(),
+                    ));
+                }
+                while let Some(result) = task_set.join_next().await {
+                    result.context(JoinSnafu)??;
+                }
+                Ok(())
+            },
+            self.name(),
+        );
+
         let stream = futures::stream::iter(receivers.into_iter().map(ReceiverStream::new));
         Ok(Box::pin(stream.flatten()))
     }
@@ -98,9 +111,79 @@ impl Source for ScanTaskSource {
     }
 }
 
+async fn get_delete_map(
+    scan_tasks: &[Arc<ScanTask>],
+) -> DaftResult<Option<HashMap<String, Vec<i64>>>> {
+    let delete_files = scan_tasks
+        .iter()
+        .flat_map(|st| {
+            st.sources
+                .iter()
+                .filter_map(|source| source.get_iceberg_delete_files())
+                .flatten()
+                .cloned()
+        })
+        .collect::<Vec<_>>();
+    if delete_files.is_empty() {
+        return Ok(None);
+    }
+
+    let (runtime, io_client) = scan_tasks
+        .first()
+        .unwrap()
+        .storage_config
+        .get_io_client_and_runtime()?;
+    let scan_tasks = scan_tasks.to_vec();
+    runtime.block_on_io_pool(async move {
+        let mut delete_map = scan_tasks
+            .iter()
+            .flat_map(|st| st.sources.iter().map(|s| s.get_path().to_string()))
+            .map(|path| (path, vec![]))
+            .collect::<std::collections::HashMap<_, _>>();
+        let columns_to_read = Some(vec!["file_path".to_string(), "pos".to_string()]);
+        let result = read_parquet_bulk_async(
+            delete_files,
+            columns_to_read,
+            None,
+            None,
+            None,
+            None,
+            io_client,
+            None,
+            *NUM_CPUS,
+            ParquetSchemaInferenceOptions::new(None),
+            None,
+            None,
+            None,
+            None,
+        )
+        .await?;
+
+        for table_result in result {
+            let table = table_result?;
+            // values in the file_path column are guaranteed by the iceberg spec to match the full URI of the corresponding data file
+            // https://iceberg.apache.org/spec/#position-delete-files
+            let file_paths = table.get_column("file_path")?.downcast::<Utf8Array>()?;
+            let positions = table.get_column("pos")?.downcast::<Int64Array>()?;
+
+            for (file, pos) in file_paths
+                .as_arrow()
+                .values_iter()
+                .zip(positions.as_arrow().values_iter())
+            {
+                if delete_map.contains_key(file) {
+                    delete_map.get_mut(file).unwrap().push(*pos);
+                }
+            }
+        }
+        Ok(Some(delete_map))
+    })?
+}
+
 async fn stream_scan_task(
     scan_task: Arc<ScanTask>,
     io_stats: Option<IOStatsRef>,
+    delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
     maintain_order: bool,
 ) -> DaftResult<impl Stream<Item = DaftResult<Arc<MicroPartition>>> + Send> {
     let pushdown_columns = scan_task.pushdowns.columns.as_ref().map(|v| {
@@ -160,56 +243,7 @@ async fn stream_scan_task(
             let inference_options =
                 ParquetSchemaInferenceOptions::new(Some(*coerce_int96_timestamp_unit));
 
-            let delete_rows = if let Some(delete_files) = source.get_iceberg_delete_files() {
-                let columns = Some(vec!["file_path".to_string(), "pos".to_string()]);
-                let delete_files = delete_files.to_owned();
-                let runtime = get_runtime(multi_threaded_io)?;
-                let io_client = io_client.clone();
-                let io_stats = io_stats.clone();
-                let tables = runtime.block_on_io_pool(async move {
-                    read_parquet_bulk_async(
-                        delete_files,
-                        columns,
-                        None,
-                        None,
-                        None,
-                        None,
-                        io_client,
-                        io_stats,
-                        *NUM_CPUS,
-                        inference_options,
-                        None,
-                        None,
-                        None,
-                        None,
-                    )
-                    .await
-                })??;
-
-                let mut delete_rows = vec![];
-                for table_result in tables {
-                    let table = table_result?;
-                    // values in the file_path column are guaranteed by the iceberg spec to match the full URI of the corresponding data file
-                    // https://iceberg.apache.org/spec/#position-delete-files
-                    let file_paths = table.get_column("file_path")?.downcast::<Utf8Array>()?;
-                    let positions = table.get_column("pos")?.downcast::<Int64Array>()?;
-
-                    for i in 0..table.len() {
-                        let file = file_paths.get(i);
-                        let pos = positions.get(i);
-                        if let Some(file) = file
-                            && let Some(pos) = pos
-                            && file == url
-                        {
-                            delete_rows.push(pos);
-                        }
-                    }
-                }
-                Some(delete_rows)
-            } else {
-                None
-            };
-
+            let delete_rows = delete_map.as_ref().and_then(|m| m.get(url).cloned());
             let row_groups = if let Some(ChunkSpec::Parquet(row_groups)) = source.get_chunk_spec() {
                 Some(row_groups.clone())
             } else {
