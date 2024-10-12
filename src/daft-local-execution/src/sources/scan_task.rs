@@ -85,9 +85,9 @@ impl Source for ScanTaskSource {
             async move {
                 let mut task_set = TaskSet::new();
                 let delete_map = get_delete_map(&scan_tasks).await?.map(Arc::new);
-                for (scan_task, sender) in scan_tasks.iter().zip(senders) {
+                for (scan_task, sender) in scan_tasks.into_iter().zip(senders) {
                     task_set.spawn(Self::process_scan_task_stream(
-                        scan_task.clone(),
+                        scan_task,
                         sender,
                         maintain_order,
                         io_stats.clone(),
@@ -111,6 +111,7 @@ impl Source for ScanTaskSource {
     }
 }
 
+// Read all iceberg delete files and return a map of file paths to delete positions
 async fn get_delete_map(
     scan_tasks: &[Arc<ScanTask>],
 ) -> DaftResult<Option<HashMap<String, Vec<i64>>>> {
@@ -130,7 +131,7 @@ async fn get_delete_map(
 
     let (runtime, io_client) = scan_tasks
         .first()
-        .unwrap()
+        .unwrap() // Safe to unwrap because we checked that the list is not empty
         .storage_config
         .get_io_client_and_runtime()?;
     let scan_tasks = scan_tasks.to_vec();
