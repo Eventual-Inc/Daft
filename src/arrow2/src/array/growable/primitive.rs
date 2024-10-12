@@ -1,10 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    array::{Array, PrimitiveArray},
-    bitmap::MutableBitmap,
-    datatypes::DataType,
-    types::NativeType,
+    array::{Array, PrimitiveArray}, bitmap::MutableBitmap, datatypes::DataType, types::NativeType
 };
 
 use super::{
