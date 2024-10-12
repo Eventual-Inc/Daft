@@ -199,6 +199,7 @@ fn tables_concat(mut tables: Vec<Table>) -> DaftResult<Table> {
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn read_csv_single_into_table(
     uri: &str,
     convert_options: Option<CsvConvertOptions>,

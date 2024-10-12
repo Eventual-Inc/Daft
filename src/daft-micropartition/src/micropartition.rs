@@ -644,6 +644,7 @@ impl MicroPartition {
                     field_id_mapping.clone(),
                     parquet_metadata,
                     chunk_size,
+                    scan_task.file_path_column.as_deref(),
                 )
                 .context(DaftCoreComputeSnafu)
             }
@@ -1121,6 +1122,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     parquet_metadata: Option<Vec<Arc<FileMetaData>>>,
     chunk_size: Option<usize>,
+    file_path_column: Option<&str>,
 ) -> DaftResult<MicroPartition> {
     if let Some(so) = start_offset
         && so > 0
@@ -1308,6 +1310,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
                 }),
                 num_rows,
             ),
+            file_path_column.map(|s| s.to_string()),
         );
 
         let fill_map = scan_task.partition_spec().map(|pspec| pspec.to_fill_map());

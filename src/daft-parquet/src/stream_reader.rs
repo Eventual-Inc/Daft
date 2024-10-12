@@ -113,8 +113,12 @@ pub fn arrow_column_iters_to_table_iter(
             return Err(super::Error::ParquetColumnsDontHaveEqualRows { path: uri.clone() }.into());
         }
 
-        let mut table = Table::new_with_size(owned_schema_ref.clone(), all_series, len)
-            .with_context(|_| super::UnableToCreateTableFromChunkSnafu { path: uri.clone() })?;
+        let mut table = Table::new_with_size(
+            Schema::new(all_series.iter().map(|s| s.field().clone()).collect())?,
+            all_series,
+            len,
+        )
+        .with_context(|_| super::UnableToCreateTableFromChunkSnafu { path: uri.clone() })?;
 
         // Apply delete rows if needed
         if let Some(delete_rows) = &delete_rows

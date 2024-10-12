@@ -30,6 +30,7 @@ def read_csv(
     comment: Optional[str] = None,
     allow_variable_columns: bool = False,
     io_config: Optional["IOConfig"] = None,
+    file_path_column: Optional[str] = None,
     use_native_downloader: bool = True,
     schema_hints: Optional[Dict[str, DataType]] = None,
     _buffer_size: Optional[int] = None,
@@ -54,6 +55,7 @@ def read_csv(
         comment (str): Character to treat as the start of a comment line, or None to not support comments
         allow_variable_columns (bool): Whether to allow for variable number of columns in the CSV, defaults to False. If set to True, Daft will append nulls to rows with less columns than the schema, and ignore extra columns in rows with more columns
         io_config (IOConfig): Config to be used with the native downloader
+        file_path_column: Include the source path(s) as a column with this name. Defaults to None.
         use_native_downloader: Whether to use the native downloader instead of PyArrow for reading Parquet. This
             is currently experimental.
 
@@ -97,5 +99,6 @@ def read_csv(
         schema=schema,
         file_format_config=file_format_config,
         storage_config=storage_config,
+        file_path_column=file_path_column,
     )
     return DataFrame(builder)

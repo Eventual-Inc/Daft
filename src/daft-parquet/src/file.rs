@@ -736,10 +736,9 @@ impl ParquetFileReader {
             })?
             .into_iter()
             .collect::<DaftResult<Vec<_>>>()?;
-        let daft_schema = daft_core::prelude::Schema::try_from(self.arrow_schema.as_ref())?;
 
         Table::new_with_size(
-            daft_schema,
+            Schema::new(all_series.iter().map(|s| s.field().clone()).collect())?,
             all_series,
             self.row_ranges.as_ref().iter().map(|rr| rr.num_rows).sum(),
         )
