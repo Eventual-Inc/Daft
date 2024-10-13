@@ -1007,7 +1007,7 @@ def sort_merge_join_aligned_boundaries(
                     partial_metadatas=None,
                 )
                 .add_instruction(
-                    instruction=execution_step.Sample(sort_by=on, size=sample_size),
+                    instruction=execution_step.Sample(sort_by=on, size=sample_size, over_sample=False),
                 )
                 # Rename sample columns so they align with sort_by_left naming, so we can reduce to combined quantiles below.
                 # NOTE: This instruction will be a no-op for the left side of the sort.
@@ -1535,7 +1535,7 @@ def sort(
                 partial_metadatas=None,
             )
             .add_instruction(
-                instruction=execution_step.Sample(size=sample_size, sort_by=sort_by),
+                instruction=execution_step.Sample(size=sample_size, sort_by=sort_by, over_sample=False),
             )
             .finalize_partition_task_single_output(stage_id=stage_id_sampling)
         )

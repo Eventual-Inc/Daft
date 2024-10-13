@@ -28,7 +28,7 @@ pub use monotonically_increasing_id::MonotonicallyIncreasingId;
 pub use pivot::Pivot;
 pub use project::Project;
 pub use repartition::Repartition;
-pub use sample::Sample;
+pub use sample::{Sample, SampleBy};
 pub use sink::Sink;
 pub use sort::Sort;
 pub use source::Source;

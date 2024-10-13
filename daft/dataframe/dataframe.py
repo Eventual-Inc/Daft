@@ -1264,7 +1264,8 @@ class DataFrame:
     @DataframePublicAPI
     def sample(
         self,
-        fraction: float,
+        fraction: Optional[float] = None,
+        size: Optional[int] = None,
         with_replacement: bool = False,
         seed: Optional[int] = None,
     ) -> "DataFrame":
@@ -1287,18 +1288,34 @@ class DataFrame:
             >>> # ╰───────┴───────┴───────╯
 
         Args:
-            fraction (float): fraction of rows to sample.
+            fraction (float): fraction of rows to sample. Must be between 0.0 and 1.0.
+            size (int): number of rows to sample. Must be greater than 0.
             with_replacement (bool, optional): whether to sample with replacement. Defaults to False.
             seed (Optional[int], optional): random seed. Defaults to None.
 
         Returns:
-            DataFrame: DataFrame with a fraction of rows.
+            DataFrame: DataFrame with sampled rows.
         """
-        if fraction < 0.0 or fraction > 1.0:
-            raise ValueError(f"fraction should be between 0.0 and 1.0, but got {fraction}")
+        if size is not None and fraction is not None:
+            raise ValueError("Only one of n or fraction should be provided, but got both")
+        elif fraction is not None:
+            if fraction < 0.0:
+                raise ValueError(f"Fraction should be greater than 0, but got {fraction}")
+            if fraction > 1.0 and not with_replacement:
+                raise ValueError(
+                    f"If fraction is greater than 1.0, with_replacement should be True, but got {with_replacement}"
+                )
 
-        builder = self._builder.sample(fraction, with_replacement, seed)
-        return DataFrame(builder)
+            builder = self._builder.sample_by_fraction(fraction, with_replacement, seed)
+            return DataFrame(builder)
+        elif size is not None:
+            if size < 0:
+                raise ValueError(f"Size should be greater than 0, but got {size}")
+
+            builder = self._builder.sample_by_size(size, with_replacement, seed)
+            return DataFrame(builder)
+        else:
+            raise ValueError("Either n or fraction should be provided, but got none")
 
     @DataframePublicAPI
     def exclude(self, *names: str) -> "DataFrame":

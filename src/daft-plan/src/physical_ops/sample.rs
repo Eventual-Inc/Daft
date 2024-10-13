@@ -1,11 +1,11 @@
 use serde::{Deserialize, Serialize};
 
-use crate::physical_plan::PhysicalPlanRef;
+use crate::{logical_ops::SampleBy, physical_plan::PhysicalPlanRef};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Sample {
     pub input: PhysicalPlanRef,
-    pub fraction: f64,
+    pub sample_by: SampleBy,
     pub with_replacement: bool,
     pub seed: Option<u64>,
 }
@@ -13,13 +13,13 @@ pub struct Sample {
 impl Sample {
     pub(crate) fn new(
         input: PhysicalPlanRef,
-        fraction: f64,
+        sample_by: SampleBy,
         with_replacement: bool,
         seed: Option<u64>,
     ) -> Self {
         Self {
             input,
-            fraction,
+            sample_by,
             with_replacement,
             seed,
         }
@@ -27,7 +27,7 @@ impl Sample {
 
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
-        res.push(format!("Sample: {}", self.fraction));
+        res.push(format!("Sample: {}", self.sample_by));
         res.push(format!("With replacement = {}", self.with_replacement));
         res.push(format!("Seed = {:?}", self.seed));
         res

@@ -345,6 +345,7 @@ impl PyMicroPartition {
         py: Python,
         fraction: f64,
         with_replacement: bool,
+        over_sample: bool,
         seed: Option<u64>,
     ) -> PyResult<Self> {
         py.allow_threads(|| {
@@ -353,14 +354,14 @@ impl PyMicroPartition {
                     "Can not sample table with negative fraction: {fraction}"
                 )));
             }
-            if fraction > 1.0 {
+            if fraction > 1.0 && !with_replacement {
                 return Err(PyValueError::new_err(format!(
-                    "Can not sample table with fraction greater than 1.0: {fraction}"
+                    "Can not sample table with fraction greater than 1.0: {fraction} without replacement"
                 )));
             }
             Ok(self
                 .inner
-                .sample_by_fraction(fraction, with_replacement, seed)?
+                .sample_by_fraction(fraction, with_replacement, over_sample, seed)?
                 .into())
         })
     }
@@ -370,6 +371,7 @@ impl PyMicroPartition {
         py: Python,
         size: i64,
         with_replacement: bool,
+        over_sample: bool,
         seed: Option<u64>,
     ) -> PyResult<Self> {
         py.allow_threads(|| {
@@ -380,7 +382,7 @@ impl PyMicroPartition {
             }
             Ok(self
                 .inner
-                .sample_by_size(size as usize, with_replacement, seed)?
+                .sample_by_size(size as usize, with_replacement, over_sample, seed)?
                 .into())
         })
     }

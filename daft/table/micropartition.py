@@ -196,17 +196,18 @@ class MicroPartition:
         fraction: float | None = None,
         size: int | None = None,
         with_replacement: bool = False,
+        over_sample: bool = False,
         seed: int | None = None,
     ) -> MicroPartition:
         if fraction is not None and size is not None:
             raise ValueError("Must specify either `fraction` or `size`, but not both")
         elif fraction is not None:
             return MicroPartition._from_pymicropartition(
-                self._micropartition.sample_by_fraction(float(fraction), with_replacement, seed)
+                self._micropartition.sample_by_fraction(float(fraction), with_replacement, over_sample, seed)
             )
         elif size is not None:
             return MicroPartition._from_pymicropartition(
-                self._micropartition.sample_by_size(size, with_replacement, seed)
+                self._micropartition.sample_by_size(size, with_replacement, over_sample, seed)
             )
         else:
             raise ValueError("Must specify either `fraction` or `size`")

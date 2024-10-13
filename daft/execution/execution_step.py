@@ -659,6 +659,7 @@ class Sample(SingleOutputInstruction):
     with_replacement: bool = False
     seed: int | None = None
     sort_by: ExpressionsProjection | None = None
+    over_sample: bool = False
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return self._sample(inputs)
@@ -667,12 +668,12 @@ class Sample(SingleOutputInstruction):
         [input] = inputs
         if self.sort_by:
             result = (
-                input.sample(self.fraction, self.size, self.with_replacement, self.seed)
+                input.sample(self.fraction, self.size, self.with_replacement, self.over_sample, self.seed)
                 .eval_expression_list(self.sort_by)
                 .filter(ExpressionsProjection([~col(e.name()).is_null() for e in self.sort_by]))
             )
         else:
-            result = input.sample(self.fraction, self.size, self.with_replacement, self.seed)
+            result = input.sample(self.fraction, self.size, self.with_replacement, self.over_sample, self.seed)
         return [result]
 
     def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:

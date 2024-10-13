@@ -4,6 +4,7 @@ use common_display::ascii::AsciiTreeDisplay;
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    logical_ops::SampleBy,
     partitioning::{
         ClusteringSpec, HashClusteringConfig, RandomClusteringConfig, RangeClusteringConfig,
         UnknownClusteringConfig,
@@ -310,10 +311,22 @@ impl PhysicalPlan {
                 input.approximate_stats()
             }
             Self::Sample(Sample {
-                input, fraction, ..
-            }) => input
-                .approximate_stats()
-                .apply(|v| ((v as f64) * fraction) as usize),
+                input, sample_by, ..
+            }) => {
+                let input_stats = input.approximate_stats();
+                match sample_by {
+                    SampleBy::Fraction(f) => input_stats.apply(|v| (v as f64 * f).ceil() as usize),
+                    SampleBy::Size(s) => ApproxStats {
+                        lower_bound_rows: *s,
+                        upper_bound_rows: Some(*s),
+                        lower_bound_bytes: *s / input_stats.lower_bound_rows.max(1)
+                            * input_stats.lower_bound_bytes,
+                        upper_bound_bytes: input_stats
+                            .upper_bound_bytes
+                            .map(|ub| *s / input_stats.upper_bound_rows.unwrap_or(1) * ub),
+                    },
+                }
+            }
             Self::Explode(Explode { input, .. }) => {
                 let input_stats = input.approximate_stats();
                 ApproxStats {
@@ -473,7 +486,7 @@ impl PhysicalPlan {
                 Self::Explode(Explode { to_explode, .. }) => Self::Explode(Explode::try_new(input.clone(), to_explode.clone()).unwrap()),
                 Self::Unpivot(Unpivot { ids, values, variable_name, value_name, .. }) => Self::Unpivot(Unpivot::new(input.clone(), ids.clone(), values.clone(), variable_name, value_name)),
                 Self::Pivot(Pivot { group_by, pivot_column, value_column, names, .. }) => Self::Pivot(Pivot::new(input.clone(), group_by.clone(), pivot_column.clone(), value_column.clone(), names.clone())),
-                Self::Sample(Sample { fraction, with_replacement, seed, .. }) => Self::Sample(Sample::new(input.clone(), *fraction, *with_replacement, *seed)),
+                Self::Sample(Sample { sample_by, with_replacement, seed, .. }) => Self::Sample(Sample::new(input.clone(), sample_by.clone(), *with_replacement, *seed)),
                 Self::Sort(Sort { sort_by, descending, num_partitions, .. }) => Self::Sort(Sort::new(input.clone(), sort_by.clone(), descending.clone(), *num_partitions)),
                 Self::Split(Split { input_num_partitions, output_num_partitions, .. }) => Self::Split(Split::new(input.clone(), *input_num_partitions, *output_num_partitions)),
                 Self::Coalesce(Coalesce { num_from, num_to, .. }) => Self::Coalesce(Coalesce::new(input.clone(), *num_from, *num_to)),

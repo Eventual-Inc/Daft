@@ -202,6 +202,7 @@ impl PyTable {
         py: Python,
         fraction: f64,
         with_replacement: bool,
+        over_sample: bool,
         seed: Option<u64>,
     ) -> PyResult<Self> {
         if fraction < 0.0 {
@@ -209,15 +210,15 @@ impl PyTable {
                 "Can not sample table with negative fraction: {fraction}"
             )));
         }
-        if fraction > 1.0 {
+        if fraction > 1.0 && !with_replacement {
             return Err(PyValueError::new_err(format!(
-                "Can not sample table with fraction greater than 1.0: {fraction}"
+                "Can not sample table with fraction greater than 1.0: {fraction} without replacement"
             )));
         }
         py.allow_threads(|| {
             Ok(self
                 .table
-                .sample_by_fraction(fraction, with_replacement, seed)?
+                .sample_by_fraction(fraction, with_replacement, seed, over_sample)?
                 .into())
         })
     }
@@ -227,6 +228,7 @@ impl PyTable {
         py: Python,
         size: i64,
         with_replacement: bool,
+        over_sample: bool,
         seed: Option<u64>,
     ) -> PyResult<Self> {
         if size < 0 {
@@ -237,7 +239,7 @@ impl PyTable {
         py.allow_threads(|| {
             Ok(self
                 .table
-                .sample(size as usize, with_replacement, seed)?
+                .sample(size as usize, with_replacement, seed, over_sample)?
                 .into())
         })
     }

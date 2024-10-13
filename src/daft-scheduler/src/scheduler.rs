@@ -256,6 +256,8 @@ fn physical_plan_to_partition_tasks(
     py: Python,
     psets: &HashMap<String, Vec<PyObject>>,
 ) -> PyResult<PyObject> {
+    use daft_plan::logical_plan::SampleBy;
+
     match physical_plan {
         PhysicalPlan::InMemoryScan(InMemoryScan {
             in_memory_info: InMemoryInfo { cache_key, .. },
@@ -421,15 +423,25 @@ fn physical_plan_to_partition_tasks(
         }
         PhysicalPlan::Sample(Sample {
             input,
-            fraction,
+            sample_by,
             with_replacement,
             seed,
         }) => {
+            let fraction = if let SampleBy::Fraction(f) = sample_by {
+                Some(*f)
+            } else {
+                None
+            };
+            let size = if let SampleBy::Size(s) = sample_by {
+                Some(*s)
+            } else {
+                None
+            };
             let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
             let py_iter = py
                 .import_bound(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                 .getattr(pyo3::intern!(py, "sample"))?
-                .call1((upstream_iter, *fraction, *with_replacement, *seed))?;
+                .call1((upstream_iter, fraction, size, *with_replacement, *seed))?;
             Ok(py_iter.into())
         }
         PhysicalPlan::MonotonicallyIncreasingId(MonotonicallyIncreasingId {

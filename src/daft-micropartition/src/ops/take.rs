@@ -43,6 +43,7 @@ impl MicroPartition {
         &self,
         fraction: f64,
         with_replacement: bool,
+        over_sample: bool,
         seed: Option<u64>,
     ) -> DaftResult<Self> {
         let io_stats = IOStatsContext::new(format!("MicroPartition::sample({fraction})"));
@@ -56,7 +57,8 @@ impl MicroPartition {
         match tables.as_slice() {
             [] => Ok(Self::empty(Some(self.schema.clone()))),
             [single] => {
-                let taken = single.sample_by_fraction(fraction, with_replacement, seed)?;
+                let taken =
+                    single.sample_by_fraction(fraction, with_replacement, seed, over_sample)?;
                 Ok(Self::new_loaded(
                     self.schema.clone(),
                     Arc::new(vec![taken]),
@@ -71,6 +73,7 @@ impl MicroPartition {
         &self,
         size: usize,
         with_replacement: bool,
+        over_sample: bool,
         seed: Option<u64>,
     ) -> DaftResult<Self> {
         let io_stats = IOStatsContext::new(format!("MicroPartition::sample({size})"));
@@ -84,7 +87,7 @@ impl MicroPartition {
         match tables.as_slice() {
             [] => Ok(Self::empty(Some(self.schema.clone()))),
             [single] => {
-                let taken = single.sample(size, with_replacement, seed)?;
+                let taken = single.sample(size, with_replacement, seed, over_sample)?;
                 Ok(Self::new_loaded(
                     self.schema.clone(),
                     Arc::new(vec![taken]),

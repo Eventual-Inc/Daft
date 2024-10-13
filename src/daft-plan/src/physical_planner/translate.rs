@@ -256,7 +256,7 @@ pub(super) fn translate_single_logical_node(
             }
         }
         LogicalPlan::Sample(LogicalSample {
-            fraction,
+            sample_by,
             with_replacement,
             seed,
             ..
@@ -264,7 +264,7 @@ pub(super) fn translate_single_logical_node(
             let input_physical = physical_children.pop().expect("requires 1 input");
             Ok(PhysicalPlan::Sample(Sample::new(
                 input_physical,
-                *fraction,
+                sample_by.clone(),
                 *with_replacement,
                 *seed,
             ))

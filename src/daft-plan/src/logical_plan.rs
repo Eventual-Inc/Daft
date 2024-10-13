@@ -208,7 +208,7 @@ impl LogicalPlan {
             Self::Join(join) => join.multiline_display(),
             Self::Sink(sink) => sink.multiline_display(),
             Self::Sample(sample) => {
-                vec![format!("Sample: {fraction}", fraction = sample.fraction)]
+                vec![format!("Sample: {sample_by}", sample_by = sample.sample_by)]
             }
             Self::MonotonicallyIncreasingId(_) => vec!["MonotonicallyIncreasingId".to_string()],
         }
@@ -257,7 +257,7 @@ impl LogicalPlan {
                 Self::Sink(Sink { sink_info, .. }) => Self::Sink(Sink::try_new(input.clone(), sink_info.clone()).unwrap()),
                 Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId {column_name, .. }) => Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId::new(input.clone(), Some(column_name))),
                 Self::Unpivot(Unpivot {ids, values, variable_name, value_name, output_schema, ..}) => Self::Unpivot(Unpivot { input: input.clone(), ids: ids.clone(), values: values.clone(), variable_name: variable_name.clone(), value_name: value_name.clone(), output_schema: output_schema.clone() }),
-                Self::Sample(Sample {fraction, with_replacement, seed, ..}) => Self::Sample(Sample::new(input.clone(), *fraction, *with_replacement, *seed)),
+                Self::Sample(Sample {sample_by, with_replacement, seed, ..}) => Self::Sample(Sample::new(input.clone(), sample_by.clone(), *with_replacement, *seed)),
                 Self::Concat(_) => panic!("Concat ops should never have only one input, but got one"),
                 Self::Join(_) => panic!("Join ops should never have only one input, but got one"),
             },

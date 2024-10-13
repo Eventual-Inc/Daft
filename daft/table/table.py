@@ -263,14 +263,15 @@ class Table:
         fraction: float | None = None,
         size: int | None = None,
         with_replacement: bool = False,
+        over_sample: bool = False,
         seed: int | None = None,
     ) -> Table:
         if fraction is not None and size is not None:
             raise ValueError("Must specify either `fraction` or `size`, but not both")
         elif fraction is not None:
-            return Table._from_pytable(self._table.sample_by_fraction(fraction, with_replacement, seed))
+            return Table._from_pytable(self._table.sample_by_fraction(fraction, with_replacement, over_sample, seed))
         elif size is not None:
-            return Table._from_pytable(self._table.sample_by_size(size, with_replacement, seed))
+            return Table._from_pytable(self._table.sample_by_size(size, with_replacement, over_sample, seed))
         else:
             raise ValueError("Must specify either `fraction` or `size`")
 

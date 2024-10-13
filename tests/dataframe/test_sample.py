@@ -20,18 +20,67 @@ def test_sample_fraction(make_df, valid_data: list[dict[str, float]]) -> None:
     assert df.column_names == list(valid_data[0].keys())
 
 
+def test_sample_size(make_df, valid_data: list[dict[str, float]]) -> None:
+    df = make_df(valid_data)
+
+    df = df.sample(size=2)
+    df.collect()
+
+    assert len(df) == 2
+    assert df.column_names == list(valid_data[0].keys())
+
+
+def test_sample_size_negative(make_df, valid_data: list[dict[str, float]]) -> None:
+    df = make_df(valid_data)
+
+    with pytest.raises(ValueError, match="Size should be greater than 0, but got -1"):
+        df = df.sample(size=-1)
+
+
 def test_sample_negative_fraction(make_df, valid_data: list[dict[str, float]]) -> None:
     df = make_df(valid_data)
 
-    with pytest.raises(ValueError, match="fraction should be between 0.0 and 1.0"):
+    with pytest.raises(ValueError, match="Fraction should be greater than 0, but got -0.1"):
         df = df.sample(fraction=-0.1)
 
 
-def test_sample_fraction_above_1(make_df, valid_data: list[dict[str, float]]) -> None:
+def test_sample_fraction_above_1_without_replacement(make_df, valid_data: list[dict[str, float]]) -> None:
     df = make_df(valid_data)
 
-    with pytest.raises(ValueError, match="fraction should be between 0.0 and 1.0"):
+    with pytest.raises(
+        ValueError, match="If fraction is greater than 1.0, with_replacement should be True, but got False"
+    ):
         df = df.sample(fraction=1.1)
+
+
+def test_sample_size_greater_than_len_without_replacement(make_df, valid_data: list[dict[str, float]]) -> None:
+    df = make_df(valid_data)
+
+    with pytest.raises(
+        ValueError, match="DaftError::ValueError Cannot sample 4 rows from a table with 3 rows without replacement"
+    ):
+        df = df.sample(size=4)
+        df.collect()
+
+
+def test_sample_fraction_over_sample(make_df, valid_data: list[dict[str, float]]) -> None:
+    df = make_df(valid_data)
+
+    df = df.sample(fraction=2.0, with_replacement=True)
+    df.collect()
+
+    assert len(df) == 6
+    assert df.column_names == list(valid_data[0].keys())
+
+
+def test_sample_size_over_sample(make_df, valid_data: list[dict[str, float]]) -> None:
+    df = make_df(valid_data)
+
+    df = df.sample(size=6, with_replacement=True)
+    df.collect()
+
+    assert len(df) == 6
+    assert df.column_names == list(valid_data[0].keys())
 
 
 def test_sample_full_fraction(make_df, valid_data: list[dict[str, float]]) -> None:
@@ -88,6 +137,21 @@ def test_sample_with_replacement(make_df, valid_data: list[dict[str, float]]) ->
     assert df.column_names == list(valid_data[0].keys())
     # Check that the two rows are the same, which should be for this seed.
     assert all(col[0] == col[1] for col in df.to_pydict().values())
+
+
+def test_sample_without_replacement(make_df, valid_data: list[dict[str, float]]) -> None:
+    # Sample without replacement should return different rows each time.
+    # Valid data has 3 rows, so 10 iterations should be enough to test this.
+    for _ in range(10):
+        df = make_df(valid_data)
+        df = df.sample(fraction=0.5, with_replacement=False)
+        df.collect()
+
+        assert len(df) == 2
+        assert df.column_names == list(valid_data[0].keys())
+        # Check that the two rows are different.
+        pylist = df.to_pylist()
+        assert pylist[0] != pylist[1]
 
 
 def test_sample_with_concat(make_df, valid_data: list[dict[str, float]]) -> None:

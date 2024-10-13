@@ -35,7 +35,7 @@ use {
 };
 
 use crate::{
-    logical_ops,
+    logical_ops::{self, SampleBy},
     logical_optimization::{Optimizer, OptimizerConfig},
     logical_plan::LogicalPlan,
     partitioning::{
@@ -404,12 +404,12 @@ impl LogicalPlanBuilder {
 
     pub fn sample(
         &self,
-        fraction: f64,
+        sample_by: SampleBy,
         with_replacement: bool,
         seed: Option<u64>,
     ) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
-            logical_ops::Sample::new(self.plan.clone(), fraction, with_replacement, seed).into();
+            logical_ops::Sample::new(self.plan.clone(), sample_by, with_replacement, seed).into();
         Ok(self.with_new_plan(logical_plan))
     }
 
@@ -830,7 +830,7 @@ impl PyLogicalPlanBuilder {
         Ok(self.builder.distinct()?.into())
     }
 
-    pub fn sample(
+    pub fn sample_by_fraction(
         &self,
         fraction: f64,
         with_replacement: bool,
@@ -838,7 +838,19 @@ impl PyLogicalPlanBuilder {
     ) -> PyResult<Self> {
         Ok(self
             .builder
-            .sample(fraction, with_replacement, seed)?
+            .sample(SampleBy::Fraction(fraction), with_replacement, seed)?
+            .into())
+    }
+
+    pub fn sample_by_size(
+        &self,
+        size: usize,
+        with_replacement: bool,
+        seed: Option<u64>,
+    ) -> PyResult<Self> {
+        Ok(self
+            .builder
+            .sample(SampleBy::Size(size), with_replacement, seed)?
             .into())
     }
 
