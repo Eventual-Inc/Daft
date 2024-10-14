@@ -1676,6 +1676,7 @@ dependencies = [
  "common-system-info",
  "common-tracing",
  "common-version",
+ "daft-catalog",
  "daft-compression",
  "daft-core",
  "daft-csv",
@@ -1703,6 +1704,18 @@ dependencies = [
  "pyo3-log",
  "sysinfo",
  "tikv-jemallocator",
+]
+
+[[package]]
+name = "daft-catalog"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-error",
+ "common-io-config",
+ "daft-plan",
+ "pyo3",
+ "serde",
+ "snafu",
 ]
 
 [[package]]
