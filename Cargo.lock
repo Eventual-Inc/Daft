@@ -1714,6 +1714,7 @@ dependencies = [
  "common-error",
  "common-io-config",
  "daft-plan",
+ "once_cell",
  "pyo3",
  "serde",
  "snafu",

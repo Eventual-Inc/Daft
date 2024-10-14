@@ -2,6 +2,7 @@
 common-error = {path = "../common/error"}
 common-io-config = {path = "../common/io-config", default-features = false}
 daft-plan = {path = "../daft-plan", default-features = false}
+once_cell = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
 snafu.workspace = true
