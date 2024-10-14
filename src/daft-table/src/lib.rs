@@ -244,6 +244,8 @@ impl Table {
                 let range = Uniform::from(0..self.len() as u64);
                 rng.sample_iter(&range).take(num).collect()
             } else {
+                // https://docs.rs/rand/latest/rand/seq/index/fn.sample.html
+                // Randomly sample exactly amount distinct indices from 0..length, and return them in random order (fully shuffled).
                 sample(&mut rng, self.len(), num)
                     .into_iter()
                     .map(|i| i as u64)
