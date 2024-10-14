@@ -109,7 +109,8 @@ pub enum AggExpr {
     #[display("sum({_0})")]
     Sum(ExprRef),
 
-    #[display("approx_percentile({}, percentiles={:?}, force_list_output={})", _0.child, _0.percentiles, _0.force_list_output)]
+    #[display("approx_percentile({}, percentiles={:?}, force_list_output={})", _0.child, _0.percentiles, _0.force_list_output
+    )]
     ApproxPercentile(ApproxPercentileParams),
 
     #[display("approx_count_distinct({_0})")]
@@ -155,8 +156,36 @@ pub enum SketchType {
     HyperLogLog,
 }
 
-pub fn col<S: Into<Arc<str>>>(name: S) -> ExprRef {
-    Expr::Column(name.into()).into()
+pub trait ToArcStr {
+    fn to_arc_str(self) -> Arc<str>;
+}
+
+impl ToArcStr for &str {
+    fn to_arc_str(self) -> Arc<str> {
+        self.into()
+    }
+}
+
+impl ToArcStr for String {
+    fn to_arc_str(self) -> Arc<str> {
+        self.into()
+    }
+}
+
+impl ToArcStr for Arc<str> {
+    fn to_arc_str(self) -> Arc<str> {
+        self
+    }
+}
+
+impl ToArcStr for &String {
+    fn to_arc_str(self) -> Arc<str> {
+        Arc::from(self.as_str())
+    }
+}
+
+pub fn col(name: impl ToArcStr) -> ExprRef {
+    Expr::Column(name.to_arc_str()).into()
 }
 
 pub fn binary_op(op: Operator, left: ExprRef, right: ExprRef) -> ExprRef {
@@ -194,10 +223,10 @@ impl AggExpr {
                 FieldID::new(format!("{child_id}.local_sum()"))
             }
             Self::ApproxPercentile(ApproxPercentileParams {
-                child: expr,
-                percentiles,
-                force_list_output,
-            }) => {
+                                       child: expr,
+                                       percentiles,
+                                       force_list_output,
+                                   }) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!(
                     "{child_id}.local_approx_percentiles(percentiles={:?},force_list_output={force_list_output})",
@@ -295,10 +324,10 @@ impl AggExpr {
                 inputs: children,
             },
             Self::ApproxPercentile(ApproxPercentileParams {
-                percentiles,
-                force_list_output,
-                ..
-            }) => Self::ApproxPercentile(ApproxPercentileParams {
+                                       percentiles,
+                                       force_list_output,
+                                       ..
+                                   }) => Self::ApproxPercentile(ApproxPercentileParams {
                 child: first_child(),
                 percentiles: percentiles.clone(),
                 force_list_output: *force_list_output,
@@ -324,10 +353,10 @@ impl AggExpr {
             }
 
             Self::ApproxPercentile(ApproxPercentileParams {
-                child: expr,
-                percentiles,
-                force_list_output,
-            }) => {
+                                       child: expr,
+                                       percentiles,
+                                       force_list_output,
+                                   }) => {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(
                     field.name.as_str(),
@@ -440,7 +469,7 @@ impl Expr {
             if_false,
             predicate: self,
         }
-        .into()
+            .into()
     }
 
     pub fn cast(self: ExprRef, dtype: &DataType) -> ExprRef {
@@ -469,7 +498,7 @@ impl Expr {
             percentiles: percentiles.iter().map(|f| FloatWrapper(*f)).collect(),
             force_list_output,
         }))
-        .into()
+            .into()
     }
 
     pub fn sketch_percentile(
@@ -484,7 +513,7 @@ impl Expr {
             }),
             inputs: vec![self],
         }
-        .into()
+            .into()
     }
 
     pub fn mean(self: ExprRef) -> ExprRef {

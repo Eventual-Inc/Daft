@@ -1,3 +1,6 @@
+#![feature(iterator_try_collect)]
+#![expect(clippy::derive_partial_eq_without_eq, reason = "prost does not properly derive Eq")]
+
 use tonic::{Request, Response, Status};
 use futures::stream;
 use spark_connect::spark_connect_service_server::SparkConnectService;
@@ -23,6 +26,7 @@ pub mod spark_connect {
 
 mod config;
 mod command;
+mod convert;
 
 #[derive(Default)]
 struct Session {
@@ -31,7 +35,7 @@ struct Session {
     /// Also, <https://users.rust-lang.org/t/hashmap-vs-btreemap/13804/4>
     config_values: BTreeMap<String, String>,
 
-    session_id: String,
+    id: String,
 
     server_side_session_id: String,
 }
@@ -52,7 +56,7 @@ impl DaftSparkConnectService {
         let res = self.client_to_session.entry(uuid).or_insert_with(|| {
             Session {
                 config_values: BTreeMap::new(),
-                session_id: session_id.to_string(),
+                id: session_id.to_string(),
                 server_side_session_id: Uuid::new_v4().to_string(),
             }
         });
@@ -185,17 +189,15 @@ impl SparkConnectService for DaftSparkConnectService {
 
     async fn reattach_execute(&self, request: Request<ReattachExecuteRequest>) -> Result<Response<Self::ReattachExecuteStream>, Status> {
         let request = request.into_inner();
-        
+
         println!("reattach_execute request: {request:#?}");
 
         let session = self.get_session(&request.session_id)?;
 
-        
+
         // Return an empty stream
         let empty_stream = futures::stream::empty();
         Ok(Response::new(Box::pin(empty_stream)))
-
-        
     }
 
     async fn release_execute(&self, request: Request<ReleaseExecuteRequest>) -> Result<Response<ReleaseExecuteResponse>, Status> {
@@ -206,7 +208,7 @@ impl SparkConnectService for DaftSparkConnectService {
         println!("release request: {request:#?}");
 
         let response = ReleaseExecuteResponse {
-            session_id: session.session_id.clone(),
+            session_id: session.id.clone(),
             server_side_session_id: session.server_side_session_id.clone(),
             operation_id: Some(request.operation_id), // todo: impl properly
         };

@@ -269,9 +269,9 @@ impl SQLPlanner {
 
                 // switch left/right operands if the caller has them in reverse
                 if left_name == tbl_b || right_name == tbl_a {
-                    Ok((vec![col(col_b.as_ref())], vec![col(col_a.as_ref())]))
+                    Ok((vec![col(col_b)], vec![col(col_a)]))
                 } else {
-                    Ok((vec![col(col_a.as_ref())], vec![col(col_b.as_ref())]))
+                    Ok((vec![col(col_a)], vec![col(col_b)]))
                 }
             } else {
                 unsupported_sql_err!("collect_compound_identifiers: Expected left.len() == 2 && right.len() == 2, but found left.len() == {:?}, right.len() == {:?}", left.len(), right.len());
@@ -465,12 +465,12 @@ impl SQLPlanner {
             }
             SelectItem::UnnamedExpr(expr) => self.plan_expr(expr).map(|e| vec![e]),
             SelectItem::Wildcard(WildcardAdditionalOptions {
-                opt_ilike,
-                opt_exclude,
-                opt_except,
-                opt_replace,
-                opt_rename,
-            }) => {
+                                     opt_ilike,
+                                     opt_exclude,
+                                     opt_except,
+                                     opt_replace,
+                                     opt_rename,
+                                 }) => {
                 if opt_ilike.is_some() {
                     unsupported_sql_err!("ILIKE");
                 }
@@ -510,14 +510,14 @@ impl SQLPlanner {
                             current_relation.inner.schema().exclude(items.as_slice())
                         }
                     }
-                    .map(|schema| {
-                        schema
-                            .names()
-                            .iter()
-                            .map(|n| col(n.as_ref()))
-                            .collect::<Vec<_>>()
-                    })
-                    .map_err(std::convert::Into::into)
+                        .map(|schema| {
+                            schema
+                                .names()
+                                .iter()
+                                .map(col)
+                                .collect::<Vec<_>>()
+                        })
+                        .map_err(std::convert::Into::into)
                 } else {
                     Ok(vec![col("*")])
                 }
@@ -741,7 +741,7 @@ impl SQLPlanner {
                     s,
                     None,
                 )
-                .into_series();
+                    .into_series();
 
                 Ok(lit(s))
             }
@@ -912,12 +912,12 @@ impl SQLPlanner {
                     .enumerate()
                     .map(
                         |(
-                            idx,
-                            StructField {
-                                field_name,
-                                field_type,
-                            },
-                        )| {
+                             idx,
+                             StructField {
+                                 field_name,
+                                 field_type,
+                             },
+                         )| {
                             let dtype = self.sql_dtype_to_dtype(field_type)?;
                             let name = match field_name {
                                 Some(name) => name.to_string(),
