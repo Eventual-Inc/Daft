@@ -1730,7 +1730,6 @@ dependencies = [
  "common-tracing",
  "common-version",
  "daft-compression",
- "daft-connect",
  "daft-core",
  "daft-csv",
  "daft-dsl",
@@ -1788,9 +1787,9 @@ dependencies = [
  "futures",
  "prost 0.13.3",
  "prost-types",
+ "spark-connect",
  "tokio",
  "tonic",
- "tonic-build",
  "tracing",
  "tracing-subscriber",
  "tracing-tree",
@@ -5340,6 +5339,16 @@ checksum = "ce305eb0b4296696835b71df73eb912e0f1ffd2556a501fcede6e0c50349191c"
 dependencies = [
  "libc",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "spark-connect"
+version = "0.3.0-dev0"
+dependencies = [
+ "prost 0.13.3",
+ "prost-types",
+ "tonic",
+ "tonic-build",
 ]
 
 [[package]]

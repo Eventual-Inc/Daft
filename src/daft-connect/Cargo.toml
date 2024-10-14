@@ -1,6 +1,3 @@
-[build-dependencies]
-tonic-build = "0.12.3"
-
 [dependencies]
 dashmap = "6.1.0"
 futures = "0.3.31"
@@ -24,6 +21,7 @@ daft-micropartition.workspace = true
 daft-physical-plan.workspace = true
 daft-plan.workspace = true
 daft-table.workspace = true
+spark-connect.workspace = true
 tracing.workspace = true
 
 [lints]

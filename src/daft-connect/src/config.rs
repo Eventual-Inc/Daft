@@ -1,14 +1,12 @@
 use std::collections::BTreeMap;
 
+use spark_connect::{
+    config_request::{Get, GetAll, GetOption, GetWithDefault, IsModifiable, Set, Unset},
+    ConfigResponse, KeyValue,
+};
 use tonic::Status;
 
-use crate::{
-    spark_connect::{
-        config_request::{Get, GetAll, GetOption, GetWithDefault, IsModifiable, Set, Unset},
-        ConfigResponse, KeyValue,
-    },
-    Session,
-};
+use crate::Session;
 
 impl Session {
     fn config_response(&self) -> ConfigResponse {

@@ -2,8 +2,7 @@ use std::{collections::HashSet, sync::Arc};
 
 use anyhow::{bail, ensure, Context};
 use daft_plan::{LogicalPlanBuilder, ParquetScanBuilder};
-
-use crate::spark_connect::{
+use spark_connect::{
     expression::Alias,
     read::{DataSource, ReadType},
     relation::RelType,
@@ -98,10 +97,10 @@ pub fn to_logical_plan(plan: Relation) -> anyhow::Result<LogicalPlanBuilder> {
                 }
                 ReadType::DataSource(DataSource {
                     format,
-                    schema,
                     options,
                     paths,
                     predicates,
+                    ..
                 }) => {
                     let format = format.context("format is None")?;
 

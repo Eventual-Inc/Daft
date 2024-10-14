@@ -1,16 +1,8 @@
 use anyhow::{bail, ensure, Context};
 use daft_dsl::{Expr as DaftExpr, Operator};
+use spark_connect::{expression, expression::literal::LiteralType, Expression};
 
-use crate::{
-    spark_connect,
-    spark_connect::{
-        expression,
-        expression::{literal::LiteralType, UnresolvedFunction},
-        Expression,
-    },
-};
-
-pub fn to_daft_expr(expr: spark_connect::Expression) -> anyhow::Result<DaftExpr> {
+pub fn to_daft_expr(expr: Expression) -> anyhow::Result<DaftExpr> {
     match expr.expr_type {
         Some(expression::ExprType::Literal(lit)) => Ok(DaftExpr::Literal(convert_literal(lit)?)),
 
@@ -44,7 +36,7 @@ pub fn to_daft_expr(expr: spark_connect::Expression) -> anyhow::Result<DaftExpr>
             Ok(DaftExpr::Alias(expr.into(), name.as_str().into()))
         }
 
-        Some(expression::ExprType::UnresolvedFunction(UnresolvedFunction {
+        Some(expression::ExprType::UnresolvedFunction(expression::UnresolvedFunction {
             function_name,
             arguments,
             is_distinct,

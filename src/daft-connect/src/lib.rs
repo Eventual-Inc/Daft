@@ -1,30 +1,20 @@
 #![feature(iterator_try_collect)]
 #![feature(let_chains)]
-#![expect(
-    clippy::derive_partial_eq_without_eq,
-    reason = "prost does not properly derive Eq"
-)]
 
 use std::collections::BTreeMap;
 
 use dashmap::DashMap;
 use spark_connect::{
-    spark_connect_service_server::SparkConnectService, AddArtifactsRequest, AddArtifactsResponse,
-    AnalyzePlanRequest, AnalyzePlanResponse, ArtifactStatusesRequest, ArtifactStatusesResponse,
-    ConfigRequest, ConfigResponse, ExecutePlanRequest, ExecutePlanResponse,
-    FetchErrorDetailsRequest, FetchErrorDetailsResponse, InterruptRequest, InterruptResponse,
-    ReattachExecuteRequest, ReleaseExecuteRequest, ReleaseExecuteResponse, ReleaseSessionRequest,
-    ReleaseSessionResponse,
+    command::CommandType, spark_connect_service_server::SparkConnectService, AddArtifactsRequest,
+    AddArtifactsResponse, AnalyzePlanRequest, AnalyzePlanResponse, ArtifactStatusesRequest,
+    ArtifactStatusesResponse, ConfigRequest, ConfigResponse, ExecutePlanRequest,
+    ExecutePlanResponse, FetchErrorDetailsRequest, FetchErrorDetailsResponse, InterruptRequest,
+    InterruptResponse, ReattachExecuteRequest, ReleaseExecuteRequest, ReleaseExecuteResponse,
+    ReleaseSessionRequest, ReleaseSessionResponse,
 };
 use tonic::{Request, Response, Status};
 use tracing::info;
 use uuid::Uuid;
-
-use crate::spark_connect::command::CommandType;
-
-pub mod spark_connect {
-    tonic::include_proto!("spark.connect");
-}
 
 mod command;
 mod config;
@@ -104,7 +94,7 @@ impl SparkConnectService for DaftSparkConnectService {
             .op_type
             .ok_or_else(|| Status::invalid_argument("Plan operation is required"))?;
 
-        use crate::spark_connect::plan::OpType;
+        use spark_connect::plan::OpType;
         println!("plan {:#?}", plan);
 
         let command = match plan {
@@ -124,7 +114,7 @@ impl SparkConnectService for DaftSparkConnectService {
         match command {
             CommandType::RegisterFunction(_) => {}
             CommandType::WriteOperation(write) => {
-                let result =  session.write_operation(write)?;
+                let result = session.write_operation(write)?;
                 return Ok(Response::new(result));
             }
             CommandType::CreateDataframeView(_) => {}
@@ -159,7 +149,7 @@ impl SparkConnectService for DaftSparkConnectService {
             return Err(Status::invalid_argument("Missing operation"));
         };
 
-        use crate::spark_connect::config_request::operation::OpType;
+        use spark_connect::config_request::operation::OpType;
 
         let response = match operation {
             OpType::Set(op) => session.set(op),
@@ -192,21 +182,21 @@ impl SparkConnectService for DaftSparkConnectService {
         let request = request.into_inner();
         println!("AnalyzePlanRequest: {request:#?}");
 
-        let session = self.get_session(&request.session_id)?;
+        // let session = self.get_session(&request.session_id)?;
 
         // Err(Status::unimplemented("analyze_plan operation is not yet implemented"))
 
-        use crate::spark_connect::analyze_plan_response::Result as AnalyzePlanResponseResult;
+        use spark_connect::analyze_plan_response::Result as AnalyzePlanResponseResult;
 
         let tree_string = AnalyzePlanResponseResult::TreeString(
-            crate::spark_connect::analyze_plan_response::TreeString {
+            spark_connect::analyze_plan_response::TreeString {
                 tree_string: "🤫 some schema [unimplemented] ✨ ".to_string(),
             },
         );
 
         let response = AnalyzePlanResponse {
             session_id: request.session_id.clone(),
-            server_side_session_id: request.session_id.clone(),
+            server_side_session_id: request.session_id,
             result: Some(tree_string),
         };
 

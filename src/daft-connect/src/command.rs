@@ -2,25 +2,21 @@
 
 use std::{collections::HashMap, sync::Arc, thread};
 
-use anyhow::bail;
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use daft_local_execution::run::run_local;
 use daft_micropartition::MicroPartition;
 use daft_plan::LogicalPlanRef;
 use daft_table::Table;
+use spark_connect::{
+    execute_plan_response::{ArrowBatch, ResponseType, ResultComplete},
+    spark_connect_service_server::SparkConnectService,
+    ExecutePlanResponse, Relation, WriteOperation,
+};
 use tonic::Status;
 use uuid::Uuid;
 
-use crate::{
-    convert::to_logical_plan,
-    spark_connect::{
-        execute_plan_response::{ArrowBatch, ResponseType, ResultComplete},
-        spark_connect_service_server::SparkConnectService,
-        ExecutePlanResponse, Relation, WriteOperation,
-    },
-    DaftSparkConnectService, Session,
-};
+use crate::{convert::to_logical_plan, DaftSparkConnectService, Session};
 
 type DaftStream = <DaftSparkConnectService as SparkConnectService>::ExecutePlanStream;
 

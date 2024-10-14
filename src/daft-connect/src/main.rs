@@ -1,6 +1,5 @@
-use daft_connect::{
-    spark_connect::spark_connect_service_server::SparkConnectServiceServer, DaftSparkConnectService,
-};
+use daft_connect::DaftSparkConnectService;
+use spark_connect::spark_connect_service_server::SparkConnectServiceServer;
 use tonic::transport::Server;
 use tracing_subscriber::{layer::SubscriberExt, EnvFilter, Registry};
 use tracing_tree::HierarchicalLayer;
