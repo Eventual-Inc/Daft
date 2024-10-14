@@ -16,8 +16,9 @@ from tests.conftest import assert_df_equals
 
 @pytest.mark.integration()
 def test_daft_iceberg_table_predicate_pushdown_days(local_iceberg_catalog):
-    tab = local_iceberg_catalog.load_table("default.test_partitioned_by_days")
-    df = daft.read_iceberg(tab)
+    catalog_name, pyiceberg_catalog = local_iceberg_catalog
+    tab = pyiceberg_catalog.load_table("default.test_partitioned_by_days")
+    df = daft.read_table("default.test_partitioned_by_days", catalog_name=catalog_name)
     df = df.where(df["ts"] < date(2023, 3, 6))
     df.collect()
     daft_pandas = df.to_pandas()
@@ -70,8 +71,9 @@ def udf_func(obj):
     ),
 )
 def test_daft_iceberg_table_predicate_pushdown_on_date_column(predicate, table, limit, local_iceberg_catalog):
-    tab = local_iceberg_catalog.load_table(f"default.{table}")
-    df = daft.read_iceberg(tab)
+    catalog_name, pyiceberg_catalog = local_iceberg_catalog
+    tab = pyiceberg_catalog.load_table(f"default.{table}")
+    df = daft.read_table(f"default.{table}", catalog_name=catalog_name)
     df = df.where(predicate(df["dt"]))
     if limit:
         df = df.limit(limit)
@@ -110,8 +112,9 @@ def test_daft_iceberg_table_predicate_pushdown_on_date_column(predicate, table, 
     ),
 )
 def test_daft_iceberg_table_predicate_pushdown_on_timestamp_column(predicate, table, limit, local_iceberg_catalog):
-    tab = local_iceberg_catalog.load_table(f"default.{table}")
-    df = daft.read_iceberg(tab)
+    catalog_name, pyiceberg_catalog = local_iceberg_catalog
+    tab = pyiceberg_catalog.load_table(f"default.{table}")
+    df = daft.read_table(f"default.{table}", catalog_name=catalog_name)
     df = df.where(predicate(df["ts"]))
     if limit:
         df = df.limit(limit)
@@ -151,8 +154,9 @@ def test_daft_iceberg_table_predicate_pushdown_on_timestamp_column(predicate, ta
     ),
 )
 def test_daft_iceberg_table_predicate_pushdown_on_letter(predicate, table, limit, local_iceberg_catalog):
-    tab = local_iceberg_catalog.load_table(f"default.{table}")
-    df = daft.read_iceberg(tab)
+    catalog_name, pyiceberg_catalog = local_iceberg_catalog
+    tab = pyiceberg_catalog.load_table(f"default.{table}")
+    df = daft.read_table(f"default.{table}", catalog_name=catalog_name)
     df = df.where(predicate(df["letter"]))
     if limit:
         df = df.limit(limit)
@@ -191,8 +195,9 @@ def test_daft_iceberg_table_predicate_pushdown_on_letter(predicate, table, limit
     ),
 )
 def test_daft_iceberg_table_predicate_pushdown_on_number(predicate, table, limit, local_iceberg_catalog):
-    tab = local_iceberg_catalog.load_table(f"default.{table}")
-    df = daft.read_iceberg(tab)
+    catalog_name, pyiceberg_catalog = local_iceberg_catalog
+    tab = pyiceberg_catalog.load_table(f"default.{table}")
+    df = daft.read_table(f"default.{table}", catalog_name=catalog_name)
     df = df.where(predicate(df["number"]))
     if limit:
         df = df.limit(limit)
