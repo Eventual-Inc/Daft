@@ -25,6 +25,10 @@ jobs:
       matrix:
         runner-name: [ubuntu-latest, buildjet-8vcpu-ubuntu-2204-arm]
         daft-runner: [py, ray]
+        ray-runner-client-mode: [0, 1]
+      exclude:
+      - daft-runner: ray
+        ray-runner-client-mode: 1
     steps:
     - uses: actions/checkout@v4
       with:
@@ -57,6 +61,7 @@ jobs:
         pytest tests/integration/test_tpch.py --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        DAFT_RAY_FORCE_CLIENT_MODE: ${{ matrix.ray-runner-client-mode }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.26.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
@@ -88,6 +93,10 @@ jobs:
       matrix:
         runner-name: [ubuntu-latest, buildjet-8vcpu-ubuntu-2204-arm]
         daft-runner: [py, ray]
+        ray-runner-client-mode: [0, 1]
+      exclude:
+      - daft-runner: ray
+        ray-runner-client-mode: 1
     # These permissions are needed to interact with GitHub's OIDC Token endpoint.
     # This is used in the step "Assume GitHub Actions AWS Credentials"
     permissions:
@@ -136,6 +145,7 @@ jobs:
         pytest tests/integration/io -m 'integration and not benchmark' --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        DAFT_RAY_FORCE_CLIENT_MODE: ${{ matrix.ray-runner-client-mode }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.26.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}

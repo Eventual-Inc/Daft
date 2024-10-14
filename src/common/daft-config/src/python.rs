@@ -107,6 +107,7 @@ impl PyDaftExecutionConfig {
         enable_aqe: Option<bool>,
         enable_native_executor: Option<bool>,
         default_morsel_size: Option<usize>,
+        ray_runner_force_client_mode: Option<bool>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
@@ -168,6 +169,10 @@ impl PyDaftExecutionConfig {
         }
         if let Some(default_morsel_size) = default_morsel_size {
             config.default_morsel_size = default_morsel_size;
+        }
+
+        if let Some(ray_runner_force_client_mode) = ray_runner_force_client_mode {
+            config.ray_runner_force_client_mode = ray_runner_force_client_mode;
         }
 
         Ok(Self {
@@ -255,6 +260,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn default_morsel_size(&self) -> PyResult<usize> {
         Ok(self.config.default_morsel_size)
+    }
+
+    #[getter]
+    fn ray_runner_force_client_mode(&self) -> PyResult<bool> {
+        Ok(self.config.ray_runner_force_client_mode)
     }
 }
 

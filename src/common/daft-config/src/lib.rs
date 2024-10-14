@@ -57,6 +57,7 @@ pub struct DaftExecutionConfig {
     pub enable_aqe: bool,
     pub enable_native_executor: bool,
     pub default_morsel_size: usize,
+    pub ray_runner_force_client_mode: bool,
 }
 
 impl Default for DaftExecutionConfig {
@@ -80,6 +81,7 @@ impl Default for DaftExecutionConfig {
             enable_aqe: false,
             enable_native_executor: false,
             default_morsel_size: 128 * 1024,
+            ray_runner_force_client_mode: false,
         }
     }
 }
@@ -99,6 +101,12 @@ impl DaftExecutionConfig {
             && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
         {
             cfg.enable_native_executor = true;
+        }
+        let ray_client_mode_env_var_name = "DAFT_RAY_FORCE_CLIENT_MODE";
+        if let Ok(val) = std::env::var(ray_client_mode_env_var_name)
+            && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
+        {
+            cfg.ray_runner_force_client_mode = true;
         }
         cfg
     }
