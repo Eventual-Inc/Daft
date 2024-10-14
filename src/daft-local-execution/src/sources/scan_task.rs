@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use common_error::DaftResult;
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
@@ -124,7 +127,7 @@ async fn get_delete_map(
                 .flatten()
                 .cloned()
         })
-        .collect::<Vec<_>>();
+        .collect::<HashSet<_>>();
     if delete_files.is_empty() {
         return Ok(None);
     }
@@ -143,7 +146,7 @@ async fn get_delete_map(
             .collect::<std::collections::HashMap<_, _>>();
         let columns_to_read = Some(vec!["file_path".to_string(), "pos".to_string()]);
         let result = read_parquet_bulk_async(
-            delete_files,
+            delete_files.into_iter().collect(),
             columns_to_read,
             None,
             None,
