@@ -100,20 +100,21 @@ impl Schema {
         self.fields.is_empty()
     }
 
+    /// Takes the disjoint union over the `self` and `other` schemas, throwing an error if the
+    /// schemas contain overlapping keys.
     pub fn union(&self, other: &Self) -> DaftResult<Self> {
         let self_keys: HashSet<&String> = HashSet::from_iter(self.fields.keys());
-        let other_keys: HashSet<&String> = HashSet::from_iter(self.fields.keys());
-        match self_keys.difference(&other_keys).count() {
-            0 => {
-                let mut fields = IndexMap::new();
-                for (k, v) in self.fields.iter().chain(other.fields.iter()) {
-                    fields.insert(k.clone(), v.clone());
-                }
-                Ok(Self { fields })
+        let other_keys: HashSet<&String> = HashSet::from_iter(other.fields.keys());
+        if self_keys.is_disjoint(&other_keys) {
+            let mut fields = IndexMap::new();
+            for (k, v) in self.fields.iter().chain(other.fields.iter()) {
+                fields.insert(k.clone(), v.clone());
             }
-            _ => Err(DaftError::ValueError(
-                "Cannot union two schemas with overlapping keys".to_string(),
-            )),
+            Ok(Self { fields })
+        } else {
+            Err(DaftError::ValueError(
+                "Cannot disjoint union two schemas with overlapping keys".to_string(),
+            ))
         }
     }
 
