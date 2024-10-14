@@ -76,7 +76,6 @@ This file is usually found in the `.vscode` folder of your project root. See the
                     "${file}"
                 ],
                 "console": "internalConsole",
-                "justMyCode": true,
                 "serverReadyAction": {
                     "pattern": "pID = ([0-9]+)",
                     "action": "startDebugging",
