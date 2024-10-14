@@ -7,6 +7,7 @@ common-resource-request = {path = "src/common/resource-request", default-feature
 common-system-info = {path = "src/common/system-info", default-features = false}
 common-tracing = {path = "src/common/tracing", default-features = false}
 common-version = {path = "src/common/version", default-features = false}
+daft-catalog = {path = "src/daft-catalog", default-features = false}
 daft-compression = {path = "src/daft-compression", default-features = false}
 daft-core = {path = "src/daft-core", default-features = false}
 daft-csv = {path = "src/daft-csv", default-features = false}
@@ -41,6 +42,7 @@ python = [
   "daft-core/python",
   "daft-csv/python",
   "daft-dsl/python",
+  "daft-catalog/python",
   "daft-local-execution/python",
   "daft-io/python",
   "daft-image/python",
