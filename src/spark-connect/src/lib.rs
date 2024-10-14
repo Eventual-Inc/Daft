@@ -1,4 +1,7 @@
-#![allow(internal_features, reason = "prost auto generated code... im so confused.")]
+#![allow(
+    internal_features,
+    reason = "prost auto generated code... im so confused."
+)]
 #![feature(liballoc_internals)] // todo: yea... I have no idea. let's talk about this.
 #![feature(hint_must_use)]
 #![expect(
@@ -73,17 +76,13 @@ pub struct ResourceProfile {
     ///   (Optional) Resource requests for executors. Mapped from the resource name
     ///   (e.g., cores, memory, CPU) to its specific request.
     #[prost(map = "string, message", tag = "1")]
-    pub executor_resources: ::std::collections::HashMap<
-        ::prost::alloc::string::String,
-        ExecutorResourceRequest,
-    >,
+    pub executor_resources:
+        ::std::collections::HashMap<::prost::alloc::string::String, ExecutorResourceRequest>,
     ///   (Optional) Resource requests for tasks. Mapped from the resource name
     ///   (e.g., cores, memory, CPU) to its specific request.
     #[prost(map = "string, message", tag = "2")]
-    pub task_resources: ::std::collections::HashMap<
-        ::prost::alloc::string::String,
-        TaskResourceRequest,
-    >,
+    pub task_resources:
+        ::std::collections::HashMap<::prost::alloc::string::String, TaskResourceRequest>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Origin {
@@ -256,9 +255,7 @@ pub mod data_type {
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Array {
         #[prost(message, optional, boxed, tag = "1")]
-        pub element_type: ::core::option::Option<
-            ::prost::alloc::boxed::Box<super::DataType>,
-        >,
+        pub element_type: ::core::option::Option<::prost::alloc::boxed::Box<super::DataType>>,
         #[prost(bool, tag = "2")]
         pub contains_null: bool,
         #[prost(uint32, tag = "3")]
@@ -267,13 +264,9 @@ pub mod data_type {
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Map {
         #[prost(message, optional, boxed, tag = "1")]
-        pub key_type: ::core::option::Option<
-            ::prost::alloc::boxed::Box<super::DataType>,
-        >,
+        pub key_type: ::core::option::Option<::prost::alloc::boxed::Box<super::DataType>>,
         #[prost(message, optional, boxed, tag = "2")]
-        pub value_type: ::core::option::Option<
-            ::prost::alloc::boxed::Box<super::DataType>,
-        >,
+        pub value_type: ::core::option::Option<::prost::alloc::boxed::Box<super::DataType>>,
         #[prost(bool, tag = "3")]
         pub value_contains_null: bool,
         #[prost(uint32, tag = "4")]
@@ -293,13 +286,9 @@ pub mod data_type {
         #[prost(string, optional, tag = "3")]
         pub python_class: ::core::option::Option<::prost::alloc::string::String>,
         #[prost(string, optional, tag = "4")]
-        pub serialized_python_class: ::core::option::Option<
-            ::prost::alloc::string::String,
-        >,
+        pub serialized_python_class: ::core::option::Option<::prost::alloc::string::String>,
         #[prost(message, optional, boxed, tag = "5")]
-        pub sql_type: ::core::option::Option<
-            ::prost::alloc::boxed::Box<super::DataType>,
-        >,
+        pub sql_type: ::core::option::Option<::prost::alloc::boxed::Box<super::DataType>>,
     }
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Unparsed {
@@ -387,9 +376,7 @@ pub mod expression {
     pub struct Window {
         ///   (Required) The window function.
         #[prost(message, optional, boxed, tag = "1")]
-        pub window_function: ::core::option::Option<
-            ::prost::alloc::boxed::Box<super::Expression>,
-        >,
+        pub window_function: ::core::option::Option<::prost::alloc::boxed::Box<super::Expression>>,
         ///   (Optional) The way that input rows are partitioned.
         #[prost(message, repeated, tag = "2")]
         pub partition_spec: ::prost::alloc::vec::Vec<super::Expression>,
@@ -400,9 +387,7 @@ pub mod expression {
         ///
         ///   If not set, it will be treated as 'UnspecifiedFrame'.
         #[prost(message, optional, boxed, tag = "4")]
-        pub frame_spec: ::core::option::Option<
-            ::prost::alloc::boxed::Box<window::WindowFrame>,
-        >,
+        pub frame_spec: ::core::option::Option<::prost::alloc::boxed::Box<window::WindowFrame>>,
     }
     ///   Nested message and enum types in  `Window` .
     pub mod window {
@@ -414,14 +399,12 @@ pub mod expression {
             pub frame_type: i32,
             ///   (Required) The lower bound of the frame.
             #[prost(message, optional, boxed, tag = "2")]
-            pub lower: ::core::option::Option<
-                ::prost::alloc::boxed::Box<window_frame::FrameBoundary>,
-            >,
+            pub lower:
+                ::core::option::Option<::prost::alloc::boxed::Box<window_frame::FrameBoundary>>,
             ///   (Required) The upper bound of the frame.
             #[prost(message, optional, boxed, tag = "3")]
-            pub upper: ::core::option::Option<
-                ::prost::alloc::boxed::Box<window_frame::FrameBoundary>,
-            >,
+            pub upper:
+                ::core::option::Option<::prost::alloc::boxed::Box<window_frame::FrameBoundary>>,
         }
         ///   Nested message and enum types in  `WindowFrame` .
         pub mod window_frame {
@@ -444,23 +427,11 @@ pub mod expression {
                     Unbounded(bool),
                     ///   This is an expression for future proofing. We are expecting literals on the server side.
                     #[prost(message, tag = "3")]
-                    Value(
-                        ::prost::alloc::boxed::Box<
-                            super::super::super::super::Expression,
-                        >,
-                    ),
+                    Value(::prost::alloc::boxed::Box<super::super::super::super::Expression>),
                 }
             }
             #[derive(
-                Clone,
-                Copy,
-                Debug,
-                PartialEq,
-                Eq,
-                Hash,
-                PartialOrd,
-                Ord,
-                ::prost::Enumeration
+                Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration,
             )]
             #[repr(i32)]
             pub enum FrameType {
@@ -512,15 +483,7 @@ pub mod expression {
     ///   Nested message and enum types in  `SortOrder` .
     pub mod sort_order {
         #[derive(
-            Clone,
-            Copy,
-            Debug,
-            PartialEq,
-            Eq,
-            Hash,
-            PartialOrd,
-            Ord,
-            ::prost::Enumeration
+            Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration,
         )]
         #[repr(i32)]
         pub enum SortDirection {
@@ -551,15 +514,7 @@ pub mod expression {
             }
         }
         #[derive(
-            Clone,
-            Copy,
-            Debug,
-            PartialEq,
-            Eq,
-            Hash,
-            PartialOrd,
-            Ord,
-            ::prost::Enumeration
+            Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration,
         )]
         #[repr(i32)]
         pub enum NullOrdering {
@@ -605,15 +560,7 @@ pub mod expression {
     ///   Nested message and enum types in  `Cast` .
     pub mod cast {
         #[derive(
-            Clone,
-            Copy,
-            Debug,
-            PartialEq,
-            Eq,
-            Hash,
-            PartialOrd,
-            Ord,
-            ::prost::Enumeration
+            Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration,
         )]
         #[repr(i32)]
         pub enum EvalMode {
@@ -836,18 +783,15 @@ pub mod expression {
         ///   (Required) The expression to describe the extraction, can be
         ///   key of Map, index of Array, field name of Struct.
         #[prost(message, optional, boxed, tag = "2")]
-        pub extraction: ::core::option::Option<
-            ::prost::alloc::boxed::Box<super::Expression>,
-        >,
+        pub extraction: ::core::option::Option<::prost::alloc::boxed::Box<super::Expression>>,
     }
     ///   Add, replace or drop a field of  `StructType`  expression by name.
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct UpdateFields {
         ///   (Required) The struct expression.
         #[prost(message, optional, boxed, tag = "1")]
-        pub struct_expression: ::core::option::Option<
-            ::prost::alloc::boxed::Box<super::Expression>,
-        >,
+        pub struct_expression:
+            ::core::option::Option<::prost::alloc::boxed::Box<super::Expression>>,
         ///   (Required) The field name.
         #[prost(string, tag = "2")]
         pub field_name: ::prost::alloc::string::String,
@@ -855,9 +799,7 @@ pub mod expression {
         ///
         ///   When not set, it means this field will be dropped.
         #[prost(message, optional, boxed, tag = "3")]
-        pub value_expression: ::core::option::Option<
-            ::prost::alloc::boxed::Box<super::Expression>,
-        >,
+        pub value_expression: ::core::option::Option<::prost::alloc::boxed::Box<super::Expression>>,
     }
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Alias {
@@ -880,9 +822,7 @@ pub mod expression {
         ///   The function body should use 'UnresolvedAttribute' as arguments, the sever side will
         ///   replace 'UnresolvedAttribute' with 'UnresolvedNamedLambdaVariable'.
         #[prost(message, optional, boxed, tag = "1")]
-        pub function: ::core::option::Option<
-            ::prost::alloc::boxed::Box<super::Expression>,
-        >,
+        pub function: ::core::option::Option<::prost::alloc::boxed::Box<super::Expression>>,
         ///   (Required) Function variables. Must contains 1 ~ 3 variables.
         #[prost(message, repeated, tag = "2")]
         pub arguments: ::prost::alloc::vec::Vec<UnresolvedNamedLambdaVariable>,
@@ -928,9 +868,7 @@ pub mod expression {
         #[prost(message, tag = "16")]
         CallFunction(super::CallFunction),
         #[prost(message, tag = "17")]
-        NamedArgumentExpression(
-            ::prost::alloc::boxed::Box<super::NamedArgumentExpression>,
-        ),
+        NamedArgumentExpression(::prost::alloc::boxed::Box<super::NamedArgumentExpression>),
         #[prost(message, tag = "19")]
         MergeAction(::prost::alloc::boxed::Box<super::MergeAction>),
         #[prost(message, tag = "20")]
@@ -959,7 +897,10 @@ pub struct CommonInlineUserDefinedFunction {
     #[prost(message, repeated, tag = "3")]
     pub arguments: ::prost::alloc::vec::Vec<Expression>,
     ///   (Required) Indicate the function type of the user-defined function.
-    #[prost(oneof = "common_inline_user_defined_function::Function", tags = "4, 5, 6")]
+    #[prost(
+        oneof = "common_inline_user_defined_function::Function",
+        tags = "4, 5, 6"
+    )]
     pub function: ::core::option::Option<common_inline_user_defined_function::Function>,
 }
 ///   Nested message and enum types in  `CommonInlineUserDefinedFunction` .
@@ -1070,17 +1011,7 @@ pub mod merge_action {
         #[prost(message, optional, tag = "2")]
         pub value: ::core::option::Option<super::Expression>,
     }
-    #[derive(
-        Clone,
-        Copy,
-        Debug,
-        PartialEq,
-        Eq,
-        Hash,
-        PartialOrd,
-        Ord,
-        ::prost::Enumeration
-    )]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
     #[repr(i32)]
     pub enum ActionType {
         Invalid = 0,
@@ -1305,10 +1236,8 @@ pub struct CreateExternalTable {
     ///   Options could be empty for valid data source format.
     ///   The map key is case insensitive.
     #[prost(map = "string, string", tag = "5")]
-    pub options: ::std::collections::HashMap<
-        ::prost::alloc::string::String,
-        ::prost::alloc::string::String,
-    >,
+    pub options:
+        ::std::collections::HashMap<::prost::alloc::string::String, ::prost::alloc::string::String>,
 }
 ///   See  `spark.catalog.createTable`
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -1331,10 +1260,8 @@ pub struct CreateTable {
     ///   Options could be empty for valid data source format.
     ///   The map key is case insensitive.
     #[prost(map = "string, string", tag = "6")]
-    pub options: ::std::collections::HashMap<
-        ::prost::alloc::string::String,
-        ::prost::alloc::string::String,
-    >,
+    pub options:
+        ::std::collections::HashMap<::prost::alloc::string::String, ::prost::alloc::string::String>,
 }
 ///   See  `spark.catalog.dropTempView`
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -1484,9 +1411,7 @@ pub mod relation {
         #[prost(message, tag = "26")]
         ToSchema(::prost::alloc::boxed::Box<super::ToSchema>),
         #[prost(message, tag = "27")]
-        RepartitionByExpression(
-            ::prost::alloc::boxed::Box<super::RepartitionByExpression>,
-        ),
+        RepartitionByExpression(::prost::alloc::boxed::Box<super::RepartitionByExpression>),
         #[prost(message, tag = "28")]
         MapPartitions(::prost::alloc::boxed::Box<super::MapPartitions>),
         #[prost(message, tag = "29")]
@@ -1500,9 +1425,7 @@ pub mod relation {
         #[prost(message, tag = "33")]
         WithWatermark(::prost::alloc::boxed::Box<super::WithWatermark>),
         #[prost(message, tag = "34")]
-        ApplyInPandasWithState(
-            ::prost::alloc::boxed::Box<super::ApplyInPandasWithState>,
-        ),
+        ApplyInPandasWithState(::prost::alloc::boxed::Box<super::ApplyInPandasWithState>),
         #[prost(message, tag = "35")]
         HtmlString(::prost::alloc::boxed::Box<super::HtmlString>),
         #[prost(message, tag = "36")]
@@ -1510,9 +1433,7 @@ pub mod relation {
         #[prost(message, tag = "37")]
         CachedRemoteRelation(super::CachedRemoteRelation),
         #[prost(message, tag = "38")]
-        CommonInlineUserDefinedTableFunction(
-            super::CommonInlineUserDefinedTableFunction,
-        ),
+        CommonInlineUserDefinedTableFunction(super::CommonInlineUserDefinedTableFunction),
         #[prost(message, tag = "39")]
         AsOfJoin(::prost::alloc::boxed::Box<super::AsOfJoin>),
         #[prost(message, tag = "40")]
@@ -1581,10 +1502,7 @@ pub struct Sql {
     pub query: ::prost::alloc::string::String,
     ///   (Optional) A map of parameter names to literal expressions.
     #[prost(map = "string, message", tag = "2")]
-    pub args: ::std::collections::HashMap<
-        ::prost::alloc::string::String,
-        expression::Literal,
-    >,
+    pub args: ::std::collections::HashMap<::prost::alloc::string::String, expression::Literal>,
     ///   (Optional) A sequence of literal expressions for positional parameters in the SQL query text.
     #[deprecated]
     #[prost(message, repeated, tag = "3")]
@@ -1592,10 +1510,7 @@ pub struct Sql {
     ///   (Optional) A map of parameter names to expressions.
     ///   It cannot coexist with  `pos_arguments` .
     #[prost(map = "string, message", tag = "4")]
-    pub named_arguments: ::std::collections::HashMap<
-        ::prost::alloc::string::String,
-        Expression,
-    >,
+    pub named_arguments: ::std::collections::HashMap<::prost::alloc::string::String, Expression>,
     ///   (Optional) A sequence of expressions for positional parameters in the SQL query text.
     ///   It cannot coexist with  `named_arguments` .
     #[prost(message, repeated, tag = "5")]
@@ -1747,17 +1662,7 @@ pub mod join {
         #[prost(bool, tag = "2")]
         pub is_right_struct: bool,
     }
-    #[derive(
-        Clone,
-        Copy,
-        Debug,
-        PartialEq,
-        Eq,
-        Hash,
-        PartialOrd,
-        Ord,
-        ::prost::Enumeration
-    )]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
     #[repr(i32)]
     pub enum JoinType {
         Unspecified = 0,
@@ -1833,17 +1738,7 @@ pub struct SetOperation {
 }
 ///   Nested message and enum types in  `SetOperation` .
 pub mod set_operation {
-    #[derive(
-        Clone,
-        Copy,
-        Debug,
-        PartialEq,
-        Eq,
-        Hash,
-        PartialOrd,
-        Ord,
-        ::prost::Enumeration
-    )]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
     #[repr(i32)]
     pub enum SetOpType {
         Unspecified = 0,
@@ -1949,17 +1844,7 @@ pub mod aggregate {
         #[prost(message, repeated, tag = "1")]
         pub grouping_set: ::prost::alloc::vec::Vec<super::Expression>,
     }
-    #[derive(
-        Clone,
-        Copy,
-        Debug,
-        PartialEq,
-        Eq,
-        Hash,
-        PartialOrd,
-        Ord,
-        ::prost::Enumeration
-    )]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
     #[repr(i32)]
     pub enum GroupType {
         Unspecified = 0,
@@ -2447,10 +2332,8 @@ pub struct WithColumnsRenamed {
     ///   does not require that all input relation column names to present as keys.
     ///   duplicated B are not allowed.
     #[prost(map = "string, string", tag = "2")]
-    pub rename_columns_map: ::std::collections::HashMap<
-        ::prost::alloc::string::String,
-        ::prost::alloc::string::String,
-    >,
+    pub rename_columns_map:
+        ::std::collections::HashMap<::prost::alloc::string::String, ::prost::alloc::string::String>,
     #[prost(message, repeated, tag = "3")]
     pub renames: ::prost::alloc::vec::Vec<with_columns_renamed::Rename>,
 }
@@ -2682,10 +2565,11 @@ pub struct CommonInlineUserDefinedTableFunction {
     #[prost(message, repeated, tag = "3")]
     pub arguments: ::prost::alloc::vec::Vec<Expression>,
     ///   (Required) Type of the user-defined table function.
-    #[prost(oneof = "common_inline_user_defined_table_function::Function", tags = "4")]
-    pub function: ::core::option::Option<
-        common_inline_user_defined_table_function::Function,
-    >,
+    #[prost(
+        oneof = "common_inline_user_defined_table_function::Function",
+        tags = "4"
+    )]
+    pub function: ::core::option::Option<common_inline_user_defined_table_function::Function>,
 }
 ///   Nested message and enum types in  `CommonInlineUserDefinedTableFunction` .
 pub mod common_inline_user_defined_table_function {
@@ -2717,10 +2601,11 @@ pub struct CommonInlineUserDefinedDataSource {
     #[prost(string, tag = "1")]
     pub name: ::prost::alloc::string::String,
     ///   (Required) The data source type.
-    #[prost(oneof = "common_inline_user_defined_data_source::DataSource", tags = "2")]
-    pub data_source: ::core::option::Option<
-        common_inline_user_defined_data_source::DataSource,
-    >,
+    #[prost(
+        oneof = "common_inline_user_defined_data_source::DataSource",
+        tags = "2"
+    )]
+    pub data_source: ::core::option::Option<common_inline_user_defined_data_source::DataSource>,
 }
 ///   Nested message and enum types in  `CommonInlineUserDefinedDataSource` .
 pub mod common_inline_user_defined_data_source {
@@ -2766,24 +2651,12 @@ pub struct Parse {
     pub schema: ::core::option::Option<DataType>,
     ///   Options for the csv/json parser. The map key is case insensitive.
     #[prost(map = "string, string", tag = "4")]
-    pub options: ::std::collections::HashMap<
-        ::prost::alloc::string::String,
-        ::prost::alloc::string::String,
-    >,
+    pub options:
+        ::std::collections::HashMap<::prost::alloc::string::String, ::prost::alloc::string::String>,
 }
 ///   Nested message and enum types in  `Parse` .
 pub mod parse {
-    #[derive(
-        Clone,
-        Copy,
-        Debug,
-        PartialEq,
-        Eq,
-        Hash,
-        PartialOrd,
-        Ord,
-        ::prost::Enumeration
-    )]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
     #[repr(i32)]
     pub enum ParseFormat {
         Unspecified = 0,
@@ -2921,10 +2794,7 @@ pub struct SqlCommand {
     pub sql: ::prost::alloc::string::String,
     ///   (Optional) A map of parameter names to literal expressions.
     #[prost(map = "string, message", tag = "2")]
-    pub args: ::std::collections::HashMap<
-        ::prost::alloc::string::String,
-        expression::Literal,
-    >,
+    pub args: ::std::collections::HashMap<::prost::alloc::string::String, expression::Literal>,
     ///   (Optional) A sequence of literal expressions for positional parameters in the SQL query text.
     #[deprecated]
     #[prost(message, repeated, tag = "3")]
@@ -2932,10 +2802,7 @@ pub struct SqlCommand {
     ///   (Optional) A map of parameter names to expressions.
     ///   It cannot coexist with  `pos_arguments` .
     #[prost(map = "string, message", tag = "4")]
-    pub named_arguments: ::std::collections::HashMap<
-        ::prost::alloc::string::String,
-        Expression,
-    >,
+    pub named_arguments: ::std::collections::HashMap<::prost::alloc::string::String, Expression>,
     ///   (Optional) A sequence of expressions for positional parameters in the SQL query text.
     ///   It cannot coexist with  `named_arguments` .
     #[deprecated]
@@ -2988,10 +2855,8 @@ pub struct WriteOperation {
     pub bucket_by: ::core::option::Option<write_operation::BucketBy>,
     ///   (Optional) A list of configuration options.
     #[prost(map = "string, string", tag = "9")]
-    pub options: ::std::collections::HashMap<
-        ::prost::alloc::string::String,
-        ::prost::alloc::string::String,
-    >,
+    pub options:
+        ::std::collections::HashMap<::prost::alloc::string::String, ::prost::alloc::string::String>,
     ///   (Optional) Columns used for clustering the table.
     #[prost(string, repeated, tag = "10")]
     pub clustering_columns: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
@@ -3017,15 +2882,7 @@ pub mod write_operation {
     ///   Nested message and enum types in  `SaveTable` .
     pub mod save_table {
         #[derive(
-            Clone,
-            Copy,
-            Debug,
-            PartialEq,
-            Eq,
-            Hash,
-            PartialOrd,
-            Ord,
-            ::prost::Enumeration
+            Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration,
         )]
         #[repr(i32)]
         pub enum TableSaveMethod {
@@ -3059,23 +2916,11 @@ pub mod write_operation {
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct BucketBy {
         #[prost(string, repeated, tag = "1")]
-        pub bucket_column_names: ::prost::alloc::vec::Vec<
-            ::prost::alloc::string::String,
-        >,
+        pub bucket_column_names: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
         #[prost(int32, tag = "2")]
         pub num_buckets: i32,
     }
-    #[derive(
-        Clone,
-        Copy,
-        Debug,
-        PartialEq,
-        Eq,
-        Hash,
-        PartialOrd,
-        Ord,
-        ::prost::Enumeration
-    )]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
     #[repr(i32)]
     pub enum SaveMode {
         Unspecified = 0,
@@ -3142,16 +2987,12 @@ pub struct WriteOperationV2 {
     pub partitioning_columns: ::prost::alloc::vec::Vec<Expression>,
     ///   (Optional) A list of configuration options.
     #[prost(map = "string, string", tag = "5")]
-    pub options: ::std::collections::HashMap<
-        ::prost::alloc::string::String,
-        ::prost::alloc::string::String,
-    >,
+    pub options:
+        ::std::collections::HashMap<::prost::alloc::string::String, ::prost::alloc::string::String>,
     ///   (Optional) A list of table properties.
     #[prost(map = "string, string", tag = "6")]
-    pub table_properties: ::std::collections::HashMap<
-        ::prost::alloc::string::String,
-        ::prost::alloc::string::String,
-    >,
+    pub table_properties:
+        ::std::collections::HashMap<::prost::alloc::string::String, ::prost::alloc::string::String>,
     ///   (Required) Write mode.
     #[prost(enumeration = "write_operation_v2::Mode", tag = "7")]
     pub mode: i32,
@@ -3164,17 +3005,7 @@ pub struct WriteOperationV2 {
 }
 ///   Nested message and enum types in  `WriteOperationV2` .
 pub mod write_operation_v2 {
-    #[derive(
-        Clone,
-        Copy,
-        Debug,
-        PartialEq,
-        Eq,
-        Hash,
-        PartialOrd,
-        Ord,
-        ::prost::Enumeration
-    )]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
     #[repr(i32)]
     pub enum Mode {
         Unspecified = 0,
@@ -3226,14 +3057,10 @@ pub struct WriteStreamOperationStart {
     #[prost(string, tag = "2")]
     pub format: ::prost::alloc::string::String,
     #[prost(map = "string, string", tag = "3")]
-    pub options: ::std::collections::HashMap<
-        ::prost::alloc::string::String,
-        ::prost::alloc::string::String,
-    >,
+    pub options:
+        ::std::collections::HashMap<::prost::alloc::string::String, ::prost::alloc::string::String>,
     #[prost(string, repeated, tag = "4")]
-    pub partitioning_column_names: ::prost::alloc::vec::Vec<
-        ::prost::alloc::string::String,
-    >,
+    pub partitioning_column_names: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     #[prost(string, tag = "9")]
     pub output_mode: ::prost::alloc::string::String,
     #[prost(string, tag = "10")]
@@ -3244,16 +3071,15 @@ pub struct WriteStreamOperationStart {
     pub foreach_batch: ::core::option::Option<StreamingForeachFunction>,
     ///   (Optional) Columns used for clustering the table.
     #[prost(string, repeated, tag = "15")]
-    pub clustering_column_names: ::prost::alloc::vec::Vec<
-        ::prost::alloc::string::String,
-    >,
+    pub clustering_column_names: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     #[prost(oneof = "write_stream_operation_start::Trigger", tags = "5, 6, 7, 8")]
     pub trigger: ::core::option::Option<write_stream_operation_start::Trigger>,
     ///   The destination is optional. When set, it can be a path or a table name.
-    #[prost(oneof = "write_stream_operation_start::SinkDestination", tags = "11, 12")]
-    pub sink_destination: ::core::option::Option<
-        write_stream_operation_start::SinkDestination,
-    >,
+    #[prost(
+        oneof = "write_stream_operation_start::SinkDestination",
+        tags = "11, 12"
+    )]
+    pub sink_destination: ::core::option::Option<write_stream_operation_start::SinkDestination>,
 }
 ///   Nested message and enum types in  `WriteStreamOperationStart` .
 pub mod write_stream_operation_start {
@@ -3327,7 +3153,10 @@ pub struct StreamingQueryCommand {
     #[prost(message, optional, tag = "1")]
     pub query_id: ::core::option::Option<StreamingQueryInstanceId>,
     ///   See documentation for the corresponding API method in StreamingQuery.
-    #[prost(oneof = "streaming_query_command::Command", tags = "2, 3, 4, 5, 6, 7, 8, 9")]
+    #[prost(
+        oneof = "streaming_query_command::Command",
+        tags = "2, 3, 4, 5, 6, 7, 8, 9"
+    )]
     pub command: ::core::option::Option<streaming_query_command::Command>,
 }
 ///   Nested message and enum types in  `StreamingQueryCommand` .
@@ -3403,9 +3232,7 @@ pub mod streaming_query_command_result {
     pub struct RecentProgressResult {
         ///   Progress reports as an array of json strings.
         #[prost(string, repeated, tag = "5")]
-        pub recent_progress_json: ::prost::alloc::vec::Vec<
-            ::prost::alloc::string::String,
-        >,
+        pub recent_progress_json: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     }
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct ExplainResult {
@@ -3505,9 +3332,7 @@ pub struct StreamingQueryManagerCommandResult {
         oneof = "streaming_query_manager_command_result::ResultType",
         tags = "1, 2, 3, 4, 5, 6, 7"
     )]
-    pub result_type: ::core::option::Option<
-        streaming_query_manager_command_result::ResultType,
-    >,
+    pub result_type: ::core::option::Option<streaming_query_manager_command_result::ResultType>,
 }
 ///   Nested message and enum types in  `StreamingQueryManagerCommandResult` .
 pub mod streaming_query_manager_command_result {
@@ -3603,10 +3428,7 @@ pub struct GetResourcesCommand {}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetResourcesCommandResult {
     #[prost(map = "string, message", tag = "1")]
-    pub resources: ::std::collections::HashMap<
-        ::prost::alloc::string::String,
-        ResourceInformation,
-    >,
+    pub resources: ::std::collections::HashMap<::prost::alloc::string::String, ResourceInformation>,
 }
 ///   Command to create ResourceProfile
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -3751,9 +3573,8 @@ pub struct AnalyzePlanRequest {
     ///   Server-side generated idempotency key from the previous responses (if any). Server
     ///   can use this to validate that the server side session has not changed.
     #[prost(string, optional, tag = "17")]
-    pub client_observed_server_side_session_id: ::core::option::Option<
-        ::prost::alloc::string::String,
-    >,
+    pub client_observed_server_side_session_id:
+        ::core::option::Option<::prost::alloc::string::String>,
     ///   (Required) User context
     #[prost(message, optional, tag = "2")]
     pub user_context: ::core::option::Option<UserContext>,
@@ -3790,15 +3611,7 @@ pub mod analyze_plan_request {
     pub mod explain {
         ///   Plan explanation mode.
         #[derive(
-            Clone,
-            Copy,
-            Debug,
-            PartialEq,
-            Eq,
-            Hash,
-            PartialOrd,
-            Ord,
-            ::prost::Enumeration
+            Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration,
         )]
         #[repr(i32)]
         pub enum ExplainMode {
@@ -4078,9 +3891,8 @@ pub struct ExecutePlanRequest {
     ///   Server-side generated idempotency key from the previous responses (if any). Server
     ///   can use this to validate that the server side session has not changed.
     #[prost(string, optional, tag = "8")]
-    pub client_observed_server_side_session_id: ::core::option::Option<
-        ::prost::alloc::string::String,
-    >,
+    pub client_observed_server_side_session_id:
+        ::core::option::Option<::prost::alloc::string::String>,
     ///   (Required) User context
     ///
     ///   user_context.user_id and session+id both identify a unique remote spark session on the
@@ -4157,9 +3969,7 @@ pub struct ExecutePlanResponse {
     pub metrics: ::core::option::Option<execute_plan_response::Metrics>,
     ///   The metrics observed during the execution of the query plan.
     #[prost(message, repeated, tag = "6")]
-    pub observed_metrics: ::prost::alloc::vec::Vec<
-        execute_plan_response::ObservedMetrics,
-    >,
+    pub observed_metrics: ::prost::alloc::vec::Vec<execute_plan_response::ObservedMetrics>,
     ///   (Optional) The Spark schema. This field is available when  `collect`  is called.
     #[prost(message, optional, tag = "7")]
     pub schema: ::core::option::Option<DataType>,
@@ -4208,10 +4018,8 @@ pub mod execute_plan_response {
             #[prost(int64, tag = "3")]
             pub parent: i64,
             #[prost(map = "string, message", tag = "4")]
-            pub execution_metrics: ::std::collections::HashMap<
-                ::prost::alloc::string::String,
-                MetricValue,
-            >,
+            pub execution_metrics:
+                ::std::collections::HashMap<::prost::alloc::string::String, MetricValue>,
         }
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct MetricValue {
@@ -4331,9 +4139,8 @@ pub struct ConfigRequest {
     ///   Server-side generated idempotency key from the previous responses (if any). Server
     ///   can use this to validate that the server side session has not changed.
     #[prost(string, optional, tag = "8")]
-    pub client_observed_server_side_session_id: ::core::option::Option<
-        ::prost::alloc::string::String,
-    >,
+    pub client_observed_server_side_session_id:
+        ::core::option::Option<::prost::alloc::string::String>,
     ///   (Required) User context
     #[prost(message, optional, tag = "2")]
     pub user_context: ::core::option::Option<UserContext>,
@@ -4457,9 +4264,8 @@ pub struct AddArtifactsRequest {
     ///   Server-side generated idempotency key from the previous responses (if any). Server
     ///   can use this to validate that the server side session has not changed.
     #[prost(string, optional, tag = "7")]
-    pub client_observed_server_side_session_id: ::core::option::Option<
-        ::prost::alloc::string::String,
-    >,
+    pub client_observed_server_side_session_id:
+        ::core::option::Option<::prost::alloc::string::String>,
     ///   Provides optional information about the client sending the request. This field
     ///   can be used for language or version specific information and is only intended for
     ///   logging purposes and will not be interpreted by the server.
@@ -4585,9 +4391,8 @@ pub struct ArtifactStatusesRequest {
     ///   Server-side generated idempotency key from the previous responses (if any). Server
     ///   can use this to validate that the server side session has not changed.
     #[prost(string, optional, tag = "5")]
-    pub client_observed_server_side_session_id: ::core::option::Option<
-        ::prost::alloc::string::String,
-    >,
+    pub client_observed_server_side_session_id:
+        ::core::option::Option<::prost::alloc::string::String>,
     ///   User context
     #[prost(message, optional, tag = "2")]
     pub user_context: ::core::option::Option<UserContext>,
@@ -4647,9 +4452,8 @@ pub struct InterruptRequest {
     ///   Server-side generated idempotency key from the previous responses (if any). Server
     ///   can use this to validate that the server side session has not changed.
     #[prost(string, optional, tag = "7")]
-    pub client_observed_server_side_session_id: ::core::option::Option<
-        ::prost::alloc::string::String,
-    >,
+    pub client_observed_server_side_session_id:
+        ::core::option::Option<::prost::alloc::string::String>,
     ///   (Required) User context
     #[prost(message, optional, tag = "2")]
     pub user_context: ::core::option::Option<UserContext>,
@@ -4666,17 +4470,7 @@ pub struct InterruptRequest {
 }
 ///   Nested message and enum types in  `InterruptRequest` .
 pub mod interrupt_request {
-    #[derive(
-        Clone,
-        Copy,
-        Debug,
-        PartialEq,
-        Eq,
-        Hash,
-        PartialOrd,
-        Ord,
-        ::prost::Enumeration
-    )]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
     #[repr(i32)]
     pub enum InterruptType {
         Unspecified = 0,
@@ -4761,9 +4555,8 @@ pub struct ReattachExecuteRequest {
     ///   Server-side generated idempotency key from the previous responses (if any). Server
     ///   can use this to validate that the server side session has not changed.
     #[prost(string, optional, tag = "6")]
-    pub client_observed_server_side_session_id: ::core::option::Option<
-        ::prost::alloc::string::String,
-    >,
+    pub client_observed_server_side_session_id:
+        ::core::option::Option<::prost::alloc::string::String>,
     ///   (Required) User context
     ///
     ///   user_context.user_id and session+id both identify a unique remote spark session on the
@@ -4804,9 +4597,8 @@ pub struct ReleaseExecuteRequest {
     ///   Server-side generated idempotency key from the previous responses (if any). Server
     ///   can use this to validate that the server side session has not changed.
     #[prost(string, optional, tag = "7")]
-    pub client_observed_server_side_session_id: ::core::option::Option<
-        ::prost::alloc::string::String,
-    >,
+    pub client_observed_server_side_session_id:
+        ::core::option::Option<::prost::alloc::string::String>,
     ///   (Required) User context
     ///
     ///   user_context.user_id and session+id both identify a unique remote spark session on the
@@ -4909,9 +4701,8 @@ pub struct FetchErrorDetailsRequest {
     ///   Server-side generated idempotency key from the previous responses (if any). Server
     ///   can use this to validate that the server side session has not changed.
     #[prost(string, optional, tag = "5")]
-    pub client_observed_server_side_session_id: ::core::option::Option<
-        ::prost::alloc::string::String,
-    >,
+    pub client_observed_server_side_session_id:
+        ::core::option::Option<::prost::alloc::string::String>,
     ///   User context
     #[prost(message, optional, tag = "2")]
     pub user_context: ::core::option::Option<UserContext>,
@@ -4994,15 +4785,7 @@ pub mod fetch_error_details_response {
     pub mod query_context {
         ///   The type of this query context.
         #[derive(
-            Clone,
-            Copy,
-            Debug,
-            PartialEq,
-            Eq,
-            Hash,
-            PartialOrd,
-            Ord,
-            ::prost::Enumeration
+            Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration,
         )]
         #[repr(i32)]
         pub enum ContextType {
@@ -5055,9 +4838,7 @@ pub mod fetch_error_details_response {
     pub struct Error {
         ///   The fully qualified names of the exception class and its parent classes.
         #[prost(string, repeated, tag = "1")]
-        pub error_type_hierarchy: ::prost::alloc::vec::Vec<
-            ::prost::alloc::string::String,
-        >,
+        pub error_type_hierarchy: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
         ///   The detailed message of the exception.
         #[prost(string, tag = "2")]
         pub message: ::prost::alloc::string::String,
@@ -5086,10 +4867,9 @@ pub mod spark_connect_service_client {
         dead_code,
         missing_docs,
         clippy::wildcard_imports,
-        clippy::let_unit_value,
+        clippy::let_unit_value
     )]
-    use tonic::codegen::*;
-    use tonic::codegen::http::Uri;
+    use tonic::codegen::{http::Uri, *};
     ///   Main interface for the SparkConnect service.
     #[derive(Debug, Clone)]
     pub struct SparkConnectServiceClient<T> {
@@ -5110,7 +4890,7 @@ pub mod spark_connect_service_client {
     where
         T: tonic::client::GrpcService<tonic::body::BoxBody>,
         T::Error: Into<StdError>,
-        T::ResponseBody: Body<Data=Bytes> + std::marker::Send + 'static,
+        T::ResponseBody: Body<Data = Bytes> + std::marker::Send + 'static,
         <T::ResponseBody as Body>::Error: Into<StdError> + std::marker::Send,
     {
         pub fn new(inner: T) -> Self {
@@ -5130,13 +4910,12 @@ pub mod spark_connect_service_client {
             T::ResponseBody: Default,
             T: tonic::codegen::Service<
                 http::Request<tonic::body::BoxBody>,
-                Response=http::Response<
+                Response = http::Response<
                     <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
                 >,
             >,
-            <T as tonic::codegen::Service<
-                http::Request<tonic::body::BoxBody>,
-            >>::Error: Into<StdError> + std::marker::Send + std::marker::Sync,
+            <T as tonic::codegen::Service<http::Request<tonic::body::BoxBody>>>::Error:
+                Into<StdError> + std::marker::Send + std::marker::Sync,
         {
             SparkConnectServiceClient::new(InterceptedService::new(inner, interceptor))
         }
@@ -5181,56 +4960,50 @@ pub mod spark_connect_service_client {
             tonic::Response<tonic::codec::Streaming<super::ExecutePlanResponse>>,
             tonic::Status,
         > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        ::alloc::__export::must_use({
-                            let res = ::alloc::fmt::format(::alloc::__export::format_args!("Service was not ready: {}", e.into()));
-                            res
-                        }),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::unknown(::alloc::__export::must_use({
+                    let res = ::alloc::fmt::format(::alloc::__export::format_args!(
+                        "Service was not ready: {}",
+                        e.into()
+                    ));
+                    res
+                }))
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/spark.connect.SparkConnectService/ExecutePlan",
             );
             let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new("spark.connect.SparkConnectService", "ExecutePlan"),
-                );
+            req.extensions_mut().insert(GrpcMethod::new(
+                "spark.connect.SparkConnectService",
+                "ExecutePlan",
+            ));
             self.inner.server_streaming(req, path, codec).await
         }
         ///   Analyzes a query and returns a [ [ AnalyzeResponse ] ] containing metadata about the query.
         pub async fn analyze_plan(
             &mut self,
             request: impl tonic::IntoRequest<super::AnalyzePlanRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::AnalyzePlanResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        ::alloc::__export::must_use({
-                            let res = ::alloc::fmt::format(::alloc::__export::format_args!("Service was not ready: {}", e.into()));
-                            res
-                        }),
-                    )
-                })?;
+        ) -> std::result::Result<tonic::Response<super::AnalyzePlanResponse>, tonic::Status>
+        {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::unknown(::alloc::__export::must_use({
+                    let res = ::alloc::fmt::format(::alloc::__export::format_args!(
+                        "Service was not ready: {}",
+                        e.into()
+                    ));
+                    res
+                }))
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/spark.connect.SparkConnectService/AnalyzePlan",
             );
             let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new("spark.connect.SparkConnectService", "AnalyzePlan"),
-                );
+            req.extensions_mut().insert(GrpcMethod::new(
+                "spark.connect.SparkConnectService",
+                "AnalyzePlan",
+            ));
             self.inner.unary(req, path, codec).await
         }
         ///   Update or fetch the configurations and returns a [ [ ConfigResponse ] ] containing the result.
@@ -5238,120 +5011,101 @@ pub mod spark_connect_service_client {
             &mut self,
             request: impl tonic::IntoRequest<super::ConfigRequest>,
         ) -> std::result::Result<tonic::Response<super::ConfigResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        ::alloc::__export::must_use({
-                            let res = ::alloc::fmt::format(::alloc::__export::format_args!("Service was not ready: {}", e.into()));
-                            res
-                        }),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::unknown(::alloc::__export::must_use({
+                    let res = ::alloc::fmt::format(::alloc::__export::format_args!(
+                        "Service was not ready: {}",
+                        e.into()
+                    ));
+                    res
+                }))
+            })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/spark.connect.SparkConnectService/Config",
-            );
+            let path =
+                http::uri::PathAndQuery::from_static("/spark.connect.SparkConnectService/Config");
             let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("spark.connect.SparkConnectService", "Config"));
+            req.extensions_mut().insert(GrpcMethod::new(
+                "spark.connect.SparkConnectService",
+                "Config",
+            ));
             self.inner.unary(req, path, codec).await
         }
         ///   Add artifacts to the session and returns a [ [ AddArtifactsResponse ] ] containing metadata about
         ///   the added artifacts.
         pub async fn add_artifacts(
             &mut self,
-            request: impl tonic::IntoStreamingRequest<
-                Message=super::AddArtifactsRequest,
-            >,
-        ) -> std::result::Result<
-            tonic::Response<super::AddArtifactsResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        ::alloc::__export::must_use({
-                            let res = ::alloc::fmt::format(::alloc::__export::format_args!("Service was not ready: {}", e.into()));
-                            res
-                        }),
-                    )
-                })?;
+            request: impl tonic::IntoStreamingRequest<Message = super::AddArtifactsRequest>,
+        ) -> std::result::Result<tonic::Response<super::AddArtifactsResponse>, tonic::Status>
+        {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::unknown(::alloc::__export::must_use({
+                    let res = ::alloc::fmt::format(::alloc::__export::format_args!(
+                        "Service was not ready: {}",
+                        e.into()
+                    ));
+                    res
+                }))
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/spark.connect.SparkConnectService/AddArtifacts",
             );
             let mut req = request.into_streaming_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new("spark.connect.SparkConnectService", "AddArtifacts"),
-                );
+            req.extensions_mut().insert(GrpcMethod::new(
+                "spark.connect.SparkConnectService",
+                "AddArtifacts",
+            ));
             self.inner.client_streaming(req, path, codec).await
         }
         ///   Check statuses of artifacts in the session and returns them in a [ [ ArtifactStatusesResponse ] ]
         pub async fn artifact_status(
             &mut self,
             request: impl tonic::IntoRequest<super::ArtifactStatusesRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ArtifactStatusesResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        ::alloc::__export::must_use({
-                            let res = ::alloc::fmt::format(::alloc::__export::format_args!("Service was not ready: {}", e.into()));
-                            res
-                        }),
-                    )
-                })?;
+        ) -> std::result::Result<tonic::Response<super::ArtifactStatusesResponse>, tonic::Status>
+        {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::unknown(::alloc::__export::must_use({
+                    let res = ::alloc::fmt::format(::alloc::__export::format_args!(
+                        "Service was not ready: {}",
+                        e.into()
+                    ));
+                    res
+                }))
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/spark.connect.SparkConnectService/ArtifactStatus",
             );
             let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "spark.connect.SparkConnectService",
-                        "ArtifactStatus",
-                    ),
-                );
+            req.extensions_mut().insert(GrpcMethod::new(
+                "spark.connect.SparkConnectService",
+                "ArtifactStatus",
+            ));
             self.inner.unary(req, path, codec).await
         }
         ///   Interrupts running executions
         pub async fn interrupt(
             &mut self,
             request: impl tonic::IntoRequest<super::InterruptRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::InterruptResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        ::alloc::__export::must_use({
-                            let res = ::alloc::fmt::format(::alloc::__export::format_args!("Service was not ready: {}", e.into()));
-                            res
-                        }),
-                    )
-                })?;
+        ) -> std::result::Result<tonic::Response<super::InterruptResponse>, tonic::Status> {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::unknown(::alloc::__export::must_use({
+                    let res = ::alloc::fmt::format(::alloc::__export::format_args!(
+                        "Service was not ready: {}",
+                        e.into()
+                    ));
+                    res
+                }))
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/spark.connect.SparkConnectService/Interrupt",
             );
             let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new("spark.connect.SparkConnectService", "Interrupt"),
-                );
+            req.extensions_mut().insert(GrpcMethod::new(
+                "spark.connect.SparkConnectService",
+                "Interrupt",
+            ));
             self.inner.unary(req, path, codec).await
         }
         ///   Reattach to an existing reattachable execution.
@@ -5365,29 +5119,24 @@ pub mod spark_connect_service_client {
             tonic::Response<tonic::codec::Streaming<super::ExecutePlanResponse>>,
             tonic::Status,
         > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        ::alloc::__export::must_use({
-                            let res = ::alloc::fmt::format(::alloc::__export::format_args!("Service was not ready: {}", e.into()));
-                            res
-                        }),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::unknown(::alloc::__export::must_use({
+                    let res = ::alloc::fmt::format(::alloc::__export::format_args!(
+                        "Service was not ready: {}",
+                        e.into()
+                    ));
+                    res
+                }))
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/spark.connect.SparkConnectService/ReattachExecute",
             );
             let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "spark.connect.SparkConnectService",
-                        "ReattachExecute",
-                    ),
-                );
+            req.extensions_mut().insert(GrpcMethod::new(
+                "spark.connect.SparkConnectService",
+                "ReattachExecute",
+            ));
             self.inner.server_streaming(req, path, codec).await
         }
         ///   Release an reattachable execution, or parts thereof.
@@ -5397,33 +5146,26 @@ pub mod spark_connect_service_client {
         pub async fn release_execute(
             &mut self,
             request: impl tonic::IntoRequest<super::ReleaseExecuteRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ReleaseExecuteResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        ::alloc::__export::must_use({
-                            let res = ::alloc::fmt::format(::alloc::__export::format_args!("Service was not ready: {}", e.into()));
-                            res
-                        }),
-                    )
-                })?;
+        ) -> std::result::Result<tonic::Response<super::ReleaseExecuteResponse>, tonic::Status>
+        {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::unknown(::alloc::__export::must_use({
+                    let res = ::alloc::fmt::format(::alloc::__export::format_args!(
+                        "Service was not ready: {}",
+                        e.into()
+                    ));
+                    res
+                }))
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/spark.connect.SparkConnectService/ReleaseExecute",
             );
             let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "spark.connect.SparkConnectService",
-                        "ReleaseExecute",
-                    ),
-                );
+            req.extensions_mut().insert(GrpcMethod::new(
+                "spark.connect.SparkConnectService",
+                "ReleaseExecute",
+            ));
             self.inner.unary(req, path, codec).await
         }
         ///   Release a session.
@@ -5433,66 +5175,52 @@ pub mod spark_connect_service_client {
         pub async fn release_session(
             &mut self,
             request: impl tonic::IntoRequest<super::ReleaseSessionRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ReleaseSessionResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        ::alloc::__export::must_use({
-                            let res = ::alloc::fmt::format(::alloc::__export::format_args!("Service was not ready: {}", e.into()));
-                            res
-                        }),
-                    )
-                })?;
+        ) -> std::result::Result<tonic::Response<super::ReleaseSessionResponse>, tonic::Status>
+        {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::unknown(::alloc::__export::must_use({
+                    let res = ::alloc::fmt::format(::alloc::__export::format_args!(
+                        "Service was not ready: {}",
+                        e.into()
+                    ));
+                    res
+                }))
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/spark.connect.SparkConnectService/ReleaseSession",
             );
             let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "spark.connect.SparkConnectService",
-                        "ReleaseSession",
-                    ),
-                );
+            req.extensions_mut().insert(GrpcMethod::new(
+                "spark.connect.SparkConnectService",
+                "ReleaseSession",
+            ));
             self.inner.unary(req, path, codec).await
         }
         ///   FetchErrorDetails retrieves the matched exception with details based on a provided error id.
         pub async fn fetch_error_details(
             &mut self,
             request: impl tonic::IntoRequest<super::FetchErrorDetailsRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::FetchErrorDetailsResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        ::alloc::__export::must_use({
-                            let res = ::alloc::fmt::format(::alloc::__export::format_args!("Service was not ready: {}", e.into()));
-                            res
-                        }),
-                    )
-                })?;
+        ) -> std::result::Result<tonic::Response<super::FetchErrorDetailsResponse>, tonic::Status>
+        {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::unknown(::alloc::__export::must_use({
+                    let res = ::alloc::fmt::format(::alloc::__export::format_args!(
+                        "Service was not ready: {}",
+                        e.into()
+                    ));
+                    res
+                }))
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/spark.connect.SparkConnectService/FetchErrorDetails",
             );
             let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "spark.connect.SparkConnectService",
-                        "FetchErrorDetails",
-                    ),
-                );
+            req.extensions_mut().insert(GrpcMethod::new(
+                "spark.connect.SparkConnectService",
+                "FetchErrorDetails",
+            ));
             self.inner.unary(req, path, codec).await
         }
     }
@@ -5504,7 +5232,7 @@ pub mod spark_connect_service_server {
         dead_code,
         missing_docs,
         clippy::wildcard_imports,
-        clippy::let_unit_value,
+        clippy::let_unit_value
     )]
     use tonic::codegen::*;
     ///   Generated trait containing gRPC methods that should be implemented for use with SparkConnectServiceServer.
@@ -5512,28 +5240,21 @@ pub mod spark_connect_service_server {
     pub trait SparkConnectService: std::marker::Send + std::marker::Sync + 'static {
         ///   Server streaming response type for the ExecutePlan method.
         type ExecutePlanStream: tonic::codegen::tokio_stream::Stream<
-            Item=std::result::Result<super::ExecutePlanResponse, tonic::Status>,
-        >
-        + std::marker::Send
-        + 'static;
+                Item = std::result::Result<super::ExecutePlanResponse, tonic::Status>,
+            > + std::marker::Send
+            + 'static;
         ///   Executes a request that contains the query and returns a stream of [ [ Response ] ].
         ///
         ///   It is guaranteed that there is at least one ARROW batch returned even if the result set is empty.
         async fn execute_plan(
             &self,
             request: tonic::Request<super::ExecutePlanRequest>,
-        ) -> std::result::Result<
-            tonic::Response<Self::ExecutePlanStream>,
-            tonic::Status,
-        >;
+        ) -> std::result::Result<tonic::Response<Self::ExecutePlanStream>, tonic::Status>;
         ///   Analyzes a query and returns a [ [ AnalyzeResponse ] ] containing metadata about the query.
         async fn analyze_plan(
             &self,
             request: tonic::Request<super::AnalyzePlanRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::AnalyzePlanResponse>,
-            tonic::Status,
-        >;
+        ) -> std::result::Result<tonic::Response<super::AnalyzePlanResponse>, tonic::Status>;
         ///   Update or fetch the configurations and returns a [ [ ConfigResponse ] ] containing the result.
         async fn config(
             &self,
@@ -5544,32 +5265,22 @@ pub mod spark_connect_service_server {
         async fn add_artifacts(
             &self,
             request: tonic::Request<tonic::Streaming<super::AddArtifactsRequest>>,
-        ) -> std::result::Result<
-            tonic::Response<super::AddArtifactsResponse>,
-            tonic::Status,
-        >;
+        ) -> std::result::Result<tonic::Response<super::AddArtifactsResponse>, tonic::Status>;
         ///   Check statuses of artifacts in the session and returns them in a [ [ ArtifactStatusesResponse ] ]
         async fn artifact_status(
             &self,
             request: tonic::Request<super::ArtifactStatusesRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ArtifactStatusesResponse>,
-            tonic::Status,
-        >;
+        ) -> std::result::Result<tonic::Response<super::ArtifactStatusesResponse>, tonic::Status>;
         ///   Interrupts running executions
         async fn interrupt(
             &self,
             request: tonic::Request<super::InterruptRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::InterruptResponse>,
-            tonic::Status,
-        >;
+        ) -> std::result::Result<tonic::Response<super::InterruptResponse>, tonic::Status>;
         ///   Server streaming response type for the ReattachExecute method.
         type ReattachExecuteStream: tonic::codegen::tokio_stream::Stream<
-            Item=std::result::Result<super::ExecutePlanResponse, tonic::Status>,
-        >
-        + std::marker::Send
-        + 'static;
+                Item = std::result::Result<super::ExecutePlanResponse, tonic::Status>,
+            > + std::marker::Send
+            + 'static;
         ///   Reattach to an existing reattachable execution.
         ///   The ExecutePlan must have been started with ReattachOptions.reattachable=true.
         ///   If the ExecutePlanResponse stream ends without a ResultComplete message, there is more to
@@ -5577,10 +5288,7 @@ pub mod spark_connect_service_server {
         async fn reattach_execute(
             &self,
             request: tonic::Request<super::ReattachExecuteRequest>,
-        ) -> std::result::Result<
-            tonic::Response<Self::ReattachExecuteStream>,
-            tonic::Status,
-        >;
+        ) -> std::result::Result<tonic::Response<Self::ReattachExecuteStream>, tonic::Status>;
         ///   Release an reattachable execution, or parts thereof.
         ///   The ExecutePlan must have been started with ReattachOptions.reattachable=true.
         ///   Non reattachable executions are released automatically and immediately after the ExecutePlan
@@ -5588,10 +5296,7 @@ pub mod spark_connect_service_server {
         async fn release_execute(
             &self,
             request: tonic::Request<super::ReleaseExecuteRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ReleaseExecuteResponse>,
-            tonic::Status,
-        >;
+        ) -> std::result::Result<tonic::Response<super::ReleaseExecuteResponse>, tonic::Status>;
         ///   Release a session.
         ///   All the executions in the session will be released. Any further requests for the session with
         ///   that session_id for the given user_id will fail. If the session didn't exist or was already
@@ -5599,18 +5304,12 @@ pub mod spark_connect_service_server {
         async fn release_session(
             &self,
             request: tonic::Request<super::ReleaseSessionRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ReleaseSessionResponse>,
-            tonic::Status,
-        >;
+        ) -> std::result::Result<tonic::Response<super::ReleaseSessionResponse>, tonic::Status>;
         ///   FetchErrorDetails retrieves the matched exception with details based on a provided error id.
         async fn fetch_error_details(
             &self,
             request: tonic::Request<super::FetchErrorDetailsRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::FetchErrorDetailsResponse>,
-            tonic::Status,
-        >;
+        ) -> std::result::Result<tonic::Response<super::FetchErrorDetailsResponse>, tonic::Status>;
     }
     ///   Main interface for the SparkConnect service.
     #[derive(Debug)]
@@ -5634,10 +5333,7 @@ pub mod spark_connect_service_server {
                 max_encoding_message_size: None,
             }
         }
-        pub fn with_interceptor<F>(
-            inner: T,
-            interceptor: F,
-        ) -> InterceptedService<Self, F>
+        pub fn with_interceptor<F>(inner: T, interceptor: F) -> InterceptedService<Self, F>
         where
             F: tonic::service::Interceptor,
         {
@@ -5691,25 +5387,22 @@ pub mod spark_connect_service_server {
             match req.uri().path() {
                 "/spark.connect.SparkConnectService/ExecutePlan" => {
                     #[allow(non_camel_case_types)]
-                    struct ExecutePlanSvc<T: SparkConnectService> (pub Arc<T>);
-                    impl<
-                        T: SparkConnectService,
-                    > tonic::server::ServerStreamingService<super::ExecutePlanRequest>
-                    for ExecutePlanSvc<T> {
+                    struct ExecutePlanSvc<T: SparkConnectService>(pub Arc<T>);
+                    impl<T: SparkConnectService>
+                        tonic::server::ServerStreamingService<super::ExecutePlanRequest>
+                        for ExecutePlanSvc<T>
+                    {
                         type Response = super::ExecutePlanResponse;
                         type ResponseStream = T::ExecutePlanStream;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::ResponseStream>,
-                            tonic::Status,
-                        >;
+                        type Future =
+                            BoxFuture<tonic::Response<Self::ResponseStream>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::ExecutePlanRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as SparkConnectService>::execute_plan(&inner, request)
-                                    .await
+                                <T as SparkConnectService>::execute_plan(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -5738,24 +5431,20 @@ pub mod spark_connect_service_server {
                 }
                 "/spark.connect.SparkConnectService/AnalyzePlan" => {
                     #[allow(non_camel_case_types)]
-                    struct AnalyzePlanSvc<T: SparkConnectService> (pub Arc<T>);
-                    impl<
-                        T: SparkConnectService,
-                    > tonic::server::UnaryService<super::AnalyzePlanRequest>
-                    for AnalyzePlanSvc<T> {
+                    struct AnalyzePlanSvc<T: SparkConnectService>(pub Arc<T>);
+                    impl<T: SparkConnectService>
+                        tonic::server::UnaryService<super::AnalyzePlanRequest>
+                        for AnalyzePlanSvc<T>
+                    {
                         type Response = super::AnalyzePlanResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::AnalyzePlanRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as SparkConnectService>::analyze_plan(&inner, request)
-                                    .await
+                                <T as SparkConnectService>::analyze_plan(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -5784,16 +5473,10 @@ pub mod spark_connect_service_server {
                 }
                 "/spark.connect.SparkConnectService/Config" => {
                     #[allow(non_camel_case_types)]
-                    struct ConfigSvc<T: SparkConnectService> (pub Arc<T>);
-                    impl<
-                        T: SparkConnectService,
-                    > tonic::server::UnaryService<super::ConfigRequest>
-                    for ConfigSvc<T> {
+                    struct ConfigSvc<T: SparkConnectService>(pub Arc<T>);
+                    impl<T: SparkConnectService> tonic::server::UnaryService<super::ConfigRequest> for ConfigSvc<T> {
                         type Response = super::ConfigResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::ConfigRequest>,
@@ -5829,26 +5512,20 @@ pub mod spark_connect_service_server {
                 }
                 "/spark.connect.SparkConnectService/AddArtifacts" => {
                     #[allow(non_camel_case_types)]
-                    struct AddArtifactsSvc<T: SparkConnectService> (pub Arc<T>);
-                    impl<
-                        T: SparkConnectService,
-                    > tonic::server::ClientStreamingService<super::AddArtifactsRequest>
-                    for AddArtifactsSvc<T> {
+                    struct AddArtifactsSvc<T: SparkConnectService>(pub Arc<T>);
+                    impl<T: SparkConnectService>
+                        tonic::server::ClientStreamingService<super::AddArtifactsRequest>
+                        for AddArtifactsSvc<T>
+                    {
                         type Response = super::AddArtifactsResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
-                            request: tonic::Request<
-                                tonic::Streaming<super::AddArtifactsRequest>,
-                            >,
+                            request: tonic::Request<tonic::Streaming<super::AddArtifactsRequest>>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as SparkConnectService>::add_artifacts(&inner, request)
-                                    .await
+                                <T as SparkConnectService>::add_artifacts(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -5877,24 +5554,20 @@ pub mod spark_connect_service_server {
                 }
                 "/spark.connect.SparkConnectService/ArtifactStatus" => {
                     #[allow(non_camel_case_types)]
-                    struct ArtifactStatusSvc<T: SparkConnectService> (pub Arc<T>);
-                    impl<
-                        T: SparkConnectService,
-                    > tonic::server::UnaryService<super::ArtifactStatusesRequest>
-                    for ArtifactStatusSvc<T> {
+                    struct ArtifactStatusSvc<T: SparkConnectService>(pub Arc<T>);
+                    impl<T: SparkConnectService>
+                        tonic::server::UnaryService<super::ArtifactStatusesRequest>
+                        for ArtifactStatusSvc<T>
+                    {
                         type Response = super::ArtifactStatusesResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::ArtifactStatusesRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as SparkConnectService>::artifact_status(&inner, request)
-                                    .await
+                                <T as SparkConnectService>::artifact_status(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -5923,16 +5596,12 @@ pub mod spark_connect_service_server {
                 }
                 "/spark.connect.SparkConnectService/Interrupt" => {
                     #[allow(non_camel_case_types)]
-                    struct InterruptSvc<T: SparkConnectService> (pub Arc<T>);
-                    impl<
-                        T: SparkConnectService,
-                    > tonic::server::UnaryService<super::InterruptRequest>
-                    for InterruptSvc<T> {
+                    struct InterruptSvc<T: SparkConnectService>(pub Arc<T>);
+                    impl<T: SparkConnectService>
+                        tonic::server::UnaryService<super::InterruptRequest> for InterruptSvc<T>
+                    {
                         type Response = super::InterruptResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::InterruptRequest>,
@@ -5968,29 +5637,22 @@ pub mod spark_connect_service_server {
                 }
                 "/spark.connect.SparkConnectService/ReattachExecute" => {
                     #[allow(non_camel_case_types)]
-                    struct ReattachExecuteSvc<T: SparkConnectService> (pub Arc<T>);
-                    impl<
-                        T: SparkConnectService,
-                    > tonic::server::ServerStreamingService<
-                        super::ReattachExecuteRequest,
-                    > for ReattachExecuteSvc<T> {
+                    struct ReattachExecuteSvc<T: SparkConnectService>(pub Arc<T>);
+                    impl<T: SparkConnectService>
+                        tonic::server::ServerStreamingService<super::ReattachExecuteRequest>
+                        for ReattachExecuteSvc<T>
+                    {
                         type Response = super::ExecutePlanResponse;
                         type ResponseStream = T::ReattachExecuteStream;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::ResponseStream>,
-                            tonic::Status,
-                        >;
+                        type Future =
+                            BoxFuture<tonic::Response<Self::ResponseStream>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::ReattachExecuteRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as SparkConnectService>::reattach_execute(
-                                    &inner,
-                                    request,
-                                )
-                                    .await
+                                <T as SparkConnectService>::reattach_execute(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -6019,24 +5681,20 @@ pub mod spark_connect_service_server {
                 }
                 "/spark.connect.SparkConnectService/ReleaseExecute" => {
                     #[allow(non_camel_case_types)]
-                    struct ReleaseExecuteSvc<T: SparkConnectService> (pub Arc<T>);
-                    impl<
-                        T: SparkConnectService,
-                    > tonic::server::UnaryService<super::ReleaseExecuteRequest>
-                    for ReleaseExecuteSvc<T> {
+                    struct ReleaseExecuteSvc<T: SparkConnectService>(pub Arc<T>);
+                    impl<T: SparkConnectService>
+                        tonic::server::UnaryService<super::ReleaseExecuteRequest>
+                        for ReleaseExecuteSvc<T>
+                    {
                         type Response = super::ReleaseExecuteResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::ReleaseExecuteRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as SparkConnectService>::release_execute(&inner, request)
-                                    .await
+                                <T as SparkConnectService>::release_execute(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -6065,24 +5723,20 @@ pub mod spark_connect_service_server {
                 }
                 "/spark.connect.SparkConnectService/ReleaseSession" => {
                     #[allow(non_camel_case_types)]
-                    struct ReleaseSessionSvc<T: SparkConnectService> (pub Arc<T>);
-                    impl<
-                        T: SparkConnectService,
-                    > tonic::server::UnaryService<super::ReleaseSessionRequest>
-                    for ReleaseSessionSvc<T> {
+                    struct ReleaseSessionSvc<T: SparkConnectService>(pub Arc<T>);
+                    impl<T: SparkConnectService>
+                        tonic::server::UnaryService<super::ReleaseSessionRequest>
+                        for ReleaseSessionSvc<T>
+                    {
                         type Response = super::ReleaseSessionResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::ReleaseSessionRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as SparkConnectService>::release_session(&inner, request)
-                                    .await
+                                <T as SparkConnectService>::release_session(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -6111,26 +5765,20 @@ pub mod spark_connect_service_server {
                 }
                 "/spark.connect.SparkConnectService/FetchErrorDetails" => {
                     #[allow(non_camel_case_types)]
-                    struct FetchErrorDetailsSvc<T: SparkConnectService> (pub Arc<T>);
-                    impl<
-                        T: SparkConnectService,
-                    > tonic::server::UnaryService<super::FetchErrorDetailsRequest>
-                    for FetchErrorDetailsSvc<T> {
+                    struct FetchErrorDetailsSvc<T: SparkConnectService>(pub Arc<T>);
+                    impl<T: SparkConnectService>
+                        tonic::server::UnaryService<super::FetchErrorDetailsRequest>
+                        for FetchErrorDetailsSvc<T>
+                    {
                         type Response = super::FetchErrorDetailsResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::FetchErrorDetailsRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as SparkConnectService>::fetch_error_details(
-                                    &inner,
-                                    request,
-                                )
+                                <T as SparkConnectService>::fetch_error_details(&inner, request)
                                     .await
                             };
                             Box::pin(fut)
@@ -6158,23 +5806,19 @@ pub mod spark_connect_service_server {
                     };
                     Box::pin(fut)
                 }
-                _ => {
-                    Box::pin(async move {
-                        let mut response = http::Response::new(empty_body());
-                        let headers = response.headers_mut();
-                        headers
-                            .insert(
-                                tonic::Status::GRPC_STATUS,
-                                (tonic::Code::Unimplemented as i32).into(),
-                            );
-                        headers
-                            .insert(
-                                http::header::CONTENT_TYPE,
-                                tonic::metadata::GRPC_CONTENT_TYPE,
-                            );
-                        Ok(response)
-                    })
-                }
+                _ => Box::pin(async move {
+                    let mut response = http::Response::new(empty_body());
+                    let headers = response.headers_mut();
+                    headers.insert(
+                        tonic::Status::GRPC_STATUS,
+                        (tonic::Code::Unimplemented as i32).into(),
+                    );
+                    headers.insert(
+                        http::header::CONTENT_TYPE,
+                        tonic::metadata::GRPC_CONTENT_TYPE,
+                    );
+                    Ok(response)
+                }),
             }
         }
     }
