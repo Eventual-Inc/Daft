@@ -1,11 +1,17 @@
 use std::collections::HashMap;
-use crate::command::execute_plan;
-use crate::convert::to_logical_plan;
-use crate::spark_connect::{Expression, Filter, Read, Relation, RelationCommon, ShowString, WithColumns};
-use crate::spark_connect::expression::{Alias, ExprType, Literal, UnresolvedAttribute, UnresolvedFunction};
-use crate::spark_connect::expression::literal::LiteralType;
-use crate::spark_connect::read::{DataSource, ReadType};
-use crate::spark_connect::relation::RelType;
+
+use crate::{
+    command::execute_plan,
+    convert::to_logical_plan,
+    spark_connect::{
+        expression::{
+            literal::LiteralType, Alias, ExprType, Literal, UnresolvedAttribute, UnresolvedFunction,
+        },
+        read::{DataSource, ReadType},
+        relation::RelType,
+        Expression, Filter, Read, Relation, RelationCommon, ShowString, WithColumns,
+    },
+};
 
 #[test]
 pub fn test_filter() {
@@ -13,6 +19,7 @@ pub fn test_filter() {
         deprecated,
         reason = "Some of the fields are deprecated, but we must still set them to their default values."
     )]
+    #[rustfmt::skip] // rustfmt gets stuck on this (perhaps) forever. Stuck on this for literal minutes 😅
     let input = Relation {
         common: Some(
             RelationCommon {
@@ -201,8 +208,7 @@ pub fn test_filter() {
         ),
     };
 
-    let plan = to_logical_plan(input).unwrap()
-        .build();
+    let plan = to_logical_plan(input).unwrap().build();
 
     let result = execute_plan(plan);
 

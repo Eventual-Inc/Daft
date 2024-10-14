@@ -104,7 +104,13 @@ pub fn to_logical_plan(plan: Relation) -> anyhow::Result<LogicalPlanBuilder> {
                     predicates,
                 }) => {
                     let format = format.context("format is None")?;
-                    let schema = schema.context("schema is None")?;
+
+                    ensure!(
+                        format == "parquet",
+                        "Only parquet is supported; got {format}"
+                    );
+
+                    // let schema = schema.context("schema is None")?;
 
                     ensure!(options.is_empty(), "Options are not yet supported");
 

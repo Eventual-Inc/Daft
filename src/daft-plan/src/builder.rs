@@ -4,13 +4,15 @@ use std::{
 };
 
 use common_daft_config::DaftPlanningConfig;
-use common_display::mermaid::MermaidDisplayOptions;
+use common_display::{mermaid::MermaidDisplayOptions, DisplayAs, DisplayLevel};
 use common_error::DaftResult;
 use common_file_formats::{FileFormat, FileFormatConfig, ParquetSourceConfig};
 use common_io_config::IOConfig;
 use daft_core::{
+    datatypes::Utf8Array,
     join::{JoinStrategy, JoinType},
     prelude::TimeUnit,
+    series::IntoSeries,
 };
 use daft_dsl::{col, ExprRef};
 use daft_scan::{
@@ -33,9 +35,7 @@ use {
     daft_schema::python::schema::PySchema,
     pyo3::prelude::*,
 };
-use common_display::{DisplayAs, DisplayLevel};
-use daft_core::datatypes::Utf8Array;
-use daft_core::series::IntoSeries;
+
 use crate::{
     logical_ops,
     logical_optimization::{Optimizer, OptimizerConfig},
@@ -201,9 +201,9 @@ impl LogicalPlanBuilder {
         let output_schema = match (&pushdowns, &scan_operator.0.file_path_column()) {
             (
                 Some(Pushdowns {
-                         columns: Some(columns),
-                         ..
-                     }),
+                    columns: Some(columns),
+                    ..
+                }),
                 file_path_column_opt,
             ) if columns.len() < schema.fields.len() => {
                 let pruned_fields = schema
@@ -274,7 +274,7 @@ impl LogicalPlanBuilder {
     /// use daft_dsl::{col, lit};
     /// use daft_schema::dtype::DataType;
     ///
-    /// let builder: LogicalPlanBuilder = todo!();
+    /// let builder: LogicalPlanBuilder = unimplemented!("You will need to replace this with your own logic");
     ///
     /// // Select existing columns
     /// let result = builder.select(vec![col("name"), col("age")]);
@@ -302,7 +302,7 @@ impl LogicalPlanBuilder {
         // todo: should NOT broadcast; should only set first row
         let schema = self.schema();
         let display = schema.display_as(DisplayLevel::Default);
-        
+
         let utf8_data = vec![Some(display)];
         let utf8_array = arrow2::array::Utf8Array::<i64>::from(utf8_data).boxed();
 
@@ -420,7 +420,7 @@ impl LogicalPlanBuilder {
             variable_name,
             value_name,
         )?
-            .into();
+        .into();
         Ok(self.with_new_plan(logical_plan))
     }
 
@@ -439,7 +439,7 @@ impl LogicalPlanBuilder {
             self.plan.clone(),
             RepartitionSpec::Hash(HashRepartitionConfig::new(num_partitions, partition_by)),
         )?
-            .into();
+        .into();
         Ok(self.with_new_plan(logical_plan))
     }
 
@@ -448,7 +448,7 @@ impl LogicalPlanBuilder {
             self.plan.clone(),
             RepartitionSpec::Random(RandomShuffleConfig::new(num_partitions)),
         )?
-            .into();
+        .into();
         Ok(self.with_new_plan(logical_plan))
     }
 
@@ -457,7 +457,7 @@ impl LogicalPlanBuilder {
             self.plan.clone(),
             RepartitionSpec::IntoPartitions(IntoPartitionsConfig::new(num_partitions)),
         )?
-            .into();
+        .into();
         Ok(self.with_new_plan(logical_plan))
     }
 
@@ -503,7 +503,7 @@ impl LogicalPlanBuilder {
             agg_expr,
             names,
         )?
-            .into();
+        .into();
         Ok(self.with_new_plan(pivot_logical_plan))
     }
 
@@ -523,7 +523,7 @@ impl LogicalPlanBuilder {
             join_type,
             join_strategy,
         )?
-            .into();
+        .into();
         Ok(self.with_new_plan(logical_plan))
     }
 
@@ -804,7 +804,7 @@ impl PyLogicalPlanBuilder {
             size_bytes,
             num_rows,
         )?
-            .into())
+        .into())
     }
 
     #[staticmethod]

@@ -2,12 +2,14 @@
 
 use std::{collections::HashMap, sync::Arc, thread};
 
+use anyhow::bail;
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use daft_local_execution::run::run_local;
 use daft_micropartition::MicroPartition;
 use daft_plan::LogicalPlanRef;
 use daft_table::Table;
+use tonic::Status;
 use uuid::Uuid;
 
 use crate::{
@@ -23,7 +25,11 @@ use crate::{
 type DaftStream = <DaftSparkConnectService as SparkConnectService>::ExecutePlanStream;
 
 impl Session {
-    pub async fn handle_root_command(&self, command: Relation, operation_id: String) -> DaftStream {
+    pub async fn handle_root_command(
+        &self,
+        command: Relation,
+        operation_id: String,
+    ) -> Result<DaftStream, Status> {
         let data = thread::spawn(move || {
             let logical_plan = to_logical_plan(command).unwrap().build();
 
@@ -34,17 +40,21 @@ impl Session {
             .await
             .unwrap();
         let response = create_response(&self.id, &self.server_side_session_id, &operation_id, data);
-        create_stream(
+        let result = create_stream(
             response,
             &self.id,
             &self.server_side_session_id,
             &operation_id,
-        )
+        );
+
+        Ok(result)
     }
 
-    pub fn write_operation(&self, operation: WriteOperation) -> DaftStream {
+    pub fn write_operation(&self, operation: WriteOperation) -> Result<DaftStream, Status> {
         println!("write_operation {:#?}", operation);
-        todo!()
+        Err(Status::unimplemented(
+            "write_operation operation is not yet implemented",
+        ))
     }
 }
 

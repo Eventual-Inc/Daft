@@ -2,7 +2,7 @@
 mod channel;
 mod intermediate_ops;
 pub mod pipeline;
-pub mod run; 
+pub mod run;
 mod runtime_stats;
 mod sinks;
 mod sources;

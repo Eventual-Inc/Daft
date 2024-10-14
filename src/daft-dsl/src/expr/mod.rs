@@ -223,10 +223,10 @@ impl AggExpr {
                 FieldID::new(format!("{child_id}.local_sum()"))
             }
             Self::ApproxPercentile(ApproxPercentileParams {
-                                       child: expr,
-                                       percentiles,
-                                       force_list_output,
-                                   }) => {
+                child: expr,
+                percentiles,
+                force_list_output,
+            }) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!(
                     "{child_id}.local_approx_percentiles(percentiles={:?},force_list_output={force_list_output})",
@@ -324,10 +324,10 @@ impl AggExpr {
                 inputs: children,
             },
             Self::ApproxPercentile(ApproxPercentileParams {
-                                       percentiles,
-                                       force_list_output,
-                                       ..
-                                   }) => Self::ApproxPercentile(ApproxPercentileParams {
+                percentiles,
+                force_list_output,
+                ..
+            }) => Self::ApproxPercentile(ApproxPercentileParams {
                 child: first_child(),
                 percentiles: percentiles.clone(),
                 force_list_output: *force_list_output,
@@ -353,10 +353,10 @@ impl AggExpr {
             }
 
             Self::ApproxPercentile(ApproxPercentileParams {
-                                       child: expr,
-                                       percentiles,
-                                       force_list_output,
-                                   }) => {
+                child: expr,
+                percentiles,
+                force_list_output,
+            }) => {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(
                     field.name.as_str(),
@@ -469,7 +469,7 @@ impl Expr {
             if_false,
             predicate: self,
         }
-            .into()
+        .into()
     }
 
     pub fn cast(self: ExprRef, dtype: &DataType) -> ExprRef {
@@ -498,7 +498,7 @@ impl Expr {
             percentiles: percentiles.iter().map(|f| FloatWrapper(*f)).collect(),
             force_list_output,
         }))
-            .into()
+        .into()
     }
 
     pub fn sketch_percentile(
@@ -513,7 +513,7 @@ impl Expr {
             }),
             inputs: vec![self],
         }
-            .into()
+        .into()
     }
 
     pub fn mean(self: ExprRef) -> ExprRef {

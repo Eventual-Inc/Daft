@@ -1,4 +1,18 @@
+[build-dependencies]
+tonic-build = "0.12.3"
+
 [dependencies]
+dashmap = "6.1.0"
+futures = "0.3.31"
+prost = "0.13.3"
+prost-types = "0.13.3"
+tokio = {version = "1.40.0", features = ["full"]}
+tonic = "0.12.3"
+tracing-subscriber = {version = "0.3.18", features = ["env-filter"]}
+tracing-tree = "0.4.0"
+uuid = {version = "1.10.0", features = ["v4"]}
+# papaya = "0.1.3"
+anyhow.workspace = true
 arrow2.workspace = true
 common-daft-config.workspace = true
 common-display.workspace = true
@@ -6,25 +20,11 @@ common-error.workspace = true
 daft-core.workspace = true
 daft-dsl.workspace = true
 daft-local-execution.workspace = true
+daft-micropartition.workspace = true
 daft-physical-plan.workspace = true
 daft-plan.workspace = true
 daft-table.workspace = true
-dashmap = "6.1.0"
-futures = "0.3.31"
-#papaya = "0.1.3"
-anyhow.workspace = true
-daft-micropartition.workspace = true
-prost = "0.13.3"
-prost-types = "0.13.3"
-tokio = { version = "1.40.0" , features = ["full"] }
-tonic = "0.12.3"
-tracing-subscriber = { version = "0.3.18" , features = ["env-filter"] }
-tracing-tree = "0.4.0"
 tracing.workspace = true
-uuid = { version = "1.10.0", features = ["v4"] }
-
-[build-dependencies]
-tonic-build = "0.12.3"
 
 [lints]
 workspace = true
