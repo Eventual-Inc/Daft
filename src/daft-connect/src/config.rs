@@ -136,7 +136,7 @@ impl Session {
         Ok(response)
     }
 
-    pub fn is_modifiable(&self, operation: IsModifiable) -> Result<ConfigResponse, Status> {
+    pub fn is_modifiable(&self, _operation: IsModifiable) -> Result<ConfigResponse, Status> {
         let response = self.config_response();
 
         let span = tracing::info_span!("is_modifiable", session_id = %self.id);

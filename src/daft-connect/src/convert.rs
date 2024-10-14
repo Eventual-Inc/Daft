@@ -1,34 +1,31 @@
-use std::collections::HashSet;
-use std::sync::Arc;
-use crate::spark_connect::relation::RelType;
-use crate::spark_connect::{Filter, Read, Relation, ShowString, WithColumns};
+use std::{collections::HashSet, sync::Arc};
+
 use anyhow::{bail, ensure, Context};
 use daft_plan::{LogicalPlanBuilder, ParquetScanBuilder};
-use crate::spark_connect;
-use crate::spark_connect::expression::Alias;
-use crate::spark_connect::read::{DataSource, ReadType};
+
+use crate::spark_connect::{
+    expression::Alias,
+    read::{DataSource, ReadType},
+    relation::RelType,
+    Filter, Read, Relation, ShowString, WithColumns,
+};
 
 mod expr;
-
 
 // todo: a way to do something like tracing scopes but with errors?
 pub fn to_logical_plan(plan: Relation) -> anyhow::Result<LogicalPlanBuilder> {
     let result = match plan.rel_type.context("rel_type is None")? {
         RelType::ShowString(show_string) => {
             let ShowString {
-                input,
-                num_rows,
-                truncate,
-                vertical,
+                input, num_rows, ..
             } = *show_string;
+            // todo: support more truncate options
             let input = *input.context("input is None")?;
 
             let builder = to_logical_plan(input)?;
 
             let num_rows = i64::from(num_rows);
-            builder
-                .limit(num_rows, false)?
-                .add_show_string_column()?
+            builder.limit(num_rows, false)?.add_show_string_column()?
         }
         RelType::Filter(filter) => {
             let Filter { input, condition } = *filter;
@@ -49,10 +46,15 @@ pub fn to_logical_plan(plan: Relation) -> anyhow::Result<LogicalPlanBuilder> {
             let input_plan = to_logical_plan(*input)?;
 
             let mut new_exprs = Vec::new();
-            let mut existing_columns: HashSet<_> = input_plan.schema().names().into_iter().collect();
+            let mut existing_columns: HashSet<_> =
+                input_plan.schema().names().into_iter().collect();
 
             for alias in aliases {
-                let Alias { expr, name, metadata } = alias;
+                let Alias {
+                    expr,
+                    name,
+                    metadata,
+                } = alias;
 
                 let [name] = name.as_slice() else {
                     bail!("Alias name must have exactly one element");
@@ -69,7 +71,7 @@ pub fn to_logical_plan(plan: Relation) -> anyhow::Result<LogicalPlanBuilder> {
 
                 // todo: test
                 new_exprs.push(expr.alias(name));
-                
+
                 if existing_columns.contains(name) {
                     // Replace existing column
                     existing_columns.remove(name);
@@ -83,7 +85,10 @@ pub fn to_logical_plan(plan: Relation) -> anyhow::Result<LogicalPlanBuilder> {
 
             input_plan.select(new_exprs)?
         }
-        RelType::Read(Read { is_streaming, read_type }) => {
+        RelType::Read(Read {
+            is_streaming,
+            read_type,
+        }) => {
             ensure!(!is_streaming, "Streaming reads are not yet supported");
             let read_type = read_type.context("read_type is None")?;
 
@@ -91,7 +96,13 @@ pub fn to_logical_plan(plan: Relation) -> anyhow::Result<LogicalPlanBuilder> {
                 ReadType::NamedTable(_) => {
                     bail!("Named tables are not yet supported");
                 }
-                ReadType::DataSource(DataSource { format, schema, options, paths, predicates }) => {
+                ReadType::DataSource(DataSource {
+                    format,
+                    schema,
+                    options,
+                    paths,
+                    predicates,
+                }) => {
                     let format = format.context("format is None")?;
                     let schema = schema.context("schema is None")?;
 
@@ -99,8 +110,7 @@ pub fn to_logical_plan(plan: Relation) -> anyhow::Result<LogicalPlanBuilder> {
 
                     ensure!(predicates.is_empty(), "Predicates are not yet supported");
 
-                    ParquetScanBuilder::new(paths)
-                        .finish()?
+                    ParquetScanBuilder::new(paths).finish()?
                 }
             }
         }

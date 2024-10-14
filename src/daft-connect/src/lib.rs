@@ -1,8 +1,8 @@
 #![feature(iterator_try_collect)]
+#![feature(let_chains)]
 #![expect(clippy::derive_partial_eq_without_eq, reason = "prost does not properly derive Eq")]
 
 use tonic::{Request, Response, Status};
-use futures::stream;
 use spark_connect::spark_connect_service_server::SparkConnectService;
 use spark_connect::{
     ExecutePlanRequest, ExecutePlanResponse, AnalyzePlanRequest, AnalyzePlanResponse, ConfigRequest,
@@ -10,15 +10,11 @@ use spark_connect::{
     InterruptRequest, InterruptResponse, ReattachExecuteRequest, ReleaseExecuteRequest, ReleaseExecuteResponse,
     ReleaseSessionRequest, ReleaseSessionResponse, FetchErrorDetailsRequest, FetchErrorDetailsResponse,
 };
-use std::sync::{Arc, Mutex};
 use uuid::Uuid;
-use std::collections::{BTreeMap, HashMap};
-use dashmap::{DashMap, Entry};
+use std::collections::BTreeMap;
+use dashmap::DashMap;
 use tracing::info;
-use crate::spark_connect::analyze_plan_response::TreeString;
 use crate::spark_connect::command::CommandType;
-use crate::spark_connect::config_request::{Operation, Set};
-use crate::spark_connect::KeyValue;
 
 pub mod spark_connect {
     tonic::include_proto!("spark.connect");

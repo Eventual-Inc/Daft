@@ -274,7 +274,7 @@ impl LogicalPlanBuilder {
     /// use daft_dsl::{col, lit};
     /// use daft_schema::dtype::DataType;
     ///
-    /// let builder = LogicalPlanBuilder::default(); // todo: can we replace this correctly?
+    /// let builder: LogicalPlanBuilder = todo!();
     ///
     /// // Select existing columns
     /// let result = builder.select(vec![col("name"), col("age")]);

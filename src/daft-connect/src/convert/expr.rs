@@ -12,13 +12,9 @@ use crate::{
 
 pub fn to_daft_expr(expr: spark_connect::Expression) -> anyhow::Result<DaftExpr> {
     match expr.expr_type {
-        Some(expression::ExprType::Literal(lit)) => {
-            // Convert Spark literal to Daft literal
-            Ok(DaftExpr::Literal(convert_literal(lit)?))
-        }
+        Some(expression::ExprType::Literal(lit)) => Ok(DaftExpr::Literal(convert_literal(lit)?)),
 
         Some(expression::ExprType::UnresolvedAttribute(attr)) => {
-            // Convert unresolved attribute to Daft column reference
             Ok(DaftExpr::Column(attr.unparsed_identifier.into()))
         }
 
@@ -32,6 +28,12 @@ pub fn to_daft_expr(expr: spark_connect::Expression) -> anyhow::Result<DaftExpr>
 
             // Convert alias
             let expr = to_daft_expr(expr)?;
+
+            if let Some(metadata) = metadata
+                && !metadata.is_empty()
+            {
+                bail!("Metadata is not yet supported");
+            }
 
             // ignore metadata for now
 
@@ -48,6 +50,12 @@ pub fn to_daft_expr(expr: spark_connect::Expression) -> anyhow::Result<DaftExpr>
             is_distinct,
             is_user_defined_function,
         })) => {
+            ensure!(!is_distinct, "Distinct is not yet supported");
+            ensure!(
+                !is_user_defined_function,
+                "User-defined functions are not yet supported"
+            );
+
             let op = function_name.as_str();
             match op {
                 ">" | "<" | "<=" | ">=" | "+" | "-" | "*" | "/" => {
@@ -81,19 +89,6 @@ pub fn to_daft_expr(expr: spark_connect::Expression) -> anyhow::Result<DaftExpr>
             }
         }
 
-        // Some(expression::ExprType::BinaryComparison(cmp)) => {
-        //     // Convert binary comparison
-        //     let left = to_daft_expr(*cmp.left)?;
-        //     let right = to_daft_expr(*cmp.right)?;
-        //     let op = convert_comparison_op(cmp.comparison_type)?;
-        //
-        //     Ok(DaftExpr::BinaryOp {
-        //         left: Box::new(left),
-        //         op,
-        //         right: Box::new(right),
-        //     })
-        // }
-
         // Handle other expression types...
         _ => Err(anyhow::anyhow!("Unsupported expression type")),
     }
@@ -114,25 +109,18 @@ fn convert_literal(lit: expression::Literal) -> anyhow::Result<daft_dsl::Literal
         LiteralType::Long(input) => daft_dsl::LiteralValue::Int64(input),
         LiteralType::Float(input) => daft_dsl::LiteralValue::Float64(f64::from(input)),
         LiteralType::Double(input) => daft_dsl::LiteralValue::Float64(input),
-        LiteralType::Decimal(input) => unimplemented!(),
         LiteralType::String(input) => daft_dsl::LiteralValue::Utf8(input),
         LiteralType::Date(input) => daft_dsl::LiteralValue::Date(input),
-        LiteralType::Timestamp(input) => unimplemented!(),
-        LiteralType::TimestampNtz(input) => unimplemented!(),
-        LiteralType::CalendarInterval(input) => unimplemented!(),
-        LiteralType::YearMonthInterval(input) => unimplemented!(),
-        LiteralType::DayTimeInterval(input) => unimplemented!(),
-        LiteralType::Array(_) | LiteralType::Map(_) | LiteralType::Struct(_) => todo!(),
+        LiteralType::Decimal(_)
+        | LiteralType::Timestamp(_)
+        | LiteralType::TimestampNtz(_)
+        | LiteralType::CalendarInterval(_)
+        | LiteralType::YearMonthInterval(_)
+        | LiteralType::DayTimeInterval(_)
+        | LiteralType::Array(_)
+        | LiteralType::Map(_)
+        | LiteralType::Struct(_) => bail!("unimplemented"),
     };
 
     Ok(result)
 }
-
-fn convert_function_name(name: &str) -> anyhow::Result<daft_dsl::functions::ScalarFunction> {
-    // Map Spark function names to Daft equivalents
-    todo!()
-}
-
-// fn convert_comparison_op(op: i32) -> anyhow::Result<BinaryOperator> {
-//     // Map Spark comparison types to Daft binary operators
-// }

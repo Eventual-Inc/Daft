@@ -1,8 +1,6 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 use crate::command::execute_plan;
 use crate::convert::to_logical_plan;
-use crate::spark_connect::plan::OpType::Root;
 use crate::spark_connect::{Expression, Filter, Read, Relation, RelationCommon, ShowString, WithColumns};
 use crate::spark_connect::expression::{Alias, ExprType, Literal, UnresolvedAttribute, UnresolvedFunction};
 use crate::spark_connect::expression::literal::LiteralType;
