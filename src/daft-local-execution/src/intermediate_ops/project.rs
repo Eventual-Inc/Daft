@@ -25,7 +25,7 @@ impl IntermediateOperator for ProjectOperator {
         &self,
         _idx: usize,
         input: &PipelineResultType,
-        _state: Option<&mut Box<dyn IntermediateOperatorState>>,
+        _state: &mut dyn IntermediateOperatorState,
     ) -> DaftResult<IntermediateOperatorResult> {
         let out = input.as_data().eval_expression_list(&self.projection)?;
         Ok(IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(
