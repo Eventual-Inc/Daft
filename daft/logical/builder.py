@@ -62,6 +62,9 @@ class LogicalPlanBuilder:
         used to generate executable tasks for the physical plan.
 
         This should be called after triggering optimization with self.optimize().
+
+        **Warning**: This function is not part of the stable API and may change
+        without notice. It is intended for internal or experimental use only.
         """
         from daft.plan_scheduler.physical_plan_scheduler import PhysicalPlanScheduler
 
