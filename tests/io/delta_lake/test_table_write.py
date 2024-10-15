@@ -300,3 +300,13 @@ def test_deltalake_write_partitioned_existing_table(tmp_path):
     assert result["rows"] == [1, 1]
 
     check_equal_both_daft_and_delta_rs(df1.concat(df2), path, [("int", "ascending"), ("string", "ascending")])
+
+
+def test_deltalake_write_roundtrip(tmp_path):
+    path = tmp_path / "some_table"
+    df = daft.from_pydict({"a": [1, 2, 3, 4]})
+    df.write_deltalake(str(path))
+
+    read_df = daft.read_deltalake(str(path))
+    assert df.schema() == read_df.schema()
+    assert df.to_arrow() == read_df.to_arrow()

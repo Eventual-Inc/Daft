@@ -674,7 +674,7 @@ class DeltaLakeWriteVisitors:
 
             self.parent.add_actions.append(
                 AddAction(
-                    written_file.path,
+                    written_file.path.removeprefix("/"),
                     size,
                     self.partition_values,
                     int(datetime.now().timestamp() * 1000),
