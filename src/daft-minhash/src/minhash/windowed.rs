@@ -219,4 +219,91 @@ mod tests {
 
         assert_eq!(result, vec!["Single", "word", "windows", ""]);
     }
+
+    #[test]
+    fn test_utf8_words() {
+        let s = "Hello 世界 Rust язык";
+        let iter = WindowedWords::new(s, 2);
+        let result: Vec<&str> = iter.collect();
+
+        assert_eq!(result, vec!["Hello 世界", "世界 Rust", "Rust язык",]);
+    }
+
+    #[test]
+    fn test_utf8_single_word() {
+        let s = "こんにちは"; // "Hello" in Japanese
+        let iter = WindowedWords::new(s, 2);
+        let result: Vec<&str> = iter.collect();
+
+        // Since there's only one word, even with window_size > number of words, it should yield the single word
+        assert_eq!(result, vec!["こんにちは"]);
+    }
+
+    #[test]
+    fn test_utf8_mixed_languages() {
+        let s = "Café naïve façade Москва Москва";
+        let iter = WindowedWords::new(s, 3);
+        let result: Vec<&str> = iter.collect();
+
+        assert_eq!(
+            result,
+            vec![
+                "Café naïve façade",
+                "naïve façade Москва",
+                "façade Москва Москва",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_utf8_with_emojis() {
+        let s = "Hello 🌍 Rust 🚀 язык 📝";
+        let iter = WindowedWords::new(s, 2);
+        let result: Vec<&str> = iter.collect();
+
+        assert_eq!(
+            result,
+            vec!["Hello 🌍", "🌍 Rust", "Rust 🚀", "🚀 язык", "язык 📝",]
+        );
+    }
+
+    #[test]
+    fn test_utf8_large_window_size() {
+        let s = "One 两三 四五 六七八 九十";
+        let iter = WindowedWords::new(s, 4);
+        let result: Vec<&str> = iter.collect();
+
+        assert_eq!(
+            result,
+            vec!["One 两三 四五 六七八", "两三 四五 六七八 九十",]
+        );
+    }
+
+    #[test]
+    fn test_utf8_exact_window_size() {
+        let s = "Hola 世界 Bonjour мир";
+        let iter = WindowedWords::new(s, 4);
+        let result: Vec<&str> = iter.collect();
+
+        assert_eq!(result, vec!["Hola 世界 Bonjour мир"]);
+    }
+
+    #[test]
+    fn test_utf8_window_size_one() {
+        let s = "Hello 世界 Rust язык 🐱‍👤";
+        let iter = WindowedWords::new(s, 1);
+        let result: Vec<&str> = iter.collect();
+
+        assert_eq!(result, vec!["Hello", "世界", "Rust", "язык", "🐱‍👤"],);
+    }
+
+    #[test]
+    fn test_utf8_trailing_whitespace() {
+        let s = "Hello 世界 Rust язык 🐱‍👤 ";
+        let iter = WindowedWords::new(s, 1);
+        let result: Vec<&str> = iter.collect();
+
+        // The last window is an empty string due to trailing space
+        assert_eq!(result, vec!["Hello", "世界", "Rust", "язык", "🐱‍👤", ""],);
+    }
 }
