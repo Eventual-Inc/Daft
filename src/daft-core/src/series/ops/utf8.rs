@@ -273,4 +273,12 @@ impl Series {
             })
         })
     }
+
+    pub fn utf8_base64_encode(&self) -> DaftResult<Self> {
+        self.with_utf8_array(|arr| Ok(arr.base64_encode()?.into_series()))
+    }
+
+    pub fn utf8_base64_decode(&self) -> DaftResult<Self> {
+        self.with_utf8_array(|arr| Ok(arr.base64_decode()?.into_series()))
+    }
 }

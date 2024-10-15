@@ -112,6 +112,26 @@ def test_str_capitalize():
     )
 
 
+def test_str_base64_encode():
+    s = Series.from_arrow(pa.array(["foo", "Bar", "BUZZ"]), name="arg")
+    assert_typing_resolve_vs_runtime_behavior(
+        data=[s],
+        expr=col(s.name()).str.base64_encode(),
+        run_kernel=s.str.base64_encode,
+        resolvable=True,
+    )
+
+
+def test_str_base64_decode():
+    s = Series.from_arrow(pa.array(["Zm9v", "QmFy", "QlVaei4="]), name="arg")
+    assert_typing_resolve_vs_runtime_behavior(
+        data=[s],
+        expr=col(s.name()).str.base64_decode(),
+        run_kernel=s.str.base64_decode,
+        resolvable=True,
+    )
+
+
 @pytest.mark.parametrize(
     "op",
     [

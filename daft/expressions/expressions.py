@@ -2921,6 +2921,54 @@ class ExpressionStringNamespace(ExpressionNamespace):
 
         return Expression._from_pyexpr(_utf8_count_matches(self._expr, patterns._expr, whole_words, case_sensitive))
 
+    def base64_encode(self) -> Expression:
+        """
+        Encodes the UTF-8 string as base64.
+
+        Returns:
+            Expression: A new expression with the base64 encoded string.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"text": ["Hello, World!", "OpenAI"]})
+            >>> df = df.with_column("encoded", df["text"].str.base64_encode())
+            >>> df.show()
+            ╭─────────────────┬──────────────────────╮
+            │ text            ┆ encoded              │
+            │ ---             ┆ ---                  │
+            │ Utf8            ┆ Utf8                 │
+            ╞═════════════════╪══════════════════════╡
+            │ Hello, World!   ┆ SGVsbG8sIFdvcmxkIQ== │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ OpenAI          ┆ T3BlbkFJ             │
+            ╰─────────────────┴──────────────────────╯
+        """
+        return Expression._from_pyexpr(self._expr.utf8_base64_encode())
+
+    def base64_decode(self) -> Expression:
+        """
+        Decodes a base64 encoded string to UTF-8.
+
+        Returns:
+            Expression: A new expression with the decoded UTF-8 string.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"encoded": ["SGVsbG8sIFdvcmxkIQ==", "T3BlbkFJ"]})
+            >>> df = df.with_column("decoded", df["encoded"].str.base64_decode()).collect()
+            >>> df.show()
+            ╭──────────────────────┬─────────────────╮
+            │ encoded              ┆ decoded         │
+            │ ---                  ┆ ---             │
+            │ Utf8                 ┆ Utf8            │
+            ╞══════════════════════╪═════════════════╡
+            │ SGVsbG8sIFdvcmxkIQ== ┆ Hello, World!   │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ T3BlbkFJ             ┆ OpenAI          │
+            ╰──────────────────────┴─────────────────╯
+        """
+        return Expression._from_pyexpr(self._expr.utf8_base64_decode())
+
 
 class ExpressionListNamespace(ExpressionNamespace):
     def join(self, delimiter: str | Expression) -> Expression:

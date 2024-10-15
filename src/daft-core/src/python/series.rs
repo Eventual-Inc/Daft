@@ -566,6 +566,14 @@ impl PySeries {
             .into())
     }
 
+    pub fn utf8_base64_encode(&self) -> PyResult<Self> {
+        Ok(self.series.utf8_base64_encode()?.into())
+    }
+
+    pub fn utf8_base64_decode(&self) -> PyResult<Self> {
+        Ok(self.series.utf8_base64_decode()?.into())
+    }
+
     pub fn is_nan(&self) -> PyResult<Self> {
         Ok(self.series.is_nan()?.into())
     }

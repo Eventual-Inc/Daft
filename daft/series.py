@@ -873,6 +873,14 @@ class SeriesStringNamespace(SeriesNamespace):
         assert self._series is not None and patterns._series is not None
         return Series._from_pyseries(self._series.utf8_count_matches(patterns._series, whole_words, case_sensitive))
 
+    def base64_encode(self) -> Series:
+        assert self._series is not None
+        return Series._from_pyseries(self._series.utf8_base64_encode())
+
+    def base64_decode(self) -> Series:
+        assert self._series is not None
+        return Series._from_pyseries(self._series.utf8_base64_decode())
+
 
 class SeriesDateNamespace(SeriesNamespace):
     def date(self) -> Series:

@@ -5,6 +5,7 @@ use std::{
 
 use aho_corasick::{AhoCorasickBuilder, MatchKind};
 use arrow2::{array::Array, temporal_conversions};
+use base64::Engine;
 use chrono::Datelike;
 use common_error::{DaftError, DaftResult};
 use itertools::Itertools;
@@ -1401,6 +1402,38 @@ impl Utf8Array {
             })
         });
         Ok(UInt64Array::from_iter(self.name(), iter))
+    }
+
+    pub fn base64_encode(&self) -> DaftResult<Self> {
+        self.unary_broadcasted_op(|val| {
+            base64::engine::general_purpose::STANDARD.encode(val).into()
+        })
+    }
+
+    pub fn base64_decode(&self) -> DaftResult<Self> {
+        let self_arrow = self.as_arrow();
+        let arrow_result = self_arrow
+            .iter()
+            .map(|val| match val {
+                Some(val) => {
+                    let decode_bytes = base64::engine::general_purpose::STANDARD.decode(val)
+                        .map_err(|e| DaftError::ComputeError(
+                            format!("Error in base64_decode: {} is not a valid base64 encoded string. Details: {}", val, e)
+                        ))?;
+
+                    let decode_str = String::from_utf8(decode_bytes)
+                        .map_err(|e| DaftError::ComputeError(
+                            format!("Error in base64_decode: {} is not a valid UTF-8 string after decoding. Details: {}", val, e)
+                        ))?;
+
+                    Ok(Some(decode_str))
+                }
+                None => Ok(None),
+            })
+            .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>()?
+            .with_validity(self_arrow.validity().cloned());
+
+        Ok(Self::from((self.name(), Box::new(arrow_result))))
     }
 
     fn unary_broadcasted_op<ScalarKernel>(&self, operation: ScalarKernel) -> DaftResult<Self>
