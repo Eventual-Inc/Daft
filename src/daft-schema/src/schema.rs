@@ -106,10 +106,12 @@ impl Schema {
         let self_keys: HashSet<&String> = HashSet::from_iter(self.fields.keys());
         let other_keys: HashSet<&String> = HashSet::from_iter(other.fields.keys());
         if self_keys.is_disjoint(&other_keys) {
-            let mut fields = IndexMap::new();
-            for (k, v) in self.fields.iter().chain(other.fields.iter()) {
-                fields.insert(k.clone(), v.clone());
-            }
+            let fields = self
+                .fields
+                .iter()
+                .chain(other.fields.iter())
+                .map(|(k, v)| (k.clone(), v.clone())) // Convert references to owned values
+                .collect();
             Ok(Self { fields })
         } else {
             Err(DaftError::ValueError(
@@ -121,10 +123,12 @@ impl Schema {
     /// Takes the non-distinct union of two schemas. If there are overlapping keys, then we take the
     /// corresponding field from one of the two schemas.
     pub fn non_distinct_union(&self, other: &Self) -> Self {
-        let mut fields = IndexMap::new();
-        for (k, v) in self.fields.iter().chain(other.fields.iter()) {
-            fields.insert(k.clone(), v.clone());
-        }
+        let fields = self
+            .fields
+            .iter()
+            .chain(other.fields.iter())
+            .map(|(k, v)| (k.clone(), v.clone())) // Convert references to owned values
+            .collect();
         Self { fields }
     }
 
