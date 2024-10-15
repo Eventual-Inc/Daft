@@ -17,7 +17,7 @@ maintainers = [
   {name = "Sammy Sidhu", email = "sammy@eventualcomputing.com"},
   {name = "Jay Chia", email = "jay@eventualcomputing.com"}
 ]
-name = "daft-tencent"
+name = "getdaft"
 readme = "README.rst"
 requires-python = ">=3.8"
 
