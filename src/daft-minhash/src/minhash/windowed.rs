@@ -1,8 +1,18 @@
-pub struct WindowedWords<'a> {
+struct WindowedWords<'a> {
     s: &'a str,
     word_starts: Vec<usize>, // Vec of start indices for each word
     window_size: usize,
     current: usize, // Current starting word index for the window
+}
+
+pub trait WindowedWordsExt<'a> {
+    fn windowed_words(&'a self, window_size: usize) -> impl Iterator<Item = &'a str>;
+}
+
+impl<'a> WindowedWordsExt<'a> for str {
+    fn windowed_words(&'a self, window_size: usize) -> impl Iterator<Item = &'a Self> {
+        WindowedWords::new(self, window_size)
+    }
 }
 
 impl<'a> WindowedWords<'a> {
