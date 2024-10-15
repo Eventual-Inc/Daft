@@ -1,31 +1,24 @@
-use std::ops::Range;
-use std::sync::Arc;
-
-use futures::stream::BoxStream;
-use futures::TryStreamExt;
-use google_cloud_storage::client::google_cloud_auth::credentials::CredentialsFile;
-use google_cloud_storage::client::ClientConfig;
-use google_cloud_token::{TokenSource, TokenSourceProvider};
+use std::{ops::Range, sync::Arc};
 
 use async_trait::async_trait;
-use google_cloud_storage::client::Client;
-use google_cloud_storage::http::objects::get::GetObjectRequest;
-
-use google_cloud_storage::http::objects::list::ListObjectsRequest;
-use google_cloud_storage::http::Error as GError;
-use snafu::IntoError;
-use snafu::ResultExt;
-use snafu::Snafu;
-
-use crate::object_io::FileMetadata;
-use crate::object_io::FileType;
-use crate::object_io::LSResult;
-use crate::object_io::ObjectSource;
-use crate::stats::IOStatsRef;
-use crate::stream_utils::io_stats_on_bytestream;
-use crate::FileFormat;
-use crate::GetResult;
 use common_io_config::GCSConfig;
+use futures::{stream::BoxStream, TryStreamExt};
+use google_cloud_storage::{
+    client::{google_cloud_auth::credentials::CredentialsFile, Client, ClientConfig},
+    http::{
+        objects::{get::GetObjectRequest, list::ListObjectsRequest},
+        Error as GError,
+    },
+};
+use google_cloud_token::{TokenSource, TokenSourceProvider};
+use snafu::{IntoError, ResultExt, Snafu};
+
+use crate::{
+    object_io::{FileMetadata, FileType, LSResult, ObjectSource},
+    stats::IOStatsRef,
+    stream_utils::io_stats_on_bytestream,
+    FileFormat, GetResult,
+};
 
 const GCS_DELIMITER: &str = "/";
 const GCS_SCHEME: &str = "gs";
@@ -59,56 +52,59 @@ enum Error {
 
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
-        use Error::*;
+        use Error::{
+            InvalidUrl, NotAFile, NotFound, UnableToListObjects, UnableToLoadCredentials,
+            UnableToOpenFile, UnableToReadBytes,
+        };
         match error {
             UnableToReadBytes { path, source }
             | UnableToOpenFile { path, source }
             | UnableToListObjects { path, source } => match source {
                 GError::HttpClient(err) => match err.status().map(|s| s.as_u16()) {
-                    Some(404) | Some(410) => super::Error::NotFound {
+                    Some(404 | 410) => Self::NotFound {
                         path,
                         source: err.into(),
                     },
-                    Some(401) => super::Error::Unauthorized {
+                    Some(401) => Self::Unauthorized {
                         store: super::SourceType::GCS,
                         path,
                         source: err.into(),
                     },
-                    _ => super::Error::UnableToOpenFile {
+                    _ => Self::UnableToOpenFile {
                         path,
                         source: err.into(),
                     },
                 },
                 GError::Response(err) => match err.code {
-                    404 | 410 => super::Error::NotFound {
+                    404 | 410 => Self::NotFound {
                         path,
                         source: err.into(),
                     },
-                    401 => super::Error::Unauthorized {
+                    401 => Self::Unauthorized {
                         store: super::SourceType::GCS,
                         path,
                         source: err.into(),
                     },
-                    _ => super::Error::UnableToOpenFile {
+                    _ => Self::UnableToOpenFile {
                         path,
                         source: err.into(),
                     },
                 },
-                GError::TokenSource(err) => super::Error::UnableToLoadCredentials {
+                GError::TokenSource(err) => Self::UnableToLoadCredentials {
                     store: super::SourceType::GCS,
                     source: err,
                 },
             },
-            NotFound { ref path } => super::Error::NotFound {
+            NotFound { ref path } => Self::NotFound {
                 path: path.into(),
                 source: error.into(),
             },
-            InvalidUrl { path, source } => super::Error::InvalidUrl { path, source },
-            UnableToLoadCredentials { source } => super::Error::UnableToLoadCredentials {
+            InvalidUrl { path, source } => Self::InvalidUrl { path, source },
+            UnableToLoadCredentials { source } => Self::UnableToLoadCredentials {
                 store: super::SourceType::GCS,
                 source: source.into(),
             },
-            NotAFile { path } => super::Error::NotAFile { path },
+            NotAFile { path } => Self::NotAFile { path },
         }
     }
 }
@@ -171,7 +167,7 @@ impl GCSClientWrapper {
             .into()
         });
         if let Some(is) = io_stats.as_ref() {
-            is.mark_get_requests(1)
+            is.mark_get_requests(1);
         }
         Ok(GetResult::Stream(
             io_stats_on_bytestream(response, io_stats),
@@ -201,7 +197,7 @@ impl GCSClientWrapper {
                 path: uri.to_string(),
             })?;
         if let Some(is) = io_stats.as_ref() {
-            is.mark_head_requests(1)
+            is.mark_head_requests(1);
         }
         Ok(response.size as usize)
     }
@@ -221,8 +217,8 @@ impl GCSClientWrapper {
             prefix: Some(key.to_string()),
             end_offset: None,
             start_offset: None,
-            page_token: continuation_token.map(|s| s.to_string()),
-            delimiter: delimiter.map(|d| d.to_string()), // returns results in "directory mode" if delimiter is provided
+            page_token: continuation_token.map(std::string::ToString::to_string),
+            delimiter: delimiter.map(std::string::ToString::to_string), // returns results in "directory mode" if delimiter is provided
             max_results: page_size,
             include_trailing_delimiter: Some(false), // This will not populate "directories" in the response's .item[]
             projection: None,
@@ -232,10 +228,10 @@ impl GCSClientWrapper {
             .list_objects(&req)
             .await
             .context(UnableToListObjectsSnafu {
-                path: format!("{GCS_SCHEME}://{}/{}", bucket, key),
+                path: format!("{GCS_SCHEME}://{bucket}/{key}"),
             })?;
         if let Some(is) = io_stats.as_ref() {
-            is.mark_list_requests(1)
+            is.mark_list_requests(1);
         }
 
         let response_items = ls_response.items.unwrap_or_default();
@@ -246,7 +242,7 @@ impl GCSClientWrapper {
             filetype: FileType::File,
         });
         let dirs = response_prefixes.iter().map(|pref| FileMetadata {
-            filepath: format!("{GCS_SCHEME}://{}/{}", bucket, pref),
+            filepath: format!("{GCS_SCHEME}://{bucket}/{pref}"),
             size: None,
             filetype: FileType::Directory,
         });
@@ -271,7 +267,7 @@ impl GCSClientWrapper {
         if posix {
             // Attempt to forcefully ls the key as a directory (by ensuring a "/" suffix)
             let forced_directory_key = if key.is_empty() {
-                "".to_string()
+                String::new()
             } else {
                 format!("{}{GCS_DELIMITER}", key.trim_end_matches(GCS_DELIMITER))
             };
@@ -333,7 +329,7 @@ impl GCSClientWrapper {
     }
 }
 
-pub(crate) struct GCSSource {
+pub struct GCSSource {
     client: GCSClientWrapper,
 }
 
@@ -399,7 +395,7 @@ impl GCSSource {
         }
 
         let client = Client::new(client_config);
-        Ok(GCSSource {
+        Ok(Self {
             client: GCSClientWrapper(client),
         }
         .into())

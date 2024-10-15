@@ -1,50 +1,49 @@
-use async_trait::async_trait;
-use aws_config::meta::credentials::CredentialsProviderChain;
-use aws_config::retry::RetryMode;
-use aws_config::timeout::TimeoutConfig;
-use aws_sdk_s3::operation::put_object::PutObjectError;
-use aws_smithy_async::rt::sleep::TokioSleep;
-use futures::stream::BoxStream;
-use reqwest::StatusCode;
-use s3::operation::head_object::HeadObjectError;
-use s3::operation::list_objects_v2::ListObjectsV2Error;
-use tokio::sync::{OwnedSemaphorePermit, SemaphorePermit};
+use std::{collections::HashMap, io, ops::Range, string::FromUtf8Error, sync::Arc, time::Duration};
 
-use crate::object_io::{FileMetadata, FileType, LSResult};
-use crate::stats::IOStatsRef;
-use crate::stream_utils::io_stats_on_bytestream;
-use crate::{get_io_pool_num_threads, FileFormat, InvalidArgumentSnafu, SourceType};
-use aws_config::SdkConfig;
-use aws_credential_types::cache::{
-    CredentialsCache, ProvideCachedCredentials, SharedCredentialsCache,
+use async_recursion::async_recursion;
+use async_trait::async_trait;
+use aws_config::{
+    meta::credentials::CredentialsProviderChain, retry::RetryMode, timeout::TimeoutConfig,
+    SdkConfig,
 };
-use aws_credential_types::provider::error::CredentialsError;
+use aws_credential_types::{
+    cache::{CredentialsCache, ProvideCachedCredentials, SharedCredentialsCache},
+    provider::error::CredentialsError,
+};
+use aws_sdk_s3::{
+    self as s3, error::ProvideErrorMetadata, operation::put_object::PutObjectError,
+    primitives::ByteStreamError,
+};
 use aws_sig_auth::signer::SigningRequirements;
+use aws_smithy_async::rt::sleep::TokioSleep;
 use common_io_config::S3Config;
-use futures::{StreamExt, TryStreamExt};
-use s3::client::customize::Response;
-use s3::config::{Credentials, Region};
-use s3::error::{DisplayErrorContext, SdkError};
-use s3::operation::get_object::GetObjectError;
+use futures::{stream::BoxStream, StreamExt, TryStreamExt};
+use reqwest::StatusCode;
+use s3::{
+    client::customize::Response,
+    config::{Credentials, Region},
+    error::{DisplayErrorContext, SdkError},
+    operation::{
+        get_object::GetObjectError, head_object::HeadObjectError,
+        list_objects_v2::ListObjectsV2Error,
+    },
+};
 use snafu::{ensure, IntoError, ResultExt, Snafu};
+use tokio::sync::{OwnedSemaphorePermit, SemaphorePermit};
 use url::{ParseError, Position};
 
 use super::object_io::{GetResult, ObjectSource};
-use async_recursion::async_recursion;
-use aws_sdk_s3 as s3;
-use aws_sdk_s3::primitives::ByteStreamError;
-
-use std::collections::HashMap;
-
-use std::io;
-use std::ops::Range;
-use std::string::FromUtf8Error;
-use std::sync::Arc;
-use std::time::Duration;
+use crate::{
+    get_io_pool_num_threads,
+    object_io::{FileMetadata, FileType, LSResult},
+    stats::IOStatsRef,
+    stream_utils::io_stats_on_bytestream,
+    FileFormat, InvalidArgumentSnafu, SourceType,
+};
 
 const S3_DELIMITER: &str = "/";
 const DEFAULT_GLOB_FANOUT_LIMIT: usize = 1024;
-pub(crate) struct S3LikeSource {
+pub struct S3LikeSource {
     region_to_client_map: tokio::sync::RwLock<HashMap<Region, Arc<s3::Client>>>,
     connection_pool_sema: Arc<tokio::sync::Semaphore>,
     default_region: Region,
@@ -121,126 +120,153 @@ enum Error {
     UploadsCannotBeAnonymous {},
 }
 
+/// List of AWS error codes that are due to throttling
+/// https://docs.aws.amazon.com/AmazonS3/latest/API/ErrorResponses.html#ErrorCodeList
+const THROTTLING_ERRORS: &[&str] = &[
+    "Throttling",
+    "ThrottlingException",
+    "ThrottledException",
+    "RequestThrottledException",
+    "TooManyRequestsException",
+    "ProvisionedThroughputExceededException",
+    "TransactionInProgressException",
+    "RequestLimitExceeded",
+    "BandwidthLimitExceeded",
+    "LimitExceededException",
+    "RequestThrottled",
+    "SlowDown",
+    "PriorRequestNotComplete",
+    "EC2ThrottledException",
+];
+
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
-        use Error::*;
+        use Error::{
+            InvalidUrl, NotAFile, NotFound, UnableToHeadFile, UnableToListObjects,
+            UnableToLoadCredentials, UnableToOpenFile, UnableToReadBytes,
+        };
+
+        fn classify_unhandled_error<
+            E: std::error::Error + ProvideErrorMetadata + Send + Sync + 'static,
+        >(
+            path: String,
+            err: E,
+        ) -> super::Error {
+            match err.code() {
+                Some("InternalError") => super::Error::MiscTransient {
+                    path,
+                    source: err.into(),
+                },
+                Some(code) if THROTTLING_ERRORS.contains(&code) => super::Error::Throttled {
+                    path,
+                    source: err.into(),
+                },
+                _ => super::Error::Unhandled {
+                    path,
+                    msg: DisplayErrorContext(err).to_string(),
+                },
+            }
+        }
 
         match error {
             UnableToOpenFile { path, source } => match source {
-                SdkError::TimeoutError(_) => super::Error::ReadTimeout {
+                SdkError::TimeoutError(_) => Self::ReadTimeout {
                     path,
                     source: source.into(),
                 },
                 SdkError::DispatchFailure(ref dispatch) => {
                     if dispatch.is_timeout() {
-                        super::Error::ConnectTimeout {
+                        Self::ConnectTimeout {
                             path,
                             source: source.into(),
                         }
                     } else if dispatch.is_io() {
-                        super::Error::SocketError {
+                        Self::SocketError {
                             path,
                             source: source.into(),
                         }
                     } else {
-                        super::Error::UnableToOpenFile {
+                        // who knows what happened here during dispatch, let's just tell the user it's transient
+                        Self::MiscTransient {
                             path,
                             source: source.into(),
                         }
                     }
                 }
+
                 _ => match source.into_service_error() {
-                    GetObjectError::NoSuchKey(no_such_key) => super::Error::NotFound {
+                    GetObjectError::NoSuchKey(no_such_key) => Self::NotFound {
                         path,
                         source: no_such_key.into(),
                     },
-                    GetObjectError::Unhandled(v) => super::Error::Unhandled {
-                        path,
-                        msg: DisplayErrorContext(v).to_string(),
-                    },
-                    err => super::Error::UnableToOpenFile {
-                        path,
-                        source: err.into(),
-                    },
+                    err => classify_unhandled_error(path, err),
                 },
             },
             UnableToHeadFile { path, source } => match source {
-                SdkError::TimeoutError(_) => super::Error::ReadTimeout {
+                SdkError::TimeoutError(_) => Self::ReadTimeout {
                     path,
                     source: source.into(),
                 },
                 SdkError::DispatchFailure(ref dispatch) => {
                     if dispatch.is_timeout() {
-                        super::Error::ConnectTimeout {
+                        Self::ConnectTimeout {
                             path,
                             source: source.into(),
                         }
                     } else if dispatch.is_io() {
-                        super::Error::SocketError {
+                        Self::SocketError {
                             path,
                             source: source.into(),
                         }
                     } else {
-                        super::Error::UnableToOpenFile {
+                        // who knows what happened here during dispatch, let's just tell the user it's transient
+                        Self::MiscTransient {
                             path,
                             source: source.into(),
                         }
                     }
                 }
                 _ => match source.into_service_error() {
-                    HeadObjectError::NotFound(no_such_key) => super::Error::NotFound {
+                    HeadObjectError::NotFound(no_such_key) => Self::NotFound {
                         path,
                         source: no_such_key.into(),
                     },
-                    HeadObjectError::Unhandled(v) => super::Error::Unhandled {
-                        path,
-                        msg: DisplayErrorContext(v).to_string(),
-                    },
-                    err => super::Error::UnableToOpenFile {
-                        path,
-                        source: err.into(),
-                    },
+                    err => classify_unhandled_error(path, err),
                 },
             },
             UnableToListObjects { path, source } => match source {
-                SdkError::TimeoutError(_) => super::Error::ReadTimeout {
+                SdkError::TimeoutError(_) => Self::ReadTimeout {
                     path,
                     source: source.into(),
                 },
                 SdkError::DispatchFailure(ref dispatch) => {
                     if dispatch.is_timeout() {
-                        super::Error::ConnectTimeout {
+                        Self::ConnectTimeout {
                             path,
                             source: source.into(),
                         }
                     } else if dispatch.is_io() {
-                        super::Error::SocketError {
+                        Self::SocketError {
                             path,
                             source: source.into(),
                         }
                     } else {
-                        super::Error::UnableToOpenFile {
+                        // who knows what happened here during dispatch, let's just tell the user it's transient
+                        Self::MiscTransient {
                             path,
                             source: source.into(),
                         }
                     }
                 }
                 _ => match source.into_service_error() {
-                    ListObjectsV2Error::NoSuchBucket(no_such_key) => super::Error::NotFound {
+                    ListObjectsV2Error::NoSuchBucket(no_such_key) => Self::NotFound {
                         path,
                         source: no_such_key.into(),
                     },
-                    ListObjectsV2Error::Unhandled(v) => super::Error::Unhandled {
-                        path,
-                        msg: DisplayErrorContext(v).to_string(),
-                    },
-                    err => super::Error::UnableToOpenFile {
-                        path,
-                        source: err.into(),
-                    },
+                    err => classify_unhandled_error(path, err),
                 },
             },
-            InvalidUrl { path, source } => super::Error::InvalidUrl { path, source },
+            InvalidUrl { path, source } => Self::InvalidUrl { path, source },
             UnableToReadBytes { path, source } => {
                 use std::error::Error;
                 let io_error = if let Some(source) = source.source() {
@@ -250,21 +276,21 @@ impl From<Error> for super::Error {
                 } else {
                     std::io::Error::new(io::ErrorKind::Other, source)
                 };
-                super::Error::UnableToReadBytes {
+                Self::UnableToReadBytes {
                     path,
                     source: io_error,
                 }
             }
-            NotAFile { path } => super::Error::NotAFile { path },
-            UnableToLoadCredentials { source } => super::Error::UnableToLoadCredentials {
+            NotAFile { path } => Self::NotAFile { path },
+            UnableToLoadCredentials { source } => Self::UnableToLoadCredentials {
                 store: SourceType::S3,
                 source: source.into(),
             },
-            NotFound { ref path } => super::Error::NotFound {
+            NotFound { ref path } => Self::NotFound {
                 path: path.into(),
                 source: error.into(),
             },
-            err => super::Error::Generic {
+            err => Self::Generic {
                 store: SourceType::S3,
                 source: err.into(),
             },
@@ -273,7 +299,7 @@ impl From<Error> for super::Error {
 }
 
 /// Retrieves an S3Config from the environment by leveraging the AWS SDK's credentials chain
-pub(crate) async fn s3_config_from_env() -> super::Result<S3Config> {
+pub async fn s3_config_from_env() -> super::Result<S3Config> {
     let default_s3_config = S3Config::default();
     let (anonymous, s3_conf) = build_s3_conf(&default_s3_config, None).await?;
     let creds = s3_conf
@@ -284,7 +310,7 @@ pub(crate) async fn s3_config_from_env() -> super::Result<S3Config> {
     let key_id = Some(creds.access_key_id().to_string());
     let access_key = Some(creds.secret_access_key().to_string().into());
     let session_token = creds.session_token().map(|t| t.to_string().into());
-    let region_name = s3_conf.region().map(|r| r.to_string());
+    let region_name = s3_conf.region().map(std::string::ToString::to_string);
     Ok(S3Config {
         // Do not perform auto-discovery of endpoint_url. This is possible, but requires quite a bit
         // of work that our current implementation of `build_s3_conf` does not yet do. See smithy-rs code:
@@ -336,8 +362,7 @@ fn handle_https_client_settings(
         http_connector,
         tls_connector.into(),
     ));
-    use aws_smithy_client::http_connector::ConnectorSettings;
-    use aws_smithy_client::hyper_ext;
+    use aws_smithy_client::{http_connector::ConnectorSettings, hyper_ext};
     let smithy_client = hyper_ext::Adapter::builder()
         .connector_settings(
             ConnectorSettings::builder()
@@ -380,11 +405,7 @@ async fn build_s3_conf(
                 .as_ref()
                 .map(|s| s.as_string().clone())
                 .unwrap(),
-            config
-                .session_token
-                .as_ref()
-                .map(|s| s.as_string().clone())
-                .clone(),
+            config.session_token.as_ref().map(|s| s.as_string().clone()),
         );
         Some(aws_credential_types::provider::SharedCredentialsProvider::new(creds))
     } else if config.access_key.is_some() || config.key_id.is_some() {
@@ -420,7 +441,7 @@ async fn build_s3_conf(
                 CredentialsCache::lazy_builder()
                     .buffer_time(Duration::from_secs(*buffer_time))
                     .into_credentials_cache(),
-            )
+            );
         }
 
         loader.load().await
@@ -459,7 +480,7 @@ async fn build_s3_conf(
         } else if retry_mode.trim().eq_ignore_ascii_case("standard") {
             retry_config
         } else {
-            return Err(crate::Error::InvalidArgument { msg: format!("Invalid Retry Mode, Daft S3 client currently only supports standard and adaptive, got {}", retry_mode) });
+            return Err(crate::Error::InvalidArgument { msg: format!("Invalid Retry Mode, Daft S3 client currently only supports standard and adaptive, got {retry_mode}") });
         }
     } else {
         retry_config
@@ -485,7 +506,7 @@ async fn build_s3_conf(
     const MAX_WAITTIME_MS: u64 = 45_000;
     let check_creds = async || -> super::Result<bool> {
         use rand::Rng;
-        use CredentialsError::*;
+        use CredentialsError::{CredentialsNotLoaded, ProviderTimedOut};
         let mut attempt = 0;
         let first_attempt_time = std::time::Instant::now();
         loop {
@@ -496,22 +517,21 @@ async fn build_s3_conf(
             attempt += 1;
             match creds {
                 Ok(_) => return Ok(false),
-                Err(err @  ProviderTimedOut(..)) => {
+                Err(err @ ProviderTimedOut(..)) => {
                     let total_time_waited_ms: u64 = first_attempt_time.elapsed().as_millis().try_into().unwrap();
                     if attempt < CRED_TRIES && (total_time_waited_ms < MAX_WAITTIME_MS) {
-                        let jitter = rand::thread_rng().gen_range(0..((1<<attempt) * JITTER_MS)) as u64;
+                        let jitter = rand::thread_rng().gen_range(0..((1 << attempt) * JITTER_MS)) as u64;
                         let jitter = jitter.min(MAX_BACKOFF_MS);
                         log::warn!("S3 Credentials Provider timed out when making client for {}! Attempt {attempt} out of {CRED_TRIES} tries. Trying again in {jitter}ms. {err}", s3_conf.region().unwrap_or(&DEFAULT_REGION));
                         tokio::time::sleep(Duration::from_millis(jitter)).await;
                         continue;
-                    } else {
-                        Err(err)
                     }
+                    Err(err)
                 }
                 Err(err @ CredentialsNotLoaded(..)) => {
                     log::warn!("S3 Credentials not provided or found when making client for {}! Reverting to Anonymous mode. {err}", s3_conf.region().unwrap_or(&DEFAULT_REGION));
-                    return Ok(true)
-                },
+                    return Ok(true);
+                }
                 Err(err) => Err(err),
             }.with_context(|_| UnableToLoadCredentialsSnafu {})?;
         }
@@ -557,7 +577,7 @@ async fn build_client(config: &S3Config) -> super::Result<S3LikeSource> {
 const REGION_HEADER: &str = "x-amz-bucket-region";
 
 impl S3LikeSource {
-    pub async fn get_client(config: &S3Config) -> super::Result<Arc<S3LikeSource>> {
+    pub async fn get_client(config: &S3Config) -> super::Result<Arc<Self>> {
         Ok(build_client(config).await?.into())
     }
 
@@ -704,7 +724,7 @@ impl S3LikeSource {
     #[async_recursion]
     async fn _head_impl(
         &self,
-        _permit: SemaphorePermit<'async_recursion>,
+        permit: SemaphorePermit<'async_recursion>,
         uri: &str,
         region: &Region,
     ) -> super::Result<usize> {
@@ -772,7 +792,7 @@ impl S3LikeSource {
 
                             let new_region = Region::new(region_name);
                             log::debug!("S3 Region of {uri} different than client {:?} vs {:?} Attempting HEAD in that region with new client", new_region, region);
-                            self._head_impl(_permit, uri, &new_region).await
+                            self._head_impl(permit, uri, &new_region).await
                         }
                         _ => Err(UnableToHeadFileSnafu { path: uri }
                             .into_error(SdkError::ServiceError(err))
@@ -788,7 +808,7 @@ impl S3LikeSource {
     #[async_recursion]
     async fn _list_impl(
         &self,
-        _permit: SemaphorePermit<'async_recursion>,
+        permit: SemaphorePermit<'async_recursion>,
         scheme: &str,
         bucket: &str,
         key: &str,
@@ -853,13 +873,15 @@ impl S3LikeSource {
             Ok(v) => {
                 let dirs = v.common_prefixes();
                 let files = v.contents();
-                let continuation_token = v.next_continuation_token().map(|s| s.to_string());
+                let continuation_token = v
+                    .next_continuation_token()
+                    .map(std::string::ToString::to_string);
                 let mut total_len = 0;
                 if let Some(dirs) = dirs {
-                    total_len += dirs.len()
+                    total_len += dirs.len();
                 }
                 if let Some(files) = files {
-                    total_len += files.len()
+                    total_len += files.len();
                 }
                 let mut all_files = Vec::with_capacity(total_len);
                 if let Some(dirs) = dirs {
@@ -912,7 +934,7 @@ impl S3LikeSource {
                         let new_region = Region::new(region_name);
                         log::debug!("S3 Region of {uri} different than client {:?} vs {:?} Attempting List in that region with new client", new_region, region);
                         self._list_impl(
-                            _permit,
+                            permit,
                             scheme,
                             bucket,
                             key,
@@ -1001,7 +1023,7 @@ impl ObjectSource for S3LikeSource {
         if io_stats.is_some() {
             if let GetResult::Stream(stream, num_bytes, permit, retry_params) = get_result {
                 if let Some(is) = io_stats.as_ref() {
-                    is.mark_get_requests(1)
+                    is.mark_get_requests(1);
                 }
                 Ok(GetResult::Stream(
                     io_stats_on_bytestream(stream, io_stats),
@@ -1049,7 +1071,7 @@ impl ObjectSource for S3LikeSource {
             .context(UnableToGrabSemaphoreSnafu)?;
         let head_result = self._head_impl(permit, uri, &self.default_region).await?;
         if let Some(is) = io_stats.as_ref() {
-            is.mark_head_requests(1)
+            is.mark_head_requests(1);
         }
         Ok(head_result)
     }
@@ -1093,7 +1115,7 @@ impl ObjectSource for S3LikeSource {
             // Perform a directory-based list of entries in the next level
             // assume its a directory first
             let key = if key.is_empty() {
-                "".to_string()
+                String::new()
             } else {
                 format!("{}{S3_DELIMITER}", key.trim_end_matches(S3_DELIMITER))
             };
@@ -1117,7 +1139,7 @@ impl ObjectSource for S3LikeSource {
                 .await?
             };
             if let Some(is) = io_stats.as_ref() {
-                is.mark_list_requests(1)
+                is.mark_list_requests(1);
             }
 
             if lsr.files.is_empty() && key.contains(S3_DELIMITER) {
@@ -1141,7 +1163,7 @@ impl ObjectSource for S3LikeSource {
                     )
                     .await?;
                 if let Some(is) = io_stats.as_ref() {
-                    is.mark_list_requests(1)
+                    is.mark_list_requests(1);
                 }
                 let target_path = format!("{scheme}://{bucket}/{key}");
                 lsr.files.retain(|f| f.filepath == target_path);
@@ -1176,7 +1198,7 @@ impl ObjectSource for S3LikeSource {
                 .await?
             };
             if let Some(is) = io_stats.as_ref() {
-                is.mark_list_requests(1)
+                is.mark_list_requests(1);
             }
 
             Ok(lsr)
@@ -1186,11 +1208,9 @@ impl ObjectSource for S3LikeSource {
 
 #[cfg(test)]
 mod tests {
-
-    use crate::object_io::ObjectSource;
-    use crate::Result;
-    use crate::S3LikeSource;
     use common_io_config::S3Config;
+
+    use crate::{object_io::ObjectSource, Result, S3LikeSource};
 
     #[tokio::test]
     async fn test_full_get_from_s3() -> Result<()> {

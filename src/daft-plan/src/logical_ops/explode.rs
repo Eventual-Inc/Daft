@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use daft_core::schema::{Schema, SchemaRef};
 use daft_dsl::{resolve_exprs, ExprRef};
+use daft_schema::schema::{Schema, SchemaRef};
 use itertools::Itertools;
 use snafu::ResultExt;
 
@@ -32,7 +32,7 @@ impl Explode {
         let explode_exprs = to_explode
             .iter()
             .cloned()
-            .map(daft_dsl::functions::list::explode)
+            .map(daft_functions::list::explode)
             .collect::<Vec<_>>();
         let exploded_schema = {
             let explode_schema = {

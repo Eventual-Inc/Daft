@@ -1,0 +1,2 @@
+d5e444d0a71409ae3701d4249ad877f1fb9e2235 # introduced `rustfmt.toml` and ran formatter; ignoring large formatting changes
+45e2944e252ccdd563dc20edd9b29762e05cec1d # auto-fix prefer `Self` over explicit type

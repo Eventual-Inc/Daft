@@ -1,17 +1,14 @@
 use std::sync::Arc;
 
 use common_daft_config::DaftExecutionConfig;
-use daft_core::schema::Schema;
-
-use crate::PhysicalPlanScheduler;
-use daft_plan::InMemoryInfo;
-use daft_plan::LogicalPlan;
-use daft_plan::{AdaptivePlanner, MaterializedResults};
-
+use daft_core::prelude::Schema;
+use daft_plan::{AdaptivePlanner, InMemoryInfo, LogicalPlan, MaterializedResults};
 #[cfg(feature = "python")]
 use {
     common_daft_config::PyDaftExecutionConfig, daft_plan::PyLogicalPlanBuilder, pyo3::prelude::*,
 };
+
+use crate::PhysicalPlanScheduler;
 /// A work scheduler for physical plans.
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub struct AdaptivePhysicalPlanScheduler {
@@ -19,8 +16,9 @@ pub struct AdaptivePhysicalPlanScheduler {
 }
 
 impl AdaptivePhysicalPlanScheduler {
+    #[must_use]
     pub fn new(logical_plan: Arc<LogicalPlan>, cfg: Arc<DaftExecutionConfig>) -> Self {
-        AdaptivePhysicalPlanScheduler {
+        Self {
             planner: AdaptivePlanner::new(logical_plan, cfg),
         }
     }
@@ -32,15 +30,12 @@ impl AdaptivePhysicalPlanScheduler {
     #[staticmethod]
     pub fn from_logical_plan_builder(
         logical_plan_builder: &PyLogicalPlanBuilder,
-        py: Python<'_>,
+        py: Python,
         cfg: PyDaftExecutionConfig,
     ) -> PyResult<Self> {
         py.allow_threads(|| {
             let logical_plan = logical_plan_builder.builder.build();
-            Ok(AdaptivePhysicalPlanScheduler::new(
-                logical_plan,
-                cfg.config.clone(),
-            ))
+            Ok(Self::new(logical_plan, cfg.config.clone()))
         })
     }
     pub fn next(&mut self, py: Python) -> PyResult<(Option<usize>, PhysicalPlanScheduler)> {
@@ -59,13 +54,12 @@ impl AdaptivePhysicalPlanScheduler {
         &mut self,
         source_id: usize,
         partition_key: &str,
-        cache_entry: &PyAny,
+        cache_entry: PyObject,
         num_partitions: usize,
         size_bytes: usize,
         num_rows: usize,
         py: Python,
     ) -> PyResult<()> {
-        let cache_entry = cache_entry.into();
         py.allow_threads(|| {
             let in_memory_info = InMemoryInfo::new(
                 Schema::empty().into(), // TODO thread in schema from in memory scan
@@ -78,8 +72,8 @@ impl AdaptivePhysicalPlanScheduler {
             );
 
             self.planner.update(MaterializedResults {
-                in_memory_info,
                 source_id,
+                in_memory_info,
             })?;
             Ok(())
         })

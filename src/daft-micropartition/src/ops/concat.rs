@@ -2,10 +2,9 @@ use std::sync::Mutex;
 
 use common_error::{DaftError, DaftResult};
 use daft_io::IOStatsContext;
+use daft_stats::TableMetadata;
 
 use crate::micropartition::{MicroPartition, TableState};
-
-use daft_stats::TableMetadata;
 
 impl MicroPartition {
     pub fn concat(mps: &[&Self]) -> DaftResult<Self> {
@@ -31,7 +30,7 @@ impl MicroPartition {
 
         let mut all_tables = vec![];
 
-        for m in mps.iter() {
+        for m in mps {
             let tables = m.tables_or_read(io_stats.clone())?;
             all_tables.extend_from_slice(tables.as_slice());
         }
@@ -46,9 +45,9 @@ impl MicroPartition {
                 all_stats = Some(curr_stats.union(stats)?);
             }
         }
-        let new_len = all_tables.iter().map(|t| t.len()).sum();
+        let new_len = all_tables.iter().map(daft_table::Table::len).sum();
 
-        Ok(MicroPartition {
+        Ok(Self {
             schema: mps.first().unwrap().schema.clone(),
             state: Mutex::new(TableState::Loaded(all_tables.into())),
             metadata: TableMetadata { length: new_len },

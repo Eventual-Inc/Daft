@@ -20,6 +20,9 @@ pub use python::register_modules;
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[snafu(display("{source}"))]
+    Arrow2Error { source: arrow2::error::Error },
+
+    #[snafu(display("{source}"))]
     DaftIOError { source: daft_io::Error },
 
     #[snafu(display("Parquet reader timed out while trying to read: {path} with a time budget of {duration_ms} ms"))]
@@ -203,18 +206,18 @@ pub enum Error {
 }
 
 impl From<Error> for DaftError {
-    fn from(err: Error) -> DaftError {
+    fn from(err: Error) -> Self {
         match err {
             Error::DaftIOError { source } => source.into(),
-            Error::FileReadTimeout { .. } => DaftError::ReadTimeout(err.into()),
-            _ => DaftError::External(err.into()),
+            Error::FileReadTimeout { .. } => Self::ReadTimeout(err.into()),
+            _ => Self::External(err.into()),
         }
     }
 }
 
 impl From<daft_io::Error> for Error {
     fn from(err: daft_io::Error) -> Self {
-        Error::DaftIOError { source: err }
+        Self::DaftIOError { source: err }
     }
 }
 

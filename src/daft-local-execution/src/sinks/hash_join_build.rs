@@ -1,32 +1,38 @@
 use std::sync::Arc;
 
-use crate::pipeline::PipelineResultType;
 use common_error::DaftResult;
-use daft_core::schema::SchemaRef;
+use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
+use daft_plan::JoinType;
+use daft_table::{make_probeable_builder, Probeable, ProbeableBuilder, Table};
 
 use super::blocking_sink::{BlockingSink, BlockingSinkStatus};
-use daft_table::{ProbeTable, ProbeTableBuilder, Table};
+use crate::pipeline::PipelineResultType;
 
 enum ProbeTableState {
     Building {
-        probe_table_builder: Option<ProbeTableBuilder>,
+        probe_table_builder: Option<Box<dyn ProbeableBuilder>>,
         projection: Vec<ExprRef>,
         tables: Vec<Table>,
     },
     Done {
-        probe_table: Arc<ProbeTable>,
+        probe_table: Arc<dyn Probeable>,
         tables: Arc<Vec<Table>>,
     },
 }
 
 impl ProbeTableState {
-    fn new(key_schema: &SchemaRef, projection: Vec<ExprRef>) -> DaftResult<Self> {
+    fn new(
+        key_schema: &SchemaRef,
+        projection: Vec<ExprRef>,
+        join_type: &JoinType,
+    ) -> DaftResult<Self> {
+        let track_indices = !matches!(join_type, JoinType::Anti | JoinType::Semi);
         Ok(Self::Building {
-            probe_table_builder: Some(ProbeTableBuilder::new(key_schema.clone())?),
+            probe_table_builder: Some(make_probeable_builder(key_schema.clone(), track_indices)?),
             projection,
-            tables: vec![],
+            tables: Vec::new(),
         })
     }
 
@@ -60,7 +66,7 @@ impl ProbeTableState {
             let pt = ptb.build();
 
             *self = Self::Done {
-                probe_table: Arc::new(pt),
+                probe_table: pt,
                 tables: Arc::new(tables.clone()),
             };
             Ok(())
@@ -70,14 +76,18 @@ impl ProbeTableState {
     }
 }
 
-pub(crate) struct HashJoinBuildSink {
+pub struct HashJoinBuildSink {
     probe_table_state: ProbeTableState,
 }
 
 impl HashJoinBuildSink {
-    pub(crate) fn new(key_schema: SchemaRef, projection: Vec<ExprRef>) -> DaftResult<Self> {
+    pub(crate) fn new(
+        key_schema: SchemaRef,
+        projection: Vec<ExprRef>,
+        join_type: &JoinType,
+    ) -> DaftResult<Self> {
         Ok(Self {
-            probe_table_state: ProbeTableState::new(&key_schema, projection)?,
+            probe_table_state: ProbeTableState::new(&key_schema, projection, join_type)?,
         })
     }
 

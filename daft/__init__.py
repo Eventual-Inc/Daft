@@ -88,7 +88,7 @@ from daft.io import (
     read_lance,
 )
 from daft.series import Series
-from daft.sql.sql import sql, sql_expr
+from daft.sql import sql, sql_expr
 from daft.udf import udf
 from daft.viz import register_viz_hook
 

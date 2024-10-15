@@ -1,11 +1,11 @@
+use std::{collections::HashSet, path::Path, sync::Arc};
+
 use async_stream::stream;
 use futures::stream::{BoxStream, StreamExt};
-use itertools::Itertools;
-use std::{collections::HashSet, path::Path, sync::Arc};
-use tokio::sync::mpsc::Sender;
-
 use globset::{GlobBuilder, GlobMatcher};
+use itertools::Itertools;
 use lazy_static::lazy_static;
+use tokio::sync::mpsc::Sender;
 
 use crate::{
     object_io::{FileMetadata, FileType, ObjectSource},
@@ -34,7 +34,7 @@ const MARKER_FILES: [&str; 3] = ["_metadata", "_common_metadata", "_success"];
 const MARKER_PREFIXES: [&str; 2] = ["_started", "_committed"];
 
 #[derive(Clone)]
-pub(crate) struct GlobState {
+pub struct GlobState {
     // Current path in dirtree and glob_fragments
     pub current_path: String,
     pub current_fragment_idx: usize,
@@ -58,16 +58,16 @@ impl GlobState {
     }
 
     pub fn advance(self, path: String, idx: usize, fanout_factor: usize) -> Self {
-        GlobState {
+        Self {
             current_path: path,
             current_fragment_idx: idx,
             current_fanout: self.current_fanout * fanout_factor,
-            ..self.clone()
+            ..self
         }
     }
 
     pub fn with_wildcard_mode(self) -> Self {
-        GlobState {
+        Self {
             wildcard_mode: true,
             ..self
         }
@@ -75,7 +75,7 @@ impl GlobState {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct GlobFragment {
+pub struct GlobFragment {
     data: String,
     escaped_data: String,
     first_wildcard_idx: Option<usize>,
@@ -113,20 +113,17 @@ impl GlobFragment {
         let mut ptr = 0;
         while ptr < data.len() {
             let remaining = &data[ptr..];
-            match remaining.find(r"\\") {
-                Some(backslash_idx) => {
-                    escaped_data.push_str(&remaining[..backslash_idx].replace('\\', ""));
-                    escaped_data.extend(std::iter::once('\\'));
-                    ptr += backslash_idx + 2;
-                }
-                None => {
-                    escaped_data.push_str(&remaining.replace('\\', ""));
-                    break;
-                }
+            if let Some(backslash_idx) = remaining.find(r"\\") {
+                escaped_data.push_str(&remaining[..backslash_idx].replace('\\', ""));
+                escaped_data.extend(std::iter::once('\\'));
+                ptr += backslash_idx + 2;
+            } else {
+                escaped_data.push_str(&remaining.replace('\\', ""));
+                break;
             }
         }
 
-        GlobFragment {
+        Self {
             data: data.to_string(),
             first_wildcard_idx,
             escaped_data,
@@ -139,11 +136,11 @@ impl GlobFragment {
     }
 
     /// Joins a slice of GlobFragments together with a separator
-    pub fn join(fragments: &[GlobFragment], sep: &str) -> Self {
-        GlobFragment::new(
+    pub fn join(fragments: &[Self], sep: &str) -> Self {
+        Self::new(
             fragments
                 .iter()
-                .map(|frag: &GlobFragment| frag.data.as_str())
+                .map(|frag: &Self| frag.data.as_str())
                 .join(sep)
                 .as_str(),
         )
@@ -168,7 +165,7 @@ impl GlobFragment {
 ///   2. Non-wildcard fragments are joined and coalesced by delimiter
 ///   3. The first fragment is prefixed by "{scheme}://"
 ///   4. Preserves any leading delimiters
-pub(crate) fn to_glob_fragments(glob_str: &str) -> super::Result<Vec<GlobFragment>> {
+pub fn to_glob_fragments(glob_str: &str) -> super::Result<Vec<GlobFragment>> {
     // NOTE: We only use the URL parse library to get the scheme, because it will escape some of our glob special characters
     // such as ? and {}
     let glob_url = url::Url::parse(glob_str).map_err(|e| super::Error::InvalidUrl {
@@ -286,10 +283,7 @@ async fn ls_with_prefix_fallback(
                 // STOP EARLY!!
                 // If the number of directory results are more than `max_dirs`, we terminate the function early,
                 // throw away our results buffer and return a stream of FileType::File files using `prefix_ls` instead
-                if max_dirs
-                    .map(|max_dirs| dir_count_so_far > max_dirs)
-                    .unwrap_or(false)
-                {
+                if max_dirs.is_some_and(|max_dirs| dir_count_so_far > max_dirs) {
                     return (
                         prefix_ls(source.clone(), uri.to_string(), page_size, io_stats),
                         0,
@@ -357,7 +351,7 @@ fn _should_return(fm: &FileMetadata) -> bool {
 ///     parallel connections (usually defaulting to 64).
 /// * page_size: control the returned results page size, or None to use the ObjectSource's defaults. Usually only used for testing
 ///     but may yield some performance improvements depending on the workload.
-pub(crate) async fn glob(
+pub async fn glob(
     source: Arc<dyn ObjectSource>,
     glob: &str,
     fanout_limit: Option<usize>,
@@ -385,7 +379,7 @@ pub(crate) async fn glob(
             }
             if attempt_as_dir {
                 let mut results = source.iter_dir(glob.as_str(), true, page_size, io_stats).await?;
-                while let Some(result) = results.next().await && remaining_results.map(|rr| rr > 0).unwrap_or(true) {
+                while let Some(result) = results.next().await && remaining_results.map_or(true, |rr| rr > 0) {
                     match result {
                         Ok(fm) => {
                             if _should_return(&fm) {
@@ -560,7 +554,7 @@ pub(crate) async fn glob(
             } else if current_fragment.has_special_character() {
                 let partial_glob_matcher = GlobBuilder::new(
                     GlobFragment::join(
-                        &state.glob_fragments[..state.current_fragment_idx + 1],
+                        &state.glob_fragments[..=state.current_fragment_idx],
                         GLOB_DELIMITER,
                     )
                     .raw_str(),
@@ -641,7 +635,7 @@ pub(crate) async fn glob(
         to_rtn_tx,
         source.clone(),
         GlobState {
-            current_path: "".to_string(),
+            current_path: String::new(),
             current_fragment_idx: 0,
             glob_fragments: Arc::new(glob_fragments),
             full_glob_matcher: Arc::new(full_glob_matcher),
@@ -655,7 +649,7 @@ pub(crate) async fn glob(
 
     let to_rtn_stream = stream! {
         let mut remaining_results = limit;
-        while remaining_results.map(|rr| rr > 0).unwrap_or(true) && let Some(v) = to_rtn_rx.recv().await {
+        while remaining_results.map_or(true, |rr| rr > 0) && let Some(v) = to_rtn_rx.recv().await {
 
             if v.as_ref().is_ok_and(|v| !_should_return(v)) {
                 continue

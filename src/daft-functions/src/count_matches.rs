@@ -1,6 +1,5 @@
 use common_error::{DaftError, DaftResult};
-
-use daft_core::{datatypes::Field, schema::Schema, DataType, Series};
+use daft_core::prelude::*;
 use daft_dsl::{
     functions::{ScalarFunction, ScalarUDF},
     ExprRef,
@@ -8,9 +7,9 @@ use daft_dsl::{
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-struct CountMatchesFunction {
-    pub(super) whole_words: bool,
-    pub(super) case_sensitive: bool,
+pub struct CountMatchesFunction {
+    pub whole_words: bool,
+    pub case_sensitive: bool,
 }
 
 #[typetag::serde]
@@ -54,6 +53,7 @@ impl ScalarUDF for CountMatchesFunction {
     }
 }
 
+#[must_use]
 pub fn utf8_count_matches(
     input: ExprRef,
     patterns: ExprRef,

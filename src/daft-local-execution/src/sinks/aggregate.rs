@@ -5,9 +5,8 @@ use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
-use crate::pipeline::PipelineResultType;
-
 use super::blocking_sink::{BlockingSink, BlockingSinkStatus};
+use crate::pipeline::PipelineResultType;
 
 enum AggregateState {
     Accumulating(Vec<Arc<MicroPartition>>),
@@ -53,8 +52,12 @@ impl BlockingSink for AggregateSink {
                 !parts.is_empty(),
                 "We can not finalize AggregateSink with no data"
             );
-            let concated =
-                MicroPartition::concat(&parts.iter().map(|x| x.as_ref()).collect::<Vec<_>>())?;
+            let concated = MicroPartition::concat(
+                &parts
+                    .iter()
+                    .map(std::convert::AsRef::as_ref)
+                    .collect::<Vec<_>>(),
+            )?;
             let agged = Arc::new(concated.agg(&self.agg_exprs, &self.group_by)?);
             self.state = AggregateState::Done(agged.clone());
             Ok(Some(agged.into()))

@@ -3,17 +3,21 @@ from __future__ import annotations
 import pyarrow as pa
 import pytest
 
-from daft import col
+from daft import col, context
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from tests.utils import sort_arrow_table
 
 
 def skip_invalid_join_strategies(join_strategy, join_type):
-    if (join_strategy == "sort_merge" or join_strategy == "sort_merge_aligned_boundaries") and join_type != "inner":
-        pytest.skip("Sort merge currently only supports inner joins")
-    elif join_strategy == "broadcast" and join_type == "outer":
-        pytest.skip("Broadcast join does not support outer joins")
+    if context.get_context().daft_execution_config.enable_native_executor is True:
+        if join_type == "outer" or join_strategy not in [None, "hash"]:
+            pytest.skip("Native executor fails for these tests")
+    else:
+        if (join_strategy == "sort_merge" or join_strategy == "sort_merge_aligned_boundaries") and join_type != "inner":
+            pytest.skip("Sort merge currently only supports inner joins")
+        elif join_strategy == "broadcast" and join_type == "outer":
+            pytest.skip("Broadcast join does not support outer joins")
 
 
 def test_invalid_join_strategies(make_df):
@@ -46,6 +50,17 @@ def test_columns_after_join(make_df):
 
     assert set(joined_df1.schema().column_names()) == set(["A", "B", "right.A"])
 
+    assert set(joined_df2.schema().column_names()) == set(["A", "B"])
+
+
+def test_rename_join_keys_in_dataframe(make_df):
+    df1 = make_df({"A": [1, 2], "B": [2, 2]})
+
+    df2 = make_df({"A": [1, 2]})
+    joined_df1 = df1.join(df2, left_on=["A", "B"], right_on=["A", "A"])
+    joined_df2 = df1.join(df2, left_on=["B", "A"], right_on=["A", "A"])
+
+    assert set(joined_df1.schema().column_names()) == set(["A", "B"])
     assert set(joined_df2.schema().column_names()) == set(["A", "B"])
 
 

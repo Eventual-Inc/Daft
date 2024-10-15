@@ -1,8 +1,6 @@
-use std::fmt::Display;
-use std::fmt::Formatter;
+use std::fmt::{Display, Formatter};
 
-use serde::Deserialize;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::ObfuscatedString;
 
@@ -40,28 +38,29 @@ impl Default for AzureConfig {
 }
 
 impl AzureConfig {
+    #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         if let Some(storage_account) = &self.storage_account {
-            res.push(format!("Storage account = {}", storage_account));
+            res.push(format!("Storage account = {storage_account}"));
         }
         if let Some(access_key) = &self.access_key {
-            res.push(format!("Access key = {}", access_key));
+            res.push(format!("Access key = {access_key}"));
         }
         if let Some(sas_token) = &self.sas_token {
-            res.push(format!("Shared Access Signature = {}", sas_token));
+            res.push(format!("Shared Access Signature = {sas_token}"));
         }
         if let Some(bearer_token) = &self.bearer_token {
-            res.push(format!("Bearer Token = {}", bearer_token));
+            res.push(format!("Bearer Token = {bearer_token}"));
         }
         if let Some(tenant_id) = &self.tenant_id {
-            res.push(format!("Tenant ID = {}", tenant_id));
+            res.push(format!("Tenant ID = {tenant_id}"));
         }
         if let Some(client_id) = &self.client_id {
-            res.push(format!("Client ID = {}", client_id));
+            res.push(format!("Client ID = {client_id}"));
         }
         if let Some(client_secret) = &self.client_secret {
-            res.push(format!("Client Secret = {}", client_secret));
+            res.push(format!("Client Secret = {client_secret}"));
         }
         res.push(format!(
             "Use Fabric Endpoint = {}",
@@ -69,7 +68,7 @@ impl AzureConfig {
         ));
         res.push(format!("Anonymous = {}", self.anonymous));
         if let Some(endpoint_url) = &self.endpoint_url {
-            res.push(format!("Endpoint URL = {}", endpoint_url));
+            res.push(format!("Endpoint URL = {endpoint_url}"));
         }
         res.push(format!("Use SSL = {}", self.use_ssl));
         res

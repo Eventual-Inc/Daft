@@ -1,8 +1,7 @@
 use common_error::DaftResult;
-use common_treenode::ConcreteTreeNode;
+use common_treenode::{ConcreteTreeNode, DynTreeNode};
 
 use crate::PhysicalPlanRef;
-use common_treenode::DynTreeNode;
 // This struct allows providing context or state to go along
 // with visiting TreeNodes.
 pub(super) struct PlanContext<T: Sized> {
@@ -43,7 +42,7 @@ impl<T: Default> PlanContext<T> {
 impl<T: Clone> PlanContext<T> {
     // Clone the context to the children
     pub fn propagate(mut self) -> Self {
-        for child in self.children.iter_mut() {
+        for child in &mut self.children {
             child.context = self.context.clone();
         }
         self

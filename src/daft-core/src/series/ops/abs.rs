@@ -1,20 +1,22 @@
-use crate::datatypes::DataType;
-use crate::series::Series;
-use common_error::DaftError;
-use common_error::DaftResult;
-impl Series {
-    pub fn abs(&self) -> DaftResult<Series> {
-        use crate::series::array_impl::IntoSeries;
+use common_error::{DaftError, DaftResult};
 
-        use DataType::*;
+use crate::{
+    datatypes::DataType,
+    series::{array_impl::IntoSeries, Series},
+};
+
+impl Series {
+    pub fn abs(&self) -> DaftResult<Self> {
         match self.data_type() {
-            Int8 => Ok(self.i8().unwrap().abs()?.into_series()),
-            Int16 => Ok(self.i16().unwrap().abs()?.into_series()),
-            Int32 => Ok(self.i32().unwrap().abs()?.into_series()),
-            Int64 => Ok(self.i64().unwrap().abs()?.into_series()),
-            UInt8 | UInt16 | UInt32 | UInt64 => Ok(self.clone()),
-            Float32 => Ok(self.f32().unwrap().abs()?.into_series()),
-            Float64 => Ok(self.f64().unwrap().abs()?.into_series()),
+            DataType::Int8 => Ok(self.i8().unwrap().abs()?.into_series()),
+            DataType::Int16 => Ok(self.i16().unwrap().abs()?.into_series()),
+            DataType::Int32 => Ok(self.i32().unwrap().abs()?.into_series()),
+            DataType::Int64 => Ok(self.i64().unwrap().abs()?.into_series()),
+            DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 => {
+                Ok(self.clone())
+            }
+            DataType::Float32 => Ok(self.f32().unwrap().abs()?.into_series()),
+            DataType::Float64 => Ok(self.f64().unwrap().abs()?.into_series()),
             dt => Err(DaftError::TypeError(format!(
                 "abs not implemented for {}",
                 dt

@@ -1,10 +1,5 @@
 use common_error::{DaftError, DaftResult};
-use daft_core::{
-    datatypes::{UInt64Array, Utf8Array},
-    schema::Schema,
-    series::cast_series_to_supertype,
-    IntoSeries, Series,
-};
+use daft_core::{prelude::*, series::cast_series_to_supertype};
 use daft_dsl::ExprRef;
 
 use crate::Table;
@@ -59,6 +54,6 @@ impl Table {
         ])?)?;
         let unpivot_series = [ids_series, vec![variable_series, value_series]].concat();
 
-        Table::new_with_size(unpivot_schema, unpivot_series, unpivoted_len)
+        Self::new_with_size(unpivot_schema, unpivot_series, unpivoted_len)
     }
 }

@@ -1,15 +1,13 @@
+use std::{
+    any::Any,
+    fmt::{Debug, Display, Formatter},
+    hash::{Hash, Hasher},
+    time::SystemTime,
+};
+
 use aws_credential_types::provider::ProvideCredentials;
-use chrono::offset::Utc;
-use chrono::DateTime;
-use serde::Deserialize;
-use serde::Serialize;
-use std::any::Any;
-use std::fmt::Debug;
-use std::fmt::Display;
-use std::fmt::Formatter;
-use std::hash::Hash;
-use std::hash::Hasher;
-use std::time::SystemTime;
+use chrono::{offset::Utc, DateTime};
+use serde::{Deserialize, Serialize};
 
 pub use crate::ObfuscatedString;
 
@@ -69,7 +67,7 @@ impl Eq for Box<dyn S3CredentialsProvider> {}
 
 impl Hash for Box<dyn S3CredentialsProvider> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.dyn_hash(state)
+        self.dyn_hash(state);
     }
 }
 
@@ -85,28 +83,29 @@ impl ProvideCredentials for Box<dyn S3CredentialsProvider> {
 }
 
 impl S3Config {
+    #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         if let Some(region_name) = &self.region_name {
-            res.push(format!("Region name = {}", region_name));
+            res.push(format!("Region name = {region_name}"));
         }
         if let Some(endpoint_url) = &self.endpoint_url {
-            res.push(format!("Endpoint URL = {}", endpoint_url));
+            res.push(format!("Endpoint URL = {endpoint_url}"));
         }
         if let Some(key_id) = &self.key_id {
-            res.push(format!("Key ID = {}", key_id));
+            res.push(format!("Key ID = {key_id}"));
         }
         if let Some(session_token) = &self.session_token {
-            res.push(format!("Session token = {}", session_token));
+            res.push(format!("Session token = {session_token}"));
         }
         if let Some(access_key) = &self.access_key {
-            res.push(format!("Access key = {}", access_key));
+            res.push(format!("Access key = {access_key}"));
         }
         if let Some(credentials_provider) = &self.credentials_provider {
-            res.push(format!("Credentials provider = {:?}", credentials_provider));
+            res.push(format!("Credentials provider = {credentials_provider:?}"));
         }
         if let Some(buffer_time) = &self.buffer_time {
-            res.push(format!("Buffer time = {}", buffer_time));
+            res.push(format!("Buffer time = {buffer_time}"));
         }
         res.push(format!(
             "Max connections = {}",
@@ -120,7 +119,7 @@ impl S3Config {
         res.push(format!("Read timeout ms = {}", self.read_timeout_ms));
         res.push(format!("Max retries = {}", self.num_tries));
         if let Some(retry_mode) = &self.retry_mode {
-            res.push(format!("Retry mode = {}", retry_mode));
+            res.push(format!("Retry mode = {retry_mode}"));
         }
         res.push(format!("Anonymous = {}", self.anonymous));
         res.push(format!("Use SSL = {}", self.use_ssl));
@@ -132,7 +131,7 @@ impl S3Config {
             self.force_virtual_addressing
         ));
         if let Some(name) = &self.profile_name {
-            res.push(format!("Profile Name = {}", name));
+            res.push(format!("Profile Name = {name}"));
         }
         res
     }
@@ -140,7 +139,7 @@ impl S3Config {
 
 impl Default for S3Config {
     fn default() -> Self {
-        S3Config {
+        Self {
             region_name: None,
             endpoint_url: None,
             key_id: None,
@@ -216,13 +215,14 @@ impl Display for S3Config {
 }
 
 impl S3Credentials {
+    #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         res.push(format!("Key ID = {}", self.key_id));
         res.push(format!("Access key = {}", self.access_key));
 
         if let Some(session_token) = &self.session_token {
-            res.push(format!("Session token = {}", session_token));
+            res.push(format!("Session token = {session_token}"));
         }
         if let Some(expiry) = &self.expiry {
             let expiry: DateTime<Utc> = (*expiry).into();

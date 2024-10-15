@@ -1,31 +1,30 @@
 mod agg_ops;
-mod binary_ops;
-mod dtype;
-mod field;
-mod image_format;
-mod image_mode;
+mod infer_datatype;
 mod matching;
-mod time_unit;
 
-use crate::array::{ops::as_arrow::AsArrow, ListArray, StructArray};
-pub use crate::array::{DataArray, FixedSizeListArray};
-pub use agg_ops::{try_mean_supertype, try_sum_supertype};
+pub use infer_datatype::InferDataType;
+pub mod prelude;
+use std::ops::{Add, Div, Mul, Rem, Sub};
+
+pub use agg_ops::{try_mean_stddev_aggregation_supertype, try_sum_supertype};
 use arrow2::{
     compute::comparison::Simd8,
     types::{simd::Simd, NativeType},
 };
-pub use binary_ops::try_physical_supertype;
-pub use dtype::DataType;
-pub use field::Field;
-pub use field::FieldID;
-pub use field::FieldRef;
-pub use image_format::ImageFormat;
-pub use image_mode::ImageMode;
+// Import DataType enum
+pub use daft_schema::dtype::DataType;
+pub use daft_schema::{
+    field::{Field, FieldID, FieldRef},
+    image_format::ImageFormat,
+    image_mode::ImageMode,
+    time_unit::{infer_timeunit_from_format_string, TimeUnit},
+};
+pub use infer_datatype::try_physical_supertype;
 use num_traits::{Bounded, Float, FromPrimitive, Num, NumCast, ToPrimitive, Zero};
 use serde::Serialize;
-use std::ops::{Add, Div, Mul, Rem, Sub};
-pub use time_unit::infer_timeunit_from_format_string;
-pub use time_unit::TimeUnit;
+
+use crate::array::{ops::as_arrow::AsArrow, ListArray, StructArray};
+pub use crate::array::{DataArray, FixedSizeListArray};
 
 pub mod logical;
 
@@ -204,6 +203,8 @@ impl_daft_logical_data_array_datatype!(TimeType, Unknown, Int64Type);
 impl_daft_logical_data_array_datatype!(DurationType, Unknown, Int64Type);
 impl_daft_logical_data_array_datatype!(ImageType, Unknown, StructType);
 impl_daft_logical_data_array_datatype!(TensorType, Unknown, StructType);
+impl_daft_logical_data_array_datatype!(SparseTensorType, Unknown, StructType);
+impl_daft_logical_data_array_datatype!(FixedShapeSparseTensorType, Unknown, StructType);
 impl_daft_logical_fixed_size_list_datatype!(EmbeddingType, Unknown);
 impl_daft_logical_fixed_size_list_datatype!(FixedShapeImageType, Unknown);
 impl_daft_logical_fixed_size_list_datatype!(FixedShapeTensorType, Unknown);
@@ -349,7 +350,6 @@ pub type UInt8Array = DataArray<UInt8Type>;
 pub type UInt16Array = DataArray<UInt16Type>;
 pub type UInt32Array = DataArray<UInt32Type>;
 pub type UInt64Array = DataArray<UInt64Type>;
-// pub type Float16Array = DataArray<Float16Type>;
 pub type Float32Array = DataArray<Float32Type>;
 pub type Float64Array = DataArray<Float64Type>;
 pub type BinaryArray = DataArray<BinaryType>;
@@ -363,5 +363,13 @@ pub type PythonArray = DataArray<PythonType>;
 impl<T: DaftNumericType> DataArray<T> {
     pub fn as_slice(&self) -> &[T::Native] {
         self.as_arrow().values().as_slice()
+    }
+}
+
+impl<P: AsRef<str>> FromIterator<Option<P>> for Utf8Array {
+    #[inline]
+    fn from_iter<I: IntoIterator<Item = Option<P>>>(iter: I) -> Self {
+        let arrow_arr = arrow2::array::Utf8Array::<i64>::from_iter(iter);
+        Self::from(("", Box::new(arrow_arr)))
     }
 }

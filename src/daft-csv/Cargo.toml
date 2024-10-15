@@ -1,7 +1,6 @@
 [dependencies]
 arrow2 = {workspace = true, features = ["io_csv", "io_csv_async"]}
 async-compat = {workspace = true}
-async-compression = {workspace = true}
 async-stream = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 common-py-serde = {path = "../common/py-serde", default-features = false}
@@ -19,13 +18,15 @@ serde = {workspace = true}
 snafu = {workspace = true}
 tokio = {workspace = true}
 tokio-util = {workspace = true}
-url = {workspace = true}
 
 [dev-dependencies]
 rstest = {workspace = true}
 
 [features]
 python = ["dep:pyo3", "common-error/python", "common-py-serde/python", "daft-core/python", "daft-io/python", "daft-table/python", "daft-dsl/python"]
+
+[lints]
+workspace = true
 
 [package]
 edition = {workspace = true}

@@ -1,17 +1,11 @@
 use std::sync::Arc;
 
-use daft_core::array::ops::as_arrow::AsArrow;
-use daft_core::datatypes::{Field, Utf8Array};
-use daft_core::{DataType, IntoSeries};
-use daft_dsl::functions::ScalarUDF;
-use daft_dsl::ExprRef;
+use common_error::{DaftError, DaftResult};
+use daft_core::prelude::*;
+use daft_dsl::{functions::ScalarUDF, ExprRef};
 use daft_io::{get_io_client, get_runtime, IOConfig, IOStatsRef, SourceType};
 use futures::{StreamExt, TryStreamExt};
 use serde::Serialize;
-
-use common_error::{DaftError, DaftResult};
-use daft_core::schema::Schema;
-use daft_core::series::Series;
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
 pub(super) struct UploadFunction {
@@ -32,7 +26,7 @@ impl ScalarUDF for UploadFunction {
     }
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
-        let UploadFunction {
+        let Self {
             location,
             config,
             max_connections,
@@ -61,7 +55,7 @@ impl ScalarUDF for UploadFunction {
                 let data_field = data.to_field(schema)?;
                 match data_field.dtype {
                     DataType::Binary | DataType::FixedSizeBinary(..) | DataType::Utf8 => Ok(Field::new(data_field.name, DataType::Utf8)),
-                    _ => Err(DaftError::TypeError(format!("Expects input to url_upload to be Binary, FixedSizeBinary or String, but received {}", data_field))),
+                    _ => Err(DaftError::TypeError(format!("Expects input to url_upload to be Binary, FixedSizeBinary or String, but received {data_field}"))),
                 }
             }
             _ => Err(DaftError::SchemaMismatch(format!(

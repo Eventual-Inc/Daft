@@ -1,13 +1,7 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
-
-use daft_core::{
-    array::{ops::as_arrow::AsArrow, ListArray},
-    datatypes::{Field, Utf8Array},
-    schema::Schema,
-    DataType, IntoSeries, Series,
-};
+use daft_core::prelude::*;
 use daft_dsl::{functions::ScalarUDF, ExprRef};
 use daft_io::IOConfig;
 use serde::{Deserialize, Serialize};
@@ -65,18 +59,17 @@ fn tokenize_decode_series(
         )?
         .into_series()),
         dt => Err(DaftError::TypeError(format!(
-            "Tokenize decode not implemented for type {}",
-            dt
+            "Tokenize decode not implemented for type {dt}"
         ))),
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub(super) struct TokenizeDecodeFunction {
-    pub(super) tokens_path: String,
-    pub(super) io_config: Option<Arc<IOConfig>>,
-    pub(super) pattern: Option<String>,
-    pub(super) special_tokens: Option<String>,
+pub struct TokenizeDecodeFunction {
+    pub tokens_path: String,
+    pub io_config: Option<Arc<IOConfig>>,
+    pub pattern: Option<String>,
+    pub special_tokens: Option<String>,
 }
 
 #[typetag::serde]

@@ -1,10 +1,12 @@
-use crate::ClusteringSpec;
-use common_display::tree::TreeDisplay;
-use daft_core::schema::SchemaRef;
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+use common_display::tree::TreeDisplay;
+use daft_schema::schema::SchemaRef;
+use serde::{Deserialize, Serialize};
+
+use crate::ClusteringSpec;
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EmptyScan {
     pub schema: SchemaRef,
     pub clustering_spec: Arc<ClusteringSpec>,

@@ -1,14 +1,14 @@
 use std::ops::Rem;
 
 use arrow2::array::{Array, DictionaryKey};
-use daft_core::array::ops::IntoGroups;
+use common_error::{DaftError, DaftResult};
+use daft_core::{
+    array::ops::{as_arrow::AsArrow, IntoGroups},
+    datatypes::UInt64Array,
+    series::IntoSeries,
+};
 use daft_dsl::ExprRef;
 use rand::SeedableRng;
-
-use common_error::{DaftError, DaftResult};
-use daft_core::{datatypes::UInt64Array, series::IntoSeries};
-
-use daft_core::array::ops::as_arrow::AsArrow;
 
 use crate::Table;
 
@@ -36,7 +36,7 @@ impl Table {
 
         for (s_idx, t_idx) in targets.as_arrow().values_iter().enumerate() {
             if *t_idx >= (num_partitions as u64) {
-                return Err(DaftError::ComputeError(format!("idx in target array is out of bounds, target idx {} at index {} out of {} partitions", t_idx, s_idx, num_partitions)));
+                return Err(DaftError::ComputeError(format!("idx in target array is out of bounds, target idx {t_idx} at index {s_idx} out of {num_partitions} partitions")));
             }
 
             output_to_input_idx[unsafe { t_idx.as_usize() }].push(s_idx as u64);

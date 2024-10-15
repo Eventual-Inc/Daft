@@ -1,10 +1,7 @@
 use arrow2::bitmap::utils::{BitmapIter, ZipValidity};
 
+use super::{ops::as_arrow::AsArrow, DataArray};
 use crate::datatypes::{BooleanArray, DaftNumericType};
-
-use super::DataArray;
-
-use super::ops::as_arrow::AsArrow;
 
 impl<'a, T> IntoIterator for &'a DataArray<T>
 where

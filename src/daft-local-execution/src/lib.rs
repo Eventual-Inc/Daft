@@ -9,8 +9,7 @@ mod sources;
 use common_error::{DaftError, DaftResult};
 use lazy_static::lazy_static;
 pub use run::NativeExecutor;
-use snafu::futures::TryFutureExt;
-use snafu::Snafu;
+use snafu::{futures::TryFutureExt, Snafu};
 lazy_static! {
     pub static ref NUM_CPUS: usize = std::thread::available_parallelism().unwrap().get();
 }
@@ -21,6 +20,7 @@ pub struct ExecutionRuntimeHandle {
 }
 
 impl ExecutionRuntimeHandle {
+    #[must_use]
     pub fn new(default_morsel_size: usize) -> Self {
         Self {
             worker_set: tokio::task::JoinSet::new(),
@@ -45,6 +45,7 @@ impl ExecutionRuntimeHandle {
         self.worker_set.shutdown().await;
     }
 
+    #[must_use]
     pub fn default_morsel_size(&self) -> usize {
         self.default_morsel_size
     }
@@ -64,6 +65,9 @@ pub enum Error {
     OneShotRecvError {
         source: tokio::sync::oneshot::error::RecvError,
     },
+    #[cfg(feature = "python")]
+    #[snafu(display("PyIOError: {}", source))]
+    PyIO { source: PyErr },
     #[snafu(display("Error creating pipeline from {}: {}", plan_name, source))]
     PipelineCreationError {
         source: DaftError,
@@ -77,7 +81,7 @@ pub enum Error {
 }
 
 impl From<Error> for DaftError {
-    fn from(err: Error) -> DaftError {
+    fn from(err: Error) -> Self {
         match err {
             Error::PipelineCreationError { source, plan_name } => {
                 log::error!("Error creating pipeline from {}", plan_name);
@@ -87,7 +91,7 @@ impl From<Error> for DaftError {
                 log::error!("Error when running pipeline node {}", node_name);
                 source
             }
-            _ => DaftError::External(err.into()),
+            _ => Self::External(err.into()),
         }
     }
 }
@@ -95,7 +99,7 @@ impl From<Error> for DaftError {
 type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[cfg(feature = "python")]
-pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<NativeExecutor>()?;
     Ok(())
 }

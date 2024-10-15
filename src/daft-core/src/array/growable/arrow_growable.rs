@@ -2,20 +2,12 @@ use std::{marker::PhantomData, sync::Arc};
 
 use common_error::DaftResult;
 
-use crate::{
-    array::{
-        ops::{as_arrow::AsArrow, from_arrow::FromArrow},
-        DataArray,
-    },
-    datatypes::{
-        BinaryType, BooleanType, DaftArrowBackedType, DaftDataType, ExtensionArray, Field,
-        FixedSizeBinaryType, Float32Type, Float64Type, Int128Type, Int16Type, Int32Type, Int64Type,
-        Int8Type, NullType, UInt16Type, UInt32Type, UInt64Type, UInt8Type, Utf8Type,
-    },
-    DataType, IntoSeries, Series,
-};
-
 use super::Growable;
+use crate::{
+    array::prelude::*,
+    datatypes::prelude::*,
+    series::{IntoSeries, Series},
+};
 
 pub struct ArrowBackedDataArrayGrowable<
     'a,
@@ -40,7 +32,7 @@ where
 
     #[inline]
     fn add_nulls(&mut self, additional: usize) {
-        self.arrow2_growable.extend_validity(additional)
+        self.arrow2_growable.extend_validity(additional);
     }
 
     #[inline]
@@ -203,11 +195,11 @@ impl<'a> ArrowExtensionGrowable<'a> {
 impl<'a> Growable for ArrowExtensionGrowable<'a> {
     #[inline]
     fn extend(&mut self, index: usize, start: usize, len: usize) {
-        self.child_growable.extend(index, start, len)
+        self.child_growable.extend(index, start, len);
     }
     #[inline]
     fn add_nulls(&mut self, additional: usize) {
-        self.child_growable.extend_validity(additional)
+        self.child_growable.extend_validity(additional);
     }
     #[inline]
     fn build(&mut self) -> DaftResult<Series> {

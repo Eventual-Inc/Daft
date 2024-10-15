@@ -9,14 +9,15 @@ use futures::{
     stream::{self, BoxStream},
     StreamExt, TryStreamExt,
 };
-
 use hyper::header;
 use reqwest::{
     header::{CONTENT_LENGTH, RANGE},
     Client,
 };
+use serde::{Deserialize, Serialize};
 use snafu::{IntoError, ResultExt, Snafu};
 
+use super::object_io::{GetResult, ObjectSource};
 use crate::{
     http::HttpSource,
     object_io::{FileMetadata, FileType, LSResult},
@@ -24,9 +25,6 @@ use crate::{
     stream_utils::io_stats_on_bytestream,
     FileFormat,
 };
-use serde::{Deserialize, Serialize};
-
-use super::object_io::{GetResult, ObjectSource};
 
 #[derive(Debug, Snafu)]
 enum Error {
@@ -130,11 +128,11 @@ impl FromStr for HFPathParts {
             let (repository, uri) = if let Some((repo, uri)) = uri.split_once('/') {
                 (repo, uri)
             } else {
-                return Some(HFPathParts {
+                return Some(Self {
                     bucket: bucket.to_string(),
-                    repository: format!("{}/{}", username, uri),
+                    repository: format!("{username}/{uri}"),
                     revision: "main".to_string(),
-                    path: "".to_string(),
+                    path: String::new(),
                 });
             };
 
@@ -147,12 +145,12 @@ impl FromStr for HFPathParts {
             };
 
             // {username}/{reponame}
-            let repository = format!("{}/{}", username, repository);
+            let repository = format!("{username}/{repository}");
             // {path from root}
             // ^--------------^
             let path = uri.to_string().trim_end_matches('/').to_string();
 
-            Some(HFPathParts {
+            Some(Self {
                 bucket: bucket.to_string(),
                 repository,
                 revision,
@@ -208,7 +206,7 @@ impl HFPathParts {
     }
 }
 
-pub(crate) struct HFSource {
+pub struct HFSource {
     http_source: HttpSource,
 }
 
@@ -220,20 +218,20 @@ impl From<HttpSource> for HFSource {
 
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
-        use Error::*;
+        use Error::{UnableToDetermineSize, UnableToOpenFile};
         match error {
             UnableToOpenFile { path, source } => match source.status().map(|v| v.as_u16()) {
-                Some(404) | Some(410) => super::Error::NotFound {
+                Some(404 | 410) => Self::NotFound {
                     path,
                     source: source.into(),
                 },
-                None | Some(_) => super::Error::UnableToOpenFile {
+                None | Some(_) => Self::UnableToOpenFile {
                     path,
                     source: source.into(),
                 },
             },
-            UnableToDetermineSize { path } => super::Error::UnableToDetermineSize { path },
-            _ => super::Error::Generic {
+            UnableToDetermineSize { path } => Self::UnableToDetermineSize { path },
+            _ => Self::Generic {
                 store: super::SourceType::Http,
                 source: error.into(),
             },
@@ -258,7 +256,7 @@ impl HFSource {
             );
         }
 
-        Ok(HFSource {
+        Ok(Self {
             http_source: HttpSource {
                 client: reqwest::ClientBuilder::default()
                     .pool_max_idle_per_host(70)
@@ -296,7 +294,7 @@ impl ObjectSource for HFSource {
             .context(UnableToConnectSnafu::<String> { path: uri.into() })?;
 
         let response = response.error_for_status().map_err(|e| {
-            if let Some(401) = e.status().map(|s| s.as_u16()) {
+            if e.status().map(|s| s.as_u16()) == Some(401) {
                 Error::Unauthorized
             } else {
                 Error::UnableToOpenFile {
@@ -307,7 +305,7 @@ impl ObjectSource for HFSource {
         })?;
 
         if let Some(is) = io_stats.as_ref() {
-            is.mark_get_requests(1)
+            is.mark_get_requests(1);
         }
         let size_bytes = response.content_length().map(|s| s as usize);
         let stream = response.bytes_stream();
@@ -346,7 +344,7 @@ impl ObjectSource for HFSource {
             .await
             .context(UnableToConnectSnafu::<String> { path: uri.into() })?;
         let response = response.error_for_status().map_err(|e| {
-            if let Some(401) = e.status().map(|s| s.as_u16()) {
+            if e.status().map(|s| s.as_u16()) == Some(401) {
                 Error::Unauthorized
             } else {
                 Error::UnableToOpenFile {
@@ -357,7 +355,7 @@ impl ObjectSource for HFSource {
         })?;
 
         if let Some(is) = io_stats.as_ref() {
-            is.mark_head_requests(1)
+            is.mark_head_requests(1);
         }
 
         let headers = response.headers();
@@ -395,7 +393,7 @@ impl ObjectSource for HFSource {
         // hf://datasets/user/repo
         // but not
         // hf://datasets/user/repo/file.parquet
-        if let Some(FileFormat::Parquet) = file_format {
+        if file_format == Some(FileFormat::Parquet) {
             let res =
                 try_parquet_api(glob_path, limit, io_stats.clone(), &self.http_source.client).await;
             match res {
@@ -435,7 +433,7 @@ impl ObjectSource for HFSource {
             })?;
 
         let response = response.error_for_status().map_err(|e| {
-            if let Some(401) = e.status().map(|s| s.as_u16()) {
+            if e.status().map(|s| s.as_u16()) == Some(401) {
                 Error::Unauthorized
             } else {
                 Error::UnableToOpenFile {
@@ -446,7 +444,7 @@ impl ObjectSource for HFSource {
         })?;
 
         if let Some(is) = io_stats.as_ref() {
-            is.mark_list_requests(1)
+            is.mark_list_requests(1);
         }
         let response = response
             .json::<Vec<Item>>()
@@ -529,7 +527,7 @@ async fn try_parquet_api(
             })?;
 
         if let Some(is) = io_stats.as_ref() {
-            is.mark_list_requests(1)
+            is.mark_list_requests(1);
         }
 
         // {<dataset_name>: {<split_name>: [<uri>, ...]}}
@@ -543,7 +541,7 @@ async fn try_parquet_api(
 
         let files = body
             .into_values()
-            .flat_map(|splits| splits.into_values())
+            .flat_map(std::collections::HashMap::into_values)
             .flatten()
             .map(|uri| {
                 Ok(FileMetadata {
@@ -553,9 +551,9 @@ async fn try_parquet_api(
                 })
             });
 
-        return Ok(Some(
+        Ok(Some(
             stream::iter(files).take(limit.unwrap_or(16 * 1024)).boxed(),
-        ));
+        ))
     } else {
         Ok(None)
     }

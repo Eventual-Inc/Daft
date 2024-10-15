@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
-use pyo3::{prelude::*, PyTypeInfo};
+use common_io_config::python::IOConfig as PyIOConfig;
+use common_py_serde::impl_bincode_py_state_serialization;
+use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::{DaftExecutionConfig, DaftPlanningConfig};
-use common_io_config::python::IOConfig as PyIOConfig;
 
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[pyclass(module = "daft.daft")]
@@ -15,13 +16,15 @@ pub struct PyDaftPlanningConfig {
 #[pymethods]
 impl PyDaftPlanningConfig {
     #[new]
+    #[must_use]
     pub fn new() -> Self {
-        PyDaftPlanningConfig::default()
+        Self::default()
     }
 
     #[staticmethod]
+    #[must_use]
     pub fn from_env() -> Self {
-        PyDaftPlanningConfig {
+        Self {
             config: Arc::new(DaftPlanningConfig::from_env()),
         }
     }
@@ -29,14 +32,19 @@ impl PyDaftPlanningConfig {
     fn with_config_values(
         &mut self,
         default_io_config: Option<PyIOConfig>,
-    ) -> PyResult<PyDaftPlanningConfig> {
+        enable_actor_pool_projections: Option<bool>,
+    ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
         if let Some(default_io_config) = default_io_config {
             config.default_io_config = default_io_config.config;
         }
 
-        Ok(PyDaftPlanningConfig {
+        if let Some(enable_actor_pool_projections) = enable_actor_pool_projections {
+            config.enable_actor_pool_projections = enable_actor_pool_projections;
+        }
+
+        Ok(Self {
             config: Arc::new(config),
         })
     }
@@ -52,27 +60,9 @@ impl PyDaftPlanningConfig {
     fn enable_actor_pool_projections(&self) -> PyResult<bool> {
         Ok(self.config.enable_actor_pool_projections)
     }
-
-    fn __reduce__(&self, py: Python) -> PyResult<(PyObject, (Vec<u8>,))> {
-        let bin_data = bincode::serialize(self.config.as_ref())
-            .expect("DaftPlanningConfig should be serializable to bytes");
-        Ok((
-            Self::type_object(py)
-                .getattr("_from_serialized")?
-                .to_object(py),
-            (bin_data,),
-        ))
-    }
-
-    #[staticmethod]
-    fn _from_serialized(bin_data: Vec<u8>) -> PyResult<PyDaftPlanningConfig> {
-        let daft_planning_config: DaftPlanningConfig = bincode::deserialize(bin_data.as_slice())
-            .expect("DaftExecutionConfig should be deserializable from bytes");
-        Ok(PyDaftPlanningConfig {
-            config: daft_planning_config.into(),
-        })
-    }
 }
+
+impl_bincode_py_state_serialization!(PyDaftPlanningConfig);
 
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[pyclass(module = "daft.daft")]
@@ -83,13 +73,15 @@ pub struct PyDaftExecutionConfig {
 #[pymethods]
 impl PyDaftExecutionConfig {
     #[new]
+    #[must_use]
     pub fn new() -> Self {
-        PyDaftExecutionConfig::default()
+        Self::default()
     }
 
     #[staticmethod]
+    #[must_use]
     pub fn from_env() -> Self {
-        PyDaftExecutionConfig {
+        Self {
             config: Arc::new(DaftExecutionConfig::from_env()),
         }
     }
@@ -115,7 +107,7 @@ impl PyDaftExecutionConfig {
         enable_aqe: Option<bool>,
         enable_native_executor: Option<bool>,
         default_morsel_size: Option<usize>,
-    ) -> PyResult<PyDaftExecutionConfig> {
+    ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
         if let Some(scan_tasks_max_size_bytes) = scan_tasks_max_size_bytes {
@@ -178,7 +170,7 @@ impl PyDaftExecutionConfig {
             config.default_morsel_size = default_morsel_size;
         }
 
-        Ok(PyDaftExecutionConfig {
+        Ok(Self {
             config: Arc::new(config),
         })
     }
@@ -264,24 +256,6 @@ impl PyDaftExecutionConfig {
     fn default_morsel_size(&self) -> PyResult<usize> {
         Ok(self.config.default_morsel_size)
     }
-
-    fn __reduce__(&self, py: Python) -> PyResult<(PyObject, (Vec<u8>,))> {
-        let bin_data = bincode::serialize(self.config.as_ref())
-            .expect("DaftExecutionConfig should be serializable to bytes");
-        Ok((
-            Self::type_object(py)
-                .getattr("_from_serialized")?
-                .to_object(py),
-            (bin_data,),
-        ))
-    }
-
-    #[staticmethod]
-    fn _from_serialized(bin_data: Vec<u8>) -> PyResult<PyDaftExecutionConfig> {
-        let daft_execution_config: DaftExecutionConfig = bincode::deserialize(bin_data.as_slice())
-            .expect("DaftExecutionConfig should be deserializable from bytes");
-        Ok(PyDaftExecutionConfig {
-            config: daft_execution_config.into(),
-        })
-    }
 }
+
+impl_bincode_py_state_serialization!(PyDaftExecutionConfig);

@@ -3,6 +3,7 @@ arrow2 = {workspace = true, features = ["io_parquet", "io_parquet_compression"]}
 async-compat = {workspace = true}
 async-stream = {workspace = true}
 bytes = {workspace = true}
+common-arrow-ffi = {path = "../common/arrow-ffi", default-features = false}
 common-error = {path = "../common/error", default-features = false}
 crossbeam-channel = "0.5.1"
 daft-core = {path = "../daft-core", default-features = false}
@@ -25,9 +26,13 @@ tokio-util = {workspace = true}
 
 [dev-dependencies]
 bincode = {workspace = true}
+path_macro = {workspace = true}
 
 [features]
-python = ["dep:pyo3", "common-error/python", "daft-core/python", "daft-io/python", "daft-table/python", "daft-stats/python", "daft-dsl/python"]
+python = ["dep:pyo3", "common-error/python", "daft-core/python", "daft-io/python", "daft-table/python", "daft-stats/python", "daft-dsl/python", "common-arrow-ffi/python"]
+
+[lints]
+workspace = true
 
 [package]
 edition = {workspace = true}

@@ -1,9 +1,11 @@
-use common_display::{tree::TreeDisplay, DisplayAs, DisplayLevel};
-use daft_scan::{file_format::FileFormatConfig, ScanTask};
 use std::sync::Arc;
 
-use crate::ClusteringSpec;
+use common_display::{tree::TreeDisplay, DisplayAs, DisplayLevel};
+use common_file_formats::FileFormatConfig;
+use daft_scan::ScanTask;
 use serde::{Deserialize, Serialize};
+
+use crate::ClusteringSpec;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TabularScan {
@@ -49,8 +51,7 @@ Num Scan Tasks = {num_scan_tasks}
 Estimated Scan Bytes = {total_bytes}
 Clustering spec = {{ {clustering_spec} }}
 "
-            )
-            .to_string();
+            );
             #[cfg(feature = "python")]
             if let FileFormatConfig::Database(config) =
                 scan.scan_tasks[0].file_format_config.as_ref()

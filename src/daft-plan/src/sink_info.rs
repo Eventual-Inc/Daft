@@ -1,17 +1,15 @@
 use std::hash::Hash;
 
+use common_file_formats::FileFormat;
 use common_io_config::IOConfig;
-use daft_dsl::ExprRef;
-use itertools::Itertools;
-
-#[cfg(feature = "python")]
-use pyo3::PyObject;
-
-use crate::FileFormat;
-use serde::{Deserialize, Serialize};
-
 #[cfg(feature = "python")]
 use common_py_serde::{deserialize_py_object, serialize_py_object};
+use daft_dsl::ExprRef;
+use derivative::Derivative;
+use itertools::Itertools;
+#[cfg(feature = "python")]
+use pyo3::PyObject;
+use serde::{Deserialize, Serialize};
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -46,45 +44,34 @@ pub enum CatalogType {
 }
 
 #[cfg(feature = "python")]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Derivative, Debug, Clone, Serialize, Deserialize)]
+#[derivative(PartialEq, Eq, Hash)]
 pub struct IcebergCatalogInfo {
     pub table_name: String,
     pub table_location: String,
-    pub spec_id: i64,
     #[serde(
         serialize_with = "serialize_py_object",
         deserialize_with = "deserialize_py_object"
     )]
+    #[derivative(PartialEq = "ignore")]
+    #[derivative(Hash = "ignore")]
+    pub partition_spec: PyObject,
+    #[serde(
+        serialize_with = "serialize_py_object",
+        deserialize_with = "deserialize_py_object"
+    )]
+    #[derivative(PartialEq = "ignore")]
+    #[derivative(Hash = "ignore")]
     pub iceberg_schema: PyObject,
 
     #[serde(
         serialize_with = "serialize_py_object",
         deserialize_with = "deserialize_py_object"
     )]
+    #[derivative(PartialEq = "ignore")]
+    #[derivative(Hash = "ignore")]
     pub iceberg_properties: PyObject,
     pub io_config: Option<IOConfig>,
-}
-
-#[cfg(feature = "python")]
-impl PartialEq for IcebergCatalogInfo {
-    fn eq(&self, other: &Self) -> bool {
-        self.table_name == other.table_name
-            && self.table_location == other.table_location
-            && self.spec_id == other.spec_id
-            && self.io_config == other.io_config
-    }
-}
-#[cfg(feature = "python")]
-impl Eq for IcebergCatalogInfo {}
-
-#[cfg(feature = "python")]
-impl Hash for IcebergCatalogInfo {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.table_name.hash(state);
-        self.table_location.hash(state);
-        self.spec_id.hash(state);
-        self.io_config.hash(state);
-    }
 }
 
 #[cfg(feature = "python")]
@@ -93,7 +80,6 @@ impl IcebergCatalogInfo {
         let mut res = vec![];
         res.push(format!("Table Name = {}", self.table_name));
         res.push(format!("Table Location = {}", self.table_location));
-        res.push(format!("Spec ID = {}", self.spec_id));
         match &self.io_config {
             None => res.push("IOConfig = None".to_string()),
             Some(io_config) => res.push(format!("IOConfig = {}", io_config)),
@@ -103,38 +89,14 @@ impl IcebergCatalogInfo {
 }
 
 #[cfg(feature = "python")]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct DeltaLakeCatalogInfo {
     pub path: String,
     pub mode: String,
     pub version: i32,
     pub large_dtypes: bool,
+    pub partition_cols: Option<Vec<String>>,
     pub io_config: Option<IOConfig>,
-}
-
-#[cfg(feature = "python")]
-impl PartialEq for DeltaLakeCatalogInfo {
-    fn eq(&self, other: &Self) -> bool {
-        self.path == other.path
-            && self.mode == other.mode
-            && self.version == other.version
-            && self.large_dtypes == other.large_dtypes
-            && self.io_config == other.io_config
-    }
-}
-
-#[cfg(feature = "python")]
-impl Eq for DeltaLakeCatalogInfo {}
-
-#[cfg(feature = "python")]
-impl Hash for DeltaLakeCatalogInfo {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.path.hash(state);
-        self.mode.hash(state);
-        self.version.hash(state);
-        self.large_dtypes.hash(state);
-        self.io_config.hash(state);
-    }
 }
 
 #[cfg(feature = "python")]
@@ -145,6 +107,12 @@ impl DeltaLakeCatalogInfo {
         res.push(format!("Mode = {}", self.mode));
         res.push(format!("Version = {}", self.version));
         res.push(format!("Large Dtypes = {}", self.large_dtypes));
+        if let Some(ref partition_cols) = self.partition_cols {
+            res.push(format!(
+                "Partition cols = {}",
+                partition_cols.iter().map(|e| e.to_string()).join(", ")
+            ));
+        }
         match &self.io_config {
             None => res.push("IOConfig = None".to_string()),
             Some(io_config) => res.push(format!("IOConfig = {}", io_config)),
@@ -154,7 +122,8 @@ impl DeltaLakeCatalogInfo {
 }
 
 #[cfg(feature = "python")]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Derivative, Debug, Clone, Serialize, Deserialize)]
+#[derivative(PartialEq, Eq, Hash)]
 pub struct LanceCatalogInfo {
     pub path: String,
     pub mode: String,
@@ -163,26 +132,9 @@ pub struct LanceCatalogInfo {
         serialize_with = "serialize_py_object",
         deserialize_with = "deserialize_py_object"
     )]
+    #[derivative(PartialEq = "ignore")]
+    #[derivative(Hash = "ignore")]
     pub kwargs: PyObject,
-}
-
-#[cfg(feature = "python")]
-impl PartialEq for LanceCatalogInfo {
-    fn eq(&self, other: &Self) -> bool {
-        self.path == other.path && self.mode == other.mode && self.io_config == other.io_config
-    }
-}
-
-#[cfg(feature = "python")]
-impl Eq for LanceCatalogInfo {}
-
-#[cfg(feature = "python")]
-impl Hash for LanceCatalogInfo {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.path.hash(state);
-        self.mode.hash(state);
-        self.io_config.hash(state);
-    }
 }
 
 #[cfg(feature = "python")]

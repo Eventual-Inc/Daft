@@ -4,11 +4,11 @@ use common_error::DaftResult;
 use common_resource_request::ResourceRequest;
 use daft_dsl::{functions::python::get_resource_request, ExprRef};
 use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     partitioning::translate_clustering_spec, physical_plan::PhysicalPlanRef, ClusteringSpec,
 };
-use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Project {
@@ -73,7 +73,7 @@ crate::impl_default_tree_display!(Project);
 mod tests {
     use common_daft_config::DaftExecutionConfig;
     use common_error::DaftResult;
-    use daft_core::{datatypes::Field, DataType};
+    use daft_core::prelude::*;
     use daft_dsl::{col, lit, ExprRef};
     use rstest::rstest;
 

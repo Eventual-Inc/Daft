@@ -3,7 +3,6 @@ use std::sync::Arc;
 use common_error::DaftError;
 use common_resource_request::ResourceRequest;
 use common_treenode::TreeNode;
-use daft_core::schema::{Schema, SchemaRef};
 use daft_dsl::{
     functions::{
         python::{get_concurrency, get_resource_request, PythonUDF, StatefulPythonUDF},
@@ -11,6 +10,7 @@ use daft_dsl::{
     },
     resolve_exprs, Expr, ExprRef,
 };
+use daft_schema::schema::{Schema, SchemaRef};
 use itertools::Itertools;
 use snafu::ResultExt;
 
@@ -58,7 +58,7 @@ impl ActorPoolProject {
 
         let projected_schema = Schema::new(fields).context(CreationSnafu)?.into();
 
-        Ok(ActorPoolProject {
+        Ok(Self {
             input,
             projection,
             projected_schema,

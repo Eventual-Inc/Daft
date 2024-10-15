@@ -1,19 +1,20 @@
 pub mod file_info;
-use daft_core::schema::SchemaRef;
+use std::{
+    hash::{Hash, Hasher},
+    sync::atomic::AtomicUsize,
+};
+
 use daft_scan::PhysicalScanInfo;
+use daft_schema::schema::SchemaRef;
 pub use file_info::{FileInfo, FileInfos};
 use serde::{Deserialize, Serialize};
-use std::hash::Hash;
-use std::sync::atomic::AtomicUsize;
-
-use crate::partitioning::ClusteringSpecRef;
-use std::hash::Hasher;
-
 #[cfg(feature = "python")]
 use {
     common_py_serde::{deserialize_py_object, serialize_py_object},
     pyo3::PyObject,
 };
+
+use crate::partitioning::ClusteringSpecRef;
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub enum SourceInfo {
@@ -86,7 +87,7 @@ pub struct PlaceHolderInfo {
 
 impl PlaceHolderInfo {
     pub fn new(source_schema: SchemaRef, clustering_spec: ClusteringSpecRef) -> Self {
-        PlaceHolderInfo {
+        Self {
             source_schema,
             clustering_spec,
             source_id: PLACEHOLDER_ID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst),

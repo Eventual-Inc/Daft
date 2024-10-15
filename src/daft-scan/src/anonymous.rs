@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_core::schema::SchemaRef;
+use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
+use daft_schema::schema::SchemaRef;
 
 use crate::{
-    file_format::{FileFormatConfig, ParquetSourceConfig},
-    storage_config::StorageConfig,
-    ChunkSpec, DataSource, PartitionField, Pushdowns, ScanOperator, ScanTask, ScanTaskRef,
+    storage_config::StorageConfig, ChunkSpec, DataSource, PartitionField, Pushdowns, ScanOperator,
+    ScanTask, ScanTaskRef,
 };
 #[derive(Debug)]
 pub struct AnonymousScanOperator {
@@ -17,6 +17,7 @@ pub struct AnonymousScanOperator {
 }
 
 impl AnonymousScanOperator {
+    #[must_use]
     pub fn new(
         files: Vec<String>,
         schema: SchemaRef,
@@ -39,6 +40,10 @@ impl ScanOperator for AnonymousScanOperator {
 
     fn partitioning_keys(&self) -> &[PartitionField] {
         &[]
+    }
+
+    fn file_path_column(&self) -> Option<&str> {
+        None
     }
 
     fn can_absorb_filter(&self) -> bool {
@@ -87,7 +92,7 @@ impl ScanOperator for AnonymousScanOperator {
                 let chunk_spec = rg.map(ChunkSpec::Parquet);
                 Ok(ScanTask::new(
                     vec![DataSource::File {
-                        path: f.to_string(),
+                        path: f,
                         chunk_spec,
                         size_bytes: None,
                         iceberg_delete_files: None,
@@ -100,6 +105,7 @@ impl ScanOperator for AnonymousScanOperator {
                     schema.clone(),
                     storage_config.clone(),
                     pushdowns.clone(),
+                    None,
                 )
                 .into())
             },

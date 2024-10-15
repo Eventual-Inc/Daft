@@ -27,7 +27,7 @@ pub trait StreamingSink: Send + Sync {
     fn name(&self) -> &'static str;
 }
 
-pub(crate) struct StreamingSinkNode {
+pub struct StreamingSinkNode {
     // use a RW lock
     op: Arc<tokio::sync::Mutex<Box<dyn StreamingSink>>>,
     name: &'static str,
@@ -38,7 +38,7 @@ pub(crate) struct StreamingSinkNode {
 impl StreamingSinkNode {
     pub(crate) fn new(op: Box<dyn StreamingSink>, children: Vec<Box<dyn PipelineNode>>) -> Self {
         let name = op.name();
-        StreamingSinkNode {
+        Self {
             op: Arc::new(tokio::sync::Mutex::new(op)),
             name,
             children,
@@ -55,13 +55,11 @@ impl TreeDisplay for StreamingSinkNode {
         use std::fmt::Write;
         let mut display = String::new();
         writeln!(display, "{}", self.name()).unwrap();
-        use common_display::DisplayLevel::*;
-        match level {
-            Compact => {}
-            _ => {
-                let rt_result = self.runtime_stats.result();
-                rt_result.display(&mut display, true, true, true).unwrap();
-            }
+        use common_display::DisplayLevel::Compact;
+        if matches!(level, Compact) {
+        } else {
+            let rt_result = self.runtime_stats.result();
+            rt_result.display(&mut display, true, true, true).unwrap();
         }
         display
     }
@@ -75,7 +73,10 @@ impl TreeDisplay for StreamingSinkNode {
 
 impl PipelineNode for StreamingSinkNode {
     fn children(&self) -> Vec<&dyn PipelineNode> {
-        self.children.iter().map(|v| v.as_ref()).collect()
+        self.children
+            .iter()
+            .map(std::convert::AsRef::as_ref)
+            .collect()
     }
 
     fn name(&self) -> &'static str {

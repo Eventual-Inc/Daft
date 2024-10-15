@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 import threading
 import time
@@ -8,12 +9,18 @@ from datetime import datetime
 from queue import Full, Queue
 from typing import TYPE_CHECKING, Any, Generator, Iterable, Iterator
 
-import pyarrow as pa
+# The ray runner is not a top-level module, so we don't need to lazily import pyarrow to minimize
+# import times. If this changes, we first need to make the daft.lazy_import.LazyImport class
+# serializable before importing pa from daft.dependencies.
+import pyarrow as pa  # noqa: TID253
 
+from daft.arrow_utils import ensure_array
 from daft.context import execution_config_ctx, get_context
-from daft.logical.builder import LogicalPlanBuilder
-from daft.plan_scheduler import PhysicalPlanScheduler
+from daft.daft import PyTable as _PyTable
+from daft.dependencies import np
 from daft.runners.progress_bar import ProgressBar
+from daft.series import Series, item_to_series
+from daft.table import Table
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +38,7 @@ from daft.daft import (
     IOConfig,
     PyDaftExecutionConfig,
     ResourceRequest,
+    extract_partial_stateful_udf_py,
 )
 from daft.datatype import DataType
 from daft.execution.execution_step import (
@@ -41,7 +49,9 @@ from daft.execution.execution_step import (
     ReduceInstruction,
     ScanWithTask,
     SingleOutputPartitionTask,
+    StatefulUDFProject,
 )
+from daft.expressions import ExpressionsProjection
 from daft.filesystem import glob_path_with_stats
 from daft.runners import runner_io
 from daft.runners.partitioning import (
@@ -62,6 +72,9 @@ if TYPE_CHECKING:
     from ray.data.block import Block as RayDatasetBlock
     from ray.data.dataset import Dataset as RayDataset
 
+    from daft.logical.builder import LogicalPlanBuilder
+    from daft.plan_scheduler import PhysicalPlanScheduler
+
 _RAY_FROM_ARROW_REFS_AVAILABLE = True
 try:
     from ray.data import from_arrow_refs
@@ -71,6 +84,36 @@ except ImportError:
 from daft.logical.schema import Schema
 
 RAY_VERSION = tuple(int(s) for s in ray.__version__.split(".")[0:3])
+
+_RAY_DATA_ARROW_TENSOR_TYPE_AVAILABLE = True
+try:
+    from ray.data.extensions import ArrowTensorArray, ArrowTensorType
+except ImportError:
+    _RAY_DATA_ARROW_TENSOR_TYPE_AVAILABLE = False
+
+_RAY_DATA_EXTENSIONS_AVAILABLE = True
+_TENSOR_EXTENSION_TYPES = []
+try:
+    import ray
+except ImportError:
+    _RAY_DATA_EXTENSIONS_AVAILABLE = False
+else:
+    _RAY_VERSION = tuple(int(s) for s in ray.__version__.split(".")[0:3])
+    try:
+        # Variable-shaped tensor column support was added in Ray 2.1.0.
+        if _RAY_VERSION >= (2, 2, 0):
+            from ray.data.extensions import (
+                ArrowTensorType,
+                ArrowVariableShapedTensorType,
+            )
+
+            _TENSOR_EXTENSION_TYPES = [ArrowTensorType, ArrowVariableShapedTensorType]
+        else:
+            from ray.data.extensions import ArrowTensorType
+
+            _TENSOR_EXTENSION_TYPES = [ArrowTensorType]
+    except ImportError:
+        _RAY_DATA_EXTENSIONS_AVAILABLE = False
 
 
 @ray.remote
@@ -93,16 +136,90 @@ def _glob_path_into_file_infos(
 @ray.remote
 def _make_ray_block_from_micropartition(partition: MicroPartition) -> RayDatasetBlock:
     try:
-        return partition.to_arrow(cast_tensors_to_ray_tensor_dtype=True)
+        daft_schema = partition.schema()
+        arrow_tbl = partition.to_arrow()
+
+        # Convert arrays to Ray Data's native ArrowTensorType arrays
+        new_arrs = {}
+        for idx, field in enumerate(arrow_tbl.schema):
+            if daft_schema[field.name].dtype._is_fixed_shape_tensor_type():
+                assert isinstance(field.type, pa.FixedShapeTensorType)
+                new_dtype = ArrowTensorType(field.type.shape, field.type.value_type)
+                arrow_arr = arrow_tbl[field.name].combine_chunks()
+                storage_arr = arrow_arr.storage
+                list_size = storage_arr.type.list_size
+                new_storage_arr = pa.ListArray.from_arrays(
+                    pa.array(
+                        list(range(0, (len(arrow_arr) + 1) * list_size, list_size)),
+                        pa.int32(),
+                    ),
+                    storage_arr.values,
+                )
+                new_arrs[idx] = (
+                    field.name,
+                    pa.ExtensionArray.from_storage(new_dtype, new_storage_arr),
+                )
+            elif daft_schema[field.name].dtype._is_tensor_type():
+                assert isinstance(field.type, pa.ExtensionType)
+                new_arrs[idx] = (field.name, ArrowTensorArray.from_numpy(partition.get_column(field.name).to_pylist()))
+        for idx, (field_name, arr) in new_arrs.items():
+            arrow_tbl = arrow_tbl.set_column(idx, pa.field(field_name, arr.type), arr)
+
+        return arrow_tbl
     except pa.ArrowInvalid:
         return partition.to_pylist()
+
+
+def _series_from_arrow_with_ray_data_extensions(
+    array: pa.Array | pa.ChunkedArray, name: str = "arrow_series"
+) -> Series:
+    if isinstance(array, pa.Array):
+        # TODO(desmond): This might be dead code since `ArrayTensorType`s are `numpy.ndarray` under
+        # the hood and are not instances of `pyarrow.Array`. Should follow up and check if this code
+        # can be removed.
+        array = ensure_array(array)
+        if _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(array.type, ArrowTensorType):
+            storage_series = _series_from_arrow_with_ray_data_extensions(array.storage, name=name)
+            series = storage_series.cast(
+                DataType.fixed_size_list(
+                    _from_arrow_type_with_ray_data_extensions(array.type.scalar_type),
+                    int(np.prod(array.type.shape)),
+                )
+            )
+            return series.cast(DataType.from_arrow_type(array.type))
+        elif _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(array.type, ArrowVariableShapedTensorType):
+            return Series.from_numpy(array.to_numpy(zero_copy_only=False), name=name)
+    return Series.from_arrow(array, name)
+
+
+def _micropartition_from_arrow_with_ray_data_extensions(arrow_table: pa.Table) -> MicroPartition:
+    assert isinstance(arrow_table, pa.Table)
+    non_native_fields = []
+    for arrow_field in arrow_table.schema:
+        dt = _from_arrow_type_with_ray_data_extensions(arrow_field.type)
+        if dt == DataType.python() or dt._is_tensor_type() or dt._is_fixed_shape_tensor_type():
+            non_native_fields.append(arrow_field.name)
+    if non_native_fields:
+        # If there are any contained Arrow types that are not natively supported, convert each
+        # series while checking for ray data extension types.
+        logger.debug("Unsupported Arrow types detected for columns: %s", non_native_fields)
+        series_dict = dict()
+        for name, column in zip(arrow_table.column_names, arrow_table.columns):
+            series = (
+                _series_from_arrow_with_ray_data_extensions(column, name)
+                if isinstance(column, (pa.Array, pa.ChunkedArray))
+                else item_to_series(name, column)
+            )
+            series_dict[name] = series._series
+        return MicroPartition._from_tables([Table._from_pytable(_PyTable.from_pylist_series(series_dict))])
+    return MicroPartition.from_arrow(arrow_table)
 
 
 @ray.remote
 def _make_daft_partition_from_ray_dataset_blocks(
     ray_dataset_block: pa.MicroPartition, daft_schema: Schema
 ) -> MicroPartition:
-    return MicroPartition.from_arrow(ray_dataset_block)
+    return _micropartition_from_arrow_with_ray_data_extensions(ray_dataset_block)
 
 
 @ray.remote(num_returns=2)
@@ -222,6 +339,14 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
         ray.wait(list(deduped_object_refs))
 
 
+def _from_arrow_type_with_ray_data_extensions(arrow_type: pa.lib.DataType) -> DataType:
+    if _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(arrow_type, tuple(_TENSOR_EXTENSION_TYPES)):
+        scalar_dtype = _from_arrow_type_with_ray_data_extensions(arrow_type.scalar_type)
+        shape = arrow_type.shape if isinstance(arrow_type, ArrowTensorType) else None
+        return DataType.tensor(scalar_dtype, shape)
+    return DataType.from_arrow_type(arrow_type)
+
+
 class RayRunnerIO(runner_io.RunnerIO):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -263,7 +388,10 @@ class RayRunnerIO(runner_io.RunnerIO):
                 arrow_schema = pa.schema({name: t for name, t in zip(arrow_schema.names, arrow_schema.types)})
 
         daft_schema = Schema._from_field_name_and_types(
-            [(arrow_field.name, DataType.from_arrow_type(arrow_field.type)) for arrow_field in arrow_schema]
+            [
+                (arrow_field.name, _from_arrow_type_with_ray_data_extensions(arrow_field.type))
+                for arrow_field in arrow_schema
+            ]
         )
         block_refs = ds.get_internal_block_refs()
 
@@ -449,6 +577,8 @@ class Scheduler:
         self.active_by_df: dict[str, bool] = dict()
         self.results_buffer_size_by_df: dict[str, int | None] = dict()
 
+        self._actor_pools: dict[str, RayRoundRobinActorPool] = {}
+
         self.use_ray_tqdm = use_ray_tqdm
 
     def next(self, result_uuid: str) -> RayMaterializedResult | StopIteration:
@@ -505,6 +635,24 @@ class Scheduler:
             del self.active_by_df[result_uuid]
             del self.results_by_df[result_uuid]
             del self.results_buffer_size_by_df[result_uuid]
+
+    def get_actor_pool(
+        self,
+        name: str,
+        resource_request: ResourceRequest,
+        num_actors: int,
+        projection: ExpressionsProjection,
+        execution_config: PyDaftExecutionConfig,
+    ) -> str:
+        actor_pool = RayRoundRobinActorPool(name, num_actors, resource_request, projection, execution_config)
+        self._actor_pools[name] = actor_pool
+        self._actor_pools[name].setup()
+        return name
+
+    def teardown_actor_pool(self, name: str) -> None:
+        if name in self._actor_pools:
+            self._actor_pools[name].teardown()
+            del self._actor_pools[name]
 
     def _run_plan(
         self,
@@ -618,7 +766,12 @@ class Scheduler:
                             break
 
                         for task in tasks_to_dispatch:
-                            results = _build_partitions(daft_execution_config, task)
+                            if task.actor_pool_id is None:
+                                results = _build_partitions(daft_execution_config, task)
+                            else:
+                                actor_pool = self._actor_pools.get(task.actor_pool_id)
+                                assert actor_pool is not None, "Ray actor pool must live for as long as the tasks."
+                                results = _build_partitions_on_actor_pool(task, actor_pool)
                             logger.debug("%s -> %s", task, results)
                             inflight_tasks[task.id()] = task
                             for result in results:
@@ -746,6 +899,128 @@ def _build_partitions(
     )
 
     return partitions
+
+
+def _build_partitions_on_actor_pool(
+    task: PartitionTask[ray.ObjectRef],
+    actor_pool: RayRoundRobinActorPool,
+) -> list[ray.ObjectRef]:
+    """Run a PartitionTask on an actor pool and return the resulting list of partitions."""
+    [metadatas_ref, *partitions] = actor_pool.submit(task.instructions, task.partial_metadatas, task.inputs)
+    metadatas_accessor = PartitionMetadataAccessor(metadatas_ref)
+    task.set_result(
+        [
+            RayMaterializedResult(
+                partition=partition,
+                metadatas=metadatas_accessor,
+                metadata_idx=i,
+            )
+            for i, partition in enumerate(partitions)
+        ]
+    )
+    return partitions
+
+
+@ray.remote
+class DaftRayActor:
+    def __init__(self, daft_execution_config: PyDaftExecutionConfig, uninitialized_projection: ExpressionsProjection):
+        self.daft_execution_config = daft_execution_config
+        partial_stateful_udfs = {
+            name: psu
+            for expr in uninitialized_projection
+            for name, psu in extract_partial_stateful_udf_py(expr._expr).items()
+        }
+        logger.info("Initializing stateful UDFs: %s", ", ".join(partial_stateful_udfs.keys()))
+
+        self.initialized_stateful_udfs = {}
+        for name, (partial_udf, init_args) in partial_stateful_udfs.items():
+            if init_args is None:
+                self.initialized_stateful_udfs[name] = partial_udf.func_cls()
+            else:
+                args, kwargs = init_args
+                self.initialized_stateful_udfs[name] = partial_udf.func_cls(*args, **kwargs)
+
+    @ray.method(num_returns=2)
+    def run(
+        self,
+        uninitialized_projection: ExpressionsProjection,
+        partial_metadatas: list[PartitionMetadata],
+        *inputs: MicroPartition,
+    ) -> list[list[PartitionMetadata] | MicroPartition]:
+        with execution_config_ctx(config=self.daft_execution_config):
+            assert len(inputs) == 1, "DaftRayActor can only process single partitions"
+            assert len(partial_metadatas) == 1, "DaftRayActor can only process single partitions (and single metadata)"
+            part = inputs[0]
+            partial = partial_metadatas[0]
+
+            # Bind the ExpressionsProjection to the initialized UDFs
+            initialized_projection = ExpressionsProjection(
+                [e._bind_stateful_udfs(self.initialized_stateful_udfs) for e in uninitialized_projection]
+            )
+            new_part = part.eval_expression_list(initialized_projection)
+
+            return [
+                [PartitionMetadata.from_table(new_part).merge_with_partial(partial)],
+                new_part,
+            ]
+
+
+class RayRoundRobinActorPool:
+    """Naive implementation of an ActorPool that performs round-robin task submission to the actors"""
+
+    def __init__(
+        self,
+        pool_id: str,
+        num_actors: int,
+        resource_request: ResourceRequest,
+        projection: ExpressionsProjection,
+        execution_config: PyDaftExecutionConfig,
+    ):
+        self._actors: list[DaftRayActor] | None = None
+        self._task_idx = 0
+
+        self._execution_config = execution_config
+        self._num_actors = num_actors
+        self._resource_request_per_actor = resource_request
+        self._id = pool_id
+        self._projection = projection
+
+    def setup(self) -> None:
+        ray_options = _get_ray_task_options(self._resource_request_per_actor)
+
+        self._actors = [
+            DaftRayActor.options(name=f"rank={rank}-{self._id}", **ray_options).remote(  # type: ignore
+                self._execution_config, self._projection
+            )
+            for rank in range(self._num_actors)
+        ]
+
+    def teardown(self):
+        assert self._actors is not None, "Must have active Ray actors on teardown"
+
+        # Delete the actors in the old pool so Ray can tear them down
+        old_actors = self._actors
+        self._actors = None
+        del old_actors
+
+    def submit(
+        self, instruction_stack: list[Instruction], partial_metadatas: list[ray.ObjectRef], inputs: list[ray.ObjectRef]
+    ) -> list[ray.ObjectRef]:
+        assert self._actors is not None, "Must have active Ray actors during submission"
+
+        assert (
+            len(instruction_stack) == 1
+        ), "RayRoundRobinActorPool can only handle single StatefulUDFProject instructions"
+        instruction = instruction_stack[0]
+        assert isinstance(instruction, StatefulUDFProject)
+        projection = instruction.projection
+
+        # Determine which actor to schedule on in a round-robin fashion
+        idx = self._task_idx % self._num_actors
+        self._task_idx += 1
+        actor = self._actors[idx]
+
+        return actor.run.remote(projection, partial_metadatas, *inputs)
 
 
 class RayRunner(Runner[ray.ObjectRef]):
@@ -881,6 +1156,32 @@ class RayRunner(Runner[ray.ObjectRef]):
     ) -> Iterator[MicroPartition]:
         for result in self.run_iter(builder, results_buffer_size=results_buffer_size):
             yield ray.get(result.partition())
+
+    @contextlib.contextmanager
+    def actor_pool_context(
+        self,
+        name: str,
+        actor_resource_request: ResourceRequest,
+        task_resource_request: ResourceRequest,
+        num_actors: PartID,
+        projection: ExpressionsProjection,
+    ) -> Iterator[str]:
+        # Ray runs actor methods serially, so the resource request for an actor should be both the actor's resources and the task's resources
+        resource_request = actor_resource_request + task_resource_request
+
+        execution_config = get_context().daft_execution_config
+        if self.ray_client_mode:
+            try:
+                yield ray.get(
+                    self.scheduler_actor.get_actor_pool.remote(name, resource_request, num_actors, projection)
+                )
+            finally:
+                self.scheduler_actor.teardown_actor_pool.remote(name)
+        else:
+            try:
+                yield self.scheduler.get_actor_pool(name, resource_request, num_actors, projection, execution_config)
+            finally:
+                self.scheduler.teardown_actor_pool(name)
 
     def _collect_into_cache(self, results_iter: Iterator[RayMaterializedResult]) -> PartitionCacheEntry:
         result_pset = RayPartitionSet()

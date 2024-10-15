@@ -1,8 +1,6 @@
-use std::fmt::Display;
-use std::fmt::Formatter;
+use std::fmt::{Display, Formatter};
 
-use serde::Deserialize;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::ObfuscatedString;
 
@@ -15,10 +13,11 @@ pub struct GCSConfig {
 }
 
 impl GCSConfig {
+    #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         if let Some(project_id) = &self.project_id {
-            res.push(format!("Project ID = {}", project_id));
+            res.push(format!("Project ID = {project_id}"));
         }
         res.push(format!("Anonymous = {}", self.anonymous));
         res

@@ -4,7 +4,8 @@ use std::{
 };
 
 use common_error::DaftResult;
-use daft_core::JoinType;
+use common_treenode::{DynTreeNode, Transformed, TreeNode};
+use daft_core::join::JoinType;
 use daft_dsl::{
     col,
     optimization::{
@@ -14,14 +15,12 @@ use daft_dsl::{
 };
 use daft_scan::{rewrite_predicate_for_partitioning, PredicateGroups};
 
+use super::OptimizerRule;
 use crate::{
     logical_ops::{Concat, Filter, Project, Source},
     source_info::SourceInfo,
     LogicalPlan,
 };
-
-use super::{ApplyOrder, OptimizerRule, Transformed};
-use common_treenode::DynTreeNode;
 
 /// Optimization rules for pushing Filters further into the logical plan.
 #[derive(Default, Debug)]
@@ -34,14 +33,20 @@ impl PushDownFilter {
 }
 
 impl OptimizerRule for PushDownFilter {
-    fn apply_order(&self) -> ApplyOrder {
-        ApplyOrder::TopDown
-    }
-
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
+        plan.transform_down(|node| self.try_optimize_node(node))
+    }
+}
+
+impl PushDownFilter {
+    #[allow(clippy::only_used_in_recursion)]
+    fn try_optimize_node(
+        &self,
+        plan: Arc<LogicalPlan>,
+    ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         let filter = match plan.as_ref() {
             LogicalPlan::Filter(filter) => filter,
-            _ => return Ok(Transformed::No(plan)),
+            _ => return Ok(Transformed::no(plan)),
         };
         let child_plan = filter.input.as_ref();
         let new_plan = match child_plan {
@@ -52,7 +57,7 @@ impl OptimizerRule for PushDownFilter {
 
                 // Split predicate expression on conjunctions (ANDs).
                 let parent_predicates = split_conjuction(&filter.predicate);
-                let predicate_set: HashSet<&ExprRef> = parent_predicates.iter().cloned().collect();
+                let predicate_set: HashSet<&ExprRef> = parent_predicates.iter().copied().collect();
                 // Add child predicate expressions to parent predicate expressions, eliminating duplicates.
                 let new_predicates: Vec<ExprRef> = parent_predicates
                     .iter()
@@ -68,20 +73,19 @@ impl OptimizerRule for PushDownFilter {
                 let new_filter: Arc<LogicalPlan> =
                     LogicalPlan::from(Filter::try_new(child_filter.input.clone(), new_predicate)?)
                         .into();
-                self.try_optimize(new_filter.clone())?
-                    .or(Transformed::Yes(new_filter))
-                    .unwrap()
-                    .clone()
+                self.try_optimize_node(new_filter.clone())?
+                    .or(Transformed::yes(new_filter))
+                    .data
             }
             LogicalPlan::Source(source) => {
                 match source.source_info.as_ref() {
                     // Filter pushdown is not supported for in-memory sources.
-                    SourceInfo::InMemory(_) => return Ok(Transformed::No(plan)),
+                    SourceInfo::InMemory(_) => return Ok(Transformed::no(plan)),
                     // Do not pushdown if Source node already has a limit
                     SourceInfo::Physical(external_info)
                         if let Some(_) = external_info.pushdowns.limit =>
                     {
-                        return Ok(Transformed::No(plan))
+                        return Ok(Transformed::no(plan))
                     }
 
                     // Pushdown filter into the Source node
@@ -92,7 +96,7 @@ impl OptimizerRule for PushDownFilter {
                             .filters
                             .as_ref()
                             .map(|f| predicate.clone().and(f.clone()))
-                            .unwrap_or(predicate.clone());
+                            .unwrap_or_else(|| predicate.clone());
                         // We split the predicate into three groups:
                         // 1. All partition-only filters, which can be applied directly to partition values and can be
                         //    dropped from the data-level filter.
@@ -126,7 +130,7 @@ impl OptimizerRule for PushDownFilter {
                             // column and a data column (or contain a UDF), then no pushdown into the scan is possible,
                             // so we short-circuit.
                             // TODO(Clark): Support pushing predicates referencing both partition and data columns into the scan.
-                            return Ok(Transformed::No(plan));
+                            return Ok(Transformed::no(plan));
                         }
 
                         let data_filter = conjuct(data_only_filter);
@@ -157,9 +161,9 @@ impl OptimizerRule for PushDownFilter {
                                 conjuct(needing_filter_op).unwrap(),
                             )?
                             .into();
-                            return Ok(Transformed::Yes(filter_op.into()));
+                            return Ok(Transformed::yes(filter_op.into()));
                         } else {
-                            return Ok(Transformed::Yes(new_source.into()));
+                            return Ok(Transformed::yes(new_source.into()));
                         }
                     }
                     SourceInfo::PlaceHolder(..) => {
@@ -205,7 +209,7 @@ impl OptimizerRule for PushDownFilter {
                 }
                 if can_push.is_empty() {
                     // No predicate expressions can be pushed through projection.
-                    return Ok(Transformed::No(plan));
+                    return Ok(Transformed::no(plan));
                 }
                 // Create new Filter with predicates that can be pushed past Projection.
                 let predicates_to_push = conjuct(can_push).unwrap();
@@ -335,12 +339,12 @@ impl OptimizerRule for PushDownFilter {
                         new_join
                     }
                 } else {
-                    return Ok(Transformed::No(plan));
+                    return Ok(Transformed::no(plan));
                 }
             }
-            _ => return Ok(Transformed::No(plan)),
+            _ => return Ok(Transformed::no(plan)),
         };
-        Ok(Transformed::Yes(new_plan))
+        Ok(Transformed::yes(new_plan))
     }
 }
 
@@ -349,7 +353,7 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
-    use daft_core::{datatypes::Field, join::JoinType, DataType};
+    use daft_core::prelude::*;
     use daft_dsl::{col, lit};
     use daft_scan::Pushdowns;
     use rstest::rstest;
@@ -676,19 +680,13 @@ mod tests {
         let expected_left_filter_scan = if push_into_left_scan {
             dummy_scan_node_with_pushdowns(
                 left_scan_op.clone(),
-                Pushdowns::default().with_filters(Some(pred.clone())),
+                Pushdowns::default().with_filters(Some(pred)),
             )
         } else {
-            left_scan_plan.filter(pred.clone())?
+            left_scan_plan.filter(pred)?
         };
         let expected = expected_left_filter_scan
-            .join(
-                &right_scan_plan,
-                join_on.clone(),
-                join_on.clone(),
-                how,
-                None,
-            )?
+            .join(&right_scan_plan, join_on.clone(), join_on, how, None)?
             .build();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
@@ -728,16 +726,16 @@ mod tests {
         let expected_right_filter_scan = if push_into_right_scan {
             dummy_scan_node_with_pushdowns(
                 right_scan_op.clone(),
-                Pushdowns::default().with_filters(Some(pred.clone())),
+                Pushdowns::default().with_filters(Some(pred)),
             )
         } else {
-            right_scan_plan.filter(pred.clone())?
+            right_scan_plan.filter(pred)?
         };
         let expected = left_scan_plan
             .join(
                 &expected_right_filter_scan,
                 join_on.clone(),
-                join_on.clone(),
+                join_on,
                 how,
                 None,
             )?
@@ -810,7 +808,7 @@ mod tests {
             .join(
                 &expected_right_filter_scan,
                 join_on.clone(),
-                join_on.clone(),
+                join_on,
                 how,
                 None,
             )?
@@ -837,14 +835,8 @@ mod tests {
         let join_on = vec![col("b")];
         let pred = col("a").lt(lit(2));
         let plan = left_scan_plan
-            .join(
-                &right_scan_plan,
-                join_on.clone(),
-                join_on.clone(),
-                how,
-                None,
-            )?
-            .filter(pred.clone())?
+            .join(&right_scan_plan, join_on.clone(), join_on, how, None)?
+            .filter(pred)?
             .build();
         // should not push down filter
         let expected = plan.clone();
@@ -870,14 +862,8 @@ mod tests {
         let join_on = vec![col("b")];
         let pred = col("c").lt(lit(2.0));
         let plan = left_scan_plan
-            .join(
-                &right_scan_plan,
-                join_on.clone(),
-                join_on.clone(),
-                how,
-                None,
-            )?
-            .filter(pred.clone())?
+            .join(&right_scan_plan, join_on.clone(), join_on, how, None)?
+            .filter(pred)?
             .build();
         // should not push down filter
         let expected = plan.clone();

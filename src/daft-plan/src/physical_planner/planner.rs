@@ -2,20 +2,20 @@ use std::sync::Arc;
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
-use common_treenode::{Transformed, TreeNode, TreeNodeRewriter, TreeNodeVisitor};
+use common_treenode::{
+    DynTreeNode, Transformed, TreeNode, TreeNodeRecursion, TreeNodeRewriter, TreeNodeVisitor,
+};
 use serde::{Deserialize, Serialize};
 
-use crate::logical_ops::Source;
-use crate::logical_optimization::Optimizer;
-use crate::logical_plan::LogicalPlan;
-
-use crate::physical_plan::{PhysicalPlan, PhysicalPlanRef};
-use crate::source_info::{InMemoryInfo, PlaceHolderInfo, SourceInfo};
-use crate::LogicalPlanRef;
-
-use common_treenode::{DynTreeNode, TreeNodeRecursion};
-
 use super::translate::translate_single_logical_node;
+use crate::{
+    logical_ops::Source,
+    logical_optimization::Optimizer,
+    logical_plan::LogicalPlan,
+    physical_plan::{PhysicalPlan, PhysicalPlanRef},
+    source_info::{InMemoryInfo, PlaceHolderInfo, SourceInfo},
+    LogicalPlanRef,
+};
 pub(super) struct PhysicalPlanTranslator {
     pub physical_children: Vec<Arc<PhysicalPlan>>,
     pub cfg: Arc<DaftExecutionConfig>,
@@ -193,7 +193,7 @@ impl TreeNodeRewriter for QueryStagePhysicalPlanTranslator {
                 _ => panic!("We shouldn't have any nodes that have more than 3 children"),
             }
         } else {
-            self.physical_children.push(translated_pplan.clone());
+            self.physical_children.push(translated_pplan);
             Ok(Transformed::no(node))
         }
     }
@@ -258,18 +258,18 @@ pub enum QueryStageOutput {
 impl QueryStageOutput {
     pub fn unwrap(self) -> (Option<usize>, PhysicalPlanRef) {
         match self {
-            QueryStageOutput::Partial {
+            Self::Partial {
                 physical_plan,
                 source_id,
             } => (Some(source_id), physical_plan),
-            QueryStageOutput::Final { physical_plan } => (None, physical_plan),
+            Self::Final { physical_plan } => (None, physical_plan),
         }
     }
 
     pub fn source_id(&self) -> Option<usize> {
         match self {
-            QueryStageOutput::Partial { source_id, .. } => Some(*source_id),
-            QueryStageOutput::Final { .. } => None,
+            Self::Partial { source_id, .. } => Some(*source_id),
+            Self::Final { .. } => None,
         }
     }
 }
@@ -293,7 +293,7 @@ pub struct AdaptivePlanner {
 
 impl AdaptivePlanner {
     pub fn new(logical_plan: LogicalPlanRef, cfg: Arc<DaftExecutionConfig>) -> Self {
-        AdaptivePlanner {
+        Self {
             logical_plan,
             cfg,
             status: AdaptivePlannerStatus::Ready,

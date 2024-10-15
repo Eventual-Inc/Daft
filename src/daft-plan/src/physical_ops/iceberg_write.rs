@@ -1,10 +1,9 @@
-use daft_core::schema::SchemaRef;
-
-use crate::{physical_plan::PhysicalPlanRef, sink_info::IcebergCatalogInfo};
+use daft_schema::schema::SchemaRef;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+use crate::{physical_plan::PhysicalPlanRef, sink_info::IcebergCatalogInfo};
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct IcebergWrite {
     pub schema: SchemaRef,
     pub iceberg_info: IcebergCatalogInfo,

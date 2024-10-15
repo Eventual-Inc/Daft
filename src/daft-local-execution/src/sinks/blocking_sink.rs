@@ -23,7 +23,7 @@ pub trait BlockingSink: Send + Sync {
     fn name(&self) -> &'static str;
 }
 
-pub(crate) struct BlockingSinkNode {
+pub struct BlockingSinkNode {
     // use a RW lock
     op: Arc<tokio::sync::Mutex<Box<dyn BlockingSink>>>,
     name: &'static str,
@@ -34,7 +34,7 @@ pub(crate) struct BlockingSinkNode {
 impl BlockingSinkNode {
     pub(crate) fn new(op: Box<dyn BlockingSink>, child: Box<dyn PipelineNode>) -> Self {
         let name = op.name();
-        BlockingSinkNode {
+        Self {
             op: Arc::new(tokio::sync::Mutex::new(op)),
             name,
             child,
@@ -51,13 +51,11 @@ impl TreeDisplay for BlockingSinkNode {
         use std::fmt::Write;
         let mut display = String::new();
         writeln!(display, "{}", self.name()).unwrap();
-        use common_display::DisplayLevel::*;
-        match level {
-            Compact => {}
-            _ => {
-                let rt_result = self.runtime_stats.result();
-                rt_result.display(&mut display, true, true, true).unwrap();
-            }
+        use common_display::DisplayLevel::Compact;
+        if matches!(level, Compact) {
+        } else {
+            let rt_result = self.runtime_stats.result();
+            rt_result.display(&mut display, true, true, true).unwrap();
         }
         display
     }
@@ -96,9 +94,10 @@ impl PipelineNode for BlockingSinkNode {
                 let span = info_span!("BlockingSinkNode::execute");
                 let mut guard = op.lock().await;
                 while let Some(val) = child_results_receiver.recv().await {
-                    if let BlockingSinkStatus::Finished =
-                        rt_context.in_span(&span, || guard.sink(val.as_data()))?
-                    {
+                    if matches!(
+                        rt_context.in_span(&span, || guard.sink(val.as_data()))?,
+                        BlockingSinkStatus::Finished
+                    ) {
                         break;
                     }
                 }

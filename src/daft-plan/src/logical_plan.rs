@@ -1,12 +1,11 @@
 use std::{num::NonZeroUsize, sync::Arc};
 
+use common_display::ascii::AsciiTreeDisplay;
 use common_error::DaftError;
-use daft_core::schema::SchemaRef;
 use daft_dsl::optimization::get_required_columns;
+use daft_schema::schema::SchemaRef;
 use indexmap::IndexSet;
 use snafu::Snafu;
-
-use common_display::ascii::AsciiTreeDisplay;
 
 pub use crate::logical_ops::*;
 
@@ -215,7 +214,7 @@ impl LogicalPlan {
         }
     }
 
-    pub fn children(&self) -> Vec<&LogicalPlan> {
+    pub fn children(&self) -> Vec<&Self> {
         match self {
             Self::Source(..) => vec![],
             Self::Project(Project { input, .. }) => vec![input],
@@ -239,7 +238,7 @@ impl LogicalPlan {
         }
     }
 
-    pub fn with_new_children(&self, children: &[Arc<LogicalPlan>]) -> LogicalPlan {
+    pub fn with_new_children(&self, children: &[Arc<Self>]) -> Self {
         match children {
             [input] => match self {
                 Self::Source(_) => panic!("Source nodes don't have children, with_new_children() should never be called for Source ops"),
@@ -310,8 +309,8 @@ pub(crate) enum Error {
 pub(crate) type Result<T, E = Error> = std::result::Result<T, E>;
 
 impl From<Error> for DaftError {
-    fn from(err: Error) -> DaftError {
-        DaftError::External(err.into())
+    fn from(err: Error) -> Self {
+        Self::External(err.into())
     }
 }
 

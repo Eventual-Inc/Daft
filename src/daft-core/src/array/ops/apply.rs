@@ -1,12 +1,10 @@
 use std::iter::zip;
 
 use arrow2::array::PrimitiveArray;
-
-use crate::{array::DataArray, datatypes::DaftNumericType, utils::arrow::arrow_bitmap_and_helper};
-
 use common_error::{DaftError, DaftResult};
 
 use super::full::FullNull;
+use crate::{array::DataArray, datatypes::DaftNumericType, utils::arrow::arrow_bitmap_and_helper};
 
 impl<T> DataArray<T>
 where
@@ -22,7 +20,7 @@ where
             PrimitiveArray::from_trusted_len_values_iter(arr.values_iter().map(|v| func(*v)))
                 .with_validity(arr.validity().cloned());
 
-        Ok(DataArray::from((self.name(), Box::new(result_arr))))
+        Ok(Self::from((self.name(), Box::new(result_arr))))
     }
 
     // applies a native binary function to two DataArrays, maintaining validity.
@@ -46,17 +44,13 @@ where
                     zip(lhs_arr.values_iter(), rhs_arr.values_iter()).map(|(a, b)| func(*a, *b)),
                 )
                 .with_validity(validity);
-                Ok(DataArray::from((self.name(), Box::new(result_arr))))
+                Ok(Self::from((self.name(), Box::new(result_arr))))
             }
             (l_size, 1) => {
                 if let Some(value) = rhs.get(0) {
                     self.apply(|v| func(v, value))
                 } else {
-                    Ok(DataArray::<T>::full_null(
-                        self.name(),
-                        self.data_type(),
-                        l_size,
-                    ))
+                    Ok(Self::full_null(self.name(), self.data_type(), l_size))
                 }
             }
             (1, r_size) => {
@@ -67,13 +61,9 @@ where
                         rhs_arr.values_iter().map(|v| func(value, *v)),
                     )
                     .with_validity(rhs_arr.validity().cloned());
-                    Ok(DataArray::from((self.name(), Box::new(result_arr))))
+                    Ok(Self::from((self.name(), Box::new(result_arr))))
                 } else {
-                    Ok(DataArray::<T>::full_null(
-                        self.name(),
-                        self.data_type(),
-                        r_size,
-                    ))
+                    Ok(Self::full_null(self.name(), self.data_type(), r_size))
                 }
             }
             (l, r) => Err(DaftError::ValueError(format!(

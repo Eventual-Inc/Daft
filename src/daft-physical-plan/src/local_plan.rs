@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_resource_request::ResourceRequest;
-use daft_core::{schema::SchemaRef, JoinType};
+use daft_core::prelude::*;
 use daft_dsl::{AggExpr, ExprRef};
 use daft_plan::InMemoryInfo;
 use daft_scan::{ScanTask, ScanTaskRef};
@@ -11,7 +11,7 @@ pub type LocalPhysicalPlanRef = Arc<LocalPhysicalPlan>;
 pub enum LocalPhysicalPlan {
     InMemoryScan(InMemoryScan),
     PhysicalScan(PhysicalScan),
-    // EmptyScan(EmptyScan),
+    EmptyScan(EmptyScan),
     Project(Project),
     Filter(Filter),
     Limit(Limit),
@@ -46,17 +46,19 @@ pub enum LocalPhysicalPlan {
 }
 
 impl LocalPhysicalPlan {
+    #[must_use]
     pub fn name(&self) -> &'static str {
         // uses strum::IntoStaticStr
         self.into()
     }
 
+    #[must_use]
     pub fn arced(self) -> LocalPhysicalPlanRef {
         self.into()
     }
 
     pub(crate) fn in_memory_scan(in_memory_info: InMemoryInfo) -> LocalPhysicalPlanRef {
-        LocalPhysicalPlan::InMemoryScan(InMemoryScan {
+        Self::InMemoryScan(InMemoryScan {
             info: in_memory_info,
             plan_stats: PlanStats {},
         })
@@ -67,8 +69,16 @@ impl LocalPhysicalPlan {
         scan_tasks: Vec<ScanTaskRef>,
         schema: SchemaRef,
     ) -> LocalPhysicalPlanRef {
-        LocalPhysicalPlan::PhysicalScan(PhysicalScan {
+        Self::PhysicalScan(PhysicalScan {
             scan_tasks,
+            schema,
+            plan_stats: PlanStats {},
+        })
+        .arced()
+    }
+
+    pub(crate) fn empty_scan(schema: SchemaRef) -> LocalPhysicalPlanRef {
+        Self::EmptyScan(EmptyScan {
             schema,
             plan_stats: PlanStats {},
         })
@@ -77,7 +87,7 @@ impl LocalPhysicalPlan {
 
     pub(crate) fn filter(input: LocalPhysicalPlanRef, predicate: ExprRef) -> LocalPhysicalPlanRef {
         let schema = input.schema().clone();
-        LocalPhysicalPlan::Filter(Filter {
+        Self::Filter(Filter {
             input,
             predicate,
             schema,
@@ -88,7 +98,7 @@ impl LocalPhysicalPlan {
 
     pub(crate) fn limit(input: LocalPhysicalPlanRef, num_rows: i64) -> LocalPhysicalPlanRef {
         let schema = input.schema().clone();
-        LocalPhysicalPlan::Limit(Limit {
+        Self::Limit(Limit {
             input,
             num_rows,
             schema,
@@ -102,7 +112,7 @@ impl LocalPhysicalPlan {
         projection: Vec<ExprRef>,
         schema: SchemaRef,
     ) -> LocalPhysicalPlanRef {
-        LocalPhysicalPlan::Project(Project {
+        Self::Project(Project {
             input,
             projection,
             schema,
@@ -116,7 +126,7 @@ impl LocalPhysicalPlan {
         aggregations: Vec<AggExpr>,
         schema: SchemaRef,
     ) -> LocalPhysicalPlanRef {
-        LocalPhysicalPlan::UnGroupedAggregate(UnGroupedAggregate {
+        Self::UnGroupedAggregate(UnGroupedAggregate {
             input,
             aggregations,
             schema,
@@ -131,7 +141,7 @@ impl LocalPhysicalPlan {
         group_by: Vec<ExprRef>,
         schema: SchemaRef,
     ) -> LocalPhysicalPlanRef {
-        LocalPhysicalPlan::HashAggregate(HashAggregate {
+        Self::HashAggregate(HashAggregate {
             input,
             aggregations,
             group_by,
@@ -147,7 +157,7 @@ impl LocalPhysicalPlan {
         descending: Vec<bool>,
     ) -> LocalPhysicalPlanRef {
         let schema = input.schema().clone();
-        LocalPhysicalPlan::Sort(Sort {
+        Self::Sort(Sort {
             input,
             sort_by,
             descending,
@@ -165,7 +175,7 @@ impl LocalPhysicalPlan {
         join_type: JoinType,
         schema: SchemaRef,
     ) -> LocalPhysicalPlanRef {
-        LocalPhysicalPlan::HashJoin(HashJoin {
+        Self::HashJoin(HashJoin {
             left,
             right,
             left_on,
@@ -181,7 +191,7 @@ impl LocalPhysicalPlan {
         other: LocalPhysicalPlanRef,
     ) -> LocalPhysicalPlanRef {
         let schema = input.schema().clone();
-        LocalPhysicalPlan::Concat(Concat {
+        Self::Concat(Concat {
             input,
             other,
             schema,
@@ -190,62 +200,69 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    #[must_use]
     pub fn schema(&self) -> &SchemaRef {
         match self {
-            LocalPhysicalPlan::PhysicalScan(PhysicalScan { schema, .. })
-            | LocalPhysicalPlan::Filter(Filter { schema, .. })
-            | LocalPhysicalPlan::Limit(Limit { schema, .. })
-            | LocalPhysicalPlan::Project(Project { schema, .. })
-            | LocalPhysicalPlan::UnGroupedAggregate(UnGroupedAggregate { schema, .. })
-            | LocalPhysicalPlan::HashAggregate(HashAggregate { schema, .. })
-            | LocalPhysicalPlan::Sort(Sort { schema, .. })
-            | LocalPhysicalPlan::HashJoin(HashJoin { schema, .. })
-            | LocalPhysicalPlan::Concat(Concat { schema, .. }) => schema,
-            LocalPhysicalPlan::InMemoryScan(InMemoryScan { info, .. }) => &info.source_schema,
+            Self::PhysicalScan(PhysicalScan { schema, .. })
+            | Self::EmptyScan(EmptyScan { schema, .. })
+            | Self::Filter(Filter { schema, .. })
+            | Self::Limit(Limit { schema, .. })
+            | Self::Project(Project { schema, .. })
+            | Self::UnGroupedAggregate(UnGroupedAggregate { schema, .. })
+            | Self::HashAggregate(HashAggregate { schema, .. })
+            | Self::Sort(Sort { schema, .. })
+            | Self::HashJoin(HashJoin { schema, .. })
+            | Self::Concat(Concat { schema, .. }) => schema,
+            Self::InMemoryScan(InMemoryScan { info, .. }) => &info.source_schema,
             _ => todo!("{:?}", self),
         }
     }
 }
 
 #[derive(Debug)]
-
 pub struct InMemoryScan {
     pub info: InMemoryInfo,
     pub plan_stats: PlanStats,
 }
-#[derive(Debug)]
 
+#[derive(Debug)]
 pub struct PhysicalScan {
     pub scan_tasks: Vec<ScanTaskRef>,
     pub schema: SchemaRef,
     pub plan_stats: PlanStats,
 }
-#[derive(Debug)]
 
+#[derive(Debug)]
+pub struct EmptyScan {
+    pub schema: SchemaRef,
+    pub plan_stats: PlanStats,
+}
+
+#[derive(Debug)]
 pub struct Project {
     pub input: LocalPhysicalPlanRef,
     pub projection: Vec<ExprRef>,
     pub schema: SchemaRef,
     pub plan_stats: PlanStats,
 }
-#[derive(Debug)]
 
+#[derive(Debug)]
 pub struct Filter {
     pub input: LocalPhysicalPlanRef,
     pub predicate: ExprRef,
     pub schema: SchemaRef,
     pub plan_stats: PlanStats,
 }
-#[derive(Debug)]
 
+#[derive(Debug)]
 pub struct Limit {
     pub input: LocalPhysicalPlanRef,
     pub num_rows: i64,
     pub schema: SchemaRef,
     pub plan_stats: PlanStats,
 }
-#[derive(Debug)]
 
+#[derive(Debug)]
 pub struct Sort {
     pub input: LocalPhysicalPlanRef,
     pub sort_by: Vec<ExprRef>,
@@ -253,16 +270,16 @@ pub struct Sort {
     pub schema: SchemaRef,
     pub plan_stats: PlanStats,
 }
-#[derive(Debug)]
 
+#[derive(Debug)]
 pub struct UnGroupedAggregate {
     pub input: LocalPhysicalPlanRef,
     pub aggregations: Vec<AggExpr>,
     pub schema: SchemaRef,
     pub plan_stats: PlanStats,
 }
-#[derive(Debug)]
 
+#[derive(Debug)]
 pub struct HashAggregate {
     pub input: LocalPhysicalPlanRef,
     pub aggregations: Vec<AggExpr>,
@@ -272,7 +289,6 @@ pub struct HashAggregate {
 }
 
 #[derive(Debug)]
-
 pub struct HashJoin {
     pub left: LocalPhysicalPlanRef,
     pub right: LocalPhysicalPlanRef,
@@ -283,7 +299,6 @@ pub struct HashJoin {
 }
 
 #[derive(Debug)]
-
 pub struct Concat {
     pub input: LocalPhysicalPlanRef,
     pub other: LocalPhysicalPlanRef,
@@ -292,8 +307,7 @@ pub struct Concat {
 }
 
 #[derive(Debug)]
-
 pub struct PhysicalWrite {}
-#[derive(Debug)]
 
+#[derive(Debug)]
 pub struct PlanStats {}

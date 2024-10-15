@@ -1,4 +1,5 @@
 [dependencies]
+comfy-table = {workspace = true}
 indexmap = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 terminal_size = {version = "0.3.0"}
@@ -6,6 +7,9 @@ textwrap = {version = "0.16.1"}
 
 [features]
 python = ["dep:pyo3"]
+
+[lints]
+workspace = true
 
 [package]
 edition = {workspace = true}

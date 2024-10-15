@@ -1,20 +1,15 @@
 use std::collections::HashSet;
 
-use daft_core::{
-    array::growable::make_growable, utils::supertype::try_get_supertype, JoinType, Series,
-};
-
 use common_error::{DaftError, DaftResult};
+use daft_core::{array::growable::make_growable, prelude::*, utils::supertype::try_get_supertype};
 use daft_dsl::{
     join::{get_common_join_keys, infer_join_schema},
     ExprRef,
 };
 use hash_join::hash_semi_anti_join;
 
-use crate::Table;
-
 use self::hash_join::{hash_inner_join, hash_left_right_join, hash_outer_join};
-
+use crate::Table;
 mod hash_join;
 mod merge_join;
 
@@ -57,9 +52,8 @@ fn add_non_join_key_columns(
     for field in left.schema.fields.values() {
         if join_keys.contains(&field.name) {
             continue;
-        } else {
-            join_series.push(left.get_column(&field.name)?.take(&lidx)?);
         }
+        join_series.push(left.get_column(&field.name)?.take(&lidx)?);
     }
 
     drop(lidx);
@@ -67,9 +61,9 @@ fn add_non_join_key_columns(
     for field in right.schema.fields.values() {
         if join_keys.contains(&field.name) {
             continue;
-        } else {
-            join_series.push(right.get_column(&field.name)?.take(&ridx)?);
         }
+
+        join_series.push(right.get_column(&field.name)?.take(&ridx)?);
     }
 
     Ok(join_series)
@@ -183,6 +177,6 @@ impl Table {
         let num_rows = lidx.len();
         join_series = add_non_join_key_columns(self, right, lidx, ridx, join_series)?;
 
-        Table::new_with_size(join_schema, join_series, num_rows)
+        Self::new_with_size(join_schema, join_series, num_rows)
     }
 }

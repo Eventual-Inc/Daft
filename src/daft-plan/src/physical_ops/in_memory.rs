@@ -1,10 +1,12 @@
-use crate::{source_info::InMemoryInfo, ClusteringSpec};
-use common_display::{tree::TreeDisplay, DisplayLevel};
-use daft_core::schema::SchemaRef;
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+use common_display::{tree::TreeDisplay, DisplayLevel};
+use daft_schema::schema::SchemaRef;
+use serde::{Deserialize, Serialize};
+
+use crate::{source_info::InMemoryInfo, ClusteringSpec};
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InMemoryScan {
     pub schema: SchemaRef,
     pub in_memory_info: InMemoryInfo,

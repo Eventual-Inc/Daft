@@ -1,8 +1,3 @@
-use common_daft_config::DaftExecutionConfig;
-use common_error::DaftResult;
-use common_tracing::refresh_chrome_trace;
-use daft_micropartition::MicroPartition;
-use daft_physical_plan::{translate, LocalPhysicalPlan};
 use std::{
     collections::HashMap,
     fs::File,
@@ -14,6 +9,11 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use common_daft_config::DaftExecutionConfig;
+use common_error::DaftResult;
+use common_tracing::refresh_chrome_trace;
+use daft_micropartition::MicroPartition;
+use daft_physical_plan::{translate, LocalPhysicalPlan};
 #[cfg(feature = "python")]
 use {
     common_daft_config::PyDaftExecutionConfig,
@@ -40,7 +40,7 @@ impl LocalPartitionIterator {
     fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
     }
-    fn __next__(mut slf: PyRefMut<'_, Self>, py: Python<'_>) -> PyResult<Option<PyObject>> {
+    fn __next__(mut slf: PyRefMut<'_, Self>, py: Python) -> PyResult<Option<PyObject>> {
         let iter = &mut slf.iter;
         Ok(py.allow_threads(|| iter.next().transpose())?)
     }
@@ -57,7 +57,7 @@ impl NativeExecutor {
     #[staticmethod]
     pub fn from_logical_plan_builder(
         logical_plan_builder: &PyLogicalPlanBuilder,
-        py: Python<'_>,
+        py: Python,
     ) -> PyResult<Self> {
         py.allow_threads(|| {
             let logical_plan = logical_plan_builder.builder.build();
@@ -82,7 +82,7 @@ impl NativeExecutor {
                     part_id,
                     parts
                         .into_iter()
-                        .map(|part| part.into())
+                        .map(std::convert::Into::into)
                         .collect::<Vec<Arc<MicroPartition>>>(),
                 )
             })
@@ -130,7 +130,7 @@ pub fn run_local(
             .thread_name_fn(|| {
                 static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
                 let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
-                format!("Executor-Worker-{}", id)
+                format!("Executor-Worker-{id}")
             })
             .build()
             .expect("Failed to create tokio runtime");
@@ -159,7 +159,7 @@ pub fn run_local(
                     .duration_since(UNIX_EPOCH)
                     .expect("Time went backwards")
                     .as_millis();
-                let file_name = format!("explain-analyze-{}-mermaid.md", curr_ms);
+                let file_name = format!("explain-analyze-{curr_ms}-mermaid.md");
                 let mut file = File::create(file_name)?;
                 writeln!(file, "```mermaid\n{}\n```", viz_pipeline(pipeline.as_ref()))?;
             }
@@ -187,7 +187,7 @@ pub fn run_local(
                             .join()
                             .expect("Execution engine thread panicked");
                         match join_result {
-                            Ok(_) => None,
+                            Ok(()) => None,
                             Err(e) => Some(Err(e)),
                         }
                     } else {

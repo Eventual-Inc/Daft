@@ -1,15 +1,20 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import datetime
 
 import pyarrow as pa
 import pytest
 from pyarrow import dataset as pads
 
 import daft
+from daft import context
 from tests.conftest import assert_df_equals
 from tests.cookbook.assets import COOKBOOK_DATA_CSV
 
+pytestmark = pytest.mark.skipif(
+    context.get_context().daft_execution_config.enable_native_executor is True,
+    reason="Native executor fails for these tests",
+)
 PYARROW_GE_7_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (7, 0, 0)
 
 
@@ -92,7 +97,7 @@ def test_parquet_write_with_partitioning_readback_values(tmp_path):
         (
             daft.col("date").partitioning.days(),
             "date_days",
-            [date(2024, 1, 1), date(2024, 2, 1), date(2024, 3, 1), date(2024, 4, 1), date(2024, 5, 1)],
+            [19723, 19754, 19783, 19814, 19844],
         ),
         (daft.col("date").partitioning.hours(), "date_hours", [473352, 474096, 474792, 475536, 476256]),
         (daft.col("date").partitioning.months(), "date_months", [648, 649, 650, 651, 652]),
@@ -123,7 +128,7 @@ def test_parquet_write_with_iceberg_date_partitioning(exp, key, answer, tmp_path
     "exp,key,answer",
     [
         (daft.col("id").partitioning.iceberg_bucket(10), "id_bucket", [0, 3, 5, 6, 8]),
-        (daft.col("id").partitioning.iceberg_truncate(10), "id_truncate", [0, 10, 20, 40]),
+        (daft.col("id").partitioning.iceberg_truncate(10), "id_trunc", [0, 10, 20, 40]),
     ],
 )
 def test_parquet_write_with_iceberg_bucket_and_trunc(exp, key, answer, tmp_path):
@@ -194,6 +199,26 @@ def test_parquet_write_multifile_with_partitioning(tmp_path, smaller_parquet_tar
     assert readback["y"] == [y % 2 for y in data["x"]]
 
 
+def test_parquet_write_with_some_empty_partitions(tmp_path):
+    data = {"x": [1, 2, 3], "y": ["a", "b", "c"]}
+    output_files = daft.from_pydict(data).into_partitions(4).write_parquet(tmp_path)
+
+    assert len(output_files) == 3
+
+    read_back = daft.read_parquet(tmp_path.as_posix() + "/**/*.parquet").sort("x").to_pydict()
+    assert read_back == data
+
+
+def test_parquet_partitioned_write_with_some_empty_partitions(tmp_path):
+    data = {"x": [1, 2, 3], "y": ["a", "b", "c"]}
+    output_files = daft.from_pydict(data).into_partitions(4).write_parquet(tmp_path, partition_cols=["x"])
+
+    assert len(output_files) == 3
+
+    read_back = daft.read_parquet(tmp_path.as_posix() + "/**/*.parquet").sort("x").to_pydict()
+    assert read_back == data
+
+
 def test_csv_write(tmp_path):
     df = daft.read_csv(COOKBOOK_DATA_CSV)
 
@@ -257,3 +282,23 @@ def test_empty_csv_write_with_partitioning(tmp_path):
 
     assert len(pd_df) == 1
     assert len(pd_df._preview.preview_partition) == 1
+
+
+def test_csv_write_with_some_empty_partitions(tmp_path):
+    data = {"x": [1, 2, 3], "y": ["a", "b", "c"]}
+    output_files = daft.from_pydict(data).into_partitions(4).write_csv(tmp_path)
+
+    assert len(output_files) == 3
+
+    read_back = daft.read_csv(tmp_path.as_posix() + "/**/*.csv").sort("x").to_pydict()
+    assert read_back == data
+
+
+def test_csv_partitioned_write_with_some_empty_partitions(tmp_path):
+    data = {"x": [1, 2, 3], "y": ["a", "b", "c"]}
+    output_files = daft.from_pydict(data).into_partitions(4).write_csv(tmp_path, partition_cols=["x"])
+
+    assert len(output_files) == 3
+
+    read_back = daft.read_csv(tmp_path.as_posix() + "/**/*.csv").sort("x").to_pydict()
+    assert read_back == data

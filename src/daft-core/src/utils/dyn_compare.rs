@@ -1,13 +1,13 @@
 use std::cmp::Ordering;
 
-use crate::{schema::Schema, DataType};
+use arrow2::array::{
+    dyn_ord::{build_dyn_array_compare, DynArrayComparator},
+    Array,
+};
+use common_error::{DaftError, DaftResult};
+use daft_schema::schema::Schema;
 
-use arrow2::array::Array;
-use common_error::DaftError;
-use common_error::DaftResult;
-
-use arrow2::array::dyn_ord::build_dyn_array_compare;
-use arrow2::array::dyn_ord::DynArrayComparator;
+use crate::datatypes::DataType;
 
 pub type MultiDynArrayComparator =
     Box<dyn Fn(&[Box<dyn Array>], &[Box<dyn Array>], usize, usize) -> Ordering + Send + Sync>;
@@ -18,18 +18,17 @@ pub fn build_dyn_compare(
     nulls_equal: bool,
     nans_equal: bool,
 ) -> DaftResult<DynArrayComparator> {
-    if left != right {
-        Err(DaftError::TypeError(format!(
-            "Types do not match when creating comparator {} vs {}",
-            left, right
-        )))
-    } else {
+    if left == right {
         Ok(build_dyn_array_compare(
             &left.to_physical().to_arrow()?,
             &right.to_physical().to_arrow()?,
             nulls_equal,
             nans_equal,
         )?)
+    } else {
+        Err(DaftError::TypeError(format!(
+            "Types do not match when creating comparator {left} vs {right}",
+        )))
     }
 }
 

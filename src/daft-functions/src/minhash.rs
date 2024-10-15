@@ -1,5 +1,5 @@
 use common_error::{DaftError, DaftResult};
-use daft_core::{datatypes::Field, schema::Schema, DataType, Series};
+use daft_core::prelude::*;
 use daft_dsl::{
     functions::{ScalarFunction, ScalarUDF},
     ExprRef,
@@ -7,10 +7,10 @@ use daft_dsl::{
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub(super) struct MinHashFunction {
-    num_hashes: usize,
-    ngram_size: usize,
-    seed: u32,
+pub struct MinHashFunction {
+    pub num_hashes: usize,
+    pub ngram_size: usize,
+    pub seed: u32,
 }
 
 #[typetag::serde]
@@ -55,6 +55,7 @@ impl ScalarUDF for MinHashFunction {
     }
 }
 
+#[must_use]
 pub fn minhash(input: ExprRef, num_hashes: usize, ngram_size: usize, seed: u32) -> ExprRef {
     ScalarFunction::new(
         MinHashFunction {

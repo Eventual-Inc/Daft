@@ -1,9 +1,13 @@
 use common_error::{DaftError, DaftResult};
 
-use crate::{array::ops::DaftMinHash, DataType, IntoSeries, Series};
+use crate::{
+    array::ops::DaftMinHash,
+    datatypes::DataType,
+    series::{IntoSeries, Series},
+};
 
 impl Series {
-    pub fn minhash(&self, num_hashes: usize, ngram_size: usize, seed: u32) -> DaftResult<Series> {
+    pub fn minhash(&self, num_hashes: usize, ngram_size: usize, seed: u32) -> DaftResult<Self> {
         match self.data_type() {
             DataType::Utf8 => Ok(self
                 .utf8()?

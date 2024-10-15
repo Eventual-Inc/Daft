@@ -1,15 +1,14 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use common_treenode::{DynTreeNode, Transformed, TreeNode};
 
+use super::OptimizerRule;
 use crate::{
     logical_ops::{Limit as LogicalLimit, Source},
     source_info::SourceInfo,
     LogicalPlan,
 };
-
-use super::{ApplyOrder, OptimizerRule, Transformed};
-use common_treenode::DynTreeNode;
 
 /// Optimization rules for pushing Limits further into the logical plan.
 #[derive(Default, Debug)]
@@ -22,11 +21,17 @@ impl PushDownLimit {
 }
 
 impl OptimizerRule for PushDownLimit {
-    fn apply_order(&self) -> ApplyOrder {
-        ApplyOrder::TopDown
-    }
-
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
+        plan.transform_down(|node| self.try_optimize_node(node))
+    }
+}
+
+impl PushDownLimit {
+    #[allow(clippy::only_used_in_recursion)]
+    fn try_optimize_node(
+        &self,
+        plan: Arc<LogicalPlan>,
+    ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         match plan.as_ref() {
             LogicalPlan::Limit(LogicalLimit {
                 input,
@@ -42,7 +47,7 @@ impl OptimizerRule for PushDownLimit {
                         let new_limit = plan
                             .with_new_children(&[input.arc_children()[0].clone()])
                             .into();
-                        Ok(Transformed::Yes(
+                        Ok(Transformed::yes(
                             input.with_new_children(&[new_limit]).into(),
                         ))
                     }
@@ -52,13 +57,13 @@ impl OptimizerRule for PushDownLimit {
                     LogicalPlan::Source(source) => {
                         match source.source_info.as_ref() {
                             // Limit pushdown is not supported for in-memory sources.
-                            SourceInfo::InMemory(_) => Ok(Transformed::No(plan)),
+                            SourceInfo::InMemory(_) => Ok(Transformed::no(plan)),
                             // Do not pushdown if Source node is already more limited than `limit`
                             SourceInfo::Physical(external_info)
                                 if let Some(existing_limit) = external_info.pushdowns.limit
                                     && existing_limit <= limit =>
                             {
-                                Ok(Transformed::No(plan))
+                                Ok(Transformed::no(plan))
                             }
                             // Pushdown limit into the Source node as a "local" limit
                             SourceInfo::Physical(external_info) => {
@@ -74,7 +79,7 @@ impl OptimizerRule for PushDownLimit {
                                 } else {
                                     plan.with_new_children(&[new_source]).into()
                                 };
-                                Ok(Transformed::Yes(out_plan))
+                                Ok(Transformed::yes(out_plan))
                             }
                             SourceInfo::PlaceHolder(..) => {
                                 panic!("PlaceHolderInfo should not exist for optimization!");
@@ -99,31 +104,30 @@ impl OptimizerRule for PushDownLimit {
                         )));
                         // we rerun the optimizer, ideally when we move to a visitor pattern this should go away
                         let optimized = self
-                            .try_optimize(new_plan.clone())?
-                            .or(Transformed::Yes(new_plan))
-                            .unwrap()
-                            .clone();
-                        Ok(Transformed::Yes(optimized))
+                            .try_optimize_node(new_plan.clone())?
+                            .or(Transformed::yes(new_plan))
+                            .data;
+                        Ok(Transformed::yes(optimized))
                     }
-                    _ => Ok(Transformed::No(plan)),
+                    _ => Ok(Transformed::no(plan)),
                 }
             }
-            _ => Ok(Transformed::No(plan)),
+            _ => Ok(Transformed::no(plan)),
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use common_error::DaftResult;
-    use daft_core::{datatypes::Field, schema::Schema, DataType};
-    use daft_dsl::col;
-    use daft_scan::Pushdowns;
-    use rstest::rstest;
     use std::sync::Arc;
 
+    use common_error::DaftResult;
+    use daft_core::prelude::*;
+    use daft_dsl::col;
+    use daft_scan::Pushdowns;
     #[cfg(feature = "python")]
     use pyo3::Python;
+    use rstest::rstest;
 
     use crate::{
         logical_optimization::{rules::PushDownLimit, test::assert_optimized_plan_with_rules_eq},

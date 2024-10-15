@@ -5,11 +5,10 @@ use std::{
 
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    array::ops::arrow2::comparison::build_multi_array_is_equal, datatypes::UInt64Array,
+    array::ops::{arrow2::comparison::build_multi_array_is_equal, as_arrow::AsArrow},
+    datatypes::UInt64Array,
     utils::identity_hash_set::IdentityBuildHasher,
 };
-
-use daft_core::array::ops::as_arrow::AsArrow;
 
 use crate::Table;
 
@@ -20,7 +19,7 @@ pub struct IndexHash {
 
 impl Hash for IndexHash {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        state.write_u64(self.hash)
+        state.write_u64(self.hash);
     }
 }
 

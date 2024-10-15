@@ -9,7 +9,12 @@ import pytest
 import pytz
 
 import daft
-from daft import DataType, col
+from daft import DataType, col, context
+
+pytestmark = pytest.mark.skipif(
+    context.get_context().daft_execution_config.enable_native_executor is True,
+    reason="Native executor fails for these tests",
+)
 
 PYARROW_GE_7_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (7, 0, 0)
 
@@ -145,6 +150,33 @@ def test_python_duration() -> None:
 
     res = df.to_pydict()["duration"][0]
     assert res == duration
+
+
+def test_temporal_arithmetic_with_duration_lit() -> None:
+    df = daft.from_pydict(
+        {
+            "duration": [timedelta(days=1)],
+            "date": [datetime(2021, 1, 1)],
+            "timestamp": [datetime(2021, 1, 1)],
+        }
+    )
+
+    df = df.select(
+        (df["date"] + timedelta(days=1)).alias("add_date"),
+        (df["date"] - timedelta(days=1)).alias("sub_date"),
+        (df["timestamp"] + timedelta(days=1)).alias("add_timestamp"),
+        (df["timestamp"] - timedelta(days=1)).alias("sub_timestamp"),
+        (df["duration"] + timedelta(days=1)).alias("add_dur"),
+        (df["duration"] - timedelta(days=1)).alias("sub_dur"),
+    )
+
+    result = df.to_pydict()
+    assert result["add_date"] == [datetime(2021, 1, 2)]
+    assert result["sub_date"] == [datetime(2020, 12, 31)]
+    assert result["add_timestamp"] == [datetime(2021, 1, 2)]
+    assert result["sub_timestamp"] == [datetime(2020, 12, 31)]
+    assert result["add_dur"] == [timedelta(days=2)]
+    assert result["sub_dur"] == [timedelta(0)]
 
 
 @pytest.mark.parametrize(

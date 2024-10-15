@@ -16,14 +16,13 @@
 // specific language governing permissions and limitations
 // under the License.
 use arrow2::bitmap::Bitmap;
-use arrow2::buffer::Buffer;
 use arrow2::{
     array::PrimitiveArray,
     bitmap::{utils::SlicesIterator, MutableBitmap},
+    buffer::Buffer,
+    compute::sort::SortOptions,
     types::NativeType,
 };
-
-use arrow2::compute::sort::SortOptions;
 
 /// # Safety
 /// `indices[i] < values.len()` for all i
@@ -90,7 +89,7 @@ where
         // extend buffer with constants followed by non-null values
         buffer.resize(validity.unset_bits(), T::default());
         for (start, len) in slices {
-            buffer.extend_from_slice(&values[start..start + len])
+            buffer.extend_from_slice(&values[start..start + len]);
         }
 
         // sort values
@@ -106,7 +105,7 @@ where
 
         // extend buffer with non-null values
         for (start, len) in slices {
-            buffer.extend_from_slice(&values[start..start + len])
+            buffer.extend_from_slice(&values[start..start + len]);
         }
 
         // sort all non-null values
@@ -163,11 +162,12 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use arrow2::{
+        array::{ord, Array},
+        datatypes::DataType,
+    };
 
-    use arrow2::array::ord;
-    use arrow2::array::Array;
-    use arrow2::datatypes::DataType;
+    use super::*;
 
     fn test_sort_primitive_arrays<T>(
         data: &[Option<T>],
@@ -200,7 +200,7 @@ mod tests {
             .unwrap()
             .clone();
         let output = sort_by(&input, ord::total_cmp, &options, Some(3));
-        assert_eq!(expected, output)
+        assert_eq!(expected, output);
     }
 
     #[test]

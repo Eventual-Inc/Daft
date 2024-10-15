@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 import itertools
-import pathlib
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Generic, Protocol
 
 from daft.context import get_context
-from daft.daft import FileFormat, IOConfig, JoinType, ResourceRequest, ScanTask
+from daft.daft import ResourceRequest
 from daft.expressions import Expression, ExpressionsProjection, col
-from daft.logical.map_partition_ops import MapPartitionOp
-from daft.logical.schema import Schema
 from daft.runners.partitioning import (
     Boundaries,
     MaterializedResult,
@@ -20,8 +17,15 @@ from daft.runners.partitioning import (
 from daft.table import MicroPartition, table_io
 
 if TYPE_CHECKING:
+    import pathlib
+
+    from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
+
+    from daft.daft import FileFormat, IOConfig, JoinType, ScanTask
+    from daft.logical.map_partition_ops import MapPartitionOp
+    from daft.logical.schema import Schema
 
 
 ID_GEN = itertools.count()
@@ -43,6 +47,11 @@ class PartitionTask(Generic[PartitionT]):
     num_results: int
     stage_id: int
     partial_metadatas: list[PartialPartitionMetadata]
+
+    # Indicates that this PartitionTask must be executed on the executor with the supplied ID
+    # This is used when a specific executor (e.g. an Actor pool) must be provisioned and used for the task
+    actor_pool_id: str | None
+
     _id: int = field(default_factory=lambda: next(ID_GEN))
 
     def id(self) -> str:
@@ -87,6 +96,7 @@ class PartitionTaskBuilder(Generic[PartitionT]):
         inputs: list[PartitionT],
         partial_metadatas: list[PartialPartitionMetadata] | None,
         resource_request: ResourceRequest = ResourceRequest(),
+        actor_pool_id: str | None = None,
     ) -> None:
         self.inputs = inputs
         if partial_metadatas is not None:
@@ -96,6 +106,7 @@ class PartitionTaskBuilder(Generic[PartitionT]):
         self.resource_request: ResourceRequest = resource_request
         self.instructions: list[Instruction] = list()
         self.num_results = len(inputs)
+        self.actor_pool_id = actor_pool_id
 
     def add_instruction(
         self,
@@ -133,6 +144,7 @@ class PartitionTaskBuilder(Generic[PartitionT]):
             num_results=1,
             resource_request=resource_request_final_cpu,
             partial_metadatas=self.partial_metadatas,
+            actor_pool_id=self.actor_pool_id,
         )
 
     def finalize_partition_task_multi_output(self, stage_id: int) -> MultiOutputPartitionTask[PartitionT]:
@@ -153,6 +165,7 @@ class PartitionTaskBuilder(Generic[PartitionT]):
             num_results=self.num_results,
             resource_request=resource_request_final_cpu,
             partial_metadatas=self.partial_metadatas,
+            actor_pool_id=self.actor_pool_id,
         )
 
     def __str__(self) -> str:
@@ -378,7 +391,7 @@ class WriteIceberg(SingleOutputInstruction):
     base_path: str
     iceberg_schema: IcebergSchema
     iceberg_properties: IcebergTableProperties
-    spec_id: int
+    partition_spec: IcebergPartitionSpec
     io_config: IOConfig | None
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
@@ -406,7 +419,7 @@ class WriteIceberg(SingleOutputInstruction):
             base_path=self.base_path,
             schema=self.iceberg_schema,
             properties=self.iceberg_properties,
-            spec_id=self.spec_id,
+            partition_spec=self.partition_spec,
             io_config=self.io_config,
         )
 
@@ -416,6 +429,7 @@ class WriteDeltaLake(SingleOutputInstruction):
     base_path: str
     large_dtypes: bool
     version: int
+    partition_cols: list[str] | None
     io_config: IOConfig | None
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
@@ -443,6 +457,7 @@ class WriteDeltaLake(SingleOutputInstruction):
             large_dtypes=self.large_dtypes,
             base_path=self.base_path,
             version=self.version,
+            partition_cols=self.partition_cols,
             io_config=self.io_config,
         )
 
@@ -526,6 +541,23 @@ class Project(SingleOutputInstruction):
                 num_rows=input_meta.num_rows,
                 size_bytes=None,
                 boundaries=boundaries,
+            )
+        ]
+
+
+@dataclass(frozen=True)
+class StatefulUDFProject(SingleOutputInstruction):
+    projection: ExpressionsProjection
+
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        raise NotImplementedError("UDFProject instruction cannot be run from outside an Actor. Please file an issue.")
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        return [
+            PartialPartitionMetadata(
+                num_rows=None,  # UDFs can potentially change cardinality
+                size_bytes=None,
+                boundaries=None,  # TODO: figure out if the stateful UDF projection changes boundaries
             )
         ]
 

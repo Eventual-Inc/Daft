@@ -7,6 +7,7 @@ mod find;
 mod ilike;
 mod left;
 mod length;
+mod length_bytes;
 mod like;
 mod lower;
 mod lpad;
@@ -36,6 +37,7 @@ use find::FindEvaluator;
 use ilike::IlikeEvaluator;
 use left::LeftEvaluator;
 use length::LengthEvaluator;
+use length_bytes::LengthBytesEvaluator;
 use like::LikeEvaluator;
 use lower::LowerEvaluator;
 use lpad::LpadEvaluator;
@@ -55,9 +57,8 @@ use to_date::ToDateEvaluator;
 use to_datetime::ToDatetimeEvaluator;
 use upper::UpperEvaluator;
 
-use crate::{functions::utf8::match_::MatchEvaluator, Expr, ExprRef};
-
 use super::FunctionEvaluator;
+use crate::{functions::utf8::match_::MatchEvaluator, Expr, ExprRef};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum Utf8Expr {
@@ -70,6 +71,7 @@ pub enum Utf8Expr {
     ExtractAll(usize),
     Replace(bool),
     Length,
+    LengthBytes,
     Lower,
     Upper,
     Lstrip,
@@ -93,35 +95,35 @@ pub enum Utf8Expr {
 impl Utf8Expr {
     #[inline]
     pub fn get_evaluator(&self) -> &dyn FunctionEvaluator {
-        use Utf8Expr::*;
         match self {
-            EndsWith => &EndswithEvaluator {},
-            StartsWith => &StartswithEvaluator {},
-            Contains => &ContainsEvaluator {},
-            Split(_) => &SplitEvaluator {},
-            Match => &MatchEvaluator {},
-            Extract(_) => &ExtractEvaluator {},
-            ExtractAll(_) => &ExtractAllEvaluator {},
-            Replace(_) => &ReplaceEvaluator {},
-            Length => &LengthEvaluator {},
-            Lower => &LowerEvaluator {},
-            Upper => &UpperEvaluator {},
-            Lstrip => &LstripEvaluator {},
-            Rstrip => &RstripEvaluator {},
-            Reverse => &ReverseEvaluator {},
-            Capitalize => &CapitalizeEvaluator {},
-            Left => &LeftEvaluator {},
-            Right => &RightEvaluator {},
-            Find => &FindEvaluator {},
-            Rpad => &RpadEvaluator {},
-            Lpad => &LpadEvaluator {},
-            Repeat => &RepeatEvaluator {},
-            Like => &LikeEvaluator {},
-            Ilike => &IlikeEvaluator {},
-            Substr => &SubstrEvaluator {},
-            ToDate(_) => &ToDateEvaluator {},
-            ToDatetime(_, _) => &ToDatetimeEvaluator {},
-            Normalize(_) => &NormalizeEvaluator {},
+            Self::EndsWith => &EndswithEvaluator {},
+            Self::StartsWith => &StartswithEvaluator {},
+            Self::Contains => &ContainsEvaluator {},
+            Self::Split(_) => &SplitEvaluator {},
+            Self::Match => &MatchEvaluator {},
+            Self::Extract(_) => &ExtractEvaluator {},
+            Self::ExtractAll(_) => &ExtractAllEvaluator {},
+            Self::Replace(_) => &ReplaceEvaluator {},
+            Self::Length => &LengthEvaluator {},
+            Self::LengthBytes => &LengthBytesEvaluator {},
+            Self::Lower => &LowerEvaluator {},
+            Self::Upper => &UpperEvaluator {},
+            Self::Lstrip => &LstripEvaluator {},
+            Self::Rstrip => &RstripEvaluator {},
+            Self::Reverse => &ReverseEvaluator {},
+            Self::Capitalize => &CapitalizeEvaluator {},
+            Self::Left => &LeftEvaluator {},
+            Self::Right => &RightEvaluator {},
+            Self::Find => &FindEvaluator {},
+            Self::Rpad => &RpadEvaluator {},
+            Self::Lpad => &LpadEvaluator {},
+            Self::Repeat => &RepeatEvaluator {},
+            Self::Like => &LikeEvaluator {},
+            Self::Ilike => &IlikeEvaluator {},
+            Self::Substr => &SubstrEvaluator {},
+            Self::ToDate(_) => &ToDateEvaluator {},
+            Self::ToDatetime(_, _) => &ToDatetimeEvaluator {},
+            Self::Normalize(_) => &NormalizeEvaluator {},
         }
     }
 }
@@ -193,6 +195,14 @@ pub fn replace(data: ExprRef, pattern: ExprRef, replacement: ExprRef, regex: boo
 pub fn length(data: ExprRef) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Length),
+        inputs: vec![data],
+    }
+    .into()
+}
+
+pub fn length_bytes(data: ExprRef) -> ExprRef {
+    Expr::Function {
+        func: super::FunctionExpr::Utf8(Utf8Expr::LengthBytes),
         inputs: vec![data],
     }
     .into()

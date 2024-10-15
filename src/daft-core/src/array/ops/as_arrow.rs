@@ -1,5 +1,9 @@
 use arrow2::array;
 
+#[cfg(feature = "python")]
+use crate::array::pseudo_arrow::PseudoArrowArray;
+#[cfg(feature = "python")]
+use crate::datatypes::PythonArray;
 use crate::{
     array::DataArray,
     datatypes::{
@@ -8,15 +12,12 @@ use crate::{
     },
 };
 
-#[cfg(feature = "python")]
-use crate::array::pseudo_arrow::PseudoArrowArray;
-#[cfg(feature = "python")]
-use crate::datatypes::PythonArray;
-
 pub trait AsArrow {
     type Output;
 
-    // Retrieve the underlying concrete Arrow2 array.
+    /// This does not correct for the logical types and will just yield the physical type of the array.
+    /// For example, a TimestampArray will yield an arrow Int64Array rather than a arrow Timestamp Array.
+    /// To get a corrected arrow type, see `.to_arrow()`.
     fn as_arrow(&self) -> &Self::Output;
 }
 

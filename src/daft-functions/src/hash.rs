@@ -1,9 +1,5 @@
 use common_error::{DaftError, DaftResult};
-use daft_core::{
-    datatypes::{Field, UInt64Array},
-    schema::Schema,
-    DataType, IntoSeries, Series,
-};
+use daft_core::prelude::*;
 use daft_dsl::{
     functions::{ScalarFunction, ScalarUDF},
     ExprRef,
@@ -25,7 +21,7 @@ impl ScalarUDF for HashFunction {
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
-            [input] => input.hash(None).map(|s| s.into_series()),
+            [input] => input.hash(None).map(|arr| arr.into_series()),
             [input, seed] => {
                 match seed.len() {
                     1 => {
@@ -37,13 +33,17 @@ impl ScalarUDF for HashFunction {
                             "seed",
                             std::iter::repeat(Some(seed)).take(input.len()),
                         );
-                        input.hash(Some(&seed)).map(|s| s.into_series())
+                        input
+                            .hash(Some(&seed))
+                            .map(daft_core::series::IntoSeries::into_series)
                     }
                     _ if seed.len() == input.len() => {
                         let seed = seed.cast(&DataType::UInt64)?;
                         let seed = seed.u64().unwrap();
 
-                        input.hash(Some(seed)).map(|s| s.into_series())
+                        input
+                            .hash(Some(seed))
+                            .map(daft_core::series::IntoSeries::into_series)
                     }
                     _ => Err(DaftError::ValueError(
                         "Seed must be a single value or the same length as the input".to_string(),
@@ -68,6 +68,7 @@ impl ScalarUDF for HashFunction {
     }
 }
 
+#[must_use]
 pub fn hash(input: ExprRef, seed: Option<ExprRef>) -> ExprRef {
     let inputs = match seed {
         Some(seed) => vec![input, seed],
@@ -85,6 +86,6 @@ pub mod python {
     #[pyfunction]
     pub fn hash(expr: PyExpr, seed: Option<PyExpr>) -> PyResult<PyExpr> {
         use super::hash;
-        Ok(hash(expr.into(), seed.map(|s| s.into())).into())
+        Ok(hash(expr.into(), seed.map(std::convert::Into::into)).into())
     }
 }

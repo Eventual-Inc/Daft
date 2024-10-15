@@ -1,17 +1,16 @@
 use std::borrow::Cow;
 
+use arrow2::bitmap::utils::SlicesIterator;
+use common_error::DaftResult;
+
+use super::{as_arrow::AsArrow, full::FullNull};
 use crate::{
     array::{
         growable::{Growable, GrowableArray},
         DataArray, FixedSizeListArray, ListArray, StructArray,
     },
-    datatypes::{BooleanArray, DaftArrayType, DaftArrowBackedType},
-    DataType,
+    datatypes::{BooleanArray, DaftArrayType, DaftArrowBackedType, DataType},
 };
-use arrow2::bitmap::utils::SlicesIterator;
-use common_error::DaftResult;
-
-use super::{as_arrow::AsArrow, full::FullNull};
 
 impl<T> DataArray<T>
 where
@@ -30,7 +29,6 @@ impl crate::datatypes::PythonArray {
         use pyo3::PyObject;
 
         use crate::array::pseudo_arrow::PseudoArrowArray;
-        use crate::datatypes::PythonType;
 
         let mask = mask.as_arrow();
 
@@ -73,7 +71,7 @@ impl crate::datatypes::PythonArray {
         let arrow_array: Box<dyn arrow2::array::Array> =
             Box::new(PseudoArrowArray::new(new_values.into(), new_validity));
 
-        DataArray::<PythonType>::new(self.field().clone().into(), arrow_array)
+        Self::new(self.field().clone().into(), arrow_array)
     }
 }
 

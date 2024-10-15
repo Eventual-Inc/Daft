@@ -7,6 +7,7 @@ API Documentation
    Table of Contents <self>
    creation
    dataframe
+   sql
    expressions
    schema
    datatype

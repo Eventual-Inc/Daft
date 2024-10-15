@@ -1,7 +1,7 @@
 use arrow2::array::Array;
 use common_error::DaftResult;
 use common_py_serde::impl_bincode_py_state_serialization;
-use daft_core::Series;
+use daft_core::prelude::*;
 use daft_table::Table;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
@@ -132,7 +132,7 @@ impl FileInfos {
             .downcast_ref::<arrow2::array::Int64Array>()
             .unwrap()
             .iter()
-            .map(|n| n.cloned())
+            .map(|n| n.copied())
             .collect::<Vec<_>>();
         let num_rows = table
             .get_column("num_rows")?
@@ -142,7 +142,7 @@ impl FileInfos {
             .downcast_ref::<arrow2::array::Int64Array>()
             .unwrap()
             .iter()
-            .map(|n| n.cloned())
+            .map(|n| n.copied())
             .collect::<Vec<_>>();
         Ok(Self::new_internal(file_paths, file_sizes, num_rows))
     }

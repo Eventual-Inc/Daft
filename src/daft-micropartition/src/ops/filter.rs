@@ -1,11 +1,10 @@
 use common_error::DaftResult;
 use daft_dsl::ExprRef;
 use daft_io::IOStatsContext;
+use daft_stats::TruthValue;
 use snafu::ResultExt;
 
 use crate::{micropartition::MicroPartition, DaftCoreComputeSnafu};
-
-use daft_stats::TruthValue;
 
 impl MicroPartition {
     pub fn filter(&self, predicate: &[ExprRef]) -> DaftResult<Self> {
@@ -17,7 +16,7 @@ impl MicroPartition {
             let folded_expr = predicate
                 .iter()
                 .cloned()
-                .reduce(|a, b| a.and(b))
+                .reduce(daft_dsl::Expr::and)
                 .expect("should have at least 1 expr");
             let eval_result = statistics.eval_expression(&folded_expr)?;
             let tv = eval_result.to_truth_value();

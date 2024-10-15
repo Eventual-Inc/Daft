@@ -1,7 +1,8 @@
 use std::{collections::HashSet, sync::Arc};
 
 use common_error::DaftResult;
-use daft_core::schema::Schema;
+use daft_compression::CompressionCodec;
+use daft_core::prelude::Schema;
 use daft_io::{get_runtime, GetResult, IOClient, IOStatsRef};
 use futures::{StreamExt, TryStreamExt};
 use indexmap::IndexMap;
@@ -16,7 +17,6 @@ use crate::{
     inference::{column_types_map_to_fields, infer_records_schema},
     ArrowSnafu, JsonParseOptions, StdIOSnafu,
 };
-use daft_compression::CompressionCodec;
 
 #[derive(Debug, Clone)]
 pub struct JsonReadStats {
@@ -81,7 +81,7 @@ pub async fn read_json_schema_bulk(
     let result = runtime_handle
         .block_on_current_thread(async {
             let task_stream = futures::stream::iter(uris.iter().map(|uri| {
-                let owned_string = uri.to_string();
+                let owned_string = (*uri).to_string();
                 let owned_client = io_client.clone();
                 let owned_io_stats = io_stats.clone();
                 let owned_parse_options = parse_options.clone();
@@ -197,11 +197,7 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
-    use daft_core::{
-        datatypes::{Field, TimeUnit},
-        schema::Schema,
-        DataType,
-    };
+    use daft_core::prelude::*;
     use daft_io::{IOClient, IOConfig};
     use rstest::rstest;
 
@@ -235,14 +231,14 @@ mod tests {
         let file = format!(
             "{}/test/iris_tiny.jsonl{}",
             env!("CARGO_MANIFEST_DIR"),
-            compression.map_or("".to_string(), |ext| format!(".{}", ext))
+            compression.map_or(String::new(), |ext| format!(".{}", ext))
         );
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let schema = read_json_schema(file.as_ref(), None, None, io_client.clone(), None)?;
+        let schema = read_json_schema(file.as_ref(), None, None, io_client, None)?;
         assert_eq!(
             schema,
             Schema::new(vec![
@@ -327,7 +323,7 @@ mod tests {
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let schema = read_json_schema(file.as_ref(), None, None, io_client.clone(), None)?;
+        let schema = read_json_schema(file.as_ref(), None, None, io_client, None)?;
         assert_eq!(
             schema,
             Schema::new(vec![
@@ -353,7 +349,7 @@ mod tests {
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let schema = read_json_schema(file.as_ref(), None, None, io_client.clone(), None)?;
+        let schema = read_json_schema(file.as_ref(), None, None, io_client, None)?;
         assert_eq!(
             schema,
             Schema::new(vec![
@@ -378,7 +374,7 @@ mod tests {
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let schema = read_json_schema(file.as_ref(), None, Some(100), io_client.clone(), None)?;
+        let schema = read_json_schema(file.as_ref(), None, Some(100), io_client, None)?;
         assert_eq!(
             schema,
             Schema::new(vec![
@@ -420,14 +416,14 @@ mod tests {
     ) -> DaftResult<()> {
         let file = format!(
             "s3://daft-public-data/test_fixtures/json-dev/iris_tiny.jsonl{}",
-            compression.map_or("".to_string(), |ext| format!(".{}", ext))
+            compression.map_or(String::new(), |ext| format!(".{}", ext))
         );
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let schema = read_json_schema(file.as_ref(), None, None, io_client.clone(), None)?;
+        let schema = read_json_schema(file.as_ref(), None, None, io_client, None)?;
         assert_eq!(
             schema,
             Schema::new(vec![

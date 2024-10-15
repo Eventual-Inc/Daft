@@ -2,18 +2,16 @@ use std::cell::RefCell;
 
 use serde::ser::SerializeMap;
 
+use super::{ops::as_arrow::AsArrow, DataArray, FixedSizeListArray, ListArray, StructArray};
+#[cfg(feature = "python")]
+use crate::datatypes::PythonArray;
 use crate::{
     datatypes::{
         logical::LogicalArray, BinaryArray, BooleanArray, DaftLogicalType, DaftNumericType,
-        ExtensionArray, FixedSizeBinaryArray, Int64Array, NullArray, Utf8Array,
+        DataType, ExtensionArray, FixedSizeBinaryArray, Int64Array, NullArray, Utf8Array,
     },
-    DataType, IntoSeries, Series,
+    series::{IntoSeries, Series},
 };
-
-#[cfg(feature = "python")]
-use crate::datatypes::PythonArray;
-
-use super::{ops::as_arrow::AsArrow, DataArray, FixedSizeListArray, ListArray, StructArray};
 
 pub struct IterSer<I>
 where
@@ -29,7 +27,7 @@ where
     <I as IntoIterator>::Item: serde::Serialize,
 {
     fn new(iter: I) -> Self {
-        IterSer {
+        Self {
             iter: RefCell::new(Some(iter)),
         }
     }
@@ -132,7 +130,11 @@ impl serde::Serialize for ExtensionArray {
         let mut s = serializer.serialize_map(Some(2))?;
         s.serialize_entry("field", self.field())?;
         let values = if let DataType::Extension(_, inner, _) = self.data_type() {
-            Series::try_from(("physical", self.data.to_type(inner.to_arrow().unwrap()))).unwrap()
+            Series::try_from((
+                "physical",
+                self.data.convert_logical_type(inner.to_arrow().unwrap()),
+            ))
+            .unwrap()
         } else {
             panic!("Expected Extension Type!")
         };

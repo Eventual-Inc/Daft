@@ -2,12 +2,12 @@ use std::sync::Arc;
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
-
-use crate::LogicalPlan;
-use crate::{physical_optimization::optimizer::PhysicalOptimizer, physical_plan::PhysicalPlanRef};
-
-use crate::physical_planner::planner::PhysicalPlanTranslator;
 use common_treenode::TreeNode;
+
+use crate::{
+    physical_optimization::optimizer::PhysicalOptimizer, physical_plan::PhysicalPlanRef,
+    physical_planner::planner::PhysicalPlanTranslator, LogicalPlan,
+};
 mod planner;
 pub use planner::{AdaptivePlanner, MaterializedResults, QueryStageOutput};
 mod translate;
@@ -20,7 +20,7 @@ pub fn logical_to_physical(
 ) -> DaftResult<PhysicalPlanRef> {
     let mut visitor = PhysicalPlanTranslator {
         physical_children: vec![],
-        cfg: cfg.clone(),
+        cfg,
     };
     let _output = logical_plan.visit(&mut visitor)?;
     assert_eq!(

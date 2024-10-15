@@ -1,8 +1,13 @@
-use std::collections::hash_map::Entry::{Occupied, Vacant};
+use std::{
+    collections::hash_map::Entry::{Occupied, Vacant},
+    hash::{BuildHasherDefault, Hash},
+};
 
 use arrow2::array::Array;
+use common_error::DaftResult;
 use fnv::FnvHashMap;
 
+use super::{as_arrow::AsArrow, IntoGroups};
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{
@@ -10,11 +15,6 @@ use crate::{
         Float32Array, Float64Array, NullArray, Utf8Array,
     },
 };
-use common_error::DaftResult;
-
-use super::{as_arrow::AsArrow, IntoGroups};
-
-use std::hash::Hash;
 
 /// Given a list of values, return a `(Vec<u64>, Vec<Vec<u64>>)`.
 /// The sub-vector in the first part of the tuple contains the indices of the unique values.
@@ -37,12 +37,12 @@ use std::hash::Hash;
 fn make_groups<T>(iter: impl Iterator<Item = T>) -> DaftResult<super::GroupIndicesPair>
 where
     T: Hash,
-    T: std::cmp::Eq,
+    T: Eq,
 {
     const DEFAULT_SIZE: usize = 256;
     let mut tbl = FnvHashMap::<T, (u64, Vec<u64>)>::with_capacity_and_hasher(
         DEFAULT_SIZE,
-        Default::default(),
+        BuildHasherDefault::default(),
     );
     for (idx, val) in iter.enumerate() {
         let idx = idx as u64;
@@ -56,15 +56,15 @@ where
             }
         }
     }
-    let mut s_indices = Vec::with_capacity(tbl.len());
-    let mut g_indices = Vec::with_capacity(tbl.len());
+    let mut sample_indices = Vec::with_capacity(tbl.len());
+    let mut group_indices = Vec::with_capacity(tbl.len());
 
-    for (s_idx, g_idx) in tbl.into_values() {
-        s_indices.push(s_idx);
-        g_indices.push(g_idx);
+    for (sample_index, group_index) in tbl.into_values() {
+        sample_indices.push(sample_index);
+        group_indices.push(group_index);
     }
 
-    Ok((s_indices, g_indices))
+    Ok((sample_indices, group_indices))
 }
 
 impl<T> IntoGroups for DataArray<T>

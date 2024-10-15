@@ -1,11 +1,10 @@
 use common_error::DaftResult;
 
-use crate::PhysicalPlanRef;
-
 use super::rules::{
     drop_repartition::DropRepartitionPhysical, reorder_partition_keys::ReorderPartitionKeys,
     PhysicalOptimizerRuleBatch, PhysicalRuleExecutionStrategy,
 };
+use crate::PhysicalPlanRef;
 
 pub struct PhysicalOptimizerConfig {
     // The upper bound on the number of passes a rule batch can run.
@@ -17,13 +16,13 @@ pub struct PhysicalOptimizerConfig {
 impl PhysicalOptimizerConfig {
     #[allow(dead_code)] // used in test
     pub fn new(max_passes: usize) -> Self {
-        PhysicalOptimizerConfig { max_passes }
+        Self { max_passes }
     }
 }
 
 impl Default for PhysicalOptimizerConfig {
     fn default() -> Self {
-        PhysicalOptimizerConfig { max_passes: 5 }
+        Self { max_passes: 5 }
     }
 }
 
@@ -38,14 +37,14 @@ impl PhysicalOptimizer {
         rule_batches: Vec<PhysicalOptimizerRuleBatch>,
         config: PhysicalOptimizerConfig,
     ) -> Self {
-        PhysicalOptimizer {
+        Self {
             rule_batches,
             config,
         }
     }
 
     pub fn optimize(&self, mut plan: PhysicalPlanRef) -> DaftResult<PhysicalPlanRef> {
-        for batch in self.rule_batches.iter() {
+        for batch in &self.rule_batches {
             plan = batch.optimize(plan, &self.config)?;
         }
         Ok(plan)
@@ -54,7 +53,7 @@ impl PhysicalOptimizer {
 
 impl Default for PhysicalOptimizer {
     fn default() -> Self {
-        PhysicalOptimizer {
+        Self {
             rule_batches: vec![PhysicalOptimizerRuleBatch::new(
                 vec![
                     Box::new(ReorderPartitionKeys {}),
@@ -73,19 +72,15 @@ mod tests {
 
     use common_error::DaftResult;
     use common_treenode::Transformed;
-    use daft_core::{
-        datatypes::Field,
-        schema::{Schema, SchemaRef},
-    };
+    use daft_core::prelude::*;
 
+    use super::{PhysicalOptimizer, PhysicalOptimizerRuleBatch};
     use crate::{
         partitioning::UnknownClusteringConfig,
         physical_ops::{EmptyScan, Limit},
         physical_optimization::{optimizer::PhysicalOptimizerConfig, rules::PhysicalOptimizerRule},
         ClusteringSpec, PhysicalPlan, PhysicalPlanRef,
     };
-
-    use super::{PhysicalOptimizer, PhysicalOptimizerRuleBatch};
 
     fn create_dummy_plan(schema: SchemaRef, num_partitions: usize) -> PhysicalPlanRef {
         PhysicalPlan::EmptyScan(EmptyScan::new(
@@ -130,10 +125,7 @@ mod tests {
     #[test]
     fn test_rule_batch_once() -> DaftResult<()> {
         let plan = create_dummy_plan(
-            Arc::new(Schema::new(vec![Field::new(
-                "a",
-                daft_core::DataType::Int32,
-            )])?),
+            Arc::new(Schema::new(vec![Field::new("a", DataType::Int32)])?),
             1,
         );
 
@@ -154,10 +146,7 @@ mod tests {
     #[test]
     fn test_rule_batch_fixed_point() -> DaftResult<()> {
         let plan = create_dummy_plan(
-            Arc::new(Schema::new(vec![Field::new(
-                "a",
-                daft_core::DataType::Int32,
-            )])?),
+            Arc::new(Schema::new(vec![Field::new("a", DataType::Int32)])?),
             1,
         );
 
@@ -178,10 +167,7 @@ mod tests {
     #[test]
     fn test_rule_batch_fixed_point_max() -> DaftResult<()> {
         let plan = create_dummy_plan(
-            Arc::new(Schema::new(vec![Field::new(
-                "a",
-                daft_core::DataType::Int32,
-            )])?),
+            Arc::new(Schema::new(vec![Field::new("a", DataType::Int32)])?),
             1,
         );
 
@@ -202,10 +188,7 @@ mod tests {
     #[test]
     fn test_rule_batch_fixed_point_max_passes() -> DaftResult<()> {
         let plan = create_dummy_plan(
-            Arc::new(Schema::new(vec![Field::new(
-                "a",
-                daft_core::DataType::Int32,
-            )])?),
+            Arc::new(Schema::new(vec![Field::new("a", DataType::Int32)])?),
             1,
         );
 
@@ -226,10 +209,7 @@ mod tests {
     #[test]
     fn test_rule_batch_fixed_point_no_limit() -> DaftResult<()> {
         let plan = create_dummy_plan(
-            Arc::new(Schema::new(vec![Field::new(
-                "a",
-                daft_core::DataType::Int32,
-            )])?),
+            Arc::new(Schema::new(vec![Field::new("a", DataType::Int32)])?),
             1,
         );
 

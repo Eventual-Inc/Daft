@@ -1,19 +1,20 @@
 use std::{sync::Arc, vec};
 
 use common_error::{DaftError, DaftResult};
-use daft_core::schema::SchemaRef;
+use common_file_formats::{CsvSourceConfig, FileFormat, FileFormatConfig, ParquetSourceConfig};
+use daft_core::{prelude::Utf8Array, series::IntoSeries};
 use daft_csv::CsvParseOptions;
-use daft_io::{
-    parse_url, FileFormat, FileMetadata, IOClient, IOStatsContext, IOStatsRef, RuntimeRef,
-};
+use daft_io::{parse_url, FileMetadata, IOClient, IOStatsContext, IOStatsRef, RuntimeRef};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
+use daft_schema::{dtype::DataType, field::Field, schema::SchemaRef};
+use daft_stats::PartitionSpec;
+use daft_table::Table;
 use futures::{stream::BoxStream, StreamExt, TryStreamExt};
 use snafu::Snafu;
 
 use crate::{
-    file_format::{CsvSourceConfig, FileFormatConfig, ParquetSourceConfig},
-    storage_config::StorageConfig,
-    ChunkSpec, DataSource, PartitionField, Pushdowns, ScanOperator, ScanTask, ScanTaskRef,
+    storage_config::StorageConfig, ChunkSpec, DataSource, PartitionField, Pushdowns, ScanOperator,
+    ScanTask, ScanTaskRef,
 };
 #[derive(Debug)]
 pub struct GlobScanOperator {
@@ -21,6 +22,8 @@ pub struct GlobScanOperator {
     file_format_config: Arc<FileFormatConfig>,
     schema: SchemaRef,
     storage_config: Arc<StorageConfig>,
+    file_path_column: Option<String>,
+    partitioning_keys: Vec<PartitionField>,
 }
 
 /// Wrapper struct that implements a sync Iterator for a BoxStream
@@ -51,7 +54,7 @@ enum Error {
 impl From<Error> for DaftError {
     fn from(value: Error) -> Self {
         match &value {
-            Error::GlobNoMatch { glob_path } => DaftError::FileNotFound {
+            Error::GlobNoMatch { glob_path } => Self::FileNotFound {
                 path: glob_path.clone(),
                 source: Box::new(value),
             },
@@ -120,18 +123,19 @@ fn run_glob_parallel(
     // Construct a static-lifetime BoxStreamIterator
     let iterator = BoxStreamIterator {
         boxstream,
-        runtime_handle: owned_runtime.clone(),
+        runtime_handle: owned_runtime,
     };
     Ok(iterator)
 }
 
 impl GlobScanOperator {
     pub fn try_new(
-        glob_paths: &[&str],
+        glob_paths: Vec<String>,
         file_format_config: Arc<FileFormatConfig>,
         storage_config: Arc<StorageConfig>,
         infer_schema: bool,
         schema: Option<SchemaRef>,
+        file_path_column: Option<String>,
     ) -> DaftResult<Self> {
         let first_glob_path = match glob_paths.first() {
             None => Err(DaftError::ValueError(
@@ -150,7 +154,7 @@ impl GlobScanOperator {
             first_glob_path,
             Some(1),
             io_client.clone(),
-            io_runtime.clone(),
+            io_runtime,
             Some(io_stats.clone()),
             file_format,
         )?;
@@ -164,13 +168,20 @@ impl GlobScanOperator {
             }
             .into()),
         }?;
+        let partitioning_keys = if let Some(fp_col) = &file_path_column {
+            let partition_field =
+                PartitionField::new(Field::new(fp_col, DataType::Utf8), None, None)?;
+            vec![partition_field; 1]
+        } else {
+            vec![]
+        };
 
         let schema = match infer_schema {
             true => {
                 let inferred_schema = match file_format_config.as_ref() {
-                    FileFormatConfig::Parquet(ParquetSourceConfig {
+                    &FileFormatConfig::Parquet(ParquetSourceConfig {
                         coerce_int96_timestamp_unit,
-                        field_id_mapping,
+                        ref field_id_mapping,
                         ..
                     }) => {
                         let io_stats = IOStatsContext::new(format!(
@@ -179,10 +190,11 @@ impl GlobScanOperator {
 
                         let (schema, _metadata) = daft_parquet::read::read_parquet_schema(
                             first_filepath.as_str(),
-                            io_client.clone(),
+                            io_client,
                             Some(io_stats),
                             ParquetSchemaInferenceOptions {
-                                coerce_int96_timestamp_unit: *coerce_int96_timestamp_unit,
+                                coerce_int96_timestamp_unit,
+                                ..Default::default()
                             },
                             field_id_mapping.clone(),
                         )?;
@@ -244,10 +256,12 @@ impl GlobScanOperator {
             false => schema.expect("Schema must be provided if infer_schema is false"),
         };
         Ok(Self {
-            glob_paths: glob_paths.iter().map(|s| s.to_string()).collect(),
+            glob_paths,
             file_format_config,
             schema,
             storage_config,
+            file_path_column,
+            partitioning_keys,
         })
     }
 }
@@ -258,7 +272,11 @@ impl ScanOperator for GlobScanOperator {
     }
 
     fn partitioning_keys(&self) -> &[PartitionField] {
-        &[]
+        &self.partitioning_keys
+    }
+
+    fn file_path_column(&self) -> Option<&str> {
+        self.file_path_column.as_deref()
     }
 
     fn can_absorb_filter(&self) -> bool {
@@ -272,9 +290,28 @@ impl ScanOperator for GlobScanOperator {
     }
 
     fn multiline_display(&self) -> Vec<String> {
+        let condensed_glob_paths = if self.glob_paths.len() <= 7 {
+            self.glob_paths.join(", ")
+        } else {
+            let first_three: Vec<String> = self.glob_paths.iter().take(3).cloned().collect();
+            let last_three: Vec<String> = self
+                .glob_paths
+                .iter()
+                .skip(self.glob_paths.len() - 3)
+                .cloned()
+                .collect();
+
+            let mut result = first_three.join(", ");
+            result.push_str(", ...");
+            result.push_str(", ");
+            result.push_str(&last_three.join(", "));
+
+            result
+        };
+
         let mut lines = vec![
             "GlobScanOperator".to_string(),
-            format!("Glob paths = [{}]", self.glob_paths.join(", ")),
+            format!("Glob paths = [{}]", condensed_glob_paths),
         ];
         lines.extend(self.file_format_config.multiline_display());
         lines.extend(self.storage_config.multiline_display());
@@ -295,9 +332,9 @@ impl ScanOperator for GlobScanOperator {
 
         let files = run_glob_parallel(
             self.glob_paths.clone(),
-            io_client.clone(),
-            io_runtime.clone(),
-            Some(io_stats.clone()),
+            io_client,
+            io_runtime,
+            Some(io_stats),
             file_format,
         )?;
 
@@ -314,37 +351,70 @@ impl ScanOperator for GlobScanOperator {
         } else {
             None
         };
-
+        let file_path_column = self.file_path_column.clone();
         // Create one ScanTask per file
-        Ok(Box::new(files.enumerate().map(move |(idx, f)| {
-            let FileMetadata {
-                filepath: path,
-                size: size_bytes,
-                ..
-            } = f?;
+        Ok(Box::new(files.enumerate().filter_map(move |(idx, f)| {
+            let scan_task_result = (|| {
+                let FileMetadata {
+                    filepath: path,
+                    size: size_bytes,
+                    ..
+                } = f?;
+                let partition_spec = if let Some(fp_col) = &file_path_column {
+                    let trimmed = path.trim_start_matches("file://");
+                    let file_paths_column_series =
+                        Utf8Array::from_iter(fp_col, std::iter::once(Some(trimmed))).into_series();
+                    let file_paths_table =
+                        Table::from_nonempty_columns(vec![file_paths_column_series; 1])?;
 
-            let row_group = row_groups
-                .as_ref()
-                .and_then(|rgs| rgs.get(idx).cloned())
-                .flatten();
-            let chunk_spec = row_group.map(ChunkSpec::Parquet);
-            Ok(ScanTask::new(
-                vec![DataSource::File {
-                    path: path.to_string(),
-                    chunk_spec,
-                    size_bytes,
-                    iceberg_delete_files: None,
-                    metadata: None,
-                    partition_spec: None,
-                    statistics: None,
-                    parquet_metadata: None,
-                }],
-                file_format_config.clone(),
-                schema.clone(),
-                storage_config.clone(),
-                pushdowns.clone(),
-            )
-            .into())
+                    if let Some(ref partition_filters) = pushdowns.partition_filters {
+                        let eval_pred =
+                            file_paths_table.eval_expression_list(&[partition_filters.clone()])?;
+                        assert_eq!(eval_pred.num_columns(), 1);
+                        let series = eval_pred.get_column_by_index(0)?;
+                        assert_eq!(series.data_type(), &daft_core::datatypes::DataType::Boolean);
+                        let boolean = series.bool()?;
+                        assert_eq!(boolean.len(), 1);
+                        let value = boolean.get(0);
+                        match value {
+                            None | Some(false) => return Ok(None),
+                            Some(true) => {}
+                        }
+                    }
+                    Some(PartitionSpec {
+                        keys: file_paths_table,
+                    })
+                } else {
+                    None
+                };
+                let row_group = row_groups
+                    .as_ref()
+                    .and_then(|rgs| rgs.get(idx).cloned())
+                    .flatten();
+                let chunk_spec = row_group.map(ChunkSpec::Parquet);
+                Ok(Some(ScanTask::new(
+                    vec![DataSource::File {
+                        path,
+                        chunk_spec,
+                        size_bytes,
+                        iceberg_delete_files: None,
+                        metadata: None,
+                        partition_spec,
+                        statistics: None,
+                        parquet_metadata: None,
+                    }],
+                    file_format_config.clone(),
+                    schema.clone(),
+                    storage_config.clone(),
+                    pushdowns.clone(),
+                    file_path_column.clone(),
+                )))
+            })();
+            match scan_task_result {
+                Ok(Some(scan_task)) => Some(Ok(scan_task.into())),
+                Ok(None) => None,
+                Err(e) => Some(Err(e)),
+            }
         })))
     }
 }

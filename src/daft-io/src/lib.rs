@@ -15,40 +15,36 @@ mod s3_like;
 mod stats;
 mod stream_utils;
 use azure_blob::AzureBlobSource;
+use common_file_formats::FileFormat;
 use futures::FutureExt;
 use google_cloud::GCSSource;
 use huggingface::HFSource;
 use lazy_static::lazy_static;
-mod file_format;
 #[cfg(feature = "python")]
 pub mod python;
-pub use file_format::FileFormat;
 
-pub use common_io_config::{AzureConfig, IOConfig, S3Config};
-pub use object_io::FileMetadata;
-pub use object_io::GetResult;
-use object_io::StreamingRetryParams;
-#[cfg(feature = "python")]
-pub use python::register_modules;
-pub use stats::{IOStatsContext, IOStatsRef};
-use tokio::runtime::RuntimeFlavor;
-use tokio::task::JoinHandle;
-
-use std::future::Future;
-use std::panic::AssertUnwindSafe;
-use std::sync::Arc;
-use std::sync::OnceLock;
-use std::{borrow::Cow, collections::HashMap, hash::Hash, ops::Range};
-
-use futures::stream::BoxStream;
-
-use snafu::Snafu;
-use url::ParseError;
-
-use snafu::prelude::*;
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    future::Future,
+    hash::Hash,
+    ops::Range,
+    panic::AssertUnwindSafe,
+    sync::{Arc, OnceLock},
+};
 
 use common_error::{DaftError, DaftResult};
+pub use common_io_config::{AzureConfig, IOConfig, S3Config};
+use futures::stream::BoxStream;
+use object_io::StreamingRetryParams;
+pub use object_io::{FileMetadata, GetResult};
+#[cfg(feature = "python")]
+pub use python::register_modules;
 use s3_like::S3LikeSource;
+use snafu::{prelude::*, Snafu};
+pub use stats::{IOStatsContext, IOStatsRef};
+use tokio::{runtime::RuntimeFlavor, task::JoinHandle};
+use url::ParseError;
 
 #[cfg(feature = "enable_hdfs")]
 use self::hdfs::HDFSSource;
@@ -105,6 +101,12 @@ pub enum Error {
     ))]
     SocketError { path: String, source: DynError },
 
+    #[snafu(display("Throttled when trying to read {}\nDetails:\n{:?}", path, source))]
+    Throttled { path: String, source: DynError },
+
+    #[snafu(display("Misc Transient error trying to read {}\nDetails:\n{:?}", path, source))]
+    MiscTransient { path: String, source: DynError },
+
     #[snafu(display("Unable to convert URL \"{}\" to path", path))]
     InvalidUrl {
         path: String,
@@ -150,34 +152,41 @@ pub enum Error {
 }
 
 impl From<Error> for DaftError {
-    fn from(err: Error) -> DaftError {
-        use Error::*;
+    fn from(err: Error) -> Self {
+        use Error::{
+            CachedError, ConnectTimeout, MiscTransient, NotFound, ReadTimeout, SocketError,
+            Throttled, UnableToReadBytes,
+        };
         match err {
-            NotFound { path, source } => DaftError::FileNotFound { path, source },
-            ConnectTimeout { .. } => DaftError::ConnectTimeout(err.into()),
-            ReadTimeout { .. } => DaftError::ReadTimeout(err.into()),
-            UnableToReadBytes { .. } => DaftError::ByteStreamError(err.into()),
-            SocketError { .. } => DaftError::SocketError(err.into()),
+            NotFound { path, source } => Self::FileNotFound { path, source },
+            ConnectTimeout { .. } => Self::ConnectTimeout(err.into()),
+            ReadTimeout { .. } => Self::ReadTimeout(err.into()),
+            UnableToReadBytes { .. } => Self::ByteStreamError(err.into()),
+            SocketError { .. } => Self::SocketError(err.into()),
+            Throttled { .. } => Self::ThrottledIo(err.into()),
+            MiscTransient { .. } => Self::MiscTransient(err.into()),
             // We have to repeat everything above for the case we have an Arc since we can't move the error.
             CachedError { ref source } => match source.as_ref() {
-                NotFound { path, source: _ } => DaftError::FileNotFound {
+                NotFound { path, source: _ } => Self::FileNotFound {
                     path: path.clone(),
                     source: err.into(),
                 },
-                ConnectTimeout { .. } => DaftError::ConnectTimeout(err.into()),
-                ReadTimeout { .. } => DaftError::ReadTimeout(err.into()),
-                UnableToReadBytes { .. } => DaftError::ByteStreamError(err.into()),
-                SocketError { .. } => DaftError::SocketError(err.into()),
-                _ => DaftError::External(err.into()),
+                ConnectTimeout { .. } => Self::ConnectTimeout(err.into()),
+                ReadTimeout { .. } => Self::ReadTimeout(err.into()),
+                UnableToReadBytes { .. } => Self::ByteStreamError(err.into()),
+                SocketError { .. } => Self::SocketError(err.into()),
+                Throttled { .. } => Self::ThrottledIo(err.into()),
+                MiscTransient { .. } => Self::MiscTransient(err.into()),
+                _ => Self::External(err.into()),
             },
-            _ => DaftError::External(err.into()),
+            _ => Self::External(err.into()),
         }
     }
 }
 
 impl From<Error> for std::io::Error {
-    fn from(err: Error) -> std::io::Error {
-        std::io::Error::new(std::io::ErrorKind::Other, err)
+    fn from(err: Error) -> Self {
+        Self::new(std::io::ErrorKind::Other, err)
     }
 }
 
@@ -191,7 +200,7 @@ pub struct IOClient {
 
 impl IOClient {
     pub fn new(config: Arc<IOConfig>) -> Result<Self> {
-        Ok(IOClient {
+        Ok(Self {
             source_type_to_store: tokio::sync::RwLock::new(HashMap::new()),
             config,
         })
@@ -316,16 +325,17 @@ impl IOClient {
 
         match value {
             Some(Ok(bytes)) => Ok(Some(bytes)),
-            Some(Err(err)) => match raise_error_on_failure {
-                true => Err(err),
-                false => {
+            Some(Err(err)) => {
+                if raise_error_on_failure {
+                    Err(err)
+                } else {
                     log::warn!(
-                        "Error occurred during url_download at index: {index} {} (falling back to Null)",
-                        err
-                    );
+                    "Error occurred during url_download at index: {index} {} (falling back to Null)",
+                    err
+                );
                     Ok(None)
                 }
-            },
+            }
             None => Ok(None),
         }
     }
@@ -373,14 +383,14 @@ pub enum SourceType {
 impl std::fmt::Display for SourceType {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            SourceType::File => write!(f, "file"),
-            SourceType::Http => write!(f, "http"),
-            SourceType::S3 => write!(f, "s3"),
-            SourceType::AzureBlob => write!(f, "AzureBlob"),
-            SourceType::GCS => write!(f, "gcs"),
-            SourceType::HF => write!(f, "hf"),
+            Self::File => write!(f, "file"),
+            Self::Http => write!(f, "http"),
+            Self::S3 => write!(f, "s3"),
+            Self::AzureBlob => write!(f, "AzureBlob"),
+            Self::GCS => write!(f, "gcs"),
+            Self::HF => write!(f, "hf"),
             #[cfg(feature = "enable_hdfs")]
-            SourceType::HDFS => write!(f, "hdfs"),
+            Self::HDFS => write!(f, "hdfs"),
         }
     }
 }
@@ -394,7 +404,7 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
                 let expanded = home_dir.join(&input[2..]);
                 let input = expanded.to_str()?;
 
-                Some((SourceType::File, Cow::Owned(format!("file://{}", input))))
+                Some((SourceType::File, Cow::Owned(format!("file://{input}"))))
             })
             .ok_or_else(|| crate::Error::InvalidArgument {
                 msg: "Could not convert expanded path to string".to_string(),
@@ -453,7 +463,7 @@ pub fn get_io_client(multi_thread: bool, config: Arc<IOConfig>) -> DaftResult<Ar
         if let Some(client) = w_handle.get(&key) {
             Ok(client.clone())
         } else {
-            let client = Arc::new(IOClient::new(config.clone())?);
+            let client = Arc::new(IOClient::new(config)?);
             w_handle.insert(key, client.clone());
             Ok(client)
         }
@@ -484,7 +494,7 @@ impl Runtime {
                 let s = if let Some(s) = e.downcast_ref::<String>() {
                     s.clone()
                 } else if let Some(s) = e.downcast_ref::<&str>() {
-                    s.to_string()
+                    (*s).to_string()
                 } else {
                     "unknown internal error".to_string()
                 };
@@ -494,7 +504,7 @@ impl Runtime {
             });
 
             if tx.send(task_output).is_err() {
-                log::warn!("Spawned task output ignored: receiver dropped")
+                log::warn!("Spawned task output ignored: receiver dropped");
             }
         });
         rx.recv().expect("Spawned task transmitter dropped")
@@ -530,22 +540,20 @@ fn init_runtime(num_threads: usize) -> Arc<Runtime> {
 }
 
 pub fn get_runtime(multi_thread: bool) -> DaftResult<RuntimeRef> {
-    match multi_thread {
-        false => {
-            let runtime = SINGLE_THREADED_RUNTIME
-                .get_or_init(|| init_runtime(1))
-                .clone();
-            Ok(runtime)
-        }
-        true => {
-            let runtime = THREADED_RUNTIME
-                .get_or_init(|| init_runtime(*THREADED_RUNTIME_NUM_WORKER_THREADS))
-                .clone();
-            Ok(runtime)
-        }
+    if !multi_thread {
+        let runtime = SINGLE_THREADED_RUNTIME
+            .get_or_init(|| init_runtime(1))
+            .clone();
+        Ok(runtime)
+    } else {
+        let runtime = THREADED_RUNTIME
+            .get_or_init(|| init_runtime(*THREADED_RUNTIME_NUM_WORKER_THREADS))
+            .clone();
+        Ok(runtime)
     }
 }
 
+#[must_use]
 pub fn get_io_pool_num_threads() -> Option<usize> {
     match tokio::runtime::Handle::try_current() {
         Ok(handle) => {

@@ -3,8 +3,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-import pyarrow as pa
-
 from daft.daft import (
     CsvConvertOptions,
     CsvParseOptions,
@@ -26,14 +24,7 @@ from daft.table.table import Table
 
 if TYPE_CHECKING:
     import pandas as pd
-
-
-_PANDAS_AVAILABLE = True
-try:
-    import pandas as pd
-except ImportError:
-    _PANDAS_AVAILABLE = False
-
+    import pyarrow as pa
 
 logger = logging.getLogger(__name__)
 
@@ -139,10 +130,8 @@ class MicroPartition:
     def to_table(self) -> Table:
         return Table._from_pytable(self._micropartition.to_table())
 
-    def to_arrow(self, cast_tensors_to_ray_tensor_dtype: bool = False, convert_large_arrays: bool = False) -> pa.Table:
-        return self.to_table().to_arrow(
-            cast_tensors_to_ray_tensor_dtype=cast_tensors_to_ray_tensor_dtype, convert_large_arrays=convert_large_arrays
-        )
+    def to_arrow(self) -> pa.Table:
+        return self.to_table().to_arrow()
 
     def to_pydict(self) -> dict[str, list]:
         return self.to_table().to_pydict()
@@ -153,12 +142,10 @@ class MicroPartition:
     def to_pandas(
         self,
         schema: Schema | None = None,
-        cast_tensors_to_ray_tensor_dtype: bool = False,
         coerce_temporal_nanoseconds: bool = False,
     ) -> pd.DataFrame:
         return self.to_table().to_pandas(
             schema=schema,
-            cast_tensors_to_ray_tensor_dtype=cast_tensors_to_ray_tensor_dtype,
             coerce_temporal_nanoseconds=coerce_temporal_nanoseconds,
         )
 

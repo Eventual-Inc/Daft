@@ -1,8 +1,11 @@
 [dependencies]
 common-daft-config = {path = "../common/daft-config"}
 common-error = {path = "../common/error"}
+common-io-config = {path = "../common/io-config", default-features = false}
 daft-core = {path = "../daft-core"}
 daft-dsl = {path = "../daft-dsl"}
+daft-functions = {path = "../daft-functions"}
+daft-functions-json = {path = "../daft-functions-json"}
 daft-plan = {path = "../daft-plan"}
 once_cell = {workspace = true}
 pyo3 = {workspace = true, optional = true}
@@ -13,7 +16,10 @@ snafu.workspace = true
 rstest = {workspace = true}
 
 [features]
-python = ["dep:pyo3", "common-error/python"]
+python = ["dep:pyo3", "common-error/python", "daft-functions/python", "daft-functions-json/python"]
+
+[lints]
+workspace = true
 
 [package]
 name = "daft-sql"
