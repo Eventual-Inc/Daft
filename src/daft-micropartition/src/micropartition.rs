@@ -870,7 +870,7 @@ pub fn read_csv_into_micropartition(
             let unioned_schema = tables
                 .iter()
                 .map(|tbl| tbl.schema.clone())
-                .try_reduce(|s1, s2| s1.union(s2.as_ref()).map(Arc::new))?
+                .reduce(|s1, s2| Arc::new(s1.non_distinct_union(s2.as_ref())))
                 .unwrap();
             let tables = tables
                 .into_iter()
@@ -919,7 +919,7 @@ pub fn read_json_into_micropartition(
             let unioned_schema = tables
                 .iter()
                 .map(|tbl| tbl.schema.clone())
-                .try_reduce(|s1, s2| s1.union(s2.as_ref()).map(Arc::new))?
+                .reduce(|s1, s2| Arc::new(s1.non_distinct_union(s2.as_ref())))
                 .unwrap();
             let tables = tables
                 .into_iter()
@@ -1082,7 +1082,7 @@ fn _read_parquet_into_loaded_micropartition<T: AsRef<str>>(
         let unioned_schema = all_tables
             .iter()
             .map(|t| t.schema.clone())
-            .try_reduce(|l, r| DaftResult::Ok(l.union(&r)?.into()))?;
+            .reduce(|l, r| l.non_distinct_union(&r).into());
         unioned_schema.expect("we need at least 1 schema")
     };
 
@@ -1231,7 +1231,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
         } else {
             let unioned_schema = schemas
                 .into_iter()
-                .try_reduce(|l, r| l.union(&r).map(Arc::new))?;
+                .reduce(|l, r| Arc::new(l.non_distinct_union(&r)));
             unioned_schema.expect("we need at least 1 schema")
         };
 

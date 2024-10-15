@@ -146,13 +146,10 @@ class Schema:
     def apply_hints(self, hints: Schema) -> Schema:
         return Schema._from_pyschema(self._schema.apply_hints(hints._schema))
 
+    # Takes the unions between two schemas. Throws an error if the schemas contain overlapping keys.
     def union(self, other: Schema) -> Schema:
         if not isinstance(other, Schema):
             raise ValueError(f"Expected Schema, got other: {type(other)}")
-
-        intersecting_names = self.to_name_set().intersection(other.to_name_set())
-        if intersecting_names:
-            raise ValueError(f"Cannot union schemas with overlapping names: {intersecting_names}")
 
         return Schema._from_pyschema(self._schema.union(other._schema))
 
