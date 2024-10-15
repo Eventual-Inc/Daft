@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+- name: GitHub Discussions
+  url: https://github.com/Eventual-Inc/Daft/discussions/new/choose
+  about: Please ask questions here.
+- name: Slack
+  url: https://dist-data.slack.com/archives/C052CA6Q9N1
+  about: Or the `#daft-dev` channel in the Daft Slack.
