@@ -111,7 +111,7 @@ jobs:
         path: dist
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v1.26.0
+      uses: slackapi/slack-github-action@v1.27.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
@@ -186,7 +186,7 @@ jobs:
         upload_wheels
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v1.26.0
+      uses: slackapi/slack-github-action@v1.27.0
       if: failure()
       with:
         payload: |
