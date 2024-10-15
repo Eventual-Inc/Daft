@@ -34,12 +34,11 @@ body:
     placeholder: Some related requests in other projects or upstream spec proposals.
   validations:
     required: false
-- type: dropdown
+- type: checkboxes
   id: contribute
   attributes:
     label: Would you like to implement a fix?
     description: |
       For guidance on how to get started, refer to the [contribution guide](https://github.com/Eventual-Inc/Daft/blob/main/CONTRIBUTING.md).
     options:
-    - No
     - Yes
