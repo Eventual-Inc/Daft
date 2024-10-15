@@ -41,4 +41,7 @@ body:
     description: |
       For guidance on how to get started, refer to the [contribution guide](https://github.com/Eventual-Inc/Daft/blob/main/CONTRIBUTING.md).
     options:
-    - Yes
+    - "No"
+    - "Yes"
+    validations:
+      required: true
