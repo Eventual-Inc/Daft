@@ -2933,15 +2933,15 @@ class ExpressionStringNamespace(ExpressionNamespace):
             >>> df = daft.from_pydict({"text": ["Hello, World!", "OpenAI"]})
             >>> df = df.with_column("encoded", df["text"].str.base64_encode())
             >>> df.show()
-            ╭─────────────────┬──────────────────────╮
-            │ text            ┆ encoded              │
-            │ ---             ┆ ---                  │
-            │ Utf8            ┆ Utf8                 │
-            ╞═════════════════╪══════════════════════╡
-            │ Hello, World!   ┆ SGVsbG8sIFdvcmxkIQ== │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ OpenAI          ┆ T3BlbkFJ             │
-            ╰─────────────────┴──────────────────────╯
+            ╭───────────────┬──────────────────────╮
+            │ text          ┆ encoded              │
+            │ ---           ┆ ---                  │
+            │ Utf8          ┆ Utf8                 │
+            ╞═══════════════╪══════════════════════╡
+            │ Hello, World! ┆ SGVsbG8sIFdvcmxkIQ== │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ OpenAI        ┆ T3BlbkFJ             │
+            ╰───────────────┴──────────────────────╯
         """
         return Expression._from_pyexpr(self._expr.utf8_base64_encode())
 
@@ -2957,15 +2957,15 @@ class ExpressionStringNamespace(ExpressionNamespace):
             >>> df = daft.from_pydict({"encoded": ["SGVsbG8sIFdvcmxkIQ==", "T3BlbkFJ"]})
             >>> df = df.with_column("decoded", df["encoded"].str.base64_decode()).collect()
             >>> df.show()
-            ╭──────────────────────┬─────────────────╮
-            │ encoded              ┆ decoded         │
-            │ ---                  ┆ ---             │
-            │ Utf8                 ┆ Utf8            │
-            ╞══════════════════════╪═════════════════╡
-            │ SGVsbG8sIFdvcmxkIQ== ┆ Hello, World!   │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ T3BlbkFJ             ┆ OpenAI          │
-            ╰──────────────────────┴─────────────────╯
+            ╭──────────────────────┬───────────────╮
+            │ encoded              ┆ decoded       │
+            │ ---                  ┆ ---           │
+            │ Utf8                 ┆ Utf8          │
+            ╞══════════════════════╪═══════════════╡
+            │ SGVsbG8sIFdvcmxkIQ== ┆ Hello, World! │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ T3BlbkFJ             ┆ OpenAI        │
+            ╰──────────────────────┴───────────────╯
         """
         return Expression._from_pyexpr(self._expr.utf8_base64_decode())
 
