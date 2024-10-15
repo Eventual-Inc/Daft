@@ -40,7 +40,7 @@ from daft.datatype import DataType, TimeUnit
 from daft.dependencies import pa
 from daft.expressions.testing import expr_structurally_equal
 from daft.logical.schema import Field, Schema
-from daft.series import Series, item_to_series
+from daft.series import item_to_series
 
 if TYPE_CHECKING:
     import builtins
@@ -126,8 +126,6 @@ def lit(value: object) -> Expression:
         sign, digits, exponent = value.as_tuple()
         assert isinstance(exponent, int)
         lit_value = _decimal_lit(sign == 1, digits, exponent)
-    elif isinstance(value, Series):
-        lit_value = _series_lit(value._series)
     else:
         lit_value = _lit(value)
     return Expression._from_pyexpr(lit_value)
@@ -1101,11 +1099,10 @@ class Expression:
             Expression: Boolean Expression indicating whether values are in the provided list
         """
 
-        if not isinstance(other, Expression):
-            series = item_to_series("items", other)
-            other = Expression._to_expression(series)
-
-        expr = self._expr.is_in(other._expr)
+        other_expr = (
+            other._expr if isinstance(other, Expression) else _series_lit(item_to_series("items", other)._series)
+        )
+        expr = self._expr.is_in(other_expr)
         return Expression._from_pyexpr(expr)
 
     def between(self, lower: Any, upper: Any) -> Expression:

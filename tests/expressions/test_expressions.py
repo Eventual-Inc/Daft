@@ -10,7 +10,6 @@ import daft
 from daft.datatype import DataType, TimeUnit
 from daft.expressions import col, lit
 from daft.expressions.testing import expr_structurally_equal
-from daft.series import Series
 from daft.table import MicroPartition
 
 
@@ -25,7 +24,6 @@ from daft.table import MicroPartition
         (b"a", DataType.binary()),
         (True, DataType.bool()),
         (None, DataType.null()),
-        (Series.from_pylist([1, 2, 3]), DataType.int64()),
         (date(2023, 1, 1), DataType.date()),
         (time(1, 2, 3, 4), DataType.time(timeunit=TimeUnit.from_str("us"))),
         (datetime(2023, 1, 1), DataType.timestamp(timeunit=TimeUnit.from_str("us"))),
@@ -530,12 +528,6 @@ def test_duration_lit(input, expected) -> None:
     d = lit(input)
     output = repr(d)
     assert output == expected
-
-
-def test_repr_series_lit() -> None:
-    s = lit(Series.from_pylist([1, 2, 3]))
-    output = repr(s)
-    assert output == "lit([1, 2, 3])"
 
 
 def test_list_value_counts():
