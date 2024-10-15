@@ -46,7 +46,7 @@ repos:
     args: [--autofix]
     exclude: Cargo.lock
   - id: pretty-format-yaml
-    args: [--autofix]
+    args: [--autofix, --preserve-quotes]
 
 - repo: https://github.com/codespell-project/codespell
   rev: v2.3.0
