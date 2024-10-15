@@ -813,6 +813,16 @@ pub trait ScanOperator: Send + Sync + Debug {
     fn schema(&self) -> SchemaRef;
     fn partitioning_keys(&self) -> &[PartitionField];
     fn file_path_column(&self) -> Option<&str>;
+    // Although generated fields are often added to the partition spec, generated fields and
+    // partition fields are handled differently:
+    // 1. Generated fields: Currently from file paths or Hive partitions,
+    //    although in the future these may be extended to generated and virtual columns.
+    // 2. Partition fields: Originally from Iceberg, specifying both source and (possibly
+    //    transformed) partition fields.
+    //
+    // Partition fields are automatically included in scan output schemas (e.g.,
+    // in ScanTask::materialized_schema), while generated fields require special handling.
+    // Thus, we maintain separate representations for partitioning keys and generated fields.
     fn generated_fields(&self) -> IndexMap<std::string::String, Field>;
 
     fn can_absorb_filter(&self) -> bool;
