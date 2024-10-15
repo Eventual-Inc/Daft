@@ -2,8 +2,9 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
+use common_runtime::get_io_runtime;
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
-use daft_io::{get_runtime, IOStatsRef};
+use daft_io::IOStatsRef;
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_micropartition::MicroPartition;
 use daft_parquet::read::ParquetSchemaInferenceOptions;
@@ -40,9 +41,9 @@ impl ScanTaskSource {
         io_stats: IOStatsRef,
     ) -> DaftResult<()> {
         let schema = scan_task.materialized_schema();
-        let io_runtime = get_runtime(true)?;
+        let io_runtime = get_io_runtime(true)?;
         let mut stream = io_runtime
-            .await_on_io_pool(stream_scan_task(scan_task, Some(io_stats), maintain_order))
+            .await_on(stream_scan_task(scan_task, Some(io_stats), maintain_order))
             .await??;
         let mut has_data = false;
         while let Some(partition) = stream.next().await {

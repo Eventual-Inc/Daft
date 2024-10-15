@@ -121,3 +121,22 @@ def test_tpch(tmp_path, check_answer, get_df, benchmark_with_memray, engine, q):
     benchmark_group = f"q{q}-parts-{num_parts}"
     daft_pd_df = benchmark_with_memray(f, benchmark_group).to_pandas()
     check_answer(daft_pd_df, q, tmp_path)
+
+@pytest.mark.benchmark(group="parquet")
+@pytest.mark.parametrize("engine", ENGINES)
+def test_parquet(benchmark_with_memray, engine):
+    path = "data/tpch-dbgen/1_0/2/parquet/lineitem"
+
+    def f():
+        if engine == "native":
+            ctx = daft.context.execution_config_ctx(enable_native_executor=True)
+        elif engine == "python":
+            ctx = daft.context.execution_config_ctx(enable_native_executor=False)
+        else:
+            raise ValueError(f"{engine} unsupported")
+        
+        with ctx:
+            daft.read_parquet(path).to_arrow()
+
+    benchmark_group = f"parquet"
+    benchmark_with_memray(f, benchmark_group)

@@ -4,6 +4,7 @@ common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}
 common-file-formats = {path = "../common/file-formats", default-features = false}
 common-tracing = {path = "../common/tracing", default-features = false}
+common-runtime = {path = "../common/runtime", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-csv = {path = "../daft-csv", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}

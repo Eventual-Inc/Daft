@@ -6,12 +6,13 @@ use arrow2::{
 };
 use async_compat::{Compat, CompatExt};
 use common_error::{DaftError, DaftResult};
+use common_runtime::get_io_runtime;
 use csv_async::AsyncReader;
 use daft_compression::CompressionCodec;
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
 use daft_decoding::deserialize::deserialize_column;
 use daft_dsl::optimization::get_required_columns;
-use daft_io::{get_runtime, GetResult, IOClient, IOStatsRef};
+use daft_io::{GetResult, IOClient, IOStatsRef};
 use daft_table::Table;
 use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
 use rayon::{
@@ -53,7 +54,7 @@ pub fn read_csv(
     multithreaded_io: bool,
     max_chunks_in_flight: Option<usize>,
 ) -> DaftResult<Table> {
-    let runtime_handle = get_runtime(multithreaded_io)?;
+    let runtime_handle = get_io_runtime(multithreaded_io)?;
     runtime_handle.block_on_current_thread(async {
         read_csv_single_into_table(
             uri,
@@ -80,7 +81,7 @@ pub fn read_csv_bulk(
     max_chunks_in_flight: Option<usize>,
     num_parallel_tasks: usize,
 ) -> DaftResult<Vec<Table>> {
-    let runtime_handle = get_runtime(multithreaded_io)?;
+    let runtime_handle = get_io_runtime(multithreaded_io)?;
     let tables = runtime_handle.block_on_current_thread(async move {
         // Launch a read task per URI, throttling the number of concurrent file reads to num_parallel tasks.
         let task_stream = futures::stream::iter(uris.iter().map(|uri| {
