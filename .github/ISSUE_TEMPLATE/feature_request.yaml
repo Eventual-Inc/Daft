@@ -34,7 +34,7 @@ body:
     placeholder: Some related requests in other projects or upstream spec proposals.
   validations:
     required: false
-- type: checkboxes
+- type: dropdown
   id: contribute
   attributes:
     label: Would you like to implement a fix?
