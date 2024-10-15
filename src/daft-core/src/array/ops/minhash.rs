@@ -3,6 +3,7 @@ use std::iter::repeat_with;
 use arrow2::array::{MutableArray, MutablePrimitiveArray, PrimitiveArray};
 use common_error::{DaftError, DaftResult};
 use daft_minhash::load_simd;
+use mur3::murmurhash3_x86_32;
 
 use super::{as_arrow::AsArrow, DaftMinHash};
 use crate::{
@@ -69,6 +70,7 @@ impl DaftMinHash for Utf8Array {
                 num_hashes,
                 ngram_size,
                 seed,
+                |s: &[u8], seed: u32| -> u32 { murmurhash3_x86_32(s, seed) },
             )?;
 
             output.extend(minhash_res.into_iter().map(Some));
