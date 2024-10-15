@@ -1784,6 +1784,7 @@ dependencies = [
  "dashmap",
  "futures",
  "spark-connect",
+ "tempfile",
  "tokio",
  "tonic",
  "tracing",

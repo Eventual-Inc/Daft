@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, io::Write};
 
 use spark_connect::{
     expression::{
@@ -13,6 +13,12 @@ use crate::{command::execute_plan, convert::to_logical_plan};
 
 #[test]
 pub fn test_filter() {
+    let mut tmp_file = tempfile::NamedTempFile::new().unwrap();
+    let bytes = include_bytes!("../../tests/increasing_id_data.parquet");
+    tmp_file.write_all(bytes).unwrap();
+
+    let path = tmp_file.path().to_str().unwrap();
+
     #[expect(
         deprecated,
         reason = "Some of the fields are deprecated, but we must still set them to their default values."
@@ -85,7 +91,7 @@ pub fn test_filter() {
                                                                                             ),
                                                                                             options: HashMap::new(),
                                                                                             paths: vec![
-                                                                                                "/Users/andrewgazelka/Projects/simple-spark-connect/increasing_id_data.parquet".to_string(),
+                                                                                                path.to_string(),
                                                                                             ],
                                                                                             predicates: Vec::new(),
                                                                                         },
