@@ -86,6 +86,8 @@ use std::simd::{cmp::SimdOrd, Simd};
 use common_error::DaftResult;
 use mur3::murmurhash3_x86_32;
 
+use crate::minhash::windowed::WindowedWordsExt;
+
 mod windowed;
 
 // which SIMD to use
@@ -225,9 +227,7 @@ pub fn minhash(
 
     let mut min_hash_values: Vec<SimdU64> = vec![MAX_HASH_SIMD; num_simd_vectors];
 
-    let windowed = windowed::WindowedWords::new(s, word_ngram_size);
-
-    let hashes = windowed.map(|w| {
+    let hashes = s.windowed_words(word_ngram_size).map(|w| {
         let w_bytes = w.as_bytes();
         u64::from(murmurhash3_x86_32(w_bytes, seed))
     });
