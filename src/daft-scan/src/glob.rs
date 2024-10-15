@@ -15,6 +15,7 @@ use daft_schema::{
 use daft_stats::PartitionSpec;
 use daft_table::Table;
 use futures::{stream::BoxStream, StreamExt, TryStreamExt};
+use indexmap::IndexMap;
 use snafu::Snafu;
 
 use crate::{
@@ -30,6 +31,7 @@ pub struct GlobScanOperator {
     file_path_column: Option<String>,
     hive_partitioning: bool,
     partitioning_keys: Vec<PartitionField>,
+    generated_fields: IndexMap<std::string::String, Field>,
 }
 
 /// Wrapper struct that implements a sync Iterator for a BoxStream
@@ -197,6 +199,10 @@ impl GlobScanOperator {
                 .collect::<Result<Vec<_>, _>>()?;
             partitioning_keys.extend(hive_partitioning_keys);
         }
+        let generated_fields: IndexMap<String, Field> = partitioning_keys
+            .iter()
+            .map(|pf| (pf.field.name.clone(), pf.field.clone()))
+            .collect();
 
         let schema = match infer_schema {
             true => {
@@ -285,6 +291,7 @@ impl GlobScanOperator {
             file_path_column,
             hive_partitioning,
             partitioning_keys,
+            generated_fields,
         })
     }
 }
@@ -300,6 +307,10 @@ impl ScanOperator for GlobScanOperator {
 
     fn file_path_column(&self) -> Option<&str> {
         self.file_path_column.as_deref()
+    }
+
+    fn generated_fields(&self) -> indexmap::IndexMap<std::string::String, Field> {
+        self.generated_fields.clone()
     }
 
     fn can_absorb_filter(&self) -> bool {
@@ -419,6 +430,7 @@ impl ScanOperator for GlobScanOperator {
                         return Ok(None);
                     }
                 }
+                let generated_fields = partition_values.schema.fields.clone();
                 let partition_spec = Some(PartitionSpec {
                     keys: partition_values,
                 });
@@ -444,6 +456,7 @@ impl ScanOperator for GlobScanOperator {
                     storage_config.clone(),
                     pushdowns.clone(),
                     file_path_column.clone(),
+                    generated_fields,
                 )))
             })();
             match scan_task_result {

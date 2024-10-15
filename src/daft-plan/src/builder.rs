@@ -202,25 +202,28 @@ impl LogicalPlanBuilder {
                 )));
             }
         }
-        // Add partitioning keys to the schema.
-        let schema_and_partitions = {
-            let partitioning_fields = partitioning_keys
-                .iter()
-                .map(|partition_field| partition_field.clone_field())
-                .collect();
-            let partitioning_schema = Schema::new(partitioning_fields)?;
+        // Add generated fields to the schema.
+        let schema_and_generated_fields = {
+            let generated_schema = Schema::new(
+                scan_operator
+                    .0
+                    .generated_fields()
+                    .values()
+                    .cloned()
+                    .collect(),
+            )?;
             // We use the non-distinct union here because some scan operators have table schema information that
             // already contain partitioned fields. For example,the deltalake scan operator takes the table schema.
-            Arc::new(schema.non_distinct_union(&partitioning_schema))
+            Arc::new(schema.non_distinct_union(&generated_schema))
         };
         // If column selection (projection) pushdown is specified, prune unselected columns from the schema.
         let output_schema = if let Some(Pushdowns {
             columns: Some(columns),
             ..
         }) = &pushdowns
-            && columns.len() < schema_and_partitions.fields.len()
+            && columns.len() < schema_and_generated_fields.fields.len()
         {
-            let pruned_upstream_schema = schema_and_partitions
+            let pruned_upstream_schema = schema_and_generated_fields
                 .fields
                 .iter()
                 .filter(|&(name, _)| columns.contains(name))
@@ -228,7 +231,7 @@ impl LogicalPlanBuilder {
                 .collect::<Vec<_>>();
             Arc::new(Schema::new(pruned_upstream_schema)?)
         } else {
-            schema_and_partitions
+            schema_and_generated_fields
         };
         let logical_plan: LogicalPlan =
             logical_ops::Source::new(output_schema, source_info.into()).into();

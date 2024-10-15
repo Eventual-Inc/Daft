@@ -16,6 +16,7 @@ use daft_schema::{
     schema::{Schema, SchemaRef},
 };
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
+use indexmap::IndexMap;
 use itertools::Itertools;
 use parquet2::metadata::FileMetaData;
 use serde::{Deserialize, Serialize};
@@ -377,6 +378,7 @@ pub struct ScanTask {
     pub metadata: Option<TableMetadata>,
     pub statistics: Option<TableStatistics>,
     pub file_path_column: Option<String>,
+    pub generated_fields: IndexMap<std::string::String, Field>,
 }
 pub type ScanTaskRef = Arc<ScanTask>;
 
@@ -389,6 +391,7 @@ impl ScanTask {
         storage_config: Arc<StorageConfig>,
         pushdowns: Pushdowns,
         file_path_column: Option<String>,
+        generated_fields: IndexMap<std::string::String, Field>,
     ) -> Self {
         assert!(!sources.is_empty());
         debug_assert!(
@@ -430,6 +433,7 @@ impl ScanTask {
             metadata,
             statistics,
             file_path_column,
+            generated_fields,
         }
     }
 
@@ -481,24 +485,20 @@ impl ScanTask {
             sc1.storage_config.clone(),
             sc1.pushdowns.clone(),
             sc1.file_path_column.clone(),
+            sc1.generated_fields.clone(),
         ))
     }
 
     #[must_use]
     pub fn materialized_schema(&self) -> SchemaRef {
         let mut fields = self.schema.fields.clone();
-        // Extend the schema with the partition spec.
-        if let Some(source) = self.sources.first() {
-            if let Some(partition_spec) = source.get_partition_spec() {
-                fields.extend(
-                    partition_spec
-                        .keys
-                        .schema
-                        .fields
-                        .iter()
-                        .map(|(name, field)| (name.clone(), field.clone())),
-                );
-            }
+        // Extend the schema with generated fields.
+        if !self.generated_fields.is_empty() {
+            fields.extend(
+                self.generated_fields
+                    .iter()
+                    .map(|(name, field)| (name.clone(), field.clone())),
+            );
         }
         // Filter the schema based on the pushdown column filters.
         fields = match &self.pushdowns.columns {
@@ -746,6 +746,10 @@ impl PartitionField {
     pub fn clone_field(&self) -> Field {
         self.field.clone()
     }
+
+    pub fn clone_source_field(&self) -> Option<Field> {
+        self.source_field.clone()
+    }
 }
 
 impl Display for PartitionField {
@@ -809,6 +813,7 @@ pub trait ScanOperator: Send + Sync + Debug {
     fn schema(&self) -> SchemaRef;
     fn partitioning_keys(&self) -> &[PartitionField];
     fn file_path_column(&self) -> Option<&str>;
+    fn generated_fields(&self) -> IndexMap<std::string::String, Field>;
 
     fn can_absorb_filter(&self) -> bool;
     fn can_absorb_select(&self) -> bool;
@@ -1029,6 +1034,7 @@ mod test {
     use common_error::DaftResult;
     use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
     use daft_schema::{schema::Schema, time_unit::TimeUnit};
+    use indexmap::IndexMap;
     use itertools::Itertools;
 
     use crate::{
@@ -1067,6 +1073,7 @@ mod test {
             ))),
             Pushdowns::default(),
             None,
+            IndexMap::new(),
         )
     }
 

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use daft_schema::schema::SchemaRef;
+use indexmap::IndexMap;
 
 use crate::{
     storage_config::StorageConfig, ChunkSpec, DataSource, PartitionField, Pushdowns, ScanOperator,
@@ -44,6 +45,12 @@ impl ScanOperator for AnonymousScanOperator {
 
     fn file_path_column(&self) -> Option<&str> {
         None
+    }
+
+    fn generated_fields(
+        &self,
+    ) -> indexmap::IndexMap<std::string::String, daft_core::prelude::Field> {
+        IndexMap::new()
     }
 
     fn can_absorb_filter(&self) -> bool {
@@ -106,6 +113,7 @@ impl ScanOperator for AnonymousScanOperator {
                     storage_config.clone(),
                     pushdowns.clone(),
                     None,
+                    IndexMap::new(),
                 )
                 .into())
             },
