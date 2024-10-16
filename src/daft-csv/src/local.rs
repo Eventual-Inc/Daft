@@ -39,34 +39,33 @@ use crate::{
     ArrowSnafu, CsvConvertOptions, CsvParseOptions, CsvReadOptions,
 };
 
-#[allow(clippy::doc_lazy_continuation, clippy::empty_line_after_doc_comments)]
-/// Our local CSV reader takes the following approach to reading CSV files:
-/// 1. Read the CSV file in 4MB chunks from a slab pool.
-/// 2. Adjust the chunks so that chunks are contiguous and contain complete
-///    CSV records. See `get_file_chunk` for more details.
-/// 3. In parallel with the above, convert the adjusted chunks into byte records,
-///    which are stored within pre-allocated CSV buffers.
-/// 4. In parallel with the above, deserialize each CSV buffer into a Daft table
-///    and stream the results.
-///
-///                 Slab Pool                                    CSV Buffer Pool
-///               ┌────────────────────┐                       ┌────────────────────┐
-///               │ 4MB Chunks         │                       │ CSV Buffers        │
-///               │┌───┐┌───┐┌───┐     │                       │┌───┐┌───┐┌───┐     │
-///               ││   ││   ││   │ ... │                       ││   ││   ││   │ ... │
-///               │└─┬─┘└─┬─┘└───┘     │                       │└─┬─┘└─┬─┘└───┘     │
-///               └──┼────┼────────────┘                       └──┼────┼────────────┘
-///                  │    │                                       │    │
-///     ───────┐     │    │                                       │    │
-///   /│       │     │    │                                       │    │
-///  /─┘       │     │    │                                       │    │
-/// │          │     ▼    ▼                                       ▼    ▼
-/// │          |    ┌───┐ ┌───┐          ┌────┐  ┬--─┐           ┌───┐ ┌───┐               ┌───┐ ┌───┐
-/// │         ─┼───►│   │ │   │  ──────► │   ┬┘┌─┘ ┬─┘  ───────► │   │ │   │  ──────────►  │   │ │   │
-/// │ CSV File │    └───┘ └───┘          └───┴ └───┘             └───┘ └───┘               └───┘ └───┘
-/// │          │  Chain of buffers      Adjusted chunks     Vectors of ByteRecords     Stream of Daft tables
-/// │          │
-/// └──────────┘
+// Our local CSV reader takes the following approach to reading CSV files:
+// 1. Read the CSV file in 4MB chunks from a slab pool.
+// 2. Adjust the chunks so that chunks are contiguous and contain complete
+//    CSV records. See `get_file_chunk` for more details.
+// 3. In parallel with the above, convert the adjusted chunks into byte records,
+//    which are stored within pre-allocated CSV buffers.
+// 4. In parallel with the above, deserialize each CSV buffer into a Daft table
+//    and stream the results.
+//
+//                 Slab Pool                                    CSV Buffer Pool
+//               ┌────────────────────┐                       ┌────────────────────┐
+//               │ 4MB Chunks         │                       │ CSV Buffers        │
+//               │┌───┐┌───┐┌───┐     │                       │┌───┐┌───┐┌───┐     │
+//               ││   ││   ││   │ ... │                       ││   ││   ││   │ ... │
+//               │└─┬─┘└─┬─┘└───┘     │                       │└─┬─┘└─┬─┘└───┘     │
+//               └──┼────┼────────────┘                       └──┼────┼────────────┘
+//                  │    │                                       │    │
+//     ───────┐     │    │                                       │    │
+//   /│       │     │    │                                       │    │
+//  /─┘       │     │    │                                       │    │
+// │          │     ▼    ▼                                       ▼    ▼
+// │          |    ┌───┐ ┌───┐          ┌────┐  ┬--─┐           ┌───┐ ┌───┐               ┌───┐ ┌───┐
+// │         ─┼───►│   │ │   │  ──────► │   ┬┘┌─┘ ┬─┘  ───────► │   │ │   │  ──────────►  │   │ │   │
+// │ CSV File │    └───┘ └───┘          └───┴ └───┘             └───┘ └───┘               └───┘ └───┘
+// │          │  Chain of buffers      Adjusted chunks     Vectors of ByteRecords     Stream of Daft tables
+// │          │
+// └──────────┘
 
 /// A pool of ByteRecord slabs. Used for deserializing CSV.
 #[derive(Debug)]
@@ -143,7 +142,7 @@ impl CsvBufferPool {
 
 // The default size of a slab used for reading CSV files in chunks. Currently set to 4 MiB. This can be tuned.
 const SLABSIZE: usize = 4 * 1024 * 1024;
-// The default number of slabs in a slab pool.
+// The default number of slabs in a slab pool. With 20 slabs, we reserve a total of 80 MiB of memory for reading file data.
 const SLABPOOL_DEFAULT_SIZE: usize = 20;
 
 /// A pool of slabs. Used for reading CSV files in SLABSIZE chunks.
@@ -162,9 +161,9 @@ struct FileSlab {
     buffer: Option<Arc<[u8]>>,
 }
 
+// Modify the Drop method for FileSlabs so that they're returned to their parent slab pool.
 impl Drop for FileSlab {
     fn drop(&mut self) {
-        // Move the buffer back to the slab pool.
         if let Some(buffer) = self.buffer.take() {
             self.pool.return_buffer(buffer);
         }
@@ -174,6 +173,7 @@ impl Drop for FileSlab {
 impl FileSlabPool {
     pub fn new() -> Self {
         let chunk_buffers: Vec<Arc<[u8]>> = (0..SLABPOOL_DEFAULT_SIZE)
+            // We get uninitialized buffers because we will always populate the buffers with a file read before use.
             .map(|_| Box::new_uninit_slice(SLABSIZE))
             .map(|x| unsafe { x.assume_init() })
             .map(Arc::from)
@@ -201,8 +201,12 @@ impl FileSlabPool {
     }
 }
 
-/// A data structure that holds either a single slice of bytes, or a chain of two slices of bytes.
-/// See the description to `parse_csv` for more details.
+/// A data structure that holds either:
+/// 1. A single slice of bytes.
+/// 2. A chain of two slices of bytes.
+/// 3. A file.
+///
+/// See the description to `dispatch_to_parse_csv` for more details.
 #[derive(Debug)]
 enum CsvBufferSource<'a> {
     Single(Cursor<&'a [u8]>),
@@ -221,6 +225,7 @@ impl<'a> Read for CsvBufferSource<'a> {
     }
 }
 
+/// Reads a single local CSV file in a non-streaming fashion.
 pub async fn read_csv_local(
     uri: &str,
     convert_options: Option<CsvConvertOptions>,
@@ -280,13 +285,14 @@ pub async fn read_csv_local(
     if let Some(limit) = limit
         && concated_table.len() > limit
     {
-        // apply head in case that last chunk went over limit
+        // Apply head in case that last chunk went over limit.
         concated_table.head(limit)
     } else {
         Ok(concated_table)
     }
 }
 
+/// Reads a single local CSV file in a streaming fashion.
 pub async fn stream_csv_local(
     uri: &str,
     convert_options: Option<CsvConvertOptions>,
@@ -299,7 +305,7 @@ pub async fn stream_csv_local(
     let uri = uri.trim_start_matches("file://");
     let file = std::fs::File::open(uri)?;
 
-    // Process the CV convert options.
+    // Process the CSV convert options.
     let predicate = convert_options
         .as_ref()
         .and_then(|opts| opts.predicate.clone());
