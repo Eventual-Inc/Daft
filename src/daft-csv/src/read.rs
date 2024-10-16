@@ -3,8 +3,10 @@ use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
 use arrow2::{
     datatypes::Field,
-    io::csv::read_async,
-    io::csv::read_async::{read_rows, AsyncReaderBuilder},
+    io::csv::{
+        read_async,
+        read_async::{read_rows, AsyncReaderBuilder},
+    },
 };
 use async_compat::{Compat, CompatExt};
 use common_error::{DaftError, DaftResult};
@@ -42,7 +44,7 @@ impl<S> ByteRecordChunkStream for S where
 {
 }
 
-use crate::{local::read_csv_local, local::stream_csv_local};
+use crate::local::{read_csv_local, stream_csv_local};
 
 type TableChunkResult =
     super::Result<Context<JoinHandle<DaftResult<Table>>, super::JoinSnafu, super::Error>>;

@@ -1,20 +1,27 @@
 use core::str;
-use std::io::{Chain, Cursor, Read};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::{num::NonZeroUsize, sync::Arc, sync::Condvar, sync::Mutex};
+use std::{
+    io::{Chain, Cursor, Read},
+    num::NonZeroUsize,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Condvar, Mutex,
+    },
+};
 
-use crate::metadata::read_csv_schema_single;
-use crate::ArrowSnafu;
-use crate::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use arrow2::{
     datatypes::Field,
-    io::csv::read,
-    io::csv::read::{Reader, ReaderBuilder},
-    io::csv::read_async::local_read_rows,
+    io::csv::{
+        read,
+        read::{Reader, ReaderBuilder},
+        read_async::local_read_rows,
+    },
 };
 use common_error::{DaftError, DaftResult};
 use crossbeam_channel::Sender;
-use daft_core::{schema::Schema, utils::arrow::cast_array_for_daft_if_needed, Series};
+use daft_core::{
+    prelude::{Schema, Series},
+    utils::arrow::cast_array_for_daft_if_needed,
+};
 use daft_decoding::deserialize::deserialize_column;
 use daft_dsl::{optimization::get_required_columns, Expr};
 use daft_io::{IOClient, IOStatsRef};
@@ -26,9 +33,13 @@ use rayon::{
 };
 use snafu::ResultExt;
 
-use crate::read::{fields_to_projection_indices, tables_concat};
+use crate::{
+    metadata::read_csv_schema_single,
+    read::{fields_to_projection_indices, tables_concat},
+    ArrowSnafu, CsvConvertOptions, CsvParseOptions, CsvReadOptions,
+};
 
-#[allow(clippy::doc_lazy_continuation)]
+#[allow(clippy::doc_lazy_continuation, clippy::empty_line_after_doc_comments)]
 /// Our local CSV reader takes the following approach to reading CSV files:
 /// 1. Read the CSV file in 4MB chunks from a slab pool.
 /// 2. Adjust the chunks so that chunks are contiguous and contain complete
@@ -86,7 +97,7 @@ impl CsvBufferPool {
             ];
             initial_pool_size
         ];
-        CsvBufferPool {
+        Self {
             buffers: Mutex::new(chunk_buffers),
             buffer_size: chunk_size_rows,
             record_buffer_size,
@@ -125,7 +136,7 @@ const SLABPOOL_DEFAULT_SIZE: usize = 20;
 /// A pool of slabs. Used for reading CSV files in SLABSIZE chunks.
 #[derive(Debug)]
 struct SlabPool {
-    buffers: Mutex<Vec<Arc<[u8; SLABSIZE]>>>,
+    buffers: Mutex<Vec<Arc<[u8]>>>,
     condvar: Condvar,
 }
 
@@ -135,7 +146,7 @@ struct Slab {
     pool: Arc<SlabPool>,
     // We wrap the Arc<buffer> in an Option so that when a Slab is being dropped, we can move the Slab's reference
     // to the Arc<buffer> back to the slab pool.
-    buffer: Option<Arc<[u8; SLABSIZE]>>,
+    buffer: Option<Arc<[u8]>>,
 }
 
 impl Drop for Slab {
@@ -149,16 +160,18 @@ impl Drop for Slab {
 
 impl SlabPool {
     pub fn new() -> Self {
-        let chunk_buffers: Vec<Arc<[u8; SLABSIZE]>> = (0..SLABPOOL_DEFAULT_SIZE)
-            .map(|_| Arc::new([0; SLABSIZE]))
+        let chunk_buffers: Vec<Arc<[u8]>> = (0..SLABPOOL_DEFAULT_SIZE)
+            .map(|_| Box::new_uninit_slice(SLABSIZE))
+            .map(|x| unsafe { x.assume_init() })
+            .map(Arc::from)
             .collect();
-        SlabPool {
+        Self {
             buffers: Mutex::new(chunk_buffers),
             condvar: Condvar::new(),
         }
     }
 
-    pub fn get_buffer(self: &Arc<Self>) -> Arc<[u8; SLABSIZE]> {
+    pub fn get_buffer(self: &Arc<Self>) -> Arc<[u8]> {
         let mut buffers = self.buffers.lock().unwrap();
         while buffers.is_empty() {
             // Instead of creating a new slab when we're out, we wait for a slab to be returned before waking up.
@@ -168,7 +181,7 @@ impl SlabPool {
         buffers.pop().unwrap()
     }
 
-    fn return_buffer(&self, buffer: Arc<[u8; SLABSIZE]>) {
+    fn return_buffer(&self, buffer: Arc<[u8]>) {
         let mut buffers = self.buffers.lock().unwrap();
         buffers.push(buffer);
         self.condvar.notify_one();
@@ -257,7 +270,7 @@ pub async fn stream_csv_local(
                 let required_columns_for_predicate = get_required_columns(predicate);
                 for rc in required_columns_for_predicate {
                     if include_columns.iter().all(|c| c.as_str() != rc.as_str()) {
-                        include_columns.push(rc)
+                        include_columns.push(rc);
                     }
                 }
             }
@@ -280,16 +293,14 @@ pub async fn stream_csv_local(
         .as_ref()
         .and_then(|opt| opt.chunk_size.or_else(|| opt.buffer_size.map(|bs| bs / 8)))
         .unwrap_or(DEFAULT_CHUNK_SIZE);
-    let projection_indices = fields_to_projection_indices(
-        &schema.clone().fields,
-        &convert_options.clone().include_columns,
-    );
+    let projection_indices =
+        fields_to_projection_indices(&schema.fields, &convert_options.clone().include_columns);
     let fields = schema.clone().fields;
     let fields_subset = projection_indices
         .iter()
         .map(|i| fields.get(*i).unwrap().into())
         .collect::<Vec<daft_core::datatypes::Field>>();
-    let read_schema = Arc::new(daft_core::schema::Schema::new(fields_subset)?);
+    let read_schema = Arc::new(Schema::new(fields_subset)?);
     let read_daft_fields = Arc::new(
         read_schema
             .fields
@@ -573,7 +584,7 @@ fn consume_csv_file(
 
 /// Unsafe helper function that extracts the buffer from an &Option<Arc<[u8]>>. Users should
 /// ensure that the buffer is Some, otherwise this function causes the process to panic.
-fn unsafe_clone_buffer(buffer: &Option<Arc<[u8; SLABSIZE]>>) -> Arc<[u8; SLABSIZE]> {
+fn unsafe_clone_buffer(buffer: &Option<Arc<[u8]>>) -> Arc<[u8]> {
     match buffer {
         Some(buffer) => Arc::clone(buffer),
         None => panic!("Tried to clone a CSV slab that doesn't exist. Please report this error."),
@@ -638,9 +649,9 @@ fn unsafe_clone_buffer(buffer: &Option<Arc<[u8; SLABSIZE]>>) -> Arc<[u8; SLABSIZ
 ///     \n character and go back to 2.
 #[allow(clippy::too_many_arguments)]
 fn get_file_chunk(
-    current_buffer: Arc<[u8; SLABSIZE]>,
+    current_buffer: Arc<[u8]>,
     current_buffer_len: usize,
-    next_buffer: Option<Arc<[u8; SLABSIZE]>>,
+    next_buffer: Option<Arc<[u8]>>,
     next_buffer_len: usize,
     first_buffer: bool,
     num_fields: usize,
