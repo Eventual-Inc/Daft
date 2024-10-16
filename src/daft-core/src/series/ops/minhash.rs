@@ -7,7 +7,13 @@ use crate::{
 };
 
 impl Series {
-    pub fn minhash(&self, num_hashes: usize, ngram_size: usize, seed: u32, hasher: &impl std::hash::BuildHasher) -> DaftResult<Self> {
+    pub fn minhash(
+        &self,
+        num_hashes: usize,
+        ngram_size: usize,
+        seed: u32,
+        hasher: &impl std::hash::BuildHasher,
+    ) -> DaftResult<Self> {
         match self.data_type() {
             DataType::Utf8 => Ok(self
                 .utf8()?
