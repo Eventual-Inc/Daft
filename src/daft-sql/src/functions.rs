@@ -230,7 +230,7 @@ impl SQLPlanner {
 
         // lookup function variant(s) by name
         let fns = &SQL_FUNCTIONS;
-        let fn_name = func.name.to_string();
+        let fn_name = func.name.to_string().to_lowercase();
         let fn_match = match fns.get(&fn_name) {
             Some(func) => func,
             None => unsupported_sql_err!("Function `{}` not found", fn_name),

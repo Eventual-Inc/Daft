@@ -67,3 +67,15 @@ def test_hash_exprs():
 
     with pytest.raises(Exception, match="num_hashes is required"):
         daft.sql("SELECT minhash(a) as hash_a FROM df").collect()
+
+
+def test_count_star():
+    df = daft.from_pydict(
+        {
+            "a": [1, 2, 3, 4],
+        }
+    )
+
+    actual = daft.sql("SELECT COUNT(*) FROM df").collect()
+    expected = df.agg(daft.col("*").count().alias("count")).collect()
+    assert actual.to_pydict() == expected.to_pydict()
