@@ -35,7 +35,6 @@ impl PySeries {
     #[staticmethod]
     pub fn from_arrow(py: Python, name: &str, pyarrow_array: Bound<PyAny>) -> PyResult<Self> {
         let arrow_array = ffi::array_to_rust(py, pyarrow_array)?;
-        println!("arrow_array: {:?}", arrow_array);
         let arrow_array = cast_array_for_daft_if_needed(arrow_array.to_boxed());
         let series = series::Series::try_from((name, arrow_array))?;
         Ok(series.into())
