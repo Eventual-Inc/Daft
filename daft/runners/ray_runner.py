@@ -1178,34 +1178,6 @@ class RayRunner(Runner[ray.ObjectRef]):
         for result in self.run_iter(builder, results_buffer_size=results_buffer_size):
             yield ray.get(result.partition())
 
-    @contextlib.contextmanager
-    def actor_pool_context(
-        self,
-        name: str,
-        actor_resource_request: ResourceRequest,
-        task_resource_request: ResourceRequest,
-        num_actors: PartID,
-        projection: ExpressionsProjection,
-    ) -> Iterator[str]:
-        # Ray runs actor methods serially, so the resource request for an actor should be both the actor's resources and the task's resources
-        resource_request = actor_resource_request + task_resource_request
-
-        execution_config = get_context().daft_execution_config
-        if self.ray_client_mode:
-            try:
-                yield ray.get(
-                    self.scheduler_actor.get_actor_pool.remote(
-                        name, resource_request, num_actors, projection, execution_config
-                    )
-                )
-            finally:
-                self.scheduler_actor.teardown_actor_pool.remote(name)
-        else:
-            try:
-                yield self.scheduler.get_actor_pool(name, resource_request, num_actors, projection, execution_config)
-            finally:
-                self.scheduler.teardown_actor_pool(name)
-
     def _collect_into_cache(self, results_iter: Iterator[RayMaterializedResult]) -> PartitionCacheEntry:
         result_pset = RayPartitionSet()
 
