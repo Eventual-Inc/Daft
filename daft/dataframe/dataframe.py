@@ -460,7 +460,6 @@ class DataFrame:
         if not isinstance(data, list):
             data = [data]
         data_micropartitions = [MicroPartition.from_arrow(table) for table in data]
-        print(data_micropartitions)
         return cls._from_tables(*data_micropartitions)
 
     @classmethod
