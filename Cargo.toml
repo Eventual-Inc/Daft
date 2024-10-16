@@ -141,6 +141,7 @@ members = [
 ]
 
 [workspace.dependencies]
+ahash = "0.8.11"
 async-compat = "0.2.3"
 async-compression = {version = "0.4.12", features = [
   "tokio",
@@ -154,10 +155,13 @@ chrono = "0.4.38"
 chrono-tz = "0.8.4"
 comfy-table = "7.1.1"
 derivative = "2.2.0"
+divan = "0.1.14"
+rustc-hash = "2.0.0"
 dyn-clone = "1"
 futures = "0.3.30"
 html-escape = "0.2.13"
 indexmap = "2.1.0"
+xxhash-rust = "0.8.12"
 itertools = "0.11"
 jaq-core = "1.2.0"
 jaq-interpret = "1.2.0"
