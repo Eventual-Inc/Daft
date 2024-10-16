@@ -18,7 +18,6 @@ def test_temporals():
         }
     )
     catalog = SQLCatalog({"test": df})
-    print(df)
 
     expected = df.select(
         daft.col("datetimes").dt.date().alias("date"),

@@ -86,6 +86,12 @@ pub enum DataType {
     #[display("Duration[{_0}]")]
     Duration(TimeUnit),
 
+    /// A duration of **relative** time (year, day, etc).
+    /// This is not a physical duration, but a calendar duration.
+    /// This differs from `Duration` in that it is not a fixed amount of time, and is affected by calendar events (leap years, daylight savings, etc.)
+    #[display("Interval")]
+    Interval,
+
     /// Opaque binary data of variable length whose offsets are represented as [`i64`].
     Binary,
 
@@ -224,6 +230,10 @@ impl DataType {
             Self::Date => Ok(ArrowType::Date32),
             Self::Time(unit) => Ok(ArrowType::Time64(unit.to_arrow())),
             Self::Duration(unit) => Ok(ArrowType::Duration(unit.to_arrow())),
+            Self::Interval => Ok(ArrowType::Interval(
+                arrow2::datatypes::IntervalUnit::MonthDayNano,
+            )),
+
             Self::Binary => Ok(ArrowType::LargeBinary),
             Self::FixedSizeBinary(size) => Ok(ArrowType::FixedSizeBinary(*size)),
             Self::Utf8 => Ok(ArrowType::LargeUtf8),
@@ -304,6 +314,7 @@ impl DataType {
             Decimal128(..) => Int128,
             Date => Int32,
             Duration(_) | Timestamp(..) | Time(_) => Int64,
+
             List(child_dtype) => List(Box::new(child_dtype.to_physical())),
             FixedSizeList(child_dtype, size) => {
                 FixedSizeList(Box::new(child_dtype.to_physical()), *size)
@@ -653,6 +664,7 @@ impl From<&ArrowType> for DataType {
                 Self::Time(timeunit.into())
             }
             ArrowType::Duration(timeunit) => Self::Duration(timeunit.into()),
+            ArrowType::Interval(_) => Self::Interval,
             ArrowType::FixedSizeBinary(size) => Self::FixedSizeBinary(*size),
             ArrowType::Binary | ArrowType::LargeBinary => Self::Binary,
             ArrowType::Utf8 | ArrowType::LargeUtf8 => Self::Utf8,
