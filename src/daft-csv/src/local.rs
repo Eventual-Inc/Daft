@@ -870,7 +870,7 @@ fn validate_csv_record(
                 return num_fields_seen == num_fields;
             }
             CsvState::UnquotedField => {
-                // We follow the convention where an unquoted field does consider escape characters.
+                // We follow the convention where an unquoted field does not consider escape characters.
                 while index < buffer.len() {
                     let byte = buffer[index];
                     if byte == NEWLINE {
