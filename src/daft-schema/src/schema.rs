@@ -100,21 +100,36 @@ impl Schema {
         self.fields.is_empty()
     }
 
+    /// Takes the disjoint union over the `self` and `other` schemas, throwing an error if the
+    /// schemas contain overlapping keys.
     pub fn union(&self, other: &Self) -> DaftResult<Self> {
         let self_keys: HashSet<&String> = HashSet::from_iter(self.fields.keys());
-        let other_keys: HashSet<&String> = HashSet::from_iter(self.fields.keys());
-        match self_keys.difference(&other_keys).count() {
-            0 => {
-                let mut fields = IndexMap::new();
-                for (k, v) in self.fields.iter().chain(other.fields.iter()) {
-                    fields.insert(k.clone(), v.clone());
-                }
-                Ok(Self { fields })
-            }
-            _ => Err(DaftError::ValueError(
-                "Cannot union two schemas with overlapping keys".to_string(),
-            )),
+        let other_keys: HashSet<&String> = HashSet::from_iter(other.fields.keys());
+        if self_keys.is_disjoint(&other_keys) {
+            let fields = self
+                .fields
+                .iter()
+                .chain(other.fields.iter())
+                .map(|(k, v)| (k.clone(), v.clone())) // Convert references to owned values
+                .collect();
+            Ok(Self { fields })
+        } else {
+            Err(DaftError::ValueError(
+                "Cannot disjoint union two schemas with overlapping keys".to_string(),
+            ))
         }
+    }
+
+    /// Takes the non-distinct union of two schemas. If there are overlapping keys, then we take the
+    /// corresponding field from one of the two schemas.
+    pub fn non_distinct_union(&self, other: &Self) -> Self {
+        let fields = self
+            .fields
+            .iter()
+            .chain(other.fields.iter())
+            .map(|(k, v)| (k.clone(), v.clone())) // Convert references to owned values
+            .collect();
+        Self { fields }
     }
 
     pub fn apply_hints(&self, hints: &Self) -> DaftResult<Self> {
