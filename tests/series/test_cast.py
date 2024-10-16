@@ -1161,3 +1161,38 @@ def test_series_cast_fixed_size_list_to_list() -> None:
     assert data.datatype() == DataType.fixed_size_list(DataType.int64(), 2)
     casted = data.cast(DataType.list(DataType.int64()))
     assert casted.to_pylist() == [[1, 2], [3, 4], [5, 6]]
+
+
+### Sparse ###
+
+
+def to_coo_sparse_dict(ndarray: np.ndarray) -> dict[str, np.ndarray]:
+    flat_array = ndarray.ravel()
+    indices = np.flatnonzero(flat_array).astype(np.uint64)
+    values = flat_array[indices]
+    shape = list(ndarray.shape)
+    return {"values": values, "indices": indices, "shape": shape}
+
+
+def test_series_cast_sparse_to_python() -> None:
+    data = [np.zeros(shape=(1, 2), dtype=np.uint8), None, np.ones(shape=(2, 2), dtype=np.uint8)]
+    series = Series.from_pylist(data).cast(DataType.sparse_tensor(DataType.uint8()))
+    assert series.datatype() == DataType.sparse_tensor(DataType.uint8())
+
+    given = series.to_pylist()
+    expected = [to_coo_sparse_dict(ndarray) if ndarray is not None else None for ndarray in data]
+    np.testing.assert_equal(given, expected)
+
+
+def test_series_cast_fixed_shape_sparse_to_python() -> None:
+    data = [np.zeros(shape=(2, 2), dtype=np.uint8), None, np.ones(shape=(2, 2), dtype=np.uint8)]
+    series = (
+        Series.from_pylist(data)
+        .cast(DataType.tensor(DataType.uint8(), shape=(2, 2)))  # TODO: direct cast to fixed shape sparse
+        .cast(DataType.sparse_tensor(DataType.uint8(), shape=(2, 2)))
+    )
+    assert series.datatype() == DataType.sparse_tensor(DataType.uint8(), shape=(2, 2))
+
+    given = series.to_pylist()
+    expected = [to_coo_sparse_dict(ndarray) if ndarray is not None else None for ndarray in data]
+    np.testing.assert_equal(given, expected)

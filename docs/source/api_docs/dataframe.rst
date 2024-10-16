@@ -104,6 +104,7 @@ Aggregations
     DataFrame.groupby
     DataFrame.sum
     DataFrame.mean
+    DataFrame.stddev
     DataFrame.count
     DataFrame.min
     DataFrame.max

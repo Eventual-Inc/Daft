@@ -1,6 +1,6 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    datatypes::try_mean_supertype,
+    datatypes::try_mean_stddev_aggregation_supertype,
     prelude::{Field, Schema},
     series::Series,
 };
@@ -29,7 +29,7 @@ impl ScalarUDF for ListMean {
                 let inner_field = input.to_field(schema)?.to_exploded_field()?;
                 Ok(Field::new(
                     inner_field.name.as_str(),
-                    try_mean_supertype(&inner_field.dtype)?,
+                    try_mean_stddev_aggregation_supertype(&inner_field.dtype)?,
                 ))
             }
             _ => Err(DaftError::SchemaMismatch(format!(

@@ -30,6 +30,7 @@ impl TryFrom<SQLFunctionArguments> for ParquetScanBuilder {
                 PlannerError::invalid_argument("coerce_int96_timestamp_unit", "read_parquet")
             })?;
         let chunk_size = args.try_get_named("chunk_size")?;
+        let file_path_column = args.try_get_named("file_path_column")?;
         let multithreaded = args.try_get_named("multithreaded")?.unwrap_or(true);
 
         let field_id_mapping = None; // TODO
@@ -47,6 +48,7 @@ impl TryFrom<SQLFunctionArguments> for ParquetScanBuilder {
             io_config,
             multithreaded,
             schema,
+            file_path_column,
         })
     }
 }

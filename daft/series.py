@@ -215,6 +215,8 @@ class Series:
         """
         Convert this Series to an pyarrow array.
         """
+        _ensure_registered_super_ext_type()
+
         dtype = self.datatype()
         arrow_arr = self._series.to_arrow()
 
@@ -513,6 +515,10 @@ class Series:
     def mean(self) -> Series:
         assert self._series is not None
         return Series._from_pyseries(self._series.mean())
+
+    def stddev(self) -> Series:
+        assert self._series is not None
+        return Series._from_pyseries(self._series.stddev())
 
     def sum(self) -> Series:
         assert self._series is not None

@@ -404,6 +404,77 @@ def test_create_dataframe_multiple_csvs(valid_data: list[dict[str, float]], use_
         assert len(pd_df) == (len(valid_data) * 2)
 
 
+def test_create_dataframe_csv_with_file_path_column(valid_data: list[dict[str, float]]) -> None:
+    with create_temp_filename() as fname:
+        with open(fname, "w") as f:
+            header = list(valid_data[0].keys())
+            writer = csv.writer(f)
+            writer.writerow(header)
+            writer.writerows([[item[col] for col in header] for item in valid_data])
+            f.flush()
+
+        df = daft.read_csv(fname, file_path_column="file_path")
+        assert df.column_names == COL_NAMES + ["file_path"]
+
+        pd_df = df.to_pandas()
+        assert list(pd_df.columns) == COL_NAMES + ["file_path"]
+        assert len(pd_df) == len(valid_data)
+        assert all(pd_df["file_path"] == fname)
+
+
+def test_create_dataframe_multiple_csvs_with_file_path_column(valid_data: list[dict[str, float]]) -> None:
+    with create_temp_filename() as f1name, create_temp_filename() as f2name:
+        with open(f1name, "w") as f1, open(f2name, "w") as f2:
+            for f in (f1, f2):
+                header = list(valid_data[0].keys())
+                writer = csv.writer(f)
+                writer.writerow(header)
+                writer.writerows([[item[col] for col in header] for item in valid_data])
+                f.flush()
+
+        df = daft.read_csv([f1name, f2name], file_path_column="file_path")
+        assert df.column_names == COL_NAMES + ["file_path"]
+
+        pd_df = df.to_pandas()
+        assert list(pd_df.columns) == COL_NAMES + ["file_path"]
+        assert len(pd_df) == (len(valid_data) * 2)
+        assert pd_df["file_path"].to_list() == [f1name] * len(valid_data) + [f2name] * len(valid_data)
+
+
+def test_create_dataframe_csv_with_file_path_column_and_pushdowns(valid_data: list[dict[str, float]]) -> None:
+    with create_temp_filename() as f1name, create_temp_filename() as f2name:
+        with open(f1name, "w") as f1, open(f2name, "w") as f2:
+            for f in (f1, f2):
+                header = list(valid_data[0].keys())
+                writer = csv.writer(f)
+                writer.writerow(header)
+                writer.writerows([[item[col] for col in header] for item in valid_data])
+                f.flush()
+
+        df = daft.read_csv([f1name, f2name], file_path_column="file_path").where(daft.col("file_path") == f1name)
+        assert df.column_names == COL_NAMES + ["file_path"]
+
+        pd_df = df.to_pandas()
+        assert list(pd_df.columns) == COL_NAMES + ["file_path"]
+        assert len(pd_df) == len(valid_data)
+        assert pd_df["file_path"].to_list() == [f1name] * len(valid_data)
+
+
+def test_create_dataframe_csv_with_file_path_column_duplicate_field_names() -> None:
+    with create_temp_filename() as fname:
+        with open(fname, "w") as f:
+            data = [{"path": 1, "data": "a"}, {"path": 2, "data": "b"}, {"path": 3, "data": "c"}]
+            header = list(data[0].keys())
+            writer = csv.writer(f)
+            writer.writerow(header)
+            writer.writerows([[item[col] for col in header] for item in data])
+            f.flush()
+
+        with pytest.raises(ValueError):
+            # The file_path_column name is the same as a column in the table, which is not allowed
+            daft.read_json(fname, file_path_column="path")
+
+
 @pytest.mark.parametrize("use_native_downloader", [True, False])
 def test_create_dataframe_csv_generate_headers(valid_data: list[dict[str, float]], use_native_downloader) -> None:
     with create_temp_filename() as fname:
@@ -677,6 +748,73 @@ def test_create_dataframe_multiple_jsons(valid_data: list[dict[str, float]], use
         assert len(pd_df) == (len(valid_data) * 2)
 
 
+def test_create_dataframe_json_with_file_path_column(valid_data: list[dict[str, float]]) -> None:
+    with create_temp_filename() as fname:
+        with open(fname, "w") as f:
+            for data in valid_data:
+                f.write(json.dumps(data))
+                f.write("\n")
+            f.flush()
+
+        df = daft.read_json(fname, file_path_column="file_path")
+        assert df.column_names == COL_NAMES + ["file_path"]
+
+        pd_df = df.to_pandas()
+        assert list(pd_df.columns) == COL_NAMES + ["file_path"]
+        assert len(pd_df) == len(valid_data)
+        assert all(pd_df["file_path"] == fname)
+
+
+def test_create_dataframe_multiple_jsons_with_file_path_column(valid_data: list[dict[str, float]]) -> None:
+    with create_temp_filename() as f1name, create_temp_filename() as f2name:
+        with open(f1name, "w") as f1, open(f2name, "w") as f2:
+            for f in (f1, f2):
+                for data in valid_data:
+                    f.write(json.dumps(data))
+                    f.write("\n")
+                f.flush()
+
+        df = daft.read_json([f1name, f2name], file_path_column="file_path")
+        assert df.column_names == COL_NAMES + ["file_path"]
+
+        pd_df = df.to_pandas()
+        assert list(pd_df.columns) == COL_NAMES + ["file_path"]
+        assert len(pd_df) == (len(valid_data) * 2)
+        assert pd_df["file_path"].to_list() == [f1name] * len(valid_data) + [f2name] * len(valid_data)
+
+
+def test_create_dataframe_json_with_file_path_column_and_pushdowns(valid_data: list[dict[str, float]]) -> None:
+    with create_temp_filename() as f1name, create_temp_filename() as f2name:
+        with open(f1name, "w") as f1, open(f2name, "w") as f2:
+            for f in (f1, f2):
+                for data in valid_data:
+                    f.write(json.dumps(data))
+                    f.write("\n")
+                f.flush()
+
+        df = daft.read_json([f1name, f2name], file_path_column="file_path").where(daft.col("file_path") == f1name)
+        assert df.column_names == COL_NAMES + ["file_path"]
+
+        pd_df = df.to_pandas()
+        assert list(pd_df.columns) == COL_NAMES + ["file_path"]
+        assert len(pd_df) == len(valid_data)
+        assert pd_df["file_path"].to_list() == [f1name] * len(valid_data)
+
+
+def test_create_dataframe_json_with_file_path_column_duplicate_field_names() -> None:
+    with create_temp_filename() as fname:
+        with open(fname, "w") as f:
+            data = {"path": [1, 2, 3], "data": [4, 5, 6]}
+            for i in range(len(data["path"])):
+                f.write(json.dumps({k: data[k][i] for k in data}))
+                f.write("\n")
+            f.flush()
+
+        with pytest.raises(ValueError):
+            # The file_path_column name is the same as a column in the table, which is not allowed
+            daft.read_json(fname, file_path_column="path")
+
+
 @pytest.mark.parametrize("use_native_downloader", [True, False])
 def test_create_dataframe_json_column_projection(valid_data: list[dict[str, float]], use_native_downloader) -> None:
     with create_temp_filename() as fname:
@@ -897,6 +1035,68 @@ def test_create_dataframe_parquet(valid_data: list[dict[str, float]]) -> None:
         pd_df = df.to_pandas()
         assert list(pd_df.columns) == COL_NAMES
         assert len(pd_df) == len(valid_data)
+
+
+def test_create_dataframe_parquet_with_file_path_column(valid_data: list[dict[str, float]]) -> None:
+    with create_temp_filename() as fname:
+        with open(fname, "w") as f:
+            table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
+            papq.write_table(table, f.name)
+            f.flush()
+
+        df = daft.read_parquet(fname, file_path_column="file_path")
+        assert df.column_names == COL_NAMES + ["file_path"]
+
+        pd_df = df.to_pandas()
+        assert list(pd_df.columns) == COL_NAMES + ["file_path"]
+        assert len(pd_df) == len(valid_data)
+        assert all(pd_df["file_path"] == fname)
+
+
+def test_create_dataframe_multiple_parquets_with_file_path_column(valid_data: list[dict[str, float]]) -> None:
+    with create_temp_filename() as f1name, create_temp_filename() as f2name:
+        with open(f1name, "w") as f1, open(f2name, "w") as f2:
+            for f in (f1, f2):
+                table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
+                papq.write_table(table, f.name)
+                f.flush()
+
+        df = daft.read_parquet([f1name, f2name], file_path_column="file_path")
+        assert df.column_names == COL_NAMES + ["file_path"]
+
+        pd_df = df.to_pandas()
+        assert list(pd_df.columns) == COL_NAMES + ["file_path"]
+        assert len(pd_df) == (len(valid_data) * 2)
+        assert pd_df["file_path"].to_list() == [f1name] * len(valid_data) + [f2name] * len(valid_data)
+
+
+def test_create_dataframe_parquet_with_file_path_column_and_pushdowns(valid_data: list[dict[str, float]]) -> None:
+    with create_temp_filename() as f1name, create_temp_filename() as f2name:
+        with open(f1name, "w") as f1, open(f2name, "w") as f2:
+            for f in (f1, f2):
+                table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
+                papq.write_table(table, f.name)
+                f.flush()
+
+        df = daft.read_parquet([f1name, f2name], file_path_column="file_path").where(daft.col("file_path") == f1name)
+        assert df.column_names == COL_NAMES + ["file_path"]
+
+        pd_df = df.to_pandas()
+        assert list(pd_df.columns) == COL_NAMES + ["file_path"]
+        assert len(pd_df) == len(valid_data)
+        assert pd_df["file_path"].to_list() == [f1name] * len(valid_data)
+
+
+def test_create_dataframe_parquet_with_file_path_column_duplicate_field_names() -> None:
+    with create_temp_filename() as fname:
+        with open(fname, "w") as f:
+            table = pa.Table.from_pydict({"path": [1, 2, 3], "data": [4, 5, 6]})
+            papq.write_table(table, f.name)
+            f.flush()
+
+        with pytest.raises(ValueError):
+            # The file_path_column name is the same as a column in the table, which is not allowed
+            daft.read_parquet(fname, file_path_column="path")
 
 
 def test_create_dataframe_parquet_with_filter(valid_data: list[dict[str, float]]) -> None:

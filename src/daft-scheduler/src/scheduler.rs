@@ -80,6 +80,10 @@ impl PhysicalPlanScheduler {
         Ok(self.plan().repr_mermaid(options))
     }
 
+    pub fn to_json_string(&self) -> PyResult<String> {
+        serde_json::to_string(&self.plan())
+            .map_err(|e| pyo3::PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))
+    }
     /// Converts the contained physical plan into an iterator of executable partition tasks.
     pub fn to_partition_tasks(
         &self,

@@ -2120,6 +2120,33 @@ class DataFrame:
         return self._apply_agg_fn(Expression.mean, cols)
 
     @DataframePublicAPI
+    def stddev(self, *cols: ColumnInputType) -> "DataFrame":
+        """Performs a global standard deviation on the DataFrame
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"col_a":[0,1,2]})
+            >>> df = df.stddev("col_a")
+            >>> df.show()
+            ╭───────────────────╮
+            │ col_a             │
+            │ ---               │
+            │ Float64           │
+            ╞═══════════════════╡
+            │ 0.816496580927726 │
+            ╰───────────────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+
+
+        Args:
+            *cols (Union[str, Expression]): columns to stddev
+        Returns:
+            DataFrame: Globally aggregated standard deviation. Should be a single row.
+        """
+        return self._apply_agg_fn(Expression.stddev, cols)
+
+    @DataframePublicAPI
     def min(self, *cols: ColumnInputType) -> "DataFrame":
         """Performs a global min on the DataFrame
 
@@ -2856,6 +2883,34 @@ class GroupedDataFrame:
             DataFrame: DataFrame with grouped mean.
         """
         return self.df._apply_agg_fn(Expression.mean, cols, self.group_by)
+
+    def stddev(self, *cols: ColumnInputType) -> "DataFrame":
+        """Performs grouped standard deviation on this GroupedDataFrame.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"keys": ["a", "a", "a", "b"], "col_a": [0,1,2,100]})
+            >>> df = df.groupby("keys").stddev()
+            >>> df.show()
+            ╭──────┬───────────────────╮
+            │ keys ┆ col_a             │
+            │ ---  ┆ ---               │
+            │ Utf8 ┆ Float64           │
+            ╞══════╪═══════════════════╡
+            │ a    ┆ 0.816496580927726 │
+            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ b    ┆ 0                 │
+            ╰──────┴───────────────────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+
+        Args:
+            *cols (Union[str, Expression]): columns to stddev
+
+        Returns:
+            DataFrame: DataFrame with grouped standard deviation.
+        """
+        return self.df._apply_agg_fn(Expression.stddev, cols, self.group_by)
 
     def min(self, *cols: ColumnInputType) -> "DataFrame":
         """Perform grouped min on this GroupedDataFrame.

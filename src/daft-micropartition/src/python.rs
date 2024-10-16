@@ -619,6 +619,7 @@ impl PyMicroPartition {
                 None,
                 None,
                 None,
+                None,
             )
         })?;
         Ok(mp.into())
@@ -666,6 +667,7 @@ impl PyMicroPartition {
                 None,
                 None,
                 chunk_size,
+                None,
             )
         })?;
         Ok(mp.into())
@@ -864,7 +866,7 @@ pub fn read_parquet_into_py_table(
         .extract()
 }
 
-pub(crate) fn read_sql_into_py_table(
+pub fn read_sql_into_py_table(
     py: Python,
     sql: &str,
     conn: &PyObject,

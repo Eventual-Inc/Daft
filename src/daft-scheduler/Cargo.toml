@@ -11,6 +11,7 @@ daft-plan = {path = "../daft-plan", default-features = false}
 daft-scan = {path = "../daft-scan", default-features = false}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true, features = ["rc"]}
+serde_json = {workspace = true}
 
 [dev-dependencies]
 rstest = {workspace = true}

@@ -882,6 +882,11 @@ class Expression:
         expr = self._expr.mean()
         return Expression._from_pyexpr(expr)
 
+    def stddev(self) -> Expression:
+        """Calculates the standard deviation of the values in the expression"""
+        expr = self._expr.stddev()
+        return Expression._from_pyexpr(expr)
+
     def min(self) -> Expression:
         """Calculates the minimum value in the expression"""
         expr = self._expr.min()
