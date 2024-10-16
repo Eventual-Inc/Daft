@@ -58,6 +58,7 @@ def freeze(input: dict | list | Any) -> frozenset | tuple | Any:
 
 
 def estimate_size_bytes_pylist(pylist: list) -> int:
+    print(pylist)
     """Estimate the size of this list by sampling and pickling its objects."""
     if len(pylist) == 0:
         return 0
@@ -72,6 +73,7 @@ def estimate_size_bytes_pylist(pylist: list) -> int:
     sampled_sizes = []
     sample_size_allowed = MAX_SAMPLE_SIZE
     for sample in sample_candidates:
+        print(sample)
         size = len(pickle.dumps(sample))
         sampled_sizes.append(size)
         sample_size_allowed -= size

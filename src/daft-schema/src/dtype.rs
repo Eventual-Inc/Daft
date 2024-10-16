@@ -652,6 +652,7 @@ impl From<&ArrowType> for DataType {
                 Self::Time(timeunit.into())
             }
             ArrowType::Duration(timeunit) => Self::Duration(timeunit.into()),
+            ArrowType::Interval(_) => Self::Interval,
             ArrowType::FixedSizeBinary(size) => Self::FixedSizeBinary(*size),
             ArrowType::Binary | ArrowType::LargeBinary => Self::Binary,
             ArrowType::Utf8 | ArrowType::LargeUtf8 => Self::Utf8,

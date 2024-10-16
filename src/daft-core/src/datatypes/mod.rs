@@ -63,7 +63,8 @@ pub trait DaftLogicalType: Send + Sync + DaftDataType + 'static {
 }
 
 macro_rules! impl_daft_arrow_datatype {
-    ($ca:ident, $variant:ident) => {
+    ($ca:ident, $variant:ident $(, $docstring:expr)?) => {
+        $(#[doc = $docstring])?
         #[derive(Clone, Debug)]
         pub struct $ca {}
 
@@ -186,6 +187,37 @@ impl_daft_arrow_datatype!(UInt8Type, UInt8);
 impl_daft_arrow_datatype!(UInt16Type, UInt16);
 impl_daft_arrow_datatype!(UInt32Type, UInt32);
 impl_daft_arrow_datatype!(UInt64Type, UInt64);
+impl_daft_arrow_datatype!(
+    IntervalType,
+    Interval,
+    r#"
+Value of an IntervalMonthDayNano array
+
+## Representation
+
+This type is stored as a single 128 bit integer, interpreted as three
+different signed integral fields:
+
+1. The number of months (32 bits)
+2. The number days (32 bits)
+2. The number of nanoseconds (64 bits).
+
+Nanoseconds does not allow for leap seconds.
+
+Each field is independent (e.g. there is no constraint that the quantity of
+nanoseconds represents less than a day's worth of time).
+
+```text
+┌───────────────┬─────────────┬─────────────────────────────┐
+│     Months    │     Days    │            Nanos            │
+│   (32 bits)   │  (32 bits)  │          (64 bits)          │
+└───────────────┴─────────────┴─────────────────────────────┘
+0            32             64                           128 bit offset
+```
+Please see the [Arrow Spec](https://github.com/apache/arrow/blob/081b4022fe6f659d8765efc82b3f4787c5039e3c/format/Schema.fbs#L409-L415) for more details
+"#
+);
+
 // impl_daft_arrow_datatype!(Float16Type, Float16);
 impl_daft_arrow_datatype!(Float32Type, Float32);
 impl_daft_arrow_datatype!(Float64Type, Float64);

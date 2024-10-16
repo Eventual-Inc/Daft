@@ -2,50 +2,9 @@ use std::fmt::Display;
 
 use arrow2::types::months_days_ns;
 use common_error::DaftResult;
-use daft_schema::dtype::DataType;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
-
-use super::{DaftArrowBackedType, DaftDataType, DaftPhysicalType, DataArray};
-
-/// Value of an IntervalMonthDayNano array
-///
-///  ## Representation
-///
-/// This type is stored as a single 128 bit integer, interpreted as three
-/// different signed integral fields:
-///
-/// 1. The number of months (32 bits)
-/// 2. The number days (32 bits)
-/// 2. The number of nanoseconds (64 bits).
-///
-/// Nanoseconds does not allow for leap seconds.
-///
-/// Each field is independent (e.g. there is no constraint that the quantity of
-/// nanoseconds represents less than a day's worth of time).
-///
-/// ```text
-/// ┌───────────────┬─────────────┬─────────────────────────────┐
-/// │     Months    │     Days    │            Nanos            │
-/// │   (32 bits)   │  (32 bits)  │          (64 bits)          │
-/// └───────────────┴─────────────┴─────────────────────────────┘
-/// 0            32             64                           128 bit offset
-/// ```
-/// Please see the [Arrow Spec](https://github.com/apache/arrow/blob/081b4022fe6f659d8765efc82b3f4787c5039e3c/format/Schema.fbs#L409-L415) for more details
-#[derive(Clone, Debug)]
-pub struct IntervalType {}
-
-impl DaftDataType for IntervalType {
-    #[inline]
-    fn get_dtype() -> DataType {
-        DataType::Interval
-    }
-    type ArrayType = DataArray<Self>;
-}
-
-impl DaftArrowBackedType for IntervalType {}
-impl DaftPhysicalType for IntervalType {}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 /// A literal "interval" value.
