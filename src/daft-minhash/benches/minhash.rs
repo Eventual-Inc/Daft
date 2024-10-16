@@ -1,12 +1,11 @@
-#![feature(test)]
+use std::{
+    collections::hash_map::DefaultHasher, hash::BuildHasherDefault, iter::repeat_with, ops::Range,
+};
 
-extern crate test;
-
-use std::{iter::repeat_with, ops::Range};
-
-use daft_minhash::{load_simd, minhash};
-use mur3::murmurhash3_x86_32;
-use test::Bencher;
+use ahash::AHasher;
+use daft_minhash::{load_simd, minhash, MurBuildHasher};
+use divan::{black_box, Bencher};
+use rustc_hash::FxHasher;
 
 const N_TOKENS: usize = 10000;
 const N_CHARS: Range<usize> = 1..20;
@@ -14,15 +13,15 @@ const N_CHARS: Range<usize> = 1..20;
 const NUM_HASHES: usize = 128;
 const NGRAM_SIZE: usize = 13;
 
-#[bench]
-fn bench_minhash(b: &mut Bencher) {
-    let mut rng = fastrand::Rng::with_seed(42);
-    let perm_a = repeat_with(|| rng.u64(1..(i32::MAX as u64))).take(NUM_HASHES);
-    let perm_a_simd = load_simd(perm_a, NUM_HASHES);
-    let perm_b = repeat_with(|| rng.u64(0..(i32::MAX as u64))).take(NUM_HASHES);
-    let perm_b_simd = load_simd(perm_b, NUM_HASHES);
+// #[global_allocator]
+// static ALLOC: divan::AllocProfiler = divan::AllocProfiler::system();
 
-    let mut s: String = String::new();
+fn main() {
+    divan::main();
+}
+
+fn generate_input(rng: &mut fastrand::Rng) -> String {
+    let mut s = String::new();
     for i in 0..N_TOKENS {
         if i > 0 {
             s.push(' ');
@@ -32,16 +31,32 @@ fn bench_minhash(b: &mut Bencher) {
             s.push(rng.alphanumeric());
         }
     }
+    s
+}
 
-    let hasher = |s: &[u8], seed: u32| -> u32 { murmurhash3_x86_32(s, seed) };
-    b.iter(|| {
-        minhash(
+#[divan::bench(types = [
+    BuildHasherDefault<AHasher>,
+    BuildHasherDefault<FxHasher>,
+    MurBuildHasher,
+    xxhash_rust::xxh3::Xxh3DefaultBuilder,
+    xxhash_rust::xxh64::Xxh64Builder,
+])]
+fn bench_minhash<H: std::hash::BuildHasher + Default>(bencher: Bencher) {
+    let mut rng = fastrand::Rng::with_seed(42);
+    let perm_a = repeat_with(|| rng.u64(1..(i32::MAX as u64))).take(NUM_HASHES);
+    let perm_a_simd = load_simd(perm_a, NUM_HASHES);
+    let perm_b = repeat_with(|| rng.u64(0..(i32::MAX as u64))).take(NUM_HASHES);
+    let perm_b_simd = load_simd(perm_b, NUM_HASHES);
+
+    let s = generate_input(&mut rng);
+
+    bencher.bench(|| {
+        black_box(minhash(
             &s,
             (&perm_a_simd, &perm_b_simd),
             NUM_HASHES,
             NGRAM_SIZE,
-            1,
-            hasher,
-        )
+            &H::default(),
+        ))
     });
 }

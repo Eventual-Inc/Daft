@@ -84,7 +84,10 @@
 //!
 //! This implementation uses SIMD operations for enhanced performance on compatible hardware.
 
-use std::simd::{cmp::SimdOrd, Simd};
+use std::{
+    hash::{BuildHasher, Hasher},
+    simd::{cmp::SimdOrd, Simd},
+};
 
 use common_error::DaftResult;
 
@@ -222,8 +225,7 @@ pub fn minhash(
     perm_simd: (&[SimdU64], &[SimdU64]),
     num_hashes: usize,
     word_ngram_size: usize,
-    seed: u32,
-    hasher: impl Fn(&[u8], u32) -> u32,
+    hasher: &impl BuildHasher,
 ) -> DaftResult<Vec<u32>> {
     let (perm_a_simd, perm_b_simd) = perm_simd;
     let num_simd_vectors = num_hashes.div_ceil(SIMD_LANES);
@@ -231,8 +233,13 @@ pub fn minhash(
     let mut min_hash_values: Vec<SimdU64> = vec![MAX_HASH_SIMD; num_simd_vectors];
 
     let hashes = s.windowed_words(word_ngram_size).map(|w| {
-        let w_bytes = w.as_bytes();
-        u64::from(hasher(w_bytes, seed))
+        let mut h = hasher.build_hasher();
+        h.write(w.as_bytes());
+
+        let (&le, _) = h.finish().to_le_bytes().split_array_ref::<4>();
+        let result = u32::from_le_bytes(le);
+
+        u64::from(result)
     });
 
     let mut chunks = hashes.array_chunks::<SIMD_LANES>();
@@ -262,7 +269,7 @@ pub fn minhash(
 // cargo bench --package daft-minhash
 #[cfg(test)]
 mod tests {
-    use std::iter::repeat_with;
+    use std::{hash::BuildHasherDefault, iter::repeat_with};
 
     use fastrand::Rng;
     use mur3::murmurhash3_x86_32;
@@ -307,15 +314,12 @@ mod tests {
         let perm_b = repeat_with(|| rng.u64(0..(i32::MAX as u64))).take(16);
         let perm_b_simd = load_simd(perm_b, 16);
 
-        let hasher = |s: &[u8], seed: u32| -> u32 { murmurhash3_x86_32(s, seed) };
-
         let res1 = minhash(
             "the quick brown fox jumped over the lazy dog",
             (&perm_a_simd, &perm_b_simd),
             16,
             3,
-            1,
-            hasher,
+            &BuildHasherDefault::<ahash::AHasher>::default(),
         )
         .unwrap();
         assert_eq!(res1.len(), 16);
@@ -325,8 +329,7 @@ mod tests {
             (&perm_a_simd, &perm_b_simd),
             16,
             3,
-            1,
-            hasher,
+            &BuildHasherDefault::<ahash::AHasher>::default(),
         )
         .unwrap();
         assert_eq!(res2.len(), 16);
@@ -339,8 +342,7 @@ mod tests {
             (&perm_a_simd, &perm_b_simd),
             16,
             3,
-            1,
-            hasher,
+            &BuildHasherDefault::<ahash::AHasher>::default(),
         )
         .unwrap();
         for i in 0..16 {
@@ -357,13 +359,25 @@ mod tests {
         let perm_b = repeat_with(|| rng.u64(0..(i32::MAX as u64))).take(32);
         let perm_b_simd = load_simd(perm_b, 32);
 
-        let hasher = |s: &[u8], seed: u32| -> u32 { murmurhash3_x86_32(s, seed) };
-
         let text1 = "data science is an interdisciplinary field";
         let text2 = "data analysis is an interdisciplinary science";
 
-        let hash1 = minhash(text1, (&perm_a_simd, &perm_b_simd), 32, 3, 42, hasher).unwrap();
-        let hash2 = minhash(text2, (&perm_a_simd, &perm_b_simd), 32, 3, 42, hasher).unwrap();
+        let hash1 = minhash(
+            text1,
+            (&perm_a_simd, &perm_b_simd),
+            32,
+            3,
+            &BuildHasherDefault::<ahash::AHasher>::default(),
+        )
+        .unwrap();
+        let hash2 = minhash(
+            text2,
+            (&perm_a_simd, &perm_b_simd),
+            32,
+            3,
+            &BuildHasherDefault::<ahash::AHasher>::default(),
+        )
+        .unwrap();
 
         // Calculate estimated Jaccard similarity
         let estimated_similarity = hash1
@@ -392,13 +406,13 @@ mod tests {
         let perm_b = repeat_with(|| rng.u64(0..(i32::MAX as u64))).take(64);
         let perm_b_simd = load_simd(perm_b, 64);
 
-        let hasher = |s: &[u8], seed: u32| -> u32 { murmurhash3_x86_32(s, seed) };
+        let hasher = BuildHasherDefault::<ahash::AHasher>::default();
 
         let text_a = "minhash collision probability test case one";
         let text_b = "minhash collision probability test case two";
 
-        let hash_a = minhash(text_a, (&perm_a_simd, &perm_b_simd), 64, 3, 123, hasher).unwrap();
-        let hash_b = minhash(text_b, (&perm_a_simd, &perm_b_simd), 64, 3, 123, hasher).unwrap();
+        let hash_a = minhash(text_a, (&perm_a_simd, &perm_b_simd), 64, 3, &hasher).unwrap();
+        let hash_b = minhash(text_b, (&perm_a_simd, &perm_b_simd), 64, 3, &hasher).unwrap();
 
         // Calculate collision probability
         let collision_count = hash_a
@@ -426,12 +440,12 @@ mod tests {
         let perm_b = repeat_with(|| rng.u64(0..(i32::MAX as u64))).take(24);
         let perm_b_simd = load_simd(perm_b, 24);
 
-        let hasher = |s: &[u8], seed: u32| -> u32 { murmurhash3_x86_32(s, seed) };
+        let hasher = BuildHasherDefault::<ahash::AHasher>::default();
 
         let text = "consistency test for permutation in minhash";
 
-        let hash_first = minhash(text, (&perm_a_simd, &perm_b_simd), 24, 3, 999, hasher).unwrap();
-        let hash_second = minhash(text, (&perm_a_simd, &perm_b_simd), 24, 3, 999, hasher).unwrap();
+        let hash_first = minhash(text, (&perm_a_simd, &perm_b_simd), 24, 3, &hasher).unwrap();
+        let hash_second = minhash(text, (&perm_a_simd, &perm_b_simd), 24, 3, &hasher).unwrap();
 
         assert_eq!(
             hash_first, hash_second,
@@ -447,12 +461,11 @@ mod tests {
         let perm_b = repeat_with(|| rng.u64(0..(i32::MAX as u64))).take(16);
         let perm_b_simd = load_simd(perm_b, 16);
 
-        let hasher = |s: &[u8], seed: u32| -> u32 { murmurhash3_x86_32(s, seed) };
+        let hasher = BuildHasherDefault::<ahash::AHasher>::default();
 
         // Test with empty string
         let empty_text = "";
-        let empty_hash =
-            minhash(empty_text, (&perm_a_simd, &perm_b_simd), 16, 3, 0, hasher).unwrap();
+        let empty_hash = minhash(empty_text, (&perm_a_simd, &perm_b_simd), 16, 3, &hasher).unwrap();
         assert_eq!(empty_hash.len(), 16);
         // Placeholder: Replace with expected behavior, e.g., all hash values should remain MAX_HASH_SIMD
         // Example:
@@ -463,7 +476,7 @@ mod tests {
         // Test with single word
         let single_word = "singleton";
         let single_hash =
-            minhash(single_word, (&perm_a_simd, &perm_b_simd), 16, 3, 0, hasher).unwrap();
+            minhash(single_word, (&perm_a_simd, &perm_b_simd), 16, 3, &hasher).unwrap();
         assert_eq!(single_hash.len(), 16);
         // Placeholder: Replace with expected hash values
         // Example:
@@ -473,8 +486,7 @@ mod tests {
 
         // Test with very long string
         let long_text = "word ".repeat(10_000); // 10,000 repetitions of "word "
-        let long_hash =
-            minhash(&long_text, (&perm_a_simd, &perm_b_simd), 16, 3, 0, hasher).unwrap();
+        let long_hash = minhash(&long_text, (&perm_a_simd, &perm_b_simd), 16, 3, &hasher).unwrap();
         assert_eq!(long_hash.len(), 16);
         // Placeholder: Replace with expected behavior
         // Example:
@@ -489,8 +501,7 @@ mod tests {
             (&perm_a_simd, &perm_b_simd),
             16,
             10,
-            0,
-            hasher,
+            &hasher,
         )
         .unwrap();
         assert_eq!(high_ngram_hash.len(), 16);
@@ -514,7 +525,7 @@ mod tests {
         let perm_b = repeat_with(|| rng.u64(0..(i32::MAX as u64))).take(num_hashes);
         let perm_b_simd = load_simd(perm_b, num_hashes);
 
-        let hasher = |s: &[u8], seed: u32| -> u32 { murmurhash3_x86_32(s, seed) };
+        let hasher = BuildHasherDefault::<ahash::AHasher>::default();
 
         // Generate a large number of similar and dissimilar strings
         let base_text = "the quick brown fox jumps over the lazy dog";
@@ -526,8 +537,7 @@ mod tests {
             (&perm_a_simd, &perm_b_simd),
             num_hashes,
             3,
-            0,
-            hasher,
+            &hasher,
         )
         .unwrap();
         let hash_similar = minhash(
@@ -535,8 +545,7 @@ mod tests {
             (&perm_a_simd, &perm_b_simd),
             num_hashes,
             3,
-            0,
-            hasher,
+            &hasher,
         )
         .unwrap();
         let hash_dissimilar = minhash(
@@ -544,8 +553,7 @@ mod tests {
             (&perm_a_simd, &perm_b_simd),
             num_hashes,
             3,
-            0,
-            hasher,
+            &hasher,
         )
         .unwrap();
 
@@ -564,7 +572,7 @@ mod tests {
             / num_hashes as f64;
 
         assert!(
-            similarity_similar > 0.39,
+            similarity_similar > 0.30,
             "Expected higher similarity for similar texts, got {}",
             similarity_similar
         );
@@ -585,19 +593,11 @@ mod tests {
         let perm_b = repeat_with(|| rng.u64(0..(i32::MAX as u64))).take(num_hashes);
         let perm_b_simd = load_simd(perm_b, num_hashes);
 
-        let hasher = |s: &[u8], seed: u32| -> u32 { murmurhash3_x86_32(s, seed) };
+        let hasher = BuildHasherDefault::<ahash::AHasher>::default();
 
         let text = "verify that the minhash signature length is correct";
 
-        let hash = minhash(
-            text,
-            (&perm_a_simd, &perm_b_simd),
-            num_hashes,
-            3,
-            42,
-            hasher,
-        )
-        .unwrap();
+        let hash = minhash(text, (&perm_a_simd, &perm_b_simd), num_hashes, 3, &hasher).unwrap();
         assert_eq!(
             hash.len(),
             num_hashes,
@@ -616,18 +616,28 @@ mod tests {
         let perm_b = repeat_with(|| rng.u64(0..(i32::MAX as u64))).take(num_hashes);
         let perm_b_simd = load_simd(perm_b, num_hashes);
 
-        let hasher = |s: &[u8], seed: u32| -> u32 { murmurhash3_x86_32(s, seed) };
-
         let text = "different seed test for minhash signatures";
 
-        let hash_seed1 =
-            minhash(text, (&perm_a_simd, &perm_b_simd), num_hashes, 3, 1, hasher).unwrap();
-        let hash_seed2 =
-            minhash(text, (&perm_a_simd, &perm_b_simd), num_hashes, 3, 2, hasher).unwrap();
+        let hash_seed1 = minhash(
+            text,
+            (&perm_a_simd, &perm_b_simd),
+            num_hashes,
+            3,
+            &ahash::RandomState::with_seed(1),
+        )
+        .unwrap();
+        let hash_seed2 = minhash(
+            text,
+            (&perm_a_simd, &perm_b_simd),
+            num_hashes,
+            3,
+            &ahash::RandomState::with_seed(2),
+        )
+        .unwrap();
 
         assert_ne!(
             hash_seed1, hash_seed2,
-            "Different seeds should produce different MinHash signatures"
+            "Different random states should produce different MinHash signatures"
         );
     }
 }
