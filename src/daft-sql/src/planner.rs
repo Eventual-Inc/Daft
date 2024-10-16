@@ -597,7 +597,22 @@ impl SQLPlanner {
                 unsupported_sql_err!("IN subquery")
             }
             SQLExpr::InUnnest { .. } => unsupported_sql_err!("IN UNNEST"),
-            SQLExpr::Between { .. } => unsupported_sql_err!("BETWEEN"),
+            SQLExpr::Between {
+                expr,
+                negated,
+                low,
+                high,
+            } => {
+                let expr = self.plan_expr(expr)?;
+                let low = self.plan_expr(low)?;
+                let high = self.plan_expr(high)?;
+                let expr = expr.between(low, high);
+                if *negated {
+                    Ok(expr.not())
+                } else {
+                    Ok(expr)
+                }
+            }
             SQLExpr::Like {
                 negated,
                 expr,
