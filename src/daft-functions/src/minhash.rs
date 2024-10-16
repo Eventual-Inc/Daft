@@ -42,7 +42,7 @@ impl ScalarUDF for MinHashFunction {
                 input.minhash(self.num_hashes, self.ngram_size, self.seed, &hasher)
             }
             HashFunctionLiteral::XxHash => {
-                let hasher = xxhash_rust::xxh64::Xxh64Builder::new(self.seed);
+                let hasher = xxhash_rust::xxh64::Xxh64Builder::new(self.seed as u64);
                 input.minhash(self.num_hashes, self.ngram_size, self.seed, &hasher)
             }
             HashFunctionLiteral::Sha1 => {
