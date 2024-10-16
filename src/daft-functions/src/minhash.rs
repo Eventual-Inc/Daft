@@ -25,7 +25,12 @@ impl ScalarUDF for MinHashFunction {
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
-            [input] => input.minhash(self.num_hashes, self.ngram_size, self.seed, MurBuildHasher::new(self.seed)),
+            [input] => input.minhash(
+                self.num_hashes,
+                self.ngram_size,
+                self.seed,
+                MurBuildHasher::new(self.seed),
+            ),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()
