@@ -1,6 +1,6 @@
 use core::str;
 use std::{
-    io::{Chain, Cursor, Read},
+    io::{prelude::Seek, Chain, Cursor, Read, SeekFrom},
     num::NonZeroUsize,
     sync::{
         atomic::{AtomicUsize, Ordering},
@@ -83,6 +83,9 @@ struct CsvBuffer {
     buffer: Vec<read::ByteRecord>,
 }
 
+// If regular 4 MiB buffers are too small, we fall back to using large 2 GiB buffers.
+const HUGE_BUFFER_SIZE: usize = 2 * 1024 * 1024 * 1024;
+
 impl CsvBufferPool {
     pub fn new(
         record_buffer_size: usize,
@@ -122,6 +125,16 @@ impl CsvBufferPool {
         }
     }
 
+    // Creates a single huge 2 GiB buffer for the fallback reader.
+    pub fn create_huge_buffer(self: &Arc<Self>) -> CsvBuffer {
+        let buffer = vec![read::ByteRecord::with_capacity(HUGE_BUFFER_SIZE, self.num_fields); 1];
+
+        CsvBuffer {
+            pool: Arc::clone(self),
+            buffer,
+        }
+    }
+
     fn return_buffer(&self, buffer: Vec<read::ByteRecord>) {
         let mut buffers = self.buffers.lock().unwrap();
         buffers.push(buffer);
@@ -135,21 +148,21 @@ const SLABPOOL_DEFAULT_SIZE: usize = 20;
 
 /// A pool of slabs. Used for reading CSV files in SLABSIZE chunks.
 #[derive(Debug)]
-struct SlabPool {
+struct FileSlabPool {
     buffers: Mutex<Vec<Arc<[u8]>>>,
     condvar: Condvar,
 }
 
 /// A slab of bytes. Used for reading CSV files in SLABSIZE chunks.
 #[derive(Clone)]
-struct Slab {
-    pool: Arc<SlabPool>,
+struct FileSlab {
+    pool: Arc<FileSlabPool>,
     // We wrap the Arc<buffer> in an Option so that when a Slab is being dropped, we can move the Slab's reference
     // to the Arc<buffer> back to the slab pool.
     buffer: Option<Arc<[u8]>>,
 }
 
-impl Drop for Slab {
+impl Drop for FileSlab {
     fn drop(&mut self) {
         // Move the buffer back to the slab pool.
         if let Some(buffer) = self.buffer.take() {
@@ -158,7 +171,7 @@ impl Drop for Slab {
     }
 }
 
-impl SlabPool {
+impl FileSlabPool {
     pub fn new() -> Self {
         let chunk_buffers: Vec<Arc<[u8]>> = (0..SLABPOOL_DEFAULT_SIZE)
             .map(|_| Box::new_uninit_slice(SLABSIZE))
@@ -191,17 +204,19 @@ impl SlabPool {
 /// A data structure that holds either a single slice of bytes, or a chain of two slices of bytes.
 /// See the description to `parse_csv` for more details.
 #[derive(Debug)]
-enum BufferSource<'a> {
+enum CsvBufferSource<'a> {
     Single(Cursor<&'a [u8]>),
     Chain(Chain<Cursor<&'a [u8]>, Cursor<&'a [u8]>>),
+    File(std::fs::File),
 }
 
 /// Read implementation that allows BufferSource to be used by csv::read::Reader.
-impl<'a> Read for BufferSource<'a> {
+impl<'a> Read for CsvBufferSource<'a> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         match self {
-            BufferSource::Single(cursor) => std::io::Read::read(cursor, buf),
-            BufferSource::Chain(chain) => chain.read(buf),
+            CsvBufferSource::Single(cursor) => std::io::Read::read(cursor, buf),
+            CsvBufferSource::Chain(chain) => chain.read(buf),
+            CsvBufferSource::File(file) => file.read(buf),
         }
     }
 }
@@ -312,7 +327,7 @@ pub async fn stream_csv_local(
     .unwrap_or_default();
 
     // Create slab pool for file reads.
-    let slabpool = Arc::new(SlabPool::new());
+    let slabpool = Arc::new(FileSlabPool::new());
 
     // Get schema and row estimations.
     let (schema, estimated_mean_row_size, estimated_std_row_size) =
@@ -427,7 +442,7 @@ async fn get_schema_and_estimators(
 fn consume_csv_file(
     mut file: std::fs::File,
     buffer_pool: Arc<CsvBufferPool>,
-    slabpool: Arc<SlabPool>,
+    slabpool: Arc<FileSlabPool>,
     parse_options: CsvParseOptions,
     projection_indices: Arc<Vec<usize>>,
     read_daft_fields: Arc<Vec<Arc<daft_core::datatypes::Field>>>,
@@ -474,7 +489,7 @@ fn consume_csv_file(
                         }
                         total_bytes_read += bytes_read;
                         (
-                            Arc::new(Slab {
+                            Arc::new(FileSlab {
                                 pool: Arc::clone(&slabpool),
                                 buffer: Some(buffer),
                             }),
@@ -498,7 +513,7 @@ fn consume_csv_file(
                         (None, 0)
                     } else {
                         (
-                            Some(Arc::new(Slab {
+                            Some(Arc::new(FileSlab {
                                 pool: Arc::clone(&slabpool),
                                 buffer: Some(next_buffer),
                             })),
@@ -530,12 +545,34 @@ fn consume_csv_file(
         );
         first_buffer = false;
         if let (None, _) = file_chunk {
-            // Return the buffer. It doesn't matter that we still have a reference to the slab. We're going to fallback
-            // and the slabs will be useless.
-            slabpool.return_buffer(unsafe_clone_buffer(&current_slab.buffer));
-            // Exit early before spawning a new thread.
+            // The current file slab does not have records that fit into 4 MiB. Fallback to a standard reader.
+            total_bytes_read -= current_buffer_len;
+            // Seek to the undecoded portion of the file.
+            match file.seek(SeekFrom::Start(total_bytes_read as u64)) {
+                Ok(_) => {
+                    // Since this CSV file has records larger than 4 MiB, get a huge buffer that accepts 2 GiB records.
+                    let csv_buffer = buffer_pool.create_huge_buffer();
+                    dispatch_to_parse_csv(
+                        has_header,
+                        parse_options,
+                        CsvBufferSource::File(file),
+                        projection_indices,
+                        fields,
+                        read_daft_fields,
+                        read_schema,
+                        csv_buffer,
+                        include_columns.clone(),
+                        predicate,
+                        sender,
+                        rows_read,
+                    );
+                }
+                Err(e) => {
+                    sender.send(Err(DaftError::IoError(e))).unwrap();
+                }
+            }
+            // Exit after falling back.
             break;
-            // TODO(desmond): we should fallback instead.
         }
         let current_slab_clone = Arc::clone(&current_slab);
         let next_slab_clone = next_slab.clone();
@@ -558,7 +595,7 @@ fn consume_csv_file(
                 match file_chunk {
                     (Some(start), None) => {
                         if let Some(buffer) = &current_slab_clone.buffer {
-                            let buffer_source = BufferSource::Single(Cursor::new(
+                            let buffer_source = CsvBufferSource::Single(Cursor::new(
                                 &buffer[start..current_buffer_len],
                             ));
                             dispatch_to_parse_csv(
@@ -570,7 +607,7 @@ fn consume_csv_file(
                                 read_daft_fields,
                                 read_schema,
                                 csv_buffer,
-                                &include_columns,
+                                include_columns,
                                 predicate,
                                 sender,
                                 rows_read,
@@ -584,7 +621,7 @@ fn consume_csv_file(
                             && let Some(current_buffer) = &current_slab_clone.buffer
                             && let Some(next_buffer) = &next_slab_clone.buffer
                         {
-                            let buffer_source = BufferSource::Chain(std::io::Read::chain(
+                            let buffer_source = CsvBufferSource::Chain(std::io::Read::chain(
                                 Cursor::new(&current_buffer[start..current_buffer_len]),
                                 Cursor::new(&next_buffer[..end]),
                             ));
@@ -597,7 +634,7 @@ fn consume_csv_file(
                                 read_daft_fields,
                                 read_schema,
                                 csv_buffer,
-                                &include_columns,
+                                include_columns,
                                 predicate,
                                 sender,
                                 rows_read,
@@ -896,13 +933,13 @@ fn validate_csv_record(
 fn dispatch_to_parse_csv(
     has_header: bool,
     parse_options: CsvParseOptions,
-    buffer_source: BufferSource,
+    buffer_source: CsvBufferSource,
     projection_indices: Arc<Vec<usize>>,
     fields: Vec<Field>,
     read_daft_fields: Arc<Vec<Arc<daft_core::datatypes::Field>>>,
     read_schema: Arc<Schema>,
     csv_buffer: CsvBuffer,
-    include_columns: &Option<Vec<String>>,
+    include_columns: Option<Vec<String>>,
     predicate: Option<Arc<Expr>>,
     sender: Sender<Result<Table, DaftError>>,
     rows_read: Arc<AtomicUsize>,
@@ -953,7 +990,7 @@ fn parse_csv_chunk<R>(
     read_daft_fields: Arc<Vec<Arc<daft_core::datatypes::Field>>>,
     read_schema: Arc<Schema>,
     csv_buffer: CsvBuffer,
-    include_columns: &Option<Vec<String>>,
+    include_columns: Option<Vec<String>>,
     predicate: Option<Arc<Expr>>,
 ) -> DaftResult<Vec<Table>>
 where
@@ -962,10 +999,8 @@ where
     let mut chunk_buffer = csv_buffer.buffer;
     let mut tables = vec![];
     loop {
-        //let time = Instant::now();
         let (rows_read, has_more) =
             local_read_rows(&mut reader, chunk_buffer.as_mut_slice()).context(ArrowSnafu {})?;
-        //let time = Instant::now();
         let chunk = projection_indices
             .par_iter()
             .enumerate()
