@@ -110,7 +110,9 @@ impl IntervalValue {
     const NANOS_PER_MINUTE: i64 = 60_000_000_000;
     const NANOS_PER_MILLIS: i64 = 1_000_000;
     const NANOS_PER_SECOND: i64 = 1_000_000_000;
+
     pub fn try_new(opts: IntervalValueBuilder) -> DaftResult<Self> {
+        // Instead of always using the default values, we can skip some computations for certain patterns
         match opts {
             IntervalValueBuilder {
                 years,
@@ -169,6 +171,7 @@ impl IntervalValue {
                 nanoseconds,
             }),
 
+            // Fallback with default values for all filds.
             IntervalValueBuilder {
                 years,
                 months,
