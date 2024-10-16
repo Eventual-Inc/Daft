@@ -38,7 +38,6 @@ class Series:
 
         _ensure_registered_super_ext_type()
         if DataType.from_arrow_type(array.type) == DataType.python():
-            print("is python")
             # If the Arrow type is not natively supported, go through the Python list path.
             return Series.from_pylist(array.to_pylist(), name=name, pyobj="force")
         elif isinstance(array, pa.Array):
@@ -48,7 +47,6 @@ class Series:
                 return series.cast(DataType.from_arrow_type(array.type))
             else:
                 pys = PySeries.from_arrow(name, array)
-                print(pys)
                 return Series._from_pyseries(pys)
         elif isinstance(array, pa.ChunkedArray):
             array = ensure_chunked_array(array)
