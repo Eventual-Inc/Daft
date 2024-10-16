@@ -13,9 +13,7 @@ daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
 daft-table = {path = "../daft-table", default-features = false}
 futures = {workspace = true}
-indexmap = {workspace = true, features = ["serde"]}
 memchr = "2.7.2"
-memmap2 = "0.9.4"
 pyo3 = {workspace = true, optional = true}
 rayon = {workspace = true}
 serde = {workspace = true}
