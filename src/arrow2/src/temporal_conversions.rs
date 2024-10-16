@@ -574,7 +574,7 @@ pub fn add_interval<T: chrono::TimeZone>(
     }
 }
 
-/// Adds an `interval` to a `timestamp` in `time_unit` units and timezone `timezone`.
+/// Subtracts an `interval` from a `timestamp` in `time_unit` units and timezone `timezone`.
 #[inline]
 pub fn sub_interval<T: chrono::TimeZone>(
     timestamp: i64,
