@@ -156,12 +156,10 @@ chrono-tz = "0.8.4"
 comfy-table = "7.1.1"
 derivative = "2.2.0"
 divan = "0.1.14"
-rustc-hash = "2.0.0"
 dyn-clone = "1"
 futures = "0.3.30"
 html-escape = "0.2.13"
 indexmap = "2.1.0"
-xxhash-rust = "0.8.12"
 itertools = "0.11"
 jaq-core = "1.2.0"
 jaq-interpret = "1.2.0"
@@ -176,6 +174,7 @@ rand = "^0.8"
 rayon = "1.10.0"
 regex = "1.10.4"
 rstest = "0.18.2"
+rustc-hash = "2.0.0"
 serde_json = "1.0.116"
 sketches-ddsketch = {version = "0.2.2", features = ["use_serde"]}
 snafu = {version = "0.7.4", features = ["futures"]}
@@ -198,6 +197,7 @@ tokio-stream = {version = "0.1.14", features = ["fs", "io-util", "time"]}
 tokio-util = "0.7.11"
 tracing = "0.1"
 url = "2.4.0"
+xxhash-rust = "0.8.12"
 
 [workspace.dependencies.arrow2]
 path = "src/arrow2"

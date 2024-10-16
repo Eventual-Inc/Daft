@@ -1,13 +1,17 @@
+[[bench]]
+harness = false
+name = "minhash"
+
 [dependencies]
 common-error = {path = "../common/error", default-features = false}
 fastrand = "2.1.0"
 mur3 = "0.1.0"
 
 [dev-dependencies]
+xxhash-rust = {workspace = true, features = ["xxh64", "xxh3"]}
+ahash.workspace = true
 divan.workspace = true
 rustc-hash.workspace = true
-ahash.workspace = true
-xxhash-rust = { workspace = true, features = ["xxh64", "xxh3"] }
 
 [lints]
 workspace = true
@@ -16,7 +20,3 @@ workspace = true
 edition = {workspace = true}
 name = "daft-minhash"
 version = {workspace = true}
-
-[[bench]]
-name = "minhash"
-harness = false

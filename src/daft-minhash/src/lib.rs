@@ -7,6 +7,7 @@
 mod minhash;
 
 use std::hash::BuildHasher;
+
 pub use minhash::{load_simd, minhash};
 
 // todo: move to another crate
