@@ -79,3 +79,16 @@ def test_count_star():
     actual = daft.sql("SELECT COUNT(*) FROM df").collect()
     expected = df.agg(daft.col("*").count().alias("count")).collect()
     assert actual.to_pydict() == expected.to_pydict()
+
+
+def test_between():
+    df = daft.from_pydict(
+        {
+            "integers": [0, 1, 2, 3, 5],
+        }
+    )
+
+    actual = daft.sql("SELECT * FROM df where integers between 1 and 4").collect().to_pydict()
+
+    expected = df.filter(col("integers").between(1, 4)).collect().to_pydict()
+    assert actual == expected

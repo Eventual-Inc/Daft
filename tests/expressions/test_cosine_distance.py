@@ -38,5 +38,4 @@ def test_cosine():
 
     # check if they are approximately equal
     for a, b in zip(res["a"], expected):
-        print("a:", a, "b:", b)
         assert pytest.approx(b) == pytest.approx(a, abs=1e-5)

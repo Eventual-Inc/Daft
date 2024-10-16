@@ -8,6 +8,7 @@ use std::{
 use common_error::{DaftError, DaftResult};
 use common_hashable_float_wrapper::FloatWrapper;
 use daft_core::{
+    datatypes::IntervalValue,
     prelude::*,
     utils::display::{
         display_date32, display_decimal128, display_duration, display_series_literal,
@@ -62,6 +63,8 @@ pub enum LiteralValue {
     Time(i64, TimeUnit),
     /// An [`i64`] representing a measure of elapsed time. This elapsed time is a physical duration (i.e. 1s as defined in S.I.)
     Duration(i64, TimeUnit),
+    /// Interval: relative elapsed time measured in (months, days, nanoseconds)
+    Interval(IntervalValue),
     /// A 64-bit floating point number.
     Float64(f64),
     /// An [`i128`] representing a decimal number with the provided precision and scale.
@@ -102,6 +105,9 @@ impl Hash for LiteralValue {
             Self::Duration(n, tu) => {
                 n.hash(state);
                 tu.hash(state);
+            }
+            Self::Interval(n) => {
+                n.hash(state);
             }
             // Wrap float64 in hashable newtype.
             Self::Float64(n) => FloatWrapper(*n).hash(state),
@@ -149,6 +155,7 @@ impl Display for LiteralValue {
             Self::Decimal(val, precision, scale) => {
                 write!(f, "{}", display_decimal128(*val, *precision, *scale))
             }
+            Self::Interval(value) => write!(f, "{value}"),
             Self::Series(series) => write!(f, "{}", display_series_literal(series)),
             #[cfg(feature = "python")]
             Self::Python(pyobj) => write!(f, "PyObject({})", {
@@ -189,6 +196,7 @@ impl LiteralValue {
             Self::Decimal(_, precision, scale) => {
                 DataType::Decimal128(*precision as usize, *scale as usize)
             }
+            Self::Interval(_) => DataType::Interval,
             Self::Series(series) => series.data_type().clone(),
             #[cfg(feature = "python")]
             Self::Python(_) => DataType::Python,
@@ -224,6 +232,11 @@ impl LiteralValue {
                 let physical = Int64Array::from(("literal", [*val].as_slice()));
                 DurationArray::new(Field::new("literal", self.get_type()), physical).into_series()
             }
+            Self::Interval(val) => IntervalArray::from_values(
+                "literal",
+                std::iter::once((val.months, val.days, val.nanoseconds)),
+            )
+            .into_series(),
             Self::Float64(val) => Float64Array::from(("literal", [*val].as_slice())).into_series(),
             Self::Decimal(val, ..) => {
                 let physical = Int128Array::from(("literal", [*val].as_slice()));
@@ -270,7 +283,8 @@ impl LiteralValue {
             | Self::Series(..)
             | Self::Time(..)
             | Self::Binary(..)
-            | Self::Duration(..) => display_sql_err,
+            | Self::Duration(..)
+            | Self::Interval(..) => display_sql_err,
             #[cfg(feature = "python")]
             Self::Python(..) => display_sql_err,
             Self::Struct(..) => display_sql_err,
@@ -488,7 +502,13 @@ pub fn literals_to_series(values: &[LiteralValue]) -> DaftResult<Series> {
             let data = values.iter().map(|lit| unwrap_unchecked!(lit, UInt64));
             UInt64Array::from_values("literal", data).into_series()
         }
-
+        DataType::Interval => {
+            let data = values.iter().map(|lit| match lit {
+                LiteralValue::Interval(iv) => (iv.months, iv.days, iv.nanoseconds),
+                _ => unreachable!("datatype is already checked"),
+            });
+            IntervalArray::from_values("literal", data).into_series()
+        }
         dtype @ DataType::Timestamp(_, _) => {
             let data = values.iter().map(|lit| unwrap_unchecked!(lit, Timestamp));
             let physical = Int64Array::from_values("literal", data);
