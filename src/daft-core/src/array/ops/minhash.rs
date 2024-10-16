@@ -1,9 +1,8 @@
-use std::iter::repeat_with;
+use std::{hash::BuildHasher, iter::repeat_with};
 
 use arrow2::array::{MutableArray, MutablePrimitiveArray, PrimitiveArray};
 use common_error::{DaftError, DaftResult};
 use daft_minhash::load_simd;
-use mur3::murmurhash3_x86_32;
 
 use super::{as_arrow::AsArrow, DaftMinHash};
 use crate::{
@@ -15,7 +14,13 @@ use crate::{
 impl DaftMinHash for Utf8Array {
     type Output = DaftResult<FixedSizeListArray>;
 
-    fn minhash(&self, num_hashes: usize, ngram_size: usize, seed: u32) -> Self::Output {
+    fn minhash(
+        &self,
+        num_hashes: usize,
+        ngram_size: usize,
+        seed: u32,
+        hasher: &impl BuildHasher,
+    ) -> Self::Output {
         if num_hashes == 0 {
             return Err(DaftError::ValueError(
                 "Number of hashes must be nonzero".into(),
@@ -69,8 +74,7 @@ impl DaftMinHash for Utf8Array {
                 (&perm_a_simd, &perm_b_simd),
                 num_hashes,
                 ngram_size,
-                seed,
-                |s: &[u8], seed: u32| -> u32 { murmurhash3_x86_32(s, seed) },
+                hasher,
             )?;
 
             output.extend(minhash_res.into_iter().map(Some));
