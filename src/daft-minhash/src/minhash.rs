@@ -139,6 +139,53 @@ fn compute_fast_simd_remainder(simd_value: SimdU64) -> SimdU64 {
 /// while maintaining the essential properties required for MinHash.
 ///
 /// For more details on MinHash and its implementation, see [`crate::minhash`].
+///
+/// ```text
+/// Initial Hash:  
+///   [H1]   [H2]  [H3]  [H4] [H5] [H6]  [H7] [H8]  (SIMD vector with 8 lanes)
+///    |      |     |     |    |    |     |    |
+///    v      v     v     v    v    v     v    v
+/// +-----+-----+-----+-----+-----+-----+-----+-----+
+/// | P1  | P2  | P3  | P4  | P5  | P6  | P7  | P8  |  Permutation Sets
+/// +-----+-----+-----+-----+-----+-----+-----+-----+
+///   |     |     |     |     |     |     |     |
+///   v     v     v     v     v     v     v     v
+/// +-----+-----+-----+-----+-----+-----+-----+-----+
+/// | M1  | M2  | M3  | M4  | M5  | M6  | M7  | M8  |  Min Hash Values
+/// +-----+-----+-----+-----+-----+-----+-----+-----+
+///
+///        Rotate Hash Values Left
+/// [H8]   [H1]  [H2]  [H3]  [H4]  [H5]  [H6]  [H7]
+///   |      |     |     |     |     |    |     |
+///   v      v     v     v     v     v    v     v
+/// +-----+-----+-----+-----+-----+-----+-----+-----+
+/// | P1  | P2  | P3  | P4  | P5  | P6  | P7  | P8  |  Permutation Sets
+/// +-----+-----+-----+-----+-----+-----+-----+-----+
+///   |     |     |     |     |     |     |     |
+///   v     v     v     v     v     v     v     v
+/// +-----+-----+-----+-----+-----+-----+-----+-----+
+/// | M1  | M2  | M3  | M4  | M5  | M6  | M7  | M8  |  Min Hash Values
+/// +-----+-----+-----+-----+-----+-----+-----+-----+
+///   ^     ^     ^     ^     ^     ^     ^     ^
+///   |     |     |     |     |     |     |     |
+///   |     |     |     |     |     |     |     |
+///   +-----+-----+-----+-----+-----+-----+-----+
+///    (Update with minimum of new and existing values)
+///
+///        Rotate Hash Values Left
+///   [H7]  [H8]  [H1]  [H2]  [H3]  [H4] [H5]   [H6]
+///     |    |     |     |     |     |    |      |
+///     v    v     v     v     v     v    v      v
+/// +-----+-----+-----+-----+-----+-----+-----+-----+
+/// | P1  | P2  | P3  | P4  | P5  | P6  | P7  | P8  |  Permutation Sets
+/// +-----+-----+-----+-----+-----+-----+-----+-----+
+///            . . . (Process repeats)
+///
+/// Legend:
+/// [Hx] : Hash value in SIMD lane x
+/// Px   : Permutation set x, where h'(x) = (a * x + b) % p
+/// Mx   : Running minimum hash value for permutation set x
+/// ```
 #[inline(always)]
 fn simd_permute_and_min_batch(
     initial_hash: SimdU64,
@@ -170,6 +217,9 @@ fn simd_permute_and_min_batch(
             let permuted_hash =
                 compute_fast_simd_remainder(rotated_hash * coefficient_a + coefficient_b);
             *current_min_hash = permuted_hash.simd_min(*current_min_hash);
+            // Rotate the hash vector left by 1 element. This ensures that each SIMD lane
+            // processes a different permutation of the initial hash in subsequent iterations,
+            // effectively computing multiple hash permutations in parallel.
             rotated_hash = rotated_hash.rotate_elements_left::<1>();
         }
     }
@@ -218,6 +268,10 @@ pub fn load_simd(v: impl IntoIterator<Item = u64>, num_hashes: usize) -> Vec<Sim
     }
     out
 }
+
+// a real     1010
+// b LLM      1001
+// a XOR b    0011
 
 /// Computes the MinHash signature of a string using SIMD operations.
 pub fn minhash(
@@ -272,7 +326,6 @@ mod tests {
     use std::{hash::BuildHasherDefault, iter::repeat_with};
 
     use fastrand::Rng;
-    use mur3::murmurhash3_x86_32;
 
     use super::*;
 
