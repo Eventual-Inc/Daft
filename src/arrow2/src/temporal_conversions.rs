@@ -517,7 +517,7 @@ pub fn add_naive_interval(timestamp: i64, time_unit: TimeUnit, interval: months_
     }
 }
 
-/// Adds an `interval` to a `timestamp` in `time_unit` units without timezone.
+/// Subtracts an `interval` from a `timestamp` in `time_unit` units without timezone.
 #[inline]
 pub fn sub_naive_interval(timestamp: i64, time_unit: TimeUnit, interval: months_days_ns) -> i64 {
     // convert seconds to a DateTime of a given offset.
@@ -532,7 +532,7 @@ pub fn sub_naive_interval(timestamp: i64, time_unit: TimeUnit, interval: months_
     let delta_days = get_days_between_months(datetime.year(), datetime.month(), interval.months())
         - interval.days() as i64;
 
-    // add; no leap hours are considered
+    // subtract; no leap hours are considered
     let new_datetime_tz = datetime
         - chrono::Duration::nanoseconds(delta_days * 24 * 60 * 60 * 1_000_000_000 + interval.ns());
 
@@ -590,7 +590,7 @@ pub fn sub_interval<T: chrono::TimeZone>(
         get_days_between_months(datetime_tz.year(), datetime_tz.month(), interval.months())
             - interval.days() as i64;
 
-    // add; tz will take care of leap hours
+    // subtract; tz will take care of leap hours
     let new_datetime_tz = datetime_tz
         - chrono::Duration::nanoseconds(delta_days * 24 * 60 * 60 * 1_000_000_000 + interval.ns());
 
