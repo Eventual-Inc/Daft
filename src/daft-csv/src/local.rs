@@ -26,7 +26,7 @@ use daft_decoding::deserialize::deserialize_column;
 use daft_dsl::{optimization::get_required_columns, Expr};
 use daft_io::{IOClient, IOStatsRef};
 use daft_table::Table;
-use futures::{stream::BoxStream, Stream, StreamExt};
+use futures::Stream;
 use rayon::{
     iter::IndexedParallelIterator,
     prelude::{IntoParallelRefIterator, ParallelIterator},
@@ -189,7 +189,7 @@ impl SlabPool {
 }
 
 /// A data structure that holds either a single slice of bytes, or a chain of two slices of bytes.
-/// See the description to `parse_json` for more details.
+/// See the description to `parse_csv` for more details.
 #[derive(Debug)]
 enum BufferSource<'a> {
     Single(Cursor<&'a [u8]>),
@@ -217,27 +217,59 @@ pub async fn read_csv_local(
 ) -> DaftResult<Table> {
     let stream = stream_csv_local(
         uri,
-        convert_options,
-        parse_options,
+        convert_options.clone(),
+        parse_options.clone(),
         read_options,
-        io_client,
-        io_stats,
+        io_client.clone(),
+        io_stats.clone(),
         max_chunks_in_flight,
     )
     .await?;
-    tables_concat(tables_stream_collect(Box::pin(stream)).await)
-}
-
-async fn tables_stream_collect(stream: BoxStream<'static, DaftResult<Table>>) -> Vec<Table> {
-    stream
-        .filter_map(|result| async {
-            match result {
-                Ok(table) => Some(table),
-                Err(_) => None, // Skips errors; you could log them or handle differently
+    let tables = Box::pin(stream);
+    // Apply limit.
+    let limit = convert_options.as_ref().and_then(|opts| opts.limit);
+    let mut remaining_rows = limit.map(|limit| limit as i64);
+    use futures::TryStreamExt;
+    let collected_tables = tables
+        .try_take_while(|result| {
+            match (result, remaining_rows) {
+                // Limit has been met, early-terminate.
+                (_, Some(rows_left)) if rows_left <= 0 => futures::future::ready(Ok(false)),
+                // Limit has not yet been met, update remaining limit slack and continue.
+                (table, Some(rows_left)) => {
+                    remaining_rows = Some(rows_left - table.len() as i64);
+                    futures::future::ready(Ok(true))
+                }
+                // (1) No limit, never early-terminate.
+                // (2) Encountered error, propagate error to try_collect to allow it to short-circuit.
+                (_, None) => futures::future::ready(Ok(true)),
             }
         })
-        .collect()
-        .await
+        .try_collect::<Vec<_>>()
+        .await?
+        .into_iter()
+        .collect::<Vec<_>>();
+    // Handle empty table case.
+    if collected_tables.is_empty() {
+        let (schema, _, _) = get_schema_and_estimators(
+            uri,
+            &convert_options.unwrap_or_default(),
+            &parse_options,
+            io_client,
+            io_stats,
+        )
+        .await?;
+        return Table::empty(Some(Arc::new(Schema::try_from(&schema)?)));
+    }
+    let concated_table = tables_concat(collected_tables)?;
+    if let Some(limit) = limit
+        && concated_table.len() > limit
+    {
+        // apply head in case that last chunk went over limit
+        concated_table.head(limit)
+    } else {
+        Ok(concated_table)
+    }
 }
 
 pub async fn stream_csv_local(
@@ -252,16 +284,14 @@ pub async fn stream_csv_local(
     let uri = uri.trim_start_matches("file://");
     let file = std::fs::File::open(uri)?;
 
+    // Process the CV convert options.
     let predicate = convert_options
         .as_ref()
         .and_then(|opts| opts.predicate.clone());
-
     let limit = convert_options.as_ref().and_then(|opts| opts.limit);
-
     let include_columns = convert_options
         .as_ref()
         .and_then(|opts| opts.include_columns.clone());
-
     let convert_options = match (convert_options, &predicate) {
         (None, _) => None,
         (co, None) => co,
@@ -281,18 +311,13 @@ pub async fn stream_csv_local(
     }
     .unwrap_or_default();
 
+    // Create slab pool for file reads.
     let slabpool = Arc::new(SlabPool::new());
+
+    // Get schema and row estimations.
     let (schema, estimated_mean_row_size, estimated_std_row_size) =
         get_schema_and_estimators(uri, &convert_options, &parse_options, io_client, io_stats)
             .await?;
-
-    let n_threads: usize = std::thread::available_parallelism()
-        .unwrap_or(NonZeroUsize::new(2).unwrap())
-        .into();
-    let chunk_size = read_options
-        .as_ref()
-        .and_then(|opt| opt.chunk_size.or_else(|| opt.buffer_size.map(|bs| bs / 8)))
-        .unwrap_or(DEFAULT_CHUNK_SIZE);
     let projection_indices =
         fields_to_projection_indices(&schema.fields, &convert_options.clone().include_columns);
     let fields = schema.clone().fields;
@@ -308,7 +333,16 @@ pub async fn stream_csv_local(
             .map(|f| Arc::new(f.clone()))
             .collect::<Vec<_>>(),
     );
+
+    // Create CSV buffer pool.
+    let n_threads: usize = std::thread::available_parallelism()
+        .unwrap_or(NonZeroUsize::new(2).unwrap())
+        .into();
     let record_buffer_size = (estimated_mean_row_size + estimated_std_row_size).ceil() as usize;
+    let chunk_size = read_options
+        .as_ref()
+        .and_then(|opt| opt.chunk_size.or_else(|| opt.buffer_size.map(|bs| bs / 8)))
+        .unwrap_or(DEFAULT_CHUNK_SIZE);
     let chunk_size_rows = (chunk_size as f64 / record_buffer_size as f64).ceil() as usize;
     let num_fields = schema.fields.len();
     // TODO(desmond): We might consider creating per-process buffer pools and slab pools.
@@ -318,10 +352,13 @@ pub async fn stream_csv_local(
         chunk_size_rows,
         n_threads * 2,
     ));
+
     // We suppose that each slab of CSV data produces (chunk size / slab size) number of Daft tables. We
     // then double this capacity to ensure that our channel is never full and our threads won't deadlock.
     let (sender, receiver) =
         crossbeam_channel::bounded(max_chunks_in_flight.unwrap_or(2 * chunk_size / SLABSIZE));
+
+    // Consume the CSV file asynchronously.
     rayon::spawn(move || {
         consume_csv_file(
             file,
@@ -380,8 +417,8 @@ async fn get_schema_and_estimators(
     }
     Ok((
         schema,
-        read_stats.mean_record_size_bytes,
-        read_stats.stddev_record_size_bytes,
+        read_stats.mean_record_size_bytes.max(8_f64),
+        read_stats.stddev_record_size_bytes.max(8_f64),
     ))
 }
 
@@ -570,7 +607,7 @@ fn consume_csv_file(
                         }
                     }
                     _ => panic!(
-                        "Something went wrong when parsing the CSV file. Please report this issue."
+                        "Reached an unreachable state when parsing the CSV file. Please report this issue."
                     ),
                 };
             }
