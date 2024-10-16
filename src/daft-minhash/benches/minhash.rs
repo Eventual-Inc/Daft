@@ -5,6 +5,7 @@ extern crate test;
 use std::{iter::repeat_with, ops::Range};
 
 use daft_minhash::{load_simd, minhash};
+use mur3::murmurhash3_x86_32;
 use test::Bencher;
 
 const N_TOKENS: usize = 10000;
@@ -31,5 +32,16 @@ fn bench_minhash(b: &mut Bencher) {
             s.push(rng.alphanumeric());
         }
     }
-    b.iter(|| minhash(&s, (&perm_a_simd, &perm_b_simd), NUM_HASHES, NGRAM_SIZE, 1));
+
+    let hasher = |s: &[u8], seed: u32| -> u32 { murmurhash3_x86_32(s, seed) };
+    b.iter(|| {
+        minhash(
+            &s,
+            (&perm_a_simd, &perm_b_simd),
+            NUM_HASHES,
+            NGRAM_SIZE,
+            1,
+            hasher,
+        )
+    });
 }
