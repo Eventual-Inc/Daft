@@ -1048,6 +1048,7 @@ class RayRunner(Runner[ray.ObjectRef]):
         self,
         address: str | None,
         max_task_backlog: int | None,
+        force_client_mode: bool = False,
     ) -> None:
         super().__init__()
         if ray.is_initialized():
@@ -1060,12 +1061,8 @@ class RayRunner(Runner[ray.ObjectRef]):
         else:
             ray.init(address=address)
 
-        execution_config = get_context().daft_execution_config
-
         # Check if Ray is running in "client mode" (connected to a Ray cluster via a Ray client)
-        self.ray_client_mode = (
-            execution_config.ray_runner_force_client_mode or ray.util.client.ray.get_context().is_connected()
-        )
+        self.ray_client_mode = force_client_mode or ray.util.client.ray.get_context().is_connected()
 
         if self.ray_client_mode:
             # Run scheduler remotely if the cluster is connected remotely.
