@@ -1,7 +1,7 @@
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use common_arrow_ffi as ffi;
-use daft_minhash::MurBuildHasher;
+use daft_hash::MurBuildHasher;
 use daft_schema::python::PyDataType;
 use pyo3::{
     exceptions::PyValueError,

@@ -1,0 +1,11 @@
+[dependencies]
+mur3 = {workspace = true}
+sha1 = {workspace = true}
+
+[lints]
+workspace = true
+
+[package]
+edition = {workspace = true}
+name = "daft-hash"
+version = {workspace = true}
