@@ -391,7 +391,7 @@ impl ScanTask {
         storage_config: Arc<StorageConfig>,
         pushdowns: Pushdowns,
         file_path_column: Option<String>,
-        generated_fields: IndexMap<std::string::String, Field>,
+        generated_fields: IndexMap<String, Field>,
     ) -> Self {
         assert!(!sources.is_empty());
         debug_assert!(
