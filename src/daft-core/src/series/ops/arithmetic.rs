@@ -211,6 +211,24 @@ impl Rem for &Series {
         }
     }
 }
+
+impl Series {
+    pub fn floor_div(&self, rhs: &Self) -> DaftResult<Self> {
+        let output_type = InferDataType::from(self.data_type())
+            .floor_div(&InferDataType::from(rhs.data_type()))?;
+        let lhs = self;
+        match &output_type {
+            #[cfg(feature = "python")]
+            DataType::Python => run_python_binary_operator_fn(lhs, rhs, "floordiv"),
+            output_type if output_type.is_numeric() => {
+                let div_floor = lhs.div(rhs)?.floor()?;
+                div_floor.cast(output_type)
+            }
+            _ => arithmetic_op_not_implemented!(self, "floor_div", rhs, output_type),
+        }
+    }
+}
+
 enum FixedSizeBinaryOp {
     Add,
     Sub,

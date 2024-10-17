@@ -466,6 +466,16 @@ class Expression:
         expr = self._expr.__invert__()
         return Expression._from_pyexpr(expr)
 
+    def __floordiv__(self, other: Expression) -> Expression:
+        """Floor divides two numeric expressions (``e1 / e2``)"""
+        expr = Expression._to_expression(other)
+        return Expression._from_pyexpr(self._expr // expr._expr)
+
+    def __rfloordiv__(self, other: object) -> Expression:
+        """Reverse floor divides two numeric expressions (``e2 / e1``)"""
+        expr = Expression._to_expression(other)
+        return Expression._from_pyexpr(expr._expr // self._expr)
+
     def alias(self, name: builtins.str) -> Expression:
         """Gives the expression a new name, which is its column's name in the DataFrame schema and the name
         by which subsequent expressions can refer to the results of this expression.

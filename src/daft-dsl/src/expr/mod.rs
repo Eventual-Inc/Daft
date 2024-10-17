@@ -866,7 +866,9 @@ impl Expr {
                         Ok(Field::new(left_field.name.as_str(), result_type))
                     }
                     Operator::FloorDivide => {
-                        unimplemented!()
+                        let result_type = (InferDataType::from(&left_field.dtype)
+                            .floor_div(&InferDataType::from(&right_field.dtype)))?;
+                        Ok(Field::new(left_field.name.as_str(), result_type))
                     }
                 }
             }
