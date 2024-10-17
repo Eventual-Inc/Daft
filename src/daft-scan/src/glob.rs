@@ -188,7 +188,7 @@ impl GlobScanOperator {
         if hive_partitioning {
             let hive_partitions = parse_hive_partitioning(&first_filepath);
             let hive_partition_schema = hive_partitions_to_schema(&hive_partitions)?;
-            let hive_partition_schema = match schema.clone() {
+            let hive_partition_schema = match schema.as_ref() {
                 Some(hint) => hive_partition_schema.apply_hints(&hint)?,
                 None => hive_partition_schema,
             };
