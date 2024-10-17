@@ -1,6 +1,7 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use common_error::DaftResult;
+use common_runtime::get_compute_runtime;
 use daft_core::datatypes::Field;
 use daft_dsl::common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_io::{IOClient, IOStatsRef};
@@ -8,7 +9,7 @@ pub use parquet2::metadata::{FileMetaData, RowGroupMetaData};
 use parquet2::{read::deserialize_metadata, schema::types::ParquetType};
 use snafu::ResultExt;
 
-use crate::{Error, JoinSnafu, UnableToParseMetadataSnafu};
+use crate::{Error, UnableToParseMetadataSnafu};
 
 fn metadata_len(buffer: &[u8], len: usize) -> i32 {
     i32::from_le_bytes(buffer[len - 8..len - 4].try_into().unwrap())
@@ -282,17 +283,17 @@ pub(crate) async fn read_parquet_metadata(
             footer: buffer[buffer.len() - 4..].into(),
         });
     }
-    // use rayon here
-    let file_metadata = tokio::task::spawn_blocking(move || {
-        let reader = &data.as_ref()[remaining..];
-        let max_size = reader.len() * 2 + 1024;
-        deserialize_metadata(reader, max_size)
-    })
-    .await
-    .context(JoinSnafu {
-        path: uri.to_string(),
-    })?
-    .context(UnableToParseMetadataSnafu { path: uri });
+
+    let runtime = get_compute_runtime().unwrap();
+    let file_metadata = runtime
+        .await_on(async move {
+            let reader = &data.as_ref()[remaining..];
+            let max_size = reader.len() * 2 + 1024;
+            deserialize_metadata(reader, max_size)
+        })
+        .await
+        .unwrap()
+        .context(UnableToParseMetadataSnafu { path: uri });
 
     if let Some(field_id_mapping) = field_id_mapping {
         apply_field_ids_to_parquet_file_metadata(file_metadata?, field_id_mapping.as_ref())

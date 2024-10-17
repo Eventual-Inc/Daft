@@ -2,7 +2,10 @@ use std::{
     fmt::{Display, Formatter},
     future::Future,
     panic::AssertUnwindSafe,
-    sync::{Arc, OnceLock},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, OnceLock,
+    },
 };
 
 use common_error::{DaftError, DaftResult};
@@ -17,7 +20,8 @@ static COMPUTE_RUNTIME: OnceLock<RuntimeRef> = OnceLock::new();
 lazy_static! {
     static ref NUM_CPUS: usize = std::thread::available_parallelism().unwrap().get();
     static ref THREADED_IO_RUNTIME_NUM_WORKER_THREADS: usize = 8.min(*NUM_CPUS);
-    static ref THREADED_COMPUTE_RUNTIME_NUM_WORKER_THREADS: usize = *NUM_CPUS;
+    static ref COMPUTE_RUNTIME_NUM_WORKER_THREADS: usize = *NUM_CPUS;
+    static ref COMPUTE_RUNTIME_MAX_BLOCKING_THREADS: usize = 1; // Compute thread should not use blocking threads, limit this to the minimum, i.e. 1
 }
 
 #[derive(Clone, Copy)]
@@ -116,16 +120,32 @@ impl Runtime {
     }
 }
 
-fn init_runtime(num_threads: usize, pool_type: PoolType) -> Arc<Runtime> {
+fn init_runtime(
+    num_worker_threads: usize,
+    max_blocking_threads: Option<usize>,
+    pool_type: PoolType,
+) -> Arc<Runtime> {
     std::thread::spawn(move || {
-        Runtime::new(
-            tokio::runtime::Builder::new_multi_thread()
-                .worker_threads(num_threads)
-                .enable_all()
-                .build()
-                .unwrap(),
-            pool_type,
-        )
+        let mut builder = tokio::runtime::Builder::new_multi_thread();
+        builder
+            .worker_threads(num_worker_threads)
+            .enable_all()
+            .thread_name_fn(move || match pool_type {
+                PoolType::Compute => {
+                    static COMPUTE_THREAD_ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
+                    let id = COMPUTE_THREAD_ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
+                    format!("Compute-Thread-{}", id)
+                }
+                PoolType::IO => {
+                    static IO_THREAD_ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
+                    let id = IO_THREAD_ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
+                    format!("IO-Thread-{}", id)
+                }
+            });
+        if let Some(max_blocking_threads) = max_blocking_threads {
+            builder.max_blocking_threads(max_blocking_threads);
+        }
+        Runtime::new(builder.build().unwrap(), pool_type)
     })
     .join()
     .unwrap()
@@ -135,7 +155,8 @@ pub fn get_compute_runtime() -> DaftResult<RuntimeRef> {
     let runtime = COMPUTE_RUNTIME
         .get_or_init(|| {
             init_runtime(
-                *THREADED_COMPUTE_RUNTIME_NUM_WORKER_THREADS,
+                *COMPUTE_RUNTIME_NUM_WORKER_THREADS,
+                Some(*COMPUTE_RUNTIME_MAX_BLOCKING_THREADS),
                 PoolType::Compute,
             )
         })
@@ -146,12 +167,14 @@ pub fn get_compute_runtime() -> DaftResult<RuntimeRef> {
 pub fn get_io_runtime(multi_thread: bool) -> DaftResult<RuntimeRef> {
     if !multi_thread {
         let runtime = SINGLE_THREADED_IO_RUNTIME
-            .get_or_init(|| init_runtime(1, PoolType::IO))
+            .get_or_init(|| init_runtime(1, None, PoolType::IO))
             .clone();
         Ok(runtime)
     } else {
         let runtime = THREADED_IO_RUNTIME
-            .get_or_init(|| init_runtime(*THREADED_IO_RUNTIME_NUM_WORKER_THREADS, PoolType::IO))
+            .get_or_init(|| {
+                init_runtime(*THREADED_IO_RUNTIME_NUM_WORKER_THREADS, None, PoolType::IO)
+            })
             .clone();
         Ok(runtime)
     }

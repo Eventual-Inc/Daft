@@ -22,7 +22,7 @@ use {
 use crate::{
     channel::{create_channel, Receiver},
     pipeline::{physical_plan_to_pipeline, viz_pipeline},
-    Error, ExecutionRuntimeHandle,
+    Error, ExecutionRuntimeHandle, NUM_CPUS,
 };
 
 #[cfg(feature = "python")]
@@ -119,7 +119,7 @@ pub fn run_local(
 ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<Arc<MicroPartition>>> + Send>> {
     refresh_chrome_trace();
     let mut pipeline = physical_plan_to_pipeline(physical_plan, &psets)?;
-    let (tx, rx) = create_channel(results_buffer_size.unwrap_or(1));
+    let (tx, rx) = create_channel(results_buffer_size.unwrap_or(*NUM_CPUS));
     let handle = std::thread::spawn(move || {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -135,11 +135,11 @@ pub fn run_local(
                 result = async {
                     let mut runtime_handle = ExecutionRuntimeHandle::new(cfg.default_morsel_size);
                     let mut receiver = pipeline.start(true, &mut runtime_handle)?.get_receiver();
-
+                    let mut buffer = vec![];
                     while let Some(val) = receiver.recv().await {
-                        let _ = tx.send(val.as_data().clone()).await;
+                        buffer.push(val.as_data().clone());
                     }
-
+                    let _ = tx.send(Arc::new(MicroPartition::concat(&buffer.iter().map(|p| p.as_ref()).collect::<Vec<_>>())?)).await;
                     while let Some(result) = runtime_handle.join_next().await {
                         match result {
                             Ok(Err(e)) => {

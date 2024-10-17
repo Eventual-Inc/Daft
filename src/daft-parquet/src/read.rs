@@ -690,9 +690,7 @@ pub fn read_parquet(
     })
 }
 pub type ArrowChunk = Vec<Box<dyn arrow2::array::Array>>;
-pub type ArrowChunkIters = Vec<
-    Box<dyn Iterator<Item = arrow2::error::Result<Box<dyn arrow2::array::Array>>> + Send + Sync>,
->;
+pub type ArrowChunkIter = Box<dyn Iterator<Item = arrow2::error::Result<Box<dyn arrow2::array::Array>>> + Send + Sync>;
 pub type ParquetPyarrowChunk = (arrow2::datatypes::SchemaRef, Vec<ArrowChunk>, usize);
 #[allow(clippy::too_many_arguments)]
 pub fn read_parquet_into_pyarrow(
@@ -1079,7 +1077,7 @@ mod tests {
 
     use super::*;
 
-    const PARQUET_FILE: &str = "s3://daft-public-data/test_fixtures/parquet-dev/mvp.parquet";
+    const PARQUET_FILE: &str = "s3://daft-public-data/benchmarking/lineitem-parquet/108417bd-5bee-43d9-bf9a-d6faec6afb2d-0.parquet";
     const PARQUET_FILE_LOCAL: &str = "tests/assets/parquet-data/mvp.parquet";
 
     fn get_local_parquet_path() -> String {
@@ -1111,7 +1109,7 @@ mod tests {
             Default::default(),
             None,
         )?;
-        assert_eq!(table.len(), 100);
+        assert_eq!(table.len(), 18751674);
 
         Ok(())
     }
@@ -1146,7 +1144,7 @@ mod tests {
             .into_iter()
             .collect::<DaftResult<Vec<_>>>()?;
             let total_tables_len = tables.iter().map(|t| t.len()).sum::<usize>();
-            assert_eq!(total_tables_len, 100);
+            assert_eq!(total_tables_len, 18751674);
             Ok(())
         })
     }

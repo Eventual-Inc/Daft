@@ -2053,7 +2053,6 @@ dependencies = [
  "parquet2",
  "path_macro",
  "pyo3",
- "rayon",
  "serde",
  "snafu",
  "tokio",

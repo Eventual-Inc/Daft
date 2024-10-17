@@ -33,7 +33,7 @@ class NativeExecutor:
         results_buffer_size: int | None,
     ) -> Iterator[PyMaterializedResult]:
         from daft.runners.pyrunner import PyMaterializedResult
-
+        print("NativeExecutor.run result buffer size:", results_buffer_size)
         psets_mp = {
             part_id: [part.micropartition()._micropartition for part in parts] for part_id, parts in psets.items()
         }
