@@ -33,3 +33,24 @@ services:
       dockerfile: Dockerfile.s3_retry_server
     ports:
     - 8001:8000
+
+  namenode:
+    image: apache/hadoop:3
+    entrypoint: ["/docker-entrypoint.sh"]
+    command: ["hdfs", "namenode"]
+    ports:
+      - 9870:9870
+      - 9000:9000
+    volumes:
+      - namenode:/hadoop/dfs/name
+      - ./namenode-entrypoint.sh:/docker-entrypoint.sh
+
+  datanode:
+    image: apache/hadoop:3
+    command: ["hdfs", "datanode"]
+    ports:
+      - 9864:9864
+    volumes:
+      - datanode:/hadoop/dfs/data
+    depends_on:
+      - namenode
