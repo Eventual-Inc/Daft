@@ -8,7 +8,7 @@ from daft import DataType, ResourceRequest
 from daft.context import get_context
 from daft.execution.execution_step import StatefulUDFProject
 from daft.expressions import ExpressionsProjection
-from daft.runners.partitioning import PartialPartitionMetadata
+from daft.runners.partitioning import EstimatedPartitionMetadata
 from daft.runners.pyrunner import PyActorPool, PyRunner
 from daft.table import MicroPartition
 
@@ -27,7 +27,7 @@ def test_pyactor_pool():
     projection = ExpressionsProjection([MyStatefulUDF(daft.col("x"))])
     pool = PyActorPool("my-pool", 1, ResourceRequest(num_cpus=1), projection)
     initial_partition = MicroPartition.from_pydict({"x": [1, 1, 1]})
-    ppm = PartialPartitionMetadata(num_rows=None, size_bytes=None)
+    ppm = EstimatedPartitionMetadata(num_rows=None, size_bytes=None)
     instr = StatefulUDFProject(projection=projection)
 
     pool.setup()

@@ -69,36 +69,36 @@ class TableParseParquetOptions:
 
 
 @dataclass(frozen=True)
-class PartialPartitionMetadata:
+class EstimatedPartitionMetadata:
     num_rows: None | int
     size_bytes: None | int
     boundaries: None | Boundaries = None
 
 
 @dataclass(frozen=True)
-class PartitionMetadata(PartialPartitionMetadata):
+class ExactPartitionMetadata(EstimatedPartitionMetadata):
     num_rows: int
     size_bytes: int | None
     boundaries: Boundaries | None = None
 
     @classmethod
-    def from_table(cls, table: MicroPartition) -> PartitionMetadata:
-        return PartitionMetadata(
+    def from_table(cls, table: MicroPartition) -> ExactPartitionMetadata:
+        return ExactPartitionMetadata(
             num_rows=len(table),
             size_bytes=table.size_bytes(),
             boundaries=None,
         )
 
-    def merge_with_partial(self, partial_metadata: PartialPartitionMetadata) -> PartitionMetadata:
+    def merge_with_partial(self, partial_metadata: EstimatedPartitionMetadata) -> ExactPartitionMetadata:
         num_rows = self.num_rows
         size_bytes = self.size_bytes
         boundaries = self.boundaries
         if boundaries is None:
             boundaries = partial_metadata.boundaries
-        return PartitionMetadata(num_rows, size_bytes, boundaries)
+        return ExactPartitionMetadata(num_rows, size_bytes, boundaries)
 
-    def downcast_to_partial(self) -> PartialPartitionMetadata:
-        return PartialPartitionMetadata(self.num_rows, self.size_bytes, self.boundaries)
+    def downcast_to_partial(self) -> EstimatedPartitionMetadata:
+        return EstimatedPartitionMetadata(self.num_rows, self.size_bytes, self.boundaries)
 
 
 def _is_bound_null(bound_row: list[Any | None]) -> bool:
@@ -184,7 +184,7 @@ class MaterializedResult(Generic[PartitionT]):
         ...
 
     @abstractmethod
-    def metadata(self) -> PartitionMetadata:
+    def metadata(self) -> ExactPartitionMetadata:
         """Get the metadata of the partition in this result."""
         ...
 

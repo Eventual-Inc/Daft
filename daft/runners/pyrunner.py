@@ -16,11 +16,11 @@ from daft.filesystem import glob_path_with_stats
 from daft.internal.gpu import cuda_device_count
 from daft.runners import runner_io
 from daft.runners.partitioning import (
+    EstimatedPartitionMetadata,
+    ExactPartitionMetadata,
     MaterializedResult,
-    PartialPartitionMetadata,
     PartID,
     PartitionCacheEntry,
-    PartitionMetadata,
     PartitionSet,
 )
 from daft.runners.profiler import profiler
@@ -81,7 +81,7 @@ class LocalPartitionSet(PartitionSet[MicroPartition]):
         self._partitions[idx] = part
 
     def set_partition_from_table(self, idx: PartID, part: MicroPartition) -> None:
-        self._partitions[idx] = PyMaterializedResult(part, PartitionMetadata.from_table(part))
+        self._partitions[idx] = PyMaterializedResult(part, ExactPartitionMetadata.from_table(part))
 
     def delete_partition(self, idx: PartID) -> None:
         del self._partitions[idx]
@@ -152,7 +152,7 @@ class PyActorPool:
     def build_partitions_with_stateful_project(
         uninitialized_projection: ExpressionsProjection,
         partition: MicroPartition,
-        partial_metadata: PartialPartitionMetadata,
+        partial_metadata: EstimatedPartitionMetadata,
     ) -> list[MaterializedResult[MicroPartition]]:
         # Bind the expressions to the initialized stateful UDFs, which should already have been initialized at process start-up
         initialized_stateful_udfs = PyActorPool.initialized_stateful_udfs_process_singleton
@@ -164,14 +164,16 @@ class PyActorPool:
         )
         new_part = partition.eval_expression_list(initialized_projection)
         return [
-            PyMaterializedResult(new_part, PartitionMetadata.from_table(new_part).merge_with_partial(partial_metadata))
+            PyMaterializedResult(
+                new_part, ExactPartitionMetadata.from_table(new_part).merge_with_partial(partial_metadata)
+            )
         ]
 
     def submit(
         self,
         instruction_stack: list[Instruction],
         partitions: list[MicroPartition],
-        final_metadata: list[PartialPartitionMetadata],
+        final_metadata: list[EstimatedPartitionMetadata],
     ) -> futures.Future[list[MaterializedResult[MicroPartition]]]:
         from daft.execution import execution_step
 
@@ -564,13 +566,13 @@ class PyRunner(Runner[MicroPartition]):
         self,
         instruction_stack: list[Instruction],
         partitions: list[MicroPartition],
-        final_metadata: list[PartialPartitionMetadata],
+        final_metadata: list[EstimatedPartitionMetadata],
     ) -> list[MaterializedResult[MicroPartition]]:
         for instruction in instruction_stack:
             partitions = instruction.run(partitions)
 
         results: list[MaterializedResult[MicroPartition]] = [
-            PyMaterializedResult(part, PartitionMetadata.from_table(part).merge_with_partial(partial))
+            PyMaterializedResult(part, ExactPartitionMetadata.from_table(part).merge_with_partial(partial))
             for part, partial in zip(partitions, final_metadata)
         ]
         return results
@@ -579,7 +581,7 @@ class PyRunner(Runner[MicroPartition]):
 @dataclass
 class PyMaterializedResult(MaterializedResult[MicroPartition]):
     _partition: MicroPartition
-    _metadata: PartitionMetadata | None = None
+    _metadata: ExactPartitionMetadata | None = None
 
     def partition(self) -> MicroPartition:
         return self._partition
@@ -587,9 +589,9 @@ class PyMaterializedResult(MaterializedResult[MicroPartition]):
     def micropartition(self) -> MicroPartition:
         return self._partition
 
-    def metadata(self) -> PartitionMetadata:
+    def metadata(self) -> ExactPartitionMetadata:
         if self._metadata is None:
-            self._metadata = PartitionMetadata.from_table(self._partition)
+            self._metadata = ExactPartitionMetadata.from_table(self._partition)
         return self._metadata
 
     def cancel(self) -> None:
