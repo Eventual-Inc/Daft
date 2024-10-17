@@ -12,7 +12,7 @@ pub use data_catalog_table::DataCatalogTable;
 #[cfg(feature = "python")]
 pub mod python;
 
-pub use errors::{Error, Result};
+use errors::Error;
 
 pub mod global_catalog {
     use std::sync::{Arc, Mutex};
