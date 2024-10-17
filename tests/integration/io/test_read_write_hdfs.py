@@ -1,3 +1,5 @@
+import pytest
+import daft
 
 @pytest.mark.integration()
 def write_df_to_hdfs():
