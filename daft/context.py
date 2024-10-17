@@ -7,7 +7,7 @@ import os
 import warnings
 from typing import TYPE_CHECKING, ClassVar
 
-from daft.daft import IOConfig, PyDaftExecutionConfig, PyDaftPlanningConfig, ResourceRequest
+from daft.daft import IOConfig, PyDaftExecutionConfig, PyDaftPlanningConfig
 
 if TYPE_CHECKING:
     from daft.runners.runner import Runner
@@ -178,47 +178,11 @@ class DaftContext:
             return isinstance(runner_config, _RayRunnerConfig)
 
 
-@dataclasses.dataclass
-class DaftActorContext:
-    """Actor-local context for the current Daft stateful UDF environment"""
-
-    _running_in_actor: bool = False
-    _rank: int | None = None
-    _resource_request: ResourceRequest | None = None
-
-    @property
-    def rank(self) -> int | None:
-        """Rank of the current actor"""
-        return self._rank
-
-    @property
-    def resource_request(self) -> ResourceRequest | None:
-        """Resource request of the current actor"""
-        return self._resource_request
-
-
 _DaftContext = DaftContext()
 
 
 def get_context() -> DaftContext:
     return _DaftContext
-
-
-_DaftActorContext = DaftActorContext()
-
-
-def get_actor_context() -> DaftActorContext:
-    if not _DaftActorContext._running_in_actor:
-        raise RuntimeError("get_actor_context() can only be called inside a stateful UDF")
-    return _DaftActorContext
-
-
-def _set_actor_context(rank: int | None, resource_request: ResourceRequest | None) -> None:
-    assert not _DaftActorContext._running_in_actor, "_DaftActorContext already set"
-
-    _DaftActorContext._running_in_actor = True
-    _DaftActorContext._rank = rank
-    _DaftActorContext._resource_request = resource_request
 
 
 def set_runner_ray(

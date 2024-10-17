@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import warnings
+
 
 def _raw_device_count_nvml() -> int:
     """
@@ -15,10 +17,12 @@ def _raw_device_count_nvml() -> int:
         return 0
     rc = nvml_h.nvmlInit()
     if rc != 0:
+        warnings.warn("Can't initialize NVML, assuming no CUDA devices.")
         return 0
     dev_count = c_int(0)
     rc = nvml_h.nvmlDeviceGetCount_v2(byref(dev_count))
     if rc != 0:
+        warnings.warn("Can't get nvml device count, assuming no CUDA devices.")
         return 0
     del nvml_h
     return dev_count.value

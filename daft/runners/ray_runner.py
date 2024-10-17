@@ -927,13 +927,7 @@ class DaftRayActor:
         self,
         daft_execution_config: PyDaftExecutionConfig,
         uninitialized_projection: ExpressionsProjection,
-        rank: int,
-        resource_request: ResourceRequest,
     ):
-        from daft.context import _set_actor_context
-
-        _set_actor_context(rank=rank, resource_request=resource_request)
-
         self.daft_execution_config = daft_execution_config
         partial_stateful_udfs = {
             name: psu
@@ -1000,7 +994,7 @@ class RayRoundRobinActorPool:
 
         self._actors = [
             DaftRayActor.options(name=f"rank={rank}-{self._id}", **ray_options).remote(  # type: ignore
-                self._execution_config, self._projection, rank, self._resource_request_per_actor
+                self._execution_config, self._projection
             )
             for rank in range(self._num_actors)
         ]
