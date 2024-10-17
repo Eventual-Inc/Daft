@@ -44,14 +44,14 @@ pub fn start() {
     std::thread::spawn(move || {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         runtime.block_on(async {
-            tokio::spawn(async move {
-                Server::builder()
-                    .add_service(SparkConnectServiceServer::new(service))
-                    .serve(addr)
-                    .await
-                    .unwrap();
-            });
+            Server::builder()
+                .add_service(SparkConnectServiceServer::new(service))
+                .serve(addr)
+                .await
+                .unwrap();
         });
+
+        println!("done with runtime")
     });
 }
 

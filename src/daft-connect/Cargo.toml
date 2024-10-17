@@ -1,11 +1,12 @@
 [dependencies]
 dashmap = "6.1.0"
 futures = "0.3.31"
-tokio = { version = "1.40.0", features = ["full"] }
+pyo3 = {workspace = true, optional = true}
+tokio = {version = "1.40.0", features = ["full"]}
 tonic = "0.12.3"
-tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+tracing-subscriber = {version = "0.3.18", features = ["env-filter"]}
 tracing-tree = "0.4.0"
-uuid = { version = "1.10.0", features = ["v4"] }
+uuid = {version = "1.10.0", features = ["v4"]}
 # papaya = "0.1.3"
 anyhow.workspace = true
 arrow2.workspace = true
@@ -20,20 +21,18 @@ daft-table.workspace = true
 spark-connect.workspace = true
 tracing.workspace = true
 
-pyo3 = { workspace = true, optional = true }
-
 [dev-dependencies]
 tempfile = "3.4.0"
+
+[features]
+python = [
+  "dep:pyo3"
+]
 
 [lints]
 workspace = true
 
-[features]
-python = [
-    "dep:pyo3",
-]
-
 [package]
-edition = { workspace = true }
+edition = {workspace = true}
 name = "daft-connect"
-version = { workspace = true }
+version = {workspace = true}

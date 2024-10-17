@@ -4,42 +4,23 @@
 # def test_apply_lambda_pyobj
 
 from __future__ import annotations
-import pytest
 
-import dataclasses
-
-
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import col
-from pyspark.sql.dataframe import DataFrame
-
-import pyarrow as pa
-import pyarrow.parquet as pq
-import pandas as pd
-import numpy as np
-
-
-
-from daft.daft import connect_start
 import time
 
+from pyspark.sql import SparkSession
+from pyspark.sql.dataframe import DataFrame
+from pyspark.sql.functions import col
 
+from daft.daft import connect_start
 
 
 def test_abc():
-    print("start of func")
-    # connect_start()
-
-    # sleep 2 seconds
-    time.sleep(1)
-
-    print("Start of main function")
+    connect_start()
 
     # Create a Spark session using Spark Connect
-    spark: SparkSession = SparkSession.builder \
-        .appName("SparkConnectExample") \
-        .remote("sc://localhost:50051") \
-        .getOrCreate()
+    spark: SparkSession = (
+        SparkSession.builder.appName("SparkConnectExample").remote("sc://localhost:50051").getOrCreate()
+    )
     print("Spark session created")
 
     # Read the Parquet file back into a DataFrame
@@ -71,11 +52,10 @@ def test_abc():
     # 2. withColumn("id2", col("id") + 2): Add a new column 'id2' that is 'id' plus 2
     result: DataFrame = df.filter(col("id") > 2).withColumn("id2", col("id") + 2)
 
-
     print("\nFiltered and transformed DataFrame:")
     result.show()
 
-    result_pandas = result.toPandas()
+    # result_pandas = result.toPandas()
     # The resulting DataFrame looks like this:
     # +---+---+
     # | id|id2|
@@ -88,7 +68,7 @@ def test_abc():
     # 2. A new column 'id2' is added with values id + 2
 
     # Stop the Spark session
-    spark.sql("select * from increasing_id_data").show()
+    # spark.sql("select * from increasing_id_data").show()
 
     spark.stop()
     print("Spark session stopped")
@@ -97,6 +77,8 @@ def test_abc():
     time.sleep(2)
 
     print("End of main function")
+
+
 # from daft.
 #
 #

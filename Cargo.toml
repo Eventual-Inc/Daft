@@ -8,14 +8,14 @@ common-system-info = {path = "src/common/system-info", default-features = false}
 common-tracing = {path = "src/common/tracing", default-features = false}
 common-version = {path = "src/common/version", default-features = false}
 daft-compression = {path = "src/daft-compression", default-features = false}
+daft-connect = {path = "src/daft-connect"}
 daft-core = {path = "src/daft-core", default-features = false}
 daft-csv = {path = "src/daft-csv", default-features = false}
 daft-dsl = {path = "src/daft-dsl", default-features = false}
+daft-functions = {path = "src/daft-functions"}
 daft-functions-json = {path = "src/daft-functions-json", default-features = false}
 daft-image = {path = "src/daft-image", default-features = false}
 daft-io = {path = "src/daft-io", default-features = false}
-daft-connect = {path = "src/daft-connect" }
-daft-functions = {path = "src/daft-functions" }
 daft-json = {path = "src/daft-json", default-features = false}
 daft-local-execution = {path = "src/daft-local-execution", default-features = false}
 daft-micropartition = {path = "src/daft-micropartition", default-features = false}
@@ -60,7 +60,7 @@ python = [
   "daft-scheduler/python",
   "daft-sql/python",
   "daft-stats/python",
-  "daft-table/python",
+  "daft-table/python"
 ]
 
 [lib]
