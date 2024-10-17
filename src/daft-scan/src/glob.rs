@@ -423,8 +423,8 @@ impl ScanOperator for GlobScanOperator {
                     };
                 }
                 // Check if the partition values satisfy the partition filters, if any.
-                if let Some(partition_filters) = pushdowns.clone().partition_filters {
-                    let filter_result = partition_values.filter(&[partition_filters])?;
+                if let Some(partition_filters) = &pushdowns.partition_filters {
+                    let filter_result = partition_values.filter(&[partition_filters.clone()])?;
                     if filter_result.is_empty() {
                         // Skip the current file since it does not satisfy the partition filters.
                         return Ok(None);
