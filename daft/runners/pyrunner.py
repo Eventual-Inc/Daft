@@ -17,12 +17,12 @@ from daft.filesystem import glob_path_with_stats
 from daft.internal.gpu import cuda_visible_devices
 from daft.runners import runner_io
 from daft.runners.partitioning import (
+    EstimatedPartitionMetadata,
+    ExactPartitionMetadata,
     LocalMaterializedResult,
     LocalPartitionSet,
     MaterializedResult,
-    PartialPartitionMetadata,
     PartitionCacheEntry,
-    PartitionMetadata,
 )
 from daft.runners.profiler import profiler
 from daft.runners.progress_bar import ProgressBar
@@ -193,7 +193,7 @@ class PyStatefulActorSingleton:
     @staticmethod
     def build_partitions_with_stateful_project(
         partition: MicroPartition,
-        partial_metadata: PartialPartitionMetadata,
+        partial_metadata: EstimatedPartitionMetadata,
     ) -> list[MaterializedResult[MicroPartition]]:
         # Bind the expressions to the initialized stateful UDFs, which should already have been initialized at process start-up
         assert (
@@ -203,7 +203,7 @@ class PyStatefulActorSingleton:
         new_part = partition.eval_expression_list(PyStatefulActorSingleton.initialized_projection)
         return [
             LocalMaterializedResult(
-                new_part, PartitionMetadata.from_table(new_part).merge_with_partial(partial_metadata)
+                new_part, ExactPartitionMetadata.from_table(new_part).merge_with_partial(partial_metadata)
             )
         ]
 
@@ -226,7 +226,7 @@ class PyActorPool:
         self,
         instruction_stack: list[Instruction],
         partitions: list[MicroPartition],
-        final_metadata: list[PartialPartitionMetadata],
+        final_metadata: list[EstimatedPartitionMetadata],
     ) -> futures.Future[list[MaterializedResult[MicroPartition]]]:
         from daft.execution import execution_step
 
@@ -596,13 +596,13 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
         self,
         instruction_stack: list[Instruction],
         partitions: list[MicroPartition],
-        final_metadata: list[PartialPartitionMetadata],
+        final_metadata: list[EstimatedPartitionMetadata],
     ) -> list[MaterializedResult[MicroPartition]]:
         for instruction in instruction_stack:
             partitions = instruction.run(partitions)
 
         results: list[MaterializedResult[MicroPartition]] = [
-            LocalMaterializedResult(part, PartitionMetadata.from_table(part).merge_with_partial(partial))
+            LocalMaterializedResult(part, ExactPartitionMetadata.from_table(part).merge_with_partial(partial))
             for part, partial in zip(partitions, final_metadata)
         ]
         return results

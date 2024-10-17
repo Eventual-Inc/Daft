@@ -56,11 +56,11 @@ from daft.expressions import ExpressionsProjection
 from daft.filesystem import glob_path_with_stats
 from daft.runners import runner_io
 from daft.runners.partitioning import (
+    ExactPartitionMetadata,
     LocalPartitionSet,
     MaterializedResult,
     PartID,
     PartitionCacheEntry,
-    PartitionMetadata,
     PartitionSet,
 )
 from daft.runners.profiler import profiler
@@ -461,15 +461,17 @@ def _get_ray_task_options(resource_request: ResourceRequest) -> dict[str, Any]:
 
 
 def build_partitions(
-    instruction_stack: list[Instruction], partial_metadatas: list[PartitionMetadata], *inputs: MicroPartition
-) -> list[list[PartitionMetadata] | MicroPartition]:
+    instruction_stack: list[Instruction], partial_metadatas: list[ExactPartitionMetadata], *inputs: MicroPartition
+) -> list[list[ExactPartitionMetadata] | MicroPartition]:
     partitions = list(inputs)
     for instruction in instruction_stack:
         partitions = instruction.run(partitions)
 
     assert len(partial_metadatas) == len(partitions), f"{len(partial_metadatas)} vs {len(partitions)}"
 
-    metadatas = [PartitionMetadata.from_table(p).merge_with_partial(m) for p, m in zip(partitions, partial_metadatas)]
+    metadatas = [
+        ExactPartitionMetadata.from_table(p).merge_with_partial(m) for p, m in zip(partitions, partial_metadatas)
+    ]
 
     return [metadatas, *partitions]
 
@@ -481,9 +483,9 @@ def build_partitions(
 def single_partition_pipeline(
     daft_execution_config: PyDaftExecutionConfig,
     instruction_stack: list[Instruction],
-    partial_metadatas: list[PartitionMetadata],
+    partial_metadatas: list[ExactPartitionMetadata],
     *inputs: MicroPartition,
-) -> list[list[PartitionMetadata] | MicroPartition]:
+) -> list[list[ExactPartitionMetadata] | MicroPartition]:
     with execution_config_ctx(
         config=daft_execution_config,
     ):
@@ -494,9 +496,9 @@ def single_partition_pipeline(
 def fanout_pipeline(
     daft_execution_config: PyDaftExecutionConfig,
     instruction_stack: list[Instruction],
-    partial_metadatas: list[PartitionMetadata],
+    partial_metadatas: list[ExactPartitionMetadata],
     *inputs: MicroPartition,
-) -> list[list[PartitionMetadata] | MicroPartition]:
+) -> list[list[ExactPartitionMetadata] | MicroPartition]:
     with execution_config_ctx(config=daft_execution_config):
         return build_partitions(instruction_stack, partial_metadatas, *inputs)
 
@@ -505,9 +507,9 @@ def fanout_pipeline(
 def reduce_pipeline(
     daft_execution_config: PyDaftExecutionConfig,
     instruction_stack: list[Instruction],
-    partial_metadatas: list[PartitionMetadata],
+    partial_metadatas: list[ExactPartitionMetadata],
     inputs: list,
-) -> list[list[PartitionMetadata] | MicroPartition]:
+) -> list[list[ExactPartitionMetadata] | MicroPartition]:
     import ray
 
     with execution_config_ctx(config=daft_execution_config):
@@ -518,9 +520,9 @@ def reduce_pipeline(
 def reduce_and_fanout(
     daft_execution_config: PyDaftExecutionConfig,
     instruction_stack: list[Instruction],
-    partial_metadatas: list[PartitionMetadata],
+    partial_metadatas: list[ExactPartitionMetadata],
     inputs: list,
-) -> list[list[PartitionMetadata] | MicroPartition]:
+) -> list[list[ExactPartitionMetadata] | MicroPartition]:
     import ray
 
     with execution_config_ctx(config=daft_execution_config):
@@ -528,8 +530,8 @@ def reduce_and_fanout(
 
 
 @ray.remote
-def get_metas(*partitions: MicroPartition) -> list[PartitionMetadata]:
-    return [PartitionMetadata.from_table(partition) for partition in partitions]
+def get_metas(*partitions: MicroPartition) -> list[ExactPartitionMetadata]:
+    return [ExactPartitionMetadata.from_table(partition) for partition in partitions]
 
 
 def _ray_num_cpus_provider(ttl_seconds: int = 1) -> Generator[int, None, None]:
@@ -739,7 +741,7 @@ class Scheduler(ActorPoolManager):
                                 else:
                                     accessor = PartitionMetadataAccessor.from_metadata_list(
                                         [
-                                            PartitionMetadata(
+                                            ExactPartitionMetadata(
                                                 num_rows=single_partial.num_rows,
                                                 size_bytes=single_partial.size_bytes,
                                                 boundaries=single_partial.boundaries,
@@ -967,9 +969,9 @@ class DaftRayActor:
     def run(
         self,
         uninitialized_projection: ExpressionsProjection,
-        partial_metadatas: list[PartitionMetadata],
+        partial_metadatas: list[ExactPartitionMetadata],
         *inputs: MicroPartition,
-    ) -> list[list[PartitionMetadata] | MicroPartition]:
+    ) -> list[list[ExactPartitionMetadata] | MicroPartition]:
         with execution_config_ctx(config=self.daft_execution_config):
             assert len(inputs) == 1, "DaftRayActor can only process single partitions"
             assert len(partial_metadatas) == 1, "DaftRayActor can only process single partitions (and single metadata)"
@@ -983,7 +985,7 @@ class DaftRayActor:
             new_part = part.eval_expression_list(initialized_projection)
 
             return [
-                [PartitionMetadata.from_table(new_part).merge_with_partial(partial)],
+                [ExactPartitionMetadata.from_table(new_part).merge_with_partial(partial)],
                 new_part,
             ]
 
@@ -1231,7 +1233,7 @@ class RayMaterializedResult(MaterializedResult[ray.ObjectRef]):
     def micropartition(self) -> MicroPartition:
         return ray.get(self._partition)
 
-    def metadata(self) -> PartitionMetadata:
+    def metadata(self) -> ExactPartitionMetadata:
         return self._metadatas.get_index(self._metadata_idx)
 
     def cancel(self) -> None:
@@ -1246,18 +1248,18 @@ class PartitionMetadataAccessor:
 
     def __init__(self, ref: ray.ObjectRef) -> None:
         self._ref: ray.ObjectRef = ref
-        self._metadatas: None | list[PartitionMetadata] = None
+        self._metadatas: None | list[ExactPartitionMetadata] = None
 
-    def _get_metadatas(self) -> list[PartitionMetadata]:
+    def _get_metadatas(self) -> list[ExactPartitionMetadata]:
         if self._metadatas is None:
             self._metadatas = ray.get(self._ref)
         return self._metadatas
 
-    def get_index(self, key) -> PartitionMetadata:
+    def get_index(self, key) -> ExactPartitionMetadata:
         return self._get_metadatas()[key]
 
     @classmethod
-    def from_metadata_list(cls, meta: list[PartitionMetadata]) -> PartitionMetadataAccessor:
+    def from_metadata_list(cls, meta: list[ExactPartitionMetadata]) -> PartitionMetadataAccessor:
         ref = ray.put(meta)
         accessor = cls(ref)
         accessor._metadatas = meta

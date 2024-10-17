@@ -9,9 +9,9 @@ from daft.daft import ResourceRequest
 from daft.expressions import Expression, ExpressionsProjection, col
 from daft.runners.partitioning import (
     Boundaries,
+    EstimatedPartitionMetadata,
+    ExactPartitionMetadata,
     MaterializedResult,
-    PartialPartitionMetadata,
-    PartitionMetadata,
     PartitionT,
 )
 from daft.table import MicroPartition, table_io
@@ -46,7 +46,7 @@ class PartitionTask(Generic[PartitionT]):
     resource_request: ResourceRequest
     num_results: int
     stage_id: int
-    partial_metadatas: list[PartialPartitionMetadata]
+    partial_metadatas: list[EstimatedPartitionMetadata]
 
     # Indicates that this PartitionTask must be executed on the executor with the supplied ID
     # This is used when a specific executor (e.g. an Actor pool) must be provisioned and used for the task
@@ -106,7 +106,7 @@ class PartitionTaskBuilder(Generic[PartitionT]):
     def __init__(
         self,
         inputs: list[PartitionT],
-        partial_metadatas: list[PartialPartitionMetadata] | None,
+        partial_metadatas: list[EstimatedPartitionMetadata] | None,
         resource_request: ResourceRequest = ResourceRequest(),
         actor_pool_id: str | None = None,
     ) -> None:
@@ -114,7 +114,7 @@ class PartitionTaskBuilder(Generic[PartitionT]):
         if partial_metadatas is not None:
             self.partial_metadatas = partial_metadatas
         else:
-            self.partial_metadatas = [PartialPartitionMetadata(num_rows=None, size_bytes=None) for _ in self.inputs]
+            self.partial_metadatas = [EstimatedPartitionMetadata(num_rows=None, size_bytes=None) for _ in self.inputs]
         self.resource_request: ResourceRequest = resource_request
         self.instructions: list[Instruction] = list()
         self.num_results = len(inputs)
@@ -214,7 +214,7 @@ class SingleOutputPartitionTask(PartitionTask[PartitionT]):
         """Get the PartitionT resulting from running this PartitionTask."""
         return self.result().partition()
 
-    def partition_metadata(self) -> PartitionMetadata:
+    def partition_metadata(self) -> ExactPartitionMetadata:
         """Get the metadata of the result partition.
 
         (Avoids retrieving the actual partition itself if possible.)
@@ -256,7 +256,7 @@ class MultiOutputPartitionTask(PartitionTask[PartitionT]):
         assert self._results is not None
         return [result.partition() for result in self._results]
 
-    def partition_metadatas(self) -> list[PartitionMetadata]:
+    def partition_metadatas(self) -> list[ExactPartitionMetadata]:
         """Get the metadata of the result partitions.
 
         (Avoids retrieving the actual partition itself if possible.)
@@ -295,7 +295,9 @@ class Instruction(Protocol):
         """
         ...
 
-    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+    def run_partial_metadata(
+        self, input_metadatas: list[EstimatedPartitionMetadata]
+    ) -> list[EstimatedPartitionMetadata]:
         """Calculate any possible metadata about the result partition that can be derived ahead of time."""
         ...
 
@@ -321,13 +323,15 @@ class ScanWithTask(SingleOutputInstruction):
         table = MicroPartition._from_scan_task(self.scan_task)
         return [table]
 
-    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+    def run_partial_metadata(
+        self, input_metadatas: list[EstimatedPartitionMetadata]
+    ) -> list[EstimatedPartitionMetadata]:
         assert len(input_metadatas) == 0
 
         cfg = get_context().daft_execution_config
 
         return [
-            PartialPartitionMetadata(
+            EstimatedPartitionMetadata(
                 num_rows=self.scan_task.num_rows(),
                 size_bytes=self.scan_task.estimate_in_memory_size_bytes(cfg),
             )
@@ -341,11 +345,13 @@ class EmptyScan(SingleOutputInstruction):
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return [MicroPartition.empty(self.schema)]
 
-    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+    def run_partial_metadata(
+        self, input_metadatas: list[EstimatedPartitionMetadata]
+    ) -> list[EstimatedPartitionMetadata]:
         assert len(input_metadatas) == 0
 
         return [
-            PartialPartitionMetadata(
+            EstimatedPartitionMetadata(
                 num_rows=0,
                 size_bytes=0,
             )
@@ -371,10 +377,12 @@ class WriteFile(SingleOutputInstruction):
         )
         return [partition]
 
-    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+    def run_partial_metadata(
+        self, input_metadatas: list[EstimatedPartitionMetadata]
+    ) -> list[EstimatedPartitionMetadata]:
         assert len(input_metadatas) == 1
         return [
-            PartialPartitionMetadata(
+            EstimatedPartitionMetadata(
                 num_rows=None,  # we can write more than 1 file per partition
                 size_bytes=None,
             )
@@ -410,10 +418,12 @@ class WriteIceberg(SingleOutputInstruction):
         )
         return [partition]
 
-    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+    def run_partial_metadata(
+        self, input_metadatas: list[EstimatedPartitionMetadata]
+    ) -> list[EstimatedPartitionMetadata]:
         assert len(input_metadatas) == 1
         return [
-            PartialPartitionMetadata(
+            EstimatedPartitionMetadata(
                 num_rows=None,  # we can write more than 1 file per partition
                 size_bytes=None,
             )
@@ -448,10 +458,12 @@ class WriteDeltaLake(SingleOutputInstruction):
         )
         return [partition]
 
-    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+    def run_partial_metadata(
+        self, input_metadatas: list[EstimatedPartitionMetadata]
+    ) -> list[EstimatedPartitionMetadata]:
         assert len(input_metadatas) == 1
         return [
-            PartialPartitionMetadata(
+            EstimatedPartitionMetadata(
                 num_rows=None,  # we can write more than 1 file per partition
                 size_bytes=None,
             )
@@ -485,10 +497,12 @@ class WriteLance(SingleOutputInstruction):
         )
         return [partition]
 
-    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+    def run_partial_metadata(
+        self, input_metadatas: list[EstimatedPartitionMetadata]
+    ) -> list[EstimatedPartitionMetadata]:
         assert len(input_metadatas) == 1
         return [
-            PartialPartitionMetadata(
+            EstimatedPartitionMetadata(
                 num_rows=None,  # we can write more than 1 file per partition
                 size_bytes=None,
             )
@@ -515,10 +529,12 @@ class Filter(SingleOutputInstruction):
         [input] = inputs
         return [input.filter(self.predicate)]
 
-    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+    def run_partial_metadata(
+        self, input_metadatas: list[EstimatedPartitionMetadata]
+    ) -> list[EstimatedPartitionMetadata]:
         [input_meta] = input_metadatas
         return [
-            PartialPartitionMetadata(
+            EstimatedPartitionMetadata(
                 num_rows=None,
                 size_bytes=None,
                 boundaries=input_meta.boundaries,
@@ -537,13 +553,15 @@ class Project(SingleOutputInstruction):
         [input] = inputs
         return [input.eval_expression_list(self.projection)]
 
-    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+    def run_partial_metadata(
+        self, input_metadatas: list[EstimatedPartitionMetadata]
+    ) -> list[EstimatedPartitionMetadata]:
         [input_meta] = input_metadatas
         boundaries = input_meta.boundaries
         if boundaries is not None:
             boundaries = _prune_boundaries(boundaries, self.projection)
         return [
-            PartialPartitionMetadata(
+            EstimatedPartitionMetadata(
                 num_rows=input_meta.num_rows,
                 size_bytes=None,
                 boundaries=boundaries,
@@ -558,9 +576,11 @@ class StatefulUDFProject(SingleOutputInstruction):
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         raise NotImplementedError("UDFProject instruction cannot be run from outside an Actor. Please file an issue.")
 
-    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+    def run_partial_metadata(
+        self, input_metadatas: list[EstimatedPartitionMetadata]
+    ) -> list[EstimatedPartitionMetadata]:
         return [
-            PartialPartitionMetadata(
+            EstimatedPartitionMetadata(
                 num_rows=None,  # UDFs can potentially change cardinality
                 size_bytes=None,
                 boundaries=None,  # TODO: figure out if the stateful UDF projection changes boundaries
@@ -601,9 +621,11 @@ class LocalCount(SingleOutputInstruction):
         assert partition.schema() == self.schema
         return [partition]
 
-    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+    def run_partial_metadata(
+        self, input_metadatas: list[EstimatedPartitionMetadata]
+    ) -> list[EstimatedPartitionMetadata]:
         return [
-            PartialPartitionMetadata(
+            EstimatedPartitionMetadata(
                 num_rows=1,
                 size_bytes=104,  # An empirical value, but will likely remain small.
             )
@@ -621,10 +643,12 @@ class LocalLimit(SingleOutputInstruction):
         [input] = inputs
         return [input.head(self.limit)]
 
-    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+    def run_partial_metadata(
+        self, input_metadatas: list[EstimatedPartitionMetadata]
+    ) -> list[EstimatedPartitionMetadata]:
         [input_meta] = input_metadatas
         return [
-            PartialPartitionMetadata(
+            EstimatedPartitionMetadata(
                 num_rows=(min(self.limit, input_meta.num_rows) if input_meta.num_rows is not None else None),
                 size_bytes=None,
                 boundaries=input_meta.boundaries,
@@ -648,10 +672,12 @@ class MapPartition(SingleOutputInstruction):
         [input] = inputs
         return [self.map_op.run(input)]
 
-    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+    def run_partial_metadata(
+        self, input_metadatas: list[EstimatedPartitionMetadata]
+    ) -> list[EstimatedPartitionMetadata]:
         # Can't derive anything.
         return [
-            PartialPartitionMetadata(
+            EstimatedPartitionMetadata(
                 num_rows=None,
                 size_bytes=None,
             )
@@ -681,10 +707,12 @@ class Sample(SingleOutputInstruction):
             result = input.sample(self.fraction, self.size, self.with_replacement, self.seed)
         return [result]
 
-    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+    def run_partial_metadata(
+        self, input_metadatas: list[EstimatedPartitionMetadata]
+    ) -> list[EstimatedPartitionMetadata]:
         # Can't derive anything due to null filter in sample.
         return [
-            PartialPartitionMetadata(
+            EstimatedPartitionMetadata(
                 num_rows=None,
                 size_bytes=None,
             )
@@ -701,10 +729,12 @@ class MonotonicallyIncreasingId(SingleOutputInstruction):
         result = input.add_monotonically_increasing_id(self.partition_num, self.column_name)
         return [result]
 
-    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+    def run_partial_metadata(
+        self, input_metadatas: list[EstimatedPartitionMetadata]
+    ) -> list[EstimatedPartitionMetadata]:
         [input_meta] = input_metadatas
         return [
-            PartialPartitionMetadata(
+            EstimatedPartitionMetadata(
                 num_rows=input_meta.num_rows,
                 size_bytes=(
                     (input_meta.size_bytes + input_meta.num_rows * 8)  # 8 bytes per uint64
@@ -727,10 +757,12 @@ class Aggregate(SingleOutputInstruction):
         [input] = inputs
         return [input.agg(self.to_agg, self.group_by)]
 
-    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+    def run_partial_metadata(
+        self, input_metadatas: list[EstimatedPartitionMetadata]
+    ) -> list[EstimatedPartitionMetadata]:
         # Can't derive anything.
         return [
-            PartialPartitionMetadata(
+            EstimatedPartitionMetadata(
                 num_rows=None,
                 size_bytes=None,
             )
@@ -751,9 +783,11 @@ class Pivot(SingleOutputInstruction):
         [input] = inputs
         return [input.pivot(self.group_by, self.pivot_col, self.value_col, self.names)]
 
-    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+    def run_partial_metadata(
+        self, input_metadatas: list[EstimatedPartitionMetadata]
+    ) -> list[EstimatedPartitionMetadata]:
         return [
-            PartialPartitionMetadata(
+            EstimatedPartitionMetadata(
                 num_rows=None,
                 size_bytes=None,
             )
@@ -774,10 +808,12 @@ class Unpivot(SingleOutputInstruction):
         [input] = inputs
         return [input.unpivot(self.ids, self.values, self.variable_name, self.value_name)]
 
-    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+    def run_partial_metadata(
+        self, input_metadatas: list[EstimatedPartitionMetadata]
+    ) -> list[EstimatedPartitionMetadata]:
         [input_meta] = input_metadatas
         return [
-            PartialPartitionMetadata(
+            EstimatedPartitionMetadata(
                 num_rows=None if input_meta.num_rows is None else input_meta.num_rows * len(self.values),
                 size_bytes=None,
             )
@@ -814,10 +850,12 @@ class HashJoin(SingleOutputInstruction):
         )
         return [result]
 
-    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+    def run_partial_metadata(
+        self, input_metadatas: list[EstimatedPartitionMetadata]
+    ) -> list[EstimatedPartitionMetadata]:
         # Can't derive anything.
         return [
-            PartialPartitionMetadata(
+            EstimatedPartitionMetadata(
                 num_rows=None,
                 size_bytes=None,
             )
@@ -849,7 +887,9 @@ class MergeJoin(SingleOutputInstruction):
         )
         return [result]
 
-    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+    def run_partial_metadata(
+        self, input_metadatas: list[EstimatedPartitionMetadata]
+    ) -> list[EstimatedPartitionMetadata]:
         [left_meta, right_meta] = input_metadatas
         # If the boundaries of the left and right partitions don't intersect, then the merge-join will result in an empty partition.
         if left_meta.boundaries is None or right_meta.boundaries is None:
@@ -857,7 +897,7 @@ class MergeJoin(SingleOutputInstruction):
         else:
             is_nonempty = left_meta.boundaries.intersects(right_meta.boundaries)
         return [
-            PartialPartitionMetadata(
+            EstimatedPartitionMetadata(
                 num_rows=None if is_nonempty else 0,
                 size_bytes=None,
                 boundaries=(left_meta.boundaries if self.preserve_left_bounds else right_meta.boundaries),
@@ -876,11 +916,13 @@ class ReduceMerge(ReduceInstruction):
     def _reduce_merge(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return [MicroPartition.concat(inputs)]
 
-    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+    def run_partial_metadata(
+        self, input_metadatas: list[EstimatedPartitionMetadata]
+    ) -> list[EstimatedPartitionMetadata]:
         input_rows = [_.num_rows for _ in input_metadatas]
         input_sizes = [_.size_bytes for _ in input_metadatas]
         return [
-            PartialPartitionMetadata(
+            EstimatedPartitionMetadata(
                 num_rows=(sum(input_rows) if all(_ is not None for _ in input_rows) else None),
                 size_bytes=(sum(input_sizes) if all(_ is not None for _ in input_sizes) else None),
             )
@@ -900,11 +942,13 @@ class ReduceMergeAndSort(ReduceInstruction):
         partition = MicroPartition.concat(inputs).sort(self.sort_by, descending=self.descending)
         return [partition]
 
-    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+    def run_partial_metadata(
+        self, input_metadatas: list[EstimatedPartitionMetadata]
+    ) -> list[EstimatedPartitionMetadata]:
         input_rows = [_.num_rows for _ in input_metadatas]
         input_sizes = [_.size_bytes for _ in input_metadatas]
         return [
-            PartialPartitionMetadata(
+            EstimatedPartitionMetadata(
                 num_rows=(sum(input_rows) if all(_ is not None for _ in input_rows) else None),
                 size_bytes=(sum(input_sizes) if all(_ is not None for _ in input_sizes) else None),
                 boundaries=Boundaries(list(self.sort_by), self.bounds),
@@ -930,9 +974,11 @@ class ReduceToQuantiles(ReduceInstruction):
         result = merged_sorted.quantiles(self.num_quantiles)
         return [result]
 
-    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+    def run_partial_metadata(
+        self, input_metadatas: list[EstimatedPartitionMetadata]
+    ) -> list[EstimatedPartitionMetadata]:
         return [
-            PartialPartitionMetadata(
+            EstimatedPartitionMetadata(
                 num_rows=self.num_quantiles,
                 size_bytes=None,
             )
@@ -943,10 +989,12 @@ class ReduceToQuantiles(ReduceInstruction):
 class FanoutInstruction(Instruction):
     _num_outputs: int
 
-    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+    def run_partial_metadata(
+        self, input_metadatas: list[EstimatedPartitionMetadata]
+    ) -> list[EstimatedPartitionMetadata]:
         # Can't derive anything.
         return [
-            PartialPartitionMetadata(
+            EstimatedPartitionMetadata(
                 num_rows=None,
                 size_bytes=None,
             )
@@ -1027,7 +1075,9 @@ class FanoutSlices(FanoutInstruction):
 
         return results
 
-    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+    def run_partial_metadata(
+        self, input_metadatas: list[EstimatedPartitionMetadata]
+    ) -> list[EstimatedPartitionMetadata]:
         [input_meta] = input_metadatas
 
         results = []
@@ -1042,7 +1092,7 @@ class FanoutSlices(FanoutInstruction):
                 num_rows = None
 
             results.append(
-                PartialPartitionMetadata(
+                EstimatedPartitionMetadata(
                     num_rows=num_rows,
                     size_bytes=None,
                     boundaries=input_meta.boundaries,
