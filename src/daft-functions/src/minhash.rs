@@ -1,4 +1,7 @@
-use std::hash::{BuildHasher, BuildHasherDefault};
+use std::{
+    hash::{BuildHasher, BuildHasherDefault},
+    str::FromStr,
+};
 
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
@@ -7,7 +10,8 @@ use daft_dsl::{
     ExprRef,
 };
 use daft_hash::{MurBuildHasher, Sha1Hasher};
-use pyo3::{pyclass, pymethods, types::PyType, PyErr, PyResult};
+#[cfg(feature = "python")]
+use pyo3::pyclass;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -15,7 +19,7 @@ pub struct MinHashFunction {
     pub num_hashes: usize,
     pub ngram_size: usize,
     pub seed: u32,
-    pub hash_function: HashFunctionLiteral,
+    pub hash_function: HashFunctionKind,
 }
 
 #[typetag::serde]
@@ -37,15 +41,15 @@ impl ScalarUDF for MinHashFunction {
         };
 
         match self.hash_function {
-            HashFunctionLiteral::MurmurHash3 => {
+            HashFunctionKind::MurmurHash3 => {
                 let hasher = MurBuildHasher::new(self.seed);
                 input.minhash(self.num_hashes, self.ngram_size, self.seed, &hasher)
             }
-            HashFunctionLiteral::XxHash => {
+            HashFunctionKind::XxHash => {
                 let hasher = xxhash_rust::xxh64::Xxh64Builder::new(self.seed as u64);
                 input.minhash(self.num_hashes, self.ngram_size, self.seed, &hasher)
             }
-            HashFunctionLiteral::Sha1 => {
+            HashFunctionKind::Sha1 => {
                 let hasher = BuildHasherDefault::<Sha1Hasher>::default();
                 input.minhash(self.num_hashes, self.ngram_size, self.seed, &hasher)
             }
@@ -80,7 +84,7 @@ pub fn minhash(
     num_hashes: usize,
     ngram_size: usize,
     seed: u32,
-    hash_function: HashFunctionLiteral,
+    hash_function: HashFunctionKind,
 ) -> ExprRef {
     ScalarFunction::new(
         MinHashFunction {
@@ -94,26 +98,25 @@ pub fn minhash(
     .into()
 }
 
-// todo: what
-#[pyclass]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum HashFunctionLiteral {
+/// Format of a file, e.g. Parquet, CSV, JSON.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Copy)]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
+pub enum HashFunctionKind {
     MurmurHash3,
     XxHash,
     Sha1,
 }
 
-#[pymethods]
-impl HashFunctionLiteral {
-    // todo: is there an updated way to do this? it says it is using a deprecated method
-    #[classmethod]
-    fn from_str(_cls: &PyType, s: &str) -> PyResult<Self> {
-        match s.to_lowercase().as_str() {
-            "murmurhash3" => Ok(Self::MurmurHash3),
+impl FromStr for HashFunctionKind {
+    type Err = DaftError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "murmur3" => Ok(Self::MurmurHash3),
             "xxhash" => Ok(Self::XxHash),
             "sha1" => Ok(Self::Sha1),
-            _ => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
-                "Invalid hash function: {}",
+            _ => Err(DaftError::ValueError(format!(
+                "Hash function {} not found",
                 s
             ))),
         }
@@ -125,7 +128,7 @@ pub mod python {
     use daft_dsl::python::PyExpr;
     use pyo3::{exceptions::PyValueError, pyfunction, PyResult};
 
-    use crate::minhash::HashFunctionLiteral;
+    use crate::minhash::HashFunctionKind;
 
     #[pyfunction]
     pub fn minhash(
@@ -133,7 +136,7 @@ pub mod python {
         num_hashes: i64,
         ngram_size: i64,
         seed: i64,
-        hash_function: HashFunctionLiteral,
+        hash_function: HashFunctionKind,
     ) -> PyResult<PyExpr> {
         if num_hashes <= 0 {
             return Err(PyValueError::new_err(format!(
