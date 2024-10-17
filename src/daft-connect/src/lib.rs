@@ -4,15 +4,18 @@
 use std::collections::BTreeMap;
 
 use dashmap::DashMap;
+#[cfg(feature = "python")]
+use pyo3::types::PyModuleMethods;
 use spark_connect::{
-    command::CommandType, spark_connect_service_server::SparkConnectService, AddArtifactsRequest,
-    AddArtifactsResponse, AnalyzePlanRequest, AnalyzePlanResponse, ArtifactStatusesRequest,
-    ArtifactStatusesResponse, ConfigRequest, ConfigResponse, ExecutePlanRequest,
-    ExecutePlanResponse, FetchErrorDetailsRequest, FetchErrorDetailsResponse, InterruptRequest,
-    InterruptResponse, ReattachExecuteRequest, ReleaseExecuteRequest, ReleaseExecuteResponse,
-    ReleaseSessionRequest, ReleaseSessionResponse,
+    command::CommandType,
+    spark_connect_service_server::{SparkConnectService, SparkConnectServiceServer},
+    AddArtifactsRequest, AddArtifactsResponse, AnalyzePlanRequest, AnalyzePlanResponse,
+    ArtifactStatusesRequest, ArtifactStatusesResponse, ConfigRequest, ConfigResponse,
+    ExecutePlanRequest, ExecutePlanResponse, FetchErrorDetailsRequest, FetchErrorDetailsResponse,
+    InterruptRequest, InterruptResponse, ReattachExecuteRequest, ReleaseExecuteRequest,
+    ReleaseExecuteResponse, ReleaseSessionRequest, ReleaseSessionResponse,
 };
-use tonic::{Request, Response, Status};
+use tonic::{transport::Server, Request, Response, Status};
 use tracing::info;
 use uuid::Uuid;
 
@@ -30,6 +33,26 @@ struct Session {
     id: String,
 
     server_side_session_id: String,
+}
+
+pub fn start() {
+    let addr = "[::1]:50051".parse().unwrap();
+    let service = DaftSparkConnectService::default();
+
+    println!("Daft-Connect server listening on {}", addr);
+
+    std::thread::spawn(move || {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            tokio::spawn(async move {
+                Server::builder()
+                    .add_service(SparkConnectServiceServer::new(service))
+                    .serve(addr)
+                    .await
+                    .unwrap();
+            });
+        });
+    });
 }
 
 #[derive(Default)]
@@ -271,4 +294,16 @@ impl SparkConnectService for DaftSparkConnectService {
             "fetch_error_details operation is not yet implemented",
         ))
     }
+}
+#[cfg(feature = "python")]
+#[pyo3::pyfunction]
+#[pyo3(name = "connect_start")]
+pub fn py_connect_start() {
+    start();
+}
+
+#[cfg(feature = "python")]
+pub fn register_modules(parent: &pyo3::Bound<pyo3::types::PyModule>) -> pyo3::PyResult<()> {
+    parent.add_function(pyo3::wrap_pyfunction_bound!(py_connect_start, parent)?)?;
+    Ok(())
 }
