@@ -10,6 +10,8 @@ use pyo3::{
     types::{PyBytes, PyList},
 };
 
+fn x(x: HashFunctionKind) -> PyResult<HashFunctionKind> {}
+
 use crate::{
     array::{
         ops::{
@@ -316,7 +318,13 @@ impl PySeries {
         Ok(self.series.hash(seed_array)?.into_series().into())
     }
 
-    pub fn minhash(&self, num_hashes: i64, ngram_size: i64, seed: i64) -> PyResult<Self> {
+    pub fn minhash(
+        &self,
+        num_hashes: i64,
+        ngram_size: i64,
+        seed: i64,
+        hash_function: HashFunctionKind,
+    ) -> PyResult<Self> {
         if num_hashes <= 0 {
             return Err(PyValueError::new_err(format!(
                 "num_hashes must be positive: {num_hashes}"
