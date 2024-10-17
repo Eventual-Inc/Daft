@@ -923,11 +923,7 @@ def _build_partitions_on_actor_pool(
 
 @ray.remote
 class DaftRayActor:
-    def __init__(
-        self,
-        daft_execution_config: PyDaftExecutionConfig,
-        uninitialized_projection: ExpressionsProjection,
-    ):
+    def __init__(self, daft_execution_config: PyDaftExecutionConfig, uninitialized_projection: ExpressionsProjection):
         self.daft_execution_config = daft_execution_config
         partial_stateful_udfs = {
             name: psu
