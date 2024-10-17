@@ -60,6 +60,7 @@ python = [
   "common-display/python",
   "common-resource-request/python"
 ]
+enable_hdfs = ["daft-io/enable_hdfs"]
 
 [lib]
 crate-type = ["cdylib"]

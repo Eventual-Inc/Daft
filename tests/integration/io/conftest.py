@@ -28,7 +28,7 @@ YieldFixture = Generator[T, None, None]
 def minio_io_config() -> daft.io.IOConfig:
     return daft.io.IOConfig(
         s3=daft.io.S3Config(
-            endpoint_url="http://127.0.0.1:9000",
+            endpoint_url="http://127.0.0.1:9001",
             key_id="minioadmin",
             access_key="minioadmin",
         )
