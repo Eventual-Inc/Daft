@@ -1771,6 +1771,7 @@ dependencies = [
  "daft-io",
  "daft-table",
  "futures",
+ "itertools 0.11.0",
  "memchr",
  "pyo3",
  "rayon",

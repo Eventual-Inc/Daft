@@ -27,6 +27,7 @@ use daft_dsl::{optimization::get_required_columns, Expr};
 use daft_io::{IOClient, IOStatsRef};
 use daft_table::Table;
 use futures::Stream;
+use itertools::Itertools;
 use rayon::{
     iter::IndexedParallelIterator,
     prelude::{IntoParallelRefIterator, ParallelIterator},
@@ -159,6 +160,7 @@ struct FileSlab {
     // We wrap the Arc<buffer> in an Option so that when a Slab is being dropped, we can move the Slab's reference
     // to the Arc<buffer> back to the slab pool.
     buffer: Option<Arc<[u8]>>,
+    valid_bytes: usize,
 }
 
 // Modify the Drop method for FileSlabs so that they're returned to their parent slab pool.
@@ -443,6 +445,147 @@ async fn get_schema_and_estimators(
     ))
 }
 
+struct SlabIterator {
+    file: std::fs::File,
+    slabpool: Arc<FileSlabPool>,
+    total_bytes_read: usize,
+}
+
+impl SlabIterator {
+    fn new(file: std::fs::File, slabpool: Arc<FileSlabPool>) -> Self {
+        Self {
+            file,
+            slabpool,
+            total_bytes_read: 0,
+        }
+    }
+}
+
+impl Iterator for SlabIterator {
+    type Item = Arc<FileSlab>;
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut buffer = self.slabpool.get_buffer();
+        match Arc::get_mut(&mut buffer) {
+            Some(inner_buffer) => {
+                let bytes_read = self.file.read(inner_buffer).unwrap();
+                if bytes_read == 0 {
+                    self.slabpool.return_buffer(buffer);
+                    return None;
+                }
+                self.total_bytes_read += bytes_read;
+                Some(Arc::new(FileSlab {
+                    pool: Arc::clone(&self.slabpool),
+                    buffer: Some(buffer),
+                    valid_bytes: bytes_read,
+                }))
+            }
+            None => {
+                self.slabpool.return_buffer(buffer);
+                panic!("We should have exclusive access to this mutable buffer");
+            }
+        }
+    }
+}
+
+fn consume_slab_iterator(
+    iter: impl Iterator<Item = Arc<FileSlab>>,
+    num_fields: usize,
+    parse_options: &CsvParseOptions,
+) {
+    let field_delimiter = parse_options.delimiter;
+    let escape_char = parse_options.escape_char;
+    let quote_char = parse_options.quote;
+    let double_quote_escape_allowed = parse_options.double_quote;
+
+    let mut iter = iter.peekable();
+    let mut first_buffer = true;
+    while let Some(first) = iter.next() {
+        let (second, second_num_bytes) = if let Some(second) = iter.peek() {
+            (Some(second), second.valid_bytes)
+        } else {
+            (None, 0)
+        };
+
+        let file_chunk = get_file_chunk(
+            unsafe_clone_buffer(&first.buffer),
+            first.valid_bytes,
+            second.map(|s| unsafe_clone_buffer(&s.buffer)),
+            second_num_bytes,
+            first_buffer,
+            num_fields,
+            quote_char,
+            field_delimiter,
+            escape_char,
+            double_quote_escape_allowed,
+        );
+
+        first_buffer = false;
+    }
+}
+
+enum ChunkState {
+    Start {
+        slab: Arc<FileSlab>,
+        start: usize,
+    },
+    StartAndFinal {
+        slab: Arc<FileSlab>,
+        start: usize,
+        end: usize,
+    },
+    Continue {
+        slab: Arc<FileSlab>,
+    },
+    Final {
+        slab: Arc<FileSlab>,
+        end: usize,
+    },
+}
+
+impl ChunkState {
+    #[inline]
+    fn is_final(&self) -> bool {
+        matches!(
+            self,
+            ChunkState::Final { .. } | ChunkState::StartAndFinal { .. }
+        )
+    }
+}
+
+struct SlabConsumer<'a, I> {
+    slab_iter: &'a mut I,
+}
+
+impl<'a, I> Iterator for SlabConsumer<'a, I>
+where
+    I: Iterator<Item = Arc<FileSlab>>,
+{
+    type Item = ChunkState;
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut so_far = vec![];
+        while let Some(data) = self.slab_iter.next() {
+            todo!()
+        }
+
+        // verify last item is final or StartAndFinal
+        todo!("emit state")
+    }
+}
+
+struct MultiSliceReader<'a> {
+    // https://stackoverflow.com/questions/71801199/how-can-concatenated-u8-slices-implement-the-read-trait-without-additional-co
+    // use small vec
+    state: Vec<&'a [u8]>,
+    curr_idx: usize,
+    curr_offset: usize,
+}
+
+impl Read for MultiSliceReader {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {}
+    fn read_vectored(&mut self, bufs: &mut [std::io::IoSliceMut<'_>]) -> std::io::Result<usize> {}
+    fn read_to_end(&mut self, buf: &mut Vec<u8>) -> std::io::Result<usize> {}
+}
+
 /// Consumes the CSV file and sends the results to `sender`.
 #[allow(clippy::too_many_arguments)]
 fn consume_csv_file(
@@ -498,6 +641,7 @@ fn consume_csv_file(
                             Arc::new(FileSlab {
                                 pool: Arc::clone(&slabpool),
                                 buffer: Some(buffer),
+                                valid_bytes: bytes_read,
                             }),
                             bytes_read,
                         )
@@ -522,6 +666,7 @@ fn consume_csv_file(
                             Some(Arc::new(FileSlab {
                                 pool: Arc::clone(&slabpool),
                                 buffer: Some(next_buffer),
+                                valid_bytes: bytes_read,
                             })),
                             bytes_read,
                         )
