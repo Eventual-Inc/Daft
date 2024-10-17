@@ -11,7 +11,7 @@ from daft import context, udf
 from daft.context import get_context, set_planning_config
 from daft.daft import SystemInfo
 from daft.expressions import col
-from daft.internal.gpu import cuda_device_count
+from daft.internal.gpu import cuda_visible_devices
 
 pytestmark = pytest.mark.skipif(
     context.get_context().daft_execution_config.enable_native_executor is True,
@@ -20,7 +20,7 @@ pytestmark = pytest.mark.skipif(
 
 
 def no_gpu_available() -> bool:
-    return cuda_device_count() == 0
+    return len(cuda_visible_devices()) == 0
 
 
 DATA = {"id": [i for i in range(100)]}
@@ -100,7 +100,7 @@ def test_requesting_too_many_cpus():
 def test_requesting_too_many_gpus():
     df = daft.from_pydict(DATA)
 
-    my_udf_parametrized = my_udf.override_options(num_gpus=cuda_device_count() + 1)
+    my_udf_parametrized = my_udf.override_options(num_gpus=len(cuda_visible_devices()) + 1)
     df = df.with_column("foo", my_udf_parametrized(col("id")))
 
     with pytest.raises(RuntimeError):
@@ -270,15 +270,15 @@ def test_with_column_folded_rayrunner_class(enable_actor_pool):
 
 @udf(return_dtype=daft.DataType.int64(), num_gpus=1)
 def assert_num_cuda_visible_devices(c, num_gpus: int = 0):
-    cuda_visible_devices = os.getenv("CUDA_VISIBLE_DEVICES")
+    cuda_visible_devices_env = os.getenv("CUDA_VISIBLE_DEVICES")
     # Env var not set: program is free to use any number of GPUs
-    if cuda_visible_devices is None:
-        result = cuda_device_count()
+    if cuda_visible_devices_env is None:
+        result = len(cuda_visible_devices())
     # Env var set to empty: program has no access to any GPUs
-    elif cuda_visible_devices == "":
+    elif cuda_visible_devices_env == "":
         result = 0
     else:
-        result = len(cuda_visible_devices.split(","))
+        result = len(cuda_visible_devices_env.split(","))
     assert result == num_gpus
     return c
 
@@ -291,7 +291,7 @@ def test_with_column_pyrunner_gpu():
     # We set num_gpus=1 on the UDF itself
     df = df.with_column(
         "foo",
-        assert_num_cuda_visible_devices(col("id"), num_gpus=cuda_device_count()),
+        assert_num_cuda_visible_devices(col("id"), num_gpus=len(cuda_visible_devices())),
     )
 
     df.collect()
@@ -330,3 +330,27 @@ def test_with_column_max_resources_rayrunner_gpu():
     )
 
     df.collect()
+
+
+def test_improper_num_gpus():
+    with pytest.raises(ValueError, match="DaftError::ValueError"):
+
+        @udf(return_dtype=daft.DataType.int64(), num_gpus=-1)
+        def foo(c):
+            return c
+
+    with pytest.raises(ValueError, match="DaftError::ValueError"):
+
+        @udf(return_dtype=daft.DataType.int64(), num_gpus=1.5)
+        def foo(c):
+            return c
+
+    @udf(return_dtype=daft.DataType.int64())
+    def foo(c):
+        return c
+
+    with pytest.raises(ValueError, match="DaftError::ValueError"):
+        foo = foo.override_options(num_gpus=-1)
+
+    with pytest.raises(ValueError, match="DaftError::ValueError"):
+        foo = foo.override_options(num_gpus=1.5)

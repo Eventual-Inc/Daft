@@ -1,4 +1,5 @@
 [dependencies]
+common-error = {path = "../error"}
 common-hashable-float-wrapper = {path = "../hashable-float-wrapper"}
 common-py-serde = {path = "../py-serde"}
 pyo3 = {workspace = true, optional = true}
