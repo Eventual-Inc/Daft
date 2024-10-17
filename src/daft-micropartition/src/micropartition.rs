@@ -1319,7 +1319,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
                 num_rows,
             ),
             file_path_column.map(|s| s.to_string()),
-            IndexMap::new(),
+            generated_fields,
         );
 
         let fill_map = scan_task.partition_spec().map(|pspec| pspec.to_fill_map());

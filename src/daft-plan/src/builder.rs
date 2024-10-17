@@ -203,7 +203,7 @@ impl LogicalPlanBuilder {
             }
         }
         // Add generated fields to the schema.
-        let schema_and_generated_fields = {
+        let schema_with_generated_fields = {
             let generated_schema = Schema::new(
                 scan_operator
                     .0
@@ -221,9 +221,9 @@ impl LogicalPlanBuilder {
             columns: Some(columns),
             ..
         }) = &pushdowns
-            && columns.len() < schema_and_generated_fields.fields.len()
+            && columns.len() < schema_with_generated_fields.fields.len()
         {
-            let pruned_upstream_schema = schema_and_generated_fields
+            let pruned_upstream_schema = schema_with_generated_fields
                 .fields
                 .iter()
                 .filter(|&(name, _)| columns.contains(name))
@@ -231,7 +231,7 @@ impl LogicalPlanBuilder {
                 .collect::<Vec<_>>();
             Arc::new(Schema::new(pruned_upstream_schema)?)
         } else {
-            schema_and_generated_fields
+            schema_with_generated_fields
         };
         let logical_plan: LogicalPlan =
             logical_ops::Source::new(output_schema, source_info.into()).into();

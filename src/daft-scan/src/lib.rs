@@ -24,6 +24,7 @@ use serde::{Deserialize, Serialize};
 mod anonymous;
 pub use anonymous::AnonymousScanOperator;
 pub mod glob;
+mod hive;
 use common_daft_config::DaftExecutionConfig;
 pub mod scan_task_iters;
 
@@ -378,7 +379,7 @@ pub struct ScanTask {
     pub metadata: Option<TableMetadata>,
     pub statistics: Option<TableStatistics>,
     pub file_path_column: Option<String>,
-    pub generated_fields: IndexMap<std::string::String, Field>,
+    pub generated_fields: IndexMap<String, Field>,
 }
 pub type ScanTaskRef = Arc<ScanTask>;
 

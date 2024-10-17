@@ -421,12 +421,10 @@ def test_complex_table_write_read(local_catalog, complex_table, partition_spec, 
     pa_table, schema = complex_table
     table = local_catalog.create_table("default.test", schema, partition_spec=partition_spec)
     df = daft.from_arrow(pa_table)
-    df.show()
     result = df.write_iceberg(table)
     as_dict = result.to_pydict()
     assert len(as_dict["operation"]) == num_partitions
     assert all(op == "ADD" for op in as_dict["operation"]), as_dict["operation"]
     assert sum(as_dict["rows"]) == 3, as_dict["rows"]
     read_back = daft.read_iceberg(table)
-    read_back.show()
     assert df.to_arrow() == read_back.to_arrow().sort_by("int")

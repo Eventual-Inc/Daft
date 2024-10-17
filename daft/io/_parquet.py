@@ -48,7 +48,7 @@ def read_parquet(
         schema (dict[str, DataType]): A schema that is used as the definitive schema for the Parquet file if infer_schema is False, otherwise it is used as a schema hint that is applied after the schema is inferred.
         io_config (IOConfig): Config to be used with the native downloader
         file_path_column: Include the source path(s) as a column with this name. Defaults to None.
-        hive_partitioning: Whether to use hive-style partitioning when reading glob files. Defaults to False.
+        hive_partitioning: Whether to infer hive_style partitions from file paths and include them as columns in the Dataframe. Defaults to False.
         use_native_downloader: Whether to use the native downloader instead of PyArrow for reading Parquet.
         coerce_int96_timestamp_unit: TimeUnit to coerce Int96 TimeStamps to. e.g.: [ns, us, ms], Defaults to None.
         _multithreaded_io: Whether to use multithreading for IO threads. Setting this to False can be helpful in reducing

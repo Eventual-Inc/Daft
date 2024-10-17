@@ -1857,18 +1857,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "daft-hive"
-version = "0.3.0-dev0"
-dependencies = [
- "arrow2",
- "common-error",
- "daft-core",
- "daft-decoding",
- "daft-schema",
- "daft-table",
-]
-
-[[package]]
 name = "daft-image"
 version = "0.3.0-dev0"
 dependencies = [
@@ -2113,8 +2101,8 @@ dependencies = [
  "common-py-serde",
  "daft-core",
  "daft-csv",
+ "daft-decoding",
  "daft-dsl",
- "daft-hive",
  "daft-io",
  "daft-json",
  "daft-parquet",

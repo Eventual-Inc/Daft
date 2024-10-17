@@ -4,7 +4,6 @@ use common_error::{DaftError, DaftResult};
 use common_file_formats::{CsvSourceConfig, FileFormat, FileFormatConfig, ParquetSourceConfig};
 use daft_core::{prelude::Utf8Array, series::IntoSeries};
 use daft_csv::CsvParseOptions;
-use daft_hive::{hive_partitions_to_1d_table, hive_partitions_to_schema, parse_hive_partitioning};
 use daft_io::{parse_url, FileMetadata, IOClient, IOStatsContext, IOStatsRef, RuntimeRef};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use daft_schema::{
@@ -19,8 +18,9 @@ use indexmap::IndexMap;
 use snafu::Snafu;
 
 use crate::{
-    storage_config::StorageConfig, ChunkSpec, DataSource, PartitionField, Pushdowns, ScanOperator,
-    ScanTask, ScanTaskRef,
+    hive::{hive_partitions_to_1d_table, hive_partitions_to_schema, parse_hive_partitioning},
+    storage_config::StorageConfig,
+    ChunkSpec, DataSource, PartitionField, Pushdowns, ScanOperator, ScanTask, ScanTaskRef,
 };
 #[derive(Debug)]
 pub struct GlobScanOperator {
@@ -142,7 +142,7 @@ impl GlobScanOperator {
         file_format_config: Arc<FileFormatConfig>,
         storage_config: Arc<StorageConfig>,
         infer_schema: bool,
-        schema: Option<SchemaRef>,
+        user_provided_schema: Option<SchemaRef>,
         file_path_column: Option<String>,
         hive_partitioning: bool,
     ) -> DaftResult<Self> {
@@ -188,7 +188,7 @@ impl GlobScanOperator {
         if hive_partitioning {
             let hive_partitions = parse_hive_partitioning(&first_filepath);
             let hive_partition_schema = hive_partitions_to_schema(&hive_partitions)?;
-            let hive_partition_schema = match schema.as_ref() {
+            let hive_partition_schema = match user_provided_schema.clone() {
                 Some(hint) => hive_partition_schema.apply_hints(&hint)?,
                 None => hive_partition_schema,
             };
@@ -276,12 +276,14 @@ impl GlobScanOperator {
                         ))
                     }
                 };
-                match schema {
+                match user_provided_schema {
                     Some(hint) => Arc::new(inferred_schema.apply_hints(&hint)?),
                     None => Arc::new(inferred_schema),
                 }
             }
-            false => schema.expect("Schema must be provided if infer_schema is false"),
+            false => {
+                user_provided_schema.expect("Schema must be provided if infer_schema is false")
+            }
         };
         Ok(Self {
             glob_paths,
