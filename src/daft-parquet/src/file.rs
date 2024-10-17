@@ -316,7 +316,7 @@ impl ParquetFileReader {
     // Set to a very high number 256MB to guard against unbounded large
     // downloads from remote storage, which likely indicates corrupted Parquet data
     // See: https://github.com/Eventual-Inc/Daft/issues/1551
-    const MAX_HEADER_SIZE: usize = 256 * 1024 * 1024;
+    const MAX_HEADER_SIZE: usize = 2 * 1024 * 1024 * 1024;
 
     fn new(
         uri: String,
