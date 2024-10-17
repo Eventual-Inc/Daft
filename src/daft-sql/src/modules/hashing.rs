@@ -1,7 +1,7 @@
 use daft_dsl::ExprRef;
 use daft_functions::{
     hash::hash,
-    minhash::{minhash, MinHashFunction},
+    minhash::{minhash, HashFunctionKind, MinHashFunction},
 };
 use sqlparser::ast::FunctionArg;
 
@@ -74,6 +74,7 @@ impl TryFrom<SQLFunctionArguments> for MinHashFunction {
             .and_then(daft_dsl::LiteralValue::as_i64)
             .ok_or_else(|| PlannerError::invalid_operation("ngram_size must be an integer"))?
             as usize;
+
         let seed = args
             .get_named("seed")
             .map(|arg| {
@@ -83,10 +84,24 @@ impl TryFrom<SQLFunctionArguments> for MinHashFunction {
             })
             .transpose()?
             .unwrap_or(1) as u32;
+
+        let hash_function = args
+            .get_named("hash_function")
+            .map(|arg| {
+                arg.as_literal()
+                    .and_then(daft_dsl::LiteralValue::as_str)
+                    .ok_or_else(|| {
+                        PlannerError::invalid_operation("hash_function must be a string")
+                    })
+            })
+            .transpose()?
+            .unwrap_or("murmur3");
+
         Ok(Self {
             num_hashes,
             ngram_size,
             seed,
+            hash_function: hash_function.parse()?,
         })
     }
 }
@@ -103,7 +118,13 @@ impl SQLFunction for SQLMinhash {
                 let args: MinHashFunction =
                     planner.plan_function_args(args, &["num_hashes", "ngram_size", "seed"], 0)?;
 
-                Ok(minhash(input, args.num_hashes, args.ngram_size, args.seed))
+                Ok(minhash(
+                    input,
+                    args.num_hashes,
+                    args.ngram_size,
+                    args.seed,
+                    args.hash_function,
+                ))
             }
             _ => unsupported_sql_err!("Invalid arguments for minhash: '{inputs:?}'"),
         }
