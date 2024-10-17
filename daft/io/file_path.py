@@ -8,7 +8,7 @@ from daft.context import get_context
 from daft.daft import IOConfig
 from daft.dataframe import DataFrame
 from daft.logical.builder import LogicalPlanBuilder
-from daft.runners.pyrunner import LocalPartitionSet
+from daft.runners.partitioning import LocalPartitionSet
 from daft.table import MicroPartition
 
 

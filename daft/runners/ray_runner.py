@@ -51,10 +51,12 @@ from daft.execution.execution_step import (
     SingleOutputPartitionTask,
     StatefulUDFProject,
 )
+from daft.execution.physical_plan import ActorPoolManager
 from daft.expressions import ExpressionsProjection
 from daft.filesystem import glob_path_with_stats
 from daft.runners import runner_io
 from daft.runners.partitioning import (
+    LocalPartitionSet,
     MaterializedResult,
     PartID,
     PartitionCacheEntry,
@@ -62,7 +64,6 @@ from daft.runners.partitioning import (
     PartitionSet,
 )
 from daft.runners.profiler import profiler
-from daft.runners.pyrunner import LocalPartitionSet
 from daft.runners.runner import Runner
 from daft.table import MicroPartition
 
@@ -553,7 +554,7 @@ def _ray_num_cpus_provider(ttl_seconds: int = 1) -> Generator[int, None, None]:
             yield last_num_cpus_queried
 
 
-class Scheduler:
+class Scheduler(ActorPoolManager):
     def __init__(self, max_task_backlog: int | None, use_ray_tqdm: bool) -> None:
         """
         max_task_backlog: Max number of inflight tasks waiting for cores.
@@ -664,6 +665,7 @@ class Scheduler:
         results_buffer_size = self.results_buffer_size_by_df[result_uuid]
         tasks = plan_scheduler.to_partition_tasks(
             psets,
+            self,
             # Attempt to subtract 1 from results_buffer_size because the return Queue size is already 1
             # If results_buffer_size=1 though, we can't do much and the total buffer size actually has to be >= 2
             # because we have two buffers (the Queue and the buffer inside the `materialize` generator)
@@ -840,6 +842,24 @@ class Scheduler:
                 raise
 
         pbar.close()
+
+    @contextlib.contextmanager
+    def actor_pool_context(
+        self,
+        name: str,
+        actor_resource_request: ResourceRequest,
+        task_resource_request: ResourceRequest,
+        num_actors: PartID,
+        projection: ExpressionsProjection,
+    ) -> Iterator[str]:
+        # Ray runs actor methods serially, so the resource request for an actor should be both the actor's resources and the task's resources
+        resource_request = actor_resource_request + task_resource_request
+
+        execution_config = get_context().daft_execution_config
+        try:
+            yield self.get_actor_pool(name, resource_request, num_actors, projection, execution_config)
+        finally:
+            self.teardown_actor_pool(name)
 
 
 SCHEDULER_ACTOR_NAME = "scheduler"
@@ -1028,6 +1048,7 @@ class RayRunner(Runner[ray.ObjectRef]):
         self,
         address: str | None,
         max_task_backlog: int | None,
+        force_client_mode: bool = False,
     ) -> None:
         super().__init__()
         if ray.is_initialized():
@@ -1041,7 +1062,7 @@ class RayRunner(Runner[ray.ObjectRef]):
             ray.init(address=address)
 
         # Check if Ray is running in "client mode" (connected to a Ray cluster via a Ray client)
-        self.ray_client_mode = ray.util.client.ray.get_context().is_connected()
+        self.ray_client_mode = force_client_mode or ray.util.client.ray.get_context().is_connected()
 
         if self.ray_client_mode:
             # Run scheduler remotely if the cluster is connected remotely.
@@ -1156,32 +1177,6 @@ class RayRunner(Runner[ray.ObjectRef]):
     ) -> Iterator[MicroPartition]:
         for result in self.run_iter(builder, results_buffer_size=results_buffer_size):
             yield ray.get(result.partition())
-
-    @contextlib.contextmanager
-    def actor_pool_context(
-        self,
-        name: str,
-        actor_resource_request: ResourceRequest,
-        task_resource_request: ResourceRequest,
-        num_actors: PartID,
-        projection: ExpressionsProjection,
-    ) -> Iterator[str]:
-        # Ray runs actor methods serially, so the resource request for an actor should be both the actor's resources and the task's resources
-        resource_request = actor_resource_request + task_resource_request
-
-        execution_config = get_context().daft_execution_config
-        if self.ray_client_mode:
-            try:
-                yield ray.get(
-                    self.scheduler_actor.get_actor_pool.remote(name, resource_request, num_actors, projection)
-                )
-            finally:
-                self.scheduler_actor.teardown_actor_pool.remote(name)
-        else:
-            try:
-                yield self.scheduler.get_actor_pool(name, resource_request, num_actors, projection, execution_config)
-            finally:
-                self.scheduler.teardown_actor_pool(name)
 
     def _collect_into_cache(self, results_iter: Iterator[RayMaterializedResult]) -> PartitionCacheEntry:
         result_pset = RayPartitionSet()
