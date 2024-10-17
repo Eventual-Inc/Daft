@@ -205,3 +205,9 @@ def test_sql_multi_statement_sql_error():
     catalog = SQLCatalog({})
     with pytest.raises(Exception, match="one SQL statement allowed"):
         daft.sql("SELECT * FROM df; SELECT * FROM df", catalog)
+
+
+def test_sql_tbl_alias():
+    catalog = SQLCatalog({"df": daft.from_pydict({"n": [1, 2, 3]})})
+    df = daft.sql("SELECT df_alias.n FROM df AS df_alias where df_alias.n = 2", catalog)
+    assert df.collect().to_pydict() == {"n": [2]}
