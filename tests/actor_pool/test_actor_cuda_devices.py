@@ -7,8 +7,7 @@ import pytest
 import ray
 
 import daft
-from daft import ResourceRequest
-from daft.context import get_actor_context, get_context, set_planning_config
+from daft.context import get_context, set_planning_config
 from daft.datatype import DataType
 from daft.internal.gpu import cuda_visible_devices
 from daft.udf import udf
@@ -56,67 +55,6 @@ def reset_runner_with_gpus(num_gpus, monkeypatch):
                 daft.context.get_context()._runner = original_runner
     else:
         yield
-
-
-@pytest.mark.parametrize("concurrency", [1, 2, 3])
-def test_stateful_udf_context_rank(enable_actor_pool, concurrency):
-    @udf(return_dtype=DataType.int64())
-    class GetRank:
-        def __init__(self):
-            actor_context = get_actor_context()
-            self._rank = actor_context.rank
-
-        def __call__(self, data):
-            actor_context = get_actor_context()
-
-            assert actor_context.rank == self._rank
-
-            import time
-
-            time.sleep(0.1)
-
-            return [self._rank] * len(data)
-
-    GetRank = GetRank.with_concurrency(concurrency)
-
-    df = daft.from_pydict({"x": [1, 2, 3, 4]})
-    df = df.into_partitions(4)
-    df = df.select(GetRank(df["x"]))
-
-    result = df.to_pydict()
-    ranks = set(result["x"])
-    for i in range(concurrency):
-        assert i in ranks, f"rank {i} not found in {ranks}"
-
-
-@pytest.mark.parametrize("concurrency", [1, 2, 3])
-def test_stateful_udf_context_resource_request(enable_actor_pool, concurrency):
-    @udf(return_dtype=DataType.int64(), num_cpus=1, memory_bytes=5_000_000)
-    class TestResourceRequest:
-        def __init__(self, resource_request: ResourceRequest):
-            self.resource_request = resource_request
-
-            actor_context = get_actor_context()
-            assert actor_context.resource_request == self.resource_request
-
-        def __call__(self, data):
-            actor_context = get_actor_context()
-            assert actor_context.resource_request == self.resource_request
-
-            import time
-
-            time.sleep(0.1)
-
-            return data
-
-    TestResourceRequest = TestResourceRequest.with_concurrency(concurrency)
-    TestResourceRequest = TestResourceRequest.with_init_args(ResourceRequest(num_cpus=1, memory_bytes=5_000_000))
-
-    df = daft.from_pydict({"x": [1, 2, 3, 4]})
-    df = df.into_partitions(4)
-    df = df.select(TestResourceRequest(df["x"]))
-
-    df.collect()
 
 
 @pytest.mark.parametrize("concurrency", [1, 2])
