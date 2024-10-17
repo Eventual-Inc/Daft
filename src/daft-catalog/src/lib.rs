@@ -1,21 +1,39 @@
+mod data_catalog;
+mod data_catalog_table;
+pub mod errors;
+
+// Export public-facing traits
 use std::{collections::HashMap, default, sync::Arc};
 
 use daft_plan::LogicalPlanBuilder;
-use data_catalog::DataCatalog;
-
-mod data_catalog;
-mod data_catalog_table;
-mod errors;
+pub use data_catalog::DataCatalog;
+pub use data_catalog_table::DataCatalogTable;
 
 #[cfg(feature = "python")]
 pub mod python;
 
-use errors::Error;
-use once_cell::sync::Lazy;
+pub use errors::{Error, Result};
 
-/// Global singleton DaftMetaCatalog, lazily initialed from the environment
-pub(crate) static GLOBAL_DAFT_META_CATALOG: Lazy<DaftMetaCatalog> =
-    Lazy::new(DaftMetaCatalog::new_from_env);
+pub mod global_catalog {
+    use std::sync::{Arc, Mutex};
+
+    use lazy_static::lazy_static;
+
+    use crate::{DaftMetaCatalog, DataCatalog};
+
+    lazy_static! {
+        pub(crate) static ref GLOBAL_DAFT_META_CATALOG: Mutex<DaftMetaCatalog> =
+            Mutex::new(DaftMetaCatalog::new_from_env());
+    }
+
+    /// Register a DataCatalog with the global DaftMetaCatalog
+    pub fn register_catalog(catalog: Arc<dyn DataCatalog>, name: Option<&str>) {
+        GLOBAL_DAFT_META_CATALOG
+            .lock()
+            .unwrap()
+            .register_catalog(catalog, name);
+    }
+}
 
 /// The [`DaftMetaCatalog`] is a catalog of [`DataCatalog`] implementations
 ///

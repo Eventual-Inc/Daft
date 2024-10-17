@@ -3,35 +3,7 @@ use std::sync::Arc;
 use daft_plan::PyLogicalPlanBuilder;
 use pyo3::prelude::*;
 
-use crate::{data_catalog::DataCatalog, GLOBAL_DAFT_META_CATALOG};
-
-/// Registers an AWS Glue catalog instance with Daft
-#[pyfunction]
-#[pyo3(name = "register_aws_glue")]
-pub fn register_aws_glue() -> PyResult<()> {
-    todo!("Register an AWS Glue catalog");
-}
-
-/// Registers an Iceberg REST service with Daft
-#[pyfunction]
-#[pyo3(name = "register_iceberg_rest")]
-pub fn register_iceberg_rest() -> PyResult<()> {
-    todo!("Register an Iceberg REST catalog");
-}
-
-/// Registers a Hive Metastore (HMS) service with Daft
-#[pyfunction]
-#[pyo3(name = "register_hive_metastore")]
-pub fn register_hive_metastore() -> PyResult<()> {
-    todo!("Register a Hive Metastore catalog");
-}
-
-/// Registers a Unity Catalog instance with Daft
-#[pyfunction]
-#[pyo3(name = "register_unity_catalog")]
-pub fn register_unity_catalog() -> PyResult<()> {
-    todo!("Register a Unity Catalog");
-}
+use crate::{data_catalog::DataCatalog, global_catalog};
 
 /// Retrieves a catalog instance by name.
 ///
@@ -94,15 +66,17 @@ fn py_read_table(
     table_identifier: &str,
     catalog_name: Option<&str>,
 ) -> PyResult<PyLogicalPlanBuilder> {
-    let logical_plan_builder =
-        GLOBAL_DAFT_META_CATALOG.read_table(table_identifier, catalog_name)?;
+    let logical_plan_builder = global_catalog::GLOBAL_DAFT_META_CATALOG
+        .lock()
+        .unwrap()
+        .read_table(table_identifier, catalog_name)?;
     Ok(PyLogicalPlanBuilder::new(logical_plan_builder))
 }
 
-#[pymodule]
-fn daft_catalog(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
-    m.add_class::<PyDataCatalog>()?;
-    m.add_wrapped(wrap_pyfunction!(py_read_table))?;
-    m.add_wrapped(wrap_pyfunction!(get_catalog))?;
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
+    parent.add_class::<PyDataCatalog>()?;
+    parent.add_wrapped(wrap_pyfunction!(py_read_table))?;
+    parent.add_wrapped(wrap_pyfunction!(get_catalog))?;
+
     Ok(())
 }
