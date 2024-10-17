@@ -7,6 +7,10 @@ pub enum Error {
 
     #[snafu(display("Catalog not found: {}", name))]
     CatalogNotFound { name: String },
+
+    #[cfg(feature = "python")]
+    #[snafu(display("Python error: {}", source))]
+    PythonError { source: pyo3::PyErr },
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
@@ -17,6 +21,8 @@ impl From<Error> for common_error::DaftError {
             Error::TableNotFound { .. } | Error::CatalogNotFound { .. } => {
                 common_error::DaftError::CatalogError(err.to_string())
             }
+            #[cfg(feature = "python")]
+            Error::PythonError { .. } => common_error::DaftError::CatalogError(err.to_string()),
         }
     }
 }

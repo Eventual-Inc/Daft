@@ -1,0 +1,14 @@
+[dependencies]
+aws-config = {version = "0.55.3", features = ["native-tls", "rt-tokio", "client-hyper", "credentials-sso"], default-features = false}
+aws-sdk-glue = {version = "1.66.0", features = ["rt-tokio"], default-features = false}
+daft-catalog = {path = "..", default-features = false}
+daft-catalog-pyiceberg = {path = "../pyiceberg", optional = true}
+pyo3 = {workspace = true, optional = true}
+
+[features]
+python = ["dep:pyo3", "dep:daft-catalog-pyiceberg"]
+
+[package]
+name = "daft-catalog-aws-glue"
+edition.workspace = true
+version.workspace = true
