@@ -42,23 +42,42 @@ impl Add for &Series {
             InferDataType::from(self.data_type()).add(InferDataType::from(rhs.data_type()))?;
         let lhs = self;
         match &output_type {
+            // ----------------
+            // Python
+            // ----------------
             #[cfg(feature = "python")]
             DataType::Python => run_python_binary_operator_fn(lhs, rhs, "add"),
+            // ----------------
+            // Utf8
+            // ----------------
             DataType::Utf8 => {
                 Ok(cast_downcast_op!(lhs, rhs, &DataType::Utf8, Utf8Array, add)?.into_series())
             }
+            // ----------------
+            // Numeric types
+            // ----------------
             output_type if output_type.is_numeric() => {
                 with_match_numeric_daft_types!(output_type, |$T| {
                     Ok(cast_downcast_op!(lhs, rhs, output_type, <$T as DaftDataType>::ArrayType, add)?.into_series())
                 })
             }
+            // ----------------
+            // FixedSizeLists of numeric types (fsl, embedding, tensor, etc.)
+            // ----------------
             output_type if output_type.is_fixed_size_numeric() => {
                 fixed_size_binary_op(lhs, rhs, output_type, FixedSizeBinaryOp::Add)
             }
+            // ----------------
+            // Temporal types
+            // ----------------
             output_type
-                if output_type.is_temporal() || matches!(output_type, DataType::Duration(..)) =>
+                if output_type.is_temporal()
+                    || matches!(output_type, DataType::Duration(..) | DataType::Interval) =>
             {
                 match (self.data_type(), rhs.data_type()) {
+                    // ----------------
+                    // Duration
+                    // ----------------
                     (DataType::Date, DataType::Duration(..)) => {
                         let days = rhs.duration()?.cast_to_days()?;
                         let physical_result = self.date()?.physical.add(&days)?;
@@ -84,6 +103,28 @@ impl Add for &Series {
                             lhs.duration()?.physical.add(&rhs.timestamp()?.physical)?;
                         physical_result.cast(output_type)
                     }
+                    // ----------------
+                    // Interval
+                    // ----------------
+                    (DataType::Timestamp(..), DataType::Interval) => {
+                        let ts = self.timestamp()?.add_interval(rhs.interval()?)?;
+                        ts.cast(output_type)
+                    }
+                    (DataType::Interval, DataType::Timestamp(..)) => {
+                        let ts = rhs.timestamp()?.add_interval(self.interval()?)?;
+                        ts.cast(output_type)
+                    }
+                    (DataType::Date, DataType::Interval) => {
+                        let ts = self.cast(&DataType::Timestamp(TimeUnit::Milliseconds, None))?;
+                        let ts = ts.timestamp()?.add_interval(rhs.interval()?)?;
+                        ts.cast(output_type)
+                    }
+                    (DataType::Interval, DataType::Date) => {
+                        let ts = rhs.cast(&DataType::Timestamp(TimeUnit::Milliseconds, None))?;
+                        let ts = ts.timestamp()?.add_interval(self.interval()?)?;
+                        ts.cast(output_type)
+                    }
+
                     _ => arithmetic_op_not_implemented!(self, "+", rhs, output_type),
                 }
             }
@@ -99,17 +140,36 @@ impl Sub for &Series {
             InferDataType::from(self.data_type()).sub(InferDataType::from(rhs.data_type()))?;
         let lhs = self;
         match &output_type {
+            // ----------------
+            // Python
+            // ----------------
             #[cfg(feature = "python")]
             DataType::Python => run_python_binary_operator_fn(lhs, rhs, "sub"),
+            // ----------------
+            // Numeric types
+            // ----------------
             output_type if output_type.is_numeric() => {
                 with_match_numeric_daft_types!(output_type, |$T| {
                     Ok(cast_downcast_op!(lhs, rhs, output_type, <$T as DaftDataType>::ArrayType, sub)?.into_series())
                 })
             }
+            // ----------------
+            // FixedSizeLists of numeric types (fsl, embedding, tensor, etc.)
+            // ----------------
+            output_type if output_type.is_fixed_size_numeric() => {
+                fixed_size_binary_op(lhs, rhs, output_type, FixedSizeBinaryOp::Sub)
+            }
+            // ----------------
+            // Temporal types
+            // ----------------
             output_type
-                if output_type.is_temporal() || matches!(output_type, DataType::Duration(..)) =>
+                if output_type.is_temporal()
+                    || matches!(output_type, DataType::Duration(..) | DataType::Interval) =>
             {
                 match (self.data_type(), rhs.data_type()) {
+                    // ----------------
+                    // Duration
+                    // ----------------
                     (DataType::Date, DataType::Duration(..)) => {
                         let days = rhs.duration()?.cast_to_days()?;
                         let physical_result = self.date()?.physical.sub(&days)?;
@@ -134,12 +194,31 @@ impl Sub for &Series {
                             self.timestamp()?.physical.sub(&rhs.timestamp()?.physical)?;
                         physical_result.cast(output_type)
                     }
+                    // ----------------
+                    // Interval
+                    // ----------------
+                    (DataType::Timestamp(..), DataType::Interval) => {
+                        let ts = self.timestamp()?.sub_interval(rhs.interval()?)?;
+                        ts.cast(output_type)
+                    }
+                    (DataType::Interval, DataType::Timestamp(..)) => {
+                        let ts = rhs.timestamp()?.sub_interval(self.interval()?)?;
+                        ts.cast(output_type)
+                    }
+                    (DataType::Date, DataType::Interval) => {
+                        let ts = self.cast(&DataType::Timestamp(TimeUnit::Milliseconds, None))?;
+                        let ts = ts.timestamp()?.sub_interval(rhs.interval()?)?;
+                        ts.cast(output_type)
+                    }
+                    (DataType::Interval, DataType::Date) => {
+                        let ts = rhs.cast(&DataType::Timestamp(TimeUnit::Milliseconds, None))?;
+                        let ts = ts.timestamp()?.sub_interval(self.interval()?)?;
+                        ts.cast(output_type)
+                    }
                     _ => arithmetic_op_not_implemented!(self, "-", rhs, output_type),
                 }
             }
-            output_type if output_type.is_fixed_size_numeric() => {
-                fixed_size_binary_op(lhs, rhs, output_type, FixedSizeBinaryOp::Sub)
-            }
+
             _ => arithmetic_op_not_implemented!(self, "-", rhs, output_type),
         }
     }
@@ -152,13 +231,22 @@ impl Mul for &Series {
             InferDataType::from(self.data_type()).mul(InferDataType::from(rhs.data_type()))?;
         let lhs = self;
         match &output_type {
+            // ----------------
+            // Python
+            // ----------------
             #[cfg(feature = "python")]
             DataType::Python => run_python_binary_operator_fn(lhs, rhs, "mul"),
+            // ----------------
+            // Numeric types
+            // ----------------
             output_type if output_type.is_numeric() => {
                 with_match_numeric_daft_types!(output_type, |$T| {
                     Ok(cast_downcast_op!(lhs, rhs, output_type, <$T as DaftDataType>::ArrayType, mul)?.into_series())
                 })
             }
+            // ----------------
+            // FixedSizeLists of numeric types (fsl, embedding, tensor, etc.)
+            // ----------------
             output_type if output_type.is_fixed_size_numeric() => {
                 fixed_size_binary_op(lhs, rhs, output_type, FixedSizeBinaryOp::Mul)
             }
@@ -174,14 +262,23 @@ impl Div for &Series {
             InferDataType::from(self.data_type()).div(InferDataType::from(rhs.data_type()))?;
         let lhs = self;
         match &output_type {
+            // ----------------
+            // Python
+            // ----------------
             #[cfg(feature = "python")]
             DataType::Python => run_python_binary_operator_fn(lhs, rhs, "truediv"),
+            // ----------------
+            // Numeric types
+            // ----------------
             DataType::Float64 => {
                 Ok(
                     cast_downcast_op!(lhs, rhs, &DataType::Float64, Float64Array, div)?
                         .into_series(),
                 )
             }
+            // ----------------
+            // FixedSizeLists of numeric types (fsl, embedding, tensor, etc.)
+            // ----------------
             output_type if output_type.is_fixed_size_numeric() => {
                 fixed_size_binary_op(lhs, rhs, output_type, FixedSizeBinaryOp::Div)
             }

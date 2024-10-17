@@ -27,7 +27,7 @@ pub enum Error {
 
     #[snafu(display("Parquet reader timed out while trying to read: {path} with a time budget of {duration_ms} ms"))]
     FileReadTimeout { path: String, duration_ms: i64 },
-    #[snafu(display("Internal IO Error when Opening: {path}:\nDetails:\n{source}"))]
+    #[snafu(display("Internal IO Error when opening: {path}:\nDetails:\n{source}"))]
     InternalIOError {
         path: String,
         source: std::io::Error,
