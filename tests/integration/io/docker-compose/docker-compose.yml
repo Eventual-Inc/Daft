@@ -43,6 +43,7 @@ services:
     - 9001:9000
     volumes:
     - ./namenode-entrypoint.sh:/docker-entrypoint.sh
+    - ./core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml
 
   datanode:
     image: apache/hadoop:3
@@ -51,3 +52,5 @@ services:
     - 9864:9864
     depends_on:
     - namenode
+    volumes:
+    - ./core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml
