@@ -291,23 +291,6 @@ def _infer_filesystem(
         resolved_filesystem, resolved_path = pafs._resolve_filesystem_and_path(path, fsspec_fs)
         resolved_path = resolved_filesystem.normalize_path(_unwrap_protocol(resolved_path))
         return resolved_path, resolved_filesystem
-        
-    ###
-    # HDFS
-    ###
-    elif protocol == "hdfs":
-        try:
-            from pyarrow.fs import HadoopFileSystem
-        except ImportError:
-            raise ImportError(
-                "Unable to import GcsFileSystem from pyarrow"
-            )
-
-        translated_kwargs = {}
-
-        resolved_filesystem = HadoopFileSystem(**translated_kwargs)
-        resolved_path = resolved_filesystem.normalize_path(_unwrap_protocol(path))
-        return resolved_path, resolved_filesystem
 
     else:
         raise NotImplementedError(f"Cannot infer PyArrow filesystem for protocol {protocol}: please file an issue!")
