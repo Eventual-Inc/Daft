@@ -70,12 +70,12 @@ def test_pyactor_pool_not_enough_resources():
     runner = get_context().runner()
     assert isinstance(runner, PyRunner)
 
-    original_resources = deepcopy(runner._available_resources.resources)
+    original_resources = deepcopy(runner._resources.available_resources)
 
-    with pytest.raises(RuntimeError, match=f"Not enough resources available to admit {cpu_count + 1} actors"):
+    with pytest.raises(RuntimeError, match=f"Requested {float(cpu_count + 1)} CPUs but found only"):
         with runner.actor_pool_context(
             "my-pool", ResourceRequest(num_cpus=1), ResourceRequest(), cpu_count + 1, projection
         ) as _:
             pass
 
-    assert runner._available_resources.resources == original_resources
+    assert runner._resources.available_resources == original_resources

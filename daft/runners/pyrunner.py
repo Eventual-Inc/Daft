@@ -118,7 +118,11 @@ class AcquiredResources:
 class PyRunnerResources:
     def __init__(self, num_cpus: float, gpus: list[str], memory_bytes: int):
         gpus_dict = {gpu: 1.0 for gpu in gpus}
-        self.resources = AcquiredResources(num_cpus, gpus_dict, memory_bytes)
+        self.num_cpus = num_cpus
+        self.num_gpus = len(gpus)
+        self.memory_bytes = memory_bytes
+
+        self.available_resources = AcquiredResources(num_cpus, gpus_dict, memory_bytes)
         self.lock = threading.Lock()
 
     def try_acquire(self, resource_request: ResourceRequest) -> AcquiredResources | None:
@@ -133,20 +137,30 @@ class PyRunnerResources:
 
         If the requested resources are not available, returns None.
         """
+        all_requested_cpus = [r.num_cpus or 0.0 for r in resource_requests]
+        total_requested_cpus = sum(all_requested_cpus)
+
+        all_requested_memory_bytes = [r.memory_bytes or 0 for r in resource_requests]
+        total_requested_memory_bytes = sum(all_requested_memory_bytes)
+
+        total_requested_gpus = sum([r.num_gpus or 0.0 for r in resource_requests])
+
+        for resource_name, requested, total in [
+            ("CPUs", total_requested_cpus, self.num_cpus),
+            ("bytes of memory", total_requested_memory_bytes, self.memory_bytes),
+            ("GPUs", total_requested_gpus, self.num_gpus),
+        ]:
+            if requested > total:
+                raise RuntimeError(f"Requested {requested} {resource_name} but found only {total} available")
+
         with self.lock:
-            all_requested_cpus = [r.num_cpus or 0.0 for r in resource_requests]
-            total_requested_cpus = sum(all_requested_cpus)
-
-            if total_requested_cpus > self.resources.num_cpus:
+            if total_requested_cpus > self.available_resources.num_cpus:
                 return None
 
-            all_requested_memory_bytes = [r.memory_bytes or 0 for r in resource_requests]
-            total_requested_memory_bytes = sum(all_requested_memory_bytes)
-
-            if total_requested_memory_bytes > self.resources.memory_bytes:
+            if total_requested_memory_bytes > self.available_resources.memory_bytes:
                 return None
 
-            remaining_available_gpus = self.resources.gpus.copy()
+            remaining_available_gpus = self.available_resources.gpus.copy()
             all_requested_gpus = []
 
             # choose GPUs for resource requests
@@ -188,9 +202,9 @@ class PyRunnerResources:
 
                 all_requested_gpus.append(chosen_gpus)
 
-            self.resources.num_cpus -= total_requested_cpus
-            self.resources.memory_bytes -= total_requested_memory_bytes
-            self.resources.gpus = remaining_available_gpus
+            self.available_resources.num_cpus -= total_requested_cpus
+            self.available_resources.memory_bytes -= total_requested_memory_bytes
+            self.available_resources.gpus = remaining_available_gpus
 
             return [
                 AcquiredResources(num_cpus, gpus, memory_bytes)
@@ -206,10 +220,10 @@ class PyRunnerResources:
                 resources = [resources]
 
             for r in resources:
-                self.resources.num_cpus += r.num_cpus
-                self.resources.memory_bytes += r.memory_bytes
+                self.available_resources.num_cpus += r.num_cpus
+                self.available_resources.memory_bytes += r.memory_bytes
                 for gpu, amount in r.gpus.items():
-                    self.resources.gpus[gpu] += amount
+                    self.available_resources.gpus[gpu] += amount
 
 
 class PyStatefulActorSingleton:
@@ -372,19 +386,15 @@ class PyRunner(Runner[MicroPartition]):
         if num_cpus is None:
             import multiprocessing
 
-            self.num_cpus = multiprocessing.cpu_count()
-        else:
-            self.num_cpus = num_cpus
+            num_cpus = multiprocessing.cpu_count()
 
-        self.gpus = cuda_visible_devices()
-        self.total_bytes_memory = system_info.total_memory()
+        gpus = cuda_visible_devices()
+        memory_bytes = system_info.total_memory()
 
-        # Resource accounting:
-        self._resource_accounting_lock = threading.Lock()
-        self._available_resources = PyRunnerResources(
-            num_cpus=self.num_cpus,
-            gpus=self.gpus,
-            memory_bytes=self.total_bytes_memory,
+        self._resources = PyRunnerResources(
+            num_cpus,
+            gpus,
+            memory_bytes,
         )
 
     def runner_io(self) -> PyRunnerIO:
@@ -475,7 +485,7 @@ class PyRunner(Runner[MicroPartition]):
     ) -> Iterator[str]:
         actor_pool_id = f"py_actor_pool-{name}"
 
-        resources = self._available_resources.try_acquire_multiple([actor_resource_request] * num_actors)
+        resources = self._resources.try_acquire_multiple([actor_resource_request] * num_actors)
         if resources is None:
             raise RuntimeError(
                 f"Not enough resources available to admit {num_actors} actors, each with resource request: {actor_resource_request}"
@@ -499,7 +509,7 @@ class PyRunner(Runner[MicroPartition]):
         # NOTE: Ensure that teardown always occurs regardless of any errors that occur during actor pool setup or execution
         finally:
             logger.debug("Tearing down actor pool: %s", actor_pool_id)
-            self._available_resources.release(resources)
+            self._resources.release(resources)
             self._actor_pools[actor_pool_id].teardown()
             del self._actor_pools[actor_pool_id]
 
@@ -536,7 +546,7 @@ class PyRunner(Runner[MicroPartition]):
 
                     else:
                         # next_task is a task to run.
-                        resources = self._available_resources.try_acquire(next_step.resource_request)
+                        resources = self._resources.try_acquire(next_step.resource_request)
 
                         if resources is None:
                             # Insufficient resources; await some tasks.
@@ -570,7 +580,7 @@ class PyRunner(Runner[MicroPartition]):
                                 next_step.partial_metadatas,
                             )
 
-                            self._available_resources.release(resources)
+                            self._resources.release(resources)
 
                             next_step.set_result(materialized_results)
 
@@ -605,7 +615,7 @@ class PyRunner(Runner[MicroPartition]):
                                 """We use a higher order function here to capture the value of `resources` during the creation of the callback instead of during its call."""
 
                                 def inner(_):
-                                    self._available_resources.release(resources)
+                                    self._resources.release(resources)
 
                                 return inner
 
@@ -662,18 +672,6 @@ class PyRunner(Runner[MicroPartition]):
             for (exec_id, task_id), _ in list(self._inflight_futures.items()):
                 if exec_id == execution_id:
                     del self._inflight_futures[(exec_id, task_id)]
-
-    def _check_resource_requests(self, resource_request: ResourceRequest) -> None:
-        """Validates that the requested ResourceRequest is possible to run locally"""
-
-        if resource_request.num_cpus is not None and resource_request.num_cpus > self.num_cpus:
-            raise RuntimeError(f"Requested {resource_request.num_cpus} CPUs but found only {self.num_cpus} available")
-        if resource_request.num_gpus is not None and resource_request.num_gpus > len(self.gpus):
-            raise RuntimeError(f"Requested {resource_request.num_gpus} GPUs but found only {len(self.gpus)} available")
-        if resource_request.memory_bytes is not None and resource_request.memory_bytes > self.total_bytes_memory:
-            raise RuntimeError(
-                f"Requested {resource_request.memory_bytes} bytes of memory but found only {self.total_bytes_memory} available"
-            )
 
     def build_partitions(
         self,
