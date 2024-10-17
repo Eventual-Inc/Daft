@@ -10,12 +10,18 @@ use daft_dsl::python::PyExpr;
 use daft_io::{python::IOConfig, IOStatsContext};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
-use daft_scan::{python::pylib::PyScanTask, storage_config::PyStorageConfig, ScanTask};
+use daft_scan::{
+    python::pylib::PyScanTask, storage_config::PyStorageConfig, DataSource, ScanTask, ScanTaskRef,
+};
 use daft_stats::{TableMetadata, TableStatistics};
-use daft_table::python::PyTable;
+use daft_table::{python::PyTable, Table};
 use pyo3::{exceptions::PyValueError, prelude::*, types::PyBytes, PyTypeInfo};
+use snafu::ResultExt;
 
-use crate::micropartition::{MicroPartition, TableState};
+use crate::{
+    micropartition::{MicroPartition, TableState},
+    DaftCoreComputeSnafu, PyIOSnafu,
+};
 
 #[pyclass(module = "daft.daft", frozen)]
 #[derive(Clone)]
@@ -900,6 +906,100 @@ pub fn read_sql_into_py_table(
         .call0()?
         .getattr(pyo3::intern!(py, "_table"))?
         .extract()
+}
+
+pub fn read_pyfunc_into_table_iter(
+    scan_task: &ScanTaskRef,
+) -> crate::Result<impl Iterator<Item = crate::Result<Table>>> {
+    let table_iterators = scan_task.sources.iter().map(|source| {
+        // Call Python function to create an Iterator (Grabs the GIL and then releases it)
+        match source {
+            DataSource::PythonFactoryFunction {
+                module,
+                func_name,
+                func_args,
+                ..
+            } => {
+                Python::with_gil(|py| {
+                    let func = py.import_bound(module.as_str())
+                        .unwrap_or_else(|_| panic!("Cannot import factory function from module {module}"))
+                        .getattr(func_name.as_str())
+                        .unwrap_or_else(|_| panic!("Cannot find function {func_name} in module {module}"));
+                    func.call(func_args.to_pytuple(py), None)
+                        .with_context(|_| PyIOSnafu)
+                        .map(Into::<PyObject>::into)
+                })
+            },
+            _ => unreachable!("PythonFunction file format must be paired with PythonFactoryFunction data file sources"),
+        }
+    }).collect::<crate::Result<Vec<_>>>()?;
+
+    let scan_task_limit = scan_task.pushdowns.limit;
+    let scan_task_filters = scan_task.pushdowns.filters.clone();
+    let res = table_iterators
+        .into_iter()
+        .filter_map(|iter| {
+            Python::with_gil(|py| {
+                iter.downcast_bound::<pyo3::types::PyIterator>(py)
+                    .expect("Function must return an iterator of tables")
+                    .clone()
+                    .next()
+                    .map(|result| {
+                        result
+                            .map(|tbl| {
+                                tbl.extract::<daft_table::python::PyTable>()
+                                    .expect("Must be a PyTable")
+                                    .table
+                            })
+                            .with_context(|_| PyIOSnafu)
+                    })
+            })
+        })
+        .scan(0, move |rows_seen_so_far, table| {
+            if scan_task_limit
+                .map(|limit| *rows_seen_so_far >= limit)
+                .unwrap_or(false)
+            {
+                return None;
+            }
+            match table {
+                Err(e) => Some(Err(e)),
+                Ok(table) => {
+                    // Apply filters
+                    let post_pushdown_table = || -> crate::Result<Table> {
+                        let table = if let Some(filters) = scan_task_filters.as_ref() {
+                            table
+                                .filter(&[filters.clone()])
+                                .with_context(|_| DaftCoreComputeSnafu)?
+                        } else {
+                            table
+                        };
+
+                        // Apply limit if necessary, and update `&mut remaining`
+                        if let Some(limit) = scan_task_limit {
+                            let limited_table = if *rows_seen_so_far + table.len() > limit {
+                                table
+                                    .slice(0, limit - *rows_seen_so_far)
+                                    .with_context(|_| DaftCoreComputeSnafu)?
+                            } else {
+                                table
+                            };
+
+                            // Update the rows_seen_so_far
+                            *rows_seen_so_far += limited_table.len();
+
+                            Ok(limited_table)
+                        } else {
+                            Ok(table)
+                        }
+                    }();
+
+                    Some(post_pushdown_table)
+                }
+            }
+        });
+
+    Ok(res)
 }
 
 impl From<MicroPartition> for PyMicroPartition {

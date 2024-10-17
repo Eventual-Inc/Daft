@@ -371,14 +371,13 @@ async fn stream_scan_task(
                 .map(|t| t.into())
                 .context(PyIOSnafu)
             })?;
-            // SQL Scan cannot be streamed at the moment, so we just return the table
             Box::pin(futures::stream::once(async { Ok(table) }))
         }
         #[cfg(feature = "python")]
         FileFormatConfig::PythonFunction => {
-            return Err(common_error::DaftError::TypeError(
-                "PythonFunction file format not implemented".to_string(),
-            ));
+            let iter = daft_micropartition::python::read_pyfunc_into_table_iter(&scan_task)?;
+            let stream = futures::stream::iter(iter.map(|r| r.map_err(|e| e.into())));
+            Box::pin(stream)
         }
     };
 
