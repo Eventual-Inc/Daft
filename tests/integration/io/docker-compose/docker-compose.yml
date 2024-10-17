@@ -7,7 +7,7 @@ services:
     volumes:
     - /data
     ports:
-    - 9000:9000
+    - 9001:9000
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
@@ -40,7 +40,7 @@ services:
     command: [hdfs, namenode]
     ports:
     - 9870:9870
-    - 9001:9000
+    - 9000:9000
     volumes:
     - ./namenode-entrypoint.sh:/docker-entrypoint.sh
     - ./core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml
