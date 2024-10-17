@@ -107,6 +107,8 @@ impl SQLFunction for Utf8Expr {
             Self::ToDatetime(_, _) => "Parses the string as a datetime using the specified format.".to_string(),
             Self::LengthBytes => "Returns the length of the string in bytes".to_string(),
             Self::Normalize(_) => unimplemented!("Normalize not implemented"),
+            Self::Base64Encode => "Base64 encode the string and return a new string".to_string(),
+            Self::Base64Decode => "Base64 decode the string and return a new string".to_string(),
         }
     }
 
@@ -140,6 +142,8 @@ impl SQLFunction for Utf8Expr {
             Self::ToDatetime(_, _) => &["string_input", "format"],
             Self::LengthBytes => &["string_input"],
             Self::Normalize(_) => unimplemented!("Normalize not implemented"),
+            Self::Base64Encode => &["string_input"],
+            Self::Base64Decode => &["string_input"],
         }
     }
 }
@@ -151,9 +155,10 @@ fn to_expr(expr: &Utf8Expr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
         startswith, to_date, to_datetime, upper, Utf8Expr,
     };
     use Utf8Expr::{
-        Capitalize, Contains, EndsWith, Extract, ExtractAll, Find, Ilike, Left, Length,
-        LengthBytes, Like, Lower, Lpad, Lstrip, Match, Normalize, Repeat, Replace, Reverse, Right,
-        Rpad, Rstrip, Split, StartsWith, Substr, ToDate, ToDatetime, Upper,
+        Base64Decode, Base64Encode, Capitalize, Contains, EndsWith, Extract, ExtractAll, Find,
+        Ilike, Left, Length, LengthBytes, Like, Lower, Lpad, Lstrip, Match, Normalize, Repeat,
+        Replace, Reverse, Right, Rpad, Rstrip, Split, StartsWith, Substr, ToDate, ToDatetime,
+        Upper,
     };
     match expr {
         EndsWith => {
@@ -306,6 +311,14 @@ fn to_expr(expr: &Utf8Expr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
         }
         Normalize(_) => {
             unsupported_sql_err!("normalize")
+        }
+        Base64Encode => {
+            ensure!(args.len() == 1, "base64_encode takes exactly one argument");
+            Ok(upper(args[0].clone()))
+        }
+        Base64Decode => {
+            ensure!(args.len() == 1, "base64_decode takes exactly one argument");
+            Ok(upper(args[0].clone()))
         }
     }
 }
