@@ -118,3 +118,68 @@ def test_stateful_udf_fractional_gpu(enable_actor_pool, monkeypatch):
 
         unique_visible_devices = set(result["x"])
         assert len(unique_visible_devices) == 1
+
+
+@pytest.mark.skipif(get_context().runner_config.name != "py", reason="Test can only be run on PyRunner")
+def test_stateful_udf_no_cuda_devices(enable_actor_pool, monkeypatch):
+    monkeypatch.setattr(daft.internal.gpu, "_raw_device_count_nvml", lambda: 0)
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+
+    original_runner = daft.context.get_context()._runner
+
+    try:
+        daft.context.get_context()._runner = None
+
+        @udf(return_dtype=DataType.string(), num_gpus=1)
+        class UdfWithGpus:
+            def __init__(self):
+                pass
+
+            def __call__(self, data):
+                return [str(i) for i in range(len(data))]
+
+        UdfWithGpus = UdfWithGpus.with_concurrency(1)
+
+        df = daft.from_pydict({"x": [1, 2, 3, 4]})
+        df = df.select(UdfWithGpus(df["x"]))
+
+        with pytest.raises(RuntimeError):
+            df.collect()
+    finally:
+        daft.context.get_context()._runner = original_runner
+
+
+@pytest.mark.skipif(get_context().runner_config.name != "py", reason="Test can only be run on PyRunner")
+def test_stateful_udf_no_cuda_visible_device_envvar(enable_actor_pool, monkeypatch):
+    monkeypatch.setattr(daft.internal.gpu, "_raw_device_count_nvml", lambda: 1)
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+
+    original_runner = daft.context.get_context()._runner
+
+    try:
+        daft.context.get_context()._runner = None
+
+        @udf(return_dtype=DataType.string(), num_gpus=1)
+        class UdfWithGpus:
+            def __init__(self):
+                pass
+
+            def __call__(self, data):
+                return [str(i) for i in range(len(data))]
+
+        UdfWithGpus = UdfWithGpus.with_concurrency(1)
+
+        df = daft.from_pydict({"x": [1, 2, 3, 4]})
+        df = df.select(UdfWithGpus(df["x"]))
+
+        df.collect()
+
+        UdfWithGpus2 = UdfWithGpus.with_concurrency(2)
+
+        df = daft.from_pydict({"x": [1, 2, 3, 4]})
+        df = df.select(UdfWithGpus2(df["x"]))
+
+        with pytest.raises(RuntimeError):
+            df.collect()
+    finally:
+        daft.context.get_context()._runner = original_runner
