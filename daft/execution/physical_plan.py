@@ -24,7 +24,6 @@ from typing import (
     TYPE_CHECKING,
     Generator,
     Generic,
-    Iterable,
     Iterator,
     TypeVar,
     Union,
@@ -85,7 +84,9 @@ def partition_read(
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Instantiate a (no-op) physical plan from existing partitions."""
     yield from (
-        PartitionTaskBuilder[PartitionT](inputs=[mat_result.partition()], partial_metadatas=[mat_result.metadata()])
+        PartitionTaskBuilder[PartitionT](
+            inputs=[mat_result.partition()], input_partition_metadatas=[mat_result.metadata()]
+        )
         for mat_result in materialized_results
     )
 
@@ -197,12 +198,11 @@ def lance_write(
 def pipeline_instruction(
     child_plan: InProgressPhysicalPlan[PartitionT],
     pipeable_instruction: Instruction,
-    resource_request: execution_step.ResourceRequest,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Apply an instruction to the results of `child_plan`."""
 
     yield from (
-        step.add_instruction(pipeable_instruction, resource_request) if isinstance(step, PartitionTaskBuilder) else step
+        step.add_instruction(pipeable_instruction) if isinstance(step, PartitionTaskBuilder) else step
         for step in child_plan
     )
 
@@ -280,12 +280,13 @@ def actor_pool_project(
                 actor_project_step = (
                     PartitionTaskBuilder[PartitionT](
                         inputs=[next_ready_child.partition()],
-                        partial_metadatas=[next_ready_child.partition_metadata()],
+                        input_partition_metadatas=[next_ready_child.partition_metadata()],
                         actor_pool_id=actor_pool_id,
                     )
                     .add_instruction(
-                        instruction=execution_step.StatefulUDFProject(projection),
-                        resource_request=task_resource_request,
+                        instruction=execution_step.StatefulUDFProject(
+                            projection=projection, task_resource_request=task_resource_request
+                        ),
                     )
                     .finalize_partition_task_single_output(
                         stage_id=stage_id,
@@ -299,8 +300,7 @@ def actor_pool_project(
                 next_ready_actor_pool_task = actor_pool_materializations.popleft()
                 new_pipeline_starter_task = PartitionTaskBuilder[PartitionT](
                     inputs=[next_ready_actor_pool_task.partition()],
-                    partial_metadatas=[next_ready_actor_pool_task.partition_metadata()],
-                    resource_request=ResourceRequest(),
+                    input_partition_metadatas=[next_ready_actor_pool_task.partition_metadata()],
                 )
                 yield new_pipeline_starter_task
 
@@ -334,7 +334,7 @@ def monotonically_increasing_id(
     for step in child_plan:
         if isinstance(step, PartitionTaskBuilder):
             yield step.add_instruction(
-                execution_step.MonotonicallyIncreasingId(partition_counter, column_name), ResourceRequest()
+                execution_step.MonotonicallyIncreasingId(partition_counter, column_name),
             )
             partition_counter += 1
         else:
@@ -365,24 +365,9 @@ def hash_join(
             next_left = left_requests.popleft()
             next_right = right_requests.popleft()
 
-            # Calculate memory request for task.
-            left_size_bytes = next_left.partition_metadata().size_bytes
-            right_size_bytes = next_right.partition_metadata().size_bytes
-            if left_size_bytes is None and right_size_bytes is None:
-                size_bytes = None
-            elif left_size_bytes is None and right_size_bytes is not None:
-                # Use 2x the right side as the memory request, assuming that left and right side are ~ the same size.
-                size_bytes = 2 * right_size_bytes
-            elif right_size_bytes is None and left_size_bytes is not None:
-                # Use 2x the left side as the memory request, assuming that left and right side are ~ the same size.
-                size_bytes = 2 * left_size_bytes
-            elif left_size_bytes is not None and right_size_bytes is not None:
-                size_bytes = left_size_bytes + right_size_bytes
-
             join_step = PartitionTaskBuilder[PartitionT](
                 inputs=[next_left.partition(), next_right.partition()],
-                partial_metadatas=[next_left.partition_metadata(), next_right.partition_metadata()],
-                resource_request=ResourceRequest(memory_bytes=size_bytes),
+                input_partition_metadatas=[next_left.partition_metadata(), next_right.partition_metadata()],
             ).add_instruction(
                 instruction=execution_step.HashJoin(
                     left_on=left_on,
@@ -435,44 +420,16 @@ def _create_broadcast_join_step(
     how: JoinType,
     is_swapped: bool,
 ) -> PartitionTaskBuilder[PartitionT]:
-    # Calculate memory request for task.
-    broadcaster_size_bytes_ = 0
     broadcaster_partitions = []
     broadcaster_partition_metadatas = []
-    null_count = 0
     for next_broadcaster in broadcaster_parts:
         next_broadcaster_partition_metadata = next_broadcaster.partition_metadata()
-        if next_broadcaster_partition_metadata is None or next_broadcaster_partition_metadata.size_bytes is None:
-            null_count += 1
-        else:
-            broadcaster_size_bytes_ += next_broadcaster_partition_metadata.size_bytes
         broadcaster_partitions.append(next_broadcaster.partition())
         broadcaster_partition_metadatas.append(next_broadcaster_partition_metadata)
-    if null_count == len(broadcaster_parts):
-        broadcaster_size_bytes = None
-    elif null_count > 0:
-        # Impute null size estimates with mean of non-null estimates.
-        broadcaster_size_bytes = broadcaster_size_bytes_ + math.ceil(
-            null_count * broadcaster_size_bytes_ / (len(broadcaster_parts) - null_count)
-        )
-    else:
-        broadcaster_size_bytes = broadcaster_size_bytes_
-    receiver_size_bytes = receiver_part.partition_metadata().size_bytes
-    if broadcaster_size_bytes is None and receiver_size_bytes is None:
-        size_bytes = None
-    elif broadcaster_size_bytes is None and receiver_size_bytes is not None:
-        # Use 1.25x the receiver side as the memory request, assuming that receiver side is ~4x larger than the broadcaster side.
-        size_bytes = int(1.25 * receiver_size_bytes)
-    elif receiver_size_bytes is None and broadcaster_size_bytes is not None:
-        # Use 4x the broadcaster side as the memory request, assuming that receiver side is ~4x larger than the broadcaster side.
-        size_bytes = 4 * broadcaster_size_bytes
-    elif broadcaster_size_bytes is not None and receiver_size_bytes is not None:
-        size_bytes = broadcaster_size_bytes + receiver_size_bytes
 
     return PartitionTaskBuilder[PartitionT](
         inputs=broadcaster_partitions + [receiver_part.partition()],
-        partial_metadatas=list(broadcaster_partition_metadatas + [receiver_part.partition_metadata()]),
-        resource_request=ResourceRequest(memory_bytes=size_bytes),
+        input_partition_metadatas=list(broadcaster_partition_metadatas + [receiver_part.partition_metadata()]),
     ).add_instruction(
         instruction=execution_step.BroadcastJoin(
             left_on=left_on,
@@ -688,11 +645,10 @@ def _emit_merge_joins_on_window(
     """
     # Emit a merge-join step for all partitions in the other window that intersect with this new partition.
     for other_next_part in other_window:
-        memory_bytes = _memory_bytes_for_merge(next_part, other_next_part)
         inputs = [next_part.partition(), other_next_part.partition()]
         partial_metadatas = [
-            next_part.partition_metadata().downcast_to_partial(),
-            other_next_part.partition_metadata().downcast_to_partial(),
+            next_part.partition_metadata(),
+            other_next_part.partition_metadata(),
         ]
         # If next, other are flipped (right, left partitions), flip them back.
         if flipped:
@@ -700,8 +656,7 @@ def _emit_merge_joins_on_window(
             partial_metadatas = list(reversed(partial_metadatas))
         join_task = PartitionTaskBuilder[PartitionT](
             inputs=inputs,
-            partial_metadatas=partial_metadatas,
-            resource_request=ResourceRequest(memory_bytes=memory_bytes),
+            input_partition_metadatas=partial_metadatas,
         ).add_instruction(
             instruction=execution_step.MergeJoin(
                 left_on=left_on,
@@ -715,25 +670,6 @@ def _emit_merge_joins_on_window(
         # emitting non-empty join steps if there are now more than one.
         merge_join_task_tracker.add_task(part_id, join_task)
         yield from merge_join_task_tracker.yield_ready(part_id)
-
-
-def _memory_bytes_for_merge(
-    next_left: SingleOutputPartitionTask[PartitionT], next_right: SingleOutputPartitionTask[PartitionT]
-) -> int | None:
-    # Calculate memory request for merge task.
-    left_size_bytes = next_left.partition_metadata().size_bytes
-    right_size_bytes = next_right.partition_metadata().size_bytes
-    if left_size_bytes is None and right_size_bytes is None:
-        size_bytes = None
-    elif left_size_bytes is None and right_size_bytes is not None:
-        # Use 2x the right side as the memory request, assuming that left and right side are ~ the same size.
-        size_bytes = 2 * right_size_bytes
-    elif right_size_bytes is None and left_size_bytes is not None:
-        # Use 2x the left side as the memory request, assuming that left and right side are ~ the same size.
-        size_bytes = 2 * left_size_bytes
-    elif left_size_bytes is not None and right_size_bytes is not None:
-        size_bytes = left_size_bytes + right_size_bytes
-    return size_bytes
 
 
 def merge_join_sorted(
@@ -865,11 +801,9 @@ def merge_join_sorted(
             # they actually are empty, so we just issue the coalesce task.
             # TODO(Clark): Elide coalescing by emitting a single merge-join task per larger-side partition, including as
             # input all intersecting partitions from the smaller side of the join.
-            size_bytes = _memory_bytes_for_coalesce(tasks)
             coalesce_task = PartitionTaskBuilder[PartitionT](
                 inputs=[task.partition() for task in tasks],
-                partial_metadatas=[task.partition_metadata() for task in tasks],
-                resource_request=ResourceRequest(memory_bytes=size_bytes),
+                input_partition_metadatas=[task.partition_metadata() for task in tasks],
             ).add_instruction(
                 instruction=execution_step.ReduceMerge(),
             )
@@ -950,25 +884,6 @@ def _is_strictly_bounded_above_by(
     return lower_boundaries.is_strictly_bounded_above_by(upper_boundaries)
 
 
-def _memory_bytes_for_coalesce(input_parts: Iterable[SingleOutputPartitionTask[PartitionT]]) -> int | None:
-    # Calculate memory request for task.
-    size_bytes_per_task = [task.partition_metadata().size_bytes for task in input_parts]
-    non_null_size_bytes_per_task = [size for size in size_bytes_per_task if size is not None]
-    non_null_size_bytes = sum(non_null_size_bytes_per_task)
-    if len(size_bytes_per_task) == len(non_null_size_bytes_per_task):
-        # If all task size bytes are non-null, directly use the non-null size bytes sum.
-        size_bytes = non_null_size_bytes
-    elif non_null_size_bytes_per_task:
-        # If some are null, calculate the non-null mean and assume that null task size bytes
-        # have that size.
-        mean_size = math.ceil(non_null_size_bytes / len(non_null_size_bytes_per_task))
-        size_bytes = non_null_size_bytes + mean_size * (len(size_bytes_per_task) - len(non_null_size_bytes_per_task))
-    else:
-        # If all null, set to null.
-        size_bytes = None
-    return size_bytes
-
-
 def sort_merge_join_aligned_boundaries(
     left_plan: InProgressPhysicalPlan[PartitionT],
     right_plan: InProgressPhysicalPlan[PartitionT],
@@ -1025,7 +940,7 @@ def sort_merge_join_aligned_boundaries(
             sample = (
                 PartitionTaskBuilder[PartitionT](
                     inputs=[source.partition()],
-                    partial_metadatas=None,
+                    input_partition_metadatas=[source.result().metadata()],
                 )
                 .add_instruction(
                     instruction=execution_step.Sample(sort_by=on, size=sample_size),
@@ -1057,15 +972,16 @@ def sort_merge_join_aligned_boundaries(
     stage_id_reduce = next(stage_id_counter)
 
     # Reduce the samples from both child plans to get combined sort partitioning boundaries.
+    samples = [
+        sample
+        for sample in itertools.chain(
+            consume_deque(left_sample_materializations), consume_deque(right_sample_materializations)
+        )
+    ]
     left_boundaries = (
         PartitionTaskBuilder[PartitionT](
-            inputs=[
-                sample.partition()
-                for sample in itertools.chain(
-                    consume_deque(left_sample_materializations), consume_deque(right_sample_materializations)
-                )
-            ],
-            partial_metadatas=None,
+            inputs=[s.result().partition() for s in samples],
+            input_partition_metadatas=[s.result().metadata() for s in samples],
         )
         .add_instruction(
             execution_step.ReduceToQuantiles(
@@ -1088,7 +1004,7 @@ def sort_merge_join_aligned_boundaries(
     right_boundaries = (
         PartitionTaskBuilder[PartitionT](
             inputs=[left_boundaries.partition()],
-            partial_metadatas=None,
+            input_partition_metadatas=[left_boundaries.result().metadata()],
         )
         # Rename quantile columns so their original naming is restored, so we can sort each child with their native expression.
         .add_instruction(
@@ -1121,10 +1037,7 @@ def sort_merge_join_aligned_boundaries(
         range_fanout_plan = [
             PartitionTaskBuilder[PartitionT](
                 inputs=[boundaries.partition(), source.partition()],
-                partial_metadatas=[boundaries.partition_metadata(), source.partition_metadata()],
-                resource_request=ResourceRequest(
-                    memory_bytes=source.partition_metadata().size_bytes,
-                ),
+                input_partition_metadatas=[boundaries.partition_metadata(), source.partition_metadata()],
             ).add_instruction(
                 instruction=execution_step.FanoutRange[PartitionT](
                     _num_outputs=num_partitions,
@@ -1237,8 +1150,7 @@ def global_limit(
 
             global_limit_step = PartitionTaskBuilder[PartitionT](
                 inputs=[done_task.partition()],
-                partial_metadatas=[done_task_metadata],
-                resource_request=ResourceRequest(memory_bytes=done_task_metadata.size_bytes),
+                input_partition_metadatas=[done_task_metadata],
             ).add_instruction(
                 instruction=execution_step.GlobalLimit(limit),
             )
@@ -1259,8 +1171,7 @@ def global_limit(
                 yield from (
                     PartitionTaskBuilder[PartitionT](
                         inputs=[done_task.partition()],
-                        partial_metadatas=[done_task.partition_metadata()],
-                        resource_request=ResourceRequest(memory_bytes=done_task.partition_metadata().size_bytes),
+                        input_partition_metadatas=[done_task.partition_metadata()],
                     ).add_instruction(
                         instruction=execution_step.GlobalLimit(0),
                     )
@@ -1288,9 +1199,10 @@ def global_limit(
                 # If this is the very next partition to apply a nonvacuous global limit on,
                 # see if it has any row metadata already.
                 # If so, we can deterministically apply and deduct the rolling limit without materializing.
-                [partial_meta] = child_step.partial_metadatas
-                if len(materializations) == 0 and remaining_rows > 0 and partial_meta.num_rows is not None:
-                    limit = min(remaining_rows, partial_meta.num_rows)
+                exact_meta = child_step.exact_partition_metadata()
+                if len(materializations) == 0 and remaining_rows > 0 and exact_meta is not None:
+                    [meta] = exact_meta
+                    limit = min(remaining_rows, meta.num_rows)
                     child_step = child_step.add_instruction(instruction=execution_step.LocalLimit(limit))
 
                     remaining_partitions -= 1
@@ -1319,8 +1231,7 @@ def flatten_plan(child_plan: InProgressPhysicalPlan[PartitionT]) -> InProgressPh
             for partition, metadata in zip(done_task.partitions(), done_task.partition_metadatas()):
                 yield PartitionTaskBuilder[PartitionT](
                     inputs=[partition],
-                    partial_metadatas=[metadata],
-                    resource_request=ResourceRequest(memory_bytes=metadata.size_bytes),
+                    input_partition_metadatas=[metadata],
                 )
 
         try:
@@ -1396,29 +1307,9 @@ def coalesce(
         ready_to_coalesce = [task for task in list(materializations)[:num_partitions_to_merge] if task.done()]
         if len(ready_to_coalesce) == num_partitions_to_merge:
             # Coalesce the partition and emit it.
-
-            # Calculate memory request for task.
-            size_bytes_per_task = [task.partition_metadata().size_bytes for task in ready_to_coalesce]
-            non_null_size_bytes_per_task = [size for size in size_bytes_per_task if size is not None]
-            non_null_size_bytes = sum(non_null_size_bytes_per_task)
-            if len(size_bytes_per_task) == len(non_null_size_bytes_per_task):
-                # If all task size bytes are non-null, directly use the non-null size bytes sum.
-                size_bytes = non_null_size_bytes
-            elif non_null_size_bytes_per_task:
-                # If some are null, calculate the non-null mean and assume that null task size bytes
-                # have that size.
-                mean_size = math.ceil(non_null_size_bytes / len(non_null_size_bytes_per_task))
-                size_bytes = non_null_size_bytes + mean_size * (
-                    len(size_bytes_per_task) - len(non_null_size_bytes_per_task)
-                )
-            else:
-                # If all null, set to null.
-                size_bytes = None
-
             merge_step = PartitionTaskBuilder[PartitionT](
                 inputs=[_.partition() for _ in ready_to_coalesce],
-                partial_metadatas=[_.partition_metadata() for _ in ready_to_coalesce],
-                resource_request=ResourceRequest(memory_bytes=size_bytes),
+                input_partition_metadatas=[_.partition_metadata() for _ in ready_to_coalesce],
             ).add_instruction(
                 instruction=execution_step.ReduceMerge(),
             )
@@ -1485,10 +1376,7 @@ def reduce(
         metadata_batch = [_.popleft() for _ in metadatas]
         yield PartitionTaskBuilder[PartitionT](
             inputs=partition_batch,
-            partial_metadatas=metadata_batch,
-            resource_request=ResourceRequest(
-                memory_bytes=sum(metadata.size_bytes for metadata in metadata_batch),
-            ),
+            input_partition_metadatas=metadata_batch,
         ).add_instruction(reduce_instructions_.popleft())
 
 
@@ -1522,7 +1410,7 @@ def sort(
         sample = (
             PartitionTaskBuilder[PartitionT](
                 inputs=[source.partition()],
-                partial_metadatas=None,
+                input_partition_metadatas=[source.result().metadata()],
             )
             .add_instruction(
                 instruction=execution_step.Sample(size=sample_size, sort_by=sort_by),
@@ -1541,10 +1429,11 @@ def sort(
     stage_id_reduce = next(stage_id_counter)
 
     # Reduce the samples to get sort boundaries.
+    samples = [sample for sample in consume_deque(sample_materializations)]
     boundaries = (
         PartitionTaskBuilder[PartitionT](
-            inputs=[sample.partition() for sample in consume_deque(sample_materializations)],
-            partial_metadatas=None,
+            inputs=[s.partition() for s in samples],
+            input_partition_metadatas=[s.result().metadata() for s in samples],
         )
         .add_instruction(
             execution_step.ReduceToQuantiles(
@@ -1566,10 +1455,7 @@ def sort(
     range_fanout_plan = (
         PartitionTaskBuilder[PartitionT](
             inputs=[boundaries.partition(), source.partition()],
-            partial_metadatas=[boundaries.partition_metadata(), source.partition_metadata()],
-            resource_request=ResourceRequest(
-                memory_bytes=source.partition_metadata().size_bytes,
-            ),
+            input_partition_metadatas=[boundaries.partition_metadata(), source.partition_metadata()],
         ).add_instruction(
             instruction=execution_step.FanoutRange[PartitionT](
                 _num_outputs=num_partitions,
