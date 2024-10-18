@@ -13,7 +13,6 @@ daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
 daft-table = {path = "../daft-table", default-features = false}
 futures = {workspace = true}
-itertools = {workspace = true}
 memchr = "2.7.2"
 pyo3 = {workspace = true, optional = true}
 rayon = {workspace = true}

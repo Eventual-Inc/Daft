@@ -687,15 +687,12 @@ impl ChunkStateHolder {
     /// 2b. If the record at this point is invalid, then this was likely a \n in a quoted field. Find the next
     ///     \n character and go back to 2.
     fn goto_next_newline(&mut self) -> bool {
-        //println!("newline idx {}, newline offset {}", self.curr_newline_idx, self.curr_newline_offset);
         self.valid_chunk = false;
         loop {
             if self.curr_newline_idx >= self.states.len() {
-                //println!("no newline found");
                 return false;
             }
             if self.curr_newline_offset >= self.states[self.curr_newline_idx].len() {
-                //println!("offset larger than length of current state");
                 self.curr_newline_offset = 0;
                 self.curr_newline_idx += 1;
                 continue;
@@ -703,7 +700,6 @@ impl ChunkStateHolder {
             if let Some(pos) =
                 self.states[self.curr_newline_idx].find_newline(self.curr_newline_offset)
             {
-                //println!("found newline at {}, {}", self.curr_newline_idx, pos);
                 self.curr_newline_offset = pos + 1;
                 if self.curr_newline_offset >= self.states[self.curr_newline_idx].len() {
                     self.curr_newline_offset = 0;
@@ -714,7 +710,6 @@ impl ChunkStateHolder {
                 self.curr_byte_read_offset = self.curr_newline_offset;
                 return true;
             } else {
-                //println!("no newline found, going to next idx..");
                 self.curr_newline_offset = 0;
                 self.curr_newline_idx += 1;
                 continue;
@@ -745,10 +740,8 @@ impl ChunkStateHolder {
                 escape_char,
                 double_quote_escape_allowed,
             ) {
-                // println!("validity: {valid}");
                 self.valid_chunk = valid;
                 if valid {
-                    // println!("Valid! states: {:?}", self.states);
                     let (ending_idx, ending_offset) = if self.curr_byte_read_offset == 0 {
                         (
                             self.curr_byte_read_idx - 1,
@@ -770,12 +763,9 @@ impl ChunkStateHolder {
                     } else {
                         panic!("There should be at least one chunk state that's split off.");
                     }
-                    // println!("After transformation: {:?}", self.states);
-                    // println!("leftovers:{:?}", self.next_states);
                 }
                 return valid;
             } else {
-                //println!("state machine needs more bytes??");
                 // We ran out of bytes while running the CSV state machine. Read another file slab then
                 // continue running the state machine.
                 if let Some(next) = iter.next() {
@@ -829,40 +819,6 @@ impl Iterator for ChunkStateHolder {
         }
     }
 }
-
-// impl Read for ChunkStateHolder {
-//     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-//         let current_state = loop {
-//             if self.curr_read_idx >= self.states.len() {
-//                 return Ok(0); // EOF
-//             }
-//             let current_state = &self.states[self.curr_read_idx];
-//             if self.curr_read_offset < current_state.len() {
-//                 break current_state;
-//             }
-//             self.curr_read_offset = 0;
-//             self.curr_read_idx += 1;
-//         };
-//         let slice = match current_state {
-//             ChunkState::Start { slab, start } => {
-//                 &unsafe_clone_buffer(&slab.buffer)[*start..slab.valid_bytes]
-//             }
-//             ChunkState::StartAndFinal { slab, start, end } => {
-//                 &unsafe_clone_buffer(&slab.buffer)[*start..*end]
-//             }
-//             ChunkState::Continue { slab } => &unsafe_clone_buffer(&slab.buffer)[..slab.valid_bytes],
-//             ChunkState::Final { slab, end } => &unsafe_clone_buffer(&slab.buffer)[..*end],
-//         };
-//         let read_size = buf.len().min(slice.len() - self.curr_read_offset);
-//         buf[..read_size].copy_from_slice(&slice[self.curr_read_offset..][..read_size]);
-//         self.curr_read_offset += read_size;
-//         Ok(read_size)
-//     }
-
-//     // fn read_vectored(&mut self, bufs: &mut [std::io::IoSliceMut<'_>]) -> std::io::Result<usize> {}
-
-//     // fn read_to_end(&mut self, buf: &mut Vec<u8>) -> std::io::Result<usize> {}
-// }
 
 #[derive(Debug)]
 enum ChunkState {
@@ -945,26 +901,6 @@ impl ChunkState {
         self.get_slab().clone()
     }
 }
-
-// struct SlabConsumer<'a, I> {
-//     slab_iter: &'a mut I,
-// }
-
-// impl<'a, I> Iterator for SlabConsumer<'a, I>
-// where
-//     I: Iterator<Item = Arc<FileSlab>>,
-// {
-//     type Item = ChunkState;
-//     fn next(&mut self) -> Option<Self::Item> {
-//         // let mut so_far = vec![];
-//         while let Some(data) = self.slab_iter.next() {
-//             todo!()
-//         }
-
-//         // verify last item is final or StartAndFinal
-//         todo!("emit state")
-//     }
-// }
 
 struct MultiSliceReader {
     // https://stackoverflow.com/questions/71801199/how-can-concatenated-u8-slices-implement-the-read-trait-without-additional-co
@@ -1072,7 +1008,6 @@ fn validate_csv_record(
                     return Some(false);
                 }
                 let byte = iter.next()?;
-                // println!("field start byte {}", byte);
                 if byte == NEWLINE {
                     *state = CsvState::RecordEnd;
                 } else if byte == quote_char {
@@ -1088,7 +1023,6 @@ fn validate_csv_record(
                 // We follow the convention where an unquoted field does not consider escape characters.
                 loop {
                     let byte = iter.next()?;
-                    // println!("unquoted field byte {}", byte);
                     if byte == NEWLINE {
                         *state = CsvState::RecordEnd;
                         break;
@@ -1102,7 +1036,6 @@ fn validate_csv_record(
             CsvState::QuotedField => {
                 loop {
                     let byte = iter.next()?;
-                    // println!("quoted field byte {}", byte);
                     if byte == quote_char {
                         *state = CsvState::Unquote;
                         break;
@@ -1117,7 +1050,6 @@ fn validate_csv_record(
             }
             CsvState::Unquote => {
                 let byte = iter.next()?;
-                // println!("unquote byte {}", byte);
                 if let Some(escape_char) = escape_char
                     && byte == escape_char
                     && escape_char == quote_char
