@@ -41,11 +41,11 @@ def scan_with_tasks(
     for scan_task in scan_tasks:
         scan_step = execution_step.PartitionTaskBuilder[PartitionT](
             inputs=[],
-            partial_metadatas=None,
+            input_partition_metadatas=[],
         ).add_instruction(
-            instruction=execution_step.ScanWithTask(scan_task),
-            # Set the estimated in-memory size as the memory request.
-            resource_request=ResourceRequest(memory_bytes=scan_task.estimate_in_memory_size_bytes(cfg)),
+            instruction=execution_step.ScanWithTask(
+                scan_task, resource_request=ResourceRequest(memory_bytes=scan_task.estimate_in_memory_size_bytes(cfg))
+            ),
         )
         yield scan_step
 
@@ -56,10 +56,9 @@ def empty_scan(
     """yield a plan to create an empty Partition"""
     scan_step = execution_step.PartitionTaskBuilder[PartitionT](
         inputs=[],
-        partial_metadatas=None,
+        input_partition_metadatas=[],
     ).add_instruction(
         instruction=execution_step.EmptyScan(schema=schema),
-        resource_request=ResourceRequest(memory_bytes=0),
     )
     yield scan_step
 
@@ -75,8 +74,7 @@ def project(
     )
     return physical_plan.pipeline_instruction(
         child_plan=input,
-        pipeable_instruction=execution_step.Project(expr_projection),
-        resource_request=resource_request,
+        pipeable_instruction=execution_step.Project(expr_projection, resource_request=resource_request),
     )
 
 
@@ -121,7 +119,6 @@ def explode(
     return physical_plan.pipeline_instruction(
         child_plan=input,
         pipeable_instruction=execution_step.MapPartition(explode_op),
-        resource_request=ResourceRequest(),
     )
 
 
@@ -145,7 +142,6 @@ def unpivot(
     return physical_plan.pipeline_instruction(
         child_plan=input,
         pipeable_instruction=unpivot_step,
-        resource_request=ResourceRequest(),
     )
 
 
@@ -162,7 +158,6 @@ def local_aggregate(
     return physical_plan.pipeline_instruction(
         child_plan=input,
         pipeable_instruction=aggregation_step,
-        resource_request=ResourceRequest(),
     )
 
 
@@ -183,7 +178,6 @@ def pivot(
     return physical_plan.pipeline_instruction(
         child_plan=input,
         pipeable_instruction=pivot_step,
-        resource_request=ResourceRequest(),
     )
 
 
@@ -193,7 +187,6 @@ def sample(
     return physical_plan.pipeline_instruction(
         child_plan=input,
         pipeable_instruction=execution_step.Sample(fraction=fraction, with_replacement=with_replacement, seed=seed),
-        resource_request=ResourceRequest(),
     )
 
 
@@ -225,7 +218,6 @@ def split_by_hash(
     return physical_plan.pipeline_instruction(
         input,
         fanout_instruction,
-        ResourceRequest(),
     )
 
 

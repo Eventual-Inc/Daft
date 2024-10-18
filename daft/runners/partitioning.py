@@ -97,7 +97,7 @@ class ExactPartitionMetadata(EstimatedPartitionMetadata):
             boundaries = partial_metadata.boundaries
         return ExactPartitionMetadata(num_rows, size_bytes, boundaries)
 
-    def downcast_to_partial(self) -> EstimatedPartitionMetadata:
+    def downcast_to_estimated(self) -> EstimatedPartitionMetadata:
         return EstimatedPartitionMetadata(self.num_rows, self.size_bytes, self.boundaries)
 
 
