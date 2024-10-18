@@ -1044,3 +1044,30 @@ class FanoutSlices(FanoutInstruction):
             )
 
         return results
+
+
+@dataclass(frozen=True)
+class FanoutEvenSlices(FanoutInstruction):
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        [input] = inputs
+        results = []
+
+        chunk_size, remainder = divmod(len(input), self.num_outputs())
+        for i in range(self.num_outputs()):
+            start = i * chunk_size
+            end = start + chunk_size
+            if i == self.num_outputs() - 1:
+                end += remainder
+            results.append(input.slice(start, end))
+
+        return results
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        # TODO: Derive this based on the ratios of num rows
+        return [
+            PartialPartitionMetadata(
+                num_rows=None,
+                size_bytes=None,
+            )
+            for _ in range(self._num_outputs)
+        ]

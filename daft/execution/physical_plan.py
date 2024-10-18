@@ -1317,12 +1317,47 @@ def flatten_plan(child_plan: InProgressPhysicalPlan[PartitionT]) -> InProgressPh
                 return
 
 
-def split(
+def split_naively(
     child_plan: InProgressPhysicalPlan[PartitionT],
     num_input_partitions: int,
     num_output_partitions: int,
 ) -> InProgressPhysicalPlan[PartitionT]:
-    """Repartition the child_plan into more partitions by splitting partitions only. Preserves order."""
+    """Repartition the child_plan into more partitions by splitting partitions only. Preserves order.
+
+    This performs a naive split, which might lead to data skews but does not require a full materialization of
+    input partitions when performing the split.
+    """
+    assert (
+        num_output_partitions >= num_input_partitions
+    ), f"Cannot split from {num_input_partitions} to {num_output_partitions}."
+
+    base_splits_per_partition, num_partitions_with_extra_output = divmod(num_output_partitions, num_input_partitions)
+
+    input_partition_idx = 0
+    for step in child_plan:
+        if isinstance(step, PartitionTaskBuilder):
+            num_out = (
+                base_splits_per_partition + 1
+                if input_partition_idx < num_partitions_with_extra_output
+                else base_splits_per_partition
+            )
+            step = step.add_instruction(instruction=execution_step.FanoutEvenSlices(_num_outputs=num_out))
+            input_partition_idx += 1
+            yield step
+        else:
+            yield step
+
+
+def split_evenly(
+    child_plan: InProgressPhysicalPlan[PartitionT],
+    num_input_partitions: int,
+    num_output_partitions: int,
+) -> InProgressPhysicalPlan[PartitionT]:
+    """Repartition the child_plan into more partitions by splitting partitions only. Preserves order.
+
+    This performs an even split, but requires a full materialization of input partitions in order to get an accurate count of
+    the rows on those input partitions.
+    """
 
     assert (
         num_output_partitions >= num_input_partitions
