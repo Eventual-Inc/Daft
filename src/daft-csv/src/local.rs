@@ -135,7 +135,7 @@ const SLABPOOL_DEFAULT_SIZE: usize = 20;
 /// A pool of slabs. Used for reading CSV files in SLABSIZE chunks.
 #[derive(Debug)]
 struct FileSlabPool {
-    buffers: Mutex<Vec<Arc<[u8]>>>,
+    buffers: Mutex<Vec<Box<[u8]>>>,
     condvar: Condvar,
 }
 
@@ -143,7 +143,7 @@ struct FileSlabPool {
 #[derive(Clone, Debug)]
 struct FileSlab {
     pool: Arc<FileSlabPool>,
-    buffer: ManuallyDrop<Arc<[u8]>>,
+    buffer: ManuallyDrop<Box<[u8]>>,
     valid_bytes: usize,
 }
 
@@ -167,11 +167,10 @@ impl Drop for FileSlab {
 
 impl FileSlabPool {
     pub fn new() -> Self {
-        let chunk_buffers: Vec<Arc<[u8]>> = (0..SLABPOOL_DEFAULT_SIZE)
+        let chunk_buffers: Vec<Box<[u8]>> = (0..SLABPOOL_DEFAULT_SIZE)
             // We get uninitialized buffers because we will always populate the buffers with a file read before use.
             .map(|_| Box::new_uninit_slice(SLABSIZE))
             .map(|x| unsafe { x.assume_init() })
-            .map(Arc::from)
             .collect();
         Self {
             buffers: Mutex::new(chunk_buffers),
@@ -179,7 +178,7 @@ impl FileSlabPool {
         }
     }
 
-    pub fn get_buffer(self: &Arc<Self>) -> Arc<[u8]> {
+    pub fn get_buffer(self: &Arc<Self>) -> Box<[u8]> {
         let mut buffers = self.buffers.lock().unwrap();
         while buffers.is_empty() {
             // Instead of creating a new slab when we're out, we wait for a slab to be returned before waking up.
@@ -189,7 +188,7 @@ impl FileSlabPool {
         buffers.pop().unwrap()
     }
 
-    fn return_buffer(&self, buffer: Arc<[u8]>) {
+    fn return_buffer(&self, buffer: Box<[u8]>) {
         let mut buffers = self.buffers.lock().unwrap();
         buffers.push(buffer);
         self.condvar.notify_one();
@@ -436,25 +435,17 @@ impl Iterator for SlabIterator {
     type Item = Arc<FileSlab>;
     fn next(&mut self) -> Option<Self::Item> {
         let mut buffer = self.slabpool.get_buffer();
-        match Arc::get_mut(&mut buffer) {
-            Some(inner_buffer) => {
-                let bytes_read = self.file.read(inner_buffer).unwrap();
-                if bytes_read == 0 {
-                    self.slabpool.return_buffer(buffer);
-                    return None;
-                }
-                self.total_bytes_read += bytes_read;
-                Some(Arc::new(FileSlab {
-                    pool: Arc::clone(&self.slabpool),
-                    buffer: ManuallyDrop::new(buffer),
-                    valid_bytes: bytes_read,
-                }))
-            }
-            None => {
-                self.slabpool.return_buffer(buffer);
-                panic!("We should have exclusive access to this mutable buffer.");
-            }
+        let bytes_read = self.file.read(buffer.as_mut()).unwrap();
+        if bytes_read == 0 {
+            self.slabpool.return_buffer(buffer);
+            return None;
         }
+        self.total_bytes_read += bytes_read;
+        Some(Arc::new(FileSlab {
+            pool: Arc::clone(&self.slabpool),
+            buffer: ManuallyDrop::new(buffer),
+            valid_bytes: bytes_read,
+        }))
     }
 }
 
