@@ -1688,10 +1688,13 @@ class DataFrame:
         right_on: Optional[Union[List[ColumnInputType], ColumnInputType]] = None,
         how: str = "inner",
         strategy: Optional[str] = None,
+        join_prefix: Optional[str] = None,
+        join_suffix: Optional[str] = None,
     ) -> "DataFrame":
         """Column-wise join of the current DataFrame with an ``other`` DataFrame, similar to a SQL ``JOIN``
 
-        If the two DataFrames have duplicate non-join key column names, "right." will be prepended to the conflicting right columns.
+        If the two DataFrames have duplicate non-join key column names, "right." will be prepended to the conflicting right columns. You can change the behavior by passing either (or both) `join_prefix` or `join_suffix` to the function.
+        If `join_prefix` is passed, it will be prepended to the conflicting right columns. If `join_suffix` is passed, it will be appended to the conflicting right columns.
 
         .. NOTE::
             Although self joins are supported, we currently duplicate the logical plan for the right side
@@ -1706,6 +1709,42 @@ class DataFrame:
             >>> joined_df.show()
             ╭──────┬───────┬─────────╮
             │ a    ┆ b     ┆ right.b │
+            │ ---  ┆ ---   ┆ ---     │
+            │ Utf8 ┆ Int64 ┆ Int64   │
+            ╞══════╪═══════╪═════════╡
+            │ x    ┆ 2     ┆ 20      │
+            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ y    ┆ 3     ┆ 30      │
+            ╰──────┴───────┴─────────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+
+            >>> import daft
+            >>> from daft import col
+            >>> df1 = daft.from_pydict({ "a": ["w", "x", "y"], "b": [1, 2, 3] })
+            >>> df2 = daft.from_pydict({ "a": ["x", "y", "z"], "b": [20, 30, 40] })
+            >>> joined_df = df1.join(df2, left_on=[col("a"), col("b")], right_on=[col("a"), col("b")/10], join_prefix="right_")
+            >>> joined_df.show()
+            ╭──────┬───────┬─────────╮
+            │ a    ┆ b     ┆ right_b │
+            │ ---  ┆ ---   ┆ ---     │
+            │ Utf8 ┆ Int64 ┆ Int64   │
+            ╞══════╪═══════╪═════════╡
+            │ x    ┆ 2     ┆ 20      │
+            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ y    ┆ 3     ┆ 30      │
+            ╰──────┴───────┴─────────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+
+            >>> import daft
+            >>> from daft import col
+            >>> df1 = daft.from_pydict({ "a": ["w", "x", "y"], "b": [1, 2, 3] })
+            >>> df2 = daft.from_pydict({ "a": ["x", "y", "z"], "b": [20, 30, 40] })
+            >>> joined_df = df1.join(df2, left_on=[col("a"), col("b")], right_on=[col("a"), col("b")/10], join_suffix="_right")
+            >>> joined_df.show()
+            ╭──────┬───────┬─────────╮
+            │ a    ┆ b     ┆ b_right │
             │ ---  ┆ ---   ┆ ---     │
             │ Utf8 ┆ Int64 ┆ Int64   │
             ╞══════╪═══════╪═════════╡
@@ -1756,6 +1795,8 @@ class DataFrame:
             right_on=right_exprs,
             how=join_type,
             strategy=join_strategy,
+            join_prefix=join_prefix,
+            join_suffix=join_suffix,
         )
         return DataFrame(builder)
 
