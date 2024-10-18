@@ -19,7 +19,7 @@ pub enum LocalPhysicalPlan {
     // Unpivot(Unpivot),
     Sort(Sort),
     // Split(Split),
-    // Sample(Sample),
+    Sample(Sample),
     // MonotonicallyIncreasingId(MonotonicallyIncreasingId),
     // Coalesce(Coalesce),
     // Flatten(Flatten),
@@ -167,6 +167,24 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    pub(crate) fn sample(
+        input: LocalPhysicalPlanRef,
+        fraction: f64,
+        with_replacement: bool,
+        seed: Option<u64>,
+    ) -> LocalPhysicalPlanRef {
+        let schema = input.schema().clone();
+        Self::Sample(Sample {
+            input,
+            fraction,
+            with_replacement,
+            seed,
+            schema,
+            plan_stats: PlanStats {},
+        })
+        .arced()
+    }
+
     pub(crate) fn hash_join(
         left: LocalPhysicalPlanRef,
         right: LocalPhysicalPlanRef,
@@ -211,6 +229,7 @@ impl LocalPhysicalPlan {
             | Self::UnGroupedAggregate(UnGroupedAggregate { schema, .. })
             | Self::HashAggregate(HashAggregate { schema, .. })
             | Self::Sort(Sort { schema, .. })
+            | Self::Sample(Sample { schema, .. })
             | Self::HashJoin(HashJoin { schema, .. })
             | Self::Concat(Concat { schema, .. }) => schema,
             Self::InMemoryScan(InMemoryScan { info, .. }) => &info.source_schema,
@@ -267,6 +286,16 @@ pub struct Sort {
     pub input: LocalPhysicalPlanRef,
     pub sort_by: Vec<ExprRef>,
     pub descending: Vec<bool>,
+    pub schema: SchemaRef,
+    pub plan_stats: PlanStats,
+}
+
+#[derive(Debug)]
+pub struct Sample {
+    pub input: LocalPhysicalPlanRef,
+    pub fraction: f64,
+    pub with_replacement: bool,
+    pub seed: Option<u64>,
     pub schema: SchemaRef,
     pub plan_stats: PlanStats,
 }
