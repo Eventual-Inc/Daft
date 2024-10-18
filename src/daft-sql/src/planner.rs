@@ -495,6 +495,7 @@ impl SQLPlanner {
         };
 
         if root == current_relation.get_name() {
+            // This happens when it's called from a qualified wildcard (tbl.*)
             if idents.len() == 0 {
                 return Ok(current_relation
                     .inner
@@ -547,6 +548,7 @@ impl SQLPlanner {
                 }
             }
         }
+
         match item {
             SelectItem::ExprWithAlias { expr, alias } => {
                 let expr = self.plan_expr(expr)?;
@@ -554,6 +556,7 @@ impl SQLPlanner {
                 Ok(vec![expr.alias(alias)])
             }
             SelectItem::UnnamedExpr(expr) => self.plan_expr(expr).map(|e| vec![e]),
+
             SelectItem::Wildcard(wildcard_opts) => {
                 check_wildcard_options(wildcard_opts)?;
 
