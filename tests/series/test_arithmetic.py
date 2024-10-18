@@ -263,6 +263,11 @@ class FakeFive:
             other = 5
         return 5 % other
 
+    def __floordiv__(self, other):
+        if isinstance(other, FakeFive):
+            other = 5
+        return 5 // other
+
 
 @pytest.mark.parametrize(
     ["op", "expected_datatype", "expected", "expected_self"],
@@ -272,6 +277,7 @@ class FakeFive:
         (operator.mul, DataType.int64(), [10, None, None], [25, 25, None]),
         (operator.truediv, DataType.float64(), [2.5, None, None], [1.0, 1.0, None]),
         (operator.mod, DataType.int64(), [1, None, None], [0, 0, None]),
+        (operator.floordiv, DataType.int64(), [2, None, None], [1.0, 1.0, None]),
     ],
 )
 def test_arithmetic_pyobjects(op, expected_datatype, expected, expected_self) -> None:
