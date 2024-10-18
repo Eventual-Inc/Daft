@@ -403,6 +403,7 @@ impl ParquetFileReader {
         predicate: Option<ExprRef>,
         original_columns: Option<Vec<String>>,
         original_num_rows: Option<usize>,
+        delete_rows: Option<Vec<i64>>,
     ) -> DaftResult<BoxStream<'static, DaftResult<Table>>> {
         let daft_schema = Arc::new(daft_core::prelude::Schema::try_from(
             self.arrow_schema.as_ref(),
@@ -416,6 +417,7 @@ impl ParquetFileReader {
             let ranges = ranges.clone();
             let predicate = predicate.clone();
             let original_columns = original_columns.clone();
+            let delete_rows = delete_rows.clone();
             let row_range = *row_range;
             let compute_runtime = compute_runtime.clone();
 
@@ -522,6 +524,7 @@ impl ParquetFileReader {
                             predicate,
                             original_columns,
                             original_num_rows,
+                            delete_rows,
                         )
                     })
                     .await?
@@ -717,10 +720,9 @@ impl ParquetFileReader {
             })?
             .into_iter()
             .collect::<DaftResult<Vec<_>>>()?;
-        let daft_schema = daft_core::prelude::Schema::try_from(self.arrow_schema.as_ref())?;
 
         Table::new_with_size(
-            daft_schema,
+            Schema::new(all_series.iter().map(|s| s.field().clone()).collect())?,
             all_series,
             self.row_ranges.as_ref().iter().map(|rr| rr.num_rows).sum(),
         )

@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
 use daft_core::prelude::*;
@@ -12,8 +12,8 @@ use daft_plan::{LogicalPlanBuilder, LogicalPlanRef};
 use sqlparser::{
     ast::{
         ArrayElemTypeDef, BinaryOperator, CastKind, ExactNumberInfo, GroupByExpr, Ident, Query,
-        SelectItem, Statement, StructField, Subscript, TableWithJoins, TimezoneInfo, UnaryOperator,
-        Value, WildcardAdditionalOptions,
+        SelectItem, Statement, StructField, Subscript, TableAlias, TableWithJoins, TimezoneInfo,
+        UnaryOperator, Value, WildcardAdditionalOptions,
     },
     dialect::GenericDialect,
     parser::{Parser, ParserOptions},
@@ -32,11 +32,28 @@ use crate::{
 pub struct Relation {
     pub(crate) inner: LogicalPlanBuilder,
     pub(crate) name: String,
+    pub(crate) alias: Option<TableAlias>,
 }
 
 impl Relation {
     pub fn new(inner: LogicalPlanBuilder, name: String) -> Self {
-        Self { inner, name }
+        Self {
+            inner,
+            name,
+            alias: None,
+        }
+    }
+    pub fn with_alias(self, alias: TableAlias) -> Self {
+        Self {
+            alias: Some(alias),
+            ..self
+        }
+    }
+    pub fn get_name(&self) -> String {
+        self.alias
+            .as_ref()
+            .map(|alias| ident_to_str(&alias.name))
+            .unwrap_or_else(|| self.name.clone())
     }
     pub(crate) fn schema(&self) -> SchemaRef {
         self.inner.schema()
@@ -46,6 +63,7 @@ impl Relation {
 pub struct SQLPlanner {
     catalog: SQLCatalog,
     current_relation: Option<Relation>,
+    table_map: HashMap<String, Relation>,
 }
 
 impl Default for SQLPlanner {
@@ -53,6 +71,7 @@ impl Default for SQLPlanner {
         Self {
             catalog: SQLCatalog::new(),
             current_relation: None,
+            table_map: HashMap::new(),
         }
     }
 }
@@ -62,6 +81,7 @@ impl SQLPlanner {
         Self {
             catalog: context,
             current_relation: None,
+            table_map: HashMap::new(),
         }
     }
 
@@ -76,6 +96,12 @@ impl SQLPlanner {
         self.current_relation.as_ref()
     }
 
+    /// Clears the current context used for planning a SQL query
+    fn clear_context(&mut self) {
+        self.current_relation = None;
+        self.table_map.clear();
+    }
+
     pub fn plan_sql(&mut self, sql: &str) -> SQLPlannerResult<LogicalPlanRef> {
         let tokens = Tokenizer::new(&GenericDialect {}, sql).tokenize()?;
 
@@ -88,12 +114,14 @@ impl SQLPlanner {
 
         let statements = parser.parse_statements()?;
 
-        match statements.len() {
+        let plan = match statements.len() {
             1 => Ok(self.plan_statement(&statements[0])?),
             other => {
                 unsupported_sql_err!("Only exactly one SQL statement allowed, found {}", other)
             }
-        }
+        };
+        self.clear_context();
+        plan
     }
 
     fn plan_statement(&mut self, statement: &Statement) -> SQLPlannerResult<LogicalPlanRef> {
@@ -256,19 +284,19 @@ impl SQLPlanner {
         Ok((exprs, desc))
     }
 
-    fn plan_from(&self, from: &TableWithJoins) -> SQLPlannerResult<Relation> {
+    fn plan_from(&mut self, from: &TableWithJoins) -> SQLPlannerResult<Relation> {
         fn collect_compound_identifiers(
             left: &[Ident],
             right: &[Ident],
-            left_name: &str,
-            right_name: &str,
+            left_rel: &Relation,
+            right_rel: &Relation,
         ) -> SQLPlannerResult<(Vec<ExprRef>, Vec<ExprRef>)> {
             if left.len() == 2 && right.len() == 2 {
                 let (tbl_a, col_a) = (&left[0].value, &left[1].value);
                 let (tbl_b, col_b) = (&right[0].value, &right[1].value);
 
                 // switch left/right operands if the caller has them in reverse
-                if left_name == tbl_b || right_name == tbl_a {
+                if &left_rel.get_name() == tbl_b || &right_rel.get_name() == tbl_a {
                     Ok((vec![col(col_b.as_ref())], vec![col(col_a.as_ref())]))
                 } else {
                     Ok((vec![col(col_a.as_ref())], vec![col(col_b.as_ref())]))
@@ -280,8 +308,8 @@ impl SQLPlanner {
 
         fn process_join_on(
             expression: &sqlparser::ast::Expr,
-            left_name: &str,
-            right_name: &str,
+            left_rel: &Relation,
+            right_rel: &Relation,
         ) -> SQLPlannerResult<(Vec<ExprRef>, Vec<ExprRef>)> {
             if let sqlparser::ast::Expr::BinaryOp { left, op, right } = expression {
                 match *op {
@@ -291,16 +319,14 @@ impl SQLPlanner {
                             sqlparser::ast::Expr::CompoundIdentifier(right),
                         ) = (left.as_ref(), right.as_ref())
                         {
-                            collect_compound_identifiers(left, right, left_name, right_name)
+                            collect_compound_identifiers(left, right, left_rel, right_rel)
                         } else {
                             unsupported_sql_err!("JOIN clauses support '=' constraints on identifiers; found lhs={:?}, rhs={:?}", left, right);
                         }
                     }
                     BinaryOperator::And => {
-                        let (mut left_i, mut right_i) =
-                            process_join_on(left, left_name, right_name)?;
-                        let (mut left_j, mut right_j) =
-                            process_join_on(right, left_name, right_name)?;
+                        let (mut left_i, mut right_i) = process_join_on(left, left_rel, right_rel)?;
+                        let (mut left_j, mut right_j) = process_join_on(left, left_rel, right_rel)?;
                         left_i.append(&mut left_j);
                         right_i.append(&mut right_j);
                         Ok((left_i, right_i))
@@ -310,7 +336,7 @@ impl SQLPlanner {
                     }
                 }
             } else if let sqlparser::ast::Expr::Nested(expr) = expression {
-                process_join_on(expr, left_name, right_name)
+                process_join_on(expr, left_rel, right_rel)
             } else {
                 unsupported_sql_err!("JOIN clauses support '=' constraints combined with 'AND'; found expression = {:?}", expression);
             }
@@ -318,6 +344,7 @@ impl SQLPlanner {
 
         let relation = from.relation.clone();
         let mut left_rel = self.plan_relation(&relation)?;
+        self.table_map.insert(left_rel.get_name(), left_rel.clone());
 
         for join in &from.joins {
             use sqlparser::ast::{
@@ -327,17 +354,16 @@ impl SQLPlanner {
                     OuterApply, RightAnti, RightOuter, RightSemi,
                 },
             };
-            let Relation {
-                inner: right_plan,
-                name: right_name,
-            } = self.plan_relation(&join.relation)?;
+            let right_rel = self.plan_relation(&join.relation)?;
+            self.table_map
+                .insert(right_rel.get_name(), right_rel.clone());
 
             match &join.join_operator {
                 Inner(JoinConstraint::On(expr)) => {
-                    let (left_on, right_on) = process_join_on(expr, &left_rel.name, &right_name)?;
+                    let (left_on, right_on) = process_join_on(expr, &left_rel, &right_rel)?;
 
                     left_rel.inner = left_rel.inner.join(
-                        right_plan,
+                        right_rel.inner,
                         left_on,
                         right_on,
                         JoinType::Inner,
@@ -350,24 +376,30 @@ impl SQLPlanner {
                         .map(|i| col(i.value.clone()))
                         .collect::<Vec<_>>();
 
-                    left_rel.inner =
-                        left_rel
-                            .inner
-                            .join(right_plan, on.clone(), on, JoinType::Inner, None)?;
+                    left_rel.inner = left_rel.inner.join(
+                        right_rel.inner,
+                        on.clone(),
+                        on,
+                        JoinType::Inner,
+                        None,
+                    )?;
                 }
                 LeftOuter(JoinConstraint::On(expr)) => {
-                    let (left_on, right_on) = process_join_on(expr, &left_rel.name, &right_name)?;
-
-                    left_rel.inner =
-                        left_rel
-                            .inner
-                            .join(right_plan, left_on, right_on, JoinType::Left, None)?;
-                }
-                RightOuter(JoinConstraint::On(expr)) => {
-                    let (left_on, right_on) = process_join_on(expr, &left_rel.name, &right_name)?;
+                    let (left_on, right_on) = process_join_on(expr, &left_rel, &right_rel)?;
 
                     left_rel.inner = left_rel.inner.join(
-                        right_plan,
+                        right_rel.inner,
+                        left_on,
+                        right_on,
+                        JoinType::Left,
+                        None,
+                    )?;
+                }
+                RightOuter(JoinConstraint::On(expr)) => {
+                    let (left_on, right_on) = process_join_on(expr, &left_rel, &right_rel)?;
+
+                    left_rel.inner = left_rel.inner.join(
+                        right_rel.inner,
                         left_on,
                         right_on,
                         JoinType::Right,
@@ -376,10 +408,10 @@ impl SQLPlanner {
                 }
 
                 FullOuter(JoinConstraint::On(expr)) => {
-                    let (left_on, right_on) = process_join_on(expr, &left_rel.name, &right_name)?;
+                    let (left_on, right_on) = process_join_on(expr, &left_rel, &right_rel)?;
 
                     left_rel.inner = left_rel.inner.join(
-                        right_plan,
+                        right_rel.inner,
                         left_on,
                         right_on,
                         JoinType::Outer,
@@ -402,7 +434,7 @@ impl SQLPlanner {
     }
 
     fn plan_relation(&self, rel: &sqlparser::ast::TableFactor) -> SQLPlannerResult<Relation> {
-        match rel {
+        let (rel, alias) = match rel {
             sqlparser::ast::TableFactor::Table {
                 name,
                 args: Some(args),
@@ -410,11 +442,13 @@ impl SQLPlanner {
                 ..
             } => {
                 let tbl_fn = name.0.first().unwrap().value.as_str();
-
-                self.plan_table_function(tbl_fn, args, alias)
+                (self.plan_table_function(tbl_fn, args)?, alias.clone())
             }
             sqlparser::ast::TableFactor::Table {
-                name, args: None, ..
+                name,
+                args: None,
+                alias,
+                ..
             } => {
                 let table_name = name.to_string();
                 let plan = self
@@ -422,9 +456,14 @@ impl SQLPlanner {
                     .get_table(&table_name)
                     .ok_or_else(|| PlannerError::table_not_found(table_name.clone()))?;
                 let plan_builder = LogicalPlanBuilder::new(plan, None);
-                Ok(Relation::new(plan_builder, table_name))
+                (Relation::new(plan_builder, table_name), alias.clone())
             }
             _ => todo!(),
+        };
+        if let Some(alias) = alias {
+            Ok(rel.with_alias(alias))
+        } else {
+            Ok(rel)
         }
     }
 
@@ -433,7 +472,7 @@ impl SQLPlanner {
 
         let root = idents.next().unwrap();
         let root = ident_to_str(root);
-        let current_relation = match &self.current_relation {
+        let current_relation = match self.table_map.get(&root) {
             Some(rel) => rel,
             None => {
                 return Err(PlannerError::TableNotFound {
@@ -441,7 +480,7 @@ impl SQLPlanner {
                 })
             }
         };
-        if root == current_relation.name {
+        if root == current_relation.get_name() {
             let column = idents.next().unwrap();
             let column_name = ident_to_str(column);
             let current_schema = current_relation.inner.schema();
@@ -449,7 +488,7 @@ impl SQLPlanner {
             if let Some(field) = f {
                 Ok(vec![col(field.name.clone())])
             } else {
-                column_not_found_err!(&column_name, &current_relation.name);
+                column_not_found_err!(&column_name, &current_relation.get_name());
             }
         } else {
             table_not_found_err!(root);
@@ -597,7 +636,22 @@ impl SQLPlanner {
                 unsupported_sql_err!("IN subquery")
             }
             SQLExpr::InUnnest { .. } => unsupported_sql_err!("IN UNNEST"),
-            SQLExpr::Between { .. } => unsupported_sql_err!("BETWEEN"),
+            SQLExpr::Between {
+                expr,
+                negated,
+                low,
+                high,
+            } => {
+                let expr = self.plan_expr(expr)?;
+                let low = self.plan_expr(low)?;
+                let high = self.plan_expr(high)?;
+                let expr = expr.between(low, high);
+                if *negated {
+                    Ok(expr.not())
+                } else {
+                    Ok(expr)
+                }
+            }
             SQLExpr::Like {
                 negated,
                 expr,

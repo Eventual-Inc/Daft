@@ -53,6 +53,9 @@ class PhysicalPlanScheduler:
     def __repr__(self) -> str:
         return self._scheduler.repr_ascii(simple=False)
 
+    def to_json_string(self) -> str:
+        return self._scheduler.to_json_string()
+
     def to_partition_tasks(
         self, psets: dict[str, list[PartitionT]], results_buffer_size: int | None
     ) -> physical_plan.MaterializedPhysicalPlan:

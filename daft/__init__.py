@@ -73,7 +73,7 @@ from daft.daft import ImageFormat, ImageMode, ResourceRequest
 from daft.dataframe import DataFrame
 from daft.logical.schema import Schema
 from daft.datatype import DataType, TimeUnit
-from daft.expressions import Expression, col, lit
+from daft.expressions import Expression, col, lit, interval
 from daft.io import (
     DataCatalogTable,
     DataCatalogType,
@@ -115,6 +115,7 @@ __all__ = [
     "DataFrame",
     "Expression",
     "col",
+    "interval",
     "DataType",
     "ImageMode",
     "ImageFormat",

@@ -220,6 +220,7 @@ List
    Expression.list.slice
    Expression.list.chunk
    Expression.list.sort
+   Expression.list.value_counts
 
 Struct
 ######

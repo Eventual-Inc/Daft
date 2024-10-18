@@ -380,105 +380,8 @@ fn materialize_scan_task(
                     })?
                 }
                 FileFormatConfig::PythonFunction => {
-                    use pyo3::{types::PyAnyMethods, PyObject};
-
-                    let table_iterators = scan_task.sources.iter().map(|source| {
-                        // Call Python function to create an Iterator (Grabs the GIL and then releases it)
-                        match source {
-                            DataSource::PythonFactoryFunction {
-                                module,
-                                func_name,
-                                func_args,
-                                ..
-                            } => {
-                                Python::with_gil(|py| {
-                                    let func = py.import_bound(module.as_str())
-                                        .unwrap_or_else(|_| panic!("Cannot import factory function from module {module}"))
-                                        .getattr(func_name.as_str())
-                                        .unwrap_or_else(|_| panic!("Cannot find function {func_name} in module {module}"));
-                                    func.call(func_args.to_pytuple(py), None)
-                                        .with_context(|_| PyIOSnafu)
-                                        .map(Into::<PyObject>::into)
-                                })
-                            }
-                            _ => unreachable!("PythonFunction file format must be paired with PythonFactoryFunction data file sources"),
-                        }
-                    });
-
-                    let mut tables = Vec::new();
-                    let mut rows_seen_so_far = 0;
-                    for iterator in table_iterators {
-                        let iterator = iterator?;
-
-                        // Iterate on this iterator to exhaustion, or until the limit is met
-                        while scan_task
-                            .pushdowns
-                            .limit
-                            .map_or(true, |limit| rows_seen_so_far < limit)
-                        {
-                            // Grab the GIL to call next() on the iterator, and then release it once we have the Table
-                            let table = match Python::with_gil(|py| {
-                                iterator
-                                    .downcast_bound::<pyo3::types::PyIterator>(py)
-                                    .expect("Function must return an iterator of tables")
-                                    .clone()
-                                    .next()
-                                    .map(|result| {
-                                        result
-                                            .map(|tbl| {
-                                                tbl.extract::<daft_table::python::PyTable>()
-                                                    .expect("Must be a PyTable")
-                                                    .table
-                                            })
-                                            .with_context(|_| PyIOSnafu)
-                                    })
-                            }) {
-                                Some(table) => table,
-                                None => break,
-                            }?;
-
-                            // Apply filters
-                            let table = if let Some(filters) = scan_task.pushdowns.filters.as_ref()
-                            {
-                                table
-                                    .filter(&[filters.clone()])
-                                    .with_context(|_| DaftCoreComputeSnafu)?
-                            } else {
-                                table
-                            };
-
-                            // Apply limit if necessary, and update `&mut remaining`
-                            let table = if let Some(limit) = scan_task.pushdowns.limit {
-                                let limited_table = if rows_seen_so_far + table.len() > limit {
-                                    table
-                                        .slice(0, limit - rows_seen_so_far)
-                                        .with_context(|_| DaftCoreComputeSnafu)?
-                                } else {
-                                    table
-                                };
-
-                                // Update the rows_seen_so_far
-                                rows_seen_so_far += limited_table.len();
-
-                                limited_table
-                            } else {
-                                table
-                            };
-
-                            tables.push(table);
-                        }
-
-                        // If seen enough rows, early-terminate
-                        if scan_task
-                            .pushdowns
-                            .limit
-                            .is_some_and(|limit| rows_seen_so_far >= limit)
-                        {
-                            break;
-                        }
-                    }
-
-                    tables
+                    let tables = crate::python::read_pyfunc_into_table_iter(&scan_task)?;
+                    tables.collect::<crate::Result<Vec<_>>>()?
                 }
             }
         }
@@ -645,6 +548,7 @@ impl MicroPartition {
                     field_id_mapping.clone(),
                     parquet_metadata,
                     chunk_size,
+                    scan_task.file_path_column.as_deref(),
                 )
                 .context(DaftCoreComputeSnafu)
             }
@@ -870,7 +774,7 @@ pub fn read_csv_into_micropartition(
             let unioned_schema = tables
                 .iter()
                 .map(|tbl| tbl.schema.clone())
-                .try_reduce(|s1, s2| s1.union(s2.as_ref()).map(Arc::new))?
+                .reduce(|s1, s2| Arc::new(s1.non_distinct_union(s2.as_ref())))
                 .unwrap();
             let tables = tables
                 .into_iter()
@@ -919,7 +823,7 @@ pub fn read_json_into_micropartition(
             let unioned_schema = tables
                 .iter()
                 .map(|tbl| tbl.schema.clone())
-                .try_reduce(|s1, s2| s1.union(s2.as_ref()).map(Arc::new))?
+                .reduce(|s1, s2| Arc::new(s1.non_distinct_union(s2.as_ref())))
                 .unwrap();
             let tables = tables
                 .into_iter()
@@ -1082,7 +986,7 @@ fn _read_parquet_into_loaded_micropartition<T: AsRef<str>>(
         let unioned_schema = all_tables
             .iter()
             .map(|t| t.schema.clone())
-            .try_reduce(|l, r| DaftResult::Ok(l.union(&r)?.into()))?;
+            .reduce(|l, r| l.non_distinct_union(&r).into());
         unioned_schema.expect("we need at least 1 schema")
     };
 
@@ -1122,6 +1026,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     parquet_metadata: Option<Vec<Arc<FileMetaData>>>,
     chunk_size: Option<usize>,
+    file_path_column: Option<&str>,
 ) -> DaftResult<MicroPartition> {
     if let Some(so) = start_offset
         && so > 0
@@ -1230,7 +1135,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
         } else {
             let unioned_schema = schemas
                 .into_iter()
-                .try_reduce(|l, r| l.union(&r).map(Arc::new))?;
+                .reduce(|l, r| Arc::new(l.non_distinct_union(&r)));
             unioned_schema.expect("we need at least 1 schema")
         };
 
@@ -1309,6 +1214,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
                 }),
                 num_rows,
             ),
+            file_path_column.map(|s| s.to_string()),
         );
 
         let fill_map = scan_task.partition_spec().map(|pspec| pspec.to_fill_map());

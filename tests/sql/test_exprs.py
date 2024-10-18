@@ -67,3 +67,28 @@ def test_hash_exprs():
 
     with pytest.raises(Exception, match="num_hashes is required"):
         daft.sql("SELECT minhash(a) as hash_a FROM df").collect()
+
+
+def test_count_star():
+    df = daft.from_pydict(
+        {
+            "a": [1, 2, 3, 4],
+        }
+    )
+
+    actual = daft.sql("SELECT COUNT(*) FROM df").collect()
+    expected = df.agg(daft.col("*").count().alias("count")).collect()
+    assert actual.to_pydict() == expected.to_pydict()
+
+
+def test_between():
+    df = daft.from_pydict(
+        {
+            "integers": [0, 1, 2, 3, 5],
+        }
+    )
+
+    actual = daft.sql("SELECT * FROM df where integers between 1 and 4").collect().to_pydict()
+
+    expected = df.filter(col("integers").between(1, 4)).collect().to_pydict()
+    assert actual == expected
