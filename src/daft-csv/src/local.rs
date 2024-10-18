@@ -567,7 +567,7 @@ fn consume_slab_iterator(
             } else {
                 return;
             }
-            let multi_slice_reader = MultiSliceReader::new(states_to_read);
+            let multi_slice_reader = MultiSliceReader::new(states_to_read.as_slice());
             dispatch_to_parse_csv(
                 has_header,
                 parse_options,
@@ -870,47 +870,53 @@ impl ChunkState {
     }
 }
 
-struct MultiSliceReader {
+struct MultiSliceReader<'a> {
     // https://stackoverflow.com/questions/71801199/how-can-concatenated-u8-slices-implement-the-read-trait-without-additional-co
     // use small vec
-    states: Vec<ChunkState>,
+    slices: Vec<&'a [u8]>,
     curr_read_idx: usize,
     curr_read_offset: usize,
 }
 
-impl MultiSliceReader {
-    fn new(states: Vec<ChunkState>) -> Self {
+impl<'a> MultiSliceReader<'a> {
+    fn new(states: &'a [ChunkState]) -> Self {
+        let mut slices = Vec::with_capacity(states.len());
+        for state in states {
+            let slice = match state {
+                ChunkState::Start { slab, start } => &slab.buffer[*start..slab.valid_bytes],
+                ChunkState::StartAndFinal { slab, start, end } => &slab.buffer[*start..*end],
+                ChunkState::Continue { slab } => &slab.buffer[..slab.valid_bytes],
+                ChunkState::Final { slab, end } => &slab.buffer[..*end],
+            };
+            slices.push(slice);
+        }
+
         Self {
-            states,
+            slices,
             curr_read_idx: 0,
             curr_read_offset: 0,
         }
     }
 }
 
-impl Read for MultiSliceReader {
+impl<'a> Read for MultiSliceReader<'a> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        let current_state = loop {
-            if self.curr_read_idx >= self.states.len() {
-                return Ok(0); // EOF
+        let buf_len = buf.len();
+        let mut position = 0;
+        while self.curr_read_idx < self.slices.len() && position < buf_len {
+            let slice = self.slices[self.curr_read_idx];
+            if self.curr_read_offset < slice.len() {
+                let read_size = (buf_len - position).min(slice.len() - self.curr_read_offset);
+                buf[position..position + read_size]
+                    .copy_from_slice(&slice[self.curr_read_offset..][..read_size]);
+                self.curr_read_offset += read_size;
+                position += read_size;
+            } else {
+                self.curr_read_offset = 0;
+                self.curr_read_idx += 1;
             }
-            let current_state = &self.states[self.curr_read_idx];
-            if self.curr_read_offset < current_state.len() {
-                break current_state;
-            }
-            self.curr_read_offset = 0;
-            self.curr_read_idx += 1;
-        };
-        let slice = match current_state {
-            ChunkState::Start { slab, start } => &slab.buffer[*start..slab.valid_bytes],
-            ChunkState::StartAndFinal { slab, start, end } => &slab.buffer[*start..*end],
-            ChunkState::Continue { slab } => &slab.buffer[..slab.valid_bytes],
-            ChunkState::Final { slab, end } => &slab.buffer[..*end],
-        };
-        let read_size = buf.len().min(slice.len() - self.curr_read_offset);
-        buf[..read_size].copy_from_slice(&slice[self.curr_read_offset..][..read_size]);
-        self.curr_read_offset += read_size;
-        Ok(read_size)
+        }
+        Ok(position)
     }
 
     // fn read_vectored(&mut self, bufs: &mut [std::io::IoSliceMut<'_>]) -> std::io::Result<usize> {}
