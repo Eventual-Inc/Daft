@@ -167,6 +167,8 @@ The following methods are available under the ``expr.str`` attribute.
    Expression.str.tokenize_encode
    Expression.str.tokenize_decode
    Expression.str.count_matches
+   Expression.str.base64_encode
+   Expression.str.base64_decode
 
 .. _api-float-expression-operations:
 
