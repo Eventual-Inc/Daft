@@ -1,6 +1,6 @@
 use core::str;
 use std::{
-    io::{prelude::Seek, Chain, Cursor, Read, SeekFrom},
+    io::Read,
     num::NonZeroUsize,
     sync::{
         atomic::{AtomicUsize, Ordering},
@@ -27,7 +27,6 @@ use daft_dsl::{optimization::get_required_columns, Expr};
 use daft_io::{IOClient, IOStatsRef};
 use daft_table::Table;
 use futures::Stream;
-use itertools::Itertools;
 use rayon::{
     iter::IndexedParallelIterator,
     prelude::{IntoParallelRefIterator, ParallelIterator},
@@ -83,9 +82,6 @@ struct CsvBuffer {
     buffer: Vec<read::ByteRecord>,
 }
 
-// If regular 4 MiB buffers are too small, we fall back to using large 2 GiB buffers.
-const HUGE_BUFFER_SIZE: usize = 2 * 1024 * 1024 * 1024;
-
 impl CsvBufferPool {
     pub fn new(
         record_buffer_size: usize,
@@ -125,16 +121,6 @@ impl CsvBufferPool {
         }
     }
 
-    // Creates a single huge 2 GiB buffer for the fallback reader.
-    pub fn create_huge_buffer(self: &Arc<Self>) -> CsvBuffer {
-        let buffer = vec![read::ByteRecord::with_capacity(HUGE_BUFFER_SIZE, self.num_fields); 1];
-
-        CsvBuffer {
-            pool: Arc::clone(self),
-            buffer,
-        }
-    }
-
     fn return_buffer(&self, buffer: Vec<read::ByteRecord>) {
         let mut buffers = self.buffers.lock().unwrap();
         buffers.push(buffer);
@@ -154,13 +140,23 @@ struct FileSlabPool {
 }
 
 /// A slab of bytes. Used for reading CSV files in SLABSIZE chunks.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct FileSlab {
     pool: Arc<FileSlabPool>,
     // We wrap the Arc<buffer> in an Option so that when a Slab is being dropped, we can move the Slab's reference
     // to the Arc<buffer> back to the slab pool.
     buffer: Option<Arc<[u8]>>,
     valid_bytes: usize,
+}
+
+impl FileSlab {
+    // Check whether this FileSlab filled up its internal buffer. We use this as a means of checking whether this
+    // is the last FileSlab in the current file.
+    //
+    // This assumption is only true if the user does not append to the current file while we are reading it.
+    pub fn filled_buffer(&self) -> bool {
+        self.valid_bytes >= unsafe_clone_buffer(&self.buffer).len()
+    }
 }
 
 // Modify the Drop method for FileSlabs so that they're returned to their parent slab pool.
@@ -200,30 +196,6 @@ impl FileSlabPool {
         let mut buffers = self.buffers.lock().unwrap();
         buffers.push(buffer);
         self.condvar.notify_one();
-    }
-}
-
-/// A data structure that holds either:
-/// 1. A single slice of bytes.
-/// 2. A chain of two slices of bytes.
-/// 3. A file.
-///
-/// See the description to `dispatch_to_parse_csv` for more details.
-#[derive(Debug)]
-enum CsvBufferSource<'a> {
-    Single(Cursor<&'a [u8]>),
-    Chain(Chain<Cursor<&'a [u8]>, Cursor<&'a [u8]>>),
-    File(std::fs::File),
-}
-
-/// Read implementation that allows BufferSource to be used by csv::read::Reader.
-impl<'a> Read for CsvBufferSource<'a> {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        match self {
-            CsvBufferSource::Single(cursor) => std::io::Read::read(cursor, buf),
-            CsvBufferSource::Chain(chain) => chain.read(buf),
-            CsvBufferSource::File(file) => file.read(buf),
-        }
     }
 }
 
@@ -383,20 +355,22 @@ pub async fn stream_csv_local(
 
     // Consume the CSV file asynchronously.
     rayon::spawn(move || {
-        consume_csv_file(
-            file,
+        let slab_iterator = SlabIterator::new(file, slabpool);
+        let rows_read = Arc::new(AtomicUsize::new(0));
+        consume_slab_iterator(
+            slab_iterator,
             buffer_pool,
-            slabpool,
+            num_fields,
             parse_options,
             projection_indices,
             read_daft_fields,
             read_schema,
             fields,
-            num_fields,
-            &include_columns,
+            include_columns,
             predicate,
             limit,
             sender,
+            rows_read,
         );
     });
 
@@ -481,48 +455,416 @@ impl Iterator for SlabIterator {
             }
             None => {
                 self.slabpool.return_buffer(buffer);
-                panic!("We should have exclusive access to this mutable buffer");
+                panic!("We should have exclusive access to this mutable buffer.");
             }
         }
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn consume_slab_iterator(
     iter: impl Iterator<Item = Arc<FileSlab>>,
+    buffer_pool: Arc<CsvBufferPool>,
     num_fields: usize,
-    parse_options: &CsvParseOptions,
+    parse_options: CsvParseOptions,
+    projection_indices: Arc<Vec<usize>>,
+    read_daft_fields: Arc<Vec<Arc<daft_core::datatypes::Field>>>,
+    read_schema: Arc<Schema>,
+    fields: Vec<Field>,
+    include_columns: Option<Vec<String>>,
+    predicate: Option<Arc<Expr>>,
+    limit: Option<usize>,
+    sender: Sender<Result<Table, DaftError>>,
+    rows_read: Arc<AtomicUsize>,
 ) {
+    let mut has_header = parse_options.has_header;
     let field_delimiter = parse_options.delimiter;
     let escape_char = parse_options.escape_char;
     let quote_char = parse_options.quote;
     let double_quote_escape_allowed = parse_options.double_quote;
 
     let mut iter = iter.peekable();
-    let mut first_buffer = true;
-    while let Some(first) = iter.next() {
-        let (second, second_num_bytes) = if let Some(second) = iter.peek() {
-            (Some(second), second.valid_bytes)
-        } else {
-            (None, 0)
-        };
-
-        let file_chunk = get_file_chunk(
-            unsafe_clone_buffer(&first.buffer),
-            first.valid_bytes,
-            second.map(|s| unsafe_clone_buffer(&s.buffer)),
-            second_num_bytes,
-            first_buffer,
-            num_fields,
-            quote_char,
-            field_delimiter,
-            escape_char,
-            double_quote_escape_allowed,
-        );
-
-        first_buffer = false;
+    let mut curr_chunk = ChunkStateHolder::empty();
+    loop {
+        // Check limit.
+        let limit_reached = limit.map_or(false, |limit| {
+            let current_rows_read = rows_read.load(Ordering::Relaxed);
+            current_rows_read >= limit
+        });
+        if limit_reached {
+            break;
+        }
+        // Grab a starting file slab if the current CSV chunk is empty.
+        if curr_chunk.is_empty() {
+            if let Some(next) = iter.next() {
+                curr_chunk.states.push(ChunkState::Start {
+                    slab: next,
+                    start: 0,
+                });
+                curr_chunk.reset();
+            } else {
+                // EOF.
+                break;
+            }
+            continue;
+        }
+        // Grab file slabs until we find a valid CSV chunk.
+        loop {
+            if let Some(next) = iter.next() {
+                // If the next buffer is not completely filled, we take this to mean that we've reached EOF.
+                if !next.filled_buffer() {
+                    curr_chunk.states.push(ChunkState::Final {
+                        end: next.valid_bytes,
+                        slab: next,
+                    });
+                    break;
+                }
+                curr_chunk.states.push(ChunkState::Continue { slab: next });
+                while curr_chunk.goto_next_newline() {
+                    if curr_chunk.validate_csv_record(
+                        &mut iter,
+                        num_fields,
+                        quote_char,
+                        field_delimiter,
+                        escape_char,
+                        double_quote_escape_allowed,
+                    ) {
+                        break;
+                    }
+                }
+                if curr_chunk.is_valid() {
+                    break;
+                }
+            } else {
+                // If there is no next file slab, turn the last ChunkState into a final ChunkState.
+                if let Some(last_state) = curr_chunk.states.pop() {
+                    match last_state {
+                        ChunkState::Start { slab, start } => {
+                            curr_chunk.states.push(ChunkState::StartAndFinal {
+                                end: slab.valid_bytes,
+                                slab,
+                                start,
+                            });
+                        }
+                        ChunkState::Continue { slab } => {
+                            curr_chunk.states.push(ChunkState::Final {
+                                end: slab.valid_bytes,
+                                slab,
+                            });
+                        }
+                        _ => panic!("There should be no final CSV chunk states at this point."),
+                    }
+                } else {
+                    panic!("There should be at least one CSV chunk state at this point.")
+                }
+                break;
+            }
+        }
+        let states_to_read = curr_chunk.states;
+        curr_chunk.states = std::mem::take(&mut curr_chunk.next_states);
+        curr_chunk.reset();
+        let parse_options = parse_options.clone();
+        let csv_buffer = buffer_pool.get_buffer();
+        let projection_indices = projection_indices.clone();
+        let fields = fields.clone();
+        let read_daft_fields = read_daft_fields.clone();
+        let read_schema = read_schema.clone();
+        let include_columns = include_columns.clone();
+        let predicate = predicate.clone();
+        let sender = sender.clone();
+        let rows_read = Arc::clone(&rows_read);
+        rayon::spawn(move || {
+            if let Some(state) = states_to_read.last() {
+                assert!(state.is_final());
+            } else {
+                return;
+            }
+            let multi_slice_reader = MultiSliceReader::new(states_to_read);
+            dispatch_to_parse_csv(
+                has_header,
+                parse_options,
+                multi_slice_reader,
+                projection_indices,
+                fields,
+                read_daft_fields,
+                read_schema,
+                csv_buffer,
+                include_columns,
+                predicate,
+                sender,
+                rows_read,
+            );
+        });
+        has_header = false;
     }
 }
 
+struct ChunkStateHolder {
+    states: Vec<ChunkState>,
+    next_states: Vec<ChunkState>,
+    curr_newline_idx: usize,
+    curr_newline_offset: usize,
+    curr_byte_read_idx: usize,
+    curr_byte_read_offset: usize,
+    valid_chunk: bool,
+}
+
+impl ChunkStateHolder {
+    fn new(states: Vec<ChunkState>) -> Self {
+        Self {
+            states,
+            next_states: vec![],
+            curr_newline_idx: 1,
+            curr_newline_offset: 0,
+            curr_byte_read_idx: 0,
+            curr_byte_read_offset: 0,
+            valid_chunk: false,
+        }
+    }
+
+    fn empty() -> Self {
+        Self::new(vec![])
+    }
+
+    fn is_empty(&self) -> bool {
+        self.states.is_empty()
+    }
+
+    #[allow(clippy::doc_lazy_continuation)]
+    /// `goto_next_line` and `validate_csv_record` are two helper function that determines what chunk of
+    /// data to parse given a starting position within the file, and the desired initial chunk size.
+    ///
+    /// Given a starting position, we use our chunk size to compute a preliminary start and stop
+    /// position. For example, we can visualize all preliminary chunks in a file as follows.
+    ///
+    /// Chunk 1         Chunk 2         Chunk 3              Chunk N
+    /// ┌──────────┐    ┌──────────┐    ┌──────────┐         ┌──────────┐
+    /// │          │    │\n        │    │   \n     │         │       \n │
+    /// │          │    │          │    │          │         │          │
+    /// │          │    │       \n │    │          │         │          │
+    /// │   \n     │    │          │    │      \n  │         │          │
+    /// │          │    │          │    │          │   ...   │     \n   │
+    /// │          │    │  \n      │    │          │         │          │
+    /// │ \n       │    │          │    │          │         │          │
+    /// │          │    │          │    │     \n   │         │  \n      │
+    /// └──────────┘    └──────────┘    └──────────┘         └──────────┘
+    ///
+    /// However, record boundaries (i.e. the \n terminators) do not align nicely with these preliminary
+    /// chunk boundaries. So we adjust each preliminary chunk as follows:
+    /// - Find the first record terminator from the chunk's start. This is the new starting position.
+    /// - Find the first record terminator from the chunk's end. This is the new ending position.
+    /// - If a given preliminary chunk doesn't contain a record terminator, the adjusted chunk is empty.
+    ///
+    /// For example:
+    ///
+    /// Adjusted Chunk 1    Adj. Chunk 2        Adj. Chunk 3          Adj. Chunk N
+    /// ┌──────────────────┐┌─────────────────┐ ┌────────┐            ┌─┐
+    /// │                \n││               \n│ │      \n│         \n │ │
+    /// │          ┌───────┘│      ┌──────────┘ │  ┌─────┘            │ │
+    /// │          │    ┌───┘   \n │    ┌───────┘  │         ┌────────┘ │
+    /// │   \n     │    │          │    │      \n  │         │          │
+    /// │          │    │          │    │          │   ...   │     \n   │
+    /// │          │    │  \n      │    │          │         │          │
+    /// │ \n       │    │          │    │          │         │          │
+    /// │          │    │          │    │     \n   │         │  \n      │
+    /// └──────────┘    └──────────┘    └──────────┘         └──────────┘
+    ///
+    /// Using this method, we now have adjusted chunks that are aligned with record boundaries, that do
+    /// not overlap, and that fully cover every byte in the CSV file. Parsing each adjusted chunk can
+    /// now happen in parallel.
+    ///
+    /// This is the same method as described in:
+    /// Ge, Chang et al. “Speculative Distributed CSV Data Parsing for Big Data Analytics.” Proceedings of the 2019 International Conference on Management of Data (2019).
+    ///
+    /// Another observation is that seeing a pure \n character is not necessarily indicative of a record
+    /// terminator. We need to consider whether the \n character was seen within a quoted field, since the
+    /// string "some text \n some text" is a valid CSV string field. To do this, we carry out the following
+    /// algorithm:
+    /// 1. Find a \n character.
+    /// 2. Check if the CSV string immediately following this \n character is valid, i.e. does it parse
+    ///    as valid CSV, and does it produce the same number of fields as our schema.
+    /// 2a. If there is a valid record at this point, then we assume that the \n we saw was a valid terminator.
+    /// 2b. If the record at this point is invalid, then this was likely a \n in a quoted field. Find the next
+    ///     \n character and go back to 2.
+    fn goto_next_newline(&mut self) -> bool {
+        //println!("newline idx {}, newline offset {}", self.curr_newline_idx, self.curr_newline_offset);
+        self.valid_chunk = false;
+        loop {
+            if self.curr_newline_idx >= self.states.len() {
+                //println!("no newline found");
+                return false;
+            }
+            if self.curr_newline_offset >= self.states[self.curr_newline_idx].len() {
+                //println!("offset larger than length of current state");
+                self.curr_newline_offset = 0;
+                self.curr_newline_idx += 1;
+                continue;
+            }
+            if let Some(pos) =
+                self.states[self.curr_newline_idx].find_newline(self.curr_newline_offset)
+            {
+                //println!("found newline at {}, {}", self.curr_newline_idx, pos);
+                self.curr_newline_offset = pos + 1;
+                if self.curr_newline_offset >= self.states[self.curr_newline_idx].len() {
+                    self.curr_newline_offset = 0;
+                    self.curr_newline_idx += 1;
+                    continue;
+                }
+                self.curr_byte_read_idx = self.curr_newline_idx;
+                self.curr_byte_read_offset = self.curr_newline_offset;
+                return true;
+            } else {
+                //println!("no newline found, going to next idx..");
+                self.curr_newline_offset = 0;
+                self.curr_newline_idx += 1;
+                continue;
+            }
+        }
+    }
+
+    fn validate_csv_record(
+        &mut self,
+        iter: &mut impl Iterator<Item = Arc<FileSlab>>,
+        num_fields: usize,
+        quote_char: u8,
+        field_delimiter: u8,
+        escape_char: Option<u8>,
+        double_quote_escape_allowed: bool,
+    ) -> bool {
+        let mut csv_state = CsvState::FieldStart;
+        let mut num_fields_seen: usize = 0;
+        loop {
+            // Run the CSV state machine to see if we're currently at a valid record boundary.
+            if let Some(valid) = validate_csv_record(
+                self.into_iter(),
+                &mut csv_state,
+                num_fields,
+                &mut num_fields_seen,
+                quote_char,
+                field_delimiter,
+                escape_char,
+                double_quote_escape_allowed,
+            ) {
+                // println!("validity: {valid}");
+                self.valid_chunk = valid;
+                if valid {
+                    // println!("Valid! states: {:?}", self.states);
+                    let (ending_idx, ending_offset) = if self.curr_byte_read_offset == 0 {
+                        (
+                            self.curr_byte_read_idx - 1,
+                            self.states[self.curr_byte_read_idx - 1].len(),
+                        )
+                    } else {
+                        (self.curr_byte_read_idx, self.curr_byte_read_offset)
+                    };
+                    self.next_states = self.states.split_off(ending_idx);
+                    if let Some(front_of_next) = self.next_states.get_mut(0) {
+                        self.states.push(ChunkState::Final {
+                            slab: front_of_next.clone_slab(),
+                            end: ending_offset,
+                        });
+                        *front_of_next = ChunkState::Start {
+                            slab: front_of_next.clone_slab(),
+                            start: ending_offset,
+                        };
+                    } else {
+                        panic!("There should be at least one chunk state that's split off.");
+                    }
+                    // println!("After transformation: {:?}", self.states);
+                    // println!("leftovers:{:?}", self.next_states);
+                }
+                return valid;
+            } else {
+                //println!("state machine needs more bytes??");
+                // We ran out of bytes while running the CSV state machine. Read another file slab then
+                // continue running the state machine.
+                if let Some(next) = iter.next() {
+                    if !next.filled_buffer() {
+                        // EOF. Make this chunk state holder valid and exit.
+                        self.states.push(ChunkState::Final {
+                            end: next.valid_bytes,
+                            slab: next,
+                        });
+                        self.valid_chunk = true;
+                        return true;
+                    }
+                    self.states.push(ChunkState::Continue { slab: next });
+                } else {
+                    // EOF. Make this chunk state holder valid and exit.
+                    self.valid_chunk = true;
+                    return true;
+                }
+            }
+        }
+    }
+
+    fn is_valid(&self) -> bool {
+        self.valid_chunk
+    }
+
+    fn reset(&mut self) {
+        self.curr_newline_idx = 1;
+        self.curr_newline_offset = 0;
+        self.curr_byte_read_idx = 0;
+        self.curr_byte_read_offset = 0;
+    }
+}
+
+impl Iterator for ChunkStateHolder {
+    type Item = u8;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if self.curr_byte_read_idx >= self.states.len() {
+                return None;
+            }
+            if self.curr_byte_read_offset >= self.states[self.curr_byte_read_idx].len() {
+                self.curr_byte_read_offset = 0;
+                self.curr_byte_read_idx += 1;
+                continue;
+            }
+            let byte = self.states[self.curr_byte_read_idx].get_idx(self.curr_byte_read_offset);
+            self.curr_byte_read_offset += 1;
+            return Some(byte);
+        }
+    }
+}
+
+// impl Read for ChunkStateHolder {
+//     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+//         let current_state = loop {
+//             if self.curr_read_idx >= self.states.len() {
+//                 return Ok(0); // EOF
+//             }
+//             let current_state = &self.states[self.curr_read_idx];
+//             if self.curr_read_offset < current_state.len() {
+//                 break current_state;
+//             }
+//             self.curr_read_offset = 0;
+//             self.curr_read_idx += 1;
+//         };
+//         let slice = match current_state {
+//             ChunkState::Start { slab, start } => {
+//                 &unsafe_clone_buffer(&slab.buffer)[*start..slab.valid_bytes]
+//             }
+//             ChunkState::StartAndFinal { slab, start, end } => {
+//                 &unsafe_clone_buffer(&slab.buffer)[*start..*end]
+//             }
+//             ChunkState::Continue { slab } => &unsafe_clone_buffer(&slab.buffer)[..slab.valid_bytes],
+//             ChunkState::Final { slab, end } => &unsafe_clone_buffer(&slab.buffer)[..*end],
+//         };
+//         let read_size = buf.len().min(slice.len() - self.curr_read_offset);
+//         buf[..read_size].copy_from_slice(&slice[self.curr_read_offset..][..read_size]);
+//         self.curr_read_offset += read_size;
+//         Ok(read_size)
+//     }
+
+//     // fn read_vectored(&mut self, bufs: &mut [std::io::IoSliceMut<'_>]) -> std::io::Result<usize> {}
+
+//     // fn read_to_end(&mut self, buf: &mut Vec<u8>) -> std::io::Result<usize> {}
+// }
+
+#[derive(Debug)]
 enum ChunkState {
     Start {
         slab: Arc<FileSlab>,
@@ -545,266 +887,135 @@ enum ChunkState {
 impl ChunkState {
     #[inline]
     fn is_final(&self) -> bool {
-        matches!(
-            self,
-            ChunkState::Final { .. } | ChunkState::StartAndFinal { .. }
-        )
+        matches!(self, Self::Final { .. } | Self::StartAndFinal { .. })
     }
-}
 
-struct SlabConsumer<'a, I> {
-    slab_iter: &'a mut I,
-}
-
-impl<'a, I> Iterator for SlabConsumer<'a, I>
-where
-    I: Iterator<Item = Arc<FileSlab>>,
-{
-    type Item = ChunkState;
-    fn next(&mut self) -> Option<Self::Item> {
-        let mut so_far = vec![];
-        while let Some(data) = self.slab_iter.next() {
-            todo!()
+    #[inline]
+    fn len(&self) -> usize {
+        match self {
+            Self::Start { slab, start } => slab.valid_bytes - start,
+            Self::StartAndFinal { start, end, .. } => end - start,
+            Self::Continue { slab } => slab.valid_bytes,
+            Self::Final { end, .. } => *end,
         }
+    }
 
-        // verify last item is final or StartAndFinal
-        todo!("emit state")
+    #[inline]
+    fn get_idx(&self, idx: usize) -> u8 {
+        match self {
+            Self::Start { slab, start } => unsafe_clone_buffer(&slab.buffer)[start + idx],
+            Self::StartAndFinal { slab, start, .. } => {
+                unsafe_clone_buffer(&slab.buffer)[start + idx]
+            }
+            Self::Continue { slab } => unsafe_clone_buffer(&slab.buffer)[idx],
+            Self::Final { slab, .. } => unsafe_clone_buffer(&slab.buffer)[idx],
+        }
+    }
+
+    #[inline]
+    fn find_newline(&self, offset: usize) -> Option<usize> {
+        match self {
+            Self::Start { slab, start } => newline_position(
+                &unsafe_clone_buffer(&slab.buffer)[*start + offset..slab.valid_bytes],
+            ),
+            Self::StartAndFinal { slab, start, end } => {
+                newline_position(&unsafe_clone_buffer(&slab.buffer)[*start + offset..*end])
+            }
+            Self::Continue { slab } => {
+                newline_position(&unsafe_clone_buffer(&slab.buffer)[offset..slab.valid_bytes])
+            }
+            Self::Final { slab, end } => {
+                newline_position(&unsafe_clone_buffer(&slab.buffer)[offset..*end])
+            }
+        }
+    }
+
+    #[inline]
+    fn get_slab(&self) -> &Arc<FileSlab> {
+        match self {
+            Self::Start { slab, .. } => slab,
+            Self::StartAndFinal { slab, .. } => slab,
+            Self::Continue { slab } => slab,
+            Self::Final { slab, .. } => slab,
+        }
+    }
+
+    #[inline]
+    fn clone_slab(&self) -> Arc<FileSlab> {
+        self.get_slab().clone()
     }
 }
 
-struct MultiSliceReader<'a> {
+// struct SlabConsumer<'a, I> {
+//     slab_iter: &'a mut I,
+// }
+
+// impl<'a, I> Iterator for SlabConsumer<'a, I>
+// where
+//     I: Iterator<Item = Arc<FileSlab>>,
+// {
+//     type Item = ChunkState;
+//     fn next(&mut self) -> Option<Self::Item> {
+//         // let mut so_far = vec![];
+//         while let Some(data) = self.slab_iter.next() {
+//             todo!()
+//         }
+
+//         // verify last item is final or StartAndFinal
+//         todo!("emit state")
+//     }
+// }
+
+struct MultiSliceReader {
     // https://stackoverflow.com/questions/71801199/how-can-concatenated-u8-slices-implement-the-read-trait-without-additional-co
     // use small vec
-    state: Vec<&'a [u8]>,
-    curr_idx: usize,
-    curr_offset: usize,
+    states: Vec<ChunkState>,
+    curr_read_idx: usize,
+    curr_read_offset: usize,
+}
+
+impl MultiSliceReader {
+    fn new(states: Vec<ChunkState>) -> Self {
+        Self {
+            states,
+            curr_read_idx: 0,
+            curr_read_offset: 0,
+        }
+    }
 }
 
 impl Read for MultiSliceReader {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {}
-    fn read_vectored(&mut self, bufs: &mut [std::io::IoSliceMut<'_>]) -> std::io::Result<usize> {}
-    fn read_to_end(&mut self, buf: &mut Vec<u8>) -> std::io::Result<usize> {}
-}
-
-/// Consumes the CSV file and sends the results to `sender`.
-#[allow(clippy::too_many_arguments)]
-fn consume_csv_file(
-    mut file: std::fs::File,
-    buffer_pool: Arc<CsvBufferPool>,
-    slabpool: Arc<FileSlabPool>,
-    parse_options: CsvParseOptions,
-    projection_indices: Arc<Vec<usize>>,
-    read_daft_fields: Arc<Vec<Arc<daft_core::datatypes::Field>>>,
-    read_schema: Arc<Schema>,
-    fields: Vec<Field>,
-    num_fields: usize,
-    include_columns: &Option<Vec<String>>,
-    predicate: Option<Arc<Expr>>,
-    limit: Option<usize>,
-    sender: Sender<Result<Table, DaftError>>,
-) {
-    let rows_read = Arc::new(AtomicUsize::new(0));
-    let mut has_header = parse_options.has_header;
-    let total_len = file.metadata().unwrap().len() as usize;
-    let field_delimiter = parse_options.delimiter;
-    let escape_char = parse_options.escape_char;
-    let quote_char = parse_options.quote;
-    let double_quote_escape_allowed = parse_options.double_quote;
-    let mut total_bytes_read = 0;
-    let mut next_slab = None;
-    let mut next_buffer_len = 0;
-    let mut first_buffer = true;
-    loop {
-        let limit_reached = limit.map_or(false, |limit| {
-            let current_rows_read = rows_read.load(Ordering::Relaxed);
-            current_rows_read >= limit
-        });
-        if limit_reached {
-            break;
-        }
-        let (current_slab, current_buffer_len) = match next_slab.take() {
-            Some(next_slab) => {
-                total_bytes_read += next_buffer_len;
-                (next_slab, next_buffer_len)
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let current_state = loop {
+            if self.curr_read_idx >= self.states.len() {
+                return Ok(0); // EOF
             }
-            None => {
-                let mut buffer = slabpool.get_buffer();
-                match Arc::get_mut(&mut buffer) {
-                    Some(inner_buffer) => {
-                        let bytes_read = file.read(inner_buffer).unwrap();
-                        if bytes_read == 0 {
-                            slabpool.return_buffer(buffer);
-                            break;
-                        }
-                        total_bytes_read += bytes_read;
-                        (
-                            Arc::new(FileSlab {
-                                pool: Arc::clone(&slabpool),
-                                buffer: Some(buffer),
-                                valid_bytes: bytes_read,
-                            }),
-                            bytes_read,
-                        )
-                    }
-                    None => {
-                        slabpool.return_buffer(buffer);
-                        break;
-                    }
-                }
+            let current_state = &self.states[self.curr_read_idx];
+            if self.curr_read_offset < current_state.len() {
+                break current_state;
             }
+            self.curr_read_offset = 0;
+            self.curr_read_idx += 1;
         };
-        (next_slab, next_buffer_len) = if total_bytes_read < total_len {
-            let mut next_buffer = slabpool.get_buffer();
-            match Arc::get_mut(&mut next_buffer) {
-                Some(inner_buffer) => {
-                    let bytes_read = file.read(inner_buffer).unwrap();
-                    if bytes_read == 0 {
-                        slabpool.return_buffer(next_buffer);
-                        (None, 0)
-                    } else {
-                        (
-                            Some(Arc::new(FileSlab {
-                                pool: Arc::clone(&slabpool),
-                                buffer: Some(next_buffer),
-                                valid_bytes: bytes_read,
-                            })),
-                            bytes_read,
-                        )
-                    }
-                }
-                None => {
-                    slabpool.return_buffer(next_buffer);
-                    break;
-                }
+        let slice = match current_state {
+            ChunkState::Start { slab, start } => {
+                &unsafe_clone_buffer(&slab.buffer)[*start..slab.valid_bytes]
             }
-        } else {
-            (None, 0)
+            ChunkState::StartAndFinal { slab, start, end } => {
+                &unsafe_clone_buffer(&slab.buffer)[*start..*end]
+            }
+            ChunkState::Continue { slab } => &unsafe_clone_buffer(&slab.buffer)[..slab.valid_bytes],
+            ChunkState::Final { slab, end } => &unsafe_clone_buffer(&slab.buffer)[..*end],
         };
-        let file_chunk = get_file_chunk(
-            unsafe_clone_buffer(&current_slab.buffer),
-            current_buffer_len,
-            next_slab
-                .as_ref()
-                .map(|slab| unsafe_clone_buffer(&slab.buffer)),
-            next_buffer_len,
-            first_buffer,
-            num_fields,
-            quote_char,
-            field_delimiter,
-            escape_char,
-            double_quote_escape_allowed,
-        );
-        first_buffer = false;
-        if let (None, _) = file_chunk {
-            // The current file slab does not have records that fit into 4 MiB. Fallback to a standard reader.
-            total_bytes_read -= current_buffer_len;
-            // Seek to the undecoded portion of the file.
-            match file.seek(SeekFrom::Start(total_bytes_read as u64)) {
-                Ok(_) => {
-                    // Since this CSV file has records larger than 4 MiB, get a huge buffer that accepts 2 GiB records.
-                    let csv_buffer = buffer_pool.create_huge_buffer();
-                    dispatch_to_parse_csv(
-                        has_header,
-                        parse_options,
-                        CsvBufferSource::File(file),
-                        projection_indices,
-                        fields,
-                        read_daft_fields,
-                        read_schema,
-                        csv_buffer,
-                        include_columns.clone(),
-                        predicate,
-                        sender,
-                        rows_read,
-                    );
-                }
-                Err(e) => {
-                    sender.send(Err(DaftError::IoError(e))).unwrap();
-                }
-            }
-            // Exit after falling back.
-            break;
-        }
-        let current_slab_clone = Arc::clone(&current_slab);
-        let next_slab_clone = next_slab.clone();
-        let parse_options = parse_options.clone();
-        let csv_buffer = buffer_pool.get_buffer();
-        let projection_indices = projection_indices.clone();
-        let fields = fields.clone();
-        let read_daft_fields = read_daft_fields.clone();
-        let read_schema = read_schema.clone();
-        let include_columns = include_columns.clone();
-        let predicate = predicate.clone();
-        let sender = sender.clone();
-        let rows_read = Arc::clone(&rows_read);
-        rayon::spawn(move || {
-            let limit_reached = limit.map_or(false, |limit| {
-                let current_rows_read = rows_read.load(Ordering::Relaxed);
-                current_rows_read >= limit
-            });
-            if !limit_reached {
-                match file_chunk {
-                    (Some(start), None) => {
-                        if let Some(buffer) = &current_slab_clone.buffer {
-                            let buffer_source = CsvBufferSource::Single(Cursor::new(
-                                &buffer[start..current_buffer_len],
-                            ));
-                            dispatch_to_parse_csv(
-                                has_header,
-                                parse_options,
-                                buffer_source,
-                                projection_indices,
-                                fields,
-                                read_daft_fields,
-                                read_schema,
-                                csv_buffer,
-                                include_columns,
-                                predicate,
-                                sender,
-                                rows_read,
-                            );
-                        } else {
-                            panic!("Trying to read from a CSV buffer that doesn't exist. Please report this issue.")
-                        }
-                    }
-                    (Some(start), Some(end)) => {
-                        if let Some(next_slab_clone) = next_slab_clone
-                            && let Some(current_buffer) = &current_slab_clone.buffer
-                            && let Some(next_buffer) = &next_slab_clone.buffer
-                        {
-                            let buffer_source = CsvBufferSource::Chain(std::io::Read::chain(
-                                Cursor::new(&current_buffer[start..current_buffer_len]),
-                                Cursor::new(&next_buffer[..end]),
-                            ));
-                            dispatch_to_parse_csv(
-                                has_header,
-                                parse_options,
-                                buffer_source,
-                                projection_indices,
-                                fields,
-                                read_daft_fields,
-                                read_schema,
-                                csv_buffer,
-                                include_columns,
-                                predicate,
-                                sender,
-                                rows_read,
-                            );
-                        } else {
-                            panic!("Trying to read from an overflow CSV buffer that doesn't exist. Please report this issue.")
-                        }
-                    }
-                    _ => panic!(
-                        "Reached an unreachable state when parsing the CSV file. Please report this issue."
-                    ),
-                };
-            }
-        });
-        has_header = false;
-        if total_bytes_read >= total_len {
-            break;
-        }
+        let read_size = buf.len().min(slice.len() - self.curr_read_offset);
+        buf[..read_size].copy_from_slice(&slice[self.curr_read_offset..][..read_size]);
+        self.curr_read_offset += read_size;
+        Ok(read_size)
     }
+
+    // fn read_vectored(&mut self, bufs: &mut [std::io::IoSliceMut<'_>]) -> std::io::Result<usize> {}
+
+    // fn read_to_end(&mut self, buf: &mut Vec<u8>) -> std::io::Result<usize> {}
 }
 
 /// Unsafe helper function that extracts the buffer from an &Option<Arc<[u8]>>. Users should
@@ -813,147 +1024,6 @@ fn unsafe_clone_buffer(buffer: &Option<Arc<[u8]>>) -> Arc<[u8]> {
     match buffer {
         Some(buffer) => Arc::clone(buffer),
         None => panic!("Tried to clone a CSV slab that doesn't exist. Please report this error."),
-    }
-}
-
-#[allow(clippy::doc_lazy_continuation)]
-/// Helper function that determines what chunk of data to parse given a starting position within the
-/// file, and the desired initial chunk size.
-///
-/// Given a starting position, we use our chunk size to compute a preliminary start and stop
-/// position. For example, we can visualize all preliminary chunks in a file as follows.
-///
-///  Chunk 1         Chunk 2         Chunk 3              Chunk N
-/// ┌──────────┐    ┌──────────┐    ┌──────────┐         ┌──────────┐
-/// │          │    │\n        │    │   \n     │         │       \n │
-/// │          │    │          │    │          │         │          │
-/// │          │    │       \n │    │          │         │          │
-/// │   \n     │    │          │    │      \n  │         │          │
-/// │          │    │          │    │          │   ...   │     \n   │
-/// │          │    │  \n      │    │          │         │          │
-/// │ \n       │    │          │    │          │         │          │
-/// │          │    │          │    │     \n   │         │  \n      │
-/// └──────────┘    └──────────┘    └──────────┘         └──────────┘
-///
-/// However, record boundaries (i.e. the \n terminators) do not align nicely with these preliminary
-/// chunk boundaries. So we adjust each preliminary chunk as follows:
-/// - Find the first record terminator from the chunk's start. This is the new starting position.
-/// - Find the first record terminator from the chunk's end. This is the new ending position.
-/// - If a given preliminary chunk doesn't contain a record terminator, the adjusted chunk is empty.
-///
-/// For example:
-///
-///  Adjusted Chunk 1    Adj. Chunk 2        Adj. Chunk 3          Adj. Chunk N
-/// ┌──────────────────┐┌─────────────────┐ ┌────────┐            ┌─┐
-/// │                \n││               \n│ │      \n│         \n │ │
-/// │          ┌───────┘│      ┌──────────┘ │  ┌─────┘            │ │
-/// │          │    ┌───┘   \n │    ┌───────┘  │         ┌────────┘ │
-/// │   \n     │    │          │    │      \n  │         │          │
-/// │          │    │          │    │          │   ...   │     \n   │
-/// │          │    │  \n      │    │          │         │          │
-/// │ \n       │    │          │    │          │         │          │
-/// │          │    │          │    │     \n   │         │  \n      │
-/// └──────────┘    └──────────┘    └──────────┘         └──────────┘
-///
-/// Using this method, we now have adjusted chunks that are aligned with record boundaries, that do
-/// not overlap, and that fully cover every byte in the CSV file. Parsing each adjusted chunk can
-/// now happen in parallel.
-///
-/// This is the same method as described in:
-/// Ge, Chang et al. “Speculative Distributed CSV Data Parsing for Big Data Analytics.” Proceedings of the 2019 International Conference on Management of Data (2019).
-///
-/// Another observation is that seeing a pure \n character is not necessarily indicative of a record
-/// terminator. We need to consider whether the \n character was seen within a quoted field, since the
-/// string "some text \n some text" is a valid CSV string field. To do this, we carry out the following
-/// algorithm:
-/// 1. Find a \n character.
-/// 2. Check if the CSV string immediately following this \n character is valid, i.e. does it parse
-///    as valid CSV, and does it produce the same number of fields as our schema.
-/// 2a. If there is a valid record at this point, then we assume that the \n we saw was a valid terminator.
-/// 2b. If the record at this point is invalid, then this was likely a \n in a quoted field. Find the next
-///     \n character and go back to 2.
-#[allow(clippy::too_many_arguments)]
-fn get_file_chunk(
-    current_buffer: Arc<[u8]>,
-    current_buffer_len: usize,
-    next_buffer: Option<Arc<[u8]>>,
-    next_buffer_len: usize,
-    first_buffer: bool,
-    num_fields: usize,
-    quote_char: u8,
-    field_delimiter: u8,
-    escape_char: Option<u8>,
-    double_quote_escape_allowed: bool,
-) -> (Option<usize>, Option<usize>) {
-    // TODO(desmond): There is a potential fast path here when `escape_char` is None: simply check for \n characters.
-    let start = if !first_buffer {
-        let start = next_line_position(
-            &current_buffer[..current_buffer_len],
-            0,
-            num_fields,
-            quote_char,
-            field_delimiter,
-            escape_char,
-            double_quote_escape_allowed,
-        );
-        match start {
-            Some(_) => start,
-            None => return (None, None), // If the record size is >= 4MB, return None and fallback.
-        }
-    } else {
-        Some(0)
-    };
-    // If there is a next buffer, find the adjusted chunk in that buffer. If there's no next buffer, we're at the end of the file.
-    let end = if let Some(next_buffer) = next_buffer {
-        let end = next_line_position(
-            &next_buffer[..next_buffer_len],
-            0,
-            num_fields,
-            quote_char,
-            field_delimiter,
-            escape_char,
-            double_quote_escape_allowed,
-        );
-        match end {
-            Some(_) => end,
-            None => return (None, None), // If the record size is >= 4MB, return None and fallback.
-        }
-    } else {
-        None
-    };
-    (start, end)
-}
-
-/// Helper function that finds the first valid record terminator in a buffer.
-fn next_line_position(
-    buffer: &[u8],
-    offset: usize,
-    num_fields: usize,
-    quote_char: u8,
-    field_delimiter: u8,
-    escape_char: Option<u8>,
-    double_quote_escape_allowed: bool,
-) -> Option<usize> {
-    let mut start = offset;
-    loop {
-        start = match newline_position(&buffer[start..]) {
-            // Start reading after the first record terminator from the start of the chunk.
-            Some(pos) => start + pos + 1,
-            None => return None,
-        };
-        if start >= buffer.len() {
-            return None;
-        }
-        if validate_csv_record(
-            &buffer[start..],
-            num_fields,
-            quote_char,
-            field_delimiter,
-            escape_char,
-            double_quote_escape_allowed,
-        ) {
-            return Some(start);
-        }
     }
 }
 
@@ -983,96 +1053,89 @@ enum CsvState {
 
 /// State machine that validates whether the current buffer starts at a valid csv record.
 /// See `get_file_chunk` for more details.
+#[allow(clippy::too_many_arguments)]
 fn validate_csv_record(
-    buffer: &[u8],
+    iter: &mut impl Iterator<Item = u8>,
+    state: &mut CsvState,
     num_fields: usize,
+    num_fields_seen: &mut usize,
     quote_char: u8,
     field_delimiter: u8,
     escape_char: Option<u8>,
     double_quote_escape_allowed: bool,
-) -> bool {
-    let mut state = CsvState::FieldStart;
-    let mut index = 0;
-    let mut num_fields_seen = 0;
+) -> Option<bool> {
     loop {
-        if index >= buffer.len() {
-            // We've reached the end of the buffer without seeing a valid record.
-            return false;
-        }
         match state {
             CsvState::FieldStart => {
-                let byte = buffer[index];
+                *num_fields_seen += 1;
+                if *num_fields_seen > num_fields {
+                    return Some(false);
+                }
+                let byte = iter.next()?;
+                // println!("field start byte {}", byte);
                 if byte == NEWLINE {
-                    state = CsvState::RecordEnd;
+                    *state = CsvState::RecordEnd;
                 } else if byte == quote_char {
-                    state = CsvState::QuotedField;
-                    index += 1;
-                } else {
-                    state = CsvState::UnquotedField;
+                    *state = CsvState::QuotedField;
+                } else if byte != field_delimiter {
+                    *state = CsvState::UnquotedField;
                 }
             }
             CsvState::RecordEnd => {
-                return num_fields_seen == num_fields;
+                return Some(*num_fields_seen == num_fields);
             }
             CsvState::UnquotedField => {
                 // We follow the convention where an unquoted field does not consider escape characters.
-                while index < buffer.len() {
-                    let byte = buffer[index];
+                loop {
+                    let byte = iter.next()?;
+                    // println!("unquoted field byte {}", byte);
                     if byte == NEWLINE {
-                        num_fields_seen += 1;
-                        state = CsvState::RecordEnd;
+                        *state = CsvState::RecordEnd;
                         break;
                     }
                     if byte == field_delimiter {
-                        num_fields_seen += 1;
-                        state = CsvState::FieldStart;
-                        index += 1;
+                        *state = CsvState::FieldStart;
                         break;
                     }
-                    index += 1;
                 }
             }
             CsvState::QuotedField => {
-                while index < buffer.len() {
-                    let byte = buffer[index];
+                loop {
+                    let byte = iter.next()?;
+                    // println!("quoted field byte {}", byte);
                     if byte == quote_char {
-                        state = CsvState::Unquote;
-                        index += 1;
+                        *state = CsvState::Unquote;
                         break;
                     }
                     if let Some(escape_char) = escape_char
                         && byte == escape_char
                     {
                         // Skip the next character.
-                        index += 1;
+                        iter.next()?;
                     }
-                    index += 1;
                 }
             }
             CsvState::Unquote => {
-                let byte = buffer[index];
+                let byte = iter.next()?;
+                // println!("unquote byte {}", byte);
                 if let Some(escape_char) = escape_char
                     && byte == escape_char
                     && escape_char == quote_char
                     && (byte != DOUBLE_QUOTE || double_quote_escape_allowed)
                 {
-                    state = CsvState::QuotedField;
-                    index += 1;
+                    *state = CsvState::QuotedField;
                     continue;
                 }
                 if byte == NEWLINE {
-                    num_fields_seen += 1;
-                    state = CsvState::RecordEnd;
+                    *state = CsvState::RecordEnd;
                     continue;
                 }
                 if byte == field_delimiter {
-                    num_fields_seen += 1;
-                    state = CsvState::FieldStart;
-                    index += 1;
+                    *state = CsvState::FieldStart;
                     continue;
                 }
                 // Other characters are not allowed after a quote. This is invalid CSV.
-                return false;
+                return Some(false);
             }
         }
     }
@@ -1081,10 +1144,10 @@ fn validate_csv_record(
 /// Helper function that takes in a BufferSource, calls parse_csv() to extract table values from
 /// the buffer source, then streams the results to `sender`.
 #[allow(clippy::too_many_arguments)]
-fn dispatch_to_parse_csv(
+fn dispatch_to_parse_csv<R>(
     has_header: bool,
     parse_options: CsvParseOptions,
-    buffer_source: CsvBufferSource,
+    buffer_source: R,
     projection_indices: Arc<Vec<usize>>,
     fields: Vec<Field>,
     read_daft_fields: Arc<Vec<Arc<daft_core::datatypes::Field>>>,
@@ -1094,7 +1157,9 @@ fn dispatch_to_parse_csv(
     predicate: Option<Arc<Expr>>,
     sender: Sender<Result<Table, DaftError>>,
     rows_read: Arc<AtomicUsize>,
-) {
+) where
+    R: std::io::Read,
+{
     let table_results = {
         let rdr = ReaderBuilder::new()
             .has_headers(has_header)
@@ -1120,7 +1185,7 @@ fn dispatch_to_parse_csv(
         Ok(tables) => {
             for table in tables {
                 let table_len = table.len();
-                sender.send(Ok(table)).unwrap();
+                let _ = sender.send(Ok(table));
                 // Atomically update the number of rows read only after the result has
                 // been sent. In theory we could wrap these steps in a mutex, but
                 // applying limit at this layer can be best-effort with no adverse
@@ -1128,7 +1193,9 @@ fn dispatch_to_parse_csv(
                 rows_read.fetch_add(table_len, Ordering::Relaxed);
             }
         }
-        Err(e) => sender.send(Err(e)).unwrap(),
+        Err(e) => {
+            let _ = sender.send(Err(e));
+        }
     }
 }
 
