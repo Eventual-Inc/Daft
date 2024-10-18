@@ -202,7 +202,7 @@ mod tests {
         let io_runtime = get_io_runtime(true);
         compute_runtime.block_on_current_thread(async {
             let mut handles = vec![];
-            for _ in 0..*NUM_CPUS*2 {
+            for _ in 0..*NUM_CPUS * 2 {
                 let io_runtime = io_runtime.clone();
                 handles.push(tokio::spawn(async move {
                     let _ = io_runtime.block_on(async {
