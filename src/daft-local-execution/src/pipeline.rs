@@ -10,8 +10,8 @@ use daft_core::{
 use daft_dsl::{col, join::get_common_join_keys, Expr};
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{
-    EmptyScan, Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, Project,
-    Sort, UnGroupedAggregate,
+    EmptyScan, Explode, Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan,
+    Project, Sort, UnGroupedAggregate,
 };
 use daft_plan::{populate_aggregation_stages, JoinType};
 use daft_table::{Probeable, Table};
@@ -22,7 +22,7 @@ use crate::{
     channel::PipelineChannel,
     intermediate_ops::{
         aggregate::AggregateOperator, anti_semi_hash_join_probe::AntiSemiProbeOperator,
-        filter::FilterOperator, hash_join_probe::HashJoinProbeOperator,
+        explode::ExplodeOperator, filter::FilterOperator, hash_join_probe::HashJoinProbeOperator,
         intermediate_op::IntermediateNode, project::ProjectOperator,
     },
     sinks::{
@@ -131,6 +131,13 @@ pub fn physical_plan_to_pipeline(
             let filter_op = FilterOperator::new(predicate.clone());
             let child_node = physical_plan_to_pipeline(input, psets)?;
             IntermediateNode::new(Arc::new(filter_op), vec![child_node]).boxed()
+        }
+        LocalPhysicalPlan::Explode(Explode {
+            input, to_explode, ..
+        }) => {
+            let explode_op = ExplodeOperator::new(to_explode.clone());
+            let child_node = physical_plan_to_pipeline(input, psets)?;
+            IntermediateNode::new(Arc::new(explode_op), vec![child_node]).boxed()
         }
         LocalPhysicalPlan::Limit(Limit {
             input, num_rows, ..
