@@ -15,7 +15,7 @@ pub enum LocalPhysicalPlan {
     Project(Project),
     Filter(Filter),
     Limit(Limit),
-    // Explode(Explode),
+    Explode(Explode),
     // Unpivot(Unpivot),
     Sort(Sort),
     // Split(Split),
@@ -101,6 +101,20 @@ impl LocalPhysicalPlan {
         Self::Limit(Limit {
             input,
             num_rows,
+            schema,
+            plan_stats: PlanStats {},
+        })
+        .arced()
+    }
+
+    pub(crate) fn explode(
+        input: LocalPhysicalPlanRef,
+        to_explode: Vec<ExprRef>,
+        schema: SchemaRef,
+    ) -> LocalPhysicalPlanRef {
+        Self::Explode(Explode {
+            input,
+            to_explode,
             schema,
             plan_stats: PlanStats {},
         })
@@ -212,6 +226,7 @@ impl LocalPhysicalPlan {
             | Self::HashAggregate(HashAggregate { schema, .. })
             | Self::Sort(Sort { schema, .. })
             | Self::HashJoin(HashJoin { schema, .. })
+            | Self::Explode(Explode { schema, .. })
             | Self::Concat(Concat { schema, .. }) => schema,
             Self::InMemoryScan(InMemoryScan { info, .. }) => &info.source_schema,
             _ => todo!("{:?}", self),
@@ -258,6 +273,14 @@ pub struct Filter {
 pub struct Limit {
     pub input: LocalPhysicalPlanRef,
     pub num_rows: i64,
+    pub schema: SchemaRef,
+    pub plan_stats: PlanStats,
+}
+
+#[derive(Debug)]
+pub struct Explode {
+    pub input: LocalPhysicalPlanRef,
+    pub to_explode: Vec<ExprRef>,
     pub schema: SchemaRef,
     pub plan_stats: PlanStats,
 }

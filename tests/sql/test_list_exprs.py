@@ -1,8 +1,7 @@
 import pyarrow as pa
-import pytest
 
 import daft
-from daft import col, context
+from daft import col
 from daft.daft import CountMode
 from daft.sql.sql import SQLCatalog
 
@@ -62,8 +61,6 @@ def test_list_counts():
 
 
 def test_list_explode():
-    if context.get_context().daft_execution_config.enable_native_executor is True:
-        pytest.skip("Native executor fails for these tests")
     df = daft.from_pydict({"col": [[1, 2, 3], [1, 2], [1, None, 4], []]})
     catalog = SQLCatalog({"test": df})
     expected = df.explode(col("col"))
