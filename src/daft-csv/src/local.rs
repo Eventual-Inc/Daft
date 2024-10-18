@@ -1,4 +1,4 @@
-use core::str;
+use core::{mem::ManuallyDrop, str};
 use std::{
     io::Read,
     num::NonZeroUsize,
@@ -143,9 +143,7 @@ struct FileSlabPool {
 #[derive(Clone, Debug)]
 struct FileSlab {
     pool: Arc<FileSlabPool>,
-    // We wrap the Arc<buffer> in an Option so that when a Slab is being dropped, we can move the Slab's reference
-    // to the Arc<buffer> back to the slab pool.
-    buffer: Option<Arc<[u8]>>,
+    buffer: ManuallyDrop<Arc<[u8]>>,
     valid_bytes: usize,
 }
 
@@ -155,16 +153,15 @@ impl FileSlab {
     //
     // This assumption is only true if the user does not append to the current file while we are reading it.
     pub fn filled_buffer(&self) -> bool {
-        self.valid_bytes >= unsafe_clone_buffer(&self.buffer).len()
+        self.valid_bytes >= self.buffer.len()
     }
 }
 
 // Modify the Drop method for FileSlabs so that they're returned to their parent slab pool.
 impl Drop for FileSlab {
     fn drop(&mut self) {
-        if let Some(buffer) = self.buffer.take() {
-            self.pool.return_buffer(buffer);
-        }
+        let buffer = unsafe { ManuallyDrop::take(&mut self.buffer) };
+        self.pool.return_buffer(buffer);
     }
 }
 
@@ -449,7 +446,7 @@ impl Iterator for SlabIterator {
                 self.total_bytes_read += bytes_read;
                 Some(Arc::new(FileSlab {
                     pool: Arc::clone(&self.slabpool),
-                    buffer: Some(buffer),
+                    buffer: ManuallyDrop::new(buffer),
                     valid_bytes: bytes_read,
                 }))
             }
@@ -845,30 +842,24 @@ impl ChunkState {
     #[inline]
     fn get_idx(&self, idx: usize) -> u8 {
         match self {
-            Self::Start { slab, start } => unsafe_clone_buffer(&slab.buffer)[start + idx],
-            Self::StartAndFinal { slab, start, .. } => {
-                unsafe_clone_buffer(&slab.buffer)[start + idx]
-            }
-            Self::Continue { slab } => unsafe_clone_buffer(&slab.buffer)[idx],
-            Self::Final { slab, .. } => unsafe_clone_buffer(&slab.buffer)[idx],
+            Self::Start { slab, start } => slab.buffer[start + idx],
+            Self::StartAndFinal { slab, start, .. } => slab.buffer[start + idx],
+            Self::Continue { slab } => slab.buffer[idx],
+            Self::Final { slab, .. } => slab.buffer[idx],
         }
     }
 
     #[inline]
     fn find_newline(&self, offset: usize) -> Option<usize> {
         match self {
-            Self::Start { slab, start } => newline_position(
-                &unsafe_clone_buffer(&slab.buffer)[*start + offset..slab.valid_bytes],
-            ),
+            Self::Start { slab, start } => {
+                newline_position(&slab.buffer[*start + offset..slab.valid_bytes])
+            }
             Self::StartAndFinal { slab, start, end } => {
-                newline_position(&unsafe_clone_buffer(&slab.buffer)[*start + offset..*end])
+                newline_position(&slab.buffer[*start + offset..*end])
             }
-            Self::Continue { slab } => {
-                newline_position(&unsafe_clone_buffer(&slab.buffer)[offset..slab.valid_bytes])
-            }
-            Self::Final { slab, end } => {
-                newline_position(&unsafe_clone_buffer(&slab.buffer)[offset..*end])
-            }
+            Self::Continue { slab } => newline_position(&slab.buffer[offset..slab.valid_bytes]),
+            Self::Final { slab, end } => newline_position(&slab.buffer[offset..*end]),
         }
     }
 
@@ -920,14 +911,10 @@ impl Read for MultiSliceReader {
             self.curr_read_idx += 1;
         };
         let slice = match current_state {
-            ChunkState::Start { slab, start } => {
-                &unsafe_clone_buffer(&slab.buffer)[*start..slab.valid_bytes]
-            }
-            ChunkState::StartAndFinal { slab, start, end } => {
-                &unsafe_clone_buffer(&slab.buffer)[*start..*end]
-            }
-            ChunkState::Continue { slab } => &unsafe_clone_buffer(&slab.buffer)[..slab.valid_bytes],
-            ChunkState::Final { slab, end } => &unsafe_clone_buffer(&slab.buffer)[..*end],
+            ChunkState::Start { slab, start } => &slab.buffer[*start..slab.valid_bytes],
+            ChunkState::StartAndFinal { slab, start, end } => &slab.buffer[*start..*end],
+            ChunkState::Continue { slab } => &slab.buffer[..slab.valid_bytes],
+            ChunkState::Final { slab, end } => &slab.buffer[..*end],
         };
         let read_size = buf.len().min(slice.len() - self.curr_read_offset);
         buf[..read_size].copy_from_slice(&slice[self.curr_read_offset..][..read_size]);
@@ -938,15 +925,6 @@ impl Read for MultiSliceReader {
     // fn read_vectored(&mut self, bufs: &mut [std::io::IoSliceMut<'_>]) -> std::io::Result<usize> {}
 
     // fn read_to_end(&mut self, buf: &mut Vec<u8>) -> std::io::Result<usize> {}
-}
-
-/// Unsafe helper function that extracts the buffer from an &Option<Arc<[u8]>>. Users should
-/// ensure that the buffer is Some, otherwise this function causes the process to panic.
-fn unsafe_clone_buffer(buffer: &Option<Arc<[u8]>>) -> Arc<[u8]> {
-    match buffer {
-        Some(buffer) => Arc::clone(buffer),
-        None => panic!("Tried to clone a CSV slab that doesn't exist. Please report this error."),
-    }
 }
 
 // Daft does not currently support non-\n record terminators (e.g. carriage return \r, which only
