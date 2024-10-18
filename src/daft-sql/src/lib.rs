@@ -261,6 +261,8 @@ mod tests {
                 vec![col("id")],
                 JoinType::Inner,
                 None,
+                None,
+                None,
             )?
             .select(vec![col("*")])?
             .build();
