@@ -485,6 +485,13 @@ fn consume_slab_iterator(
 
     let mut iter = iter.peekable();
     let mut curr_chunk = ChunkStateHolder::empty();
+    let mut csv_validator = CsvValidator::new(
+        num_fields,
+        quote_char,
+        field_delimiter,
+        escape_char,
+        double_quote_escape_allowed,
+    );
     loop {
         // Check limit.
         let limit_reached = limit.map_or(false, |limit| {
@@ -521,14 +528,7 @@ fn consume_slab_iterator(
                 }
                 curr_chunk.states.push(ChunkState::Continue { slab: next });
                 while curr_chunk.goto_next_newline() {
-                    if curr_chunk.validate_csv_record(
-                        &mut iter,
-                        num_fields,
-                        quote_char,
-                        field_delimiter,
-                        escape_char,
-                        double_quote_escape_allowed,
-                    ) {
+                    if curr_chunk.validate_csv_record(&mut csv_validator, &mut iter) {
                         break;
                     }
                 }
@@ -719,27 +719,13 @@ impl ChunkStateHolder {
 
     fn validate_csv_record(
         &mut self,
+        validator: &mut CsvValidator,
         iter: &mut impl Iterator<Item = Arc<FileSlab>>,
-        num_fields: usize,
-        quote_char: u8,
-        field_delimiter: u8,
-        escape_char: Option<u8>,
-        double_quote_escape_allowed: bool,
     ) -> bool {
-        let mut csv_state = CsvState::FieldStart;
-        let mut num_fields_seen: usize = 0;
+        validator.reset();
         loop {
             // Run the CSV state machine to see if we're currently at a valid record boundary.
-            if let Some(valid) = validate_csv_record(
-                self.into_iter(),
-                &mut csv_state,
-                num_fields,
-                &mut num_fields_seen,
-                quote_char,
-                field_delimiter,
-                escape_char,
-                double_quote_escape_allowed,
-            ) {
+            if let Some(valid) = validator.validate_record(self.into_iter()) {
                 self.valid_chunk = valid;
                 if valid {
                     let (ending_idx, ending_offset) = if self.curr_byte_read_offset == 0 {
@@ -977,99 +963,127 @@ fn newline_position(buffer: &[u8]) -> Option<usize> {
     memchr::memchr(NEWLINE, buffer)
 }
 
+struct CsvValidator {
+    state: CsvState,
+    num_fields: usize,
+    num_fields_seen: usize,
+    quote_char: u8,
+    field_delimiter: u8,
+    escape_char: Option<u8>,
+    double_quote_escape_allowed: bool,
+    // The transition table only needs to consider 256 possible inputs, because the only characters
+    // that are valid for transitioning the table state are single-byte ASCII characters. Furthermore,
+    // even when reading UTF-8, upon encountering a byte that matches the value for an ASCII character,
+    // this byte will always correspond to the ASCII character.
+    // For more details, see: https://en.wikipedia.org/wiki/UTF-8#Encoding
+    transition_table: [[CsvState; 256]; 6],
+}
+
 /// Csv states used by the state machine in `validate_csv_record`.
-#[derive(Clone)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum CsvState {
     FieldStart,
     RecordEnd,
     UnquotedField,
     QuotedField,
     Unquote,
+    Escape,
+    Invalid,
 }
 
-/// State machine that validates whether the current buffer starts at a valid csv record.
-/// See `get_file_chunk` for more details.
-#[allow(clippy::too_many_arguments)]
-fn validate_csv_record(
-    iter: &mut impl Iterator<Item = u8>,
-    state: &mut CsvState,
-    num_fields: usize,
-    num_fields_seen: &mut usize,
-    quote_char: u8,
-    field_delimiter: u8,
-    escape_char: Option<u8>,
-    double_quote_escape_allowed: bool,
-) -> Option<bool> {
-    loop {
-        match state {
-            CsvState::FieldStart => {
-                *num_fields_seen += 1;
-                if *num_fields_seen > num_fields {
-                    return Some(false);
-                }
-                let byte = iter.next()?;
-                if byte == NEWLINE {
-                    *state = CsvState::RecordEnd;
-                } else if byte == quote_char {
-                    *state = CsvState::QuotedField;
-                } else if byte != field_delimiter {
-                    *state = CsvState::UnquotedField;
-                }
-            }
-            CsvState::RecordEnd => {
-                return Some(*num_fields_seen == num_fields);
-            }
-            CsvState::UnquotedField => {
-                // We follow the convention where an unquoted field does not consider escape characters.
-                loop {
-                    let byte = iter.next()?;
-                    if byte == NEWLINE {
-                        *state = CsvState::RecordEnd;
-                        break;
-                    }
-                    if byte == field_delimiter {
-                        *state = CsvState::FieldStart;
-                        break;
-                    }
-                }
-            }
-            CsvState::QuotedField => {
-                loop {
-                    let byte = iter.next()?;
-                    if byte == quote_char {
-                        *state = CsvState::Unquote;
-                        break;
-                    }
-                    if let Some(escape_char) = escape_char
-                        && byte == escape_char
-                    {
-                        // Skip the next character.
-                        iter.next()?;
-                    }
-                }
-            }
-            CsvState::Unquote => {
-                let byte = iter.next()?;
-                if let Some(escape_char) = escape_char
-                    && byte == escape_char
-                    && escape_char == quote_char
-                    && (byte != DOUBLE_QUOTE || double_quote_escape_allowed)
-                {
-                    *state = CsvState::QuotedField;
-                    continue;
-                }
-                if byte == NEWLINE {
-                    *state = CsvState::RecordEnd;
-                    continue;
-                }
-                if byte == field_delimiter {
-                    *state = CsvState::FieldStart;
-                    continue;
-                }
-                // Other characters are not allowed after a quote. This is invalid CSV.
-                return Some(false);
-            }
+impl CsvValidator {
+    fn new(
+        num_fields: usize,
+        quote_char: u8,
+        field_delimiter: u8,
+        escape_char: Option<u8>,
+        double_quote_escape_allowed: bool,
+    ) -> Self {
+        let mut validator = Self {
+            state: CsvState::FieldStart,
+            num_fields,
+            num_fields_seen: 0,
+            quote_char,
+            field_delimiter,
+            escape_char,
+            double_quote_escape_allowed,
+            transition_table: [[CsvState::Invalid; 256]; 6],
+        };
+        validator.build_transition_table();
+        validator
+    }
+
+    fn build_transition_table(&mut self) {
+        // FieldStart transitions.
+        self.transition_table[CsvState::FieldStart as usize] = [CsvState::UnquotedField; 256];
+        self.transition_table[CsvState::FieldStart as usize][NEWLINE as usize] =
+            CsvState::RecordEnd;
+        self.transition_table[CsvState::FieldStart as usize][self.quote_char as usize] =
+            CsvState::QuotedField;
+        self.transition_table[CsvState::FieldStart as usize][self.field_delimiter as usize] =
+            CsvState::FieldStart;
+
+        // UnquotedField transitions.
+        self.transition_table[CsvState::UnquotedField as usize] = [CsvState::UnquotedField; 256];
+        self.transition_table[CsvState::UnquotedField as usize][NEWLINE as usize] =
+            CsvState::RecordEnd;
+        self.transition_table[CsvState::UnquotedField as usize][self.field_delimiter as usize] =
+            CsvState::FieldStart;
+
+        // QuotedField transitions.
+        self.transition_table[CsvState::QuotedField as usize] = [CsvState::QuotedField; 256];
+        if let Some(escape_char) = self.escape_char {
+            self.transition_table[CsvState::QuotedField as usize][escape_char as usize] =
+                CsvState::Escape;
         }
+        // The quote char transition must be defined after the escape transition, because the most common
+        // escape char in CSV is the quote char itself ("._.)
+        self.transition_table[CsvState::QuotedField as usize][self.quote_char as usize] =
+            CsvState::Unquote;
+
+        // Unquote transitions.
+        self.transition_table[CsvState::Unquote as usize][NEWLINE as usize] = CsvState::RecordEnd;
+        self.transition_table[CsvState::Unquote as usize][self.field_delimiter as usize] =
+            CsvState::FieldStart;
+        if let Some(escape_char) = self.escape_char
+            && escape_char == self.quote_char
+            && (self.quote_char != DOUBLE_QUOTE || self.double_quote_escape_allowed)
+        {
+            self.transition_table[CsvState::Unquote as usize][self.quote_char as usize] =
+                CsvState::QuotedField;
+        }
+
+        // Escape transitions.
+        self.transition_table[CsvState::Escape as usize] = [CsvState::QuotedField; 256];
+    }
+
+    fn reset(&mut self) {
+        self.num_fields_seen = 1;
+        self.state = CsvState::FieldStart;
+    }
+
+    fn validate_record(&mut self, iter: &mut impl Iterator<Item = u8>) -> Option<bool> {
+        for byte in iter {
+            let next_state = self.transition_table[self.state as usize][byte as usize];
+
+            match next_state {
+                CsvState::FieldStart => {
+                    self.num_fields_seen += 1;
+                    if self.num_fields_seen > self.num_fields {
+                        return Some(false);
+                    }
+                }
+                CsvState::RecordEnd => {
+                    return Some(self.num_fields_seen == self.num_fields);
+                }
+                CsvState::Invalid => return Some(false),
+                _ => {}
+            }
+
+            self.state = next_state;
+        }
+
+        None
     }
 }
 
