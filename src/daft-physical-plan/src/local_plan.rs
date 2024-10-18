@@ -157,7 +157,7 @@ impl LocalPhysicalPlan {
         values: Vec<ExprRef>,
         variable_name: String,
         value_name: String,
-        output_schema: SchemaRef,
+        schema: SchemaRef,
     ) -> LocalPhysicalPlanRef {
         Self::Unpivot(Unpivot {
             input,
@@ -165,7 +165,8 @@ impl LocalPhysicalPlan {
             values,
             variable_name,
             value_name,
-            output_schema,
+            schema,
+            plan_stats: PlanStats {},
         })
         .arced()
     }
@@ -231,8 +232,8 @@ impl LocalPhysicalPlan {
             | Self::HashAggregate(HashAggregate { schema, .. })
             | Self::Sort(Sort { schema, .. })
             | Self::HashJoin(HashJoin { schema, .. })
+            | Self::Unpivot(Unpivot { schema, .. })
             | Self::Concat(Concat { schema, .. }) => schema,
-            Self::Unpivot(Unpivot { output_schema, .. }) => output_schema,
             Self::InMemoryScan(InMemoryScan { info, .. }) => &info.source_schema,
             _ => todo!("{:?}", self),
         }
@@ -315,7 +316,8 @@ pub struct Unpivot {
     pub values: Vec<ExprRef>,
     pub variable_name: String,
     pub value_name: String,
-    pub output_schema: SchemaRef,
+    pub schema: SchemaRef,
+    pub plan_stats: PlanStats,
 }
 
 #[derive(Debug)]
