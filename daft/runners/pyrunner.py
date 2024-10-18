@@ -513,6 +513,13 @@ class PyRunner(Runner[MicroPartition]):
             self._actor_pools[actor_pool_id].teardown()
             del self._actor_pools[actor_pool_id]
 
+    def _create_resource_release_callback(self, resources: AcquiredResources) -> Callable[[futures.Future], None]:
+        """
+        This higher order function is used so that the `resources` released by the callback
+        are from the ones stored in the variable at the creation of the callback instead of during its call.
+        """
+        return lambda _: self._resources.release(resources)
+
     def _physical_plan_to_partitions(
         self,
         execution_id: str,
@@ -609,17 +616,7 @@ class PyRunner(Runner[MicroPartition]):
                                     next_step.partial_metadatas,
                                 )
 
-                            def create_resource_release_callback(
-                                resources: AcquiredResources,
-                            ) -> Callable[[futures.Future], None]:
-                                """We use a higher order function here to capture the value of `resources` during the creation of the callback instead of during its call."""
-
-                                def inner(_):
-                                    self._resources.release(resources)
-
-                                return inner
-
-                            future.add_done_callback(create_resource_release_callback(resources))
+                            future.add_done_callback(self._create_resource_release_callback(resources))
 
                             # Register the inflight task
                             assert (
