@@ -1052,13 +1052,16 @@ class FanoutEvenSlices(FanoutInstruction):
         [input] = inputs
         results = []
 
-        chunk_size, remainder = divmod(len(input), self.num_outputs())
-        for i in range(self.num_outputs()):
-            start = i * chunk_size
-            end = start + chunk_size
-            if i == self.num_outputs() - 1:
-                end += remainder
-            results.append(input.slice(start, end))
+        input_length = len(input)
+        num_outputs = self.num_outputs()
+
+        chunk_size, remainder = divmod(input_length, num_outputs)
+        ptr = 0
+        for output_idx in range(self.num_outputs()):
+            end = ptr + chunk_size + 1 if output_idx < remainder else ptr + chunk_size
+            results.append(input.slice(ptr, end))
+            ptr = end
+        assert ptr == input_length
 
         return results
 

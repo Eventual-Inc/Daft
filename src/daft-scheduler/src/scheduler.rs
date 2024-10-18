@@ -477,7 +477,7 @@ fn physical_plan_to_partition_tasks(
             let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
             let py_iter = py
                 .import_bound(pyo3::intern!(py, "daft.execution.physical_plan"))?
-                .getattr(pyo3::intern!(py, "split_naively"))?
+                .getattr(pyo3::intern!(py, "split"))?
                 .call1((upstream_iter, *input_num_partitions, *output_num_partitions))?;
             Ok(py_iter.into())
         }
