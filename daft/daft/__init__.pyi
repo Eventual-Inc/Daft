@@ -701,9 +701,15 @@ class ScanTask:
     A batch of scan tasks for reading data from an external source.
     """
 
-    def num_rows(self) -> int:
+    def approx_num_rows(self, cfg: PyDaftExecutionConfig) -> float | None:
         """
-        Get number of rows that will be scanned by this ScanTask.
+        Get an approximate number of rows that will be scanned by this ScanTask, or None if not available.
+        """
+        ...
+
+    def num_rows(self) -> int | None:
+        """
+        Get number of rows that will be scanned by this ScanTask, or None if not available.
         """
         ...
 

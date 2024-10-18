@@ -275,6 +275,10 @@ pub mod pylib {
 
     #[pymethods]
     impl PyScanTask {
+        pub fn approx_num_rows(&self, cfg: PyDaftExecutionConfig) -> PyResult<Option<f64>> {
+            Ok(self.0.approx_num_rows(Some(cfg.config.as_ref())))
+        }
+
         pub fn num_rows(&self) -> PyResult<Option<i64>> {
             Ok(self.0.num_rows().map(i64::try_from).transpose()?)
         }

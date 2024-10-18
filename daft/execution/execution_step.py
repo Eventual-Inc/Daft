@@ -143,13 +143,15 @@ class PartitionTaskBuilder(Generic[PartitionT]):
         This triggers a re-calculation of
         """
         # Update the resource requests as well as the current estimated partition metadata at the current state of the PartitionTaskBuilder's "stack"
-        current_instruction_resource_request, estimated_output_partition_metadatas = (
-            instruction.estimate_runtime_metrics(self.estimated_output_partition_metadatas)
+        estimated_output_metadata = instruction.estimate_output_metadata(self.estimated_output_partition_metadatas)
+        current_instruction_resource_request = instruction.estimate_resource_request(
+            self.estimated_output_partition_metadatas
         )
+
         self.resource_request = ResourceRequest.max_resources(
             [self.resource_request, current_instruction_resource_request]
         )
-        self.estimated_output_partition_metadatas = estimated_output_partition_metadatas
+        self.estimated_output_partition_metadatas = estimated_output_metadata
 
         self.instructions.append(instruction)
         self.num_results = instruction.num_outputs()
@@ -320,10 +322,15 @@ class Instruction(Protocol):
         """
         ...
 
-    def estimate_runtime_metrics(
+    def estimate_resource_request(self, input_metadatas: list[EstimatedPartitionMetadata]) -> ResourceRequest:
+        """Estimates the ResourceRequest required to run this instruction based on the estimated metadata of the inputs"""
+        # TODO: This just helps us pass mypy
+        return ResourceRequest()
+
+    def estimate_output_metadata(
         self, input_metadatas: list[EstimatedPartitionMetadata]
-    ) -> tuple[ResourceRequest, list[EstimatedPartitionMetadata]]:
-        """Estimates metrics for this instruction. This includes how much resources are required to run this instruction as well as estimated statistics of the outputs"""
+    ) -> list[EstimatedPartitionMetadata]:
+        """Estimates output metadata for this instruction."""
         ...
 
     def num_outputs(self) -> int:
@@ -349,19 +356,21 @@ class ScanWithTask(SingleOutputInstruction):
         table = MicroPartition._from_scan_task(self.scan_task)
         return [table]
 
-    def estimate_runtime_metrics(
+    def estimate_output_metadata(
         self, input_metadatas: list[EstimatedPartitionMetadata]
-    ) -> tuple[ResourceRequest, list[EstimatedPartitionMetadata]]:
+    ) -> list[EstimatedPartitionMetadata]:
+        # A scan is a leaf task, and shouldn't have any inputs
         assert len(input_metadatas) == 0
 
         cfg = get_context().daft_execution_config
-
-        return [
+        approx_num_rows = self.scan_task.approx_num_rows(cfg)
+        estimated_output_metadata = [
             EstimatedPartitionMetadata(
-                num_rows=self.scan_task.num_rows(),
+                num_rows=None if approx_num_rows is None else int(approx_num_rows),
                 size_bytes=self.scan_task.estimate_in_memory_size_bytes(cfg),
             )
         ]
+        return estimated_output_metadata
 
 
 @dataclass(frozen=True)
@@ -371,9 +380,9 @@ class EmptyScan(SingleOutputInstruction):
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return [MicroPartition.empty(self.schema)]
 
-    def estimate_runtime_metrics(
+    def estimate_output_metadata(
         self, input_metadatas: list[EstimatedPartitionMetadata]
-    ) -> tuple[ResourceRequest, list[EstimatedPartitionMetadata]]:
+    ) -> list[EstimatedPartitionMetadata]:
         assert len(input_metadatas) == 0
 
         return [
@@ -403,9 +412,9 @@ class WriteFile(SingleOutputInstruction):
         )
         return [partition]
 
-    def estimate_runtime_metrics(
+    def estimate_output_metadata(
         self, input_metadatas: list[EstimatedPartitionMetadata]
-    ) -> tuple[ResourceRequest, list[EstimatedPartitionMetadata]]:
+    ) -> list[EstimatedPartitionMetadata]:
         assert len(input_metadatas) == 1
         return [
             EstimatedPartitionMetadata(
@@ -444,9 +453,9 @@ class WriteIceberg(SingleOutputInstruction):
         )
         return [partition]
 
-    def estimate_runtime_metrics(
+    def estimate_output_metadata(
         self, input_metadatas: list[EstimatedPartitionMetadata]
-    ) -> tuple[ResourceRequest, list[EstimatedPartitionMetadata]]:
+    ) -> list[EstimatedPartitionMetadata]:
         assert len(input_metadatas) == 1
         return [
             EstimatedPartitionMetadata(
@@ -484,9 +493,9 @@ class WriteDeltaLake(SingleOutputInstruction):
         )
         return [partition]
 
-    def estimate_runtime_metrics(
+    def estimate_output_metadata(
         self, input_metadatas: list[EstimatedPartitionMetadata]
-    ) -> tuple[ResourceRequest, list[EstimatedPartitionMetadata]]:
+    ) -> list[EstimatedPartitionMetadata]:
         assert len(input_metadatas) == 1
         return [
             EstimatedPartitionMetadata(
@@ -523,9 +532,9 @@ class WriteLance(SingleOutputInstruction):
         )
         return [partition]
 
-    def estimate_runtime_metrics(
+    def estimate_output_metadata(
         self, input_metadatas: list[EstimatedPartitionMetadata]
-    ) -> tuple[ResourceRequest, list[EstimatedPartitionMetadata]]:
+    ) -> list[EstimatedPartitionMetadata]:
         assert len(input_metadatas) == 1
         return [
             EstimatedPartitionMetadata(
@@ -555,9 +564,9 @@ class Filter(SingleOutputInstruction):
         [input] = inputs
         return [input.filter(self.predicate)]
 
-    def estimate_runtime_metrics(
+    def estimate_output_metadata(
         self, input_metadatas: list[EstimatedPartitionMetadata]
-    ) -> tuple[ResourceRequest, list[EstimatedPartitionMetadata]]:
+    ) -> list[EstimatedPartitionMetadata]:
         [input_meta] = input_metadatas
         return [
             EstimatedPartitionMetadata(
@@ -580,9 +589,9 @@ class Project(SingleOutputInstruction):
         [input] = inputs
         return [input.eval_expression_list(self.projection)]
 
-    def estimate_runtime_metrics(
+    def estimate_output_metadata(
         self, input_metadatas: list[EstimatedPartitionMetadata]
-    ) -> tuple[ResourceRequest, list[EstimatedPartitionMetadata]]:
+    ) -> list[EstimatedPartitionMetadata]:
         [input_meta] = input_metadatas
         boundaries = input_meta.boundaries
         if boundaries is not None:
@@ -604,9 +613,9 @@ class StatefulUDFProject(SingleOutputInstruction):
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         raise NotImplementedError("UDFProject instruction cannot be run from outside an Actor. Please file an issue.")
 
-    def estimate_runtime_metrics(
+    def estimate_output_metadata(
         self, input_metadatas: list[EstimatedPartitionMetadata]
-    ) -> tuple[ResourceRequest, list[EstimatedPartitionMetadata]]:
+    ) -> list[EstimatedPartitionMetadata]:
         return [
             EstimatedPartitionMetadata(
                 num_rows=None,  # UDFs can potentially change cardinality
@@ -649,9 +658,9 @@ class LocalCount(SingleOutputInstruction):
         assert partition.schema() == self.schema
         return [partition]
 
-    def estimate_runtime_metrics(
+    def estimate_output_metadata(
         self, input_metadatas: list[EstimatedPartitionMetadata]
-    ) -> tuple[ResourceRequest, list[EstimatedPartitionMetadata]]:
+    ) -> list[EstimatedPartitionMetadata]:
         return [
             EstimatedPartitionMetadata(
                 num_rows=1,
@@ -671,9 +680,9 @@ class LocalLimit(SingleOutputInstruction):
         [input] = inputs
         return [input.head(self.limit)]
 
-    def estimate_runtime_metrics(
+    def estimate_output_metadata(
         self, input_metadatas: list[EstimatedPartitionMetadata]
-    ) -> tuple[ResourceRequest, list[EstimatedPartitionMetadata]]:
+    ) -> list[EstimatedPartitionMetadata]:
         [input_meta] = input_metadatas
         return [
             EstimatedPartitionMetadata(
@@ -700,9 +709,9 @@ class MapPartition(SingleOutputInstruction):
         [input] = inputs
         return [self.map_op.run(input)]
 
-    def estimate_runtime_metrics(
+    def estimate_output_metadata(
         self, input_metadatas: list[EstimatedPartitionMetadata]
-    ) -> tuple[ResourceRequest, list[EstimatedPartitionMetadata]]:
+    ) -> list[EstimatedPartitionMetadata]:
         # TODO: this was the previous logic
         # ResourceRequest(memory_bytes=done_task_metadata.size_bytes)
 
@@ -738,9 +747,9 @@ class Sample(SingleOutputInstruction):
             result = input.sample(self.fraction, self.size, self.with_replacement, self.seed)
         return [result]
 
-    def estimate_runtime_metrics(
+    def estimate_output_metadata(
         self, input_metadatas: list[EstimatedPartitionMetadata]
-    ) -> tuple[ResourceRequest, list[EstimatedPartitionMetadata]]:
+    ) -> list[EstimatedPartitionMetadata]:
         # Can't derive anything due to null filter in sample.
         return [
             EstimatedPartitionMetadata(
@@ -760,9 +769,9 @@ class MonotonicallyIncreasingId(SingleOutputInstruction):
         result = input.add_monotonically_increasing_id(self.partition_num, self.column_name)
         return [result]
 
-    def estimate_runtime_metrics(
+    def estimate_output_metadata(
         self, input_metadatas: list[EstimatedPartitionMetadata]
-    ) -> tuple[ResourceRequest, list[EstimatedPartitionMetadata]]:
+    ) -> list[EstimatedPartitionMetadata]:
         [input_meta] = input_metadatas
         return [
             EstimatedPartitionMetadata(
@@ -788,9 +797,9 @@ class Aggregate(SingleOutputInstruction):
         [input] = inputs
         return [input.agg(self.to_agg, self.group_by)]
 
-    def estimate_runtime_metrics(
+    def estimate_output_metadata(
         self, input_metadatas: list[EstimatedPartitionMetadata]
-    ) -> tuple[ResourceRequest, list[EstimatedPartitionMetadata]]:
+    ) -> list[EstimatedPartitionMetadata]:
         # Can't derive anything.
         return [
             EstimatedPartitionMetadata(
@@ -814,9 +823,9 @@ class Pivot(SingleOutputInstruction):
         [input] = inputs
         return [input.pivot(self.group_by, self.pivot_col, self.value_col, self.names)]
 
-    def estimate_runtime_metrics(
+    def estimate_output_metadata(
         self, input_metadatas: list[EstimatedPartitionMetadata]
-    ) -> tuple[ResourceRequest, list[EstimatedPartitionMetadata]]:
+    ) -> list[EstimatedPartitionMetadata]:
         return [
             EstimatedPartitionMetadata(
                 num_rows=None,
@@ -839,9 +848,9 @@ class Unpivot(SingleOutputInstruction):
         [input] = inputs
         return [input.unpivot(self.ids, self.values, self.variable_name, self.value_name)]
 
-    def estimate_runtime_metrics(
+    def estimate_output_metadata(
         self, input_metadatas: list[EstimatedPartitionMetadata]
-    ) -> tuple[ResourceRequest, list[EstimatedPartitionMetadata]]:
+    ) -> list[EstimatedPartitionMetadata]:
         [input_meta] = input_metadatas
         return [
             EstimatedPartitionMetadata(
@@ -881,9 +890,9 @@ class HashJoin(SingleOutputInstruction):
         )
         return [result]
 
-    def estimate_runtime_metrics(
+    def estimate_output_metadata(
         self, input_metadatas: list[EstimatedPartitionMetadata]
-    ) -> tuple[ResourceRequest, list[EstimatedPartitionMetadata]]:
+    ) -> list[EstimatedPartitionMetadata]:
         # TODO: Incorporate this logic into ResourceRequest estimation
         # # Calculate memory request for task.
         # left_size_bytes = next_left.partition_metadata().size_bytes
@@ -910,9 +919,9 @@ class HashJoin(SingleOutputInstruction):
 
 @dataclass(frozen=True)
 class BroadcastJoin(HashJoin):
-    def estimate_runtime_metrics(
+    def estimate_output_metadata(
         self, input_metadatas: list[EstimatedPartitionMetadata]
-    ) -> tuple[ResourceRequest, list[EstimatedPartitionMetadata]]:
+    ) -> list[EstimatedPartitionMetadata]:
         # TODO: Incorporate this logic into ResourceRequest estimation
         # # Calculate memory request for task.
         # broadcaster_size_bytes_ = 0
@@ -976,9 +985,9 @@ class MergeJoin(SingleOutputInstruction):
         )
         return [result]
 
-    def estimate_runtime_metrics(
+    def estimate_output_metadata(
         self, input_metadatas: list[EstimatedPartitionMetadata]
-    ) -> tuple[ResourceRequest, list[EstimatedPartitionMetadata]]:
+    ) -> list[EstimatedPartitionMetadata]:
         # TODO: Use logic for ResourceRequest estimations
         # def _memory_bytes_for_merge(
         #     next_left: SingleOutputPartitionTask[PartitionT], next_right: SingleOutputPartitionTask[PartitionT]
@@ -1024,9 +1033,9 @@ class ReduceMerge(ReduceInstruction):
     def _reduce_merge(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return [MicroPartition.concat(inputs)]
 
-    def estimate_runtime_metrics(
+    def estimate_output_metadata(
         self, input_metadatas: list[EstimatedPartitionMetadata]
-    ) -> tuple[ResourceRequest, list[EstimatedPartitionMetadata]]:
+    ) -> list[EstimatedPartitionMetadata]:
         # TODO: Use this to estimate the ResourceRequest
         # def _memory_bytes_for_coalesce(input_parts: Iterable[SingleOutputPartitionTask[PartitionT]]) -> int | None:
         #     # Calculate memory request for task.
@@ -1069,9 +1078,9 @@ class ReduceMergeAndSort(ReduceInstruction):
         partition = MicroPartition.concat(inputs).sort(self.sort_by, descending=self.descending)
         return [partition]
 
-    def estimate_runtime_metrics(
+    def estimate_output_metadata(
         self, input_metadatas: list[EstimatedPartitionMetadata]
-    ) -> tuple[ResourceRequest, list[EstimatedPartitionMetadata]]:
+    ) -> list[EstimatedPartitionMetadata]:
         input_rows = [_.num_rows for _ in input_metadatas]
         input_sizes = [_.size_bytes for _ in input_metadatas]
         return [
@@ -1101,9 +1110,9 @@ class ReduceToQuantiles(ReduceInstruction):
         result = merged_sorted.quantiles(self.num_quantiles)
         return [result]
 
-    def estimate_runtime_metrics(
+    def estimate_output_metadata(
         self, input_metadatas: list[EstimatedPartitionMetadata]
-    ) -> tuple[ResourceRequest, list[EstimatedPartitionMetadata]]:
+    ) -> list[EstimatedPartitionMetadata]:
         return [
             EstimatedPartitionMetadata(
                 num_rows=self.num_quantiles,
@@ -1116,9 +1125,9 @@ class ReduceToQuantiles(ReduceInstruction):
 class FanoutInstruction(Instruction):
     _num_outputs: int
 
-    def estimate_runtime_metrics(
+    def estimate_output_metadata(
         self, input_metadatas: list[EstimatedPartitionMetadata]
-    ) -> tuple[ResourceRequest, list[EstimatedPartitionMetadata]]:
+    ) -> list[EstimatedPartitionMetadata]:
         # Can't derive anything.
         return [
             EstimatedPartitionMetadata(
@@ -1202,9 +1211,9 @@ class FanoutSlices(FanoutInstruction):
 
         return results
 
-    def estimate_runtime_metrics(
+    def estimate_output_metadata(
         self, input_metadatas: list[EstimatedPartitionMetadata]
-    ) -> tuple[ResourceRequest, list[EstimatedPartitionMetadata]]:
+    ) -> list[EstimatedPartitionMetadata]:
         [input_meta] = input_metadatas
 
         results = []
