@@ -4,7 +4,7 @@ use std::{
     num::NonZeroUsize,
     sync::{
         atomic::{AtomicUsize, Ordering},
-        Arc, Condvar, Mutex,
+        Arc, Condvar, Mutex, RwLock,
     },
 };
 
@@ -138,6 +138,57 @@ struct FileSlabPool {
     buffers: Mutex<Vec<Box<[u8]>>>,
     condvar: Condvar,
 }
+
+struct FileSlabState {
+
+
+}
+
+
+struct FileSlab2 {
+    state: RwLock<FileSlabState>,
+    pool: Arc<FileSlabPool2>
+}
+
+#[derive(Debug)]
+struct FileSlabPool2 {
+    buffers: Mutex<Vec<Arc<RwLock<FileSlab>>>>,
+    condvar: Condvar,
+}
+
+
+impl FileSlabPool2 {
+    pub fn get_slab(self: &Arc<Self>) -> Arc<RwLock<FileSlab>> {
+        let mut buffers = self.buffers.lock().unwrap();
+        while buffers.is_empty() {
+            // Instead of creating a new slab when we're out, we wait for a slab to be returned before waking up.
+            // This potentially allows us to rate limit the CSV reader until downstream consumers are ready for data.
+            buffers = self.condvar.wait(buffers).unwrap();
+        }
+        buffers.pop().unwrap()
+    }
+}
+
+
+fn does_stuff(fs: &Arc<FileSlabPool2>) {
+    let slab = fs.get_slab();
+    {
+        let mut writer = slab.write().unwrap();
+        writer.valid_bytes = 1;
+    }
+    rayon::spawn(move || {
+        let reader = slab.read().unwrap();
+
+    });
+
+    
+
+
+
+}
+
+
+
 
 /// A slab of bytes. Used for reading CSV files in SLABSIZE chunks.
 #[derive(Clone, Debug)]

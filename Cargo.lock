@@ -1772,6 +1772,7 @@ dependencies = [
  "daft-table",
  "futures",
  "memchr",
+ "parking_lot",
  "pyo3",
  "rayon",
  "rstest",
