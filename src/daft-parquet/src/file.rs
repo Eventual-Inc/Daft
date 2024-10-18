@@ -313,10 +313,9 @@ pub struct ParquetFileReader {
 
 impl ParquetFileReader {
     const DEFAULT_CHUNK_SIZE: usize = 2048;
-    // Set to a very high number 256MB to guard against unbounded large
-    // downloads from remote storage, which likely indicates corrupted Parquet data
-    // See: https://github.com/Eventual-Inc/Daft/issues/1551
-    const MAX_HEADER_SIZE: usize = 2 * 1024 * 1024 * 1024;
+    // Set to 2GB because that's the maximum size of strings allowable by Parquet (using i32 offsets).
+    // See issue: https://github.com/Eventual-Inc/Daft/issues/3007
+    const MAX_PAGE_SIZE: usize = 2 * 1024 * 1024 * 1024;
 
     fn new(
         uri: String,
@@ -473,7 +472,7 @@ impl ParquetFileReader {
                                             range_reader,
                                             vec![],
                                             Arc::new(|_, _| true),
-                                            Self::MAX_HEADER_SIZE,
+                                            Self::MAX_PAGE_SIZE,
                                         )
                                         .with_context(
                                             |_| UnableToCreateParquetPageStreamSnafu::<String> {
@@ -638,7 +637,7 @@ impl ParquetFileReader {
                                         range_reader,
                                         vec![],
                                         Arc::new(|_, _| true),
-                                        Self::MAX_HEADER_SIZE,
+                                        Self::MAX_PAGE_SIZE,
                                     )
                                     .with_context(|_| {
                                         UnableToCreateParquetPageStreamSnafu::<String> {
@@ -821,7 +820,7 @@ impl ParquetFileReader {
                                         range_reader,
                                         vec![],
                                         Arc::new(|_, _| true),
-                                        Self::MAX_HEADER_SIZE,
+                                        Self::MAX_PAGE_SIZE,
                                     )
                                     .with_context(|_| {
                                         UnableToCreateParquetPageStreamSnafu::<String> {
