@@ -29,7 +29,7 @@ mod py {
                 io_config.unwrap_or_default().config.into(),
             )?;
             let (scheme, path) = parse_url(&path)?;
-            let runtime_handle = get_io_runtime(multithreaded_io)?;
+            let runtime_handle = get_io_runtime(multithreaded_io);
 
             runtime_handle.block_on_current_thread(async move {
                 let source = io_client.get_source(&scheme).await?;
@@ -64,7 +64,7 @@ mod py {
     #[pyfunction]
     fn s3_config_from_env(py: Python) -> PyResult<common_io_config::python::S3Config> {
         let s3_config: DaftResult<common_io_config::S3Config> = py.allow_threads(|| {
-            let runtime = get_io_runtime(false)?;
+            let runtime = get_io_runtime(false);
             runtime.block_on_current_thread(async { Ok(s3_like::s3_config_from_env().await?) })
         });
         Ok(common_io_config::python::S3Config { config: s3_config? })

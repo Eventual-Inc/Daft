@@ -48,7 +48,6 @@ fn add_non_join_key_columns(
         .map(|s| s.name().to_string())
         .collect::<HashSet<_>>();
 
-    // TODO(Clark): Parallelize with rayon.
     for field in left.schema.fields.values() {
         if join_keys.contains(&field.name) {
             continue;

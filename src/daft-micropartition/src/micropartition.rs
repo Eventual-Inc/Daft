@@ -1160,7 +1160,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
             chunk_size,
         );
     }
-    let runtime_handle = get_io_runtime(multithreaded_io)?;
+    let runtime_handle = get_io_runtime(multithreaded_io);
     // Attempt to read TableStatistics from the Parquet file
     let meta_io_client = io_client.clone();
     let meta_io_stats = io_stats.clone();

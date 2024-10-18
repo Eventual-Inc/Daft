@@ -83,7 +83,7 @@ impl IntermediateNode {
         rt_context: Arc<RuntimeStatsContext>,
     ) -> DaftResult<()> {
         let span = info_span!("IntermediateOp::execute");
-        let compute_runtime = get_compute_runtime()?;
+        let compute_runtime = get_compute_runtime();
         let state = Arc::new(Mutex::new(op.make_state()));
         while let Some((idx, morsel)) = receiver.recv().await {
             loop {

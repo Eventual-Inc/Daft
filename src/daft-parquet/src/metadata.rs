@@ -284,7 +284,7 @@ pub(crate) async fn read_parquet_metadata(
         });
     }
 
-    let runtime = get_compute_runtime().unwrap();
+    let runtime = get_compute_runtime();
     let file_metadata = runtime
         .await_on(async move {
             let reader = &data.as_ref()[remaining..];

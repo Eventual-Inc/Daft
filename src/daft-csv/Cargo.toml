@@ -14,7 +14,6 @@ daft-io = {path = "../daft-io", default-features = false}
 daft-table = {path = "../daft-table", default-features = false}
 futures = {workspace = true}
 pyo3 = {workspace = true, optional = true}
-rayon = {workspace = true}
 serde = {workspace = true}
 snafu = {workspace = true}
 tokio = {workspace = true}

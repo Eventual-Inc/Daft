@@ -93,7 +93,7 @@ impl PipelineNode for BlockingSinkNode {
         runtime_handle.spawn(
             async move {
                 let span = info_span!("BlockingSinkNode::execute");
-                let compute_runtime = get_compute_runtime()?;
+                let compute_runtime = get_compute_runtime();
                 while let Some(val) = child_results_receiver.recv().await {
                     let op = op.clone();
                     let span = span.clone();

@@ -407,7 +407,7 @@ impl ParquetFileReader {
         let daft_schema = Arc::new(daft_core::prelude::Schema::try_from(
             self.arrow_schema.as_ref(),
         )?);
-        let compute_runtime = get_compute_runtime()?;
+        let compute_runtime = get_compute_runtime();
         let table_iter_handles = self.row_ranges.iter().map(|row_range| {
             let uri = self.uri.clone();
             let metadata = self.metadata.clone();
@@ -490,39 +490,41 @@ impl ParquetFileReader {
 
                 // Even if there are no columns to read, we still need to create a empty table with the correct number of rows
                 // This is because the columns may be present in other files. See https://github.com/Eventual-Inc/Daft/pull/2514
-                compute_runtime.block_on(async move {
-                    let (senders, receivers): (Vec<_>, Vec<_>) = (0..arr_iter_handles.len())
-                        .map(|_| tokio::sync::mpsc::channel(1))
-                        .unzip();
+                compute_runtime
+                    .await_on(async move {
+                        let (senders, receivers): (Vec<_>, Vec<_>) = (0..arr_iter_handles.len())
+                            .map(|_| tokio::sync::mpsc::channel(1))
+                            .unzip();
 
-                    for (arr_iter_handle, sender) in arr_iter_handles.into_iter().zip(senders) {
-                        tokio::spawn(async move {
-                            let arr_iter_res = arr_iter_handle.await;
-                            match arr_iter_res {
-                                Err(e) => {
-                                    let _ = sender.send(Err(e.into())).await;
-                                }
-                                Ok(Err(e)) => {
-                                    let _ = sender.send(Err(e)).await;
-                                }
-                                Ok(Ok(arr_iter)) => {
-                                    for chunk in arr_iter.into_iter() {
-                                        let _ = sender.send(Ok(chunk)).await;
+                        for (arr_iter_handle, sender) in arr_iter_handles.into_iter().zip(senders) {
+                            tokio::spawn(async move {
+                                let arr_iter_res = arr_iter_handle.await;
+                                match arr_iter_res {
+                                    Err(e) => {
+                                        let _ = sender.send(Err(e.into())).await;
+                                    }
+                                    Ok(Err(e)) => {
+                                        let _ = sender.send(Err(e)).await;
+                                    }
+                                    Ok(Ok(arr_iter)) => {
+                                        for chunk in arr_iter {
+                                            let _ = sender.send(Ok(chunk)).await;
+                                        }
                                     }
                                 }
-                            }
-                        });
-                    }
-                    arrow_array_receivers_to_table_stream(
-                        receivers,
-                        row_range,
-                        daft_schema.clone(),
-                        uri,
-                        predicate,
-                        original_columns,
-                        original_num_rows,
-                    )
-                })?
+                            });
+                        }
+                        arrow_array_receivers_to_table_stream(
+                            receivers,
+                            row_range,
+                            daft_schema.clone(),
+                            uri,
+                            predicate,
+                            original_columns,
+                            original_num_rows,
+                        )
+                    })
+                    .await?
             })
         });
 
@@ -544,7 +546,7 @@ impl ParquetFileReader {
         ranges: Arc<RangesContainer>,
     ) -> DaftResult<Table> {
         let metadata = self.metadata;
-        let compute_runtime = get_compute_runtime()?;
+        let compute_runtime = get_compute_runtime();
         let all_handles = self
             .arrow_schema
             .fields
@@ -633,44 +635,46 @@ impl ParquetFileReader {
                                     .push(StreamIterator::new(pinned_stream, rt_handle.clone()));
                             }
 
-                            compute_runtime.block_on(async move {
-                                let arr_iter = column_iter_to_arrays(
-                                    decompressed_iters,
-                                    ptypes.iter().collect(),
-                                    field.clone(),
-                                    Some(chunk_size),
-                                    num_rows,
-                                    num_values,
-                                );
+                            compute_runtime
+                                .await_on(async move {
+                                    let arr_iter = column_iter_to_arrays(
+                                        decompressed_iters,
+                                        ptypes.iter().collect(),
+                                        field.clone(),
+                                        Some(chunk_size),
+                                        num_rows,
+                                        num_values,
+                                    );
 
-                                let mut all_arrays = vec![];
-                                let mut curr_index = 0;
+                                    let mut all_arrays = vec![];
+                                    let mut curr_index = 0;
 
-                                for arr in arr_iter? {
-                                    let arr = arr?;
-                                    if (curr_index + arr.len()) < row_range.start {
-                                        // throw arrays less than what we need
-                                        curr_index += arr.len();
-                                        continue;
-                                    } else if curr_index < row_range.start {
-                                        let offset = row_range.start.saturating_sub(curr_index);
-                                        all_arrays.push(arr.sliced(offset, arr.len() - offset));
-                                        curr_index += arr.len();
-                                    } else {
-                                        curr_index += arr.len();
-                                        all_arrays.push(arr);
+                                    for arr in arr_iter? {
+                                        let arr = arr?;
+                                        if (curr_index + arr.len()) < row_range.start {
+                                            // throw arrays less than what we need
+                                            curr_index += arr.len();
+                                            continue;
+                                        } else if curr_index < row_range.start {
+                                            let offset = row_range.start.saturating_sub(curr_index);
+                                            all_arrays.push(arr.sliced(offset, arr.len() - offset));
+                                            curr_index += arr.len();
+                                        } else {
+                                            curr_index += arr.len();
+                                            all_arrays.push(arr);
+                                        }
                                     }
-                                }
-                                all_arrays
-                                    .into_iter()
-                                    .map(|a| {
-                                        Series::try_from((
-                                            field.name.as_str(),
-                                            cast_array_for_daft_if_needed(a),
-                                        ))
-                                    })
-                                    .collect::<DaftResult<Vec<Series>>>()
-                            })?
+                                    all_arrays
+                                        .into_iter()
+                                        .map(|a| {
+                                            Series::try_from((
+                                                field.name.as_str(),
+                                                cast_array_for_daft_if_needed(a),
+                                            ))
+                                        })
+                                        .collect::<DaftResult<Vec<Series>>>()
+                                })
+                                .await?
                         });
                         Ok(handle)
                     })
@@ -687,16 +691,20 @@ impl ParquetFileReader {
                         .into_iter()
                         .collect::<DaftResult<Vec<_>>>()?;
 
-                    compute_runtime.block_on(async move {
-                        if series_to_concat.is_empty() {
-                            Ok(Series::empty(
-                                owned_field.name.as_str(),
-                                &owned_field.data_type().into(),
-                            ))
-                        } else {
-                            Series::concat(&series_to_concat.iter().flatten().collect::<Vec<_>>())
-                        }
-                    })?
+                    compute_runtime
+                        .await_on(async move {
+                            if series_to_concat.is_empty() {
+                                Ok(Series::empty(
+                                    owned_field.name.as_str(),
+                                    &owned_field.data_type().into(),
+                                ))
+                            } else {
+                                Series::concat(
+                                    &series_to_concat.iter().flatten().collect::<Vec<_>>(),
+                                )
+                            }
+                        })
+                        .await?
                 });
                 Ok(concated_handle)
             })
@@ -722,7 +730,7 @@ impl ParquetFileReader {
         self,
         ranges: Arc<RangesContainer>,
     ) -> DaftResult<(Vec<Vec<Box<dyn arrow2::array::Array>>>, usize)> {
-        let compute_runtime = get_compute_runtime()?;
+        let compute_runtime = get_compute_runtime();
         let metadata = self.metadata;
         let all_handles = self
             .arrow_schema
@@ -810,36 +818,38 @@ impl ParquetFileReader {
                                     .push(StreamIterator::new(pinned_stream, rt_handle.clone()));
                             }
 
-                            compute_runtime.block_on(async move {
-                                let arr_iter = column_iter_to_arrays(
-                                    decompressed_iters,
-                                    ptypes.iter().collect(),
-                                    field.clone(),
-                                    Some(chunk_size),
-                                    num_rows,
-                                    num_values,
-                                );
+                            compute_runtime
+                                .await_on(async move {
+                                    let arr_iter = column_iter_to_arrays(
+                                        decompressed_iters,
+                                        ptypes.iter().collect(),
+                                        field.clone(),
+                                        Some(chunk_size),
+                                        num_rows,
+                                        num_values,
+                                    );
 
-                                let mut all_arrays = vec![];
-                                let mut curr_index = 0;
+                                    let mut all_arrays = vec![];
+                                    let mut curr_index = 0;
 
-                                for arr in arr_iter? {
-                                    let arr = arr?;
-                                    if (curr_index + arr.len()) < row_range.start {
-                                        // throw arrays less than what we need
-                                        curr_index += arr.len();
-                                        continue;
-                                    } else if curr_index < row_range.start {
-                                        let offset = row_range.start.saturating_sub(curr_index);
-                                        all_arrays.push(arr.sliced(offset, arr.len() - offset));
-                                        curr_index += arr.len();
-                                    } else {
-                                        curr_index += arr.len();
-                                        all_arrays.push(arr);
+                                    for arr in arr_iter? {
+                                        let arr = arr?;
+                                        if (curr_index + arr.len()) < row_range.start {
+                                            // throw arrays less than what we need
+                                            curr_index += arr.len();
+                                            continue;
+                                        } else if curr_index < row_range.start {
+                                            let offset = row_range.start.saturating_sub(curr_index);
+                                            all_arrays.push(arr.sliced(offset, arr.len() - offset));
+                                            curr_index += arr.len();
+                                        } else {
+                                            curr_index += arr.len();
+                                            all_arrays.push(arr);
+                                        }
                                     }
-                                }
-                                Ok(all_arrays)
-                            })?
+                                    Ok(all_arrays)
+                                })
+                                .await?
                         });
                         Ok(handle)
                     })

@@ -6,7 +6,7 @@ use arrow2::{
 };
 use async_compat::{Compat, CompatExt};
 use common_error::{DaftError, DaftResult};
-use common_runtime::get_io_runtime;
+use common_runtime::{get_compute_runtime, get_io_runtime};
 use csv_async::AsyncReader;
 use daft_compression::CompressionCodec;
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
@@ -14,11 +14,7 @@ use daft_decoding::deserialize::deserialize_column;
 use daft_dsl::optimization::get_required_columns;
 use daft_io::{GetResult, IOClient, IOStatsRef};
 use daft_table::Table;
-use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
-use rayon::{
-    iter::{IndexedParallelIterator, IntoParallelIterator},
-    prelude::{IntoParallelRefIterator, ParallelIterator},
-};
+use futures::{future::try_join_all, stream::BoxStream, Stream, StreamExt, TryStreamExt};
 use snafu::{
     futures::{try_future::Context, TryFutureExt},
     ResultExt,
@@ -54,7 +50,7 @@ pub fn read_csv(
     multithreaded_io: bool,
     max_chunks_in_flight: Option<usize>,
 ) -> DaftResult<Table> {
-    let runtime_handle = get_io_runtime(multithreaded_io)?;
+    let runtime_handle = get_io_runtime(multithreaded_io);
     runtime_handle.block_on_current_thread(async {
         read_csv_single_into_table(
             uri,
@@ -81,7 +77,7 @@ pub fn read_csv_bulk(
     max_chunks_in_flight: Option<usize>,
     num_parallel_tasks: usize,
 ) -> DaftResult<Vec<Table>> {
-    let runtime_handle = get_io_runtime(multithreaded_io)?;
+    let runtime_handle = get_io_runtime(multithreaded_io);
     let tables = runtime_handle.block_on_current_thread(async move {
         // Launch a read task per URI, throttling the number of concurrent file reads to num_parallel tasks.
         let task_stream = futures::stream::iter(uris.iter().map(|uri| {
@@ -162,7 +158,7 @@ pub async fn stream_csv(
 
 // Parallel version of table concat
 // get rid of this once Table APIs are parallel
-fn tables_concat(mut tables: Vec<Table>) -> DaftResult<Table> {
+pub(crate) fn tables_concat(mut tables: Vec<Table>) -> DaftResult<Table> {
     if tables.is_empty() {
         return Err(DaftError::ValueError(
             "Need at least 1 Table to perform concat".to_string(),
@@ -173,7 +169,7 @@ fn tables_concat(mut tables: Vec<Table>) -> DaftResult<Table> {
     }
     let first_table = tables.as_slice().first().unwrap();
 
-    let first_schema = &first_table.schema;
+    let first_schema = first_table.schema.clone();
     for tab in tables.iter().skip(1) {
         if tab.schema.as_ref() != first_schema.as_ref() {
             return Err(DaftError::SchemaMismatch(format!(
@@ -183,21 +179,28 @@ fn tables_concat(mut tables: Vec<Table>) -> DaftResult<Table> {
         }
     }
     let num_columns = first_table.num_columns();
-    let new_series = (0..num_columns)
-        .into_par_iter()
-        .map(|i| {
-            let series_to_cat: Vec<&Series> = tables
-                .iter()
-                .map(|s| s.as_ref().get_column_by_index(i).unwrap())
-                .collect();
-            Series::concat(series_to_cat.as_slice())
-        })
-        .collect::<DaftResult<Vec<_>>>()?;
-    Table::new_with_size(
-        first_table.schema.clone(),
-        new_series,
-        tables.iter().map(daft_table::Table::len).sum(),
-    )
+    let num_rows = tables.iter().map(daft_table::Table::len).sum();
+    let runtime = get_compute_runtime();
+    let tables_ref = Arc::new(tables);
+    let new_series = runtime.block_on(async move {
+        let handles = (0..num_columns).map(|i| {
+            let tables_ref = tables_ref.clone();
+            tokio::spawn(async move {
+                let series_to_cat: Vec<&Series> = tables_ref
+                    .iter()
+                    .map(|s| s.as_ref().get_column_by_index(i).unwrap())
+                    .collect();
+                Series::concat(series_to_cat.as_slice())
+            })
+        });
+        let results = futures::future::try_join_all(handles)
+            .await
+            .context(super::JoinSnafu)?
+            .into_iter()
+            .collect::<DaftResult<Vec<_>>>()?;
+        DaftResult::Ok(results)
+    })??;
+    Table::new_with_size(first_schema, new_series, num_rows)
 }
 
 async fn read_csv_single_into_table(
@@ -247,7 +250,7 @@ async fn read_csv_single_into_table(
     )
     .await?;
     // Default max chunks in flight is set to 2x the number of cores, which should ensure pipelining of reading chunks
-    // with the parsing of chunks on the rayon threadpool.
+    // with the parsing of chunks on the compute_runtime.
     let max_chunks_in_flight = max_chunks_in_flight.unwrap_or_else(|| {
         std::thread::available_parallelism()
             .unwrap_or(NonZeroUsize::new(2).unwrap())
@@ -373,7 +376,7 @@ async fn stream_csv_single(
     )
     .await?;
     // Default max chunks in flight is set to 2x the number of cores, which should ensure pipelining of reading chunks
-    // with the parsing of chunks on the rayon threadpool.
+    // with the parsing of chunks on the compute_runtime.
     let max_chunks_in_flight = max_chunks_in_flight.unwrap_or_else(|| {
         std::thread::available_parallelism()
             .unwrap_or(NonZeroUsize::new(2).unwrap())
@@ -587,8 +590,8 @@ fn parse_into_column_array_chunk_stream(
     fields: Arc<Vec<arrow2::datatypes::Field>>,
     projection_indices: Arc<Vec<usize>>,
 ) -> DaftResult<impl TableStream + Send> {
-    // Parsing stream: we spawn background tokio + rayon tasks so we can pipeline chunk parsing with chunk reading, and
-    // we further parse each chunk column in parallel on the rayon threadpool.
+    // Parsing stream: we spawn background IO + Compute tasks so we can pipeline chunk parsing with chunk reading, and
+    // we further parse each chunk column in parallel on the compute_runtime.
 
     let fields_subset = projection_indices
         .iter()
@@ -602,37 +605,46 @@ fn parse_into_column_array_chunk_stream(
             .map(|f| Arc::new(f.clone()))
             .collect::<Vec<_>>(),
     );
-
+    let compute_runtime = get_compute_runtime();
     Ok(stream.map_ok(move |record| {
+        let record = Arc::new(record);
         let (fields, projection_indices) = (fields.clone(), projection_indices.clone());
         let read_schema = read_schema.clone();
         let read_daft_fields = read_daft_fields.clone();
+        let compute_runtime = compute_runtime.clone();
         tokio::spawn(async move {
-            let (send, recv) = tokio::sync::oneshot::channel();
-            rayon::spawn(move || {
-                let result = (move || {
-                    let chunk = projection_indices
-                        .par_iter()
+            compute_runtime
+                .await_on(async move {
+                    let series_handles = <Vec<usize> as Clone>::clone(&projection_indices)
+                        .into_iter()
                         .enumerate()
                         .map(|(i, proj_idx)| {
-                            let deserialized_col = deserialize_column(
-                                record.as_slice(),
-                                *proj_idx,
-                                fields[*proj_idx].data_type().clone(),
-                                0,
-                            );
-                            Series::try_from_field_and_arrow_array(
-                                read_daft_fields[i].clone(),
-                                cast_array_for_daft_if_needed(deserialized_col?),
-                            )
-                        })
-                        .collect::<DaftResult<Vec<Series>>>()?;
-                    let num_rows = chunk.first().map_or(0, daft_core::series::Series::len);
-                    Ok(Table::new_unchecked(read_schema, chunk, num_rows))
-                })();
-                let _ = send.send(result);
-            });
-            recv.await.context(super::OneShotRecvSnafu {})?
+                            let record = record.clone();
+                            let fields = fields.clone();
+                            let read_daft_fields = read_daft_fields.clone();
+                            tokio::spawn(async move {
+                                let deserialized_col = deserialize_column(
+                                    record.as_slice(),
+                                    proj_idx,
+                                    fields[proj_idx].data_type().clone(),
+                                    0,
+                                );
+                                Series::try_from_field_and_arrow_array(
+                                    read_daft_fields[i].clone(),
+                                    cast_array_for_daft_if_needed(deserialized_col?),
+                                )
+                            })
+                        });
+
+                    let series = try_join_all(series_handles)
+                        .await
+                        .context(super::JoinSnafu)?
+                        .into_iter()
+                        .collect::<DaftResult<Vec<_>>>()?;
+                    let num_rows = series.first().map_or(0, daft_core::series::Series::len);
+                    Ok(Table::new_unchecked(read_schema, series, num_rows))
+                })
+                .await?
         })
         .context(super::JoinSnafu {})
     }))

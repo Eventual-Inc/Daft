@@ -33,8 +33,8 @@ enum PoolType {
 impl Display for PoolType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            PoolType::Compute => write!(f, "Compute"),
-            PoolType::IO => write!(f, "IO"),
+            Self::Compute => write!(f, "Compute"),
+            Self::IO => write!(f, "IO"),
         }
     }
 }
@@ -48,7 +48,7 @@ pub struct Runtime {
 
 impl Runtime {
     fn new(runtime: tokio::runtime::Runtime, pool_type: PoolType) -> RuntimeRef {
-        Arc::new(Self { runtime, pool_type })
+        Arc::new(Self { pool_type, runtime })
     }
 
     async fn execute_task<F>(future: F, pool_type: PoolType) -> DaftResult<F::Output>
@@ -151,8 +151,8 @@ fn init_runtime(
     .unwrap()
 }
 
-pub fn get_compute_runtime() -> DaftResult<RuntimeRef> {
-    let runtime = COMPUTE_RUNTIME
+pub fn get_compute_runtime() -> RuntimeRef {
+    COMPUTE_RUNTIME
         .get_or_init(|| {
             init_runtime(
                 *COMPUTE_RUNTIME_NUM_WORKER_THREADS,
@@ -160,23 +160,20 @@ pub fn get_compute_runtime() -> DaftResult<RuntimeRef> {
                 PoolType::Compute,
             )
         })
-        .clone();
-    Ok(runtime)
+        .clone()
 }
 
-pub fn get_io_runtime(multi_thread: bool) -> DaftResult<RuntimeRef> {
+pub fn get_io_runtime(multi_thread: bool) -> RuntimeRef {
     if !multi_thread {
-        let runtime = SINGLE_THREADED_IO_RUNTIME
+        SINGLE_THREADED_IO_RUNTIME
             .get_or_init(|| init_runtime(1, None, PoolType::IO))
-            .clone();
-        Ok(runtime)
+            .clone()
     } else {
-        let runtime = THREADED_IO_RUNTIME
+        THREADED_IO_RUNTIME
             .get_or_init(|| {
                 init_runtime(*THREADED_IO_RUNTIME_NUM_WORKER_THREADS, None, PoolType::IO)
             })
-            .clone();
-        Ok(runtime)
+            .clone()
     }
 }
 

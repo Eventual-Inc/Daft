@@ -4,7 +4,7 @@ use common_error::{DaftError, DaftResult};
 use common_file_formats::{CsvSourceConfig, FileFormat, FileFormatConfig, ParquetSourceConfig};
 use common_runtime::RuntimeRef;
 use daft_csv::CsvParseOptions;
-use daft_io::{parse_url, FileMetadata, IOClient, IOStatsContext, IOStatsRef,};
+use daft_io::{parse_url, FileMetadata, IOClient, IOStatsContext, IOStatsRef};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use daft_schema::schema::SchemaRef;
 use futures::{stream::BoxStream, StreamExt, TryStreamExt};

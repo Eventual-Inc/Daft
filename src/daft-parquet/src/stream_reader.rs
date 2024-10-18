@@ -50,12 +50,10 @@ fn prune_fields_from_schema(
     }
 }
 
+type ArrowArrayReceiver =
+    tokio::sync::mpsc::Receiver<DaftResult<arrow2::error::Result<Box<dyn arrow2::array::Array>>>>;
 pub fn arrow_array_receivers_to_table_stream(
-    mut arrow_array_receivers: Vec<
-        tokio::sync::mpsc::Receiver<
-            DaftResult<arrow2::error::Result<Box<dyn arrow2::array::Array>>>,
-        >,
-    >,
+    mut arrow_array_receivers: Vec<ArrowArrayReceiver>,
     row_range: RowGroupRange,
     schema_ref: SchemaRef,
     uri: String,
@@ -456,7 +454,7 @@ pub async fn local_parquet_read_async(
     metadata: Option<Arc<parquet2::metadata::FileMetaData>>,
     chunk_size: Option<usize>,
 ) -> DaftResult<(Arc<parquet2::metadata::FileMetaData>, Table)> {
-    let compute_runtime = get_compute_runtime()?;
+    let compute_runtime = get_compute_runtime();
     let uri = uri.to_string();
     compute_runtime.block_on(async move {
         let v = local_parquet_read_into_arrow(
@@ -523,7 +521,7 @@ pub fn local_parquet_stream(
     BoxStream<'static, DaftResult<Table>>,
 )> {
     let chunk_size = 128 * 1024;
-    let runtime = get_compute_runtime()?;
+    let runtime = get_compute_runtime();
     let uri = uri.to_string();
     let (metadata, streams) = runtime.block_on(async move {
         let (metadata, schema_ref, row_ranges, column_iters) =
@@ -570,7 +568,7 @@ pub fn local_parquet_stream(
         DaftResult::Ok((metadata, streams))
     })??;
 
-    let result_stream = futures::stream::iter(streams.into_iter());
+    let result_stream = futures::stream::iter(streams);
 
     match maintain_order {
         true => Ok((metadata, Box::pin(result_stream.flatten()))),
@@ -595,7 +593,7 @@ pub async fn local_parquet_read_into_arrow_async(
     Vec<ArrowChunk>,
     usize,
 )> {
-    let compute_runtime = get_compute_runtime()?;
+    let compute_runtime = get_compute_runtime();
     let uri = uri.to_string();
     Ok(compute_runtime.block_on(async move {
         local_parquet_read_into_arrow(

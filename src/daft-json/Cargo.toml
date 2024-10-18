@@ -16,7 +16,6 @@ memchr = "2.7.2"
 memmap2 = "0.9.4"
 num-traits = {workspace = true}
 pyo3 = {workspace = true, optional = true}
-rayon = {workspace = true}
 serde = {workspace = true}
 serde_json = {workspace = true, features = ["raw_value"]}
 simd-json = {version = "0.13", features = ["known-key"]}

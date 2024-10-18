@@ -30,7 +30,7 @@ impl StorageConfig {
             Self::Native(cfg) => {
                 let multithreaded_io = cfg.multithreaded_io;
                 Ok((
-                    get_io_runtime(multithreaded_io)?,
+                    get_io_runtime(multithreaded_io),
                     get_io_client(
                         multithreaded_io,
                         Arc::new(cfg.io_config.clone().unwrap_or_default()),
@@ -41,7 +41,7 @@ impl StorageConfig {
             Self::Python(cfg) => {
                 let multithreaded_io = true; // Hardcode to use multithreaded IO if Python storage config is used for data fetches
                 Ok((
-                    get_io_runtime(multithreaded_io)?,
+                    get_io_runtime(multithreaded_io),
                     get_io_client(
                         multithreaded_io,
                         Arc::new(cfg.io_config.clone().unwrap_or_default()),

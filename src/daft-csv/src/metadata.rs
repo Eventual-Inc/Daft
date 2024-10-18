@@ -59,7 +59,7 @@ pub fn read_csv_schema(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
 ) -> DaftResult<(Schema, CsvReadStats)> {
-    let runtime_handle = get_io_runtime(true)?;
+    let runtime_handle = get_io_runtime(true);
     runtime_handle.block_on_current_thread(async {
         read_csv_schema_single(
             uri,
@@ -81,7 +81,7 @@ pub async fn read_csv_schema_bulk(
     io_stats: Option<IOStatsRef>,
     num_parallel_tasks: usize,
 ) -> DaftResult<Vec<(Schema, CsvReadStats)>> {
-    let runtime_handle = get_io_runtime(true)?;
+    let runtime_handle = get_io_runtime(true);
     let result = runtime_handle
         .block_on_current_thread(async {
             let task_stream = futures::stream::iter(uris.iter().map(|uri| {

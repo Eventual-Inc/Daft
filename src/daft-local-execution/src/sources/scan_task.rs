@@ -41,7 +41,7 @@ impl ScanTaskSource {
         io_stats: IOStatsRef,
     ) -> DaftResult<()> {
         let schema = scan_task.materialized_schema();
-        let io_runtime = get_io_runtime(true)?;
+        let io_runtime = get_io_runtime(true);
         let mut stream = io_runtime
             .await_on(stream_scan_task(scan_task, Some(io_stats), maintain_order))
             .await??;
