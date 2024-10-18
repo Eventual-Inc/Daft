@@ -1089,12 +1089,19 @@ def test_join_same_name_alias_with_compute(join_strategy, join_type, expected, m
     )
 
 
-def test_join_suffix_and_prefix(make_df):
+@pytest.mark.parametrize(
+    "suffix,prefix,expected",
+    [
+        (None, None, "right.score"),
+        ("_right", None, "score_right"),
+        (None, "left_", "left_score"),
+        ("_right", "prefix.", "prefix.score_right"),
+    ],
+)
+def test_join_suffix_and_prefix(suffix, prefix, expected, make_df):
     df1 = daft.from_pydict({"idx": [1, 2], "val": [10, 20]})
     df2 = daft.from_pydict({"idx": [3], "score": [0.1]})
     df3 = daft.from_pydict({"idx": [1], "score": [0.1]})
 
-    df = df1.join(df2, on="idx").join(df3, on="idx", suffix="_right")
-    assert df.column_names == ["idx", "val", "score", "score_right"]
-    df = df1.join(df2, on="idx").join(df3, on="idx", prefix="left_")
-    assert df.column_names == ["idx", "val", "score", "left_score"]
+    df = df1.join(df2, on="idx").join(df3, on="idx", suffix=suffix, prefix=prefix)
+    assert df.column_names == ["idx", "val", "score", expected]
