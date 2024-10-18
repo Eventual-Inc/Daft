@@ -11,7 +11,7 @@ use daft_dsl::{col, join::get_common_join_keys, Expr};
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{
     EmptyScan, Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, Project,
-    Sort, UnGroupedAggregate,
+    Sort, UnGroupedAggregate, Unpivot,
 };
 use daft_plan::{populate_aggregation_stages, JoinType};
 use daft_table::{Probeable, Table};
@@ -23,7 +23,7 @@ use crate::{
     intermediate_ops::{
         aggregate::AggregateOperator, anti_semi_hash_join_probe::AntiSemiProbeOperator,
         filter::FilterOperator, hash_join_probe::HashJoinProbeOperator,
-        intermediate_op::IntermediateNode, project::ProjectOperator,
+        intermediate_op::IntermediateNode, project::ProjectOperator, unpivot::UnpivotOperator,
     },
     sinks::{
         aggregate::AggregateSink, blocking_sink::BlockingSinkNode,
@@ -222,6 +222,23 @@ pub fn physical_plan_to_pipeline(
             let final_stage_project = ProjectOperator::new(final_exprs);
 
             IntermediateNode::new(Arc::new(final_stage_project), vec![second_stage_node]).boxed()
+        }
+        LocalPhysicalPlan::Unpivot(Unpivot {
+            input,
+            ids,
+            values,
+            variable_name,
+            value_name,
+            ..
+        }) => {
+            let child_node = physical_plan_to_pipeline(input, psets)?;
+            let unpivot_op = UnpivotOperator::new(
+                ids.clone(),
+                values.clone(),
+                variable_name.clone(),
+                value_name.clone(),
+            );
+            IntermediateNode::new(Arc::new(unpivot_op), vec![child_node]).boxed()
         }
         LocalPhysicalPlan::Sort(Sort {
             input,

@@ -16,7 +16,7 @@ pub enum LocalPhysicalPlan {
     Filter(Filter),
     Limit(Limit),
     // Explode(Explode),
-    // Unpivot(Unpivot),
+    Unpivot(Unpivot),
     Sort(Sort),
     // Split(Split),
     // Sample(Sample),
@@ -151,6 +151,25 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    pub(crate) fn unpivot(
+        input: LocalPhysicalPlanRef,
+        ids: Vec<ExprRef>,
+        values: Vec<ExprRef>,
+        variable_name: String,
+        value_name: String,
+        output_schema: SchemaRef,
+    ) -> LocalPhysicalPlanRef {
+        Self::Unpivot(Unpivot {
+            input,
+            ids,
+            values,
+            variable_name,
+            value_name,
+            output_schema,
+        })
+        .arced()
+    }
+
     pub(crate) fn sort(
         input: LocalPhysicalPlanRef,
         sort_by: Vec<ExprRef>,
@@ -213,6 +232,7 @@ impl LocalPhysicalPlan {
             | Self::Sort(Sort { schema, .. })
             | Self::HashJoin(HashJoin { schema, .. })
             | Self::Concat(Concat { schema, .. }) => schema,
+            Self::Unpivot(Unpivot { output_schema, .. }) => output_schema,
             Self::InMemoryScan(InMemoryScan { info, .. }) => &info.source_schema,
             _ => todo!("{:?}", self),
         }
@@ -286,6 +306,16 @@ pub struct HashAggregate {
     pub group_by: Vec<ExprRef>,
     pub schema: SchemaRef,
     pub plan_stats: PlanStats,
+}
+
+#[derive(Debug)]
+pub struct Unpivot {
+    pub input: LocalPhysicalPlanRef,
+    pub ids: Vec<ExprRef>,
+    pub values: Vec<ExprRef>,
+    pub variable_name: String,
+    pub value_name: String,
+    pub output_schema: SchemaRef,
 }
 
 #[derive(Debug)]
