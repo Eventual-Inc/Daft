@@ -135,11 +135,9 @@ pub fn run_local(
                 result = async {
                     let mut runtime_handle = ExecutionRuntimeHandle::new(cfg.default_morsel_size);
                     let mut receiver = pipeline.start(true, &mut runtime_handle)?.get_receiver();
-                    let mut buffer = vec![];
                     while let Some(val) = receiver.recv().await {
-                        buffer.push(val.as_data().clone());
+                        let _ = tx.send(val.as_data().clone()).await;
                     }
-                    let _ = tx.send(Arc::new(MicroPartition::concat(&buffer.iter().map(|p| p.as_ref()).collect::<Vec<_>>())?)).await;
                     while let Some(result) = runtime_handle.join_next().await {
                         match result {
                             Ok(Err(e)) => {

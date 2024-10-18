@@ -5,7 +5,7 @@ use std::{
 
 use arrow2::io::parquet::read::{column_iter_to_arrays, schema::infer_schema_with_options};
 use common_error::DaftResult;
-use common_runtime::get_compute_runtime;
+use common_runtime::{get_compute_runtime, get_io_runtime, RuntimeRef};
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
 use daft_dsl::ExprRef;
 use daft_io::{IOClient, IOStatsRef};
@@ -60,37 +60,37 @@ fn streaming_decompression<S: futures::Stream<Item = parquet2::error::Result<Com
 pub struct StreamIterator<S> {
     curr: Option<Page>,
     src: Arc<tokio::sync::Mutex<S>>,
-    handle: tokio::runtime::Handle,
+    runtime: RuntimeRef,
 }
 
 impl<S> StreamIterator<S>
 where
-    S: futures::Stream<Item = parquet2::error::Result<Page>> + std::marker::Unpin,
+    S: futures::Stream<Item = parquet2::error::Result<Page>> + std::marker::Unpin + Send + 'static,
 {
-    pub fn new(src: S, handle: tokio::runtime::Handle) -> Self {
+    pub fn new(src: S, runtime: RuntimeRef) -> Self {
         Self {
             curr: None,
             src: Arc::new(tokio::sync::Mutex::new(src)),
-            handle,
+            runtime,
         }
     }
 }
 
 impl<S> FallibleStreamingIterator for StreamIterator<S>
 where
-    S: futures::Stream<Item = parquet2::error::Result<Page>> + std::marker::Unpin,
+    S: futures::Stream<Item = parquet2::error::Result<Page>> + std::marker::Unpin + Send + 'static,
 {
     type Error = parquet2::error::Error;
     type Item = Page;
     fn advance(&mut self) -> Result<(), Self::Error> {
-        let handle = self.handle.clone();
         let src = self.src.clone();
-        let val = tokio::task::block_in_place(move || {
-            handle.block_on(async {
+        let val = self
+            .runtime
+            .block_on(async move {
                 let mut s_guard = src.lock().await;
                 s_guard.next().await
             })
-        });
+            .unwrap();
         if let Some(val) = val {
             let val = val?;
             self.curr = Some(val);
@@ -426,7 +426,7 @@ impl ParquetFileReader {
                     .fields
                     .iter()
                     .map(|field| {
-                        let rt_handle = tokio::runtime::Handle::current();
+                        let io_runtime = get_io_runtime(true);
                         let ranges = ranges.clone();
                         let owned_uri = uri.clone();
                         let field = field.clone();
@@ -474,7 +474,7 @@ impl ParquetFileReader {
                                 let page_stream = streaming_decompression(compressed_page_stream);
                                 let pinned_stream = Box::pin(page_stream);
                                 decompressed_iters
-                                    .push(StreamIterator::new(pinned_stream, rt_handle.clone()));
+                                    .push(StreamIterator::new(pinned_stream, io_runtime.clone()));
                             }
                             let arr_iter = column_iter_to_arrays(
                                 decompressed_iters,
@@ -635,7 +635,7 @@ impl ParquetFileReader {
                                 let page_stream = streaming_decompression(compressed_page_stream);
                                 let pinned_stream = Box::pin(page_stream);
                                 decompressed_iters
-                                    .push(StreamIterator::new(pinned_stream, rt_handle.clone()));
+                                    .push(StreamIterator::new(pinned_stream, get_io_runtime(true)));
                             }
 
                             compute_runtime
@@ -817,7 +817,7 @@ impl ParquetFileReader {
                                 let page_stream = streaming_decompression(compressed_page_stream);
                                 let pinned_stream = Box::pin(page_stream);
                                 decompressed_iters
-                                    .push(StreamIterator::new(pinned_stream, rt_handle.clone()));
+                                    .push(StreamIterator::new(pinned_stream, get_io_runtime(true)));
                             }
 
                             compute_runtime

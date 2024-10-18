@@ -191,3 +191,31 @@ pub fn get_io_pool_num_threads() -> Option<usize> {
         Err(_) => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_runtime() {
+        let compute_runtime = get_compute_runtime();
+        let io_runtime = get_io_runtime(true);
+        compute_runtime.block_on_current_thread(async {
+            let mut handles = vec![];
+            for _ in 0..*NUM_CPUS*2 {
+                let io_runtime = io_runtime.clone();
+                handles.push(tokio::spawn(async move {
+                    let _ = io_runtime.block_on(async {
+                        println!("Starting IO task");
+                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                        println!("Finished IO task");
+                        1
+                    });
+                }));
+            }
+            for handle in handles {
+                handle.await.unwrap();
+            }
+        });
+    }
+}
