@@ -226,6 +226,7 @@ impl LocalPhysicalPlan {
             | Self::HashAggregate(HashAggregate { schema, .. })
             | Self::Sort(Sort { schema, .. })
             | Self::HashJoin(HashJoin { schema, .. })
+            | Self::Explode(Explode { schema, .. })
             | Self::Concat(Concat { schema, .. }) => schema,
             Self::InMemoryScan(InMemoryScan { info, .. }) => &info.source_schema,
             _ => todo!("{:?}", self),
