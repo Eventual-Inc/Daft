@@ -1,12 +1,7 @@
 import pytest
 
-from daft import col, context
+from daft import col
 from daft.datatype import DataType
-
-pytestmark = pytest.mark.skipif(
-    context.get_context().daft_execution_config.enable_native_executor is True,
-    reason="Native executor fails for these tests",
-)
 
 
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
