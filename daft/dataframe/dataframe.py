@@ -1688,13 +1688,13 @@ class DataFrame:
         right_on: Optional[Union[List[ColumnInputType], ColumnInputType]] = None,
         how: str = "inner",
         strategy: Optional[str] = None,
-        join_prefix: Optional[str] = None,
-        join_suffix: Optional[str] = None,
+        prefix: Optional[str] = None,
+        suffix: Optional[str] = None,
     ) -> "DataFrame":
         """Column-wise join of the current DataFrame with an ``other`` DataFrame, similar to a SQL ``JOIN``
 
-        If the two DataFrames have duplicate non-join key column names, "right." will be prepended to the conflicting right columns. You can change the behavior by passing either (or both) `join_prefix` or `join_suffix` to the function.
-        If `join_prefix` is passed, it will be prepended to the conflicting right columns. If `join_suffix` is passed, it will be appended to the conflicting right columns.
+        If the two DataFrames have duplicate non-join key column names, "right." will be prepended to the conflicting right columns. You can change the behavior by passing either (or both) `prefix` or `suffix` to the function.
+        If `prefix` is passed, it will be prepended to the conflicting right columns. If `suffix` is passed, it will be appended to the conflicting right columns.
 
         .. NOTE::
             Although self joins are supported, we currently duplicate the logical plan for the right side
@@ -1795,8 +1795,8 @@ class DataFrame:
             right_on=right_exprs,
             how=join_type,
             strategy=join_strategy,
-            join_prefix=join_prefix,
-            join_suffix=join_suffix,
+            join_prefix=prefix,
+            join_suffix=suffix,
         )
         return DataFrame(builder)
 

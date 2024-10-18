@@ -128,12 +128,12 @@ impl Join {
                         let mut new_name = name.clone();
                         while names_so_far.contains(&new_name) {
                             if let Some(prefix) = join_prefix {
-                                new_name = format!("{}.{}", prefix, new_name);
+                                new_name = format!("{}{}", prefix, new_name);
                             } else if join_suffix.is_none() {
                                 new_name = format!("right.{}", new_name);
                             }
                             if let Some(suffix) = join_suffix {
-                                new_name = format!("{}.{}", new_name, suffix);
+                                new_name = format!("{}{}", new_name, suffix);
                             }
                         }
                         names_so_far.insert(new_name.clone());

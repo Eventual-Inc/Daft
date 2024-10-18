@@ -358,7 +358,7 @@ impl SQLPlanner {
             self.table_map
                 .insert(right_rel.get_name(), right_rel.clone());
             let right_rel_name = right_rel.get_name();
-            let right_join_prefix = Some(right_rel_name.as_ref());
+            let right_join_prefix = Some(format!("{right_rel_name}."));
 
             match &join.join_operator {
                 Inner(JoinConstraint::On(expr)) => {
@@ -371,7 +371,7 @@ impl SQLPlanner {
                         JoinType::Inner,
                         None,
                         None,
-                        right_join_prefix,
+                        right_join_prefix.as_deref(),
                     )?;
                 }
                 Inner(JoinConstraint::Using(idents)) => {
@@ -387,7 +387,7 @@ impl SQLPlanner {
                         JoinType::Inner,
                         None,
                         None,
-                        right_join_prefix,
+                        right_join_prefix.as_deref(),
                     )?;
                 }
                 LeftOuter(JoinConstraint::On(expr)) => {
@@ -400,7 +400,7 @@ impl SQLPlanner {
                         JoinType::Left,
                         None,
                         None,
-                        right_join_prefix,
+                        right_join_prefix.as_deref(),
                     )?;
                 }
                 RightOuter(JoinConstraint::On(expr)) => {
@@ -413,7 +413,7 @@ impl SQLPlanner {
                         JoinType::Right,
                         None,
                         None,
-                        right_join_prefix,
+                        right_join_prefix.as_deref(),
                     )?;
                 }
 
@@ -427,7 +427,7 @@ impl SQLPlanner {
                         JoinType::Outer,
                         None,
                         None,
-                        right_join_prefix,
+                        right_join_prefix.as_deref(),
                     )?;
                 }
                 CrossJoin => unsupported_sql_err!("CROSS JOIN"),
