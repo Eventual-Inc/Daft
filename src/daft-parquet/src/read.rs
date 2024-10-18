@@ -418,6 +418,7 @@ async fn stream_parquet_single(
             maintain_order,
             io_stats,
         )
+        .await
     } else {
         let builder = ParquetReaderBuilder::from_uri(
             uri.as_str(),

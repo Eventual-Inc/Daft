@@ -158,7 +158,7 @@ pub async fn stream_csv(
 
 // Parallel version of table concat
 // get rid of this once Table APIs are parallel
-pub(crate) fn tables_concat(mut tables: Vec<Table>) -> DaftResult<Table> {
+pub(crate) async fn parallel_table_concat(mut tables: Vec<Table>) -> DaftResult<Table> {
     if tables.is_empty() {
         return Err(DaftError::ValueError(
             "Need at least 1 Table to perform concat".to_string(),
@@ -182,24 +182,26 @@ pub(crate) fn tables_concat(mut tables: Vec<Table>) -> DaftResult<Table> {
     let num_rows = tables.iter().map(daft_table::Table::len).sum();
     let runtime = get_compute_runtime();
     let tables_ref = Arc::new(tables);
-    let new_series = runtime.block_on(async move {
-        let handles = (0..num_columns).map(|i| {
-            let tables_ref = tables_ref.clone();
-            tokio::spawn(async move {
-                let series_to_cat: Vec<&Series> = tables_ref
-                    .iter()
-                    .map(|s| s.as_ref().get_column_by_index(i).unwrap())
-                    .collect();
-                Series::concat(series_to_cat.as_slice())
-            })
-        });
-        let results = futures::future::try_join_all(handles)
-            .await
-            .context(super::JoinSnafu)?
-            .into_iter()
-            .collect::<DaftResult<Vec<_>>>()?;
-        DaftResult::Ok(results)
-    })??;
+    let new_series = runtime
+        .await_on(async move {
+            let handles = (0..num_columns).map(|i| {
+                let tables_ref = tables_ref.clone();
+                tokio::spawn(async move {
+                    let series_to_cat: Vec<&Series> = tables_ref
+                        .iter()
+                        .map(|s| s.as_ref().get_column_by_index(i).unwrap())
+                        .collect();
+                    Series::concat(series_to_cat.as_slice())
+                })
+            });
+            let results = futures::future::try_join_all(handles)
+                .await
+                .context(super::JoinSnafu)?
+                .into_iter()
+                .collect::<DaftResult<Vec<_>>>()?;
+            DaftResult::Ok(results)
+        })
+        .await??;
     Table::new_with_size(first_schema, new_series, num_rows)
 }
 
@@ -319,7 +321,7 @@ async fn read_csv_single_into_table(
     }
 
     // // TODO(Clark): Don't concatenate all chunks from a file into a single table, since MicroPartition is natively chunked.
-    let concated_table = tables_concat(collected_tables)?;
+    let concated_table = parallel_table_concat(collected_tables).await?;
     if let Some(limit) = limit
         && concated_table.len() > limit
     {

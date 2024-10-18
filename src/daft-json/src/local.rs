@@ -14,14 +14,14 @@ use crate::{
     decoding::{allocate_array, deserialize_into},
     deserializer::Value,
     inference::{column_types_map_to_fields, infer_records_schema},
-    read::tables_concat,
+    read::parallel_table_concat,
     ArrowSnafu, JoinSnafu, JsonConvertOptions, JsonParseOptions, JsonReadOptions, StdIOSnafu,
 };
 
 const NEWLINE: u8 = b'\n';
 const CLOSING_BRACKET: u8 = b'}';
 
-pub fn read_json_local(
+pub async fn read_json_local(
     uri: &str,
     convert_options: Option<JsonConvertOptions>,
     parse_options: Option<JsonParseOptions>,
@@ -35,7 +35,7 @@ pub fn read_json_local(
 
     let bytes = &mmap[..];
     let reader = JsonReader::try_new(bytes.into(), convert_options, parse_options, read_options)?;
-    reader.finish()
+    reader.finish().await
 }
 
 struct JsonReader {
@@ -93,7 +93,7 @@ impl JsonReader {
         })
     }
 
-    pub fn finish(&self) -> DaftResult<Table> {
+    pub async fn finish(&self) -> DaftResult<Table> {
         let mut bytes = self.bytes.clone();
         let mut n_threads = self.n_threads;
         let mut total_rows = 128;
@@ -126,25 +126,27 @@ impl JsonReader {
         let compute_runtime = get_compute_runtime();
         let schema = self.schema.clone();
         let predicate = self.predicate.clone();
-        let tbls = compute_runtime.block_on(async move {
-            let tbl_handles = file_chunks.into_iter().map(|(start, stop)| {
-                let schema = schema.clone();
-                let predicate = predicate.clone();
-                let bytes = bytes.clone();
-                tokio::spawn(async move {
-                    let chunk = &bytes[start..stop];
-                    parse_json_chunk(chunk, chunk_size, schema.clone(), predicate.clone())
-                })
-            });
-            let tbls = futures::future::try_join_all(tbl_handles)
-                .await
-                .context(JoinSnafu)?
-                .into_iter()
-                .collect::<DaftResult<Vec<_>>>()?;
-            DaftResult::Ok(tbls)
-        })??;
+        let tbls = compute_runtime
+            .await_on(async move {
+                let tbl_handles = file_chunks.into_iter().map(|(start, stop)| {
+                    let schema = schema.clone();
+                    let predicate = predicate.clone();
+                    let bytes = bytes.clone();
+                    tokio::spawn(async move {
+                        let chunk = &bytes[start..stop];
+                        parse_json_chunk(chunk, chunk_size, schema.clone(), predicate.clone())
+                    })
+                });
+                let tbls = futures::future::try_join_all(tbl_handles)
+                    .await
+                    .context(JoinSnafu)?
+                    .into_iter()
+                    .collect::<DaftResult<Vec<_>>>()?;
+                DaftResult::Ok(tbls)
+            })
+            .await??;
 
-        let tbl = tables_concat(tbls)?;
+        let tbl = parallel_table_concat(tbls).await?;
 
         // The `limit` is not guaranteed to be fully applied from the byte slice, so we need to properly apply the limit after concatenating the tables
         if let Some(limit) = self.n_rows {

@@ -531,7 +531,7 @@ pub async fn local_parquet_read_async(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn local_parquet_stream(
+pub async fn local_parquet_stream(
     uri: &str,
     original_columns: Option<Vec<String>>,
     columns: Option<Vec<String>>,
@@ -551,50 +551,52 @@ pub fn local_parquet_stream(
     let chunk_size = 128 * 1024;
     let runtime = get_compute_runtime();
     let uri = uri.to_string();
-    let (metadata, streams) = runtime.block_on(async move {
-        let (metadata, schema_ref, row_ranges, column_iters) =
-            local_parquet_read_into_column_iters(
-                &uri,
-                columns.as_deref(),
-                num_rows,
-                row_groups.as_deref(),
-                predicate.clone(),
-                schema_infer_options,
-                metadata,
-                chunk_size,
-                io_stats,
-            )?;
-
-        let streams = column_iters
-            .zip(row_ranges)
-            .map(|(column_iter_result, rg_range)| {
-                // For each vec of column iters, iterate through them in parallel lock step such that each iteration
-                // produces a chunk of the row group that can be converted into a table.
-                let column_iters = column_iter_result?;
-                let (senders, receivers): (Vec<_>, Vec<_>) = (0..column_iters.len())
-                    .map(|_| tokio::sync::mpsc::channel(1))
-                    .unzip();
-                for (column_iter, sender) in column_iters.into_iter().zip(senders) {
-                    tokio::spawn(async move {
-                        for chunk in column_iter {
-                            let _ = sender.send(Ok(chunk)).await;
-                        }
-                    });
-                }
-                arrow_array_receivers_to_table_stream(
-                    receivers,
-                    rg_range,
-                    schema_ref.clone(),
-                    uri.clone(),
+    let (metadata, streams) = runtime
+        .await_on(async move {
+            let (metadata, schema_ref, row_ranges, column_iters) =
+                local_parquet_read_into_column_iters(
+                    &uri,
+                    columns.as_deref(),
+                    num_rows,
+                    row_groups.as_deref(),
                     predicate.clone(),
-                    original_columns.clone(),
-                    original_num_rows,
-                    delete_rows.clone(),
-                )
-            })
-            .collect::<DaftResult<Vec<_>>>()?;
-        DaftResult::Ok((metadata, streams))
-    })??;
+                    schema_infer_options,
+                    metadata,
+                    chunk_size,
+                    io_stats,
+                )?;
+
+            let streams = column_iters
+                .zip(row_ranges)
+                .map(|(column_iter_result, rg_range)| {
+                    // For each vec of column iters, iterate through them in parallel lock step such that each iteration
+                    // produces a chunk of the row group that can be converted into a table.
+                    let column_iters = column_iter_result?;
+                    let (senders, receivers): (Vec<_>, Vec<_>) = (0..column_iters.len())
+                        .map(|_| tokio::sync::mpsc::channel(1))
+                        .unzip();
+                    for (column_iter, sender) in column_iters.into_iter().zip(senders) {
+                        tokio::spawn(async move {
+                            for chunk in column_iter {
+                                let _ = sender.send(Ok(chunk)).await;
+                            }
+                        });
+                    }
+                    arrow_array_receivers_to_table_stream(
+                        receivers,
+                        rg_range,
+                        schema_ref.clone(),
+                        uri.clone(),
+                        predicate.clone(),
+                        original_columns.clone(),
+                        original_num_rows,
+                        delete_rows.clone(),
+                    )
+                })
+                .collect::<DaftResult<Vec<_>>>()?;
+            DaftResult::Ok((metadata, streams))
+        })
+        .await??;
 
     let result_stream = futures::stream::iter(streams);
 
