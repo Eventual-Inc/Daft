@@ -4,7 +4,7 @@ import threading
 import weakref
 from abc import abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar
 from uuid import uuid4
 
 from daft.datatype import TimeUnit
@@ -70,15 +70,18 @@ class TableParseParquetOptions:
 
 @dataclass(frozen=True)
 class EstimatedPartitionMetadata:
-    num_rows: None | int
-    size_bytes: None | int
+    num_rows: int
+    size_bytes: int
     boundaries: None | Boundaries = None
 
 
 @dataclass(frozen=True)
-class ExactPartitionMetadata(EstimatedPartitionMetadata):
+class ExactPartitionMetadata:
+    FALLBACK_ESTIMATED_NUM_ROWS_PER_PARTITION: ClassVar[int] = 128_000
+    FALLBACK_ESTIMATED_SIZE_BYTES_PER_PARTITION: ClassVar[int] = 512 * 1024 * 1024
+
     num_rows: int
-    size_bytes: int | None
+    size_bytes: int
     boundaries: Boundaries | None = None
 
     @classmethod
@@ -98,7 +101,11 @@ class ExactPartitionMetadata(EstimatedPartitionMetadata):
         return ExactPartitionMetadata(num_rows, size_bytes, boundaries)
 
     def downcast_to_estimated(self) -> EstimatedPartitionMetadata:
-        return EstimatedPartitionMetadata(self.num_rows, self.size_bytes, self.boundaries)
+        return EstimatedPartitionMetadata(
+            num_rows=self.num_rows or ExactPartitionMetadata.FALLBACK_ESTIMATED_NUM_ROWS_PER_PARTITION,
+            size_bytes=self.size_bytes or ExactPartitionMetadata.FALLBACK_ESTIMATED_SIZE_BYTES_PER_PARTITION,
+            boundaries=self.boundaries,
+        )
 
 
 def _is_bound_null(bound_row: list[Any | None]) -> bool:

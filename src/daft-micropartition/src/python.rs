@@ -50,7 +50,7 @@ impl PyMicroPartition {
         }
     }
 
-    pub fn size_bytes(&self) -> PyResult<Option<usize>> {
+    pub fn size_bytes(&self) -> PyResult<usize> {
         Ok(self.inner.size_bytes()?)
     }
 
