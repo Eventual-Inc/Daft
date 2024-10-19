@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from daft.expressions import ExpressionsProjection
 from daft.logical.schema import Schema
+from daft.runners.partitioning import EstimatedPartitionMetadata
 
 if TYPE_CHECKING:
     from daft.table import MicroPartition
@@ -19,8 +20,16 @@ class MapPartitionOp:
     def run(self, input_partition: MicroPartition) -> MicroPartition:
         """Runs this MapPartitionOp on the supplied vPartition"""
 
+    @abstractmethod
+    def estimate_output_metadata(
+        self, input_metadatas: list[EstimatedPartitionMetadata]
+    ) -> list[EstimatedPartitionMetadata]:
+        """Estimates the output partition metadata"""
+
 
 class ExplodeOp(MapPartitionOp):
+    CARDINALITY_INCREASE_FACTOR: ClassVar[int] = 5
+
     input_schema: Schema
     explode_columns: ExpressionsProjection
 
@@ -44,3 +53,15 @@ class ExplodeOp(MapPartitionOp):
 
     def run(self, input_partition: MicroPartition) -> MicroPartition:
         return input_partition.explode(self.explode_columns)
+
+    def estimate_output_metadata(
+        self, input_metadatas: list[EstimatedPartitionMetadata]
+    ) -> list[EstimatedPartitionMetadata]:
+        assert len(input_metadatas) == 1
+        [input_meta] = input_metadatas
+        return [
+            EstimatedPartitionMetadata(
+                num_rows=input_meta.num_rows * ExplodeOp.CARDINALITY_INCREASE_FACTOR,
+                size_bytes=input_meta.size_bytes * ExplodeOp.CARDINALITY_INCREASE_FACTOR,
+            )
+        ]

@@ -585,25 +585,16 @@ impl MicroPartition {
         self.len() == 0
     }
 
-    pub fn size_bytes(&self) -> DaftResult<Option<usize>> {
-        let guard = self.state.lock().unwrap();
-        let size_bytes = if let TableState::Loaded(tables) = &*guard {
-            let total_size: usize = tables
-                .iter()
-                .map(daft_table::Table::size_bytes)
-                .collect::<DaftResult<Vec<_>>>()?
-                .iter()
-                .sum();
-            Some(total_size)
-        } else if let TableState::Unloaded(scan_task) = &*guard {
-            // TODO: pass in the execution config once we have it available
-            scan_task.estimate_in_memory_size_bytes(None)
-        } else {
-            // If the table is not loaded, we don't have stats, and we don't have the file size in bytes, return None.
-            // TODO(Clark): Should we pull in the table or trigger a file metadata fetch instead of returning None here?
-            None
-        };
-        Ok(size_bytes)
+    pub fn size_bytes(&self) -> DaftResult<usize> {
+        let io_stats = IOStatsContext::new("MicroPartition::size_bytes");
+        Ok(self
+            .tables_or_read(io_stats)?
+            .as_ref()
+            .iter()
+            .map(daft_table::Table::size_bytes)
+            .collect::<DaftResult<Vec<_>>>()?
+            .iter()
+            .sum())
     }
 
     /// Retrieves tables from the MicroPartition, reading data if not already loaded.

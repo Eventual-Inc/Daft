@@ -470,7 +470,8 @@ def build_partitions(
     assert len(partial_metadatas) == len(partitions), f"{len(partial_metadatas)} vs {len(partitions)}"
 
     metadatas = [
-        ExactPartitionMetadata.from_table(p).merge_with_partial(m) for p, m in zip(partitions, partial_metadatas)
+        ExactPartitionMetadata.from_table(p).merge_with_partial(m.downcast_to_estimated())
+        for p, m in zip(partitions, partial_metadatas)
     ]
 
     return [metadatas, *partitions]
@@ -985,7 +986,7 @@ class DaftRayActor:
             new_part = part.eval_expression_list(initialized_projection)
 
             return [
-                [ExactPartitionMetadata.from_table(new_part).merge_with_partial(partial)],
+                [ExactPartitionMetadata.from_table(new_part).merge_with_partial(partial.downcast_to_estimated())],
                 new_part,
             ]
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import itertools
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Generic, Protocol, cast
+from typing import TYPE_CHECKING, ClassVar, Generic, Protocol
 
 from daft.context import get_context
 from daft.daft import ResourceRequest
@@ -116,8 +116,9 @@ class PartitionTaskBuilder(Generic[PartitionT]):
 
         # Initial `estimated_output_partition_metadatas` is set to the inputs, since it is initially a no-op
         self.estimated_output_partition_metadatas: list[EstimatedPartitionMetadata] = [
-            cast(EstimatedPartitionMetadata, m) for m in input_partition_metadatas
+            m.downcast_to_estimated() for m in input_partition_metadatas
         ]
+        self.input_partition_exact_partition_metadatas = input_partition_metadatas
 
         # Initial resource request for this should for a no-op, since there are no instructions
         self.resource_request: ResourceRequest = ResourceRequest()
@@ -128,7 +129,7 @@ class PartitionTaskBuilder(Generic[PartitionT]):
             return None
 
         # If this builder is still a no-op, then the partition metadata is exact
-        exact_meta = []
+        exact_meta: list[ExactPartitionMetadata] = []
         for m in self.estimated_output_partition_metadatas:
             assert isinstance(m, ExactPartitionMetadata)
             exact_meta.append(m)
@@ -323,9 +324,25 @@ class Instruction(Protocol):
         ...
 
     def estimate_resource_request(self, input_metadatas: list[EstimatedPartitionMetadata]) -> ResourceRequest:
-        """Estimates the ResourceRequest required to run this instruction based on the estimated metadata of the inputs"""
-        # TODO: This just helps us pass mypy
-        return ResourceRequest()
+        """Estimates the ResourceRequest required to run this instruction based on the estimated metadata of the inputs
+
+        A default implementation here is provided which provides reasonable fallbacks, but Instructions should override this
+        to provide better estimates based on the semantics of each Instruction.
+        """
+        assert (
+            len(input_metadatas) == 1
+        ), "Default impl of estimate_resource_request only works for Instructions with 1 input"
+
+        # Fallback to 512MB of input/output sizes if no estimation can be provided, at least giving a naive baseline
+        estimated_input_data_bytes = input_metadatas[0].size_bytes
+        estimated_output_data_bytes = self.estimate_output_metadata(input_metadatas=input_metadatas)[0].size_bytes
+        memory_bytes = (
+            estimated_input_data_bytes
+            + (estimated_input_data_bytes * 2)  # Assume 2x input size required for heap memory allocs
+            + estimated_output_data_bytes
+        )
+
+        return ResourceRequest(memory_bytes=memory_bytes)
 
     def estimate_output_metadata(
         self, input_metadatas: list[EstimatedPartitionMetadata]
@@ -345,6 +362,9 @@ class SingleOutputInstruction(Instruction):
 
 @dataclass(frozen=True)
 class ScanWithTask(SingleOutputInstruction):
+    FALLBACK_PARTITION_NUM_ROWS: ClassVar[int] = 131_072
+    FALLBACK_PARTITION_SIZE_BYTES: ClassVar[int] = 512 * 1024 * 1024
+
     scan_task: ScanTask
     resource_request: ResourceRequest
 
@@ -366,10 +386,14 @@ class ScanWithTask(SingleOutputInstruction):
         approx_num_rows = self.scan_task.approx_num_rows(cfg)
         estimated_output_metadata = [
             EstimatedPartitionMetadata(
-                num_rows=None if approx_num_rows is None else int(approx_num_rows),
-                size_bytes=self.scan_task.estimate_in_memory_size_bytes(cfg),
+                num_rows=int(approx_num_rows)
+                if approx_num_rows is not None
+                else ScanWithTask.FALLBACK_PARTITION_NUM_ROWS,
+                size_bytes=self.scan_task.estimate_in_memory_size_bytes(cfg)
+                or ScanWithTask.FALLBACK_PARTITION_SIZE_BYTES,
             )
         ]
+
         return estimated_output_metadata
 
 
@@ -379,6 +403,9 @@ class EmptyScan(SingleOutputInstruction):
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return [MicroPartition.empty(self.schema)]
+
+    def estimate_resource_request(self, input_metadatas: list[EstimatedPartitionMetadata]) -> ResourceRequest:
+        return ResourceRequest()
 
     def estimate_output_metadata(
         self, input_metadatas: list[EstimatedPartitionMetadata]
@@ -412,14 +439,22 @@ class WriteFile(SingleOutputInstruction):
         )
         return [partition]
 
+    def estimate_resource_request(self, input_metadatas: list[EstimatedPartitionMetadata]) -> ResourceRequest:
+        assert len(input_metadatas) == 1
+
+        estimated_data_to_write_bytes = input_metadatas[0].size_bytes
+
+        # Assume 2x the memory of the output data is required in order to write this data
+        return ResourceRequest(memory_bytes=estimated_data_to_write_bytes * 2)
+
     def estimate_output_metadata(
         self, input_metadatas: list[EstimatedPartitionMetadata]
     ) -> list[EstimatedPartitionMetadata]:
         assert len(input_metadatas) == 1
         return [
             EstimatedPartitionMetadata(
-                num_rows=None,  # we can write more than 1 file per partition
-                size_bytes=None,
+                num_rows=1,  # Assume just 1 file written per partition
+                size_bytes=1000,  # Assume each filepath is <=1KB
             )
         ]
 
@@ -453,14 +488,22 @@ class WriteIceberg(SingleOutputInstruction):
         )
         return [partition]
 
+    def estimate_resource_request(self, input_metadatas: list[EstimatedPartitionMetadata]) -> ResourceRequest:
+        assert len(input_metadatas) == 1
+
+        estimated_data_to_write_bytes = input_metadatas[0].size_bytes
+
+        # Assume 2x the memory of the output data is required in order to write this data
+        return ResourceRequest(memory_bytes=estimated_data_to_write_bytes * 2)
+
     def estimate_output_metadata(
         self, input_metadatas: list[EstimatedPartitionMetadata]
     ) -> list[EstimatedPartitionMetadata]:
         assert len(input_metadatas) == 1
         return [
             EstimatedPartitionMetadata(
-                num_rows=None,  # we can write more than 1 file per partition
-                size_bytes=None,
+                num_rows=1,  # Assume just 1 file written per partition
+                size_bytes=1000,  # Assume each filepath is <=1KB
             )
         ]
 
@@ -493,14 +536,22 @@ class WriteDeltaLake(SingleOutputInstruction):
         )
         return [partition]
 
+    def estimate_resource_request(self, input_metadatas: list[EstimatedPartitionMetadata]) -> ResourceRequest:
+        assert len(input_metadatas) == 1
+
+        estimated_data_to_write_bytes = input_metadatas[0].size_bytes
+
+        # Assume 2x the memory of the output data is required in order to write this data
+        return ResourceRequest(memory_bytes=estimated_data_to_write_bytes * 2)
+
     def estimate_output_metadata(
         self, input_metadatas: list[EstimatedPartitionMetadata]
     ) -> list[EstimatedPartitionMetadata]:
         assert len(input_metadatas) == 1
         return [
             EstimatedPartitionMetadata(
-                num_rows=None,  # we can write more than 1 file per partition
-                size_bytes=None,
+                num_rows=1,  # Assume just 1 file written per partition
+                size_bytes=1000,  # Assume each filepath is <=1KB
             )
         ]
 
@@ -532,14 +583,22 @@ class WriteLance(SingleOutputInstruction):
         )
         return [partition]
 
+    def estimate_resource_request(self, input_metadatas: list[EstimatedPartitionMetadata]) -> ResourceRequest:
+        assert len(input_metadatas) == 1
+
+        estimated_data_to_write_bytes = input_metadatas[0].size_bytes
+
+        # Assume 2x the memory of the output data is required in order to write this data
+        return ResourceRequest(memory_bytes=estimated_data_to_write_bytes * 2)
+
     def estimate_output_metadata(
         self, input_metadatas: list[EstimatedPartitionMetadata]
     ) -> list[EstimatedPartitionMetadata]:
         assert len(input_metadatas) == 1
         return [
             EstimatedPartitionMetadata(
-                num_rows=None,  # we can write more than 1 file per partition
-                size_bytes=None,
+                num_rows=1,  # Assume just 1 file written per partition
+                size_bytes=1000,  # Assume each filepath is <=1KB
             )
         ]
 
@@ -555,6 +614,8 @@ class WriteLance(SingleOutputInstruction):
 
 @dataclass(frozen=True)
 class Filter(SingleOutputInstruction):
+    SELECTIVITY: ClassVar[float] = 0.2
+
     predicate: ExpressionsProjection
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
@@ -570,8 +631,8 @@ class Filter(SingleOutputInstruction):
         [input_meta] = input_metadatas
         return [
             EstimatedPartitionMetadata(
-                num_rows=None,
-                size_bytes=None,
+                num_rows=int(input_meta.num_rows * Filter.SELECTIVITY),
+                size_bytes=int(input_meta.size_bytes * Filter.SELECTIVITY),
                 boundaries=input_meta.boundaries,
             )
         ]
@@ -579,6 +640,11 @@ class Filter(SingleOutputInstruction):
 
 @dataclass(frozen=True)
 class Project(SingleOutputInstruction):
+    # TODO: Use information about each expression to arrive at a better estimate.
+    # Maybe we can just use the schema as a good heuristic as well.
+    # For example, if there is a url download or image decode, we can use that to arrive at better estimates
+    POST_PROJECT_INFLATION_FACTOR: ClassVar[float] = 1.5
+
     projection: ExpressionsProjection
     resource_request: ResourceRequest | None = None
 
@@ -596,10 +662,13 @@ class Project(SingleOutputInstruction):
         boundaries = input_meta.boundaries
         if boundaries is not None:
             boundaries = _prune_boundaries(boundaries, self.projection)
+
+        output_size_bytes = int(input_meta.size_bytes * Project.POST_PROJECT_INFLATION_FACTOR)
+
         return [
             EstimatedPartitionMetadata(
                 num_rows=input_meta.num_rows,
-                size_bytes=None,
+                size_bytes=output_size_bytes,
                 boundaries=boundaries,
             )
         ]
@@ -607,6 +676,11 @@ class Project(SingleOutputInstruction):
 
 @dataclass(frozen=True)
 class StatefulUDFProject(SingleOutputInstruction):
+    # TODO: Use information about each expression to arrive at a better estimate.
+    # Maybe we can just use the schema as a good heuristic as well.
+    # For example, if there is a url download or image decode, we can use that to arrive at better estimates
+    POST_PROJECT_INFLATION_FACTOR: ClassVar[float] = 1.0
+
     projection: ExpressionsProjection
     task_resource_request: ResourceRequest
 
@@ -616,11 +690,15 @@ class StatefulUDFProject(SingleOutputInstruction):
     def estimate_output_metadata(
         self, input_metadatas: list[EstimatedPartitionMetadata]
     ) -> list[EstimatedPartitionMetadata]:
+        [input_meta] = input_metadatas
+
+        output_size_bytes = int(input_meta.size_bytes * StatefulUDFProject.POST_PROJECT_INFLATION_FACTOR)
+
         return [
             EstimatedPartitionMetadata(
-                num_rows=None,  # UDFs can potentially change cardinality
-                size_bytes=None,
-                boundaries=None,  # TODO: figure out if the stateful UDF projection changes boundaries
+                num_rows=input_meta.num_rows,
+                size_bytes=output_size_bytes,
+                boundaries=None,
             )
         ]
 
@@ -684,10 +762,17 @@ class LocalLimit(SingleOutputInstruction):
         self, input_metadatas: list[EstimatedPartitionMetadata]
     ) -> list[EstimatedPartitionMetadata]:
         [input_meta] = input_metadatas
+
+        new_num_rows = min(self.limit, input_meta.num_rows)
+        selectivity = new_num_rows / input_meta.num_rows
+
+        # Assume a selectivity of 10% of the filter if unable to use the limit to calculate selectivity
+        new_size_bytes = int(selectivity * input_meta.size_bytes)
+
         return [
             EstimatedPartitionMetadata(
-                num_rows=(min(self.limit, input_meta.num_rows) if input_meta.num_rows is not None else None),
-                size_bytes=None,
+                num_rows=new_num_rows,
+                size_bytes=new_size_bytes,
                 boundaries=input_meta.boundaries,
             )
         ]
@@ -712,16 +797,7 @@ class MapPartition(SingleOutputInstruction):
     def estimate_output_metadata(
         self, input_metadatas: list[EstimatedPartitionMetadata]
     ) -> list[EstimatedPartitionMetadata]:
-        # TODO: this was the previous logic
-        # ResourceRequest(memory_bytes=done_task_metadata.size_bytes)
-
-        # Can't derive anything.
-        return [
-            EstimatedPartitionMetadata(
-                num_rows=None,
-                size_bytes=None,
-            )
-        ]
+        return self.map_op.estimate_output_metadata(input_metadatas)
 
 
 @dataclass(frozen=True)
@@ -750,13 +826,25 @@ class Sample(SingleOutputInstruction):
     def estimate_output_metadata(
         self, input_metadatas: list[EstimatedPartitionMetadata]
     ) -> list[EstimatedPartitionMetadata]:
-        # Can't derive anything due to null filter in sample.
-        return [
-            EstimatedPartitionMetadata(
-                num_rows=None,
-                size_bytes=None,
-            )
-        ]
+        assert len(input_metadatas) == 1
+        [input_meta] = input_metadatas
+
+        if self.size is not None:
+            fraction = self.size / input_meta.num_rows
+            return [
+                EstimatedPartitionMetadata(
+                    num_rows=self.size,
+                    size_bytes=int(fraction * input_meta.size_bytes),
+                )
+            ]
+        elif self.fraction is not None:
+            return [
+                EstimatedPartitionMetadata(
+                    num_rows=int(self.fraction * input_meta.num_rows),
+                    size_bytes=int(self.fraction * input_meta.size_bytes),
+                )
+            ]
+        assert False, f"Unrecognized sampling instruction: {self}"
 
 
 @dataclass(frozen=True)
@@ -773,20 +861,20 @@ class MonotonicallyIncreasingId(SingleOutputInstruction):
         self, input_metadatas: list[EstimatedPartitionMetadata]
     ) -> list[EstimatedPartitionMetadata]:
         [input_meta] = input_metadatas
+
+        added_column_size_bytes = input_meta.num_rows * 8  # 8 bytes per uint64
         return [
             EstimatedPartitionMetadata(
                 num_rows=input_meta.num_rows,
-                size_bytes=(
-                    (input_meta.size_bytes + input_meta.num_rows * 8)  # 8 bytes per uint64
-                    if input_meta.size_bytes is not None and input_meta.num_rows is not None
-                    else None
-                ),
+                size_bytes=(input_meta.size_bytes + added_column_size_bytes),
             )
         ]
 
 
 @dataclass(frozen=True)
 class Aggregate(SingleOutputInstruction):
+    GROUPBY_CARDINALITY_REDUCTION_FACTOR: ClassVar[float] = 0.2
+
     to_agg: list[Expression]
     group_by: ExpressionsProjection | None
 
@@ -800,11 +888,24 @@ class Aggregate(SingleOutputInstruction):
     def estimate_output_metadata(
         self, input_metadatas: list[EstimatedPartitionMetadata]
     ) -> list[EstimatedPartitionMetadata]:
-        # Can't derive anything.
+        assert len(input_metadatas) == 1
+        [input_meta] = input_metadatas
+
+        if self.group_by is None:
+            return [
+                EstimatedPartitionMetadata(
+                    num_rows=1,
+                    size_bytes=input_meta.size_bytes // input_meta.num_rows,
+                )
+            ]
+
+        # Assume a reduction of cardinality of about 80% in the groupby
         return [
             EstimatedPartitionMetadata(
-                num_rows=None,
-                size_bytes=None,
+                num_rows=int(input_meta.num_rows * Aggregate.GROUPBY_CARDINALITY_REDUCTION_FACTOR),
+                size_bytes=int(
+                    input_meta.size_bytes * Aggregate.GROUPBY_CARDINALITY_REDUCTION_FACTOR
+                ),  # NOTE: This might be naive and doesn't take into account types
             )
         ]
 
