@@ -16,7 +16,7 @@ use spark_connect::{
 use tonic::Status;
 use uuid::Uuid;
 
-use crate::{convert::to_logical_plan, DaftSparkConnectService, Session};
+use crate::{DaftSparkConnectService, Session};
 
 type DaftStream = <DaftSparkConnectService as SparkConnectService>::ExecutePlanStream;
 

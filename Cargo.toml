@@ -145,6 +145,7 @@ members = [
 ]
 
 [workspace.dependencies]
+daft-schema = {path = "src/daft-schema"}
 anyhow = "1.0.89"
 async-compat = "0.2.3"
 async-compression = {version = "0.4.12", features = [

@@ -118,7 +118,7 @@ impl SparkConnectService for DaftSparkConnectService {
             .ok_or_else(|| Status::invalid_argument("Plan operation is required"))?;
 
         use spark_connect::plan::OpType;
-        println!("plan {:#?}", plan);
+        // println!("plan {:#?}", plan);
 
         let command = match plan {
             OpType::Root(relation) => {
@@ -132,7 +132,7 @@ impl SparkConnectService for DaftSparkConnectService {
             .command_type
             .ok_or_else(|| Status::invalid_argument("Command type is required"))?;
 
-        println!("command {:#?}", command);
+        // println!("command {:#?}", command);
 
         match command {
             CommandType::RegisterFunction(_) => {}
@@ -203,7 +203,7 @@ impl SparkConnectService for DaftSparkConnectService {
         request: Request<AnalyzePlanRequest>,
     ) -> Result<Response<AnalyzePlanResponse>, Status> {
         let request = request.into_inner();
-        println!("AnalyzePlanRequest: {request:#?}");
+        // println!("AnalyzePlanRequest: {request:#?}");
 
         // let session = self.get_session(&request.session_id)?;
 
@@ -213,7 +213,7 @@ impl SparkConnectService for DaftSparkConnectService {
 
         let tree_string = AnalyzePlanResponseResult::TreeString(
             spark_connect::analyze_plan_response::TreeString {
-                tree_string: "🤫 some schema [unimplemented] ✨ ".to_string(),
+                tree_string: "schema [unimplemented]".to_string(),
             },
         );
 
@@ -248,9 +248,9 @@ impl SparkConnectService for DaftSparkConnectService {
         &self,
         request: Request<ReattachExecuteRequest>,
     ) -> Result<Response<Self::ReattachExecuteStream>, Status> {
-        let request = request.into_inner();
+        // let request = request.into_inner();
 
-        println!("reattach_execute request: {request:#?}");
+        // println!("reattach_execute request: {request:#?}");
 
         // let session = self.get_session(&request.session_id)?;
 
@@ -267,7 +267,7 @@ impl SparkConnectService for DaftSparkConnectService {
 
         let session = self.get_session(&request.session_id)?;
 
-        println!("release request: {request:#?}");
+        // println!("release request: {request:#?}");
 
         let response = ReleaseExecuteResponse {
             session_id: session.id.clone(),
