@@ -5,8 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     partitioning::{
-        ClusteringSpec, HashClusteringConfig, RandomClusteringConfig, RangeClusteringConfig,
-        UnknownClusteringConfig,
+        ClusteringSpec, HashClusteringConfig, RangeClusteringConfig, UnknownClusteringConfig,
     },
     physical_ops::*,
 };
@@ -26,16 +25,8 @@ pub enum PhysicalPlan {
     Explode(Explode),
     Unpivot(Unpivot),
     Sort(Sort),
-    Split(Split),
     Sample(Sample),
     MonotonicallyIncreasingId(MonotonicallyIncreasingId),
-    Coalesce(Coalesce),
-    Flatten(Flatten),
-    FanoutRandom(FanoutRandom),
-    FanoutByHash(FanoutByHash),
-    #[allow(dead_code)]
-    FanoutByRange(FanoutByRange),
-    ReduceMerge(ReduceMerge),
     Aggregate(Aggregate),
     Pivot(Pivot),
     Concat(Concat),
@@ -45,6 +36,7 @@ pub enum PhysicalPlan {
     TabularWriteParquet(TabularWriteParquet),
     TabularWriteJson(TabularWriteJson),
     TabularWriteCsv(TabularWriteCsv),
+    ShuffleExchange(ShuffleExchange),
     #[cfg(feature = "python")]
     IcebergWrite(IcebergWrite),
     #[cfg(feature = "python")]
@@ -142,40 +134,7 @@ impl PhysicalPlan {
                 descending.clone(),
             ))
             .into(),
-            Self::Split(Split {
-                output_num_partitions,
-                ..
-            }) => {
-                ClusteringSpec::Unknown(UnknownClusteringConfig::new(*output_num_partitions)).into()
-            }
-            Self::Coalesce(Coalesce { num_to, .. }) => {
-                ClusteringSpec::Unknown(UnknownClusteringConfig::new(*num_to)).into()
-            }
-            Self::Flatten(Flatten { input }) => input.clustering_spec(),
-            Self::FanoutRandom(FanoutRandom { num_partitions, .. }) => {
-                ClusteringSpec::Random(RandomClusteringConfig::new(*num_partitions)).into()
-            }
-            Self::FanoutByHash(FanoutByHash {
-                num_partitions,
-                partition_by,
-                ..
-            }) => ClusteringSpec::Hash(HashClusteringConfig::new(
-                *num_partitions,
-                partition_by.clone(),
-            ))
-            .into(),
-            Self::FanoutByRange(FanoutByRange {
-                num_partitions,
-                sort_by,
-                descending,
-                ..
-            }) => ClusteringSpec::Range(RangeClusteringConfig::new(
-                *num_partitions,
-                sort_by.clone(),
-                descending.clone(),
-            ))
-            .into(),
-            Self::ReduceMerge(ReduceMerge { input }) => input.clustering_spec(),
+            Self::ShuffleExchange(shuffle_exchange) => shuffle_exchange.clustering_spec(),
             Self::Aggregate(Aggregate { input, groupby, .. }) => {
                 let input_clustering_spec = input.clustering_spec();
                 if groupby.is_empty() {
@@ -324,15 +283,9 @@ impl PhysicalPlan {
                 }
             }
             // Propagate child approximation for operations that don't affect cardinality.
-            Self::Coalesce(Coalesce { input, .. })
-            | Self::FanoutByHash(FanoutByHash { input, .. })
-            | Self::FanoutByRange(FanoutByRange { input, .. })
-            | Self::FanoutRandom(FanoutRandom { input, .. })
-            | Self::Flatten(Flatten { input, .. })
-            | Self::ReduceMerge(ReduceMerge { input, .. })
-            | Self::Sort(Sort { input, .. })
-            | Self::Split(Split { input, .. })
-            | Self::Pivot(Pivot { input, .. }) => input.approximate_stats(),
+            Self::Sort(Sort { input, .. })
+            | Self::Pivot(Pivot { input, .. })
+            | Self::ShuffleExchange(ShuffleExchange { input, .. }) => input.approximate_stats(),
             Self::Concat(Concat { input, other }) => {
                 &input.approximate_stats() + &other.approximate_stats()
             }
@@ -423,18 +376,12 @@ impl PhysicalPlan {
             Self::Unpivot(Unpivot { input, .. }) => vec![input],
             Self::Sample(Sample { input, .. }) => vec![input],
             Self::Sort(Sort { input, .. }) => vec![input],
-            Self::Split(Split { input, .. }) => vec![input],
-            Self::Coalesce(Coalesce { input, .. }) => vec![input],
-            Self::Flatten(Flatten { input }) => vec![input],
-            Self::FanoutRandom(FanoutRandom { input, .. }) => vec![input],
-            Self::FanoutByHash(FanoutByHash { input, .. }) => vec![input],
-            Self::FanoutByRange(FanoutByRange { input, .. }) => vec![input],
-            Self::ReduceMerge(ReduceMerge { input }) => vec![input],
             Self::Aggregate(Aggregate { input, .. }) => vec![input],
             Self::Pivot(Pivot { input, .. }) => vec![input],
             Self::TabularWriteParquet(TabularWriteParquet { input, .. }) => vec![input],
             Self::TabularWriteCsv(TabularWriteCsv { input, .. }) => vec![input],
             Self::TabularWriteJson(TabularWriteJson { input, .. }) => vec![input],
+            Self::ShuffleExchange(ShuffleExchange { input, .. }) => vec![input],
             #[cfg(feature = "python")]
             Self::IcebergWrite(IcebergWrite { input, .. }) => vec![input],
             #[cfg(feature = "python")]
@@ -475,13 +422,7 @@ impl PhysicalPlan {
                 Self::Pivot(Pivot { group_by, pivot_column, value_column, names, .. }) => Self::Pivot(Pivot::new(input.clone(), group_by.clone(), pivot_column.clone(), value_column.clone(), names.clone())),
                 Self::Sample(Sample { fraction, with_replacement, seed, .. }) => Self::Sample(Sample::new(input.clone(), *fraction, *with_replacement, *seed)),
                 Self::Sort(Sort { sort_by, descending, num_partitions, .. }) => Self::Sort(Sort::new(input.clone(), sort_by.clone(), descending.clone(), *num_partitions)),
-                Self::Split(Split { input_num_partitions, output_num_partitions, .. }) => Self::Split(Split::new(input.clone(), *input_num_partitions, *output_num_partitions)),
-                Self::Coalesce(Coalesce { num_from, num_to, .. }) => Self::Coalesce(Coalesce::new(input.clone(), *num_from, *num_to)),
-                Self::Flatten(..) => Self::Flatten(Flatten::new(input.clone())),
-                Self::FanoutRandom(FanoutRandom { num_partitions, .. }) => Self::FanoutRandom(FanoutRandom::new(input.clone(), *num_partitions)),
-                Self::FanoutByHash(FanoutByHash { num_partitions, partition_by, .. }) => Self::FanoutByHash(FanoutByHash::new(input.clone(), *num_partitions, partition_by.clone())),
-                Self::FanoutByRange(FanoutByRange { num_partitions, sort_by, descending, .. }) => Self::FanoutByRange(FanoutByRange::new(input.clone(), *num_partitions, sort_by.clone(), descending.clone())),
-                Self::ReduceMerge(..) => Self::ReduceMerge(ReduceMerge::new(input.clone())),
+                Self::ShuffleExchange(ShuffleExchange { strategy, .. }) => Self::ShuffleExchange(ShuffleExchange { input: input.clone(), strategy: strategy.clone() }),
                 Self::Aggregate(Aggregate { aggregations, groupby, ..}) => Self::Aggregate(Aggregate::new(input.clone(), aggregations.clone(), groupby.clone())),
                 Self::TabularWriteParquet(TabularWriteParquet { schema, file_info, .. }) => Self::TabularWriteParquet(TabularWriteParquet::new(schema.clone(), file_info.clone(), input.clone())),
                 Self::TabularWriteCsv(TabularWriteCsv { schema, file_info, .. }) => Self::TabularWriteCsv(TabularWriteCsv::new(schema.clone(), file_info.clone(), input.clone())),
@@ -529,13 +470,7 @@ impl PhysicalPlan {
             Self::Unpivot(..) => "Unpivot",
             Self::Sample(..) => "Sample",
             Self::Sort(..) => "Sort",
-            Self::Split(..) => "Split",
-            Self::Coalesce(..) => "Coalesce",
-            Self::Flatten(..) => "Flatten",
-            Self::FanoutRandom(..) => "FanoutRandom",
-            Self::FanoutByHash(..) => "FanoutByHash",
-            Self::FanoutByRange(..) => "FanoutByRange",
-            Self::ReduceMerge(..) => "ReduceMerge",
+            Self::ShuffleExchange(..) => "ShuffleExchange",
             Self::Aggregate(..) => "Aggregate",
             Self::Pivot(..) => "Pivot",
             Self::HashJoin(..) => "HashJoin",
@@ -569,13 +504,7 @@ impl PhysicalPlan {
             Self::Unpivot(unpivot) => unpivot.multiline_display(),
             Self::Sample(sample) => sample.multiline_display(),
             Self::Sort(sort) => sort.multiline_display(),
-            Self::Split(split) => split.multiline_display(),
-            Self::Coalesce(coalesce) => coalesce.multiline_display(),
-            Self::Flatten(flatten) => flatten.multiline_display(),
-            Self::FanoutRandom(fanout_random) => fanout_random.multiline_display(),
-            Self::FanoutByHash(fanout_by_hash) => fanout_by_hash.multiline_display(),
-            Self::FanoutByRange(fanout_by_range) => fanout_by_range.multiline_display(),
-            Self::ReduceMerge(reduce_merge) => reduce_merge.multiline_display(),
+            Self::ShuffleExchange(shuffle_exchange) => shuffle_exchange.multiline_display(),
             Self::Aggregate(aggregate) => aggregate.multiline_display(),
             Self::Pivot(pivot) => pivot.multiline_display(),
             Self::HashJoin(hash_join) => hash_join.multiline_display(),
