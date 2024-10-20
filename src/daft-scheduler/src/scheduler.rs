@@ -526,22 +526,36 @@ fn physical_plan_to_partition_tasks(
                 ShuffleExchangeStrategy::SplitOrCoalesceToTargetNum {
                     target_num_partitions,
                 } => {
-                    if target_num_partitions >= &input_num_partitions {
-                        let split = py
-                            .import_bound(pyo3::intern!(py, "daft.execution.physical_plan"))?
-                            .getattr(pyo3::intern!(py, "split"))?
-                            .call1((upstream_iter, input_num_partitions, *target_num_partitions))?;
-                        let flattened = py
-                            .import_bound(pyo3::intern!(py, "daft.execution.physical_plan"))?
-                            .getattr(pyo3::intern!(py, "flatten_plan"))?
-                            .call1((split,))?;
-                        Ok(flattened.into())
-                    } else {
-                        let coalesced = py
-                            .import_bound(pyo3::intern!(py, "daft.execution.physical_plan"))?
-                            .getattr(pyo3::intern!(py, "coalesce"))?
-                            .call1((upstream_iter, input_num_partitions, *target_num_partitions))?;
-                        Ok(coalesced.into())
+                    match target_num_partitions.cmp(&input_num_partitions) {
+                        std::cmp::Ordering::Equal => Ok(upstream_iter),
+                        std::cmp::Ordering::Greater => {
+                            // Split if more outputs than inputs
+                            let split = py
+                                .import_bound(pyo3::intern!(py, "daft.execution.physical_plan"))?
+                                .getattr(pyo3::intern!(py, "split"))?
+                                .call1((
+                                    upstream_iter,
+                                    input_num_partitions,
+                                    *target_num_partitions,
+                                ))?;
+                            let flattened = py
+                                .import_bound(pyo3::intern!(py, "daft.execution.physical_plan"))?
+                                .getattr(pyo3::intern!(py, "flatten_plan"))?
+                                .call1((split,))?;
+                            Ok(flattened.into())
+                        }
+                        std::cmp::Ordering::Less => {
+                            // Coalesce if fewer outputs than inputs
+                            let coalesced = py
+                                .import_bound(pyo3::intern!(py, "daft.execution.physical_plan"))?
+                                .getattr(pyo3::intern!(py, "coalesce"))?
+                                .call1((
+                                    upstream_iter,
+                                    input_num_partitions,
+                                    *target_num_partitions,
+                                ))?;
+                            Ok(coalesced.into())
+                        }
                     }
                 }
             }
