@@ -517,14 +517,10 @@ fn physical_plan_to_partition_tasks(
                             unreachable!("Cannot use NaiveFullyMaterializingMapReduce ShuffleExchange to map to an Unknown ClusteringSpec");
                         }
                     };
-                    let flattened = py
-                        .import_bound(pyo3::intern!(py, "daft.execution.physical_plan"))?
-                        .getattr(pyo3::intern!(py, "flatten_plan"))?
-                        .call1((mapped,))?;
                     let reduced = py
                         .import_bound(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                         .getattr(pyo3::intern!(py, "reduce_merge"))?
-                        .call1((flattened,))?;
+                        .call1((mapped,))?;
                     Ok(reduced.into())
                 }
                 ShuffleExchangeStrategy::SplitOrCoalesceToTargetNum {
