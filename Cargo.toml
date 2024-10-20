@@ -7,6 +7,9 @@ common-resource-request = {path = "src/common/resource-request", default-feature
 common-system-info = {path = "src/common/system-info", default-features = false}
 common-tracing = {path = "src/common/tracing", default-features = false}
 common-version = {path = "src/common/version", default-features = false}
+daft-catalog = {path = "src/daft-catalog", default-features = false}
+daft-catalog-aws-glue = {path = "src/daft-catalog/aws-glue"}
+daft-catalog-pyiceberg = {path = "src/daft-catalog/pyiceberg", optional = true}
 daft-compression = {path = "src/daft-compression", default-features = false}
 daft-core = {path = "src/daft-core", default-features = false}
 daft-csv = {path = "src/daft-csv", default-features = false}
@@ -41,6 +44,9 @@ python = [
   "daft-core/python",
   "daft-csv/python",
   "daft-dsl/python",
+  "daft-catalog/python",
+  "daft-catalog-aws-glue/python",
+  "daft-catalog-pyiceberg",
   "daft-local-execution/python",
   "daft-io/python",
   "daft-image/python",
@@ -113,6 +119,9 @@ tikv-jemallocator = {version = "0.5.4", features = [
 members = [
   "src/arrow2",
   "src/parquet2",
+  "src/daft-catalog",
+  "src/daft-catalog/aws-glue",
+  "src/daft-catalog/pyiceberg",
   "src/common/display",
   "src/common/error",
   "src/common/io-config",
