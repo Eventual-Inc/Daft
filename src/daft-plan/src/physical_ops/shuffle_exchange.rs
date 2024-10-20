@@ -51,14 +51,26 @@ impl ShuffleExchange {
             ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce { target_spec } => {
                 res.push("  Strategy: NaiveFullyMaterializingMapReduce".to_string());
                 res.push(format!("  Target Spec: {:?}", target_spec));
+                res.push(format!(
+                    "  Number of Partitions: {} → {}",
+                    self.input.clustering_spec().num_partitions(),
+                    target_spec.num_partitions(),
+                ));
             }
             ShuffleExchangeStrategy::SplitOrCoalesceToTargetNum {
                 target_num_partitions,
             } => {
+                let input_num_partitions = self.input.clustering_spec().num_partitions();
                 res.push("  Strategy: SplitOrCoalesceToTargetNum".to_string());
                 res.push(format!(
-                    "  Target Num Partitions: {:?}",
-                    target_num_partitions
+                    "  {} Partitions: {} → {}",
+                    if input_num_partitions >= *target_num_partitions {
+                        "Coalescing"
+                    } else {
+                        "Splitting"
+                    },
+                    input_num_partitions,
+                    target_num_partitions,
                 ));
             }
         }
