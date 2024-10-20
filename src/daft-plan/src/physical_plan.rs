@@ -1,4 +1,4 @@
-use std::{cmp::max, ops::Add, sync::Arc};
+use std::{cmp::max, collections::HashSet, ops::Add, sync::Arc};
 
 use common_display::ascii::AsciiTreeDisplay;
 use serde::{Deserialize, Serialize};
@@ -135,12 +135,31 @@ impl PhysicalPlan {
             ))
             .into(),
             Self::ShuffleExchange(shuffle_exchange) => shuffle_exchange.clustering_spec(),
-            Self::Aggregate(Aggregate { input, groupby, .. }) => {
-                let input_clustering_spec = input.clustering_spec();
-                if groupby.is_empty() {
-                    ClusteringSpec::Unknown(Default::default()).into()
+            Self::Aggregate(Aggregate {
+                input,
+                aggregations,
+                ..
+            }) => {
+                // PhysicalPlan aggregates are local aggregations
+                //
+                // If the local aggregation modifies the partition columns (unlikely), the clustering spec is invalidated
+                //
+                // If the groupby keys are the partition columns (very likely, since we often partition by hash on the groupby keys), the
+                // clustering spec is still valid
+                let input_partition_by = input.clustering_spec().partition_by();
+                let input_partition_col_names: HashSet<&str> =
+                    input_partition_by.iter().map(|e| e.name()).collect();
+                if aggregations
+                    .iter()
+                    .map(|e| e.name())
+                    .any(|name| input_partition_col_names.contains(name))
+                {
+                    ClusteringSpec::Unknown(UnknownClusteringConfig::new(
+                        input.clustering_spec().num_partitions(),
+                    ))
+                    .into()
                 } else {
-                    input_clustering_spec
+                    input.clustering_spec()
                 }
             }
             Self::Pivot(Pivot { input, .. }) => input.clustering_spec(),
