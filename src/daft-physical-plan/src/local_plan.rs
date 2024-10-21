@@ -29,7 +29,7 @@ pub enum LocalPhysicalPlan {
     // ReduceMerge(ReduceMerge),
     UnGroupedAggregate(UnGroupedAggregate),
     HashAggregate(HashAggregate),
-    // Pivot(Pivot),
+    Pivot(Pivot),
     Concat(Concat),
     HashJoin(HashJoin),
     // SortMergeJoin(SortMergeJoin),
@@ -151,6 +151,26 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    pub(crate) fn pivot(
+        input: LocalPhysicalPlanRef,
+        group_by: Vec<ExprRef>,
+        pivot_column: ExprRef,
+        value_column: ExprRef,
+        names: Vec<String>,
+        schema: SchemaRef,
+    ) -> LocalPhysicalPlanRef {
+        Self::Pivot(Pivot {
+            input,
+            group_by,
+            pivot_column,
+            value_column,
+            names,
+            schema,
+            plan_stats: PlanStats {},
+        })
+        .arced()
+    }
+
     pub(crate) fn sort(
         input: LocalPhysicalPlanRef,
         sort_by: Vec<ExprRef>,
@@ -228,6 +248,7 @@ impl LocalPhysicalPlan {
             | Self::Project(Project { schema, .. })
             | Self::UnGroupedAggregate(UnGroupedAggregate { schema, .. })
             | Self::HashAggregate(HashAggregate { schema, .. })
+            | Self::Pivot(Pivot { schema, .. })
             | Self::Sort(Sort { schema, .. })
             | Self::Sample(Sample { schema, .. })
             | Self::HashJoin(HashJoin { schema, .. })
@@ -313,6 +334,17 @@ pub struct HashAggregate {
     pub input: LocalPhysicalPlanRef,
     pub aggregations: Vec<AggExpr>,
     pub group_by: Vec<ExprRef>,
+    pub schema: SchemaRef,
+    pub plan_stats: PlanStats,
+}
+
+#[derive(Debug)]
+pub struct Pivot {
+    pub input: LocalPhysicalPlanRef,
+    pub group_by: Vec<ExprRef>,
+    pub pivot_column: ExprRef,
+    pub value_column: ExprRef,
+    pub names: Vec<String>,
     pub schema: SchemaRef,
     pub plan_stats: PlanStats,
 }

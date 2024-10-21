@@ -10,8 +10,8 @@ use daft_core::{
 use daft_dsl::{col, join::get_common_join_keys, Expr};
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{
-    EmptyScan, Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, Project,
-    Sample, Sort, UnGroupedAggregate,
+    EmptyScan, Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, Pivot,
+    Project, Sample, Sort, UnGroupedAggregate,
 };
 use daft_plan::{populate_aggregation_stages, JoinType};
 use daft_table::{Probeable, Table};
@@ -23,7 +23,8 @@ use crate::{
     intermediate_ops::{
         aggregate::AggregateOperator, anti_semi_hash_join_probe::AntiSemiProbeOperator,
         filter::FilterOperator, hash_join_probe::HashJoinProbeOperator,
-        intermediate_op::IntermediateNode, project::ProjectOperator, sample::SampleOperator,
+        intermediate_op::IntermediateNode, pivot::PivotOperator, project::ProjectOperator,
+        sample::SampleOperator,
     },
     sinks::{
         aggregate::AggregateSink, blocking_sink::BlockingSinkNode,
@@ -233,6 +234,23 @@ pub fn physical_plan_to_pipeline(
             let final_stage_project = ProjectOperator::new(final_exprs);
 
             IntermediateNode::new(Arc::new(final_stage_project), vec![second_stage_node]).boxed()
+        }
+        LocalPhysicalPlan::Pivot(Pivot {
+            input,
+            group_by,
+            pivot_column,
+            value_column,
+            names,
+            ..
+        }) => {
+            let pivot_op = PivotOperator::new(
+                group_by.clone(),
+                pivot_column.clone(),
+                value_column.clone(),
+                names.clone(),
+            );
+            let child_node = physical_plan_to_pipeline(input, psets)?;
+            IntermediateNode::new(Arc::new(pivot_op), vec![child_node]).boxed()
         }
         LocalPhysicalPlan::Sort(Sort {
             input,
