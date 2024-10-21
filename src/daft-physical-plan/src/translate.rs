@@ -44,6 +44,15 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 project.projected_schema.clone(),
             ))
         }
+        LogicalPlan::Sample(sample) => {
+            let input = translate(&sample.input)?;
+            Ok(LocalPhysicalPlan::sample(
+                input,
+                sample.fraction,
+                sample.with_replacement,
+                sample.seed,
+            ))
+        }
         LogicalPlan::Aggregate(aggregate) => {
             let input = translate(&aggregate.input)?;
             if aggregate.groupby.is_empty() {
