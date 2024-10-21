@@ -4,11 +4,6 @@ import pytest
 
 from daft import context
 
-pytestmark = pytest.mark.skipif(
-    context.get_context().daft_execution_config.enable_native_executor is True,
-    reason="Native executor fails for these tests",
-)
-
 
 def test_sample_fraction(make_df, valid_data: list[dict[str, float]]) -> None:
     df = make_df(valid_data)
@@ -105,6 +100,10 @@ def test_sample_without_replacement(make_df, valid_data: list[dict[str, float]])
         assert pylist[0] != pylist[1]
 
 
+@pytest.mark.skipif(
+    context.get_context().daft_execution_config.enable_native_executor is True,
+    reason="Native executor fails for concat",
+)
 def test_sample_with_concat(make_df, valid_data: list[dict[str, float]]) -> None:
     df1 = make_df(valid_data)
     df2 = make_df(valid_data)

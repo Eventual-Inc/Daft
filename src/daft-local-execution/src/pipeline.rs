@@ -11,7 +11,7 @@ use daft_dsl::{col, join::get_common_join_keys, Expr};
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{
     EmptyScan, Explode, Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan,
-    Project, Sort, UnGroupedAggregate,
+    Project, Sample, Sort, UnGroupedAggregate,
 };
 use daft_plan::{populate_aggregation_stages, JoinType};
 use daft_table::{Probeable, Table};
@@ -23,7 +23,7 @@ use crate::{
     intermediate_ops::{
         aggregate::AggregateOperator, anti_semi_hash_join_probe::AntiSemiProbeOperator,
         explode::ExplodeOperator, filter::FilterOperator, hash_join_probe::HashJoinProbeOperator,
-        intermediate_op::IntermediateNode, project::ProjectOperator,
+        intermediate_op::IntermediateNode, project::ProjectOperator, sample::SampleOperator,
     },
     sinks::{
         aggregate::AggregateSink, blocking_sink::BlockingSinkNode,
@@ -124,6 +124,17 @@ pub fn physical_plan_to_pipeline(
             let proj_op = ProjectOperator::new(projection.clone());
             let child_node = physical_plan_to_pipeline(input, psets)?;
             IntermediateNode::new(Arc::new(proj_op), vec![child_node]).boxed()
+        }
+        LocalPhysicalPlan::Sample(Sample {
+            input,
+            fraction,
+            with_replacement,
+            seed,
+            ..
+        }) => {
+            let sample_op = SampleOperator::new(*fraction, *with_replacement, *seed);
+            let child_node = physical_plan_to_pipeline(input, psets)?;
+            IntermediateNode::new(Arc::new(sample_op), vec![child_node]).boxed()
         }
         LocalPhysicalPlan::Filter(Filter {
             input, predicate, ..
@@ -240,6 +251,7 @@ pub fn physical_plan_to_pipeline(
             let child_node = physical_plan_to_pipeline(input, psets)?;
             BlockingSinkNode::new(sort_sink.boxed(), child_node).boxed()
         }
+
         LocalPhysicalPlan::HashJoin(HashJoin {
             left,
             right,

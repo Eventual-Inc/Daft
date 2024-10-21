@@ -4,7 +4,7 @@ mod translate;
 
 pub use local_plan::{
     Concat, EmptyScan, Explode, Filter, HashAggregate, HashJoin, InMemoryScan, Limit,
-    LocalPhysicalPlan, LocalPhysicalPlanRef, PhysicalScan, PhysicalWrite, Project, Sort,
+    LocalPhysicalPlan, LocalPhysicalPlanRef, PhysicalScan, PhysicalWrite, Project, Sample, Sort,
     UnGroupedAggregate,
 };
 pub use translate::translate;
