@@ -250,10 +250,6 @@ def actor_pool_project(
     actor_pool_name = f"{stateful_udf_names}-stage={stage_id}"
 
     # Keep track of materializations of the children tasks
-    #
-    # Our goal here is to saturate the actors, and so we need a sufficient number of completed child tasks to do so. However
-    # we do not want too many child tasks to be running (potentially starving our actors) and hence place an upper bound of `num_actors * 2`
-    child_materializations_buffer_len = num_actors * 2
     child_materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
 
     # Keep track of materializations of the actor_pool tasks
@@ -313,8 +309,8 @@ def actor_pool_project(
                 if len(child_materializations) > 0 or len(actor_pool_materializations) > 0:
                     yield None
 
-            # If there is capacity in the pipeline, attempt to schedule child work
-            elif len(child_materializations) < child_materializations_buffer_len:
+            # Attempt to schedule child work
+            else:
                 try:
                     child_step = next(child_plan)
                 except StopIteration:
@@ -325,10 +321,6 @@ def actor_pool_project(
                         child_step = child_step.finalize_partition_task_single_output(stage_id=stage_id)
                         child_materializations.append(child_step)
                     yield child_step
-
-            # Otherwise, indicate that we need to wait for work to complete
-            else:
-                yield None
 
 
 def monotonically_increasing_id(
