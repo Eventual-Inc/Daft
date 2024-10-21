@@ -11,9 +11,9 @@ use daft_functions::numeric::{ceil::ceil, floor::floor};
 use daft_plan::{LogicalPlanBuilder, LogicalPlanRef};
 use sqlparser::{
     ast::{
-        ArrayElemTypeDef, BinaryOperator, CastKind, ExactNumberInfo, GroupByExpr, Ident, Query,
-        SelectItem, Statement, StructField, Subscript, TableAlias, TableWithJoins, TimezoneInfo,
-        UnaryOperator, Value, WildcardAdditionalOptions,
+        ArrayElemTypeDef, BinaryOperator, CastKind, ExactNumberInfo, ExcludeSelectItem,
+        GroupByExpr, Ident, Query, SelectItem, Statement, StructField, Subscript, TableAlias,
+        TableWithJoins, TimezoneInfo, UnaryOperator, Value, WildcardAdditionalOptions,
     },
     dialect::GenericDialect,
     parser::{Parser, ParserOptions},
@@ -357,6 +357,8 @@ impl SQLPlanner {
             let right_rel = self.plan_relation(&join.relation)?;
             self.table_map
                 .insert(right_rel.get_name(), right_rel.clone());
+            let right_rel_name = right_rel.get_name();
+            let right_join_prefix = Some(format!("{right_rel_name}."));
 
             match &join.join_operator {
                 Inner(JoinConstraint::On(expr)) => {
@@ -368,6 +370,8 @@ impl SQLPlanner {
                         right_on,
                         JoinType::Inner,
                         None,
+                        None,
+                        right_join_prefix.as_deref(),
                     )?;
                 }
                 Inner(JoinConstraint::Using(idents)) => {
@@ -382,6 +386,8 @@ impl SQLPlanner {
                         on,
                         JoinType::Inner,
                         None,
+                        None,
+                        right_join_prefix.as_deref(),
                     )?;
                 }
                 LeftOuter(JoinConstraint::On(expr)) => {
@@ -393,6 +399,8 @@ impl SQLPlanner {
                         right_on,
                         JoinType::Left,
                         None,
+                        None,
+                        right_join_prefix.as_deref(),
                     )?;
                 }
                 RightOuter(JoinConstraint::On(expr)) => {
@@ -404,6 +412,8 @@ impl SQLPlanner {
                         right_on,
                         JoinType::Right,
                         None,
+                        None,
+                        right_join_prefix.as_deref(),
                     )?;
                 }
 
@@ -416,6 +426,8 @@ impl SQLPlanner {
                         right_on,
                         JoinType::Outer,
                         None,
+                        None,
+                        right_join_prefix.as_deref(),
                     )?;
                 }
                 CrossJoin => unsupported_sql_err!("CROSS JOIN"),
@@ -458,7 +470,7 @@ impl SQLPlanner {
                 let plan_builder = LogicalPlanBuilder::new(plan, None);
                 (Relation::new(plan_builder, table_name), alias.clone())
             }
-            _ => todo!(),
+            _ => unsupported_sql_err!("Unsupported table factor"),
         };
         if let Some(alias) = alias {
             Ok(rel.with_alias(alias))
@@ -468,6 +480,7 @@ impl SQLPlanner {
     }
 
     fn plan_compound_identifier(&self, idents: &[Ident]) -> SQLPlannerResult<Vec<ExprRef>> {
+        let ident_str = idents_to_str(idents);
         let mut idents = idents.iter();
 
         let root = idents.next().unwrap();
@@ -480,15 +493,38 @@ impl SQLPlanner {
                 })
             }
         };
+
         if root == current_relation.get_name() {
-            let column = idents.next().unwrap();
-            let column_name = ident_to_str(column);
-            let current_schema = current_relation.inner.schema();
-            let f = current_schema.get_field(&column_name).ok();
+            // This happens when it's called from a qualified wildcard (tbl.*)
+            if idents.len() == 0 {
+                return Ok(current_relation
+                    .inner
+                    .schema()
+                    .fields
+                    .keys()
+                    .map(|f| col(f.clone()))
+                    .collect());
+            }
+
+            // If duplicate columns are present in the schema, it adds the table name as a prefix. (df.column_name)
+            // So we first check if the prefixed column name is present in the schema.
+            let current_schema = self.relation_opt().unwrap().inner.schema();
+            let f = current_schema.get_field(&ident_str).ok();
             if let Some(field) = f {
                 Ok(vec![col(field.name.clone())])
+            // If it's not, we also need to check if the column name is present in the current schema.
+            // This is to handle aliased tables. (df1 as a join df2 as b where b.column_name)
+            } else if let Some(next_ident) = idents.next() {
+                let column_name = ident_to_str(next_ident);
+
+                let f = current_schema.get_field(&column_name).ok();
+                if let Some(field) = f {
+                    Ok(vec![col(field.name.clone())])
+                } else {
+                    column_not_found_err!(&column_name, &current_relation.get_name());
+                }
             } else {
-                column_not_found_err!(&column_name, &current_relation.get_name());
+                column_not_found_err!(&ident_str, &current_relation.get_name());
             }
         } else {
             table_not_found_err!(root);
@@ -496,6 +532,23 @@ impl SQLPlanner {
     }
 
     fn select_item_to_expr(&self, item: &SelectItem) -> SQLPlannerResult<Vec<ExprRef>> {
+        fn wildcard_exclude(
+            schema: SchemaRef,
+            exclusion: &ExcludeSelectItem,
+        ) -> DaftResult<Schema> {
+            match exclusion {
+                ExcludeSelectItem::Single(column) => schema.exclude(&[&column.to_string()]),
+                ExcludeSelectItem::Multiple(columns) => {
+                    let items = columns
+                        .iter()
+                        .map(std::string::ToString::to_string)
+                        .collect::<Vec<String>>();
+
+                    schema.exclude(items.as_slice())
+                }
+            }
+        }
+
         match item {
             SelectItem::ExprWithAlias { expr, alias } => {
                 let expr = self.plan_expr(expr)?;
@@ -503,27 +556,11 @@ impl SQLPlanner {
                 Ok(vec![expr.alias(alias)])
             }
             SelectItem::UnnamedExpr(expr) => self.plan_expr(expr).map(|e| vec![e]),
-            SelectItem::Wildcard(WildcardAdditionalOptions {
-                opt_ilike,
-                opt_exclude,
-                opt_except,
-                opt_replace,
-                opt_rename,
-            }) => {
-                if opt_ilike.is_some() {
-                    unsupported_sql_err!("ILIKE");
-                }
-                if opt_except.is_some() {
-                    unsupported_sql_err!("EXCEPT");
-                }
-                if opt_replace.is_some() {
-                    unsupported_sql_err!("REPLACE");
-                }
-                if opt_rename.is_some() {
-                    unsupported_sql_err!("RENAME");
-                }
 
-                if let Some(exclude) = opt_exclude {
+            SelectItem::Wildcard(wildcard_opts) => {
+                check_wildcard_options(wildcard_opts)?;
+
+                if let Some(exclude) = &wildcard_opts.opt_exclude {
                     let current_relation = match &self.current_relation {
                         Some(rel) => rel,
                         None => {
@@ -532,36 +569,54 @@ impl SQLPlanner {
                             })
                         }
                     };
-
-                    use sqlparser::ast::ExcludeSelectItem::{Multiple, Single};
-                    match exclude {
-                        Single(item) => current_relation
-                            .inner
-                            .schema()
-                            .exclude(&[&item.to_string()]),
-
-                        Multiple(items) => {
-                            let items = items
+                    let schema = current_relation.inner.schema();
+                    wildcard_exclude(schema, exclude)
+                        .map(|schema| {
+                            schema
+                                .names()
                                 .iter()
-                                .map(std::string::ToString::to_string)
-                                .collect::<Vec<String>>();
-
-                            current_relation.inner.schema().exclude(items.as_slice())
-                        }
-                    }
-                    .map(|schema| {
-                        schema
-                            .names()
-                            .iter()
-                            .map(|n| col(n.as_ref()))
-                            .collect::<Vec<_>>()
-                    })
-                    .map_err(std::convert::Into::into)
+                                .map(|n| col(n.as_ref()))
+                                .collect::<Vec<_>>()
+                        })
+                        .map_err(std::convert::Into::into)
                 } else {
                     Ok(vec![col("*")])
                 }
             }
-            _ => todo!(),
+            SelectItem::QualifiedWildcard(object_name, wildcard_opts) => {
+                check_wildcard_options(wildcard_opts)?;
+                let table_name = idents_to_str(&object_name.0);
+                let Some(rel) = self.relation_opt() else {
+                    table_not_found_err!(table_name);
+                };
+                let Some(table_rel) = self.table_map.get(&table_name) else {
+                    table_not_found_err!(table_name);
+                };
+                let right_schema = table_rel.inner.schema();
+                let schema = rel.inner.schema();
+                let keys = schema.fields.keys();
+
+                let right_schema = if let Some(exclude) = &wildcard_opts.opt_exclude {
+                    Arc::new(wildcard_exclude(right_schema, exclude)?)
+                } else {
+                    right_schema
+                };
+                let columns = right_schema
+                    .fields
+                    .keys()
+                    .map(|field| {
+                        if keys
+                            .clone()
+                            .any(|s| s.starts_with(&table_name) && s.ends_with(field))
+                        {
+                            col(format!("{}.{}", table_name, field)).alias(field.as_ref())
+                        } else {
+                            col(field.clone())
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                Ok(columns)
+            }
         }
     }
 
@@ -1166,6 +1221,31 @@ fn check_select_features(selection: &sqlparser::ast::Select) -> SQLPlannerResult
     }
     Ok(())
 }
+
+fn check_wildcard_options(
+    WildcardAdditionalOptions {
+        opt_ilike,
+        opt_except,
+        opt_replace,
+        opt_rename,
+        opt_exclude: _,
+    }: &WildcardAdditionalOptions,
+) -> SQLPlannerResult<()> {
+    if opt_ilike.is_some() {
+        unsupported_sql_err!("ILIKE");
+    }
+    if opt_except.is_some() {
+        unsupported_sql_err!("EXCEPT");
+    }
+    if opt_replace.is_some() {
+        unsupported_sql_err!("REPLACE");
+    }
+    if opt_rename.is_some() {
+        unsupported_sql_err!("RENAME");
+    }
+
+    Ok(())
+}
 pub fn sql_expr<S: AsRef<str>>(s: S) -> SQLPlannerResult<ExprRef> {
     let planner = SQLPlanner::default();
 
@@ -1192,4 +1272,11 @@ fn ident_to_str(ident: &Ident) -> String {
     } else {
         ident.to_string()
     }
+}
+fn idents_to_str(idents: &[Ident]) -> String {
+    idents
+        .iter()
+        .map(ident_to_str)
+        .collect::<Vec<_>>()
+        .join(".")
 }
