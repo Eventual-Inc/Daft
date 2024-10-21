@@ -76,7 +76,7 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
         },
         [FunctionArg::Unnamed(FunctionArgExpr::QualifiedWildcard(name))] => {
             match planner.relation_opt() {
-                Some(rel) if name.to_string() == rel.name => {
+                Some(rel) if name.to_string() == rel.get_name() => {
                     let schema = rel.schema();
                     col(schema.fields[0].name.clone())
                         .count(daft_core::count_mode::CountMode::All)
