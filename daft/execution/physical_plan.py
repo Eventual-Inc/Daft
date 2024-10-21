@@ -14,9 +14,11 @@ because it is waiting for the result of a previous PartitionTask to can decide w
 from __future__ import annotations
 
 import collections
+import contextlib
 import itertools
 import logging
 import math
+from abc import abstractmethod
 from collections import deque
 from typing import (
     TYPE_CHECKING,
@@ -205,9 +207,36 @@ def pipeline_instruction(
     )
 
 
+class ActorPoolManager:
+    @abstractmethod
+    @contextlib.contextmanager
+    def actor_pool_context(
+        self,
+        name: str,
+        actor_resource_request: ResourceRequest,
+        task_resource_request: ResourceRequest,
+        num_actors: int,
+        projection: ExpressionsProjection,
+    ) -> Iterator[str]:
+        """Creates a pool of actors which can execute work, and yield a context in which the pool can be used.
+
+        Also yields a `str` ID which clients can use to refer to the actor pool when submitting tasks.
+
+        Note that attempting to do work outside this context will result in errors!
+
+        Args:
+            name: Name of the actor pool for debugging/observability
+            resource_request: Requested amount of resources for each actor
+            num_actors: Number of actors to spin up
+            projection: Projection to be run on the incoming data (contains Stateful UDFs as well as other stateless expressions such as aliases)
+        """
+        ...
+
+
 def actor_pool_project(
     child_plan: InProgressPhysicalPlan[PartitionT],
     projection: ExpressionsProjection,
+    actor_pool_manager: ActorPoolManager,
     resource_request: execution_step.ResourceRequest,
     num_actors: int,
 ) -> InProgressPhysicalPlan[PartitionT]:
@@ -238,7 +267,7 @@ def actor_pool_project(
         num_gpus=resource_request.num_gpus, memory_bytes=resource_request.memory_bytes
     )
 
-    with get_context().runner().actor_pool_context(
+    with actor_pool_manager.actor_pool_context(
         actor_pool_name,
         actor_resource_request,
         task_resource_request,
