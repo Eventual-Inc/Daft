@@ -214,3 +214,10 @@ def test_sql_tbl_alias():
     catalog = SQLCatalog({"df": daft.from_pydict({"n": [1, 2, 3]})})
     df = daft.sql("SELECT df_alias.n FROM df AS df_alias where df_alias.n = 2", catalog)
     assert df.collect().to_pydict() == {"n": [2]}
+
+
+def test_sql_distinct():
+    df = daft.from_pydict({"n": [1, 1, 2, 2]})
+    actual = daft.sql("SELECT DISTINCT n FROM df").collect().to_pydict()
+    expected = df.distinct().collect().to_pydict()
+    assert actual == expected

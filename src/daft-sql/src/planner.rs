@@ -11,7 +11,7 @@ use daft_functions::numeric::{ceil::ceil, floor::floor};
 use daft_plan::{LogicalPlanBuilder, LogicalPlanRef};
 use sqlparser::{
     ast::{
-        ArrayElemTypeDef, BinaryOperator, CastKind, ExactNumberInfo, ExcludeSelectItem,
+        ArrayElemTypeDef, BinaryOperator, CastKind, Distinct, ExactNumberInfo, ExcludeSelectItem,
         GroupByExpr, Ident, Query, SelectItem, Statement, StructField, Subscript, TableAlias,
         TableWithJoins, TimezoneInfo, UnaryOperator, Value, WildcardAdditionalOptions,
     },
@@ -200,6 +200,15 @@ impl SQLPlanner {
             } else {
                 rel.inner = rel.inner.select(to_select)?;
             }
+        }
+
+        match &selection.distinct {
+            Some(Distinct::Distinct) => {
+                let rel = self.relation_mut();
+                rel.inner = rel.inner.distinct()?;
+            }
+            Some(Distinct::On(_)) => unsupported_sql_err!("DISTINCT ON"),
+            None => {}
         }
 
         if let Some(order_by) = &query.order_by {
@@ -1186,9 +1195,7 @@ fn check_select_features(selection: &sqlparser::ast::Select) -> SQLPlannerResult
     if selection.top.is_some() {
         unsupported_sql_err!("TOP");
     }
-    if selection.distinct.is_some() {
-        unsupported_sql_err!("DISTINCT");
-    }
+
     if selection.into.is_some() {
         unsupported_sql_err!("INTO");
     }
