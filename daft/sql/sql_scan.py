@@ -166,9 +166,10 @@ class SQLScanOperator(ScanOperator):
             percentile_sql = self.conn.construct_sql_query(
                 self.sql,
                 projection=[
-                    f"percentile_disc({percentile}) WITHIN GROUP (ORDER BY {self._partition_col}) AS bound_{i}"
+                    f"percentile_disc({percentile}) WITHIN GROUP (ORDER BY {self._partition_col}) {"OVER ()" if self.conn.dialect in ["mssql", "tsql"] else ""} AS bound_{i}"
                     for i, percentile in enumerate(percentiles)
                 ],
+                limit=1,
             )
             pa_table = self.conn.execute_sql_query(percentile_sql)
             return pa_table, PartitionBoundStrategy.PERCENTILE
