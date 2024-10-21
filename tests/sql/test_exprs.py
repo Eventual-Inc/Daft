@@ -92,3 +92,15 @@ def test_between():
 
     expected = df.filter(col("integers").between(1, 4)).collect().to_pydict()
     assert actual == expected
+
+
+def test_is_in():
+    df = daft.from_pydict({"idx": [1, 2, 3], "val": ["foo", "bar", "baz"]})
+    expected = df.filter(col("val").is_in(["bar", "foo"])).collect().to_pydict()
+    actual = daft.sql("select * from df where val in ('bar','foo')").collect().to_pydict()
+    assert actual == expected
+
+    # test negated too
+    expected = df.filter(~col("val").is_in(["bar", "foo"])).collect().to_pydict()
+    actual = daft.sql("select * from df where val not in ('bar','foo')").collect().to_pydict()
+    assert actual == expected
