@@ -1660,8 +1660,8 @@ class DataFrame:
     def into_partitions(self, num: int) -> "DataFrame":
         """Splits or coalesces DataFrame to ``num`` partitions. Order is preserved.
 
-        No rebalancing is done; the minimum number of splits or merges are applied.
-        (i.e. if there are 2 partitions, and change it into 3, this function will just split the bigger one)
+        This will naively greedily split partitions in a round-robin fashion to hit the targeted number of partitions.
+        The number of rows/size in a given partition is not taken into account during the splitting.
 
         Example:
             >>> import daft
