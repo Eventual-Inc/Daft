@@ -12,11 +12,11 @@ use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormatConfig;
 use daft_dsl::ExprRef;
 use daft_schema::{
-    dtype::DataType,
     field::Field,
     schema::{Schema, SchemaRef},
 };
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
+use indexmap::IndexMap;
 use itertools::Itertools;
 use parquet2::metadata::FileMetaData;
 use serde::{Deserialize, Serialize};
@@ -24,6 +24,7 @@ use serde::{Deserialize, Serialize};
 mod anonymous;
 pub use anonymous::AnonymousScanOperator;
 pub mod glob;
+mod hive;
 use common_daft_config::DaftExecutionConfig;
 pub mod scan_task_iters;
 
@@ -378,6 +379,7 @@ pub struct ScanTask {
     pub metadata: Option<TableMetadata>,
     pub statistics: Option<TableStatistics>,
     pub file_path_column: Option<String>,
+    pub generated_fields: IndexMap<String, Field>,
 }
 pub type ScanTaskRef = Arc<ScanTask>;
 
@@ -390,6 +392,7 @@ impl ScanTask {
         storage_config: Arc<StorageConfig>,
         pushdowns: Pushdowns,
         file_path_column: Option<String>,
+        generated_fields: IndexMap<String, Field>,
     ) -> Self {
         assert!(!sources.is_empty());
         debug_assert!(
@@ -431,6 +434,7 @@ impl ScanTask {
             metadata,
             statistics,
             file_path_column,
+            generated_fields,
         }
     }
 
@@ -482,46 +486,30 @@ impl ScanTask {
             sc1.storage_config.clone(),
             sc1.pushdowns.clone(),
             sc1.file_path_column.clone(),
+            sc1.generated_fields.clone(),
         ))
     }
 
     #[must_use]
     pub fn materialized_schema(&self) -> SchemaRef {
-        match (&self.pushdowns.columns, &self.file_path_column) {
-            (None, None) => self.schema.clone(),
-            (Some(columns), file_path_column_opt) => {
-                let filtered_fields = self
-                    .schema
-                    .fields
-                    .clone()
-                    .into_iter()
-                    .filter(|(name, _)| columns.contains(name));
-
-                let fields = match file_path_column_opt {
-                    Some(file_path_column) => filtered_fields
-                        .chain(std::iter::once((
-                            file_path_column.to_string(),
-                            Field::new(file_path_column.to_string(), DataType::Utf8),
-                        )))
-                        .collect(),
-                    None => filtered_fields.collect(),
-                };
-
-                Arc::new(Schema { fields })
-            }
-            (None, Some(file_path_column)) => Arc::new(Schema {
-                fields: self
-                    .schema
-                    .fields
-                    .clone()
-                    .into_iter()
-                    .chain(std::iter::once((
-                        file_path_column.to_string(),
-                        Field::new(file_path_column.to_string(), DataType::Utf8),
-                    )))
-                    .collect(),
-            }),
+        let mut fields = self.schema.fields.clone();
+        // Extend the schema with generated fields.
+        if !self.generated_fields.is_empty() {
+            fields.extend(
+                self.generated_fields
+                    .iter()
+                    .map(|(name, field)| (name.clone(), field.clone())),
+            );
         }
+        // Filter the schema based on the pushdown column filters.
+        fields = match &self.pushdowns.columns {
+            None => fields,
+            Some(columns) => fields
+                .into_iter()
+                .filter(|(name, _)| columns.contains(name))
+                .collect(),
+        };
+        Arc::new(Schema { fields })
     }
 
     /// Obtain an accurate, exact num_rows from the ScanTask, or `None` if this is not possible
@@ -755,6 +743,14 @@ impl PartitionField {
             }),
         }
     }
+
+    pub fn clone_field(&self) -> Field {
+        self.field.clone()
+    }
+
+    pub fn clone_source_field(&self) -> Option<Field> {
+        self.source_field.clone()
+    }
 }
 
 impl Display for PartitionField {
@@ -818,6 +814,17 @@ pub trait ScanOperator: Send + Sync + Debug {
     fn schema(&self) -> SchemaRef;
     fn partitioning_keys(&self) -> &[PartitionField];
     fn file_path_column(&self) -> Option<&str>;
+    // Although generated fields are often added to the partition spec, generated fields and
+    // partition fields are handled differently:
+    // 1. Generated fields: Currently from file paths or Hive partitions,
+    //    although in the future these may be extended to generated and virtual columns.
+    // 2. Partition fields: Originally from Iceberg, specifying both source and (possibly
+    //    transformed) partition fields.
+    //
+    // Partition fields are automatically included in scan output schemas (e.g.,
+    // in ScanTask::materialized_schema), while generated fields require special handling.
+    // Thus, we maintain separate representations for partitioning keys and generated fields.
+    fn generated_fields(&self) -> IndexMap<std::string::String, Field>;
 
     fn can_absorb_filter(&self) -> bool;
     fn can_absorb_select(&self) -> bool;
@@ -1038,6 +1045,7 @@ mod test {
     use common_error::DaftResult;
     use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
     use daft_schema::{schema::Schema, time_unit::TimeUnit};
+    use indexmap::IndexMap;
     use itertools::Itertools;
 
     use crate::{
@@ -1076,6 +1084,7 @@ mod test {
             ))),
             Pushdowns::default(),
             None,
+            IndexMap::new(),
         )
     }
 
@@ -1102,6 +1111,7 @@ mod test {
             false,
             Some(Arc::new(Schema::empty())),
             None,
+            false,
         )
         .unwrap();
 

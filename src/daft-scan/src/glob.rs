@@ -6,15 +6,21 @@ use daft_core::{prelude::Utf8Array, series::IntoSeries};
 use daft_csv::CsvParseOptions;
 use daft_io::{parse_url, FileMetadata, IOClient, IOStatsContext, IOStatsRef, RuntimeRef};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
-use daft_schema::{dtype::DataType, field::Field, schema::SchemaRef};
+use daft_schema::{
+    dtype::DataType,
+    field::Field,
+    schema::{Schema, SchemaRef},
+};
 use daft_stats::PartitionSpec;
 use daft_table::Table;
 use futures::{stream::BoxStream, StreamExt, TryStreamExt};
+use indexmap::IndexMap;
 use snafu::Snafu;
 
 use crate::{
-    storage_config::StorageConfig, ChunkSpec, DataSource, PartitionField, Pushdowns, ScanOperator,
-    ScanTask, ScanTaskRef,
+    hive::{hive_partitions_to_1d_table, hive_partitions_to_schema, parse_hive_partitioning},
+    storage_config::StorageConfig,
+    ChunkSpec, DataSource, PartitionField, Pushdowns, ScanOperator, ScanTask, ScanTaskRef,
 };
 #[derive(Debug)]
 pub struct GlobScanOperator {
@@ -23,7 +29,9 @@ pub struct GlobScanOperator {
     schema: SchemaRef,
     storage_config: Arc<StorageConfig>,
     file_path_column: Option<String>,
+    hive_partitioning: bool,
     partitioning_keys: Vec<PartitionField>,
+    generated_fields: IndexMap<std::string::String, Field>,
 }
 
 /// Wrapper struct that implements a sync Iterator for a BoxStream
@@ -134,8 +142,9 @@ impl GlobScanOperator {
         file_format_config: Arc<FileFormatConfig>,
         storage_config: Arc<StorageConfig>,
         infer_schema: bool,
-        schema: Option<SchemaRef>,
+        user_provided_schema: Option<SchemaRef>,
         file_path_column: Option<String>,
+        hive_partitioning: bool,
     ) -> DaftResult<Self> {
         let first_glob_path = match glob_paths.first() {
             None => Err(DaftError::ValueError(
@@ -168,13 +177,32 @@ impl GlobScanOperator {
             }
             .into()),
         }?;
-        let partitioning_keys = if let Some(fp_col) = &file_path_column {
+        let mut partitioning_keys = if let Some(fp_col) = &file_path_column {
             let partition_field =
                 PartitionField::new(Field::new(fp_col, DataType::Utf8), None, None)?;
             vec![partition_field; 1]
         } else {
             vec![]
         };
+        // If hive partitioning is set, extend the partition keys with  hive partition keys.
+        if hive_partitioning {
+            let hive_partitions = parse_hive_partitioning(&first_filepath);
+            let hive_partition_schema = hive_partitions_to_schema(&hive_partitions)?;
+            let hive_partition_schema = match user_provided_schema.clone() {
+                Some(hint) => hive_partition_schema.apply_hints(&hint)?,
+                None => hive_partition_schema,
+            };
+            let hive_partitioning_keys = hive_partition_schema
+                .fields
+                .into_iter()
+                .map(|(_, field)| PartitionField::new(field, None, None))
+                .collect::<Result<Vec<_>, _>>()?;
+            partitioning_keys.extend(hive_partitioning_keys);
+        }
+        let generated_fields: IndexMap<String, Field> = partitioning_keys
+            .iter()
+            .map(|pf| (pf.field.name.clone(), pf.field.clone()))
+            .collect();
 
         let schema = match infer_schema {
             true => {
@@ -248,12 +276,14 @@ impl GlobScanOperator {
                         ))
                     }
                 };
-                match schema {
+                match user_provided_schema {
                     Some(hint) => Arc::new(inferred_schema.apply_hints(&hint)?),
                     None => Arc::new(inferred_schema),
                 }
             }
-            false => schema.expect("Schema must be provided if infer_schema is false"),
+            false => {
+                user_provided_schema.expect("Schema must be provided if infer_schema is false")
+            }
         };
         Ok(Self {
             glob_paths,
@@ -261,7 +291,9 @@ impl GlobScanOperator {
             schema,
             storage_config,
             file_path_column,
+            hive_partitioning,
             partitioning_keys,
+            generated_fields,
         })
     }
 }
@@ -277,6 +309,10 @@ impl ScanOperator for GlobScanOperator {
 
     fn file_path_column(&self) -> Option<&str> {
         self.file_path_column.as_deref()
+    }
+
+    fn generated_fields(&self) -> indexmap::IndexMap<std::string::String, Field> {
+        self.generated_fields.clone()
     }
 
     fn can_absorb_filter(&self) -> bool {
@@ -352,7 +388,14 @@ impl ScanOperator for GlobScanOperator {
             None
         };
         let file_path_column = self.file_path_column.clone();
-        // Create one ScanTask per file
+        let hive_partitioning = self.hive_partitioning;
+        let partition_fields = self
+            .partitioning_keys
+            .iter()
+            .map(|partition_spec| partition_spec.clone_field())
+            .collect();
+        let partition_schema = Schema::new(partition_fields)?;
+        // Create one ScanTask per file.
         Ok(Box::new(files.enumerate().filter_map(move |(idx, f)| {
             let scan_task_result = (|| {
                 let FileMetadata {
@@ -360,33 +403,40 @@ impl ScanOperator for GlobScanOperator {
                     size: size_bytes,
                     ..
                 } = f?;
-                let partition_spec = if let Some(fp_col) = &file_path_column {
+                // Create a table of partition values based on whether a file_path_column is set
+                // (this column is inherently a partition).
+                let mut partition_values = if let Some(fp_col) = &file_path_column {
                     let trimmed = path.trim_start_matches("file://");
                     let file_paths_column_series =
                         Utf8Array::from_iter(fp_col, std::iter::once(Some(trimmed))).into_series();
-                    let file_paths_table =
-                        Table::from_nonempty_columns(vec![file_paths_column_series; 1])?;
-
-                    if let Some(ref partition_filters) = pushdowns.partition_filters {
-                        let eval_pred =
-                            file_paths_table.eval_expression_list(&[partition_filters.clone()])?;
-                        assert_eq!(eval_pred.num_columns(), 1);
-                        let series = eval_pred.get_column_by_index(0)?;
-                        assert_eq!(series.data_type(), &daft_core::datatypes::DataType::Boolean);
-                        let boolean = series.bool()?;
-                        assert_eq!(boolean.len(), 1);
-                        let value = boolean.get(0);
-                        match value {
-                            None | Some(false) => return Ok(None),
-                            Some(true) => {}
-                        }
-                    }
-                    Some(PartitionSpec {
-                        keys: file_paths_table,
-                    })
+                    Table::from_nonempty_columns(vec![file_paths_column_series; 1])?
                 } else {
-                    None
+                    Table::empty(None)?
                 };
+                // Extend the partition values with hive partitions.
+                if hive_partitioning {
+                    let hive_partitions = parse_hive_partitioning(&path);
+                    let hive_partition_values =
+                        hive_partitions_to_1d_table(&hive_partitions, &partition_schema)?;
+                    partition_values = if partition_values.is_empty() {
+                        hive_partition_values
+                    } else {
+                        partition_values.union(&hive_partition_values)?
+                    };
+                }
+                // Check if the partition values satisfy the partition filters, if any.
+                if let Some(partition_filters) = &pushdowns.partition_filters {
+                    let filter_result = partition_values.filter(&[partition_filters.clone()])?;
+                    if filter_result.is_empty() {
+                        // Skip the current file since it does not satisfy the partition filters.
+                        return Ok(None);
+                    }
+                }
+                let generated_fields = partition_values.schema.fields.clone();
+                let partition_spec = Some(PartitionSpec {
+                    keys: partition_values,
+                });
+
                 let row_group = row_groups
                     .as_ref()
                     .and_then(|rgs| rgs.get(idx).cloned())
@@ -408,6 +458,7 @@ impl ScanOperator for GlobScanOperator {
                     storage_config.clone(),
                     pushdowns.clone(),
                     file_path_column.clone(),
+                    generated_fields,
                 )))
             })();
             match scan_task_result {

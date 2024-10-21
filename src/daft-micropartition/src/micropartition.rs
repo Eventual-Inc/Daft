@@ -21,6 +21,7 @@ use daft_scan::{
 };
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
 use daft_table::Table;
+use indexmap::IndexMap;
 use parquet2::metadata::FileMetaData;
 use snafu::ResultExt;
 #[cfg(feature = "python")]
@@ -1164,6 +1165,13 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
                 std::iter::Sum::sum(m.row_groups.values().map(|m| m.total_byte_size() as u64))
             })
             .sum();
+        let mut generated_fields = IndexMap::new();
+        if let Some(file_path_column) = file_path_column {
+            generated_fields.insert(
+                file_path_column.to_string(),
+                Field::new(file_path_column.to_string(), DataType::Utf8),
+            );
+        }
 
         let scan_task = ScanTask::new(
             owned_urls
@@ -1214,6 +1222,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
                 num_rows,
             ),
             file_path_column.map(|s| s.to_string()),
+            generated_fields,
         );
 
         let fill_map = scan_task.partition_spec().map(|pspec| pspec.to_fill_map());

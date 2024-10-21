@@ -294,6 +294,7 @@ pub fn split_by_row_groups(
                                     t.storage_config.clone(),
                                     t.pushdowns.clone(),
                                     t.file_path_column.clone(),
+                                    t.generated_fields.clone(),
                                 )
                                 .into()));
                             }
