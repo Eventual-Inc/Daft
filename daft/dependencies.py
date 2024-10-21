@@ -3,8 +3,6 @@ from typing import TYPE_CHECKING
 from daft.lazy_import import LazyImport
 
 if TYPE_CHECKING:
-    import xml.etree.ElementTree as ET
-
     import fsspec
     import numpy as np
     import pandas as pd
@@ -16,8 +14,6 @@ if TYPE_CHECKING:
     import pyarrow.json as pajson
     import pyarrow.parquet as pq
 else:
-    ET = LazyImport("xml.etree.ElementTree")
-
     fsspec = LazyImport("fsspec")
     np = LazyImport("numpy")
     pd = LazyImport("pandas")

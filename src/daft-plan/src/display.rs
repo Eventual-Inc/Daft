@@ -166,6 +166,8 @@ mod test {
                 vec![col("id")],
                 JoinType::Inner,
                 None,
+                None,
+                None,
             )?
             .filter(col("first_name").eq(lit("hello")))?
             .select(vec![col("first_name")])?
@@ -236,6 +238,8 @@ Project1 --> Limit0
                 vec![col("id")],
                 vec![col("id")],
                 JoinType::Inner,
+                None,
+                None,
                 None,
             )?
             .filter(col("first_name").eq(lit("hello")))?

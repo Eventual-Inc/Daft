@@ -1378,6 +1378,7 @@ dependencies = [
 name = "common-resource-request"
 version = "0.3.0-dev0"
 dependencies = [
+ "common-error",
  "common-hashable-float-wrapper",
  "common-py-serde",
  "pyo3",
