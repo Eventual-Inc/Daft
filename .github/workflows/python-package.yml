@@ -517,7 +517,6 @@ jobs:
         pytest tests/integration/iceberg -m 'integration' --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
-
         DAFT_ENABLE_NATIVE_EXECUTOR: ${{ matrix.enable-native-executor }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v1.26.0
