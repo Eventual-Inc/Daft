@@ -38,8 +38,7 @@ from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.expressions import Expression, ExpressionsProjection, col, lit
 from daft.logical.builder import LogicalPlanBuilder
-from daft.runners.partitioning import PartitionCacheEntry, PartitionSet
-from daft.runners.pyrunner import LocalPartitionSet
+from daft.runners.partitioning import LocalPartitionSet, PartitionCacheEntry, PartitionSet
 from daft.table import MicroPartition
 from daft.viz import DataFrameDisplay
 

@@ -32,6 +32,7 @@ class _RayRunnerConfig(_RunnerConfig):
     name = "ray"
     address: str | None
     max_task_backlog: int | None
+    force_client_mode: bool
 
 
 def _get_runner_config_from_env() -> _RunnerConfig:
@@ -43,9 +44,17 @@ def _get_runner_config_from_env() -> _RunnerConfig:
     2. RayRunner: set DAFT_RUNNER=ray and optionally RAY_ADDRESS=ray://...
     """
     runner_from_envvar = os.getenv("DAFT_RUNNER")
+
     task_backlog_env = os.getenv("DAFT_DEVELOPER_RAY_MAX_TASK_BACKLOG")
+    task_backlog = int(task_backlog_env) if task_backlog_env is not None else None
+
     use_thread_pool_env = os.getenv("DAFT_DEVELOPER_USE_THREAD_POOL")
     use_thread_pool = bool(int(use_thread_pool_env)) if use_thread_pool_env is not None else None
+
+    ray_force_client_mode_env = os.getenv("DAFT_RAY_FORCE_CLIENT_MODE")
+    ray_force_client_mode = (
+        ray_force_client_mode_env.strip().lower() in ["1", "true"] if ray_force_client_mode_env else False
+    )
 
     ray_is_initialized = False
     in_ray_worker = False
@@ -71,7 +80,8 @@ def _get_runner_config_from_env() -> _RunnerConfig:
             ray_address = os.getenv("RAY_ADDRESS")
         return _RayRunnerConfig(
             address=ray_address,
-            max_task_backlog=int(task_backlog_env) if task_backlog_env else None,
+            max_task_backlog=task_backlog,
+            force_client_mode=ray_force_client_mode,
         )
     elif runner_from_envvar and runner_from_envvar.upper() == "PY":
         return _PyRunnerConfig(use_thread_pool=use_thread_pool)
@@ -82,7 +92,8 @@ def _get_runner_config_from_env() -> _RunnerConfig:
     elif ray_is_initialized and not in_ray_worker:
         return _RayRunnerConfig(
             address=None,  # No address supplied, use the existing connection
-            max_task_backlog=int(task_backlog_env) if task_backlog_env else None,
+            max_task_backlog=task_backlog,
+            force_client_mode=ray_force_client_mode,
         )
 
     # Fall back on PyRunner
@@ -155,6 +166,7 @@ class DaftContext:
             self._runner = RayRunner(
                 address=runner_config.address,
                 max_task_backlog=runner_config.max_task_backlog,
+                force_client_mode=runner_config.force_client_mode,
             )
         elif runner_config.name == "py":
             from daft.runners.pyrunner import PyRunner
@@ -189,6 +201,7 @@ def set_runner_ray(
     address: str | None = None,
     noop_if_initialized: bool = False,
     max_task_backlog: int | None = None,
+    force_client_mode: bool = False,
 ) -> DaftContext:
     """Set the runner for executing Daft dataframes to a Ray cluster
 
@@ -222,6 +235,7 @@ def set_runner_ray(
         ctx._runner_config = _RayRunnerConfig(
             address=address,
             max_task_backlog=max_task_backlog,
+            force_client_mode=force_client_mode,
         )
         ctx._disallow_set_runner = True
         return ctx
