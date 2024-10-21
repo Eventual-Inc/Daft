@@ -163,10 +163,12 @@ class SQLScanOperator(ScanOperator):
         try:
             # Try to get percentiles using percentile_cont
             percentiles = [i / num_scan_tasks for i in range(num_scan_tasks + 1)]
+            # Use the OVER clause for SQL Server
+            over_clause = "OVER ()" if self.conn.dialect in ["mssql", "tsql"] else ""
             percentile_sql = self.conn.construct_sql_query(
                 self.sql,
                 projection=[
-                    f"percentile_disc({percentile}) WITHIN GROUP (ORDER BY {self._partition_col}) {"OVER ()" if self.conn.dialect in ["mssql", "tsql"] else ""} AS bound_{i}"
+                    f"percentile_disc({percentile}) WITHIN GROUP (ORDER BY {self._partition_col}) {over_clause} AS bound_{i}"
                     for i, percentile in enumerate(percentiles)
                 ],
                 limit=1,
