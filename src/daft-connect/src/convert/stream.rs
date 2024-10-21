@@ -1,12 +1,11 @@
 use std::{collections::HashMap, fmt::Display, sync::Arc};
 
-use anyhow::Context;
+use eyre::{bail, ensure, eyre, Context};
 use common_daft_config::DaftExecutionConfig;
 use daft_core::series::Series;
 use daft_plan::LogicalPlanRef;
 use daft_schema::schema::Schema;
 use daft_table::Table;
-use eyre::{bail, ensure, eyre, Context};
 use spark_connect::{
     execute_plan_response::{ArrowBatch, ResponseType},
     relation::RelType,
@@ -14,7 +13,7 @@ use spark_connect::{
 };
 use uuid::Uuid;
 
-use crate::convert::{fmt::TopLevelDisplay, logical_plan::to_logical_plan};
+use crate::convert::{fmt::TopLevelDisplay, logical_plan::to_logical_plan, to_daft_stream};
 
 pub fn parse_top_level(
     plan: Relation,
@@ -124,4 +123,8 @@ fn create_response(
         schema: None,
         response_type: Some(response_type),
     }
+}
+
+pub fn to_daft_stream(plan: spark_connect::plan::Plan) -> eyre::Result<daft_dsl::LogicalPlan> {
+    to_daft_stream(plan).map_err(|e| eyre!(e))
 }

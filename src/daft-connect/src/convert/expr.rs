@@ -1,8 +1,8 @@
-use anyhow::{bail, ensure, Context};
 use daft_dsl::{Expr as DaftExpr, Operator};
+use eyre::{bail, ensure, eyre, Result};
 use spark_connect::{expression, expression::literal::LiteralType, Expression};
 
-pub fn to_daft_expr(expr: Expression) -> anyhow::Result<DaftExpr> {
+pub fn to_daft_expr(expr: Expression) -> Result<DaftExpr> {
     match expr.expr_type {
         Some(expression::ExprType::Literal(lit)) => Ok(DaftExpr::Literal(convert_literal(lit)?)),
 
@@ -16,7 +16,7 @@ pub fn to_daft_expr(expr: Expression) -> anyhow::Result<DaftExpr> {
                 name,
                 metadata,
             } = *alias;
-            let expr = *expr.context("expr is None")?;
+            let expr = *expr.ok_or_else(|| eyre!("expr is None"))?;
 
             // Convert alias
             let expr = to_daft_expr(expr)?;
@@ -53,7 +53,7 @@ pub fn to_daft_expr(expr: Expression) -> anyhow::Result<DaftExpr> {
                 ">" | "<" | "<=" | ">=" | "+" | "-" | "*" | "/" => {
                     let arr: [Expression; 2] = arguments
                         .try_into()
-                        .map_err(|_| anyhow::anyhow!("Expected 2 arguments"))?;
+                        .map_err(|_| eyre!("Expected 2 arguments"))?;
                     let [left, right] = arr;
 
                     let left = to_daft_expr(left)?;
@@ -82,14 +82,14 @@ pub fn to_daft_expr(expr: Expression) -> anyhow::Result<DaftExpr> {
         }
 
         // Handle other expression types...
-        _ => Err(anyhow::anyhow!("Unsupported expression type")),
+        _ => Err(eyre!("Unsupported expression type")),
     }
 }
 
 // Helper functions to convert literals, function names, operators etc.
 
-fn convert_literal(lit: expression::Literal) -> anyhow::Result<daft_dsl::LiteralValue> {
-    let literal_type = lit.literal_type.context("literal_type is None")?;
+fn convert_literal(lit: expression::Literal) -> Result<daft_dsl::LiteralValue> {
+    let literal_type = lit.literal_type.ok_or_else(|| eyre!("literal_type is None"))?;
 
     let result = match literal_type {
         LiteralType::Null(..) => daft_dsl::LiteralValue::Null,
