@@ -1030,6 +1030,13 @@ impl Expr {
             _ => None,
         }
     }
+
+    pub fn to_literal(self) -> Option<lit::LiteralValue> {
+        match self {
+            Self::Literal(lit) => Some(lit),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Display, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]

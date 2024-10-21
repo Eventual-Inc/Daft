@@ -686,7 +686,35 @@ impl SQLPlanner {
             SQLExpr::IsNotDistinctFrom(_, _) => {
                 unsupported_sql_err!("IS NOT DISTINCT FROM")
             }
-            SQLExpr::InList { .. } => unsupported_sql_err!("IN LIST"),
+            SQLExpr::InList {
+                expr,
+                list,
+                negated,
+            } => {
+                let expr = self.plan_expr(expr)?;
+                let list = list
+                    .iter()
+                    .map(|e| {
+                        let e = self.plan_expr(e)?;
+                        let e = Arc::unwrap_or_clone(e);
+                        let Some(lit) = e.to_literal() else {
+                            invalid_operation_err!("'IN' operator only supports literal values")
+                        };
+                        Ok(lit)
+                    })
+                    .collect::<SQLPlannerResult<Vec<_>>>()?;
+                let series = literals_to_series(&list)?;
+                let series_lit = LiteralValue::Series(series);
+                let series_expr = Expr::Literal(series_lit);
+                let series_expr_arc = Arc::new(series_expr);
+
+                let expr = expr.is_in(series_expr_arc);
+                if *negated {
+                    Ok(expr.not())
+                } else {
+                    Ok(expr)
+                }
+            }
             SQLExpr::InSubquery { .. } => {
                 unsupported_sql_err!("IN subquery")
             }
