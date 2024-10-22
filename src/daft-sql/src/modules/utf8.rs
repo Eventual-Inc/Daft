@@ -36,7 +36,7 @@ macro_rules! utf8_function_one_argument {
                         ". Expected ",
                         $sql_name,
                         "(",
-                        stringify!($arg_name),
+                        $arg_name,
                         ")"
                     )),
                 }
@@ -75,9 +75,9 @@ macro_rules! utf8_function_two_arguments {
                         ". Expected ",
                         $sql_name,
                         "(",
-                        stringify!($arg_name_1),
+                        $arg_name_1,
                         ", ",
-                        stringify!($arg_name_2),
+                        $arg_name_2,
                         ")"
                     )),
                 }
@@ -117,11 +117,11 @@ macro_rules! utf8_function_three_arguments {
                         ". Expected ",
                         $sql_name,
                         "(",
-                        stringify!($arg_name_1),
+                        $arg_name_1,
                         ", ",
-                        stringify!($arg_name_2),
+                        $arg_name_2,
                         ", ",
-                        stringify!($arg_name_3),
+                        $arg_name_3,
                         ")"
                     )),
                 }
