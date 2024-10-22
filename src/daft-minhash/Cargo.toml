@@ -3,13 +3,14 @@ harness = false
 name = "minhash"
 
 [dependencies]
-common-error = {path = "../common/error", default-features = false}
 fastrand = "2.1.0"
 mur3 = "0.1.0"
+common-error.workspace = true
 
 [dev-dependencies]
 xxhash-rust = {workspace = true, features = ["xxh64", "xxh3"]}
 ahash.workspace = true
+daft-hash.workspace = true
 divan.workspace = true
 rustc-hash.workspace = true
 

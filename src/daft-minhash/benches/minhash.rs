@@ -3,7 +3,8 @@ use std::{
 };
 
 use ahash::AHasher;
-use daft_minhash::{load_simd, minhash, MurBuildHasher};
+use daft_hash::MurBuildHasher;
+use daft_minhash::{load_simd, minhash};
 use divan::{black_box, Bencher};
 use rustc_hash::FxHasher;
 

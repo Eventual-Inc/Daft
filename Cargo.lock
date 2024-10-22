@@ -1942,7 +1942,10 @@ dependencies = [
 name = "daft-hash"
 version = "0.3.0-dev0"
 dependencies = [
+ "common-error",
  "mur3",
+ "pyo3",
+ "serde",
  "sha1 0.11.0-pre.4",
 ]
 
@@ -2101,6 +2104,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "ahash",
  "common-error",
+ "daft-hash",
  "divan",
  "fastrand 2.1.0",
  "mur3",

@@ -1,7 +1,7 @@
 use daft_dsl::ExprRef;
 use daft_functions::{
     hash::hash,
-    minhash::{minhash, HashFunctionKind, MinHashFunction},
+    minhash::{minhash, MinHashFunction},
 };
 use sqlparser::ast::FunctionArg;
 
