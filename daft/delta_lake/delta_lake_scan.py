@@ -82,7 +82,6 @@ class DeltaLakeScanOperator(ScanOperator):
                                 region_name=s3_config_from_env.region_name,
                             )
                         )
-
         elif scheme == "gcs" or scheme == "gs":
             # TO-DO: Handle any key-value replacements in `io_config` if there are missing elements
             pass
