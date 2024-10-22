@@ -10,8 +10,8 @@ use daft_core::{
 use daft_dsl::{col, join::get_common_join_keys, Expr};
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{
-    EmptyScan, Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, Pivot,
-    Project, Sample, Sort, UnGroupedAggregate, Unpivot,
+    Concat, EmptyScan, Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan,
+    Pivot, Project, Sample, Sort, UnGroupedAggregate, Unpivot,
 };
 use daft_plan::{populate_aggregation_stages, JoinType};
 use daft_table::ProbeState;
@@ -27,7 +27,7 @@ use crate::{
         sample::SampleOperator, unpivot::UnpivotOperator,
     },
     sinks::{
-        aggregate::AggregateSink, blocking_sink::BlockingSinkNode,
+        aggregate::AggregateSink, blocking_sink::BlockingSinkNode, concat::ConcatSink,
         hash_join_build::HashJoinBuildSink, limit::LimitSink,
         outer_hash_join_probe::OuterHashJoinProbeSink, sort::SortSink,
         streaming_sink::StreamingSinkNode,
@@ -152,12 +152,11 @@ pub fn physical_plan_to_pipeline(
             let child_node = physical_plan_to_pipeline(input, psets)?;
             StreamingSinkNode::new(Arc::new(sink), vec![child_node]).boxed()
         }
-        LocalPhysicalPlan::Concat(_) => {
-            todo!("concat")
-            // let sink = ConcatSink::new();
-            // let left_child = physical_plan_to_pipeline(input, psets)?;
-            // let right_child = physical_plan_to_pipeline(other, psets)?;
-            // PipelineNode::double_sink(sink, left_child, right_child)
+        LocalPhysicalPlan::Concat(Concat { input, other, .. }) => {
+            let left_child = physical_plan_to_pipeline(input, psets)?;
+            let right_child = physical_plan_to_pipeline(other, psets)?;
+            let sink = ConcatSink {};
+            StreamingSinkNode::new(Arc::new(sink), vec![left_child, right_child]).boxed()
         }
         LocalPhysicalPlan::UnGroupedAggregate(UnGroupedAggregate {
             input,
