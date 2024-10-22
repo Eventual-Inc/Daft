@@ -44,8 +44,16 @@ class DeltaLakeScanOperator(ScanOperator):
         deltalake_sdk_io_config = storage_config.config.io_config
         scheme = urlparse(table_uri).scheme
         if scheme == "s3" or scheme == "s3a":
+            # Try to get region from boto3
+            if deltalake_sdk_io_config.s3.region_name is None:
+                client = boto3_client_from_s3_config("s3", deltalake_sdk_io_config.s3)
+                response = client.get_bucket_location(Bucket=urlparse(table_uri).netloc)
+                deltalake_sdk_io_config = deltalake_sdk_io_config.replace(
+                    s3=deltalake_sdk_io_config.s3.replace(region_name=response["LocationConstraint"])
+                )
+
+            # Try to get config from the environment
             if any([deltalake_sdk_io_config.s3.key_id is None, deltalake_sdk_io_config.s3.region_name is None]):
-                # Try to get config from the environment
                 try:
                     s3_config_from_env = S3Config.from_env()
                 # Sometimes S3Config.from_env throws an error, for example on CI machines with weird metadata servers.
@@ -71,13 +79,6 @@ class DeltaLakeScanOperator(ScanOperator):
                             )
                         )
 
-                # Try to get region from boto3
-                if deltalake_sdk_io_config.s3.region_name is None:
-                    client = boto3_client_from_s3_config("s3", deltalake_sdk_io_config.s3)
-                    response = client.get_bucket_location(Bucket=urlparse(table_uri).netloc)
-                    deltalake_sdk_io_config = deltalake_sdk_io_config.replace(
-                        s3=deltalake_sdk_io_config.s3.replace(region_name=response["LocationConstraint"])
-                    )
         elif scheme == "gcs" or scheme == "gs":
             # TO-DO: Handle any key-value replacements in `io_config` if there are missing elements
             pass
