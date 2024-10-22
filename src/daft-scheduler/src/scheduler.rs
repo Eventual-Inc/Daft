@@ -484,7 +484,8 @@ fn physical_plan_to_partition_tasks(
             Ok(py_iter.into())
         }
         PhysicalPlan::ShuffleExchange(ShuffleExchange { input, strategy }) => {
-            let upstream_iter = physical_plan_to_partition_tasks(input, py, psets)?;
+            let upstream_iter =
+                physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?;
             let input_num_partitions = input.clustering_spec().num_partitions();
             match strategy {
                 ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce { target_spec } => {
