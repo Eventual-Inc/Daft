@@ -8,6 +8,7 @@ use daft_local_execution::run::run_local;
 use daft_micropartition::MicroPartition;
 use daft_plan::LogicalPlanRef;
 use daft_table::Table;
+use eyre::Context;
 use spark_connect::{
     execute_plan_response::{ArrowBatch, ResponseType, ResultComplete},
     spark_connect_service_server::SparkConnectService,
@@ -20,30 +21,67 @@ use crate::{DaftSparkConnectService, Session};
 
 type DaftStream = <DaftSparkConnectService as SparkConnectService>::ExecutePlanStream;
 
+struct ResultEncoder {
+    session_id: String,
+    server_side_session_id: String,
+    operation_id: String,
+    tx: tokio::sync::mpsc::UnboundedSender<ExecutePlanResponse>,
+}
+
+pub trait Encoder {
+    fn create_batch(&self, row_count: i64, data: Vec<u8>) -> eyre::Result<()>;
+}
+
+impl Encoder for ResultEncoder {
+    fn create_batch(&self, row_count: i64, data: Vec<u8>) -> eyre::Result<()> {
+        let response = ExecutePlanResponse {
+            session_id: self.session_id.clone(),
+            server_side_session_id: self.server_side_session_id.clone(),
+            operation_id: self.operation_id.clone(),
+            response_id: Uuid::new_v4().to_string(), // todo: implement this
+            metrics: None,                           // todo: implement this
+            observed_metrics: vec![],
+            schema: None,
+            response_type: Some(ResponseType::ArrowBatch(ArrowBatch {
+                row_count,
+                data,
+                start_offset: None,
+            })),
+        };
+
+        self.tx
+            .send(response)
+            .wrap_err("Error sending response to client")
+    }
+}
+
 impl Session {
     pub async fn handle_root_command(
         &self,
         command: Relation,
         operation_id: String,
     ) -> Result<DaftStream, Status> {
-        let data = thread::spawn(move || {
-            let logical_plan = to_logical_plan(command).unwrap().build();
-
-            let result = execute_plan(logical_plan);
-            process_result(result)
-        });
-        let data = tokio::task::spawn_blocking(move || data.join().unwrap())
-            .await
-            .unwrap();
-        let response = create_response(&self.id, &self.server_side_session_id, &operation_id, data);
-        let result = create_stream(
-            response,
-            &self.id,
-            &self.server_side_session_id,
-            &operation_id,
-        );
-
-        Ok(result)
+        // let data = thread::spawn(move || {
+        //     // crate::convert::
+        // 
+        //     // let logical_plan = to_logical_plan(command).unwrap().build();
+        // 
+        //     let result = execute_plan(logical_plan);
+        //     process_result(result)
+        // });
+        // let data = tokio::task::spawn_blocking(move || data.join().unwrap())
+        //     .await
+        //     .unwrap();
+        // let response = create_response(&self.id, &self.server_side_session_id, &operation_id, data);
+        // let result = create_stream(
+        //     response,
+        //     &self.id,
+        //     &self.server_side_session_id,
+        //     &operation_id,
+        // );
+        // 
+        // Ok(result)
+        todo!()
     }
 
     pub fn write_operation(&self, operation: WriteOperation) -> Result<DaftStream, Status> {

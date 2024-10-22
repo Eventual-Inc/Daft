@@ -1,11 +1,10 @@
 use std::{collections::HashMap, fmt::Display, sync::Arc};
 
-use eyre::{bail, ensure, eyre, Context};
 use common_daft_config::DaftExecutionConfig;
 use daft_core::series::Series;
-use daft_plan::LogicalPlanRef;
 use daft_schema::schema::Schema;
 use daft_table::Table;
+use eyre::{bail, ensure, eyre, Context};
 use spark_connect::{
     execute_plan_response::{ArrowBatch, ResponseType},
     relation::RelType,
@@ -13,23 +12,21 @@ use spark_connect::{
 };
 use uuid::Uuid;
 
-use crate::convert::{fmt::TopLevelDisplay, logical_plan::to_logical_plan, to_daft_stream};
+use crate::{
+    command::Encoder,
+    convert::{fmt::RelTypeExt, logical_plan::to_logical_plan},
+};
 
-pub fn parse_top_level(
-    plan: Relation,
-) -> eyre::Result<impl Iterator<Item = eyre::Result<LogicalPlanRef>>> {
+pub fn parse_top_level(plan: Relation, encoder: &impl Encoder) -> eyre::Result<()> {
     let rel_type = plan.rel_type.ok_or_else(|| eyre!("rel_type is None"))?;
 
     match rel_type {
-        RelType::ShowString(input) => show_string(*input).wrap_err("parsing ShowString"),
-        other => Err(eyre!(
-            "Unsupported top-level relation: {}",
-            TopLevelDisplay::new(&other)
-        )),
+        RelType::ShowString(input) => show_string(*input, encoder).wrap_err("parsing ShowString"),
+        other => Err(eyre!("Unsupported top-level relation: {}", other.name())),
     }
 }
 
-pub fn show_string(show_string: ShowString) -> eyre::Result<LogicalPlanRef> {
+pub fn show_string(show_string: ShowString, encoder: &impl Encoder) -> eyre::Result<()> {
     let ShowString {
         input,
         num_rows,
@@ -82,6 +79,7 @@ pub fn show_string(show_string: ShowString) -> eyre::Result<LogicalPlanRef> {
         write_table_to_arrow(&mut writer, &singleton_table);
     }
 
+    encoder.create_batch(10, data);
     Ok(())
 }
 
@@ -95,10 +93,6 @@ fn write_table_to_arrow(
     let arrays = table.get_inner_arrow_arrays();
     let chunk = arrow2::chunk::Chunk::new(arrays);
     writer.write(&chunk, None).unwrap();
-}
-
-trait Encoder {
-    fn create_batch(&self, row_count: i64, data: Vec<u8>);
 }
 
 fn create_response(
@@ -123,8 +117,4 @@ fn create_response(
         schema: None,
         response_type: Some(response_type),
     }
-}
-
-pub fn to_daft_stream(plan: spark_connect::plan::Plan) -> eyre::Result<daft_dsl::LogicalPlan> {
-    to_daft_stream(plan).map_err(|e| eyre!(e))
 }
