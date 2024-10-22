@@ -20,7 +20,7 @@ serde = {workspace = true}
 snafu = {workspace = true}
 tokio = {workspace = true}
 tokio-util = {workspace = true}
-parking_lot = "*"
+
 [dev-dependencies]
 rstest = {workspace = true}
 

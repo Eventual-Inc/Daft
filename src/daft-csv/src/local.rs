@@ -347,12 +347,12 @@ pub async fn stream_csv_local(
     let (schema, estimated_mean_row_size, estimated_std_row_size) =
         get_schema_and_estimators(uri, &convert_options, &parse_options, io_client, io_stats)
             .await?;
+    let num_fields = schema.fields.len();
     let projection_indices =
         fields_to_projection_indices(&schema.fields, &convert_options.clone().include_columns);
-    let fields = schema.clone().fields;
     let fields_subset = projection_indices
         .iter()
-        .map(|i| fields.get(*i).unwrap().into())
+        .map(|i| schema.fields.get(*i).unwrap().into())
         .collect::<Vec<daft_core::datatypes::Field>>();
     let read_schema = Arc::new(Schema::new(fields_subset)?);
     let read_daft_fields = Arc::new(
@@ -373,7 +373,6 @@ pub async fn stream_csv_local(
         .and_then(|opt| opt.chunk_size.or_else(|| opt.buffer_size.map(|bs| bs / 8)))
         .unwrap_or(DEFAULT_CHUNK_SIZE);
     let chunk_size_rows = (chunk_size as f64 / record_buffer_size as f64).ceil() as usize;
-    let num_fields = schema.fields.len();
 
     // We produce `file_len / SLABSIZE` number of file slabs, each of which might be split into two, so the maximum number
     // of tasks we might spawn is 2 times this number.
@@ -399,7 +398,7 @@ pub async fn stream_csv_local(
             projection_indices,
             read_daft_fields,
             read_schema,
-            fields,
+            schema.fields,
             include_columns,
             predicate,
             limit,
@@ -1165,7 +1164,6 @@ fn parse_csv_chunk<R>(
 where
     R: std::io::Read,
 {
-    // let mut chunk_buffer = &mut csv_buffer.buffer;
     let mut tables = vec![];
     loop {
         let (rows_read, has_more) = local_read_rows(&mut reader, csv_buffer.buffer.as_mut_slice())
