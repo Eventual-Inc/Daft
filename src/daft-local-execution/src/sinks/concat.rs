@@ -1,13 +1,16 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
 use super::streaming_sink::{StreamingSink, StreamingSinkOutput, StreamingSinkState};
 use crate::pipeline::PipelineResultType;
 
-struct ConcatSinkState {}
+struct ConcatSinkState {
+    // The index of the last morsel of data that was received, which should be strictly non-decreasing.
+    pub curr_idx: usize,
+}
 impl StreamingSinkState for ConcatSinkState {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
@@ -17,15 +20,29 @@ impl StreamingSinkState for ConcatSinkState {
 pub struct ConcatSink {}
 
 impl StreamingSink for ConcatSink {
+    /// Execute for the ConcatSink operator does not do any computation and simply returns the input data.
+    /// It only expects that the indices of the input data are strictly non-decreasing.
     #[instrument(skip_all, name = "ConcatSink::sink")]
     fn execute(
         &self,
-        _index: usize,
+        index: usize,
         input: &PipelineResultType,
-        _state: &mut dyn StreamingSinkState,
+        state: &mut dyn StreamingSinkState,
     ) -> DaftResult<StreamingSinkOutput> {
-        let input = input.as_data();
-        Ok(StreamingSinkOutput::NeedMoreInput(Some(input.clone())))
+        let state = state
+            .as_any_mut()
+            .downcast_mut::<ConcatSinkState>()
+            .expect("ConcatSink should have ConcatSinkState");
+
+        // If the index is the same as the current index or one more than the current index, then we can accept the morsel.
+        if state.curr_idx == index || state.curr_idx + 1 == index {
+            state.curr_idx = index;
+            Ok(StreamingSinkOutput::NeedMoreInput(Some(
+                input.as_data().clone(),
+            )))
+        } else {
+            Err(DaftError::ComputeError(format!("Concat sink received out-of-order data. Expected index to be {} or {}, but got {}.", state.curr_idx, state.curr_idx + 1, index)))
+        }
     }
 
     fn name(&self) -> &'static str {
@@ -40,9 +57,10 @@ impl StreamingSink for ConcatSink {
     }
 
     fn make_state(&self) -> Box<dyn StreamingSinkState> {
-        Box::new(ConcatSinkState {})
+        Box::new(ConcatSinkState { curr_idx: 0 })
     }
 
+    /// Since the ConcatSink does not do any computation, it does not need to spawn multiple workers.
     fn max_concurrency(&self) -> usize {
         1
     }

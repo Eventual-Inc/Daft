@@ -26,18 +26,30 @@ pub enum StreamingSinkOutput {
 }
 
 pub trait StreamingSink: Send + Sync {
+    /// Execute the StreamingSink operator on the morsel of input data,
+    /// received from the child with the given index,
+    /// with the given state.
     fn execute(
         &self,
         index: usize,
         input: &PipelineResultType,
         state: &mut dyn StreamingSinkState,
     ) -> DaftResult<StreamingSinkOutput>;
+
+    /// Finalize the StreamingSink operator, with the given states from each worker.
     fn finalize(
         &self,
         states: Vec<Box<dyn StreamingSinkState>>,
     ) -> DaftResult<Option<Arc<MicroPartition>>>;
+
+    /// The name of the StreamingSink operator.
     fn name(&self) -> &'static str;
+
+    /// Create a new worker-local state for this StreamingSink.
     fn make_state(&self) -> Box<dyn StreamingSinkState>;
+
+    /// The maximum number of concurrent workers that can be spawned for this sink.
+    /// Each worker will has its own StreamingSinkState.
     fn max_concurrency(&self) -> usize {
         *NUM_CPUS
     }
