@@ -70,6 +70,17 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 ))
             }
         }
+        LogicalPlan::Unpivot(unpivot) => {
+            let input = translate(&unpivot.input)?;
+            Ok(LocalPhysicalPlan::unpivot(
+                input,
+                unpivot.ids.clone(),
+                unpivot.values.clone(),
+                unpivot.variable_name.clone(),
+                unpivot.value_name.clone(),
+                unpivot.output_schema.clone(),
+            ))
+        }
         LogicalPlan::Pivot(pivot) => {
             let input = translate(&pivot.input)?;
             let groupby_with_pivot = pivot
