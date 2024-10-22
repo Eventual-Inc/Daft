@@ -1,7 +1,8 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
+use common_runtime::get_compute_runtime;
 use daft_micropartition::MicroPartition;
 use snafu::ResultExt;
 use tracing::{info_span, instrument};
@@ -15,6 +16,18 @@ use crate::{
 
 pub trait StreamingSinkState: Send + Sync {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
+}
+
+pub(crate) struct StreamingSinkStateWrapper {
+    pub inner: Mutex<Box<dyn StreamingSinkState>>,
+}
+
+impl StreamingSinkStateWrapper {
+    fn new(inner: Box<dyn StreamingSinkState>) -> Arc<Self> {
+        Arc::new(Self {
+            inner: Mutex::new(inner),
+        })
+    }
 }
 
 pub enum StreamingSinkOutput {
@@ -32,7 +45,7 @@ pub trait StreamingSink: Send + Sync {
         &self,
         index: usize,
         input: &PipelineResultType,
-        state: &mut dyn StreamingSinkState,
+        state: &StreamingSinkStateWrapper,
     ) -> DaftResult<StreamingSinkOutput>;
 
     /// Finalize the StreamingSink operator, with the given states from each worker.
@@ -84,11 +97,23 @@ impl StreamingSinkNode {
         rt_context: Arc<RuntimeStatsContext>,
     ) -> DaftResult<Box<dyn StreamingSinkState>> {
         let span = info_span!("StreamingSink::Execute");
-        let mut state = op.make_state();
+        let compute_runtime = get_compute_runtime();
+        let state_wrapper = StreamingSinkStateWrapper::new(op.make_state());
+        let mut finished = false;
         while let Some((idx, morsel)) = input_receiver.recv().await {
+            if finished {
+                break;
+            }
             loop {
-                let result =
-                    rt_context.in_span(&span, || op.execute(idx, &morsel, state.as_mut()))?;
+                let op = op.clone();
+                let morsel = morsel.clone();
+                let span = span.clone();
+                let rt_context = rt_context.clone();
+                let state_wrapper = state_wrapper.clone();
+                let fut = async move {
+                    rt_context.in_span(&span, || op.execute(idx, &morsel, state_wrapper.as_ref()))
+                };
+                let result = compute_runtime.await_on(fut).await??;
                 match result {
                     StreamingSinkOutput::NeedMoreInput(mp) => {
                         if let Some(mp) = mp {
@@ -103,12 +128,20 @@ impl StreamingSinkNode {
                         if let Some(mp) = mp {
                             let _ = output_sender.send(mp).await;
                         }
-                        return Ok(state);
+                        finished = true;
+                        break;
                     }
                 }
             }
         }
-        Ok(state)
+
+        // Take the state out of the Arc and Mutex because we need to return it.
+        // It should be guaranteed that the ONLY holder of state at this point is this function.
+        Ok(Arc::into_inner(state_wrapper)
+            .expect("Completed worker should have exclusive access to state wrapper")
+            .inner
+            .into_inner()
+            .expect("Completed worker should have exclusive access to inner state"))
     }
 
     fn spawn_workers(
@@ -234,8 +267,16 @@ impl PipelineNode for StreamingSinkNode {
                     finished_states.push(state);
                 }
 
-                if let Some(finalized_result) = op.finalize(finished_states)? {
-                    let _ = destination_sender.send(finalized_result.into()).await;
+                let compute_runtime = get_compute_runtime();
+                let finalized_result = compute_runtime
+                    .await_on(async move {
+                        runtime_stats.in_span(&info_span!("StreamingSinkNode::finalize"), || {
+                            op.finalize(finished_states)
+                        })
+                    })
+                    .await??;
+                if let Some(res) = finalized_result {
+                    let _ = destination_sender.send(res.into()).await;
                 }
                 Ok(())
             },

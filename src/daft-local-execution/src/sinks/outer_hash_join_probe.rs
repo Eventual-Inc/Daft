@@ -15,7 +15,9 @@ use daft_table::{GrowableTable, ProbeState, Table};
 use indexmap::IndexSet;
 use tracing::{info_span, instrument};
 
-use super::streaming_sink::{StreamingSink, StreamingSinkOutput, StreamingSinkState};
+use super::streaming_sink::{
+    StreamingSink, StreamingSinkOutput, StreamingSinkState, StreamingSinkStateWrapper,
+};
 use crate::pipeline::PipelineResultType;
 
 struct IndexBitmapBuilder {
@@ -363,11 +365,12 @@ impl StreamingSink for OuterHashJoinProbeSink {
         &self,
         idx: usize,
         input: &PipelineResultType,
-        state: &mut dyn StreamingSinkState,
+        state: &StreamingSinkStateWrapper,
     ) -> DaftResult<StreamingSinkOutput> {
         match idx {
             0 => {
-                let state = state
+                let mut guard = state.inner.lock().unwrap();
+                let state = guard
                     .as_any_mut()
                     .downcast_mut::<OuterHashJoinProbeState>()
                     .expect("OuterHashJoinProbeSink state should be OuterHashJoinProbeState");
@@ -377,7 +380,8 @@ impl StreamingSink for OuterHashJoinProbeSink {
                 Ok(StreamingSinkOutput::NeedMoreInput(None))
             }
             _ => {
-                let state = state
+                let mut guard = state.inner.lock().unwrap();
+                let state = guard
                     .as_any_mut()
                     .downcast_mut::<OuterHashJoinProbeState>()
                     .expect("OuterHashJoinProbeSink state should be OuterHashJoinProbeState");

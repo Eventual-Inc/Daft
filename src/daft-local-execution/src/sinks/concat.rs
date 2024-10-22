@@ -4,7 +4,9 @@ use common_error::{DaftError, DaftResult};
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
-use super::streaming_sink::{StreamingSink, StreamingSinkOutput, StreamingSinkState};
+use super::streaming_sink::{
+    StreamingSink, StreamingSinkOutput, StreamingSinkState, StreamingSinkStateWrapper,
+};
 use crate::pipeline::PipelineResultType;
 
 struct ConcatSinkState {
@@ -28,9 +30,10 @@ impl StreamingSink for ConcatSink {
         &self,
         index: usize,
         input: &PipelineResultType,
-        state: &mut dyn StreamingSinkState,
+        state: &StreamingSinkStateWrapper,
     ) -> DaftResult<StreamingSinkOutput> {
-        let state = state
+        let mut guard = state.inner.lock().unwrap();
+        let state = guard
             .as_any_mut()
             .downcast_mut::<ConcatSinkState>()
             .expect("ConcatSink should have ConcatSinkState");

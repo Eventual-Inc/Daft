@@ -4,7 +4,9 @@ use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
-use super::streaming_sink::{StreamingSink, StreamingSinkOutput, StreamingSinkState};
+use super::streaming_sink::{
+    StreamingSink, StreamingSinkOutput, StreamingSinkState, StreamingSinkStateWrapper,
+};
 use crate::pipeline::PipelineResultType;
 
 struct LimitSinkState {
@@ -43,10 +45,11 @@ impl StreamingSink for LimitSink {
         &self,
         index: usize,
         input: &PipelineResultType,
-        state: &mut dyn StreamingSinkState,
+        state: &StreamingSinkStateWrapper,
     ) -> DaftResult<StreamingSinkOutput> {
         assert_eq!(index, 0);
-        let state = state
+        let mut guard = state.inner.lock().unwrap();
+        let state = guard
             .as_any_mut()
             .downcast_mut::<LimitSinkState>()
             .expect("Limit Sink should have LimitSinkState");
