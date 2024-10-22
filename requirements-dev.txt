@@ -33,6 +33,7 @@ xxhash>=3.0.0
 Pillow==10.4.0
 opencv-python==4.8.1.78
 tiktoken==0.7.0
+duckdb==1.1.2
 
 # Pyarrow
 pyarrow==16.0.0; python_version >= '3.9'
@@ -66,7 +67,6 @@ trino[sqlalchemy]==0.328.0; python_version >= '3.8'
 PyMySQL==1.1.0; python_version >= '3.8'
 psycopg2-binary==2.9.9; python_version >= '3.8'
 sqlglot==23.3.0; python_version >= '3.8'
-
 # AWS
 s3fs==2023.12.0; python_version >= '3.8'
 # on old versions of s3fs's pinned botocore, they neglected to pin urllib3<2 which leads to:
