@@ -130,6 +130,8 @@ impl StreamingSinkNode {
         output_receiver
     }
 
+    // Forwards input from the children to the workers in a round-robin fashion.
+    // Always exhausts the input from one child before moving to the next.
     async fn forward_input_to_workers(
         receivers: Vec<CountingReceiver>,
         worker_senders: Vec<Sender<(usize, PipelineResultType)>>,
