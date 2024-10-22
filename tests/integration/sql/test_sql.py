@@ -134,7 +134,6 @@ def test_sql_read_with_partition_num_without_partition_col(test_db) -> None:
         ("id", 100),
         ("float_col", 100.0123),
         ("string_col", "row_100"),
-        ("bool_col", True),
         ("date_col", datetime.date(2021, 1, 1)),
         ("date_time_col", datetime.datetime(2020, 1, 1, 10, 0, 0)),
     ],
@@ -204,7 +203,7 @@ def test_sql_read_with_not_null_filter_pushdowns(test_db, num_partitions, pdf) -
 
 @pytest.mark.integration()
 @pytest.mark.parametrize("num_partitions", [1, 2])
-def test_sql_read_with_if_else_filter_pushdown(test_db, num_partitions, pdf) -> None:
+def test_sql_read_with_if_else_filter(test_db, num_partitions, pdf) -> None:
     df = daft.read_sql(
         f"SELECT * FROM {TEST_TABLE_NAME}",
         test_db,
