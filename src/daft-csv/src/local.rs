@@ -25,7 +25,7 @@ use daft_decoding::deserialize::deserialize_column;
 use daft_dsl::{optimization::get_required_columns, Expr};
 use daft_io::{IOClient, IOStatsRef};
 use daft_table::Table;
-use futures::Stream;
+use futures::{Stream, StreamExt};
 use rayon::{
     iter::IndexedParallelIterator,
     prelude::{IntoParallelRefIterator, ParallelIterator},
@@ -404,7 +404,17 @@ pub async fn stream_csv_local(
         );
     });
 
-    Ok(futures::stream::iter(receiver))
+    let stream = futures::stream::iter(receiver)
+        .map(|oneshot_rx| async move {
+            oneshot_rx
+                .await
+                .context(super::OneShotRecvSnafu {})
+                .map_err(DaftError::from)
+                .and_then(|result| result)
+        })
+        .then(|future| future);
+
+    Ok(stream)
 }
 
 /// Helper function that reads up to 1 MiB of the CSV file to  estimate stats and/or infer the schema of the file.
@@ -498,7 +508,7 @@ fn consume_slab_iterator(
     include_columns: Option<Vec<String>>,
     predicate: Option<Arc<Expr>>,
     limit: Option<usize>,
-    sender: Sender<Result<Table, DaftError>>,
+    sender: Sender<tokio::sync::oneshot::Receiver<Result<Table, DaftError>>>,
 ) {
     // Create slab pool for file reads.
     let slabpool = FileSlabPool::new();
@@ -598,6 +608,7 @@ fn consume_slab_iterator(
         let sender = sender.clone();
         let rows_read = Arc::clone(&rows_read);
         let mut csv_buffer = buffer_pool.get_buffer();
+        let (oneshot_send, oneshot_recv) = tokio::sync::oneshot::channel();
         rayon::spawn(move || {
             if let Some(state) = states_to_read.last() {
                 assert!(state.is_final());
@@ -616,11 +627,13 @@ fn consume_slab_iterator(
                 &mut csv_buffer,
                 include_columns,
                 predicate,
-                sender,
+                oneshot_send,
                 rows_read,
             );
         });
         has_header = false;
+
+        let _ = sender.send(oneshot_recv);
     }
 }
 
@@ -1098,7 +1111,7 @@ fn dispatch_to_parse_csv<R>(
     csv_buffer: &mut CsvBuffer,
     include_columns: Option<Vec<String>>,
     predicate: Option<Arc<Expr>>,
-    sender: Sender<Result<Table, DaftError>>,
+    sender: tokio::sync::oneshot::Sender<Result<Table, DaftError>>,
     rows_read: Arc<AtomicUsize>,
 ) where
     R: std::io::Read,
@@ -1126,15 +1139,12 @@ fn dispatch_to_parse_csv<R>(
     };
     match table_results {
         Ok(tables) => {
-            for table in tables {
-                let table_len = table.len();
-                let _ = sender.send(Ok(table));
-                // Atomically update the number of rows read only after the result has
-                // been sent. In theory we could wrap these steps in a mutex, but
-                // applying limit at this layer can be best-effort with no adverse
-                // side effects.
-                rows_read.fetch_add(table_len, Ordering::Relaxed);
+            let concated_tables = tables_concat(tables);
+            if let Ok(table) = &concated_tables {
+                // Update the number of rows read so the main thread can apply the limit, if any.
+                rows_read.fetch_add(table.len(), Ordering::SeqCst);
             }
+            let _ = sender.send(concated_tables);
         }
         Err(e) => {
             let _ = sender.send(Err(e));
