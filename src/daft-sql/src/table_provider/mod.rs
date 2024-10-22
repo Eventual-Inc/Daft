@@ -4,7 +4,7 @@ use std::{collections::HashMap, sync::Arc};
 use daft_plan::LogicalPlanBuilder;
 use once_cell::sync::Lazy;
 use read_parquet::ReadParquetFunction;
-use sqlparser::ast::{TableAlias, TableFunctionArgs};
+use sqlparser::ast::TableFunctionArgs;
 
 use crate::{
     error::SQLPlannerResult,
@@ -52,7 +52,6 @@ impl SQLPlanner {
         &self,
         fn_name: &str,
         args: &TableFunctionArgs,
-        alias: &Option<TableAlias>,
     ) -> SQLPlannerResult<Relation> {
         let fns = &SQL_TABLE_FUNCTIONS;
 
@@ -61,12 +60,8 @@ impl SQLPlanner {
         };
 
         let builder = func.plan(self, args)?;
-        let name = alias
-            .as_ref()
-            .map(|a| a.name.value.clone())
-            .unwrap_or_else(|| fn_name.to_string());
 
-        Ok(Relation::new(builder, name))
+        Ok(Relation::new(builder, fn_name.to_string()))
     }
 }
 

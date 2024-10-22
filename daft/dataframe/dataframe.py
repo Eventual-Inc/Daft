@@ -38,8 +38,7 @@ from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.expressions import Expression, ExpressionsProjection, col, lit
 from daft.logical.builder import LogicalPlanBuilder
-from daft.runners.partitioning import PartitionCacheEntry, PartitionSet
-from daft.runners.pyrunner import LocalPartitionSet
+from daft.runners.partitioning import LocalPartitionSet, PartitionCacheEntry, PartitionSet
 from daft.table import MicroPartition
 from daft.viz import DataFrameDisplay
 
@@ -1660,8 +1659,8 @@ class DataFrame:
     def into_partitions(self, num: int) -> "DataFrame":
         """Splits or coalesces DataFrame to ``num`` partitions. Order is preserved.
 
-        No rebalancing is done; the minimum number of splits or merges are applied.
-        (i.e. if there are 2 partitions, and change it into 3, this function will just split the bigger one)
+        This will naively greedily split partitions in a round-robin fashion to hit the targeted number of partitions.
+        The number of rows/size in a given partition is not taken into account during the splitting.
 
         Example:
             >>> import daft
@@ -1688,10 +1687,13 @@ class DataFrame:
         right_on: Optional[Union[List[ColumnInputType], ColumnInputType]] = None,
         how: str = "inner",
         strategy: Optional[str] = None,
+        prefix: Optional[str] = None,
+        suffix: Optional[str] = None,
     ) -> "DataFrame":
         """Column-wise join of the current DataFrame with an ``other`` DataFrame, similar to a SQL ``JOIN``
 
-        If the two DataFrames have duplicate non-join key column names, "right." will be prepended to the conflicting right columns.
+        If the two DataFrames have duplicate non-join key column names, "right." will be prepended to the conflicting right columns. You can change the behavior by passing either (or both) `prefix` or `suffix` to the function.
+        If `prefix` is passed, it will be prepended to the conflicting right columns. If `suffix` is passed, it will be appended to the conflicting right columns.
 
         .. NOTE::
             Although self joins are supported, we currently duplicate the logical plan for the right side
@@ -1716,6 +1718,42 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 2 of 2 rows)
 
+            >>> import daft
+            >>> from daft import col
+            >>> df1 = daft.from_pydict({ "a": ["w", "x", "y"], "b": [1, 2, 3] })
+            >>> df2 = daft.from_pydict({ "a": ["x", "y", "z"], "b": [20, 30, 40] })
+            >>> joined_df = df1.join(df2, left_on=[col("a"), col("b")], right_on=[col("a"), col("b")/10], prefix="right_")
+            >>> joined_df.show()
+            ╭──────┬───────┬─────────╮
+            │ a    ┆ b     ┆ right_b │
+            │ ---  ┆ ---   ┆ ---     │
+            │ Utf8 ┆ Int64 ┆ Int64   │
+            ╞══════╪═══════╪═════════╡
+            │ x    ┆ 2     ┆ 20      │
+            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ y    ┆ 3     ┆ 30      │
+            ╰──────┴───────┴─────────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+
+            >>> import daft
+            >>> from daft import col
+            >>> df1 = daft.from_pydict({ "a": ["w", "x", "y"], "b": [1, 2, 3] })
+            >>> df2 = daft.from_pydict({ "a": ["x", "y", "z"], "b": [20, 30, 40] })
+            >>> joined_df = df1.join(df2, left_on=[col("a"), col("b")], right_on=[col("a"), col("b")/10], suffix="_right")
+            >>> joined_df.show()
+            ╭──────┬───────┬─────────╮
+            │ a    ┆ b     ┆ b_right │
+            │ ---  ┆ ---   ┆ ---     │
+            │ Utf8 ┆ Int64 ┆ Int64   │
+            ╞══════╪═══════╪═════════╡
+            │ x    ┆ 2     ┆ 20      │
+            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ y    ┆ 3     ┆ 30      │
+            ╰──────┴───────┴─────────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+
         Args:
             other (DataFrame): the right DataFrame to join on.
             on (Optional[Union[List[ColumnInputType], ColumnInputType]], optional): key or keys to join on [use if the keys on the left and right side match.]. Defaults to None.
@@ -1724,6 +1762,8 @@ class DataFrame:
             how (str, optional): what type of join to perform; currently "inner", "left", "right", "outer", "anti", and "semi" are supported. Defaults to "inner".
             strategy (Optional[str]): The join strategy (algorithm) to use; currently "hash", "sort_merge", "broadcast", and None are supported, where None
                 chooses the join strategy automatically during query optimization. The default is None.
+            suffix (Optional[str], optional): Suffix to add to the column names in case of a name collision. Defaults to "".
+            prefix (Optional[str], optional): Prefix to add to the column names in case of a name collision. Defaults to "right.".
 
         Raises:
             ValueError: if `on` is passed in and `left_on` or `right_on` is not None.
@@ -1756,6 +1796,8 @@ class DataFrame:
             right_on=right_exprs,
             how=join_type,
             strategy=join_strategy,
+            join_prefix=prefix,
+            join_suffix=suffix,
         )
         return DataFrame(builder)
 

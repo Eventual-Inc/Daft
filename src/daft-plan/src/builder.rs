@@ -19,6 +19,7 @@ use daft_scan::{
     PhysicalScanInfo, Pushdowns, ScanOperatorRef,
 };
 use daft_schema::{
+    dtype::DataType,
     field::Field,
     schema::{Schema, SchemaRef},
 };
@@ -146,7 +147,7 @@ impl LogicalPlanBuilder {
         io_config: Option<IOConfig>,
         multithreaded_io: bool,
     ) -> DaftResult<Self> {
-        use daft_scan::storage_config::PyStorageConfig;
+        use daft_scan::storage_config::{NativeStorageConfig, PyStorageConfig, StorageConfig};
 
         Python::with_gil(|py| {
             let io_config = io_config.unwrap_or_default();
@@ -194,21 +195,45 @@ impl LogicalPlanBuilder {
             pushdowns.clone().unwrap_or_default(),
         ));
         // If column selection (projection) pushdown is specified, prune unselected columns from the schema.
-        let output_schema = if let Some(Pushdowns {
-            columns: Some(columns),
-            ..
-        }) = &pushdowns
-            && columns.len() < schema.fields.len()
-        {
-            let pruned_upstream_schema = schema
-                .fields
-                .iter()
-                .filter(|&(name, _)| columns.contains(name))
-                .map(|(_, field)| field.clone())
-                .collect::<Vec<_>>();
-            Arc::new(Schema::new(pruned_upstream_schema)?)
-        } else {
-            schema
+        // If file path column is specified, add it to the schema.
+        let output_schema = match (&pushdowns, &scan_operator.0.file_path_column()) {
+            (
+                Some(Pushdowns {
+                    columns: Some(columns),
+                    ..
+                }),
+                file_path_column_opt,
+            ) if columns.len() < schema.fields.len() => {
+                let pruned_fields = schema
+                    .fields
+                    .iter()
+                    .filter(|(name, _)| columns.contains(name))
+                    .map(|(_, field)| field.clone());
+
+                let finalized_fields = match file_path_column_opt {
+                    Some(file_path_column) => pruned_fields
+                        .chain(std::iter::once(Field::new(
+                            (*file_path_column).to_string(),
+                            DataType::Utf8,
+                        )))
+                        .collect::<Vec<_>>(),
+                    None => pruned_fields.collect::<Vec<_>>(),
+                };
+                Arc::new(Schema::new(finalized_fields)?)
+            }
+            (None, Some(file_path_column)) => {
+                let schema_with_file_path = schema
+                    .fields
+                    .values()
+                    .cloned()
+                    .chain(std::iter::once(Field::new(
+                        (*file_path_column).to_string(),
+                        DataType::Utf8,
+                    )))
+                    .collect::<Vec<_>>();
+                Arc::new(Schema::new(schema_with_file_path)?)
+            }
+            _ => schema,
         };
         let logical_plan: LogicalPlan =
             logical_ops::Source::new(output_schema, source_info.into()).into();
@@ -418,6 +443,7 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(pivot_logical_plan))
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn join<Right: Into<LogicalPlanRef>>(
         &self,
         right: Right,
@@ -425,6 +451,8 @@ impl LogicalPlanBuilder {
         right_on: Vec<ExprRef>,
         join_type: JoinType,
         join_strategy: Option<JoinStrategy>,
+        join_suffix: Option<&str>,
+        join_prefix: Option<&str>,
     ) -> DaftResult<Self> {
         let logical_plan: LogicalPlan = logical_ops::Join::try_new(
             self.plan.clone(),
@@ -433,6 +461,8 @@ impl LogicalPlanBuilder {
             right_on,
             join_type,
             join_strategy,
+            join_suffix,
+            join_prefix,
         )?
         .into();
         Ok(self.with_new_plan(logical_plan))
@@ -585,6 +615,7 @@ pub struct ParquetScanBuilder {
     pub io_config: Option<IOConfig>,
     pub multithreaded: bool,
     pub schema: Option<SchemaRef>,
+    pub file_path_column: Option<String>,
 }
 
 impl ParquetScanBuilder {
@@ -605,6 +636,7 @@ impl ParquetScanBuilder {
             multithreaded: true,
             schema: None,
             io_config: None,
+            file_path_column: None,
         }
     }
     pub fn infer_schema(mut self, infer_schema: bool) -> Self {
@@ -642,6 +674,11 @@ impl ParquetScanBuilder {
         self
     }
 
+    pub fn file_path_column(mut self, file_path_column: String) -> Self {
+        self.file_path_column = Some(file_path_column);
+        self
+    }
+
     pub fn finish(self) -> DaftResult<LogicalPlanBuilder> {
         let cfg = ParquetSourceConfig {
             coerce_int96_timestamp_unit: self.coerce_int96_timestamp_unit,
@@ -658,6 +695,7 @@ impl ParquetScanBuilder {
             ))),
             self.infer_schema,
             self.schema,
+            self.file_path_column,
         )?);
 
         LogicalPlanBuilder::table_scan(ScanOperatorRef(operator), None)
@@ -835,7 +873,7 @@ impl PyLogicalPlanBuilder {
             )?
             .into())
     }
-
+    #[allow(clippy::too_many_arguments)]
     pub fn join(
         &self,
         right: &Self,
@@ -843,6 +881,8 @@ impl PyLogicalPlanBuilder {
         right_on: Vec<PyExpr>,
         join_type: JoinType,
         join_strategy: Option<JoinStrategy>,
+        join_suffix: Option<&str>,
+        join_prefix: Option<&str>,
     ) -> PyResult<Self> {
         Ok(self
             .builder
@@ -852,6 +892,8 @@ impl PyLogicalPlanBuilder {
                 pyexprs_to_exprs(right_on),
                 join_type,
                 join_strategy,
+                join_suffix,
+                join_prefix,
             )?
             .into())
     }

@@ -1,0 +1,47 @@
+name: Feature Request
+description: Suggest an idea for this project
+labels: [enhancement, needs triage]
+body:
+- type: textarea
+  id: related-problem
+  attributes:
+    label: Is your feature request related to a problem?
+    description: Is your feature request related to a problem? If so, provide a concise description of the problem.
+    placeholder: Include the Issue ID from this or other repos.
+  validations:
+    required: true
+- type: textarea
+  id: solution
+  attributes:
+    label: Describe the solution you'd like
+    description: What do you want to happen instead? What is the expected behavior?
+    placeholder: I'd like to ...
+  validations:
+    required: true
+- type: textarea
+  id: alternatives
+  attributes:
+    label: Describe alternatives you've considered
+    description: Which alternative solutions or features have you considered?
+    placeholder: Some potential solutions
+  validations:
+    required: false
+- type: textarea
+  id: additional-context
+  attributes:
+    label: Additional Context
+    description: Add any other context about the feature request here.
+    placeholder: Some related requests in other projects or upstream spec proposals.
+  validations:
+    required: false
+- type: dropdown
+  id: contribute
+  attributes:
+    label: Would you like to implement a fix?
+    description: |
+      For guidance on how to get started, refer to the [contribution guide](https://github.com/Eventual-Inc/Daft/blob/main/CONTRIBUTING.md).
+    options:
+    - "No"
+    - "Yes"
+  validations:
+    required: true

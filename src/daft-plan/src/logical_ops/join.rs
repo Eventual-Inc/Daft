@@ -47,6 +47,7 @@ impl std::hash::Hash for Join {
 }
 
 impl Join {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn try_new(
         left: Arc<LogicalPlan>,
         right: Arc<LogicalPlan>,
@@ -54,6 +55,8 @@ impl Join {
         right_on: Vec<ExprRef>,
         join_type: JoinType,
         join_strategy: Option<JoinStrategy>,
+        join_suffix: Option<&str>,
+        join_prefix: Option<&str>,
     ) -> logical_plan::Result<Self> {
         let (left_on, _) = resolve_exprs(left_on, &left.schema(), false).context(CreationSnafu)?;
         let (right_on, _) =
@@ -124,7 +127,14 @@ impl Join {
                     } else {
                         let mut new_name = name.clone();
                         while names_so_far.contains(&new_name) {
-                            new_name = format!("right.{}", new_name);
+                            if let Some(prefix) = join_prefix {
+                                new_name = format!("{}{}", prefix, new_name);
+                            } else if join_suffix.is_none() {
+                                new_name = format!("right.{}", new_name);
+                            }
+                            if let Some(suffix) = join_suffix {
+                                new_name = format!("{}{}", new_name, suffix);
+                            }
                         }
                         names_so_far.insert(new_name.clone());
 

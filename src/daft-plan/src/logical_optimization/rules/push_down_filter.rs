@@ -674,6 +674,8 @@ mod tests {
                 join_on.clone(),
                 how,
                 None,
+                None,
+                None,
             )?
             .filter(pred.clone())?
             .build();
@@ -686,7 +688,15 @@ mod tests {
             left_scan_plan.filter(pred)?
         };
         let expected = expected_left_filter_scan
-            .join(&right_scan_plan, join_on.clone(), join_on, how, None)?
+            .join(
+                &right_scan_plan,
+                join_on.clone(),
+                join_on,
+                how,
+                None,
+                None,
+                None,
+            )?
             .build();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
@@ -720,6 +730,8 @@ mod tests {
                 join_on.clone(),
                 how,
                 None,
+                None,
+                None,
             )?
             .filter(pred.clone())?
             .build();
@@ -737,6 +749,8 @@ mod tests {
                 join_on.clone(),
                 join_on,
                 how,
+                None,
+                None,
                 None,
             )?
             .build();
@@ -785,6 +799,8 @@ mod tests {
                 join_on.clone(),
                 how,
                 None,
+                None,
+                None,
             )?
             .filter(pred.clone())?
             .build();
@@ -811,6 +827,8 @@ mod tests {
                 join_on,
                 how,
                 None,
+                None,
+                None,
             )?
             .build();
         assert_optimized_plan_eq(plan, expected)?;
@@ -835,7 +853,15 @@ mod tests {
         let join_on = vec![col("b")];
         let pred = col("a").lt(lit(2));
         let plan = left_scan_plan
-            .join(&right_scan_plan, join_on.clone(), join_on, how, None)?
+            .join(
+                &right_scan_plan,
+                join_on.clone(),
+                join_on,
+                how,
+                None,
+                None,
+                None,
+            )?
             .filter(pred)?
             .build();
         // should not push down filter
@@ -862,7 +888,15 @@ mod tests {
         let join_on = vec![col("b")];
         let pred = col("c").lt(lit(2.0));
         let plan = left_scan_plan
-            .join(&right_scan_plan, join_on.clone(), join_on, how, None)?
+            .join(
+                &right_scan_plan,
+                join_on.clone(),
+                join_on,
+                how,
+                None,
+                None,
+                None,
+            )?
             .filter(pred)?
             .build();
         // should not push down filter

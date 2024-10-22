@@ -2,12 +2,12 @@ use std::sync::Arc;
 
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
+use common_runtime::get_compute_runtime;
 use daft_micropartition::MicroPartition;
 use tracing::info_span;
 
 use crate::{
     channel::PipelineChannel,
-    get_compute_runtime,
     pipeline::{PipelineNode, PipelineResultType},
     runtime_stats::RuntimeStatsContext,
     ExecutionRuntimeHandle,
@@ -93,7 +93,7 @@ impl PipelineNode for BlockingSinkNode {
         runtime_handle.spawn(
             async move {
                 let span = info_span!("BlockingSinkNode::execute");
-                let compute_runtime = get_compute_runtime()?;
+                let compute_runtime = get_compute_runtime();
                 while let Some(val) = child_results_receiver.recv().await {
                     let op = op.clone();
                     let span = span.clone();
@@ -102,13 +102,13 @@ impl PipelineNode for BlockingSinkNode {
                         let mut guard = op.lock().await;
                         rt_context.in_span(&span, || guard.sink(val.as_data()))
                     };
-                    let result = compute_runtime.await_on_compute_pool(fut).await??;
+                    let result = compute_runtime.await_on(fut).await??;
                     if matches!(result, BlockingSinkStatus::Finished) {
                         break;
                     }
                 }
                 let finalized_result = compute_runtime
-                    .await_on_compute_pool(async move {
+                    .await_on(async move {
                         let mut guard = op.lock().await;
                         rt_context.in_span(&info_span!("BlockingSinkNode::finalize"), || {
                             guard.finalize()

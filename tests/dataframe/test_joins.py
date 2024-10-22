@@ -3,6 +3,7 @@ from __future__ import annotations
 import pyarrow as pa
 import pytest
 
+import daft
 from daft import col, context
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
@@ -11,7 +12,7 @@ from tests.utils import sort_arrow_table
 
 def skip_invalid_join_strategies(join_strategy, join_type):
     if context.get_context().daft_execution_config.enable_native_executor is True:
-        if join_type == "outer" or join_strategy not in [None, "hash"]:
+        if join_strategy not in [None, "hash"]:
             pytest.skip("Native executor fails for these tests")
     else:
         if (join_strategy == "sort_merge" or join_strategy == "sort_merge_aligned_boundaries") and join_type != "inner":
@@ -1086,3 +1087,21 @@ def test_join_same_name_alias_with_compute(join_strategy, join_type, expected, m
     assert sort_arrow_table(pa.Table.from_pydict(daft_df.to_pydict()), "a") == sort_arrow_table(
         pa.Table.from_pydict(expected), "a"
     )
+
+
+@pytest.mark.parametrize(
+    "suffix,prefix,expected",
+    [
+        (None, None, "right.score"),
+        ("_right", None, "score_right"),
+        (None, "left_", "left_score"),
+        ("_right", "prefix.", "prefix.score_right"),
+    ],
+)
+def test_join_suffix_and_prefix(suffix, prefix, expected, make_df):
+    df1 = daft.from_pydict({"idx": [1, 2], "val": [10, 20]})
+    df2 = daft.from_pydict({"idx": [3], "score": [0.1]})
+    df3 = daft.from_pydict({"idx": [1], "score": [0.1]})
+
+    df = df1.join(df2, on="idx").join(df3, on="idx", suffix=suffix, prefix=prefix)
+    assert df.column_names == ["idx", "val", "score", expected]

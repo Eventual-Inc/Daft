@@ -42,6 +42,10 @@ impl ScanOperator for AnonymousScanOperator {
         &[]
     }
 
+    fn file_path_column(&self) -> Option<&str> {
+        None
+    }
+
     fn can_absorb_filter(&self) -> bool {
         false
     }
@@ -101,6 +105,7 @@ impl ScanOperator for AnonymousScanOperator {
                     schema.clone(),
                     storage_config.clone(),
                     pushdowns.clone(),
+                    None,
                 )
                 .into())
             },

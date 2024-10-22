@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
+use common_runtime::get_compute_runtime;
 use daft_micropartition::MicroPartition;
 use tokio::sync::Mutex;
 use tracing::{info_span, instrument};
@@ -82,7 +83,7 @@ impl IntermediateNode {
         rt_context: Arc<RuntimeStatsContext>,
     ) -> DaftResult<()> {
         let span = info_span!("IntermediateOp::execute");
-        let compute_runtime = crate::get_compute_runtime()?;
+        let compute_runtime = get_compute_runtime();
         let state = Arc::new(Mutex::new(op.make_state()));
         while let Some((idx, morsel)) = receiver.recv().await {
             loop {
@@ -95,7 +96,7 @@ impl IntermediateNode {
                     let mut state_guard = state.lock().await;
                     rt_context.in_span(&span, || op.execute(idx, &morsel, state_guard.as_mut()))
                 };
-                let result = compute_runtime.await_on_compute_pool(fut).await??;
+                let result = compute_runtime.await_on(fut).await??;
                 match result {
                     IntermediateOperatorResult::NeedMoreInput(Some(mp)) => {
                         let _ = sender.send(mp.into()).await;
