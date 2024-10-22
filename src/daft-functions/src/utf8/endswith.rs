@@ -45,7 +45,7 @@ impl ScalarUDF for Utf8Endswith {
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
-            [data, pattern] => data.utf8_startswith(pattern),
+            [data, pattern] => data.utf8_endswith(pattern),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 2 input args, got {}",
                 inputs.len()
