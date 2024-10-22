@@ -4,6 +4,7 @@ import gcsfs
 import pytest
 
 from daft.daft import io_glob
+from daft.exceptions import DaftCoreException
 
 BUCKET = "daft-public-data-gs"
 
@@ -72,4 +73,11 @@ def test_gs_single_file_listing(gcs_public_config, recursive):
 def test_gs_notfound(gcs_public_config):
     path = f"gs://{BUCKET}/test_"
     with pytest.raises(FileNotFoundError, match=path):
+        io_glob(path, io_config=gcs_public_config)
+
+
+@pytest.mark.integration()
+def test_invalid_double_asterisk_usage_gcs(gcs_public_config):
+    path = f"gs://{BUCKET}/**invalid"
+    with pytest.raises(DaftCoreException):
         io_glob(path, io_config=gcs_public_config)

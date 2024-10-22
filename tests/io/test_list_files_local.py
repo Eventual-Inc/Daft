@@ -6,6 +6,7 @@ import pytest
 from fsspec.implementations.local import LocalFileSystem
 
 from daft.daft import io_glob
+from daft.exceptions import DaftCoreException
 
 
 def local_recursive_list(fs, path) -> list:
@@ -165,3 +166,17 @@ def test_missing_file_path(tmp_path, include_protocol):
         p = "file://" + p
     with pytest.raises(FileNotFoundError, match="/c/cc/ddd not found"):
         io_glob(p)
+
+
+@pytest.mark.parametrize("include_protocol", [False, True])
+@pytest.mark.integration()
+def test_invalid_double_asterisk_usage_local(tmp_path, include_protocol):
+    d = tmp_path / "dir"
+    d.mkdir()
+
+    path = str(d) + "/**.pq"
+    if include_protocol:
+        path = "file://" + path
+
+    with pytest.raises(DaftCoreException):
+        io_glob(path)

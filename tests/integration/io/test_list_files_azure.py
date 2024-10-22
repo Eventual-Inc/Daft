@@ -4,6 +4,7 @@ import adlfs
 import pytest
 
 from daft.daft import AzureConfig, IOConfig, io_glob
+from daft.exceptions import DaftCoreException
 
 STORAGE_ACCOUNT = "dafttestdata"
 CONTAINER = "public-anonymous"
@@ -68,4 +69,11 @@ def test_az_single_file_listing():
 def test_az_notfound():
     path = f"az://{CONTAINER}/test_"
     with pytest.raises(FileNotFoundError, match=path):
+        io_glob(path, io_config=IOConfig(azure=DEFAULT_AZURE_CONFIG))
+
+
+@pytest.mark.integration()
+def test_invalid_double_asterisk_usage():
+    path = f"az://{CONTAINER}/**.pq"
+    with pytest.raises(DaftCoreException):
         io_glob(path, io_config=IOConfig(azure=DEFAULT_AZURE_CONFIG))

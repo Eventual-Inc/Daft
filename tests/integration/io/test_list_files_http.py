@@ -6,6 +6,7 @@ import pytest
 from fsspec.implementations.http import HTTPFileSystem
 
 from daft.daft import io_glob
+from daft.exceptions import DaftCoreException
 from tests.integration.io.conftest import mount_data_nginx
 
 
@@ -139,3 +140,10 @@ def test_http_listing_absolute_base_urls(nginx_config, tmpdir):
         assert daft_ls_result == [
             {"type": "File", "path": f"{nginx_http_url}/other.html", "size": None},
         ]
+
+
+@pytest.mark.integration()
+def test_invalid_double_asterisk_usage_http(nginx_http_url):
+    path = f"{nginx_http_url}/**.txt"
+    with pytest.raises(DaftCoreException):
+        io_glob(path)

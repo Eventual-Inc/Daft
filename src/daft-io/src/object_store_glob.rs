@@ -404,6 +404,28 @@ pub async fn glob(
     };
     let glob = glob.as_str();
 
+    // We need to do some validation on the glob pattern before compiling it, since the globset crate is very permissive
+    // and will happily compile patterns that don't make sense without throwing an error.
+    fn verify_glob(glob: &str) -> super::Result<()> {
+        // Catching invalid usage of "**" in the glob pattern (e.g. "s3://bucket/**.txt" is invalid)
+        let parts = glob.split('/');
+
+        for part in parts {
+            if part.contains("**") && part != "**" {
+                return Err(super::Error::InvalidArgument {
+                    msg: format!(
+                        "Invalid usage of '**' in glob pattern. The '**' wildcard must occupy an entire path segment and be surrounded by '{}' characters. Found invalid usage in '{}'.",
+                        GLOB_DELIMITER, glob
+                    ),
+                });
+            }
+        }
+
+        Ok(())
+    }
+
+    verify_glob(glob)?;
+
     let glob_fragments = to_glob_fragments(glob)?;
     let full_glob_matcher = GlobBuilder::new(glob)
         .literal_separator(true)
