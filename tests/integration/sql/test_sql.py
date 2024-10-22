@@ -134,12 +134,17 @@ def test_sql_read_with_partition_num_without_partition_col(test_db) -> None:
         ("id", 100),
         ("float_col", 100.0123),
         ("string_col", "row_100"),
+        ("bool_col", True),
         ("date_col", datetime.date(2021, 1, 1)),
         ("date_time_col", datetime.datetime(2020, 1, 1, 10, 0, 0)),
     ],
 )
 @pytest.mark.parametrize("num_partitions", [1, 2])
 def test_sql_read_with_binary_filter_pushdowns(test_db, column, operator, value, num_partitions, pdf) -> None:
+    # Skip invalid comparisons for bool_col
+    if column == "bool_col" and operator not in ("=", "!="):
+        pytest.skip(f"Operator {operator} not valid for bool_col")
+
     df = daft.read_sql(
         f"SELECT * FROM {TEST_TABLE_NAME}",
         test_db,
@@ -203,13 +208,15 @@ def test_sql_read_with_not_null_filter_pushdowns(test_db, num_partitions, pdf) -
 
 @pytest.mark.integration()
 @pytest.mark.parametrize("num_partitions", [1, 2])
-def test_sql_read_with_if_else_filter(test_db, num_partitions, pdf) -> None:
+def test_sql_read_with_non_pushdowned_predicate(test_db, num_partitions, pdf) -> None:
     df = daft.read_sql(
         f"SELECT * FROM {TEST_TABLE_NAME}",
         test_db,
         partition_col="id",
         num_partitions=num_partitions,
     )
+
+    # If_else is not supported as a pushdown to read_sql, but it should still work
     df = df.where((df["id"] > 100).if_else(df["float_col"] > 150, df["float_col"] < 50))
 
     pdf = pdf[(pdf["id"] > 100) & (pdf["float_col"] > 150) | (pdf["float_col"] < 50)]
