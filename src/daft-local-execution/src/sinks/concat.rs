@@ -22,6 +22,7 @@ pub struct ConcatSink {}
 impl StreamingSink for ConcatSink {
     /// Execute for the ConcatSink operator does not do any computation and simply returns the input data.
     /// It only expects that the indices of the input data are strictly non-decreasing.
+    /// TODO(Colin): If maintain_order is false, technically we could accept any index. Make this optimization later.
     #[instrument(skip_all, name = "ConcatSink::sink")]
     fn execute(
         &self,
