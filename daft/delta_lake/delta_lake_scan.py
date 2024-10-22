@@ -46,11 +46,14 @@ class DeltaLakeScanOperator(ScanOperator):
         if scheme == "s3" or scheme == "s3a":
             # Try to get region from boto3
             if deltalake_sdk_io_config.s3.region_name is None:
-                client = boto3_client_from_s3_config("s3", deltalake_sdk_io_config.s3)
-                response = client.get_bucket_location(Bucket=urlparse(table_uri).netloc)
-                deltalake_sdk_io_config = deltalake_sdk_io_config.replace(
-                    s3=deltalake_sdk_io_config.s3.replace(region_name=response["LocationConstraint"])
-                )
+                try:
+                    client = boto3_client_from_s3_config("s3", deltalake_sdk_io_config.s3)
+                    response = client.get_bucket_location(Bucket=urlparse(table_uri).netloc)
+                    deltalake_sdk_io_config = deltalake_sdk_io_config.replace(
+                        s3=deltalake_sdk_io_config.s3.replace(region_name=response["LocationConstraint"])
+                    )
+                except Exception:
+                    pass
 
             # Try to get config from the environment
             if any([deltalake_sdk_io_config.s3.key_id is None, deltalake_sdk_io_config.s3.region_name is None]):
