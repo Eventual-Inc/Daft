@@ -405,7 +405,7 @@ mod tests {
         // 3 + 2 + 1 = 6
         assert_eq!(pass_count, 6);
 
-        let mut new_proj_exprs = proj_exprs.clone();
+        let mut new_proj_exprs = proj_exprs;
         new_proj_exprs.rotate_left(2);
         let new_pred = filter_predicate
             .or(lit(false))
@@ -446,7 +446,7 @@ mod tests {
                 };
                 let new_predicate = filter.predicate.or(lit(false));
                 Ok(Transformed::yes(
-                    LogicalPlan::from(Filter::try_new(filter.input.clone(), new_predicate)?).into(),
+                    LogicalPlan::from(Filter::try_new(filter.input, new_predicate)?).into(),
                 ))
             })
         }
@@ -473,7 +473,7 @@ mod tests {
                 };
                 let new_predicate = filter.predicate.and(lit(true));
                 Ok(Transformed::yes(
-                    LogicalPlan::from(Filter::try_new(filter.input.clone(), new_predicate)?).into(),
+                    LogicalPlan::from(Filter::try_new(filter.input, new_predicate)?).into(),
                 ))
             })
         }
@@ -511,7 +511,7 @@ mod tests {
                     exprs.rotate_left(1);
                 }
                 Ok(Transformed::yes(
-                    LogicalPlan::from(Project::try_new(project.input.clone(), exprs)?).into(),
+                    LogicalPlan::from(Project::try_new(project.input, exprs)?).into(),
                 ))
             })
         }

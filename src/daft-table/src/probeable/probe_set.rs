@@ -15,7 +15,7 @@ use daft_core::{
 
 use super::{ArrowTableEntry, IndicesMapper, Probeable, ProbeableBuilder};
 use crate::Table;
-pub(crate) struct ProbeSet {
+pub struct ProbeSet {
     schema: SchemaRef,
     hash_table: HashMap<IndexHash, (), IdentityBuildHasher>,
     tables: Vec<ArrowTableEntry>,
@@ -156,7 +156,7 @@ impl Probeable for ProbeSet {
     }
 }
 
-pub(crate) struct ProbeSetBuilder(pub ProbeSet);
+pub struct ProbeSetBuilder(pub ProbeSet);
 
 impl ProbeableBuilder for ProbeSetBuilder {
     fn add_table(&mut self, table: &Table) -> DaftResult<()> {

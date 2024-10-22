@@ -17,6 +17,7 @@ pub mod temporal;
 pub mod utf8;
 
 pub use aggs::SQLModuleAggs;
+pub use config::SQLModuleConfig;
 pub use float::SQLModuleFloat;
 pub use image::SQLModuleImage;
 pub use json::SQLModuleJson;

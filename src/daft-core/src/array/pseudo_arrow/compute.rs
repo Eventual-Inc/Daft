@@ -9,7 +9,7 @@ impl<T: Send + Sync + Clone + 'static> PseudoArrowArray<T> {
         // Concatenate the values and the validity separately.
 
         let mut concatenated_values: Vec<T> = Vec::new();
-        for array in arrays.iter() {
+        for array in &arrays {
             concatenated_values.extend_from_slice(array.values());
         }
 

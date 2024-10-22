@@ -1,5 +1,5 @@
 use common_error::DaftResult;
-use daft_core::join::JoinStrategy;
+use daft_core::{join::JoinStrategy, prelude::Schema};
 use daft_dsl::ExprRef;
 use daft_plan::{LogicalPlan, LogicalPlanRef, SourceInfo};
 
@@ -14,10 +14,14 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                     // We should be able to pass the ScanOperator into the physical plan directly but we need to figure out the serialization story
                     let scan_tasks_iter = info.scan_op.0.to_scan_tasks(info.pushdowns.clone())?;
                     let scan_tasks = scan_tasks_iter.collect::<DaftResult<Vec<_>>>()?;
-                    Ok(LocalPhysicalPlan::physical_scan(
-                        scan_tasks,
-                        source.output_schema.clone(),
-                    ))
+                    if scan_tasks.is_empty() {
+                        Ok(LocalPhysicalPlan::empty_scan(source.output_schema.clone()))
+                    } else {
+                        Ok(LocalPhysicalPlan::physical_scan(
+                            scan_tasks,
+                            source.output_schema.clone(),
+                        ))
+                    }
                 }
                 SourceInfo::PlaceHolder(_) => {
                     panic!("We should not encounter a PlaceHolder during translation")
@@ -40,6 +44,15 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 project.projected_schema.clone(),
             ))
         }
+        LogicalPlan::Sample(sample) => {
+            let input = translate(&sample.input)?;
+            Ok(LocalPhysicalPlan::sample(
+                input,
+                sample.fraction,
+                sample.with_replacement,
+                sample.seed,
+            ))
+        }
         LogicalPlan::Aggregate(aggregate) => {
             let input = translate(&aggregate.input)?;
             if aggregate.groupby.is_empty() {
@@ -56,6 +69,35 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                     aggregate.output_schema.clone(),
                 ))
             }
+        }
+        LogicalPlan::Pivot(pivot) => {
+            let input = translate(&pivot.input)?;
+            let groupby_with_pivot = pivot
+                .group_by
+                .iter()
+                .chain(std::iter::once(&pivot.pivot_column))
+                .cloned()
+                .collect::<Vec<_>>();
+            let aggregate_fields = groupby_with_pivot
+                .iter()
+                .map(|expr| expr.to_field(input.schema()))
+                .chain(std::iter::once(pivot.aggregation.to_field(input.schema())))
+                .collect::<DaftResult<Vec<_>>>()?;
+            let aggregate_schema = Schema::new(aggregate_fields)?;
+            let aggregate = LocalPhysicalPlan::hash_aggregate(
+                input,
+                vec![pivot.aggregation.clone(); 1],
+                groupby_with_pivot,
+                aggregate_schema.into(),
+            );
+            Ok(LocalPhysicalPlan::pivot(
+                aggregate,
+                pivot.group_by.clone(),
+                pivot.pivot_column.clone(),
+                pivot.value_column.clone(),
+                pivot.names.clone(),
+                pivot.output_schema.clone(),
+            ))
         }
         LogicalPlan::Sort(sort) => {
             let input = translate(&sort.input)?;
@@ -81,7 +123,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             ))
         }
         LogicalPlan::Distinct(distinct) => {
-            let schema = distinct.input.schema().clone();
+            let schema = distinct.input.schema();
             let input = translate(&distinct.input)?;
             let col_exprs = input
                 .schema()

@@ -25,7 +25,7 @@ impl DynTreeNode for LogicalPlan {
         {
             Ok(self.with_new_children(&children).arced())
         } else {
-            Ok(self.clone())
+            Ok(self)
         }
     }
 }
@@ -50,7 +50,7 @@ impl DynTreeNode for PhysicalPlan {
         {
             Ok(self.with_new_children(&children).arced())
         } else {
-            Ok(self.clone())
+            Ok(self)
         }
     }
 }

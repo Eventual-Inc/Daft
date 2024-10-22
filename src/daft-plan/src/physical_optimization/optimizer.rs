@@ -44,7 +44,7 @@ impl PhysicalOptimizer {
     }
 
     pub fn optimize(&self, mut plan: PhysicalPlanRef) -> DaftResult<PhysicalPlanRef> {
-        for batch in self.rule_batches.iter() {
+        for batch in &self.rule_batches {
             plan = batch.optimize(plan, &self.config)?;
         }
         Ok(plan)

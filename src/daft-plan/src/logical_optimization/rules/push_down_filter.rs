@@ -57,7 +57,7 @@ impl PushDownFilter {
 
                 // Split predicate expression on conjunctions (ANDs).
                 let parent_predicates = split_conjuction(&filter.predicate);
-                let predicate_set: HashSet<&ExprRef> = parent_predicates.iter().cloned().collect();
+                let predicate_set: HashSet<&ExprRef> = parent_predicates.iter().copied().collect();
                 // Add child predicate expressions to parent predicate expressions, eliminating duplicates.
                 let new_predicates: Vec<ExprRef> = parent_predicates
                     .iter()
@@ -76,7 +76,6 @@ impl PushDownFilter {
                 self.try_optimize_node(new_filter.clone())?
                     .or(Transformed::yes(new_filter))
                     .data
-                    .clone()
             }
             LogicalPlan::Source(source) => {
                 match source.source_info.as_ref() {
@@ -97,7 +96,7 @@ impl PushDownFilter {
                             .filters
                             .as_ref()
                             .map(|f| predicate.clone().and(f.clone()))
-                            .unwrap_or(predicate.clone());
+                            .unwrap_or_else(|| predicate.clone());
                         // We split the predicate into three groups:
                         // 1. All partition-only filters, which can be applied directly to partition values and can be
                         //    dropped from the data-level filter.
@@ -675,23 +674,27 @@ mod tests {
                 join_on.clone(),
                 how,
                 None,
+                None,
+                None,
             )?
             .filter(pred.clone())?
             .build();
         let expected_left_filter_scan = if push_into_left_scan {
             dummy_scan_node_with_pushdowns(
                 left_scan_op.clone(),
-                Pushdowns::default().with_filters(Some(pred.clone())),
+                Pushdowns::default().with_filters(Some(pred)),
             )
         } else {
-            left_scan_plan.filter(pred.clone())?
+            left_scan_plan.filter(pred)?
         };
         let expected = expected_left_filter_scan
             .join(
                 &right_scan_plan,
                 join_on.clone(),
-                join_on.clone(),
+                join_on,
                 how,
+                None,
+                None,
                 None,
             )?
             .build();
@@ -727,23 +730,27 @@ mod tests {
                 join_on.clone(),
                 how,
                 None,
+                None,
+                None,
             )?
             .filter(pred.clone())?
             .build();
         let expected_right_filter_scan = if push_into_right_scan {
             dummy_scan_node_with_pushdowns(
                 right_scan_op.clone(),
-                Pushdowns::default().with_filters(Some(pred.clone())),
+                Pushdowns::default().with_filters(Some(pred)),
             )
         } else {
-            right_scan_plan.filter(pred.clone())?
+            right_scan_plan.filter(pred)?
         };
         let expected = left_scan_plan
             .join(
                 &expected_right_filter_scan,
                 join_on.clone(),
-                join_on.clone(),
+                join_on,
                 how,
+                None,
+                None,
                 None,
             )?
             .build();
@@ -792,6 +799,8 @@ mod tests {
                 join_on.clone(),
                 how,
                 None,
+                None,
+                None,
             )?
             .filter(pred.clone())?
             .build();
@@ -815,8 +824,10 @@ mod tests {
             .join(
                 &expected_right_filter_scan,
                 join_on.clone(),
-                join_on.clone(),
+                join_on,
                 how,
+                None,
+                None,
                 None,
             )?
             .build();
@@ -845,11 +856,13 @@ mod tests {
             .join(
                 &right_scan_plan,
                 join_on.clone(),
-                join_on.clone(),
+                join_on,
                 how,
                 None,
+                None,
+                None,
             )?
-            .filter(pred.clone())?
+            .filter(pred)?
             .build();
         // should not push down filter
         let expected = plan.clone();
@@ -878,11 +891,13 @@ mod tests {
             .join(
                 &right_scan_plan,
                 join_on.clone(),
-                join_on.clone(),
+                join_on,
                 how,
                 None,
+                None,
+                None,
             )?
-            .filter(pred.clone())?
+            .filter(pred)?
             .build();
         // should not push down filter
         let expected = plan.clone();

@@ -54,6 +54,7 @@ impl ScalarUDF for ListMax {
     }
 }
 
+#[must_use]
 pub fn list_max(expr: ExprRef) -> ExprRef {
     ScalarFunction::new(ListMax {}, vec![expr]).into()
 }

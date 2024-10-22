@@ -16,7 +16,7 @@ pub struct SQLModuleAggs;
 
 impl SQLModule for SQLModuleAggs {
     fn register(parent: &mut SQLFunctions) {
-        use AggExpr::*;
+        use AggExpr::{Count, Max, Mean, Min, Sum};
         // HACK TO USE AggExpr as an enum rather than a
         let nil = Arc::new(Expr::Literal(LiteralValue::Null));
         parent.add_fn(
@@ -27,7 +27,7 @@ impl SQLModule for SQLModuleAggs {
         parent.add_fn("avg", Mean(nil.clone()));
         parent.add_fn("mean", Mean(nil.clone()));
         parent.add_fn("min", Min(nil.clone()));
-        parent.add_fn("max", Max(nil.clone()));
+        parent.add_fn("max", Max(nil));
     }
 }
 
@@ -76,7 +76,7 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
         },
         [FunctionArg::Unnamed(FunctionArgExpr::QualifiedWildcard(name))] => {
             match planner.relation_opt() {
-                Some(rel) if name.to_string() == rel.name => {
+                Some(rel) if name.to_string() == rel.get_name() => {
                     let schema = rel.schema();
                     col(schema.fields[0].name.clone())
                         .count(daft_core::count_mode::CountMode::All)
@@ -94,7 +94,7 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
     })
 }
 
-pub(crate) fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
+pub fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
     match expr {
         AggExpr::Count(_, _) => unreachable!("count should be handled by by this point"),
         AggExpr::Sum(_) => {
@@ -108,6 +108,10 @@ pub(crate) fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<Expr
         AggExpr::Mean(_) => {
             ensure!(args.len() == 1, "mean takes exactly one argument");
             Ok(args[0].clone().mean())
+        }
+        AggExpr::Stddev(_) => {
+            ensure!(args.len() == 1, "stddev takes exactly one argument");
+            Ok(args[0].clone().stddev())
         }
         AggExpr::Min(_) => {
             ensure!(args.len() == 1, "min takes exactly one argument");

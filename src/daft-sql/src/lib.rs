@@ -138,13 +138,13 @@ mod tests {
     #[case::from("select tbl2.text from tbl2")]
     #[case::using("select tbl2.text from tbl2 join tbl3 using (id)")]
     #[case(
-        r#"
+        r"
     select
         abs(i32) as abs,
         ceil(i32) as ceil,
         floor(i32) as floor,
         sign(i32) as sign
-    from tbl1"#
+    from tbl1"
     )]
     #[case("select round(i32, 1) from tbl1")]
     #[case::groupby("select max(i32) from tbl1 group by utf8")]
@@ -156,7 +156,7 @@ mod tests {
     #[case::globalagg("select max(i32) from tbl1")]
     fn test_compiles(mut planner: SQLPlanner, #[case] query: &str) -> SQLPlannerResult<()> {
         let plan = planner.plan_sql(query);
-        assert!(plan.is_ok(), "query: {}\nerror: {:?}", query, plan);
+        assert!(plan.is_ok(), "query: {query}\nerror: {plan:?}");
 
         Ok(())
     }
@@ -261,6 +261,8 @@ mod tests {
                 vec![col("id")],
                 JoinType::Inner,
                 None,
+                None,
+                None,
             )?
             .select(vec![col("*")])?
             .build();
@@ -314,10 +316,14 @@ mod tests {
     #[case::ilike("select utf8 ilike 'a' as ilike from tbl1")]
     #[case::datestring("select DATE '2021-08-01' as dt from tbl1")]
     #[case::datetime("select DATETIME '2021-08-01 00:00:00' as dt from tbl1")]
+    #[case::countstar("select COUNT(*) as count from tbl1")]
+    #[case::countstarlower("select COUNT(*) as count from tbl1")]
+    #[case::count("select COUNT(i32) as count from tbl1")]
+    #[case::countcasing("select CoUnT(i32) as count from tbl1")]
     // #[case::to_datetime("select to_datetime(utf8, 'YYYY-MM-DD') as to_datetime from tbl1")]
     fn test_compiles_funcs(mut planner: SQLPlanner, #[case] query: &str) -> SQLPlannerResult<()> {
         let plan = planner.plan_sql(query);
-        assert!(plan.is_ok(), "query: {}\nerror: {:?}", query, plan);
+        assert!(plan.is_ok(), "query: {query}\nerror: {plan:?}");
 
         Ok(())
     }

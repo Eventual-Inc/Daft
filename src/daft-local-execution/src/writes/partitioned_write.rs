@@ -78,7 +78,7 @@ impl PerPartitionWriteHandler {
             self.written_rows_so_far = 0;
             self.current_writer = self
                 .writer_factory
-                .create_writer(self.results.len(), Some(&self.partition_values))?
+                .create_writer(self.results.len(), Some(&self.partition_values))?;
         }
         Ok(())
     }

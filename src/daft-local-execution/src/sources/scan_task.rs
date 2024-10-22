@@ -1,21 +1,26 @@
-use std::sync::Arc;
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use common_error::DaftResult;
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
+use daft_core::prelude::{AsArrow, Int64Array, Utf8Array};
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_io::IOStatsRef;
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_micropartition::MicroPartition;
-use daft_parquet::read::ParquetSchemaInferenceOptions;
+use daft_parquet::read::{read_parquet_bulk_async, ParquetSchemaInferenceOptions};
 use daft_scan::{storage_config::StorageConfig, ChunkSpec, ScanTask};
 use futures::{Stream, StreamExt};
+use snafu::ResultExt;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::instrument;
 
 use crate::{
     channel::{create_channel, Sender},
     sources::source::{Source, SourceStream},
-    ExecutionRuntimeHandle,
+    ExecutionRuntimeHandle, JoinSnafu, TaskSet, NUM_CPUS,
 };
 
 pub struct ScanTaskSource {
@@ -37,9 +42,11 @@ impl ScanTaskSource {
         sender: Sender<Arc<MicroPartition>>,
         maintain_order: bool,
         io_stats: IOStatsRef,
+        delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
     ) -> DaftResult<()> {
         let schema = scan_task.materialized_schema();
-        let mut stream = stream_scan_task(scan_task, Some(io_stats), maintain_order).await?;
+        let mut stream =
+            stream_scan_task(scan_task, Some(io_stats), delete_map, maintain_order).await?;
         let mut has_data = false;
         while let Some(partition) = stream.next().await {
             let _ = sender.send(partition?).await;
@@ -63,31 +70,41 @@ impl Source for ScanTaskSource {
         runtime_handle: &mut ExecutionRuntimeHandle,
         io_stats: IOStatsRef,
     ) -> crate::Result<SourceStream<'static>> {
-        let (senders, receivers): (Vec<_>, Vec<_>) = match maintain_order {
-            true => (0..self.scan_tasks.len())
+        let (senders, receivers): (Vec<_>, Vec<_>) = if maintain_order {
+            (0..self.scan_tasks.len())
                 .map(|_| create_channel(1))
-                .unzip(),
-            false => {
-                let (sender, receiver) = create_channel(self.scan_tasks.len());
-                (
-                    std::iter::repeat(sender)
-                        .take(self.scan_tasks.len())
-                        .collect(),
-                    vec![receiver],
-                )
-            }
+                .unzip()
+        } else {
+            let (sender, receiver) = create_channel(self.scan_tasks.len());
+            (
+                std::iter::repeat(sender)
+                    .take(self.scan_tasks.len())
+                    .collect(),
+                vec![receiver],
+            )
         };
-        for (scan_task, sender) in self.scan_tasks.iter().zip(senders) {
-            runtime_handle.spawn(
-                Self::process_scan_task_stream(
-                    scan_task.clone(),
-                    sender,
-                    maintain_order,
-                    io_stats.clone(),
-                ),
-                self.name(),
-            );
-        }
+        let scan_tasks = self.scan_tasks.clone();
+        runtime_handle.spawn(
+            async move {
+                let mut task_set = TaskSet::new();
+                let delete_map = get_delete_map(&scan_tasks).await?.map(Arc::new);
+                for (scan_task, sender) in scan_tasks.into_iter().zip(senders) {
+                    task_set.spawn(Self::process_scan_task_stream(
+                        scan_task,
+                        sender,
+                        maintain_order,
+                        io_stats.clone(),
+                        delete_map.clone(),
+                    ));
+                }
+                while let Some(result) = task_set.join_next().await {
+                    result.context(JoinSnafu)??;
+                }
+                Ok(())
+            },
+            self.name(),
+        );
+
         let stream = futures::stream::iter(receivers.into_iter().map(ReceiverStream::new));
         Ok(Box::pin(stream.flatten()))
     }
@@ -97,23 +114,94 @@ impl Source for ScanTaskSource {
     }
 }
 
+// Read all iceberg delete files and return a map of file paths to delete positions
+async fn get_delete_map(
+    scan_tasks: &[Arc<ScanTask>],
+) -> DaftResult<Option<HashMap<String, Vec<i64>>>> {
+    let delete_files = scan_tasks
+        .iter()
+        .flat_map(|st| {
+            st.sources
+                .iter()
+                .filter_map(|source| source.get_iceberg_delete_files())
+                .flatten()
+                .cloned()
+        })
+        .collect::<HashSet<_>>();
+    if delete_files.is_empty() {
+        return Ok(None);
+    }
+
+    let (runtime, io_client) = scan_tasks
+        .first()
+        .unwrap() // Safe to unwrap because we checked that the list is not empty
+        .storage_config
+        .get_io_client_and_runtime()?;
+    let scan_tasks = scan_tasks.to_vec();
+    runtime.block_on_io_pool(async move {
+        let mut delete_map = scan_tasks
+            .iter()
+            .flat_map(|st| st.sources.iter().map(|s| s.get_path().to_string()))
+            .map(|path| (path, vec![]))
+            .collect::<std::collections::HashMap<_, _>>();
+        let columns_to_read = Some(vec!["file_path".to_string(), "pos".to_string()]);
+        let result = read_parquet_bulk_async(
+            delete_files.into_iter().collect(),
+            columns_to_read,
+            None,
+            None,
+            None,
+            None,
+            io_client,
+            None,
+            *NUM_CPUS,
+            ParquetSchemaInferenceOptions::new(None),
+            None,
+            None,
+            None,
+            None,
+        )
+        .await?;
+
+        for table_result in result {
+            let table = table_result?;
+            // values in the file_path column are guaranteed by the iceberg spec to match the full URI of the corresponding data file
+            // https://iceberg.apache.org/spec/#position-delete-files
+            let file_paths = table.get_column("file_path")?.downcast::<Utf8Array>()?;
+            let positions = table.get_column("pos")?.downcast::<Int64Array>()?;
+
+            for (file, pos) in file_paths
+                .as_arrow()
+                .values_iter()
+                .zip(positions.as_arrow().values_iter())
+            {
+                if delete_map.contains_key(file) {
+                    delete_map.get_mut(file).unwrap().push(*pos);
+                }
+            }
+        }
+        Ok(Some(delete_map))
+    })?
+}
+
 async fn stream_scan_task(
     scan_task: Arc<ScanTask>,
     io_stats: Option<IOStatsRef>,
+    delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
     maintain_order: bool,
 ) -> DaftResult<impl Stream<Item = DaftResult<Arc<MicroPartition>>> + Send> {
-    let pushdown_columns = scan_task
-        .pushdowns
-        .columns
-        .as_ref()
-        .map(|v| v.iter().map(|s| s.as_str()).collect::<Vec<&str>>());
+    let pushdown_columns = scan_task.pushdowns.columns.as_ref().map(|v| {
+        v.iter()
+            .map(std::string::String::as_str)
+            .collect::<Vec<&str>>()
+    });
 
     let file_column_names = match (
         pushdown_columns,
         scan_task.partition_spec().map(|ps| ps.to_fill_map()),
     ) {
         (None, _) => None,
-        (Some(columns), None) => Some(columns.to_vec()),
+        (Some(columns), None) => Some(columns.clone()),
 
         // If the ScanTask has a partition_spec, we elide reads of partition columns from the file
         (Some(columns), Some(partition_fillmap)) => Some(
@@ -159,12 +247,7 @@ async fn stream_scan_task(
             let inference_options =
                 ParquetSchemaInferenceOptions::new(Some(*coerce_int96_timestamp_unit));
 
-            if source.get_iceberg_delete_files().is_some() {
-                return Err(common_error::DaftError::TypeError(
-                    "Streaming reads not supported for Iceberg delete files".to_string(),
-                ));
-            }
-
+            let delete_rows = delete_map.as_ref().and_then(|m| m.get(url).cloned());
             let row_groups = if let Some(ChunkSpec::Parquet(row_groups)) = source.get_chunk_spec() {
                 Some(row_groups.clone())
             } else {
@@ -177,7 +260,6 @@ async fn stream_scan_task(
             daft_parquet::read::stream_parquet(
                 url,
                 file_column_names.as_deref(),
-                None,
                 scan_task.pushdowns.limit,
                 row_groups,
                 scan_task.pushdowns.filters.clone(),
@@ -187,6 +269,7 @@ async fn stream_scan_task(
                 field_id_mapping.clone(),
                 metadata,
                 maintain_order,
+                delete_rows,
             )
             .await?
         }
@@ -207,10 +290,10 @@ async fn stream_scan_task(
                 scan_task.pushdowns.limit,
                 file_column_names
                     .as_ref()
-                    .map(|cols| cols.iter().map(|col| col.to_string()).collect()),
+                    .map(|cols| cols.iter().map(|col| (*col).to_string()).collect()),
                 col_names
                     .as_ref()
-                    .map(|cols| cols.iter().map(|col| col.to_string()).collect()),
+                    .map(|cols| cols.iter().map(|col| (*col).to_string()).collect()),
                 Some(schema_of_file),
                 scan_task.pushdowns.filters.clone(),
             );
@@ -242,7 +325,7 @@ async fn stream_scan_task(
                 scan_task.pushdowns.limit,
                 file_column_names
                     .as_ref()
-                    .map(|cols| cols.iter().map(|col| col.to_string()).collect()),
+                    .map(|cols| cols.iter().map(|col| (*col).to_string()).collect()),
                 Some(schema_of_file),
                 scan_task.pushdowns.filters.clone(),
             );
@@ -262,16 +345,39 @@ async fn stream_scan_task(
             .await?
         }
         #[cfg(feature = "python")]
-        FileFormatConfig::Database(_) => {
-            return Err(common_error::DaftError::TypeError(
-                "Database file format not implemented".to_string(),
-            ));
+        FileFormatConfig::Database(common_file_formats::DatabaseSourceConfig { sql, conn }) => {
+            use pyo3::Python;
+
+            use crate::PyIOSnafu;
+            let predicate = scan_task
+                .pushdowns
+                .filters
+                .as_ref()
+                .map(|p| (*p.as_ref()).clone().into());
+            let table = Python::with_gil(|py| {
+                daft_micropartition::python::read_sql_into_py_table(
+                    py,
+                    sql,
+                    conn,
+                    predicate.clone(),
+                    scan_task.schema.clone().into(),
+                    scan_task
+                        .pushdowns
+                        .columns
+                        .as_ref()
+                        .map(|cols| cols.as_ref().clone()),
+                    scan_task.pushdowns.limit,
+                )
+                .map(|t| t.into())
+                .context(PyIOSnafu)
+            })?;
+            Box::pin(futures::stream::once(async { Ok(table) }))
         }
         #[cfg(feature = "python")]
         FileFormatConfig::PythonFunction => {
-            return Err(common_error::DaftError::TypeError(
-                "PythonFunction file format not implemented".to_string(),
-            ));
+            let iter = daft_micropartition::python::read_pyfunc_into_table_iter(&scan_task)?;
+            let stream = futures::stream::iter(iter.map(|r| r.map_err(|e| e.into())));
+            Box::pin(stream)
         }
     };
 
@@ -286,7 +392,7 @@ async fn stream_scan_task(
                 .as_ref(),
         )?;
         let mp = Arc::new(MicroPartition::new_loaded(
-            scan_task.materialized_schema().clone(),
+            scan_task.materialized_schema(),
             Arc::new(vec![casted_table]),
             scan_task.statistics.clone(),
         ));

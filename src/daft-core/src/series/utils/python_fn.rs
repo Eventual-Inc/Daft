@@ -2,7 +2,7 @@ use common_error::DaftResult;
 
 use crate::series::Series;
 
-pub(crate) fn run_python_binary_operator_fn(
+pub fn run_python_binary_operator_fn(
     lhs: &Series,
     rhs: &Series,
     operator_fn: &str,
@@ -10,7 +10,7 @@ pub(crate) fn run_python_binary_operator_fn(
     python_binary_op_with_utilfn(lhs, rhs, operator_fn, "map_operator_arrow_semantics")
 }
 
-pub(crate) fn run_python_binary_bool_operator(
+pub fn run_python_binary_bool_operator(
     lhs: &Series,
     rhs: &Series,
     operator_fn: &str,
@@ -39,7 +39,7 @@ fn python_binary_op_with_utilfn(
     };
 
     let left_pylist = PySeries::from(lhs.clone()).to_pylist()?;
-    let right_pylist = PySeries::from(rhs.clone()).to_pylist()?;
+    let right_pylist = PySeries::from(rhs).to_pylist()?;
 
     let result_series: Series = Python::with_gil(|py| -> PyResult<PySeries> {
         let py_operator =
@@ -60,7 +60,7 @@ fn python_binary_op_with_utilfn(
     Ok(result_series)
 }
 
-pub(crate) fn py_membership_op_utilfn(lhs: &Series, rhs: &Series) -> DaftResult<Series> {
+pub fn py_membership_op_utilfn(lhs: &Series, rhs: &Series) -> DaftResult<Series> {
     use pyo3::prelude::*;
 
     use crate::{datatypes::DataType, python::PySeries};
@@ -69,7 +69,7 @@ pub(crate) fn py_membership_op_utilfn(lhs: &Series, rhs: &Series) -> DaftResult<
     let rhs_casted = rhs.cast(&DataType::Python)?;
 
     let left_pylist = PySeries::from(lhs_casted.clone()).to_pylist()?;
-    let right_pylist = PySeries::from(rhs_casted.clone()).to_pylist()?;
+    let right_pylist = PySeries::from(rhs_casted).to_pylist()?;
 
     let result_series: Series = Python::with_gil(|py| -> PyResult<PySeries> {
         let result_pylist = PyModule::import_bound(py, pyo3::intern!(py, "daft.utils"))?
@@ -92,11 +92,7 @@ pub(crate) fn py_membership_op_utilfn(lhs: &Series, rhs: &Series) -> DaftResult<
     Ok(result_series)
 }
 
-pub(crate) fn py_between_op_utilfn(
-    value: &Series,
-    lower: &Series,
-    upper: &Series,
-) -> DaftResult<Series> {
+pub fn py_between_op_utilfn(value: &Series, lower: &Series, upper: &Series) -> DaftResult<Series> {
     use pyo3::prelude::*;
 
     use crate::{datatypes::DataType, python::PySeries};
@@ -132,8 +128,8 @@ pub(crate) fn py_between_op_utilfn(
         };
 
     let value_pylist = PySeries::from(value_casted.clone()).to_pylist()?;
-    let lower_pylist = PySeries::from(lower_casted.clone()).to_pylist()?;
-    let upper_pylist = PySeries::from(upper_casted.clone()).to_pylist()?;
+    let lower_pylist = PySeries::from(lower_casted).to_pylist()?;
+    let upper_pylist = PySeries::from(upper_casted).to_pylist()?;
 
     let result_series: Series = Python::with_gil(|py| -> PyResult<PySeries> {
         let result_pylist = PyModule::import_bound(py, pyo3::intern!(py, "daft.utils"))?

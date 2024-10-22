@@ -82,7 +82,7 @@ impl NativeExecutor {
                     part_id,
                     parts
                         .into_iter()
-                        .map(|part| part.into())
+                        .map(std::convert::Into::into)
                         .collect::<Vec<Arc<MicroPartition>>>(),
                 )
             })
@@ -130,7 +130,7 @@ pub fn run_local(
             .thread_name_fn(|| {
                 static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
                 let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
-                format!("Executor-Worker-{}", id)
+                format!("Executor-Worker-{id}")
             })
             .build()
             .expect("Failed to create tokio runtime");
@@ -159,7 +159,7 @@ pub fn run_local(
                     .duration_since(UNIX_EPOCH)
                     .expect("Time went backwards")
                     .as_millis();
-                let file_name = format!("explain-analyze-{}-mermaid.md", curr_ms);
+                let file_name = format!("explain-analyze-{curr_ms}-mermaid.md");
                 let mut file = File::create(file_name)?;
                 writeln!(file, "```mermaid\n{}\n```", viz_pipeline(pipeline.as_ref()))?;
             }
@@ -187,7 +187,7 @@ pub fn run_local(
                             .join()
                             .expect("Execution engine thread panicked");
                         match join_result {
-                            Ok(_) => None,
+                            Ok(()) => None,
                             Err(e) => Some(Err(e)),
                         }
                     } else {

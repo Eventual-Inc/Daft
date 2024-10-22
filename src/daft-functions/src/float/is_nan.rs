@@ -53,6 +53,7 @@ impl ScalarUDF for IsNan {
     }
 }
 
+#[must_use]
 pub fn is_nan(input: ExprRef) -> ExprRef {
     ScalarFunction::new(IsNan {}, vec![input]).into()
 }

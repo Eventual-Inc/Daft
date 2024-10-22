@@ -25,6 +25,7 @@ type BoxScanTaskIter<'a> = Box<dyn Iterator<Item = DaftResult<ScanTaskRef>> + 'a
 /// * `scan_tasks`: A Boxed Iterator of ScanTaskRefs to perform merging on
 /// * `min_size_bytes`: Minimum size in bytes of a ScanTask, after which no more merging will be performed
 /// * `max_size_bytes`: Maximum size in bytes of a ScanTask, capping the maximum size of a merged ScanTask
+#[must_use]
 pub fn merge_by_sizes<'a>(
     scan_tasks: BoxScanTaskIter<'a>,
     pushdowns: &Pushdowns,
@@ -35,7 +36,7 @@ pub fn merge_by_sizes<'a>(
         let mut scan_tasks = scan_tasks.peekable();
         let first_scantask = scan_tasks
             .peek()
-            .and_then(|x| x.as_ref().map(|x| x.clone()).ok());
+            .and_then(|x| x.as_ref().map(std::clone::Clone::clone).ok());
         if let Some(first_scantask) = first_scantask {
             let estimated_bytes_for_reading_limit_rows = first_scantask
                 .as_ref()
@@ -175,6 +176,7 @@ impl<'a> Iterator for MergeByFileSize<'a> {
     }
 }
 
+#[must_use]
 pub fn split_by_row_groups(
     scan_tasks: BoxScanTaskIter,
     max_tasks: usize,
@@ -218,7 +220,7 @@ pub fn split_by_row_groups(
                         .map_or(true, |s| s > max_size_bytes as u64)
                       && source
                         .get_iceberg_delete_files()
-                        .map_or(true, |f| f.is_empty())
+                        .map_or(true, std::vec::Vec::is_empty)
                     {
                         let (io_runtime, io_client) =
                             t.storage_config.get_io_client_and_runtime()?;
@@ -226,7 +228,7 @@ pub fn split_by_row_groups(
                         let path = source.get_path();
 
                         let io_stats =
-                            IOStatsContext::new(format!("split_by_row_groups for {:#?}", path));
+                            IOStatsContext::new(format!("split_by_row_groups for {path:#?}"));
 
                         let mut file = io_runtime.block_on_current_thread(read_parquet_metadata(
                             path,
@@ -243,7 +245,7 @@ pub fn split_by_row_groups(
 
                         let row_groups = std::mem::take(&mut file.row_groups);
                         let num_row_groups = row_groups.len();
-                        for (i, rg) in row_groups.into_iter() {
+                        for (i, rg) in row_groups {
                             curr_row_groups.push((i, rg));
                             let rg = &curr_row_groups.last().unwrap().1;
                             curr_row_group_indices.push(i as i64);
@@ -291,6 +293,7 @@ pub fn split_by_row_groups(
                                     t.schema.clone(),
                                     t.storage_config.clone(),
                                     t.pushdowns.clone(),
+                                    t.file_path_column.clone(),
                                 )
                                 .into()));
                             }

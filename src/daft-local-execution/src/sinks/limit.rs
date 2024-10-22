@@ -35,7 +35,7 @@ impl StreamingSink for LimitSink {
 
         let input_num_rows = input.len();
 
-        use std::cmp::Ordering::*;
+        use std::cmp::Ordering::{Equal, Greater, Less};
         match input_num_rows.cmp(&self.remaining) {
             Less => {
                 self.remaining -= input_num_rows;

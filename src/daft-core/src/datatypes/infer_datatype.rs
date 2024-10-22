@@ -120,10 +120,12 @@ impl<'a> Add for InferDataType<'a> {
     type Output = DaftResult<DataType>;
 
     fn add(self, other: Self) -> Self::Output {
-        try_numeric_supertype(self.0, other.0).or(try_fixed_shape_numeric_datatype(self.0, other.0, |l, r| {InferDataType::from(l) + InferDataType::from(r)})).or(
+        try_numeric_supertype(self.0, other.0).or_else(|_| try_fixed_shape_numeric_datatype(self.0, other.0, |l, r| {InferDataType::from(l) + InferDataType::from(r)})).or(
             match (self.0, other.0) {
+                // --- Python + Python = Python ---
                 #[cfg(feature = "python")]
                 (DataType::Python, _) | (_, DataType::Python) => Ok(DataType::Python),
+                // --- Timestamp + Duration = Timestamp ---
                 (DataType::Timestamp(t_unit, tz), DataType::Duration(d_unit))
                 | (DataType::Duration(d_unit), DataType::Timestamp(t_unit, tz))
                     if t_unit == d_unit => Ok(DataType::Timestamp(*t_unit, tz.clone())),
@@ -131,41 +133,55 @@ impl<'a> Add for InferDataType<'a> {
                     | (du @ DataType::Duration(..), ts @ DataType::Timestamp(..)) => Err(DaftError::TypeError(
                     format!("Cannot add due to differing precision: {}, {}. Please explicitly cast to the precision you wish to add in.", ts, du)
                 )),
+                // --- Date & Duration = Date ---
                 (DataType::Date, DataType::Duration(..)) | (DataType::Duration(..), DataType::Date) => Ok(DataType::Date),
+                // --- Duration + Duration = Duration ---
                 (DataType::Duration(d_unit_self), DataType::Duration(d_unit_other)) if d_unit_self == d_unit_other => {
                     Ok(DataType::Duration(*d_unit_self))
                 },
+                // --------
+                // Duration + other
+                // --------
                 (du_self @ &DataType::Duration(..), du_other @ &DataType::Duration(..)) => Err(DaftError::TypeError(
                     format!("Cannot add due to differing precision: {}, {}. Please explicitly cast to the precision you wish to add in.", du_self, du_other)
                 )),
-                (DataType::Null, other) | (other, DataType::Null) => {
+                // --------
+                // Nulls + other
+                // --------
+                (dtype @ DataType::Null, other) | (other, dtype @ DataType::Null) => {
                     match other {
                         // Condition is for backwards compatibility. TODO: remove
                         DataType::Binary | DataType::FixedSizeBinary(..) | DataType::Date => Err(DaftError::TypeError(
-                            format!("Cannot add types: {}, {}", self, other)
+                            format!("Cannot add types: {}, {}", dtype, other)
                         )),
                         other if other.is_physical() => Ok(other.clone()),
                         _ => Err(DaftError::TypeError(
-                            format!("Cannot add types: {}, {}", self, other)
+                            format!("Cannot add types: {}, {}", dtype, other)
                         )),
                     }
                 }
-                (DataType::Utf8, other) | (other, DataType::Utf8) => {
+                // --------
+                // Utf8 + other
+                // --------
+                (dtype @ DataType::Utf8, other) | (other, dtype @ DataType::Utf8) => {
                     match other {
                         // DataType::Date condition is for backwards compatibility. TODO: remove
                         DataType::Binary | DataType::FixedSizeBinary(..) | DataType::Date => Err(DaftError::TypeError(
-                            format!("Cannot add types: {}, {}", self, other)
+                            format!("Cannot add types: {}, {}", dtype, other)
                         )),
                         other if other.is_physical() => Ok(DataType::Utf8),
                         _ => Err(DaftError::TypeError(
-                            format!("Cannot add types: {}, {}", self, other)
+                            format!("Cannot add types: {}, {}", dtype, other)
                         )),
                     }
-                }
+                },
+                // ---- Interval + temporal ----
+                (DataType::Interval, dtype) | (dtype, DataType::Interval) if dtype.is_temporal() => Ok(dtype.clone()),
+                // ---- Boolean + other ----
                 (DataType::Boolean, other) | (other, DataType::Boolean)
                     if other.is_numeric() => Ok(other.clone()),
                 _ => Err(DaftError::TypeError(
-                    format!("Cannot add types: {}, {}", self, other)
+                    format!("Cannot infer supertypes for addition on types: {}, {}", self, other)
                 ))
             }
         )
@@ -176,7 +192,7 @@ impl<'a> Sub for InferDataType<'a> {
     type Output = DaftResult<DataType>;
 
     fn sub(self, other: Self) -> Self::Output {
-        try_numeric_supertype(self.0, other.0).or(try_fixed_shape_numeric_datatype(self.0, other.0, |l, r| {InferDataType::from(l) - InferDataType::from(r)})).or(
+        try_numeric_supertype(self.0, other.0).or_else(|_| try_fixed_shape_numeric_datatype(self.0, other.0, |l, r| {InferDataType::from(l) - InferDataType::from(r)})).or(
             match (self.0, other.0) {
                 #[cfg(feature = "python")]
                 (DataType::Python, _) | (_, DataType::Python) => Ok(DataType::Python),
@@ -198,6 +214,7 @@ impl<'a> Sub for InferDataType<'a> {
                 (du_self @ &DataType::Duration(..), du_other @ &DataType::Duration(..)) => Err(DaftError::TypeError(
                     format!("Cannot subtract due to differing precision: {}, {}. Please explicitly cast to the precision you wish to add in.", du_self, du_other)
                 )),
+                (DataType::Interval, dtype) | (dtype, DataType::Interval) if dtype.is_temporal() => Ok(dtype.clone()),
                 _ => Err(DaftError::TypeError(
                     format!("Cannot subtract types: {}, {}", self, other)
                 ))
@@ -219,9 +236,11 @@ impl<'a> Div for InferDataType<'a> {
                 self, other
             ))),
         }
-        .or(try_fixed_shape_numeric_datatype(self.0, other.0, |l, r| {
-            InferDataType::from(l) / InferDataType::from(r)
-        }))
+        .or_else(|_| {
+            try_fixed_shape_numeric_datatype(self.0, other.0, |l, r| {
+                InferDataType::from(l) / InferDataType::from(r)
+            })
+        })
     }
 }
 
@@ -230,9 +249,11 @@ impl<'a> Mul for InferDataType<'a> {
 
     fn mul(self, other: Self) -> Self::Output {
         try_numeric_supertype(self.0, other.0)
-            .or(try_fixed_shape_numeric_datatype(self.0, other.0, |l, r| {
-                InferDataType::from(l) * InferDataType::from(r)
-            }))
+            .or_else(|_| {
+                try_fixed_shape_numeric_datatype(self.0, other.0, |l, r| {
+                    InferDataType::from(l) * InferDataType::from(r)
+                })
+            })
             .or(match (self.0, other.0) {
                 #[cfg(feature = "python")]
                 (DataType::Python, _) | (_, DataType::Python) => Ok(DataType::Python),
@@ -249,9 +270,11 @@ impl<'a> Rem for InferDataType<'a> {
 
     fn rem(self, other: Self) -> Self::Output {
         try_numeric_supertype(self.0, other.0)
-            .or(try_fixed_shape_numeric_datatype(self.0, other.0, |l, r| {
-                InferDataType::from(l) % InferDataType::from(r)
-            }))
+            .or_else(|_| {
+                try_fixed_shape_numeric_datatype(self.0, other.0, |l, r| {
+                    InferDataType::from(l) % InferDataType::from(r)
+                })
+            })
             .or(match (self.0, other.0) {
                 #[cfg(feature = "python")]
                 (DataType::Python, _) | (_, DataType::Python) => Ok(DataType::Python),
@@ -394,7 +417,7 @@ pub fn try_numeric_supertype(l: &DataType, r: &DataType) -> DaftResult<DataType>
     }
 
     inner(l, r)
-        .or(inner(r, l))
+        .or_else(|| inner(r, l))
         .ok_or(DaftError::TypeError(format!(
             "Invalid arguments to numeric supertype: {}, {}",
             l, r

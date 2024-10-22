@@ -3,12 +3,6 @@ import pyarrow as pa
 import pytest
 
 import daft
-from daft import context
-
-native_executor_skip = pytest.mark.skipif(
-    context.get_context().daft_execution_config.enable_native_executor is True,
-    reason="Native executor fails for these tests",
-)
 
 TABLE_NAME = "my_table"
 data = {
@@ -18,8 +12,7 @@ data = {
 }
 
 PYARROW_LE_8_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (8, 0, 0)
-py_arrow_skip = pytest.mark.skipif(PYARROW_LE_8_0_0, reason="lance only supported if pyarrow >= 8.0.0")
-pytestmark = [native_executor_skip, py_arrow_skip]
+pytestmark = pytest.mark.skipif(PYARROW_LE_8_0_0, reason="lance only supported if pyarrow >= 8.0.0")
 
 
 @pytest.fixture(scope="function")

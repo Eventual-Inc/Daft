@@ -20,6 +20,7 @@ pub enum CompressionCodec {
 }
 
 impl CompressionCodec {
+    #[must_use]
     pub fn from_uri(uri: &str) -> Option<Self> {
         let url = Url::parse(uri);
         let path = match &url {
@@ -32,8 +33,9 @@ impl CompressionCodec {
             .to_string();
         Self::from_extension(extension.as_ref())
     }
+    #[must_use]
     pub fn from_extension(extension: &str) -> Option<Self> {
-        use CompressionCodec::*;
+        use CompressionCodec::{Brotli, Bz, Deflate, Gzip, Lzma, Xz, Zlib, Zstd};
         match extension {
             "br" => Some(Brotli),
             "bz2" => Some(Bz),
@@ -52,7 +54,7 @@ impl CompressionCodec {
         &self,
         reader: T,
     ) -> Pin<Box<dyn AsyncRead + Send>> {
-        use CompressionCodec::*;
+        use CompressionCodec::{Brotli, Bz, Deflate, Gzip, Lzma, Xz, Zlib, Zstd};
         match self {
             Brotli => Box::pin(BrotliDecoder::new(reader)),
             Bz => Box::pin(BzDecoder::new(reader)),

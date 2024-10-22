@@ -20,6 +20,7 @@ impl PythonTablesFactoryArgs {
         Self(args.into_iter().map(PyObjectSerializableWrapper).collect())
     }
 
+    #[must_use]
     pub fn to_pytuple<'a>(&self, py: Python<'a>) -> Bound<'a, PyTuple> {
         pyo3::types::PyTuple::new_bound(py, self.0.iter().map(|x| x.0.bind(py)))
     }
@@ -107,6 +108,7 @@ pub mod pylib {
             storage_config: PyStorageConfig,
             infer_schema: bool,
             schema: Option<PySchema>,
+            file_path_column: Option<String>,
         ) -> PyResult<Self> {
             py.allow_threads(|| {
                 let operator = Arc::new(GlobScanOperator::try_new(
@@ -115,6 +117,7 @@ pub mod pylib {
                     storage_config.into(),
                     infer_schema,
                     schema.map(|s| s.schema),
+                    file_path_column,
                 )?);
                 Ok(Self {
                     scan_op: ScanOperatorRef(operator),
@@ -210,6 +213,9 @@ pub mod pylib {
         }
         fn schema(&self) -> daft_schema::schema::SchemaRef {
             self.schema.clone()
+        }
+        fn file_path_column(&self) -> Option<&str> {
+            None
         }
         fn can_absorb_filter(&self) -> bool {
             self.can_absorb_filter
@@ -321,9 +327,7 @@ pub mod pylib {
             // TODO(Clark): Filter out scan tasks with pushed down filters + table stats?
 
             let pspec = PartitionSpec {
-                keys: partition_values
-                    .map(|p| p.table)
-                    .unwrap_or_else(|| Table::empty(None).unwrap()),
+                keys: partition_values.map_or_else(|| Table::empty(None).unwrap(), |p| p.table),
             };
             let statistics = stats
                 .map(|s| TableStatistics::from_stats_table(&s.table))
@@ -348,6 +352,7 @@ pub mod pylib {
                 schema.schema,
                 storage_config.into(),
                 pushdowns.map(|p| p.0.as_ref().clone()).unwrap_or_default(),
+                None,
             );
             Ok(Some(Self(scan_task.into())))
         }
@@ -380,6 +385,7 @@ pub mod pylib {
                 schema.schema,
                 storage_config.into(),
                 pushdowns.map(|p| p.0.as_ref().clone()).unwrap_or_default(),
+                None,
             );
             Ok(Self(scan_task.into()))
         }
@@ -424,6 +430,7 @@ pub mod pylib {
                     PythonStorageConfig { io_config: None },
                 ))),
                 pushdowns.map(|p| p.0.as_ref().clone()).unwrap_or_default(),
+                None,
             );
             Ok(Self(scan_task.into()))
         }
@@ -461,7 +468,7 @@ pub mod pylib {
         ) -> PyResult<Self> {
             let p_field = PartitionField::new(
                 field.field,
-                source_field.map(|f| f.into()),
+                source_field.map(std::convert::Into::into),
                 transform.map(|e| e.0),
             )?;
             Ok(Self(Arc::new(p_field)))
@@ -537,16 +544,19 @@ pub mod pylib {
             Ok(format!("{:#?}", self.0))
         }
         #[getter]
+        #[must_use]
         pub fn limit(&self) -> Option<usize> {
             self.0.limit
         }
 
         #[getter]
+        #[must_use]
         pub fn filters(&self) -> Option<PyExpr> {
             self.0.filters.as_ref().map(|e| PyExpr { expr: e.clone() })
         }
 
         #[getter]
+        #[must_use]
         pub fn partition_filters(&self) -> Option<PyExpr> {
             self.0
                 .partition_filters
@@ -555,6 +565,7 @@ pub mod pylib {
         }
 
         #[getter]
+        #[must_use]
         pub fn columns(&self) -> Option<Vec<String>> {
             self.0.columns.as_deref().cloned()
         }

@@ -12,6 +12,7 @@ use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormatConfig;
 use daft_dsl::ExprRef;
 use daft_schema::{
+    dtype::DataType,
     field::Field,
     schema::{Schema, SchemaRef},
 };
@@ -66,6 +67,16 @@ pub enum Error {
     },
 
     #[snafu(display(
+        "FilePathColumns were different during ScanTask::merge: {:?} vs {:?}",
+        fpc1,
+        fpc2
+    ))]
+    DifferingFilePathColumnsInScanTaskMerge {
+        fpc1: Option<String>,
+        fpc2: Option<String>,
+    },
+
+    #[snafu(display(
         "StorageConfigs were different during ScanTask::merge: {:?} vs {:?}",
         sc1,
         sc2
@@ -98,18 +109,19 @@ impl From<Error> for pyo3::PyErr {
 }
 
 /// Specification of a subset of a file to be read.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ChunkSpec {
     /// Selection of Parquet row groups.
     Parquet(Vec<i64>),
 }
 
 impl ChunkSpec {
+    #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         match self {
             Self::Parquet(chunks) => {
-                res.push(format!("Chunks = {:?}", chunks));
+                res.push(format!("Chunks = {chunks:?}"));
             }
         }
         res
@@ -147,6 +159,7 @@ pub enum DataSource {
 }
 
 impl DataSource {
+    #[must_use]
     pub fn get_path(&self) -> &str {
         match self {
             Self::File { path, .. } | Self::Database { path, .. } => path,
@@ -155,6 +168,7 @@ impl DataSource {
         }
     }
 
+    #[must_use]
     pub fn get_parquet_metadata(&self) -> Option<&Arc<FileMetaData>> {
         match self {
             Self::File {
@@ -164,6 +178,7 @@ impl DataSource {
         }
     }
 
+    #[must_use]
     pub fn get_chunk_spec(&self) -> Option<&ChunkSpec> {
         match self {
             Self::File { chunk_spec, .. } => chunk_spec.as_ref(),
@@ -173,6 +188,7 @@ impl DataSource {
         }
     }
 
+    #[must_use]
     pub fn get_size_bytes(&self) -> Option<u64> {
         match self {
             Self::File { size_bytes, .. } | Self::Database { size_bytes, .. } => *size_bytes,
@@ -181,6 +197,7 @@ impl DataSource {
         }
     }
 
+    #[must_use]
     pub fn get_metadata(&self) -> Option<&TableMetadata> {
         match self {
             Self::File { metadata, .. } | Self::Database { metadata, .. } => metadata.as_ref(),
@@ -189,6 +206,7 @@ impl DataSource {
         }
     }
 
+    #[must_use]
     pub fn get_statistics(&self) -> Option<&TableStatistics> {
         match self {
             Self::File { statistics, .. } | Self::Database { statistics, .. } => {
@@ -199,6 +217,7 @@ impl DataSource {
         }
     }
 
+    #[must_use]
     pub fn get_partition_spec(&self) -> Option<&PartitionSpec> {
         match self {
             Self::File { partition_spec, .. } => partition_spec.as_ref(),
@@ -208,6 +227,7 @@ impl DataSource {
         }
     }
 
+    #[must_use]
     pub fn get_iceberg_delete_files(&self) -> Option<&Vec<String>> {
         match self {
             Self::File {
@@ -218,6 +238,7 @@ impl DataSource {
         }
     }
 
+    #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         match self {
@@ -231,7 +252,7 @@ impl DataSource {
                 statistics,
                 parquet_metadata: _,
             } => {
-                res.push(format!("Path = {}", path));
+                res.push(format!("Path = {path}"));
                 if let Some(chunk_spec) = chunk_spec {
                     res.push(format!(
                         "Chunk spec = {{ {} }}",
@@ -239,10 +260,10 @@ impl DataSource {
                     ));
                 }
                 if let Some(size_bytes) = size_bytes {
-                    res.push(format!("Size bytes = {}", size_bytes));
+                    res.push(format!("Size bytes = {size_bytes}"));
                 }
                 if let Some(iceberg_delete_files) = iceberg_delete_files {
-                    res.push(format!("Iceberg delete files = {:?}", iceberg_delete_files));
+                    res.push(format!("Iceberg delete files = {iceberg_delete_files:?}"));
                 }
                 if let Some(metadata) = metadata {
                     res.push(format!(
@@ -257,7 +278,7 @@ impl DataSource {
                     ));
                 }
                 if let Some(statistics) = statistics {
-                    res.push(format!("Statistics = {}", statistics));
+                    res.push(format!("Statistics = {statistics}"));
                 }
             }
             Self::Database {
@@ -266,9 +287,9 @@ impl DataSource {
                 metadata,
                 statistics,
             } => {
-                res.push(format!("Path = {}", path));
+                res.push(format!("Path = {path}"));
                 if let Some(size_bytes) = size_bytes {
-                    res.push(format!("Size bytes = {}", size_bytes));
+                    res.push(format!("Size bytes = {size_bytes}"));
                 }
                 if let Some(metadata) = metadata {
                     res.push(format!(
@@ -277,7 +298,7 @@ impl DataSource {
                     ));
                 }
                 if let Some(statistics) = statistics {
-                    res.push(format!("Statistics = {}", statistics));
+                    res.push(format!("Statistics = {statistics}"));
                 }
             }
             #[cfg(feature = "python")]
@@ -292,7 +313,7 @@ impl DataSource {
             } => {
                 res.push(format!("Function = {module}.{func_name}"));
                 if let Some(size_bytes) = size_bytes {
-                    res.push(format!("Size bytes = {}", size_bytes));
+                    res.push(format!("Size bytes = {size_bytes}"));
                 }
                 if let Some(metadata) = metadata {
                     res.push(format!(
@@ -307,7 +328,7 @@ impl DataSource {
                     ));
                 }
                 if let Some(statistics) = statistics {
-                    res.push(format!("Statistics = {}", statistics));
+                    res.push(format!("Statistics = {statistics}"));
                 }
             }
         }
@@ -328,7 +349,7 @@ impl DisplayAs for DataSource {
                     Self::PythonFactoryFunction {
                         module, func_name, ..
                     } => {
-                        format!("{}:{}", module, func_name)
+                        format!("{module}:{func_name}")
                     }
                 }
             }
@@ -356,16 +377,19 @@ pub struct ScanTask {
     pub size_bytes_on_disk: Option<u64>,
     pub metadata: Option<TableMetadata>,
     pub statistics: Option<TableStatistics>,
+    pub file_path_column: Option<String>,
 }
 pub type ScanTaskRef = Arc<ScanTask>;
 
 impl ScanTask {
+    #[must_use]
     pub fn new(
         sources: Vec<DataSource>,
         file_format_config: Arc<FileFormatConfig>,
         schema: SchemaRef,
         storage_config: Arc<StorageConfig>,
         pushdowns: Pushdowns,
+        file_path_column: Option<String>,
     ) -> Self {
         assert!(!sources.is_empty());
         debug_assert!(
@@ -399,13 +423,14 @@ impl ScanTask {
         let metadata = length.map(|l| TableMetadata { length: l });
         Self {
             sources,
-            file_format_config,
             schema,
+            file_format_config,
             storage_config,
             pushdowns,
             size_bytes_on_disk,
             metadata,
             statistics,
+            file_path_column,
         }
     }
 
@@ -440,6 +465,12 @@ impl ScanTask {
                 p2: sc2.pushdowns.clone(),
             });
         }
+        if sc1.file_path_column != sc2.file_path_column {
+            return Err(Error::DifferingFilePathColumnsInScanTaskMerge {
+                fpc1: sc1.file_path_column.clone(),
+                fpc2: sc2.file_path_column.clone(),
+            });
+        }
         Ok(Self::new(
             sc1.sources
                 .clone()
@@ -450,25 +481,51 @@ impl ScanTask {
             sc1.schema.clone(),
             sc1.storage_config.clone(),
             sc1.pushdowns.clone(),
+            sc1.file_path_column.clone(),
         ))
     }
 
+    #[must_use]
     pub fn materialized_schema(&self) -> SchemaRef {
-        match &self.pushdowns.columns {
-            None => self.schema.clone(),
-            Some(columns) => Arc::new(Schema {
+        match (&self.pushdowns.columns, &self.file_path_column) {
+            (None, None) => self.schema.clone(),
+            (Some(columns), file_path_column_opt) => {
+                let filtered_fields = self
+                    .schema
+                    .fields
+                    .clone()
+                    .into_iter()
+                    .filter(|(name, _)| columns.contains(name));
+
+                let fields = match file_path_column_opt {
+                    Some(file_path_column) => filtered_fields
+                        .chain(std::iter::once((
+                            file_path_column.to_string(),
+                            Field::new(file_path_column.to_string(), DataType::Utf8),
+                        )))
+                        .collect(),
+                    None => filtered_fields.collect(),
+                };
+
+                Arc::new(Schema { fields })
+            }
+            (None, Some(file_path_column)) => Arc::new(Schema {
                 fields: self
                     .schema
                     .fields
                     .clone()
                     .into_iter()
-                    .filter(|(name, _)| columns.contains(name))
+                    .chain(std::iter::once((
+                        file_path_column.to_string(),
+                        Field::new(file_path_column.to_string(), DataType::Utf8),
+                    )))
                     .collect(),
             }),
         }
     }
 
     /// Obtain an accurate, exact num_rows from the ScanTask, or `None` if this is not possible
+    #[must_use]
     pub fn num_rows(&self) -> Option<usize> {
         if self.pushdowns.filters.is_some() {
             // Cannot obtain an accurate num_rows if there are filters
@@ -487,6 +544,7 @@ impl ScanTask {
     }
 
     /// Obtain an approximate num_rows from the ScanTask, or `None` if this is not possible
+    #[must_use]
     pub fn approx_num_rows(&self, config: Option<&DaftExecutionConfig>) -> Option<f64> {
         let approx_total_num_rows_before_pushdowns = self
             .metadata
@@ -531,6 +589,7 @@ impl ScanTask {
     }
 
     /// Obtain the absolute maximum number of rows this ScanTask can give, or None if not possible to derive
+    #[must_use]
     pub fn upper_bound_rows(&self) -> Option<usize> {
         self.metadata.as_ref().map(|m| {
             if let Some(limit) = self.pushdowns.limit {
@@ -541,10 +600,12 @@ impl ScanTask {
         })
     }
 
+    #[must_use]
     pub fn size_bytes_on_disk(&self) -> Option<usize> {
         self.size_bytes_on_disk.map(|s| s as usize)
     }
 
+    #[must_use]
     pub fn estimate_in_memory_size_bytes(
         &self,
         config: Option<&DaftExecutionConfig>,
@@ -570,6 +631,7 @@ impl ScanTask {
             })
     }
 
+    #[must_use]
     pub fn partition_spec(&self) -> Option<&PartitionSpec> {
         match self.sources.first() {
             None => None,
@@ -577,6 +639,7 @@ impl ScanTask {
         }
     }
 
+    #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         // TODO(Clark): Use above methods to display some of the more derived fields.
@@ -606,7 +669,7 @@ impl ScanTask {
         }
         res.extend(self.pushdowns.multiline_display());
         if let Some(size_bytes) = self.size_bytes_on_disk {
-            res.push(format!("Size bytes on disk = {}", size_bytes));
+            res.push(format!("Size bytes on disk = {size_bytes}"));
         }
         if let Some(metadata) = &self.metadata {
             res.push(format!(
@@ -615,7 +678,7 @@ impl ScanTask {
             ));
         }
         if let Some(statistics) = &self.statistics {
-            res.push(format!("Statistics = {}", statistics));
+            res.push(format!("Statistics = {statistics}"));
         }
         res
     }
@@ -683,8 +746,7 @@ impl PartitionField {
                 })
             }
             (None, Some(tfm)) => Err(DaftError::ValueError(format!(
-                "transform set in PartitionField: {} but source_field not set",
-                tfm
+                "transform set in PartitionField: {tfm} but source_field not set"
             ))),
             _ => Ok(Self {
                 field,
@@ -726,16 +788,19 @@ pub enum PartitionTransform {
 }
 
 impl PartitionTransform {
+    #[must_use]
     pub fn supports_equals(&self) -> bool {
         true
     }
 
+    #[must_use]
     pub fn supports_not_equals(&self) -> bool {
         matches!(self, Self::Identity)
     }
 
+    #[must_use]
     pub fn supports_comparison(&self) -> bool {
-        use PartitionTransform::*;
+        use PartitionTransform::{Day, Hour, IcebergTruncate, Identity, Month, Year};
         matches!(
             self,
             Identity | IcebergTruncate(_) | Year | Month | Day | Hour
@@ -752,6 +817,7 @@ impl Display for PartitionTransform {
 pub trait ScanOperator: Send + Sync + Debug {
     fn schema(&self) -> SchemaRef;
     fn partitioning_keys(&self) -> &[PartitionField];
+    fn file_path_column(&self) -> Option<&str>;
 
     fn can_absorb_filter(&self) -> bool;
     fn can_absorb_select(&self) -> bool;
@@ -783,7 +849,7 @@ pub struct ScanOperatorRef(pub Arc<dyn ScanOperator>);
 
 impl Hash for ScanOperatorRef {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        Arc::as_ptr(&self.0).hash(state)
+        Arc::as_ptr(&self.0).hash(state);
     }
 }
 
@@ -810,6 +876,7 @@ pub struct PhysicalScanInfo {
 }
 
 impl PhysicalScanInfo {
+    #[must_use]
     pub fn new(
         scan_op: ScanOperatorRef,
         source_schema: SchemaRef,
@@ -824,6 +891,7 @@ impl PhysicalScanInfo {
         }
     }
 
+    #[must_use]
     pub fn with_pushdowns(&self, pushdowns: Pushdowns) -> Self {
         Self {
             scan_op: self.scan_op.clone(),
@@ -853,6 +921,7 @@ impl Default for Pushdowns {
 }
 
 impl Pushdowns {
+    #[must_use]
     pub fn new(
         filters: Option<ExprRef>,
         partition_filters: Option<ExprRef>,
@@ -867,6 +936,7 @@ impl Pushdowns {
         }
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.filters.is_none()
             && self.partition_filters.is_none()
@@ -874,6 +944,7 @@ impl Pushdowns {
             && self.limit.is_none()
     }
 
+    #[must_use]
     pub fn with_limit(&self, limit: Option<usize>) -> Self {
         Self {
             filters: self.filters.clone(),
@@ -883,6 +954,7 @@ impl Pushdowns {
         }
     }
 
+    #[must_use]
     pub fn with_filters(&self, filters: Option<ExprRef>) -> Self {
         Self {
             filters,
@@ -892,6 +964,7 @@ impl Pushdowns {
         }
     }
 
+    #[must_use]
     pub fn with_partition_filters(&self, partition_filters: Option<ExprRef>) -> Self {
         Self {
             filters: self.filters.clone(),
@@ -901,6 +974,7 @@ impl Pushdowns {
         }
     }
 
+    #[must_use]
     pub fn with_columns(&self, columns: Option<Arc<Vec<String>>>) -> Self {
         Self {
             filters: self.filters.clone(),
@@ -910,19 +984,20 @@ impl Pushdowns {
         }
     }
 
+    #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         if let Some(columns) = &self.columns {
             res.push(format!("Projection pushdown = [{}]", columns.join(", ")));
         }
         if let Some(filters) = &self.filters {
-            res.push(format!("Filter pushdown = {}", filters));
+            res.push(format!("Filter pushdown = {filters}"));
         }
         if let Some(pfilters) = &self.partition_filters {
-            res.push(format!("Partition Filter = {}", pfilters));
+            res.push(format!("Partition Filter = {pfilters}"));
         }
         if let Some(limit) = self.limit {
-            res.push(format!("Limit pushdown = {}", limit));
+            res.push(format!("Limit pushdown = {limit}"));
         }
         res
     }
@@ -938,13 +1013,13 @@ impl DisplayAs for Pushdowns {
                     sub_items.push(format!("projection: [{}]", columns.join(", ")));
                 }
                 if let Some(filters) = &self.filters {
-                    sub_items.push(format!("filter: {}", filters));
+                    sub_items.push(format!("filter: {filters}"));
                 }
                 if let Some(pfilters) = &self.partition_filters {
-                    sub_items.push(format!("partition_filter: {}", pfilters));
+                    sub_items.push(format!("partition_filter: {pfilters}"));
                 }
                 if let Some(limit) = self.limit {
-                    sub_items.push(format!("limit: {}", limit));
+                    sub_items.push(format!("limit: {limit}"));
                 }
                 s.push_str(&sub_items.join(", "));
                 s.push('}');
@@ -974,7 +1049,7 @@ mod test {
     fn make_scan_task(num_sources: usize) -> ScanTask {
         let sources = (0..num_sources)
             .map(|i| DataSource::File {
-                path: format!("test{}", i),
+                path: format!("test{i}"),
                 chunk_spec: None,
                 size_bytes: None,
                 iceberg_delete_files: None,
@@ -1000,6 +1075,7 @@ mod test {
                 NativeStorageConfig::new_internal(false, None),
             ))),
             Pushdowns::default(),
+            None,
         )
     }
 
@@ -1025,6 +1101,7 @@ mod test {
             ))),
             false,
             Some(Arc::new(Schema::empty())),
+            None,
         )
         .unwrap();
 

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import math
 import os
-from datetime import date, datetime, time
+import warnings
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import (
     TYPE_CHECKING,
@@ -22,6 +23,7 @@ from daft.daft import PyExpr as _PyExpr
 from daft.daft import col as _col
 from daft.daft import date_lit as _date_lit
 from daft.daft import decimal_lit as _decimal_lit
+from daft.daft import duration_lit as _duration_lit
 from daft.daft import list_sort as _list_sort
 from daft.daft import lit as _lit
 from daft.daft import series_lit as _series_lit
@@ -114,6 +116,12 @@ def lit(value: object) -> Expression:
         i64_value = pa_time.cast(pa.int64()).as_py()
         time_unit = TimeUnit.from_str(pa.type_for_alias(str(pa_time.type)).unit)._timeunit
         lit_value = _time_lit(i64_value, time_unit)
+    elif isinstance(value, timedelta):
+        # pyo3 timedelta (PyDelta) is not available when running in abi3 mode, workaround
+        pa_duration = pa.scalar(value)
+        i64_value = pa_duration.cast(pa.int64()).as_py()
+        time_unit = TimeUnit.from_str(pa_duration.type.unit)._timeunit
+        lit_value = _duration_lit(i64_value, time_unit)
     elif isinstance(value, Decimal):
         sign, digits, exponent = value.as_tuple()
         assert isinstance(exponent, int)
@@ -156,6 +164,26 @@ def col(name: str) -> Expression:
         Expression: Expression representing the selected column
     """
     return Expression._from_pyexpr(_col(name))
+
+
+def interval(
+    years: int | None = None,
+    months: int | None = None,
+    days: int | None = None,
+    hours: int | None = None,
+    minutes: int | None = None,
+    seconds: int | None = None,
+    millis: int | None = None,
+    nanos: int | None = None,
+) -> Expression:
+    """
+    Creates an Expression representing an interval.
+
+    """
+    lit_value = native.interval_lit(
+        years=years, months=months, days=days, hours=hours, minutes=minutes, seconds=seconds, millis=millis, nanos=nanos
+    )
+    return Expression._from_pyexpr(lit_value)
 
 
 class Expression:
@@ -852,6 +880,11 @@ class Expression:
     def mean(self) -> Expression:
         """Calculates the mean of the values in the expression"""
         expr = self._expr.mean()
+        return Expression._from_pyexpr(expr)
+
+    def stddev(self) -> Expression:
+        """Calculates the standard deviation of the values in the expression"""
+        expr = self._expr.stddev()
         return Expression._from_pyexpr(expr)
 
     def min(self) -> Expression:
@@ -2922,6 +2955,40 @@ class ExpressionListNamespace(ExpressionNamespace):
         delimiter_expr = Expression._to_expression(delimiter)
         return Expression._from_pyexpr(native.list_join(self._expr, delimiter_expr._expr))
 
+    def value_counts(self) -> Expression:
+        """Counts the occurrences of each unique value in the list.
+
+        Returns:
+            Expression: A Map<X, UInt64> expression where the keys are unique elements from the
+                        original list of type X, and the values are UInt64 counts representing
+                        the number of times each element appears in the list.
+
+        Note:
+            This function does not work for nested types. For example, it will not produce a map
+            with lists as keys.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"letters": [["a", "b", "a"], ["b", "c", "b", "c"]]})
+            >>> df.with_column("value_counts", df["letters"].list.value_counts()).collect()
+            ╭──────────────┬───────────────────╮
+            │ letters      ┆ value_counts      │
+            │ ---          ┆ ---               │
+            │ List[Utf8]   ┆ Map[Utf8: UInt64] │
+            ╞══════════════╪═══════════════════╡
+            │ [a, b, a]    ┆ [{key: a,         │
+            │              ┆ value: 2,         │
+            │              ┆ }, {key: …        │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ [b, c, b, c] ┆ [{key: b,         │
+            │              ┆ value: 2,         │
+            │              ┆ }, {key: …        │
+            ╰──────────────┴───────────────────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+        """
+        return Expression._from_pyexpr(native.list_value_counts(self._expr))
+
     def count(self, mode: CountMode = CountMode.Valid) -> Expression:
         """Counts the number of elements in each list
 
@@ -2934,6 +3001,21 @@ class ExpressionListNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.list_count(self._expr, mode))
 
     def lengths(self) -> Expression:
+        """Gets the length of each list
+
+        (DEPRECATED) Please use Expression.list.length instead
+
+        Returns:
+            Expression: a UInt64 expression which is the length of each list
+        """
+        warnings.warn(
+            "This function will be deprecated from Daft version >= 0.3.5!  Instead, please use 'Expression.list.length'",
+            category=DeprecationWarning,
+        )
+
+        return Expression._from_pyexpr(native.list_count(self._expr, CountMode.All))
+
+    def length(self) -> Expression:
         """Gets the length of each list
 
         Returns:
@@ -3069,21 +3151,21 @@ class ExpressionMapNamespace(ExpressionNamespace):
             >>> df = daft.from_arrow(pa.table({"map_col": pa_array}))
             >>> df = df.with_column("a", df["map_col"].map.get("a"))
             >>> df.show()
-            ╭──────────────────────────────────────┬───────╮
-            │ map_col                              ┆ a     │
-            │ ---                                  ┆ ---   │
-            │ Map[Struct[key: Utf8, value: Int64]] ┆ Int64 │
-            ╞══════════════════════════════════════╪═══════╡
-            │ [{key: a,                            ┆ 1     │
-            │ value: 1,                            ┆       │
-            │ }]                                   ┆       │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ []                                   ┆ None  │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ [{key: b,                            ┆ None  │
-            │ value: 2,                            ┆       │
-            │ }]                                   ┆       │
-            ╰──────────────────────────────────────┴───────╯
+            ╭──────────────────┬───────╮
+            │ map_col          ┆ a     │
+            │ ---              ┆ ---   │
+            │ Map[Utf8: Int64] ┆ Int64 │
+            ╞══════════════════╪═══════╡
+            │ [{key: a,        ┆ 1     │
+            │ value: 1,        ┆       │
+            │ }]               ┆       │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ []               ┆ None  │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ [{key: b,        ┆ None  │
+            │ value: 2,        ┆       │
+            │ }]               ┆       │
+            ╰──────────────────┴───────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 

@@ -1,5 +1,6 @@
 use std::{marker::PhantomData, sync::Arc};
 
+use arrow2::types::months_days_ns;
 use common_error::DaftResult;
 
 use super::Growable;
@@ -32,7 +33,7 @@ where
 
     #[inline]
     fn add_nulls(&mut self, additional: usize) {
-        self.arrow2_growable.extend_validity(additional)
+        self.arrow2_growable.extend_validity(additional);
     }
 
     #[inline]
@@ -161,6 +162,11 @@ impl_arrow_backed_data_array_growable!(
     Utf8Type,
     arrow2::array::growable::GrowableUtf8<'a, i64>
 );
+impl_arrow_backed_data_array_growable!(
+    ArrowMonthDayNanoIntervalGrowable,
+    IntervalType,
+    arrow2::array::growable::GrowablePrimitive<'a, months_days_ns>
+);
 
 /// ExtensionTypes are slightly different, because they have a dynamic inner type
 pub struct ArrowExtensionGrowable<'a> {
@@ -195,11 +201,11 @@ impl<'a> ArrowExtensionGrowable<'a> {
 impl<'a> Growable for ArrowExtensionGrowable<'a> {
     #[inline]
     fn extend(&mut self, index: usize, start: usize, len: usize) {
-        self.child_growable.extend(index, start, len)
+        self.child_growable.extend(index, start, len);
     }
     #[inline]
     fn add_nulls(&mut self, additional: usize) {
-        self.child_growable.extend_validity(additional)
+        self.child_growable.extend_validity(additional);
     }
     #[inline]
     fn build(&mut self) -> DaftResult<Series> {

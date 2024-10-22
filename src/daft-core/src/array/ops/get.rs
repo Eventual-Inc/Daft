@@ -1,3 +1,5 @@
+use arrow2::types::months_days_ns;
+
 use super::as_arrow::AsArrow;
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray},
@@ -7,7 +9,7 @@ use crate::{
             TimestampArray,
         },
         BinaryArray, BooleanArray, DaftLogicalType, DaftNumericType, ExtensionArray,
-        FixedSizeBinaryArray, NullArray, Utf8Array,
+        FixedSizeBinaryArray, IntervalArray, NullArray, Utf8Array,
     },
     series::Series,
 };
@@ -18,9 +20,12 @@ where
 {
     #[inline]
     pub fn get(&self, idx: usize) -> Option<T::Native> {
-        if idx >= self.len() {
-            panic!("Out of bounds: {} vs len: {}", idx, self.len())
-        }
+        assert!(
+            idx < self.len(),
+            "Out of bounds: {} vs len: {}",
+            idx,
+            self.len()
+        );
         let arrow_array = self.as_arrow();
         let is_valid = arrow_array
             .validity()
@@ -71,14 +76,18 @@ impl_array_arrow_get!(Decimal128Array, i128);
 impl_array_arrow_get!(DateArray, i32);
 impl_array_arrow_get!(TimeArray, i64);
 impl_array_arrow_get!(DurationArray, i64);
+impl_array_arrow_get!(IntervalArray, months_days_ns);
 impl_array_arrow_get!(TimestampArray, i64);
 
 impl NullArray {
     #[inline]
     pub fn get(&self, idx: usize) -> Option<()> {
-        if idx >= self.len() {
-            panic!("Out of bounds: {} vs len: {}", idx, self.len())
-        }
+        assert!(
+            idx < self.len(),
+            "Out of bounds: {} vs len: {}",
+            idx,
+            self.len()
+        );
         None
     }
 }
@@ -86,9 +95,12 @@ impl NullArray {
 impl ExtensionArray {
     #[inline]
     pub fn get(&self, idx: usize) -> Option<Box<dyn arrow2::scalar::Scalar>> {
-        if idx >= self.len() {
-            panic!("Out of bounds: {} vs len: {}", idx, self.len())
-        }
+        assert!(
+            idx < self.len(),
+            "Out of bounds: {} vs len: {}",
+            idx,
+            self.len()
+        );
         let is_valid = self
             .data
             .validity()
@@ -108,9 +120,12 @@ impl crate::datatypes::PythonArray {
         use arrow2::array::Array;
         use pyo3::prelude::*;
 
-        if idx >= self.len() {
-            panic!("Out of bounds: {} vs len: {}", idx, self.len())
-        }
+        assert!(
+            idx < self.len(),
+            "Out of bounds: {} vs len: {}",
+            idx,
+            self.len()
+        );
         let valid = self
             .as_arrow()
             .validity()
@@ -127,9 +142,12 @@ impl crate::datatypes::PythonArray {
 impl FixedSizeListArray {
     #[inline]
     pub fn get(&self, idx: usize) -> Option<Series> {
-        if idx >= self.len() {
-            panic!("Out of bounds: {} vs len: {}", idx, self.len())
-        }
+        assert!(
+            idx < self.len(),
+            "Out of bounds: {} vs len: {}",
+            idx,
+            self.len()
+        );
         let fixed_len = self.fixed_element_len();
         let valid = self.is_valid(idx);
         if valid {
@@ -147,9 +165,12 @@ impl FixedSizeListArray {
 impl ListArray {
     #[inline]
     pub fn get(&self, idx: usize) -> Option<Series> {
-        if idx >= self.len() {
-            panic!("Out of bounds: {} vs len: {}", idx, self.len())
-        }
+        assert!(
+            idx < self.len(),
+            "Out of bounds: {} vs len: {}",
+            idx,
+            self.len()
+        );
         let valid = self.is_valid(idx);
         if valid {
             let (start, end) = self.offsets().start_end(idx);

@@ -1,5 +1,6 @@
 #![feature(hash_raw_entry)]
 #![feature(let_chains)]
+#![feature(iterator_try_collect)]
 
 use core::slice;
 use std::{
@@ -34,6 +35,7 @@ pub use probeable::{make_probeable_builder, Probeable, ProbeableBuilder};
 pub mod python;
 #[cfg(feature = "python")]
 pub use python::register_modules;
+use rand::seq::index::sample;
 use repr_html::html_value;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -145,9 +147,9 @@ impl Table {
     pub fn empty(schema: Option<SchemaRef>) -> DaftResult<Self> {
         let schema = schema.unwrap_or_else(|| Schema::empty().into());
         let mut columns: Vec<Series> = Vec::with_capacity(schema.names().len());
-        for (field_name, field) in schema.fields.iter() {
+        for (field_name, field) in &schema.fields {
             let series = Series::empty(field_name, &field.dtype);
-            columns.push(series)
+            columns.push(series);
         }
         Ok(Self::new_unchecked(schema, columns, 0))
     }
@@ -160,9 +162,7 @@ impl Table {
     ///
     /// * `columns` - Columns to crate a table from as [`Series`] objects
     pub fn from_nonempty_columns(columns: Vec<Series>) -> DaftResult<Self> {
-        if columns.is_empty() {
-            panic!("Cannot call Table::new() with empty columns. This indicates an internal error, please file an issue.");
-        }
+        assert!(!columns.is_empty(), "Cannot call Table::new() with empty columns. This indicates an internal error, please file an issue.");
 
         let schema = Schema::new(columns.iter().map(|s| s.field().clone()).collect())?;
         let schema: SchemaRef = schema.into();
@@ -240,11 +240,16 @@ impl Table {
                 Some(seed) => StdRng::seed_from_u64(seed),
                 None => StdRng::from_rng(rand::thread_rng()).unwrap(),
             };
-            let range = Uniform::from(0..self.len() as u64);
             let values: Vec<u64> = if with_replacement {
-                (0..num).map(|_| rng.sample(range)).collect()
-            } else {
+                let range = Uniform::from(0..self.len() as u64);
                 rng.sample_iter(&range).take(num).collect()
+            } else {
+                // https://docs.rs/rand/latest/rand/seq/index/fn.sample.html
+                // Randomly sample exactly amount distinct indices from 0..length, and return them in random order (fully shuffled).
+                sample(&mut rng, self.len(), num)
+                    .into_iter()
+                    .map(|i| i as u64)
+                    .collect()
             };
             let indices: daft_core::array::DataArray<daft_core::datatypes::UInt64Type> =
                 UInt64Array::from(("idx", values));
@@ -342,7 +347,7 @@ impl Table {
             let num_filtered = mask
                 .validity()
                 .map(|validity| arrow2::bitmap::and(validity, mask.as_bitmap()).unset_bits())
-                .unwrap_or(mask.as_bitmap().unset_bits());
+                .unwrap_or_else(|| mask.as_bitmap().unset_bits());
             mask.len() - num_filtered
         };
 
@@ -480,6 +485,7 @@ impl Table {
                 }
             }
             AggExpr::Mean(expr) => self.eval_expression(expr)?.mean(groups),
+            AggExpr::Stddev(expr) => self.eval_expression(expr)?.stddev(groups),
             AggExpr::Min(expr) => self.eval_expression(expr)?.min(groups),
             AggExpr::Max(expr) => self.eval_expression(expr)?.max(groups),
             &AggExpr::AnyValue(ref expr, ignore_nulls) => {
@@ -495,6 +501,7 @@ impl Table {
 
     fn eval_expression(&self, expr: &Expr) -> DaftResult<Series> {
         use crate::Expr::*;
+
         let expected_field = expr.to_field(self.schema.as_ref())?;
         let series = match expr {
             Alias(child, name) => Ok(self.eval_expression(child)?.rename(name)),
@@ -572,6 +579,7 @@ impl Table {
                 }
             },
         }?;
+
         if expected_field.name != series.field().name {
             return Err(DaftError::ComputeError(format!(
                 "Mismatch of expected expression name and name from computed series ({} vs {}) for expression: {expr}",
@@ -579,32 +587,41 @@ impl Table {
                 series.field().name
             )));
         }
-        if expected_field.dtype != series.field().dtype {
-            panic!("Mismatch of expected expression data type and data type from computed series, {} vs {}", expected_field.dtype, series.field().dtype);
-        }
+
+        assert!(
+            !(expected_field.dtype != series.field().dtype),
+            "Data type mismatch in expression evaluation:\n\
+                Expected type: {}\n\
+                Computed type: {}\n\
+                Expression: {}\n\
+                This likely indicates an internal error in type inference or computation.",
+            expected_field.dtype,
+            series.field().dtype,
+            expr
+        );
         Ok(series)
     }
 
     pub fn eval_expression_list(&self, exprs: &[ExprRef]) -> DaftResult<Self> {
-        let result_series = exprs
+        let result_series: Vec<_> = exprs
             .iter()
             .map(|e| self.eval_expression(e))
-            .collect::<DaftResult<Vec<Series>>>()?;
+            .try_collect()?;
 
-        let fields = result_series
-            .iter()
-            .map(|s| s.field().clone())
-            .collect::<Vec<Field>>();
-        let mut seen: HashSet<String> = HashSet::new();
-        for field in fields.iter() {
+        let fields: Vec<_> = result_series.iter().map(|s| s.field().clone()).collect();
+
+        let mut seen = HashSet::new();
+
+        for field in &fields {
             let name = &field.name;
             if seen.contains(name) {
                 return Err(DaftError::ValueError(format!(
                     "Duplicate name found when evaluating expressions: {name}"
                 )));
             }
-            seen.insert(name.clone());
+            seen.insert(name);
         }
+
         let new_schema = Schema::new(fields)?;
 
         let has_agg_expr = exprs.iter().any(|e| matches!(e.as_ref(), Expr::Agg(..)));
@@ -696,16 +713,11 @@ impl Table {
         // Begin the body.
         res.push_str("<tbody>\n");
 
-        let head_rows;
-        let tail_rows;
-
-        if self.len() > 10 {
-            head_rows = 5;
-            tail_rows = 5;
+        let (head_rows, tail_rows) = if self.len() > 10 {
+            (5, 5)
         } else {
-            head_rows = self.len();
-            tail_rows = 0;
-        }
+            (self.len(), 0)
+        };
 
         let styled_td =
             "<td><div style=\"text-align:left; max-width:192px; max-height:64px; overflow:auto\">";
@@ -714,7 +726,7 @@ impl Table {
             // Begin row.
             res.push_str("<tr>");
 
-            for col in self.columns.iter() {
+            for col in &self.columns {
                 res.push_str(styled_td);
                 res.push_str(&html_value(col, i));
                 res.push_str("</div></td>");
@@ -726,7 +738,7 @@ impl Table {
 
         if tail_rows != 0 {
             res.push_str("<tr>");
-            for _ in self.columns.iter() {
+            for _ in &self.columns {
                 res.push_str("<td>...</td>");
             }
             res.push_str("</tr>\n");
@@ -736,7 +748,7 @@ impl Table {
             // Begin row.
             res.push_str("<tr>");
 
-            for col in self.columns.iter() {
+            for col in &self.columns {
                 res.push_str(styled_td);
                 res.push_str(&html_value(col, i));
                 res.push_str("</td>");

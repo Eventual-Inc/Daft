@@ -1324,6 +1324,7 @@ name = "common-error"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow2",
+ "parquet2",
  "pyo3",
  "regex",
  "serde_json",
@@ -1377,6 +1378,7 @@ dependencies = [
 name = "common-resource-request"
 version = "0.3.0-dev0"
 dependencies = [
+ "common-error",
  "common-hashable-float-wrapper",
  "common-py-serde",
  "pyo3",
@@ -2086,6 +2088,7 @@ dependencies = [
  "serde",
  "snafu",
  "test-log",
+ "uuid 1.10.0",
 ]
 
 [[package]]
@@ -2132,6 +2135,7 @@ dependencies = [
  "pyo3",
  "rstest",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

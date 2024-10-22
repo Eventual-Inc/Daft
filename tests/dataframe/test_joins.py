@@ -3,6 +3,7 @@ from __future__ import annotations
 import pyarrow as pa
 import pytest
 
+import daft
 from daft import col, context
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
@@ -50,6 +51,17 @@ def test_columns_after_join(make_df):
 
     assert set(joined_df1.schema().column_names()) == set(["A", "B", "right.A"])
 
+    assert set(joined_df2.schema().column_names()) == set(["A", "B"])
+
+
+def test_rename_join_keys_in_dataframe(make_df):
+    df1 = make_df({"A": [1, 2], "B": [2, 2]})
+
+    df2 = make_df({"A": [1, 2]})
+    joined_df1 = df1.join(df2, left_on=["A", "B"], right_on=["A", "A"])
+    joined_df2 = df1.join(df2, left_on=["B", "A"], right_on=["A", "A"])
+
+    assert set(joined_df1.schema().column_names()) == set(["A", "B"])
     assert set(joined_df2.schema().column_names()) == set(["A", "B"])
 
 
@@ -1075,3 +1087,21 @@ def test_join_same_name_alias_with_compute(join_strategy, join_type, expected, m
     assert sort_arrow_table(pa.Table.from_pydict(daft_df.to_pydict()), "a") == sort_arrow_table(
         pa.Table.from_pydict(expected), "a"
     )
+
+
+@pytest.mark.parametrize(
+    "suffix,prefix,expected",
+    [
+        (None, None, "right.score"),
+        ("_right", None, "score_right"),
+        (None, "left_", "left_score"),
+        ("_right", "prefix.", "prefix.score_right"),
+    ],
+)
+def test_join_suffix_and_prefix(suffix, prefix, expected, make_df):
+    df1 = daft.from_pydict({"idx": [1, 2], "val": [10, 20]})
+    df2 = daft.from_pydict({"idx": [3], "score": [0.1]})
+    df3 = daft.from_pydict({"idx": [1], "score": [0.1]})
+
+    df = df1.join(df2, on="idx").join(df3, on="idx", suffix=suffix, prefix=prefix)
+    assert df.column_names == ["idx", "val", "score", expected]

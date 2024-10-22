@@ -117,7 +117,7 @@ pub fn cast_array_for_daft_if_needed(
                     .unwrap();
                 let casted = cast_array_for_daft_if_needed(map_array.field().clone());
                 Box::new(arrow2::array::MapArray::new(
-                    arrow2::datatypes::DataType::Map(to_field.clone(), sorted),
+                    arrow2::datatypes::DataType::Map(to_field, sorted),
                     map_array.offsets().clone(),
                     casted,
                     arrow_array.validity().cloned(),
