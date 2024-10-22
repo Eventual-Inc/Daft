@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import dataclasses
 from typing import Callable
+from urllib.parse import urlparse
 
 import unitycatalog
 
-from daft.io import IOConfig, S3Config
+from daft.io import AzureConfig, IOConfig, S3Config
 
 
 @dataclasses.dataclass(frozen=True)
@@ -96,18 +97,28 @@ class UnityCatalog:
 
         # Grab credentials from Unity catalog and place it into the Table
         temp_table_credentials = self._client.temporary_table_credentials.create(operation="READ", table_id=table_id)
-        aws_temp_credentials = temp_table_credentials.aws_temp_credentials
-        io_config = (
-            IOConfig(
-                s3=S3Config(
-                    key_id=aws_temp_credentials.access_key_id,
-                    access_key=aws_temp_credentials.secret_access_key,
-                    session_token=aws_temp_credentials.session_token,
+
+        scheme = urlparse(storage_location).scheme
+        if scheme == "s3" or scheme == "s3a":
+            aws_temp_credentials = temp_table_credentials.aws_temp_credentials
+            io_config = (
+                IOConfig(
+                    s3=S3Config(
+                        key_id=aws_temp_credentials.access_key_id,
+                        access_key=aws_temp_credentials.secret_access_key,
+                        session_token=aws_temp_credentials.session_token,
+                    )
                 )
+                if aws_temp_credentials is not None
+                else None
             )
-            if aws_temp_credentials is not None
-            else None
-        )
+        elif scheme == "gcs" or scheme == "gs":
+            # TO-DO: gather GCS credential vending assets from Unity and construct 'io_config``
+            pass
+        elif scheme == "az" or scheme == "abfs" or scheme == "abfss":
+            io_config = IOConfig(
+                azure=AzureConfig(sas_token=temp_table_credentials.azure_user_delegation_sas.get("sas_token"))
+            )
 
         return UnityCatalogTable(
             table_uri=storage_location,

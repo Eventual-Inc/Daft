@@ -62,6 +62,9 @@ class LogicalPlanBuilder:
         used to generate executable tasks for the physical plan.
 
         This should be called after triggering optimization with self.optimize().
+
+        **Warning**: This function is not part of the stable API and may change
+        without notice. It is intended for internal or experimental use only.
         """
         from daft.plan_scheduler.physical_plan_scheduler import PhysicalPlanScheduler
 
@@ -252,6 +255,8 @@ class LogicalPlanBuilder:
         right_on: list[Expression],
         how: JoinType = JoinType.Inner,
         strategy: JoinStrategy | None = None,
+        join_suffix: str | None = None,
+        join_prefix: str | None = None,
     ) -> LogicalPlanBuilder:
         builder = self._builder.join(
             right._builder,
@@ -259,6 +264,8 @@ class LogicalPlanBuilder:
             [expr._expr for expr in right_on],
             how,
             strategy,
+            join_suffix,
+            join_prefix,
         )
         return LogicalPlanBuilder(builder)
 

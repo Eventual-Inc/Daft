@@ -35,6 +35,7 @@ pub use probeable::{make_probeable_builder, ProbeState, Probeable, ProbeableBuil
 pub mod python;
 #[cfg(feature = "python")]
 pub use python::register_modules;
+use rand::seq::index::sample;
 use repr_html::html_value;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -239,11 +240,16 @@ impl Table {
                 Some(seed) => StdRng::seed_from_u64(seed),
                 None => StdRng::from_rng(rand::thread_rng()).unwrap(),
             };
-            let range = Uniform::from(0..self.len() as u64);
             let values: Vec<u64> = if with_replacement {
-                (0..num).map(|_| rng.sample(range)).collect()
-            } else {
+                let range = Uniform::from(0..self.len() as u64);
                 rng.sample_iter(&range).take(num).collect()
+            } else {
+                // https://docs.rs/rand/latest/rand/seq/index/fn.sample.html
+                // Randomly sample exactly amount distinct indices from 0..length, and return them in random order (fully shuffled).
+                sample(&mut rng, self.len(), num)
+                    .into_iter()
+                    .map(|i| i as u64)
+                    .collect()
             };
             let indices: daft_core::array::DataArray<daft_core::datatypes::UInt64Type> =
                 UInt64Array::from(("idx", values));

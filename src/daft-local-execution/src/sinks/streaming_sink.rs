@@ -8,10 +8,10 @@ use tracing::{info_span, instrument};
 
 use crate::{
     channel::{create_channel, PipelineChannel, Receiver, Sender},
-    create_worker_set,
+    create_task_set,
     pipeline::{PipelineNode, PipelineResultType},
     runtime_stats::{CountingReceiver, RuntimeStatsContext},
-    ExecutionRuntimeHandle, JoinSnafu, WorkerSet, NUM_CPUS,
+    ExecutionRuntimeHandle, JoinSnafu, TaskSet, NUM_CPUS,
 };
 
 pub trait StreamingSinkState: Send + Sync {
@@ -103,12 +103,12 @@ impl StreamingSinkNode {
     fn spawn_workers(
         op: Arc<dyn StreamingSink>,
         input_receivers: Vec<Receiver<(usize, PipelineResultType)>>,
-        worker_set: &mut WorkerSet<DaftResult<Box<dyn StreamingSinkState>>>,
+        task_set: &mut TaskSet<DaftResult<Box<dyn StreamingSinkState>>>,
         stats: Arc<RuntimeStatsContext>,
     ) -> Receiver<Arc<MicroPartition>> {
         let (output_sender, output_receiver) = create_channel(input_receivers.len());
         for input_receiver in input_receivers {
-            worker_set.spawn(Self::run_worker(
+            task_set.spawn(Self::run_worker(
                 op.clone(),
                 input_receiver,
                 output_sender.clone(),
@@ -203,11 +203,11 @@ impl PipelineNode for StreamingSinkNode {
         );
         runtime_handle.spawn(
             async move {
-                let mut worker_set = create_worker_set();
+                let mut task_set = create_task_set();
                 let mut output_receiver = Self::spawn_workers(
                     op.clone(),
                     input_receivers,
-                    &mut worker_set,
+                    &mut task_set,
                     runtime_stats.clone(),
                 );
 
@@ -216,7 +216,7 @@ impl PipelineNode for StreamingSinkNode {
                 }
 
                 let mut finished_states = Vec::with_capacity(num_workers);
-                while let Some(result) = worker_set.join_next().await {
+                while let Some(result) = task_set.join_next().await {
                     let state = result.context(JoinSnafu)??;
                     finished_states.push(state);
                 }

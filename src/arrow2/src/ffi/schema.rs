@@ -261,6 +261,7 @@ unsafe fn to_data_type(schema: &ArrowSchema) -> Result<DataType> {
         "tDn" => DataType::Duration(TimeUnit::Nanosecond),
         "tiM" => DataType::Interval(IntervalUnit::YearMonth),
         "tiD" => DataType::Interval(IntervalUnit::DayTime),
+        "tin" => DataType::Interval(IntervalUnit::MonthDayNano),
         "+l" => {
             let child = schema.child(0);
             DataType::List(Box::new(to_field(child)?))
@@ -423,9 +424,7 @@ fn to_format(data_type: &DataType) -> String {
         DataType::Duration(TimeUnit::Nanosecond) => "tDn".to_string(),
         DataType::Interval(IntervalUnit::YearMonth) => "tiM".to_string(),
         DataType::Interval(IntervalUnit::DayTime) => "tiD".to_string(),
-        DataType::Interval(IntervalUnit::MonthDayNano) => {
-            todo!("Spec for FFI for MonthDayNano still not defined.")
-        }
+        DataType::Interval(IntervalUnit::MonthDayNano) => "tin".to_string(),
         DataType::Timestamp(unit, tz) => {
             let unit = match unit {
                 TimeUnit::Second => "s",

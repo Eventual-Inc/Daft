@@ -14,13 +14,13 @@ lazy_static! {
     pub static ref NUM_CPUS: usize = std::thread::available_parallelism().unwrap().get();
 }
 
-pub(crate) type WorkerSet<T> = tokio::task::JoinSet<T>;
-pub(crate) fn create_worker_set<T>() -> WorkerSet<T> {
+pub(crate) type TaskSet<T> = tokio::task::JoinSet<T>;
+pub(crate) fn create_task_set<T>() -> TaskSet<T> {
     tokio::task::JoinSet::new()
 }
 
 pub struct ExecutionRuntimeHandle {
-    worker_set: WorkerSet<crate::Result<()>>,
+    worker_set: TaskSet<crate::Result<()>>,
     default_morsel_size: usize,
 }
 
@@ -28,7 +28,7 @@ impl ExecutionRuntimeHandle {
     #[must_use]
     pub fn new(default_morsel_size: usize) -> Self {
         Self {
-            worker_set: create_worker_set(),
+            worker_set: create_task_set(),
             default_morsel_size,
         }
     }
