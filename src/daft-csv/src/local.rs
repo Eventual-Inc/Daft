@@ -4,7 +4,7 @@ use std::{
     num::NonZeroUsize,
     sync::{
         atomic::{AtomicUsize, Ordering},
-        Arc, Mutex, RwLock,
+        Arc, Mutex, RwLock, Weak,
     },
 };
 
@@ -77,8 +77,8 @@ struct CsvBufferPool {
 
 /// A slab of ByteRecords. Used for deserializing CSV.
 struct CsvBuffer {
-    pool: Arc<CsvBufferPool>,
     buffer: Vec<read::ByteRecord>,
+    pool: Weak<CsvBufferPool>,
 }
 
 impl CsvBufferPool {
@@ -119,8 +119,8 @@ impl CsvBufferPool {
         };
 
         CsvBuffer {
-            pool: Arc::clone(self),
             buffer,
+            pool: Arc::downgrade(self),
         }
     }
 
@@ -133,9 +133,10 @@ impl CsvBufferPool {
 
 impl Drop for CsvBuffer {
     fn drop(&mut self) {
-        // Take ownership of the buffer using std::mem::take
-        let buffer = std::mem::take(&mut self.buffer);
-        self.pool.return_buffer(buffer);
+        if let Some(pool) = self.pool.upgrade() {
+            let buffer = std::mem::take(&mut self.buffer);
+            pool.return_buffer(buffer);
+        }
     }
 }
 
@@ -147,10 +148,10 @@ const SLABPOOL_DEFAULT_SIZE: usize = 20;
 /// A pool of slabs. Used for reading CSV files in SLABSIZE chunks.
 #[derive(Debug)]
 struct FileSlabPool {
-    buffers: Mutex<Vec<Arc<FileSlab>>>,
+    slabs: Mutex<Vec<RwLock<FileSlabState>>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct FileSlabState {
     buffer: Box<[u8]>,
     valid_bytes: usize,
@@ -170,7 +171,7 @@ impl FileSlabState {
 #[derive(Debug)]
 struct FileSlab {
     state: RwLock<FileSlabState>,
-    pool: Arc<FileSlabPool>,
+    pool: Weak<FileSlabPool>,
 }
 
 impl FileSlab {
@@ -180,66 +181,55 @@ impl FileSlab {
     }
 }
 
-// Modify the Drop method for FileSlabs so that they're returned to their parent slab pool.
+// Modify the Drop method for FileSlabs so that their states are returned to their parent slab pool.
 impl Drop for FileSlab {
     fn drop(&mut self) {
-        let pool = Arc::clone(&self.pool);
-
-        let new_slab = Arc::new(Self {
-            state: RwLock::new(FileSlabState {
-                buffer: std::mem::take(&mut self.state.get_mut().unwrap().buffer),
-                valid_bytes: self.state.get_mut().unwrap().valid_bytes,
-            }),
-            pool,
-        });
-
-        self.pool.return_slab(new_slab);
+        if let Some(pool) = self.pool.upgrade() {
+            let file_slab_state = std::mem::take(&mut self.state);
+            pool.return_slab(file_slab_state);
+        }
     }
 }
 
 impl FileSlabPool {
     fn new() -> Arc<Self> {
-        let pool = Arc::new(Self {
-            buffers: Mutex::new(vec![]),
-        });
-        {
-            let chunk_buffers: Vec<Arc<FileSlab>> = (0..SLABPOOL_DEFAULT_SIZE)
-                // We get uninitialized buffers because we will always populate the buffers with a file read before use.
-                .map(|_| Box::new_uninit_slice(SLABSIZE))
-                .map(|x| unsafe { x.assume_init() })
-                .map(|buffer| {
-                    Arc::new(FileSlab {
-                        state: RwLock::new(FileSlabState {
-                            buffer,
-                            valid_bytes: 0,
-                        }),
-                        pool: Arc::clone(&pool),
-                    })
+        let slabs: Vec<RwLock<FileSlabState>> = (0..SLABPOOL_DEFAULT_SIZE)
+            // We get uninitialized buffers because we will always populate the buffers with a file read before use.
+            .map(|_| Box::new_uninit_slice(SLABSIZE))
+            .map(|x| unsafe { x.assume_init() })
+            .map(|buffer| {
+                RwLock::new(FileSlabState {
+                    buffer,
+                    valid_bytes: 0,
                 })
-                .collect();
-            let mut buffers = pool.buffers.lock().unwrap();
-            *buffers = chunk_buffers;
-        }
-        pool
+            })
+            .collect();
+        Arc::new(Self {
+            slabs: Mutex::new(slabs),
+        })
     }
 
     fn get_slab(self: &Arc<Self>) -> Arc<FileSlab> {
-        let mut buffers = self.buffers.lock().unwrap();
-        let buffer = buffers.pop();
-        match buffer {
-            Some(buffer) => buffer,
-            None => Arc::new(FileSlab {
-                state: RwLock::new(FileSlabState {
+        let slab = {
+            let mut slabs = self.slabs.lock().unwrap();
+            let slab = slabs.pop();
+            match slab {
+                Some(slab) => slab,
+                None => RwLock::new(FileSlabState {
                     buffer: unsafe { Box::new_uninit_slice(SLABSIZE).assume_init() },
                     valid_bytes: 0,
                 }),
-                pool: Arc::clone(self),
-            }),
-        }
+            }
+        };
+
+        Arc::new(FileSlab {
+            state: slab,
+            pool: Arc::downgrade(self),
+        })
     }
 
-    fn return_slab(&self, slab: Arc<FileSlab>) {
-        if let Ok(mut slabs) = self.buffers.lock() {
+    fn return_slab(&self, slab: RwLock<FileSlabState>) {
+        if let Ok(mut slabs) = self.slabs.lock() {
             slabs.push(slab);
         }
     }
