@@ -147,6 +147,8 @@ pub enum AggExpr {
         func: FunctionExpr,
         inputs: Vec<ExprRef>,
     },
+    #[display("first({_0})")]
+    First(ExprRef),
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -178,7 +180,9 @@ impl AggExpr {
             | Self::Max(expr)
             | Self::AnyValue(expr, _)
             | Self::List(expr)
+            | Self::First(expr)
             | Self::Concat(expr) => expr.name(),
+
             Self::MapGroups { func: _, inputs } => inputs.first().unwrap().name(),
         }
     }
@@ -251,6 +255,10 @@ impl AggExpr {
                 FieldID::new(format!("{child_id}.local_concat()"))
             }
             Self::MapGroups { func, inputs } => function_semantic_id(func, inputs, schema),
+            Self::First(expr) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.local_first()"))
+            }
         }
     }
 
@@ -268,6 +276,7 @@ impl AggExpr {
             | Self::Max(expr)
             | Self::AnyValue(expr, _)
             | Self::List(expr)
+            | Self::First(expr)
             | Self::Concat(expr) => vec![expr.clone()],
             Self::MapGroups { func: _, inputs } => inputs.clone(),
         }
@@ -290,6 +299,7 @@ impl AggExpr {
             Self::AnyValue(_, ignore_nulls) => Self::AnyValue(first_child(), *ignore_nulls),
             Self::List(_) => Self::List(first_child()),
             Self::Concat(_) => Self::Concat(first_child()),
+            Self::First(_) => Self::First(first_child()),
             Self::MapGroups { func, inputs: _ } => Self::MapGroups {
                 func: func.clone(),
                 inputs: children,
@@ -395,6 +405,7 @@ impl AggExpr {
                 Ok(Field::new(field.name.as_str(), field.dtype))
             }
             Self::List(expr) => expr.to_field(schema)?.to_list_field(),
+            Self::First(expr) => expr.to_field(schema),
             Self::Concat(expr) => {
                 let field = expr.to_field(schema)?;
                 match field.dtype {
@@ -453,6 +464,11 @@ impl Expr {
 
     pub fn sum(self: ExprRef) -> ExprRef {
         Self::Agg(AggExpr::Sum(self)).into()
+    }
+
+    /// Returns the first value
+    pub fn first(self: ExprRef) -> ExprRef {
+        Self::Agg(AggExpr::First(self)).into()
     }
 
     pub fn approx_count_distinct(self: ExprRef) -> ExprRef {

@@ -911,6 +911,11 @@ class Expression:
         expr = self._expr.agg_list()
         return Expression._from_pyexpr(expr)
 
+    def first(self) -> Expression:
+        """Returns the first value in the expression"""
+        expr = self._expr.first()
+        return Expression._from_pyexpr(expr)
+
     def agg_concat(self) -> Expression:
         """Aggregates the values in the expression into a single string by concatenating them"""
         expr = self._expr.agg_concat()

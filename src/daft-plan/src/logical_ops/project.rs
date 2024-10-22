@@ -436,6 +436,10 @@ fn replace_column_with_semantic_id_aggexpr(
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                 .map_yes_no(AggExpr::Concat, |_| e)
         }
+        AggExpr::First(ref child) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                .map_yes_no(AggExpr::First, |_| e)
+        }
         AggExpr::MapGroups { func, inputs } => {
             let transforms = inputs
                 .iter()

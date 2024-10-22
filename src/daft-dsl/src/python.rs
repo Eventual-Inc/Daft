@@ -685,6 +685,10 @@ impl PyExpr {
         use crate::functions::partitioning::iceberg_truncate;
         Ok(iceberg_truncate(self.into(), w).into())
     }
+
+    pub fn first(&self) -> PyResult<Self> {
+        Ok(self.expr.clone().first().into())
+    }
 }
 
 impl_bincode_py_state_serialization!(PyExpr);

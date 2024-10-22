@@ -64,6 +64,7 @@ def test_agg_global_all_null(make_df, repartition_nparts):
             col("values").max().alias("max"),
             col("values").count().alias("count"),
             col("values").agg_list().alias("list"),
+            col("values").first().alias("first"),
         ]
     )
     expected = {
@@ -73,6 +74,7 @@ def test_agg_global_all_null(make_df, repartition_nparts):
         "max": [None],
         "count": [0],
         "list": [[None, None, None]],
+        "first": [None],
     }
 
     daft_df.collect()

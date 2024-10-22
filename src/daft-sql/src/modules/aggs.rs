@@ -16,7 +16,7 @@ pub struct SQLModuleAggs;
 
 impl SQLModule for SQLModuleAggs {
     fn register(parent: &mut SQLFunctions) {
-        use AggExpr::{Count, Max, Mean, Min, Sum};
+        use AggExpr::{Count, First, Max, Mean, Min, Sum};
         // HACK TO USE AggExpr as an enum rather than a
         let nil = Arc::new(Expr::Literal(LiteralValue::Null));
         parent.add_fn(
@@ -27,6 +27,7 @@ impl SQLModule for SQLModuleAggs {
         parent.add_fn("avg", Mean(nil.clone()));
         parent.add_fn("mean", Mean(nil.clone()));
         parent.add_fn("min", Min(nil.clone()));
+        parent.add_fn("first", First(nil.clone()));
         parent.add_fn("max", Max(nil));
     }
 }
@@ -49,15 +50,19 @@ impl SQLFunction for AggExpr {
             Self::Mean(_) => static_docs::AVG_DOCSTRING.replace("{}", alias),
             Self::Min(_) => static_docs::MIN_DOCSTRING.to_string(),
             Self::Max(_) => static_docs::MAX_DOCSTRING.to_string(),
+            Self::First(_) => static_docs::FIRST_DOCSTRING.to_string(),
             e => unimplemented!("Need to implement docstrings for {e}"),
         }
     }
 
     fn arg_names(&self) -> &'static [&'static str] {
         match self {
-            Self::Count(_, _) | Self::Sum(_) | Self::Mean(_) | Self::Min(_) | Self::Max(_) => {
-                &["input"]
-            }
+            Self::Count(_, _)
+            | Self::Sum(_)
+            | Self::Mean(_)
+            | Self::Min(_)
+            | Self::Max(_)
+            | Self::First(_) => &["input"],
             e => unimplemented!("Need to implement arg names for {e}"),
         }
     }
@@ -100,6 +105,10 @@ pub fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
         AggExpr::Sum(_) => {
             ensure!(args.len() == 1, "sum takes exactly one argument");
             Ok(args[0].clone().sum())
+        }
+        AggExpr::First(_) => {
+            ensure!(args.len() == 1, "first takes exactly one argument");
+            Ok(args[0].clone().first())
         }
         AggExpr::ApproxCountDistinct(_) => unsupported_sql_err!("approx_percentile"),
         AggExpr::ApproxPercentile(_) => unsupported_sql_err!("approx_percentile"),
@@ -322,6 +331,43 @@ Example:
     │ Int64 │
     ╞═══════╡
     │ 200   │
+    ╰───────╯
+    (Showing first 1 of 1 rows)";
+
+    pub(crate) const FIRST_DOCSTRING: &str =
+        "Returns the first non-null value in the input expression.
+        
+Example:
+.. code-block:: sql
+    :caption: SQL
+
+    SELECT first(x) FROM tbl
+
+.. code-block:: text
+    :caption: Input
+
+    ╭───────╮
+    │ x     │
+    │ ---   │
+    │ Int64 │
+    ╞═══════╡
+    │ 100   │
+    ├╌╌╌╌╌╌╌┤
+    │ 200   │
+    ├╌╌╌╌╌╌╌┤
+    │ null  │
+    ╰───────╯
+    (Showing first 3 of 3 rows)
+
+.. code-block:: text
+    :caption: Output
+
+    ╭───────╮
+    │ x     │
+    │ ---   │
+    │ Int64 │
+    ╞═══════╡
+    │ 100   │
     ╰───────╯
     (Showing first 1 of 1 rows)";
 }

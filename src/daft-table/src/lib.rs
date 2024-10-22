@@ -488,6 +488,7 @@ impl Table {
             AggExpr::Stddev(expr) => self.eval_expression(expr)?.stddev(groups),
             AggExpr::Min(expr) => self.eval_expression(expr)?.min(groups),
             AggExpr::Max(expr) => self.eval_expression(expr)?.max(groups),
+            AggExpr::First(expr) => self.eval_expression(expr)?.first(groups),
             &AggExpr::AnyValue(ref expr, ignore_nulls) => {
                 self.eval_expression(expr)?.any_value(groups, ignore_nulls)
             }

@@ -984,6 +984,21 @@ pub fn populate_aggregation_stages(
                     ));
                 final_exprs.push(col(concat_of_concat_id.clone()).alias(output_name));
             }
+            AggExpr::First(e) => {
+                let first_id = agg_expr.semantic_id(schema).id;
+                let first_of_first_id =
+                    AggExpr::First(col(first_id.clone())).semantic_id(schema).id;
+                first_stage_aggs
+                    .entry(first_id.clone())
+                    .or_insert(AggExpr::First(e.alias(first_id.clone()).clone()));
+                second_stage_aggs
+                    .entry(first_of_first_id.clone())
+                    .or_insert(AggExpr::First(
+                        col(first_id.clone()).alias(first_of_first_id.clone()),
+                    ));
+                final_exprs.push(col(first_of_first_id.clone()).alias(output_name));
+            }
+
             AggExpr::MapGroups { func, inputs } => {
                 let func_id = agg_expr.semantic_id(schema).id;
                 // No first stage aggregation for MapGroups, do all the work in the second stage.

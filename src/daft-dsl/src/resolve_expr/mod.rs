@@ -245,6 +245,7 @@ fn extract_agg_expr(expr: &Expr) -> DaftResult<AggExpr> {
                 }
                 AggExpr::List(e) => AggExpr::List(Expr::Alias(e, name.clone()).into()),
                 AggExpr::Concat(e) => AggExpr::Concat(Expr::Alias(e, name.clone()).into()),
+                AggExpr::First(e) => AggExpr::First(Expr::Alias(e, name.clone()).into()),
                 AggExpr::MapGroups { func, inputs } => AggExpr::MapGroups {
                     func,
                     inputs: inputs

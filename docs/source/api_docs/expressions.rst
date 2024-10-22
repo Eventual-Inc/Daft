@@ -111,6 +111,7 @@ The following can be used with DataFrame.agg or GroupedDataFrame.agg
    :toctree: doc_gen/expression_methods
 
    Expression.count
+   Expression.first
    Expression.sum
    Expression.mean
    Expression.stddev
