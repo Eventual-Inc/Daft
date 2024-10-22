@@ -1186,6 +1186,7 @@ class Expression:
         num_hashes: int,
         ngram_size: int,
         seed: int = 1,
+        hash_function: Literal["murmur3", "xxhash", "sha1"] = "murmur3",
     ) -> Expression:
         """
         Runs the MinHash algorithm on the series.
@@ -1206,7 +1207,10 @@ class Expression:
         assert isinstance(num_hashes, int)
         assert isinstance(ngram_size, int)
         assert isinstance(seed, int)
-        return Expression._from_pyexpr(native.minhash(self._expr, num_hashes, ngram_size, seed))
+        assert isinstance(hash_function, str)
+        assert hash_function in ("murmur3", "xxhash", "sha1"), f"Hash function {hash_function} not found"
+
+        return Expression._from_pyexpr(native.minhash(self._expr, num_hashes, ngram_size, seed, hash_function))
 
     def name(self) -> builtins.str:
         return self._expr.name()
