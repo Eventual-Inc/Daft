@@ -4,16 +4,16 @@ use std::{
     num::NonZeroUsize,
     sync::{
         atomic::{AtomicUsize, Ordering},
-        Arc, Condvar, Mutex, RwLock,
+        Arc, Mutex, RwLock,
     },
 };
 
 use arrow2::{
     datatypes::Field,
-    io::{csv::{
+    io::csv::{
         read::{self, Reader, ReaderBuilder},
         read_async::local_read_rows,
-    }},
+    },
 };
 use common_error::{DaftError, DaftResult};
 use crossbeam_channel::Sender;
@@ -104,14 +104,18 @@ impl CsvBufferPool {
     }
 
     pub fn get_buffer(self: &Arc<Self>) -> CsvBuffer {
-        let mut buffers = self.buffers.lock().unwrap();
-        let buffer = buffers.pop();
-        let buffer = match buffer {
-            Some(buffer) => buffer,
-            None => vec![
-                read::ByteRecord::with_capacity(self.record_buffer_size, self.num_fields);
-                self.buffer_size
-            ],
+        let buffer = {
+            let mut buffers = self.buffers.lock().unwrap();
+            let buffer = buffers.pop();
+            match buffer {
+                Some(buffer) => buffer,
+                None => {
+                    vec![
+                        read::ByteRecord::with_capacity(self.record_buffer_size, self.num_fields);
+                        self.buffer_size
+                    ]
+                }
+            }
         };
 
         CsvBuffer {
@@ -121,8 +125,17 @@ impl CsvBufferPool {
     }
 
     fn return_buffer(&self, buffer: Vec<read::ByteRecord>) {
-        let mut buffers = self.buffers.lock().unwrap();
-        buffers.push(buffer);
+        if let Ok(mut buffers) = self.buffers.lock() {
+            buffers.push(buffer);
+        }
+    }
+}
+
+impl Drop for CsvBuffer {
+    fn drop(&mut self) {
+        // Take ownership of the buffer using std::mem::take
+        let buffer = std::mem::take(&mut self.buffer);
+        self.pool.return_buffer(buffer);
     }
 }
 
@@ -135,7 +148,6 @@ const SLABPOOL_DEFAULT_SIZE: usize = 20;
 #[derive(Debug)]
 struct FileSlabPool {
     buffers: Mutex<Vec<Arc<FileSlab>>>,
-    condvar: Condvar,
 }
 
 #[derive(Debug)]
@@ -144,77 +156,67 @@ struct FileSlabState {
     valid_bytes: usize,
 }
 
+impl FileSlabState {
+    fn find_newline(&self, offset: usize) -> Option<usize> {
+        newline_position(&self.buffer[offset..self.valid_bytes])
+    }
+
+    fn validate_record(&self, validator: &mut CsvValidator, start: usize) -> Option<bool> {
+        validator.validate_record(&mut self.buffer[start..self.valid_bytes].iter())
+    }
+}
+
 /// A slab of bytes. Used for reading CSV files in SLABSIZE chunks.
 #[derive(Debug)]
 struct FileSlab {
     state: RwLock<FileSlabState>,
-    pool: Arc<FileSlabPool>
+    pool: Arc<FileSlabPool>,
 }
 
 impl FileSlab {
-    // Check whether this FileSlabState filled up its internal buffer. We use this as a means of checking whether this
-    // is the last FileSlab in the current file.
-    //
-    // This assumption is only true if the user does not append to the current file while we are reading it.
-    fn filled_buffer(&self) -> bool {
-        let reader = self.state.read().unwrap();
-        reader.valid_bytes >= reader.buffer.len()
-    }
-
-    fn get_valid_bytes(&self) -> usize {
-        let reader = self.state.read().unwrap();
-        reader.valid_bytes
-    }
-
-    fn get_byte(&self, idx: usize) -> u8 {
-        let reader = self.state.read().unwrap();
-        reader.buffer[idx]
-    }
-
     fn find_newline(&self, offset: usize) -> Option<usize> {
-        let reader = self.state.read().unwrap();
-        newline_position(&reader.buffer[offset..reader.valid_bytes])
-    }
-
-    fn get_slice(&self) -> &[u8] {
-        let reader = self.state.read().unwrap();
-        &reader.buffer[..]
+        let guard = self.state.read().unwrap();
+        guard.find_newline(offset)
     }
 }
 
 // Modify the Drop method for FileSlabs so that they're returned to their parent slab pool.
 impl Drop for FileSlab {
     fn drop(&mut self) {
-        // We need to reconstruct an Arc<FileSlab> here.
-        // This is safe because we know we're in the Drop impl,
-        // so there are no other strong references to this FileSlab.
-        let slab = unsafe { Arc::from_raw(self as *const FileSlab) };
-        
-        // Prevent the Drop from being called again when this Arc is dropped
-        std::mem::forget(slab.clone());
-        
-        // Return the slab to the pool
-        self.pool.return_slab(slab);
+        let pool = Arc::clone(&self.pool);
+
+        let new_slab = Arc::new(Self {
+            state: RwLock::new(FileSlabState {
+                buffer: std::mem::take(&mut self.state.get_mut().unwrap().buffer),
+                valid_bytes: self.state.get_mut().unwrap().valid_bytes,
+            }),
+            pool,
+        });
+
+        self.pool.return_slab(new_slab);
     }
 }
 
 impl FileSlabPool {
     fn new() -> Arc<Self> {
-        let pool = Arc::new(Self { buffers: Mutex::new(vec![]), condvar: Condvar::new() });
+        let pool = Arc::new(Self {
+            buffers: Mutex::new(vec![]),
+        });
         {
             let chunk_buffers: Vec<Arc<FileSlab>> = (0..SLABPOOL_DEFAULT_SIZE)
-            // We get uninitialized buffers because we will always populate the buffers with a file read before use.
-            .map(|_| Box::new_uninit_slice(SLABSIZE))
-            .map(|x| unsafe { x.assume_init() })
-            .map(|buffer|
-                Arc::new(
-                    FileSlab{
-                        state: RwLock::new(FileSlabState {buffer, valid_bytes: 0}),
+                // We get uninitialized buffers because we will always populate the buffers with a file read before use.
+                .map(|_| Box::new_uninit_slice(SLABSIZE))
+                .map(|x| unsafe { x.assume_init() })
+                .map(|buffer| {
+                    Arc::new(FileSlab {
+                        state: RwLock::new(FileSlabState {
+                            buffer,
+                            valid_bytes: 0,
+                        }),
                         pool: Arc::clone(&pool),
-                    }
-                )
-            )
-            .collect();
+                    })
+                })
+                .collect();
             let mut buffers = pool.buffers.lock().unwrap();
             *buffers = chunk_buffers;
         }
@@ -223,18 +225,23 @@ impl FileSlabPool {
 
     fn get_slab(self: &Arc<Self>) -> Arc<FileSlab> {
         let mut buffers = self.buffers.lock().unwrap();
-        while buffers.is_empty() {
-            // Instead of creating a new slab when we're out, we wait for a slab to be returned before waking up.
-            // This potentially allows us to rate limit the CSV reader until downstream consumers are ready for data.
-            buffers = self.condvar.wait(buffers).unwrap();
+        let buffer = buffers.pop();
+        match buffer {
+            Some(buffer) => buffer,
+            None => Arc::new(FileSlab {
+                state: RwLock::new(FileSlabState {
+                    buffer: unsafe { Box::new_uninit_slice(SLABSIZE).assume_init() },
+                    valid_bytes: 0,
+                }),
+                pool: Arc::clone(self),
+            }),
         }
-        buffers.pop().unwrap()
     }
 
     fn return_slab(&self, slab: Arc<FileSlab>) {
-        let mut slabs = self.buffers.lock().unwrap();
-        slabs.push(slab);
-        self.condvar.notify_one();
+        if let Ok(mut slabs) = self.buffers.lock() {
+            slabs.push(slab);
+        }
     }
 }
 
@@ -376,13 +383,6 @@ pub async fn stream_csv_local(
         .unwrap_or(DEFAULT_CHUNK_SIZE);
     let chunk_size_rows = (chunk_size as f64 / record_buffer_size as f64).ceil() as usize;
     let num_fields = schema.fields.len();
-    // TODO(desmond): We might consider creating per-process buffer pools and slab pools.
-    let buffer_pool = Arc::new(CsvBufferPool::new(
-        record_buffer_size,
-        num_fields,
-        chunk_size_rows,
-        n_threads * 2,
-    ));
 
     // We suppose that each slab of CSV data produces (chunk size / slab size) number of Daft tables. We
     // then double this capacity to ensure that our channel is never full and our threads won't deadlock.
@@ -391,6 +391,13 @@ pub async fn stream_csv_local(
 
     // Consume the CSV file asynchronously.
     rayon::spawn(move || {
+        // TODO(desmond): We might consider creating per-process buffer pools and slab pools.
+        let buffer_pool = Arc::new(CsvBufferPool::new(
+            record_buffer_size,
+            num_fields,
+            chunk_size_rows,
+            n_threads * 2,
+        ));
         consume_slab_iterator(
             file,
             buffer_pool,
@@ -469,20 +476,22 @@ impl SlabIterator {
 }
 
 impl Iterator for SlabIterator {
-    type Item = Arc<FileSlab>;
+    type Item = (Arc<FileSlab>, usize, bool);
     fn next(&mut self) -> Option<Self::Item> {
         let slab = self.slabpool.get_slab();
-        {
+        let (bytes_read, filled_buffer) = {
             let mut writer = slab.state.write().unwrap();
             let bytes_read = self.file.read(&mut writer.buffer).unwrap();
             if bytes_read == 0 {
                 return None;
             }
+            let filled_buffer = bytes_read == writer.buffer.len();
             self.total_bytes_read += bytes_read;
             writer.valid_bytes = bytes_read;
-        }
-        
-        Some(slab)
+            (bytes_read, filled_buffer)
+        };
+
+        Some((slab, bytes_read, filled_buffer))
     }
 }
 
@@ -530,10 +539,11 @@ fn consume_slab_iterator(
         }
         // Grab a starting file slab if the current CSV chunk is empty.
         if curr_chunk.is_empty() {
-            if let Some(next) = slab_iterator.next() {
+            if let Some((next, bytes_read, _)) = slab_iterator.next() {
                 curr_chunk.states.push(ChunkState::Start {
                     slab: next,
                     start: 0,
+                    end: bytes_read,
                 });
                 curr_chunk.reset();
             } else {
@@ -544,16 +554,19 @@ fn consume_slab_iterator(
         }
         // Grab file slabs until we find a valid CSV chunk.
         loop {
-            if let Some(next) = slab_iterator.next() {
+            if let Some((next, bytes_read, filled_buffer)) = slab_iterator.next() {
                 // If the next buffer is not completely filled, we take this to mean that we've reached EOF.
-                if !next.filled_buffer() {
+                if !filled_buffer {
                     curr_chunk.states.push(ChunkState::Final {
-                        end: next.get_valid_bytes(),
+                        end: bytes_read,
                         slab: next,
                     });
                     break;
                 }
-                curr_chunk.states.push(ChunkState::Continue { slab: next });
+                curr_chunk.states.push(ChunkState::Continue {
+                    slab: next,
+                    end: bytes_read,
+                });
                 while curr_chunk.goto_next_newline() {
                     if curr_chunk.validate_csv_record(&mut csv_validator, &mut slab_iterator) {
                         break;
@@ -566,18 +579,13 @@ fn consume_slab_iterator(
                 // If there is no next file slab, turn the last ChunkState into a final ChunkState.
                 if let Some(last_state) = curr_chunk.states.pop() {
                     match last_state {
-                        ChunkState::Start { slab, start } => {
-                            curr_chunk.states.push(ChunkState::StartAndFinal {
-                                end: slab.get_valid_bytes(),
-                                slab,
-                                start,
-                            });
+                        ChunkState::Start { slab, start, end } => {
+                            curr_chunk
+                                .states
+                                .push(ChunkState::StartAndFinal { slab, start, end });
                         }
-                        ChunkState::Continue { slab } => {
-                            curr_chunk.states.push(ChunkState::Final {
-                                end: slab.get_valid_bytes(),
-                                slab,
-                            });
+                        ChunkState::Continue { slab, end } => {
+                            curr_chunk.states.push(ChunkState::Final { slab, end });
                         }
                         _ => panic!("There should be no final CSV chunk states at this point."),
                     }
@@ -591,7 +599,6 @@ fn consume_slab_iterator(
         curr_chunk.states = std::mem::take(&mut curr_chunk.next_states);
         curr_chunk.reset();
         let parse_options = parse_options.clone();
-        let csv_buffer = buffer_pool.get_buffer();
         let projection_indices = projection_indices.clone();
         let fields = fields.clone();
         let read_daft_fields = read_daft_fields.clone();
@@ -600,6 +607,7 @@ fn consume_slab_iterator(
         let predicate = predicate.clone();
         let sender = sender.clone();
         let rows_read = Arc::clone(&rows_read);
+        let mut csv_buffer = buffer_pool.get_buffer();
         rayon::spawn(move || {
             if let Some(state) = states_to_read.last() {
                 assert!(state.is_final());
@@ -615,7 +623,7 @@ fn consume_slab_iterator(
                 fields,
                 read_daft_fields,
                 read_schema,
-                csv_buffer,
+                &mut csv_buffer,
                 include_columns,
                 predicate,
                 sender,
@@ -634,6 +642,7 @@ struct ChunkStateHolder {
     curr_byte_read_idx: usize,
     curr_byte_read_offset: usize,
     valid_chunk: bool,
+    // current_reader: Option<FileSlabStateReader<>>,
 }
 
 impl ChunkStateHolder {
@@ -646,6 +655,7 @@ impl ChunkStateHolder {
             curr_byte_read_idx: 0,
             curr_byte_read_offset: 0,
             valid_chunk: false,
+            // current_reader: None,
         }
     }
 
@@ -747,56 +757,72 @@ impl ChunkStateHolder {
     fn validate_csv_record(
         &mut self,
         validator: &mut CsvValidator,
-        iter: &mut impl Iterator<Item = Arc<FileSlab>>,
+        slab_iter: &mut impl Iterator<Item = (Arc<FileSlab>, usize, bool)>,
     ) -> bool {
         validator.reset();
         loop {
             // Run the CSV state machine to see if we're currently at a valid record boundary.
-            if let Some(valid) = validator.validate_record(self.into_iter()) {
-                self.valid_chunk = valid;
-                if valid {
-                    let (ending_idx, ending_offset) = if self.curr_byte_read_offset == 0 {
-                        (
-                            self.curr_byte_read_idx - 1,
-                            self.states[self.curr_byte_read_idx - 1].len(),
-                        )
-                    } else {
-                        (self.curr_byte_read_idx, self.curr_byte_read_offset)
-                    };
-                    self.next_states = self.states.split_off(ending_idx);
-                    if let Some(front_of_next) = self.next_states.get_mut(0) {
-                        self.states.push(ChunkState::Final {
-                            slab: front_of_next.clone_slab(),
-                            end: ending_offset,
-                        });
-                        *front_of_next = ChunkState::Start {
-                            slab: front_of_next.clone_slab(),
-                            start: ending_offset,
+            if self.curr_byte_read_idx < self.states.len() {
+                let validity = {
+                    let state = &self.states[self.curr_byte_read_idx];
+                    // Only the first slab that we're validating might not start from offset 0 (it starts from the offset where we found a newline).
+                    if self.curr_byte_read_offset >= state.len() {
+                        self.curr_byte_read_idx += 1;
+                        self.curr_byte_read_offset = 0;
+                        continue;
+                    }
+                    let guard = state.get_slab().state.read().unwrap();
+                    guard.validate_record(validator, self.curr_byte_read_offset)
+                };
+                if let Some(valid) = validity {
+                    self.valid_chunk = valid;
+                    if valid {
+                        let (ending_idx, ending_offset) = if self.curr_byte_read_offset == 0 {
+                            (
+                                self.curr_byte_read_idx - 1,
+                                self.states[self.curr_byte_read_idx - 1].len(),
+                            )
+                        } else {
+                            (self.curr_byte_read_idx, self.curr_byte_read_offset)
                         };
-                    } else {
-                        panic!("There should be at least one chunk state that's split off.");
+                        self.next_states = self.states.split_off(ending_idx);
+                        if let Some(front_of_next) = self.next_states.get_mut(0) {
+                            self.states.push(ChunkState::Final {
+                                slab: Arc::clone(front_of_next.get_slab()),
+                                end: ending_offset,
+                            });
+                            *front_of_next = ChunkState::Start {
+                                slab: Arc::clone(front_of_next.get_slab()),
+                                start: ending_offset,
+                                end: front_of_next.len(),
+                            };
+                        } else {
+                            panic!("There should be at least one chunk state that's split off.");
+                        }
                     }
+                    return valid;
                 }
-                return valid;
-            } else {
-                // We ran out of bytes while running the CSV state machine. Read another file slab then
-                // continue running the state machine.
-                if let Some(next) = iter.next() {
-                    if !next.filled_buffer() {
-                        // EOF. Make this chunk state holder valid and exit.
-                        self.states.push(ChunkState::Final {
-                            end: next.get_valid_bytes(),
-                            slab: next,
-                        });
-                        self.valid_chunk = true;
-                        return true;
-                    }
-                    self.states.push(ChunkState::Continue { slab: next });
-                } else {
+            }
+            // We ran out of bytes while running the CSV state machine. Read another file slab then
+            // continue running the state machine.
+            if let Some((next, bytes_read, filled_buffer)) = slab_iter.next() {
+                if !filled_buffer {
                     // EOF. Make this chunk state holder valid and exit.
+                    self.states.push(ChunkState::Final {
+                        slab: next,
+                        end: bytes_read,
+                    });
                     self.valid_chunk = true;
                     return true;
                 }
+                self.states.push(ChunkState::Continue {
+                    slab: next,
+                    end: bytes_read,
+                });
+            } else {
+                // EOF. Make this chunk state holder valid and exit.
+                self.valid_chunk = true;
+                return true;
             }
         }
     }
@@ -813,31 +839,12 @@ impl ChunkStateHolder {
     }
 }
 
-impl<'a> Iterator for ChunkStateHolder {
-    type Item = u8;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            if self.curr_byte_read_idx >= self.states.len() {
-                return None;
-            }
-            if self.curr_byte_read_offset >= self.states[self.curr_byte_read_idx].len() {
-                self.curr_byte_read_offset = 0;
-                self.curr_byte_read_idx += 1;
-                continue;
-            }
-            let byte = self.states[self.curr_byte_read_idx].get_idx(self.curr_byte_read_offset);
-            self.curr_byte_read_offset += 1;
-            return Some(byte);
-        }
-    }
-}
-
 #[derive(Debug)]
 enum ChunkState {
     Start {
         slab: Arc<FileSlab>,
         start: usize,
+        end: usize,
     },
     StartAndFinal {
         slab: Arc<FileSlab>,
@@ -846,6 +853,7 @@ enum ChunkState {
     },
     Continue {
         slab: Arc<FileSlab>,
+        end: usize,
     },
     Final {
         slab: Arc<FileSlab>,
@@ -862,76 +870,43 @@ impl ChunkState {
     #[inline]
     fn len(&self) -> usize {
         match self {
-            Self::Start { slab, start } => slab.get_valid_bytes() - start,
+            Self::Start { start, end, .. } => end - start,
             Self::StartAndFinal { start, end, .. } => end - start,
-            Self::Continue { slab } => slab.get_valid_bytes(),
+            Self::Continue { end, .. } => *end,
             Self::Final { end, .. } => *end,
-        }
-    }
-
-    #[inline]
-    fn get_idx(&self, idx: usize) -> u8 {
-        match self {
-            Self::Start { slab, start } => slab.get_byte(start + idx),
-            Self::StartAndFinal { slab, start, .. } => slab.get_byte(start + idx),
-            Self::Continue { slab } => slab.get_byte(idx),
-            Self::Final { slab, .. } => slab.get_byte(idx),
         }
     }
 
     #[inline]
     fn find_newline(&self, offset: usize) -> Option<usize> {
         match self {
-            Self::Continue { slab } =>slab.find_newline(offset),
+            Self::Continue { slab, .. } => slab.find_newline(offset),
             // This function is not needed for non-Continue chunk states.
             _ => None,
         }
     }
 
     #[inline]
-    fn clone_slab(&self) -> Arc<FileSlab> {
+    fn get_slab(&self) -> &Arc<FileSlab> {
         match self {
-            Self::Start { slab, .. } => slab.clone(),
-            Self::StartAndFinal { slab, .. } => slab.clone(),
-            Self::Continue { slab } => slab.clone(),
-            Self::Final { slab, .. } => slab.clone(),
+            Self::Start { slab, .. } => slab,
+            Self::StartAndFinal { slab, .. } => slab,
+            Self::Continue { slab, .. } => slab,
+            Self::Final { slab, .. } => slab,
         }
     }
 }
 
 struct MultiSliceReader<'a> {
-    slices: Vec<(usize, usize, std::sync::RwLockReadGuard<'a, FileSlabState>)>,
+    states: &'a [ChunkState],
     curr_read_idx: usize,
     curr_read_offset: usize,
 }
 
 impl<'a> MultiSliceReader<'a> {
     fn new(states: &'a [ChunkState]) -> Self {
-        let mut slices = Vec::with_capacity(states.len());
-        for state in states {
-            let (start, end, guard) = match state {
-                ChunkState::Start { slab, start } => {
-                    let guard = slab.state.read().unwrap();
-                    (*start, guard.valid_bytes, guard)
-                },
-                ChunkState::StartAndFinal { slab, start, end } => {
-                    let guard = slab.state.read().unwrap();
-                    (*start, *end, guard)
-                },
-                ChunkState::Continue { slab } => {
-                    let guard = slab.state.read().unwrap();
-                    (0, guard.valid_bytes, guard)
-                },
-                ChunkState::Final { slab, end } => {
-                    let guard = slab.state.read().unwrap();
-                    (0, *end, guard)
-                },
-            };
-            slices.push((start, end, guard));
-        }
-
         Self {
-            slices,
+            states,
             curr_read_idx: 0,
             curr_read_offset: 0,
         }
@@ -942,16 +917,37 @@ impl<'a> Read for MultiSliceReader<'a> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         let buf_len = buf.len();
         let mut position = 0;
-        while self.curr_read_idx < self.slices.len() && position < buf_len {
-            let (start, end, reader) = &self.slices[self.curr_read_idx];
-            let slice = &reader.buffer[*start..*end];
+        while self.curr_read_idx < self.states.len() && position < buf_len {
+            let state = &self.states[self.curr_read_idx];
+            let (start, end, guard) = match state {
+                ChunkState::Start { slab, start, end } => {
+                    let guard: std::sync::RwLockReadGuard<'_, FileSlabState> =
+                        slab.state.read().unwrap();
+                    (*start, *end, guard)
+                }
+                ChunkState::StartAndFinal { slab, start, end } => {
+                    let guard = slab.state.read().unwrap();
+                    (*start, *end, guard)
+                }
+                ChunkState::Continue { slab, end } => {
+                    let guard = slab.state.read().unwrap();
+                    (0, *end, guard)
+                }
+                ChunkState::Final { slab, end } => {
+                    let guard = slab.state.read().unwrap();
+                    (0, *end, guard)
+                }
+            };
+            let slice = &guard.buffer[start..end];
             if self.curr_read_offset < slice.len() {
                 let read_size = (buf_len - position).min(slice.len() - self.curr_read_offset);
-                buf[position..position + read_size]
-                    .copy_from_slice(&slice[self.curr_read_offset..][..read_size]);
+                buf[position..position + read_size].copy_from_slice(
+                    &slice[self.curr_read_offset..self.curr_read_offset + read_size],
+                );
                 self.curr_read_offset += read_size;
                 position += read_size;
-            } else {
+            }
+            if self.curr_read_offset >= slice.len() {
                 self.curr_read_offset = 0;
                 self.curr_read_idx += 1;
             }
@@ -1073,8 +1069,8 @@ impl CsvValidator {
         self.state = CsvState::FieldStart;
     }
 
-    fn validate_record(&mut self, iter: &mut impl Iterator<Item = u8>) -> Option<bool> {
-        for byte in iter {
+    fn validate_record<'a>(&mut self, iter: &mut impl Iterator<Item = &'a u8>) -> Option<bool> {
+        for &byte in iter {
             let next_state = self.transition_table[self.state as usize][byte as usize];
 
             match next_state {
@@ -1109,7 +1105,7 @@ fn dispatch_to_parse_csv<R>(
     fields: Vec<Field>,
     read_daft_fields: Arc<Vec<Arc<daft_core::datatypes::Field>>>,
     read_schema: Arc<Schema>,
-    csv_buffer: CsvBuffer,
+    csv_buffer: &mut CsvBuffer,
     include_columns: Option<Vec<String>>,
     predicate: Option<Arc<Expr>>,
     sender: Sender<Result<Table, DaftError>>,
@@ -1164,24 +1160,24 @@ fn parse_csv_chunk<R>(
     fields: Vec<arrow2::datatypes::Field>,
     read_daft_fields: Arc<Vec<Arc<daft_core::datatypes::Field>>>,
     read_schema: Arc<Schema>,
-    csv_buffer: CsvBuffer,
+    csv_buffer: &mut CsvBuffer,
     include_columns: Option<Vec<String>>,
     predicate: Option<Arc<Expr>>,
 ) -> DaftResult<Vec<Table>>
 where
     R: std::io::Read,
 {
-    let mut chunk_buffer = csv_buffer.buffer;
+    // let mut chunk_buffer = &mut csv_buffer.buffer;
     let mut tables = vec![];
     loop {
-        let (rows_read, has_more) =
-            local_read_rows(&mut reader, chunk_buffer.as_mut_slice()).context(ArrowSnafu {})?;
+        let (rows_read, has_more) = local_read_rows(&mut reader, csv_buffer.buffer.as_mut_slice())
+            .context(ArrowSnafu {})?;
         let chunk = projection_indices
             .par_iter()
             .enumerate()
             .map(|(i, proj_idx)| {
                 let deserialized_col = deserialize_column(
-                    &chunk_buffer[0..rows_read],
+                    &csv_buffer.buffer[0..rows_read],
                     *proj_idx,
                     fields[*proj_idx].data_type().clone(),
                     0,
@@ -1212,6 +1208,5 @@ where
             break;
         }
     }
-    csv_buffer.pool.return_buffer(chunk_buffer);
     Ok(tables)
 }
