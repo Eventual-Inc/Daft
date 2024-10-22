@@ -27,7 +27,7 @@ use crate::{
         sample::SampleOperator, unpivot::UnpivotOperator,
     },
     sinks::{
-        aggregate::AggregateSink, blocking_sink::BlockingSinkNode,
+        aggregate::AggregateSink, blocking_sink::BlockingSinkNode, concat::ConcatSink,
         hash_join_build::HashJoinBuildSink, limit::LimitSink,
         outer_hash_join_probe::OuterHashJoinProbeSink, sort::SortSink,
         streaming_sink::StreamingSinkNode,
@@ -155,7 +155,7 @@ pub fn physical_plan_to_pipeline(
         LocalPhysicalPlan::Concat(Concat { input, other, .. }) => {
             let left_child = physical_plan_to_pipeline(input, psets)?;
             let right_child = physical_plan_to_pipeline(other, psets)?;
-            let sink = crate::sinks::concat::ConcatSink {};
+            let sink = ConcatSink {};
             StreamingSinkNode::new(Arc::new(sink), vec![left_child, right_child]).boxed()
         }
         LocalPhysicalPlan::UnGroupedAggregate(UnGroupedAggregate {
