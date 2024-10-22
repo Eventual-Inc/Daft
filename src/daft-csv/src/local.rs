@@ -25,7 +25,7 @@ use daft_decoding::deserialize::deserialize_column;
 use daft_dsl::{optimization::get_required_columns, Expr};
 use daft_io::{IOClient, IOStatsRef};
 use daft_table::Table;
-use futures::{Stream, StreamExt};
+use futures::Stream;
 use rayon::{
     iter::IndexedParallelIterator,
     prelude::{IntoParallelRefIterator, ParallelIterator},
@@ -314,6 +314,7 @@ pub async fn stream_csv_local(
 ) -> DaftResult<impl Stream<Item = DaftResult<Table>> + Send> {
     let uri = uri.trim_start_matches("file://");
     let file = std::fs::File::open(uri)?;
+    let file_len = file.metadata()?.len();
 
     // Process the CSV convert options.
     let predicate = convert_options
@@ -374,10 +375,12 @@ pub async fn stream_csv_local(
     let chunk_size_rows = (chunk_size as f64 / record_buffer_size as f64).ceil() as usize;
     let num_fields = schema.fields.len();
 
-    // We suppose that each slab of CSV data produces (chunk size / slab size) number of Daft tables. We
-    // then double this capacity to ensure that our channel is never full and our threads won't deadlock.
-    let (sender, receiver) =
-        crossbeam_channel::bounded(max_chunks_in_flight.unwrap_or(2 * chunk_size / SLABSIZE));
+    // We produce `file_len / SLABSIZE` number of file slabs, each of which might be split into two, so the maximum number
+    // of tasks we might spawn is 2 times this number.
+    let (sender, receiver) = crossbeam_channel::bounded(
+        max_chunks_in_flight
+            .unwrap_or_else(|| 2 * (file_len as f64 / SLABSIZE as f64).ceil() as usize),
+    );
 
     // Consume the CSV file asynchronously.
     rayon::spawn(move || {
@@ -404,16 +407,8 @@ pub async fn stream_csv_local(
         );
     });
 
-    let stream = futures::stream::iter(receiver)
-        .map(|oneshot_rx| async move {
-            oneshot_rx
-                .await
-                .context(super::OneShotRecvSnafu {})
-                .map_err(DaftError::from)
-                .and_then(|result| result)
-        })
-        .then(|future| future);
-
+    let flattened_receiver = receiver.into_iter().flat_map(|rx| rx.into_iter());
+    let stream = futures::stream::iter(flattened_receiver);
     Ok(stream)
 }
 
@@ -508,7 +503,7 @@ fn consume_slab_iterator(
     include_columns: Option<Vec<String>>,
     predicate: Option<Arc<Expr>>,
     limit: Option<usize>,
-    sender: Sender<tokio::sync::oneshot::Receiver<Result<Table, DaftError>>>,
+    sender: Sender<crossbeam_channel::Receiver<Result<Table, DaftError>>>,
 ) {
     // Create slab pool for file reads.
     let slabpool = FileSlabPool::new();
@@ -605,10 +600,14 @@ fn consume_slab_iterator(
         let read_schema = read_schema.clone();
         let include_columns = include_columns.clone();
         let predicate = predicate.clone();
-        let sender = sender.clone();
+        let stream_sender = sender.clone();
         let rows_read = Arc::clone(&rows_read);
         let mut csv_buffer = buffer_pool.get_buffer();
-        let (oneshot_send, oneshot_recv) = tokio::sync::oneshot::channel();
+        // We produce roughly `SLABSIZE / DEFAULT_CHUNK_SIZE` tables per state, with maybe an overflow of 1 table per state.
+        let (tx, rx) = crossbeam_channel::bounded(
+            2 * (states_to_read.len() as f64 * SLABSIZE as f64 / DEFAULT_CHUNK_SIZE as f64).ceil()
+                as usize,
+        );
         rayon::spawn(move || {
             if let Some(state) = states_to_read.last() {
                 assert!(state.is_final());
@@ -627,13 +626,13 @@ fn consume_slab_iterator(
                 &mut csv_buffer,
                 include_columns,
                 predicate,
-                oneshot_send,
+                tx,
                 rows_read,
             );
         });
         has_header = false;
 
-        let _ = sender.send(oneshot_recv);
+        let _ = stream_sender.send(rx);
     }
 }
 
@@ -1111,7 +1110,7 @@ fn dispatch_to_parse_csv<R>(
     csv_buffer: &mut CsvBuffer,
     include_columns: Option<Vec<String>>,
     predicate: Option<Arc<Expr>>,
-    sender: tokio::sync::oneshot::Sender<Result<Table, DaftError>>,
+    sender: crossbeam_channel::Sender<Result<Table, DaftError>>,
     rows_read: Arc<AtomicUsize>,
 ) where
     R: std::io::Read,
@@ -1139,12 +1138,11 @@ fn dispatch_to_parse_csv<R>(
     };
     match table_results {
         Ok(tables) => {
-            let concated_tables = tables_concat(tables);
-            if let Ok(table) = &concated_tables {
-                // Update the number of rows read so the main thread can apply the limit, if any.
-                rows_read.fetch_add(table.len(), Ordering::SeqCst);
+            for table in tables {
+                let table_len = table.len();
+                let _ = sender.send(Ok(table));
+                rows_read.fetch_add(table_len, Ordering::SeqCst);
             }
-            let _ = sender.send(concated_tables);
         }
         Err(e) => {
             let _ = sender.send(Err(e));
