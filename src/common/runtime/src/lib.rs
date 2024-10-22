@@ -61,6 +61,7 @@ impl Runtime {
         })
     }
 
+    /// Spawns a task on the runtime and blocks the current thread until the task is completed.
     /// Similar to tokio's Runtime::block_on but requires static lifetime + Send
     /// You should use this when you are spawning IO tasks from an Expression Evaluator or in the Executor
     pub fn block_on<F>(&self, future: F) -> DaftResult<F::Output>
@@ -79,7 +80,8 @@ impl Runtime {
         rx.recv().expect("Spawned task transmitter dropped")
     }
 
-    /// Similar to block_on, but is async and can be awaited
+    /// Spawn a task on the runtime and await on it.
+    /// You should use this when you are spawning compute or IO tasks from the Executor.
     pub async fn await_on<F>(&self, future: F) -> DaftResult<F::Output>
     where
         F: Future + Send + 'static,
