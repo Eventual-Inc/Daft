@@ -10,8 +10,8 @@ use daft_core::{
 use daft_dsl::{col, join::get_common_join_keys, Expr};
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{
-    EmptyScan, Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan, Pivot,
-    Project, Sample, Sort, UnGroupedAggregate,
+    Concat, EmptyScan, Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan,
+    Pivot, Project, Sample, Sort, UnGroupedAggregate,
 };
 use daft_plan::{populate_aggregation_stages, JoinType};
 use daft_table::ProbeState;
