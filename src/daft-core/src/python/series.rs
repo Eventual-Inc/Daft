@@ -1,7 +1,10 @@
-use std::ops::{Add, Div, Mul, Rem, Sub};
+use std::{
+    hash::BuildHasherDefault,
+    ops::{Add, Div, Mul, Rem, Sub},
+};
 
 use common_arrow_ffi as ffi;
-use daft_hash::MurBuildHasher;
+use daft_hash::{HashFunctionKind, MurBuildHasher, Sha1Hasher};
 use daft_schema::python::PyDataType;
 use pyo3::{
     exceptions::PyValueError,
@@ -9,8 +12,6 @@ use pyo3::{
     pyclass::CompareOp,
     types::{PyBytes, PyList},
 };
-
-fn x(x: HashFunctionKind) -> PyResult<HashFunctionKind> {}
 
 use crate::{
     array::{
@@ -335,17 +336,27 @@ impl PySeries {
                 "ngram_size must be positive: {ngram_size}"
             )));
         }
-        let cast_seed = seed as u32;
+        let seed = seed as u32;
 
-        Ok(self
-            .series
-            .minhash(
-                num_hashes as usize,
-                ngram_size as usize,
-                cast_seed,
-                &MurBuildHasher::new(cast_seed),
-            )?
-            .into())
+        let num_hashes = num_hashes as usize;
+        let ngram_size = ngram_size as usize;
+
+        let result = match hash_function {
+            HashFunctionKind::MurmurHash3 => {
+                let hasher = MurBuildHasher::new(seed);
+                self.series.minhash(num_hashes, ngram_size, seed, &hasher)
+            }
+            HashFunctionKind::XxHash => {
+                let hasher = xxhash_rust::xxh64::Xxh64Builder::new(seed as u64);
+                self.series.minhash(num_hashes, ngram_size, seed, &hasher)
+            }
+            HashFunctionKind::Sha1 => {
+                let hasher = BuildHasherDefault::<Sha1Hasher>::default();
+                self.series.minhash(num_hashes, ngram_size, seed, &hasher)
+            }
+        }?;
+
+        Ok(result.into())
     }
 
     pub fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<Self> {

@@ -24,7 +24,7 @@ common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}
 common-hashable-float-wrapper = {path = "../common/hashable-float-wrapper"}
 common-py-serde = {path = "../common/py-serde", default-features = false}
-daft-hash = {workspace = true}
+daft-hash = {workspace = true, features = ["python"]}
 daft-minhash = {path = "../daft-minhash", default-features = false}
 daft-schema = {path = "../daft-schema", default-features = false}
 daft-sketch = {path = "../daft-sketch", default-features = false}
@@ -51,7 +51,7 @@ optional = true
 version = "0.21.0"
 
 [dependencies.xxhash-rust]
-features = ["xxh3", "const_xxh3"]
+features = ["xxh3", "const_xxh3", "xxh64"]
 version = "0.8.5"
 
 [features]
