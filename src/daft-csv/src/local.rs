@@ -151,46 +151,6 @@ struct FileSlabPool {
     slabs: Mutex<Vec<RwLock<FileSlabState>>>,
 }
 
-#[derive(Debug, Default)]
-struct FileSlabState {
-    buffer: Box<[u8]>,
-    valid_bytes: usize,
-}
-
-impl FileSlabState {
-    fn find_newline(&self, offset: usize) -> Option<usize> {
-        newline_position(&self.buffer[offset..self.valid_bytes])
-    }
-
-    fn validate_record(&self, validator: &mut CsvValidator, start: usize) -> Option<bool> {
-        validator.validate_record(&mut self.buffer[start..self.valid_bytes].iter())
-    }
-}
-
-/// A slab of bytes. Used for reading CSV files in SLABSIZE chunks.
-#[derive(Debug)]
-struct FileSlab {
-    state: RwLock<FileSlabState>,
-    pool: Weak<FileSlabPool>,
-}
-
-impl FileSlab {
-    fn find_newline(&self, offset: usize) -> Option<usize> {
-        let guard = self.state.read().unwrap();
-        guard.find_newline(offset)
-    }
-}
-
-// Modify the Drop method for FileSlabs so that their states are returned to their parent slab pool.
-impl Drop for FileSlab {
-    fn drop(&mut self) {
-        if let Some(pool) = self.pool.upgrade() {
-            let file_slab_state = std::mem::take(&mut self.state);
-            pool.return_slab(file_slab_state);
-        }
-    }
-}
-
 impl FileSlabPool {
     fn new() -> Arc<Self> {
         let slabs: Vec<RwLock<FileSlabState>> = (0..SLABPOOL_DEFAULT_SIZE)
@@ -232,6 +192,49 @@ impl FileSlabPool {
         if let Ok(mut slabs) = self.slabs.lock() {
             slabs.push(slab);
         }
+    }
+}
+
+/// A slab of bytes. Used for reading CSV files in SLABSIZE chunks.
+#[derive(Debug)]
+struct FileSlab {
+    state: RwLock<FileSlabState>,
+    pool: Weak<FileSlabPool>,
+}
+
+impl FileSlab {
+    fn find_newline(&self, offset: usize) -> Option<usize> {
+        let guard = self.state.read().unwrap();
+        guard.find_newline(offset)
+    }
+}
+
+// Modify the Drop method for FileSlabs so that their states are returned to their parent slab pool.
+impl Drop for FileSlab {
+    fn drop(&mut self) {
+        if let Some(pool) = self.pool.upgrade() {
+            let file_slab_state = std::mem::take(&mut self.state);
+            pool.return_slab(file_slab_state);
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct FileSlabState {
+    buffer: Box<[u8]>,
+    valid_bytes: usize,
+}
+
+impl FileSlabState {
+    /// Helper function that find the first \n char in the file slab state's buffer starting from `offset.`
+    fn find_newline(&self, offset: usize) -> Option<usize> {
+        newline_position(&self.buffer[offset..self.valid_bytes])
+    }
+
+    /// Validate the CSV record in the file slab state's buffer starting from `start`. `validator` is a
+    /// state machine that might need to process multiple buffers to validate CSV records.
+    fn validate_record(&self, validator: &mut CsvValidator, start: usize) -> Option<bool> {
+        validator.validate_record(&mut self.buffer[start..self.valid_bytes].iter())
     }
 }
 
@@ -411,7 +414,7 @@ pub async fn stream_csv_local(
     Ok(stream)
 }
 
-/// Helper function that reads up to 1 MiB of the CSV file to  estimate stats and/or infer the schema of the file.
+/// Helper function that reads up to 1 MiB of the CSV file to estimate stats and/or infer the schema of the file.
 async fn get_schema_and_estimators(
     uri: &str,
     convert_options: &CsvConvertOptions,
@@ -453,6 +456,8 @@ async fn get_schema_and_estimators(
     ))
 }
 
+/// A helper iterator that takes in a File and FileSlabPool and produces an iterator of FileSlabs
+/// over the given file.
 struct SlabIterator {
     file: std::fs::File,
     slabpool: Arc<FileSlabPool>,
@@ -643,7 +648,6 @@ struct ChunkStateHolder {
     curr_byte_read_idx: usize,
     curr_byte_read_offset: usize,
     valid_chunk: bool,
-    // current_reader: Option<FileSlabStateReader<>>,
 }
 
 impl ChunkStateHolder {
@@ -656,14 +660,15 @@ impl ChunkStateHolder {
             curr_byte_read_idx: 0,
             curr_byte_read_offset: 0,
             valid_chunk: false,
-            // current_reader: None,
         }
     }
 
+    /// Creates an empty ChunkStateHolder.
     fn empty() -> Self {
         Self::new(vec![])
     }
 
+    /// Checks if the current ChunkStateHolder is empty.
     fn is_empty(&self) -> bool {
         self.states.is_empty()
     }
@@ -882,8 +887,7 @@ impl ChunkState {
     fn find_newline(&self, offset: usize) -> Option<usize> {
         match self {
             Self::Continue { slab, .. } => slab.find_newline(offset),
-            // This function is not needed for non-Continue chunk states.
-            _ => None,
+            _ => panic!("find_newline should never be called on non-Continue chunk states"),
         }
     }
 
@@ -898,6 +902,7 @@ impl ChunkState {
     }
 }
 
+/// A helper struct that implements `std::io::Read` over a slice of ChunkStates' buffers.
 struct MultiSliceReader<'a> {
     states: &'a [ChunkState],
     curr_read_idx: usize,
@@ -971,6 +976,7 @@ fn newline_position(buffer: &[u8]) -> Option<usize> {
     memchr::memchr(NEWLINE, buffer)
 }
 
+/// State machine that validates CSV records.
 struct CsvValidator {
     state: CsvState,
     num_fields: usize,
