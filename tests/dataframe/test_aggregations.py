@@ -99,6 +99,7 @@ def test_agg_global_empty(make_df):
             col("values").max().alias("max"),
             col("values").count().alias("count"),
             col("values").agg_list().alias("list"),
+            col("values").first().alias("first"),
         ]
     )
     expected = {
@@ -108,6 +109,7 @@ def test_agg_global_empty(make_df):
         "max": [None],
         "count": [0],
         "list": [[]],
+        "first": [None],
     }
 
     daft_df.collect()
@@ -133,6 +135,7 @@ def test_agg_groupby(make_df, repartition_nparts):
             col("values").max().alias("max"),
             col("values").count().alias("count"),
             col("values").agg_list().alias("list"),
+            col("values").first().alias("first"),
         ]
     )
     expected = {
@@ -143,6 +146,7 @@ def test_agg_groupby(make_df, repartition_nparts):
         "max": [2, 4],
         "count": [2, 2],
         "list": [[1, None, 2], [2, None, 4]],
+        "first": [1, 2],
     }
 
     daft_df.collect()

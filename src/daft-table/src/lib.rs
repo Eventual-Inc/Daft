@@ -174,6 +174,11 @@ impl Table {
             if num_rows == 1 {
                 num_rows = series.len();
             }
+            println!(
+                "num_rows {num_rows} series.len() {} field.name {}",
+                series.len(),
+                field.name
+            );
             if series.len() != num_rows {
                 return Err(DaftError::ValueError(format!("While building a Table with Table::new_with_nonempty_columns, we found that the Series lengths did not match. Series named: {} had length: {} vs inferred Table length: {}", field.name, series.len(), num_rows)));
             }

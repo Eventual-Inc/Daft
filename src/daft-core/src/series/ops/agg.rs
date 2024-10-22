@@ -259,7 +259,13 @@ impl Series {
     /// Returns the first value in the series.
     pub fn first(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
         groups.map_or_else(
-            || self.inner.slice(0, 1),
+            || {
+                if self.is_empty() {
+                    Ok(self.clone())
+                } else {
+                    self.inner.slice(0, 1)
+                }
+            },
             |groups| self.grouped_first(groups),
         )
     }
@@ -270,11 +276,26 @@ impl Series {
             .into_iter()
             .map(|g| {
                 let to_take = UInt64Array::from_values("", g.into_iter()).into_series();
-                self.take(&to_take)?.slice(0, 1)
+                if self.is_empty() {
+                    Ok(Series::full_null(
+                        self.name(),
+                        self.data_type(),
+                        to_take.len(),
+                    ))
+                } else {
+                    self.take(&to_take)?.slice(0, 1)
+                }
             })
             .collect::<DaftResult<Vec<_>>>()?;
         let temp: Vec<&_> = first_values.iter().collect();
-
-        Series::concat(&temp)
+        if temp.is_empty() {
+            Ok(Series::full_null(
+                self.name(),
+                self.data_type(),
+                groups.len(),
+            ))
+        } else {
+            Series::concat(&temp)
+        }
     }
 }
