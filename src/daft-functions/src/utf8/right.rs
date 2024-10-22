@@ -1,17 +1,27 @@
 use common_error::{DaftError, DaftResult};
-use daft_core::prelude::*;
+use daft_core::{
+    prelude::{DataType, Field, Schema},
+    series::Series,
+};
+use daft_dsl::{
+    functions::{ScalarFunction, ScalarUDF},
+    ExprRef,
+};
+use serde::{Deserialize, Serialize};
 
-use super::super::FunctionEvaluator;
-use crate::{functions::FunctionExpr, ExprRef};
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct Utf8Right {}
 
-pub(super) struct LeftEvaluator {}
-
-impl FunctionEvaluator for LeftEvaluator {
-    fn fn_name(&self) -> &'static str {
-        "left"
+#[typetag::serde]
+impl ScalarUDF for Utf8Right {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn name(&self) -> &'static str {
+        "utf8_right"
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [data, nchars] => match (data.to_field(schema), nchars.to_field(schema)) {
                 (Ok(data_field), Ok(nchars_field)) => {
@@ -33,13 +43,30 @@ impl FunctionEvaluator for LeftEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
-            [data, nchars] => data.utf8_left(nchars),
+            [data, nchars] => data.utf8_right(nchars),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 2 input args, got {}",
                 inputs.len()
             ))),
         }
     }
+}
+
+#[must_use]
+pub fn utf8_right(input: ExprRef, nchars: ExprRef) -> ExprRef {
+    ScalarFunction::new(Utf8Right {}, vec![input, nchars]).into()
+}
+
+#[cfg(feature = "python")]
+use {
+    daft_dsl::python::PyExpr,
+    pyo3::{pyfunction, PyResult},
+};
+#[cfg(feature = "python")]
+#[pyfunction]
+#[pyo3(name = "utf8_right")]
+pub fn py_utf8_right(expr: PyExpr, nchars: PyExpr) -> PyResult<PyExpr> {
+    Ok(utf8_right(expr.into(), nchars.into()).into())
 }

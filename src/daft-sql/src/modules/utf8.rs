@@ -1,10 +1,6 @@
 use daft_core::array::ops::Utf8NormalizeOptions;
 use daft_dsl::{
     binary_op,
-    functions::{
-        self,
-        utf8::{normalize, Utf8Expr},
-    },
     ExprRef, LiteralValue, Operator,
 };
 use daft_functions::{
@@ -14,51 +10,168 @@ use daft_functions::{
 
 use super::SQLModule;
 use crate::{
-    ensure,
     error::{PlannerError, SQLPlannerResult},
     functions::{SQLFunction, SQLFunctionArguments},
-    invalid_operation_err, unsupported_sql_err,
+    invalid_operation_err,
 };
+
+macro_rules! utf8_function_one_argument {
+    ($name:ident, $sql_name:expr, $func:expr, $doc:expr, $arg_name:expr) => {
+        pub struct $name;
+
+        impl SQLFunction for $name {
+            fn to_expr(
+                &self,
+                inputs: &[sqlparser::ast::FunctionArg],
+                planner: &crate::planner::SQLPlanner,
+            ) -> SQLPlannerResult<ExprRef> {
+                match inputs {
+                    [input] => {
+                        let input = planner.plan_function_arg(input)?;
+                        Ok($func(input))
+                    }
+                    _ => invalid_operation_err!(concat!(
+                        "invalid arguments for ",
+                        $sql_name,
+                        ". Expected ",
+                        $sql_name,
+                        "(",
+                        stringify!($arg_name),
+                        ")"
+                    )),
+                }
+            }
+
+            fn docstrings(&self, _alias: &str) -> String {
+                $doc.to_string()
+            }
+
+            fn arg_names(&self) -> &'static [&'static str] {
+                &[$arg_name]
+            }
+        }
+    };
+}
+
+macro_rules! utf8_function_two_arguments {
+    ($name:ident, $sql_name:expr, $func:expr, $doc:expr, $arg_name_1:expr, $arg_name_2:expr) => {
+        pub struct $name;
+
+        impl SQLFunction for $name {
+            fn to_expr(
+                &self,
+                inputs: &[sqlparser::ast::FunctionArg],
+                planner: &crate::planner::SQLPlanner,
+            ) -> SQLPlannerResult<ExprRef> {
+                match inputs {
+                    [input1, input2] => {
+                        let input1 = planner.plan_function_arg(input1)?;
+                        let input2 = planner.plan_function_arg(input2)?;
+                        Ok($func(input1, input2))
+                    }
+                    _ => invalid_operation_err!(concat!(
+                        "invalid arguments for ",
+                        $sql_name,
+                        ". Expected ",
+                        $sql_name,
+                        "(",
+                        stringify!($arg_name_1),
+                        ", ",
+                        stringify!($arg_name_2),
+                        ")"
+                    )),
+                }
+            }
+
+            fn docstrings(&self, _alias: &str) -> String {
+                $doc.to_string()
+            }
+
+            fn arg_names(&self) -> &'static [&'static str] {
+                &[$arg_name_1, $arg_name_2]
+            }
+        }
+    };
+}
+
+macro_rules! utf8_function_three_arguments {
+    ($name:ident, $sql_name:expr, $func:expr, $doc:expr, $arg_name_1:expr, $arg_name_2:expr, $arg_name_3:expr) => {
+        pub struct $name;
+
+        impl SQLFunction for $name {
+            fn to_expr(
+                &self,
+                inputs: &[sqlparser::ast::FunctionArg],
+                planner: &crate::planner::SQLPlanner,
+            ) -> SQLPlannerResult<ExprRef> {
+                match inputs {
+                    [input1, input2, input3] => {
+                        let input1 = planner.plan_function_arg(input1)?;
+                        let input2 = planner.plan_function_arg(input2)?;
+                        let input3 = planner.plan_function_arg(input3)?;
+                        Ok($func(input1, input2, input3))
+                    }
+                    _ => invalid_operation_err!(concat!(
+                        "invalid arguments for ",
+                        $sql_name,
+                        ". Expected ",
+                        $sql_name,
+                        "(",
+                        stringify!($arg_name_1),
+                        ", ",
+                        stringify!($arg_name_2),
+                        ", ",
+                        stringify!($arg_name_3),
+                        ")"
+                    )),
+                }
+            }
+
+            fn docstrings(&self, _alias: &str) -> String {
+                $doc.to_string()
+            }
+
+            fn arg_names(&self) -> &'static [&'static str] {
+                &[$arg_name_1, $arg_name_2, $arg_name_3]
+            }
+        }
+    };
+}
 
 pub struct SQLModuleUtf8;
 
 impl SQLModule for SQLModuleUtf8 {
     fn register(parent: &mut crate::functions::SQLFunctions) {
-        use Utf8Expr::{
-            Capitalize, Contains, EndsWith, Extract, ExtractAll, Find, Left, Length, LengthBytes,
-            Lower, Lpad, Lstrip, Match, Repeat, Replace, Reverse, Right, Rpad, Rstrip, Split,
-            StartsWith, ToDate, ToDatetime, Upper,
-        };
-        parent.add_fn("ends_with", EndsWith);
-        parent.add_fn("starts_with", StartsWith);
-        parent.add_fn("contains", Contains);
-        parent.add_fn("split", Split(false));
+        parent.add_fn("ends_with", SQLUtf8EndsWith);
+        parent.add_fn("starts_with", SQLUtf8StartsWith);
+        parent.add_fn("contains", SQLUtf8Contains);
+        parent.add_fn("split", SQLUtf8Split);
         // TODO add split variants
         // parent.add("split", f(Split(false)));
-        parent.add_fn("regexp_match", Match);
-        parent.add_fn("regexp_extract", Extract(0));
-        parent.add_fn("regexp_extract_all", ExtractAll(0));
-        parent.add_fn("regexp_replace", Replace(true));
-        parent.add_fn("regexp_split", Split(true));
+        parent.add_fn("regexp_match", SQLUtf8RegexpMatch);
+        parent.add_fn("regexp_extract", SQLUtf8RegexpExtract);
+        parent.add_fn("regexp_extract_all", SQLUtf8RegexpExtractAll);
+        parent.add_fn("regexp_replace", SQLUtf8RegexpReplace);
+        parent.add_fn("regexp_split", SQLUtf8RegexpSplit);
         // TODO add replace variants
         // parent.add("replace", f(Replace(false)));
-        parent.add_fn("length", Length);
-        parent.add_fn("length_bytes", LengthBytes);
-        parent.add_fn("lower", Lower);
-        parent.add_fn("upper", Upper);
-        parent.add_fn("lstrip", Lstrip);
-        parent.add_fn("rstrip", Rstrip);
-        parent.add_fn("reverse", Reverse);
-        parent.add_fn("capitalize", Capitalize);
-        parent.add_fn("left", Left);
-        parent.add_fn("right", Right);
-        parent.add_fn("find", Find);
-        parent.add_fn("rpad", Rpad);
-        parent.add_fn("lpad", Lpad);
-        parent.add_fn("repeat", Repeat);
+        parent.add_fn("length", SQLUtf8Length);
+        parent.add_fn("length_bytes", SQLUtf8LengthBytes);
+        parent.add_fn("lower", SQLUtf8Lower);
+        parent.add_fn("upper", SQLUtf8Upper);
+        parent.add_fn("lstrip", SQLUtf8Lstrip);
+        parent.add_fn("rstrip", SQLUtf8Rstrip);
+        parent.add_fn("reverse", SQLUtf8Reverse);
+        parent.add_fn("capitalize", SQLUtf8Capitalize);
+        parent.add_fn("left", SQLUtf8Left);
+        parent.add_fn("right", SQLUtf8Right);
+        parent.add_fn("find", SQLUtf8Find);
+        parent.add_fn("rpad", SQLUtf8Rpad);
+        parent.add_fn("lpad", SQLUtf8Lpad);
+        parent.add_fn("repeat", SQLUtf8Repeat);
 
-        parent.add_fn("to_date", ToDate(String::new()));
-        parent.add_fn("to_datetime", ToDatetime(String::new(), None));
+        parent.add_fn("to_date", SQLUtf8ToDate);
+        parent.add_fn("to_datetime", SQLUtf8ToDatetime);
         parent.add_fn("count_matches", SQLCountMatches);
         parent.add_fn("normalize", SQLNormalize);
         parent.add_fn("tokenize_encode", SQLTokenizeEncode);
@@ -67,254 +180,333 @@ impl SQLModule for SQLModuleUtf8 {
     }
 }
 
-impl SQLModuleUtf8 {}
+utf8_function_two_arguments!(
+    SQLUtf8EndsWith,
+    "ends_with",
+    daft_functions::utf8::endswith,
+    "Returns true if the string ends with the specified substring",
+    "string_input",
+    "substring"
+);
 
-impl SQLFunction for Utf8Expr {
+utf8_function_two_arguments!(
+    SQLUtf8StartsWith,
+    "starts_with",
+    daft_functions::utf8::startswith,
+    "Returns true if the string starts with the specified substring",
+    "string_input",
+    "substring"
+);
+
+utf8_function_two_arguments!(
+    SQLUtf8Contains,
+    "contains",
+    daft_functions::utf8::contains,
+    "Returns true if the string contains the specified substring",
+    "string_input",
+    "substring"
+);
+
+utf8_function_two_arguments!(
+    SQLUtf8Split,
+    "split",
+    |input, pattern| daft_functions::utf8::split(input, pattern, false),
+    "Splits the string by the specified delimiter and returns an array of substrings",
+    "string_input",
+    "delimiter"
+);
+
+utf8_function_two_arguments!(
+    SQLUtf8RegexpMatch,
+    "regexp_match",
+    daft_functions::utf8::match_,
+    "Returns true if the string matches the specified regular expression pattern",
+    "string_input",
+    "pattern"
+);
+
+utf8_function_three_arguments!(
+    SQLUtf8RegexpReplace,
+    "regexp_replace",
+    |input, pattern, replacement| daft_functions::utf8::replace(input, pattern, replacement, true),
+    "Replaces all occurrences of a substring with a new string",
+    "string_input",
+    "pattern",
+    "replacement"
+);
+
+utf8_function_two_arguments!(
+    SQLUtf8RegexpSplit,
+    "regexp_split",
+    |input, pattern| daft_functions::utf8::split(input, pattern, true),
+    "Splits the string by the specified delimiter and returns an array of substrings",
+    "string_input",
+    "delimiter"
+);
+
+utf8_function_one_argument!(
+    SQLUtf8Length,
+    "length",
+    daft_functions::utf8::length,
+    "Returns the length of the string",
+    "string_input"
+);
+
+utf8_function_one_argument!(
+    SQLUtf8LengthBytes,
+    "length_bytes",
+    daft_functions::utf8::length_bytes,
+    "Returns the length of the string in bytes",
+    "string_input"
+);
+
+utf8_function_one_argument!(
+    SQLUtf8Lower,
+    "lower",
+    daft_functions::utf8::lower,
+    "Converts the string to lowercase",
+    "string_input"
+);
+
+utf8_function_one_argument!(
+    SQLUtf8Upper,
+    "upper",
+    daft_functions::utf8::upper,
+    "Converts the string to uppercase",
+    "string_input"
+);
+
+utf8_function_one_argument!(
+    SQLUtf8Lstrip,
+    "lstrip",
+    daft_functions::utf8::lstrip,
+    "Removes leading whitespace from the string",
+    "string_input"
+);
+
+utf8_function_one_argument!(
+    SQLUtf8Rstrip,
+    "rstrip",
+    daft_functions::utf8::rstrip,
+    "Removes trailing whitespace from the string",
+    "string_input"
+);
+
+utf8_function_one_argument!(
+    SQLUtf8Reverse,
+    "reverse",
+    daft_functions::utf8::reverse,
+    "Reverses the order of characters in the string",
+    "string_input"
+);
+
+utf8_function_one_argument!(
+    SQLUtf8Capitalize,
+    "capitalize",
+    daft_functions::utf8::capitalize,
+    "Capitalizes the first character of the string",
+    "string_input"
+);
+
+utf8_function_two_arguments!(
+    SQLUtf8Left,
+    "left",
+    daft_functions::utf8::left,
+    "Returns the specified number of leftmost characters from the string",
+    "string_input",
+    "length"
+);
+
+utf8_function_two_arguments!(
+    SQLUtf8Right,
+    "right",
+    daft_functions::utf8::right,
+    "Returns the specified number of rightmost characters from the string",
+    "string_input",
+    "length"
+);
+
+utf8_function_two_arguments!(
+    SQLUtf8Find,
+    "find",
+    daft_functions::utf8::find,
+    "Returns the index of the first occurrence of a substring within the string",
+    "string_input",
+    "substring"
+);
+
+utf8_function_three_arguments!(
+    SQLUtf8Rpad,
+    "rpad",
+    daft_functions::utf8::rpad,
+    "Pads the string on the right side with the specified string until it reaches the specified length",
+    "string_input", "length", "pad"
+);
+
+utf8_function_three_arguments!(
+    SQLUtf8Lpad,
+    "lpad",
+    daft_functions::utf8::lpad,
+    "Pads the string on the left side with the specified string until it reaches the specified length",
+    "string_input", "length", "pad"
+);
+
+utf8_function_two_arguments!(
+    SQLUtf8Repeat,
+    "repeat",
+    daft_functions::utf8::repeat,
+    "Repeats the string the specified number of times",
+    "string_input",
+    "count"
+);
+
+pub struct SQLUtf8RegexpExtract;
+
+impl SQLFunction for SQLUtf8RegexpExtract {
     fn to_expr(
         &self,
         inputs: &[sqlparser::ast::FunctionArg],
         planner: &crate::planner::SQLPlanner,
     ) -> SQLPlannerResult<ExprRef> {
-        let inputs = self.args_to_expr_unnamed(inputs, planner)?;
-        to_expr(self, &inputs)
+        match inputs {
+            [input, pattern] => {
+                let input = planner.plan_function_arg(input)?;
+                let pattern = planner.plan_function_arg(pattern)?;
+                Ok(daft_functions::utf8::extract(input, pattern, 0))
+            }
+            [input, pattern, idx] => {
+                let input = planner.plan_function_arg(input)?;
+                let pattern = planner.plan_function_arg(pattern)?;
+                let idx = planner.plan_function_arg(idx)?.as_literal().and_then(LiteralValue::as_i64).ok_or_else(|| {
+                    PlannerError::invalid_operation(format!("Expected a literal integer for the third argument of regexp_extract, found {idx:?}"))
+                })? as usize;
+                Ok(daft_functions::utf8::extract(input, pattern, idx))
+            }
+            _ => invalid_operation_err!("regexp_extract takes exactly two or three arguments"),
+        }
     }
 
     fn docstrings(&self, _alias: &str) -> String {
-        match self {
-            Self::EndsWith => "Returns true if the string ends with the specified substring".to_string(),
-            Self::StartsWith => "Returns true if the string starts with the specified substring".to_string(),
-            Self::Contains => "Returns true if the string contains the specified substring".to_string(),
-            Self::Split(_) => "Splits the string by the specified delimiter and returns an array of substrings".to_string(),
-            Self::Match => "Returns true if the string matches the specified regular expression pattern".to_string(),
-            Self::Extract(_) => "Extracts the first substring that matches the specified regular expression pattern".to_string(),
-            Self::ExtractAll(_) => "Extracts all substrings that match the specified regular expression pattern".to_string(),
-            Self::Replace(_) => "Replaces all occurrences of a substring with a new string".to_string(),
-            Self::Like => "Returns true if the string matches the specified SQL LIKE pattern".to_string(),
-            Self::Ilike => "Returns true if the string matches the specified SQL LIKE pattern (case-insensitive)".to_string(),
-            Self::Length => "Returns the length of the string".to_string(),
-            Self::Lower => "Converts the string to lowercase".to_string(),
-            Self::Upper => "Converts the string to uppercase".to_string(),
-            Self::Lstrip => "Removes leading whitespace from the string".to_string(),
-            Self::Rstrip => "Removes trailing whitespace from the string".to_string(),
-            Self::Reverse => "Reverses the order of characters in the string".to_string(),
-            Self::Capitalize => "Capitalizes the first character of the string".to_string(),
-            Self::Left => "Returns the specified number of leftmost characters from the string".to_string(),
-            Self::Right => "Returns the specified number of rightmost characters from the string".to_string(),
-            Self::Find => "Returns the index of the first occurrence of a substring within the string".to_string(),
-            Self::Rpad => "Pads the string on the right side with the specified string until it reaches the specified length".to_string(),
-            Self::Lpad => "Pads the string on the left side with the specified string until it reaches the specified length".to_string(),
-            Self::Repeat => "Repeats the string the specified number of times".to_string(),
-            Self::Substr => "Returns a substring of the string starting at the specified position and length".to_string(),
-            Self::ToDate(_) => "Parses the string as a date using the specified format.".to_string(),
-            Self::ToDatetime(_, _) => "Parses the string as a datetime using the specified format.".to_string(),
-            Self::LengthBytes => "Returns the length of the string in bytes".to_string(),
-            Self::Normalize(_) => "Normalizes a string for more useful deduplication and data cleaning".to_string(),
-        }
+        "Extracts the first substring that matches the specified regular expression pattern"
+            .to_string()
     }
 
     fn arg_names(&self) -> &'static [&'static str] {
-        match self {
-            Self::EndsWith => &["string_input", "substring"],
-            Self::StartsWith => &["string_input", "substring"],
-            Self::Contains => &["string_input", "substring"],
-            Self::Split(_) => &["string_input", "delimiter"],
-            Self::Match => &["string_input", "pattern"],
-            Self::Extract(_) => &["string_input", "pattern"],
-            Self::ExtractAll(_) => &["string_input", "pattern"],
-            Self::Replace(_) => &["string_input", "pattern", "replacement"],
-            Self::Like => &["string_input", "pattern"],
-            Self::Ilike => &["string_input", "pattern"],
-            Self::Length => &["string_input"],
-            Self::Lower => &["string_input"],
-            Self::Upper => &["string_input"],
-            Self::Lstrip => &["string_input"],
-            Self::Rstrip => &["string_input"],
-            Self::Reverse => &["string_input"],
-            Self::Capitalize => &["string_input"],
-            Self::Left => &["string_input", "length"],
-            Self::Right => &["string_input", "length"],
-            Self::Find => &["string_input", "substring"],
-            Self::Rpad => &["string_input", "length", "pad"],
-            Self::Lpad => &["string_input", "length", "pad"],
-            Self::Repeat => &["string_input", "count"],
-            Self::Substr => &["string_input", "start", "length"],
-            Self::ToDate(_) => &["string_input", "format"],
-            Self::ToDatetime(_, _) => &["string_input", "format"],
-            Self::LengthBytes => &["string_input"],
-            Self::Normalize(_) => &[
-                "input",
-                "remove_punct",
-                "lowercase",
-                "nfd_unicode",
-                "white_space",
-            ],
-        }
+        &["string_input", "pattern"]
     }
 }
 
-fn to_expr(expr: &Utf8Expr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
-    use functions::utf8::{
-        capitalize, contains, endswith, extract, extract_all, find, left, length, length_bytes,
-        lower, lpad, lstrip, match_, repeat, replace, reverse, right, rpad, rstrip, split,
-        startswith, to_date, to_datetime, upper, Utf8Expr,
-    };
-    use Utf8Expr::{
-        Capitalize, Contains, EndsWith, Extract, ExtractAll, Find, Ilike, Left, Length,
-        LengthBytes, Like, Lower, Lpad, Lstrip, Match, Normalize, Repeat, Replace, Reverse, Right,
-        Rpad, Rstrip, Split, StartsWith, Substr, ToDate, ToDatetime, Upper,
-    };
-    match expr {
-        EndsWith => {
-            ensure!(args.len() == 2, "endswith takes exactly two arguments");
-            Ok(endswith(args[0].clone(), args[1].clone()))
-        }
-        StartsWith => {
-            ensure!(args.len() == 2, "startswith takes exactly two arguments");
-            Ok(startswith(args[0].clone(), args[1].clone()))
-        }
-        Contains => {
-            ensure!(args.len() == 2, "contains takes exactly two arguments");
-            Ok(contains(args[0].clone(), args[1].clone()))
-        }
-        Split(true) => {
-            ensure!(args.len() == 2, "split takes exactly two arguments");
-            Ok(split(args[0].clone(), args[1].clone(), true))
-        }
-        Split(false) => {
-            ensure!(args.len() == 2, "split takes exactly two arguments");
-            Ok(split(args[0].clone(), args[1].clone(), false))
-        }
-        Match => {
-            ensure!(args.len() == 2, "regexp_match takes exactly two arguments");
-            Ok(match_(args[0].clone(), args[1].clone()))
-        }
-        Extract(_) => match args {
-            [input, pattern] => Ok(extract(input.clone(), pattern.clone(), 0)),
+pub struct SQLUtf8RegexpExtractAll;
+
+impl SQLFunction for SQLUtf8RegexpExtractAll {
+    fn to_expr(
+        &self,
+        inputs: &[sqlparser::ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        match inputs {
+            [input, pattern] => {
+                let input = planner.plan_function_arg(input)?;
+                let pattern = planner.plan_function_arg(pattern)?;
+                Ok(daft_functions::utf8::extract_all(input, pattern, 0))
+            }
             [input, pattern, idx] => {
-                let idx = idx.as_literal().and_then(daft_dsl::LiteralValue::as_i64).ok_or_else(|| {
-                   PlannerError::invalid_operation(format!("Expected a literal integer for the third argument of regexp_extract, found {idx:?}"))
-               })?;
+                let input = planner.plan_function_arg(input)?;
+                let pattern = planner.plan_function_arg(pattern)?;
+                let idx = planner.plan_function_arg(idx)?.as_literal().and_then(LiteralValue::as_i64).ok_or_else(|| {
+                    PlannerError::invalid_operation(format!("Expected a literal integer for the third argument of regexp_extract_all, found {idx:?}"))
+                })? as usize;
+                Ok(daft_functions::utf8::extract_all(input, pattern, idx))
+            }
+            _ => invalid_operation_err!("regexp_extract_all takes exactly two or three arguments"),
+        }
+    }
 
-                Ok(extract(input.clone(), pattern.clone(), idx as usize))
-            }
-            _ => {
-                invalid_operation_err!("regexp_extract takes exactly two or three arguments")
-            }
-        },
-        ExtractAll(_) => match args {
-            [input, pattern] => Ok(extract_all(input.clone(), pattern.clone(), 0)),
-            [input, pattern, idx] => {
-                let idx = idx.as_literal().and_then(daft_dsl::LiteralValue::as_i64).ok_or_else(|| {
-                   PlannerError::invalid_operation(format!("Expected a literal integer for the third argument of regexp_extract, found {idx:?}"))
-               })?;
+    fn docstrings(&self, _alias: &str) -> String {
+        "Extracts all substrings that match the specified regular expression pattern".to_string()
+    }
 
-                Ok(extract_all(input.clone(), pattern.clone(), idx as usize))
-            }
-            _ => {
-                invalid_operation_err!("regexp_extract_all takes exactly two or three arguments")
-            }
-        },
-        Replace(_) => {
-            ensure!(args.len() == 3, "replace takes exactly three arguments");
-            Ok(replace(
-                args[0].clone(),
-                args[1].clone(),
-                args[2].clone(),
-                false,
-            ))
-        }
-        Like => {
-            unreachable!("like should be handled by the parser")
-        }
-        Ilike => {
-            unreachable!("ilike should be handled by the parser")
-        }
-        Length => {
-            ensure!(args.len() == 1, "length takes exactly one argument");
-            Ok(length(args[0].clone()))
-        }
-        LengthBytes => {
-            ensure!(args.len() == 1, "length_bytes takes exactly one argument");
-            Ok(length_bytes(args[0].clone()))
-        }
-        Lower => {
-            ensure!(args.len() == 1, "lower takes exactly one argument");
-            Ok(lower(args[0].clone()))
-        }
-        Upper => {
-            ensure!(args.len() == 1, "upper takes exactly one argument");
-            Ok(upper(args[0].clone()))
-        }
-        Lstrip => {
-            ensure!(args.len() == 1, "lstrip takes exactly one argument");
-            Ok(lstrip(args[0].clone()))
-        }
-        Rstrip => {
-            ensure!(args.len() == 1, "rstrip takes exactly one argument");
-            Ok(rstrip(args[0].clone()))
-        }
-        Reverse => {
-            ensure!(args.len() == 1, "reverse takes exactly one argument");
-            Ok(reverse(args[0].clone()))
-        }
-        Capitalize => {
-            ensure!(args.len() == 1, "capitalize takes exactly one argument");
-            Ok(capitalize(args[0].clone()))
-        }
-        Left => {
-            ensure!(args.len() == 2, "left takes exactly two arguments");
-            Ok(left(args[0].clone(), args[1].clone()))
-        }
-        Right => {
-            ensure!(args.len() == 2, "right takes exactly two arguments");
-            Ok(right(args[0].clone(), args[1].clone()))
-        }
-        Find => {
-            ensure!(args.len() == 2, "find takes exactly two arguments");
-            Ok(find(args[0].clone(), args[1].clone()))
-        }
-        Rpad => {
-            ensure!(args.len() == 3, "rpad takes exactly three arguments");
-            Ok(rpad(args[0].clone(), args[1].clone(), args[2].clone()))
-        }
-        Lpad => {
-            ensure!(args.len() == 3, "lpad takes exactly three arguments");
-            Ok(lpad(args[0].clone(), args[1].clone(), args[2].clone()))
-        }
-        Repeat => {
-            ensure!(args.len() == 2, "repeat takes exactly two arguments");
-            Ok(repeat(args[0].clone(), args[1].clone()))
-        }
-        Substr => {
-            unreachable!("substr should be handled by the parser")
-        }
-        ToDate(_) => {
-            ensure!(args.len() == 2, "to_date takes exactly two arguments");
-            let fmt = match args[1].as_ref().as_literal() {
-                Some(LiteralValue::Utf8(s)) => s,
-                _ => invalid_operation_err!("to_date format must be a string"),
-            };
-            Ok(to_date(args[0].clone(), fmt))
-        }
-        ToDatetime(..) => {
-            ensure!(
-                args.len() >= 2,
-                "to_datetime takes either two or three arguments"
-            );
-            let fmt = match args[1].as_ref().as_literal() {
-                Some(LiteralValue::Utf8(s)) => s,
-                _ => invalid_operation_err!("to_datetime format must be a string"),
-            };
-            let tz = match args.get(2).and_then(|e| e.as_ref().as_literal()) {
-                Some(LiteralValue::Utf8(s)) => Some(s.as_str()),
-                _ => invalid_operation_err!("to_datetime timezone must be a string"),
-            };
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["string_input", "pattern"]
+    }
+}
 
-            Ok(to_datetime(args[0].clone(), fmt, tz))
+pub struct SQLUtf8ToDate;
+
+impl SQLFunction for SQLUtf8ToDate {
+    fn to_expr(
+        &self,
+        inputs: &[sqlparser::ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        match inputs {
+            [input, fmt] => {
+                let input = planner.plan_function_arg(input)?;
+                let fmt = planner.plan_function_arg(fmt)?;
+                let fmt = fmt
+                    .as_literal()
+                    .and_then(|lit| lit.as_str())
+                    .ok_or_else(|| {
+                        PlannerError::invalid_operation("to_date format must be a string")
+                    })?;
+                Ok(daft_functions::utf8::to_date(input, fmt))
+            }
+            _ => invalid_operation_err!("to_date takes exactly two arguments"),
         }
-        Normalize(_) => {
-            unsupported_sql_err!("normalize")
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Parses the string as a date using the specified format.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["string_input", "format"]
+    }
+}
+
+pub struct SQLUtf8ToDatetime;
+
+impl SQLFunction for SQLUtf8ToDatetime {
+    fn to_expr(
+        &self,
+        inputs: &[sqlparser::ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        match inputs {
+            [input, fmt] => {
+                let input = planner.plan_function_arg(input)?;
+                let fmt = planner.plan_function_arg(fmt)?;
+                let fmt = fmt
+                    .as_literal()
+                    .and_then(|lit| lit.as_str())
+                    .ok_or_else(|| {
+                        PlannerError::invalid_operation("to_datetime format must be a string")
+                    })?;
+                Ok(daft_functions::utf8::to_datetime(input, fmt, None))
+            }
+            [input, fmt, tz] => {
+                let input = planner.plan_function_arg(input)?;
+                let fmt = planner.plan_function_arg(fmt)?;
+                let fmt = fmt
+                    .as_literal()
+                    .and_then(|lit| lit.as_str())
+                    .ok_or_else(|| {
+                        PlannerError::invalid_operation("to_datetime format must be a string")
+                    })?;
+                let tz = planner.plan_function_arg(tz)?;
+                let tz = tz.as_literal().and_then(|lit| lit.as_str());
+                Ok(daft_functions::utf8::to_datetime(input, fmt, tz))
+            }
+            _ => invalid_operation_err!("to_datetime takes either two or three arguments"),
         }
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Parses the string as a datetime using the specified format.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["string_input", "format"]
     }
 }
 
@@ -404,7 +596,10 @@ impl SQLFunction for SQLNormalize {
         match inputs {
             [input] => {
                 let input = planner.plan_function_arg(input)?;
-                Ok(normalize(input, Utf8NormalizeOptions::default()))
+                Ok(daft_functions::utf8::normalize(
+                    input,
+                    Utf8NormalizeOptions::default(),
+                ))
             }
             [input, args @ ..] => {
                 let input = planner.plan_function_arg(input)?;
@@ -413,7 +608,7 @@ impl SQLFunction for SQLNormalize {
                     &["remove_punct", "lowercase", "nfd_unicode", "white_space"],
                     0,
                 )?;
-                Ok(normalize(input, args))
+                Ok(daft_functions::utf8::normalize(input, args))
             }
             _ => invalid_operation_err!("Invalid arguments for normalize"),
         }

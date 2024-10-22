@@ -8,12 +8,15 @@ use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 use daft_dsl::{
     col,
-    functions::utf8::{ilike, like, to_date, to_datetime},
     has_agg, lit, literals_to_series, null_lit, AggExpr, Expr, ExprRef, LiteralValue, Operator,
     Subquery,
 };
-use daft_functions::numeric::{ceil::ceil, floor::floor};
+use daft_functions::{
+    numeric::{ceil::ceil, floor::floor},
+    utf8::{ilike, like, to_date, to_datetime},
+};
 use daft_logical_plan::{LogicalPlanBuilder, LogicalPlanRef};
+
 use sqlparser::{
     ast::{
         ArrayElemTypeDef, BinaryOperator, CastKind, DateTimeField, Distinct, ExactNumberInfo,
@@ -1261,7 +1264,7 @@ impl SQLPlanner {
                 let start = self.plan_expr(substring_from)?;
                 let length = self.plan_expr(substring_for)?;
 
-                Ok(daft_dsl::functions::utf8::substr(expr, start, length))
+                Ok(daft_functions::utf8::substr(expr, start, length))
             }
             SQLExpr::Substring { special: false, .. } => {
                 unsupported_sql_err!("`SUBSTRING(expr [FROM start] [FOR len])` syntax")

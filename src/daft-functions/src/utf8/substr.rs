@@ -1,17 +1,27 @@
 use common_error::{DaftError, DaftResult};
-use daft_core::prelude::*;
+use daft_core::{
+    prelude::{DataType, Field, Schema},
+    series::Series,
+};
+use daft_dsl::{
+    functions::{ScalarFunction, ScalarUDF},
+    ExprRef,
+};
+use serde::{Deserialize, Serialize};
 
-use super::super::FunctionEvaluator;
-use crate::{functions::FunctionExpr, ExprRef};
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct Utf8Substr {}
 
-pub(super) struct SubstrEvaluator {}
-
-impl FunctionEvaluator for SubstrEvaluator {
-    fn fn_name(&self) -> &'static str {
-        "substr"
+#[typetag::serde]
+impl ScalarUDF for Utf8Substr {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn name(&self) -> &'static str {
+        "utf8_substr"
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [data, start, length] => {
                 let data = data.to_field(schema)?;
@@ -37,7 +47,7 @@ impl FunctionEvaluator for SubstrEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], _: &FunctionExpr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
             [data, start, length] => data.utf8_substr(start, length),
             _ => Err(DaftError::ValueError(format!(
@@ -46,4 +56,21 @@ impl FunctionEvaluator for SubstrEvaluator {
             ))),
         }
     }
+}
+
+#[must_use]
+pub fn utf8_substr(input: ExprRef, start: ExprRef, length: ExprRef) -> ExprRef {
+    ScalarFunction::new(Utf8Substr {}, vec![input, start, length]).into()
+}
+
+#[cfg(feature = "python")]
+use {
+    daft_dsl::python::PyExpr,
+    pyo3::{pyfunction, PyResult},
+};
+#[cfg(feature = "python")]
+#[pyfunction]
+#[pyo3(name = "utf8_substr")]
+pub fn py_utf8_substr(expr: PyExpr, start: PyExpr, length: PyExpr) -> PyResult<PyExpr> {
+    Ok(utf8_substr(expr.into(), start.into(), length.into()).into())
 }

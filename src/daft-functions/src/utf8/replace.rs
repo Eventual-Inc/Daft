@@ -1,17 +1,29 @@
 use common_error::{DaftError, DaftResult};
-use daft_core::prelude::*;
+use daft_core::{
+    prelude::{DataType, Field, Schema},
+    series::Series,
+};
+use daft_dsl::{
+    functions::{ScalarFunction, ScalarUDF},
+    ExprRef,
+};
+use serde::{Deserialize, Serialize};
 
-use super::{super::FunctionEvaluator, Utf8Expr};
-use crate::{functions::FunctionExpr, ExprRef};
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct Utf8Replace {
+    pub regex: bool,
+}
 
-pub(super) struct ReplaceEvaluator {}
-
-impl FunctionEvaluator for ReplaceEvaluator {
-    fn fn_name(&self) -> &'static str {
-        "replace"
+#[typetag::serde]
+impl ScalarUDF for Utf8Replace {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn name(&self) -> &'static str {
+        "utf8_replace"
     }
 
-    fn to_field(&self, inputs: &[ExprRef], schema: &Schema, _: &FunctionExpr) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [data, pattern, replacement] => match (
                 data.to_field(schema),
@@ -37,19 +49,40 @@ impl FunctionEvaluator for ReplaceEvaluator {
         }
     }
 
-    fn evaluate(&self, inputs: &[Series], expr: &FunctionExpr) -> DaftResult<Series> {
+    fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
-            [data, pattern, replacement] => {
-                let regex = match expr {
-                    FunctionExpr::Utf8(Utf8Expr::Replace(regex)) => regex,
-                    _ => panic!("Expected Utf8 Replace Expr, got {expr}"),
-                };
-                data.utf8_replace(pattern, replacement, *regex)
-            }
+            [data, pattern, replacement] => data.utf8_replace(pattern, replacement, self.regex),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 3 input args, got {}",
                 inputs.len()
             ))),
         }
     }
+}
+
+#[must_use]
+pub fn utf8_replace(
+    input: ExprRef,
+    pattern: ExprRef,
+    replacement: ExprRef,
+    regex: bool,
+) -> ExprRef {
+    ScalarFunction::new(Utf8Replace { regex }, vec![input, pattern, replacement]).into()
+}
+
+#[cfg(feature = "python")]
+use {
+    daft_dsl::python::PyExpr,
+    pyo3::{pyfunction, PyResult},
+};
+#[cfg(feature = "python")]
+#[pyfunction]
+#[pyo3(name = "utf8_replace")]
+pub fn py_utf8_replace(
+    expr: PyExpr,
+    pattern: PyExpr,
+    replacement: PyExpr,
+    regex: bool,
+) -> PyResult<PyExpr> {
+    Ok(utf8_replace(expr.into(), pattern.into(), replacement.into(), regex).into())
 }
