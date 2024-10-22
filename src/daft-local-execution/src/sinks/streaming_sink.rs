@@ -8,7 +8,6 @@ use tracing::{info_span, instrument};
 
 use crate::{
     channel::{create_channel, PipelineChannel, Receiver, Sender},
-    create_task_set,
     pipeline::{PipelineNode, PipelineResultType},
     runtime_stats::{CountingReceiver, RuntimeStatsContext},
     ExecutionRuntimeHandle, JoinSnafu, TaskSet, NUM_CPUS,
@@ -203,7 +202,7 @@ impl PipelineNode for StreamingSinkNode {
         );
         runtime_handle.spawn(
             async move {
-                let mut task_set = create_task_set();
+                let mut task_set = TaskSet::new();
                 let mut output_receiver = Self::spawn_workers(
                     op.clone(),
                     input_receivers,

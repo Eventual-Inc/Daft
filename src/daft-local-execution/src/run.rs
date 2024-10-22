@@ -157,7 +157,9 @@ pub fn run_local(
             }
             Ok(())
         };
-        runtime.block_on(async {
+
+        let local_set = tokio::task::LocalSet::new();
+        local_set.block_on(&runtime, async {
             tokio::select! {
                 biased;
                 _ = tokio::signal::ctrl_c() => {
