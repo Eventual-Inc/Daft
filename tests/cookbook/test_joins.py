@@ -6,16 +6,20 @@ from daft import context
 from daft.expressions import col
 from tests.conftest import assert_df_equals
 
-pytestmark = pytest.mark.skipif(
-    context.get_context().daft_execution_config.enable_native_executor is True,
-    reason="Native executor fails for these tests",
-)
+
+def skip_invalid_join_strategies(join_strategy):
+    if context.get_context().daft_execution_config.enable_native_executor is True:
+        if join_strategy not in [None, "hash"]:
+            pytest.skip("Native executor fails for these tests")
 
 
 @pytest.mark.parametrize(
-    "join_strategy", [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"], indirect=True
+    "join_strategy",
+    [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"],
+    indirect=True,
 )
 def test_simple_join(join_strategy, daft_df, service_requests_csv_pd_df, repartition_nparts):
+    skip_invalid_join_strategies(join_strategy)
     daft_df = daft_df.repartition(repartition_nparts)
     daft_df_left = daft_df.select(col("Unique Key"), col("Borough"))
     daft_df_right = daft_df.select(col("Unique Key"), col("Created Date"))
@@ -33,9 +37,12 @@ def test_simple_join(join_strategy, daft_df, service_requests_csv_pd_df, reparti
 
 
 @pytest.mark.parametrize(
-    "join_strategy", [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"], indirect=True
+    "join_strategy",
+    [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"],
+    indirect=True,
 )
 def test_simple_self_join(join_strategy, daft_df, service_requests_csv_pd_df, repartition_nparts):
+    skip_invalid_join_strategies(join_strategy)
     daft_df = daft_df.repartition(repartition_nparts)
     daft_df = daft_df.select(col("Unique Key"), col("Borough"))
 
@@ -44,7 +51,11 @@ def test_simple_self_join(join_strategy, daft_df, service_requests_csv_pd_df, re
     service_requests_csv_pd_df = service_requests_csv_pd_df[["Unique Key", "Borough"]]
     service_requests_csv_pd_df = (
         service_requests_csv_pd_df.set_index("Unique Key")
-        .join(service_requests_csv_pd_df.set_index("Unique Key"), how="inner", rsuffix="_right")
+        .join(
+            service_requests_csv_pd_df.set_index("Unique Key"),
+            how="inner",
+            rsuffix="_right",
+        )
         .reset_index()
     )
     service_requests_csv_pd_df = service_requests_csv_pd_df.rename({"Borough_right": "right.Borough"}, axis=1)
@@ -53,9 +64,12 @@ def test_simple_self_join(join_strategy, daft_df, service_requests_csv_pd_df, re
 
 
 @pytest.mark.parametrize(
-    "join_strategy", [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"], indirect=True
+    "join_strategy",
+    [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"],
+    indirect=True,
 )
 def test_simple_join_missing_rvalues(join_strategy, daft_df, service_requests_csv_pd_df, repartition_nparts):
+    skip_invalid_join_strategies(join_strategy)
     daft_df_right = daft_df.sort("Unique Key").limit(25).repartition(repartition_nparts)
     daft_df_left = daft_df.repartition(repartition_nparts)
     daft_df_left = daft_df_left.select(col("Unique Key"), col("Borough"))
@@ -76,9 +90,12 @@ def test_simple_join_missing_rvalues(join_strategy, daft_df, service_requests_cs
 
 
 @pytest.mark.parametrize(
-    "join_strategy", [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"], indirect=True
+    "join_strategy",
+    [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"],
+    indirect=True,
 )
 def test_simple_join_missing_lvalues(join_strategy, daft_df, service_requests_csv_pd_df, repartition_nparts):
+    skip_invalid_join_strategies(join_strategy)
     daft_df_right = daft_df.repartition(repartition_nparts)
     daft_df_left = daft_df.sort(col("Unique Key")).limit(25).repartition(repartition_nparts)
     daft_df_left = daft_df_left.select(col("Unique Key"), col("Borough"))
