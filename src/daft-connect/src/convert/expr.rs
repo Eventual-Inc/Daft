@@ -89,7 +89,9 @@ pub fn to_daft_expr(expr: Expression) -> Result<DaftExpr> {
 // Helper functions to convert literals, function names, operators etc.
 
 fn convert_literal(lit: expression::Literal) -> Result<daft_dsl::LiteralValue> {
-    let literal_type = lit.literal_type.ok_or_else(|| eyre!("literal_type is None"))?;
+    let literal_type = lit
+        .literal_type
+        .ok_or_else(|| eyre!("literal_type is None"))?;
 
     let result = match literal_type {
         LiteralType::Null(..) => daft_dsl::LiteralValue::Null,

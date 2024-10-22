@@ -63,9 +63,9 @@ impl Session {
     ) -> Result<DaftStream, Status> {
         // let data = thread::spawn(move || {
         //     // crate::convert::
-        // 
+        //
         //     // let logical_plan = to_logical_plan(command).unwrap().build();
-        // 
+        //
         //     let result = execute_plan(logical_plan);
         //     process_result(result)
         // });
@@ -79,7 +79,7 @@ impl Session {
         //     &self.server_side_session_id,
         //     &operation_id,
         // );
-        // 
+        //
         // Ok(result)
         todo!()
     }

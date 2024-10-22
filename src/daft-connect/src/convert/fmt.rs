@@ -145,7 +145,9 @@ impl RelTypeExt for RelType {
             RelType::HtmlString(_) => "HtmlString",
             RelType::CachedLocalRelation(_) => "CachedLocalRelation",
             RelType::CachedRemoteRelation(_) => "CachedRemoteRelation",
-            RelType::CommonInlineUserDefinedTableFunction(_) => "CommonInlineUserDefinedTableFunction",
+            RelType::CommonInlineUserDefinedTableFunction(_) => {
+                "CommonInlineUserDefinedTableFunction"
+            }
             RelType::AsOfJoin(_) => "AsOfJoin",
             RelType::CommonInlineUserDefinedDataSource(_) => "CommonInlineUserDefinedDataSource",
             RelType::WithRelations(_) => "WithRelations",
