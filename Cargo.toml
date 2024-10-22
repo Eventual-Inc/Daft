@@ -155,6 +155,7 @@ bytes = "1.6.0"
 chrono = "0.4.38"
 chrono-tz = "0.8.4"
 comfy-table = "7.1.1"
+common-error = {path = "src/common/error", default-features = false}
 daft-hash = {path = "src/daft-hash"}
 derivative = "2.2.0"
 divan = "0.1.14"

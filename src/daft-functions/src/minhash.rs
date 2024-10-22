@@ -1,7 +1,4 @@
-use std::{
-    hash::{BuildHasher, BuildHasherDefault},
-    str::FromStr,
-};
+use std::hash::BuildHasherDefault;
 
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
@@ -9,9 +6,7 @@ use daft_dsl::{
     functions::{ScalarFunction, ScalarUDF},
     ExprRef,
 };
-use daft_hash::{MurBuildHasher, Sha1Hasher};
-#[cfg(feature = "python")]
-use pyo3::pyclass;
+use daft_hash::{HashFunctionKind, MurBuildHasher, Sha1Hasher};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -98,37 +93,11 @@ pub fn minhash(
     .into()
 }
 
-/// Format of a file, e.g. Parquet, CSV, JSON.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Copy)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
-pub enum HashFunctionKind {
-    MurmurHash3,
-    XxHash,
-    Sha1,
-}
-
-impl FromStr for HashFunctionKind {
-    type Err = DaftError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "murmur3" => Ok(Self::MurmurHash3),
-            "xxhash" => Ok(Self::XxHash),
-            "sha1" => Ok(Self::Sha1),
-            _ => Err(DaftError::ValueError(format!(
-                "Hash function {} not found",
-                s
-            ))),
-        }
-    }
-}
-
 #[cfg(feature = "python")]
 pub mod python {
     use daft_dsl::python::PyExpr;
+    use daft_hash::HashFunctionKind;
     use pyo3::{exceptions::PyValueError, pyfunction, PyResult};
-
-    use crate::minhash::HashFunctionKind;
 
     #[pyfunction]
     pub fn minhash(
