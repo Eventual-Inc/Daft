@@ -1,4 +1,6 @@
 #![feature(let_chains)]
+#![feature(hash_raw_entry)]
+mod buffer;
 mod channel;
 mod intermediate_ops;
 mod pipeline;
@@ -6,6 +8,7 @@ mod run;
 mod runtime_stats;
 mod sinks;
 mod sources;
+mod writes;
 use common_error::{DaftError, DaftResult};
 use lazy_static::lazy_static;
 pub use run::NativeExecutor;
@@ -16,7 +19,7 @@ lazy_static! {
 
 pub(crate) type TaskSet<T> = tokio::task::JoinSet<T>;
 pub(crate) fn create_task_set<T>() -> TaskSet<T> {
-    tokio::task::JoinSet::new()
+    TaskSet::new()
 }
 
 pub struct ExecutionRuntimeHandle {
