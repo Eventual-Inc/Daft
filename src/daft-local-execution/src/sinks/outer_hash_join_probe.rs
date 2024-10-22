@@ -77,9 +77,9 @@ impl OuterHashJoinProbeState {
         let tables = probe_state.get_tables();
         if matches!(self, Self::Building) {
             *self = Self::ReadyToProbe(
-                probe_state,
+                probe_state.clone(),
                 if needs_bitmap {
-                    Some(IndexBitmapBuilder::new(&tables))
+                    Some(IndexBitmapBuilder::new(tables))
                 } else {
                     None
                 },
@@ -232,7 +232,10 @@ impl OuterHashJoinProbeSink {
     ) -> DaftResult<Arc<MicroPartition>> {
         let (probe_table, tables) = {
             let probe_state = state.get_probe_state();
-            (probe_state.get_probeable(), probe_state.get_tables())
+            (
+                probe_state.get_probeable().clone(),
+                probe_state.get_tables().clone(),
+            )
         };
         let bitmap_builder = state.get_bitmap_builder();
         let _growables = info_span!("OuterHashJoinProbeSink::build_growables").entered();
@@ -305,7 +308,8 @@ impl OuterHashJoinProbeSink {
             .first()
             .expect("at least one state should be present")
             .get_probe_state()
-            .get_tables();
+            .get_tables()
+            .clone();
 
         let merged_bitmap = {
             let bitmaps = states.into_iter().map(|s| {

@@ -16,12 +16,8 @@ impl LimitSinkState {
         Self { remaining }
     }
 
-    fn get_remaining(&self) -> usize {
-        self.remaining
-    }
-
-    fn set_remaining(&mut self, remaining: usize) {
-        self.remaining = remaining;
+    fn get_remaining_mut(&mut self) -> &mut usize {
+        &mut self.remaining
     }
 }
 
@@ -56,23 +52,20 @@ impl StreamingSink for LimitSink {
             .expect("Limit Sink should have LimitSinkState");
         let input = input.as_data();
         let input_num_rows = input.len();
-        let mut remaining = state.get_remaining();
+        let remaining = state.get_remaining_mut();
         use std::cmp::Ordering::{Equal, Greater, Less};
-        match input_num_rows.cmp(&remaining) {
+        match input_num_rows.cmp(remaining) {
             Less => {
-                remaining -= input_num_rows;
-                state.set_remaining(remaining);
+                *remaining -= input_num_rows;
                 Ok(StreamingSinkOutput::NeedMoreInput(Some(input.clone())))
             }
             Equal => {
-                remaining = 0;
-                state.set_remaining(remaining);
+                *remaining = 0;
                 Ok(StreamingSinkOutput::Finished(Some(input.clone())))
             }
             Greater => {
-                let taken = input.head(remaining)?;
-                remaining -= taken.len();
-                state.set_remaining(remaining);
+                let taken = input.head(*remaining)?;
+                *remaining = 0;
                 Ok(StreamingSinkOutput::Finished(Some(Arc::new(taken))))
             }
         }

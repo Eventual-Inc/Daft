@@ -89,11 +89,11 @@ impl ProbeState {
         Self { probeable, tables }
     }
 
-    pub fn get_probeable(&self) -> Arc<dyn Probeable> {
-        self.probeable.clone()
+    pub fn get_probeable(&self) -> &Arc<dyn Probeable> {
+        &self.probeable
     }
 
-    pub fn get_tables(&self) -> Arc<Vec<Table>> {
-        self.tables.clone()
+    pub fn get_tables(&self) -> &Arc<Vec<Table>> {
+        &self.tables
     }
 }

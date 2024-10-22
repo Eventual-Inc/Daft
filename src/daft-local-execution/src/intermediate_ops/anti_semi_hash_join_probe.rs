@@ -118,7 +118,7 @@ impl IntermediateOperator for AntiSemiProbeOperator {
 
         if idx == 0 {
             let probe_state = input.as_probe_state();
-            state.set_table(&probe_state.get_probeable());
+            state.set_table(probe_state.get_probeable());
             Ok(IntermediateOperatorResult::NeedMoreInput(None))
         } else {
             let input = input.as_data();

@@ -27,9 +27,9 @@ impl InnerHashJoinProbeState {
         }
     }
 
-    fn get_probe_state(&self) -> Arc<ProbeState> {
+    fn get_probe_state(&self) -> &Arc<ProbeState> {
         if let Self::ReadyToProbe(probe_state) = self {
-            probe_state.clone()
+            probe_state
         } else {
             panic!("get_probeable_and_table can only be used during the ReadyToProbe Phase")
         }
