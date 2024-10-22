@@ -5,7 +5,7 @@ use daft_dsl::ExprRef;
 use tracing::instrument;
 
 use super::intermediate_op::{
-    IntermediateOperator, IntermediateOperatorResult, IntermediateOperatorState,
+    IntermediateOperator, IntermediateOperatorResult, IntermediateOperatorStateWrapper,
 };
 use crate::pipeline::PipelineResultType;
 
@@ -38,7 +38,7 @@ impl IntermediateOperator for PivotOperator {
         &self,
         _idx: usize,
         input: &PipelineResultType,
-        _state: &mut dyn IntermediateOperatorState,
+        _state: &IntermediateOperatorStateWrapper,
     ) -> DaftResult<IntermediateOperatorResult> {
         let out = input.as_data().pivot(
             &self.group_by,

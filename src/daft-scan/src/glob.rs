@@ -2,7 +2,7 @@ use std::{sync::Arc, vec};
 
 use common_error::{DaftError, DaftResult};
 use common_file_formats::{CsvSourceConfig, FileFormat, FileFormatConfig, ParquetSourceConfig};
-use common_runtime::io::IORuntimeRef;
+use common_runtime::RuntimeRef;
 use daft_core::{prelude::Utf8Array, series::IntoSeries};
 use daft_csv::CsvParseOptions;
 use daft_io::{parse_url, FileMetadata, IOClient, IOStatsContext, IOStatsRef};
@@ -30,7 +30,7 @@ pub struct GlobScanOperator {
 /// Wrapper struct that implements a sync Iterator for a BoxStream
 struct BoxStreamIterator<'a, T> {
     boxstream: BoxStream<'a, T>,
-    runtime_handle: IORuntimeRef,
+    runtime_handle: RuntimeRef,
 }
 
 impl<'a, T> Iterator for BoxStreamIterator<'a, T> {
@@ -69,7 +69,7 @@ fn run_glob(
     glob_path: &str,
     limit: Option<usize>,
     io_client: Arc<IOClient>,
-    runtime: IORuntimeRef,
+    runtime: RuntimeRef,
     io_stats: Option<IOStatsRef>,
     file_format: FileFormat,
 ) -> DaftResult<FileInfoIterator> {
@@ -94,7 +94,7 @@ fn run_glob(
 fn run_glob_parallel(
     glob_paths: Vec<String>,
     io_client: Arc<IOClient>,
-    runtime: IORuntimeRef,
+    runtime: RuntimeRef,
     io_stats: Option<IOStatsRef>,
     file_format: FileFormat,
 ) -> DaftResult<impl Iterator<Item = DaftResult<FileMetadata>>> {

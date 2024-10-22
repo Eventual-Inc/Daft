@@ -1,10 +1,9 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_runtime::get_compute_runtime;
 use daft_micropartition::MicroPartition;
-use tokio::sync::Mutex;
 use tracing::{info_span, instrument};
 
 use super::buffer::OperatorBuffer;
@@ -15,13 +14,26 @@ use crate::{
     ExecutionRuntimeHandle, NUM_CPUS,
 };
 
-pub trait IntermediateOperatorState: Send + Sync {
+pub(crate) trait IntermediateOperatorState: Send + Sync {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
 }
-pub struct DefaultIntermediateOperatorState {}
+
+struct DefaultIntermediateOperatorState {}
 impl IntermediateOperatorState for DefaultIntermediateOperatorState {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
+    }
+}
+
+pub(crate) struct IntermediateOperatorStateWrapper {
+    pub inner: Mutex<Box<dyn IntermediateOperatorState>>,
+}
+
+impl IntermediateOperatorStateWrapper {
+    fn new(inner: Box<dyn IntermediateOperatorState>) -> Arc<Self> {
+        Arc::new(Self {
+            inner: Mutex::new(inner),
+        })
     }
 }
 
@@ -36,7 +48,7 @@ pub trait IntermediateOperator: Send + Sync {
         &self,
         idx: usize,
         input: &PipelineResultType,
-        state: &mut dyn IntermediateOperatorState,
+        state: &IntermediateOperatorStateWrapper,
     ) -> DaftResult<IntermediateOperatorResult>;
     fn name(&self) -> &'static str;
     fn make_state(&self) -> Box<dyn IntermediateOperatorState> {
@@ -84,17 +96,16 @@ impl IntermediateNode {
     ) -> DaftResult<()> {
         let span = info_span!("IntermediateOp::execute");
         let compute_runtime = get_compute_runtime();
-        let state = Arc::new(Mutex::new(op.make_state()));
+        let state_wrapper = IntermediateOperatorStateWrapper::new(op.make_state());
         while let Some((idx, morsel)) = receiver.recv().await {
             loop {
-                let state = state.clone();
                 let op = op.clone();
                 let morsel = morsel.clone();
                 let span = span.clone();
                 let rt_context = rt_context.clone();
+                let state_wrapper = state_wrapper.clone();
                 let fut = async move {
-                    let mut state_guard = state.lock().await;
-                    rt_context.in_span(&span, || op.execute(idx, &morsel, state_guard.as_mut()))
+                    rt_context.in_span(&span, || op.execute(idx, &morsel, &state_wrapper))
                 };
                 let result = compute_runtime.await_on(fut).await??;
                 match result {

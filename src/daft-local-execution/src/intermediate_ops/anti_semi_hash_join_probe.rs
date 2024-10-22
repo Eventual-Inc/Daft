@@ -10,6 +10,7 @@ use tracing::{info_span, instrument};
 
 use super::intermediate_op::{
     IntermediateOperator, IntermediateOperatorResult, IntermediateOperatorState,
+    IntermediateOperatorStateWrapper,
 };
 use crate::pipeline::PipelineResultType;
 
@@ -108,9 +109,10 @@ impl IntermediateOperator for AntiSemiProbeOperator {
         &self,
         idx: usize,
         input: &PipelineResultType,
-        state: &mut dyn IntermediateOperatorState,
+        state: &IntermediateOperatorStateWrapper,
     ) -> DaftResult<IntermediateOperatorResult> {
-        let state = state
+        let mut guard = state.inner.lock().unwrap();
+        let state = guard
             .as_any_mut()
             .downcast_mut::<AntiSemiProbeState>()
             .expect("AntiSemiProbeOperator state should be AntiSemiProbeState");

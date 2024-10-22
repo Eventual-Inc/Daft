@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use common_io_config::IOConfig;
 use common_py_serde::impl_bincode_py_state_serialization;
-use common_runtime::{get_io_runtime, io::IORuntimeRef};
+use common_runtime::{get_io_runtime, RuntimeRef};
 use daft_io::{get_io_client, IOClient};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
@@ -23,7 +23,7 @@ pub enum StorageConfig {
 }
 
 impl StorageConfig {
-    pub fn get_io_client_and_runtime(&self) -> DaftResult<(IORuntimeRef, Arc<IOClient>)> {
+    pub fn get_io_client_and_runtime(&self) -> DaftResult<(RuntimeRef, Arc<IOClient>)> {
         // Grab an IOClient and Runtime
         // TODO: This should be cleaned up and hidden behind a better API from daft-io
         match self {

@@ -1919,7 +1919,6 @@ dependencies = [
  "lazy_static",
  "log",
  "md5",
- "oneshot",
  "openssl-sys",
  "pyo3",
  "rand 0.8.5",
