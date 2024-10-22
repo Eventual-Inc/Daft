@@ -5,7 +5,7 @@ use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use daft_plan::JoinType;
-use daft_table::{make_probeable_builder, Probeable, ProbeableBuilder, Table};
+use daft_table::{make_probeable_builder, ProbeState, ProbeableBuilder, Table};
 
 use super::blocking_sink::{BlockingSink, BlockingSinkStatus};
 use crate::pipeline::PipelineResultType;
@@ -17,8 +17,7 @@ enum ProbeTableState {
         tables: Vec<Table>,
     },
     Done {
-        probe_table: Arc<dyn Probeable>,
-        tables: Arc<Vec<Table>>,
+        probe_state: Arc<ProbeState>,
     },
 }
 
@@ -66,8 +65,7 @@ impl ProbeTableState {
             let pt = ptb.build();
 
             *self = Self::Done {
-                probe_table: pt,
-                tables: Arc::new(tables.clone()),
+                probe_state: Arc::new(ProbeState::new(pt, Arc::new(tables.clone()))),
             };
             Ok(())
         } else {
@@ -108,12 +106,8 @@ impl BlockingSink for HashJoinBuildSink {
 
     fn finalize(&mut self) -> DaftResult<Option<PipelineResultType>> {
         self.probe_table_state.finalize()?;
-        if let ProbeTableState::Done {
-            probe_table,
-            tables,
-        } = &self.probe_table_state
-        {
-            Ok(Some((probe_table.clone(), tables.clone()).into()))
+        if let ProbeTableState::Done { probe_state } = &self.probe_table_state {
+            Ok(Some(probe_state.clone().into()))
         } else {
             panic!("finalize should only be called after the probe table is built")
         }
