@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
+use common_runtime::get_io_runtime;
 use daft_core::prelude::*;
 use daft_dsl::{functions::ScalarUDF, ExprRef};
-use daft_io::{get_io_client, get_runtime, Error, IOConfig, IOStatsContext, IOStatsRef};
+use daft_io::{get_io_client, Error, IOConfig, IOStatsContext, IOStatsRef};
 use futures::{StreamExt, TryStreamExt};
 use serde::Serialize;
 use snafu::prelude::*;
@@ -98,7 +99,7 @@ fn url_download(
         }
     );
 
-    let runtime_handle = get_runtime(true)?;
+    let runtime_handle = get_io_runtime(true);
     let max_connections = match multi_thread {
         false => max_connections,
         true => max_connections * usize::from(std::thread::available_parallelism()?),
@@ -139,7 +140,7 @@ fn url_download(
         stream.try_collect::<Vec<_>>().await
     };
 
-    let mut results = runtime_handle.block_on_io_pool(fetches)??;
+    let mut results = runtime_handle.block_on(fetches)??;
 
     results.sort_by_key(|k| k.0);
     let mut offsets: Vec<i64> = Vec::with_capacity(results.len() + 1);

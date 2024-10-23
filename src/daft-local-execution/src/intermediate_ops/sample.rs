@@ -30,7 +30,7 @@ impl IntermediateOperator for SampleOperator {
         &self,
         _idx: usize,
         input: &PipelineResultType,
-        _state: Option<&mut Box<dyn IntermediateOperatorState>>,
+        _state: &IntermediateOperatorState,
     ) -> DaftResult<IntermediateOperatorResult> {
         let out =
             input

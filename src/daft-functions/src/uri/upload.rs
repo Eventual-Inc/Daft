@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
+use common_runtime::get_io_runtime;
 use daft_core::prelude::*;
 use daft_dsl::{functions::ScalarUDF, ExprRef};
-use daft_io::{get_io_client, get_runtime, IOConfig, IOStatsRef, SourceType};
+use daft_io::{get_io_client, IOConfig, IOStatsRef, SourceType};
 use futures::{StreamExt, TryStreamExt};
 use serde::Serialize;
 
@@ -109,7 +110,7 @@ pub fn url_upload(
             })?;
         }
 
-        let runtime_handle = get_runtime(multi_thread)?;
+        let runtime_handle = get_io_runtime(multi_thread);
         let max_connections = match multi_thread {
             false => max_connections,
             true => max_connections * usize::from(std::thread::available_parallelism()?),
@@ -143,7 +144,7 @@ pub fn url_upload(
             .await
         };
 
-        let mut results = runtime_handle.block_on_io_pool(uploads)??;
+        let mut results = runtime_handle.block_on(uploads)??;
         results.sort_by_key(|k| k.0);
 
         Ok(results.into_iter().map(|(_, path)| path).collect())

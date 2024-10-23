@@ -4,14 +4,16 @@ use common_error::{DaftError, DaftResult};
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
-use super::streaming_sink::{StreamingSink, StreamingSinkOutput, StreamingSinkState};
+use super::streaming_sink::{
+    DynStreamingSinkState, StreamingSink, StreamingSinkOutput, StreamingSinkState,
+};
 use crate::pipeline::PipelineResultType;
 
 struct ConcatSinkState {
     // The index of the last morsel of data that was received, which should be strictly non-decreasing.
     pub curr_idx: usize,
 }
-impl StreamingSinkState for ConcatSinkState {
+impl DynStreamingSinkState for ConcatSinkState {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
@@ -28,22 +30,19 @@ impl StreamingSink for ConcatSink {
         &self,
         index: usize,
         input: &PipelineResultType,
-        state: &mut dyn StreamingSinkState,
+        state_handle: &StreamingSinkState,
     ) -> DaftResult<StreamingSinkOutput> {
-        let state = state
-            .as_any_mut()
-            .downcast_mut::<ConcatSinkState>()
-            .expect("ConcatSink should have ConcatSinkState");
-
-        // If the index is the same as the current index or one more than the current index, then we can accept the morsel.
-        if state.curr_idx == index || state.curr_idx + 1 == index {
-            state.curr_idx = index;
-            Ok(StreamingSinkOutput::NeedMoreInput(Some(
-                input.as_data().clone(),
-            )))
-        } else {
-            Err(DaftError::ComputeError(format!("Concat sink received out-of-order data. Expected index to be {} or {}, but got {}.", state.curr_idx, state.curr_idx + 1, index)))
-        }
+        state_handle.with_state_mut::<ConcatSinkState, _, _>(|state| {
+            // If the index is the same as the current index or one more than the current index, then we can accept the morsel.
+            if state.curr_idx == index || state.curr_idx + 1 == index {
+                state.curr_idx = index;
+                Ok(StreamingSinkOutput::NeedMoreInput(Some(
+                    input.as_data().clone(),
+                )))
+            } else {
+                Err(DaftError::ComputeError(format!("Concat sink received out-of-order data. Expected index to be {} or {}, but got {}.", state.curr_idx, state.curr_idx + 1, index)))
+            }
+        })
     }
 
     fn name(&self) -> &'static str {
@@ -52,12 +51,12 @@ impl StreamingSink for ConcatSink {
 
     fn finalize(
         &self,
-        _states: Vec<Box<dyn StreamingSinkState>>,
+        _states: Vec<Box<dyn DynStreamingSinkState>>,
     ) -> DaftResult<Option<Arc<MicroPartition>>> {
         Ok(None)
     }
 
-    fn make_state(&self) -> Box<dyn StreamingSinkState> {
+    fn make_state(&self) -> Box<dyn DynStreamingSinkState> {
         Box::new(ConcatSinkState { curr_idx: 0 })
     }
 
