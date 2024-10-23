@@ -145,11 +145,8 @@ impl SQLPlanner {
 
         // FROM/JOIN
         let from = selection.clone().from;
-        if from.len() != 1 {
-            unsupported_sql_err!("Only exactly one table is supported");
-        }
-
-        self.current_relation = Some(self.plan_from(&from[0])?);
+        let rel = self.plan_from(&from)?;
+        self.current_relation = Some(rel);
 
         // WHERE
         if let Some(selection) = &selection.selection {
@@ -293,7 +290,31 @@ impl SQLPlanner {
         Ok((exprs, desc))
     }
 
-    fn plan_from(&mut self, from: &TableWithJoins) -> SQLPlannerResult<Relation> {
+    fn plan_from(&mut self, from: &[TableWithJoins]) -> SQLPlannerResult<Relation> {
+        if from.len() > 1 {
+            // todo!("cross join")
+            let mut from_iter = from.iter();
+
+            let first = from_iter.next().unwrap();
+            let mut rel = self.plan_relation(&first.relation)?;
+            for tbl in from_iter {
+                let right = self.plan_relation(&tbl.relation)?;
+
+                rel.inner = rel.inner.join(
+                    right.inner,
+                    vec![],
+                    vec![],
+                    JoinType::Inner,
+                    None,
+                    None,
+                    None,
+                )?;
+            }
+            return Ok(rel);
+        }
+
+        let from = from.into_iter().next().unwrap();
+
         fn collect_compound_identifiers(
             left: &[Ident],
             right: &[Ident],

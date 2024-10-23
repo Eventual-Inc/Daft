@@ -1,7 +1,7 @@
 use common_error::DaftResult;
 use daft_core::{join::JoinStrategy, prelude::Schema};
 use daft_dsl::ExprRef;
-use daft_plan::{LogicalPlan, LogicalPlanRef, SourceInfo};
+use daft_plan::{JoinType, LogicalPlan, LogicalPlanRef, SourceInfo};
 
 use crate::local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
 
@@ -119,6 +119,13 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             ))
         }
         LogicalPlan::Join(join) => {
+            dbg!(&join);
+            if join.left_on.is_empty()
+                && join.right_on.is_empty()
+                && join.join_type == JoinType::Inner
+            {
+                todo!("Cross join is not supported yet")
+            }
             if join.join_strategy.is_some_and(|x| x != JoinStrategy::Hash) {
                 todo!("Only hash join is supported for now")
             }

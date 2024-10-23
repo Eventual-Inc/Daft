@@ -428,6 +428,9 @@ pub(super) fn translate_single_logical_node(
             join_strategy,
             ..
         }) => {
+            if left_on.is_empty() && right_on.is_empty() && join_type == &JoinType::Inner {
+                todo!("Cross join not yet implemented")
+            }
             let mut right_physical = physical_children.pop().expect("requires 1 inputs");
             let mut left_physical = physical_children.pop().expect("requires 2 inputs");
 

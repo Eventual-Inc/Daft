@@ -37,6 +37,15 @@ impl Project {
             projected_schema,
         })
     }
+    /// Create a new Projection using the specified output schema
+    pub fn new_from_schema(input: Arc<LogicalPlan>, schema: SchemaRef) -> Result<Self> {
+        let expr: Vec<ExprRef> = schema
+            .names()
+            .into_iter()
+            .map(|n| Arc::new(Expr::Column(Arc::from(n))))
+            .collect();
+        Self::try_new(input, expr)
+    }
 
     pub fn multiline_display(&self) -> Vec<String> {
         vec![format!(
