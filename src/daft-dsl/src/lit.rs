@@ -579,8 +579,11 @@ mod test {
             LiteralValue::UInt64(2),
             LiteralValue::UInt64(3),
         ];
-        let actual = super::literals_to_series(&values);
-        assert!(actual.is_err());
+        let expected = vec![None, Some(2), Some(3)];
+        let expected = UInt64Array::from_iter("literal", expected.into_iter());
+        let expected = expected.into_series();
+        let actual = super::literals_to_series(&values).unwrap();
+        assert_eq!(expected, actual);
     }
 
     #[test]
