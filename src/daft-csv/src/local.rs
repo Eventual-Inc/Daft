@@ -1,15 +1,10 @@
 use core::str;
-use std::{
-    io::Read,
-    num::NonZeroUsize,
-    ops::{Deref, DerefMut},
-    sync::{Arc, Weak},
-};
+use std::{io::Read, num::NonZeroUsize, sync::Arc};
 
 use arrow2::{
     datatypes::Field,
     io::csv::{
-        read::{self, Reader, ReaderBuilder},
+        read::{Reader, ReaderBuilder},
         read_async::local_read_rows,
     },
 };
@@ -23,7 +18,6 @@ use daft_dsl::{optimization::get_required_columns, Expr};
 use daft_io::{IOClient, IOStatsRef};
 use daft_table::Table;
 use futures::{Stream, StreamExt, TryStreamExt};
-use parking_lot::{Mutex, RwLock};
 use rayon::{
     iter::IndexedParallelIterator,
     prelude::{IntoParallelRefIterator, ParallelIterator},
@@ -35,6 +29,9 @@ use crate::{
     read::{fields_to_projection_indices, tables_concat},
     ArrowSnafu, CsvConvertOptions, CsvParseOptions, CsvReadOptions, JoinSnafu,
 };
+
+mod pool;
+use pool::{CsvBuffer, CsvBufferPool, FileSlab, FileSlabPool, SLABSIZE};
 
 // Our local CSV reader takes the following approach to reading CSV files:
 // 1. Read the CSV file in 4MB chunks from a slab pool.
@@ -139,195 +136,8 @@ use crate::{
 //     we simply move on to the next chunk of bytes and try to find a valid CSV record there. This is a
 //     simplification that makes the implementation a lot easier to maintain.
 
-#[derive(Clone, Debug, Default)]
-struct CsvSlab(Vec<read::ByteRecord>);
-
-impl CsvSlab {
-    fn new(record_size: usize, num_fields: usize, num_rows: usize) -> Self {
-        Self(vec![
-            read::ByteRecord::with_capacity(record_size, num_fields);
-            num_rows
-        ])
-    }
-}
-
-impl Deref for CsvSlab {
-    type Target = Vec<read::ByteRecord>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for CsvSlab {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-/// A pool of ByteRecord slabs. Used for deserializing CSV.
-#[derive(Debug)]
-struct CsvBufferPool {
-    buffers: Mutex<Vec<CsvSlab>>,
-    record_size: usize,
-    num_fields: usize,
-    num_rows: usize,
-}
-
-/// A slab of ByteRecords. Used for deserializing CSV.
-struct CsvBuffer {
-    buffer: CsvSlab,
-    pool: Weak<CsvBufferPool>,
-}
-
-impl CsvBufferPool {
-    pub fn new(
-        record_size: usize,
-        num_fields: usize,
-        num_rows: usize,
-        initial_pool_size: usize,
-    ) -> Self {
-        let chunk_buffers =
-            vec![CsvSlab::new(record_size, num_fields, num_rows); initial_pool_size];
-        Self {
-            buffers: Mutex::new(chunk_buffers),
-            record_size,
-            num_fields,
-            num_rows,
-        }
-    }
-
-    pub fn get_buffer(self: &Arc<Self>) -> CsvBuffer {
-        let buffer = {
-            let mut buffers = self.buffers.lock();
-            let buffer = buffers.pop();
-            match buffer {
-                Some(buffer) => buffer,
-                None => CsvSlab::new(self.record_size, self.num_fields, self.num_rows),
-            }
-        };
-
-        CsvBuffer {
-            buffer,
-            pool: Arc::downgrade(self),
-        }
-    }
-
-    fn return_buffer(&self, buffer: CsvSlab) {
-        let mut buffers = self.buffers.lock();
-        buffers.push(buffer);
-    }
-}
-
-impl Drop for CsvBuffer {
-    fn drop(&mut self) {
-        if let Some(pool) = self.pool.upgrade() {
-            let buffer = std::mem::take(&mut self.buffer);
-            pool.return_buffer(buffer);
-        }
-    }
-}
-
-// The default size of a slab used for reading CSV files in chunks. Currently set to 4 MiB. This can be tuned.
-const SLABSIZE: usize = 4 * 1024 * 1024;
-// The default number of slabs in a slab pool. With 20 slabs, we reserve a total of 80 MiB of memory for reading file data.
-const SLABPOOL_DEFAULT_SIZE: usize = 20;
-
-/// A pool of slabs. Used for reading CSV files in SLABSIZE chunks.
-#[derive(Debug)]
-struct FileSlabPool {
-    slabs: Mutex<Vec<RwLock<FileSlabState>>>,
-}
-
-impl FileSlabPool {
-    fn new() -> Arc<Self> {
-        let slabs: Vec<RwLock<FileSlabState>> = (0..SLABPOOL_DEFAULT_SIZE)
-            // We get uninitialized buffers because we will always populate the buffers with a file read before use.
-            .map(|_| Box::new_uninit_slice(SLABSIZE))
-            .map(|x| unsafe { x.assume_init() })
-            .map(|buffer| RwLock::new(FileSlabState::new(buffer, 0)))
-            .collect();
-        Arc::new(Self {
-            slabs: Mutex::new(slabs),
-        })
-    }
-
-    fn get_slab(self: &Arc<Self>) -> Arc<FileSlab> {
-        let slab = {
-            let mut slabs = self.slabs.lock();
-            let slab = slabs.pop();
-            match slab {
-                Some(slab) => slab,
-                None => RwLock::new(FileSlabState::new(
-                    unsafe { Box::new_uninit_slice(SLABSIZE).assume_init() },
-                    0,
-                )),
-            }
-        };
-
-        Arc::new(FileSlab {
-            state: slab,
-            pool: Arc::downgrade(self),
-        })
-    }
-
-    fn return_slab(&self, slab: RwLock<FileSlabState>) {
-        let mut slabs = self.slabs.lock();
-        slabs.push(slab);
-    }
-}
-
-/// A slab of bytes. Used for reading CSV files in SLABSIZE chunks.
-#[derive(Debug)]
-struct FileSlab {
-    state: RwLock<FileSlabState>,
-    pool: Weak<FileSlabPool>,
-}
-
-impl FileSlab {
-    /// Given an offset into a FileSlab, finds the first \n char found in the FileSlabState's buffer,
-    /// then the returns the position relative to the given offset.
-    fn find_first_newline_from(&self, offset: usize) -> Option<usize> {
-        let guard = self.state.read();
-        guard.find_first_newline_from(offset)
-    }
-}
-
-// Modify the Drop method for FileSlabs so that their states are returned to their parent slab pool.
-impl Drop for FileSlab {
-    fn drop(&mut self) {
-        if let Some(pool) = self.pool.upgrade() {
-            let file_slab_state = std::mem::take(&mut self.state);
-            pool.return_slab(file_slab_state);
-        }
-    }
-}
-
-#[derive(Debug, Default)]
-struct FileSlabState {
-    buffer: Box<[u8]>,
-    valid_bytes: usize,
-}
-
-impl FileSlabState {
-    fn new(buffer: Box<[u8]>, valid_bytes: usize) -> Self {
-        Self {
-            buffer,
-            valid_bytes,
-        }
-    }
-
-    /// Helper function that find the first \n char in the file slab state's buffer starting from `offset.`
-    fn find_first_newline_from(&self, offset: usize) -> Option<usize> {
-        newline_position(&self.buffer[offset..self.valid_bytes])
-    }
-
-    /// Validate the CSV record in the file slab state's buffer starting from `start`. `validator` is a
-    /// state machine that might need to process multiple buffers to validate CSV records.
-    fn validate_record(&self, validator: &mut CsvValidator, start: usize) -> Option<bool> {
-        validator.validate_record(&mut self.buffer[start..self.valid_bytes].iter())
-    }
-}
+// Default size for CSV buffers.
+const DEFAULT_CSV_BUFFER_SIZE: usize = SLABSIZE; // 4MiB. Like SLABSIZE, this can be tuned.
 
 /// Reads a single local CSV file in a non-streaming fashion.
 pub async fn read_csv_local(
@@ -464,7 +274,7 @@ pub async fn stream_csv_local(
     let chunk_size = read_options
         .as_ref()
         .and_then(|opt| opt.chunk_size.or_else(|| opt.buffer_size.map(|bs| bs / 8)))
-        .unwrap_or(DEFAULT_CHUNK_SIZE);
+        .unwrap_or(DEFAULT_CSV_BUFFER_SIZE);
     let chunk_size_rows = (chunk_size as f64 / record_buffer_size as f64).ceil() as usize;
 
     // TODO(desmond): We might consider creating per-process buffer pools and slab pools.
@@ -557,13 +367,13 @@ impl Iterator for SlabIterator {
     fn next(&mut self) -> Option<Self::Item> {
         let slab = self.slabpool.get_slab();
         let bytes_read = {
-            let mut writer = slab.state.write();
-            let bytes_read = self.file.read(&mut writer.buffer).unwrap();
+            let mut guard = slab.write();
+            let bytes_read = self.file.read(&mut guard.buffer).unwrap();
             if bytes_read == 0 {
                 return None;
             }
             self.total_bytes_read += bytes_read;
-            writer.valid_bytes = bytes_read;
+            guard.valid_bytes = bytes_read;
             bytes_read
         };
 
@@ -649,7 +459,7 @@ where
                         && curr_pos < valid_bytes
                     {
                         let offset = curr_pos + pos;
-                        let guard = slab.state.read();
+                        let guard = slab.read();
                         chunk_state = match guard.validate_record(&mut self.validator, offset + 1) {
                             Some(true) => Some(ChunkState::Final {
                                 slab: slab.clone(),
@@ -846,15 +656,15 @@ impl<'a> Read for MultiSliceReader<'a> {
             let state = &self.states[self.curr_read_idx];
             let (start, end, guard) = match state {
                 ChunkState::Start { slab, start, end } => {
-                    let guard = slab.state.read();
+                    let guard = slab.read();
                     (*start, *end, guard)
                 }
                 ChunkState::Continue { slab, end } => {
-                    let guard = slab.state.read();
+                    let guard = slab.read();
                     (0, *end, guard)
                 }
                 ChunkState::Final { slab, end, .. } => {
-                    let guard = slab.state.read();
+                    let guard = slab.read();
                     (0, *end, guard)
                 }
             };
@@ -876,19 +686,8 @@ impl<'a> Read for MultiSliceReader<'a> {
     }
 }
 
-// Daft does not currently support non-\n record terminators (e.g. carriage return \r, which only
-// matters for pre-Mac OS X).
 const NEWLINE: u8 = b'\n';
 const DOUBLE_QUOTE: u8 = b'"';
-const DEFAULT_CHUNK_SIZE: usize = SLABSIZE; // 4MiB. Like SLABSIZE, this can be tuned.
-
-/// Helper function that finds the first new line character (\n) in the given byte slice.
-fn newline_position(buffer: &[u8]) -> Option<usize> {
-    // Assuming we are searching for the ASCII `\n` character, we don't need to do any special
-    // handling for UTF-8, since a `\n` value always corresponds to an ASCII `\n`.
-    // For more details, see: https://en.wikipedia.org/wiki/UTF-8#Encoding
-    memchr::memchr(NEWLINE, buffer)
-}
 
 /// State machine that validates CSV records.
 struct CsvValidator {
