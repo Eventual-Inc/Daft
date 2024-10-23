@@ -47,21 +47,21 @@ use crate::{
 //
 //                 Slab Pool                                    CSV Buffer Pool
 //               ┌────────────────────┐                       ┌────────────────────┐
-//               │ 4MB Chunks         │                       │ CSV Buffers        │
-//               │┌───┐┌───┐┌───┐     │                       │┌───┐┌───┐┌───┐     │
-//               ││   ││   ││   │ ... │                       ││   ││   ││   │ ... │
-//               │└─┬─┘└─┬─┘└───┘     │                       │└─┬─┘└─┬─┘└───┘     │
+//               | 4MB Chunks         |                       | CSV Buffers        |
+//               |┌───┐┌───┐┌───┐     |                       |┌───┐┌───┐┌───┐     |
+//               ||   ||   ||   | ... |                       ||   ||   ||   | ... |
+//               |└─┬─┘└─┬─┘└───┘     |                       |└─┬─┘└─┬─┘└───┘     |
 //               └──┼────┼────────────┘                       └──┼────┼────────────┘
-//                  │    │                                       │    │
-//     ───────┐     │    │                                       │    │
-//   /│       │     │    │                                       │    │
-//  /─┘       │     │    │                                       │    │
-// │          │     ▼    ▼                                       ▼    ▼
-// │          |    ┌───┐ ┌───┐          ┌────┐  ┬--─┐           ┌───┐ ┌───┐               ┌───┐ ┌───┐
-// │         ─┼───►│   │ │   │  ──────► │   ┬┘┌─┘ ┬─┘  ───────► │   │ │   │  ──────────►  │   │ │   │
-// │ CSV File │    └───┘ └───┘          └───┴ └───┘             └───┘ └───┘               └───┘ └───┘
-// │          │  Chain of slabs        Adjusted chunks     Vectors of ByteRecords     Stream of Daft tables
-// │          │
+//                  |    |                                       |    |
+//     ───────┐     |    |                                       |    |
+//   /|       |     |    |                                       |    |
+//  /─┘       |     |    |                                       |    |
+// |          |     ▼    ▼                                       ▼    ▼
+// |          |    ┌───┐ ┌───┐          ┌────┐  ┬--─┐           ┌───┐ ┌───┐               ┌───┐ ┌───┐
+// |         ─┼───►|   | |   |  ──────► |   ┬┘┌─┘ ┬─┘  ───────► |   | |   |  ──────────►  |   | |   |
+// | CSV File |    └───┘ └───┘          └───┴ └───┘             └───┘ └───┘               └───┘ └───┘
+// |          |  Chain of slabs        Adjusted chunks     Vectors of ByteRecords     Stream of Daft tables
+// |          |
 // └──────────┘
 //
 //
@@ -77,50 +77,52 @@ use crate::{
 // We take items off the ChunkWindowIterator, and pass them to a CSV decoder to be turned into Daft tables in parallel.
 //
 //
-// "Adjusted chunks" were mentioned a few times above and refer to chunks of complete CSV records. This is
-// needed for us to process chunks in parallel without having to stitch together records that are split across
-// multiple chunks. Here's a way to think about adjusted chunks:
+// What we call "Chunk Windows" are also known as "Adjusted chunks" in the literature, and refers to contiguous
+// bytes that consist of complete CSV records. This contiguous bytes are typically made up of one or more file slabs.
+// This is abstraction is needed for us to process file slabs in parallel without having to stitch together records that
+// are split across multiple slabs. Here's a way to think about adjusted chunks:
 //
-// Given a starting position, we use our chunk size to compute a preliminary start and stop
-// position. For example, we can visualize all preliminary chunks in a file as follows.
+// Given a starting position, we use our slab size to compute a preliminary start and stop
+// position. For example, we can visualize all slabs in a file as follows.
 //
-// Chunk 1         Chunk 2         Chunk 3              Chunk N
+// Slab 1          Slab 2          Slab 3               Slab N
 // ┌──────────┐    ┌──────────┐    ┌──────────┐         ┌──────────┐
-// │          │    │\n        │    │   \n     │         │       \n │
-// │          │    │          │    │          │         │          │
-// │          │    │       \n │    │          │         │          │
-// │   \n     │    │          │    │      \n  │         │          │
-// │          │    │          │    │          │   ...   │     \n   │
-// │          │    │  \n      │    │          │         │          │
-// │ \n       │    │          │    │          │         │          │
-// │          │    │          │    │     \n   │         │  \n      │
+// |          |    |\n        |    |          |   \n    |       \n |
+// |          |    |          |    |          |         |          |
+// |          |    |          |    |          |         |          |
+// |   \n     |    |          |    |          |         |          |
+// |          |    |          |    |          |   ...   |     \n   |
+// |          |    |          |    |          |         |          |
+// | \n       |    |          |    |          |         |          |
+// |          |    |          |    |          |         |  \n      |
 // └──────────┘    └──────────┘    └──────────┘         └──────────┘
 //
-// However, record boundaries (i.e. the \n terminators) do not align nicely with these preliminary
-// chunk boundaries. So we adjust each preliminary chunk as follows:
-// - Find the first record terminator from the chunk's start. This is the new starting position.
-// - Find the first record terminator from the chunk's end. This is the new ending position.
-// - If a given preliminary chunk doesn't contain a record terminator, the adjusted chunk is empty.
+// However, record boundaries (i.e. the \n terminators) do not align nicely with the boundaries of slabs.
+// So we create "adjusted chunks" from slabs as follows:
+// 1. Find the first record terminator from a slabs's start. This is the starting position of the adjusted chunk.
+// 2. Find the first record terminator from the next slabs's start. This is the ending positiono of the adjusted chunk.
+// 3. If a given slab doesn't contain a record terminator (that we can find), then we add the current slab wholly into
+//    the adjusted chunk, then repeat step 2. with the next slab.
 //
 // For example:
 //
-// Adjusted Chunk 1    Adj. Chunk 2        Adj. Chunk 3          Adj. Chunk N
-// ┌──────────────────┐┌─────────────────┐ ┌────────┐            ┌─┐
-// │                \n││               \n│ │      \n│         \n │ │
-// │          ┌───────┘│      ┌──────────┘ │  ┌─────┘            │ │
-// │          │    ┌───┘   \n │    ┌───────┘  │         ┌────────┘ │
-// │   \n     │    │          │    │      \n  │         │          │
-// │          │    │          │    │          │   ...   │     \n   │
-// │          │    │  \n      │    │          │         │          │
-// │ \n       │    │          │    │          │         │          │
-// │          │    │          │    │     \n   │         │  \n      │
-// └──────────┘    └──────────┘    └──────────┘         └──────────┘
+// Adjusted Chunk 1     Adj. Chunk 2                         Adj. Chunk N
+// ┌──────────────────┐┌─────────────────────────────┐            ┌─┐
+// |                \n||                           \n|         \n | |
+// |          ┌───────┘|                       ┌─────┘            | |
+// |          |    ┌───┘                       |         ┌────────┘ |
+// |   \n     |    |                           |         |          |
+// |          |    |                           |   ...   |     \n   |
+// |          |    |                           |         |          |
+// | \n       |    |                           |         |          |
+// |          |    |                           |         |  \n      |
+// └──────────┘    └───────────────────────────┘         └──────────┘
 //
 // Using this method, we now have adjusted chunks that are aligned with record boundaries, that do
 // not overlap, and that fully cover every byte in the CSV file. Parsing each adjusted chunk can
 // now happen in parallel.
 //
-// This is the same method as described in:
+// This is similar to the method described in:
 // Ge, Chang et al. “Speculative Distributed CSV Data Parsing for Big Data Analytics.” Proceedings of the 2019 International Conference on Management of Data (2019).
 //
 // Another observation is that seeing a pure \n character is not necessarily indicative of a record
@@ -472,7 +474,7 @@ pub async fn stream_csv_local(
         chunk_size_rows,
         n_threads * 2,
     ));
-    consume_slab_iterator(
+    stream_csv_as_tables(
         file,
         buffer_pool,
         num_fields,
@@ -530,7 +532,7 @@ async fn get_schema_and_estimators(
     ))
 }
 
-/// A helper iterator that takes in a File and FileSlabPool and produces an iterator of FileSlabs
+/// An iterator of FileSlabs that takes in a File and FileSlabPool and yields FileSlabs
 /// over the given file.
 struct SlabIterator {
     file: std::fs::File,
@@ -569,6 +571,49 @@ impl Iterator for SlabIterator {
     }
 }
 
+/// ChunkStates are a wrapper over slabs that dictate the position of a slab in a chunk window,
+/// and which bytes of the slab should be used for parsing CSV records.
+#[derive(Debug, Clone)]
+enum ChunkState {
+    // Represents the first chunk in a chunk window.
+    Start {
+        slab: Arc<FileSlab>,
+        start: usize,
+        end: usize,
+    },
+    // Represents any number of chunks between the Start and Final chunk in a chunk window.
+    Continue {
+        slab: Arc<FileSlab>,
+        end: usize,
+    },
+    // Represents the last chunk in a chunk window.
+    Final {
+        slab: Arc<FileSlab>,
+        end: usize,
+        valid_bytes: usize,
+    },
+}
+
+impl std::fmt::Display for ChunkState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Start {
+                slab: _,
+                start,
+                end,
+            } => write!(f, "ChunkState::Start-{start}-{end}"),
+            Self::Final {
+                slab: _,
+                end,
+                valid_bytes,
+            } => write!(f, "ChunkState::Final-{end}-{valid_bytes}"),
+            Self::Continue { slab: _, end } => write!(f, "ChunkState::Continue-{end}"),
+        }
+    }
+}
+
+/// An iterator of ChunkStates that takes in a SlabIterator and yields Start, Continue, and Final
+/// ChunkStates over the given slabs.
 struct ChunkyIterator<I> {
     slab_iter: I,
     last_chunk: Option<ChunkState>,
@@ -659,6 +704,8 @@ where
     }
 }
 
+/// An iterator of ChunkWindows that takes in aa ChunkyIterator and yields vectors of ChunkStates
+/// that contain Start-Continue*-Final chunks that are valid for CSV parsing.
 struct ChunkWindowIterator<I> {
     chunk_iter: I,
 }
@@ -691,7 +738,7 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-fn consume_slab_iterator(
+fn stream_csv_as_tables(
     file: std::fs::File,
     buffer_pool: Arc<CsvBufferPool>,
     num_fields: usize,
@@ -705,10 +752,11 @@ fn consume_slab_iterator(
     limit: Option<usize>,
     n_threads: usize,
 ) -> DaftResult<impl Stream<Item = DaftResult<Table>> + Send> {
-    // Create slab pool for file reads.
+    // Create a slab iterator over the file.
     let slabpool = FileSlabPool::new();
     let slab_iterator = SlabIterator::new(file, slabpool);
 
+    // Create a chunk iterator over the slab iterator.
     let csv_validator = CsvValidator::new(
         num_fields,
         parse_options.quote,
@@ -716,9 +764,12 @@ fn consume_slab_iterator(
         parse_options.escape_char,
         parse_options.double_quote,
     );
-
     let chunk_iterator = ChunkyIterator::new(slab_iterator, csv_validator);
+
+    // Create a chunk window iterator over the chunk iterator.
     let chunk_window_iterator = ChunkWindowIterator::new(chunk_iterator);
+
+    // Stream tables from each chunk window.
     let has_header = parse_options.has_header;
     let parse_options = Arc::new(parse_options);
     let stream = futures::stream::iter(chunk_window_iterator.enumerate())
@@ -770,41 +821,6 @@ fn consume_slab_iterator(
     Ok(flattened)
 }
 
-#[derive(Debug, Clone)]
-enum ChunkState {
-    Start {
-        slab: Arc<FileSlab>,
-        start: usize,
-        end: usize,
-    },
-    Continue {
-        slab: Arc<FileSlab>,
-        end: usize,
-    },
-    Final {
-        slab: Arc<FileSlab>,
-        end: usize,
-        valid_bytes: usize,
-    },
-}
-
-impl std::fmt::Display for ChunkState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Start {
-                slab: _,
-                start,
-                end,
-            } => write!(f, "ChunkState::Start-{start}-{end}"),
-            Self::Final {
-                slab: _,
-                end,
-                valid_bytes,
-            } => write!(f, "ChunkState::Final-{end}-{valid_bytes}"),
-            Self::Continue { slab: _, end } => write!(f, "ChunkState::Continue-{end}"),
-        }
-    }
-}
 /// A helper struct that implements `std::io::Read` over a slice of ChunkStates.
 struct MultiSliceReader<'a> {
     states: &'a [ChunkState],
