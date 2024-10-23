@@ -10,10 +10,8 @@ daft-hash = {workspace = true, features = ["python"]}
 daft-image = {path = "../daft-image", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
 futures = {workspace = true}
-mur3 = {workspace = true}
 paste = "1.0.15"
 pyo3 = {workspace = true, optional = true}
-sha1 = "0.11.0-pre.4"
 tiktoken-rs = {workspace = true}
 tokio = {workspace = true}
 typetag = "0.2.16"
