@@ -1,5 +1,5 @@
 use common_error::DaftResult;
-use daft_core::join::JoinStrategy;
+use daft_core::{join::JoinStrategy, prelude::Schema};
 use daft_dsl::ExprRef;
 use daft_plan::{LogicalPlan, LogicalPlanRef, SourceInfo};
 
@@ -44,6 +44,15 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 project.projected_schema.clone(),
             ))
         }
+        LogicalPlan::Sample(sample) => {
+            let input = translate(&sample.input)?;
+            Ok(LocalPhysicalPlan::sample(
+                input,
+                sample.fraction,
+                sample.with_replacement,
+                sample.seed,
+            ))
+        }
         LogicalPlan::Aggregate(aggregate) => {
             let input = translate(&aggregate.input)?;
             if aggregate.groupby.is_empty() {
@@ -60,6 +69,46 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                     aggregate.output_schema.clone(),
                 ))
             }
+        }
+        LogicalPlan::Unpivot(unpivot) => {
+            let input = translate(&unpivot.input)?;
+            Ok(LocalPhysicalPlan::unpivot(
+                input,
+                unpivot.ids.clone(),
+                unpivot.values.clone(),
+                unpivot.variable_name.clone(),
+                unpivot.value_name.clone(),
+                unpivot.output_schema.clone(),
+            ))
+        }
+        LogicalPlan::Pivot(pivot) => {
+            let input = translate(&pivot.input)?;
+            let groupby_with_pivot = pivot
+                .group_by
+                .iter()
+                .chain(std::iter::once(&pivot.pivot_column))
+                .cloned()
+                .collect::<Vec<_>>();
+            let aggregate_fields = groupby_with_pivot
+                .iter()
+                .map(|expr| expr.to_field(input.schema()))
+                .chain(std::iter::once(pivot.aggregation.to_field(input.schema())))
+                .collect::<DaftResult<Vec<_>>>()?;
+            let aggregate_schema = Schema::new(aggregate_fields)?;
+            let aggregate = LocalPhysicalPlan::hash_aggregate(
+                input,
+                vec![pivot.aggregation.clone(); 1],
+                groupby_with_pivot,
+                aggregate_schema.into(),
+            );
+            Ok(LocalPhysicalPlan::pivot(
+                aggregate,
+                pivot.group_by.clone(),
+                pivot.pivot_column.clone(),
+                pivot.value_column.clone(),
+                pivot.names.clone(),
+                pivot.output_schema.clone(),
+            ))
         }
         LogicalPlan::Sort(sort) => {
             let input = translate(&sort.input)?;
@@ -108,6 +157,14 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
         LogicalPlan::Repartition(repartition) => {
             log::warn!("Repartition Not supported for Local Executor!; This will be a No-Op");
             translate(&repartition.input)
+        }
+        LogicalPlan::Explode(explode) => {
+            let input = translate(&explode.input)?;
+            Ok(LocalPhysicalPlan::explode(
+                input,
+                explode.to_explode.clone(),
+                explode.exploded_schema.clone(),
+            ))
         }
         _ => todo!("{} not yet implemented", plan.name()),
     }

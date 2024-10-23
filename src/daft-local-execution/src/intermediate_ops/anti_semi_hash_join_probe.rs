@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use daft_plan::JoinType;
@@ -43,14 +44,18 @@ impl IntermediateOperatorState for AntiSemiProbeState {
 
 pub struct AntiSemiProbeOperator {
     probe_on: Vec<ExprRef>,
-    join_type: JoinType,
+    is_semi: bool,
+    output_schema: SchemaRef,
 }
 
 impl AntiSemiProbeOperator {
-    pub fn new(probe_on: Vec<ExprRef>, join_type: JoinType) -> Self {
+    const DEFAULT_GROWABLE_SIZE: usize = 20;
+
+    pub fn new(probe_on: Vec<ExprRef>, join_type: &JoinType, output_schema: &SchemaRef) -> Self {
         Self {
             probe_on,
-            join_type,
+            is_semi: *join_type == JoinType::Semi,
+            output_schema: output_schema.clone(),
         }
     }
 
@@ -65,8 +70,11 @@ impl AntiSemiProbeOperator {
 
         let input_tables = input.get_tables()?;
 
-        let mut probe_side_growable =
-            GrowableTable::new(&input_tables.iter().collect::<Vec<_>>(), false, 20)?;
+        let mut probe_side_growable = GrowableTable::new(
+            &input_tables.iter().collect::<Vec<_>>(),
+            false,
+            Self::DEFAULT_GROWABLE_SIZE,
+        )?;
 
         drop(_growables);
         {
@@ -76,7 +84,7 @@ impl AntiSemiProbeOperator {
                 let iter = probe_set.probe_exists(&join_keys)?;
 
                 for (probe_row_idx, matched) in iter.enumerate() {
-                    match (self.join_type == JoinType::Semi, matched) {
+                    match (self.is_semi, matched) {
                         (true, true) | (false, false) => {
                             probe_side_growable.extend(probe_side_table_idx, probe_row_idx, 1);
                         }
@@ -109,15 +117,16 @@ impl IntermediateOperator for AntiSemiProbeOperator {
             .expect("AntiSemiProbeOperator state should be AntiSemiProbeState");
 
         if idx == 0 {
-            let (probe_table, _) = input.as_probe_table();
-            state.set_table(probe_table);
+            let probe_state = input.as_probe_state();
+            state.set_table(probe_state.get_probeable());
             Ok(IntermediateOperatorResult::NeedMoreInput(None))
         } else {
             let input = input.as_data();
-            let out = match self.join_type {
-                JoinType::Semi | JoinType::Anti => self.probe_anti_semi(input, state),
-                _ => unreachable!("Only Semi and Anti joins are supported"),
-            }?;
+            if input.is_empty() {
+                let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));
+                return Ok(IntermediateOperatorResult::NeedMoreInput(Some(empty)));
+            }
+            let out = self.probe_anti_semi(input, state)?;
             Ok(IntermediateOperatorResult::NeedMoreInput(Some(out)))
         }
     }

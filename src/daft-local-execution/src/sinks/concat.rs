@@ -1,61 +1,68 @@
-// use std::sync::Arc;
+use std::sync::Arc;
 
-// use common_error::DaftResult;
-// use daft_micropartition::MicroPartition;
-// use tracing::instrument;
+use common_error::{DaftError, DaftResult};
+use daft_micropartition::MicroPartition;
+use tracing::instrument;
 
-// use super::sink::{Sink, SinkResultType};
+use super::streaming_sink::{StreamingSink, StreamingSinkOutput, StreamingSinkState};
+use crate::pipeline::PipelineResultType;
 
-// #[derive(Clone)]
-// pub struct ConcatSink {
-//     result_left: Vec<Arc<MicroPartition>>,
-//     result_right: Vec<Arc<MicroPartition>>,
-// }
+struct ConcatSinkState {
+    // The index of the last morsel of data that was received, which should be strictly non-decreasing.
+    pub curr_idx: usize,
+}
+impl StreamingSinkState for ConcatSinkState {
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
 
-// impl ConcatSink {
-//     pub fn new() -> Self {
-//         Self {
-//             result_left: Vec::new(),
-//             result_right: Vec::new(),
-//         }
-//     }
+pub struct ConcatSink {}
 
-//     #[instrument(skip_all, name = "ConcatSink::sink")]
-//     fn sink_left(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
-//         self.result_left.push(input.clone());
-//         Ok(SinkResultType::NeedMoreInput)
-//     }
+impl StreamingSink for ConcatSink {
+    /// Execute for the ConcatSink operator does not do any computation and simply returns the input data.
+    /// It only expects that the indices of the input data are strictly non-decreasing.
+    /// TODO(Colin): If maintain_order is false, technically we could accept any index. Make this optimization later.
+    #[instrument(skip_all, name = "ConcatSink::sink")]
+    fn execute(
+        &self,
+        index: usize,
+        input: &PipelineResultType,
+        state: &mut dyn StreamingSinkState,
+    ) -> DaftResult<StreamingSinkOutput> {
+        let state = state
+            .as_any_mut()
+            .downcast_mut::<ConcatSinkState>()
+            .expect("ConcatSink should have ConcatSinkState");
 
-//     #[instrument(skip_all, name = "ConcatSink::sink")]
-//     fn sink_right(&mut self, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
-//         self.result_right.push(input.clone());
-//         Ok(SinkResultType::NeedMoreInput)
-//     }
-// }
+        // If the index is the same as the current index or one more than the current index, then we can accept the morsel.
+        if state.curr_idx == index || state.curr_idx + 1 == index {
+            state.curr_idx = index;
+            Ok(StreamingSinkOutput::NeedMoreInput(Some(
+                input.as_data().clone(),
+            )))
+        } else {
+            Err(DaftError::ComputeError(format!("Concat sink received out-of-order data. Expected index to be {} or {}, but got {}.", state.curr_idx, state.curr_idx + 1, index)))
+        }
+    }
 
-// impl Sink for ConcatSink {
-//     fn sink(&mut self, index: usize, input: &Arc<MicroPartition>) -> DaftResult<SinkResultType> {
-//         match index {
-//             0 => self.sink_left(input),
-//             1 => self.sink_right(input),
-//             _ => panic!("concat only supports 2 inputs, got {index}"),
-//         }
-//     }
+    fn name(&self) -> &'static str {
+        "Concat"
+    }
 
-//     fn in_order(&self) -> bool {
-//         true
-//     }
+    fn finalize(
+        &self,
+        _states: Vec<Box<dyn StreamingSinkState>>,
+    ) -> DaftResult<Option<Arc<MicroPartition>>> {
+        Ok(None)
+    }
 
-//     fn num_inputs(&self) -> usize {
-//         2
-//     }
+    fn make_state(&self) -> Box<dyn StreamingSinkState> {
+        Box::new(ConcatSinkState { curr_idx: 0 })
+    }
 
-//     #[instrument(skip_all, name = "ConcatSink::finalize")]
-//     fn finalize(self: Box<Self>) -> DaftResult<Vec<Arc<MicroPartition>>> {
-//         Ok(self
-//             .result_left
-//             .into_iter()
-//             .chain(self.result_right.into_iter())
-//             .collect())
-//     }
-// }
+    /// Since the ConcatSink does not do any computation, it does not need to spawn multiple workers.
+    fn max_concurrency(&self) -> usize {
+        1
+    }
+}

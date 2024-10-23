@@ -12,7 +12,7 @@ from tests.utils import sort_arrow_table
 
 def skip_invalid_join_strategies(join_strategy, join_type):
     if context.get_context().daft_execution_config.enable_native_executor is True:
-        if join_type == "outer" or join_strategy not in [None, "hash"]:
+        if join_strategy not in [None, "hash"]:
             pytest.skip("Native executor fails for these tests")
     else:
         if (join_strategy == "sort_merge" or join_strategy == "sort_merge_aligned_boundaries") and join_type != "inner":
