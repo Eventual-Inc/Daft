@@ -653,10 +653,10 @@ fn consume_slab_iterator(
     let parse_options = Arc::new(parse_options);
     let stream = futures::stream::iter(chunk_window_iterator)
         .map(move |w| {
-            println!("window of size {}", w.len());
-            for c in w.iter() {
-                println!("\t {c}");
-            }
+            // println!("window of size {}", w.len());
+            // for c in w.iter() {
+            //     println!("\t {c}");
+            // }
             let mut buffer = buffer_pool.get_buffer();
             let parse_options = parse_options.clone();
             let projection_indices = projection_indices.clone();
@@ -682,7 +682,7 @@ fn consume_slab_iterator(
                         predicate,
                     )
                     .unwrap();
-                    println!("generated {} tables", tables.len());
+                    // println!("generated {} tables", tables.len());
                     tx.send(tables).unwrap();
                 });
                 rx.await
@@ -951,6 +951,8 @@ impl CsvValidator {
     }
 
     fn validate_record<'a>(&mut self, iter: &mut impl Iterator<Item = &'a u8>) -> Option<bool> {
+        self.state = CsvState::FieldStart;
+        self.num_fields_seen = 1;
         for &byte in iter {
             let next_state = self.transition_table[self.state as usize][byte as usize];
 
