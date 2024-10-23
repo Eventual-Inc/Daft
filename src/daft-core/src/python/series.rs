@@ -121,6 +121,10 @@ impl PySeries {
         Ok(self.series.shift_right(&other.series)?.into())
     }
 
+    pub fn __floordiv__(&self, other: &Self) -> PyResult<Self> {
+        Ok(self.series.floor_div(&other.series)?.into())
+    }
+
     pub fn ceil(&self) -> PyResult<Self> {
         Ok(self.series.ceil()?.into())
     }
