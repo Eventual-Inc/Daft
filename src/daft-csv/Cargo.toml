@@ -4,7 +4,6 @@ async-compat = {workspace = true}
 async-stream = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 common-py-serde = {path = "../common/py-serde", default-features = false}
-crossbeam-channel = "0.5.1"
 csv-async = "1.3.0"
 daft-compression = {path = "../daft-compression", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}

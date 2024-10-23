@@ -1762,7 +1762,6 @@ dependencies = [
  "async-stream",
  "common-error",
  "common-py-serde",
- "crossbeam-channel",
  "csv-async",
  "daft-compression",
  "daft-core",
