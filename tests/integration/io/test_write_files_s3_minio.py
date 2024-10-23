@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from typing import List, Optional
 
 import pytest
 import s3fs
@@ -48,21 +49,21 @@ def write(
     path: str,
     format: str,
     write_mode: str,
-    partition_col: str | None = None,
+    partition_cols: Optional[List[str]] = None,  # noqa: UP006, UP007
     io_config: daft.io.IOConfig | None = None,
 ):
     if format == "parquet":
         return df.write_parquet(
             path,
             write_mode=write_mode,
-            partition_cols=[partition_col] if partition_col is not None else None,
+            partition_cols=partition_cols,
             io_config=io_config,
         )
     elif format == "csv":
         return df.write_csv(
             path,
             write_mode=write_mode,
-            partition_cols=[partition_col] if partition_col is not None else None,
+            partition_cols=partition_cols,
             io_config=io_config,
         )
     else:
