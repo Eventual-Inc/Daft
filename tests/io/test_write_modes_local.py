@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import List, Optional
 
 import pytest
 
@@ -10,12 +10,20 @@ def write(
     path: str,
     format: str,
     write_mode: str,
-    partition_col: Optional[str] = None,
+    partition_cols: Optional[List[str]] = None,
 ):
     if format == "parquet":
-        return df.write_parquet(path, write_mode=write_mode, partition_cols=[partition_col])
+        return df.write_parquet(
+            path,
+            write_mode=write_mode,
+            partition_cols=partition_cols,
+        )
     elif format == "csv":
-        return df.write_csv(path, write_mode=write_mode, partition_cols=[partition_col])
+        return df.write_csv(
+            path,
+            write_mode=write_mode,
+            partition_cols=partition_cols,
+        )
     else:
         raise ValueError(f"Unsupported format: {format}")
 
