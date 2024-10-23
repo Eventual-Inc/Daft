@@ -3,7 +3,6 @@ from __future__ import annotations
 import pytest
 
 from daft.daft import io_glob
-from daft.exceptions import DaftCoreException
 
 from .conftest import minio_create_bucket
 
@@ -392,12 +391,3 @@ def test_limit(minio_io_config, limit):
             fs.write_bytes(f"s3://{bucket_name}/{name}", b"")
         daft_ls_result = io_glob(f"s3://{bucket_name}/**", io_config=minio_io_config, limit=limit)
         assert len(daft_ls_result) == limit
-
-
-@pytest.mark.integration()
-def test_invalid_double_asterisk_usage_s3(minio_io_config):
-    bucket_name = "bucket"
-    path = f"s3://{bucket_name}/**.pq"
-    with minio_create_bucket(minio_io_config, bucket_name=bucket_name) as _:
-        with pytest.raises(DaftCoreException):
-            io_glob(path, io_config=minio_io_config)

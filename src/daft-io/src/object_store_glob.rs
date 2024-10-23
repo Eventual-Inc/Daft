@@ -334,6 +334,29 @@ fn _should_return(fm: &FileMetadata) -> bool {
     }
 }
 
+/// Validates the glob pattern before compiling it. The `globset` crate which we use for globbing is
+/// very permissive and does not check for invalid usage of the '**' wildcard. This function ensures
+/// that the glob pattern does not contain invalid usage of '**'.
+fn verify_glob(glob: &str) -> super::Result<()> {
+    // Catch for cases like `s3://bucket/path/**.txt`
+    // NOTE: "\**" is a valid pattern that matches a literal `*`, followed by anything, so we need to
+    // only capture cases where `**` is not preceded by a backslash
+    let re = regex::Regex::new(r"(?:[^\\]|^)\*\*").unwrap();
+
+    for segment in glob.split(GLOB_DELIMITER) {
+        if re.is_match(segment) && segment != "**" {
+            return Err(super::Error::InvalidArgument {
+                msg: format!(
+                    "Invalid usage of '**' in glob pattern. The '**' wildcard must occupy an entire path segment and be surrounded by '{}' characters. Found invalid usage in '{}'.",
+                    GLOB_DELIMITER, glob
+                ),
+            });
+        }
+    }
+
+    Ok(())
+}
+
 /// Globs an ObjectSource for Files
 ///
 /// Uses the `globset` crate for matching, and thus supports all the syntax enabled by that crate.
@@ -404,27 +427,8 @@ pub async fn glob(
     };
     let glob = glob.as_str();
 
-    // We need to do some validation on the glob pattern before compiling it, since the globset crate is very permissive
-    // and will happily compile patterns that don't make sense without throwing an error.
-    fn verify_glob(glob: &str) -> super::Result<()> {
-        // Catch for cases like `s3://bucket/path/**.txt`
-        // NOTE: "\**" is a valid pattern that matches a literal `*`, followed by anything, so we need to only capture cases where `**` is not preceded by a backslash
-        let re = regex::Regex::new(r"(?:[^\\]|^)\*\*").unwrap();
-
-        for segment in glob.split(GLOB_DELIMITER) {
-            if re.is_match(segment) && segment != "**" {
-                return Err(super::Error::InvalidArgument {
-                    msg: format!(
-                        "Invalid usage of '**' in glob pattern. The '**' wildcard must occupy an entire path segment and be surrounded by '{}' characters. Found invalid usage in '{}'.",
-                        GLOB_DELIMITER, glob
-                    ),
-                });
-            }
-        }
-
-        Ok(())
-    }
-
+    // Validate the glob pattern, this is necessary since the `globset` crate is overly permissive and happily compiles patterns
+    // like "/foo/bar/**.txt" which don't make sense.
     verify_glob(glob)?;
 
     let glob_fragments = to_glob_fragments(glob)?;
@@ -684,4 +688,26 @@ pub async fn glob(
     };
 
     Ok(to_rtn_stream.boxed())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_verify_glob() {
+        // Test valid glob patterns
+        assert!(verify_glob("valid/pattern.txt").is_ok()); // Normal globbing works ok
+        assert!(verify_glob("another/valid/pattern/**/blah.txt").is_ok()); // No error if ** used as a segment
+        assert!(verify_glob("another/valid/pattern/**").is_ok()); // No trailing slash is ok
+        assert!(verify_glob("another/valid/pattern/**/").is_ok()); // Trailing slash is ok (should be interpreted as **/*)
+        assert!(verify_glob("another/valid/pattern/**/\\**.txt").is_ok()); // Escaped ** is ok
+        assert!(verify_glob("**/wildcard/*.txt").is_ok()); // Wildcard matching not affected
+
+        // Test invalid glob patterns
+        assert!(verify_glob("invalid/**.txt").is_err()); // Non-escaped ** is bad
+        assert!(verify_glob("invalid/blahblah**.txt").is_err()); // Non-escaped ** is bad, even if it's not at the start
+        assert!(verify_glob("invalid/\\***.txt").is_err()); // Backslash should only escape the first *, leading to non-escaped **
+        assert!(verify_glob("invalid/\\**blahblah**.txt").is_err()); // Non-escaped ** should trigger even when there is a escaped **
+    }
 }
