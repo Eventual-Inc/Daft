@@ -14,7 +14,7 @@ def bucket(minio_io_config):
     # For some reason s3fs is having trouble cleaning up MinIO
     # folders created by pyarrow write_parquet. We just write to
     # paths with random UUIDs to work around this.
-    BUCKET = "my-bucket"
+    BUCKET = "my-bucket2"
 
     fs = s3fs.S3FileSystem(
         key=minio_io_config.s3.key_id,
