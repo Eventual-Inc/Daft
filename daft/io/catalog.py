@@ -5,6 +5,7 @@ from enum import Enum
 from typing import Optional
 
 from daft.daft import IOConfig
+from daft.io.aws_config import boto3_client_from_s3_config
 
 
 class DataCatalogType(Enum):
@@ -42,20 +43,8 @@ class DataCatalogTable:
         """
         if self.catalog == DataCatalogType.GLUE:
             # Use boto3 to get the table from AWS Glue Data Catalog.
-            import boto3
+            glue = boto3_client_from_s3_config("glue", io_config.s3)
 
-            s3_config = io_config.s3
-
-            glue = boto3.client(
-                "glue",
-                region_name=s3_config.region_name,
-                use_ssl=s3_config.use_ssl,
-                verify=s3_config.verify_ssl,
-                endpoint_url=s3_config.endpoint_url,
-                aws_access_key_id=s3_config.key_id,
-                aws_secret_access_key=s3_config.access_key,
-                aws_session_token=s3_config.session_token,
-            )
             if self.catalog_id is not None:
                 # Allow cross account access, table.catalog_id should be the target account id
                 glue_table = glue.get_table(
