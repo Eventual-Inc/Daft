@@ -4,7 +4,7 @@ import warnings
 from typing import Any, Literal, TypeVar
 
 from daft.arrow_utils import ensure_array, ensure_chunked_array
-from daft.daft import CountMode, ImageFormat, ImageMode, PySeries, image
+from daft.daft import CountMode, HashFunctionKind, ImageFormat, ImageMode, PySeries, image
 from daft.datatype import DataType, _ensure_registered_super_ext_type
 from daft.dependencies import np, pa, pd
 from daft.utils import pyarrow_supports_fixed_shape_tensor
@@ -568,6 +568,7 @@ class Series:
         num_hashes: int,
         ngram_size: int,
         seed: int = 1,
+        hash_function: HashFunctionKind = HashFunctionKind.MurmurHash3,
     ) -> Series:
         """
         Runs the MinHash algorithm on the series.
@@ -582,6 +583,7 @@ class Series:
             num_hashes: The number of hash permutations to compute.
             ngram_size: The number of tokens in each shingle/ngram.
             seed (optional): Seed used for generating permutations and the initial string hashes. Defaults to 1.
+            hash_function (optional): Hash function to use for initial string hashing. One of "murmur3", "xxhash", or "sha1". Defaults to "murmur3".
         """
         if not isinstance(num_hashes, int):
             raise ValueError(f"expected an integer for num_hashes but got {type(num_hashes)}")
@@ -589,6 +591,10 @@ class Series:
             raise ValueError(f"expected an integer for ngram_size but got {type(ngram_size)}")
         if seed is not None and not isinstance(seed, int):
             raise ValueError(f"expected an integer or None for seed but got {type(seed)}")
+        if not isinstance(hash_function, str):
+            raise ValueError(f"expected a string for hash_function but got {type(hash_function)}")
+        if not isinstance(hash_function, HashFunctionKind):
+            raise ValueError(f"expected HashFunctionKind for hash_function but got {type(hash_function)}")
 
         return Series._from_pyseries(self._series.minhash(num_hashes, ngram_size, seed))
 

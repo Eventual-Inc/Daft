@@ -1754,6 +1754,7 @@ dependencies = [
  "daft-dsl",
  "daft-functions",
  "daft-functions-json",
+ "daft-hash",
  "daft-image",
  "daft-io",
  "daft-json",
