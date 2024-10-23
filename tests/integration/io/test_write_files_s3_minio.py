@@ -48,21 +48,21 @@ def write(
     path: str,
     format: str,
     write_mode: str,
-    partition_cols: list[str] | None = None,
+    partition_col: str | None = None,
     io_config: daft.io.IOConfig | None = None,
 ):
     if format == "parquet":
         return df.write_parquet(
             path,
             write_mode=write_mode,
-            partition_cols=partition_cols,
+            partition_cols=[partition_col],
             io_config=io_config,
         )
     elif format == "csv":
         return df.write_csv(
             path,
             write_mode=write_mode,
-            partition_cols=partition_cols,
+            partition_cols=[partition_col],
             io_config=io_config,
         )
     else:

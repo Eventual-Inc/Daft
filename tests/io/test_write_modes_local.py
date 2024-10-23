@@ -1,5 +1,3 @@
-from typing import Optional
-
 import pytest
 
 import daft
@@ -10,12 +8,12 @@ def write(
     path: str,
     format: str,
     write_mode: str,
-    partition_cols: Optional[list[str]] = None,
+    partition_col: str | None = None,
 ):
     if format == "parquet":
-        return df.write_parquet(path, write_mode=write_mode, partition_cols=partition_cols)
+        return df.write_parquet(path, write_mode=write_mode, partition_cols=[partition_col])
     elif format == "csv":
-        return df.write_csv(path, write_mode=write_mode, partition_cols=partition_cols)
+        return df.write_csv(path, write_mode=write_mode, partition_cols=[partition_col])
     else:
         raise ValueError(f"Unsupported format: {format}")
 
