@@ -1,3 +1,5 @@
+from typing import Optional
+
 import pytest
 
 import daft
@@ -8,7 +10,7 @@ def write(
     path: str,
     format: str,
     write_mode: str,
-    partition_col: str | None = None,
+    partition_col: Optional[str] = None,
 ):
     if format == "parquet":
         return df.write_parquet(path, write_mode=write_mode, partition_cols=[partition_col])

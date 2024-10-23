@@ -55,14 +55,14 @@ def write(
         return df.write_parquet(
             path,
             write_mode=write_mode,
-            partition_cols=[partition_col],
+            partition_cols=[partition_col] if partition_col is not None else None,
             io_config=io_config,
         )
     elif format == "csv":
         return df.write_csv(
             path,
             write_mode=write_mode,
-            partition_cols=[partition_col],
+            partition_cols=[partition_col] if partition_col is not None else None,
             io_config=io_config,
         )
     else:
