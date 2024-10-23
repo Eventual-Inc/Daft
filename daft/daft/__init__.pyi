@@ -1220,7 +1220,7 @@ def minhash(
     num_hashes: int,
     ngram_size: int,
     seed: int = 1,
-    hash_function: Literal["murmur3", "xxhash", "sha1"] = "murmur3",
+    hash_function: HashFunctionKind = HashFunctionKind.MurmurHash3,
 ) -> PyExpr: ...
 
 # -----
@@ -1360,7 +1360,7 @@ class PySeries:
         num_hashes: int,
         ngram_size: int,
         seed: int = 1,
-        hash_function: Literal["murmur3", "xxhash", "sha1"] = "murmur3",
+        hash_function: HashFunctionKind = HashFunctionKind.MurmurHash3,
     ) -> PySeries: ...
     def __invert__(self) -> PySeries: ...
     def count(self, mode: CountMode) -> PySeries: ...
