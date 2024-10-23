@@ -178,7 +178,11 @@ def test_invalid_double_asterisk_usage_local(tmp_path, include_protocol):
     if include_protocol:
         path = "file://" + path
 
-    with pytest.raises(DaftCoreException):
+    expected_correct_path = str(d) + "/**/*.pq"
+    if include_protocol:
+        expected_correct_path = "file://" + expected_correct_path
+
+    with pytest.raises(DaftCoreException, match=expected_correct_path):
         io_glob(path)
 
 
