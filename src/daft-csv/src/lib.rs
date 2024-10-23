@@ -27,8 +27,6 @@ pub enum Error {
     #[snafu(display("{source}"))]
     IOError { source: daft_io::Error },
     #[snafu(display("{source}"))]
-    StdIOError { source: std::io::Error },
-    #[snafu(display("{source}"))]
     CSVError { source: csv_async::Error },
     #[snafu(display("Invalid char: {}", val))]
     WrongChar {
