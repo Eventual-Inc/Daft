@@ -176,10 +176,11 @@ impl FileSlabPool {
             let slab = slabs.pop();
             match slab {
                 Some(slab) => slab,
-                None => RwLock::new(FileSlabState {
+                None => {
+                RwLock::new(FileSlabState {
                     buffer: unsafe { Box::new_uninit_slice(SLABSIZE).assume_init() },
                     valid_bytes: 0,
-                }),
+                })},
             }
         };
 
@@ -394,7 +395,7 @@ pub async fn stream_csv_local(
         chunk_size_rows,
         n_threads * 2,
     ));
-    let stream = consume_slab_iterator(
+    consume_slab_iterator(
         file,
         buffer_pool,
         num_fields,
@@ -406,16 +407,7 @@ pub async fn stream_csv_local(
         include_columns,
         predicate,
         limit,
-        // sender,
-    )?;
-    // });
-
-    // let flattened_receiver = receiver.into_iter().flat_map(|rx| rx.into_iter());
-    let val = stream.flat_map(|v| {
-        let value = v.unwrap();
-        futures::stream::iter(value.into_iter().map(Ok))
-    });
-    Ok(val)
+    )
 }
 
 /// Helper function that reads up to 1 MiB of the CSV file to estimate stats and/or infer the schema of the file.
@@ -633,7 +625,7 @@ fn consume_slab_iterator(
     include_columns: Option<Vec<String>>,
     predicate: Option<Arc<Expr>>,
     limit: Option<usize>,
-) -> DaftResult<BoxStream<'static, DaftResult<Vec<Table>>>> {
+) -> DaftResult<impl Stream<Item = DaftResult<Table>> + Send> {
     // Create slab pool for file reads.
     let slabpool = FileSlabPool::new();
     let rows_read = Arc::new(AtomicUsize::new(0));
@@ -688,10 +680,16 @@ fn consume_slab_iterator(
                 rx.await
             })
         })
-        .buffered(10)
+        .buffered(32)
         .map(|v| v.unwrap().context(super::OneShotRecvSnafu {}))
         .map_err(|err| err.into());
-    Ok(stream.boxed())
+
+    let flattened = stream.flat_map(|v: DaftResult<Vec<Table>>| {
+        let value = v.unwrap();
+        futures::stream::iter(value.into_iter().map(Ok))
+    });
+    
+    Ok(flattened)
 }
 
 /// `goto_next_line` and `validate_csv_record` are two helper function that determines what chunk of
