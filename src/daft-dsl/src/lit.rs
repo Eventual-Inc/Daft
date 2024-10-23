@@ -583,7 +583,10 @@ mod test {
         let expected = UInt64Array::from_iter("literal", expected.into_iter());
         let expected = expected.into_series();
         let actual = super::literals_to_series(&values).unwrap();
-        assert_eq!(expected, actual);
+        // Series.eq returns false for nulls
+        for (expected, actual) in expected.u64().iter().zip(actual.u64().iter()) {
+            assert_eq!(expected, actual);
+        }
     }
 
     #[test]
