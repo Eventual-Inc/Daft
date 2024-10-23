@@ -990,21 +990,9 @@ impl Expr {
                     to_sql_inner(inner, buffer)?;
                     write!(buffer, ") IS NOT NULL")
                 }
-                Expr::IfElse {
-                    if_true,
-                    if_false,
-                    predicate,
-                } => {
-                    write!(buffer, "CASE WHEN ")?;
-                    to_sql_inner(predicate, buffer)?;
-                    write!(buffer, " THEN ")?;
-                    to_sql_inner(if_true, buffer)?;
-                    write!(buffer, " ELSE ")?;
-                    to_sql_inner(if_false, buffer)?;
-                    write!(buffer, " END")
-                }
                 // TODO: Implement SQL translations for these expressions if possible
-                Expr::Agg(..)
+                Expr::IfElse { .. }
+                | Expr::Agg(..)
                 | Expr::Cast(..)
                 | Expr::IsIn(..)
                 | Expr::Between(..)

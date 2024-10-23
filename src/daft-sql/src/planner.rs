@@ -11,7 +11,7 @@ use daft_functions::numeric::{ceil::ceil, floor::floor};
 use daft_plan::{LogicalPlanBuilder, LogicalPlanRef};
 use sqlparser::{
     ast::{
-        ArrayElemTypeDef, BinaryOperator, CastKind, ExactNumberInfo, ExcludeSelectItem,
+        ArrayElemTypeDef, BinaryOperator, CastKind, Distinct, ExactNumberInfo, ExcludeSelectItem,
         GroupByExpr, Ident, Query, SelectItem, Statement, StructField, Subscript, TableAlias,
         TableWithJoins, TimezoneInfo, UnaryOperator, Value, WildcardAdditionalOptions,
     },
@@ -200,6 +200,15 @@ impl SQLPlanner {
             } else {
                 rel.inner = rel.inner.select(to_select)?;
             }
+        }
+
+        match &selection.distinct {
+            Some(Distinct::Distinct) => {
+                let rel = self.relation_mut();
+                rel.inner = rel.inner.distinct()?;
+            }
+            Some(Distinct::On(_)) => unsupported_sql_err!("DISTINCT ON"),
+            None => {}
         }
 
         if let Some(order_by) = &query.order_by {
@@ -641,6 +650,14 @@ impl SQLPlanner {
             }
         })
     }
+
+    fn plan_lit(&self, expr: &sqlparser::ast::Expr) -> SQLPlannerResult<LiteralValue> {
+        if let sqlparser::ast::Expr::Value(v) = expr {
+            self.value_to_lit(v)
+        } else {
+            invalid_operation_err!("Only string, number, boolean and null literals are supported");
+        }
+    }
     pub(crate) fn plan_expr(&self, expr: &sqlparser::ast::Expr) -> SQLPlannerResult<ExprRef> {
         use sqlparser::ast::Expr as SQLExpr;
         match expr {
@@ -686,7 +703,28 @@ impl SQLPlanner {
             SQLExpr::IsNotDistinctFrom(_, _) => {
                 unsupported_sql_err!("IS NOT DISTINCT FROM")
             }
-            SQLExpr::InList { .. } => unsupported_sql_err!("IN LIST"),
+            SQLExpr::InList {
+                expr,
+                list,
+                negated,
+            } => {
+                let expr = self.plan_expr(expr)?;
+                let list = list
+                    .iter()
+                    .map(|e| self.plan_lit(e))
+                    .collect::<SQLPlannerResult<Vec<_>>>()?;
+                // We should really have a better way to use `is_in` instead of all of this extra wrapping of the values
+                let series = literals_to_series(&list)?;
+                let series_lit = LiteralValue::Series(series);
+                let series_expr = Expr::Literal(series_lit);
+                let series_expr_arc = Arc::new(series_expr);
+                let expr = expr.is_in(series_expr_arc);
+                if *negated {
+                    Ok(expr.not())
+                } else {
+                    Ok(expr)
+                }
+            }
             SQLExpr::InSubquery { .. } => {
                 unsupported_sql_err!("IN subquery")
             }
@@ -1186,9 +1224,7 @@ fn check_select_features(selection: &sqlparser::ast::Select) -> SQLPlannerResult
     if selection.top.is_some() {
         unsupported_sql_err!("TOP");
     }
-    if selection.distinct.is_some() {
-        unsupported_sql_err!("DISTINCT");
-    }
+
     if selection.into.is_some() {
         unsupported_sql_err!("INTO");
     }
