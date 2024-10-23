@@ -196,7 +196,7 @@ where
     type Output = DaftResult<DataArray<T>>;
     fn div(self, rhs: Self) -> Self::Output {
         if rhs.data().null_count() == 0 {
-            arithmetic_helper(self, rhs, basic::rem, |l, r| l / r)
+            arithmetic_helper(self, rhs, basic::div, |l, r| l / r)
         } else {
             match (self.len(), rhs.len()) {
                 (a, b) if a == b => Ok(DataArray::from((
