@@ -17,6 +17,7 @@ from daft.daft import (
     ScanTask,
     StorageConfig,
 )
+from daft.io.aws_config import boto3_client_from_s3_config
 from daft.io.object_store_options import io_config_to_storage_options
 from daft.io.scan import PartitionField, ScanOperator
 from daft.logical.schema import Schema
@@ -43,6 +44,24 @@ class DeltaLakeScanOperator(ScanOperator):
         deltalake_sdk_io_config = storage_config.config.io_config
         scheme = urlparse(table_uri).scheme
         if scheme == "s3" or scheme == "s3a":
+            # Try to get region from boto3
+            if deltalake_sdk_io_config.s3.region_name is None:
+                from botocore.exceptions import BotoCoreError
+
+                try:
+                    client = boto3_client_from_s3_config("s3", deltalake_sdk_io_config.s3)
+                    response = client.get_bucket_location(Bucket=urlparse(table_uri).netloc)
+                except BotoCoreError as e:
+                    logger.warning(
+                        "Failed to get the S3 bucket region using existing storage config, will attempt to get it from the environment instead. Error from boto3: %s",
+                        e,
+                    )
+                else:
+                    deltalake_sdk_io_config = deltalake_sdk_io_config.replace(
+                        s3=deltalake_sdk_io_config.s3.replace(region_name=response["LocationConstraint"])
+                    )
+
+            # Try to get config from the environment
             if any([deltalake_sdk_io_config.s3.key_id is None, deltalake_sdk_io_config.s3.region_name is None]):
                 try:
                     s3_config_from_env = S3Config.from_env()
