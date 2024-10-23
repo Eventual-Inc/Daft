@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 
 import pytest
 from fsspec.implementations.local import LocalFileSystem
@@ -169,7 +170,6 @@ def test_missing_file_path(tmp_path, include_protocol):
 
 
 @pytest.mark.parametrize("include_protocol", [False, True])
-@pytest.mark.integration()
 def test_invalid_double_asterisk_usage_local(tmp_path, include_protocol):
     d = tmp_path / "dir"
     d.mkdir()
@@ -181,6 +181,9 @@ def test_invalid_double_asterisk_usage_local(tmp_path, include_protocol):
     expected_correct_path = str(d) + "/**/*.pq"
     if include_protocol:
         expected_correct_path = "file://" + expected_correct_path
+
+    # Need to escape these or the regex matcher will complain
+    expected_correct_path = re.escape(expected_correct_path)
 
     with pytest.raises(DaftCoreException, match=expected_correct_path):
         io_glob(path)
