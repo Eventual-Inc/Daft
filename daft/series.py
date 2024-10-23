@@ -591,12 +591,10 @@ class Series:
             raise ValueError(f"expected an integer for ngram_size but got {type(ngram_size)}")
         if seed is not None and not isinstance(seed, int):
             raise ValueError(f"expected an integer or None for seed but got {type(seed)}")
-        if not isinstance(hash_function, str):
-            raise ValueError(f"expected a string for hash_function but got {type(hash_function)}")
         if not isinstance(hash_function, HashFunctionKind):
             raise ValueError(f"expected HashFunctionKind for hash_function but got {type(hash_function)}")
 
-        return Series._from_pyseries(self._series.minhash(num_hashes, ngram_size, seed))
+        return Series._from_pyseries(self._series.minhash(num_hashes, ngram_size, seed, hash_function))
 
     def _to_str_values(self) -> Series:
         return Series._from_pyseries(self._series.to_str_values())

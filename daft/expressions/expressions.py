@@ -1218,7 +1218,6 @@ class Expression:
         assert isinstance(num_hashes, int)
         assert isinstance(ngram_size, int)
         assert isinstance(seed, int)
-        assert isinstance(hash_function, str)
         assert isinstance(hash_function, native.HashFunctionKind), f"Hash function {hash_function} not found"
 
         return Expression._from_pyexpr(native.minhash(self._expr, num_hashes, ngram_size, seed, hash_function))

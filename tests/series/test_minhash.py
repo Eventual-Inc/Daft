@@ -1,20 +1,9 @@
 from __future__ import annotations
 
-from enum import Enum
-
 import pytest
 
 from daft import DataType, Series
-
-
-class HashFunctionKind(Enum):
-    """
-    Kind of hash function to use for minhash.
-    """
-
-    MurmurHash3 = 0
-    XxHash = 1
-    Sha1 = 2
+from daft.daft import HashFunctionKind
 
 
 def minhash_none(
@@ -25,9 +14,9 @@ def minhash_none(
     hash_function: HashFunctionKind,
 ) -> list[list[int] | None]:
     if seed is None:
-        return series.minhash(num_hashes, ngram_size, hash_function=hash_function.name.lower()).to_pylist()
+        return series.minhash(num_hashes, ngram_size, hash_function=hash_function).to_pylist()
     else:
-        return series.minhash(num_hashes, ngram_size, seed, hash_function=hash_function.name.lower()).to_pylist()
+        return series.minhash(num_hashes, ngram_size, seed, hash_function=hash_function).to_pylist()
 
 
 test_series = Series.from_pylist(
