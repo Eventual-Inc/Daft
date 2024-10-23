@@ -28,7 +28,7 @@ impl IntermediateOperator for ExplodeOperator {
         &self,
         _idx: usize,
         input: &PipelineResultType,
-        _state: Option<&mut Box<dyn IntermediateOperatorState>>,
+        _state: &IntermediateOperatorState,
     ) -> DaftResult<IntermediateOperatorResult> {
         let out = input.as_data().explode(&self.to_explode)?;
         Ok(IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(
