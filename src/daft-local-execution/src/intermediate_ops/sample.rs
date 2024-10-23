@@ -4,7 +4,7 @@ use common_error::DaftResult;
 use tracing::instrument;
 
 use super::intermediate_op::{
-    IntermediateOperator, IntermediateOperatorResult, IntermediateOperatorStateWrapper,
+    IntermediateOperator, IntermediateOperatorResult, IntermediateOperatorState,
 };
 use crate::pipeline::PipelineResultType;
 
@@ -30,7 +30,7 @@ impl IntermediateOperator for SampleOperator {
         &self,
         _idx: usize,
         input: &PipelineResultType,
-        _state: &IntermediateOperatorStateWrapper,
+        _state: &IntermediateOperatorState,
     ) -> DaftResult<IntermediateOperatorResult> {
         let out =
             input

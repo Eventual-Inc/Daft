@@ -14,19 +14,31 @@ use crate::{
     ExecutionRuntimeHandle, JoinSnafu, TaskSet, NUM_CPUS,
 };
 
-pub trait StreamingSinkState: Send + Sync {
+pub trait DynStreamingSinkState: Send + Sync {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
 }
 
-pub(crate) struct StreamingSinkStateWrapper {
-    pub inner: Mutex<Box<dyn StreamingSinkState>>,
+pub(crate) struct StreamingSinkState {
+    inner: Mutex<Box<dyn DynStreamingSinkState>>,
 }
 
-impl StreamingSinkStateWrapper {
-    fn new(inner: Box<dyn StreamingSinkState>) -> Arc<Self> {
+impl StreamingSinkState {
+    fn new(inner: Box<dyn DynStreamingSinkState>) -> Arc<Self> {
         Arc::new(Self {
             inner: Mutex::new(inner),
         })
+    }
+
+    pub(crate) fn with_state_mut<T: DynStreamingSinkState + 'static, F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut T) -> R,
+    {
+        let mut guard = self.inner.lock().unwrap();
+        let state = guard
+            .as_any_mut()
+            .downcast_mut::<T>()
+            .expect("State type mismatch");
+        f(state)
     }
 }
 
@@ -45,20 +57,20 @@ pub trait StreamingSink: Send + Sync {
         &self,
         index: usize,
         input: &PipelineResultType,
-        state: &StreamingSinkStateWrapper,
+        state_handle: &StreamingSinkState,
     ) -> DaftResult<StreamingSinkOutput>;
 
     /// Finalize the StreamingSink operator, with the given states from each worker.
     fn finalize(
         &self,
-        states: Vec<Box<dyn StreamingSinkState>>,
+        states: Vec<Box<dyn DynStreamingSinkState>>,
     ) -> DaftResult<Option<Arc<MicroPartition>>>;
 
     /// The name of the StreamingSink operator.
     fn name(&self) -> &'static str;
 
     /// Create a new worker-local state for this StreamingSink.
-    fn make_state(&self) -> Box<dyn StreamingSinkState>;
+    fn make_state(&self) -> Box<dyn DynStreamingSinkState>;
 
     /// The maximum number of concurrent workers that can be spawned for this sink.
     /// Each worker will has its own StreamingSinkState.
@@ -95,10 +107,10 @@ impl StreamingSinkNode {
         mut input_receiver: Receiver<(usize, PipelineResultType)>,
         output_sender: Sender<Arc<MicroPartition>>,
         rt_context: Arc<RuntimeStatsContext>,
-    ) -> DaftResult<Box<dyn StreamingSinkState>> {
+    ) -> DaftResult<Box<dyn DynStreamingSinkState>> {
         let span = info_span!("StreamingSink::Execute");
         let compute_runtime = get_compute_runtime();
-        let state_wrapper = StreamingSinkStateWrapper::new(op.make_state());
+        let state_wrapper = StreamingSinkState::new(op.make_state());
         let mut finished = false;
         while let Some((idx, morsel)) = input_receiver.recv().await {
             if finished {
@@ -147,7 +159,7 @@ impl StreamingSinkNode {
     fn spawn_workers(
         op: Arc<dyn StreamingSink>,
         input_receivers: Vec<Receiver<(usize, PipelineResultType)>>,
-        task_set: &mut TaskSet<DaftResult<Box<dyn StreamingSinkState>>>,
+        task_set: &mut TaskSet<DaftResult<Box<dyn DynStreamingSinkState>>>,
         stats: Arc<RuntimeStatsContext>,
     ) -> Receiver<Arc<MicroPartition>> {
         let (output_sender, output_receiver) = create_channel(input_receivers.len());

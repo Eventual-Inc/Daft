@@ -14,26 +14,38 @@ use crate::{
     ExecutionRuntimeHandle, NUM_CPUS,
 };
 
-pub(crate) trait IntermediateOperatorState: Send + Sync {
+pub(crate) trait DynIntermediateOpState: Send + Sync {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
 }
 
 struct DefaultIntermediateOperatorState {}
-impl IntermediateOperatorState for DefaultIntermediateOperatorState {
+impl DynIntermediateOpState for DefaultIntermediateOperatorState {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
 }
 
-pub(crate) struct IntermediateOperatorStateWrapper {
-    pub inner: Mutex<Box<dyn IntermediateOperatorState>>,
+pub(crate) struct IntermediateOperatorState {
+    inner: Mutex<Box<dyn DynIntermediateOpState>>,
 }
 
-impl IntermediateOperatorStateWrapper {
-    fn new(inner: Box<dyn IntermediateOperatorState>) -> Arc<Self> {
+impl IntermediateOperatorState {
+    fn new(inner: Box<dyn DynIntermediateOpState>) -> Arc<Self> {
         Arc::new(Self {
             inner: Mutex::new(inner),
         })
+    }
+
+    pub(crate) fn with_state_mut<T: DynIntermediateOpState + 'static, F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut T) -> R,
+    {
+        let mut guard = self.inner.lock().unwrap();
+        let state = guard
+            .as_any_mut()
+            .downcast_mut::<T>()
+            .expect("State type mismatch");
+        f(state)
     }
 }
 
@@ -48,10 +60,10 @@ pub trait IntermediateOperator: Send + Sync {
         &self,
         idx: usize,
         input: &PipelineResultType,
-        state: &IntermediateOperatorStateWrapper,
+        state: &IntermediateOperatorState,
     ) -> DaftResult<IntermediateOperatorResult>;
     fn name(&self) -> &'static str;
-    fn make_state(&self) -> Box<dyn IntermediateOperatorState> {
+    fn make_state(&self) -> Box<dyn DynIntermediateOpState> {
         Box::new(DefaultIntermediateOperatorState {})
     }
 }
@@ -96,7 +108,7 @@ impl IntermediateNode {
     ) -> DaftResult<()> {
         let span = info_span!("IntermediateOp::execute");
         let compute_runtime = get_compute_runtime();
-        let state_wrapper = IntermediateOperatorStateWrapper::new(op.make_state());
+        let state_wrapper = IntermediateOperatorState::new(op.make_state());
         while let Some((idx, morsel)) = receiver.recv().await {
             loop {
                 let op = op.clone();

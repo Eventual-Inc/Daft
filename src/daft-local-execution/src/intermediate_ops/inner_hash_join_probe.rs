@@ -9,8 +9,8 @@ use indexmap::IndexSet;
 use tracing::{info_span, instrument};
 
 use super::intermediate_op::{
-    IntermediateOperator, IntermediateOperatorResult, IntermediateOperatorState,
-    IntermediateOperatorStateWrapper,
+    DynIntermediateOpState, IntermediateOperator, IntermediateOperatorResult,
+    IntermediateOperatorState,
 };
 use crate::pipeline::PipelineResultType;
 
@@ -37,7 +37,7 @@ impl InnerHashJoinProbeState {
     }
 }
 
-impl IntermediateOperatorState for InnerHashJoinProbeState {
+impl DynIntermediateOpState for InnerHashJoinProbeState {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
@@ -165,14 +165,9 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
         &self,
         idx: usize,
         input: &PipelineResultType,
-        state: &IntermediateOperatorStateWrapper,
+        state: &IntermediateOperatorState,
     ) -> DaftResult<IntermediateOperatorResult> {
-        let mut guard = state.inner.lock().unwrap();
-        let state = guard
-            .as_any_mut()
-            .downcast_mut::<InnerHashJoinProbeState>()
-            .expect("InnerHashJoinProbeOperator state should be InnerHashJoinProbeState");
-        match idx {
+        state.with_state_mut::<InnerHashJoinProbeState, _, _>(|state| match idx {
             0 => {
                 let probe_state = input.as_probe_state();
                 state.set_probe_state(probe_state.clone());
@@ -187,14 +182,14 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
                 let out = self.probe_inner(input, state)?;
                 Ok(IntermediateOperatorResult::NeedMoreInput(Some(out)))
             }
-        }
+        })
     }
 
     fn name(&self) -> &'static str {
         "InnerHashJoinProbeOperator"
     }
 
-    fn make_state(&self) -> Box<dyn IntermediateOperatorState> {
+    fn make_state(&self) -> Box<dyn DynIntermediateOpState> {
         Box::new(InnerHashJoinProbeState::Building)
     }
 }

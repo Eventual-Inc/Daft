@@ -41,6 +41,7 @@ impl Runtime {
         Arc::new(Self { runtime, pool_type })
     }
 
+    // TODO: figure out a way to cancel the Future if this output is dropped.
     async fn execute_task<F>(future: F, pool_type: PoolType) -> DaftResult<F::Output>
     where
         F: Future + Send + 'static,

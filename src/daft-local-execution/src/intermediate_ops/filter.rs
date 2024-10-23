@@ -5,7 +5,7 @@ use daft_dsl::ExprRef;
 use tracing::instrument;
 
 use super::intermediate_op::{
-    IntermediateOperator, IntermediateOperatorResult, IntermediateOperatorStateWrapper,
+    IntermediateOperator, IntermediateOperatorResult, IntermediateOperatorState,
 };
 use crate::pipeline::PipelineResultType;
 
@@ -25,7 +25,7 @@ impl IntermediateOperator for FilterOperator {
         &self,
         _idx: usize,
         input: &PipelineResultType,
-        _state: &IntermediateOperatorStateWrapper,
+        _state: &IntermediateOperatorState,
     ) -> DaftResult<IntermediateOperatorResult> {
         let out = input.as_data().filter(&[self.predicate.clone()])?;
         Ok(IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(

@@ -5,7 +5,7 @@ use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
 use super::streaming_sink::{
-    StreamingSink, StreamingSinkOutput, StreamingSinkState, StreamingSinkStateWrapper,
+    DynStreamingSinkState, StreamingSink, StreamingSinkOutput, StreamingSinkState,
 };
 use crate::pipeline::PipelineResultType;
 
@@ -23,7 +23,7 @@ impl LimitSinkState {
     }
 }
 
-impl StreamingSinkState for LimitSinkState {
+impl DynStreamingSinkState for LimitSinkState {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
@@ -45,33 +45,31 @@ impl StreamingSink for LimitSink {
         &self,
         index: usize,
         input: &PipelineResultType,
-        state: &StreamingSinkStateWrapper,
+        state_handle: &StreamingSinkState,
     ) -> DaftResult<StreamingSinkOutput> {
         assert_eq!(index, 0);
-        let mut guard = state.inner.lock().unwrap();
-        let state = guard
-            .as_any_mut()
-            .downcast_mut::<LimitSinkState>()
-            .expect("Limit Sink should have LimitSinkState");
         let input = input.as_data();
         let input_num_rows = input.len();
-        let remaining = state.get_remaining_mut();
-        use std::cmp::Ordering::{Equal, Greater, Less};
-        match input_num_rows.cmp(remaining) {
-            Less => {
-                *remaining -= input_num_rows;
-                Ok(StreamingSinkOutput::NeedMoreInput(Some(input.clone())))
+
+        state_handle.with_state_mut::<LimitSinkState, _, _>(|state| {
+            let remaining = state.get_remaining_mut();
+            use std::cmp::Ordering::{Equal, Greater, Less};
+            match input_num_rows.cmp(remaining) {
+                Less => {
+                    *remaining -= input_num_rows;
+                    Ok(StreamingSinkOutput::NeedMoreInput(Some(input.clone())))
+                }
+                Equal => {
+                    *remaining = 0;
+                    Ok(StreamingSinkOutput::Finished(Some(input.clone())))
+                }
+                Greater => {
+                    let taken = input.head(*remaining)?;
+                    *remaining = 0;
+                    Ok(StreamingSinkOutput::Finished(Some(Arc::new(taken))))
+                }
             }
-            Equal => {
-                *remaining = 0;
-                Ok(StreamingSinkOutput::Finished(Some(input.clone())))
-            }
-            Greater => {
-                let taken = input.head(*remaining)?;
-                *remaining = 0;
-                Ok(StreamingSinkOutput::Finished(Some(Arc::new(taken))))
-            }
-        }
+        })
     }
 
     fn name(&self) -> &'static str {
@@ -80,12 +78,12 @@ impl StreamingSink for LimitSink {
 
     fn finalize(
         &self,
-        _states: Vec<Box<dyn StreamingSinkState>>,
+        _states: Vec<Box<dyn DynStreamingSinkState>>,
     ) -> DaftResult<Option<Arc<MicroPartition>>> {
         Ok(None)
     }
 
-    fn make_state(&self) -> Box<dyn StreamingSinkState> {
+    fn make_state(&self) -> Box<dyn DynStreamingSinkState> {
         Box::new(LimitSinkState::new(self.limit))
     }
 

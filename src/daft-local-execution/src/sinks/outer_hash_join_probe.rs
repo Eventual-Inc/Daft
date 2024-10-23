@@ -16,7 +16,7 @@ use indexmap::IndexSet;
 use tracing::{info_span, instrument};
 
 use super::streaming_sink::{
-    StreamingSink, StreamingSinkOutput, StreamingSinkState, StreamingSinkStateWrapper,
+    DynStreamingSinkState, StreamingSink, StreamingSinkOutput, StreamingSinkState,
 };
 use crate::pipeline::PipelineResultType;
 
@@ -108,7 +108,7 @@ impl OuterHashJoinProbeState {
     }
 }
 
-impl StreamingSinkState for OuterHashJoinProbeState {
+impl DynStreamingSinkState for OuterHashJoinProbeState {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
@@ -296,7 +296,7 @@ impl OuterHashJoinProbeSink {
 
     fn finalize_outer(
         &self,
-        mut states: Vec<Box<dyn StreamingSinkState>>,
+        mut states: Vec<Box<dyn DynStreamingSinkState>>,
     ) -> DaftResult<Option<Arc<MicroPartition>>> {
         let states = states
             .iter_mut()
@@ -365,26 +365,19 @@ impl StreamingSink for OuterHashJoinProbeSink {
         &self,
         idx: usize,
         input: &PipelineResultType,
-        state: &StreamingSinkStateWrapper,
+        state_handle: &StreamingSinkState,
     ) -> DaftResult<StreamingSinkOutput> {
         match idx {
             0 => {
-                let mut guard = state.inner.lock().unwrap();
-                let state = guard
-                    .as_any_mut()
-                    .downcast_mut::<OuterHashJoinProbeState>()
-                    .expect("OuterHashJoinProbeSink state should be OuterHashJoinProbeState");
-                let probe_state = input.as_probe_state();
-                state
-                    .initialize_probe_state(probe_state.clone(), self.join_type == JoinType::Outer);
+                state_handle.with_state_mut::<OuterHashJoinProbeState, _, _>(|state| {
+                    state.initialize_probe_state(
+                        input.as_probe_state().clone(),
+                        self.join_type == JoinType::Outer,
+                    );
+                });
                 Ok(StreamingSinkOutput::NeedMoreInput(None))
             }
-            _ => {
-                let mut guard = state.inner.lock().unwrap();
-                let state = guard
-                    .as_any_mut()
-                    .downcast_mut::<OuterHashJoinProbeState>()
-                    .expect("OuterHashJoinProbeSink state should be OuterHashJoinProbeState");
+            _ => state_handle.with_state_mut::<OuterHashJoinProbeState, _, _>(|state| {
                 let input = input.as_data();
                 if input.is_empty() {
                     let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));
@@ -398,7 +391,7 @@ impl StreamingSink for OuterHashJoinProbeSink {
                     ),
                 }?;
                 Ok(StreamingSinkOutput::NeedMoreInput(Some(out)))
-            }
+            }),
         }
     }
 
@@ -406,13 +399,13 @@ impl StreamingSink for OuterHashJoinProbeSink {
         "OuterHashJoinProbeSink"
     }
 
-    fn make_state(&self) -> Box<dyn StreamingSinkState> {
+    fn make_state(&self) -> Box<dyn DynStreamingSinkState> {
         Box::new(OuterHashJoinProbeState::Building)
     }
 
     fn finalize(
         &self,
-        states: Vec<Box<dyn StreamingSinkState>>,
+        states: Vec<Box<dyn DynStreamingSinkState>>,
     ) -> DaftResult<Option<Arc<MicroPartition>>> {
         if self.join_type == JoinType::Outer {
             self.finalize_outer(states)
