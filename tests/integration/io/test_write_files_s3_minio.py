@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pathlib
 import uuid
 
 import pytest
@@ -46,7 +45,7 @@ def test_writing_parquet(minio_io_config, bucket, protocol):
 
 def write(
     df: daft.DataFrame,
-    path: str | pathlib.Path,
+    path: str,
     format: str,
     write_mode: str,
     partition_cols: list[str] | None = None,

@@ -1,5 +1,3 @@
-import pathlib
-
 import pytest
 
 import daft
@@ -7,7 +5,7 @@ import daft
 
 def write(
     df: daft.DataFrame,
-    path: str | pathlib.Path,
+    path: str,
     format: str,
     write_mode: str,
     partition_cols: list[str] | None = None,
@@ -34,11 +32,12 @@ def read(path: str, format: str):
 @pytest.mark.parametrize("num_partitions", [1, 50, 100])
 @pytest.mark.parametrize("partition_cols", [None, ["a"]])
 def test_write_modes_local(tmp_path, write_mode, format, num_partitions, partition_cols):
+    path = str(tmp_path)
     existing_data = {"a": [i for i in range(100)]}
     # Write some existing_data
     write(
         daft.from_pydict(existing_data).into_partitions(num_partitions),
-        tmp_path,
+        path,
         format,
         "append",
         partition_cols,
@@ -50,14 +49,14 @@ def test_write_modes_local(tmp_path, write_mode, format, num_partitions, partiti
     }
     write(
         daft.from_pydict(new_data).into_partitions(num_partitions),
-        tmp_path,
+        path,
         format,
         write_mode,
         partition_cols,
     )
 
     # Read back the data
-    read_path = str(tmp_path) + "/**" if partition_cols is not None else str(tmp_path)
+    read_path = path + "/**" if partition_cols is not None else path
     read_back = read(read_path, format).sort("a").to_pydict()
 
     # Check the data
