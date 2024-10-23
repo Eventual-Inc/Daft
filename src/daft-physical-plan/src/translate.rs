@@ -158,6 +158,14 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             log::warn!("Repartition Not supported for Local Executor!; This will be a No-Op");
             translate(&repartition.input)
         }
+        LogicalPlan::Explode(explode) => {
+            let input = translate(&explode.input)?;
+            Ok(LocalPhysicalPlan::explode(
+                input,
+                explode.to_explode.clone(),
+                explode.exploded_schema.clone(),
+            ))
+        }
         _ => todo!("{} not yet implemented", plan.name()),
     }
 }

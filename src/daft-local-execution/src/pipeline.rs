@@ -10,8 +10,8 @@ use daft_core::{
 use daft_dsl::{col, join::get_common_join_keys, Expr};
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{
-    Concat, EmptyScan, Filter, HashAggregate, HashJoin, InMemoryScan, Limit, LocalPhysicalPlan,
-    Pivot, Project, Sample, Sort, UnGroupedAggregate, Unpivot,
+    Concat, EmptyScan, Explode, Filter, HashAggregate, HashJoin, InMemoryScan, Limit,
+    LocalPhysicalPlan, Pivot, Project, Sample, Sort, UnGroupedAggregate, Unpivot,
 };
 use daft_plan::{populate_aggregation_stages, JoinType};
 use daft_table::ProbeState;
@@ -22,9 +22,10 @@ use crate::{
     channel::PipelineChannel,
     intermediate_ops::{
         aggregate::AggregateOperator, anti_semi_hash_join_probe::AntiSemiProbeOperator,
-        filter::FilterOperator, inner_hash_join_probe::InnerHashJoinProbeOperator,
-        intermediate_op::IntermediateNode, pivot::PivotOperator, project::ProjectOperator,
-        sample::SampleOperator, unpivot::UnpivotOperator,
+        explode::ExplodeOperator, filter::FilterOperator,
+        inner_hash_join_probe::InnerHashJoinProbeOperator, intermediate_op::IntermediateNode,
+        pivot::PivotOperator, project::ProjectOperator, sample::SampleOperator,
+        unpivot::UnpivotOperator,
     },
     sinks::{
         aggregate::AggregateSink, blocking_sink::BlockingSinkNode, concat::ConcatSink,
@@ -144,6 +145,13 @@ pub fn physical_plan_to_pipeline(
             let filter_op = FilterOperator::new(predicate.clone());
             let child_node = physical_plan_to_pipeline(input, psets)?;
             IntermediateNode::new(Arc::new(filter_op), vec![child_node]).boxed()
+        }
+        LocalPhysicalPlan::Explode(Explode {
+            input, to_explode, ..
+        }) => {
+            let explode_op = ExplodeOperator::new(to_explode.clone());
+            let child_node = physical_plan_to_pipeline(input, psets)?;
+            IntermediateNode::new(Arc::new(explode_op), vec![child_node]).boxed()
         }
         LocalPhysicalPlan::Limit(Limit {
             input, num_rows, ..

@@ -3,13 +3,7 @@ from __future__ import annotations
 import pyarrow as pa
 import pytest
 
-from daft import context
 from daft.expressions import col
-
-pytestmark = pytest.mark.skipif(
-    context.get_context().daft_execution_config.enable_native_executor is True,
-    reason="Native executor fails for these tests",
-)
 
 
 @pytest.mark.parametrize(

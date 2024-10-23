@@ -1960,6 +1960,7 @@ dependencies = [
  "daft-core",
  "daft-csv",
  "daft-dsl",
+ "daft-functions",
  "daft-io",
  "daft-json",
  "daft-micropartition",
