@@ -51,9 +51,11 @@ class DeltaLakeScanOperator(ScanOperator):
                 try:
                     client = boto3_client_from_s3_config("s3", deltalake_sdk_io_config.s3)
                     response = client.get_bucket_location(Bucket=urlparse(table_uri).netloc)
-                except BotoCoreError:
-                    # If bucket location request fails, ignore error because S3 config may be correctly populated later from environment
-                    pass
+                except BotoCoreError as e:
+                    logger.warning(
+                        "Failed to get the S3 bucket region using existing storage config, will attempt to get it from the environment instead. Error from boto3: %s",
+                        e,
+                    )
                 else:
                     deltalake_sdk_io_config = deltalake_sdk_io_config.replace(
                         s3=deltalake_sdk_io_config.s3.replace(region_name=response["LocationConstraint"])
