@@ -76,3 +76,10 @@ impl FromStr for HashFunctionKind {
         }
     }
 }
+
+#[cfg(feature = "python")]
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
+    parent.add_class::<HashFunctionKind>()?;
+
+    Ok(())
+}

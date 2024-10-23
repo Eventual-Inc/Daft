@@ -13,6 +13,7 @@ daft-csv = {path = "src/daft-csv", default-features = false}
 daft-dsl = {path = "src/daft-dsl", default-features = false}
 daft-functions = {path = "src/daft-functions", default-features = false}
 daft-functions-json = {path = "src/daft-functions-json", default-features = false}
+daft-hash = {path = "src/daft-hash", default-features = false}
 daft-image = {path = "src/daft-image", default-features = false}
 daft-io = {path = "src/daft-io", default-features = false}
 daft-json = {path = "src/daft-json", default-features = false}
@@ -36,29 +37,30 @@ sysinfo = {workspace = true}
 [features]
 # maturin will turn this on
 python = [
-  "dep:pyo3",
-  "dep:pyo3-log",
+  "common-daft-config/python",
+  "common-display/python",
+  "common-resource-request/python",
+  "common-system-info/python",
   "daft-core/python",
   "daft-csv/python",
   "daft-dsl/python",
-  "daft-local-execution/python",
-  "daft-io/python",
+  "daft-functions-json/python",
+  "daft-functions/python",
+  "daft-hash/python",
   "daft-image/python",
+  "daft-io/python",
   "daft-json/python",
+  "daft-local-execution/python",
   "daft-micropartition/python",
   "daft-parquet/python",
   "daft-plan/python",
   "daft-scan/python",
   "daft-scheduler/python",
-  "daft-stats/python",
   "daft-sql/python",
+  "daft-stats/python",
   "daft-table/python",
-  "daft-functions/python",
-  "daft-functions-json/python",
-  "common-daft-config/python",
-  "common-system-info/python",
-  "common-display/python",
-  "common-resource-request/python"
+  "dep:pyo3",
+  "dep:pyo3-log"
 ]
 
 [lib]

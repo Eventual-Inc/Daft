@@ -2,12 +2,15 @@ import pytest
 
 import daft
 from daft import col
+from daft.daft import HashFunctionKind
 
 
 @pytest.mark.parametrize("num_hashes", [1, 2, 16, 128])
 @pytest.mark.parametrize("ngram_size", [1, 2, 4, 5, 100])
 @pytest.mark.parametrize("seed", [1, -1, 123, None])
-@pytest.mark.parametrize("hash_function", ["murmur3", "xxhash", "sha1"])
+@pytest.mark.parametrize(
+    "hash_function", [HashFunctionKind.MurmurHash3, HashFunctionKind.XxHash, HashFunctionKind.Sha1]
+)
 def test_table_expr_minhash(num_hashes, ngram_size, seed, hash_function):
     df = daft.from_pydict(
         {
