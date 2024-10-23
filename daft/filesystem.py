@@ -373,5 +373,9 @@ def overwrite_files(
     assert manifest._result is not None
     written_file_paths = manifest._result._get_merged_micropartition().get_column("path")
     to_delete = all_file_paths_df.where(~(col("path").is_in(lit(written_file_paths))))
+
+    # TODO: Support bulk deletes for remote filesystems via the filesystem APIs for that filesystem, e.g. s3fs for S3, gcsfs for GCS, etc.
+    # Pyarrow filesystem does not currently expose a bulk delete API.
+    # It is likely that this will be slow for remote filesystems in the meantime.
     for entry in to_delete:
         fs.delete_file(entry["path"])
