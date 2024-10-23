@@ -26,7 +26,7 @@ use daft_decoding::deserialize::deserialize_column;
 use daft_dsl::{optimization::get_required_columns, Expr};
 use daft_io::{IOClient, IOStatsRef};
 use daft_table::Table;
-use futures::Stream;
+use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
 use rayon::{
     iter::IndexedParallelIterator,
     prelude::{IntoParallelRefIterator, ParallelIterator},
@@ -394,11 +394,11 @@ pub async fn stream_csv_local(
         chunk_size_rows,
         n_threads * 2,
     ));
-    let tables = consume_slab_iterator(
+    let stream = consume_slab_iterator(
         file,
         buffer_pool,
         num_fields,
-        &parse_options,
+        parse_options,
         projection_indices,
         read_daft_fields,
         read_schema,
@@ -411,8 +411,11 @@ pub async fn stream_csv_local(
     // });
 
     // let flattened_receiver = receiver.into_iter().flat_map(|rx| rx.into_iter());
-    let stream = futures::stream::iter(tables.into_iter().map(Ok));
-    Ok(stream)
+    let val = stream.flat_map(|v| {
+        let value = v.unwrap();
+        futures::stream::iter(value.into_iter().map(Ok))
+    });
+    Ok(val)
 }
 
 /// Helper function that reads up to 1 MiB of the CSV file to estimate stats and/or infer the schema of the file.
@@ -586,12 +589,43 @@ where
     }
 }
 
+struct ChunkWindowIterator<I> {
+    chunk_iter: I,
+}
+
+impl<I> ChunkWindowIterator<I> {
+    fn new(chunk_iter: I) -> Self {
+        Self { chunk_iter }
+    }
+}
+
+impl<I> Iterator for ChunkWindowIterator<I>
+where
+    I: Iterator<Item = ChunkState>,
+{
+    type Item = Vec<ChunkState>;
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut chunks = Vec::with_capacity(2);
+        while let Some(chunk) = self.chunk_iter.next() {
+            chunks.push(chunk);
+            if let ChunkState::Final { .. } = chunks.last().unwrap() {
+                break;
+            }
+        }
+        if chunks.is_empty() {
+            None
+        } else {
+            Some(chunks)
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn consume_slab_iterator(
     file: std::fs::File,
     buffer_pool: Arc<CsvBufferPool>,
     num_fields: usize,
-    parse_options: &CsvParseOptions,
+    parse_options: CsvParseOptions,
     projection_indices: Arc<Vec<usize>>,
     read_daft_fields: Arc<Vec<Arc<daft_core::datatypes::Field>>>,
     read_schema: Arc<Schema>,
@@ -599,7 +633,7 @@ fn consume_slab_iterator(
     include_columns: Option<Vec<String>>,
     predicate: Option<Arc<Expr>>,
     limit: Option<usize>,
-) -> DaftResult<Vec<Table>> {
+) -> DaftResult<BoxStream<'static, DaftResult<Vec<Table>>>> {
     // Create slab pool for file reads.
     let slabpool = FileSlabPool::new();
     let rows_read = Arc::new(AtomicUsize::new(0));
@@ -614,44 +648,50 @@ fn consume_slab_iterator(
     );
 
     let chunk_iterator = ChunkyIterator::new(slab_iterator, csv_validator);
-
+    let chunk_window_iterator = ChunkWindowIterator::new(chunk_iterator);
     let has_header = parse_options.has_header;
-
-    let mut chunks = vec![];
-
-    let mut all_tables = vec![];
-
-    let mut flush = |chunks: &mut Vec<_>| {
-        let reader = MultiSliceReader::new(&chunks);
-        let mut buffer = buffer_pool.get_buffer();
-        let tables = dispatch_to_parse_csv(
-            has_header,
-            parse_options,
-            reader,
-            projection_indices.clone(),
-            fields.clone(),
-            read_daft_fields.clone(),
-            read_schema.clone(),
-            &mut buffer,
-            include_columns.clone(),
-            predicate.clone(),
-        )
-        .unwrap();
-        all_tables.extend(tables.into_iter());
-        chunks.clear();
-    };
-
-    for chunk in chunk_iterator {
-        chunks.push(chunk);
-        match chunks.last().unwrap() {
-            ChunkState::Final { .. } => {
-                flush(&mut chunks);
+    let parse_options = Arc::new(parse_options);
+    let stream = futures::stream::iter(chunk_window_iterator)
+        .map(move |w| {
+            println!("window of size {}", w.len());
+            for c in w.iter() {
+                println!("\t {c}");
             }
-            _ => {}
-        }
-    }
-    flush(&mut chunks);
-    Ok(all_tables)
+            let mut buffer = buffer_pool.get_buffer();
+            let parse_options = parse_options.clone();
+            let projection_indices = projection_indices.clone();
+            let fields = fields.clone();
+            let read_daft_fields = read_daft_fields.clone();
+            let read_schema = read_schema.clone();
+            let include_columns = include_columns.clone();
+            let predicate = predicate.clone();
+            tokio::spawn(async move {
+                let (tx, rx) = tokio::sync::oneshot::channel();
+                rayon::spawn(move || {
+                    let reader = MultiSliceReader::new(&w);
+                    let tables = dispatch_to_parse_csv(
+                        has_header,
+                        &parse_options,
+                        reader,
+                        projection_indices,
+                        fields,
+                        read_daft_fields,
+                        read_schema,
+                        &mut buffer,
+                        include_columns,
+                        predicate,
+                    )
+                    .unwrap();
+                    println!("generated {} tables", tables.len());
+                    tx.send(tables).unwrap();
+                });
+                rx.await
+            })
+        })
+        .buffered(10)
+        .map(|v| v.unwrap().context(super::OneShotRecvSnafu {}))
+        .map_err(|err| err.into());
+    Ok(stream.boxed())
 }
 
 /// `goto_next_line` and `validate_csv_record` are two helper function that determines what chunk of
