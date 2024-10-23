@@ -204,7 +204,7 @@ pub fn n_columns(data_type: &DataType) -> usize {
 pub fn column_iter_to_arrays<'a, I>(
     columns: Vec<I>,
     types: Vec<&PrimitiveType>,
-    mut field: Field,
+    field: Field,
     chunk_size: Option<usize>,
     num_rows: usize,
     num_values: Vec<usize>,
@@ -212,15 +212,6 @@ pub fn column_iter_to_arrays<'a, I>(
 where
     I: Pages + 'a,
 {
-    let utf_and_binary_to_large = true;
-    if utf_and_binary_to_large {
-        match field.data_type {
-            DataType::Utf8 => field.data_type = DataType::LargeUtf8,
-            DataType::Binary => field.data_type = DataType::LargeBinary,
-            _ => (),
-        }
-    };
-
     Ok(Box::new(
         columns_to_iter_recursive(
             columns,
