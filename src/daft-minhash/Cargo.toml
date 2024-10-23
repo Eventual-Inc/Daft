@@ -4,7 +4,6 @@ name = "minhash"
 
 [dependencies]
 fastrand = "2.1.0"
-mur3 = "0.1.0"
 common-error.workspace = true
 
 [dev-dependencies]
