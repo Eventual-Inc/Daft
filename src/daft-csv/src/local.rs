@@ -36,7 +36,7 @@ use snafu::ResultExt;
 use crate::{
     metadata::read_csv_schema_single,
     read::{fields_to_projection_indices, tables_concat},
-    ArrowSnafu, CsvConvertOptions, CsvParseOptions, CsvReadOptions,
+    ArrowSnafu, CsvConvertOptions, CsvParseOptions, CsvReadOptions, JoinSnafu,
 };
 
 // Our local CSV reader takes the following approach to reading CSV files:
@@ -406,7 +406,7 @@ pub async fn stream_csv_local(
         schema.fields,
         include_columns,
         predicate,
-        limit,
+        n_threads,
     )
 }
 
@@ -600,7 +600,7 @@ where
         let mut chunks = Vec::with_capacity(2);
         while let Some(chunk) = self.chunk_iter.next() {
             chunks.push(chunk);
-            if let ChunkState::Final { .. } = chunks.last().unwrap() {
+            if let ChunkState::Final { .. } = chunks.last().expect("We just pushed a chunk") {
                 break;
             }
         }
@@ -624,11 +624,10 @@ fn consume_slab_iterator(
     fields: Vec<Field>,
     include_columns: Option<Vec<String>>,
     predicate: Option<Arc<Expr>>,
-    limit: Option<usize>,
+    n_threads: usize,
 ) -> DaftResult<impl Stream<Item = DaftResult<Table>> + Send> {
     // Create slab pool for file reads.
     let slabpool = FileSlabPool::new();
-    let rows_read = Arc::new(AtomicUsize::new(0));
     let slab_iterator = SlabIterator::new(file, slabpool);
 
     let csv_validator = CsvValidator::new(
@@ -643,12 +642,9 @@ fn consume_slab_iterator(
     let chunk_window_iterator = ChunkWindowIterator::new(chunk_iterator);
     let has_header = parse_options.has_header;
     let parse_options = Arc::new(parse_options);
-    let stream = futures::stream::iter(chunk_window_iterator)
-        .map(move |w| {
-            // println!("window of size {}", w.len());
-            // for c in w.iter() {
-            //     println!("\t {c}");
-            // }
+    let stream = futures::stream::iter(chunk_window_iterator.enumerate())
+        .map(move |(i, w)| {
+            let has_header = has_header && (i == 0);
             let mut buffer = buffer_pool.get_buffer();
             let parse_options = parse_options.clone();
             let projection_indices = projection_indices.clone();
@@ -672,22 +668,19 @@ fn consume_slab_iterator(
                         &mut buffer,
                         include_columns,
                         predicate,
-                    )
-                    .unwrap();
-                    // println!("generated {} tables", tables.len());
-                    tx.send(tables).unwrap();
+                    );
+                    tx.send(tables).expect("OneShot Channel should still be open");
                 });
                 rx.await
             })
         })
-        .buffered(32)
-        .map(|v| v.unwrap().context(super::OneShotRecvSnafu {}))
+        .buffered(n_threads)
+        .map(|v| v.context(JoinSnafu {})?.context(super::OneShotRecvSnafu {})? )
         .map_err(|err| err.into());
-
-    let flattened = stream.flat_map(|v: DaftResult<Vec<Table>>| {
-        let value = v.unwrap();
-        futures::stream::iter(value.into_iter().map(Ok))
-    });
+    let flattened = stream.map(|result: DaftResult<Vec<Table>>| {
+        let tables = result?;
+        DaftResult::Ok(futures::stream::iter(tables.into_iter().map(Ok)))
+    }).try_flatten();
     
     Ok(flattened)
 }
