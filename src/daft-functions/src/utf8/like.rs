@@ -18,7 +18,7 @@ impl ScalarUDF for Utf8Like {
         self
     }
     fn name(&self) -> &'static str {
-        "utf8_like"
+        "like"
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {

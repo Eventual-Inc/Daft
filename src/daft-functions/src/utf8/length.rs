@@ -18,7 +18,7 @@ impl ScalarUDF for Utf8Length {
         self
     }
     fn name(&self) -> &'static str {
-        "utf8_length"
+        "length"
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {

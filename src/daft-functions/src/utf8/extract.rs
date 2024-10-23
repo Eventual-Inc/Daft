@@ -20,7 +20,7 @@ impl ScalarUDF for Utf8Extract {
         self
     }
     fn name(&self) -> &'static str {
-        "utf8_extract"
+        "extract"
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {

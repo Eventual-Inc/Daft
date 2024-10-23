@@ -18,7 +18,7 @@ impl ScalarUDF for Utf8Endswith {
         self
     }
     fn name(&self) -> &'static str {
-        "utf8_endswith"
+        "endswith"
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {

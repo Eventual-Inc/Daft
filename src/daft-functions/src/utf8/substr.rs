@@ -18,7 +18,7 @@ impl ScalarUDF for Utf8Substr {
         self
     }
     fn name(&self) -> &'static str {
-        "utf8_substr"
+        "substr"
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {

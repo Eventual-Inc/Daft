@@ -18,7 +18,7 @@ impl ScalarUDF for Utf8Lpad {
         self
     }
     fn name(&self) -> &'static str {
-        "utf8_lpad"
+        "lpad"
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {

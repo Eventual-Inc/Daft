@@ -18,7 +18,7 @@ impl ScalarUDF for Utf8Lower {
         self
     }
     fn name(&self) -> &'static str {
-        "utf8_lower"
+        "lower"
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {

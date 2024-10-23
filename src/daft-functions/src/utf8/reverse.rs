@@ -18,7 +18,7 @@ impl ScalarUDF for Utf8Reverse {
         self
     }
     fn name(&self) -> &'static str {
-        "utf8_reverse"
+        "reverse"
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {

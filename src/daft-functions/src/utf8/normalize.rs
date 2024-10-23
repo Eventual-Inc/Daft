@@ -20,7 +20,7 @@ impl ScalarUDF for Utf8Normalize {
         self
     }
     fn name(&self) -> &'static str {
-        "utf8_normalize"
+        "normalize"
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {

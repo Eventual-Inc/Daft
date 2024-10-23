@@ -18,7 +18,7 @@ impl ScalarUDF for Utf8Lstrip {
         self
     }
     fn name(&self) -> &'static str {
-        "utf8_lstrip"
+        "lstrip"
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {

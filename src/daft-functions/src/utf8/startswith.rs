@@ -18,7 +18,7 @@ impl ScalarUDF for Utf8Startswith {
         self
     }
     fn name(&self) -> &'static str {
-        "utf8_startswith"
+        "startswith"
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {

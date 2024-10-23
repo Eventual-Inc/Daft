@@ -18,7 +18,7 @@ impl ScalarUDF for Utf8Repeat {
         self
     }
     fn name(&self) -> &'static str {
-        "utf8_repeat"
+        "repeat"
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {

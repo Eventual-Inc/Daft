@@ -18,7 +18,7 @@ impl ScalarUDF for Utf8Right {
         self
     }
     fn name(&self) -> &'static str {
-        "utf8_right"
+        "right"
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
@@ -30,7 +30,7 @@ impl ScalarUDF for Utf8Right {
                             Ok(Field::new(data_field.name, DataType::Utf8))
                         }
                         _ => Err(DaftError::TypeError(format!(
-                            "Expects inputs to left to be utf8 and integer, but received {data_field} and {nchars_field}",
+                            "Expects inputs to right to be utf8 and integer, but received {data_field} and {nchars_field}",
                         ))),
                     }
                 }

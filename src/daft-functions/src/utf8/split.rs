@@ -20,7 +20,7 @@ impl ScalarUDF for Utf8Split {
         self
     }
     fn name(&self) -> &'static str {
-        "utf8_split"
+        "split"
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {

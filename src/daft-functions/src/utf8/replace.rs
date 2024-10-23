@@ -20,7 +20,7 @@ impl ScalarUDF for Utf8Replace {
         self
     }
     fn name(&self) -> &'static str {
-        "utf8_replace"
+        "replace"
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {

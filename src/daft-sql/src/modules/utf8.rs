@@ -15,31 +15,76 @@ use crate::{
     invalid_operation_err,
 };
 
-macro_rules! utf8_function_one_argument {
+fn utf8_unary(
+    func: impl Fn(ExprRef) -> ExprRef,
+    sql_name: &str,
+    arg_name: &str,
+    inputs: &[sqlparser::ast::FunctionArg],
+    planner: &crate::planner::SQLPlanner,
+) -> SQLPlannerResult<ExprRef> {
+    match inputs {
+        [input] => {
+            let input = planner.plan_function_arg(input)?;
+            Ok(func(input))
+        }
+        _ => invalid_operation_err!(
+            "invalid arguments for {sql_name}. Expected {sql_name}({arg_name})",
+        ),
+    }
+}
+
+fn utf8_binary(
+    func: impl Fn(ExprRef, ExprRef) -> ExprRef,
+    sql_name: &str,
+    arg_name_1: &str,
+    arg_name_2: &str,
+    inputs: &[sqlparser::ast::FunctionArg],
+    planner: &crate::planner::SQLPlanner,
+) -> SQLPlannerResult<ExprRef> {
+    match inputs {
+        [input1, input2] => {
+            let input1 = planner.plan_function_arg(input1)?;
+            let input2 = planner.plan_function_arg(input2)?;
+            Ok(func(input1, input2))
+        }
+        _ => invalid_operation_err!(
+            "invalid arguments for {sql_name}. Expected {sql_name}({arg_name_1}, {arg_name_2})",
+        ),
+    }
+}
+
+fn utf8_ternary(
+    func: impl Fn(ExprRef, ExprRef, ExprRef) -> ExprRef,
+    sql_name: &str,
+    arg_name_1: &str,
+    arg_name_2: &str,
+    arg_name_3: &str,
+    inputs: &[sqlparser::ast::FunctionArg],
+    planner: &crate::planner::SQLPlanner,
+) -> SQLPlannerResult<ExprRef> {
+    match inputs {
+        [input1, input2, input3] => {
+            let input1 = planner.plan_function_arg(input1)?;
+            let input2 = planner.plan_function_arg(input2)?;
+            let input3 = planner.plan_function_arg(input3)?;
+            Ok(func(input1, input2, input3))
+        },
+        _ => invalid_operation_err!(
+            "invalid arguments for {sql_name}. Expected {sql_name}({arg_name_1}, {arg_name_2}, {arg_name_3})",
+        ),
+    }
+}
+
+macro_rules! utf8_function {
     ($name:ident, $sql_name:expr, $func:expr, $doc:expr, $arg_name:expr) => {
         pub struct $name;
-
         impl SQLFunction for $name {
             fn to_expr(
                 &self,
                 inputs: &[sqlparser::ast::FunctionArg],
                 planner: &crate::planner::SQLPlanner,
             ) -> SQLPlannerResult<ExprRef> {
-                match inputs {
-                    [input] => {
-                        let input = planner.plan_function_arg(input)?;
-                        Ok($func(input))
-                    }
-                    _ => invalid_operation_err!(concat!(
-                        "invalid arguments for ",
-                        $sql_name,
-                        ". Expected ",
-                        $sql_name,
-                        "(",
-                        $arg_name,
-                        ")"
-                    )),
-                }
+                utf8_unary($func, $sql_name, $arg_name, inputs, planner)
             }
 
             fn docstrings(&self, _alias: &str) -> String {
@@ -51,36 +96,15 @@ macro_rules! utf8_function_one_argument {
             }
         }
     };
-}
-
-macro_rules! utf8_function_two_arguments {
     ($name:ident, $sql_name:expr, $func:expr, $doc:expr, $arg_name_1:expr, $arg_name_2:expr) => {
         pub struct $name;
-
         impl SQLFunction for $name {
             fn to_expr(
                 &self,
                 inputs: &[sqlparser::ast::FunctionArg],
                 planner: &crate::planner::SQLPlanner,
             ) -> SQLPlannerResult<ExprRef> {
-                match inputs {
-                    [input1, input2] => {
-                        let input1 = planner.plan_function_arg(input1)?;
-                        let input2 = planner.plan_function_arg(input2)?;
-                        Ok($func(input1, input2))
-                    }
-                    _ => invalid_operation_err!(concat!(
-                        "invalid arguments for ",
-                        $sql_name,
-                        ". Expected ",
-                        $sql_name,
-                        "(",
-                        $arg_name_1,
-                        ", ",
-                        $arg_name_2,
-                        ")"
-                    )),
-                }
+                utf8_binary($func, $sql_name, $arg_name_1, $arg_name_2, inputs, planner)
             }
 
             fn docstrings(&self, _alias: &str) -> String {
@@ -92,39 +116,23 @@ macro_rules! utf8_function_two_arguments {
             }
         }
     };
-}
-
-macro_rules! utf8_function_three_arguments {
     ($name:ident, $sql_name:expr, $func:expr, $doc:expr, $arg_name_1:expr, $arg_name_2:expr, $arg_name_3:expr) => {
         pub struct $name;
-
         impl SQLFunction for $name {
             fn to_expr(
                 &self,
                 inputs: &[sqlparser::ast::FunctionArg],
                 planner: &crate::planner::SQLPlanner,
             ) -> SQLPlannerResult<ExprRef> {
-                match inputs {
-                    [input1, input2, input3] => {
-                        let input1 = planner.plan_function_arg(input1)?;
-                        let input2 = planner.plan_function_arg(input2)?;
-                        let input3 = planner.plan_function_arg(input3)?;
-                        Ok($func(input1, input2, input3))
-                    }
-                    _ => invalid_operation_err!(concat!(
-                        "invalid arguments for ",
-                        $sql_name,
-                        ". Expected ",
-                        $sql_name,
-                        "(",
-                        $arg_name_1,
-                        ", ",
-                        $arg_name_2,
-                        ", ",
-                        $arg_name_3,
-                        ")"
-                    )),
-                }
+                utf8_ternary(
+                    $func,
+                    $sql_name,
+                    $arg_name_1,
+                    $arg_name_2,
+                    $arg_name_3,
+                    inputs,
+                    planner,
+                )
             }
 
             fn docstrings(&self, _alias: &str) -> String {
@@ -180,7 +188,7 @@ impl SQLModule for SQLModuleUtf8 {
     }
 }
 
-utf8_function_two_arguments!(
+utf8_function!(
     SQLUtf8EndsWith,
     "ends_with",
     daft_functions::utf8::endswith,
@@ -189,7 +197,7 @@ utf8_function_two_arguments!(
     "substring"
 );
 
-utf8_function_two_arguments!(
+utf8_function!(
     SQLUtf8StartsWith,
     "starts_with",
     daft_functions::utf8::startswith,
@@ -198,7 +206,7 @@ utf8_function_two_arguments!(
     "substring"
 );
 
-utf8_function_two_arguments!(
+utf8_function!(
     SQLUtf8Contains,
     "contains",
     daft_functions::utf8::contains,
@@ -207,7 +215,7 @@ utf8_function_two_arguments!(
     "substring"
 );
 
-utf8_function_two_arguments!(
+utf8_function!(
     SQLUtf8Split,
     "split",
     |input, pattern| daft_functions::utf8::split(input, pattern, false),
@@ -216,7 +224,7 @@ utf8_function_two_arguments!(
     "delimiter"
 );
 
-utf8_function_two_arguments!(
+utf8_function!(
     SQLUtf8RegexpMatch,
     "regexp_match",
     daft_functions::utf8::match_,
@@ -225,17 +233,17 @@ utf8_function_two_arguments!(
     "pattern"
 );
 
-utf8_function_three_arguments!(
+utf8_function!(
     SQLUtf8RegexpReplace,
     "regexp_replace",
-    |input, pattern, replacement| daft_functions::utf8::replace(input, pattern, replacement, true),
+    |input, pattern, replacement| daft_functions::utf8::replace(input, pattern, replacement, false),
     "Replaces all occurrences of a substring with a new string",
     "string_input",
     "pattern",
     "replacement"
 );
 
-utf8_function_two_arguments!(
+utf8_function!(
     SQLUtf8RegexpSplit,
     "regexp_split",
     |input, pattern| daft_functions::utf8::split(input, pattern, true),
@@ -244,7 +252,7 @@ utf8_function_two_arguments!(
     "delimiter"
 );
 
-utf8_function_one_argument!(
+utf8_function!(
     SQLUtf8Length,
     "length",
     daft_functions::utf8::length,
@@ -252,7 +260,7 @@ utf8_function_one_argument!(
     "string_input"
 );
 
-utf8_function_one_argument!(
+utf8_function!(
     SQLUtf8LengthBytes,
     "length_bytes",
     daft_functions::utf8::length_bytes,
@@ -260,7 +268,7 @@ utf8_function_one_argument!(
     "string_input"
 );
 
-utf8_function_one_argument!(
+utf8_function!(
     SQLUtf8Lower,
     "lower",
     daft_functions::utf8::lower,
@@ -268,7 +276,7 @@ utf8_function_one_argument!(
     "string_input"
 );
 
-utf8_function_one_argument!(
+utf8_function!(
     SQLUtf8Upper,
     "upper",
     daft_functions::utf8::upper,
@@ -276,7 +284,7 @@ utf8_function_one_argument!(
     "string_input"
 );
 
-utf8_function_one_argument!(
+utf8_function!(
     SQLUtf8Lstrip,
     "lstrip",
     daft_functions::utf8::lstrip,
@@ -284,7 +292,7 @@ utf8_function_one_argument!(
     "string_input"
 );
 
-utf8_function_one_argument!(
+utf8_function!(
     SQLUtf8Rstrip,
     "rstrip",
     daft_functions::utf8::rstrip,
@@ -292,7 +300,7 @@ utf8_function_one_argument!(
     "string_input"
 );
 
-utf8_function_one_argument!(
+utf8_function!(
     SQLUtf8Reverse,
     "reverse",
     daft_functions::utf8::reverse,
@@ -300,7 +308,7 @@ utf8_function_one_argument!(
     "string_input"
 );
 
-utf8_function_one_argument!(
+utf8_function!(
     SQLUtf8Capitalize,
     "capitalize",
     daft_functions::utf8::capitalize,
@@ -308,7 +316,7 @@ utf8_function_one_argument!(
     "string_input"
 );
 
-utf8_function_two_arguments!(
+utf8_function!(
     SQLUtf8Left,
     "left",
     daft_functions::utf8::left,
@@ -317,7 +325,7 @@ utf8_function_two_arguments!(
     "length"
 );
 
-utf8_function_two_arguments!(
+utf8_function!(
     SQLUtf8Right,
     "right",
     daft_functions::utf8::right,
@@ -326,7 +334,7 @@ utf8_function_two_arguments!(
     "length"
 );
 
-utf8_function_two_arguments!(
+utf8_function!(
     SQLUtf8Find,
     "find",
     daft_functions::utf8::find,
@@ -335,7 +343,7 @@ utf8_function_two_arguments!(
     "substring"
 );
 
-utf8_function_three_arguments!(
+utf8_function!(
     SQLUtf8Rpad,
     "rpad",
     daft_functions::utf8::rpad,
@@ -343,7 +351,7 @@ utf8_function_three_arguments!(
     "string_input", "length", "pad"
 );
 
-utf8_function_three_arguments!(
+utf8_function!(
     SQLUtf8Lpad,
     "lpad",
     daft_functions::utf8::lpad,
@@ -351,7 +359,7 @@ utf8_function_three_arguments!(
     "string_input", "length", "pad"
 );
 
-utf8_function_two_arguments!(
+utf8_function!(
     SQLUtf8Repeat,
     "repeat",
     daft_functions::utf8::repeat,

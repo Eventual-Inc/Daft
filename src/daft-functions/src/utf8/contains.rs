@@ -18,7 +18,7 @@ impl ScalarUDF for Utf8Contains {
         self
     }
     fn name(&self) -> &'static str {
-        "utf8_contains"
+        "contains"
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {

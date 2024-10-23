@@ -18,7 +18,7 @@ impl ScalarUDF for Utf8Capitalize {
         self
     }
     fn name(&self) -> &'static str {
-        "utf8_capitalize"
+        "capitalize"
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {

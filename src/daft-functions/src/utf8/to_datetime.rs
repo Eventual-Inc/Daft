@@ -22,7 +22,7 @@ impl ScalarUDF for Utf8ToDatetime {
         self
     }
     fn name(&self) -> &'static str {
-        "utf8_to_datetime"
+        "to_datetime"
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
