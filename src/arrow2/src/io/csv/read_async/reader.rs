@@ -43,6 +43,7 @@ where
 pub fn local_read_rows<R>(
     reader: &mut read::Reader<R>,
     rows: &mut [read::ByteRecord],
+    limit: Option<usize>,
 ) -> Result<(usize, bool)>
 where
     R: std::io::Read,
@@ -50,6 +51,9 @@ where
     let mut row_number = 0;
     let mut has_more = true;
     for row in rows.iter_mut() {
+        if matches!(limit, Some(limit) if row_number >= limit) {
+            break;
+        }
         has_more = reader
             .read_byte_record(row)
             .map_err(|e| Error::External(format!(" at line {}", row_number), Box::new(e)))?;

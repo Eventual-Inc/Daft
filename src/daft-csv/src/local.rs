@@ -2,11 +2,7 @@ use core::str;
 use std::{
     io::Read,
     num::NonZeroUsize,
-    path::Display,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc, Mutex, RwLock, Weak,
-    },
+    sync::{Arc, Mutex, RwLock, Weak},
 };
 
 use arrow2::{
@@ -16,8 +12,7 @@ use arrow2::{
         read_async::local_read_rows,
     },
 };
-use common_error::{DaftError, DaftResult};
-use crossbeam_channel::Sender;
+use common_error::DaftResult;
 use daft_core::{
     prelude::{Schema, Series},
     utils::arrow::cast_array_for_daft_if_needed,
@@ -26,7 +21,7 @@ use daft_decoding::deserialize::deserialize_column;
 use daft_dsl::{optimization::get_required_columns, Expr};
 use daft_io::{IOClient, IOStatsRef};
 use daft_table::Table;
-use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
+use futures::{Stream, StreamExt, TryStreamExt};
 use rayon::{
     iter::IndexedParallelIterator,
     prelude::{IntoParallelRefIterator, ParallelIterator},
@@ -63,9 +58,82 @@ use crate::{
 // │          |    ┌───┐ ┌───┐          ┌────┐  ┬--─┐           ┌───┐ ┌───┐               ┌───┐ ┌───┐
 // │         ─┼───►│   │ │   │  ──────► │   ┬┘┌─┘ ┬─┘  ───────► │   │ │   │  ──────────►  │   │ │   │
 // │ CSV File │    └───┘ └───┘          └───┴ └───┘             └───┘ └───┘               └───┘ └───┘
-// │          │  Chain of buffers      Adjusted chunks     Vectors of ByteRecords     Stream of Daft tables
+// │          │  Chain of slabs        Adjusted chunks     Vectors of ByteRecords     Stream of Daft tables
 // │          │
 // └──────────┘
+//
+//
+// The above flow is concretely implemented via a series of iterators:
+// 1. SlabIterator provides an iterator of slabs populated with file data.
+// 2. ChunkyIterator takes the SlabIterator and provides an iterator of `Start`, `Continue`, and
+//    `Final` chunks. Each chunk contains a reference to a file slab, and the start-end range of bytes of the
+//    slab that it is valid for.
+// 3. ChunkWindowIterator takes a ChunkyIterator, and creates windows of Start-Continue*-Final adjusted chunks.
+//    An adjusted chunk (described in greater detail below), always starts with `ChunkState::Start`,
+//    ends with `ChunkState::Final`, and has any number of `ChunkState::Continue` chunks in between.
+//
+// We take items off the ChunkWindowIterator, and pass them to a CSV decoder to be turned into Daft tables in parallel.
+//
+//
+// "Adjusted chunks" were mentioned a few times above and refer to chunks of complete CSV records. This is
+// needed for us to process chunks in parallel without having to stitch together records that are split across
+// multiple chunks. Here's a way to think about adjusted chunks:
+//
+// Given a starting position, we use our chunk size to compute a preliminary start and stop
+// position. For example, we can visualize all preliminary chunks in a file as follows.
+//
+// Chunk 1         Chunk 2         Chunk 3              Chunk N
+// ┌──────────┐    ┌──────────┐    ┌──────────┐         ┌──────────┐
+// │          │    │\n        │    │   \n     │         │       \n │
+// │          │    │          │    │          │         │          │
+// │          │    │       \n │    │          │         │          │
+// │   \n     │    │          │    │      \n  │         │          │
+// │          │    │          │    │          │   ...   │     \n   │
+// │          │    │  \n      │    │          │         │          │
+// │ \n       │    │          │    │          │         │          │
+// │          │    │          │    │     \n   │         │  \n      │
+// └──────────┘    └──────────┘    └──────────┘         └──────────┘
+//
+// However, record boundaries (i.e. the \n terminators) do not align nicely with these preliminary
+// chunk boundaries. So we adjust each preliminary chunk as follows:
+// - Find the first record terminator from the chunk's start. This is the new starting position.
+// - Find the first record terminator from the chunk's end. This is the new ending position.
+// - If a given preliminary chunk doesn't contain a record terminator, the adjusted chunk is empty.
+//
+// For example:
+//
+// Adjusted Chunk 1    Adj. Chunk 2        Adj. Chunk 3          Adj. Chunk N
+// ┌──────────────────┐┌─────────────────┐ ┌────────┐            ┌─┐
+// │                \n││               \n│ │      \n│         \n │ │
+// │          ┌───────┘│      ┌──────────┘ │  ┌─────┘            │ │
+// │          │    ┌───┘   \n │    ┌───────┘  │         ┌────────┘ │
+// │   \n     │    │          │    │      \n  │         │          │
+// │          │    │          │    │          │   ...   │     \n   │
+// │          │    │  \n      │    │          │         │          │
+// │ \n       │    │          │    │          │         │          │
+// │          │    │          │    │     \n   │         │  \n      │
+// └──────────┘    └──────────┘    └──────────┘         └──────────┘
+//
+// Using this method, we now have adjusted chunks that are aligned with record boundaries, that do
+// not overlap, and that fully cover every byte in the CSV file. Parsing each adjusted chunk can
+// now happen in parallel.
+//
+// This is the same method as described in:
+// Ge, Chang et al. “Speculative Distributed CSV Data Parsing for Big Data Analytics.” Proceedings of the 2019 International Conference on Management of Data (2019).
+//
+// Another observation is that seeing a pure \n character is not necessarily indicative of a record
+// terminator. We need to consider whether the \n character was seen within a quoted field, since the
+// string "some text \n some text" is a valid CSV string field. To do this, we carry out the following
+// algorithm:
+// 1. Find a \n character.
+// 2. Check if the CSV string immediately following this \n character is valid, i.e. does it parse
+//    as valid CSV, and does it produce the same number of fields as our schema.
+// 2a. If there is a valid record at this point, then we assume that the \n we saw was a valid terminator.
+// 2b. If the record at this point is invalid, then this was likely a \n in a quoted field. Find the next
+//     \n character and go back to 2.
+// 2c. If we hit the end of a chunk without coming to a decision on whether we found a valid CSV record,
+//     we simply move on to the next chunk of bytes and try to find a valid CSV record there. This is a
+//     simplification that makes the implementation a lot easier to maintain.
 
 /// A pool of ByteRecord slabs. Used for deserializing CSV.
 #[derive(Debug)]
@@ -176,11 +244,10 @@ impl FileSlabPool {
             let slab = slabs.pop();
             match slab {
                 Some(slab) => slab,
-                None => {
-                RwLock::new(FileSlabState {
+                None => RwLock::new(FileSlabState {
                     buffer: unsafe { Box::new_uninit_slice(SLABSIZE).assume_init() },
                     valid_bytes: 0,
-                })},
+                }),
             }
         };
 
@@ -319,7 +386,6 @@ pub async fn stream_csv_local(
 ) -> DaftResult<impl Stream<Item = DaftResult<Table>> + Send> {
     let uri = uri.trim_start_matches("file://");
     let file = std::fs::File::open(uri)?;
-    let file_len = file.metadata()?.len();
 
     // Process the CSV convert options.
     let predicate = convert_options
@@ -379,15 +445,6 @@ pub async fn stream_csv_local(
         .unwrap_or(DEFAULT_CHUNK_SIZE);
     let chunk_size_rows = (chunk_size as f64 / record_buffer_size as f64).ceil() as usize;
 
-    // We produce `file_len / SLABSIZE` number of file slabs, each of which might be split into two, so the maximum number
-    // of tasks we might spawn is 2 times this number.
-    // let (sender, receiver) = crossbeam_channel::bounded(
-    //     max_chunks_in_flight
-    //         .unwrap_or_else(|| 2 * (file_len as f64 / SLABSIZE as f64).ceil() as usize),
-    // );
-
-    // Consume the CSV file asynchronously.
-    // rayon::spawn(move || {
     // TODO(desmond): We might consider creating per-process buffer pools and slab pools.
     let buffer_pool = Arc::new(CsvBufferPool::new(
         record_buffer_size,
@@ -406,7 +463,8 @@ pub async fn stream_csv_local(
         schema.fields,
         include_columns,
         predicate,
-        n_threads,
+        limit,
+        max_chunks_in_flight.unwrap_or(n_threads),
     )
 }
 
@@ -567,7 +625,7 @@ where
             None => {
                 if let Some((slab, valid_bytes)) = self.slab_iter.next() {
                     Some(ChunkState::Start {
-                        slab: slab,
+                        slab,
                         start: 0,
                         end: valid_bytes,
                     })
@@ -576,7 +634,7 @@ where
                 }
             }
         };
-        self.last_chunk = curr_chunk.clone();
+        self.last_chunk.clone_from(&curr_chunk);
         curr_chunk
     }
 }
@@ -598,7 +656,7 @@ where
     type Item = Vec<ChunkState>;
     fn next(&mut self) -> Option<Self::Item> {
         let mut chunks = Vec::with_capacity(2);
-        while let Some(chunk) = self.chunk_iter.next() {
+        for chunk in self.chunk_iter.by_ref() {
             chunks.push(chunk);
             if let ChunkState::Final { .. } = chunks.last().expect("We just pushed a chunk") {
                 break;
@@ -624,6 +682,7 @@ fn consume_slab_iterator(
     fields: Vec<Field>,
     include_columns: Option<Vec<String>>,
     predicate: Option<Arc<Expr>>,
+    limit: Option<usize>,
     n_threads: usize,
 ) -> DaftResult<impl Stream<Item = DaftResult<Table>> + Send> {
     // Create slab pool for file reads.
@@ -668,78 +727,28 @@ fn consume_slab_iterator(
                         &mut buffer,
                         include_columns,
                         predicate,
+                        limit,
                     );
-                    tx.send(tables).expect("OneShot Channel should still be open");
+                    tx.send(tables)
+                        .expect("OneShot Channel should still be open");
                 });
                 rx.await
             })
         })
         .buffered(n_threads)
-        .map(|v| v.context(JoinSnafu {})?.context(super::OneShotRecvSnafu {})? )
-        .map_err(|err| err.into());
-    let flattened = stream.map(|result: DaftResult<Vec<Table>>| {
-        let tables = result?;
-        DaftResult::Ok(futures::stream::iter(tables.into_iter().map(Ok)))
-    }).try_flatten();
-    
+        .map(|v| {
+            v.context(JoinSnafu {})?
+                .context(super::OneShotRecvSnafu {})?
+        });
+    let flattened = stream
+        .map(|result: DaftResult<Vec<Table>>| {
+            let tables = result?;
+            DaftResult::Ok(futures::stream::iter(tables.into_iter().map(Ok)))
+        })
+        .try_flatten();
+
     Ok(flattened)
 }
-
-/// `goto_next_line` and `validate_csv_record` are two helper function that determines what chunk of
-/// data to parse given a starting position within the file, and the desired initial chunk size.
-///
-/// Given a starting position, we use our chunk size to compute a preliminary start and stop
-/// position. For example, we can visualize all preliminary chunks in a file as follows.
-///
-/// Chunk 1         Chunk 2         Chunk 3              Chunk N
-/// ┌──────────┐    ┌──────────┐    ┌──────────┐         ┌──────────┐
-/// │          │    │\n        │    │   \n     │         │       \n │
-/// │          │    │          │    │          │         │          │
-/// │          │    │       \n │    │          │         │          │
-/// │   \n     │    │          │    │      \n  │         │          │
-/// │          │    │          │    │          │   ...   │     \n   │
-/// │          │    │  \n      │    │          │         │          │
-/// │ \n       │    │          │    │          │         │          │
-/// │          │    │          │    │     \n   │         │  \n      │
-/// └──────────┘    └──────────┘    └──────────┘         └──────────┘
-///
-/// However, record boundaries (i.e. the \n terminators) do not align nicely with these preliminary
-/// chunk boundaries. So we adjust each preliminary chunk as follows:
-/// - Find the first record terminator from the chunk's start. This is the new starting position.
-/// - Find the first record terminator from the chunk's end. This is the new ending position.
-/// - If a given preliminary chunk doesn't contain a record terminator, the adjusted chunk is empty.
-///
-/// For example:
-///
-/// Adjusted Chunk 1    Adj. Chunk 2        Adj. Chunk 3          Adj. Chunk N
-/// ┌──────────────────┐┌─────────────────┐ ┌────────┐            ┌─┐
-/// │                \n││               \n│ │      \n│         \n │ │
-/// │          ┌───────┘│      ┌──────────┘ │  ┌─────┘            │ │
-/// │          │    ┌───┘   \n │    ┌───────┘  │         ┌────────┘ │
-/// │   \n     │    │          │    │      \n  │         │          │
-/// │          │    │          │    │          │   ...   │     \n   │
-/// │          │    │  \n      │    │          │         │          │
-/// │ \n       │    │          │    │          │         │          │
-/// │          │    │          │    │     \n   │         │  \n      │
-/// └──────────┘    └──────────┘    └──────────┘         └──────────┘
-///
-/// Using this method, we now have adjusted chunks that are aligned with record boundaries, that do
-/// not overlap, and that fully cover every byte in the CSV file. Parsing each adjusted chunk can
-/// now happen in parallel.
-///
-/// This is the same method as described in:
-/// Ge, Chang et al. “Speculative Distributed CSV Data Parsing for Big Data Analytics.” Proceedings of the 2019 International Conference on Management of Data (2019).
-///
-/// Another observation is that seeing a pure \n character is not necessarily indicative of a record
-/// terminator. We need to consider whether the \n character was seen within a quoted field, since the
-/// string "some text \n some text" is a valid CSV string field. To do this, we carry out the following
-/// algorithm:
-/// 1. Find a \n character.
-/// 2. Check if the CSV string immediately following this \n character is valid, i.e. does it parse
-///    as valid CSV, and does it produce the same number of fields as our schema.
-/// 2a. If there is a valid record at this point, then we assume that the \n we saw was a valid terminator.
-/// 2b. If the record at this point is invalid, then this was likely a \n in a quoted field. Find the next
-///     \n character and go back to 2.
 
 #[derive(Debug, Clone)]
 enum ChunkState {
@@ -762,17 +771,17 @@ enum ChunkState {
 impl std::fmt::Display for ChunkState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ChunkState::Start {
+            Self::Start {
                 slab: _,
                 start,
                 end,
             } => write!(f, "ChunkState::Start-{start}-{end}"),
-            ChunkState::Final {
+            Self::Final {
                 slab: _,
                 end,
                 valid_bytes,
             } => write!(f, "ChunkState::Final-{end}-{valid_bytes}"),
-            ChunkState::Continue { slab: _, end } => write!(f, "ChunkState::Continue-{end}"),
+            Self::Continue { slab: _, end } => write!(f, "ChunkState::Continue-{end}"),
         }
     }
 }
@@ -982,6 +991,7 @@ fn dispatch_to_parse_csv<R>(
     csv_buffer: &mut CsvBuffer,
     include_columns: Option<Vec<String>>,
     predicate: Option<Arc<Expr>>,
+    limit: Option<usize>,
 ) -> DaftResult<Vec<Table>>
 where
     R: std::io::Read,
@@ -995,6 +1005,8 @@ where
         .comment(parse_options.comment)
         .flexible(parse_options.allow_variable_columns)
         .from_reader(buffer_source);
+    // The header should not count towards the limit.
+    let limit = limit.map(|limit| limit + (has_header as usize));
     parse_csv_chunk(
         rdr,
         projection_indices,
@@ -1004,6 +1016,7 @@ where
         csv_buffer,
         include_columns,
         predicate,
+        limit,
     )
 }
 
@@ -1018,14 +1031,17 @@ fn parse_csv_chunk<R>(
     csv_buffer: &mut CsvBuffer,
     include_columns: Option<Vec<String>>,
     predicate: Option<Arc<Expr>>,
+    limit: Option<usize>,
 ) -> DaftResult<Vec<Table>>
 where
     R: std::io::Read,
 {
     let mut tables = vec![];
+    let mut local_limit = limit;
     loop {
-        let (rows_read, has_more) = local_read_rows(&mut reader, csv_buffer.buffer.as_mut_slice())
-            .context(ArrowSnafu {})?;
+        let (rows_read, has_more) =
+            local_read_rows(&mut reader, csv_buffer.buffer.as_mut_slice(), local_limit)
+                .context(ArrowSnafu {})?;
         let chunk = projection_indices
             .par_iter()
             .enumerate()
@@ -1055,7 +1071,13 @@ where
             table
         };
         tables.push(table);
-
+        // Stop reading once we hit the local limit.
+        if let Some(local_limit) = &mut local_limit {
+            *local_limit -= num_rows;
+            if *local_limit == 0 {
+                break;
+            }
+        }
         // The number of record might exceed the number of byte records we've allocated.
         // Retry until all byte records in this chunk are read.
         if !has_more {
