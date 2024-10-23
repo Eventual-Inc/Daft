@@ -26,6 +26,7 @@ use crate::{
     error::{PlannerError, SQLPlannerResult},
     invalid_operation_err, table_not_found_err, unsupported_sql_err,
 };
+
 /// A named logical plan
 /// This is used to keep track of the table name associated with a logical plan while planning a SQL query
 #[derive(Debug, Clone)]
@@ -297,8 +298,11 @@ impl SQLPlanner {
 
             let first = from_iter.next().unwrap();
             let mut rel = self.plan_relation(&first.relation)?;
+            self.table_map.insert(rel.get_name(), rel.clone());
             for tbl in from_iter {
                 let right = self.plan_relation(&tbl.relation)?;
+                self.table_map.insert(right.get_name(), right.clone());
+                let right_join_prefix = Some(format!("{}.", right.get_name()));
 
                 rel.inner = rel.inner.join(
                     right.inner,
@@ -307,13 +311,13 @@ impl SQLPlanner {
                     JoinType::Inner,
                     None,
                     None,
-                    None,
+                    right_join_prefix.as_deref(),
                 )?;
             }
             return Ok(rel);
         }
 
-        let from = from.into_iter().next().unwrap();
+        let from = from.iter().next().unwrap();
 
         fn collect_compound_identifiers(
             left: &[Ident],
@@ -515,6 +519,7 @@ impl SQLPlanner {
 
         let root = idents.next().unwrap();
         let root = ident_to_str(root);
+
         let current_relation = match self.table_map.get(&root) {
             Some(rel) => rel,
             None => {
@@ -539,6 +544,7 @@ impl SQLPlanner {
             // If duplicate columns are present in the schema, it adds the table name as a prefix. (df.column_name)
             // So we first check if the prefixed column name is present in the schema.
             let current_schema = self.relation_opt().unwrap().inner.schema();
+
             let f = current_schema.get_field(&ident_str).ok();
             if let Some(field) = f {
                 Ok(vec![col(field.name.clone())])

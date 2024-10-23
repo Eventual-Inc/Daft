@@ -90,7 +90,7 @@ impl JoinKeySet {
         iter: impl IntoIterator<Item = &'a (ExprRef, ExprRef)>,
     ) -> bool {
         let mut inserted = false;
-        for (left, right) in iter.into_iter() {
+        for (left, right) in iter {
             inserted |= self.insert(left, right);
         }
         inserted
@@ -102,19 +102,19 @@ impl JoinKeySet {
     /// returns true if any of the pairs were inserted
     pub fn insert_all_owned(&mut self, iter: impl IntoIterator<Item = (ExprRef, ExprRef)>) -> bool {
         let mut inserted = false;
-        for (left, right) in iter.into_iter() {
+        for (left, right) in iter {
             inserted |= self.insert_owned(Arc::unwrap_or_clone(left), Arc::unwrap_or_clone(right));
         }
         inserted
     }
 
     /// Inserts any join keys that are common to both `s1` and `s2` into self
-    pub fn insert_intersection(&mut self, s1: &JoinKeySet, s2: &JoinKeySet) {
+    pub fn insert_intersection(&mut self, s1: &Self, s2: &Self) {
         // note can't use inner.intersection as we need to consider both (l, r)
         // and (r, l) in equality
-        for (left, right) in s1.inner.iter() {
-            if s2.contains(left, right) {
-                self.insert(left, right);
+        for (left, right) in &s1.inner {
+            if s2.contains(left.as_ref(), right.as_ref()) {
+                self.insert(left.as_ref(), right.as_ref());
             }
         }
     }
@@ -140,7 +140,6 @@ impl JoinKeySet {
 ///
 /// This behaves like a `(Expr, Expr)` tuple for hashing and  comparison, but
 /// avoids copying the values simply to comparing them.
-
 #[derive(Debug, Eq, PartialEq, Hash)]
 struct ExprPair<'a>(&'a Expr, &'a Expr);
 

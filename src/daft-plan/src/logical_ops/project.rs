@@ -38,7 +38,7 @@ impl Project {
         })
     }
     /// Create a new Projection using the specified output schema
-    pub fn new_from_schema(input: Arc<LogicalPlan>, schema: SchemaRef) -> Result<Self> {
+    pub(crate) fn new_from_schema(input: Arc<LogicalPlan>, schema: SchemaRef) -> Result<Self> {
         let expr: Vec<ExprRef> = schema
             .names()
             .into_iter()

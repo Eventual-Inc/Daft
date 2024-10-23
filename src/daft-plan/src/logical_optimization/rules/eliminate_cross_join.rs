@@ -1,19 +1,19 @@
+/// Heavily inspired by DataFusion's EliminateCrossJoin rule: https://github.com/apache/datafusion/blob/b978cf8236436038a106ed94fb0d7eaa6ba99962/datafusion/optimizer/src/eliminate_cross_join.rs
 use std::{collections::HashSet, sync::Arc};
 
 use common_error::DaftResult;
-use common_treenode::{DynTreeNode, Transformed, TreeNode, TreeNodeRecursion};
+use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_core::{
-    join::{JoinStrategy, JoinType},
+    join::JoinType,
     prelude::{Schema, SchemaRef, TimeUnit},
 };
 use daft_dsl::{Expr, ExprRef, Operator};
 use daft_schema::dtype::DataType;
-use indexmap::IndexSet;
 
 use super::OptimizerRule;
 use crate::{
     logical_ops::{Filter, Join, Project},
-    logical_optimization::{join_key_set::JoinKeySet, OptimizerConfig},
+    logical_optimization::join_key_set::JoinKeySet,
     LogicalPlan, LogicalPlanRef,
 };
 
@@ -28,7 +28,6 @@ impl EliminateCrossJoin {
 
 impl OptimizerRule for EliminateCrossJoin {
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
-        dbg!("EliminateCrossJoin");
         let schema = plan.schema();
         let mut possible_join_keys = JoinKeySet::new();
         let mut all_inputs: Vec<Arc<LogicalPlan>> = vec![];
@@ -46,8 +45,7 @@ impl OptimizerRule for EliminateCrossJoin {
                 })
             );
             if !rewriteable {
-                todo!()
-                // return Ok(Transformed::no(Arc::new(filter)));
+                return rewrite_children(self, Arc::new(LogicalPlan::Filter(filter)));
             }
             if !can_flatten_join_inputs(filter.input.as_ref()) {
                 return Ok(Transformed::no(Arc::new(LogicalPlan::Filter(filter))));
@@ -89,7 +87,7 @@ impl OptimizerRule for EliminateCrossJoin {
         }
         left = rewrite_children(self, left)?.data;
         if schema != left.schema() {
-            let project = Project::new_from_schema(left, schema.clone())?;
+            let project = Project::new_from_schema(left, schema)?;
 
             left = Arc::new(LogicalPlan::Project(project));
         }
@@ -130,7 +128,7 @@ fn flatten_join_inputs(
 ) -> DaftResult<()> {
     match plan {
         LogicalPlan::Join(join) if join.join_type == JoinType::Inner => {
-            let keys = join.left_on.into_iter().zip(join.right_on.into_iter());
+            let keys = join.left_on.into_iter().zip(join.right_on);
             possible_join_keys.insert_all_owned(keys);
             flatten_join_inputs(
                 Arc::unwrap_or_clone(join.left),
@@ -162,16 +160,15 @@ fn can_flatten_join_inputs(plan: &LogicalPlan) -> bool {
     };
 
     for child in plan.children() {
-        match child {
+        if matches!(
+            child,
             LogicalPlan::Join(Join {
                 join_type: JoinType::Inner,
                 ..
-            }) => {
-                if !can_flatten_join_inputs(child) {
-                    return false;
-                }
-            }
-            _ => (),
+            })
+        ) && !can_flatten_join_inputs(child)
+        {
+            return false;
         }
     }
     true
@@ -187,9 +184,9 @@ fn extract_possible_join_keys(expr: &Expr, join_keys: &mut JoinKeySet) {
             }
             Operator::And => {
                 extract_possible_join_keys(left, join_keys);
-                extract_possible_join_keys(right, join_keys)
+                extract_possible_join_keys(right, join_keys);
             }
-            // Fix for issue#78 join predicates from inside of OR expr also pulled up properly.
+            // Fix for join predicates from inside of OR expr also pulled up properly.
             Operator::Or => {
                 let mut left_join_keys = JoinKeySet::new();
                 let mut right_join_keys = JoinKeySet::new();
@@ -197,7 +194,7 @@ fn extract_possible_join_keys(expr: &Expr, join_keys: &mut JoinKeySet) {
                 extract_possible_join_keys(left, &mut left_join_keys);
                 extract_possible_join_keys(right, &mut right_join_keys);
 
-                join_keys.insert_intersection(&left_join_keys, &right_join_keys)
+                join_keys.insert_intersection(&left_join_keys, &right_join_keys);
             }
             _ => (),
         };
@@ -219,7 +216,7 @@ fn remove_join_expressions(expr: ExprRef, join_keys: &JoinKeySet) -> Option<Expr
             // was a join key, so remove it
             None
         }
-        // Fix for issue#78 join predicates from inside of OR expr also pulled up properly.
+        // Fix for join predicates from inside of OR expr also pulled up properly.
         Expr::BinaryOp { left, op, right } if op == Operator::And => {
             let l = remove_join_expressions(left, join_keys);
             let r = remove_join_expressions(right, join_keys);
@@ -318,7 +315,7 @@ fn find_inner_join(
         .schema()
         .non_distinct_union(right.schema().as_ref());
 
-    return Ok(LogicalPlan::Join(Join {
+    Ok(LogicalPlan::Join(Join {
         left: left_input,
         right,
         left_on: vec![],
@@ -327,7 +324,7 @@ fn find_inner_join(
         join_strategy: None,
         output_schema: Arc::new(join_schema),
     })
-    .arced());
+    .arced())
 }
 
 /// Check whether all columns are from the schema.
@@ -335,8 +332,8 @@ pub fn check_all_columns_from_schema(
     columns: &HashSet<Arc<str>>,
     schema: &Schema,
 ) -> DaftResult<bool> {
-    for col in columns.iter() {
-        let exist = schema.get_index(&col).is_ok();
+    for col in columns {
+        let exist = schema.get_index(col).is_ok();
 
         if !exist {
             return Ok(false);
@@ -372,11 +369,11 @@ pub fn find_valid_equijoin_key_pair(
     if check_all_columns_from_schema(&left_using_columns, &left_schema)?
         && check_all_columns_from_schema(&right_using_columns, &right_schema)?
     {
-        return Ok(Some((left_key.clone(), right_key.clone())));
+        return Ok(Some((left_key, right_key)));
     } else if check_all_columns_from_schema(&right_using_columns, &left_schema)?
         && check_all_columns_from_schema(&left_using_columns, &right_schema)?
     {
-        return Ok(Some((right_key.clone(), left_key.clone())));
+        return Ok(Some((right_key, left_key)));
     }
 
     Ok(None)

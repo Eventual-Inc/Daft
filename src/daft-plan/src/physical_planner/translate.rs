@@ -5,7 +5,7 @@ use std::{
 };
 
 use common_daft_config::DaftExecutionConfig;
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
 use daft_core::prelude::*;
 use daft_dsl::{
@@ -429,7 +429,9 @@ pub(super) fn translate_single_logical_node(
             ..
         }) => {
             if left_on.is_empty() && right_on.is_empty() && join_type == &JoinType::Inner {
-                todo!("Cross join not yet implemented")
+                return Err(DaftError::PlanningError(
+                    "Cross join is not supported".to_string(),
+                ));
             }
             let mut right_physical = physical_children.pop().expect("requires 1 inputs");
             let mut left_physical = physical_children.pop().expect("requires 2 inputs");
