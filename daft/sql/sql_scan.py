@@ -161,7 +161,8 @@ class SQLScanOperator(ScanOperator):
 
     def _attempt_partition_bounds_read(self, num_scan_tasks: int) -> tuple[Any, PartitionBoundStrategy]:
         try:
-            # Try to get percentiles using percentile_cont
+            # Try to get percentiles using percentile_disc.
+            # Favor percentile_disc over percentile_cont because we want exact values to do <= and >= comparisons.
             percentiles = [i / num_scan_tasks for i in range(num_scan_tasks + 1)]
             # Use the OVER clause for SQL Server
             over_clause = "OVER ()" if self.conn.dialect in ["mssql", "tsql"] else ""
