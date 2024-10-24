@@ -14,8 +14,8 @@ const N_CHARS: Range<usize> = 1..20;
 const NUM_HASHES: usize = 128;
 const NGRAM_SIZE: usize = 13;
 
-// #[global_allocator]
-// static ALLOC: divan::AllocProfiler = divan::AllocProfiler::system();
+#[global_allocator]
+static ALLOC: divan::AllocProfiler = divan::AllocProfiler::system();
 
 fn main() {
     divan::main();
@@ -36,7 +36,6 @@ fn generate_input(rng: &mut fastrand::Rng) -> String {
 }
 
 #[divan::bench(types = [
-    BuildHasherDefault<AHasher>,
     BuildHasherDefault<FxHasher>,
     MurBuildHasher,
     xxhash_rust::xxh3::Xxh3DefaultBuilder,
