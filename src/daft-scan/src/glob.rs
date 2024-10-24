@@ -432,7 +432,8 @@ impl ScanOperator for GlobScanOperator {
                         return Ok(None);
                     }
                 }
-                let generated_fields = partition_values.schema.fields.clone();
+                let generated_fields =
+                    (!partition_values.is_empty()).then(|| partition_values.schema.fields.clone());
                 let partition_spec = Some(PartitionSpec {
                     keys: partition_values,
                 });
@@ -457,7 +458,6 @@ impl ScanOperator for GlobScanOperator {
                     schema.clone(),
                     storage_config.clone(),
                     pushdowns.clone(),
-                    file_path_column.clone(),
                     generated_fields,
                 )))
             })();

@@ -53,7 +53,6 @@ pub mod pylib {
     };
     use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
     use daft_table::{python::PyTable, Table};
-    use indexmap::IndexMap;
     use pyo3::{
         prelude::*,
         pyclass,
@@ -361,7 +360,6 @@ pub mod pylib {
                 storage_config.into(),
                 pushdowns.map(|p| p.0.as_ref().clone()).unwrap_or_default(),
                 None,
-                IndexMap::new(),
             );
             Ok(Some(Self(scan_task.into())))
         }
@@ -395,7 +393,6 @@ pub mod pylib {
                 storage_config.into(),
                 pushdowns.map(|p| p.0.as_ref().clone()).unwrap_or_default(),
                 None,
-                IndexMap::new(),
             );
             Ok(Self(scan_task.into()))
         }
@@ -441,7 +438,6 @@ pub mod pylib {
                 ))),
                 pushdowns.map(|p| p.0.as_ref().clone()).unwrap_or_default(),
                 None,
-                IndexMap::new(),
             );
             Ok(Self(scan_task.into()))
         }

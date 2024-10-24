@@ -623,6 +623,7 @@ impl MicroPartition {
                         iceberg_delete_files.extend(delete_files.iter().map(String::as_str));
                     }
                 }
+                // let file_path_column = if let Some(generated_fields) = scan_task.generated_fields
 
                 read_parquet_into_micropartition(
                     uris.as_slice(),
@@ -645,7 +646,7 @@ impl MicroPartition {
                     field_id_mapping.clone(),
                     parquet_metadata,
                     chunk_size,
-                    scan_task.file_path_column.as_deref(),
+                    scan_task.generated_fields.clone(),
                 )
                 .context(DaftCoreComputeSnafu)
             }
@@ -1123,7 +1124,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     parquet_metadata: Option<Vec<Arc<FileMetaData>>>,
     chunk_size: Option<usize>,
-    file_path_column: Option<&str>,
+    generated_fields: Option<IndexMap<String, Field>>,
 ) -> DaftResult<MicroPartition> {
     if let Some(so) = start_offset
         && so > 0
@@ -1262,13 +1263,6 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
                 std::iter::Sum::sum(m.row_groups.values().map(|m| m.total_byte_size() as u64))
             })
             .sum();
-        let mut generated_fields = IndexMap::new();
-        if let Some(file_path_column) = file_path_column {
-            generated_fields.insert(
-                file_path_column.to_string(),
-                Field::new(file_path_column.to_string(), DataType::Utf8),
-            );
-        }
 
         let scan_task = ScanTask::new(
             owned_urls
@@ -1318,7 +1312,6 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
                 }),
                 num_rows,
             ),
-            file_path_column.map(|s| s.to_string()),
             generated_fields,
         );
 

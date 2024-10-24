@@ -4,7 +4,6 @@ use common_error::DaftResult;
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use daft_core::prelude::Field;
 use daft_schema::schema::SchemaRef;
-use indexmap::IndexMap;
 
 use crate::{
     storage_config::StorageConfig, ChunkSpec, DataSource, PartitionField, Pushdowns, ScanOperator,
@@ -112,7 +111,6 @@ impl ScanOperator for AnonymousScanOperator {
                     storage_config.clone(),
                     pushdowns.clone(),
                     None,
-                    IndexMap::new(),
                 )
                 .into())
             },

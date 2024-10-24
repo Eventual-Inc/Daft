@@ -72,9 +72,9 @@ pub enum Error {
         fpc1,
         fpc2
     ))]
-    DifferingFilePathColumnsInScanTaskMerge {
-        fpc1: Option<String>,
-        fpc2: Option<String>,
+    DifferingGeneratedFieldsInScanTaskMerge {
+        fpc1: Option<IndexMap<String, Field>>,
+        fpc2: Option<IndexMap<String, Field>>,
     },
 
     #[snafu(display(
@@ -378,8 +378,7 @@ pub struct ScanTask {
     pub size_bytes_on_disk: Option<u64>,
     pub metadata: Option<TableMetadata>,
     pub statistics: Option<TableStatistics>,
-    pub file_path_column: Option<String>,
-    pub generated_fields: IndexMap<String, Field>,
+    pub generated_fields: Option<IndexMap<String, Field>>,
 }
 pub type ScanTaskRef = Arc<ScanTask>;
 
@@ -391,8 +390,7 @@ impl ScanTask {
         schema: SchemaRef,
         storage_config: Arc<StorageConfig>,
         pushdowns: Pushdowns,
-        file_path_column: Option<String>,
-        generated_fields: IndexMap<String, Field>,
+        generated_fields: Option<IndexMap<String, Field>>,
     ) -> Self {
         assert!(!sources.is_empty());
         debug_assert!(
@@ -433,7 +431,6 @@ impl ScanTask {
             size_bytes_on_disk,
             metadata,
             statistics,
-            file_path_column,
             generated_fields,
         }
     }
@@ -469,10 +466,10 @@ impl ScanTask {
                 p2: sc2.pushdowns.clone(),
             });
         }
-        if sc1.file_path_column != sc2.file_path_column {
-            return Err(Error::DifferingFilePathColumnsInScanTaskMerge {
-                fpc1: sc1.file_path_column.clone(),
-                fpc2: sc2.file_path_column.clone(),
+        if sc1.generated_fields != sc2.generated_fields {
+            return Err(Error::DifferingGeneratedFieldsInScanTaskMerge {
+                fpc1: sc1.generated_fields.clone(),
+                fpc2: sc2.generated_fields.clone(),
             });
         }
         Ok(Self::new(
@@ -485,7 +482,6 @@ impl ScanTask {
             sc1.schema.clone(),
             sc1.storage_config.clone(),
             sc1.pushdowns.clone(),
-            sc1.file_path_column.clone(),
             sc1.generated_fields.clone(),
         ))
     }
@@ -494,9 +490,9 @@ impl ScanTask {
     pub fn materialized_schema(&self) -> SchemaRef {
         let mut fields = self.schema.fields.clone();
         // Extend the schema with generated fields.
-        if !self.generated_fields.is_empty() {
+        if let Some(generated_fields) = &self.generated_fields {
             fields.extend(
-                self.generated_fields
+                generated_fields
                     .iter()
                     .map(|(name, field)| (name.clone(), field.clone())),
             );
@@ -1084,7 +1080,6 @@ mod test {
             ))),
             Pushdowns::default(),
             None,
-            IndexMap::new(),
         )
     }
 
