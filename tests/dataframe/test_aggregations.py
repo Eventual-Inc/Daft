@@ -15,6 +15,12 @@ from daft.utils import freeze
 from tests.utils import sort_arrow_table
 
 
+@pytest.fixture(scope="function", autouse=True)
+def set_default_morsel_size():
+    with daft.context.execution_config_ctx(default_morsel_size=1):
+        yield
+
+
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
 def test_agg_global(make_df, repartition_nparts):
     daft_df = make_df(
@@ -360,6 +366,9 @@ def test_agg_groupby_with_alias(make_df, repartition_nparts):
 class CustomObject:
     val: int
 
+    def __hash__(self):
+        return hash(self.val)
+
 
 def test_agg_pyobjects():
     objects = [CustomObject(val=0), None, CustomObject(val=1)]
@@ -375,7 +384,7 @@ def test_agg_pyobjects():
     res = df.to_pydict()
 
     assert res["count"] == [2]
-    assert res["list"] == [objects]
+    assert set(res["list"][0]) == set(objects)
 
 
 def test_groupby_agg_pyobjects():
@@ -397,7 +406,8 @@ def test_groupby_agg_pyobjects():
     res = df.to_pydict()
     assert res["groups"] == [1, 2]
     assert res["count"] == [2, 1]
-    assert res["list"] == [[objects[0], objects[2], objects[4]], [objects[1], objects[3]]]
+    assert set(res["list"][0]) == set([objects[0], objects[2], objects[4]])
+    assert set(res["list"][1]) == set([objects[1], objects[3]])
 
 
 @pytest.mark.parametrize("shuffle_aggregation_default_partitions", [None, 20])

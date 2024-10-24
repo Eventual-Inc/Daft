@@ -54,4 +54,9 @@ impl IntermediateOperator for PivotOperator {
     fn name(&self) -> &'static str {
         "PivotOperator"
     }
+
+    // Don't buffer the input to pivot because it depends on the full output of agg.
+    fn morsel_size(&self) -> Option<usize> {
+        None
+    }
 }

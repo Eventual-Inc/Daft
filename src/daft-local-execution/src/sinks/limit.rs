@@ -90,4 +90,9 @@ impl StreamingSink for LimitSink {
     fn max_concurrency(&self) -> usize {
         1
     }
+
+    /// Limits are greedy and should consume all input data whenever possible.
+    fn morsel_size(&self) -> Option<usize> {
+        None
+    }
 }

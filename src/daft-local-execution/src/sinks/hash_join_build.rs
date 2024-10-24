@@ -7,7 +7,9 @@ use daft_micropartition::MicroPartition;
 use daft_plan::JoinType;
 use daft_table::{make_probeable_builder, ProbeState, ProbeableBuilder, Table};
 
-use super::blocking_sink::{BlockingSink, BlockingSinkStatus};
+use super::blocking_sink::{
+    BlockingSink, BlockingSinkState, BlockingSinkStatus, DynBlockingSinkState,
+};
 use crate::pipeline::PipelineResultType;
 
 enum ProbeTableState {
@@ -74,8 +76,16 @@ impl ProbeTableState {
     }
 }
 
+impl DynBlockingSinkState for ProbeTableState {
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
 pub struct HashJoinBuildSink {
-    probe_table_state: ProbeTableState,
+    key_schema: SchemaRef,
+    projection: Vec<ExprRef>,
+    join_type: JoinType,
 }
 
 impl HashJoinBuildSink {
@@ -85,12 +95,10 @@ impl HashJoinBuildSink {
         join_type: &JoinType,
     ) -> DaftResult<Self> {
         Ok(Self {
-            probe_table_state: ProbeTableState::new(&key_schema, projection, join_type)?,
+            key_schema,
+            projection,
+            join_type: *join_type,
         })
-    }
-
-    pub(crate) fn boxed(self) -> Box<dyn BlockingSink> {
-        Box::new(self)
     }
 }
 
@@ -99,17 +107,49 @@ impl BlockingSink for HashJoinBuildSink {
         "HashJoinBuildSink"
     }
 
-    fn sink(&mut self, input: &Arc<MicroPartition>) -> DaftResult<BlockingSinkStatus> {
-        self.probe_table_state.add_tables(input)?;
-        Ok(BlockingSinkStatus::NeedMoreInput)
+    fn sink(
+        &self,
+        input: &Arc<MicroPartition>,
+        state_handle: &BlockingSinkState,
+    ) -> DaftResult<BlockingSinkStatus> {
+        state_handle.with_state_mut::<ProbeTableState, _, _>(|state| {
+            state.add_tables(input)?;
+            Ok(BlockingSinkStatus::NeedMoreInput)
+        })
     }
 
-    fn finalize(&mut self) -> DaftResult<Option<PipelineResultType>> {
-        self.probe_table_state.finalize()?;
-        if let ProbeTableState::Done { probe_state } = &self.probe_table_state {
+    fn finalize(
+        &self,
+        states: Vec<Box<dyn DynBlockingSinkState>>,
+    ) -> DaftResult<Option<PipelineResultType>> {
+        assert_eq!(states.len(), 1);
+        let mut state = states.into_iter().next().unwrap();
+        let probe_table_state = state
+            .as_any_mut()
+            .downcast_mut::<ProbeTableState>()
+            .expect("State type mismatch");
+        probe_table_state.finalize()?;
+        if let ProbeTableState::Done { probe_state } = probe_table_state {
             Ok(Some(probe_state.clone().into()))
         } else {
             panic!("finalize should only be called after the probe table is built")
         }
+    }
+
+    fn max_concurrency(&self) -> usize {
+        1
+    }
+
+    // Hash join build is currently single threaded, so we don't need to buffer the input
+    fn morsel_size(&self) -> Option<usize> {
+        None
+    }
+
+    fn make_state(&self) -> DaftResult<Box<dyn DynBlockingSinkState>> {
+        Ok(Box::new(ProbeTableState::new(
+            &self.key_schema,
+            self.projection.clone(),
+            &self.join_type,
+        )?))
     }
 }

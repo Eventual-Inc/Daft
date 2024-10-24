@@ -10,6 +10,12 @@ from daft.errors import ExpressionTypeError
 from tests.utils import sort_arrow_table
 
 
+@pytest.fixture(scope="function", autouse=True)
+def set_default_morsel_size():
+    with context.execution_config_ctx(default_morsel_size=1):
+        yield
+
+
 def skip_invalid_join_strategies(join_strategy, join_type):
     if context.get_context().daft_execution_config.enable_native_executor is True:
         if join_strategy not in [None, "hash"]:
@@ -151,7 +157,7 @@ def test_dupes_join_key(join_strategy, join_type, make_df, n_partitions: int):
     )
 
     joined = df.join(df, on="A", strategy=join_strategy, how=join_type)
-    joined = joined.sort(["A", "B"])
+    joined = joined.sort(["A", "B", "right.B"])
     joined_data = joined.to_pydict()
 
     assert joined_data == {
@@ -182,14 +188,14 @@ def test_multicol_dupes_join_key(join_strategy, join_type, make_df, n_partitions
     )
 
     joined = df.join(df, on=["A", "B"], strategy=join_strategy, how=join_type)
-    joined = joined.sort(["A", "B", "C"])
+    joined = joined.sort(["A", "B", "C", "right.C"])
     joined_data = joined.to_pydict()
 
     assert joined_data == {
         "A": [1, 1, 1, 1, 2, 2, 2, 2, 3, 3],
         "B": ["a"] * 4 + ["b"] * 4 + ["c", "d"],
         "C": [0, 0, 1, 1, 0, 0, 1, 1, 1, 0],
-        "right.C": [1, 0, 1, 0, 1, 0, 1, 0, 1, 0],
+        "right.C": [0, 1, 0, 1, 0, 1, 0, 1, 1, 0],
     }
 
 
@@ -213,7 +219,7 @@ def test_joins_all_same_key(join_strategy, join_type, make_df, n_partitions: int
     )
 
     joined = df.join(df, on="A", strategy=join_strategy, how=join_type)
-    joined = joined.sort(["A", "B"])
+    joined = joined.sort(["A", "B", "right.B"])
     joined_data = joined.to_pydict()
 
     assert joined_data == {

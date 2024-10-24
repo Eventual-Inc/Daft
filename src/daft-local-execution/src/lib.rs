@@ -1,4 +1,5 @@
 #![feature(let_chains)]
+mod buffer;
 mod channel;
 mod intermediate_ops;
 mod pipeline;
@@ -7,6 +8,7 @@ mod runtime_stats;
 mod sinks;
 mod sources;
 
+use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use lazy_static::lazy_static;
 pub use run::NativeExecutor;
@@ -74,9 +76,17 @@ impl ExecutionRuntimeHandle {
         self.worker_set.shutdown().await;
     }
 
-    #[must_use]
-    pub fn default_morsel_size(&self) -> usize {
-        self.default_morsel_size
+    pub fn determine_morsel_size(&self, operator_morsel_size: Option<usize>) -> Option<usize> {
+        match operator_morsel_size {
+            None => None,
+            Some(_)
+                if self.default_morsel_size
+                    != DaftExecutionConfig::default().default_morsel_size =>
+            {
+                Some(self.default_morsel_size)
+            }
+            size => size,
+        }
     }
 }
 

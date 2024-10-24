@@ -48,3 +48,9 @@ def repartition_nparts(request):
     partitions that the test case should repartition its dataset into for testing
     """
     return request.param
+
+
+@pytest.fixture(scope="function", autouse=True)
+def set_default_morsel_size():
+    with daft.context.execution_config_ctx(default_morsel_size=1):
+        yield

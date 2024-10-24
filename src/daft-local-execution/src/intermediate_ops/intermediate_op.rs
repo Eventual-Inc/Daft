@@ -1,13 +1,14 @@
 use std::sync::{Arc, Mutex};
 
+use common_daft_config::DaftExecutionConfig;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_runtime::get_compute_runtime;
 use daft_micropartition::MicroPartition;
 use tracing::{info_span, instrument};
 
-use super::buffer::OperatorBuffer;
 use crate::{
+    buffer::RowBasedBuffer,
     channel::{create_channel, PipelineChannel, Receiver, Sender},
     pipeline::{PipelineNode, PipelineResultType},
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
@@ -65,6 +66,9 @@ pub trait IntermediateOperator: Send + Sync {
     fn name(&self) -> &'static str;
     fn make_state(&self) -> Box<dyn DynIntermediateOpState> {
         Box::new(DefaultIntermediateOperatorState {})
+    }
+    fn morsel_size(&self) -> Option<usize> {
+        Some(DaftExecutionConfig::default().default_morsel_size)
     }
 }
 
@@ -165,8 +169,9 @@ impl IntermediateNode {
     pub async fn send_to_workers(
         receivers: Vec<CountingReceiver>,
         worker_senders: Vec<Sender<(usize, PipelineResultType)>>,
-        morsel_size: usize,
+        morsel_size: Option<usize>,
     ) -> DaftResult<()> {
+        println!("morsel_size: {:?}", morsel_size);
         let mut next_worker_idx = 0;
         let mut send_to_next_worker = |idx, data: PipelineResultType| {
             let next_worker_sender = worker_senders.get(next_worker_idx).unwrap();
@@ -175,26 +180,28 @@ impl IntermediateNode {
         };
 
         for (idx, mut receiver) in receivers.into_iter().enumerate() {
-            let mut buffer = OperatorBuffer::new(morsel_size);
+            let mut buffer = morsel_size.map(RowBasedBuffer::new);
             while let Some(morsel) = receiver.recv().await {
                 if morsel.should_broadcast() {
                     for worker_sender in &worker_senders {
                         let _ = worker_sender.send((idx, morsel.clone())).await;
                     }
-                } else {
+                } else if let Some(buffer) = buffer.as_mut() {
                     buffer.push(morsel.as_data().clone());
-                    if let Some(ready) = buffer.try_clear() {
-                        let _ = send_to_next_worker(idx, ready?.into()).await;
+                    if let Some(ready) = buffer.pop_enough()? {
+                        for r in ready {
+                            let _ = send_to_next_worker(idx, r.into()).await;
+                        }
                     }
+                } else {
+                    let _ = send_to_next_worker(idx, morsel).await;
                 }
             }
-            // Buffer may still have some morsels left above the threshold
-            while let Some(ready) = buffer.try_clear() {
-                let _ = send_to_next_worker(idx, ready?.into()).await;
-            }
-            // Clear all remaining morsels
-            if let Some(last_morsel) = buffer.clear_all() {
-                let _ = send_to_next_worker(idx, last_morsel?.into()).await;
+            if let Some(buffer) = buffer.as_mut() {
+                // Clear all remaining morsels
+                if let Some(last_morsel) = buffer.pop_all()? {
+                    let _ = send_to_next_worker(idx, last_morsel.into()).await;
+                }
             }
         }
         Ok(())
@@ -247,12 +254,9 @@ impl PipelineNode for IntermediateNode {
 
         let worker_senders =
             self.spawn_workers(*NUM_CPUS, &mut destination_channel, runtime_handle);
+        let morsel_size = runtime_handle.determine_morsel_size(self.intermediate_op.morsel_size());
         runtime_handle.spawn(
-            Self::send_to_workers(
-                child_result_receivers,
-                worker_senders,
-                runtime_handle.default_morsel_size(),
-            ),
+            Self::send_to_workers(child_result_receivers, worker_senders, morsel_size),
             self.intermediate_op.name(),
         );
         Ok(destination_channel)

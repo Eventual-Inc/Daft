@@ -2,6 +2,14 @@ from __future__ import annotations
 
 import pytest
 
+import daft
+
+
+@pytest.fixture(scope="function", autouse=True)
+def set_default_morsel_size():
+    with daft.context.execution_config_ctx(default_morsel_size=1):
+        yield
+
 
 def test_simple_concat(make_df):
     df1 = make_df({"foo": [1, 2, 3]})
