@@ -1,4 +1,4 @@
-use std::hint::black_box;
+use std::{collections::VecDeque, hint::black_box};
 
 use daft_minhash::windowed::WindowedWordsExt;
 use tango_bench::{
@@ -28,8 +28,9 @@ fn bench_windowed_words(text: &'static str, window_size: usize) -> Benchmark {
             window_size
         ),
         move |b| {
+            let mut vec = VecDeque::new();
             b.iter(move || {
-                let iter = text.windowed_words(window_size);
+                let iter = text.windowed_words_in(window_size, &mut vec);
 
                 for elem in iter {
                     black_box(elem);
@@ -53,8 +54,9 @@ fn all_benchmarks() -> impl IntoBenchmarks {
     benchmarks.extend([
         // Empty string
         benchmark_fn("windowed_words/empty_string", |b| {
-            b.iter(|| {
-                let iter = "".windowed_words(3);
+            let mut vec = VecDeque::new();
+            b.iter(move || {
+                let iter = "".windowed_words_in(3, &mut vec);
 
                 for elem in iter {
                     black_box(elem);
@@ -63,8 +65,9 @@ fn all_benchmarks() -> impl IntoBenchmarks {
         }),
         // Single word
         benchmark_fn("windowed_words/single_word", |b| {
-            b.iter(|| {
-                let iter = black_box("Word".windowed_words(3));
+            let mut vec = VecDeque::new();
+            b.iter(move || {
+                let iter = "Word".windowed_words_in(3, &mut vec);
 
                 for elem in iter {
                     black_box(elem);
@@ -73,8 +76,9 @@ fn all_benchmarks() -> impl IntoBenchmarks {
         }),
         // UTF-8 text
         benchmark_fn("windowed_words/utf8_text", |b| {
-            b.iter(|| {
-                let iter = "Hello 世界 Rust язык 🌍 Programming".windowed_words(3);
+            let mut vec = VecDeque::new();
+            b.iter(move || {
+                let iter = "Hello 世界 Rust язык 🌍 Programming".windowed_words_in(3, &mut vec);
 
                 for elem in iter {
                     black_box(elem);

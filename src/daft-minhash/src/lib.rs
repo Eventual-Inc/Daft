@@ -4,6 +4,7 @@
 #![feature(iter_array_chunks)]
 #![feature(split_array)]
 #![feature(array_windows)]
+#![feature(allocator_api)]
 //! MinHash: Efficient Set Similarity Estimation
 //!
 //! MinHash is a probabilistic technique for rapidly estimating similarity between sets,
@@ -92,6 +93,7 @@
 //! This implementation uses SIMD operations for enhanced performance on compatible hardware.
 
 use std::{
+    collections::VecDeque,
     hash::{BuildHasher, Hasher},
     simd::{cmp::SimdOrd, Simd},
 };
@@ -276,11 +278,6 @@ pub fn load_simd(v: impl IntoIterator<Item = u64>, num_hashes: usize) -> Vec<Sim
     out
 }
 
-// a real     1010
-// b LLM      1001
-// a XOR b    0011
-
-/// Computes the MinHash signature of a string using SIMD operations.
 pub fn minhash(
     s: &str,
     perm_simd: (&[SimdU64], &[SimdU64]),
@@ -288,12 +285,32 @@ pub fn minhash(
     word_ngram_size: usize,
     hasher: &impl BuildHasher,
 ) -> DaftResult<Vec<u32>> {
+    let mut alloc = VecDeque::new();
+    minhash_in(
+        s,
+        perm_simd,
+        num_hashes,
+        word_ngram_size,
+        hasher,
+        &mut alloc,
+    )
+}
+
+/// Computes the MinHash signature of a string using SIMD operations.
+pub fn minhash_in(
+    s: &str,
+    perm_simd: (&[SimdU64], &[SimdU64]),
+    num_hashes: usize,
+    word_ngram_size: usize,
+    hasher: &impl BuildHasher,
+    alloc: &mut VecDeque<isize>,
+) -> DaftResult<Vec<u32>> {
     let (perm_a_simd, perm_b_simd) = perm_simd;
     let num_simd_vectors = num_hashes.div_ceil(SIMD_LANES);
 
     let mut min_hash_values: Vec<SimdU64> = vec![MAX_HASH_SIMD; num_simd_vectors];
 
-    let hashes = s.windowed_words(word_ngram_size).map(|w| {
+    let hashes = s.windowed_words_in(word_ngram_size, alloc).map(|w| {
         let mut h = hasher.build_hasher();
         h.write(w.as_bytes());
 

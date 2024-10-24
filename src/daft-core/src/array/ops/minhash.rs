@@ -1,4 +1,4 @@
-use std::{hash::BuildHasher, iter::repeat_with};
+use std::{collections::VecDeque, hash::BuildHasher, iter::repeat_with};
 
 use arrow2::array::{MutableArray, MutablePrimitiveArray, PrimitiveArray};
 use common_error::{DaftError, DaftResult};
@@ -61,6 +61,8 @@ impl DaftMinHash for Utf8Array {
         let mut output: MutablePrimitiveArray<u32> =
             MutablePrimitiveArray::with_capacity(num_hashes * self.len());
 
+        let mut alloc = VecDeque::new();
+
         for elem in internal_arrow_representation {
             let Some(elem) = elem else {
                 for _ in 0..num_hashes {
@@ -69,12 +71,13 @@ impl DaftMinHash for Utf8Array {
                 continue;
             };
 
-            let minhash_res = daft_minhash::minhash(
+            let minhash_res = daft_minhash::minhash_in(
                 elem,
                 (&perm_a_simd, &perm_b_simd),
                 num_hashes,
                 ngram_size,
                 hasher,
+                &mut alloc,
             )?;
 
             output.extend(minhash_res.into_iter().map(Some));
