@@ -1,4 +1,4 @@
-struct WindowedWords<'a> {
+pub struct WindowedWords<'a> {
     s: &'a str,
     word_starts: Vec<usize>, // Vec of start indices for each word
     window_size: usize,
