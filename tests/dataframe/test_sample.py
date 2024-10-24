@@ -2,13 +2,6 @@ from __future__ import annotations
 
 import pytest
 
-from daft import context
-
-pytestmark = pytest.mark.skipif(
-    context.get_context().daft_execution_config.enable_native_executor is True,
-    reason="Native executor fails for these tests",
-)
-
 
 def test_sample_fraction(make_df, valid_data: list[dict[str, float]]) -> None:
     df = make_df(valid_data)

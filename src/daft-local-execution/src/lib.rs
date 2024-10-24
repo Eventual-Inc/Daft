@@ -6,17 +6,41 @@ mod run;
 mod runtime_stats;
 mod sinks;
 mod sources;
+
 use common_error::{DaftError, DaftResult};
 use lazy_static::lazy_static;
 pub use run::NativeExecutor;
 use snafu::{futures::TryFutureExt, Snafu};
+
 lazy_static! {
     pub static ref NUM_CPUS: usize = std::thread::available_parallelism().unwrap().get();
 }
 
-pub(crate) type TaskSet<T> = tokio::task::JoinSet<T>;
-pub(crate) fn create_task_set<T>() -> TaskSet<T> {
-    tokio::task::JoinSet::new()
+pub(crate) struct TaskSet<T> {
+    inner: tokio::task::JoinSet<T>,
+}
+
+impl<T: 'static> TaskSet<T> {
+    fn new() -> Self {
+        Self {
+            inner: tokio::task::JoinSet::new(),
+        }
+    }
+
+    fn spawn<F>(&mut self, future: F)
+    where
+        F: std::future::Future<Output = T> + 'static,
+    {
+        self.inner.spawn_local(future);
+    }
+
+    async fn join_next(&mut self) -> Option<Result<T, tokio::task::JoinError>> {
+        self.inner.join_next().await
+    }
+
+    async fn shutdown(&mut self) {
+        self.inner.shutdown().await;
+    }
 }
 
 pub struct ExecutionRuntimeHandle {
@@ -28,13 +52,13 @@ impl ExecutionRuntimeHandle {
     #[must_use]
     pub fn new(default_morsel_size: usize) -> Self {
         Self {
-            worker_set: create_task_set(),
+            worker_set: TaskSet::new(),
             default_morsel_size,
         }
     }
     pub fn spawn(
         &mut self,
-        task: impl std::future::Future<Output = DaftResult<()>> + Send + 'static,
+        task: impl std::future::Future<Output = DaftResult<()>> + 'static,
         node_name: &str,
     ) {
         let node_name = node_name.to_string();

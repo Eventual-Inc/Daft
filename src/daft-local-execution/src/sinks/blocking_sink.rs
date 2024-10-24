@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
+use common_runtime::get_compute_runtime;
 use daft_micropartition::MicroPartition;
 use tracing::info_span;
 
@@ -92,19 +93,28 @@ impl PipelineNode for BlockingSinkNode {
         runtime_handle.spawn(
             async move {
                 let span = info_span!("BlockingSinkNode::execute");
-                let mut guard = op.lock().await;
+                let compute_runtime = get_compute_runtime();
                 while let Some(val) = child_results_receiver.recv().await {
-                    if matches!(
-                        rt_context.in_span(&span, || guard.sink(val.as_data()))?,
-                        BlockingSinkStatus::Finished
-                    ) {
+                    let op = op.clone();
+                    let span = span.clone();
+                    let rt_context = rt_context.clone();
+                    let fut = async move {
+                        let mut guard = op.lock().await;
+                        rt_context.in_span(&span, || guard.sink(val.as_data()))
+                    };
+                    let result = compute_runtime.await_on(fut).await??;
+                    if matches!(result, BlockingSinkStatus::Finished) {
                         break;
                     }
                 }
-                let finalized_result = rt_context
-                    .in_span(&info_span!("BlockingSinkNode::finalize"), || {
-                        guard.finalize()
-                    })?;
+                let finalized_result = compute_runtime
+                    .await_on(async move {
+                        let mut guard = op.lock().await;
+                        rt_context.in_span(&info_span!("BlockingSinkNode::finalize"), || {
+                            guard.finalize()
+                        })
+                    })
+                    .await??;
                 if let Some(part) = finalized_result {
                     let _ = destination_sender.send(part).await;
                 }

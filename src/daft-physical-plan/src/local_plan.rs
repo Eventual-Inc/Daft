@@ -15,11 +15,11 @@ pub enum LocalPhysicalPlan {
     Project(Project),
     Filter(Filter),
     Limit(Limit),
-    // Explode(Explode),
-    // Unpivot(Unpivot),
+    Explode(Explode),
+    Unpivot(Unpivot),
     Sort(Sort),
     // Split(Split),
-    // Sample(Sample),
+    Sample(Sample),
     // MonotonicallyIncreasingId(MonotonicallyIncreasingId),
     // Coalesce(Coalesce),
     // Flatten(Flatten),
@@ -29,7 +29,7 @@ pub enum LocalPhysicalPlan {
     // ReduceMerge(ReduceMerge),
     UnGroupedAggregate(UnGroupedAggregate),
     HashAggregate(HashAggregate),
-    // Pivot(Pivot),
+    Pivot(Pivot),
     Concat(Concat),
     HashJoin(HashJoin),
     // SortMergeJoin(SortMergeJoin),
@@ -107,6 +107,20 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    pub(crate) fn explode(
+        input: LocalPhysicalPlanRef,
+        to_explode: Vec<ExprRef>,
+        schema: SchemaRef,
+    ) -> LocalPhysicalPlanRef {
+        Self::Explode(Explode {
+            input,
+            to_explode,
+            schema,
+            plan_stats: PlanStats {},
+        })
+        .arced()
+    }
+
     pub(crate) fn project(
         input: LocalPhysicalPlanRef,
         projection: Vec<ExprRef>,
@@ -151,6 +165,46 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    pub(crate) fn unpivot(
+        input: LocalPhysicalPlanRef,
+        ids: Vec<ExprRef>,
+        values: Vec<ExprRef>,
+        variable_name: String,
+        value_name: String,
+        schema: SchemaRef,
+    ) -> LocalPhysicalPlanRef {
+        Self::Unpivot(Unpivot {
+            input,
+            ids,
+            values,
+            variable_name,
+            value_name,
+            schema,
+            plan_stats: PlanStats {},
+        })
+        .arced()
+    }
+
+    pub(crate) fn pivot(
+        input: LocalPhysicalPlanRef,
+        group_by: Vec<ExprRef>,
+        pivot_column: ExprRef,
+        value_column: ExprRef,
+        names: Vec<String>,
+        schema: SchemaRef,
+    ) -> LocalPhysicalPlanRef {
+        Self::Pivot(Pivot {
+            input,
+            group_by,
+            pivot_column,
+            value_column,
+            names,
+            schema,
+            plan_stats: PlanStats {},
+        })
+        .arced()
+    }
+
     pub(crate) fn sort(
         input: LocalPhysicalPlanRef,
         sort_by: Vec<ExprRef>,
@@ -161,6 +215,24 @@ impl LocalPhysicalPlan {
             input,
             sort_by,
             descending,
+            schema,
+            plan_stats: PlanStats {},
+        })
+        .arced()
+    }
+
+    pub(crate) fn sample(
+        input: LocalPhysicalPlanRef,
+        fraction: f64,
+        with_replacement: bool,
+        seed: Option<u64>,
+    ) -> LocalPhysicalPlanRef {
+        let schema = input.schema().clone();
+        Self::Sample(Sample {
+            input,
+            fraction,
+            with_replacement,
+            seed,
             schema,
             plan_stats: PlanStats {},
         })
@@ -210,8 +282,12 @@ impl LocalPhysicalPlan {
             | Self::Project(Project { schema, .. })
             | Self::UnGroupedAggregate(UnGroupedAggregate { schema, .. })
             | Self::HashAggregate(HashAggregate { schema, .. })
+            | Self::Pivot(Pivot { schema, .. })
             | Self::Sort(Sort { schema, .. })
+            | Self::Sample(Sample { schema, .. })
             | Self::HashJoin(HashJoin { schema, .. })
+            | Self::Explode(Explode { schema, .. })
+            | Self::Unpivot(Unpivot { schema, .. })
             | Self::Concat(Concat { schema, .. }) => schema,
             Self::InMemoryScan(InMemoryScan { info, .. }) => &info.source_schema,
             _ => todo!("{:?}", self),
@@ -263,10 +339,28 @@ pub struct Limit {
 }
 
 #[derive(Debug)]
+pub struct Explode {
+    pub input: LocalPhysicalPlanRef,
+    pub to_explode: Vec<ExprRef>,
+    pub schema: SchemaRef,
+    pub plan_stats: PlanStats,
+}
+
+#[derive(Debug)]
 pub struct Sort {
     pub input: LocalPhysicalPlanRef,
     pub sort_by: Vec<ExprRef>,
     pub descending: Vec<bool>,
+    pub schema: SchemaRef,
+    pub plan_stats: PlanStats,
+}
+
+#[derive(Debug)]
+pub struct Sample {
+    pub input: LocalPhysicalPlanRef,
+    pub fraction: f64,
+    pub with_replacement: bool,
+    pub seed: Option<u64>,
     pub schema: SchemaRef,
     pub plan_stats: PlanStats,
 }
@@ -284,6 +378,28 @@ pub struct HashAggregate {
     pub input: LocalPhysicalPlanRef,
     pub aggregations: Vec<AggExpr>,
     pub group_by: Vec<ExprRef>,
+    pub schema: SchemaRef,
+    pub plan_stats: PlanStats,
+}
+
+#[derive(Debug)]
+pub struct Unpivot {
+    pub input: LocalPhysicalPlanRef,
+    pub ids: Vec<ExprRef>,
+    pub values: Vec<ExprRef>,
+    pub variable_name: String,
+    pub value_name: String,
+    pub schema: SchemaRef,
+    pub plan_stats: PlanStats,
+}
+
+#[derive(Debug)]
+pub struct Pivot {
+    pub input: LocalPhysicalPlanRef,
+    pub group_by: Vec<ExprRef>,
+    pub pivot_column: ExprRef,
+    pub value_column: ExprRef,
+    pub names: Vec<String>,
     pub schema: SchemaRef,
     pub plan_stats: PlanStats,
 }

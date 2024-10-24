@@ -7,10 +7,11 @@ use std::{
 use arrow2::io::parquet::read::schema::infer_schema_with_options;
 use common_error::DaftResult;
 use common_file_formats::{CsvSourceConfig, FileFormatConfig, ParquetSourceConfig};
+use common_runtime::get_io_runtime;
 use daft_core::prelude::*;
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::ExprRef;
-use daft_io::{get_runtime, IOClient, IOConfig, IOStatsContext, IOStatsRef};
+use daft_io::{IOClient, IOConfig, IOStatsContext, IOStatsRef};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::{
     read_parquet_bulk, read_parquet_metadata_bulk, ParquetSchemaInferenceOptions,
@@ -379,105 +380,8 @@ fn materialize_scan_task(
                     })?
                 }
                 FileFormatConfig::PythonFunction => {
-                    use pyo3::{types::PyAnyMethods, PyObject};
-
-                    let table_iterators = scan_task.sources.iter().map(|source| {
-                        // Call Python function to create an Iterator (Grabs the GIL and then releases it)
-                        match source {
-                            DataSource::PythonFactoryFunction {
-                                module,
-                                func_name,
-                                func_args,
-                                ..
-                            } => {
-                                Python::with_gil(|py| {
-                                    let func = py.import_bound(module.as_str())
-                                        .unwrap_or_else(|_| panic!("Cannot import factory function from module {module}"))
-                                        .getattr(func_name.as_str())
-                                        .unwrap_or_else(|_| panic!("Cannot find function {func_name} in module {module}"));
-                                    func.call(func_args.to_pytuple(py), None)
-                                        .with_context(|_| PyIOSnafu)
-                                        .map(Into::<PyObject>::into)
-                                })
-                            }
-                            _ => unreachable!("PythonFunction file format must be paired with PythonFactoryFunction data file sources"),
-                        }
-                    });
-
-                    let mut tables = Vec::new();
-                    let mut rows_seen_so_far = 0;
-                    for iterator in table_iterators {
-                        let iterator = iterator?;
-
-                        // Iterate on this iterator to exhaustion, or until the limit is met
-                        while scan_task
-                            .pushdowns
-                            .limit
-                            .map_or(true, |limit| rows_seen_so_far < limit)
-                        {
-                            // Grab the GIL to call next() on the iterator, and then release it once we have the Table
-                            let table = match Python::with_gil(|py| {
-                                iterator
-                                    .downcast_bound::<pyo3::types::PyIterator>(py)
-                                    .expect("Function must return an iterator of tables")
-                                    .clone()
-                                    .next()
-                                    .map(|result| {
-                                        result
-                                            .map(|tbl| {
-                                                tbl.extract::<daft_table::python::PyTable>()
-                                                    .expect("Must be a PyTable")
-                                                    .table
-                                            })
-                                            .with_context(|_| PyIOSnafu)
-                                    })
-                            }) {
-                                Some(table) => table,
-                                None => break,
-                            }?;
-
-                            // Apply filters
-                            let table = if let Some(filters) = scan_task.pushdowns.filters.as_ref()
-                            {
-                                table
-                                    .filter(&[filters.clone()])
-                                    .with_context(|_| DaftCoreComputeSnafu)?
-                            } else {
-                                table
-                            };
-
-                            // Apply limit if necessary, and update `&mut remaining`
-                            let table = if let Some(limit) = scan_task.pushdowns.limit {
-                                let limited_table = if rows_seen_so_far + table.len() > limit {
-                                    table
-                                        .slice(0, limit - rows_seen_so_far)
-                                        .with_context(|_| DaftCoreComputeSnafu)?
-                                } else {
-                                    table
-                                };
-
-                                // Update the rows_seen_so_far
-                                rows_seen_so_far += limited_table.len();
-
-                                limited_table
-                            } else {
-                                table
-                            };
-
-                            tables.push(table);
-                        }
-
-                        // If seen enough rows, early-terminate
-                        if scan_task
-                            .pushdowns
-                            .limit
-                            .is_some_and(|limit| rows_seen_so_far >= limit)
-                        {
-                            break;
-                        }
-                    }
-
-                    tables
+                    let tables = crate::python::read_pyfunc_into_table_iter(&scan_task)?;
+                    tables.collect::<crate::Result<Vec<_>>>()?
                 }
             }
         }
@@ -1161,7 +1065,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
             chunk_size,
         );
     }
-    let runtime_handle = get_runtime(multithreaded_io)?;
+    let runtime_handle = get_io_runtime(multithreaded_io);
     // Attempt to read TableStatistics from the Parquet file
     let meta_io_client = io_client.clone();
     let meta_io_stats = io_stats.clone();

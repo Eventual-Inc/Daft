@@ -1220,6 +1220,8 @@ mod tests {
                 vec![col("a"), col("b")],
                 JoinType::Inner,
                 Some(JoinStrategy::Hash),
+                None,
+                None,
             )?
             .build();
         logical_to_physical(logical_plan, cfg)

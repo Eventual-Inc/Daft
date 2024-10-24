@@ -48,6 +48,77 @@ To use a remote Ray cluster, run the following steps on the same operating syste
 3. `make build-release`: an optimized build to ensure that the module is small enough to be successfully uploaded to Ray. Run this after modifying any Rust code in `src/`
 4. `ray job submit --working-dir wd --address "http://<head_node_host>:8265" -- python script.py`: submit `wd/script.py` to be run on Ray
 
+### Debugging
+
+The debugging feature uses a special VSCode launch configuration to start the Python debugger with a script at `tools/attach_debugger.py`, which takes the target script's name as input. This script finds the process ID, updates the launch.json file, compiles the target script, and runs it. It then attaches a Rust debugger to the Python debugger, allowing both to work together. Breakpoints in Python code hit the Python debugger, while breakpoints in Rust code hit the Rust debugger.
+
+#### Preparation
+
+- **CodeLLDB Extension for Visual Studio Code**:
+This extension is useful for debugging Rust code invoked from Python.
+
+- **Setting Up the Virtual Environment Interpreter**
+(Ctrl+Shift+P -> Python: Select Interpreter -> .venv)
+
+- **Debug Settings in launch.json**
+This file is usually found in the `.vscode` folder of your project root. See the [official VSCode documentation](https://code.visualstudio.com/docs/editor/debugging#_launch-configurations) for more information about the launch.json file.
+    <details><summary><code><b>launch.json</b></code></summary>
+
+    ```json
+    {
+        "configurations": [
+            {
+                "name": "Debug Rust/Python",
+                "type": "debugpy",
+                "request": "launch",
+                "program": "${workspaceFolder}/tools/attach_debugger.py",
+                "args": [
+                    "${file}"
+                ],
+                "console": "internalConsole",
+                "serverReadyAction": {
+                    "pattern": "pID = ([0-9]+)",
+                    "action": "startDebugging",
+                    "name": "Rust LLDB"
+                }
+            },
+            {
+                "name": "Rust LLDB",
+                "pid": "0",
+                "type": "lldb",
+                "request": "attach",
+                "program": "${command:python.interpreterPath}",
+                "stopOnEntry": false,
+                "sourceLanguages": [
+                    "rust"
+                ],
+                "presentation": {
+                    "hidden": true
+                }
+            }
+        ]
+    }
+    ```
+
+    </details>
+
+#### Running the debugger
+
+1. Create a Python script containing Daft code. Ensure that your virtual environment is set up correctly.
+
+2. Set breakpoints in any `.rs` or `.py` file.
+
+3. In the `Run and Debug` panel on the left, select `Debug Rust/Python` from the drop-down menu on top and click the `Start Debugging` button.
+
+At this point, your debugger should stop on breakpoints in any .rs file located within the codebase.
+
+> **Note**:
+> On some systems, the LLDB debugger will not attach unless [ptrace protection](https://linux-audit.com/protect-ptrace-processes-kernel-yama-ptrace_scope) is disabled.
+To disable, run the following command:
+> ```shell
+> echo 0 | sudo tee /proc/sys/kernel/yama/ptrace_scope
+> ```
+
 ### Benchmarking
 
 Benchmark tests are located in `tests/benchmarks`. If you would like to run benchmarks, make sure to first do `make build-release` instead of `make build` in order to compile an optimized build of Daft.

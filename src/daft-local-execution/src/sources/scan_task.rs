@@ -138,50 +138,52 @@ async fn get_delete_map(
         .storage_config
         .get_io_client_and_runtime()?;
     let scan_tasks = scan_tasks.to_vec();
-    runtime.block_on_io_pool(async move {
-        let mut delete_map = scan_tasks
-            .iter()
-            .flat_map(|st| st.sources.iter().map(|s| s.get_path().to_string()))
-            .map(|path| (path, vec![]))
-            .collect::<std::collections::HashMap<_, _>>();
-        let columns_to_read = Some(vec!["file_path".to_string(), "pos".to_string()]);
-        let result = read_parquet_bulk_async(
-            delete_files.into_iter().collect(),
-            columns_to_read,
-            None,
-            None,
-            None,
-            None,
-            io_client,
-            None,
-            *NUM_CPUS,
-            ParquetSchemaInferenceOptions::new(None),
-            None,
-            None,
-            None,
-            None,
-        )
-        .await?;
+    runtime
+        .await_on(async move {
+            let mut delete_map = scan_tasks
+                .iter()
+                .flat_map(|st| st.sources.iter().map(|s| s.get_path().to_string()))
+                .map(|path| (path, vec![]))
+                .collect::<std::collections::HashMap<_, _>>();
+            let columns_to_read = Some(vec!["file_path".to_string(), "pos".to_string()]);
+            let result = read_parquet_bulk_async(
+                delete_files.into_iter().collect(),
+                columns_to_read,
+                None,
+                None,
+                None,
+                None,
+                io_client,
+                None,
+                *NUM_CPUS,
+                ParquetSchemaInferenceOptions::new(None),
+                None,
+                None,
+                None,
+                None,
+            )
+            .await?;
 
-        for table_result in result {
-            let table = table_result?;
-            // values in the file_path column are guaranteed by the iceberg spec to match the full URI of the corresponding data file
-            // https://iceberg.apache.org/spec/#position-delete-files
-            let file_paths = table.get_column("file_path")?.downcast::<Utf8Array>()?;
-            let positions = table.get_column("pos")?.downcast::<Int64Array>()?;
+            for table_result in result {
+                let table = table_result?;
+                // values in the file_path column are guaranteed by the iceberg spec to match the full URI of the corresponding data file
+                // https://iceberg.apache.org/spec/#position-delete-files
+                let file_paths = table.get_column("file_path")?.downcast::<Utf8Array>()?;
+                let positions = table.get_column("pos")?.downcast::<Int64Array>()?;
 
-            for (file, pos) in file_paths
-                .as_arrow()
-                .values_iter()
-                .zip(positions.as_arrow().values_iter())
-            {
-                if delete_map.contains_key(file) {
-                    delete_map.get_mut(file).unwrap().push(*pos);
+                for (file, pos) in file_paths
+                    .as_arrow()
+                    .values_iter()
+                    .zip(positions.as_arrow().values_iter())
+                {
+                    if delete_map.contains_key(file) {
+                        delete_map.get_mut(file).unwrap().push(*pos);
+                    }
                 }
             }
-        }
-        Ok(Some(delete_map))
-    })?
+            Ok(Some(delete_map))
+        })
+        .await?
 }
 
 async fn stream_scan_task(
@@ -371,14 +373,13 @@ async fn stream_scan_task(
                 .map(|t| t.into())
                 .context(PyIOSnafu)
             })?;
-            // SQL Scan cannot be streamed at the moment, so we just return the table
             Box::pin(futures::stream::once(async { Ok(table) }))
         }
         #[cfg(feature = "python")]
         FileFormatConfig::PythonFunction => {
-            return Err(common_error::DaftError::TypeError(
-                "PythonFunction file format not implemented".to_string(),
-            ));
+            let iter = daft_micropartition::python::read_pyfunc_into_table_iter(&scan_task)?;
+            let stream = futures::stream::iter(iter.map(|r| r.map_err(|e| e.into())));
+            Box::pin(stream)
         }
     };
 
