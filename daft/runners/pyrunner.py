@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import contextlib
 import logging
 import multiprocessing as mp
 import threading
@@ -317,6 +316,7 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
 
         # Registry of active ActorPools
         self._actor_pools: dict[str, PyActorPool] = {}
+        self._actor_pool_resources: dict[str, list[AcquiredResources]] = {}
 
         # Global accounting of tasks and resources
         self._inflight_futures: dict[tuple[ExecutionID, TaskID], futures.Future] = {}
@@ -415,15 +415,14 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
         for result in self.run_iter(builder, results_buffer_size=results_buffer_size):
             yield result.partition()
 
-    @contextlib.contextmanager
-    def actor_pool_context(
+    def setup_actor_pool(
         self,
         name: str,
         actor_resource_request: ResourceRequest,
         _task_resource_request: ResourceRequest,
         num_actors: int,
         projection: ExpressionsProjection,
-    ) -> Iterator[str]:
+    ) -> str:
         actor_pool_id = f"py_actor_pool-{name}"
 
         resources = self._resources.try_acquire_multiple([actor_resource_request] * num_actors)
@@ -432,27 +431,29 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
                 f"Not enough resources available to admit {num_actors} actors, each with resource request: {actor_resource_request}"
             )
 
-        try:
-            self._actor_pools[actor_pool_id] = PyActorPool(
-                actor_pool_id,
-                num_actors,
-                resources,
-                projection,
-            )
-            self._actor_pools[actor_pool_id].setup()
-            logger.debug(
-                "Created actor pool %s with %s actors, each with resources: %s",
-                actor_pool_id,
-                num_actors,
-                actor_resource_request,
-            )
-            yield actor_pool_id
-        # NOTE: Ensure that teardown always occurs regardless of any errors that occur during actor pool setup or execution
-        finally:
-            logger.debug("Tearing down actor pool: %s", actor_pool_id)
-            self._resources.release(resources)
-            self._actor_pools[actor_pool_id].teardown()
-            del self._actor_pools[actor_pool_id]
+        self._actor_pools[actor_pool_id] = PyActorPool(
+            actor_pool_id,
+            num_actors,
+            resources,
+            projection,
+        )
+        self._actor_pool_resources[actor_pool_id] = resources
+
+        self._actor_pools[actor_pool_id].setup()
+        logger.debug(
+            "Created actor pool %s with %s actors, each with resources: %s",
+            actor_pool_id,
+            num_actors,
+            actor_resource_request,
+        )
+        return actor_pool_id
+
+    def teardown_actor_pool(self, actor_pool_id: str) -> None:
+        logger.debug("Tearing down actor pool: %s", actor_pool_id)
+        self._resources.release(self._actor_pool_resources[actor_pool_id])
+        self._actor_pools[actor_pool_id].teardown()
+        del self._actor_pools[actor_pool_id]
+        del self._actor_pool_resources[actor_pool_id]
 
     def _create_resource_release_callback(self, resources: AcquiredResources) -> Callable[[futures.Future], None]:
         """

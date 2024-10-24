@@ -14,7 +14,8 @@ because it is waiting for the result of a previous PartitionTask to can decide w
 from __future__ import annotations
 
 import collections
-import contextlib
+import dataclasses
+import heapq
 import itertools
 import logging
 import math
@@ -209,20 +210,15 @@ def pipeline_instruction(
 
 class ActorPoolManager:
     @abstractmethod
-    @contextlib.contextmanager
-    def actor_pool_context(
+    def setup_actor_pool(
         self,
         name: str,
         actor_resource_request: ResourceRequest,
         task_resource_request: ResourceRequest,
         num_actors: int,
         projection: ExpressionsProjection,
-    ) -> Iterator[str]:
-        """Creates a pool of actors which can execute work, and yield a context in which the pool can be used.
-
-        Also yields a `str` ID which clients can use to refer to the actor pool when submitting tasks.
-
-        Note that attempting to do work outside this context will result in errors!
+    ) -> str:
+        """Creates a pool of actors which can execute work, and return a `str` ID which clients can use to refer to the actor pool when submitting tasks.
 
         Args:
             name: Name of the actor pool for debugging/observability
@@ -231,6 +227,23 @@ class ActorPoolManager:
             projection: Projection to be run on the incoming data (contains Stateful UDFs as well as other stateless expressions such as aliases)
         """
         ...
+
+    @abstractmethod
+    def teardown_actor_pool(self, actor_pool_id: str) -> None:
+        """Teardown an actor pool created by `setup_actor_pool`.
+
+        Note that attempting to do work after teardown will result in errors!
+
+        Args:
+            actor_pool_id: ID of the actor pool
+        """
+        ...
+
+
+@dataclasses.dataclass(order=True)
+class IndexedPartitionTask(Generic[PartitionT]):
+    index: int
+    task: SingleOutputPartitionTask[PartitionT] = dataclasses.field(compare=False)
 
 
 def actor_pool_project(
@@ -249,11 +262,18 @@ def actor_pool_project(
     )
     actor_pool_name = f"{stateful_udf_names}-stage={stage_id}"
 
+    # Keep track of partition task indices so we can execute them out of order but still yield them in order
+    next_child_index = 0
+
+    # Keep track of the first task that hasn't been yielded and completed actor pool tasks so we can yield them in order
+    next_expected_done_task_index = 0
+    done_task_heap: list[IndexedPartitionTask] = []
+
     # Keep track of materializations of the children tasks
-    child_materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
+    child_materializations: list[IndexedPartitionTask] = []
 
     # Keep track of materializations of the actor_pool tasks
-    actor_pool_materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
+    actor_pool_materializations: list[IndexedPartitionTask] = []
 
     # Perform separate accounting for the tasks' resource request and the actors' resource request:
     # * When spinning up an actor, we consider resources that are required for the persistent state in an actor (namely, GPUs and memory)
@@ -263,43 +283,67 @@ def actor_pool_project(
         num_gpus=resource_request.num_gpus, memory_bytes=resource_request.memory_bytes
     )
 
-    with actor_pool_manager.actor_pool_context(
-        actor_pool_name,
-        actor_resource_request,
-        task_resource_request,
-        num_actors,
-        projection,
-    ) as actor_pool_id:
-        child_plan_exhausted = False
+    actor_pool_id = None
 
+    child_plan_exhausted = False
+
+    try:
         # Loop until the child plan is exhausted and there is no more work in the pipeline
         while not (child_plan_exhausted and len(child_materializations) == 0 and len(actor_pool_materializations) == 0):
-            # Exhaustively pop ready child_steps and submit them to be run on the actor_pool
-            while len(child_materializations) > 0 and child_materializations[0].done():
-                next_ready_child = child_materializations.popleft()
-                actor_project_step = (
-                    PartitionTaskBuilder[PartitionT](
-                        inputs=[next_ready_child.partition()],
-                        partial_metadatas=[next_ready_child.partition_metadata()],
-                        actor_pool_id=actor_pool_id,
-                    )
-                    .add_instruction(
-                        instruction=execution_step.StatefulUDFProject(projection),
-                        resource_request=task_resource_request,
-                    )
-                    .finalize_partition_task_single_output(
-                        stage_id=stage_id,
-                    )
-                )
-                actor_pool_materializations.append(actor_project_step)
-                yield actor_project_step
+            # Pop ready child_steps and submit them to be run on the actor_pool
+            in_progress_child_materializations = list()
+            for next_child in child_materializations:
+                if next_child.task.done():
+                    # Initialize actor pool upon first task that is ready to be submitted
+                    if actor_pool_id is None:
+                        actor_pool_id = actor_pool_manager.setup_actor_pool(
+                            actor_pool_name,
+                            actor_resource_request,
+                            task_resource_request,
+                            num_actors,
+                            projection,
+                        )
 
-            # Exhaustively pop ready actor_pool steps and bubble it upwards as the start of a new pipeline
-            while len(actor_pool_materializations) > 0 and actor_pool_materializations[0].done():
-                next_ready_actor_pool_task = actor_pool_materializations.popleft()
+                    actor_project_step = (
+                        PartitionTaskBuilder[PartitionT](
+                            inputs=[next_child.task.partition()],
+                            partial_metadatas=[next_child.task.partition_metadata()],
+                            actor_pool_id=actor_pool_id,
+                        )
+                        .add_instruction(
+                            instruction=execution_step.StatefulUDFProject(projection),
+                            resource_request=task_resource_request,
+                        )
+                        .finalize_partition_task_single_output(
+                            stage_id=stage_id,
+                        )
+                    )
+                    actor_pool_materializations.append(IndexedPartitionTask(next_child.index, actor_project_step))
+                    yield actor_project_step
+                else:
+                    in_progress_child_materializations.append(next_child)
+
+            child_materializations = in_progress_child_materializations
+
+            # Pop ready actor_pool steps
+            in_progress_actor_pool_materializations = list()
+            for next_actor_pool_task in actor_pool_materializations:
+                if next_actor_pool_task.task.done():
+                    heapq.heappush(
+                        done_task_heap, IndexedPartitionTask(next_actor_pool_task.index, next_actor_pool_task.task)
+                    )
+                else:
+                    in_progress_actor_pool_materializations.append(next_actor_pool_task)
+
+            actor_pool_materializations = in_progress_actor_pool_materializations
+
+            # Bubble up completed tasks in order as the start of a new pipeline
+            while len(done_task_heap) > 0 and done_task_heap[0].index == next_expected_done_task_index:
+                next_expected_done_task_index += 1
+                next_done_actor_pool_task = heapq.heappop(done_task_heap).task
                 new_pipeline_starter_task = PartitionTaskBuilder[PartitionT](
-                    inputs=[next_ready_actor_pool_task.partition()],
-                    partial_metadatas=[next_ready_actor_pool_task.partition_metadata()],
+                    inputs=[next_done_actor_pool_task.partition()],
+                    partial_metadatas=[next_done_actor_pool_task.partition_metadata()],
                     resource_request=ResourceRequest(),
                 )
                 yield new_pipeline_starter_task
@@ -319,8 +363,12 @@ def actor_pool_project(
                     # Finalize and yield the child step to be run if it is a PartitionTaskBuilder
                     if isinstance(child_step, PartitionTaskBuilder):
                         child_step = child_step.finalize_partition_task_single_output(stage_id=stage_id)
-                        child_materializations.append(child_step)
+                        child_materializations.append(IndexedPartitionTask(next_child_index, child_step))
+                        next_child_index += 1
                     yield child_step
+    finally:
+        if actor_pool_id is not None:
+            actor_pool_manager.teardown_actor_pool(actor_pool_id)
 
 
 def monotonically_increasing_id(
