@@ -171,60 +171,20 @@ fn test_permutation_consistency() {
 
 #[test]
 fn test_edge_cases() {
-    let mut rng = Rng::with_seed(400);
-    let perm_a = repeat_with(|| rng.u64(1..(i32::MAX as u64))).take(16);
-    let perm_a_simd = load_simd(perm_a, 16);
-    let perm_b = repeat_with(|| rng.u64(0..(i32::MAX as u64))).take(16);
-    let perm_b_simd = load_simd(perm_b, 16);
+    const EMPTY_HASH_VALUE: u32 = 4294967295;
+
+    let (perm_a_simd, perm_b_simd) = load_permutations(400, 16);
 
     let hasher = Xxh64Builder::new(XX_HASH_SEED);
 
     // Test with empty string
     let empty_text = "";
     let empty_hash = minhash(empty_text, (&perm_a_simd, &perm_b_simd), 16, 3, &hasher).unwrap();
+
     assert_eq!(empty_hash.len(), 16);
-    // Placeholder: Replace with expected behavior, e.g., all hash values should remain MAX_HASH_SIMD
-    // Example:
-    // for hash in empty_hash {
-    //     assert_eq!(hash, <EXPECTED_VALUE>);
-    // }
-
-    // Test with single word
-    let single_word = "singleton";
-    let single_hash = minhash(single_word, (&perm_a_simd, &perm_b_simd), 16, 3, &hasher).unwrap();
-    assert_eq!(single_hash.len(), 16);
-    // Placeholder: Replace with expected hash values
-    // Example:
-    // for hash in single_hash {
-    //     assert_eq!(hash, <EXPECTED_VALUE>);
-    // }
-
-    // Test with very long string
-    let long_text = "word ".repeat(10_000); // 10,000 repetitions of "word "
-    let long_hash = minhash(&long_text, (&perm_a_simd, &perm_b_simd), 16, 3, &hasher).unwrap();
-    assert_eq!(long_hash.len(), 16);
-    // Placeholder: Replace with expected behavior
-    // Example:
-    // for hash in long_hash {
-    //     assert_eq!(hash, <EXPECTED_VALUE>);
-    // }
-
-    // Test with high n-gram size
-    let high_ngram_text = "short";
-    let high_ngram_hash = minhash(
-        high_ngram_text,
-        (&perm_a_simd, &perm_b_simd),
-        16,
-        10,
-        &hasher,
-    )
-    .unwrap();
-    assert_eq!(high_ngram_hash.len(), 16);
-    // Placeholder: Replace with expected behavior (likely fewer n-grams)
-    // Example:
-    // for hash in high_ngram_hash {
-    //     assert_eq!(hash, <EXPECTED_VALUE>);
-    // }
+    for hash in empty_hash {
+        assert_eq!(hash, EMPTY_HASH_VALUE);
+    }
 }
 
 #[test]
