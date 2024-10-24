@@ -7,10 +7,12 @@ fastrand = "2.1.0"
 common-error.workspace = true
 
 [dev-dependencies]
+rand = "0.8.5"
 xxhash-rust = {workspace = true, features = ["xxh64", "xxh3"]}
 ahash.workspace = true
 daft-hash.workspace = true
 divan.workspace = true
+proptest.workspace = true
 rustc-hash.workspace = true
 
 [lints]
