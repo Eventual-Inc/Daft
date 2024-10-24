@@ -64,4 +64,9 @@ impl StreamingSink for ConcatSink {
     fn max_concurrency(&self) -> usize {
         1
     }
+
+    /// The ConcatSink does not do any computation in the sink method, so no need to buffer.
+    fn morsel_size(&self) -> Option<usize> {
+        None
+    }
 }

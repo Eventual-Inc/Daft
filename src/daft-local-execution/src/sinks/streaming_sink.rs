@@ -8,6 +8,7 @@ use snafu::ResultExt;
 use tracing::{info_span, instrument};
 
 use crate::{
+    buffer::RowBasedBuffer,
     channel::{create_channel, PipelineChannel, Receiver, Sender},
     pipeline::{PipelineNode, PipelineResultType},
     runtime_stats::{CountingReceiver, RuntimeStatsContext},
@@ -76,6 +77,10 @@ pub trait StreamingSink: Send + Sync {
     /// Each worker will has its own StreamingSinkState.
     fn max_concurrency(&self) -> usize {
         *NUM_CPUS
+    }
+
+    fn morsel_size(&self) -> Option<usize> {
+        Some(*NUM_CPUS)
     }
 }
 
@@ -179,6 +184,7 @@ impl StreamingSinkNode {
     async fn forward_input_to_workers(
         receivers: Vec<CountingReceiver>,
         worker_senders: Vec<Sender<(usize, PipelineResultType)>>,
+        morsel_size: Option<usize>,
     ) -> DaftResult<()> {
         let mut next_worker_idx = 0;
         let mut send_to_next_worker = |idx, data: PipelineResultType| {
@@ -188,13 +194,27 @@ impl StreamingSinkNode {
         };
 
         for (idx, mut receiver) in receivers.into_iter().enumerate() {
+            let mut buffer = morsel_size.map(RowBasedBuffer::new);
             while let Some(morsel) = receiver.recv().await {
                 if morsel.should_broadcast() {
                     for worker_sender in &worker_senders {
                         let _ = worker_sender.send((idx, morsel.clone())).await;
                     }
+                } else if let Some(buffer) = buffer.as_mut() {
+                    buffer.push(morsel.as_data().clone());
+                    if let Some(ready) = buffer.pop_enough()? {
+                        for r in ready {
+                            let _ = send_to_next_worker(idx, r.into()).await;
+                        }
+                    }
                 } else {
-                    let _ = send_to_next_worker(idx, morsel.clone()).await;
+                    let _ = send_to_next_worker(idx, morsel).await;
+                }
+            }
+            if let Some(buffer) = buffer.as_mut() {
+                // Clear all remaining morsels
+                if let Some(last_morsel) = buffer.pop_all()? {
+                    let _ = send_to_next_worker(idx, last_morsel.into()).await;
                 }
             }
         }
@@ -255,8 +275,9 @@ impl PipelineNode for StreamingSinkNode {
         let runtime_stats = self.runtime_stats.clone();
         let num_workers = op.max_concurrency();
         let (input_senders, input_receivers) = (0..num_workers).map(|_| create_channel(1)).unzip();
+        let morsel_size = runtime_handle.determine_morsel_size(op.morsel_size());
         runtime_handle.spawn(
-            Self::forward_input_to_workers(child_result_receivers, input_senders),
+            Self::forward_input_to_workers(child_result_receivers, input_senders, morsel_size),
             self.name(),
         );
         runtime_handle.spawn(

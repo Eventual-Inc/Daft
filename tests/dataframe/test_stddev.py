@@ -8,6 +8,12 @@ import pytest
 import daft
 
 
+@pytest.fixture(scope="function", autouse=True)
+def set_default_morsel_size():
+    with daft.context.execution_config_ctx(default_morsel_size=1):
+        yield
+
+
 def grouped_stddev(rows) -> Tuple[List[Any], List[Any]]:
     map = {}
     for key, data in rows:

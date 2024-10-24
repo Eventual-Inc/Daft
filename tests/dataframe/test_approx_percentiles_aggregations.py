@@ -4,7 +4,14 @@ import pandas as pd
 import pyarrow as pa
 import pytest
 
+import daft
 from daft import col
+
+
+@pytest.fixture(scope="function", autouse=True)
+def set_default_morsel_size():
+    with daft.context.execution_config_ctx(default_morsel_size=1):
+        yield
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
