@@ -689,6 +689,8 @@ impl<'a> Read for MultiSliceReader<'a> {
     }
 }
 
+// TODO(desmond): The Daft read_csv API does not currently accept non-\n record terminators. We should
+// make this user configurable.
 const NEWLINE: u8 = b'\n';
 const DOUBLE_QUOTE: u8 = b'"';
 
