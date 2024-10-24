@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import contextlib
 import logging
 import threading
 import time
@@ -637,24 +636,6 @@ class Scheduler(ActorPoolManager):
             del self.results_by_df[result_uuid]
             del self.results_buffer_size_by_df[result_uuid]
 
-    def get_actor_pool(
-        self,
-        name: str,
-        resource_request: ResourceRequest,
-        num_actors: int,
-        projection: ExpressionsProjection,
-        execution_config: PyDaftExecutionConfig,
-    ) -> str:
-        actor_pool = RayRoundRobinActorPool(name, num_actors, resource_request, projection, execution_config)
-        self._actor_pools[name] = actor_pool
-        self._actor_pools[name].setup()
-        return name
-
-    def teardown_actor_pool(self, name: str) -> None:
-        if name in self._actor_pools:
-            self._actor_pools[name].teardown()
-            del self._actor_pools[name]
-
     def _run_plan(
         self,
         plan_scheduler: PhysicalPlanScheduler,
@@ -843,23 +824,28 @@ class Scheduler(ActorPoolManager):
 
         pbar.close()
 
-    @contextlib.contextmanager
-    def actor_pool_context(
+    def setup_actor_pool(
         self,
         name: str,
         actor_resource_request: ResourceRequest,
         task_resource_request: ResourceRequest,
         num_actors: PartID,
         projection: ExpressionsProjection,
-    ) -> Iterator[str]:
+    ) -> str:
         # Ray runs actor methods serially, so the resource request for an actor should be both the actor's resources and the task's resources
         resource_request = actor_resource_request + task_resource_request
 
         execution_config = get_context().daft_execution_config
-        try:
-            yield self.get_actor_pool(name, resource_request, num_actors, projection, execution_config)
-        finally:
-            self.teardown_actor_pool(name)
+
+        actor_pool = RayRoundRobinActorPool(name, num_actors, resource_request, projection, execution_config)
+        self._actor_pools[name] = actor_pool
+        self._actor_pools[name].setup()
+        return name
+
+    def teardown_actor_pool(self, actor_pool_id: str) -> None:
+        if actor_pool_id in self._actor_pools:
+            self._actor_pools[actor_pool_id].teardown()
+            del self._actor_pools[actor_pool_id]
 
 
 SCHEDULER_ACTOR_NAME = "scheduler"
