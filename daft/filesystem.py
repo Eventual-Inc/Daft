@@ -127,31 +127,8 @@ def _resolve_paths_and_filesystem(
         io_config: A Daft IOConfig that should be best-effort applied onto the returned
             FileSystem
     """
-    if isinstance(paths, pathlib.Path):
-        paths = str(paths)
-    if isinstance(paths, str):
-        paths = [paths]
-    assert isinstance(paths, list), paths
-    assert all(isinstance(p, str) for p in paths), paths
-    assert len(paths) > 0, paths
-
-    # Sanitize s3a/s3n protocols, which are produced by Hadoop-based systems as a way of denoting which s3
-    # filesystem client to use. However this doesn't matter for Daft, and PyArrow cannot recognize these protocols.
-    paths = [f"s3://{p[6:]}" if p.startswith("s3a://") or p.startswith("s3n://") else p for p in paths]
-
-    # Ensure that protocols for all paths are consistent, i.e. that they would map to the
-    # same filesystem.
-    protocols = {get_protocol_from_path(path) for path in paths}
-    canonicalized_protocols = {canonicalize_protocol(protocol) for protocol in protocols}
-    if len(canonicalized_protocols) > 1:
-        raise ValueError(
-            "All paths must have the same canonical protocol to ensure that they are all "
-            f"hitting the same storage backend, but got protocols {protocols} with canonical "
-            f"protocols - {canonicalized_protocols} and full paths - {paths}"
-        )
-
-    # Canonical protocol shared by all paths.
-    protocol = next(iter(canonicalized_protocols))
+    paths = _sanitize_paths(paths)
+    protocol = _get_protocol_from_paths(paths)
 
     # Try to get filesystem from protocol -> fs cache.
     resolved_filesystem = _get_fs_from_cache(protocol, io_config)
@@ -176,6 +153,40 @@ def _resolve_paths_and_filesystem(
         resolved_paths.append(resolved_path)
 
     return resolved_paths, resolved_filesystem
+
+
+def _sanitize_paths(paths: str | pathlib.Path | list[str]) -> list[str]:
+    if isinstance(paths, pathlib.Path):
+        paths = str(paths)
+    if isinstance(paths, str):
+        paths = [paths]
+    assert isinstance(paths, list), paths
+    assert all(isinstance(p, str) for p in paths), paths
+    assert len(paths) > 0, paths
+
+    # Sanitize s3a/s3n protocols, which are produced by Hadoop-based systems as a way of denoting which s3
+    # filesystem client to use. However this doesn't matter for Daft, and PyArrow cannot recognize these protocols.
+    paths = [f"s3://{p[6:]}" if p.startswith("s3a://") or p.startswith("s3n://") else p for p in paths]
+
+    return paths
+
+
+def _get_protocol_from_paths(paths: list[str]) -> str:
+    # Ensure that protocols for all paths are consistent, i.e. that they would map to the
+    # same filesystem.
+    protocols = {get_protocol_from_path(path) for path in paths}
+    canonicalized_protocols = {canonicalize_protocol(protocol) for protocol in protocols}
+    if len(canonicalized_protocols) > 1:
+        raise ValueError(
+            "All paths must have the same canonical protocol to ensure that they are all "
+            f"hitting the same storage backend, but got protocols {protocols} with canonical "
+            f"protocols - {canonicalized_protocols} and full paths - {paths}"
+        )
+
+    # Canonical protocol shared by all paths.
+    protocol = next(iter(canonicalized_protocols))
+
+    return protocol
 
 
 def _validate_filesystem(path: str, fs: pafs.FileSystem, io_config: IOConfig | None) -> str:
@@ -360,22 +371,77 @@ def join_path(fs: pafs.FileSystem, base_path: str, *sub_paths: str) -> str:
         return f"{base_path.rstrip('/')}/{'/'.join(sub_paths)}"
 
 
+###
+# File Overwriting
+###
+
+
+def _infer_fssspec_filesystem_from_protocol(
+    protocol: str,
+    io_config: IOConfig | None,
+) -> fsspec.AbstractFileSystem:
+    """
+    Infer the fsspec filesystem based on the protocol.
+    """
+
+    kwargs: dict[str, Any] = {}
+    if protocol == "s3":
+        if io_config is not None and io_config.s3 is not None:
+            s3_config = io_config.s3
+            kwargs["key"] = s3_config.key_id
+            kwargs["secret"] = s3_config.access_key
+            kwargs["token"] = s3_config.session_token
+            kwargs["client_kwargs"] = {"region_name": s3_config.region_name}
+            kwargs["endpoint_url"] = s3_config.endpoint_url
+            kwargs["anon"] = s3_config.anonymous
+        fs = fsspec.filesystem("s3", **kwargs)
+
+    elif protocol == "file":
+        fs = fsspec.filesystem("file")
+    elif protocol in {"gs", "gcs"}:
+        if io_config is not None and io_config.gcs is not None:
+            gcs_config = io_config.gcs
+            kwargs["project"] = gcs_config.project_id
+            kwargs["anon"] = gcs_config.anonymous
+        fs = fsspec.filesystem("gs", **kwargs)
+    elif protocol in {"az", "abfs", "abfss"}:
+        if io_config is not None and io_config.azure is not None:
+            kwargs["account_name"] = io_config.azure.storage_account
+            kwargs["account_key"] = io_config.azure.access_key
+            kwargs["sas_token"] = io_config.azure.sas_token
+            kwargs["tenant_id"] = io_config.azure.tenant_id
+            kwargs["client_id"] = io_config.azure.client_id
+            kwargs["client_secret"] = io_config.azure.client_secret
+            kwargs["anon"] = io_config.azure.anonymous
+        fs = fsspec.filesystem(protocol, **kwargs)
+    else:
+        raise NotImplementedError(f"Cannot infer Fsspec filesystem for protocol {protocol}: please file an issue!")
+
+    return fs
+
+
 def overwrite_files(
     manifest: DataFrame,
     root_dir: str | pathlib.Path,
     io_config: IOConfig | None,
 ) -> None:
-    [resolved_path], fs = _resolve_paths_and_filesystem(root_dir, io_config=io_config)
-    file_selector = pafs.FileSelector(resolved_path, recursive=True)
-    paths = [info.path for info in fs.get_file_info(file_selector) if info.type == pafs.FileType.File]
+    """
+    Overwrite files in the root directory that are not present in the manifest.
+    """
+
+    # Get the fsspec filesystem based on the protocol of the root directory.
+    [path] = _sanitize_paths(root_dir)
+    protocol = get_protocol_from_path(path)
+    fs = _infer_fssspec_filesystem_from_protocol(protocol, io_config)
+
+    # Get all file paths in the root directory.
+    paths = [file for file in fs.glob(f"{path}/**") if fs.isfile(file)]
     all_file_paths_df = from_pydict({"path": paths})
 
+    # Get the file paths that are not present in the manifest.
     assert manifest._result is not None
     written_file_paths = manifest._result._get_merged_micropartition().get_column("path")
-    to_delete = all_file_paths_df.where(~(col("path").is_in(lit(written_file_paths))))
+    to_delete = all_file_paths_df.where(~(col("path").is_in(lit(written_file_paths)))).to_pydict()["path"]
 
-    # TODO: Support bulk deletes for remote filesystems via the filesystem APIs for that filesystem, e.g. s3fs for S3, gcsfs for GCS, etc.
-    # Pyarrow filesystem does not currently expose a bulk delete API.
-    # It is likely that this will be slow for remote filesystems in the meantime.
-    for entry in to_delete:
-        fs.delete_file(entry["path"])
+    # Delete the files that are not present in the manifest.
+    fs.rm(to_delete)
