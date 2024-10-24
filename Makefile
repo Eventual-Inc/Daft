@@ -8,6 +8,11 @@ IS_M1 ?= 0
 HYPOTHESIS_MAX_EXAMPLES ?= 100
 HYPOTHESIS_SEED ?= 0
 
+# TPC-DS
+SCALE_FACTOR ?= 1
+OUTPUT_DIR ?= data/tpc-ds/
+
+
 ifeq ($(OS),Windows_NT)
 	VENV_BIN=$(VENV)/Scripts
 else
@@ -25,6 +30,9 @@ ifeq ($(IS_M1), 1)
 	CFLAGS="${CFLAGS} -I /opt/homebrew/opt/openssl/include"	\
 	LDFLAGS="${LDFLAGS} -L /opt/homebrew/opt/openssl/lib" \
 	$(VENV_BIN)/uv pip install -r requirements-dev.txt
+	# duckdb doesn't install correctly through uv on M1. it installs the wrong arch
+	pip uninstall -y duckdb
+	pip install duckdb
 else
 	$(VENV_BIN)/uv pip install -r requirements-dev.txt
 endif
@@ -55,6 +63,10 @@ build-release: check-toolchain .venv  ## Compile and install a faster Daft binar
 .PHONY: test
 test: .venv build  ## Run tests
 	HYPOTHESIS_MAX_EXAMPLES=$(HYPOTHESIS_MAX_EXAMPLES) $(VENV_BIN)/pytest --hypothesis-seed=$(HYPOTHESIS_SEED)
+
+.PHONY: dsdgen
+dsdgen: .venv ## Generate TPC-DS data
+	$(VENV_BIN)/python benchmarking/tpcds/datagen.py --scale-factor=$(SCALE_FACTOR) --tpch-gen-folder=$(OUTPUT_DIR)
 
 .PHONY: clean
 clean:
