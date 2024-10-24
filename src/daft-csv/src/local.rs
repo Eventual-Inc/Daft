@@ -161,25 +161,7 @@ pub async fn read_csv_local(
     )
     .await?;
     let tables = Box::pin(stream);
-    // Apply limit.
-    let limit = convert_options.as_ref().and_then(|opts| opts.limit);
-    let mut remaining_rows = limit.map(|limit| limit as i64);
-    use futures::TryStreamExt;
     let collected_tables = tables
-        .try_take_while(|result| {
-            match (result, remaining_rows) {
-                // Limit has been met, early-terminate.
-                (_, Some(rows_left)) if rows_left <= 0 => futures::future::ready(Ok(false)),
-                // Limit has not yet been met, update remaining limit slack and continue.
-                (table, Some(rows_left)) => {
-                    remaining_rows = Some(rows_left - table.len() as i64);
-                    futures::future::ready(Ok(true))
-                }
-                // (1) No limit, never early-terminate.
-                // (2) Encountered error, propagate error to try_collect to allow it to short-circuit.
-                (_, None) => futures::future::ready(Ok(true)),
-            }
-        })
         .try_collect::<Vec<_>>()
         .await?
         .into_iter()
@@ -197,10 +179,12 @@ pub async fn read_csv_local(
         return Table::empty(Some(Arc::new(Schema::try_from(&schema)?)));
     }
     let concated_table = tables_concat(collected_tables)?;
+
+    // Apply head in case the last chunk went over limit.
+    let limit = convert_options.as_ref().and_then(|opts| opts.limit);
     if let Some(limit) = limit
         && concated_table.len() > limit
     {
-        // Apply head in case that last chunk went over limit.
         concated_table.head(limit)
     } else {
         Ok(concated_table)
@@ -611,8 +595,9 @@ fn stream_csv_as_tables(
                         predicate,
                         limit,
                     );
-                    tx.send(tables)
-                        .expect("OneShot Channel should still be open");
+                    // We throw away the error because we might close the oneshot channel in the case where
+                    // a limit is applied and we early-terminate.
+                    let _ = tx.send(tables);
                 });
                 rx.await
             })
@@ -629,7 +614,24 @@ fn stream_csv_as_tables(
         })
         .try_flatten();
 
-    Ok(flattened)
+    // Apply limit.
+    let mut remaining_rows = limit.map(|limit| limit as i64);
+    let limited = flattened.try_take_while(move |result| {
+        match (result, remaining_rows) {
+            // Limit has been met, early-terminate.
+            (_, Some(rows_left)) if rows_left <= 0 => futures::future::ready(Ok(false)),
+            // Limit has not yet been met, update remaining limit slack and continue.
+            (table, Some(rows_left)) => {
+                remaining_rows = Some(rows_left - table.len() as i64);
+                futures::future::ready(Ok(true))
+            }
+            // (1) No limit, never early-terminate.
+            // (2) Encountered error, propagate error to try_collect to allow it to short-circuit.
+            (_, None) => futures::future::ready(Ok(true)),
+        }
+    });
+
+    Ok(limited)
 }
 
 /// A helper struct that implements `std::io::Read` over a slice of ChunkStates.
