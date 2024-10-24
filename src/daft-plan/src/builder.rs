@@ -84,6 +84,13 @@ impl From<&LogicalPlanBuilder> for LogicalPlanRef {
         value.plan.clone()
     }
 }
+
+impl From<LogicalPlanRef> for LogicalPlanBuilder {
+    fn from(plan: LogicalPlanRef) -> Self {
+        Self::new(plan, None)
+    }
+}
+
 pub trait IntoGlobPath {
     fn into_glob_path(self) -> Vec<String>;
 }
@@ -466,6 +473,23 @@ impl LogicalPlanBuilder {
         )?
         .into();
         Ok(self.with_new_plan(logical_plan))
+    }
+
+    pub fn cross_join<Right: Into<LogicalPlanRef>>(
+        &self,
+        right: Right,
+        join_suffix: Option<&str>,
+        join_prefix: Option<&str>,
+    ) -> DaftResult<Self> {
+        self.join(
+            right,
+            vec![],
+            vec![],
+            JoinType::Inner,
+            None,
+            join_suffix,
+            join_prefix,
+        )
     }
 
     pub fn concat(&self, other: &Self) -> DaftResult<Self> {
