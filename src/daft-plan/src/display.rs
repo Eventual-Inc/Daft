@@ -91,11 +91,8 @@ mod test {
     use common_display::mermaid::{MermaidDisplay, MermaidDisplayOptions, SubgraphOptions};
     use common_error::DaftResult;
     use daft_core::prelude::*;
-    use daft_dsl::{
-        col,
-        functions::utf8::{endswith, startswith},
-        lit,
-    };
+    use daft_dsl::{col, lit};
+    use daft_functions::utf8::{endswith, startswith};
     use pretty_assertions::assert_eq;
 
     use crate::{
