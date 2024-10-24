@@ -384,16 +384,21 @@ def _infer_fssspec_filesystem_from_protocol(
     Infer the fsspec filesystem based on the protocol.
     """
 
+    def _set_if_not_none(kwargs: dict[str, Any], key: str, val: Any | None):
+        """Helper method used when setting kwargs for fsspec filesystems"""
+        if val is not None:
+            kwargs[key] = val
+
     kwargs: dict[str, Any] = {}
     if protocol == "s3":
         if io_config is not None and io_config.s3 is not None:
             s3_config = io_config.s3
-            kwargs["key"] = s3_config.key_id
-            kwargs["secret"] = s3_config.access_key
-            kwargs["token"] = s3_config.session_token
-            kwargs["client_kwargs"] = {"region_name": s3_config.region_name}
-            kwargs["endpoint_url"] = s3_config.endpoint_url
-            kwargs["anon"] = s3_config.anonymous
+            _set_if_not_none(kwargs, "key", s3_config.key_id)
+            _set_if_not_none(kwargs, "secret", s3_config.access_key)
+            _set_if_not_none(kwargs, "token", s3_config.session_token)
+            _set_if_not_none(kwargs, "client_kwargs", {"region_name": s3_config.region_name})
+            _set_if_not_none(kwargs, "endpoint_url", s3_config.endpoint_url)
+            _set_if_not_none(kwargs, "anon", s3_config.anonymous)
         fs = fsspec.filesystem("s3", **kwargs)
 
     elif protocol == "file":
@@ -401,19 +406,20 @@ def _infer_fssspec_filesystem_from_protocol(
     elif protocol in {"gs", "gcs"}:
         if io_config is not None and io_config.gcs is not None:
             gcs_config = io_config.gcs
-            kwargs["project"] = gcs_config.project_id
-            kwargs["anon"] = gcs_config.anonymous
+            _set_if_not_none(kwargs, "token", gcs_config.token)
+            _set_if_not_none(kwargs, "project", gcs_config.project_id)
         fs = fsspec.filesystem("gs", **kwargs)
     elif protocol in {"az", "abfs", "abfss"}:
         if io_config is not None and io_config.azure is not None:
-            kwargs["account_name"] = io_config.azure.storage_account
-            kwargs["account_key"] = io_config.azure.access_key
-            kwargs["sas_token"] = io_config.azure.sas_token
-            kwargs["tenant_id"] = io_config.azure.tenant_id
-            kwargs["client_id"] = io_config.azure.client_id
-            kwargs["client_secret"] = io_config.azure.client_secret
-            kwargs["anon"] = io_config.azure.anonymous
-        fs = fsspec.filesystem(protocol, **kwargs)
+            azure_config = io_config.azure
+            _set_if_not_none(kwargs, "account_name", azure_config.storage_account)
+            _set_if_not_none(kwargs, "account_key", azure_config.access_key)
+            _set_if_not_none(kwargs, "sas_token", azure_config.sas_token)
+            _set_if_not_none(kwargs, "tenant_id", azure_config.tenant_id)
+            _set_if_not_none(kwargs, "client_id", azure_config.client_id)
+            _set_if_not_none(kwargs, "client_secret", azure_config.client_secret)
+            _set_if_not_none(kwargs, "anon", azure_config.anonymous)
+        fs = fsspec.filesystem("abfs", **kwargs)
     else:
         raise NotImplementedError(f"Cannot infer Fsspec filesystem for protocol {protocol}: please file an issue!")
 
@@ -435,7 +441,7 @@ def overwrite_files(
     fs = _infer_fssspec_filesystem_from_protocol(protocol, io_config)
 
     # Get all file paths in the root directory.
-    paths = [file for file in fs.glob(f"{path}/**") if fs.isfile(file)]
+    paths = [file for file in fs.glob(f"{path.rstrip('/')}/**") if fs.isfile(file)]
     all_file_paths_df = from_pydict({"path": paths})
 
     # Get the file paths that are not present in the manifest.
@@ -444,4 +450,5 @@ def overwrite_files(
     to_delete = all_file_paths_df.where(~(col("path").is_in(lit(written_file_paths)))).to_pydict()["path"]
 
     # Delete the files that are not present in the manifest.
-    fs.rm(to_delete)
+    if len(to_delete) > 0:
+        fs.rm(to_delete)
