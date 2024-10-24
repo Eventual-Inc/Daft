@@ -1597,3 +1597,76 @@ def test_series_utf8_count_matches_overlap(whole_words, case_sensitive):
     p = Series.from_pylist(["hello world", "hello", "world"])
     res = s.str.count_matches(p, whole_words, case_sensitive).to_pylist()
     assert res == [1]
+
+
+def test_series_utf8_base64_encode():
+    s = Series.from_pylist(["hello world", "python", "OpenAI", ""])
+    res = s.str.base64_encode().to_pylist()
+    assert res == ["aGVsbG8gd29ybGQ=", "cHl0aG9u", "T3BlbkFJ", ""]
+
+
+def test_series_utf8_base64_decode():
+    s = Series.from_pylist(["aGVsbG8gd29ybGQ=", "cHl0aG9u", "T3BlbkFJ", ""])
+    res = s.str.base64_decode().to_pylist()
+    assert res == ["hello world", "python", "OpenAI", ""]
+
+
+def test_series_utf8_base64_encode_with_special_chars():
+    s = Series.from_pylist(["hello!@#$%^&*()_+", "áéíóú"])
+    res = s.str.base64_encode().to_pylist()
+    assert res == ["aGVsbG8hQCMkJV4mKigpXys=", "w6HDqcOtw7PDug=="]
+
+
+def test_series_utf8_base64_decode_with_special_chars():
+    s = Series.from_pylist(["aGVsbG8hQCMkJV4mKigpXys=", "w6HDqcOtw7PDug=="])
+    res = s.str.base64_decode().to_pylist()
+    assert res == ["hello!@#$%^&*()_+", "áéíóú"]
+
+
+def test_series_utf8_base64_encode_decode_roundtrip():
+    original = Series.from_pylist(["Hello, World!", "Python is awesome", "OpenAI GPT", ""])
+    encoded = original.str.base64_encode()
+    decoded = encoded.str.base64_decode()
+    assert decoded.to_pylist() == original.to_pylist()
+
+
+def test_series_utf8_base64_encode_with_nulls():
+    s = Series.from_pylist(["hello", None, "world", None])
+    res = s.str.base64_encode().to_pylist()
+    assert res == ["aGVsbG8=", None, "d29ybGQ=", None]
+
+
+def test_series_utf8_base64_decode_with_nulls():
+    s = Series.from_pylist(["aGVsbG8=", None, "d29ybGQ=", None])
+    res = s.str.base64_decode().to_pylist()
+    assert res == ["hello", None, "world", None]
+
+
+def test_series_utf8_base64_decode_invalid_input():
+    s = Series.from_pylist(["invalid base64", "aGVsbG8=", "not base64"])
+    with pytest.raises(ValueError):
+        s.str.base64_decode()
+
+
+def test_series_utf8_base64_encode_non_utf8_input():
+    s = Series.from_pylist([b"\xff\xfe", "hello"])
+    with pytest.raises(ValueError):
+        s.str.base64_encode()
+
+
+def test_series_utf8_base64_decode_incomplete_input():
+    s = Series.from_pylist(["aGVsbG8", "d29ybGQ"])  # Incomplete base64 strings
+    with pytest.raises(ValueError):
+        s.str.base64_decode()
+
+
+def test_series_utf8_base64_encode_empty_series():
+    s = Series.from_pylist([])
+    res = s.str.base64_encode().to_pylist()
+    assert res == []
+
+
+def test_series_utf8_base64_decode_empty_series():
+    s = Series.from_pylist([])
+    res = s.str.base64_decode().to_pylist()
+    assert res == []

@@ -1,3 +1,5 @@
+mod base64_decode;
+mod base64_encode;
 mod capitalize;
 mod contains;
 mod endswith;
@@ -27,6 +29,8 @@ mod to_date;
 mod to_datetime;
 mod upper;
 
+use base64_decode::Base64DecodeEvaluate;
+use base64_encode::Base64EncodeEvaluate;
 use capitalize::CapitalizeEvaluator;
 use contains::ContainsEvaluator;
 use daft_core::array::ops::Utf8NormalizeOptions;
@@ -90,6 +94,8 @@ pub enum Utf8Expr {
     ToDate(String),
     ToDatetime(String, Option<String>),
     Normalize(Utf8NormalizeOptions),
+    Base64Encode,
+    Base64Decode,
 }
 
 impl Utf8Expr {
@@ -124,6 +130,8 @@ impl Utf8Expr {
             Self::ToDate(_) => &ToDateEvaluator {},
             Self::ToDatetime(_, _) => &ToDatetimeEvaluator {},
             Self::Normalize(_) => &NormalizeEvaluator {},
+            Self::Base64Encode => &Base64EncodeEvaluate {},
+            Self::Base64Decode => &Base64DecodeEvaluate {},
         }
     }
 }
@@ -350,6 +358,22 @@ pub fn to_datetime(data: ExprRef, format: &str, timezone: Option<&str>) -> ExprR
 pub fn normalize(data: ExprRef, opts: Utf8NormalizeOptions) -> ExprRef {
     Expr::Function {
         func: super::FunctionExpr::Utf8(Utf8Expr::Normalize(opts)),
+        inputs: vec![data],
+    }
+    .into()
+}
+
+pub fn base64_encode(data: ExprRef) -> ExprRef {
+    Expr::Function {
+        func: super::FunctionExpr::Utf8(Utf8Expr::Base64Encode),
+        inputs: vec![data],
+    }
+    .into()
+}
+
+pub fn base64_decode(data: ExprRef) -> ExprRef {
+    Expr::Function {
+        func: super::FunctionExpr::Utf8(Utf8Expr::Base64Decode),
         inputs: vec![data],
     }
     .into()

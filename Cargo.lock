@@ -1734,6 +1734,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "aho-corasick",
  "arrow2",
+ "base64 0.22.1",
  "bincode",
  "chrono",
  "chrono-tz",

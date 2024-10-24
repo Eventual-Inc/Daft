@@ -646,6 +646,16 @@ impl PyExpr {
         Ok(normalize(self.into(), opts).into())
     }
 
+    pub fn utf8_base64_encode(&self) -> PyResult<Self> {
+        use crate::functions::utf8::base64_encode;
+        Ok(base64_encode(self.into()).into())
+    }
+
+    pub fn utf8_base64_decode(&self) -> PyResult<Self> {
+        use crate::functions::utf8::base64_decode;
+        Ok(base64_decode(self.into()).into())
+    }
+
     pub fn struct_get(&self, name: &str) -> PyResult<Self> {
         use crate::functions::struct_::get;
         Ok(get(self.into(), name).into())
