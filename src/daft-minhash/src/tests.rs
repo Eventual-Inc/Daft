@@ -39,11 +39,7 @@ const XX_HASH_SEED: u64 = 42;
 #[test]
 fn test_minhash() {
     // just some sanity checks
-    let mut rng = Rng::with_seed(42);
-    let perm_a = repeat_with(|| rng.u64(1..(i32::MAX as u64))).take(16);
-    let perm_a_simd = load_simd(perm_a, 16);
-    let perm_b = repeat_with(|| rng.u64(0..(i32::MAX as u64))).take(16);
-    let perm_b_simd = load_simd(perm_b, 16);
+    let (perm_a_simd, perm_b_simd) = load_permutations(16, 16);
 
     let res1 = minhash(
         "the quick brown fox jumped over the lazy dog",
@@ -83,12 +79,7 @@ fn test_minhash() {
 
 #[test]
 fn test_jaccard_similarity_estimation() {
-    // Placeholder: Replace expected similarity with actual value after verification
-    let mut rng = Rng::with_seed(100);
-    let perm_a = repeat_with(|| rng.u64(1..(i32::MAX as u64))).take(32);
-    let perm_a_simd = load_simd(perm_a, 32);
-    let perm_b = repeat_with(|| rng.u64(0..(i32::MAX as u64))).take(32);
-    let perm_b_simd = load_simd(perm_b, 32);
+    let (perm_a_simd, perm_b_simd) = load_permutations(100, 32);
 
     let text1 = "data science is an interdisciplinary field";
     let text2 = "data analysis is an interdisciplinary science";
@@ -242,12 +233,8 @@ fn test_large_scale_similarity() {
     // This could involve generating a large number of strings and computing their MinHash signatures
     // Then, verify that similar strings have higher similarity scores
 
-    let mut rng = Rng::with_seed(500);
     let num_hashes = 128;
-    let perm_a = repeat_with(|| rng.u64(1..(i32::MAX as u64))).take(num_hashes);
-    let perm_a_simd = load_simd(perm_a, num_hashes);
-    let perm_b = repeat_with(|| rng.u64(0..(i32::MAX as u64))).take(num_hashes);
-    let perm_b_simd = load_simd(perm_b, num_hashes);
+    let (perm_a_simd, perm_b_simd) = load_permutations(500, num_hashes);
 
     let hasher = Xxh64Builder::new(XX_HASH_SEED);
 
@@ -512,4 +499,22 @@ proptest! {
             .count() as f64 / 32.0;
         prop_assert!((self_sim - 1.0).abs() < 1e-10);
     }
+}
+
+fn generate_permutations(seed: u64, num_hashes: usize) -> (Vec<u64>, Vec<u64>) {
+    let mut rng = Rng::with_seed(seed);
+    let perm_a = repeat_with(|| rng.u64(1..(i32::MAX as u64)))
+        .take(num_hashes)
+        .collect::<Vec<_>>();
+    let perm_b = repeat_with(|| rng.u64(0..(i32::MAX as u64)))
+        .take(num_hashes)
+        .collect::<Vec<_>>();
+    (perm_a, perm_b)
+}
+
+fn load_permutations(seed: u64, num_hashes: usize) -> (Vec<SimdU64>, Vec<SimdU64>) {
+    let (perm_a, perm_b) = generate_permutations(seed, num_hashes);
+    let perm_a_simd = load_simd(perm_a.into_iter(), num_hashes);
+    let perm_b_simd = load_simd(perm_b.into_iter(), num_hashes);
+    (perm_a_simd, perm_b_simd)
 }
