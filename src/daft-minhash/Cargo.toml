@@ -10,6 +10,7 @@ common-error.workspace = true
 rand = "0.8.5"
 xxhash-rust = {workspace = true, features = ["xxh64", "xxh3"]}
 ahash.workspace = true
+approx.workspace = true
 daft-hash.workspace = true
 divan.workspace = true
 proptest.workspace = true
