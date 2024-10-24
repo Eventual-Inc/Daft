@@ -314,8 +314,11 @@ fn test_different_seeds_produce_different_hashes() {
 
 /// Calculate actual Jaccard similarity between two sets of n-grams
 fn actual_jaccard_similarity(text1: &str, text2: &str, ngram_size: usize) -> f64 {
-    let ngrams1: HashSet<_> = text1.windowed_words(ngram_size).collect();
-    let ngrams2: HashSet<_> = text2.windowed_words(ngram_size).collect();
+    let mut vec = VecDeque::new();
+    let ngrams1: HashSet<_> = text1.windowed_words_in(ngram_size, &mut vec).collect();
+
+    let mut vec = VecDeque::new();
+    let ngrams2: HashSet<_> = text2.windowed_words_in(ngram_size, &mut vec).collect();
 
     let intersection = ngrams1.intersection(&ngrams2).count();
     let union = ngrams1.union(&ngrams2).count();
@@ -474,7 +477,7 @@ fn generate_permutations(seed: u64, num_hashes: usize) -> (Vec<u64>, Vec<u64>) {
 
 fn load_permutations(seed: u64, num_hashes: usize) -> (Vec<SimdU64>, Vec<SimdU64>) {
     let (perm_a, perm_b) = generate_permutations(seed, num_hashes);
-    let perm_a_simd = load_simd(perm_a.into_iter(), num_hashes);
-    let perm_b_simd = load_simd(perm_b.into_iter(), num_hashes);
+    let perm_a_simd = load_simd(perm_a, num_hashes);
+    let perm_b_simd = load_simd(perm_b, num_hashes);
     (perm_a_simd, perm_b_simd)
 }
