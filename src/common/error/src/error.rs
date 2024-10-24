@@ -46,6 +46,8 @@ pub enum DaftError {
     FmtError(#[from] std::fmt::Error),
     #[error("DaftError::RegexError {0}")]
     RegexError(#[from] regex::Error),
+    #[error("PlanningError {0}")]
+    PlanningError(String),
 }
 
 impl From<arrow2::error::Error> for DaftError {
