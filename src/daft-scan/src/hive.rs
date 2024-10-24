@@ -35,7 +35,8 @@ pub fn parse_hive_partitioning(uri: &str) -> DaftResult<IndexMap<String, String>
             // A separator char denotes the start of a new partition.
             '\\' | '/' => {
                 if valid_partition && equality_pos > partition_start {
-                    let key = uri[partition_start..equality_pos].to_string();
+                    let key =
+                        urlencoding::decode(&uri[partition_start..equality_pos])?.into_owned();
                     let value = {
                         // Decode the potentially url-encoded string.
                         let value = urlencoding::decode(&uri[equality_pos + 1..idx])?.into_owned();
