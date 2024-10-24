@@ -186,7 +186,7 @@ impl GlobScanOperator {
         };
         // If hive partitioning is set, extend the partition keys with  hive partition keys.
         if hive_partitioning {
-            let hive_partitions = parse_hive_partitioning(&first_filepath);
+            let hive_partitions = parse_hive_partitioning(&first_filepath)?;
             let hive_partition_schema = hive_partitions_to_schema(&hive_partitions)?;
             let hive_partition_schema = match user_provided_schema.clone() {
                 Some(hint) => hive_partition_schema.apply_hints(&hint)?,
@@ -415,7 +415,7 @@ impl ScanOperator for GlobScanOperator {
                 };
                 // Extend the partition values with hive partitions.
                 if hive_partitioning {
-                    let hive_partitions = parse_hive_partitioning(&path);
+                    let hive_partitions = parse_hive_partitioning(&path)?;
                     let hive_partition_values =
                         hive_partitions_to_1d_table(&hive_partitions, &partition_schema)?;
                     partition_values = if partition_values.is_empty() {

@@ -2116,6 +2116,7 @@ dependencies = [
  "pyo3",
  "serde",
  "snafu",
+ "urlencoding",
 ]
 
 [[package]]

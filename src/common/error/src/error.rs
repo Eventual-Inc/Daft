@@ -46,6 +46,8 @@ pub enum DaftError {
     FmtError(#[from] std::fmt::Error),
     #[error("DaftError::RegexError {0}")]
     RegexError(#[from] regex::Error),
+    #[error("DaftError::FromUtf8Error {0}")]
+    FromUtf8Error(#[from] std::string::FromUtf8Error),
 }
 
 impl From<arrow2::error::Error> for DaftError {

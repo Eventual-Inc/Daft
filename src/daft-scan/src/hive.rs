@@ -7,8 +7,10 @@ use daft_schema::{dtype::DaftDataType, field::Field, schema::Schema};
 use daft_table::Table;
 use indexmap::IndexMap;
 
+const DEFAULT_HIVE_PARTITION_NAME: &str = "__HIVE_DEFAULT_PARTITION__";
+
 /// Parses hive-style /key=value/ components from a uri.
-pub fn parse_hive_partitioning(uri: &str) -> IndexMap<&str, &str> {
+pub fn parse_hive_partitioning(uri: &str) -> DaftResult<IndexMap<String, String>> {
     let mut equality_pos = 0;
     let mut partition_start = 0;
     let mut valid_partition = true;
@@ -33,8 +35,17 @@ pub fn parse_hive_partitioning(uri: &str) -> IndexMap<&str, &str> {
             // A separator char denotes the start of a new partition.
             '\\' | '/' => {
                 if valid_partition && equality_pos > partition_start {
-                    let key = &uri[partition_start..equality_pos];
-                    let value = &uri[equality_pos + 1..idx];
+                    let key = uri[partition_start..equality_pos].to_string();
+                    let value = {
+                        // Decode the potentially url-encoded string.
+                        let value = urlencoding::decode(&uri[equality_pos + 1..idx])?.into_owned();
+                        // In Hive, __HIVE_DEFAULT_PARTITION__ is used to represent a null value.
+                        if value == DEFAULT_HIVE_PARTITION_NAME {
+                            String::new()
+                        } else {
+                            value
+                        }
+                    };
                     partitions.insert(key, value);
                 }
                 partition_start = idx + 1;
@@ -43,19 +54,19 @@ pub fn parse_hive_partitioning(uri: &str) -> IndexMap<&str, &str> {
             _ => (),
         }
     }
-    partitions
+    Ok(partitions)
 }
 
 /// Takes hive partition key-value pairs as `partitions`, and the schema of the containing table as
 /// `table_schema`, and returns a 1-dimensional table containing the partition keys as columns, and
 /// their partition values as the singular row of values.
 pub fn hive_partitions_to_1d_table(
-    partitions: &IndexMap<&str, &str>,
+    partitions: &IndexMap<String, String>,
     table_schema: &Schema,
 ) -> DaftResult<Table> {
     let partition_series = partitions
         .iter()
-        .filter_map(|(&key, &value)| {
+        .filter_map(|(key, value)| {
             if table_schema.fields.contains_key(key) {
                 let daft_utf8_array = Utf8Array::from_values(key, std::iter::once(&value));
                 let target_dtype = &table_schema.fields.get(key).unwrap().dtype;
@@ -70,7 +81,7 @@ pub fn hive_partitions_to_1d_table(
         .clone()
         .into_iter()
         .map(|(_, field)| field)
-        .filter(|field| partitions.contains_key(&field.name.as_str()))
+        .filter(|field| partitions.contains_key(&field.name))
         .collect();
     let partition_schema = Schema::new(partition_fields)?;
     Ok(Table::new_unchecked(
@@ -83,10 +94,10 @@ pub fn hive_partitions_to_1d_table(
 /// Turns hive partition key-value pairs into a schema with the partitions' keys as field names, and
 /// inferring field types from the partitions' values. We don't do schema type inference here as the
 /// user is expected to provide the schema for hive-partitioned fields.
-pub fn hive_partitions_to_schema(partitions: &IndexMap<&str, &str>) -> DaftResult<Schema> {
+pub fn hive_partitions_to_schema(partitions: &IndexMap<String, String>) -> DaftResult<Schema> {
     let partition_fields: Vec<Field> = partitions
         .iter()
-        .map(|(&key, &value)| Field::new(key, DaftDataType::from(&infer(value.as_bytes()))))
+        .map(|(key, value)| Field::new(key, DaftDataType::from(&infer(value.as_bytes()))))
         .collect();
     Schema::new(partition_fields)
 }

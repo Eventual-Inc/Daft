@@ -22,6 +22,7 @@ parquet2 = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
 snafu = {workspace = true}
+urlencoding = "2.1.3"
 
 [features]
 python = ["dep:pyo3", "common-error/python", "daft-core/python", "daft-dsl/python", "daft-table/python", "daft-stats/python", "common-file-formats/python", "common-io-config/python", "common-daft-config/python", "daft-schema/python"]
