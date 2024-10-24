@@ -2148,6 +2148,7 @@ dependencies = [
  "daft-hash",
  "divan",
  "fastrand 2.1.0",
+ "memchr",
  "proptest",
  "rand 0.8.5",
  "rustc-hash 2.0.0",

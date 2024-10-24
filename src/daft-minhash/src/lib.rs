@@ -3,7 +3,7 @@
 #![feature(iter_next_chunk)]
 #![feature(iter_array_chunks)]
 #![feature(split_array)]
-
+#![feature(array_windows)]
 //! MinHash: Efficient Set Similarity Estimation
 //!
 //! MinHash is a probabilistic technique for rapidly estimating similarity between sets,

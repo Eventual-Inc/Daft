@@ -1,7 +1,10 @@
 use std::hint::black_box;
 
-use daft_minhash::windowed::WindowedWords;
-use tango_bench::{benchmark_fn, tango_benchmarks, tango_main, Benchmark, IntoBenchmarks};
+use daft_minhash::windowed::WindowedWordsExt;
+use tango_bench::{
+    benchmark_fn, tango_benchmarks, tango_main, Benchmark, IntoBenchmarks, MeasurementSettings,
+    DEFAULT_SETTINGS,
+};
 // Import the windowed words functionality
 
 const SMALL_TEXT: &str = "The quick brown fox jumps over the lazy dog";
@@ -26,9 +29,11 @@ fn bench_windowed_words(text: &'static str, window_size: usize) -> Benchmark {
         ),
         move |b| {
             b.iter(move || {
-                let iter = WindowedWords::new(black_box(text), black_box(window_size));
-                // Force evaluation of the iterator
-                let _result: Vec<_> = iter.collect();
+                let iter = text.windowed_words(window_size);
+
+                for elem in iter {
+                    black_box(elem);
+                }
             })
         },
     )
@@ -49,25 +54,31 @@ fn all_benchmarks() -> impl IntoBenchmarks {
         // Empty string
         benchmark_fn("windowed_words/empty_string", |b| {
             b.iter(|| {
-                let iter = WindowedWords::new(black_box(""), black_box(3));
-                let _result: Vec<_> = iter.collect();
+                let iter = "".windowed_words(3);
+
+                for elem in iter {
+                    black_box(elem);
+                }
             })
         }),
         // Single word
         benchmark_fn("windowed_words/single_word", |b| {
             b.iter(|| {
-                let iter = WindowedWords::new(black_box("Word"), black_box(3));
-                let _result: Vec<_> = iter.collect();
+                let iter = black_box("Word".windowed_words(3));
+
+                for elem in iter {
+                    black_box(elem);
+                }
             })
         }),
         // UTF-8 text
         benchmark_fn("windowed_words/utf8_text", |b| {
             b.iter(|| {
-                let iter = WindowedWords::new(
-                    black_box("Hello 世界 Rust язык 🌍 Programming"),
-                    black_box(3),
-                );
-                let _result: Vec<_> = iter.collect();
+                let iter = "Hello 世界 Rust язык 🌍 Programming".windowed_words(3);
+
+                for elem in iter {
+                    black_box(elem);
+                }
             })
         }),
     ]);
@@ -75,5 +86,19 @@ fn all_benchmarks() -> impl IntoBenchmarks {
     benchmarks
 }
 
+// Customized settings to reduce variability
+const SETTINGS: MeasurementSettings = MeasurementSettings {
+    // Increase minimum iterations for more stable results
+    min_iterations_per_sample: 1000,
+    // Enable cache firewall to reduce cache effects
+    cache_firewall: Some(64), // 64KB cache firewall
+    // Enable yielding to reduce scheduler effects
+    yield_before_sample: true,
+    // Enable stack randomization to reduce alignment effects
+    randomize_stack: Some(4096), // 4KB stack randomization
+    // Rest of settings from default
+    ..DEFAULT_SETTINGS
+};
+
 tango_benchmarks!(all_benchmarks());
-tango_main!();
+tango_main!(SETTINGS);
