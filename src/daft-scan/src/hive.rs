@@ -102,3 +102,159 @@ pub fn hive_partitions_to_schema(partitions: &IndexMap<String, String>) -> DaftR
         .collect();
     Schema::new(partition_fields)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    // use std::assert_matches::assert_matches;
+
+    #[test]
+    fn test_hive_basic_partitions() {
+        let uri = "s3://bucket/year=2024/normal-string/month=03/day=15/data.parquet";
+        let partitions = parse_hive_partitioning(uri).unwrap();
+
+        assert_eq!(partitions.len(), 3);
+        assert_eq!(partitions.get("year"), Some(&"2024".to_string()));
+        assert_eq!(partitions.get("month"), Some(&"03".to_string()));
+        assert_eq!(partitions.get("day"), Some(&"15".to_string()));
+    }
+
+    #[test]
+    fn test_hive_url_encoded_values() {
+        let uri = "s3://bucket/country=United%20States/city=New%20York/data.csv";
+        let partitions = parse_hive_partitioning(uri).unwrap();
+
+        assert_eq!(
+            partitions.get("country"),
+            Some(&"United States".to_string())
+        );
+        assert_eq!(partitions.get("city"), Some(&"New York".to_string()));
+    }
+
+    #[test]
+    fn test_hive_default_partition() {
+        let uri = "/year=2024/region=__HIVE_DEFAULT_PARTITION__/data.parquet";
+        let partitions = parse_hive_partitioning(uri).unwrap();
+
+        assert_eq!(partitions.get("year"), Some(&"2024".to_string()));
+        assert_eq!(partitions.get("region"), Some(&"".to_string()));
+    }
+
+    #[test]
+    fn test_hive_empty_uri() {
+        let uri = "";
+        let partitions = parse_hive_partitioning(uri).unwrap();
+        assert!(partitions.is_empty());
+    }
+
+    #[test]
+    fn test_hive_no_partitions() {
+        let uri = "s3://bucket/data.parquet";
+        let partitions = parse_hive_partitioning(uri).unwrap();
+        assert!(partitions.is_empty());
+    }
+
+    #[test]
+    fn test_hive_invalid_partition_format() {
+        let uri = "s3://bucket/year=2024/invalid==partition/data.parquet";
+        let partitions = parse_hive_partitioning(uri).unwrap();
+
+        // Should only parse the valid partition.
+        assert_eq!(partitions.len(), 1);
+        assert_eq!(partitions.get("year"), Some(&"2024".to_string()));
+    }
+
+    #[test]
+    fn test_hive_get_parameters() {
+        let uri = "s3://bucket/year=2024/month=03/file.parquet?query=value";
+        let partitions = parse_hive_partitioning(uri).unwrap();
+
+        // Should only parse up to the '?'.
+        assert_eq!(partitions.len(), 2);
+        assert_eq!(partitions.get("year"), Some(&"2024".to_string()));
+        assert_eq!(partitions.get("month"), Some(&"03".to_string()));
+    }
+
+    #[test]
+    fn test_hive_windows_style_paths() {
+        let uri = "C:\\Documents\\year=2024\\month=03\\data.parquet";
+        let partitions = parse_hive_partitioning(uri).unwrap();
+
+        assert_eq!(partitions.len(), 2);
+        assert_eq!(partitions.get("year"), Some(&"2024".to_string()));
+        assert_eq!(partitions.get("month"), Some(&"03".to_string()));
+    }
+
+    #[test]
+    fn test_hive_mixed_separators() {
+        let uri = "C:\\Documents/year=2024\\month=03/day=15\\data.parquet";
+        let partitions = parse_hive_partitioning(uri).unwrap();
+
+        assert_eq!(partitions.len(), 3);
+        assert_eq!(partitions.get("year"), Some(&"2024".to_string()));
+        assert_eq!(partitions.get("month"), Some(&"03".to_string()));
+        assert_eq!(partitions.get("day"), Some(&"15".to_string()));
+    }
+
+    #[test]
+    fn test_hive_newline_termination() {
+        let uri = "s3://bucket/year=2024/month=03/\nday=15/data.parquet";
+        let partitions = parse_hive_partitioning(uri).unwrap();
+
+        // Should only parse up to the newline.
+        assert_eq!(partitions.len(), 2);
+        assert_eq!(partitions.get("year"), Some(&"2024".to_string()));
+        assert_eq!(partitions.get("month"), Some(&"03".to_string()));
+    }
+
+    #[test]
+    fn test_hive_special_characters() {
+        let uri = "s3://bucket/region=North%40America/type%3Ddata=csv%2Bextra/data.parquet";
+        let partitions = parse_hive_partitioning(uri).unwrap();
+
+        assert_eq!(partitions.len(), 2);
+        assert_eq!(partitions.get("region"), Some(&"North@America".to_string()));
+        assert_eq!(partitions.get("type=data"), Some(&"csv+extra".to_string()));
+    }
+
+    #[test]
+    fn test_hive_unicode_characters() {
+        let uri = "s3://bucket/country=%F0%9F%87%BA%F0%9F%87%B8/city=%E5%8C%97%E4%BA%AC/data.csv";
+        let partitions = parse_hive_partitioning(uri).unwrap();
+
+        assert_eq!(partitions.get("country"), Some(&"🇺🇸".to_string()));
+        assert_eq!(partitions.get("city"), Some(&"北京".to_string()));
+    }
+
+    #[test]
+    fn test_hive_consecutive_separators() {
+        let uri = "s3://bucket/year=2024//month=03///day=15////data.parquet";
+        let partitions = parse_hive_partitioning(uri).unwrap();
+
+        assert_eq!(partitions.len(), 3);
+        assert_eq!(partitions.get("year"), Some(&"2024".to_string()));
+        assert_eq!(partitions.get("month"), Some(&"03".to_string()));
+        assert_eq!(partitions.get("day"), Some(&"15".to_string()));
+    }
+
+    #[test]
+    fn test_hive_mixed_consecutive_separators() {
+        let uri = "s3://bucket/year=2024//\\month=03\\/\\day=15/\\//data.parquet";
+        let partitions = parse_hive_partitioning(uri).unwrap();
+
+        assert_eq!(partitions.len(), 3);
+        assert_eq!(partitions.get("year"), Some(&"2024".to_string()));
+        assert_eq!(partitions.get("month"), Some(&"03".to_string()));
+        assert_eq!(partitions.get("day"), Some(&"15".to_string()));
+    }
+
+    #[test]
+    fn test_hive_empty_key_value() {
+        let uri = "s3://bucket/empty_key=/=empty_value/another=/data.parquet";
+        let partitions = parse_hive_partitioning(uri).unwrap();
+
+        assert_eq!(partitions.len(), 2);
+        assert_eq!(partitions.get("empty_key"), Some(&"".to_string()));
+        assert_eq!(partitions.get("another"), Some(&"".to_string()));
+    }
+}

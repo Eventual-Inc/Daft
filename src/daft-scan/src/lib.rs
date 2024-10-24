@@ -1041,7 +1041,6 @@ mod test {
     use common_error::DaftResult;
     use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
     use daft_schema::{schema::Schema, time_unit::TimeUnit};
-    use indexmap::IndexMap;
     use itertools::Itertools;
 
     use crate::{
