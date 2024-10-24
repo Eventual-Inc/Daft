@@ -146,6 +146,7 @@ members = [
 
 [workspace.dependencies]
 ahash = "0.8.11"
+approx = "0.5.1"
 async-compat = "0.2.3"
 async-compression = {version = "0.4.12", features = [
   "tokio",

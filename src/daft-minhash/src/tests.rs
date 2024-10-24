@@ -1,5 +1,6 @@
 use std::{collections::HashSet, hash::BuildHasherDefault, iter::repeat_with};
 
+use approx::assert_relative_eq;
 use fastrand::Rng;
 
 use super::*;
@@ -127,7 +128,8 @@ fn test_jaccard_similarity_estimation() {
 
 #[test]
 fn test_collision_probability() {
-    // Placeholder: Replace expected collision probability with actual value after verification
+    // todo: this is NOT DETERMINISTIC... I am unsure why
+
     let mut rng = Rng::with_seed(200);
     let perm_a = repeat_with(|| rng.u64(1..(i32::MAX as u64))).take(64);
     let perm_a_simd = load_simd(perm_a, 64);
@@ -150,13 +152,8 @@ fn test_collision_probability() {
         .count() as f64;
     let collision_probability = collision_count / 64.0;
 
-    let expected_probability = 0.5625; // Placeholder value
-    assert!(
-        (collision_probability - expected_probability).abs() < 0.1,
-        "Collision probability {} differs from expected {}",
-        collision_probability,
-        expected_probability
-    );
+    let expected_probability = 0.515625; // TODO why is this not deterministic?
+    assert_relative_eq!(collision_probability, expected_probability);
 }
 
 #[test]
