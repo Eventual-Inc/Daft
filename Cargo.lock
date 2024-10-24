@@ -2019,6 +2019,7 @@ dependencies = [
  "daft-scan",
  "daft-stats",
  "daft-table",
+ "indexmap 2.5.0",
  "parquet2",
  "pyo3",
  "snafu",
@@ -2125,6 +2126,7 @@ dependencies = [
  "common-runtime",
  "daft-core",
  "daft-csv",
+ "daft-decoding",
  "daft-dsl",
  "daft-io",
  "daft-json",
@@ -2133,11 +2135,13 @@ dependencies = [
  "daft-stats",
  "daft-table",
  "futures",
+ "indexmap 2.5.0",
  "itertools 0.11.0",
  "parquet2",
  "pyo3",
  "serde",
  "snafu",
+ "urlencoding",
 ]
 
 [[package]]
