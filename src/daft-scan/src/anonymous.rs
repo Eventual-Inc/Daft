@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
+use daft_core::prelude::Field;
 use daft_schema::schema::SchemaRef;
 use indexmap::IndexMap;
 
@@ -47,10 +48,8 @@ impl ScanOperator for AnonymousScanOperator {
         None
     }
 
-    fn generated_fields(
-        &self,
-    ) -> indexmap::IndexMap<std::string::String, daft_core::prelude::Field> {
-        IndexMap::new()
+    fn generated_fields(&self) -> Option<&indexmap::IndexMap<String, Field>> {
+        None
     }
 
     fn can_absorb_filter(&self) -> bool {

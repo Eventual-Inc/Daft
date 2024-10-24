@@ -204,14 +204,13 @@ impl LogicalPlanBuilder {
         }
         // Add generated fields to the schema.
         let schema_with_generated_fields = {
-            let generated_schema = Schema::new(
-                scan_operator
-                    .0
-                    .generated_fields()
-                    .values()
-                    .cloned()
-                    .collect(),
-            )?;
+            let generated_schema = {
+                if let Some(generated_fields) = scan_operator.0.generated_fields() {
+                    Schema::new(generated_fields.values().cloned().collect())?
+                } else {
+                    Schema::empty()
+                }
+            };
             // We use the non-distinct union here because some scan operators have table schema information that
             // already contain partitioned fields. For example,the deltalake scan operator takes the table schema.
             Arc::new(schema.non_distinct_union(&generated_schema))

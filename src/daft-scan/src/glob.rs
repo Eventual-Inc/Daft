@@ -311,8 +311,8 @@ impl ScanOperator for GlobScanOperator {
         self.file_path_column.as_deref()
     }
 
-    fn generated_fields(&self) -> indexmap::IndexMap<std::string::String, Field> {
-        self.generated_fields.clone()
+    fn generated_fields(&self) -> Option<&indexmap::IndexMap<String, Field>> {
+        Some(&self.generated_fields)
     }
 
     fn can_absorb_filter(&self) -> bool {
