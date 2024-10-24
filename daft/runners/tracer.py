@@ -12,7 +12,6 @@ if TYPE_CHECKING:
 class RunnerTracer:
     def __init__(self, filepath: str):
         self._filepath = filepath
-        self._has_events = False
 
     def __enter__(self) -> RunnerTracer:
         self._file = open(self._filepath, "w")
@@ -21,12 +20,17 @@ class RunnerTracer:
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        self._file.write("]")
+        self._file.write(
+            json.dumps({"name": "process_name", "ph": "M", "pid": 1, "args": {"name": "RayRunner dispatch loop"}})
+        )
+        self._file.write(",\n")
+        self._file.write(
+            json.dumps({"name": "process_name", "ph": "M", "pid": 2, "args": {"name": "Ray Task Execution"}})
+        )
+        self._file.write("\n]")
         self._file.close()
 
     def _write_event(self, event: dict[str, Any]):
-        if self._has_events:
-            self._file.write(",\n")
         self._file.write(
             json.dumps(
                 {
@@ -35,7 +39,7 @@ class RunnerTracer:
                 }
             )
         )
-        self._has_events = True
+        self._file.write(",\n")
 
     @contextlib.contextmanager
     def dispatch_wave(self, wave_num: int):
@@ -273,7 +277,7 @@ class RunnerTracer:
                     "stage_id": stage_id,
                     "instructions": instructions,
                 },
-                "pid": 1,
+                "pid": 2,
                 "tid": 1,
             }
         )
@@ -284,7 +288,7 @@ class RunnerTracer:
                 "id": task_id,
                 "category": "task",
                 "ph": "e",
-                "pid": 1,
+                "pid": 2,
                 "tid": 1,
             }
         )
