@@ -2,9 +2,14 @@
 harness = false
 name = "minhash"
 
+[[bench]]
+harness = false
+name = "windowed"
+
 [dependencies]
 fastrand = "2.1.0"
 common-error.workspace = true
+memchr = "2.7.4"
 
 [dev-dependencies]
 rand = "0.8.5"
@@ -23,7 +28,3 @@ workspace = true
 edition = {workspace = true}
 name = "daft-minhash"
 version = {workspace = true}
-
-[[bench]]
-harness = false
-name = "windowed"

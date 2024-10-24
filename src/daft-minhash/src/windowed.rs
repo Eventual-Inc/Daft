@@ -1,59 +1,43 @@
-pub struct WindowedWords<'a> {
-    s: &'a str,
-    word_starts: Vec<usize>, // Vec of start indices for each word
-    window_size: usize,
-    current: usize, // Current starting word index for the window
-}
+use std::{
+    iter::{Map, Once},
+    str::MatchIndices,
+};
 
 pub trait WindowedWordsExt<'a> {
     fn windowed_words(&'a self, window_size: usize) -> impl Iterator<Item = &'a str>;
 }
 
-impl<'a> WindowedWordsExt<'a> for str {
-    fn windowed_words(&'a self, window_size: usize) -> impl Iterator<Item = &'a Self> {
-        WindowedWords::new(self, window_size)
-    }
+struct WindowedWords<'a> {
+    first: bool,
+    text: &'a str,
+    word_boundaries: Vec<usize>,
+    window_size: usize,
+    current_idx: usize,
 }
 
 impl<'a> WindowedWords<'a> {
-    /// Creates a new `WindowedWords` iterator.
-    ///
-    /// # Arguments
-    ///
-    /// * `s` - The input string slice.
-    /// * `window_size` - The number of words in each window.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// let s = "The quick brown fox";
-    /// let iter = WindowedWords::new(s, 2);
-    /// ```
-    pub fn new(s: &'a str, window_size: usize) -> Self {
+    fn new(text: &'a str, window_size: usize) -> Self {
         assert!(window_size > 0, "Window size must be greater than 0");
 
-        if s.is_empty() {
-            return WindowedWords {
-                s,
-                word_starts: vec![],
-                window_size,
-                current: 0,
-            };
-        }
+        let mut word_boundaries = Vec::new();
 
-        // assume first character is not whitespace
-        let mut word_starts = vec![0];
-
-        for (i, _) in s.match_indices(' ') {
-            // assume character after whitespace is not whitespace
-            word_starts.push(i + 1);
+        if !text.is_empty() {
+            // Add start position
+            word_boundaries.push(0);
+            // Add all space positions
+            for elem in memchr::memchr_iter(b' ', text.as_bytes()) {
+                word_boundaries.push(elem); // Position after space
+            }
+            // Add end position
+            word_boundaries.push(text.len());
         }
 
         WindowedWords {
-            s,
-            word_starts,
+            first: true,
+            text,
+            word_boundaries,
             window_size,
-            current: 0,
+            current_idx: 0,
         }
     }
 }
@@ -62,58 +46,38 @@ impl<'a> Iterator for WindowedWords<'a> {
     type Item = &'a str;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.window_size == 0 {
+        if self.text.is_empty() {
+            return None;
+        }
+        let is_first = self.first;
+        self.first = false;
+
+        if self.current_idx + self.window_size >= self.word_boundaries.len() {
+            if is_first && !self.text.is_empty() {
+                return Some(self.text);
+            }
+
             return None;
         }
 
-        if self.current + self.window_size <= self.word_starts.len() {
-            // Get the start of the current window
-            let start = self.word_starts[self.current];
-            // Get the end of the window: end of the last word in the window
-            let end = if self.current + self.window_size < self.word_starts.len() {
-                self.word_starts[self.current + self.window_size]
-            } else {
-                self.s.len()
-            };
-            self.current += 1;
-            Some(self.s[start..end].trim_end())
-        } else if self.current == 0
-            && !self.word_starts.is_empty()
-            && self.window_size > self.word_starts.len()
-        {
-            // Yield a window with all words if window_size exceeds the number of words
-            let start = self.word_starts[0];
-            let end = self.s.len();
-            self.current += 1;
-            Some(&self.s[start..end])
-        } else {
-            // No more windows to yield
-            None
-        }
-    }
+        let start = self.word_boundaries[self.current_idx];
+        let end = self.word_boundaries[self.current_idx + self.window_size];
+        self.current_idx += 1;
 
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        if self.window_size == 0 {
-            return (0, Some(0));
-        }
-
-        if self.window_size > self.word_starts.len() {
-            if self.word_starts.is_empty() {
-                (0, Some(0))
-            } else {
-                (1, Some(1))
-            }
+        if is_first {
+            Some(&self.text[(start)..end])
         } else {
-            let remaining = self
-                .word_starts
-                .len()
-                .saturating_sub(self.current + self.window_size - 1);
-            (remaining, Some(remaining))
+            Some(&self.text[(start + 1)..end])
         }
     }
 }
 
-impl<'a> ExactSizeIterator for WindowedWords<'a> {}
+impl<'a> WindowedWordsExt<'a> for str {
+    #[inline]
+    fn windowed_words(&'a self, window_size: usize) -> impl Iterator<Item = &'a Self> {
+        WindowedWords::new(self, window_size)
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -122,8 +86,7 @@ mod tests {
     #[test]
     fn test_windowed_words() {
         let s = "The quick brown fox jumps over the lazy dog";
-        let iter = WindowedWords::new(s, 3);
-        let result: Vec<&str> = iter.collect();
+        let result: Vec<&str> = s.windowed_words(3).collect();
 
         assert_eq!(
             result,
@@ -142,8 +105,7 @@ mod tests {
     #[test]
     fn test_fewer_words_than_window_size() {
         let s = "Hello world";
-        let iter = WindowedWords::new(s, 3);
-        let result: Vec<&str> = iter.collect();
+        let result: Vec<&str> = s.windowed_words(3).collect();
 
         assert_eq!(result, vec!["Hello world"]);
     }
@@ -151,8 +113,7 @@ mod tests {
     #[test]
     fn test_empty_string() {
         let s = "";
-        let iter = WindowedWords::new(s, 3);
-        let result: Vec<&str> = iter.collect();
+        let result: Vec<&str> = s.windowed_words(3).collect();
 
         assert_eq!(result, Vec::<&str>::new());
     }
@@ -160,8 +121,7 @@ mod tests {
     #[test]
     fn test_single_word() {
         let s = "Hello";
-        let iter = WindowedWords::new(s, 3);
-        let result: Vec<&str> = iter.collect();
+        let result: Vec<&str> = s.windowed_words(3).collect();
 
         assert_eq!(result, vec!["Hello"]);
     }
@@ -170,8 +130,7 @@ mod tests {
     // #[test]
     // fn test_with_extra_whitespace() {
     //     let s = "  The   quick  brown   ";
-    //     let iter = WindowedWords::new(s, 2);
-    //     let result: Vec<&str> = iter.collect();
+    //     let result: Vec<&str> = s.windowed_words(2).collect();
     //
     //     assert_eq!(result, vec!["The   quick", "quick  brown"]);
     // }
@@ -179,8 +138,7 @@ mod tests {
     #[test]
     fn test_large_window_size() {
         let s = "One two three";
-        let iter = WindowedWords::new(s, 5);
-        let result: Vec<&str> = iter.collect();
+        let result: Vec<&str> = s.windowed_words(5).collect();
 
         assert_eq!(result, vec!["One two three"]);
     }
@@ -189,8 +147,7 @@ mod tests {
     // #[test]
     // fn test_multiple_spaces_between_words() {
     //     let s = "Hello    world  from  Rust";
-    //     let iter = WindowedWords::new(s, 2);
-    //     let result: Vec<&str> = iter.collect();
+    //     let result: Vec<&str> = s.windowed_words(2).collect();
     //
     //     assert_eq!(result, vec!["Hello    world", "world  from", "from  Rust"]);
     // }
@@ -199,15 +156,13 @@ mod tests {
     #[should_panic(expected = "Window size must be greater than 0")]
     fn test_window_size_zero() {
         let s = "This should yield nothing";
-        let iter = WindowedWords::new(s, 0);
-        let _result: Vec<&str> = iter.collect();
+        let _result: Vec<&str> = s.windowed_words(0).collect();
     }
 
     #[test]
     fn test_exact_window_size() {
         let s = "One two three four";
-        let iter = WindowedWords::new(s, 4);
-        let result: Vec<&str> = iter.collect();
+        let result: Vec<&str> = s.windowed_words(4).collect();
 
         assert_eq!(result, vec!["One two three four"]);
     }
@@ -215,8 +170,7 @@ mod tests {
     #[test]
     fn test_window_size_one() {
         let s = "Single word windows";
-        let iter = WindowedWords::new(s, 1);
-        let result: Vec<&str> = iter.collect();
+        let result: Vec<&str> = s.windowed_words(1).collect();
 
         assert_eq!(result, vec!["Single", "word", "windows"]);
     }
@@ -224,8 +178,7 @@ mod tests {
     #[test]
     fn test_window_size_one_with_trailing_whitespace_no_panic() {
         let s = "Single word windows ";
-        let iter = WindowedWords::new(s, 1);
-        let result: Vec<&str> = iter.collect();
+        let result: Vec<&str> = s.windowed_words(1).collect();
 
         assert_eq!(result, vec!["Single", "word", "windows", ""]);
     }
@@ -233,8 +186,7 @@ mod tests {
     #[test]
     fn test_utf8_words() {
         let s = "Hello 世界 Rust язык";
-        let iter = WindowedWords::new(s, 2);
-        let result: Vec<&str> = iter.collect();
+        let result: Vec<&str> = s.windowed_words(2).collect();
 
         assert_eq!(result, vec!["Hello 世界", "世界 Rust", "Rust язык",]);
     }
@@ -242,8 +194,7 @@ mod tests {
     #[test]
     fn test_utf8_single_word() {
         let s = "こんにちは"; // "Hello" in Japanese
-        let iter = WindowedWords::new(s, 2);
-        let result: Vec<&str> = iter.collect();
+        let result: Vec<&str> = s.windowed_words(2).collect();
 
         // Since there's only one word, even with window_size > number of words, it should yield the single word
         assert_eq!(result, vec!["こんにちは"]);
@@ -252,8 +203,7 @@ mod tests {
     #[test]
     fn test_utf8_mixed_languages() {
         let s = "Café naïve façade Москва Москва";
-        let iter = WindowedWords::new(s, 3);
-        let result: Vec<&str> = iter.collect();
+        let result: Vec<&str> = s.windowed_words(3).collect();
 
         assert_eq!(
             result,
@@ -268,8 +218,7 @@ mod tests {
     #[test]
     fn test_utf8_with_emojis() {
         let s = "Hello 🌍 Rust 🚀 язык 📝";
-        let iter = WindowedWords::new(s, 2);
-        let result: Vec<&str> = iter.collect();
+        let result: Vec<&str> = s.windowed_words(2).collect();
 
         assert_eq!(
             result,
@@ -280,8 +229,7 @@ mod tests {
     #[test]
     fn test_utf8_large_window_size() {
         let s = "One 两三 四五 六七八 九十";
-        let iter = WindowedWords::new(s, 4);
-        let result: Vec<&str> = iter.collect();
+        let result: Vec<&str> = s.windowed_words(4).collect();
 
         assert_eq!(
             result,
@@ -292,8 +240,7 @@ mod tests {
     #[test]
     fn test_utf8_exact_window_size() {
         let s = "Hola 世界 Bonjour мир";
-        let iter = WindowedWords::new(s, 4);
-        let result: Vec<&str> = iter.collect();
+        let result: Vec<&str> = s.windowed_words(4).collect();
 
         assert_eq!(result, vec!["Hola 世界 Bonjour мир"]);
     }
@@ -301,8 +248,7 @@ mod tests {
     #[test]
     fn test_utf8_window_size_one() {
         let s = "Hello 世界 Rust язык 🐱‍👤";
-        let iter = WindowedWords::new(s, 1);
-        let result: Vec<&str> = iter.collect();
+        let result: Vec<&str> = s.windowed_words(1).collect();
 
         assert_eq!(result, vec!["Hello", "世界", "Rust", "язык", "🐱‍👤"],);
     }
@@ -310,8 +256,7 @@ mod tests {
     #[test]
     fn test_utf8_trailing_whitespace() {
         let s = "Hello 世界 Rust язык 🐱‍👤 ";
-        let iter = WindowedWords::new(s, 1);
-        let result: Vec<&str> = iter.collect();
+        let result: Vec<&str> = s.windowed_words(1).collect();
 
         // The last window is an empty string due to trailing space
         assert_eq!(result, vec!["Hello", "世界", "Rust", "язык", "🐱‍👤", ""],);
