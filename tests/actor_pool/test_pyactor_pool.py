@@ -73,9 +73,6 @@ def test_pyactor_pool_not_enough_resources():
     original_resources = deepcopy(runner._resources.available_resources)
 
     with pytest.raises(RuntimeError, match=f"Requested {float(cpu_count + 1)} CPUs but found only"):
-        with runner.actor_pool_context(
-            "my-pool", ResourceRequest(num_cpus=1), ResourceRequest(), cpu_count + 1, projection
-        ) as _:
-            pass
+        runner.setup_actor_pool("my-pool", ResourceRequest(num_cpus=1), ResourceRequest(), cpu_count + 1, projection)
 
     assert runner._resources.available_resources == original_resources
