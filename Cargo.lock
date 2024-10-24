@@ -2110,7 +2110,6 @@ dependencies = [
 name = "daft-minhash"
 version = "0.3.0-dev0"
 dependencies = [
- "ahash",
  "approx",
  "common-error",
  "daft-hash",

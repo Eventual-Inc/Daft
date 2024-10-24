@@ -1,4 +1,4 @@
-use std::{collections::HashSet, hash::BuildHasherDefault, iter::repeat_with};
+use std::{collections::HashSet, iter::repeat_with};
 
 use approx::assert_relative_eq;
 use fastrand::Rng;
@@ -34,6 +34,8 @@ fn test_simd_min() {
     assert_eq!(out_arr[0], 11 * 22 + 33);
 }
 
+const XX_HASH_SEED: u64 = 42;
+
 #[test]
 fn test_minhash() {
     // just some sanity checks
@@ -48,7 +50,7 @@ fn test_minhash() {
         (&perm_a_simd, &perm_b_simd),
         16,
         3,
-        &BuildHasherDefault::<ahash::AHasher>::default(),
+        &Xxh64Builder::new(XX_HASH_SEED),
     )
     .unwrap();
     assert_eq!(res1.len(), 16);
@@ -58,7 +60,7 @@ fn test_minhash() {
         (&perm_a_simd, &perm_b_simd),
         16,
         3,
-        &BuildHasherDefault::<ahash::AHasher>::default(),
+        &Xxh64Builder::new(XX_HASH_SEED),
     )
     .unwrap();
     assert_eq!(res2.len(), 16);
@@ -71,7 +73,7 @@ fn test_minhash() {
         (&perm_a_simd, &perm_b_simd),
         16,
         3,
-        &BuildHasherDefault::<ahash::AHasher>::default(),
+        &Xxh64Builder::new(XX_HASH_SEED),
     )
     .unwrap();
     for i in 0..16 {
@@ -96,7 +98,7 @@ fn test_jaccard_similarity_estimation() {
         (&perm_a_simd, &perm_b_simd),
         32,
         3,
-        &BuildHasherDefault::<ahash::AHasher>::default(),
+        &Xxh64Builder::new(XX_HASH_SEED),
     )
     .unwrap();
     let hash2 = minhash(
@@ -104,7 +106,7 @@ fn test_jaccard_similarity_estimation() {
         (&perm_a_simd, &perm_b_simd),
         32,
         3,
-        &BuildHasherDefault::<ahash::AHasher>::default(),
+        &Xxh64Builder::new(XX_HASH_SEED),
     )
     .unwrap();
 
@@ -128,15 +130,13 @@ fn test_jaccard_similarity_estimation() {
 
 #[test]
 fn test_collision_probability() {
-    // todo: this is NOT DETERMINISTIC... I am unsure why
-
     let mut rng = Rng::with_seed(200);
     let perm_a = repeat_with(|| rng.u64(1..(i32::MAX as u64))).take(64);
     let perm_a_simd = load_simd(perm_a, 64);
     let perm_b = repeat_with(|| rng.u64(0..(i32::MAX as u64))).take(64);
     let perm_b_simd = load_simd(perm_b, 64);
 
-    let hasher = BuildHasherDefault::<ahash::AHasher>::default();
+    let hasher = Xxh64Builder::new(42);
 
     let text_a = "minhash collision probability test case one";
     let text_b = "minhash collision probability test case two";
@@ -152,7 +152,7 @@ fn test_collision_probability() {
         .count() as f64;
     let collision_probability = collision_count / 64.0;
 
-    let expected_probability = 0.515625; // TODO why is this not deterministic?
+    let expected_probability = 0.578125;
     assert_relative_eq!(collision_probability, expected_probability);
 }
 
@@ -165,9 +165,9 @@ fn test_permutation_consistency() {
     let perm_b = repeat_with(|| rng.u64(0..(i32::MAX as u64))).take(24);
     let perm_b_simd = load_simd(perm_b, 24);
 
-    let hasher = BuildHasherDefault::<ahash::AHasher>::default();
-
     let text = "consistency test for permutation in minhash";
+
+    let hasher = Xxh64Builder::new(XX_HASH_SEED);
 
     let hash_first = minhash(text, (&perm_a_simd, &perm_b_simd), 24, 3, &hasher).unwrap();
     let hash_second = minhash(text, (&perm_a_simd, &perm_b_simd), 24, 3, &hasher).unwrap();
@@ -186,7 +186,7 @@ fn test_edge_cases() {
     let perm_b = repeat_with(|| rng.u64(0..(i32::MAX as u64))).take(16);
     let perm_b_simd = load_simd(perm_b, 16);
 
-    let hasher = BuildHasherDefault::<ahash::AHasher>::default();
+    let hasher = Xxh64Builder::new(XX_HASH_SEED);
 
     // Test with empty string
     let empty_text = "";
@@ -249,7 +249,7 @@ fn test_large_scale_similarity() {
     let perm_b = repeat_with(|| rng.u64(0..(i32::MAX as u64))).take(num_hashes);
     let perm_b_simd = load_simd(perm_b, num_hashes);
 
-    let hasher = BuildHasherDefault::<ahash::AHasher>::default();
+    let hasher = Xxh64Builder::new(XX_HASH_SEED);
 
     // Generate a large number of similar and dissimilar strings
     let base_text = "the quick brown fox jumps over the lazy dog";
@@ -317,7 +317,7 @@ fn test_signature_length() {
     let perm_b = repeat_with(|| rng.u64(0..(i32::MAX as u64))).take(num_hashes);
     let perm_b_simd = load_simd(perm_b, num_hashes);
 
-    let hasher = BuildHasherDefault::<ahash::AHasher>::default();
+    let hasher = Xxh64Builder::new(XX_HASH_SEED);
 
     let text = "verify that the minhash signature length is correct";
 
@@ -347,7 +347,7 @@ fn test_different_seeds_produce_different_hashes() {
         (&perm_a_simd, &perm_b_simd),
         num_hashes,
         3,
-        &ahash::RandomState::with_seed(1),
+        &Xxh64Builder::new(1),
     )
     .unwrap();
     let hash_seed2 = minhash(
@@ -355,7 +355,7 @@ fn test_different_seeds_produce_different_hashes() {
         (&perm_a_simd, &perm_b_simd),
         num_hashes,
         3,
-        &ahash::RandomState::with_seed(2),
+        &Xxh64Builder::new(2),
     )
     .unwrap();
 
@@ -377,7 +377,7 @@ fn actual_jaccard_similarity(text1: &str, text2: &str, ngram_size: usize) -> f64
 }
 
 use proptest::prelude::*;
-
+use xxhash_rust::xxh64::Xxh64Builder;
 // Existing test imports remain...
 
 #[test]
@@ -399,7 +399,7 @@ fn test_exact_vs_estimated_jaccard() {
         ("abc def ghi", "jkl mno pqr"),
     ];
 
-    let hasher = BuildHasherDefault::<ahash::AHasher>::default();
+    let hasher = Xxh64Builder::new(XX_HASH_SEED);
 
     for (text1, text2) in text_pairs {
         let hash1 = minhash(text1, (&perm_a_simd, &perm_b_simd), 256, 2, &hasher).unwrap();
@@ -441,7 +441,7 @@ fn test_unicode_handling() {
         "🌟✨🌙💫⭐",     // Emojis
     ];
 
-    let hasher = BuildHasherDefault::<ahash::AHasher>::default();
+    let hasher = Xxh64Builder::new(XX_HASH_SEED);
 
     for text in unicode_texts {
         // Ensure it doesn't panic on Unicode
@@ -464,7 +464,7 @@ proptest! {
         let perm_b = repeat_with(|| rng.u64(0..(i32::MAX as u64))).take(32);
         let perm_b_simd = load_simd(perm_b, 32);
 
-        let hasher = BuildHasherDefault::<ahash::AHasher>::default();
+        let hasher = Xxh64Builder::new(XX_HASH_SEED);
 
         // Property 1: Same input always produces same output
         let hash1 = minhash(&s1, (&perm_a_simd, &perm_b_simd), 32, 2, &hasher).unwrap();
@@ -494,7 +494,7 @@ proptest! {
         let perm_b = repeat_with(|| rng.u64(0..(i32::MAX as u64))).take(32);
         let perm_b_simd = load_simd(perm_b, 32);
 
-        let hasher = BuildHasherDefault::<ahash::AHasher>::default();
+        let hasher = Xxh64Builder::new(XX_HASH_SEED);
 
         let hash1 = minhash(&s1, (&perm_a_simd, &perm_b_simd), 32, 2, &hasher).unwrap();
         let hash2 = minhash(&s2, (&perm_a_simd, &perm_b_simd), 32, 2, &hasher).unwrap();
