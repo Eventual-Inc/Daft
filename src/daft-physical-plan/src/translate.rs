@@ -119,7 +119,6 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             ))
         }
         LogicalPlan::Join(join) => {
-            dbg!(&join);
             if join.left_on.is_empty()
                 && join.right_on.is_empty()
                 && join.join_type == JoinType::Inner
