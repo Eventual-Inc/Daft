@@ -65,7 +65,7 @@ impl FromStr for HashFunctionKind {
     type Err = DaftError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
+        match s.to_ascii_lowercase().as_str() {
             "murmur3" => Ok(Self::MurmurHash3),
             "xxhash" => Ok(Self::XxHash),
             "sha1" => Ok(Self::Sha1),
