@@ -14,6 +14,7 @@ daft-hash.workspace = true
 divan.workspace = true
 proptest.workspace = true
 rustc-hash.workspace = true
+tango-bench.workspace = true
 
 [lints]
 workspace = true
@@ -22,3 +23,7 @@ workspace = true
 edition = {workspace = true}
 name = "daft-minhash"
 version = {workspace = true}
+
+[[bench]]
+harness = false
+name = "windowed"

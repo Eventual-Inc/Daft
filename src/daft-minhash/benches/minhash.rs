@@ -2,7 +2,6 @@ use std::{
     collections::hash_map::DefaultHasher, hash::BuildHasherDefault, iter::repeat_with, ops::Range,
 };
 
-use ahash::AHasher;
 use daft_hash::MurBuildHasher;
 use daft_minhash::{load_simd, minhash};
 use divan::{black_box, Bencher};

@@ -100,7 +100,7 @@ use common_error::DaftResult;
 
 use crate::windowed::WindowedWordsExt;
 
-mod windowed;
+pub mod windowed;
 
 // which SIMD to use
 const SIMD_LANES: usize = 8;
