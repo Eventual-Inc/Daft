@@ -18,6 +18,7 @@ from daft.arrow_utils import ensure_array
 from daft.context import execution_config_ctx, get_context
 from daft.daft import PyTable as _PyTable
 from daft.dependencies import np
+from daft.runners import tracer
 from daft.runners.progress_bar import ProgressBar
 from daft.series import Series, item_to_series
 from daft.table import Table
@@ -683,6 +684,10 @@ class Scheduler(ActorPoolManager):
             f"profile_RayRunner.run()_"
             f"{datetime.replace(datetime.now(), second=0, microsecond=0).isoformat()[:-3]}.json"
         )
+        trace_filename = (
+            f"trace_RayRunner.run()_"
+            f"{datetime.replace(datetime.now(), second=0, microsecond=0).isoformat()[:-3]}.json"
+        )
 
         def is_active():
             return self.active_by_df.get(result_uuid, False)
@@ -695,142 +700,187 @@ class Scheduler(ActorPoolManager):
                 except Full:
                     pass
 
-        with profiler(profile_filename):
+        with profiler(profile_filename), tracer.RunnerTracer(trace_filename) as runner_tracer:
+            wave_count = 0
             try:
                 next_step = next(tasks)
 
                 while is_active():  # Loop: Dispatch -> await.
-                    while is_active():  # Loop: Dispatch (get tasks -> batch dispatch).
-                        tasks_to_dispatch: list[PartitionTask] = []
+                    wave_count += 1
+                    with runner_tracer.dispatch_wave(wave_count) as dispatch_wave_duration_metrics:
+                        while is_active():  # Loop: Dispatch (get tasks -> batch dispatch).
+                            tasks_to_dispatch: list[PartitionTask] = []
 
-                        # TODO: improve control loop code to be more understandable and dynamically adjust backlog
-                        cores: int = max(
-                            next(num_cpus_provider) - self.reserved_cores, 1
-                        )  # assume at least 1 CPU core for bootstrapping clusters that scale from zero
-                        max_inflight_tasks = cores + self.max_task_backlog
-                        dispatches_allowed = max_inflight_tasks - len(inflight_tasks)
-                        dispatches_allowed = min(cores, dispatches_allowed)
+                            # TODO: improve control loop code to be more understandable and dynamically adjust backlog
+                            cores: int = max(
+                                next(num_cpus_provider) - self.reserved_cores, 1
+                            )  # assume at least 1 CPU core for bootstrapping clusters that scale from zero
+                            max_inflight_tasks = cores + self.max_task_backlog
+                            dispatches_allowed = max_inflight_tasks - len(inflight_tasks)
+                            dispatches_allowed = min(cores, dispatches_allowed)
 
-                        # Loop: Get a batch of tasks.
-                        while len(tasks_to_dispatch) < dispatches_allowed and is_active():
-                            if next_step is None:
-                                # Blocked on already dispatched tasks; await some tasks.
+                            dispatch_wave_duration_metrics(
+                                cores=cores,
+                                max_inflight_tasks=max_inflight_tasks,
+                                dispatches_allowed=dispatches_allowed,
+                            )
+                            runner_tracer.count_inflight_tasks(len(inflight_ref_to_task))
+                            with runner_tracer.dispatch_batching():
+                                # Loop: Get a batch of tasks.
+                                while len(tasks_to_dispatch) < dispatches_allowed and is_active():
+                                    if next_step is None:
+                                        # Blocked on already dispatched tasks; await some tasks.
+                                        runner_tracer.mark_handle_none_task()
+                                        break
+
+                                    elif isinstance(next_step, MaterializedResult):
+                                        # A final result.
+                                        runner_tracer.mark_handle_materialized_result()
+                                        place_in_queue(next_step)
+                                        next_step = next(tasks)
+
+                                    # next_step is a task.
+
+                                    # If it is a no-op task, just run it locally immediately.
+                                    elif len(next_step.instructions) == 0:
+                                        runner_tracer.mark_noop_task_start()
+                                        logger.debug("Running task synchronously in main thread: %s", next_step)
+                                        assert (
+                                            len(next_step.partial_metadatas) == 1
+                                        ), "No-op tasks must have one output by definition, since there are no instructions to run"
+                                        [single_partial] = next_step.partial_metadatas
+                                        if single_partial.num_rows is None:
+                                            [single_meta] = ray.get(get_metas.remote(next_step.inputs))
+                                            accessor = PartitionMetadataAccessor.from_metadata_list(
+                                                [single_meta.merge_with_partial(single_partial)]
+                                            )
+                                        else:
+                                            accessor = PartitionMetadataAccessor.from_metadata_list(
+                                                [
+                                                    PartitionMetadata(
+                                                        num_rows=single_partial.num_rows,
+                                                        size_bytes=single_partial.size_bytes,
+                                                        boundaries=single_partial.boundaries,
+                                                    )
+                                                ]
+                                            )
+
+                                        next_step.set_result(
+                                            [
+                                                RayMaterializedResult(partition, accessor, 0)
+                                                for partition in next_step.inputs
+                                            ]
+                                        )
+                                        runner_tracer.mark_noop_task_end()
+                                        next_step = next(tasks)
+
+                                    else:
+                                        # Add the task to the batch.
+                                        runner_tracer.mark_handle_task_add_to_batch()
+                                        tasks_to_dispatch.append(next_step)
+                                        next_step = next(tasks)
+
+                                # Dispatch the batch of tasks.
+                                logger.debug(
+                                    "%ss: RayRunner dispatching %s tasks",
+                                    (datetime.now() - start).total_seconds(),
+                                    len(tasks_to_dispatch),
+                                )
+                                dispatch_wave_duration_metrics(dispatch_batch_size=len(tasks_to_dispatch))
+
+                            if not is_active():
                                 break
 
-                            elif isinstance(next_step, MaterializedResult):
-                                # A final result.
-                                place_in_queue(next_step)
-                                next_step = next(tasks)
+                            runner_tracer.count_inflight_tasks(len(inflight_ref_to_task))
+                            with runner_tracer.dispatching():
+                                for task in tasks_to_dispatch:
+                                    if task.actor_pool_id is None:
+                                        runner_tracer.mark_dispatch_task()
+                                        results = _build_partitions(daft_execution_config, task)
+                                    else:
+                                        actor_pool = self._actor_pools.get(task.actor_pool_id)
+                                        assert (
+                                            actor_pool is not None
+                                        ), "Ray actor pool must live for as long as the tasks."
+                                        runner_tracer.mark_dispatch_actor_task()
+                                        results = _build_partitions_on_actor_pool(task, actor_pool)
+                                    logger.debug("%s -> %s", task, results)
+                                    inflight_tasks[task.id()] = task
 
-                            # next_step is a task.
-
-                            # If it is a no-op task, just run it locally immediately.
-                            elif len(next_step.instructions) == 0:
-                                logger.debug("Running task synchronously in main thread: %s", next_step)
-                                assert (
-                                    len(next_step.partial_metadatas) == 1
-                                ), "No-op tasks must have one output by definition, since there are no instructions to run"
-                                [single_partial] = next_step.partial_metadatas
-                                if single_partial.num_rows is None:
-                                    [single_meta] = ray.get(get_metas.remote(next_step.inputs))
-                                    accessor = PartitionMetadataAccessor.from_metadata_list(
-                                        [single_meta.merge_with_partial(single_partial)]
-                                    )
-                                else:
-                                    accessor = PartitionMetadataAccessor.from_metadata_list(
-                                        [
-                                            PartitionMetadata(
-                                                num_rows=single_partial.num_rows,
-                                                size_bytes=single_partial.size_bytes,
-                                                boundaries=single_partial.boundaries,
-                                            )
-                                        ]
+                                    runner_tracer.task_dispatched(
+                                        task.id(),
+                                        task.stage_id,
+                                        task.resource_request,
+                                        "-".join([str(type(i).__name__) for i in task.instructions]),
                                     )
 
-                                next_step.set_result(
-                                    [RayMaterializedResult(partition, accessor, 0) for partition in next_step.inputs]
+                                    for result in results:
+                                        inflight_ref_to_task[result] = task.id()
+
+                                    pbar.mark_task_start(task)
+
+                            if dispatches_allowed == 0 or next_step is None:
+                                break
+
+                        # Await a batch of tasks.
+                        # (Awaits the next task, and then the next batch of tasks within 10ms.)
+
+                        runner_tracer.count_inflight_tasks(len(inflight_ref_to_task))
+                        with runner_tracer.awaiting():
+                            dispatch = datetime.now()
+                            completed_task_ids = []
+                            num_ready = 0
+                            for wait_for in ("next_one", "next_batch"):
+                                if not is_active():
+                                    break
+
+                                if wait_for == "next_one":
+                                    num_returns = 1
+                                    timeout = None
+                                elif wait_for == "next_batch":
+                                    num_returns = len(inflight_ref_to_task)
+                                    timeout = 0.01  # 10ms
+
+                                if num_returns == 0:
+                                    break
+
+                                readies, _ = ray.wait(
+                                    list(inflight_ref_to_task.keys()),
+                                    num_returns=num_returns,
+                                    timeout=timeout,
+                                    fetch_local=False,
                                 )
-                                next_step = next(tasks)
+                                num_ready += len(readies)
 
-                            else:
-                                # Add the task to the batch.
-                                tasks_to_dispatch.append(next_step)
-                                next_step = next(tasks)
+                                for ready in readies:
+                                    if ready in inflight_ref_to_task:
+                                        task_id = inflight_ref_to_task[ready]
+                                        runner_tracer.task_ready(task_id)
+                                        completed_task_ids.append(task_id)
+                                        # Mark the entire task associated with the result as done.
+                                        task = inflight_tasks[task_id]
+                                        if isinstance(task, SingleOutputPartitionTask):
+                                            del inflight_ref_to_task[ready]
+                                        elif isinstance(task, MultiOutputPartitionTask):
+                                            for partition in task.partitions():
+                                                del inflight_ref_to_task[partition]
 
-                        # Dispatch the batch of tasks.
-                        logger.debug(
-                            "%ss: RayRunner dispatching %s tasks",
-                            (datetime.now() - start).total_seconds(),
-                            len(tasks_to_dispatch),
-                        )
+                                        pbar.mark_task_done(task)
+                                        del inflight_tasks[task_id]
 
-                        if not is_active():
-                            break
+                            dispatch_wave_duration_metrics(
+                                awaited_num_ready=num_ready,
+                                awaited_num_pending=len(inflight_ref_to_task),
+                            )
+                            logger.debug(
+                                "%ss to await results from %s",
+                                (datetime.now() - dispatch).total_seconds(),
+                                completed_task_ids,
+                            )
+                        runner_tracer.count_inflight_tasks(len(inflight_ref_to_task))
 
-                        for task in tasks_to_dispatch:
-                            if task.actor_pool_id is None:
-                                results = _build_partitions(daft_execution_config, task)
-                            else:
-                                actor_pool = self._actor_pools.get(task.actor_pool_id)
-                                assert actor_pool is not None, "Ray actor pool must live for as long as the tasks."
-                                results = _build_partitions_on_actor_pool(task, actor_pool)
-                            logger.debug("%s -> %s", task, results)
-                            inflight_tasks[task.id()] = task
-                            for result in results:
-                                inflight_ref_to_task[result] = task.id()
-
-                            pbar.mark_task_start(task)
-
-                        if dispatches_allowed == 0 or next_step is None:
-                            break
-
-                    # Await a batch of tasks.
-                    # (Awaits the next task, and then the next batch of tasks within 10ms.)
-
-                    dispatch = datetime.now()
-                    completed_task_ids = []
-                    for wait_for in ("next_one", "next_batch"):
-                        if not is_active():
-                            break
-
-                        if wait_for == "next_one":
-                            num_returns = 1
-                            timeout = None
-                        elif wait_for == "next_batch":
-                            num_returns = len(inflight_ref_to_task)
-                            timeout = 0.01  # 10ms
-
-                        if num_returns == 0:
-                            break
-
-                        readies, _ = ray.wait(
-                            list(inflight_ref_to_task.keys()),
-                            num_returns=num_returns,
-                            timeout=timeout,
-                            fetch_local=False,
-                        )
-
-                        for ready in readies:
-                            if ready in inflight_ref_to_task:
-                                task_id = inflight_ref_to_task[ready]
-                                completed_task_ids.append(task_id)
-                                # Mark the entire task associated with the result as done.
-                                task = inflight_tasks[task_id]
-                                if isinstance(task, SingleOutputPartitionTask):
-                                    del inflight_ref_to_task[ready]
-                                elif isinstance(task, MultiOutputPartitionTask):
-                                    for partition in task.partitions():
-                                        del inflight_ref_to_task[partition]
-
-                                pbar.mark_task_done(task)
-                                del inflight_tasks[task_id]
-
-                    logger.debug(
-                        "%ss to await results from %s", (datetime.now() - dispatch).total_seconds(), completed_task_ids
-                    )
-
-                    if next_step is None:
-                        next_step = next(tasks)
+                        if next_step is None:
+                            next_step = next(tasks)
 
             except StopIteration as e:
                 place_in_queue(e)
