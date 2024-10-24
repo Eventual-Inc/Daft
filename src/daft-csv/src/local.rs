@@ -22,6 +22,7 @@ use rayon::{
     iter::IndexedParallelIterator,
     prelude::{IntoParallelRefIterator, ParallelIterator},
 };
+use smallvec::SmallVec;
 use snafu::ResultExt;
 
 use crate::{
@@ -530,9 +531,9 @@ impl<I> Iterator for ChunkWindowIterator<I>
 where
     I: Iterator<Item = ChunkState>,
 {
-    type Item = Vec<ChunkState>;
+    type Item = SmallVec<[ChunkState; 2]>;
     fn next(&mut self) -> Option<Self::Item> {
-        let mut chunks = Vec::with_capacity(2);
+        let mut chunks = SmallVec::with_capacity(2);
         for chunk in self.chunk_iter.by_ref() {
             chunks.push(chunk);
             if let ChunkState::Final { .. } = chunks.last().expect("We just pushed a chunk") {

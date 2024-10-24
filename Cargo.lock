@@ -1776,6 +1776,7 @@ dependencies = [
  "rayon",
  "rstest",
  "serde",
+ "smallvec",
  "snafu",
  "tokio",
  "tokio-util",
