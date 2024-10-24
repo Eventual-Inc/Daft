@@ -911,17 +911,18 @@ where
         } else {
             table
         };
+        // Check the local limit.
+        let limit_reached = if let Some(local_limit) = &mut local_limit {
+            *local_limit -= table.len();
+            *local_limit == 0
+        } else {
+            false
+        };
         tables.push(table);
-        // Stop reading once we hit the local limit.
-        if let Some(local_limit) = &mut local_limit {
-            *local_limit -= num_rows;
-            if *local_limit == 0 {
-                break;
-            }
-        }
+
         // The number of record might exceed the number of byte records we've allocated.
         // Retry until all byte records in this chunk are read.
-        if !has_more {
+        if !has_more || limit_reached {
             break;
         }
     }
