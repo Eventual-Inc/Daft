@@ -844,13 +844,17 @@ class Scheduler(ActorPoolManager):
                                 if num_returns == 0:
                                     break
 
-                                readies, _ = ray.wait(
+                                readies, not_readies = ray.wait(
                                     list(inflight_ref_to_task.keys()),
                                     num_returns=num_returns,
                                     timeout=timeout,
                                     fetch_local=False,
                                 )
                                 num_ready += len(readies)
+
+                                for not_ready in not_readies:
+                                    if not_ready in inflight_ref_to_task:
+                                        runner_tracer.task_not_ready(inflight_ref_to_task[not_ready])
 
                                 for ready in readies:
                                     if ready in inflight_ref_to_task:

@@ -282,6 +282,18 @@ class RunnerTracer:
             }
         )
 
+    def task_not_ready(self, task_id: str):
+        self._write_event(
+            {
+                "id": task_id,
+                "category": "task",
+                "name": "task_awaited_not_ready",
+                "ph": "n",
+                "pid": 2,
+                "tid": 1,
+            }
+        )
+
     def task_ready(self, task_id: str):
         self._write_event(
             {
