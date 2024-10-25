@@ -19,7 +19,7 @@ use indexmap::IndexSet;
 use snafu::ResultExt;
 
 use crate::{
-    channel::PipelineChannel,
+    channel::Receiver,
     intermediate_ops::{
         anti_semi_hash_join_probe::AntiSemiProbeOperator, explode::ExplodeOperator,
         filter::FilterOperator, inner_hash_join_probe::InnerHashJoinProbeOperator,
@@ -81,7 +81,7 @@ pub trait PipelineNode: Sync + Send + TreeDisplay {
         &mut self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> crate::Result<PipelineChannel>;
+    ) -> crate::Result<Receiver<PipelineResultType>>;
 
     fn as_tree_display(&self) -> &dyn TreeDisplay;
 }

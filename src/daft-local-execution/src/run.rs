@@ -127,10 +127,10 @@ pub fn run_local(
             .expect("Failed to create tokio runtime");
         let execution_task = async {
             let mut runtime_handle = ExecutionRuntimeHandle::new(cfg.default_morsel_size);
-            let mut receiver = pipeline.start(true, &mut runtime_handle)?.get_receiver();
+            let receiver = pipeline.start(true, &mut runtime_handle)?;
 
-            while let Some(val) = receiver.recv().await {
-                let _ = tx.send(val.as_data().clone()).await;
+            while let Some(val) = receiver.recv_async().await.ok() {
+                let _ = tx.send_async(val.as_data().clone()).await;
             }
 
             while let Some(result) = runtime_handle.join_next().await {
@@ -180,7 +180,7 @@ pub fn run_local(
         type Item = DaftResult<Arc<MicroPartition>>;
 
         fn next(&mut self) -> Option<Self::Item> {
-            match self.receiver.blocking_recv() {
+            match self.receiver.recv().ok() {
                 Some(part) => Some(Ok(part)),
                 None => {
                     if self.handle.is_some() {

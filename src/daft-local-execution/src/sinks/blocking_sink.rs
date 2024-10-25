@@ -10,9 +10,9 @@ use tracing::{info_span, instrument};
 
 use crate::{
     buffer::RowBasedBuffer,
-    channel::{create_channel, PipelineChannel, Receiver, Sender},
+    channel::{create_channel, Receiver, Sender},
     pipeline::{PipelineNode, PipelineResultType},
-    runtime_stats::{CountingReceiver, RuntimeStatsContext},
+    runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
     ExecutionRuntimeHandle, JoinSnafu, TaskSet,
 };
 pub trait DynBlockingSinkState: Send + Sync {
@@ -91,13 +91,13 @@ impl BlockingSinkNode {
     #[instrument(level = "info", skip_all, name = "BlockingSink::run_worker")]
     async fn run_worker(
         op: Arc<dyn BlockingSink>,
-        mut input_receiver: Receiver<PipelineResultType>,
+        input_receiver: Receiver<PipelineResultType>,
         rt_context: Arc<RuntimeStatsContext>,
     ) -> DaftResult<Box<dyn DynBlockingSinkState>> {
         let span = info_span!("BlockingSink::Sink");
         let compute_runtime = get_compute_runtime();
         let state_wrapper = BlockingSinkState::new(op.make_state()?);
-        while let Some(morsel) = input_receiver.recv().await {
+        while let Some(morsel) = input_receiver.recv_async().await.ok() {
             let op = op.clone();
             let morsel = morsel.clone();
             let span = span.clone();
@@ -145,14 +145,14 @@ impl BlockingSinkNode {
         let mut send_to_next_worker = |data: PipelineResultType| {
             let next_worker_sender = worker_senders.get(next_worker_idx).unwrap();
             next_worker_idx = (next_worker_idx + 1) % worker_senders.len();
-            next_worker_sender.send(data)
+            next_worker_sender.send_async(data)
         };
 
         let mut buffer = morsel_size.map(RowBasedBuffer::new);
         while let Some(morsel) = receiver.recv().await {
             if morsel.should_broadcast() {
                 for worker_sender in &worker_senders {
-                    let _ = worker_sender.send(morsel.clone()).await;
+                    let _ = worker_sender.send_async(morsel.clone()).await;
                 }
             } else if let Some(buffer) = buffer.as_mut() {
                 buffer.push(morsel.as_data().clone());
@@ -205,21 +205,24 @@ impl PipelineNode for BlockingSinkNode {
 
     fn start(
         &mut self,
-        maintain_order: bool,
+        _maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> crate::Result<PipelineChannel> {
+    ) -> crate::Result<Receiver<PipelineResultType>> {
         let child = self.child.as_mut();
-        let child_results_receiver = child
-            .start(false, runtime_handle)?
-            .get_receiver_with_stats(&self.runtime_stats);
+        let child_results_receiver = child.start(false, runtime_handle)?;
+        let child_results_receiver =
+            CountingReceiver::new(child_results_receiver, self.runtime_stats.clone());
 
-        let mut destination_channel = PipelineChannel::new(1, maintain_order);
+        let (destination_sender, destination_receiver) = create_channel(1);
         let destination_sender =
-            destination_channel.get_next_sender_with_stats(&self.runtime_stats);
+            CountingSender::new(destination_sender, self.runtime_stats.clone());
         let op = self.op.clone();
         let runtime_stats = self.runtime_stats.clone();
         let num_workers = op.max_concurrency();
-        let (input_senders, input_receivers) = (0..num_workers).map(|_| create_channel(1)).unzip();
+        let (input_senders, input_receivers) = {
+            let (tx, rx) = create_channel(num_workers);
+            (0..num_workers).map(|_| (tx.clone(), rx.clone())).unzip()
+        };
         let morsel_size = runtime_handle.determine_morsel_size(op.morsel_size());
         runtime_handle.spawn(
             Self::forward_input_to_workers(child_results_receiver, input_senders, morsel_size),
@@ -256,7 +259,7 @@ impl PipelineNode for BlockingSinkNode {
             },
             self.name(),
         );
-        Ok(destination_channel)
+        Ok(destination_receiver)
     }
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self

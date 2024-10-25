@@ -14,7 +14,6 @@ use daft_parquet::read::{read_parquet_bulk_async, ParquetSchemaInferenceOptions}
 use daft_scan::{storage_config::StorageConfig, ChunkSpec, ScanTask};
 use futures::{Stream, StreamExt};
 use snafu::ResultExt;
-use tokio_stream::wrappers::ReceiverStream;
 use tracing::instrument;
 
 use crate::{
@@ -49,12 +48,12 @@ impl ScanTaskSource {
             stream_scan_task(scan_task, Some(io_stats), delete_map, maintain_order).await?;
         let mut has_data = false;
         while let Some(partition) = stream.next().await {
-            let _ = sender.send(partition?).await;
+            let _ = sender.send_async(partition?).await;
             has_data = true;
         }
         if !has_data {
             let empty = Arc::new(MicroPartition::empty(Some(schema.clone())));
-            let _ = sender.send(empty).await;
+            let _ = sender.send_async(empty).await;
         }
         Ok(())
     }
@@ -105,7 +104,7 @@ impl Source for ScanTaskSource {
             self.name(),
         );
 
-        let stream = futures::stream::iter(receivers.into_iter().map(ReceiverStream::new));
+        let stream = futures::stream::iter(receivers.into_iter().map(|r| r.into_stream()));
         Ok(Box::pin(stream.flatten()))
     }
 
