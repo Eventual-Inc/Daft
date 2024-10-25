@@ -2,44 +2,53 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TextIO
 
 if TYPE_CHECKING:
     from daft import ResourceRequest
 
 
+@contextlib.contextmanager
+def tracer(filepath: str):
+    if int(os.environ.get("DAFT_RUNNER_TRACING", 0)) == 1:
+        with open(filepath, "w") as f:
+            # Initialize the JSON file
+            f.write("[")
+
+            # Yield the tracer
+            runner_tracer = RunnerTracer(f)
+            yield runner_tracer
+
+            # Add the final touches to the file
+            f.write(
+                json.dumps({"name": "process_name", "ph": "M", "pid": 1, "args": {"name": "RayRunner dispatch loop"}})
+            )
+            f.write(",\n")
+            f.write(json.dumps({"name": "process_name", "ph": "M", "pid": 2, "args": {"name": "Ray Task Execution"}}))
+            f.write("\n]")
+    else:
+        runner_tracer = RunnerTracer(None)
+        yield runner_tracer
+
+
 class RunnerTracer:
-    def __init__(self, filepath: str):
-        self._filepath = filepath
-
-    def __enter__(self) -> RunnerTracer:
-        self._file = open(self._filepath, "w")
-        self._file.write("[")
+    def __init__(self, file: TextIO | None):
+        self._file = file
         self._start = time.time()
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        self._file.write(
-            json.dumps({"name": "process_name", "ph": "M", "pid": 1, "args": {"name": "RayRunner dispatch loop"}})
-        )
-        self._file.write(",\n")
-        self._file.write(
-            json.dumps({"name": "process_name", "ph": "M", "pid": 2, "args": {"name": "Ray Task Execution"}})
-        )
-        self._file.write("\n]")
-        self._file.close()
 
     def _write_event(self, event: dict[str, Any]):
-        self._file.write(
-            json.dumps(
-                {
-                    **event,
-                    "ts": int((time.time() - self._start) * 1000 * 1000),
-                }
+        if self._file is not None:
+            self._file.write(
+                json.dumps(
+                    {
+                        **event,
+                        "ts": int((time.time() - self._start) * 1000 * 1000),
+                    }
+                )
             )
-        )
-        self._file.write(",\n")
+            self._file.write(",\n")
 
     @contextlib.contextmanager
     def dispatch_wave(self, wave_num: int):
@@ -69,16 +78,6 @@ class RunnerTracer:
                 "args": metrics,
             }
         )
-
-    # def dispatch_wave_metrics(self, metrics: dict[str, int]):
-    #     """Marks a counter event for various runner counters such as num cores, max inflight tasks etc"""
-    #     self._write_event({
-    #         "name": "dispatch_metrics",
-    #         "ph": "C",
-    #         "pid": 1,
-    #         "tid": 1,
-    #         "args": metrics,
-    #     })
 
     def count_inflight_tasks(self, count: int):
         self._write_event(
@@ -115,15 +114,6 @@ class RunnerTracer:
                 "ph": "E",
             }
         )
-
-    # def count_dispatch_batch_size(self, dispatch_batch_size: int):
-    #     self._write_event({
-    #         "name": "dispatch_batch_size",
-    #         "ph": "C",
-    #         "pid": 1,
-    #         "tid": 1,
-    #         "args": {"dispatch_batch_size": dispatch_batch_size},
-    #     })
 
     def mark_noop_task_start(self):
         """Marks the start of running a no-op task"""
@@ -247,15 +237,6 @@ class RunnerTracer:
                 "ph": "E",
             }
         )
-
-    # def count_num_ready(self, num_ready: int):
-    #     self._write_event({
-    #         "name": "awaiting",
-    #         "ph": "C",
-    #         "pid": 1,
-    #         "tid": 1,
-    #         "args": {"num_ready": num_ready},
-    #     })
 
     ###
     # Tracing each individual task as an Async Event

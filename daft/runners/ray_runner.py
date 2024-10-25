@@ -18,8 +18,8 @@ from daft.arrow_utils import ensure_array
 from daft.context import execution_config_ctx, get_context
 from daft.daft import PyTable as _PyTable
 from daft.dependencies import np
-from daft.runners import tracer
 from daft.runners.progress_bar import ProgressBar
+from daft.runners.tracer import tracer
 from daft.series import Series, item_to_series
 from daft.table import Table
 
@@ -700,7 +700,7 @@ class Scheduler(ActorPoolManager):
                 except Full:
                     pass
 
-        with profiler(profile_filename), tracer.RunnerTracer(trace_filename) as runner_tracer:
+        with profiler(profile_filename), tracer(trace_filename) as runner_tracer:
             wave_count = 0
             try:
                 next_step = next(tasks)
