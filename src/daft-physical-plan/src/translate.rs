@@ -44,6 +44,14 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 project.projected_schema.clone(),
             ))
         }
+        LogicalPlan::ActorPoolProject(actor_pool_project) => {
+            let input = translate(&actor_pool_project.input)?;
+            Ok(LocalPhysicalPlan::actor_pool_project(
+                input,
+                actor_pool_project.projection.clone(),
+                actor_pool_project.projected_schema.clone(),
+            ))
+        }
         LogicalPlan::Sample(sample) => {
             let input = translate(&sample.input)?;
             Ok(LocalPhysicalPlan::sample(

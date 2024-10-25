@@ -222,29 +222,35 @@ pub fn bind_stateful_udfs(
 pub fn extract_partial_stateful_udf_py(
     expr: ExprRef,
 ) -> HashMap<String, (Py<PyAny>, Option<Py<PyAny>>)> {
-    let mut py_partial_udfs = HashMap::new();
+    extract_stateful_udf_exprs(expr)
+        .into_iter()
+        .map(|stateful_udf| {
+            (
+                stateful_udf.name.as_ref().to_string(),
+                (
+                    stateful_udf.stateful_partial_func.as_ref().clone(),
+                    stateful_udf.init_args.map(|x| x.as_ref().clone()),
+                ),
+            )
+        })
+        .collect()
+}
+
+pub fn extract_stateful_udf_exprs(expr: ExprRef) -> Vec<StatefulPythonUDF> {
+    let mut stateful_udf_exprs = Vec::new();
+
     expr.apply(|child| {
         if let Expr::Function {
-            func:
-                FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
-                    name,
-                    stateful_partial_func: py_partial_udf,
-                    init_args,
-                    ..
-                })),
+            func: FunctionExpr::Python(PythonUDF::Stateful(stateful_udf)),
             ..
         } = child.as_ref()
         {
-            py_partial_udfs.insert(
-                name.as_ref().to_string(),
-                (
-                    py_partial_udf.as_ref().clone(),
-                    init_args.clone().map(|x| x.as_ref().clone()),
-                ),
-            );
+            stateful_udf_exprs.push(stateful_udf.clone());
         }
+
         Ok(TreeNodeRecursion::Continue)
     })
     .unwrap();
-    py_partial_udfs
+
+    stateful_udf_exprs
 }
