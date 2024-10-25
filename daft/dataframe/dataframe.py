@@ -514,7 +514,7 @@ class DataFrame:
         self,
         root_dir: Union[str, pathlib.Path],
         compression: str = "snappy",
-        write_mode: str = "append",
+        write_mode: Union[Literal["append"], Literal["overwrite"]] = "append",
         partition_cols: Optional[List[ColumnInputType]] = None,
         io_config: Optional[IOConfig] = None,
     ) -> "DataFrame":
@@ -538,6 +538,9 @@ class DataFrame:
             .. NOTE::
                 This call is **blocking** and will execute the DataFrame when called
         """
+        if write_mode not in ["append", "overwrite"]:
+            raise ValueError(f"Only support `append` or `overwrite` mode. {write_mode} is unsupported")
+
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
         cols: Optional[List[Expression]] = None
@@ -583,7 +586,7 @@ class DataFrame:
     def write_csv(
         self,
         root_dir: Union[str, pathlib.Path],
-        write_mode: str = "append",
+        write_mode: Union[Literal["append"], Literal["overwrite"]] = "append",
         partition_cols: Optional[List[ColumnInputType]] = None,
         io_config: Optional[IOConfig] = None,
     ) -> "DataFrame":
@@ -603,6 +606,9 @@ class DataFrame:
         Returns:
             DataFrame: The filenames that were written out as strings.
         """
+        if write_mode not in ["append", "overwrite"]:
+            raise ValueError(f"Only support `append` or `overwrite` mode. {write_mode} is unsupported")
+
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
         cols: Optional[List[Expression]] = None

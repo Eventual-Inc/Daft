@@ -829,6 +829,7 @@ def _write_tabular_arrow_table(
     version: int | None = None,
 ):
     kwargs = dict()
+
     from daft.utils import get_arrow_version
 
     arrow_version = get_arrow_version()
