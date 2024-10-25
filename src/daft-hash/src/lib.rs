@@ -6,8 +6,6 @@ use std::{
 };
 
 use common_error::DaftError;
-#[cfg(feature = "python")]
-use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 use sha1::Digest;
 
@@ -52,9 +50,7 @@ impl Hasher for Sha1Hasher {
     }
 }
 
-/// Format of a file, e.g. Parquet, CSV, JSON.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Copy)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum HashFunctionKind {
     MurmurHash3,
     XxHash,
@@ -65,21 +61,14 @@ impl FromStr for HashFunctionKind {
     type Err = DaftError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_ascii_lowercase().as_str() {
-            "murmur3" => Ok(Self::MurmurHash3),
+        match s.to_lowercase().as_str() {
+            "murmurhash3" => Ok(Self::MurmurHash3),
             "xxhash" => Ok(Self::XxHash),
             "sha1" => Ok(Self::Sha1),
             _ => Err(DaftError::ValueError(format!(
-                "Hash function {} not found",
+                "Invalid hash function: {}",
                 s
             ))),
         }
     }
-}
-
-#[cfg(feature = "python")]
-pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
-    parent.add_class::<HashFunctionKind>()?;
-
-    Ok(())
 }

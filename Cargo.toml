@@ -47,7 +47,6 @@ python = [
   "daft-dsl/python",
   "daft-functions-json/python",
   "daft-functions/python",
-  "daft-hash/python",
   "daft-image/python",
   "daft-io/python",
   "daft-json/python",

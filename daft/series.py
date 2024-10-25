@@ -4,7 +4,7 @@ import warnings
 from typing import Any, Literal, TypeVar
 
 from daft.arrow_utils import ensure_array, ensure_chunked_array
-from daft.daft import CountMode, HashFunctionKind, ImageFormat, ImageMode, PySeries, image
+from daft.daft import CountMode, ImageFormat, ImageMode, PySeries, image
 from daft.datatype import DataType, _ensure_registered_super_ext_type
 from daft.dependencies import np, pa, pd
 from daft.utils import pyarrow_supports_fixed_shape_tensor
@@ -568,7 +568,7 @@ class Series:
         num_hashes: int,
         ngram_size: int,
         seed: int = 1,
-        hash_function: HashFunctionKind = HashFunctionKind.MurmurHash3,
+        hash_function: Literal["murmurhash3", "xxhash", "sha1"] = "murmurhash3",
     ) -> Series:
         """
         Runs the MinHash algorithm on the series.
@@ -591,8 +591,13 @@ class Series:
             raise ValueError(f"expected an integer for ngram_size but got {type(ngram_size)}")
         if seed is not None and not isinstance(seed, int):
             raise ValueError(f"expected an integer or None for seed but got {type(seed)}")
-        if not isinstance(hash_function, HashFunctionKind):
-            raise ValueError(f"expected HashFunctionKind for hash_function but got {type(hash_function)}")
+        if not isinstance(hash_function, str):
+            raise ValueError(f"expected str for hash_function but got {type(hash_function)}")
+        assert hash_function in [
+            "murmurhash3",
+            "xxhash",
+            "sha1",
+        ], f"hash_function must be one of 'murmurhash3', 'xxhash', 'sha1', got {hash_function}"
 
         return Series._from_pyseries(self._series.minhash(num_hashes, ngram_size, seed, hash_function))
 

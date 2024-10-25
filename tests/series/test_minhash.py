@@ -40,9 +40,7 @@ test_series = Series.from_pylist(
 @pytest.mark.parametrize("num_hashes", [1, 2, 16, 128])
 @pytest.mark.parametrize("ngram_size", [1, 2, 4, 5, 100])
 @pytest.mark.parametrize("seed", [1, -1, 123, None])
-@pytest.mark.parametrize(
-    "hash_function", [HashFunctionKind.MurmurHash3, HashFunctionKind.XxHash, HashFunctionKind.Sha1]
-)
+@pytest.mark.parametrize("hash_function", ["murmur3", "xxhash", "sha1"])
 def test_minhash(num_hashes, ngram_size, seed, hash_function):
     minhash = minhash_none(test_series, num_hashes, ngram_size, seed, hash_function)
     assert minhash[4] is None and minhash[-1] is None

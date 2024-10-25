@@ -184,15 +184,6 @@ class ResourceRequest:
     def __eq__(self, other: ResourceRequest) -> bool: ...  # type: ignore[override]
     def __ne__(self, other: ResourceRequest) -> bool: ...  # type: ignore[override]
 
-class HashFunctionKind(Enum):
-    """
-    Kind of hash function to use for minhash.
-    """
-
-    MurmurHash3: int
-    XxHash: int
-    Sha1: int
-
 class FileFormat(Enum):
     """
     Format of a file, e.g. Parquet, CSV, and JSON.
@@ -1220,7 +1211,7 @@ def minhash(
     num_hashes: int,
     ngram_size: int,
     seed: int = 1,
-    hash_function: HashFunctionKind = HashFunctionKind.MurmurHash3,
+    hash_function: Literal["murmurhash3", "xxhash", "sha1"] = "murmurhash3",
 ) -> PyExpr: ...
 
 # -----
@@ -1361,7 +1352,7 @@ class PySeries:
         num_hashes: int,
         ngram_size: int,
         seed: int = 1,
-        hash_function: HashFunctionKind = HashFunctionKind.MurmurHash3,
+        hash_function: Literal["murmurhash3", "xxhash", "sha1"] = "murmurhash3",
     ) -> PySeries: ...
     def __invert__(self) -> PySeries: ...
     def count(self, mode: CountMode) -> PySeries: ...

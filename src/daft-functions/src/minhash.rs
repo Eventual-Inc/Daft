@@ -105,8 +105,10 @@ pub mod python {
         num_hashes: i64,
         ngram_size: i64,
         seed: i64,
-        hash_function: HashFunctionKind,
+        hash_function: &str,
     ) -> PyResult<PyExpr> {
+        let hash_function: HashFunctionKind = hash_function.parse()?;
+
         if num_hashes <= 0 {
             return Err(PyValueError::new_err(format!(
                 "num_hashes must be positive: {num_hashes}"

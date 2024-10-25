@@ -1,13 +1,8 @@
 [dependencies]
 common-error = {workspace = true}
 mur3 = {workspace = true}
-pyo3 = {workspace = true, optional = true}  # For Python bindings
 serde = {workspace = true, features = ["derive"]}
 sha1 = {workspace = true}
-
-[features]
-default = []
-python = ["dep:pyo3"]  # Enable pyo3 when python feature is enabled
 
 [lints]
 workspace = true

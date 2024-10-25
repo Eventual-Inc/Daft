@@ -28,7 +28,6 @@ python = [
   "common-io-config/python",
   "daft-core/python",
   "daft-dsl/python",
-  "daft-hash/python",
   "daft-image/python",
   "daft-io/python",
   "dep:pyo3"

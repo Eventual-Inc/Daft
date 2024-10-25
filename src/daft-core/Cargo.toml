@@ -59,7 +59,6 @@ python = [
   "common-arrow-ffi/python",
   "common-error/python",
   "common-py-serde/python",
-  "daft-hash/python",
   "daft-schema/python",
   "dep:numpy",
   "dep:pyo3"
