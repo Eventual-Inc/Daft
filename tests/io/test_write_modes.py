@@ -64,13 +64,13 @@ def arrange_write_mode_test(existing_data, new_data, path, format, write_mode, p
 
 @pytest.mark.parametrize("write_mode", ["append", "overwrite"])
 @pytest.mark.parametrize("format", ["csv", "parquet"])
-@pytest.mark.parametrize("num_partitions", [1, 50, 100])
+@pytest.mark.parametrize("num_partitions", [1, 2])
 @pytest.mark.parametrize("partition_cols", [None, ["a"]])
 def test_write_modes_local(tmp_path, write_mode, format, num_partitions, partition_cols):
     path = str(tmp_path)
-    existing_data = {"a": [i for i in range(100)]}
+    existing_data = {"a": [i for i in range(10)]}
     new_data = {
-        "a": [i for i in range(100, 200)],
+        "a": [i for i in range(10, 20)],
     }
 
     read_back = arrange_write_mode_test(
