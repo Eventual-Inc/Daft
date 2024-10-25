@@ -95,7 +95,7 @@ impl TryFrom<SQLFunctionArguments> for MinHashFunction {
                     })
             })
             .transpose()?
-            .unwrap_or("murmur3");
+            .unwrap_or("murmur3hash3");
 
         Ok(Self {
             num_hashes,

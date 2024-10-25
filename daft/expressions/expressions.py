@@ -1212,7 +1212,7 @@ class Expression:
             num_hashes: The number of hash permutations to compute.
             ngram_size: The number of tokens in each shingle/ngram.
             seed (optional): Seed used for generating permutations and the initial string hashes. Defaults to 1.
-            hash_function (optional): Hash function to use for initial string hashing. One of "murmur3", "xxhash", or "sha1". Defaults to "murmur3".
+            hash_function (optional): Hash function to use for initial string hashing. One of "murmurhash3", "xxhash", or "sha1". Defaults to "murmurhash3".
 
         """
         assert isinstance(num_hashes, int)
