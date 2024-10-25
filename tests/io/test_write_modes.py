@@ -53,11 +53,11 @@ def arrange_write_mode_test(existing_data, new_data, path, format, write_mode, p
     write(existing_data, path, format, "append", partition_cols, io_config)
 
     # Write some new data
-    print(write(new_data, path, format, write_mode, partition_cols, io_config))
+    write(new_data, path, format, write_mode, partition_cols, io_config)
 
     # Read back the data
     read_path = path + "/**" if partition_cols is not None else path
-    read_back = read(read_path, format, io_config).sort("a").to_pydict()
+    read_back = read(read_path, format, io_config).sort(["a", "b"]).to_pydict()
 
     return read_back
 
@@ -68,9 +68,10 @@ def arrange_write_mode_test(existing_data, new_data, path, format, write_mode, p
 @pytest.mark.parametrize("partition_cols", [None, ["a"]])
 def test_write_modes_local(tmp_path, write_mode, format, num_partitions, partition_cols):
     path = str(tmp_path)
-    existing_data = {"a": [i for i in range(10)]}
+    existing_data = {"a": ["a", "a", "b", "b"], "b": [1, 2, 3, 4]}
     new_data = {
-        "a": [i for i in range(10, 20)],
+        "a": ["a", "a", "b", "b"],
+        "b": [5, 6, 7, 8],
     }
 
     read_back = arrange_write_mode_test(
@@ -85,9 +86,11 @@ def test_write_modes_local(tmp_path, write_mode, format, num_partitions, partiti
 
     # Check the data
     if write_mode == "append":
-        assert read_back["a"] == existing_data["a"] + new_data["a"]
+        assert read_back["a"] == ["a"] * 4 + ["b"] * 4
+        assert read_back["b"] == [1, 2, 5, 6, 3, 4, 7, 8]
     elif write_mode == "overwrite":
-        assert read_back["a"] == new_data["a"]
+        assert read_back["a"] == ["a", "a", "b", "b"]
+        assert read_back["b"] == [5, 6, 7, 8]
     else:
         raise ValueError(f"Unsupported write_mode: {write_mode}")
 
@@ -120,9 +123,10 @@ def test_write_modes_s3_minio(
     partition_cols,
 ):
     path = f"s3://{bucket}/{str(uuid.uuid4())}"
-    existing_data = {"a": [i for i in range(10)]}
+    existing_data = {"a": ["a", "a", "b", "b"], "b": [1, 2, 3, 4]}
     new_data = {
-        "a": [i for i in range(10, 20)],
+        "a": ["a", "a", "b", "b"],
+        "b": [5, 6, 7, 8],
     }
 
     read_back = arrange_write_mode_test(
@@ -137,8 +141,10 @@ def test_write_modes_s3_minio(
 
     # Check the data
     if write_mode == "append":
-        assert read_back["a"] == existing_data["a"] + new_data["a"]
+        assert read_back["a"] == ["a"] * 4 + ["b"] * 4
+        assert read_back["b"] == [1, 2, 5, 6, 3, 4, 7, 8]
     elif write_mode == "overwrite":
-        assert read_back["a"] == new_data["a"]
+        assert read_back["a"] == ["a", "a", "b", "b"]
+        assert read_back["b"] == [5, 6, 7, 8]
     else:
         raise ValueError(f"Unsupported write_mode: {write_mode}")
