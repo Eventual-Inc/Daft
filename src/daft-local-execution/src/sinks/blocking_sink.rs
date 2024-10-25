@@ -4,13 +4,14 @@ use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_runtime::get_compute_runtime;
 use daft_micropartition::MicroPartition;
+use snafu::ResultExt;
 use tracing::info_span;
 
 use crate::{
     channel::PipelineChannel,
     pipeline::{PipelineNode, PipelineResultType},
     runtime_stats::RuntimeStatsContext,
-    ExecutionRuntimeHandle,
+    ExecutionRuntimeHandle, JoinSnafu,
 };
 pub enum BlockingSinkStatus {
     NeedMoreInput,
@@ -102,19 +103,20 @@ impl PipelineNode for BlockingSinkNode {
                         let mut guard = op.lock().await;
                         rt_context.in_span(&span, || guard.sink(val.as_data()))
                     };
-                    let result = compute_runtime.await_on(fut).await??;
+                    let result = compute_runtime.spawn(fut).await.context(JoinSnafu)??;
                     if matches!(result, BlockingSinkStatus::Finished) {
                         break;
                     }
                 }
                 let finalized_result = compute_runtime
-                    .await_on(async move {
+                    .spawn(async move {
                         let mut guard = op.lock().await;
                         rt_context.in_span(&info_span!("BlockingSinkNode::finalize"), || {
                             guard.finalize()
                         })
                     })
-                    .await??;
+                    .await
+                    .context(JoinSnafu)??;
                 if let Some(part) = finalized_result {
                     let _ = destination_sender.send(part).await;
                 }
