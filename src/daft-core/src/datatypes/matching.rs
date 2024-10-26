@@ -21,6 +21,7 @@ macro_rules! with_match_daft_types {(
         FixedShapeTensor(..) => __with_ty__! { FixedShapeTensorType },
         FixedSizeBinary(_) => __with_ty__! { FixedSizeBinaryType },
         FixedSizeList(_, _) => __with_ty__! { FixedSizeListType },
+        Float16 => __with_ty__! { Float16Type },
         Float32 => __with_ty__! { Float32Type },
         Float64 => __with_ty__! { Float64Type },
         Image(..) => __with_ty__! { ImageType },

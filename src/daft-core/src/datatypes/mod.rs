@@ -218,7 +218,7 @@ Please see the [Arrow Spec](https://github.com/apache/arrow/blob/081b4022fe6f659
 "#
 );
 
-// impl_daft_arrow_datatype!(Float16Type, Float16);
+impl_daft_arrow_datatype!(Float16Type, Float16);
 impl_daft_arrow_datatype!(Float32Type, Float32);
 impl_daft_arrow_datatype!(Float64Type, Float64);
 impl_daft_arrow_datatype!(BinaryType, Binary);
@@ -301,6 +301,10 @@ impl NumericNative for u32 {
 }
 impl NumericNative for u64 {
     type DAFTTYPE = UInt64Type;
+}
+
+impl NumericNative for arrow2::types::f16 {
+    type DAFTTYPE = Float16Type;
 }
 
 impl NumericNative for f32 {

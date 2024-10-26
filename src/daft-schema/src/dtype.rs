@@ -45,6 +45,9 @@ pub enum DataType {
     /// An [`u64`]
     UInt64,
 
+    /// A [`f16`]
+    Float16,
+
     /// A [`f32`]
     Float32,
 
@@ -220,7 +223,7 @@ impl DataType {
             Self::UInt16 => Ok(ArrowType::UInt16),
             Self::UInt32 => Ok(ArrowType::UInt32),
             Self::UInt64 => Ok(ArrowType::UInt64),
-            // DataType::Float16 => Ok(ArrowType::Float16),
+            Self::Float16 => Ok(ArrowType::Float16),
             Self::Float32 => Ok(ArrowType::Float32),
             Self::Float64 => Ok(ArrowType::Float64),
             Self::Decimal128(precision, scale) => Ok(ArrowType::Decimal(*precision, *scale)),
@@ -654,7 +657,7 @@ impl From<&ArrowType> for DataType {
             ArrowType::UInt16 => Self::UInt16,
             ArrowType::UInt32 => Self::UInt32,
             ArrowType::UInt64 => Self::UInt64,
-            // ArrowType::Float16 => DataType::Float16,
+            ArrowType::Float16 => Self::Float16,
             ArrowType::Float32 => Self::Float32,
             ArrowType::Float64 => Self::Float64,
             ArrowType::Timestamp(unit, timezone) => Self::Timestamp(unit.into(), timezone.clone()),

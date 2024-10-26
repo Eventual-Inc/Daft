@@ -1749,6 +1749,7 @@ dependencies = [
  "derive_more",
  "fastrand 2.1.0",
  "fnv",
+ "half",
  "html-escape",
  "hyperloglog",
  "indexmap 2.5.0",
@@ -2829,6 +2830,7 @@ dependencies = [
  "cfg-if",
  "crunchy",
  "num-traits",
+ "serde",
 ]
 
 [[package]]

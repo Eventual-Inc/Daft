@@ -377,7 +377,7 @@ impl Sub for months_days_ns {
 }
 
 /// Type representation of the Float16 physical type
-#[derive(Copy, Clone, Default, Zeroable, Pod)]
+#[derive(Copy, Clone, Default, Zeroable, Pod, Serialize)]
 #[allow(non_camel_case_types)]
 #[repr(C)]
 pub struct f16(pub u16);
