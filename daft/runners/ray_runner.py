@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-import dataclasses
 import logging
 import threading
 import time
@@ -480,16 +479,6 @@ def build_partitions(
 # Give the same function different names to aid in profiling data distribution.
 
 
-@contextlib.contextmanager
-def collect_task_metrics(job_id: str, task_id: str):
-    import time
-
-    metrics_actor = ray.get_actor(name=f"{METRICS_ACTOR_NAME}-{job_id}", namespace=METRICS_ACTOR_NAMESPACE)
-    metrics_actor.mark_task_start.remote(task_id, time.time())
-    yield
-    metrics_actor.mark_task_end.remote(task_id, time.time())
-
-
 @ray_tracing.RayFunctionWrapper.wrap
 @ray.remote
 def single_partition_pipeline(
@@ -502,7 +491,7 @@ def single_partition_pipeline(
 ) -> list[list[PartitionMetadata] | MicroPartition]:
     with execution_config_ctx(
         config=daft_execution_config,
-    ), collect_task_metrics(job_id, task_id):
+    ), ray_tracing.collect_ray_task_metrics(job_id, task_id):
         return build_partitions(instruction_stack, partial_metadatas, *inputs)
 
 
@@ -516,7 +505,7 @@ def fanout_pipeline(
     partial_metadatas: list[PartitionMetadata],
     *inputs: MicroPartition,
 ) -> list[list[PartitionMetadata] | MicroPartition]:
-    with execution_config_ctx(config=daft_execution_config), collect_task_metrics(job_id, task_id):
+    with execution_config_ctx(config=daft_execution_config), ray_tracing.collect_ray_task_metrics(job_id, task_id):
         return build_partitions(instruction_stack, partial_metadatas, *inputs)
 
 
@@ -532,7 +521,7 @@ def reduce_pipeline(
 ) -> list[list[PartitionMetadata] | MicroPartition]:
     import ray
 
-    with execution_config_ctx(config=daft_execution_config), collect_task_metrics(job_id, task_id):
+    with execution_config_ctx(config=daft_execution_config), ray_tracing.collect_ray_task_metrics(job_id, task_id):
         return build_partitions(instruction_stack, partial_metadatas, *ray.get(inputs))
 
 
@@ -548,7 +537,7 @@ def reduce_and_fanout(
 ) -> list[list[PartitionMetadata] | MicroPartition]:
     import ray
 
-    with execution_config_ctx(config=daft_execution_config), collect_task_metrics(job_id, task_id):
+    with execution_config_ctx(config=daft_execution_config), ray_tracing.collect_ray_task_metrics(job_id, task_id):
         return build_partitions(instruction_stack, partial_metadatas, *ray.get(inputs))
 
 
@@ -686,14 +675,6 @@ class Scheduler(ActorPoolManager):
         psets: dict[str, ray.ObjectRef],
         result_uuid: str,
     ) -> None:
-        # Initialize a metrics actor for this execution.
-        # NOTE: This goes out of scope after _run_plan is completed, and should be garbage-collected
-        metrics_actor = MetricsActor.options(  # type: ignore[attr-defined]
-            name=f"{METRICS_ACTOR_NAME}-{result_uuid}",
-            namespace=METRICS_ACTOR_NAMESPACE,
-            get_if_exists=True,
-        ).remote()
-
         # Get executable tasks from plan scheduler.
         results_buffer_size = self.results_buffer_size_by_df[result_uuid]
 
@@ -720,7 +701,7 @@ class Scheduler(ActorPoolManager):
                 except Full:
                     pass
 
-        with profiler(profile_filename), ray_tracing.ray_tracer(result_uuid, metrics_actor) as runner_tracer:
+        with profiler(profile_filename), ray_tracing.ray_tracer(result_uuid) as runner_tracer:
             ray_wrapper = ray_tracing.RayModuleWrapper(runner_tracer=runner_tracer)
             raw_tasks = plan_scheduler.to_partition_tasks(
                 psets,
@@ -908,8 +889,6 @@ class Scheduler(ActorPoolManager):
 
 SCHEDULER_ACTOR_NAME = "scheduler"
 SCHEDULER_ACTOR_NAMESPACE = "daft"
-METRICS_ACTOR_NAME = "metrics"
-METRICS_ACTOR_NAMESPACE = "daft"
 
 
 @ray.remote(num_cpus=1)
@@ -917,36 +896,6 @@ class SchedulerActor(Scheduler):
     def __init__(self, *n, **kw) -> None:
         super().__init__(*n, **kw)
         self.reserved_cores = 1
-
-
-@dataclasses.dataclass(frozen=True)
-class TaskMetric:
-    task_id: str
-    start: float
-    end: float | None
-
-
-@ray.remote(num_cpus=0)
-class MetricsActor:
-    def __init__(self):
-        self.task_starts: dict[str, float] = {}
-        self.task_ends: dict[str, float] = {}
-
-    def mark_task_start(self, task_id: str, start: float):
-        self.task_starts[task_id] = start
-
-    def mark_task_end(self, task_id: str, end: float):
-        self.task_ends[task_id] = end
-
-    def collect(self) -> list[TaskMetric]:
-        return [
-            TaskMetric(
-                task_id=task_id,
-                start=self.task_starts[task_id],
-                end=self.task_ends.get(task_id),
-            )
-            for task_id in self.task_starts
-        ]
 
 
 def _build_partitions(

@@ -1,3 +1,9 @@
+"""This module contains utilities and wrappers that instrument tracing over our RayRunner's task scheduling + execution
+
+These utilities are meant to provide light wrappers on top of Ray functionality (e.g. remote functions, actors, ray.get/ray.wait)
+which allow us to intercept these calls and perform the necessary actions for tracing the interaction between Daft and Ray.
+"""
+
 from __future__ import annotations
 
 import contextlib
@@ -14,6 +20,7 @@ except ImportError:
     raise
 
 from daft.execution.execution_step import PartitionTask
+from daft.runners import ray_metrics
 
 if TYPE_CHECKING:
     from daft import ResourceRequest
@@ -21,12 +28,15 @@ if TYPE_CHECKING:
 
 
 # We add the trace by default to the latest session logs of the Ray Runner
+# This lets us access our logs via the Ray dashboard when running Ray jobs
 DEFAULT_RAY_LOGS_LOCATION = pathlib.Path("/tmp") / "ray" / "session_latest"
 DEFAULT_DAFT_TRACE_LOCATION = DEFAULT_RAY_LOGS_LOCATION / "daft"
 
 
 @contextlib.contextmanager
-def ray_tracer(job_id: str, metrics_actor: ray.actor.ActorHandle):
+def ray_tracer(job_id: str):
+    metrics_actor = ray_metrics.get_metrics_actor(job_id)
+
     # Dump the RayRunner trace if we detect an active Ray session, otherwise we give up and do not write the trace
     if pathlib.Path(DEFAULT_RAY_LOGS_LOCATION).exists():
         trace_filename = (
@@ -457,3 +467,14 @@ class MaterializedPhysicalPlanWrapper:
             )
 
         return item
+
+
+@contextlib.contextmanager
+def collect_ray_task_metrics(job_id: str, task_id: str):
+    """Context manager that will ping the metrics actor to record various execution metrics about a given task"""
+    import time
+
+    metrics_actor = ray_metrics.get_metrics_actor(job_id)
+    metrics_actor.mark_task_start.remote(task_id, time.time())
+    yield
+    metrics_actor.mark_task_end.remote(task_id, time.time())
