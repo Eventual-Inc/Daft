@@ -371,7 +371,7 @@ class RunnerTracer:
                     "stage_id": stage_id,
                     "instructions": instructions,
                 },
-                "pid": 2,
+                "pid": 1,
                 "tid": 1,
             }
         )
@@ -383,7 +383,7 @@ class RunnerTracer:
                 "category": "task",
                 "name": "task_dispatch",
                 "ph": "b",
-                "pid": 2,
+                "pid": 1,
                 "tid": 1,
             }
         )
@@ -395,7 +395,7 @@ class RunnerTracer:
                 "category": "task",
                 "name": "task_awaited_not_ready",
                 "ph": "n",
-                "pid": 2,
+                "pid": 1,
                 "tid": 1,
             }
         )
@@ -407,7 +407,7 @@ class RunnerTracer:
                 "category": "task",
                 "name": "task_dispatch",
                 "ph": "e",
-                "pid": 2,
+                "pid": 1,
                 "tid": 1,
             }
         )
@@ -417,7 +417,7 @@ class RunnerTracer:
                 "category": "task",
                 "name": "task_execution",
                 "ph": "e",
-                "pid": 2,
+                "pid": 1,
                 "tid": 1,
             }
         )

@@ -764,11 +764,24 @@ class Scheduler(ActorPoolManager):
 
     def _await_tasks(
         self,
-        num_returns: int,
-        timeout: float | None,
         inflight_ref_to_task_id: dict[ray.ObjectRef, str],
         runner_tracer: RunnerTracer,
     ) -> list[ray.ObjectRef]:
+        if len(inflight_ref_to_task_id) == 0:
+            return []
+
+        # Await on (any) task to be ready with an unlimited timeout
+        with runner_tracer.awaiting(1, None):
+            ray.wait(
+                list(inflight_ref_to_task_id.keys()),
+                num_returns=1,
+                timeout=None,
+                fetch_local=False,
+            )
+
+        # Now, grab as many ready tasks as possible with a 0.01s timeout
+        timeout = 0.01
+        num_returns = len(inflight_ref_to_task_id)
         with runner_tracer.awaiting(num_returns, timeout):
             readies, not_readies = ray.wait(
                 list(inflight_ref_to_task_id.keys()),
@@ -777,6 +790,7 @@ class Scheduler(ActorPoolManager):
                 fetch_local=False,
             )
 
+        # Update traces
         for ready in readies:
             if ready in inflight_ref_to_task_id:
                 runner_tracer.task_received_as_ready(inflight_ref_to_task_id[ready])
@@ -888,37 +902,24 @@ class Scheduler(ActorPoolManager):
                         # (Awaits the next task, and then the next batch of tasks within 10ms.)
                         ###
                         completed_task_ids = []
-                        for wait_for in ("next_one", "next_batch"):
-                            if wait_for == "next_one":
-                                num_returns = 1
-                                timeout = None
-                            elif wait_for == "next_batch":
-                                num_returns = len(inflight_ref_to_task)
-                                timeout = 0.01  # 10ms
+                        readies = self._await_tasks(
+                            inflight_ref_to_task,
+                            runner_tracer,
+                        )
+                        for ready in readies:
+                            if ready in inflight_ref_to_task:
+                                task_id = inflight_ref_to_task[ready]
+                                completed_task_ids.append(task_id)
+                                # Mark the entire task associated with the result as done.
+                                task = inflight_tasks[task_id]
+                                if isinstance(task, SingleOutputPartitionTask):
+                                    del inflight_ref_to_task[ready]
+                                elif isinstance(task, MultiOutputPartitionTask):
+                                    for partition in task.partitions():
+                                        del inflight_ref_to_task[partition]
 
-                            if num_returns == 0:
-                                break
-
-                            readies = self._await_tasks(
-                                num_returns,
-                                timeout,
-                                inflight_ref_to_task,
-                                runner_tracer,
-                            )
-                            for ready in readies:
-                                if ready in inflight_ref_to_task:
-                                    task_id = inflight_ref_to_task[ready]
-                                    completed_task_ids.append(task_id)
-                                    # Mark the entire task associated with the result as done.
-                                    task = inflight_tasks[task_id]
-                                    if isinstance(task, SingleOutputPartitionTask):
-                                        del inflight_ref_to_task[ready]
-                                    elif isinstance(task, MultiOutputPartitionTask):
-                                        for partition in task.partitions():
-                                            del inflight_ref_to_task[partition]
-
-                                    pbar.mark_task_done(task)
-                                    del inflight_tasks[task_id]
+                                pbar.mark_task_done(task)
+                                del inflight_tasks[task_id]
 
             except StopIteration as e:
                 place_in_queue(e)
