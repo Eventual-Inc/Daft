@@ -1,14 +1,23 @@
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import json
 import pathlib
 import time
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, TextIO
 
+try:
+    import ray
+except ImportError:
+    raise
+
+from daft.execution.execution_step import PartitionTask
+
 if TYPE_CHECKING:
     from daft import ResourceRequest
+    from daft.execution.physical_plan import MaterializedPhysicalPlan
 
 
 # We add the trace by default to the latest session logs of the Ray Runner
@@ -17,7 +26,7 @@ DEFAULT_DAFT_TRACE_LOCATION = DEFAULT_RAY_LOGS_LOCATION / "daft"
 
 
 @contextlib.contextmanager
-def tracer():
+def ray_tracer(metrics_actor: ray.actor.ActorHandle | None):
     # Dump the RayRunner trace if we detect an active Ray session, otherwise we give up and do not write the trace
     if pathlib.Path(DEFAULT_RAY_LOGS_LOCATION).exists():
         trace_filename = (
@@ -35,7 +44,7 @@ def tracer():
             f.write("[")
 
             # Yield the tracer
-            runner_tracer = RunnerTracer(f)
+            runner_tracer = RunnerTracer(f, metrics_actor)
             yield runner_tracer
 
             # Add the final touches to the file
@@ -46,14 +55,15 @@ def tracer():
             f.write(json.dumps({"name": "process_name", "ph": "M", "pid": 2, "args": {"name": "Ray Task Execution"}}))
             f.write("\n]")
     else:
-        runner_tracer = RunnerTracer(None)
+        runner_tracer = RunnerTracer(None, metrics_actor)
         yield runner_tracer
 
 
 class RunnerTracer:
-    def __init__(self, file: TextIO | None):
+    def __init__(self, file: TextIO | None, metrics_ray_actor: ray.actor.ActorHandle | None):
         self._file = file
         self._start = time.time()
+        self._metrics_actor = metrics_ray_actor
 
     def _write_event(self, event: dict[str, Any]):
         if self._file is not None:
@@ -259,12 +269,12 @@ class RunnerTracer:
     # Tracing each individual task as an Async Event
     ###
 
-    def task_dispatched(self, task_id: str, stage_id: int, resource_request: ResourceRequest, instructions: str):
+    def task_created(self, task_id: str, stage_id: int, resource_request: ResourceRequest, instructions: str):
         self._write_event(
             {
                 "id": task_id,
                 "category": "task",
-                "name": f"stage[{stage_id}]-{instructions}",
+                "name": "task_execution",
                 "ph": "b",
                 "args": {
                     "resource_request": {
@@ -275,6 +285,18 @@ class RunnerTracer:
                     "stage_id": stage_id,
                     "instructions": instructions,
                 },
+                "pid": 2,
+                "tid": 1,
+            }
+        )
+
+    def task_dispatched(self, task_id: str):
+        self._write_event(
+            {
+                "id": task_id,
+                "category": "task",
+                "name": "task_dispatch",
+                "ph": "b",
                 "pid": 2,
                 "tid": 1,
             }
@@ -292,13 +314,97 @@ class RunnerTracer:
             }
         )
 
-    def task_ready(self, task_id: str):
+    def task_received_as_ready(self, task_id: str):
         self._write_event(
             {
                 "id": task_id,
                 "category": "task",
+                "name": "task_dispatch",
                 "ph": "e",
                 "pid": 2,
                 "tid": 1,
             }
         )
+        self._write_event(
+            {
+                "id": task_id,
+                "category": "task",
+                "name": "task_execution",
+                "ph": "e",
+                "pid": 2,
+                "tid": 1,
+            }
+        )
+
+
+class RayModuleWrapper:
+    """Wrapper around the `ray` module that allows us to hook into various methods for tracing"""
+
+    def __init__(self, runner_tracer: RunnerTracer):
+        self._runner_tracer = runner_tracer
+
+    def wait(self, task_ids: dict, *args, **kwargs):
+        readies, not_readies = ray.wait(*args, **kwargs)
+
+        for ready in readies:
+            if ready in task_ids:
+                self._runner_tracer.task_received_as_ready(task_ids[ready])
+        for not_ready in not_readies:
+            if not_ready in task_ids:
+                self._runner_tracer.task_not_ready(task_ids[not_ready])
+
+        return readies, not_readies
+
+
+@dataclasses.dataclass(frozen=True)
+class RayFunctionWrapper:
+    """Wrapper around a Ray remote function that allows us to intercept calls and record the call for a given task ID"""
+
+    f: ray.remote_function.RemoteFunction
+
+    def with_tracing(self, runner_tracer: RunnerTracer, task: PartitionTask) -> RayRunnableFunctionWrapper:
+        return RayRunnableFunctionWrapper(f=self.f, runner_tracer=runner_tracer, task=task)
+
+    def options(self, *args, **kwargs) -> RayFunctionWrapper:
+        return dataclasses.replace(self, f=self.f.options(*args, **kwargs))
+
+    @classmethod
+    def wrap(cls, f: ray.remote_function.RemoteFunction):
+        return cls(f=f)
+
+
+@dataclasses.dataclass(frozen=True)
+class RayRunnableFunctionWrapper:
+    """Runnable variant of RayFunctionWrapper that supports `.remote` calls"""
+
+    f: ray.remote_function.RemoteFunction
+    runner_tracer: RunnerTracer
+    task: PartitionTask
+
+    def options(self, *args, **kwargs) -> RayRunnableFunctionWrapper:
+        return dataclasses.replace(self, f=self.f.options(*args, **kwargs))
+
+    def remote(self, *args, **kwargs):
+        self.runner_tracer.task_dispatched(self.task.id())
+        return self.f.remote(*args, **kwargs)
+
+
+@dataclasses.dataclass(frozen=True)
+class MaterializedPhysicalPlanWrapper:
+    """Wrapper around MaterializedPhysicalPlan that hooks into tracing capabilities"""
+
+    plan: MaterializedPhysicalPlan
+    runner_tracer: RunnerTracer
+
+    def __next__(self):
+        item = next(self.plan)
+
+        if isinstance(item, PartitionTask):
+            self.runner_tracer.task_created(
+                item.id(),
+                item.stage_id,
+                item.resource_request,
+                "-".join(type(i).__name__ for i in item.instructions),
+            )
+
+        return item
