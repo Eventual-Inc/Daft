@@ -396,25 +396,6 @@ class RunnerTracer:
         )
 
 
-class RayModuleWrapper:
-    """Wrapper around the `ray` module that allows us to hook into various methods for tracing"""
-
-    def __init__(self, runner_tracer: RunnerTracer):
-        self._runner_tracer = runner_tracer
-
-    def wait(self, task_ids: dict, *args, **kwargs):
-        readies, not_readies = ray.wait(*args, **kwargs)
-
-        for ready in readies:
-            if ready in task_ids:
-                self._runner_tracer.task_received_as_ready(task_ids[ready])
-        for not_ready in not_readies:
-            if not_ready in task_ids:
-                self._runner_tracer.task_not_ready(task_ids[not_ready])
-
-        return readies, not_readies
-
-
 @dataclasses.dataclass(frozen=True)
 class RayFunctionWrapper:
     """Wrapper around a Ray remote function that allows us to intercept calls and record the call for a given task ID"""
