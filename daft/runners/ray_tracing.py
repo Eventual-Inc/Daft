@@ -62,21 +62,21 @@ def ray_tracer(job_id: str):
             # Retrieve metrics from the metrics actor
             metrics = ray.get(metrics_actor.collect.remote())
             for metric in metrics:
-                if metric.end is not None:
-                    f.write(
-                        json.dumps(
-                            {
-                                "id": metric.task_id,
-                                "category": "task",
-                                "name": "task_remote_execution",
-                                "ph": "b",
-                                "pid": 2,
-                                "tid": 1,
-                                "ts": (metric.start - tracer_start) * 1000 * 1000,
-                            }
-                        )
+                f.write(
+                    json.dumps(
+                        {
+                            "id": metric.task_id,
+                            "category": "task",
+                            "name": "task_remote_execution",
+                            "ph": "b",
+                            "pid": 2,
+                            "tid": 1,
+                            "ts": (metric.start - tracer_start) * 1000 * 1000,
+                        }
                     )
-                    f.write(",\n")
+                )
+                f.write(",\n")
+                if metric.end is not None:
                     f.write(
                         json.dumps(
                             {
@@ -91,27 +91,17 @@ def ray_tracer(job_id: str):
                         )
                     )
                     f.write(",\n")
-                else:
-                    f.write(
-                        json.dumps(
-                            {
-                                "id": metric.task_id,
-                                "category": "task",
-                                "name": "task_remote_execution_start_no_end",
-                                "ph": "n",
-                                "pid": 2,
-                                "tid": 1,
-                                "ts": (metric.start - tracer_start) * 1000 * 1000,
-                            }
-                        )
-                    )
 
             # Add the final touches to the file
+            f.write(json.dumps({"name": "process_name", "ph": "M", "pid": 1, "args": {"name": "Scheduler"}}))
+            f.write(",\n")
             f.write(
-                json.dumps({"name": "process_name", "ph": "M", "pid": 1, "args": {"name": "RayRunner dispatch loop"}})
+                json.dumps(
+                    {"name": "thread_name", "ph": "M", "pid": 1, "tid": 1, "args": {"name": "_run_plan dispatch loop"}}
+                )
             )
             f.write(",\n")
-            f.write(json.dumps({"name": "process_name", "ph": "M", "pid": 2, "args": {"name": "Ray Task Execution"}}))
+            f.write(json.dumps({"name": "process_name", "ph": "M", "pid": 2, "args": {"name": "Ray Tasks"}}))
             f.write("\n]")
     else:
         runner_tracer = RunnerTracer(None, tracer_start)
@@ -304,22 +294,59 @@ class RunnerTracer:
     ###
 
     @contextlib.contextmanager
-    def awaiting(self):
+    def awaiting(self, waiting_for_num_results: int, wait_timeout_s: float | None):
+        name = f"awaiting {waiting_for_num_results} (timeout={wait_timeout_s})"
         self._write_event(
             {
-                "name": "awaiting",
+                "name": name,
                 "pid": 1,
                 "tid": 1,
                 "ph": "B",
+                "args": {
+                    "waiting_for_num_results": waiting_for_num_results,
+                    "wait_timeout_s": str(wait_timeout_s),
+                },
             }
         )
         yield
         self._write_event(
             {
-                "name": "awaiting",
+                "name": name,
                 "pid": 1,
                 "tid": 1,
                 "ph": "E",
+            }
+        )
+
+    ###
+    # Tracing the PhysicalPlan
+    ###
+
+    @contextlib.contextmanager
+    def get_next_physical_plan(self):
+        self._write_event(
+            {
+                "name": "next(tasks)",
+                "pid": 1,
+                "tid": 1,
+                "ph": "B",
+            }
+        )
+
+        args = {}
+
+        def update_args(**kwargs):
+            args.update(kwargs)
+
+        yield update_args
+
+        self._write_event(
+            {
+                "name": "next(tasks)",
+                "pid": 1,
+                "tid": 1,
+                "ph": "E",
+                "args": args,
             }
         )
 
@@ -437,15 +464,23 @@ class MaterializedPhysicalPlanWrapper:
     runner_tracer: RunnerTracer
 
     def __next__(self):
-        item = next(self.plan)
+        with self.runner_tracer.get_next_physical_plan() as update_args:
+            item = next(self.plan)
 
-        if isinstance(item, PartitionTask):
-            self.runner_tracer.task_created(
-                item.id(),
-                item.stage_id,
-                item.resource_request,
-                "-".join(type(i).__name__ for i in item.instructions),
+            update_args(
+                next_item_type=type(item).__name__,
             )
+            if isinstance(item, PartitionTask):
+                instructions_description = "-".join(type(i).__name__ for i in item.instructions)
+                self.runner_tracer.task_created(
+                    item.id(),
+                    item.stage_id,
+                    item.resource_request,
+                    instructions_description,
+                )
+                update_args(
+                    partition_task_instructions=instructions_description,
+                )
 
         return item
 
