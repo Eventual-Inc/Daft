@@ -498,6 +498,12 @@ class Series:
         assert self._series is not None and other._series is not None
         return Series._from_pyseries(self._series ^ other._series)
 
+    def __floordiv__(self, other: object) -> Series:
+        if not isinstance(other, Series):
+            raise TypeError(f"expected another Series but got {type(other)}")
+        assert self._series is not None and other._series is not None
+        return Series._from_pyseries(self._series // other._series)
+
     def count(self, mode: CountMode = CountMode.Valid) -> Series:
         assert self._series is not None
         return Series._from_pyseries(self._series.count(mode))
