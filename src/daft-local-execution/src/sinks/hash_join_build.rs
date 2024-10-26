@@ -10,7 +10,7 @@ use daft_table::{make_probeable_builder, ProbeState, ProbeableBuilder, Table};
 use super::blocking_sink::{
     BlockingSink, BlockingSinkState, BlockingSinkStatus, DynBlockingSinkState,
 };
-use crate::pipeline::PipelineResultType;
+use crate::ProbeStateBridgeRef;
 
 enum ProbeTableState {
     Building {
@@ -86,6 +86,7 @@ pub struct HashJoinBuildSink {
     key_schema: SchemaRef,
     projection: Vec<ExprRef>,
     join_type: JoinType,
+    probe_state_bridge: ProbeStateBridgeRef,
 }
 
 impl HashJoinBuildSink {
@@ -93,11 +94,13 @@ impl HashJoinBuildSink {
         key_schema: SchemaRef,
         projection: Vec<ExprRef>,
         join_type: &JoinType,
+        probe_state_bridge: ProbeStateBridgeRef,
     ) -> DaftResult<Self> {
         Ok(Self {
             key_schema,
             projection,
             join_type: *join_type,
+            probe_state_bridge,
         })
     }
 }
@@ -121,7 +124,7 @@ impl BlockingSink for HashJoinBuildSink {
     fn finalize(
         &self,
         states: Vec<Box<dyn DynBlockingSinkState>>,
-    ) -> DaftResult<Option<PipelineResultType>> {
+    ) -> DaftResult<Option<Arc<MicroPartition>>> {
         assert_eq!(states.len(), 1);
         let mut state = states.into_iter().next().unwrap();
         let probe_table_state = state
@@ -130,10 +133,11 @@ impl BlockingSink for HashJoinBuildSink {
             .expect("State type mismatch");
         probe_table_state.finalize()?;
         if let ProbeTableState::Done { probe_state } = probe_table_state {
-            Ok(Some(probe_state.clone().into()))
+            self.probe_state_bridge.set_probe_state(probe_state.clone());
         } else {
             panic!("finalize should only be called after the probe table is built")
         }
+        Ok(None)
     }
 
     fn max_concurrency(&self) -> usize {

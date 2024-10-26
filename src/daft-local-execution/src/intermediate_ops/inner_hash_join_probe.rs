@@ -12,28 +12,19 @@ use super::intermediate_op::{
     DynIntermediateOpState, IntermediateOperator, IntermediateOperatorResult,
     IntermediateOperatorState,
 };
-use crate::pipeline::PipelineResultType;
+use crate::ProbeStateBridgeRef;
 
-enum InnerHashJoinProbeState {
-    Building,
-    ReadyToProbe(Arc<ProbeState>),
+struct InnerHashJoinProbeState {
+    probe_state: Arc<ProbeState>,
 }
 
 impl InnerHashJoinProbeState {
-    fn set_probe_state(&mut self, probe_state: Arc<ProbeState>) {
-        if matches!(self, Self::Building) {
-            *self = Self::ReadyToProbe(probe_state);
-        } else {
-            panic!("InnerHashJoinProbeState should only be in Building state when setting table")
-        }
+    fn new(probe_state: Arc<ProbeState>) -> Self {
+        Self { probe_state }
     }
 
     fn get_probe_state(&self) -> &Arc<ProbeState> {
-        if let Self::ReadyToProbe(probe_state) = self {
-            probe_state
-        } else {
-            panic!("get_probeable_and_table can only be used during the ReadyToProbe Phase")
-        }
+        &self.probe_state
     }
 }
 
@@ -50,6 +41,7 @@ pub struct InnerHashJoinProbeOperator {
     right_non_join_columns: Vec<String>,
     build_on_left: bool,
     output_schema: SchemaRef,
+    probe_state_bridge: ProbeStateBridgeRef,
 }
 
 impl InnerHashJoinProbeOperator {
@@ -62,6 +54,7 @@ impl InnerHashJoinProbeOperator {
         build_on_left: bool,
         common_join_keys: IndexSet<String>,
         output_schema: &SchemaRef,
+        probe_state_bridge: ProbeStateBridgeRef,
     ) -> Self {
         let left_non_join_columns = left_schema
             .fields
@@ -83,6 +76,7 @@ impl InnerHashJoinProbeOperator {
             right_non_join_columns,
             build_on_left,
             output_schema: output_schema.clone(),
+            probe_state_bridge,
         }
     }
 
@@ -159,29 +153,22 @@ impl InnerHashJoinProbeOperator {
     }
 }
 
+#[async_trait::async_trait]
 impl IntermediateOperator for InnerHashJoinProbeOperator {
     #[instrument(skip_all, name = "InnerHashJoinOperator::execute")]
     fn execute(
         &self,
-        idx: usize,
-        input: &PipelineResultType,
+        _idx: usize,
+        input: &Arc<MicroPartition>,
         state: &IntermediateOperatorState,
     ) -> DaftResult<IntermediateOperatorResult> {
-        state.with_state_mut::<InnerHashJoinProbeState, _, _>(|state| match idx {
-            0 => {
-                let probe_state = input.as_probe_state();
-                state.set_probe_state(probe_state.clone());
-                Ok(IntermediateOperatorResult::NeedMoreInput(None))
+        state.with_state_mut::<InnerHashJoinProbeState, _, _>(|state| {
+            if input.is_empty() {
+                let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));
+                return Ok(IntermediateOperatorResult::NeedMoreInput(Some(empty)));
             }
-            _ => {
-                let input = input.as_data();
-                if input.is_empty() {
-                    let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));
-                    return Ok(IntermediateOperatorResult::NeedMoreInput(Some(empty)));
-                }
-                let out = self.probe_inner(input, state)?;
-                Ok(IntermediateOperatorResult::NeedMoreInput(Some(out)))
-            }
+            let out = self.probe_inner(input, state)?;
+            Ok(IntermediateOperatorResult::NeedMoreInput(Some(out)))
         })
     }
 
@@ -189,7 +176,8 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
         "InnerHashJoinProbeOperator"
     }
 
-    fn make_state(&self) -> Box<dyn DynIntermediateOpState> {
-        Box::new(InnerHashJoinProbeState::Building)
+    async fn make_state(&self) -> Box<dyn DynIntermediateOpState> {
+        let probe_state = self.probe_state_bridge.get_probe_state().await;
+        Box::new(InnerHashJoinProbeState::new(probe_state))
     }
 }

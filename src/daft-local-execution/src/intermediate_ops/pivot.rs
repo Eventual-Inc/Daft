@@ -2,12 +2,12 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_dsl::ExprRef;
+use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
 use super::intermediate_op::{
     IntermediateOperator, IntermediateOperatorResult, IntermediateOperatorState,
 };
-use crate::pipeline::PipelineResultType;
 
 pub struct PivotOperator {
     group_by: Vec<ExprRef>,
@@ -37,10 +37,10 @@ impl IntermediateOperator for PivotOperator {
     fn execute(
         &self,
         _idx: usize,
-        input: &PipelineResultType,
+        input: &Arc<MicroPartition>,
         _state: &IntermediateOperatorState,
     ) -> DaftResult<IntermediateOperatorResult> {
-        let out = input.as_data().pivot(
+        let out = input.pivot(
             &self.group_by,
             self.pivot_col.clone(),
             self.values_col.clone(),

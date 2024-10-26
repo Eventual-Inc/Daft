@@ -2,12 +2,12 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_dsl::ExprRef;
+use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
 use super::intermediate_op::{
     IntermediateOperator, IntermediateOperatorResult, IntermediateOperatorState,
 };
-use crate::pipeline::PipelineResultType;
 
 pub struct UnpivotOperator {
     ids: Vec<ExprRef>,
@@ -37,10 +37,10 @@ impl IntermediateOperator for UnpivotOperator {
     fn execute(
         &self,
         _idx: usize,
-        input: &PipelineResultType,
+        input: &Arc<MicroPartition>,
         _state: &IntermediateOperatorState,
     ) -> DaftResult<IntermediateOperatorResult> {
-        let out = input.as_data().unpivot(
+        let out = input.unpivot(
             &self.ids,
             &self.values,
             &self.variable_name,

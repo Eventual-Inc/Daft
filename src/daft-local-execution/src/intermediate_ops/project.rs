@@ -2,12 +2,12 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_dsl::ExprRef;
+use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
 use super::intermediate_op::{
     IntermediateOperator, IntermediateOperatorResult, IntermediateOperatorState,
 };
-use crate::pipeline::PipelineResultType;
 
 pub struct ProjectOperator {
     projection: Vec<ExprRef>,
@@ -24,10 +24,11 @@ impl IntermediateOperator for ProjectOperator {
     fn execute(
         &self,
         _idx: usize,
-        input: &PipelineResultType,
+        input: &Arc<MicroPartition>,
         _state: &IntermediateOperatorState,
     ) -> DaftResult<IntermediateOperatorResult> {
-        let out = input.as_data().eval_expression_list(&self.projection)?;
+        println!("ProjectOperator::execute");
+        let out = input.eval_expression_list(&self.projection)?;
         Ok(IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(
             out,
         ))))

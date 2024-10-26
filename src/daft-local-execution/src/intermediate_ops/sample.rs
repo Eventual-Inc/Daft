@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
 use super::intermediate_op::{
     IntermediateOperator, IntermediateOperatorResult, IntermediateOperatorState,
 };
-use crate::pipeline::PipelineResultType;
 
 pub struct SampleOperator {
     fraction: f64,
@@ -29,13 +29,10 @@ impl IntermediateOperator for SampleOperator {
     fn execute(
         &self,
         _idx: usize,
-        input: &PipelineResultType,
+        input: &Arc<MicroPartition>,
         _state: &IntermediateOperatorState,
     ) -> DaftResult<IntermediateOperatorResult> {
-        let out =
-            input
-                .as_data()
-                .sample_by_fraction(self.fraction, self.with_replacement, self.seed)?;
+        let out = input.sample_by_fraction(self.fraction, self.with_replacement, self.seed)?;
         Ok(IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(
             out,
         ))))

@@ -111,7 +111,7 @@ fn should_enable_explain_analyze() -> bool {
     }
 }
 
-pub fn run_local(
+fn run_local(
     physical_plan: &LocalPhysicalPlan,
     psets: HashMap<String, Vec<Arc<MicroPartition>>>,
     cfg: Arc<DaftExecutionConfig>,
@@ -129,8 +129,8 @@ pub fn run_local(
             let mut runtime_handle = ExecutionRuntimeHandle::new(cfg.default_morsel_size);
             let receiver = pipeline.start(true, &mut runtime_handle)?;
 
-            while let Some(val) = receiver.recv_async().await.ok() {
-                let _ = tx.send_async(val.as_data().clone()).await;
+            while let Ok(val) = receiver.recv_async().await {
+                let _ = tx.send_async(val).await;
             }
 
             while let Some(result) = runtime_handle.join_next().await {

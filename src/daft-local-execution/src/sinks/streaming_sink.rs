@@ -1,5 +1,6 @@
 use std::sync::{Arc, Mutex};
 
+use async_trait::async_trait;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_runtime::get_compute_runtime;
@@ -8,9 +9,12 @@ use snafu::ResultExt;
 use tracing::{info_span, instrument};
 
 use crate::{
-    buffer::RowBasedBuffer,
-    channel::{create_channel, create_ordering_aware_channel, Receiver, Sender},
-    pipeline::{PipelineNode, PipelineResultType},
+    channel::{
+        create_channel, create_ordering_aware_receiver_channel,
+        create_ordering_aware_sender_channel, Receiver, Sender,
+    },
+    dispatcher::dispatch,
+    pipeline::PipelineNode,
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
     ExecutionRuntimeHandle, JoinSnafu, TaskSet, NUM_CPUS,
 };
@@ -50,6 +54,7 @@ pub enum StreamingSinkOutput {
     Finished(Option<Arc<MicroPartition>>),
 }
 
+#[async_trait]
 pub trait StreamingSink: Send + Sync {
     /// Execute the StreamingSink operator on the morsel of input data,
     /// received from the child with the given index,
@@ -57,7 +62,7 @@ pub trait StreamingSink: Send + Sync {
     fn execute(
         &self,
         index: usize,
-        input: &PipelineResultType,
+        input: &Arc<MicroPartition>,
         state_handle: &StreamingSinkState,
     ) -> DaftResult<StreamingSinkOutput>;
 
@@ -71,7 +76,7 @@ pub trait StreamingSink: Send + Sync {
     fn name(&self) -> &'static str;
 
     /// Create a new worker-local state for this StreamingSink.
-    fn make_state(&self) -> Box<dyn DynStreamingSinkState>;
+    async fn make_state(&self) -> Box<dyn DynStreamingSinkState>;
 
     /// The maximum number of concurrent workers that can be spawned for this sink.
     /// Each worker will has its own StreamingSinkState.
@@ -109,15 +114,15 @@ impl StreamingSinkNode {
     #[instrument(level = "info", skip_all, name = "StreamingSink::run_worker")]
     async fn run_worker(
         op: Arc<dyn StreamingSink>,
-        input_receiver: Receiver<(usize, PipelineResultType)>,
+        input_receiver: Receiver<(usize, Arc<MicroPartition>)>,
         output_sender: Sender<Arc<MicroPartition>>,
         rt_context: Arc<RuntimeStatsContext>,
     ) -> DaftResult<Box<dyn DynStreamingSinkState>> {
         let span = info_span!("StreamingSink::Execute");
         let compute_runtime = get_compute_runtime();
-        let state_wrapper = StreamingSinkState::new(op.make_state());
+        let state_wrapper = StreamingSinkState::new(op.make_state().await);
         let mut finished = false;
-        while let Some((idx, morsel)) = input_receiver.recv_async().await.ok() {
+        while let Ok((idx, morsel)) = input_receiver.recv_async().await {
             if finished {
                 break;
             }
@@ -163,7 +168,7 @@ impl StreamingSinkNode {
 
     fn spawn_workers(
         op: Arc<dyn StreamingSink>,
-        input_receivers: Vec<Receiver<(usize, PipelineResultType)>>,
+        input_receivers: Vec<Receiver<(usize, Arc<MicroPartition>)>>,
         output_senders: Vec<Sender<Arc<MicroPartition>>>,
         task_set: &mut TaskSet<DaftResult<Box<dyn DynStreamingSinkState>>>,
         stats: Arc<RuntimeStatsContext>,
@@ -176,48 +181,6 @@ impl StreamingSinkNode {
                 stats.clone(),
             ));
         }
-    }
-
-    // Forwards input from the children to the workers in a round-robin fashion.
-    // Always exhausts the input from one child before moving to the next.
-    async fn forward_input_to_workers(
-        receivers: Vec<CountingReceiver>,
-        worker_senders: Vec<Sender<(usize, PipelineResultType)>>,
-        morsel_size: Option<usize>,
-    ) -> DaftResult<()> {
-        let mut next_worker_idx = 0;
-        let mut send_to_next_worker = |idx, data: PipelineResultType| {
-            let next_worker_sender = worker_senders.get(next_worker_idx).unwrap();
-            next_worker_idx = (next_worker_idx + 1) % worker_senders.len();
-            next_worker_sender.send_async((idx, data))
-        };
-
-        for (idx, mut receiver) in receivers.into_iter().enumerate() {
-            let mut buffer = morsel_size.map(RowBasedBuffer::new);
-            while let Some(morsel) = receiver.recv().await {
-                if morsel.should_broadcast() {
-                    for worker_sender in &worker_senders {
-                        let _ = worker_sender.send_async((idx, morsel.clone())).await;
-                    }
-                } else if let Some(buffer) = buffer.as_mut() {
-                    buffer.push(morsel.as_data().clone());
-                    if let Some(ready) = buffer.pop_enough()? {
-                        for r in ready {
-                            let _ = send_to_next_worker(idx, r.into()).await;
-                        }
-                    }
-                } else {
-                    let _ = send_to_next_worker(idx, morsel).await;
-                }
-            }
-            if let Some(buffer) = buffer.as_mut() {
-                // Clear all remaining morsels
-                if let Some(last_morsel) = buffer.pop_all()? {
-                    let _ = send_to_next_worker(idx, last_morsel.into()).await;
-                }
-            }
-        }
-        Ok(())
     }
 }
 
@@ -258,7 +221,7 @@ impl PipelineNode for StreamingSinkNode {
         &mut self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> crate::Result<Receiver<PipelineResultType>> {
+    ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
         let mut child_result_receivers = Vec::with_capacity(self.children.len());
         for child in &mut self.children {
             let child_result_channel = child.start(maintain_order, runtime_handle)?;
@@ -274,17 +237,13 @@ impl PipelineNode for StreamingSinkNode {
         let op = self.op.clone();
         let runtime_stats = self.runtime_stats.clone();
         let num_workers = op.max_concurrency();
-        let (input_senders, input_receivers) = if maintain_order {
-            (0..num_workers).map(|_| create_channel(1)).unzip()
-        } else {
-            let (tx, rx) = create_channel(num_workers);
-            (vec![tx; 1], vec![rx; num_workers])
-        };
+        let (input_senders, input_receivers) =
+            create_ordering_aware_sender_channel(maintain_order, num_workers);
         let (output_senders, mut output_receiver) =
-            create_ordering_aware_channel(maintain_order, num_workers);
+            create_ordering_aware_receiver_channel(maintain_order, num_workers);
         let morsel_size = runtime_handle.determine_morsel_size(op.morsel_size());
         runtime_handle.spawn(
-            Self::forward_input_to_workers(child_result_receivers, input_senders, morsel_size),
+            dispatch(child_result_receivers, input_senders, morsel_size),
             self.name(),
         );
         runtime_handle.spawn(
@@ -299,7 +258,7 @@ impl PipelineNode for StreamingSinkNode {
                 );
 
                 while let Some(morsel) = output_receiver.recv().await {
-                    let _ = destination_sender.send(morsel.into()).await;
+                    let _ = destination_sender.send(morsel).await;
                 }
 
                 let mut finished_states = Vec::with_capacity(num_workers);
@@ -317,7 +276,7 @@ impl PipelineNode for StreamingSinkNode {
                     })
                     .await??;
                 if let Some(res) = finalized_result {
-                    let _ = destination_sender.send(res.into()).await;
+                    let _ = destination_sender.send(res).await;
                 }
                 Ok(())
             },

@@ -7,14 +7,14 @@ use futures::{stream::BoxStream, StreamExt};
 
 use crate::{
     channel::{create_channel, Receiver},
-    pipeline::{PipelineNode, PipelineResultType},
+    pipeline::PipelineNode,
     runtime_stats::{CountingSender, RuntimeStatsContext},
     ExecutionRuntimeHandle,
 };
 
-pub type SourceStream<'a> = BoxStream<'a, Arc<MicroPartition>>;
+pub(crate) type SourceStream<'a> = BoxStream<'a, Arc<MicroPartition>>;
 
-pub trait Source: Send + Sync {
+pub(crate) trait Source: Send + Sync {
     fn name(&self) -> &'static str;
     fn get_data(
         &self,
@@ -71,7 +71,7 @@ impl PipelineNode for SourceNode {
         &mut self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> crate::Result<Receiver<PipelineResultType>> {
+    ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
         let mut source_stream =
             self.source
                 .get_data(maintain_order, runtime_handle, self.io_stats.clone())?;
@@ -81,7 +81,7 @@ impl PipelineNode for SourceNode {
         runtime_handle.spawn(
             async move {
                 while let Some(part) = source_stream.next().await {
-                    let _ = counting_sender.send(part.into()).await;
+                    let _ = counting_sender.send(part).await;
                 }
                 Ok(())
             },

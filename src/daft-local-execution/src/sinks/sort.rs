@@ -8,7 +8,7 @@ use tracing::instrument;
 use super::blocking_sink::{
     BlockingSink, BlockingSinkState, BlockingSinkStatus, DynBlockingSinkState,
 };
-use crate::{pipeline::PipelineResultType, NUM_CPUS};
+use crate::NUM_CPUS;
 
 enum SortState {
     Building(Vec<Arc<MicroPartition>>),
@@ -71,7 +71,7 @@ impl BlockingSink for SortSink {
     fn finalize(
         &self,
         states: Vec<Box<dyn DynBlockingSinkState>>,
-    ) -> DaftResult<Option<PipelineResultType>> {
+    ) -> DaftResult<Option<Arc<MicroPartition>>> {
         let mut parts = Vec::new();
         for mut state in states {
             let state = state
@@ -91,7 +91,7 @@ impl BlockingSink for SortSink {
                 .collect::<Vec<_>>(),
         )?;
         let sorted = Arc::new(concated.sort(&self.sort_by, &self.descending)?);
-        Ok(Some(sorted.into()))
+        Ok(Some(sorted))
     }
 
     fn name(&self) -> &'static str {

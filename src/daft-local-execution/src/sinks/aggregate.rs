@@ -10,7 +10,7 @@ use tracing::instrument;
 use super::blocking_sink::{
     BlockingSink, BlockingSinkState, BlockingSinkStatus, DynBlockingSinkState,
 };
-use crate::{pipeline::PipelineResultType, NUM_CPUS};
+use crate::NUM_CPUS;
 
 enum AggregateState {
     Accumulating(Vec<Arc<MicroPartition>>),
@@ -102,7 +102,7 @@ impl BlockingSink for AggregateSink {
     fn finalize(
         &self,
         states: Vec<Box<dyn DynBlockingSinkState>>,
-    ) -> DaftResult<Option<PipelineResultType>> {
+    ) -> DaftResult<Option<Arc<MicroPartition>>> {
         let mut all_parts = vec![];
         for mut state in states {
             let state = state
@@ -123,7 +123,7 @@ impl BlockingSink for AggregateSink {
         )?;
         let agged = Arc::new(concated.agg(&self.finalize_aggs, &self.finalize_group_by)?);
         let projected = Arc::new(agged.eval_expression_list(&self.final_projections)?);
-        Ok(Some(projected.into()))
+        Ok(Some(projected))
     }
 
     fn name(&self) -> &'static str {

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
@@ -7,7 +8,6 @@ use tracing::instrument;
 use super::streaming_sink::{
     DynStreamingSinkState, StreamingSink, StreamingSinkOutput, StreamingSinkState,
 };
-use crate::pipeline::PipelineResultType;
 
 struct LimitSinkState {
     remaining: usize,
@@ -39,16 +39,16 @@ impl LimitSink {
     }
 }
 
+#[async_trait]
 impl StreamingSink for LimitSink {
     #[instrument(skip_all, name = "LimitSink::sink")]
     fn execute(
         &self,
         index: usize,
-        input: &PipelineResultType,
+        input: &Arc<MicroPartition>,
         state_handle: &StreamingSinkState,
     ) -> DaftResult<StreamingSinkOutput> {
         assert_eq!(index, 0);
-        let input = input.as_data();
         let input_num_rows = input.len();
 
         state_handle.with_state_mut::<LimitSinkState, _, _>(|state| {
@@ -83,7 +83,7 @@ impl StreamingSink for LimitSink {
         Ok(None)
     }
 
-    fn make_state(&self) -> Box<dyn DynStreamingSinkState> {
+    async fn make_state(&self) -> Box<dyn DynStreamingSinkState> {
         Box::new(LimitSinkState::new(self.limit))
     }
 

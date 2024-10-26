@@ -12,28 +12,19 @@ use super::intermediate_op::{
     DynIntermediateOpState, IntermediateOperator, IntermediateOperatorResult,
     IntermediateOperatorState,
 };
-use crate::pipeline::PipelineResultType;
+use crate::ProbeStateBridgeRef;
 
-enum AntiSemiProbeState {
-    Building,
-    ReadyToProbe(Arc<dyn Probeable>),
+struct AntiSemiProbeState {
+    probeable: Arc<dyn Probeable>,
 }
 
 impl AntiSemiProbeState {
-    fn set_table(&mut self, table: &Arc<dyn Probeable>) {
-        if matches!(self, Self::Building) {
-            *self = Self::ReadyToProbe(table.clone());
-        } else {
-            panic!("AntiSemiProbeState should only be in Building state when setting table")
-        }
+    fn new(probeable: Arc<dyn Probeable>) -> Self {
+        Self { probeable }
     }
 
     fn get_probeable(&self) -> &Arc<dyn Probeable> {
-        if let Self::ReadyToProbe(probeable) = self {
-            probeable
-        } else {
-            panic!("AntiSemiProbeState should only be in ReadyToProbe state when getting probeable")
-        }
+        &self.probeable
     }
 }
 
@@ -43,20 +34,27 @@ impl DynIntermediateOpState for AntiSemiProbeState {
     }
 }
 
-pub struct AntiSemiProbeOperator {
+pub(crate) struct AntiSemiProbeOperator {
     probe_on: Vec<ExprRef>,
     is_semi: bool,
     output_schema: SchemaRef,
+    probe_state_bridge: ProbeStateBridgeRef,
 }
 
 impl AntiSemiProbeOperator {
     const DEFAULT_GROWABLE_SIZE: usize = 20;
 
-    pub fn new(probe_on: Vec<ExprRef>, join_type: &JoinType, output_schema: &SchemaRef) -> Self {
+    pub fn new(
+        probe_on: Vec<ExprRef>,
+        join_type: &JoinType,
+        output_schema: &SchemaRef,
+        probe_state_bridge: ProbeStateBridgeRef,
+    ) -> Self {
         Self {
             probe_on,
             is_semi: *join_type == JoinType::Semi,
             output_schema: output_schema.clone(),
+            probe_state_bridge,
         }
     }
 
@@ -103,28 +101,22 @@ impl AntiSemiProbeOperator {
     }
 }
 
+#[async_trait::async_trait]
 impl IntermediateOperator for AntiSemiProbeOperator {
     #[instrument(skip_all, name = "AntiSemiOperator::execute")]
     fn execute(
         &self,
-        idx: usize,
-        input: &PipelineResultType,
+        _idx: usize,
+        input: &Arc<MicroPartition>,
         state: &IntermediateOperatorState,
     ) -> DaftResult<IntermediateOperatorResult> {
         state.with_state_mut::<AntiSemiProbeState, _, _>(|state| {
-            if idx == 0 {
-                let probe_state = input.as_probe_state();
-                state.set_table(probe_state.get_probeable());
-                Ok(IntermediateOperatorResult::NeedMoreInput(None))
-            } else {
-                let input = input.as_data();
-                if input.is_empty() {
-                    let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));
-                    return Ok(IntermediateOperatorResult::NeedMoreInput(Some(empty)));
-                }
-                let out = self.probe_anti_semi(input, state)?;
-                Ok(IntermediateOperatorResult::NeedMoreInput(Some(out)))
+            if input.is_empty() {
+                let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));
+                return Ok(IntermediateOperatorResult::NeedMoreInput(Some(empty)));
             }
+            let out = self.probe_anti_semi(input, state)?;
+            Ok(IntermediateOperatorResult::NeedMoreInput(Some(out)))
         })
     }
 
@@ -132,7 +124,9 @@ impl IntermediateOperator for AntiSemiProbeOperator {
         "AntiSemiProbeOperator"
     }
 
-    fn make_state(&self) -> Box<dyn DynIntermediateOpState> {
-        Box::new(AntiSemiProbeState::Building)
+    async fn make_state(&self) -> Box<dyn DynIntermediateOpState> {
+        let probe_state = self.probe_state_bridge.get_probe_state().await;
+        let probe_table = probe_state.get_probeable();
+        Box::new(AntiSemiProbeState::new(probe_table.clone()))
     }
 }

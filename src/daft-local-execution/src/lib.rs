@@ -1,6 +1,7 @@
 #![feature(let_chains)]
 mod buffer;
 mod channel;
+mod dispatcher;
 mod intermediate_ops;
 mod pipeline;
 mod run;
@@ -8,14 +9,49 @@ mod runtime_stats;
 mod sinks;
 mod sources;
 
+use std::sync::{Arc, OnceLock};
+
 use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
+use daft_table::ProbeState;
 use lazy_static::lazy_static;
 pub use run::NativeExecutor;
 use snafu::{futures::TryFutureExt, Snafu};
 
 lazy_static! {
     pub static ref NUM_CPUS: usize = std::thread::available_parallelism().unwrap().get();
+}
+
+pub(crate) type ProbeStateBridgeRef = Arc<ProbeStateBridge>;
+pub(crate) struct ProbeStateBridge {
+    inner: OnceLock<Arc<ProbeState>>,
+    notify: tokio::sync::Notify,
+}
+
+impl ProbeStateBridge {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            inner: OnceLock::new(),
+            notify: tokio::sync::Notify::new(),
+        })
+    }
+
+    fn set_probe_state(&self, state: Arc<ProbeState>) {
+        assert!(
+            !self.inner.set(state).is_err(),
+            "ProbeStateBridge should be set only once"
+        );
+        self.notify.notify_waiters();
+    }
+
+    async fn get_probe_state(&self) -> Arc<ProbeState> {
+        loop {
+            if let Some(state) = self.inner.get() {
+                return state.clone();
+            }
+            self.notify.notified().await;
+        }
+    }
 }
 
 pub(crate) struct TaskSet<T> {
@@ -45,20 +81,20 @@ impl<T: 'static> TaskSet<T> {
     }
 }
 
-pub struct ExecutionRuntimeHandle {
+pub(crate) struct ExecutionRuntimeHandle {
     worker_set: TaskSet<crate::Result<()>>,
     default_morsel_size: usize,
 }
 
 impl ExecutionRuntimeHandle {
     #[must_use]
-    pub fn new(default_morsel_size: usize) -> Self {
+    fn new(default_morsel_size: usize) -> Self {
         Self {
             worker_set: TaskSet::new(),
             default_morsel_size,
         }
     }
-    pub fn spawn(
+    fn spawn(
         &mut self,
         task: impl std::future::Future<Output = DaftResult<()>> + 'static,
         node_name: &str,
@@ -68,15 +104,15 @@ impl ExecutionRuntimeHandle {
             .spawn(task.with_context(|_| PipelineExecutionSnafu { node_name }));
     }
 
-    pub async fn join_next(&mut self) -> Option<Result<crate::Result<()>, tokio::task::JoinError>> {
+    async fn join_next(&mut self) -> Option<Result<crate::Result<()>, tokio::task::JoinError>> {
         self.worker_set.join_next().await
     }
 
-    pub async fn shutdown(&mut self) {
+    async fn shutdown(&mut self) {
         self.worker_set.shutdown().await;
     }
 
-    pub fn determine_morsel_size(&self, operator_morsel_size: Option<usize>) -> Option<usize> {
+    fn determine_morsel_size(&self, operator_morsel_size: Option<usize>) -> Option<usize> {
         match operator_morsel_size {
             None => None,
             Some(_)
