@@ -26,11 +26,11 @@ DEFAULT_DAFT_TRACE_LOCATION = DEFAULT_RAY_LOGS_LOCATION / "daft"
 
 
 @contextlib.contextmanager
-def ray_tracer(metrics_actor: ray.actor.ActorHandle | None):
+def ray_tracer(job_id: str, metrics_actor: ray.actor.ActorHandle):
     # Dump the RayRunner trace if we detect an active Ray session, otherwise we give up and do not write the trace
     if pathlib.Path(DEFAULT_RAY_LOGS_LOCATION).exists():
         trace_filename = (
-            f"trace_RayRunner." f"{datetime.replace(datetime.now(), second=0, microsecond=0).isoformat()[:-3]}.json"
+            f"trace_RayRunner.{job_id}.{datetime.replace(datetime.now(), microsecond=0).isoformat()[:-3]}.json"
         )
         daft_trace_location = pathlib.Path(DEFAULT_DAFT_TRACE_LOCATION)
         daft_trace_location.mkdir(exist_ok=True, parents=True)
@@ -38,14 +38,63 @@ def ray_tracer(metrics_actor: ray.actor.ActorHandle | None):
     else:
         filepath = None
 
+    tracer_start = time.time()
+
     if filepath is not None:
         with open(filepath, "w") as f:
             # Initialize the JSON file
             f.write("[")
 
             # Yield the tracer
-            runner_tracer = RunnerTracer(f, metrics_actor)
+            runner_tracer = RunnerTracer(f, tracer_start)
             yield runner_tracer
+
+            # Retrieve metrics from the metrics actor
+            metrics = ray.get(metrics_actor.collect.remote())
+            for metric in metrics:
+                if metric.end is not None:
+                    f.write(
+                        json.dumps(
+                            {
+                                "id": metric.task_id,
+                                "category": "task",
+                                "name": "task_remote_execution",
+                                "ph": "b",
+                                "pid": 2,
+                                "tid": 1,
+                                "ts": (metric.start - tracer_start) * 1000 * 1000,
+                            }
+                        )
+                    )
+                    f.write(",\n")
+                    f.write(
+                        json.dumps(
+                            {
+                                "id": metric.task_id,
+                                "category": "task",
+                                "name": "task_remote_execution",
+                                "ph": "e",
+                                "pid": 2,
+                                "tid": 1,
+                                "ts": (metric.end - tracer_start) * 1000 * 1000,
+                            }
+                        )
+                    )
+                    f.write(",\n")
+                else:
+                    f.write(
+                        json.dumps(
+                            {
+                                "id": metric.task_id,
+                                "category": "task",
+                                "name": "task_remote_execution_start_no_end",
+                                "ph": "n",
+                                "pid": 2,
+                                "tid": 1,
+                                "ts": (metric.start - tracer_start) * 1000 * 1000,
+                            }
+                        )
+                    )
 
             # Add the final touches to the file
             f.write(
@@ -55,15 +104,14 @@ def ray_tracer(metrics_actor: ray.actor.ActorHandle | None):
             f.write(json.dumps({"name": "process_name", "ph": "M", "pid": 2, "args": {"name": "Ray Task Execution"}}))
             f.write("\n]")
     else:
-        runner_tracer = RunnerTracer(None, metrics_actor)
+        runner_tracer = RunnerTracer(None, tracer_start)
         yield runner_tracer
 
 
 class RunnerTracer:
-    def __init__(self, file: TextIO | None, metrics_ray_actor: ray.actor.ActorHandle | None):
+    def __init__(self, file: TextIO | None, start: float):
         self._file = file
-        self._start = time.time()
-        self._metrics_actor = metrics_ray_actor
+        self._start = start
 
     def _write_event(self, event: dict[str, Any]):
         if self._file is not None:
@@ -277,6 +325,7 @@ class RunnerTracer:
                 "name": "task_execution",
                 "ph": "b",
                 "args": {
+                    "task_id": task_id,
                     "resource_request": {
                         "num_cpus": resource_request.num_cpus,
                         "num_gpus": resource_request.num_gpus,

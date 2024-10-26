@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import logging
 import threading
 import time
@@ -479,9 +480,21 @@ def build_partitions(
 # Give the same function different names to aid in profiling data distribution.
 
 
+@contextlib.contextmanager
+def collect_task_metrics(job_id: str, task_id: str):
+    import time
+
+    metrics_actor = ray.get_actor(name=f"{METRICS_ACTOR_NAME}-{job_id}", namespace=METRICS_ACTOR_NAMESPACE)
+    metrics_actor.mark_task_start.remote(task_id, time.time())
+    yield
+    metrics_actor.mark_task_end.remote(task_id, time.time())
+
+
 @ray_tracing.RayFunctionWrapper.wrap
 @ray.remote
 def single_partition_pipeline(
+    job_id: str,
+    task_id: str,
     daft_execution_config: PyDaftExecutionConfig,
     instruction_stack: list[Instruction],
     partial_metadatas: list[PartitionMetadata],
@@ -489,25 +502,29 @@ def single_partition_pipeline(
 ) -> list[list[PartitionMetadata] | MicroPartition]:
     with execution_config_ctx(
         config=daft_execution_config,
-    ):
+    ), collect_task_metrics(job_id, task_id):
         return build_partitions(instruction_stack, partial_metadatas, *inputs)
 
 
 @ray_tracing.RayFunctionWrapper.wrap
 @ray.remote
 def fanout_pipeline(
+    job_id: str,
+    task_id: str,
     daft_execution_config: PyDaftExecutionConfig,
     instruction_stack: list[Instruction],
     partial_metadatas: list[PartitionMetadata],
     *inputs: MicroPartition,
 ) -> list[list[PartitionMetadata] | MicroPartition]:
-    with execution_config_ctx(config=daft_execution_config):
+    with execution_config_ctx(config=daft_execution_config), collect_task_metrics(job_id, task_id):
         return build_partitions(instruction_stack, partial_metadatas, *inputs)
 
 
 @ray_tracing.RayFunctionWrapper.wrap
 @ray.remote(scheduling_strategy="SPREAD")
 def reduce_pipeline(
+    job_id: str,
+    task_id: str,
     daft_execution_config: PyDaftExecutionConfig,
     instruction_stack: list[Instruction],
     partial_metadatas: list[PartitionMetadata],
@@ -515,13 +532,15 @@ def reduce_pipeline(
 ) -> list[list[PartitionMetadata] | MicroPartition]:
     import ray
 
-    with execution_config_ctx(config=daft_execution_config):
+    with execution_config_ctx(config=daft_execution_config), collect_task_metrics(job_id, task_id):
         return build_partitions(instruction_stack, partial_metadatas, *ray.get(inputs))
 
 
 @ray_tracing.RayFunctionWrapper.wrap
 @ray.remote(scheduling_strategy="SPREAD")
 def reduce_and_fanout(
+    job_id: str,
+    task_id: str,
     daft_execution_config: PyDaftExecutionConfig,
     instruction_stack: list[Instruction],
     partial_metadatas: list[PartitionMetadata],
@@ -529,7 +548,7 @@ def reduce_and_fanout(
 ) -> list[list[PartitionMetadata] | MicroPartition]:
     import ray
 
-    with execution_config_ctx(config=daft_execution_config):
+    with execution_config_ctx(config=daft_execution_config), collect_task_metrics(job_id, task_id):
         return build_partitions(instruction_stack, partial_metadatas, *ray.get(inputs))
 
 
@@ -667,6 +686,14 @@ class Scheduler(ActorPoolManager):
         psets: dict[str, ray.ObjectRef],
         result_uuid: str,
     ) -> None:
+        # Initialize a metrics actor for this execution.
+        # NOTE: This goes out of scope after _run_plan is completed, and should be garbage-collected
+        metrics_actor = MetricsActor.options(  # type: ignore[attr-defined]
+            name=f"{METRICS_ACTOR_NAME}-{result_uuid}",
+            namespace=METRICS_ACTOR_NAMESPACE,
+            get_if_exists=True,
+        ).remote()
+
         # Get executable tasks from plan scheduler.
         results_buffer_size = self.results_buffer_size_by_df[result_uuid]
 
@@ -693,10 +720,7 @@ class Scheduler(ActorPoolManager):
                 except Full:
                     pass
 
-        # TODO: Add metrics actor functionality
-        metrics_actor = None
-
-        with profiler(profile_filename), ray_tracing.ray_tracer(metrics_actor) as runner_tracer:
+        with profiler(profile_filename), ray_tracing.ray_tracer(result_uuid, metrics_actor) as runner_tracer:
             ray_wrapper = ray_tracing.RayModuleWrapper(runner_tracer=runner_tracer)
             raw_tasks = plan_scheduler.to_partition_tasks(
                 psets,
@@ -781,7 +805,9 @@ class Scheduler(ActorPoolManager):
 
                         for task in tasks_to_dispatch:
                             if task.actor_pool_id is None:
-                                results = _build_partitions(daft_execution_config, task, runner_tracer=runner_tracer)
+                                results = _build_partitions(
+                                    result_uuid, daft_execution_config, task, runner_tracer=runner_tracer
+                                )
                             else:
                                 actor_pool = self._actor_pools.get(task.actor_pool_id)
                                 assert actor_pool is not None, "Ray actor pool must live for as long as the tasks."
@@ -882,6 +908,8 @@ class Scheduler(ActorPoolManager):
 
 SCHEDULER_ACTOR_NAME = "scheduler"
 SCHEDULER_ACTOR_NAMESPACE = "daft"
+METRICS_ACTOR_NAME = "metrics"
+METRICS_ACTOR_NAMESPACE = "daft"
 
 
 @ray.remote(num_cpus=1)
@@ -891,7 +919,38 @@ class SchedulerActor(Scheduler):
         self.reserved_cores = 1
 
 
+@dataclasses.dataclass(frozen=True)
+class TaskMetric:
+    task_id: str
+    start: float
+    end: float | None
+
+
+@ray.remote(num_cpus=0)
+class MetricsActor:
+    def __init__(self):
+        self.task_starts: dict[str, float] = {}
+        self.task_ends: dict[str, float] = {}
+
+    def mark_task_start(self, task_id: str, start: float):
+        self.task_starts[task_id] = start
+
+    def mark_task_end(self, task_id: str, end: float):
+        self.task_ends[task_id] = end
+
+    def collect(self) -> list[TaskMetric]:
+        return [
+            TaskMetric(
+                task_id=task_id,
+                start=self.task_starts[task_id],
+                end=self.task_ends.get(task_id),
+            )
+            for task_id in self.task_starts
+        ]
+
+
 def _build_partitions(
+    job_id: str,
     daft_execution_config_objref: ray.ObjectRef,
     task: PartitionTask[ray.ObjectRef],
     runner_tracer: RunnerTracer,
@@ -910,7 +969,7 @@ def _build_partitions(
         )
         build_remote = build_remote.options(**ray_options).with_tracing(runner_tracer, task)
         [metadatas_ref, *partitions] = build_remote.remote(
-            daft_execution_config_objref, task.instructions, task.partial_metadatas, task.inputs
+            job_id, task.id(), daft_execution_config_objref, task.instructions, task.partial_metadatas, task.inputs
         )
 
     else:
@@ -923,7 +982,7 @@ def _build_partitions(
             ray_options["scheduling_strategy"] = "SPREAD"
         build_remote = build_remote.options(**ray_options).with_tracing(runner_tracer, task)
         [metadatas_ref, *partitions] = build_remote.remote(
-            daft_execution_config_objref, task.instructions, task.partial_metadatas, *task.inputs
+            job_id, task.id(), daft_execution_config_objref, task.instructions, task.partial_metadatas, *task.inputs
         )
 
     metadatas_accessor = PartitionMetadataAccessor(metadatas_ref)
