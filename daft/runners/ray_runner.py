@@ -684,10 +684,6 @@ class Scheduler(ActorPoolManager):
             f"profile_RayRunner.run()_"
             f"{datetime.replace(datetime.now(), second=0, microsecond=0).isoformat()[:-3]}.json"
         )
-        trace_filename = (
-            f"trace_RayRunner.run()_"
-            f"{datetime.replace(datetime.now(), second=0, microsecond=0).isoformat()[:-3]}.json"
-        )
 
         def is_active():
             return self.active_by_df.get(result_uuid, False)
@@ -700,7 +696,7 @@ class Scheduler(ActorPoolManager):
                 except Full:
                     pass
 
-        with profiler(profile_filename), tracer(trace_filename) as runner_tracer:
+        with profiler(profile_filename), tracer() as runner_tracer:
             wave_count = 0
             try:
                 next_step = next(tasks)

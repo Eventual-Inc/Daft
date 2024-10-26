@@ -2,17 +2,34 @@ from __future__ import annotations
 
 import contextlib
 import json
-import os
+import pathlib
 import time
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, TextIO
 
 if TYPE_CHECKING:
     from daft import ResourceRequest
 
 
+# We add the trace by default to the latest session logs of the Ray Runner
+DEFAULT_RAY_LOGS_LOCATION = pathlib.Path("/tmp") / "ray" / "session_latest"
+DEFAULT_DAFT_TRACE_LOCATION = DEFAULT_RAY_LOGS_LOCATION / "daft"
+
+
 @contextlib.contextmanager
-def tracer(filepath: str):
-    if int(os.environ.get("DAFT_RUNNER_TRACING", 0)) == 1:
+def tracer():
+    # Dump the RayRunner trace if we detect an active Ray session, otherwise we give up and do not write the trace
+    if pathlib.Path(DEFAULT_RAY_LOGS_LOCATION).exists():
+        trace_filename = (
+            f"trace_RayRunner." f"{datetime.replace(datetime.now(), second=0, microsecond=0).isoformat()[:-3]}.json"
+        )
+        daft_trace_location = pathlib.Path(DEFAULT_DAFT_TRACE_LOCATION)
+        daft_trace_location.mkdir(exist_ok=True, parents=True)
+        filepath = DEFAULT_DAFT_TRACE_LOCATION / trace_filename
+    else:
+        filepath = None
+
+    if filepath is not None:
         with open(filepath, "w") as f:
             # Initialize the JSON file
             f.write("[")
