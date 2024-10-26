@@ -217,12 +217,12 @@ impl PipelineNode for IntermediateNode {
         }
         let (destination_sender, destination_receiver) = create_channel(1);
         let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
-
+        let morsel_size = runtime_handle.determine_morsel_size(self.intermediate_op.morsel_size());
         let (output_senders, mut output_receiver) =
             create_ordering_aware_receiver_channel(maintain_order, num_workers);
         let worker_sender =
             self.spawn_workers(num_workers, output_senders, runtime_handle, maintain_order);
-        let morsel_size = runtime_handle.determine_morsel_size(self.intermediate_op.morsel_size());
+
         runtime_handle.spawn(
             dispatch(child_result_receivers, worker_sender, morsel_size),
             self.intermediate_op.name(),
