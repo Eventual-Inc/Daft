@@ -749,6 +749,7 @@ class Scheduler(ActorPoolManager):
         daft_execution_config: PyDaftExecutionConfig,
         runner_tracer: RunnerTracer,
     ) -> Iterator[tuple[PartitionTask, list[ray.ObjectRef]]]:
+        """Dispatches a batch of tasks to the Ray backend"""
         with runner_tracer.dispatching():
             for task in tasks_to_dispatch:
                 if task.actor_pool_id is None:
@@ -765,8 +766,10 @@ class Scheduler(ActorPoolManager):
     def _await_tasks(
         self,
         inflight_ref_to_task_id: dict[ray.ObjectRef, str],
+        inflight_tasks: dict[str, PartitionTask],
         runner_tracer: RunnerTracer,
     ) -> list[ray.ObjectRef]:
+        """Awaits for tasks to be completed. Returns tasks that are ready."""
         if len(inflight_ref_to_task_id) == 0:
             return []
 
@@ -793,7 +796,8 @@ class Scheduler(ActorPoolManager):
         # Update traces
         for ready in readies:
             if ready in inflight_ref_to_task_id:
-                runner_tracer.task_received_as_ready(inflight_ref_to_task_id[ready])
+                task_id = inflight_ref_to_task_id[ready]
+                runner_tracer.task_received_as_ready(task_id, inflight_tasks[task_id].stage_id)
         for not_ready in not_readies:
             if not_ready in inflight_ref_to_task_id:
                 runner_tracer.task_not_ready(inflight_ref_to_task_id[not_ready])
@@ -899,11 +903,11 @@ class Scheduler(ActorPoolManager):
 
                         ###
                         # Await: wait for some work to be completed from the current wave's dispatch
-                        # (Awaits the next task, and then the next batch of tasks within 10ms.)
                         ###
                         completed_task_ids = []
                         readies = self._await_tasks(
                             inflight_ref_to_task,
+                            inflight_tasks,
                             runner_tracer,
                         )
                         for ready in readies:

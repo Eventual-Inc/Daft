@@ -359,7 +359,7 @@ class RunnerTracer:
             {
                 "id": task_id,
                 "category": "task",
-                "name": "task_execution",
+                "name": f"task_execution.stage-{stage_id}",
                 "ph": "b",
                 "args": {
                     "task_id": task_id,
@@ -400,7 +400,7 @@ class RunnerTracer:
             }
         )
 
-    def task_received_as_ready(self, task_id: str):
+    def task_received_as_ready(self, task_id: str, stage_id: int):
         self._write_event(
             {
                 "id": task_id,
@@ -415,7 +415,7 @@ class RunnerTracer:
             {
                 "id": task_id,
                 "category": "task",
-                "name": "task_execution",
+                "name": f"task_execution.stage-{stage_id}",
                 "ph": "e",
                 "pid": 1,
                 "tid": 1,
