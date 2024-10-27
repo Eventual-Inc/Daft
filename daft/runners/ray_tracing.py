@@ -32,6 +32,9 @@ if TYPE_CHECKING:
 DEFAULT_RAY_LOGS_LOCATION = pathlib.Path("/tmp") / "ray" / "session_latest"
 DEFAULT_DAFT_TRACE_LOCATION = DEFAULT_RAY_LOGS_LOCATION / "daft"
 
+# PIDs to reserve for custom visualization
+RESERVED_PIDS = 100
+
 
 @contextlib.contextmanager
 def ray_tracer(job_id: str):
@@ -60,14 +63,61 @@ def ray_tracer(job_id: str):
             yield runner_tracer
 
             # Retrieve metrics from the metrics actor
-            metrics = ray.get(metrics_actor.collect.remote())
+            metrics = ray.get(metrics_actor.collect_task_metrics.remote())
+            task_locations = ray.get(metrics_actor.collect_task_locations.remote())
+
+            nodes_to_workers: dict[str, set[str]] = {}
+            nodes = set()
+            for node_id, worker_id in task_locations.values():
+                nodes.add(node_id)
+                if node_id not in nodes_to_workers:
+                    nodes_to_workers[node_id] = set()
+                nodes_to_workers[node_id].add(worker_id)
+            nodes_to_pid_mapping = {node_id: i + RESERVED_PIDS for i, node_id in enumerate(nodes)}
+            nodes_workers_to_tid_mapping = {
+                node_id: {worker_id: i for i, worker_id in enumerate(worker_ids)}
+                for node_id, worker_ids in nodes_to_workers.items()
+            }
+            parsed_task_node_locations = {
+                task_id: (nodes_to_pid_mapping[node_id], nodes_workers_to_tid_mapping[node_id][worker_id])
+                for task_id, (node_id, worker_id) in task_locations.items()
+            }
+
             for metric in metrics:
-                runner_tracer.write_task_metric(metric)
+                runner_tracer.write_task_metric(metric, parsed_task_node_locations.get(metric.task_id))
+
+            for node_id, pid in nodes_to_pid_mapping.items():
+                f.write(
+                    json.dumps(
+                        {
+                            "name": "process_name",
+                            "ph": "M",
+                            "pid": pid,
+                            "args": {"name": f"Node {node_id[:8]}"},
+                            "sort_index": 3,
+                        }
+                    )
+                )
+                f.write(",\n")
+                for worker_id in nodes_workers_to_tid_mapping[node_id]:
+                    tid = nodes_workers_to_tid_mapping[node_id][worker_id]
+                    f.write(
+                        json.dumps(
+                            {
+                                "name": "thread_name",
+                                "ph": "M",
+                                "pid": pid,
+                                "tid": tid,
+                                "args": {"name": f"Worker {worker_id[:8]}"},
+                            }
+                        )
+                    )
+                    f.write(",\n")
 
             # Add the final touches to the file
             f.write(
                 json.dumps(
-                    {"name": "process_name", "ph": "M", "pid": 1, "args": {"name": "Scheduler"}, "sort_index": 1}
+                    {"name": "process_name", "ph": "M", "pid": 1, "args": {"name": "Scheduler"}, "sort_index": 2}
                 )
             )
             f.write(",\n")
@@ -84,7 +134,7 @@ def ray_tracer(job_id: str):
                         "ph": "M",
                         "pid": 2,
                         "args": {"name": "Tasks (Grouped by Stage ID)"},
-                        "sort_index": 2,
+                        "sort_index": 1,
                     }
                 )
             )
@@ -112,7 +162,8 @@ class RunnerTracer:
             )
             self._file.write(",\n")
 
-    def write_task_metric(self, metric: ray_metrics.TaskMetric):
+    def write_task_metric(self, metric: ray_metrics.TaskMetric, node_id_worker_id: tuple[int, int] | None):
+        # Write to the Async view (will group by the stage ID)
         self._write_event(
             {
                 "id": metric.task_id,
@@ -136,6 +187,29 @@ class RunnerTracer:
                 },
                 ts=int((metric.end - self._start) * 1000 * 1000),
             )
+
+        # Write to the node/worker view
+        if node_id_worker_id is not None:
+            pid, tid = node_id_worker_id
+            self._write_event(
+                {
+                    "name": "task_remote_execution",
+                    "ph": "B",
+                    "pid": pid,
+                    "tid": tid,
+                },
+                ts=int((metric.start - self._start) * 1000 * 1000),
+            )
+            if metric.end is not None:
+                self._write_event(
+                    {
+                        "name": "task_remote_execution",
+                        "ph": "E",
+                        "pid": pid,
+                        "tid": tid,
+                    },
+                    ts=int((metric.end - self._start) * 1000 * 1000),
+                )
 
     @contextlib.contextmanager
     def dispatch_wave(self, wave_num: int):
@@ -502,7 +576,10 @@ def collect_ray_task_metrics(job_id: str, task_id: str):
     """Context manager that will ping the metrics actor to record various execution metrics about a given task"""
     import time
 
+    runtime_context = ray.get_runtime_context()
+
     metrics_actor = ray_metrics.get_metrics_actor(job_id)
+    metrics_actor.mark_task_location.remote(task_id, runtime_context.get_node_id(), runtime_context.get_worker_id())
     metrics_actor.mark_task_start.remote(task_id, time.time())
     yield
     metrics_actor.mark_task_end.remote(task_id, time.time())

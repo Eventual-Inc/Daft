@@ -29,6 +29,10 @@ class MetricsActor:
     def __init__(self):
         self.task_starts: dict[str, float] = {}
         self.task_ends: dict[str, float] = {}
+        self.task_locations: dict[str, tuple[str, str]] = {}
+
+    def mark_task_location(self, task_id, node_ip: str, worker_id: str):
+        self.task_locations[task_id] = (node_ip, worker_id)
 
     def mark_task_start(self, task_id: str, start: float):
         self.task_starts[task_id] = start
@@ -36,7 +40,7 @@ class MetricsActor:
     def mark_task_end(self, task_id: str, end: float):
         self.task_ends[task_id] = end
 
-    def collect(self) -> list[TaskMetric]:
+    def collect_task_metrics(self) -> list[TaskMetric]:
         return [
             TaskMetric(
                 task_id=task_id,
@@ -45,6 +49,9 @@ class MetricsActor:
             )
             for task_id in self.task_starts
         ]
+
+    def collect_task_locations(self) -> dict[str, tuple[str, str]]:
+        return self.task_locations
 
 
 def get_metrics_actor(job_id: str) -> ray.actor.ActorHandle:
