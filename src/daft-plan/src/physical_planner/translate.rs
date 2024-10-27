@@ -429,8 +429,8 @@ pub(super) fn translate_single_logical_node(
             ..
         }) => {
             if left_on.is_empty() && right_on.is_empty() && join_type == &JoinType::Inner {
-                return Err(DaftError::PlanningError(
-                    "Cross join is not supported".to_string(),
+                return Err(DaftError::not_implemented(
+                    "Joins without join conditions (cross join) are not supported yet",
                 ));
             }
             let mut right_physical = physical_children.pop().expect("requires 1 inputs");

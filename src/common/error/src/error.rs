@@ -46,8 +46,14 @@ pub enum DaftError {
     FmtError(#[from] std::fmt::Error),
     #[error("DaftError::RegexError {0}")]
     RegexError(#[from] regex::Error),
-    #[error("PlanningError {0}")]
-    PlanningError(String),
+    #[error("Not Yet Implemented: {0}")]
+    NotImplemented(String),
+}
+
+impl DaftError {
+    pub fn not_implemented<T: std::fmt::Display>(msg: T) -> Self {
+        Self::NotImplemented(msg.to_string())
+    }
 }
 
 impl From<arrow2::error::Error> for DaftError {

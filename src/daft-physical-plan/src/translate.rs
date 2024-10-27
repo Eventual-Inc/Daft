@@ -1,4 +1,4 @@
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use daft_core::{join::JoinStrategy, prelude::Schema};
 use daft_dsl::ExprRef;
 use daft_plan::{JoinType, LogicalPlan, LogicalPlanRef, SourceInfo};
@@ -123,10 +123,14 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 && join.right_on.is_empty()
                 && join.join_type == JoinType::Inner
             {
-                todo!("Cross join is not supported yet")
+                return Err(DaftError::not_implemented(
+                    "Joins without join conditions (cross join) are not supported yet",
+                ));
             }
             if join.join_strategy.is_some_and(|x| x != JoinStrategy::Hash) {
-                todo!("Only hash join is supported for now")
+                return Err(DaftError::not_implemented(
+                    "Only hash join is supported for now",
+                ));
             }
             let left = translate(&join.left)?;
             let right = translate(&join.right)?;
