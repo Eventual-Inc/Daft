@@ -9,6 +9,7 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import json
+import os
 import pathlib
 import time
 from datetime import datetime
@@ -32,8 +33,21 @@ if TYPE_CHECKING:
 DEFAULT_RAY_LOGS_LOCATION = pathlib.Path("/tmp") / "ray" / "session_latest"
 DEFAULT_DAFT_TRACE_LOCATION = DEFAULT_RAY_LOGS_LOCATION / "daft"
 
-# PIDs to reserve for custom visualization
-RESERVED_PIDS = 100
+# IDs and names for the visualized data
+SCHEDULER_PID = 1
+STAGES_PID = 2
+NODE_PIDS_START = 100
+
+# Event Phases with human-readable const names
+PHASE_METADATA = "M"
+PHASE_DURATION_BEGIN = "B"
+PHASE_DURATION_END = "E"
+PHASE_INSTANT = "i"
+PHASE_ASYNC_BEGIN = "b"
+PHASE_ASYNC_END = "e"
+PHASE_ASYNC_INSTANT = "n"
+PHASE_FLOW_START = "s"
+PHASE_FLOW_FINISH = "f"
 
 
 @contextlib.contextmanager
@@ -41,6 +55,7 @@ def ray_tracer(execution_id: str):
     metrics_actor = ray_metrics.get_metrics_actor(execution_id)
 
     # Dump the RayRunner trace if we detect an active Ray session, otherwise we give up and do not write the trace
+    filepath: pathlib.Path | None
     if pathlib.Path(DEFAULT_RAY_LOGS_LOCATION).exists():
         trace_filename = (
             f"trace_RayRunner.{execution_id}.{datetime.replace(datetime.now(), microsecond=0).isoformat()[:-3]}.json"
@@ -51,20 +66,16 @@ def ray_tracer(execution_id: str):
     else:
         filepath = None
 
-    tracer_start = time.time()
-
     if filepath is not None:
         with open(filepath, "w") as f:
-            # Initialize the JSON file
-            f.write("[")
-
             # Yield the tracer
-            runner_tracer = RunnerTracer(f, tracer_start)
+            runner_tracer = RunnerTracer(f)
             yield runner_tracer
 
             # Retrieve metrics from the metrics actor
             metrics = metrics_actor.collect_metrics()
 
+            # Post-processing to obtain a map of {task_id: (node_id, worker_id)}
             task_locations = {metric.task_id: (metric.node_id, metric.worker_id) for metric in metrics}
             nodes_to_workers: dict[str, set[str]] = {}
             nodes = set()
@@ -73,7 +84,7 @@ def ray_tracer(execution_id: str):
                 if node_id not in nodes_to_workers:
                     nodes_to_workers[node_id] = set()
                 nodes_to_workers[node_id].add(worker_id)
-            nodes_to_pid_mapping = {node_id: i + RESERVED_PIDS for i, node_id in enumerate(nodes)}
+            nodes_to_pid_mapping = {node_id: i + NODE_PIDS_START for i, node_id in enumerate(nodes)}
             nodes_workers_to_tid_mapping = {
                 node_id: {worker_id: i for i, worker_id in enumerate(worker_ids)}
                 for node_id, worker_ids in nodes_to_workers.items()
@@ -83,79 +94,50 @@ def ray_tracer(execution_id: str):
                 for task_id, (node_id, worker_id) in task_locations.items()
             }
 
-            for node_id, pid in nodes_to_pid_mapping.items():
-                f.write(
-                    json.dumps(
-                        {
-                            "name": "process_name",
-                            "ph": "M",
-                            "pid": pid,
-                            "args": {"name": f"Node {node_id[:8]}"},
-                            "sort_index": 3,
-                        }
-                    )
-                )
-                f.write(",\n")
-                for worker_id in nodes_workers_to_tid_mapping[node_id]:
-                    tid = nodes_workers_to_tid_mapping[node_id][worker_id]
-                    f.write(
-                        json.dumps(
-                            {
-                                "name": "thread_name",
-                                "ph": "M",
-                                "pid": pid,
-                                "tid": tid,
-                                "args": {"name": f"Worker {worker_id[:8]}"},
-                            }
-                        )
-                    )
-                    f.write(",\n")
-
             for metric in metrics:
                 runner_tracer.write_task_metric(metric, parsed_task_node_locations.get(metric.task_id))
 
             runner_tracer.write_stages()
-
-            # Add the final touches to the file
-            f.write(
-                json.dumps(
-                    {"name": "process_name", "ph": "M", "pid": 1, "args": {"name": "Scheduler"}, "sort_index": 2}
-                )
+            runner_tracer._writer.write_footer(
+                [(pid, f"Node {node_id}") for node_id, pid in nodes_to_pid_mapping.items()],
+                [
+                    (pid, nodes_workers_to_tid_mapping[node_id][worker_id], f"Worker {worker_id}")
+                    for node_id, pid in nodes_to_pid_mapping.items()
+                    for worker_id in nodes_workers_to_tid_mapping[node_id]
+                ],
             )
-            f.write(",\n")
-            f.write(
-                json.dumps(
-                    {"name": "thread_name", "ph": "M", "pid": 1, "tid": 1, "args": {"name": "_run_plan dispatch loop"}}
-                )
-            )
-            f.write(",\n")
-            f.write(
-                json.dumps(
-                    {
-                        "name": "process_name",
-                        "ph": "M",
-                        "pid": 2,
-                        "args": {"name": "Stages"},
-                        "sort_index": 1,
-                    }
-                )
-            )
-            f.write("\n]")
     else:
-        runner_tracer = RunnerTracer(None, tracer_start)
+        runner_tracer = RunnerTracer(None)
         yield runner_tracer
 
 
-class RunnerTracer:
-    def __init__(self, file: TextIO | None, start: float):
-        self._file = file
-        self._start = start
-        self._stage_start_end: dict[int, tuple[int, int]] = {}
+@dataclasses.dataclass
+class TraceWriter:
+    """Handles writing trace events to a JSON file in Chrome Trace Event Format"""
 
-    def _write_event(self, event: dict[str, Any], ts: int | None = None) -> int:
-        ts = int((time.time() - self._start) * 1000 * 1000) if ts is None else ts
-        if self._file is not None:
-            self._file.write(
+    file: TextIO | None
+    start: float
+
+    def write_header(self) -> None:
+        """Initialize the JSON file with an opening bracket"""
+        if self.file is not None:
+            self.file.write("[")
+
+    def write_event(self, event: dict[str, Any], ts: int | None = None) -> int:
+        """Write a single trace event to the file
+
+        Args:
+            event: The event data to write
+            ts: Optional timestamp override. If None, current time will be used
+
+        Returns:
+            The timestamp that was used for the event
+        """
+        if ts is None:
+            ts = int((time.time() - self.start) * 1000 * 1000)
+
+        if self.file is not None:
+            self.file.write(
                 json.dumps(
                     {
                         **event,
@@ -163,8 +145,68 @@ class RunnerTracer:
                     }
                 )
             )
-            self._file.write(",\n")
+            self.file.write(",\n")
         return ts
+
+    def write_footer(self, process_meta: list[tuple[int, str]], thread_meta: list[tuple[int, int, str]]) -> None:
+        """Writes metadata for the file, closing out the file with a footer.
+
+        Args:
+            process_meta: Pass in custom names for PIDs as a list of (pid, name).
+            thread_meta: Pass in custom names for threads a a list of (pid, tid, name).
+        """
+        if self.file is not None:
+            for pid, name in [
+                (SCHEDULER_PID, "Scheduler"),
+                (STAGES_PID, "Stages"),
+            ] + process_meta:
+                self.file.write(
+                    json.dumps(
+                        {
+                            "name": "process_name",
+                            "ph": PHASE_METADATA,
+                            "pid": pid,
+                            "args": {"name": name},
+                        }
+                    )
+                )
+                self.file.write(",\n")
+
+            for pid, tid, name in [
+                (SCHEDULER_PID, 1, "_run_plan dispatch loop"),
+            ] + thread_meta:
+                self.file.write(
+                    json.dumps(
+                        {
+                            "name": "thread_name",
+                            "ph": PHASE_METADATA,
+                            "pid": pid,
+                            "tid": tid,
+                            "args": {"name": name},
+                        }
+                    )
+                )
+                self.file.write(",\n")
+
+            # Remove the trailing comma
+            self.file.seek(self.file.tell() - 2, os.SEEK_SET)
+            self.file.truncate()
+
+            # Close with a closing square bracket
+            self.file.write("]")
+
+
+class RunnerTracer:
+    def __init__(self, file: TextIO | None):
+        start = time.time()
+        self._start = start
+        self._stage_start_end: dict[int, tuple[int, int]] = {}
+
+        self._writer = TraceWriter(file, start)
+        self._writer.write_header()
+
+    def _write_event(self, event: dict[str, Any], ts: int | None = None) -> int:
+        return self._writer.write_event(event, ts)
 
     def write_stages(self):
         for stage_id in self._stage_start_end:
@@ -172,7 +214,7 @@ class RunnerTracer:
             self._write_event(
                 {
                     "name": f"stage-{stage_id}",
-                    "ph": "B",
+                    "ph": PHASE_DURATION_BEGIN,
                     "pid": 2,
                     "tid": stage_id,
                 },
@@ -184,7 +226,7 @@ class RunnerTracer:
                 {
                     "name": "stage-to-node-flow",
                     "id": stage_id,
-                    "ph": "s",
+                    "ph": PHASE_FLOW_START,
                     "pid": 2,
                     "tid": stage_id,
                 },
@@ -194,7 +236,7 @@ class RunnerTracer:
             self._write_event(
                 {
                     "name": f"stage-{stage_id}",
-                    "ph": "E",
+                    "ph": PHASE_DURATION_END,
                     "pid": 2,
                     "tid": stage_id,
                 },
@@ -208,7 +250,7 @@ class RunnerTracer:
                 "id": metric.task_id,
                 "category": "task",
                 "name": "task_remote_execution",
-                "ph": "b",
+                "ph": PHASE_ASYNC_BEGIN,
                 "pid": 1,
                 "tid": metric.stage_id,
             },
@@ -220,7 +262,7 @@ class RunnerTracer:
                     "id": metric.task_id,
                     "category": "task",
                     "name": "task_remote_execution",
-                    "ph": "e",
+                    "ph": PHASE_ASYNC_END,
                     "pid": 1,
                     "tid": metric.stage_id,
                 },
@@ -234,7 +276,7 @@ class RunnerTracer:
             self._write_event(
                 {
                     "name": "task_remote_execution",
-                    "ph": "B",
+                    "ph": PHASE_DURATION_BEGIN,
                     "pid": pid,
                     "tid": tid,
                 },
@@ -244,8 +286,8 @@ class RunnerTracer:
                 {
                     "name": "stage-to-node-flow",
                     "id": metric.stage_id,
-                    "ph": "f",
-                    "bp": "e",  # enclosed, since the stage "encloses" the execution
+                    "ph": PHASE_FLOW_FINISH,
+                    "bp": PHASE_ASYNC_END,  # enclosed, since the stage "encloses" the execution
                     "pid": pid,
                     "tid": tid,
                 },
@@ -255,7 +297,7 @@ class RunnerTracer:
                 self._write_event(
                     {
                         "name": "task_remote_execution",
-                        "ph": "E",
+                        "ph": PHASE_DURATION_END,
                         "pid": pid,
                         "tid": tid,
                     },
@@ -269,7 +311,7 @@ class RunnerTracer:
                 "name": f"wave-{wave_num}",
                 "pid": 1,
                 "tid": 1,
-                "ph": "B",
+                "ph": PHASE_DURATION_BEGIN,
                 "args": {"wave_num": wave_num},
             }
         )
@@ -286,7 +328,7 @@ class RunnerTracer:
                 "name": f"wave-{wave_num}",
                 "pid": 1,
                 "tid": 1,
-                "ph": "E",
+                "ph": PHASE_DURATION_END,
                 "args": metrics,
             }
         )
@@ -314,7 +356,7 @@ class RunnerTracer:
                 "name": "dispatch_batching",
                 "pid": 1,
                 "tid": 1,
-                "ph": "B",
+                "ph": PHASE_DURATION_BEGIN,
             }
         )
         yield
@@ -323,7 +365,7 @@ class RunnerTracer:
                 "name": "dispatch_batching",
                 "pid": 1,
                 "tid": 1,
-                "ph": "E",
+                "ph": PHASE_DURATION_END,
             }
         )
 
@@ -334,7 +376,7 @@ class RunnerTracer:
                 "name": "no_op_task",
                 "pid": 1,
                 "tid": 1,
-                "ph": "B",
+                "ph": PHASE_DURATION_BEGIN,
             }
         )
 
@@ -345,7 +387,7 @@ class RunnerTracer:
                 "name": "no_op_task",
                 "pid": 1,
                 "tid": 1,
-                "ph": "E",
+                "ph": PHASE_DURATION_END,
             }
         )
 
@@ -354,7 +396,7 @@ class RunnerTracer:
         self._write_event(
             {
                 "name": "Physical Plan returned None, needs more progress",
-                "ph": "i",
+                "ph": PHASE_INSTANT,
                 "pid": 1,
                 "tid": 1,
             }
@@ -365,7 +407,7 @@ class RunnerTracer:
         self._write_event(
             {
                 "name": "Physical Plan returned Materialized Result",
-                "ph": "i",
+                "ph": PHASE_INSTANT,
                 "pid": 1,
                 "tid": 1,
             }
@@ -376,7 +418,7 @@ class RunnerTracer:
         self._write_event(
             {
                 "name": "Physical Plan returned Task to add to batch",
-                "ph": "i",
+                "ph": PHASE_INSTANT,
                 "pid": 1,
                 "tid": 1,
             }
@@ -393,7 +435,7 @@ class RunnerTracer:
                 "name": "dispatching",
                 "pid": 1,
                 "tid": 1,
-                "ph": "B",
+                "ph": PHASE_DURATION_BEGIN,
             }
         )
         yield
@@ -402,7 +444,7 @@ class RunnerTracer:
                 "name": "dispatching",
                 "pid": 1,
                 "tid": 1,
-                "ph": "E",
+                "ph": PHASE_DURATION_END,
             }
         )
 
@@ -410,7 +452,7 @@ class RunnerTracer:
         self._write_event(
             {
                 "name": "dispatch_task",
-                "ph": "i",
+                "ph": PHASE_INSTANT,
                 "pid": 1,
                 "tid": 1,
             }
@@ -420,7 +462,7 @@ class RunnerTracer:
         self._write_event(
             {
                 "name": "dispatch_actor_task",
-                "ph": "i",
+                "ph": PHASE_INSTANT,
                 "pid": 1,
                 "tid": 1,
             }
@@ -438,7 +480,7 @@ class RunnerTracer:
                 "name": name,
                 "pid": 1,
                 "tid": 1,
-                "ph": "B",
+                "ph": PHASE_DURATION_BEGIN,
                 "args": {
                     "waiting_for_num_results": waiting_for_num_results,
                     "wait_timeout_s": str(wait_timeout_s),
@@ -451,7 +493,7 @@ class RunnerTracer:
                 "name": name,
                 "pid": 1,
                 "tid": 1,
-                "ph": "E",
+                "ph": PHASE_DURATION_END,
             }
         )
 
@@ -466,7 +508,7 @@ class RunnerTracer:
                 "name": "next(tasks)",
                 "pid": 1,
                 "tid": 1,
-                "ph": "B",
+                "ph": PHASE_DURATION_BEGIN,
             }
         )
 
@@ -482,7 +524,7 @@ class RunnerTracer:
                 "name": "next(tasks)",
                 "pid": 1,
                 "tid": 1,
-                "ph": "E",
+                "ph": PHASE_DURATION_END,
                 "args": args,
             }
         )
@@ -497,7 +539,7 @@ class RunnerTracer:
                 "id": task_id,
                 "category": "task",
                 "name": f"task_execution.stage-{stage_id}",
-                "ph": "b",
+                "ph": PHASE_ASYNC_BEGIN,
                 "args": {
                     "task_id": task_id,
                     "resource_request": {
@@ -522,7 +564,7 @@ class RunnerTracer:
                 "id": task_id,
                 "category": "task",
                 "name": "task_dispatch",
-                "ph": "b",
+                "ph": PHASE_ASYNC_BEGIN,
                 "pid": 1,
                 "tid": 1,
             }
@@ -534,7 +576,7 @@ class RunnerTracer:
                 "id": task_id,
                 "category": "task",
                 "name": "task_awaited_not_ready",
-                "ph": "n",
+                "ph": PHASE_ASYNC_INSTANT,
                 "pid": 1,
                 "tid": 1,
             }
@@ -546,7 +588,7 @@ class RunnerTracer:
                 "id": task_id,
                 "category": "task",
                 "name": "task_dispatch",
-                "ph": "e",
+                "ph": PHASE_ASYNC_END,
                 "pid": 1,
                 "tid": 1,
             }
@@ -556,7 +598,7 @@ class RunnerTracer:
                 "id": task_id,
                 "category": "task",
                 "name": f"task_execution.stage-{stage_id}",
-                "ph": "e",
+                "ph": PHASE_ASYNC_END,
                 "pid": 1,
                 "tid": 1,
             }
