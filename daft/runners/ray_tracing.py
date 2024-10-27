@@ -369,61 +369,6 @@ class RunnerTracer:
             }
         )
 
-    def mark_noop_task_start(self):
-        """Marks the start of running a no-op task"""
-        self._write_event(
-            {
-                "name": "no_op_task",
-                "pid": 1,
-                "tid": 1,
-                "ph": PHASE_DURATION_BEGIN,
-            }
-        )
-
-    def mark_noop_task_end(self):
-        """Marks the start of running a no-op task"""
-        self._write_event(
-            {
-                "name": "no_op_task",
-                "pid": 1,
-                "tid": 1,
-                "ph": PHASE_DURATION_END,
-            }
-        )
-
-    def mark_handle_none_task(self):
-        """Marks when the underlying physical plan returns None"""
-        self._write_event(
-            {
-                "name": "Physical Plan returned None, needs more progress",
-                "ph": PHASE_INSTANT,
-                "pid": 1,
-                "tid": 1,
-            }
-        )
-
-    def mark_handle_materialized_result(self):
-        """Marks when the underlying physical plan returns Materialized Result"""
-        self._write_event(
-            {
-                "name": "Physical Plan returned Materialized Result",
-                "ph": PHASE_INSTANT,
-                "pid": 1,
-                "tid": 1,
-            }
-        )
-
-    def mark_handle_task_add_to_batch(self):
-        """Marks when the underlying physical plan returns a task that we need to add to the dispatch batch"""
-        self._write_event(
-            {
-                "name": "Physical Plan returned Task to add to batch",
-                "ph": PHASE_INSTANT,
-                "pid": 1,
-                "tid": 1,
-            }
-        )
-
     ###
     # Tracing the dispatching of tasks
     ###
@@ -445,26 +390,6 @@ class RunnerTracer:
                 "pid": 1,
                 "tid": 1,
                 "ph": PHASE_DURATION_END,
-            }
-        )
-
-    def mark_dispatch_task(self):
-        self._write_event(
-            {
-                "name": "dispatch_task",
-                "ph": PHASE_INSTANT,
-                "pid": 1,
-                "tid": 1,
-            }
-        )
-
-    def mark_dispatch_actor_task(self):
-        self._write_event(
-            {
-                "name": "dispatch_actor_task",
-                "ph": PHASE_INSTANT,
-                "pid": 1,
-                "tid": 1,
             }
         )
 
