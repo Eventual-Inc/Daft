@@ -4,7 +4,7 @@ use std::{collections::HashSet, sync::Arc};
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_core::{
-    join::{JoinStrategy, JoinType},
+    join::JoinType,
     prelude::{Schema, SchemaRef, TimeUnit},
 };
 use daft_dsl::{Expr, ExprRef, Operator};
@@ -162,7 +162,7 @@ fn can_flatten_join_inputs(plan: &LogicalPlan) -> bool {
         if matches!(
             child,
             LogicalPlan::Join(Join {
-                join_strategy: None | Some(JoinStrategy::Hash),
+                join_strategy: None,
                 join_type: JoinType::Inner,
                 ..
             })
