@@ -37,13 +37,13 @@ RESERVED_PIDS = 100
 
 
 @contextlib.contextmanager
-def ray_tracer(job_id: str):
-    metrics_actor = ray_metrics.get_metrics_actor(job_id)
+def ray_tracer(execution_id: str):
+    metrics_actor = ray_metrics.get_metrics_actor(execution_id)
 
     # Dump the RayRunner trace if we detect an active Ray session, otherwise we give up and do not write the trace
     if pathlib.Path(DEFAULT_RAY_LOGS_LOCATION).exists():
         trace_filename = (
-            f"trace_RayRunner.{job_id}.{datetime.replace(datetime.now(), microsecond=0).isoformat()[:-3]}.json"
+            f"trace_RayRunner.{execution_id}.{datetime.replace(datetime.now(), microsecond=0).isoformat()[:-3]}.json"
         )
         daft_trace_location = pathlib.Path(DEFAULT_DAFT_TRACE_LOCATION)
         daft_trace_location.mkdir(exist_ok=True, parents=True)
@@ -63,7 +63,7 @@ def ray_tracer(job_id: str):
             yield runner_tracer
 
             # Retrieve metrics from the metrics actor
-            metrics = ray.get(metrics_actor.collect_task_metrics.remote())
+            metrics = metrics_actor.collect_metrics()
 
             task_locations = {metric.task_id: (metric.node_id, metric.worker_id) for metric in metrics}
             nodes_to_workers: dict[str, set[str]] = {}
@@ -630,15 +630,15 @@ class MaterializedPhysicalPlanWrapper:
 
 
 @contextlib.contextmanager
-def collect_ray_task_metrics(job_id: str, task_id: str, stage_id: int):
+def collect_ray_task_metrics(execution_id: str, task_id: str, stage_id: int):
     """Context manager that will ping the metrics actor to record various execution metrics about a given task"""
     import time
 
     runtime_context = ray.get_runtime_context()
 
-    metrics_actor = ray_metrics.get_metrics_actor(job_id)
-    metrics_actor.mark_task_start.remote(
+    metrics_actor = ray_metrics.get_metrics_actor(execution_id)
+    metrics_actor.mark_task_start(
         task_id, time.time(), runtime_context.get_node_id(), runtime_context.get_worker_id(), stage_id
     )
     yield
-    metrics_actor.mark_task_end.remote(task_id, time.time())
+    metrics_actor.mark_task_end(task_id, time.time())
