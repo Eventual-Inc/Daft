@@ -52,11 +52,16 @@ PHASE_FLOW_START = "s"
 PHASE_FLOW_FINISH = "f"
 
 
+def tracing_enabled():
+    """Checks if tracing is enabled in the current environment"""
+    return os.getenv("DAFT_RUNNER_TRACING") != "0"
+
+
 @contextlib.contextmanager
 def ray_tracer(execution_id: str):
     # Dump the RayRunner trace if we detect an active Ray session, otherwise we give up and do not write the trace
     filepath: pathlib.Path | None
-    if pathlib.Path(DEFAULT_RAY_LOGS_LOCATION).exists():
+    if pathlib.Path(DEFAULT_RAY_LOGS_LOCATION).exists() and tracing_enabled():
         trace_filename = (
             f"trace_RayRunner.{execution_id}.{datetime.replace(datetime.now(), microsecond=0).isoformat()[:-3]}.json"
         )
@@ -602,13 +607,16 @@ class MaterializedPhysicalPlanWrapper:
 @contextlib.contextmanager
 def collect_ray_task_metrics(execution_id: str, task_id: str, stage_id: int):
     """Context manager that will ping the metrics actor to record various execution metrics about a given task"""
-    import time
+    if tracing_enabled():
+        import time
 
-    runtime_context = ray.get_runtime_context()
+        runtime_context = ray.get_runtime_context()
 
-    metrics_actor = ray_metrics.get_metrics_actor(execution_id)
-    metrics_actor.mark_task_start(
-        task_id, time.time(), runtime_context.get_node_id(), runtime_context.get_worker_id(), stage_id
-    )
-    yield
-    metrics_actor.mark_task_end(task_id, time.time())
+        metrics_actor = ray_metrics.get_metrics_actor(execution_id)
+        metrics_actor.mark_task_start(
+            task_id, time.time(), runtime_context.get_node_id(), runtime_context.get_worker_id(), stage_id
+        )
+        yield
+        metrics_actor.mark_task_end(task_id, time.time())
+    else:
+        yield
