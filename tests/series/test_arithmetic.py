@@ -37,9 +37,9 @@ def test_arithmetic_numbers_array(l_dtype, r_dtype) -> None:
     assert div.name() == left.name()
     assert div.to_pylist() == [1.0, 0.5, 3.0, None, None, None]
 
-    # mod = (l % r)
-    # assert mod.name() == l.name()
-    # assert mod.to_pylist() == [0, 2, 0, None, None, None]
+    mod = left % right
+    assert mod.name() == left.name()
+    assert mod.to_pylist() == [0, 2, 0, None, None, None]
 
 
 @pytest.mark.parametrize("l_dtype, r_dtype", itertools.product(arrow_int_types + arrow_float_types, repeat=2))
@@ -281,3 +281,17 @@ def test_arithmetic_pyobjects(op, expected_datatype, expected, expected_self) ->
     assert op(fake_fives, values).datatype() == expected_datatype
     assert op(fake_fives, values).to_pylist() == expected
     assert op(fake_fives, fake_fives).to_pylist() == expected_self
+
+
+@pytest.mark.parametrize("l_dtype, r_dtype", itertools.product(arrow_int_types, repeat=2))
+def test_mod_series(l_dtype, r_dtype) -> None:
+    l_arrow = pa.array([1, 2, 3, None, 5, None])
+    r_arrow = pa.array([1, 4, 1, 5, None, None])
+
+    left = Series.from_arrow(l_arrow.cast(l_dtype), name="left")
+    right = Series.from_arrow(r_arrow.cast(r_dtype), name="right")
+
+    mod = left % right
+    assert mod.name() == left.name()
+    assert mod.datatype()._is_integer()
+    assert mod.to_pylist() == [0, 2, 0, None, None, None]
