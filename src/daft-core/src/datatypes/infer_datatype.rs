@@ -431,6 +431,13 @@ pub fn try_integer_widen_for_rem(l: &DataType, r: &DataType) -> DaftResult<DataT
 
     fn inner(l: &DataType, r: &DataType) -> Option<DataType> {
         match (l, r) {
+            (DataType::Float64, other) | (other, DataType::Float64) if other.is_numeric() => {
+                Some(DataType::Float64)
+            }
+            (DataType::Float32, other) | (other, DataType::Float32) if other.is_numeric() => {
+                Some(DataType::Float32)
+            }
+
             (DataType::Int8, DataType::Int8) => Some(DataType::Int8),
             (DataType::Int8, DataType::Int16) => Some(DataType::Int16),
             (DataType::Int8, DataType::Int32) => Some(DataType::Int32),
