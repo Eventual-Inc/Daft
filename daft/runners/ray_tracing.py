@@ -52,8 +52,6 @@ PHASE_FLOW_FINISH = "f"
 
 @contextlib.contextmanager
 def ray_tracer(execution_id: str):
-    metrics_actor = ray_metrics.get_metrics_actor(execution_id)
-
     # Dump the RayRunner trace if we detect an active Ray session, otherwise we give up and do not write the trace
     filepath: pathlib.Path | None
     if pathlib.Path(DEFAULT_RAY_LOGS_LOCATION).exists():
@@ -72,26 +70,8 @@ def ray_tracer(execution_id: str):
             runner_tracer = RunnerTracer(f)
             yield runner_tracer
 
-            # Retrieve metrics from the metrics actor and perform some post-processing
-            task_metrics, node_metrics = metrics_actor.collect_metrics()
-            nodes_to_pid_mapping = {node_id: i + NODE_PIDS_START for i, node_id in enumerate(node_metrics)}
-            nodes_workers_to_tid_mapping = {
-                (node_id, worker_id): (pid, tid)
-                for node_id, pid in nodes_to_pid_mapping.items()
-                for tid, worker_id in enumerate(node_metrics[node_id])
-            }
-
-            # Write out collected metrics
-            for metric in task_metrics:
-                runner_tracer.write_task_metric(metric, nodes_workers_to_tid_mapping)
-            runner_tracer.write_stages()
-            runner_tracer._writer.write_footer(
-                [(pid, f"Node {node_id}") for node_id, pid in nodes_to_pid_mapping.items()],
-                [
-                    (pid, tid, f"Worker {worker_id}")
-                    for (_, worker_id), (pid, tid) in nodes_workers_to_tid_mapping.items()
-                ],
-            )
+            metrics_actor = ray_metrics.get_metrics_actor(execution_id)
+            runner_tracer.finalize(metrics_actor)
     else:
         runner_tracer = RunnerTracer(None)
         yield runner_tracer
@@ -194,7 +174,26 @@ class RunnerTracer:
     def _write_event(self, event: dict[str, Any], ts: int | None = None) -> int:
         return self._writer.write_event(event, ts)
 
-    def write_stages(self):
+    def finalize(self, metrics_actor: ray_metrics.MetricsActorHandle) -> None:
+        # Retrieve metrics from the metrics actor and perform some post-processing
+        task_metrics, node_metrics = metrics_actor.collect_metrics()
+        nodes_to_pid_mapping = {node_id: i + NODE_PIDS_START for i, node_id in enumerate(node_metrics)}
+        nodes_workers_to_tid_mapping = {
+            (node_id, worker_id): (pid, tid)
+            for node_id, pid in nodes_to_pid_mapping.items()
+            for tid, worker_id in enumerate(node_metrics[node_id])
+        }
+
+        # Write out collected metrics
+        for metric in task_metrics:
+            self._write_task_metric(metric, nodes_workers_to_tid_mapping)
+        self._write_stages()
+        self._writer.write_footer(
+            [(pid, f"Node {node_id}") for node_id, pid in nodes_to_pid_mapping.items()],
+            [(pid, tid, f"Worker {worker_id}") for (_, worker_id), (pid, tid) in nodes_workers_to_tid_mapping.items()],
+        )
+
+    def _write_stages(self):
         for stage_id in self._stage_start_end:
             start_ts, end_ts = self._stage_start_end[stage_id]
             self._write_event(
@@ -229,7 +228,7 @@ class RunnerTracer:
                 ts=end_ts,
             )
 
-    def write_task_metric(
+    def _write_task_metric(
         self, metric: ray_metrics.TaskMetric, nodes_workers_to_pid_tid_mapping: dict[tuple[str, str], tuple[int, int]]
     ):
         # Write to the Async view (will group by the stage ID)
@@ -292,6 +291,10 @@ class RunnerTracer:
                     ts=int((metric.end - self._start) * 1000 * 1000),
                 )
 
+    ###
+    # Tracing of scheduler dispatching
+    ###
+
     @contextlib.contextmanager
     def dispatch_wave(self, wave_num: int):
         self._write_event(
@@ -332,11 +335,6 @@ class RunnerTracer:
             }
         )
 
-    ###
-    # Tracing the dispatch batching: when the runner is retrieving enough tasks
-    # from the physical plan in order to put them into a batch.
-    ###
-
     @contextlib.contextmanager
     def dispatch_batching(self):
         self._write_event(
@@ -357,10 +355,6 @@ class RunnerTracer:
             }
         )
 
-    ###
-    # Tracing the dispatching of tasks
-    ###
-
     @contextlib.contextmanager
     def dispatching(self):
         self._write_event(
@@ -380,10 +374,6 @@ class RunnerTracer:
                 "ph": PHASE_DURATION_END,
             }
         )
-
-    ###
-    # Tracing the waiting of tasks
-    ###
 
     @contextlib.contextmanager
     def awaiting(self, waiting_for_num_results: int, wait_timeout_s: float | None):
@@ -409,10 +399,6 @@ class RunnerTracer:
                 "ph": PHASE_DURATION_END,
             }
         )
-
-    ###
-    # Tracing the PhysicalPlan
-    ###
 
     @contextlib.contextmanager
     def get_next_physical_plan(self):
@@ -441,10 +427,6 @@ class RunnerTracer:
                 "args": args,
             }
         )
-
-    ###
-    # Tracing each individual task as an Async Event
-    ###
 
     def task_created(self, task_id: str, stage_id: int, resource_request: ResourceRequest, instructions: str):
         created_ts = self._write_event(

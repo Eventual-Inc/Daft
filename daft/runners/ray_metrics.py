@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import threading
+from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +33,6 @@ class TaskMetric:
 class ExecutionMetrics:
     """Holds the metrics for a given execution ID"""
 
-    daft_execution_id: str
     task_start_info: dict[str, TaskMetric] = dataclasses.field(default_factory=lambda: {})
     task_ends: dict[str, float] = dataclasses.field(default_factory=lambda: {})
 
@@ -39,31 +40,20 @@ class ExecutionMetrics:
 @ray.remote(num_cpus=0)
 class _MetricsActor:
     def __init__(self):
-        self.execution_metrics: dict[str, ExecutionMetrics] = {}
-        self.execution_node_and_worker_ids: dict[str, dict[str, set[str]]] = {}
-
-    def _get_or_create_execution_metrics(self, execution_id: str) -> ExecutionMetrics:
-        if execution_id not in self.execution_metrics:
-            self.execution_metrics[execution_id] = ExecutionMetrics(daft_execution_id=execution_id)
-        return self.execution_metrics[execution_id]
-
-    def _get_or_create_execution_node_and_worker_ids(self, execution_id: str) -> dict[str, set[str]]:
-        if execution_id not in self.execution_node_and_worker_ids:
-            self.execution_node_and_worker_ids[execution_id] = {}
-        return self.execution_node_and_worker_ids[execution_id]
+        self.execution_metrics: dict[str, ExecutionMetrics] = defaultdict(lambda: ExecutionMetrics())
+        self.execution_node_and_worker_ids: dict[str, dict[str, set[str]]] = defaultdict(
+            lambda: defaultdict(lambda: set())
+        )
 
     def mark_task_start(
         self, execution_id: str, task_id: str, start: float, node_id: str, worker_id: str, stage_id: int
     ):
         # Update node info
         node_id_trunc, worker_id_trunc = node_id[:8], worker_id[:8]
-        node_info = self._get_or_create_execution_node_and_worker_ids(execution_id)
-        if node_id_trunc not in node_info:
-            node_info[node_id_trunc] = set()
-        node_info[node_id_trunc].add(worker_id_trunc)
+        self.execution_node_and_worker_ids[execution_id][node_id_trunc].add(worker_id_trunc)
 
         # Update task info
-        self._get_or_create_execution_metrics(execution_id).task_start_info[task_id] = TaskMetric(
+        self.execution_metrics[execution_id].task_start_info[task_id] = TaskMetric(
             task_id=task_id,
             stage_id=stage_id,
             start=start,
@@ -73,18 +63,18 @@ class _MetricsActor:
         )
 
     def mark_task_end(self, execution_id: str, task_id: str, end: float):
-        self._get_or_create_execution_metrics(execution_id).task_ends[task_id] = end
+        self.execution_metrics[execution_id].task_ends[task_id] = end
 
     def collect_metrics(self, execution_id: str) -> tuple[list[TaskMetric], dict[str, set[str]]]:
         """Collect the metrics associated with this execution, cleaning up the memory used for this execution ID"""
-        execution_metrics = self._get_or_create_execution_metrics(execution_id)
+        execution_metrics = self.execution_metrics[execution_id]
         data = [
             dataclasses.replace(
                 execution_metrics.task_start_info[task_id], end=execution_metrics.task_ends.get(task_id)
             )
             for task_id in execution_metrics.task_start_info
         ]
-        node_data = self._get_or_create_execution_node_and_worker_ids(execution_id)
+        node_data = self.execution_node_and_worker_ids[execution_id]
 
         # Clean up the stats for this execution
         del self.execution_metrics[execution_id]
@@ -130,12 +120,23 @@ class MetricsActorHandle:
         return ray.get(self.actor.collect_metrics.remote(self.execution_id))
 
 
+# Creating/getting an actor from multiple threads is not safe.
+#
+# This could be a problem because our Scheduler does multithreaded executions of plans if multiple
+# plans are submitted at once.
+#
+# Pattern from Ray Data's _StatsActor:
+# https://github.com/ray-project/ray/blob/0b1d0d8f01599796e1109060821583e270048b6e/python/ray/data/_internal/stats.py#L447-L449
+_metrics_actor_lock: threading.RLock = threading.RLock()
+
+
 def get_metrics_actor(execution_id: str) -> MetricsActorHandle:
     """Retrieves a handle to the Actor for a given job_id"""
-    actor = _MetricsActor.options(  # type: ignore[attr-defined]
-        name="METRICS_ACTOR_NAME",
-        namespace=METRICS_ACTOR_NAMESPACE,
-        get_if_exists=True,
-        lifetime="detached",
-    ).remote()
-    return MetricsActorHandle(execution_id, actor)
+    with _metrics_actor_lock:
+        actor = _MetricsActor.options(  # type: ignore[attr-defined]
+            name="METRICS_ACTOR_NAME",
+            namespace=METRICS_ACTOR_NAMESPACE,
+            get_if_exists=True,
+            lifetime="detached",
+        ).remote()
+        return MetricsActorHandle(execution_id, actor)
