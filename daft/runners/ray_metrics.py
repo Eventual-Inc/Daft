@@ -20,6 +20,9 @@ METRICS_ACTOR_NAMESPACE = "daft"
 @dataclasses.dataclass(frozen=True)
 class TaskMetric:
     task_id: str
+    stage_id: int | None
+    node_id: str
+    worker_id: str
     start: float
     end: float | None
 
@@ -27,31 +30,28 @@ class TaskMetric:
 @ray.remote(num_cpus=0)
 class MetricsActor:
     def __init__(self):
-        self.task_starts: dict[str, float] = {}
+        self.task_start_info: dict[str, TaskMetric] = {}
         self.task_ends: dict[str, float] = {}
         self.task_locations: dict[str, tuple[str, str]] = {}
 
-    def mark_task_location(self, task_id, node_ip: str, worker_id: str):
-        self.task_locations[task_id] = (node_ip, worker_id)
-
-    def mark_task_start(self, task_id: str, start: float):
-        self.task_starts[task_id] = start
+    def mark_task_start(self, task_id: str, start: float, node_id: str, worker_id: str, stage_id: int):
+        self.task_start_info[task_id] = TaskMetric(
+            task_id=task_id,
+            stage_id=stage_id,
+            start=start,
+            node_id=node_id[:8],
+            worker_id=worker_id[:8],
+            end=None,
+        )
 
     def mark_task_end(self, task_id: str, end: float):
         self.task_ends[task_id] = end
 
     def collect_task_metrics(self) -> list[TaskMetric]:
         return [
-            TaskMetric(
-                task_id=task_id,
-                start=self.task_starts[task_id],
-                end=self.task_ends.get(task_id),
-            )
-            for task_id in self.task_starts
+            dataclasses.replace(self.task_start_info[task_id], end=self.task_ends.get(task_id))
+            for task_id in self.task_start_info
         ]
-
-    def collect_task_locations(self) -> dict[str, tuple[str, str]]:
-        return self.task_locations
 
 
 def get_metrics_actor(job_id: str) -> ray.actor.ActorHandle:

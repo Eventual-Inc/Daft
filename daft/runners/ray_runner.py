@@ -484,6 +484,7 @@ def build_partitions(
 def single_partition_pipeline(
     job_id: str,
     task_id: str,
+    stage_id: int,
     daft_execution_config: PyDaftExecutionConfig,
     instruction_stack: list[Instruction],
     partial_metadatas: list[PartitionMetadata],
@@ -491,7 +492,7 @@ def single_partition_pipeline(
 ) -> list[list[PartitionMetadata] | MicroPartition]:
     with execution_config_ctx(
         config=daft_execution_config,
-    ), ray_tracing.collect_ray_task_metrics(job_id, task_id):
+    ), ray_tracing.collect_ray_task_metrics(job_id, task_id, stage_id):
         return build_partitions(instruction_stack, partial_metadatas, *inputs)
 
 
@@ -500,12 +501,15 @@ def single_partition_pipeline(
 def fanout_pipeline(
     job_id: str,
     task_id: str,
+    stage_id: int,
     daft_execution_config: PyDaftExecutionConfig,
     instruction_stack: list[Instruction],
     partial_metadatas: list[PartitionMetadata],
     *inputs: MicroPartition,
 ) -> list[list[PartitionMetadata] | MicroPartition]:
-    with execution_config_ctx(config=daft_execution_config), ray_tracing.collect_ray_task_metrics(job_id, task_id):
+    with execution_config_ctx(config=daft_execution_config), ray_tracing.collect_ray_task_metrics(
+        job_id, task_id, stage_id
+    ):
         return build_partitions(instruction_stack, partial_metadatas, *inputs)
 
 
@@ -514,6 +518,7 @@ def fanout_pipeline(
 def reduce_pipeline(
     job_id: str,
     task_id: str,
+    stage_id: int,
     daft_execution_config: PyDaftExecutionConfig,
     instruction_stack: list[Instruction],
     partial_metadatas: list[PartitionMetadata],
@@ -521,7 +526,9 @@ def reduce_pipeline(
 ) -> list[list[PartitionMetadata] | MicroPartition]:
     import ray
 
-    with execution_config_ctx(config=daft_execution_config), ray_tracing.collect_ray_task_metrics(job_id, task_id):
+    with execution_config_ctx(config=daft_execution_config), ray_tracing.collect_ray_task_metrics(
+        job_id, task_id, stage_id
+    ):
         return build_partitions(instruction_stack, partial_metadatas, *ray.get(inputs))
 
 
@@ -530,6 +537,7 @@ def reduce_pipeline(
 def reduce_and_fanout(
     job_id: str,
     task_id: str,
+    stage_id: int,
     daft_execution_config: PyDaftExecutionConfig,
     instruction_stack: list[Instruction],
     partial_metadatas: list[PartitionMetadata],
@@ -537,7 +545,9 @@ def reduce_and_fanout(
 ) -> list[list[PartitionMetadata] | MicroPartition]:
     import ray
 
-    with execution_config_ctx(config=daft_execution_config), ray_tracing.collect_ray_task_metrics(job_id, task_id):
+    with execution_config_ctx(config=daft_execution_config), ray_tracing.collect_ray_task_metrics(
+        job_id, task_id, stage_id
+    ):
         return build_partitions(instruction_stack, partial_metadatas, *ray.get(inputs))
 
 
@@ -986,7 +996,13 @@ def _build_partitions(
         )
         build_remote = build_remote.options(**ray_options).with_tracing(runner_tracer, task)
         [metadatas_ref, *partitions] = build_remote.remote(
-            job_id, task.id(), daft_execution_config_objref, task.instructions, task.partial_metadatas, task.inputs
+            job_id,
+            task.id(),
+            task.stage_id,
+            daft_execution_config_objref,
+            task.instructions,
+            task.partial_metadatas,
+            task.inputs,
         )
 
     else:
@@ -999,7 +1015,13 @@ def _build_partitions(
             ray_options["scheduling_strategy"] = "SPREAD"
         build_remote = build_remote.options(**ray_options).with_tracing(runner_tracer, task)
         [metadatas_ref, *partitions] = build_remote.remote(
-            job_id, task.id(), daft_execution_config_objref, task.instructions, task.partial_metadatas, *task.inputs
+            job_id,
+            task.id(),
+            task.stage_id,
+            daft_execution_config_objref,
+            task.instructions,
+            task.partial_metadatas,
+            *task.inputs,
         )
 
     metadatas_accessor = PartitionMetadataAccessor(metadatas_ref)

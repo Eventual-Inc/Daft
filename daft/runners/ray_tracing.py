@@ -64,8 +64,8 @@ def ray_tracer(job_id: str):
 
             # Retrieve metrics from the metrics actor
             metrics = ray.get(metrics_actor.collect_task_metrics.remote())
-            task_locations = ray.get(metrics_actor.collect_task_locations.remote())
 
+            task_locations = {metric.task_id: (metric.node_id, metric.worker_id) for metric in metrics}
             nodes_to_workers: dict[str, set[str]] = {}
             nodes = set()
             for node_id, worker_id in task_locations.values():
@@ -82,9 +82,6 @@ def ray_tracer(job_id: str):
                 task_id: (nodes_to_pid_mapping[node_id], nodes_workers_to_tid_mapping[node_id][worker_id])
                 for task_id, (node_id, worker_id) in task_locations.items()
             }
-
-            for metric in metrics:
-                runner_tracer.write_task_metric(metric, parsed_task_node_locations.get(metric.task_id))
 
             for node_id, pid in nodes_to_pid_mapping.items():
                 f.write(
@@ -113,6 +110,9 @@ def ray_tracer(job_id: str):
                         )
                     )
                     f.write(",\n")
+
+            for metric in metrics:
+                runner_tracer.write_task_metric(metric, parsed_task_node_locations.get(metric.task_id))
 
             # Add the final touches to the file
             f.write(
@@ -148,10 +148,11 @@ class RunnerTracer:
     def __init__(self, file: TextIO | None, start: float):
         self._file = file
         self._start = start
+        self._stage_start_end: dict[int, tuple[int, int]] = {}
 
-    def _write_event(self, event: dict[str, Any], ts: int | None = None):
+    def _write_event(self, event: dict[str, Any], ts: int | None = None) -> int:
+        ts = int((time.time() - self._start) * 1000 * 1000) if ts is None else ts
         if self._file is not None:
-            ts = int((time.time() - self._start) * 1000 * 1000) if ts is None else ts
             self._file.write(
                 json.dumps(
                     {
@@ -161,6 +162,7 @@ class RunnerTracer:
                 )
             )
             self._file.write(",\n")
+        return ts
 
     def write_task_metric(self, metric: ray_metrics.TaskMetric, node_id_worker_id: tuple[int, int] | None):
         # Write to the Async view (will group by the stage ID)
@@ -171,7 +173,7 @@ class RunnerTracer:
                 "name": "task_remote_execution",
                 "ph": "b",
                 "pid": 2,
-                "tid": 1,
+                "tid": metric.stage_id,
             },
             ts=int((metric.start - self._start) * 1000 * 1000),
         )
@@ -183,7 +185,7 @@ class RunnerTracer:
                     "name": "task_remote_execution",
                     "ph": "e",
                     "pid": 2,
-                    "tid": 1,
+                    "tid": metric.stage_id,
                 },
                 ts=int((metric.end - self._start) * 1000 * 1000),
             )
@@ -441,7 +443,7 @@ class RunnerTracer:
     ###
 
     def task_created(self, task_id: str, stage_id: int, resource_request: ResourceRequest, instructions: str):
-        self._write_event(
+        created_ts = self._write_event(
             {
                 "id": task_id,
                 "category": "task",
@@ -461,6 +463,9 @@ class RunnerTracer:
                 "tid": 1,
             }
         )
+
+        if stage_id not in self._stage_start_end:
+            self._stage_start_end[stage_id] = (created_ts, created_ts)
 
     def task_dispatched(self, task_id: str):
         self._write_event(
@@ -497,7 +502,7 @@ class RunnerTracer:
                 "tid": 1,
             }
         )
-        self._write_event(
+        new_end = self._write_event(
             {
                 "id": task_id,
                 "category": "task",
@@ -507,6 +512,10 @@ class RunnerTracer:
                 "tid": 1,
             }
         )
+
+        assert stage_id in self._stage_start_end
+        old_start, _ = self._stage_start_end[stage_id]
+        self._stage_start_end[stage_id] = (old_start, new_end)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -572,14 +581,15 @@ class MaterializedPhysicalPlanWrapper:
 
 
 @contextlib.contextmanager
-def collect_ray_task_metrics(job_id: str, task_id: str):
+def collect_ray_task_metrics(job_id: str, task_id: str, stage_id: int):
     """Context manager that will ping the metrics actor to record various execution metrics about a given task"""
     import time
 
     runtime_context = ray.get_runtime_context()
 
     metrics_actor = ray_metrics.get_metrics_actor(job_id)
-    metrics_actor.mark_task_location.remote(task_id, runtime_context.get_node_id(), runtime_context.get_worker_id())
-    metrics_actor.mark_task_start.remote(task_id, time.time())
+    metrics_actor.mark_task_start.remote(
+        task_id, time.time(), runtime_context.get_node_id(), runtime_context.get_worker_id(), stage_id
+    )
     yield
     metrics_actor.mark_task_end.remote(task_id, time.time())
