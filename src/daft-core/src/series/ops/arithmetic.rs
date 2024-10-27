@@ -9,7 +9,7 @@ use crate::{
     array::prelude::*,
     datatypes::{InferDataType, Utf8Array},
     series::{utils::cast::cast_downcast_op, IntoSeries, Series},
-    with_match_numeric_daft_types,
+    with_match_integer_daft_types, with_match_numeric_daft_types,
 };
 
 macro_rules! impl_arithmetic_ref_for_series {
@@ -309,6 +309,29 @@ impl Rem for &Series {
         }
     }
 }
+
+impl Series {
+    pub fn floor_div(&self, rhs: &Self) -> DaftResult<Self> {
+        let output_type = InferDataType::from(self.data_type())
+            .floor_div(&InferDataType::from(rhs.data_type()))?;
+        let lhs = self;
+        match &output_type {
+            #[cfg(feature = "python")]
+            DataType::Python => run_python_binary_operator_fn(lhs, rhs, "floordiv"),
+            output_type if output_type.is_integer() => {
+                with_match_integer_daft_types!(output_type, |$T| {
+                    Ok(cast_downcast_op!(lhs, rhs, output_type, <$T as DaftDataType>::ArrayType, div)?.into_series())
+                })
+            }
+            output_type if output_type.is_numeric() => {
+                let div_floor = lhs.div(rhs)?.floor()?;
+                div_floor.cast(output_type)
+            }
+            _ => arithmetic_op_not_implemented!(self, "floor_div", rhs, output_type),
+        }
+    }
+}
+
 enum FixedSizeBinaryOp {
     Add,
     Sub,
@@ -384,7 +407,7 @@ mod tests {
 
     use crate::{
         array::ops::full::FullNull,
-        datatypes::{DataType, Float64Array, Int64Array, Utf8Array},
+        datatypes::{DataType, Float32Array, Float64Array, Int32Array, Int64Array, Utf8Array},
         series::IntoSeries,
     };
 
@@ -427,6 +450,30 @@ mod tests {
         let a = Int64Array::from(("a", vec![1, 2, 3]));
         let b = Float64Array::from(("b", vec![1., 2., 3.]));
         let c = a.into_series() / b.into_series();
+        assert_eq!(*c?.data_type(), DataType::Float64);
+        Ok(())
+    }
+    #[test]
+    fn floor_div_int_and_int() -> DaftResult<()> {
+        let a = Int32Array::from(("a", vec![1, 2, 3]));
+        let b = Int64Array::from(("b", vec![1, 2, 3]));
+        let c = a.into_series().floor_div(&(b.into_series()));
+        assert_eq!(*c?.data_type(), DataType::Int64);
+        Ok(())
+    }
+    #[test]
+    fn floor_div_int_and_float() -> DaftResult<()> {
+        let a = Int64Array::from(("a", vec![1, 2, 3]));
+        let b = Float64Array::from(("b", vec![1., 2., 3.]));
+        let c = a.into_series().floor_div(&(b.into_series()));
+        assert_eq!(*c?.data_type(), DataType::Float64);
+        Ok(())
+    }
+    #[test]
+    fn floor_div_float_and_float() -> DaftResult<()> {
+        let a = Float32Array::from(("b", vec![1., 2., 3.]));
+        let b = Float64Array::from(("b", vec![1., 2., 3.]));
+        let c = a.into_series().floor_div(&(b.into_series()));
         assert_eq!(*c?.data_type(), DataType::Float64);
         Ok(())
     }

@@ -530,6 +530,7 @@ impl Table {
                     Plus => lhs + rhs,
                     Minus => lhs - rhs,
                     TrueDivide => lhs / rhs,
+                    FloorDivide => lhs.floor_div(&rhs),
                     Multiply => lhs * rhs,
                     Modulus => lhs % rhs,
                     Lt => Ok(lhs.lt(&rhs)?.into_series()),
@@ -543,7 +544,6 @@ impl Table {
                     Xor => lhs.xor(&rhs),
                     ShiftLeft => lhs.shift_left(&rhs),
                     ShiftRight => lhs.shift_right(&rhs),
-                    _ => panic!("{op:?} not supported"),
                 }
             }
             Function { func, inputs } => {

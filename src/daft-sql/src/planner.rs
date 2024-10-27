@@ -941,6 +941,7 @@ impl SQLPlanner {
             BinaryOperator::NotEq => Ok(Operator::NotEq),
             BinaryOperator::And => Ok(Operator::And),
             BinaryOperator::Or => Ok(Operator::Or),
+            BinaryOperator::DuckIntegerDivide => Ok(Operator::FloorDivide),
             other => unsupported_sql_err!("Unsupported operator: '{other}'"),
         }
     }
