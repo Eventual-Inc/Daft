@@ -61,6 +61,7 @@ impl OptimizerRule for EliminateCrossJoin {
             plan,
             LogicalPlan::Join(Join {
                 join_type: JoinType::Inner,
+                join_strategy: None,
                 ..
             })
         ) {
