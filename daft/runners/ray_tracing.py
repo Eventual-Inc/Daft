@@ -72,38 +72,24 @@ def ray_tracer(execution_id: str):
             runner_tracer = RunnerTracer(f)
             yield runner_tracer
 
-            # Retrieve metrics from the metrics actor
-            metrics = metrics_actor.collect_metrics()
-
-            # Post-processing to obtain a map of {task_id: (node_id, worker_id)}
-            task_locations = {metric.task_id: (metric.node_id, metric.worker_id) for metric in metrics}
-            nodes_to_workers: dict[str, set[str]] = {}
-            nodes = set()
-            for node_id, worker_id in task_locations.values():
-                nodes.add(node_id)
-                if node_id not in nodes_to_workers:
-                    nodes_to_workers[node_id] = set()
-                nodes_to_workers[node_id].add(worker_id)
-            nodes_to_pid_mapping = {node_id: i + NODE_PIDS_START for i, node_id in enumerate(nodes)}
+            # Retrieve metrics from the metrics actor and perform some post-processing
+            task_metrics, node_metrics = metrics_actor.collect_metrics()
+            nodes_to_pid_mapping = {node_id: i + NODE_PIDS_START for i, node_id in enumerate(node_metrics)}
             nodes_workers_to_tid_mapping = {
-                node_id: {worker_id: i for i, worker_id in enumerate(worker_ids)}
-                for node_id, worker_ids in nodes_to_workers.items()
-            }
-            parsed_task_node_locations = {
-                task_id: (nodes_to_pid_mapping[node_id], nodes_workers_to_tid_mapping[node_id][worker_id])
-                for task_id, (node_id, worker_id) in task_locations.items()
+                (node_id, worker_id): (pid, tid)
+                for node_id, pid in nodes_to_pid_mapping.items()
+                for tid, worker_id in enumerate(node_metrics[node_id])
             }
 
-            for metric in metrics:
-                runner_tracer.write_task_metric(metric, parsed_task_node_locations.get(metric.task_id))
-
+            # Write out collected metrics
+            for metric in task_metrics:
+                runner_tracer.write_task_metric(metric, nodes_workers_to_tid_mapping)
             runner_tracer.write_stages()
             runner_tracer._writer.write_footer(
                 [(pid, f"Node {node_id}") for node_id, pid in nodes_to_pid_mapping.items()],
                 [
-                    (pid, nodes_workers_to_tid_mapping[node_id][worker_id], f"Worker {worker_id}")
-                    for node_id, pid in nodes_to_pid_mapping.items()
-                    for worker_id in nodes_workers_to_tid_mapping[node_id]
+                    (pid, tid, f"Worker {worker_id}")
+                    for (_, worker_id), (pid, tid) in nodes_workers_to_tid_mapping.items()
                 ],
             )
     else:
@@ -243,7 +229,9 @@ class RunnerTracer:
                 ts=end_ts,
             )
 
-    def write_task_metric(self, metric: ray_metrics.TaskMetric, node_id_worker_id: tuple[int, int] | None):
+    def write_task_metric(
+        self, metric: ray_metrics.TaskMetric, nodes_workers_to_pid_tid_mapping: dict[tuple[str, str], tuple[int, int]]
+    ):
         # Write to the Async view (will group by the stage ID)
         self._write_event(
             {
@@ -270,8 +258,8 @@ class RunnerTracer:
             )
 
         # Write to the node/worker view
-        if node_id_worker_id is not None:
-            pid, tid = node_id_worker_id
+        pid, tid = nodes_workers_to_pid_tid_mapping.get((metric.node_id, metric.worker_id), (None, None))
+        if pid is not None and tid is not None:
             start_ts = int((metric.start - self._start) * 1000 * 1000)
             self._write_event(
                 {
@@ -287,7 +275,7 @@ class RunnerTracer:
                     "name": "stage-to-node-flow",
                     "id": metric.stage_id,
                     "ph": PHASE_FLOW_FINISH,
-                    "bp": PHASE_ASYNC_END,  # enclosed, since the stage "encloses" the execution
+                    "bp": "e",  # enclosed, since the stage "encloses" the execution
                     "pid": pid,
                     "tid": tid,
                 },

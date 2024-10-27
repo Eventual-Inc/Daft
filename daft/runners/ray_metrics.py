@@ -40,28 +40,43 @@ class ExecutionMetrics:
 class _MetricsActor:
     def __init__(self):
         self.execution_metrics: dict[str, ExecutionMetrics] = {}
+        self.execution_node_and_worker_ids: dict[str, dict[str, set[str]]] = {}
 
     def _get_or_create_execution_metrics(self, execution_id: str) -> ExecutionMetrics:
         if execution_id not in self.execution_metrics:
             self.execution_metrics[execution_id] = ExecutionMetrics(daft_execution_id=execution_id)
         return self.execution_metrics[execution_id]
 
+    def _get_or_create_execution_node_and_worker_ids(self, execution_id: str) -> dict[str, set[str]]:
+        if execution_id not in self.execution_node_and_worker_ids:
+            self.execution_node_and_worker_ids[execution_id] = {}
+        return self.execution_node_and_worker_ids[execution_id]
+
     def mark_task_start(
         self, execution_id: str, task_id: str, start: float, node_id: str, worker_id: str, stage_id: int
     ):
+        # Update node info
+        node_id_trunc, worker_id_trunc = node_id[:8], worker_id[:8]
+        node_info = self._get_or_create_execution_node_and_worker_ids(execution_id)
+        if node_id_trunc not in node_info:
+            node_info[node_id_trunc] = set()
+        node_info[node_id_trunc].add(worker_id_trunc)
+
+        # Update task info
         self._get_or_create_execution_metrics(execution_id).task_start_info[task_id] = TaskMetric(
             task_id=task_id,
             stage_id=stage_id,
             start=start,
-            node_id=node_id[:8],
-            worker_id=worker_id[:8],
+            node_id=node_id_trunc,
+            worker_id=worker_id_trunc,
             end=None,
         )
 
     def mark_task_end(self, execution_id: str, task_id: str, end: float):
         self._get_or_create_execution_metrics(execution_id).task_ends[task_id] = end
 
-    def collect_metrics(self, execution_id: str) -> list[TaskMetric]:
+    def collect_metrics(self, execution_id: str) -> tuple[list[TaskMetric], dict[str, set[str]]]:
+        """Collect the metrics associated with this execution, cleaning up the memory used for this execution ID"""
         execution_metrics = self._get_or_create_execution_metrics(execution_id)
         data = [
             dataclasses.replace(
@@ -69,11 +84,13 @@ class _MetricsActor:
             )
             for task_id in execution_metrics.task_start_info
         ]
+        node_data = self._get_or_create_execution_node_and_worker_ids(execution_id)
 
         # Clean up the stats for this execution
         del self.execution_metrics[execution_id]
+        del self.execution_node_and_worker_ids[execution_id]
 
-        return data
+        return data, node_data
 
 
 @dataclasses.dataclass(frozen=True)
@@ -109,7 +126,7 @@ class MetricsActorHandle:
             end,
         )
 
-    def collect_metrics(self) -> list[TaskMetric]:
+    def collect_metrics(self) -> tuple[list[TaskMetric], dict[str, set[str]]]:
         return ray.get(self.actor.collect_metrics.remote(self.execution_id))
 
 
