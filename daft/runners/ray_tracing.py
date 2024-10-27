@@ -114,14 +114,7 @@ def ray_tracer(job_id: str):
             for metric in metrics:
                 runner_tracer.write_task_metric(metric, parsed_task_node_locations.get(metric.task_id))
 
-            stage_id_to_start_end: dict[int, tuple[float, float]] = {}
-            for metric in metrics:
-                if metric.stage_id not in stage_id_to_start_end:
-                    stage_id_to_start_end[metric.stage_id] = (metric.start, metric.end)
-                else:
-                    old_start, old_end = stage_id_to_start_end[metric.stage_id]
-                    stage_id_to_start_end[metric.stage_id] = (min(old_start, metric.start), max(old_end, metric.end))
-            runner_tracer.write_stages(stage_id_to_start_end)
+            runner_tracer.write_stages()
 
             # Add the final touches to the file
             f.write(
@@ -142,7 +135,7 @@ def ray_tracer(job_id: str):
                         "name": "process_name",
                         "ph": "M",
                         "pid": 2,
-                        "args": {"name": "Tasks (Grouped by Stage ID)"},
+                        "args": {"name": "Stages"},
                         "sort_index": 1,
                     }
                 )
@@ -173,9 +166,9 @@ class RunnerTracer:
             self._file.write(",\n")
         return ts
 
-    def write_stages(self, stages: dict[int, tuple[float, float]]):
-        for stage_id in stages:
-            start, end = stages[stage_id]
+    def write_stages(self):
+        for stage_id in self._stage_start_end:
+            start_ts, end_ts = self._stage_start_end[stage_id]
             self._write_event(
                 {
                     "name": f"stage-{stage_id}",
@@ -183,8 +176,21 @@ class RunnerTracer:
                     "pid": 2,
                     "tid": stage_id,
                 },
-                ts=int((start - self._start) * 1000 * 1000),
+                ts=start_ts,
             )
+
+            # Add a flow view here to point to the nodes
+            self._write_event(
+                {
+                    "name": "stage-to-node-flow",
+                    "id": stage_id,
+                    "ph": "s",
+                    "pid": 2,
+                    "tid": stage_id,
+                },
+                ts=start_ts,
+            )
+
             self._write_event(
                 {
                     "name": f"stage-{stage_id}",
@@ -192,7 +198,7 @@ class RunnerTracer:
                     "pid": 2,
                     "tid": stage_id,
                 },
-                ts=int((end - self._start) * 1000 * 1000),
+                ts=end_ts,
             )
 
     def write_task_metric(self, metric: ray_metrics.TaskMetric, node_id_worker_id: tuple[int, int] | None):
@@ -203,7 +209,7 @@ class RunnerTracer:
                 "category": "task",
                 "name": "task_remote_execution",
                 "ph": "b",
-                "pid": 2,
+                "pid": 1,
                 "tid": metric.stage_id,
             },
             ts=int((metric.start - self._start) * 1000 * 1000),
@@ -215,7 +221,7 @@ class RunnerTracer:
                     "category": "task",
                     "name": "task_remote_execution",
                     "ph": "e",
-                    "pid": 2,
+                    "pid": 1,
                     "tid": metric.stage_id,
                 },
                 ts=int((metric.end - self._start) * 1000 * 1000),
@@ -224,6 +230,7 @@ class RunnerTracer:
         # Write to the node/worker view
         if node_id_worker_id is not None:
             pid, tid = node_id_worker_id
+            start_ts = int((metric.start - self._start) * 1000 * 1000)
             self._write_event(
                 {
                     "name": "task_remote_execution",
@@ -231,7 +238,18 @@ class RunnerTracer:
                     "pid": pid,
                     "tid": tid,
                 },
-                ts=int((metric.start - self._start) * 1000 * 1000),
+                ts=start_ts,
+            )
+            self._write_event(
+                {
+                    "name": "stage-to-node-flow",
+                    "id": metric.stage_id,
+                    "ph": "f",
+                    "bp": "e",  # enclosed, since the stage "encloses" the execution
+                    "pid": pid,
+                    "tid": tid,
+                },
+                ts=start_ts,
             )
             if metric.end is not None:
                 self._write_event(
@@ -490,7 +508,7 @@ class RunnerTracer:
                     "stage_id": stage_id,
                     "instructions": instructions,
                 },
-                "pid": 2,
+                "pid": 1,
                 "tid": 1,
             }
         )
@@ -505,7 +523,7 @@ class RunnerTracer:
                 "category": "task",
                 "name": "task_dispatch",
                 "ph": "b",
-                "pid": 2,
+                "pid": 1,
                 "tid": 1,
             }
         )
@@ -517,7 +535,7 @@ class RunnerTracer:
                 "category": "task",
                 "name": "task_awaited_not_ready",
                 "ph": "n",
-                "pid": 2,
+                "pid": 1,
                 "tid": 1,
             }
         )
@@ -529,7 +547,7 @@ class RunnerTracer:
                 "category": "task",
                 "name": "task_dispatch",
                 "ph": "e",
-                "pid": 2,
+                "pid": 1,
                 "tid": 1,
             }
         )
@@ -539,7 +557,7 @@ class RunnerTracer:
                 "category": "task",
                 "name": f"task_execution.stage-{stage_id}",
                 "ph": "e",
-                "pid": 2,
+                "pid": 1,
                 "tid": 1,
             }
         )
