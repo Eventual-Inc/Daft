@@ -62,38 +62,14 @@ def ray_tracer(job_id: str):
             # Retrieve metrics from the metrics actor
             metrics = ray.get(metrics_actor.collect.remote())
             for metric in metrics:
-                f.write(
-                    json.dumps(
-                        {
-                            "id": metric.task_id,
-                            "category": "task",
-                            "name": "task_remote_execution",
-                            "ph": "b",
-                            "pid": 2,
-                            "tid": 1,
-                            "ts": (metric.start - tracer_start) * 1000 * 1000,
-                        }
-                    )
-                )
-                f.write(",\n")
-                if metric.end is not None:
-                    f.write(
-                        json.dumps(
-                            {
-                                "id": metric.task_id,
-                                "category": "task",
-                                "name": "task_remote_execution",
-                                "ph": "e",
-                                "pid": 2,
-                                "tid": 1,
-                                "ts": (metric.end - tracer_start) * 1000 * 1000,
-                            }
-                        )
-                    )
-                    f.write(",\n")
+                runner_tracer.write_task_metric(metric)
 
             # Add the final touches to the file
-            f.write(json.dumps({"name": "process_name", "ph": "M", "pid": 1, "args": {"name": "Scheduler"}}))
+            f.write(
+                json.dumps(
+                    {"name": "process_name", "ph": "M", "pid": 1, "args": {"name": "Scheduler"}, "sort_index": 1}
+                )
+            )
             f.write(",\n")
             f.write(
                 json.dumps(
@@ -101,7 +77,17 @@ def ray_tracer(job_id: str):
                 )
             )
             f.write(",\n")
-            f.write(json.dumps({"name": "process_name", "ph": "M", "pid": 2, "args": {"name": "Ray Tasks"}}))
+            f.write(
+                json.dumps(
+                    {
+                        "name": "process_name",
+                        "ph": "M",
+                        "pid": 2,
+                        "args": {"name": "Tasks (Grouped by Stage ID)"},
+                        "sort_index": 2,
+                    }
+                )
+            )
             f.write("\n]")
     else:
         runner_tracer = RunnerTracer(None, tracer_start)
@@ -113,17 +99,43 @@ class RunnerTracer:
         self._file = file
         self._start = start
 
-    def _write_event(self, event: dict[str, Any]):
+    def _write_event(self, event: dict[str, Any], ts: int | None = None):
         if self._file is not None:
+            ts = int((time.time() - self._start) * 1000 * 1000) if ts is None else ts
             self._file.write(
                 json.dumps(
                     {
                         **event,
-                        "ts": int((time.time() - self._start) * 1000 * 1000),
+                        "ts": ts,
                     }
                 )
             )
             self._file.write(",\n")
+
+    def write_task_metric(self, metric: ray_metrics.TaskMetric):
+        self._write_event(
+            {
+                "id": metric.task_id,
+                "category": "task",
+                "name": "task_remote_execution",
+                "ph": "b",
+                "pid": 2,
+                "tid": 1,
+            },
+            ts=int((metric.start - self._start) * 1000 * 1000),
+        )
+        if metric.end is not None:
+            self._write_event(
+                {
+                    "id": metric.task_id,
+                    "category": "task",
+                    "name": "task_remote_execution",
+                    "ph": "e",
+                    "pid": 2,
+                    "tid": 1,
+                },
+                ts=int((metric.end - self._start) * 1000 * 1000),
+            )
 
     @contextlib.contextmanager
     def dispatch_wave(self, wave_num: int):
@@ -371,7 +383,7 @@ class RunnerTracer:
                     "stage_id": stage_id,
                     "instructions": instructions,
                 },
-                "pid": 1,
+                "pid": 2,
                 "tid": 1,
             }
         )
@@ -383,7 +395,7 @@ class RunnerTracer:
                 "category": "task",
                 "name": "task_dispatch",
                 "ph": "b",
-                "pid": 1,
+                "pid": 2,
                 "tid": 1,
             }
         )
@@ -395,7 +407,7 @@ class RunnerTracer:
                 "category": "task",
                 "name": "task_awaited_not_ready",
                 "ph": "n",
-                "pid": 1,
+                "pid": 2,
                 "tid": 1,
             }
         )
@@ -407,7 +419,7 @@ class RunnerTracer:
                 "category": "task",
                 "name": "task_dispatch",
                 "ph": "e",
-                "pid": 1,
+                "pid": 2,
                 "tid": 1,
             }
         )
@@ -417,7 +429,7 @@ class RunnerTracer:
                 "category": "task",
                 "name": f"task_execution.stage-{stage_id}",
                 "ph": "e",
-                "pid": 1,
+                "pid": 2,
                 "tid": 1,
             }
         )
