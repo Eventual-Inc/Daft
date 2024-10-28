@@ -202,13 +202,13 @@ impl PipelineNode for IntermediateNode {
     }
 
     fn start(
-        &mut self,
+        &self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
         let num_workers = *NUM_CPUS;
         let mut child_result_receivers = Vec::with_capacity(self.children.len());
-        for child in &mut self.children {
+        for child in &self.children {
             let child_result_receiver = child.start(maintain_order, runtime_handle)?;
             child_result_receivers.push(CountingReceiver::new(
                 child_result_receiver,

@@ -218,12 +218,12 @@ impl PipelineNode for StreamingSinkNode {
     }
 
     fn start(
-        &mut self,
+        &self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
         let mut child_result_receivers = Vec::with_capacity(self.children.len());
-        for child in &mut self.children {
+        for child in &self.children {
             let child_result_channel = child.start(maintain_order, runtime_handle)?;
             let counting_receiver =
                 CountingReceiver::new(child_result_channel, self.runtime_stats.clone());

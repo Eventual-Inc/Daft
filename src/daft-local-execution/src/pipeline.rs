@@ -39,7 +39,7 @@ pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
     fn children(&self) -> Vec<&dyn PipelineNode>;
     fn name(&self) -> &'static str;
     fn start(
-        &mut self,
+        &self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>>;

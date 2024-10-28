@@ -68,7 +68,7 @@ impl PipelineNode for SourceNode {
         vec![]
     }
     fn start(
-        &mut self,
+        &self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {

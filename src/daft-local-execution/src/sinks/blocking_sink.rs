@@ -162,12 +162,11 @@ impl PipelineNode for BlockingSinkNode {
     }
 
     fn start(
-        &mut self,
+        &self,
         _maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
-        let child = self.child.as_mut();
-        let child_results_receiver = child.start(false, runtime_handle)?;
+        let child_results_receiver = self.child.start(false, runtime_handle)?;
         let child_results_receiver =
             CountingReceiver::new(child_results_receiver, self.runtime_stats.clone());
 
