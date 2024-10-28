@@ -140,6 +140,9 @@ def test_hive_pyarrow_daft_compatibility(tmpdir, partition_by, file_format, filt
 @pytest.mark.parametrize("file_format", ["csv", "parquet"])
 @pytest.mark.parametrize("filter", [True, False])
 def test_hive_daft_roundtrip(tmpdir, partition_by, file_format, filter):
+    # Sinks are not yet implemented for swordfish.
+    if daft.context.get_context().daft_execution_config.enable_native_executor is True:
+        pytest.skip("Native executor fails for these tests")
     filepath = f"{tmpdir}"
     source = daft.from_arrow(SAMPLE_DATA)
 
