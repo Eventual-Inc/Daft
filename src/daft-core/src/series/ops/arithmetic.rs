@@ -292,6 +292,7 @@ impl Rem for &Series {
     fn rem(self, rhs: Self) -> Self::Output {
         let output_type =
             InferDataType::from(self.data_type()).rem(InferDataType::from(rhs.data_type()))?;
+
         let lhs = self;
         match &output_type {
             #[cfg(feature = "python")]
