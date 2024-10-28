@@ -1,13 +1,13 @@
 /// Heavily inspired by DataFusion's EliminateCrossJoin rule: https://github.com/apache/datafusion/blob/b978cf8236436038a106ed94fb0d7eaa6ba99962/datafusion/optimizer/src/eliminate_cross_join.rs
-use std::{collections::HashSet, sync::Arc};
+use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
+use common_treenode::{Transformed, TreeNode};
 use daft_core::{
     join::JoinType,
     prelude::{Schema, SchemaRef, TimeUnit},
 };
-use daft_dsl::{Expr, ExprRef, Operator};
+use daft_dsl::{optimization::get_required_columns, Expr, ExprRef, Operator};
 use daft_schema::dtype::DataType;
 
 use super::OptimizerRule;
@@ -40,6 +40,7 @@ impl OptimizerRule for EliminateCrossJoin {
                 filter.input.as_ref(),
                 LogicalPlan::Join(Join {
                     join_type: JoinType::Inner,
+                    join_strategy: None,
                     ..
                 })
             );
@@ -126,25 +127,30 @@ fn flatten_join_inputs(
     possible_join_keys: &mut JoinKeySet,
     all_inputs: &mut Vec<LogicalPlanRef>,
 ) -> DaftResult<()> {
-    match plan {
-        LogicalPlan::Join(join) if join.join_type == JoinType::Inner => {
-            let keys = join.left_on.into_iter().zip(join.right_on);
-            possible_join_keys.insert_all_owned(keys);
-            flatten_join_inputs(
-                Arc::unwrap_or_clone(join.left),
-                possible_join_keys,
-                all_inputs,
-            )?;
-            flatten_join_inputs(
-                Arc::unwrap_or_clone(join.right),
-                possible_join_keys,
-                all_inputs,
-            )?;
-        }
-        _ => {
-            all_inputs.push(Arc::new(plan));
-        }
-    };
+    if let LogicalPlan::Join(
+        join @ Join {
+            join_type: JoinType::Inner,
+            join_strategy: None,
+            ..
+        },
+    ) = plan
+    {
+        let keys = join.left_on.into_iter().zip(join.right_on);
+        possible_join_keys.insert_all_owned(keys);
+        flatten_join_inputs(
+            Arc::unwrap_or_clone(join.left),
+            possible_join_keys,
+            all_inputs,
+        )?;
+        flatten_join_inputs(
+            Arc::unwrap_or_clone(join.right),
+            possible_join_keys,
+            all_inputs,
+        )?;
+    } else {
+        all_inputs.push(Arc::new(plan));
+    }
+
     Ok(())
 }
 
@@ -329,10 +335,7 @@ fn find_inner_join(
 }
 
 /// Check whether all columns are from the schema.
-pub fn check_all_columns_from_schema(
-    columns: &HashSet<Arc<str>>,
-    schema: &Schema,
-) -> DaftResult<bool> {
+pub fn check_all_columns_from_schema(columns: &[String], schema: &Schema) -> DaftResult<bool> {
     for col in columns {
         let exist = schema.get_index(col).is_ok();
 
@@ -359,8 +362,8 @@ pub fn find_valid_equijoin_key_pair(
     left_schema: SchemaRef,
     right_schema: SchemaRef,
 ) -> DaftResult<Option<(ExprRef, ExprRef)>> {
-    let left_using_columns = column_refs(left_key.clone());
-    let right_using_columns = column_refs(right_key.clone());
+    let left_using_columns = get_required_columns(&left_key);
+    let right_using_columns = get_required_columns(&right_key);
 
     // Conditions like a = 10, will be added to non-equijoin.
     if left_using_columns.is_empty() || right_using_columns.is_empty() {
@@ -378,19 +381,6 @@ pub fn find_valid_equijoin_key_pair(
     }
 
     Ok(None)
-}
-
-/// Return all references to columns in this expression.
-fn column_refs(expr: ExprRef) -> HashSet<Arc<str>> {
-    let mut set = HashSet::new();
-    expr.apply(|expr| {
-        if let Expr::Column(col) = expr.as_ref() {
-            set.insert(col.clone());
-        }
-        Ok(TreeNodeRecursion::Continue)
-    })
-    .expect("traversal is infallible");
-    set
 }
 
 /// Can this data type be used in hash join equal conditions??
@@ -430,9 +420,9 @@ pub fn can_hash(data_type: &DataType) -> bool {
         _ => false,
     }
 }
-
 #[cfg(test)]
 mod tests {
+    use common_display::mermaid::{MermaidDisplay, MermaidDisplayOptions};
     use daft_dsl::{col, lit};
     use daft_schema::field::Field;
     use rstest::*;
@@ -485,48 +475,51 @@ mod tests {
         .arced()
     }
 
-    fn assert_optimized_plan_eq(plan: LogicalPlanRef, expected: Vec<&str>) {
+    fn assert_optimized_plan_eq(plan: LogicalPlanRef, expected: LogicalPlanRef) {
         let starting_schema = plan.schema();
 
         let rule = EliminateCrossJoin::new();
         let transformed_plan = rule.try_optimize(plan).unwrap();
         assert!(transformed_plan.transformed, "failed to optimize plan");
-        let optimized_plan = transformed_plan.data;
-        let formatted = optimized_plan.repr_indent();
+        let actual = transformed_plan.data;
 
-        let actual: Vec<&str> = formatted.trim().lines().collect();
+        if actual != expected {
+            println!(
+                "expected:\n{}\nactual:\n{}",
+                expected.repr_mermaid(MermaidDisplayOptions::default()),
+                actual.repr_mermaid(MermaidDisplayOptions::default())
+            );
+        }
         assert_eq!(
             expected, actual,
             "\n\nexpected:\n\n{expected:#?}\nactual:\n\n{actual:#?}\n\n"
         );
-
-        assert_eq!(starting_schema, optimized_plan.schema())
+        assert_eq!(starting_schema, actual.schema())
     }
 
     #[rstest]
     fn eliminate_cross_with_simple_and(t1: LogicalPlanRef, t2: LogicalPlanRef) -> DaftResult<()> {
         // could eliminate to inner join since filter has Join predicates
-        let plan = LogicalPlanBuilder::from(t1)
-            .cross_join(t2, None, None)?
+        let plan = LogicalPlanBuilder::from(t1.clone())
+            .cross_join(t2.clone(), None, None)?
             .filter(col("a").eq(col("right.a")).and(col("b").eq(col("right.b"))))?
             .build();
 
-        let expected = vec![
-            "Join: Type = Inner",
-            "Strategy = Auto",
-            "Left on = col(a), col(b)",
-            "Right on = col(right.a), col(right.b)",
-            "Output schema = a#UInt32, b#UInt32, c#UInt32, right.a#UInt32, right.b#UInt32, right.c#UInt32",
-            "  PlaceHolder:",
-            "Source ID = 0",
-            "Num partitions = 0",
-            "Output schema = a#UInt32, b#UInt32, c#UInt32",
-            "  Project: col(a) as right.a, col(b) as right.b, col(c) as right.c",
-            "    PlaceHolder:",
-            "Source ID = 0",
-            "Num partitions = 0",
-            "Output schema = a#UInt32, b#UInt32, c#UInt32",
-        ];
+        let expected = LogicalPlanBuilder::from(t1)
+            .join(
+                LogicalPlanBuilder::from(t2).select(vec![
+                    col("a").alias("right.a"),
+                    col("b").alias("right.b"),
+                    col("c").alias("right.c"),
+                ])?,
+                vec![col("a"), col("b")],
+                vec![col("right.a"), col("right.b")],
+                JoinType::Inner,
+                None,
+                None,
+                None,
+            )?
+            .build();
 
         assert_optimized_plan_eq(plan, expected);
 
@@ -537,26 +530,27 @@ mod tests {
     fn eliminate_cross_with_simple_or(t1: LogicalPlanRef, t2: LogicalPlanRef) -> DaftResult<()> {
         // could not eliminate to inner join since filter OR expression and there is no common
         // Join predicates in left and right of OR expr.
-        let plan = LogicalPlanBuilder::from(t1)
-            .cross_join(t2, None, None)?
+        let plan = LogicalPlanBuilder::from(t1.clone())
+            .cross_join(t2.clone(), None, None)?
             .filter(col("a").eq(col("right.a")).or(col("right.b").eq(col("a"))))?
             .build();
 
-        let expected = vec![
-            "Filter: [col(a) == col(right.a)] | [col(right.b) == col(a)]",
-            "  Join: Type = Inner",
-            "Strategy = Auto",
-            "Output schema = a#UInt32, b#UInt32, c#UInt32, right.a#UInt32, right.b#UInt32, right.c#UInt32",
-            "    PlaceHolder:",
-            "Source ID = 0",
-            "Num partitions = 0",
-            "Output schema = a#UInt32, b#UInt32, c#UInt32",
-            "    Project: col(a) as right.a, col(b) as right.b, col(c) as right.c",
-            "      PlaceHolder:",
-            "Source ID = 0",
-            "Num partitions = 0",
-            "Output schema = a#UInt32, b#UInt32, c#UInt32",
-        ];
+        let expected = LogicalPlanBuilder::from(t1)
+            .join(
+                LogicalPlanBuilder::from(t2).select(vec![
+                    col("a").alias("right.a"),
+                    col("b").alias("right.b"),
+                    col("c").alias("right.c"),
+                ])?,
+                vec![],
+                vec![],
+                JoinType::Inner,
+                None,
+                None,
+                None,
+            )?
+            .filter(col("a").eq(col("right.a")).or(col("right.b").eq(col("a"))))?
+            .build();
 
         assert_optimized_plan_eq(plan, expected);
 
@@ -570,28 +564,27 @@ mod tests {
         let expr3 = col("a").eq(col("right.a"));
         let expr4 = col("right.c").eq(lit(10u32));
         // could eliminate to inner join
-        let plan = LogicalPlanBuilder::from(t1)
-            .cross_join(t2, None, None)?
-            .filter(expr1.and(expr2).and(expr3).and(expr4))?
+        let plan = LogicalPlanBuilder::from(t1.clone())
+            .cross_join(t2.clone(), None, None)?
+            .filter(expr1.and(expr2.clone()).and(expr3).and(expr4.clone()))?
             .build();
 
-        let expected = vec![
-            "Filter: [col(right.c) < lit(20)] & [col(right.c) == lit(10)]",
-            "  Join: Type = Inner",
-            "Strategy = Auto",
-            "Left on = col(a)",
-            "Right on = col(right.a)",
-            "Output schema = a#UInt32, b#UInt32, c#UInt32, right.a#UInt32, right.b#UInt32, right.c#UInt32",
-            "    PlaceHolder:",
-            "Source ID = 0",
-            "Num partitions = 0",
-            "Output schema = a#UInt32, b#UInt32, c#UInt32",
-            "    Project: col(a) as right.a, col(b) as right.b, col(c) as right.c",
-            "      PlaceHolder:",
-            "Source ID = 0",
-            "Num partitions = 0",
-            "Output schema = a#UInt32, b#UInt32, c#UInt32",
-        ];
+        let expected = LogicalPlanBuilder::from(t1)
+            .join(
+                LogicalPlanBuilder::from(t2).select(vec![
+                    col("a").alias("right.a"),
+                    col("b").alias("right.b"),
+                    col("c").alias("right.c"),
+                ])?,
+                vec![col("a")],
+                vec![col("right.a")],
+                JoinType::Inner,
+                None,
+                None,
+                None,
+            )?
+            .filter(expr2.and(expr4))?
+            .build();
 
         assert_optimized_plan_eq(plan, expected);
 
@@ -605,28 +598,28 @@ mod tests {
         let expr2 = col("right.c").lt(lit(15u32));
         let expr3 = col("a").eq(col("right.a"));
         let expr4 = col("right.c").eq(lit(688u32));
-        let plan = LogicalPlanBuilder::from(t1)
-            .cross_join(t2, None, None)?
-            .filter(expr1.and(expr2).or(expr3.and(expr4)))?
+        let plan = LogicalPlanBuilder::from(t1.clone())
+            .cross_join(t2.clone(), None, None)?
+            .filter(expr1.and(expr2.clone()).or(expr3.and(expr4.clone())))?
             .build();
 
-        let expected = vec![
-            "Filter: [col(right.c) < lit(15)] | [col(right.c) == lit(688)]",
-            "  Join: Type = Inner",
-            "Strategy = Auto",
-            "Left on = col(a)",
-            "Right on = col(right.a)",
-            "Output schema = a#UInt32, b#UInt32, c#UInt32, right.a#UInt32, right.b#UInt32, right.c#UInt32",
-            "    PlaceHolder:",
-            "Source ID = 0",
-            "Num partitions = 0",
-            "Output schema = a#UInt32, b#UInt32, c#UInt32",
-            "    Project: col(a) as right.a, col(b) as right.b, col(c) as right.c",
-            "      PlaceHolder:",
-            "Source ID = 0",
-            "Num partitions = 0",
-            "Output schema = a#UInt32, b#UInt32, c#UInt32",
-        ];
+        let expected = LogicalPlanBuilder::from(t1)
+            .join(
+                LogicalPlanBuilder::from(t2).select(vec![
+                    col("a").alias("right.a"),
+                    col("b").alias("right.b"),
+                    col("c").alias("right.c"),
+                ])?,
+                vec![col("a")],
+                vec![col("right.a")],
+                JoinType::Inner,
+                None,
+                None,
+                None,
+            )?
+            .filter(expr2.or(expr4))?
+            .build();
+
         assert_optimized_plan_eq(plan, expected);
 
         Ok(())
@@ -640,8 +633,8 @@ mod tests {
         #[from(t1)] t4: LogicalPlanRef,
     ) -> DaftResult<()> {
         // could eliminate to inner join
-        let plan1 = LogicalPlanBuilder::from(t1)
-            .cross_join(t2, None, Some("t2."))?
+        let plan1 = LogicalPlanBuilder::from(t1.clone())
+            .cross_join(t2.clone(), None, Some("t2."))?
             .filter(
                 col("a")
                     .eq(col("t2.a"))
@@ -650,8 +643,8 @@ mod tests {
             )?
             .build();
 
-        let plan2 = LogicalPlanBuilder::from(t3)
-            .cross_join(t4, None, Some("t4."))?
+        let plan2 = LogicalPlanBuilder::from(t3.clone())
+            .cross_join(t4.clone(), None, Some("t4."))?
             .filter(
                 (col("a")
                     .eq(col("t4.a"))
@@ -661,8 +654,8 @@ mod tests {
             )?
             .build();
 
-        let plan = LogicalPlanBuilder::from(plan1)
-            .cross_join(plan2, None, Some("t3."))?
+        let plan = LogicalPlanBuilder::from(plan1.clone())
+            .cross_join(plan2.clone(), None, Some("t3."))?
             .filter(
                 col("t3.a")
                     .eq(col("a"))
@@ -670,46 +663,64 @@ mod tests {
                     .or(col("t3.a").eq(col("a")).and(col("t4.c").eq(lit(688u32)))),
             )?
             .build();
+        let plan_1 = LogicalPlanBuilder::from(t1)
+            .join(
+                LogicalPlanBuilder::from(t2).select(vec![
+                    col("a").alias("t2.a"),
+                    col("b").alias("t2.b"),
+                    col("c").alias("t2.c"),
+                ])?,
+                vec![col("a")],
+                vec![col("t2.a")],
+                JoinType::Inner,
+                None,
+                None,
+                None,
+            )?
+            .filter(col("t2.c").lt(lit(15u32)).or(col("t2.c").eq(lit(688u32))))?
+            .build();
 
-        let expected = vec![
-            "Filter: [col(t4.c) < lit(15)] | [col(t4.c) == lit(688)]",
-            "  Join: Type = Inner",
-            "Strategy = Auto",
-            "Left on = col(a)",
-            "Right on = col(t3.a)",
-            "Output schema = a#UInt32, b#UInt32, c#UInt32, t2.a#UInt32, t2.b#UInt32, t2.c#UInt32, t3.a#UInt32, t3.b#UInt32, t3.c#UInt32, t4.a#UInt32, t4.b#UInt32, t4.c#UInt32",
-            "    Filter: [col(t2.c) < lit(15)] | [col(t2.c) == lit(688)]",
-            "      Join: Type = Inner",
-            "Strategy = Auto",
-            "Left on = col(a)",
-            "Right on = col(t2.a)",
-            "Output schema = a#UInt32, b#UInt32, c#UInt32, t2.a#UInt32, t2.b#UInt32, t2.c#UInt32",
-            "        PlaceHolder:",
-            "Source ID = 0",
-            "Num partitions = 0",
-            "Output schema = a#UInt32, b#UInt32, c#UInt32",
-            "        Project: col(a) as t2.a, col(b) as t2.b, col(c) as t2.c",
-            "          PlaceHolder:",
-            "Source ID = 0",
-            "Num partitions = 0",
-            "Output schema = a#UInt32, b#UInt32, c#UInt32",
-            "    Project: col(a) as t3.a, col(b) as t3.b, col(c) as t3.c, col(t4.a), col(t4.b), col(t4.c)",
-            "      Filter: [[col(t4.c) < lit(15)] | [col(c) == lit(688)]] | [col(b) == col(t4.b)]",
-            "        Join: Type = Inner",
-            "Strategy = Auto",
-            "Left on = col(a)",
-            "Right on = col(t4.a)",
-            "Output schema = a#UInt32, b#UInt32, c#UInt32, t4.a#UInt32, t4.b#UInt32, t4.c#UInt32",
-            "          PlaceHolder:",
-            "Source ID = 0",
-            "Num partitions = 0",
-            "Output schema = a#UInt32, b#UInt32, c#UInt32",
-            "          Project: col(a) as t4.a, col(b) as t4.b, col(c) as t4.c",
-            "            PlaceHolder:",
-            "Source ID = 0",
-            "Num partitions = 0",
-            "Output schema = a#UInt32, b#UInt32, c#UInt32",
-        ];
+        let plan_2 = LogicalPlanBuilder::from(t3)
+            .join(
+                LogicalPlanBuilder::from(t4).select(vec![
+                    col("a").alias("t4.a"),
+                    col("b").alias("t4.b"),
+                    col("c").alias("t4.c"),
+                ])?,
+                vec![col("a")],
+                vec![col("t4.a")],
+                JoinType::Inner,
+                None,
+                None,
+                None,
+            )?
+            .filter(
+                col("t4.c")
+                    .lt(lit(15u32))
+                    .or(col("c").eq(lit(688u32)))
+                    .or(col("b").eq(col("t4.b"))),
+            )?
+            .select(vec![
+                col("a").alias("t3.a"),
+                col("b").alias("t3.b"),
+                col("c").alias("t3.c"),
+                col("t4.a"),
+                col("t4.b"),
+                col("t4.c"),
+            ])?
+            .build();
+        let expected = LogicalPlanBuilder::from(plan_1)
+            .join(
+                plan_2,
+                vec![col("a")],
+                vec![col("t3.a")],
+                JoinType::Inner,
+                None,
+                None,
+                None,
+            )?
+            .filter(col("t4.c").lt(lit(15u32)).or(col("t4.c").eq(lit(688u32))))?
+            .build();
 
         assert_optimized_plan_eq(plan, expected);
 
