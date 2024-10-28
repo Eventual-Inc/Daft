@@ -672,9 +672,12 @@ class DeltaLakeWriteVisitors:
             else:
                 size = 0
 
+            # remove leading slash
+            path = written_file.path[1:] if written_file.path.startswith("/") else written_file.path
+
             self.parent.add_actions.append(
                 AddAction(
-                    written_file.path,
+                    path,
                     size,
                     self.partition_values,
                     int(datetime.now().timestamp() * 1000),

@@ -1,7 +1,8 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
+use common_runtime::get_compute_runtime;
 use daft_micropartition::MicroPartition;
 use tracing::{info_span, instrument};
 
@@ -13,8 +14,39 @@ use crate::{
     ExecutionRuntimeHandle, NUM_CPUS,
 };
 
-pub trait IntermediateOperatorState: Send + Sync {
+pub(crate) trait DynIntermediateOpState: Send + Sync {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
+}
+
+struct DefaultIntermediateOperatorState {}
+impl DynIntermediateOpState for DefaultIntermediateOperatorState {
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
+pub(crate) struct IntermediateOperatorState {
+    inner: Mutex<Box<dyn DynIntermediateOpState>>,
+}
+
+impl IntermediateOperatorState {
+    fn new(inner: Box<dyn DynIntermediateOpState>) -> Arc<Self> {
+        Arc::new(Self {
+            inner: Mutex::new(inner),
+        })
+    }
+
+    pub(crate) fn with_state_mut<T: DynIntermediateOpState + 'static, F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut T) -> R,
+    {
+        let mut guard = self.inner.lock().unwrap();
+        let state = guard
+            .as_any_mut()
+            .downcast_mut::<T>()
+            .expect("State type mismatch");
+        f(state)
+    }
 }
 
 pub enum IntermediateOperatorResult {
@@ -28,11 +60,11 @@ pub trait IntermediateOperator: Send + Sync {
         &self,
         idx: usize,
         input: &PipelineResultType,
-        state: Option<&mut Box<dyn IntermediateOperatorState>>,
+        state: &IntermediateOperatorState,
     ) -> DaftResult<IntermediateOperatorResult>;
     fn name(&self) -> &'static str;
-    fn make_state(&self) -> Option<Box<dyn IntermediateOperatorState>> {
-        None
+    fn make_state(&self) -> Box<dyn DynIntermediateOpState> {
+        Box::new(DefaultIntermediateOperatorState {})
     }
 }
 
@@ -75,11 +107,19 @@ impl IntermediateNode {
         rt_context: Arc<RuntimeStatsContext>,
     ) -> DaftResult<()> {
         let span = info_span!("IntermediateOp::execute");
-        let mut state = op.make_state();
+        let compute_runtime = get_compute_runtime();
+        let state_wrapper = IntermediateOperatorState::new(op.make_state());
         while let Some((idx, morsel)) = receiver.recv().await {
             loop {
-                let result =
-                    rt_context.in_span(&span, || op.execute(idx, &morsel, state.as_mut()))?;
+                let op = op.clone();
+                let morsel = morsel.clone();
+                let span = span.clone();
+                let rt_context = rt_context.clone();
+                let state_wrapper = state_wrapper.clone();
+                let fut = async move {
+                    rt_context.in_span(&span, || op.execute(idx, &morsel, &state_wrapper))
+                };
+                let result = compute_runtime.await_on(fut).await??;
                 match result {
                     IntermediateOperatorResult::NeedMoreInput(Some(mp)) => {
                         let _ = sender.send(mp.into()).await;

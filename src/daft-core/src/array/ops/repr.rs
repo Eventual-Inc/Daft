@@ -10,7 +10,7 @@ use crate::{
             SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
         BinaryArray, BooleanArray, DaftNumericType, DataType, ExtensionArray, FixedSizeBinaryArray,
-        NullArray, UInt64Array, Utf8Array,
+        IntervalArray, IntervalValue, NullArray, UInt64Array, Utf8Array,
     },
     series::Series,
     utils::display::{
@@ -205,6 +205,19 @@ impl DurationArray {
                     panic!("Wrong dtype for DurationArray: {}", self.field.dtype)
                 };
                 display_duration(val, time_unit)
+            },
+        );
+        Ok(res)
+    }
+}
+
+impl IntervalArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        let res = self.get(idx).map_or_else(
+            || "None".to_string(),
+            |v| -> String {
+                let value: IntervalValue = v.into();
+                format!("{value}")
             },
         );
         Ok(res)
@@ -429,6 +442,7 @@ impl_array_html_value!(Decimal128Array);
 impl_array_html_value!(DateArray);
 impl_array_html_value!(TimeArray);
 impl_array_html_value!(DurationArray);
+impl_array_html_value!(IntervalArray);
 impl_array_html_value!(TimestampArray);
 impl_array_html_value!(EmbeddingArray);
 

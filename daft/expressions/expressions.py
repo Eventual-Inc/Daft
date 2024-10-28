@@ -166,6 +166,26 @@ def col(name: str) -> Expression:
     return Expression._from_pyexpr(_col(name))
 
 
+def interval(
+    years: int | None = None,
+    months: int | None = None,
+    days: int | None = None,
+    hours: int | None = None,
+    minutes: int | None = None,
+    seconds: int | None = None,
+    millis: int | None = None,
+    nanos: int | None = None,
+) -> Expression:
+    """
+    Creates an Expression representing an interval.
+
+    """
+    lit_value = native.interval_lit(
+        years=years, months=months, days=days, hours=hours, minutes=minutes, seconds=seconds, millis=millis, nanos=nanos
+    )
+    return Expression._from_pyexpr(lit_value)
+
+
 class Expression:
     _expr: _PyExpr = None  # type: ignore
 
@@ -465,6 +485,16 @@ class Expression:
         """Inverts a boolean expression (``~e``)"""
         expr = self._expr.__invert__()
         return Expression._from_pyexpr(expr)
+
+    def __floordiv__(self, other: Expression) -> Expression:
+        """Floor divides two numeric expressions (``e1 / e2``)"""
+        expr = Expression._to_expression(other)
+        return Expression._from_pyexpr(self._expr // expr._expr)
+
+    def __rfloordiv__(self, other: object) -> Expression:
+        """Reverse floor divides two numeric expressions (``e2 / e1``)"""
+        expr = Expression._to_expression(other)
+        return Expression._from_pyexpr(expr._expr // self._expr)
 
     def alias(self, name: builtins.str) -> Expression:
         """Gives the expression a new name, which is its column's name in the DataFrame schema and the name

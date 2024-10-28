@@ -1,9 +1,10 @@
 use std::{collections::HashSet, sync::Arc};
 
 use common_error::DaftResult;
+use common_runtime::get_io_runtime;
 use daft_compression::CompressionCodec;
 use daft_core::prelude::Schema;
-use daft_io::{get_runtime, GetResult, IOClient, IOStatsRef};
+use daft_io::{GetResult, IOClient, IOStatsRef};
 use futures::{StreamExt, TryStreamExt};
 use indexmap::IndexMap;
 use snafu::ResultExt;
@@ -55,7 +56,7 @@ pub fn read_json_schema(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
 ) -> DaftResult<Schema> {
-    let runtime_handle = get_runtime(true)?;
+    let runtime_handle = get_io_runtime(true);
     runtime_handle.block_on_current_thread(async {
         read_json_schema_single(
             uri,
@@ -77,7 +78,7 @@ pub async fn read_json_schema_bulk(
     io_stats: Option<IOStatsRef>,
     num_parallel_tasks: usize,
 ) -> DaftResult<Vec<Schema>> {
-    let runtime_handle = get_runtime(true)?;
+    let runtime_handle = get_io_runtime(true);
     let result = runtime_handle
         .block_on_current_thread(async {
             let task_stream = futures::stream::iter(uris.iter().map(|uri| {

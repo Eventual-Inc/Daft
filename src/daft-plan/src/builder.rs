@@ -83,6 +83,13 @@ impl From<&LogicalPlanBuilder> for LogicalPlanRef {
         value.plan.clone()
     }
 }
+
+impl From<LogicalPlanRef> for LogicalPlanBuilder {
+    fn from(plan: LogicalPlanRef) -> Self {
+        Self::new(plan, None)
+    }
+}
+
 pub trait IntoGlobPath {
     fn into_glob_path(self) -> Vec<String>;
 }
@@ -440,6 +447,7 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(pivot_logical_plan))
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn join<Right: Into<LogicalPlanRef>>(
         &self,
         right: Right,
@@ -447,6 +455,8 @@ impl LogicalPlanBuilder {
         right_on: Vec<ExprRef>,
         join_type: JoinType,
         join_strategy: Option<JoinStrategy>,
+        join_suffix: Option<&str>,
+        join_prefix: Option<&str>,
     ) -> DaftResult<Self> {
         let logical_plan: LogicalPlan = logical_ops::Join::try_new(
             self.plan.clone(),
@@ -455,9 +465,28 @@ impl LogicalPlanBuilder {
             right_on,
             join_type,
             join_strategy,
+            join_suffix,
+            join_prefix,
         )?
         .into();
         Ok(self.with_new_plan(logical_plan))
+    }
+
+    pub fn cross_join<Right: Into<LogicalPlanRef>>(
+        &self,
+        right: Right,
+        join_suffix: Option<&str>,
+        join_prefix: Option<&str>,
+    ) -> DaftResult<Self> {
+        self.join(
+            right,
+            vec![],
+            vec![],
+            JoinType::Inner,
+            None,
+            join_suffix,
+            join_prefix,
+        )
     }
 
     pub fn concat(&self, other: &Self) -> DaftResult<Self> {
@@ -874,7 +903,7 @@ impl PyLogicalPlanBuilder {
             )?
             .into())
     }
-
+    #[allow(clippy::too_many_arguments)]
     pub fn join(
         &self,
         right: &Self,
@@ -882,6 +911,8 @@ impl PyLogicalPlanBuilder {
         right_on: Vec<PyExpr>,
         join_type: JoinType,
         join_strategy: Option<JoinStrategy>,
+        join_suffix: Option<&str>,
+        join_prefix: Option<&str>,
     ) -> PyResult<Self> {
         Ok(self
             .builder
@@ -891,6 +922,8 @@ impl PyLogicalPlanBuilder {
                 pyexprs_to_exprs(right_on),
                 join_type,
                 join_strategy,
+                join_suffix,
+                join_prefix,
             )?
             .into())
     }

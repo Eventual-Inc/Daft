@@ -5,7 +5,7 @@ use std::{
 };
 
 use common_daft_config::DaftExecutionConfig;
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
 use daft_core::prelude::*;
 use daft_dsl::{
@@ -428,6 +428,11 @@ pub(super) fn translate_single_logical_node(
             join_strategy,
             ..
         }) => {
+            if left_on.is_empty() && right_on.is_empty() && join_type == &JoinType::Inner {
+                return Err(DaftError::not_implemented(
+                    "Joins without join conditions (cross join) are not supported yet",
+                ));
+            }
             let mut right_physical = physical_children.pop().expect("requires 1 inputs");
             let mut left_physical = physical_children.pop().expect("requires 2 inputs");
 
@@ -1220,6 +1225,8 @@ mod tests {
                 vec![col("a"), col("b")],
                 JoinType::Inner,
                 Some(JoinStrategy::Hash),
+                None,
+                None,
             )?
             .build();
         logical_to_physical(logical_plan, cfg)

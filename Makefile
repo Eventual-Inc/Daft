@@ -58,4 +58,4 @@ test: .venv build  ## Run tests
 
 .PHONY: clean
 clean:
-	rm -rf .venv
+	rm -rf $(VENV)

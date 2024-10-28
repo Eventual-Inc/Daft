@@ -3,11 +3,12 @@ use std::{collections::HashSet, sync::Arc};
 use arrow2::io::csv::read_async::{AsyncReader, AsyncReaderBuilder};
 use async_compat::CompatExt;
 use common_error::DaftResult;
+use common_runtime::get_io_runtime;
 use csv_async::ByteRecord;
 use daft_compression::CompressionCodec;
 use daft_core::prelude::Schema;
 use daft_decoding::inference::infer;
-use daft_io::{get_runtime, GetResult, IOClient, IOStatsRef};
+use daft_io::{GetResult, IOClient, IOStatsRef};
 use futures::{StreamExt, TryStreamExt};
 use snafu::ResultExt;
 use tokio::{
@@ -58,7 +59,7 @@ pub fn read_csv_schema(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
 ) -> DaftResult<(Schema, CsvReadStats)> {
-    let runtime_handle = get_runtime(true)?;
+    let runtime_handle = get_io_runtime(true);
     runtime_handle.block_on_current_thread(async {
         read_csv_schema_single(
             uri,
@@ -80,7 +81,7 @@ pub async fn read_csv_schema_bulk(
     io_stats: Option<IOStatsRef>,
     num_parallel_tasks: usize,
 ) -> DaftResult<Vec<(Schema, CsvReadStats)>> {
-    let runtime_handle = get_runtime(true)?;
+    let runtime_handle = get_io_runtime(true);
     let result = runtime_handle
         .block_on_current_thread(async {
             let task_stream = futures::stream::iter(uris.iter().map(|uri| {

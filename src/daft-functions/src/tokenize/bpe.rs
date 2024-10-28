@@ -8,7 +8,8 @@ use std::{
 
 use base64::{engine::general_purpose, DecodeError, Engine};
 use common_error::{DaftError, DaftResult};
-use daft_io::{get_io_client, get_runtime, IOConfig};
+use common_runtime::get_io_runtime;
+use daft_io::{get_io_client, IOConfig};
 use snafu::{prelude::*, Snafu};
 use tiktoken_rs::CoreBPE;
 
@@ -158,12 +159,11 @@ fn get_file_bpe(
 ) -> DaftResult<DaftBPE> {
     // Fetch the token file as a string
     let client = get_io_client(false, io_config)?;
-    let runtime = get_runtime(false)?;
+    let runtime = get_io_runtime(false);
 
     let path = path.to_string();
-    let file_bytes = runtime.block_on_io_pool(async move {
-        client.single_url_get(path, None, None).await?.bytes().await
-    })??;
+    let file_bytes = runtime
+        .block_on(async move { client.single_url_get(path, None, None).await?.bytes().await })??;
     let file_str = std::str::from_utf8(&file_bytes).with_context(|_| InvalidUtf8SequenceSnafu)?;
 
     let tokens_res = parse_tokens(file_str)?;

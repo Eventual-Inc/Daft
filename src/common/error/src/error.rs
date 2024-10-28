@@ -48,6 +48,14 @@ pub enum DaftError {
     RegexError(#[from] regex::Error),
     #[error("DaftError::FromUtf8Error {0}")]
     FromUtf8Error(#[from] std::string::FromUtf8Error),
+    #[error("Not Yet Implemented: {0}")]
+    NotImplemented(String),
+}
+
+impl DaftError {
+    pub fn not_implemented<T: std::fmt::Display>(msg: T) -> Self {
+        Self::NotImplemented(msg.to_string())
+    }
 }
 
 impl From<arrow2::error::Error> for DaftError {
