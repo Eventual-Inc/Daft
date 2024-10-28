@@ -139,7 +139,7 @@ impl ActorPoolProjectOperator {
 }
 
 impl IntermediateOperator for ActorPoolProjectOperator {
-    #[instrument(skip_all, name = "ActorPoolProjectOperator::sink")]
+    #[instrument(skip_all, name = "ActorPoolProjectOperator::execute")]
     fn execute(
         &self,
         _idx: usize,
