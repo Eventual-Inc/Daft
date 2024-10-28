@@ -506,6 +506,13 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(logical_plan))
     }
 
+    pub fn intersect(&self, other: &Self, is_all: bool) -> DaftResult<Self> {
+        let logical_plan: LogicalPlan =
+            ops::Intersect::try_new(self.plan.clone(), other.plan.clone(), is_all)?
+                .to_optimized_join()?;
+        Ok(self.with_new_plan(logical_plan))
+    }
+
     pub fn add_monotonically_increasing_id(&self, column_name: Option<&str>) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
             ops::MonotonicallyIncreasingId::new(self.plan.clone(), column_name).into();
@@ -943,6 +950,10 @@ impl PyLogicalPlanBuilder {
 
     pub fn concat(&self, other: &Self) -> DaftResult<Self> {
         Ok(self.builder.concat(&other.builder)?.into())
+    }
+
+    pub fn intersect(&self, other: &Self, is_all: bool) -> DaftResult<Self> {
+        Ok(self.builder.intersect(&other.builder, is_all)?.into())
     }
 
     pub fn add_monotonically_increasing_id(&self, column_name: Option<&str>) -> PyResult<Self> {
