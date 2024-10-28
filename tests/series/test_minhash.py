@@ -43,6 +43,56 @@ def test_minhash(num_hashes, ngram_size, seed):
             assert minhash[0][i] != minhash[1][i]
 
 
+@pytest.mark.parametrize(
+    "num_hashes,ngram_size,seed,expected",
+    [
+        # Test with single hash, unigrams
+        (
+            1,
+            1,
+            1,
+            [
+                [1196831525],  # "The quick brown fox"
+                [120174860],  # "The speedy orange fox"
+                [1196831525],  # "The quick brown fox" - identical to first
+                [2559787809],  # "thisonlyhasonetokenohno"
+                None,  # None value
+                [27473697],  # "This has more..."
+                [441506281],  # "!@# $%^&*()..."
+                [27473697],  # "This has excessive..."
+                [500470364],  # "" - empty string
+                [76461626],  # " spaces at..."
+                [500470364],  # " " - just a space
+                None,  # None value
+            ],
+        ),
+        # Test with two hashes, bigrams
+        (
+            2,
+            2,
+            123,
+            [
+                [760527683, 1539127776],
+                [1704758042, 309185920],
+                [760527683, 1539127776],
+                [3763775515, 2389564536],
+                None,
+                [437177734, 1262955240],
+                [101182009, 511203536],
+                [27545328, 189622288],
+                [2989311896, 1304790168],
+                [94241209, 101414440],
+                [531691842, 296683088],
+                None,
+            ],
+        ),
+    ],
+)
+def test_minhash_exact_values(num_hashes, ngram_size, seed, expected):
+    result = minhash_none(test_series, num_hashes, ngram_size, seed)
+    assert result == expected
+
+
 @pytest.mark.parametrize("num_hashes", [0, -1, -100])
 @pytest.mark.parametrize("ngram_size", [1, 2, 4, 5, 100])
 @pytest.mark.parametrize("seed", [1, -1, 123, None])
