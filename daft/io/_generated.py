@@ -80,8 +80,7 @@ class GeneratedDataScanOperator(ScanOperator):
             yield ScanTask.python_factory_func_scan_task(
                 func_args=(i, *self._generator_args),
                 schema=self.schema()._schema,
-                module=None,
-                func_name=None,
+                module_and_func_name=None,
                 func=self._generator,
                 num_rows=None,
                 size_bytes=None,

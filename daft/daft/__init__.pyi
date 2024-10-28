@@ -751,8 +751,7 @@ class ScanTask:
     def python_factory_func_scan_task(
         func_args: tuple[Any, ...],
         schema: PySchema,
-        module: str | None,
-        func_name: str | None,
+        module_and_func_name: tuple[str, str] | None,
         func: Callable[[int, Any], Iterator[PyTable]] | None,
         num_rows: int | None,
         size_bytes: int | None,

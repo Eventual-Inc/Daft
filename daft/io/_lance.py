@@ -124,8 +124,10 @@ class LanceDBScanOperator(ScanOperator):
             yield ScanTask.python_factory_func_scan_task(
                 func_args=(fragment, required_columns),
                 schema=self.schema()._schema,
-                module=_lancedb_table_factory_function.__module__,
-                func_name=_lancedb_table_factory_function.__name__,
+                module_and_func_name=(
+                    _lancedb_table_factory_function.__module__,
+                    _lancedb_table_factory_function.__name__,
+                ),
                 func=None,
                 num_rows=num_rows,
                 size_bytes=size_bytes,
