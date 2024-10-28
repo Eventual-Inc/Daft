@@ -537,9 +537,9 @@ impl SQLPlanner {
                 ..
             } => {
                 let table_name = name.to_string();
-                let rel = self
-                    .get_table_from_current_scope(&table_name)
-                    .ok_or_else(|| PlannerError::table_not_found(dbg!(&table_name).clone()))?;
+                let Some(rel) = self.get_table_from_current_scope(&table_name) else {
+                    table_not_found_err!(table_name)
+                };
                 (rel, alias.clone())
             }
             _ => unsupported_sql_err!("Unsupported table factor"),
