@@ -12,8 +12,9 @@ use daft_plan::{LogicalPlanBuilder, LogicalPlanRef};
 use sqlparser::{
     ast::{
         ArrayElemTypeDef, BinaryOperator, CastKind, Distinct, ExactNumberInfo, ExcludeSelectItem,
-        GroupByExpr, Ident, Query, SelectItem, Statement, StructField, Subscript, TableAlias,
-        TableWithJoins, TimezoneInfo, UnaryOperator, Value, WildcardAdditionalOptions, With,
+        GroupByExpr, Ident, Query, SelectItem, SetExpr, Statement, StructField, Subscript,
+        TableAlias, TableWithJoins, TimezoneInfo, UnaryOperator, Value, WildcardAdditionalOptions,
+        With,
     },
     dialect::GenericDialect,
     parser::{Parser, ParserOptions},
@@ -199,8 +200,16 @@ impl SQLPlanner {
     fn plan_query(&mut self, query: &Query) -> SQLPlannerResult<LogicalPlanBuilder> {
         check_query_features(query)?;
 
-        let Some(selection) = query.body.as_select() else {
-            invalid_operation_err!("Only SELECT queries are supported, got: '{}'", query.body)
+        let selection = match query.body.as_ref() {
+            SetExpr::Select(selection) => selection,
+            SetExpr::Query(_) => unsupported_sql_err!("Subqueries are not supported"),
+            SetExpr::SetOperation { .. } => {
+                unsupported_sql_err!("Set operations are not supported")
+            }
+            SetExpr::Values(..) => unsupported_sql_err!("VALUES are not supported"),
+            SetExpr::Insert(..) => unsupported_sql_err!("INSERT is not supported"),
+            SetExpr::Update(..) => unsupported_sql_err!("UPDATE is not supported"),
+            SetExpr::Table(..) => unsupported_sql_err!("TABLE is not supported"),
         };
 
         check_select_features(selection)?;
@@ -544,7 +553,7 @@ impl SQLPlanner {
         Ok(left_rel)
     }
 
-    fn plan_relation(&self, rel: &sqlparser::ast::TableFactor) -> SQLPlannerResult<Relation> {
+    fn plan_relation(&mut self, rel: &sqlparser::ast::TableFactor) -> SQLPlannerResult<Relation> {
         let (rel, alias) = match rel {
             sqlparser::ast::TableFactor::Table {
                 name,
@@ -566,6 +575,44 @@ impl SQLPlanner {
                     table_not_found_err!(table_name)
                 };
                 (rel, alias.clone())
+            }
+            sqlparser::ast::TableFactor::Derived {
+                lateral,
+                subquery,
+                alias: Some(alias),
+            } => {
+                if *lateral {
+                    unsupported_sql_err!("LATERAL");
+                }
+                let subquery = self.plan_query(subquery)?;
+                let rel_name = ident_to_str(&alias.name);
+                let rel = Relation::new(subquery, rel_name);
+
+                (rel, Some(alias.clone()))
+            }
+            sqlparser::ast::TableFactor::TableFunction { .. } => {
+                unsupported_sql_err!("Unsupported table factor: TableFunction")
+            }
+            sqlparser::ast::TableFactor::Function { .. } => {
+                unsupported_sql_err!("Unsupported table factor: Function")
+            }
+            sqlparser::ast::TableFactor::UNNEST { .. } => {
+                unsupported_sql_err!("Unsupported table factor: UNNEST")
+            }
+            sqlparser::ast::TableFactor::JsonTable { .. } => {
+                unsupported_sql_err!("Unsupported table factor: JsonTable")
+            }
+            sqlparser::ast::TableFactor::NestedJoin { .. } => {
+                unsupported_sql_err!("Unsupported table factor: NestedJoin")
+            }
+            sqlparser::ast::TableFactor::Pivot { .. } => {
+                unsupported_sql_err!("Unsupported table factor: Pivot")
+            }
+            sqlparser::ast::TableFactor::Unpivot { .. } => {
+                unsupported_sql_err!("Unsupported table factor: Unpivot")
+            }
+            sqlparser::ast::TableFactor::MatchRecognize { .. } => {
+                unsupported_sql_err!("Unsupported table factor: MatchRecognize")
             }
             _ => unsupported_sql_err!("Unsupported table factor"),
         };
@@ -734,7 +781,7 @@ impl SQLPlanner {
             Value::Null => LiteralValue::Null,
             _ => {
                 return Err(PlannerError::invalid_operation(
-                    "Only string, number, boolean and null literals are supported",
+                    "Only string, number, boolean and null literals are supported. Instead found: `{value}`",
                 ))
             }
         })
@@ -744,7 +791,7 @@ impl SQLPlanner {
         if let sqlparser::ast::Expr::Value(v) = expr {
             self.value_to_lit(v)
         } else {
-            invalid_operation_err!("Only string, number, boolean and null literals are supported");
+            invalid_operation_err!("Only string, number, boolean and null literals are supported. Instead found: `{expr}`");
         }
     }
     pub(crate) fn plan_expr(&self, expr: &sqlparser::ast::Expr) -> SQLPlannerResult<ExprRef> {
