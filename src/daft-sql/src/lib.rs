@@ -157,7 +157,7 @@ mod tests {
     #[case::cte("with cte as (select * from tbl1) select * from cte")]
     fn test_compiles(mut planner: SQLPlanner, #[case] query: &str) -> SQLPlannerResult<()> {
         let plan = planner.plan_sql(query);
-        assert!(dbg!(&plan).is_ok(), "query: {query}\nerror: {plan:?}");
+        assert!(&plan.is_ok(), "query: {query}\nerror: {plan:?}");
 
         Ok(())
     }
@@ -322,7 +322,7 @@ mod tests {
     #[case::count("select COUNT(i32) as count from tbl1")]
     #[case::countcasing("select CoUnT(i32) as count from tbl1")]
     // #[case::to_datetime("select to_datetime(utf8, 'YYYY-MM-DD') as to_datetime from tbl1")]
-    fn test_funcs(mut planner: SQLPlanner, #[case] query: &str) -> SQLPlannerResult<()> {
+    fn test_compiles_funcs(mut planner: SQLPlanner, #[case] query: &str) -> SQLPlannerResult<()> {
         let plan = planner.plan_sql(query);
         assert!(plan.is_ok(), "query: {query}\nerror: {plan:?}");
 
