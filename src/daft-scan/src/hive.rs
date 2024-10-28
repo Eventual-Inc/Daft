@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
+use arrow2::datatypes::DataType;
 use common_error::DaftResult;
-use daft_core::datatypes::Utf8Array;
+use daft_core::{datatypes::Utf8Array, series::Series};
 use daft_decoding::inference::infer;
 use daft_schema::{dtype::DaftDataType, field::Field, schema::Schema};
 use daft_table::Table;
@@ -69,9 +70,13 @@ pub fn hive_partitions_to_1d_table(
         .iter()
         .filter_map(|(key, value)| {
             if table_schema.fields.contains_key(key) {
-                let daft_utf8_array = Utf8Array::from_values(key, std::iter::once(&value));
                 let target_dtype = &table_schema.fields.get(key).unwrap().dtype;
-                Some(daft_utf8_array.cast(target_dtype))
+                if value.is_empty() {
+                    Some(Ok(Series::full_null(key, target_dtype, 1)))
+                } else {
+                    let daft_utf8_array = Utf8Array::from_values(key, std::iter::once(&value));
+                    Some(daft_utf8_array.cast(target_dtype))
+                }
             } else {
                 None
             }
@@ -98,7 +103,17 @@ pub fn hive_partitions_to_1d_table(
 pub fn hive_partitions_to_schema(partitions: &IndexMap<String, String>) -> DaftResult<Schema> {
     let partition_fields: Vec<Field> = partitions
         .iter()
-        .map(|(key, value)| Field::new(key, DaftDataType::from(&infer(value.as_bytes()))))
+        .map(|(key, value)| {
+            let inferred_type = infer(value.as_bytes());
+            let inferred_type = if inferred_type == DataType::Null {
+                // If we got a null partition value, don't assume that the column will be Null.
+                // The user should provide a schema for potentially null columns.
+                DataType::LargeUtf8
+            } else {
+                inferred_type
+            };
+            Field::new(key, DaftDataType::from(&inferred_type))
+        })
         .collect();
     Schema::new(partition_fields)
 }
