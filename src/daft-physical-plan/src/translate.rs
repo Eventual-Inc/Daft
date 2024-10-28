@@ -70,6 +70,17 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 ))
             }
         }
+        LogicalPlan::Unpivot(unpivot) => {
+            let input = translate(&unpivot.input)?;
+            Ok(LocalPhysicalPlan::unpivot(
+                input,
+                unpivot.ids.clone(),
+                unpivot.values.clone(),
+                unpivot.variable_name.clone(),
+                unpivot.value_name.clone(),
+                unpivot.output_schema.clone(),
+            ))
+        }
         LogicalPlan::Pivot(pivot) => {
             let input = translate(&pivot.input)?;
             let groupby_with_pivot = pivot
@@ -161,6 +172,14 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 #[cfg(feature = "python")]
                 SinkInfo::CatalogInfo(_) => todo!("CatalogInfo not yet implemented"),
             }
+        }
+        LogicalPlan::Explode(explode) => {
+            let input = translate(&explode.input)?;
+            Ok(LocalPhysicalPlan::explode(
+                input,
+                explode.to_explode.clone(),
+                explode.exploded_schema.clone(),
+            ))
         }
         _ => todo!("{} not yet implemented", plan.name()),
     }

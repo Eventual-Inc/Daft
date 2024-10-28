@@ -77,3 +77,23 @@ pub trait Probeable: Send + Sync {
         table: &'a Table,
     ) -> DaftResult<Box<dyn Iterator<Item = bool> + 'a>>;
 }
+
+#[derive(Clone)]
+pub struct ProbeState {
+    probeable: Arc<dyn Probeable>,
+    tables: Arc<Vec<Table>>,
+}
+
+impl ProbeState {
+    pub fn new(probeable: Arc<dyn Probeable>, tables: Arc<Vec<Table>>) -> Self {
+        Self { probeable, tables }
+    }
+
+    pub fn get_probeable(&self) -> &Arc<dyn Probeable> {
+        &self.probeable
+    }
+
+    pub fn get_tables(&self) -> &Arc<Vec<Table>> {
+        &self.tables
+    }
+}

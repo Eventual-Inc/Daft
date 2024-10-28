@@ -1,10 +1,14 @@
 #![feature(async_closure)]
 #![feature(let_chains)]
+#![feature(new_uninit)]
 #![feature(trait_alias)]
 #![feature(trait_upcasting)]
+#![feature(test)]
+extern crate test;
 use common_error::DaftError;
 use snafu::Snafu;
 
+pub mod local;
 pub mod metadata;
 pub mod options;
 #[cfg(feature = "python")]

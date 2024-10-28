@@ -11,7 +11,6 @@ use super::WriterFactory;
 use crate::{
     buffer::RowBasedBuffer,
     channel::{create_channel, PipelineChannel, Receiver, Sender},
-    create_task_set,
     pipeline::PipelineNode,
     runtime_stats::{CountingReceiver, RuntimeStatsContext},
     ExecutionRuntimeHandle, JoinSnafu, TaskSet, NUM_CPUS,
@@ -188,7 +187,7 @@ impl PipelineNode for UnpartitionedWriteNode {
 
         // Start writers
         let writer_factory = self.writer_factory.clone();
-        let mut task_set = create_task_set();
+        let mut task_set = TaskSet::new();
         let writer_senders = Self::spawn_writers(
             *NUM_CPUS,
             &mut task_set,

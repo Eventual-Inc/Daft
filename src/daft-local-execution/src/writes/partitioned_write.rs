@@ -20,10 +20,9 @@ use super::WriterFactory;
 use crate::{
     buffer::RowBasedBuffer,
     channel::{create_channel, PipelineChannel, Receiver, Sender},
-    create_task_set,
     pipeline::PipelineNode,
     runtime_stats::{CountingReceiver, RuntimeStatsContext},
-    ExecutionRuntimeHandle, JoinSnafu, NUM_CPUS,
+    ExecutionRuntimeHandle, JoinSnafu, TaskSet, NUM_CPUS,
 };
 
 struct PerPartitionWriteHandler {
@@ -206,7 +205,7 @@ impl PartitionedWriteNode {
 
     fn spawn_writers(
         num_writers: usize,
-        task_set: &mut tokio::task::JoinSet<DaftResult<Vec<Table>>>,
+        task_set: &mut TaskSet<DaftResult<Vec<Table>>>,
         writer_factory: Arc<dyn WriterFactory>,
         target_chunk_rows: usize,
         target_file_rows: usize,
@@ -309,7 +308,7 @@ impl PipelineNode for PartitionedWriteNode {
             destination_channel.get_next_sender_with_stats(&self.runtime_stats);
 
         // Start writers
-        let mut task_set = create_task_set();
+        let mut task_set = TaskSet::new();
         let writer_senders = Self::spawn_writers(
             *NUM_CPUS,
             &mut task_set,

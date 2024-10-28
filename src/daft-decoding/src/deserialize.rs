@@ -5,12 +5,13 @@ use arrow2::{
     },
     datatypes::{DataType, TimeUnit},
     error::{Error, Result},
+    io::csv,
     offset::Offset,
     temporal_conversions,
     types::NativeType,
 };
 use chrono::{Datelike, Timelike};
-use csv_async::ByteRecord;
+use csv_async;
 
 pub(crate) const ISO8601: &str = "%+";
 pub(crate) const ISO8601_NO_TIME_ZONE: &str = "%Y-%m-%dT%H:%M:%S%.f";
@@ -38,7 +39,14 @@ pub trait ByteRecordGeneric {
     fn get(&self, index: usize) -> Option<&[u8]>;
 }
 
-impl ByteRecordGeneric for ByteRecord {
+impl ByteRecordGeneric for csv_async::ByteRecord {
+    #[inline]
+    fn get(&self, index: usize) -> Option<&[u8]> {
+        self.get(index)
+    }
+}
+
+impl ByteRecordGeneric for csv::read::ByteRecord {
     #[inline]
     fn get(&self, index: usize) -> Option<&[u8]> {
         self.get(index)

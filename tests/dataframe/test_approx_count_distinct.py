@@ -2,12 +2,7 @@ import pandas as pd
 import pytest
 
 import daft
-from daft import col, context
-
-pytestmark = pytest.mark.skipif(
-    context.get_context().daft_execution_config.enable_native_executor is True,
-    reason="Native executor fails for these tests",
-)
+from daft import col
 
 TESTS = [
     [[], 0],

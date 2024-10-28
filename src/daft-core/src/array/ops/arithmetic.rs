@@ -6,7 +6,7 @@ use common_error::{DaftError, DaftResult};
 use super::{as_arrow::AsArrow, full::FullNull};
 use crate::{
     array::{DataArray, FixedSizeListArray},
-    datatypes::{DaftNumericType, DataType, Field, Float64Array, Int64Array, Utf8Array},
+    datatypes::{DaftNumericType, DataType, Field, Utf8Array},
     kernels::utf8::add_utf8_arrays,
     series::Series,
 };
@@ -108,20 +108,6 @@ where
     }
 }
 
-impl Div for &Float64Array {
-    type Output = DaftResult<Float64Array>;
-    fn div(self, rhs: Self) -> Self::Output {
-        arithmetic_helper(self, rhs, basic::div, |l, r| l / r)
-    }
-}
-
-impl Div for &Int64Array {
-    type Output = DaftResult<Int64Array>;
-    fn div(self, rhs: Self) -> Self::Output {
-        arithmetic_helper(self, rhs, basic::div, |l, r| l / r)
-    }
-}
-
 pub fn binary_with_nulls<T, F>(
     lhs: &PrimitiveArray<T>,
     rhs: &PrimitiveArray<T>,
@@ -180,6 +166,61 @@ where
                         None => DataArray::full_null(rhs.name(), rhs.data_type(), rhs.len()),
                         Some(lhs) => {
                             let values_iter = rhs.as_arrow().iter().map(|v| v.map(|v| lhs % *v));
+                            let arrow_array = unsafe {
+                                PrimitiveArray::from_trusted_len_iter_unchecked(values_iter)
+                            };
+                            DataArray::from((self.name(), Box::new(arrow_array)))
+                        }
+                    })
+                }
+                (a, b) => Err(DaftError::ValueError(format!(
+                    "Cannot apply operation on arrays of different lengths: {a} vs {b}"
+                ))),
+            }
+        }
+    }
+}
+
+fn div_with_nulls<T>(lhs: &PrimitiveArray<T>, rhs: &PrimitiveArray<T>) -> PrimitiveArray<T>
+where
+    T: arrow2::types::NativeType + Div<Output = T>,
+{
+    binary_with_nulls(lhs, rhs, |a, b| a / b)
+}
+
+impl<T> Div for &DataArray<T>
+where
+    T: DaftNumericType,
+    T::Native: basic::NativeArithmetics,
+{
+    type Output = DaftResult<DataArray<T>>;
+    fn div(self, rhs: Self) -> Self::Output {
+        if rhs.data().null_count() == 0 {
+            arithmetic_helper(self, rhs, basic::div, |l, r| l / r)
+        } else {
+            match (self.len(), rhs.len()) {
+                (a, b) if a == b => Ok(DataArray::from((
+                    self.name(),
+                    Box::new(div_with_nulls(self.as_arrow(), rhs.as_arrow())),
+                ))),
+                // broadcast right path
+                (_, 1) => {
+                    let opt_rhs = rhs.get(0);
+                    match opt_rhs {
+                        None => Ok(DataArray::full_null(
+                            self.name(),
+                            self.data_type(),
+                            self.len(),
+                        )),
+                        Some(rhs) => self.apply(|lhs| lhs / rhs),
+                    }
+                }
+                (1, _) => {
+                    let opt_lhs = self.get(0);
+                    Ok(match opt_lhs {
+                        None => DataArray::full_null(rhs.name(), rhs.data_type(), rhs.len()),
+                        Some(lhs) => {
+                            let values_iter = rhs.as_arrow().iter().map(|v| v.map(|v| lhs / *v));
                             let arrow_array = unsafe {
                                 PrimitiveArray::from_trusted_len_iter_unchecked(values_iter)
                             };

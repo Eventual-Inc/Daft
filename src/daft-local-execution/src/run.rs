@@ -2,10 +2,7 @@ use std::{
     collections::HashMap,
     fs::File,
     io::Write,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
+    sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -124,19 +121,14 @@ pub fn run_local(
     let mut pipeline = physical_plan_to_pipeline(physical_plan, &psets, &cfg)?;
     let (tx, rx) = create_channel(results_buffer_size.unwrap_or(1));
     let handle = std::thread::spawn(move || {
-        let runtime = tokio::runtime::Builder::new_multi_thread()
+        let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
-            .max_blocking_threads(10)
-            .thread_name_fn(|| {
-                static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
-                let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
-                format!("Executor-Worker-{id}")
-            })
             .build()
             .expect("Failed to create tokio runtime");
-        runtime.block_on(async {
+        let execution_task = async {
             let mut runtime_handle = ExecutionRuntimeHandle::new(cfg.default_morsel_size);
             let mut receiver = pipeline.start(true, &mut runtime_handle)?.get_receiver();
+
             while let Some(val) = receiver.recv().await {
                 let _ = tx.send(val.as_data().clone()).await;
             }
@@ -164,6 +156,18 @@ pub fn run_local(
                 writeln!(file, "```mermaid\n{}\n```", viz_pipeline(pipeline.as_ref()))?;
             }
             Ok(())
+        };
+
+        let local_set = tokio::task::LocalSet::new();
+        local_set.block_on(&runtime, async {
+            tokio::select! {
+                biased;
+                _ = tokio::signal::ctrl_c() => {
+                    log::info!("Received Ctrl-C, shutting down execution engine");
+                    Ok(())
+                }
+                result = execution_task => result,
+            }
         })
     });
 
