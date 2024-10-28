@@ -9,7 +9,8 @@ use daft_table::{GrowableTable, Probeable};
 use tracing::{info_span, instrument};
 
 use super::intermediate_op::{
-    IntermediateOperator, IntermediateOperatorResult, IntermediateOperatorState,
+    DynIntermediateOpState, IntermediateOperator, IntermediateOperatorResult,
+    IntermediateOperatorState,
 };
 use crate::pipeline::PipelineResultType;
 
@@ -36,7 +37,7 @@ impl AntiSemiProbeState {
     }
 }
 
-impl IntermediateOperatorState for AntiSemiProbeState {
+impl DynIntermediateOpState for AntiSemiProbeState {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
@@ -108,34 +109,30 @@ impl IntermediateOperator for AntiSemiProbeOperator {
         &self,
         idx: usize,
         input: &PipelineResultType,
-        state: Option<&mut Box<dyn IntermediateOperatorState>>,
+        state: &IntermediateOperatorState,
     ) -> DaftResult<IntermediateOperatorResult> {
-        let state = state
-            .expect("AntiSemiProbeOperator should have state")
-            .as_any_mut()
-            .downcast_mut::<AntiSemiProbeState>()
-            .expect("AntiSemiProbeOperator state should be AntiSemiProbeState");
-
-        if idx == 0 {
-            let probe_state = input.as_probe_state();
-            state.set_table(probe_state.get_probeable());
-            Ok(IntermediateOperatorResult::NeedMoreInput(None))
-        } else {
-            let input = input.as_data();
-            if input.is_empty() {
-                let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));
-                return Ok(IntermediateOperatorResult::NeedMoreInput(Some(empty)));
+        state.with_state_mut::<AntiSemiProbeState, _, _>(|state| {
+            if idx == 0 {
+                let probe_state = input.as_probe_state();
+                state.set_table(probe_state.get_probeable());
+                Ok(IntermediateOperatorResult::NeedMoreInput(None))
+            } else {
+                let input = input.as_data();
+                if input.is_empty() {
+                    let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));
+                    return Ok(IntermediateOperatorResult::NeedMoreInput(Some(empty)));
+                }
+                let out = self.probe_anti_semi(input, state)?;
+                Ok(IntermediateOperatorResult::NeedMoreInput(Some(out)))
             }
-            let out = self.probe_anti_semi(input, state)?;
-            Ok(IntermediateOperatorResult::NeedMoreInput(Some(out)))
-        }
+        })
     }
 
     fn name(&self) -> &'static str {
         "AntiSemiProbeOperator"
     }
 
-    fn make_state(&self) -> Option<Box<dyn IntermediateOperatorState>> {
-        Some(Box::new(AntiSemiProbeState::Building))
+    fn make_state(&self) -> Box<dyn DynIntermediateOpState> {
+        Box::new(AntiSemiProbeState::Building)
     }
 }

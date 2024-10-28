@@ -114,6 +114,17 @@ impl<'a> InferDataType<'a> {
         // membership checks (is_in) use equality checks, so we can use the same logic as comparison ops.
         self.comparison_op(other)
     }
+
+    pub fn floor_div(&self, other: &Self) -> DaftResult<DataType> {
+        try_numeric_supertype(self.0, other.0).or(match (self.0, other.0) {
+            #[cfg(feature = "python")]
+            (DataType::Python, _) | (_, DataType::Python) => Ok(DataType::Python),
+            _ => Err(DaftError::TypeError(format!(
+                "Cannot perform floor divide on types: {}, {}",
+                self, other
+            ))),
+        })
+    }
 }
 
 impl<'a> Add for InferDataType<'a> {

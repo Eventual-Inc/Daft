@@ -26,6 +26,7 @@ use crate::{
     error::{PlannerError, SQLPlannerResult},
     invalid_operation_err, table_not_found_err, unsupported_sql_err,
 };
+
 /// A named logical plan
 /// This is used to keep track of the table name associated with a logical plan while planning a SQL query
 #[derive(Debug, Clone)]
@@ -145,11 +146,8 @@ impl SQLPlanner {
 
         // FROM/JOIN
         let from = selection.clone().from;
-        if from.len() != 1 {
-            unsupported_sql_err!("Only exactly one table is supported");
-        }
-
-        self.current_relation = Some(self.plan_from(&from[0])?);
+        let rel = self.plan_from(&from)?;
+        self.current_relation = Some(rel);
 
         // WHERE
         if let Some(selection) = &selection.selection {
@@ -293,7 +291,34 @@ impl SQLPlanner {
         Ok((exprs, desc))
     }
 
-    fn plan_from(&mut self, from: &TableWithJoins) -> SQLPlannerResult<Relation> {
+    fn plan_from(&mut self, from: &[TableWithJoins]) -> SQLPlannerResult<Relation> {
+        if from.len() > 1 {
+            // todo!("cross join")
+            let mut from_iter = from.iter();
+
+            let first = from_iter.next().unwrap();
+            let mut rel = self.plan_relation(&first.relation)?;
+            self.table_map.insert(rel.get_name(), rel.clone());
+            for tbl in from_iter {
+                let right = self.plan_relation(&tbl.relation)?;
+                self.table_map.insert(right.get_name(), right.clone());
+                let right_join_prefix = Some(format!("{}.", right.get_name()));
+
+                rel.inner = rel.inner.join(
+                    right.inner,
+                    vec![],
+                    vec![],
+                    JoinType::Inner,
+                    None,
+                    None,
+                    right_join_prefix.as_deref(),
+                )?;
+            }
+            return Ok(rel);
+        }
+
+        let from = from.iter().next().unwrap();
+
         fn collect_compound_identifiers(
             left: &[Ident],
             right: &[Ident],
@@ -494,6 +519,7 @@ impl SQLPlanner {
 
         let root = idents.next().unwrap();
         let root = ident_to_str(root);
+
         let current_relation = match self.table_map.get(&root) {
             Some(rel) => rel,
             None => {
@@ -518,6 +544,7 @@ impl SQLPlanner {
             // If duplicate columns are present in the schema, it adds the table name as a prefix. (df.column_name)
             // So we first check if the prefixed column name is present in the schema.
             let current_schema = self.relation_opt().unwrap().inner.schema();
+
             let f = current_schema.get_field(&ident_str).ok();
             if let Some(field) = f {
                 Ok(vec![col(field.name.clone())])
@@ -650,6 +677,14 @@ impl SQLPlanner {
             }
         })
     }
+
+    fn plan_lit(&self, expr: &sqlparser::ast::Expr) -> SQLPlannerResult<LiteralValue> {
+        if let sqlparser::ast::Expr::Value(v) = expr {
+            self.value_to_lit(v)
+        } else {
+            invalid_operation_err!("Only string, number, boolean and null literals are supported");
+        }
+    }
     pub(crate) fn plan_expr(&self, expr: &sqlparser::ast::Expr) -> SQLPlannerResult<ExprRef> {
         use sqlparser::ast::Expr as SQLExpr;
         match expr {
@@ -695,7 +730,28 @@ impl SQLPlanner {
             SQLExpr::IsNotDistinctFrom(_, _) => {
                 unsupported_sql_err!("IS NOT DISTINCT FROM")
             }
-            SQLExpr::InList { .. } => unsupported_sql_err!("IN LIST"),
+            SQLExpr::InList {
+                expr,
+                list,
+                negated,
+            } => {
+                let expr = self.plan_expr(expr)?;
+                let list = list
+                    .iter()
+                    .map(|e| self.plan_lit(e))
+                    .collect::<SQLPlannerResult<Vec<_>>>()?;
+                // We should really have a better way to use `is_in` instead of all of this extra wrapping of the values
+                let series = literals_to_series(&list)?;
+                let series_lit = LiteralValue::Series(series);
+                let series_expr = Expr::Literal(series_lit);
+                let series_expr_arc = Arc::new(series_expr);
+                let expr = expr.is_in(series_expr_arc);
+                if *negated {
+                    Ok(expr.not())
+                } else {
+                    Ok(expr)
+                }
+            }
             SQLExpr::InSubquery { .. } => {
                 unsupported_sql_err!("IN subquery")
             }
@@ -912,6 +968,7 @@ impl SQLPlanner {
             BinaryOperator::NotEq => Ok(Operator::NotEq),
             BinaryOperator::And => Ok(Operator::And),
             BinaryOperator::Or => Ok(Operator::Or),
+            BinaryOperator::DuckIntegerDivide => Ok(Operator::FloorDivide),
             other => unsupported_sql_err!("Unsupported operator: '{other}'"),
         }
     }

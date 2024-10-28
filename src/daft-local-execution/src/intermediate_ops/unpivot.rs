@@ -38,7 +38,7 @@ impl IntermediateOperator for UnpivotOperator {
         &self,
         _idx: usize,
         input: &PipelineResultType,
-        _state: Option<&mut Box<dyn IntermediateOperatorState>>,
+        _state: &IntermediateOperatorState,
     ) -> DaftResult<IntermediateOperatorResult> {
         let out = input.as_data().unpivot(
             &self.ids,

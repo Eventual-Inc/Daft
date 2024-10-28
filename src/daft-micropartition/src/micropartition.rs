@@ -7,10 +7,11 @@ use std::{
 use arrow2::io::parquet::read::schema::infer_schema_with_options;
 use common_error::DaftResult;
 use common_file_formats::{CsvSourceConfig, FileFormatConfig, ParquetSourceConfig};
+use common_runtime::get_io_runtime;
 use daft_core::prelude::*;
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::ExprRef;
-use daft_io::{get_runtime, IOClient, IOConfig, IOStatsContext, IOStatsRef};
+use daft_io::{IOClient, IOConfig, IOStatsContext, IOStatsRef};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::{
     read_parquet_bulk, read_parquet_metadata_bulk, ParquetSchemaInferenceOptions,
@@ -1064,7 +1065,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
             chunk_size,
         );
     }
-    let runtime_handle = get_runtime(multithreaded_io)?;
+    let runtime_handle = get_io_runtime(multithreaded_io);
     // Attempt to read TableStatistics from the Parquet file
     let meta_io_client = io_client.clone();
     let meta_io_stats = io_stats.clone();
