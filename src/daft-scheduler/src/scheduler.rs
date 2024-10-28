@@ -500,7 +500,7 @@ fn physical_plan_to_partition_tasks(
                                 py,
                                 "daft.execution.rust_physical_plan_shim"
                             ))?
-                            .getattr(pyo3::intern!(py, "split_by_hash"))?
+                            .getattr(pyo3::intern!(py, "fanout_by_hash"))?
                             .call1((
                                 upstream_iter,
                                 hash_clustering_config.num_partitions,
