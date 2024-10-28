@@ -80,72 +80,74 @@ impl ShuffleExchange {
 
 impl_default_tree_display!(ShuffleExchange);
 
-/// Builder of ShuffleExchanges
+/// Factory of ShuffleExchanges
 ///
 /// This provides an abstraction where we can select the most appropriate strategies based on various
 /// heuristics such as number of partitions and the currently targeted backend's available resources.
-pub struct ShuffleExchangeBuilder {
+pub struct ShuffleExchangeFactory {
     input: PhysicalPlanRef,
-    strategy: ShuffleExchangeStrategy,
 }
 
-impl ShuffleExchangeBuilder {
+impl ShuffleExchangeFactory {
     pub fn new(input: PhysicalPlanRef) -> Self {
-        let input_num_partitions = input.as_ref().clustering_spec().num_partitions();
-        Self {
-            input,
-            strategy: ShuffleExchangeStrategy::SplitOrCoalesceToTargetNum {
-                target_num_partitions: input_num_partitions,
-            },
-        }
+        Self { input }
     }
 
-    pub fn with_hash_partitioning(mut self, by: Vec<ExprRef>, num_partitions: usize) -> Self {
-        self.strategy = ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce {
+    pub fn get_hash_partitioning(
+        &self,
+        by: Vec<ExprRef>,
+        num_partitions: usize,
+    ) -> ShuffleExchange {
+        let strategy = ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce {
             target_spec: Arc::new(ClusteringSpec::Hash(HashClusteringConfig::new(
                 num_partitions,
                 by,
             ))),
         };
-        self
+        ShuffleExchange {
+            input: self.input.clone(),
+            strategy,
+        }
     }
 
-    pub fn with_range_partitioning(
-        mut self,
+    pub fn get_range_partitioning(
+        &self,
         by: Vec<ExprRef>,
         descending: Vec<bool>,
         num_partitions: usize,
-    ) -> Self {
-        self.strategy = ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce {
+    ) -> ShuffleExchange {
+        let strategy = ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce {
             target_spec: Arc::new(ClusteringSpec::Range(RangeClusteringConfig::new(
                 num_partitions,
                 by,
                 descending,
             ))),
         };
-        self
+        ShuffleExchange {
+            input: self.input.clone(),
+            strategy,
+        }
     }
 
-    pub fn with_random_partitioning(mut self, num_partitions: usize) -> Self {
-        self.strategy = ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce {
+    pub fn get_random_partitioning(&self, num_partitions: usize) -> ShuffleExchange {
+        let strategy = ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce {
             target_spec: Arc::new(ClusteringSpec::Random(RandomClusteringConfig::new(
                 num_partitions,
             ))),
         };
-        self
+        ShuffleExchange {
+            input: self.input.clone(),
+            strategy,
+        }
     }
 
-    pub fn with_split_or_coalesce(mut self, num_partitions: usize) -> Self {
-        self.strategy = ShuffleExchangeStrategy::SplitOrCoalesceToTargetNum {
+    pub fn get_split_or_coalesce(&self, num_partitions: usize) -> ShuffleExchange {
+        let strategy = ShuffleExchangeStrategy::SplitOrCoalesceToTargetNum {
             target_num_partitions: num_partitions,
         };
-        self
-    }
-
-    pub fn build(self) -> ShuffleExchange {
         ShuffleExchange {
-            input: self.input,
-            strategy: self.strategy,
+            input: self.input.clone(),
+            strategy,
         }
     }
 }

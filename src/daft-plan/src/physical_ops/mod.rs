@@ -52,7 +52,7 @@ pub use pivot::Pivot;
 pub use project::Project;
 pub use sample::Sample;
 pub use scan::TabularScan;
-pub use shuffle_exchange::{ShuffleExchange, ShuffleExchangeBuilder, ShuffleExchangeStrategy};
+pub use shuffle_exchange::{ShuffleExchange, ShuffleExchangeFactory, ShuffleExchangeStrategy};
 pub use sort::Sort;
 pub use sort_merge_join::SortMergeJoin;
 pub use unpivot::Unpivot;

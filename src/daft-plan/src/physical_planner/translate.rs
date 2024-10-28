@@ -190,22 +190,19 @@ pub(super) fn translate_single_logical_node(
                             unreachable!("Simple repartitioning with same # of output partitions as the input; this should have been dropped.")
                         }
                         _ => PhysicalPlan::ShuffleExchange(
-                            ShuffleExchangeBuilder::new(input_physical)
-                                .with_split_or_coalesce(num_partitions)
-                                .build(),
+                            ShuffleExchangeFactory::new(input_physical)
+                                .get_split_or_coalesce(num_partitions),
                         ),
                     }
                 }
                 ClusteringSpec::Random(_) => PhysicalPlan::ShuffleExchange(
-                    ShuffleExchangeBuilder::new(input_physical)
-                        .with_random_partitioning(num_partitions)
-                        .build(),
+                    ShuffleExchangeFactory::new(input_physical)
+                        .get_random_partitioning(num_partitions),
                 ),
                 ClusteringSpec::Hash(HashClusteringConfig { by, .. }) => {
                     PhysicalPlan::ShuffleExchange(
-                        ShuffleExchangeBuilder::new(input_physical)
-                            .with_hash_partitioning(by, num_partitions)
-                            .build(),
+                        ShuffleExchangeFactory::new(input_physical)
+                            .get_hash_partitioning(by, num_partitions),
                     )
                 }
                 ClusteringSpec::Range(_) => {
@@ -227,9 +224,8 @@ pub(super) fn translate_single_logical_node(
             let num_partitions = agg_op.clustering_spec().num_partitions();
             if num_partitions > 1 {
                 let shuffle_op = PhysicalPlan::ShuffleExchange(
-                    ShuffleExchangeBuilder::new(agg_op.into())
-                        .with_hash_partitioning(col_exprs.clone(), num_partitions)
-                        .build(),
+                    ShuffleExchangeFactory::new(agg_op.into())
+                        .get_hash_partitioning(col_exprs.clone(), num_partitions),
                 );
                 Ok(
                     PhysicalPlan::Aggregate(Aggregate::new(shuffle_op.into(), vec![], col_exprs))
@@ -290,22 +286,18 @@ pub(super) fn translate_single_logical_node(
                     };
                     let gather_plan = if groupby.is_empty() {
                         PhysicalPlan::ShuffleExchange(
-                            ShuffleExchangeBuilder::new(first_stage_agg)
-                                .with_split_or_coalesce(1)
-                                .build(),
+                            ShuffleExchangeFactory::new(first_stage_agg).get_split_or_coalesce(1),
                         )
                         .into()
                     } else {
                         PhysicalPlan::ShuffleExchange(
-                            ShuffleExchangeBuilder::new(first_stage_agg)
-                                .with_hash_partitioning(
-                                    groupby.clone(),
-                                    min(
-                                        num_input_partitions,
-                                        cfg.shuffle_aggregation_default_partitions,
-                                    ),
-                                )
-                                .build(),
+                            ShuffleExchangeFactory::new(first_stage_agg).get_hash_partitioning(
+                                groupby.clone(),
+                                min(
+                                    num_input_partitions,
+                                    cfg.shuffle_aggregation_default_partitions,
+                                ),
+                            ),
                         )
                         .into()
                     };
@@ -361,24 +353,20 @@ pub(super) fn translate_single_logical_node(
                     };
                     let gather_plan = if group_by_with_pivot.is_empty() {
                         PhysicalPlan::ShuffleExchange(
-                            ShuffleExchangeBuilder::new(first_stage_agg)
-                                .with_split_or_coalesce(1)
-                                .build(),
+                            ShuffleExchangeFactory::new(first_stage_agg).get_split_or_coalesce(1),
                         )
                         .into()
                     } else {
                         PhysicalPlan::ShuffleExchange(
-                            ShuffleExchangeBuilder::new(first_stage_agg)
-                                .with_hash_partitioning(
-                                    // NOTE: For the shuffle of a pivot operation, we don't include the pivot column for the hashing as we need
-                                    // to ensure that all rows with the same group_by column values are hashed to the same partition.
-                                    group_by.clone(),
-                                    min(
-                                        num_input_partitions,
-                                        cfg.shuffle_aggregation_default_partitions,
-                                    ),
-                                )
-                                .build(),
+                            ShuffleExchangeFactory::new(first_stage_agg).get_hash_partitioning(
+                                // NOTE: For the shuffle of a pivot operation, we don't include the pivot column for the hashing as we need
+                                // to ensure that all rows with the same group_by column values are hashed to the same partition.
+                                group_by.clone(),
+                                min(
+                                    num_input_partitions,
+                                    cfg.shuffle_aggregation_default_partitions,
+                                ),
+                            ),
                         )
                         .into()
                     };
@@ -638,9 +626,8 @@ pub(super) fn translate_single_logical_node(
                         || (num_partitions > 1 && !is_left_hash_partitioned)
                     {
                         left_physical = PhysicalPlan::ShuffleExchange(
-                            ShuffleExchangeBuilder::new(left_physical)
-                                .with_hash_partitioning(left_on.clone(), num_partitions)
-                                .build(),
+                            ShuffleExchangeFactory::new(left_physical)
+                                .get_hash_partitioning(left_on.clone(), num_partitions),
                         )
                         .into();
                     }
@@ -648,9 +635,8 @@ pub(super) fn translate_single_logical_node(
                         || (num_partitions > 1 && !is_right_hash_partitioned)
                     {
                         right_physical = PhysicalPlan::ShuffleExchange(
-                            ShuffleExchangeBuilder::new(right_physical)
-                                .with_hash_partitioning(right_on.clone(), num_partitions)
-                                .build(),
+                            ShuffleExchangeFactory::new(right_physical)
+                                .get_hash_partitioning(right_on.clone(), num_partitions),
                         )
                         .into();
                     }

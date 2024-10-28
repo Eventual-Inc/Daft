@@ -172,7 +172,7 @@ mod tests {
 
     use crate::{
         partitioning::UnknownClusteringConfig,
-        physical_ops::{EmptyScan, HashJoin, ShuffleExchangeBuilder},
+        physical_ops::{EmptyScan, HashJoin, ShuffleExchangeFactory},
         physical_optimization::rules::{
             reorder_partition_keys::ReorderPartitionKeys, PhysicalOptimizerRule,
         },
@@ -193,9 +193,7 @@ mod tests {
         partition_by: Vec<ExprRef>,
     ) -> PhysicalPlanRef {
         PhysicalPlan::ShuffleExchange(
-            ShuffleExchangeBuilder::new(plan)
-                .with_hash_partitioning(partition_by, num_partitions)
-                .build(),
+            ShuffleExchangeFactory::new(plan).get_hash_partitioning(partition_by, num_partitions),
         )
         .into()
     }

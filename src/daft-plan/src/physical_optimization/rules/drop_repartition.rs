@@ -56,7 +56,7 @@ mod tests {
     use super::DropRepartitionPhysical;
     use crate::{
         partitioning::UnknownClusteringConfig,
-        physical_ops::{EmptyScan, ShuffleExchangeBuilder},
+        physical_ops::{EmptyScan, ShuffleExchangeFactory},
         physical_optimization::rules::PhysicalOptimizerRule,
         ClusteringSpec, PhysicalPlan, PhysicalPlanRef,
     };
@@ -75,9 +75,7 @@ mod tests {
         partition_by: Vec<ExprRef>,
     ) -> PhysicalPlanRef {
         PhysicalPlan::ShuffleExchange(
-            ShuffleExchangeBuilder::new(plan)
-                .with_hash_partitioning(partition_by, num_partitions)
-                .build(),
+            ShuffleExchangeFactory::new(plan).get_hash_partitioning(partition_by, num_partitions),
         )
         .into()
     }
