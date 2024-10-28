@@ -78,10 +78,11 @@ class GeneratedDataScanOperator(ScanOperator):
     def to_scan_tasks(self, pushdowns: Pushdowns) -> Iterator[ScanTask]:
         for i in range(self._num_partitions):
             yield ScanTask.python_factory_func_scan_task(
-                module=self._generator.__module__,
-                func_name=self._generator.__name__,
                 func_args=(i, *self._generator_args),
                 schema=self.schema()._schema,
+                module=None,
+                func_name=None,
+                func=self._generator,
                 num_rows=None,
                 size_bytes=None,
                 pushdowns=pushdowns,

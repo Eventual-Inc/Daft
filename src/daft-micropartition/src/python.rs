@@ -11,7 +11,9 @@ use daft_io::{python::IOConfig, IOStatsContext};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use daft_scan::{
-    python::pylib::PyScanTask, storage_config::PyStorageConfig, DataSource, ScanTask, ScanTaskRef,
+    python::{pylib::PyScanTask, PythonFactoryFunctionType},
+    storage_config::PyStorageConfig,
+    DataSource, ScanTask, ScanTaskRef,
 };
 use daft_stats::{TableMetadata, TableStatistics};
 use daft_table::{python::PyTable, Table};
@@ -915,19 +917,30 @@ pub fn read_pyfunc_into_table_iter(
         // Call Python function to create an Iterator (Grabs the GIL and then releases it)
         match source {
             DataSource::PythonFactoryFunction {
-                module,
-                func_name,
+                func,
                 func_args,
                 ..
             } => {
                 Python::with_gil(|py| {
-                    let func = py.import_bound(module.as_str())
-                        .unwrap_or_else(|_| panic!("Cannot import factory function from module {module}"))
-                        .getattr(func_name.as_str())
-                        .unwrap_or_else(|_| panic!("Cannot find function {func_name} in module {module}"));
-                    func.call(func_args.to_pytuple(py), None)
-                        .with_context(|_| PyIOSnafu)
-                        .map(Into::<PyObject>::into)
+                    match func {
+                        PythonFactoryFunctionType::NameAndModule(module, func_name) => {
+                            let module = module.as_str();
+                            let func_name = func_name.as_str();
+                            let func = py
+                                .import_bound(module)
+                                .unwrap_or_else(|_| panic!("Cannot import module {module}"))
+                                .getattr(func_name)
+                                .unwrap_or_else(|_| panic!("Cannot find function {func_name} in module {module}"));
+                            func.call(func_args.to_pytuple(py), None)
+                                .with_context(|_| PyIOSnafu)
+                                .map(Into::<PyObject>::into)
+                        }
+                        PythonFactoryFunctionType::Function(func) => {
+                            func.call_bound(py, func_args.to_pytuple(py), None)
+                                .with_context(|_| PyIOSnafu)
+                                .map(Into::<PyObject>::into)
+                        }
+                    }
                 })
             },
             _ => unreachable!("PythonFunction file format must be paired with PythonFactoryFunction data file sources"),

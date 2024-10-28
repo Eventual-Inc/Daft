@@ -148,8 +148,7 @@ pub enum DataSource {
     },
     #[cfg(feature = "python")]
     PythonFactoryFunction {
-        module: String,
-        func_name: String,
+        func: python::PythonFactoryFunctionType,
         func_args: python::PythonTablesFactoryArgs,
         size_bytes: Option<u64>,
         metadata: Option<TableMetadata>,
@@ -164,7 +163,10 @@ impl DataSource {
         match self {
             Self::File { path, .. } | Self::Database { path, .. } => path,
             #[cfg(feature = "python")]
-            Self::PythonFactoryFunction { module, .. } => module,
+            Self::PythonFactoryFunction { func, .. } => match func {
+                python::PythonFactoryFunctionType::NameAndModule(_, func_name) => func_name,
+                _ => "Unknown",
+            },
         }
     }
 
@@ -303,15 +305,14 @@ impl DataSource {
             }
             #[cfg(feature = "python")]
             Self::PythonFactoryFunction {
-                module,
-                func_name,
+                func,
                 func_args: _func_args,
                 size_bytes,
                 metadata,
                 statistics,
                 partition_spec,
             } => {
-                res.push(format!("Function = {module}.{func_name}"));
+                res.push(format!("Function = {:?}", func));
                 if let Some(size_bytes) = size_bytes {
                     res.push(format!("Size bytes = {size_bytes}"));
                 }
@@ -347,9 +348,9 @@ impl DisplayAs for DataSource {
                     Self::Database { path, .. } => format!("Database {{{path}}}"),
                     #[cfg(feature = "python")]
                     Self::PythonFactoryFunction {
-                        module, func_name, ..
+                        func, func_args: _, ..
                     } => {
-                        format!("{module}:{func_name}")
+                        format!("{:?}", func)
                     }
                 }
             }

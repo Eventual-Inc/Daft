@@ -749,10 +749,11 @@ class ScanTask:
 
     @staticmethod
     def python_factory_func_scan_task(
-        module: str,
-        func_name: str,
         func_args: tuple[Any, ...],
         schema: PySchema,
+        module: str | None,
+        func_name: str | None,
+        func: Callable[[int, Any], Iterator[PyTable]] | None,
         num_rows: int | None,
         size_bytes: int | None,
         pushdowns: Pushdowns | None,
