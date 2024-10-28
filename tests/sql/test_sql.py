@@ -262,3 +262,23 @@ def test_sql_cte_column_aliases():
     )
 
     assert actual == expected
+
+
+def test_sql_multiple_ctes():
+    df1 = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6], "c": ["a", "b", "c"]})
+    df2 = daft.from_pydict({"x": [1, 0, 3], "y": [True, None, False], "z": [1.0, 2.0, 3.0]})
+    actual = (
+        daft.sql("""
+        WITH
+            cte1 AS (select * FROM df1),
+            cte2 AS (select x as a, y, z FROM df2)
+        SELECT *
+        FROM cte1
+        JOIN cte2 USING (a)
+        """)
+        .collect()
+        .to_pydict()
+    )
+    expected = df1.join(df2.select(col("x").alias("a"), "y", "z"), on="a").collect().to_pydict()
+
+    assert actual == expected
