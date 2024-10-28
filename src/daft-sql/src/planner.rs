@@ -26,6 +26,7 @@ use crate::{
     error::{PlannerError, SQLPlannerResult},
     invalid_operation_err, table_not_found_err, unsupported_sql_err,
 };
+
 /// A named logical plan
 /// This is used to keep track of the table name associated with a logical plan while planning a SQL query
 #[derive(Debug, Clone)]
@@ -210,11 +211,8 @@ impl SQLPlanner {
 
         // FROM/JOIN
         let from = selection.clone().from;
-        if from.len() != 1 {
-            unsupported_sql_err!("Only exactly one table is supported");
-        }
-
-        self.current_relation = Some(self.plan_from(&from[0])?);
+        let rel = self.plan_from(&from)?;
+        self.current_relation = Some(rel);
 
         // WHERE
         if let Some(selection) = &selection.selection {
@@ -358,7 +356,34 @@ impl SQLPlanner {
         Ok((exprs, desc))
     }
 
-    fn plan_from(&mut self, from: &TableWithJoins) -> SQLPlannerResult<Relation> {
+    fn plan_from(&mut self, from: &[TableWithJoins]) -> SQLPlannerResult<Relation> {
+        if from.len() > 1 {
+            // todo!("cross join")
+            let mut from_iter = from.iter();
+
+            let first = from_iter.next().unwrap();
+            let mut rel = self.plan_relation(&first.relation)?;
+            self.table_map.insert(rel.get_name(), rel.clone());
+            for tbl in from_iter {
+                let right = self.plan_relation(&tbl.relation)?;
+                self.table_map.insert(right.get_name(), right.clone());
+                let right_join_prefix = Some(format!("{}.", right.get_name()));
+
+                rel.inner = rel.inner.join(
+                    right.inner,
+                    vec![],
+                    vec![],
+                    JoinType::Inner,
+                    None,
+                    None,
+                    right_join_prefix.as_deref(),
+                )?;
+            }
+            return Ok(rel);
+        }
+
+        let from = from.iter().next().unwrap();
+
         fn collect_compound_identifiers(
             left: &[Ident],
             right: &[Ident],
@@ -581,6 +606,7 @@ impl SQLPlanner {
             // If duplicate columns are present in the schema, it adds the table name as a prefix. (df.column_name)
             // So we first check if the prefixed column name is present in the schema.
             let current_schema = self.relation_opt().unwrap().inner.schema();
+
             let f = current_schema.get_field(&ident_str).ok();
             if let Some(field) = f {
                 Ok(vec![col(field.name.clone())])
