@@ -154,9 +154,10 @@ mod tests {
     #[case::orderby_multi("select * from tbl1 order by i32 desc, f32 asc")]
     #[case::whenthen("select case when i32 = 1 then 'a' else 'b' end from tbl1")]
     #[case::globalagg("select max(i32) from tbl1")]
+    #[case::cte("with cte as (select * from tbl1) select * from cte")]
     fn test_compiles(mut planner: SQLPlanner, #[case] query: &str) -> SQLPlannerResult<()> {
         let plan = planner.plan_sql(query);
-        assert!(plan.is_ok(), "query: {query}\nerror: {plan:?}");
+        assert!(dbg!(&plan).is_ok(), "query: {query}\nerror: {plan:?}");
 
         Ok(())
     }
@@ -321,7 +322,7 @@ mod tests {
     #[case::count("select COUNT(i32) as count from tbl1")]
     #[case::countcasing("select CoUnT(i32) as count from tbl1")]
     // #[case::to_datetime("select to_datetime(utf8, 'YYYY-MM-DD') as to_datetime from tbl1")]
-    fn test_compiles_funcs(mut planner: SQLPlanner, #[case] query: &str) -> SQLPlannerResult<()> {
+    fn test_funcs(mut planner: SQLPlanner, #[case] query: &str) -> SQLPlannerResult<()> {
         let plan = planner.plan_sql(query);
         assert!(plan.is_ok(), "query: {query}\nerror: {plan:?}");
 

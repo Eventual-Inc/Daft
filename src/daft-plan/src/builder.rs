@@ -84,6 +84,13 @@ impl From<&LogicalPlanBuilder> for LogicalPlanRef {
         value.plan.clone()
     }
 }
+
+impl From<LogicalPlanRef> for LogicalPlanBuilder {
+    fn from(plan: LogicalPlanRef) -> Self {
+        Self::new(plan, None)
+    }
+}
+
 pub trait IntoGlobPath {
     fn into_glob_path(self) -> Vec<String>;
 }

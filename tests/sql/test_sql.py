@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 import daft
+from daft import col
 from daft.exceptions import DaftCoreException
 from daft.sql.sql import SQLCatalog
 from tests.assets import TPCH_QUERIES
@@ -220,4 +221,44 @@ def test_sql_distinct():
     df = daft.from_pydict({"n": [1, 1, 2, 2]})
     actual = daft.sql("SELECT DISTINCT n FROM df").collect().to_pydict()
     expected = df.distinct().collect().to_pydict()
+    assert actual == expected
+
+
+def test_sql_cte():
+    df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6], "c": ["a", "b", "c"]})
+    actual = (
+        daft.sql("""
+        WITH cte1 AS (select * FROM df)
+        SELECT * FROM cte1
+        """)
+        .collect()
+        .to_pydict()
+    )
+
+    expected = df.collect().to_pydict()
+
+    assert actual == expected
+
+
+def test_sql_cte_column_aliases():
+    df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6], "c": ["a", "b", "c"]})
+    actual = (
+        daft.sql("""
+        WITH cte1 (cte_a, cte_b, cte_c) AS (select * FROM df)
+        SELECT * FROM cte1
+        """)
+        .collect()
+        .to_pydict()
+    )
+
+    expected = (
+        df.select(
+            col("a").alias("cte_a"),
+            col("b").alias("cte_b"),
+            col("c").alias("cte_c"),
+        )
+        .collect()
+        .to_pydict()
+    )
+
     assert actual == expected

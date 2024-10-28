@@ -13,7 +13,7 @@ use sqlparser::{
     ast::{
         ArrayElemTypeDef, BinaryOperator, CastKind, Distinct, ExactNumberInfo, ExcludeSelectItem,
         GroupByExpr, Ident, Query, SelectItem, Statement, StructField, Subscript, TableAlias,
-        TableWithJoins, TimezoneInfo, UnaryOperator, Value, WildcardAdditionalOptions,
+        TableWithJoins, TimezoneInfo, UnaryOperator, Value, WildcardAdditionalOptions, With,
     },
     dialect::GenericDialect,
     parser::{Parser, ParserOptions},
@@ -64,14 +64,16 @@ pub struct SQLPlanner {
     catalog: SQLCatalog,
     current_relation: Option<Relation>,
     table_map: HashMap<String, Relation>,
+    cte_map: HashMap<String, Relation>,
 }
 
 impl Default for SQLPlanner {
     fn default() -> Self {
         Self {
             catalog: SQLCatalog::new(),
-            current_relation: None,
-            table_map: HashMap::new(),
+            current_relation: Default::default(),
+            table_map: Default::default(),
+            cte_map: Default::default(),
         }
     }
 }
@@ -80,8 +82,7 @@ impl SQLPlanner {
     pub fn new(context: SQLCatalog) -> Self {
         Self {
             catalog: context,
-            current_relation: None,
-            table_map: HashMap::new(),
+            ..Default::default()
         }
     }
 
@@ -100,6 +101,69 @@ impl SQLPlanner {
     fn clear_context(&mut self) {
         self.current_relation = None;
         self.table_map.clear();
+        self.cte_map.clear();
+    }
+
+    fn get_table_from_current_scope(&self, name: &str) -> Option<Relation> {
+        let table = self.table_map.get(name).cloned();
+        table
+            .or_else(|| self.cte_map.get(name).cloned())
+            .or_else(|| {
+                self.catalog
+                    .get_table(name)
+                    .map(|table| Relation::new(table.into(), name.to_string()))
+            })
+    }
+
+    fn register_cte(
+        &mut self,
+        mut rel: Relation,
+        column_aliases: &[Ident],
+    ) -> SQLPlannerResult<()> {
+        if !column_aliases.is_empty() {
+            let schema = rel.schema();
+            let columns = schema.names();
+            if columns.len() != column_aliases.len() {
+                invalid_operation_err!(
+                    "Column count mismatch: expected {} columns, found {}",
+                    column_aliases.len(),
+                    columns.len()
+                );
+            }
+
+            let projection = columns
+                .into_iter()
+                .zip(column_aliases)
+                .map(|(name, alias)| col(name).alias(ident_to_str(alias)))
+                .collect::<Vec<_>>();
+
+            rel.inner = rel.inner.select(projection)?;
+        }
+        self.cte_map.insert(rel.get_name(), rel);
+        Ok(())
+    }
+
+    fn plan_ctes(&mut self, with: &With) -> SQLPlannerResult<()> {
+        if with.recursive {
+            unsupported_sql_err!("Recursive CTEs are not supported");
+        }
+
+        for cte in &with.cte_tables {
+            if cte.materialized.is_some() {
+                unsupported_sql_err!("MATERIALIZED is not supported");
+            }
+
+            if cte.from.is_some() {
+                invalid_operation_err!("FROM should only exist in recursive CTEs");
+            }
+
+            let name = ident_to_str(&cte.alias.name);
+            let plan = self.plan_query(&cte.query)?;
+            let rel = Relation::new(plan, name);
+
+            self.register_cte(rel, cte.alias.columns.as_slice())?;
+        }
+        Ok(())
     }
 
     pub fn plan_sql(&mut self, sql: &str) -> SQLPlannerResult<LogicalPlanRef> {
@@ -134,14 +198,15 @@ impl SQLPlanner {
     fn plan_query(&mut self, query: &Query) -> SQLPlannerResult<LogicalPlanBuilder> {
         check_query_features(query)?;
 
-        let selection = query.body.as_select().ok_or_else(|| {
-            PlannerError::invalid_operation(format!(
-                "Only SELECT queries are supported, got: '{}'",
-                query.body
-            ))
-        })?;
+        let Some(selection) = query.body.as_select() else {
+            invalid_operation_err!("Only SELECT queries are supported, got: '{}'", query.body)
+        };
 
         check_select_features(selection)?;
+
+        if let Some(with) = &query.with {
+            self.plan_ctes(with)?;
+        }
 
         // FROM/JOIN
         let from = selection.clone().from;
@@ -472,12 +537,10 @@ impl SQLPlanner {
                 ..
             } => {
                 let table_name = name.to_string();
-                let plan = self
-                    .catalog
-                    .get_table(&table_name)
-                    .ok_or_else(|| PlannerError::table_not_found(table_name.clone()))?;
-                let plan_builder = LogicalPlanBuilder::new(plan, None);
-                (Relation::new(plan_builder, table_name), alias.clone())
+                let rel = self
+                    .get_table_from_current_scope(&table_name)
+                    .ok_or_else(|| PlannerError::table_not_found(dbg!(&table_name).clone()))?;
+                (rel, alias.clone())
             }
             _ => unsupported_sql_err!("Unsupported table factor"),
         };
@@ -494,7 +557,7 @@ impl SQLPlanner {
 
         let root = idents.next().unwrap();
         let root = ident_to_str(root);
-        let current_relation = match self.table_map.get(&root) {
+        let current_relation = match self.get_table_from_current_scope(&root) {
             Some(rel) => rel,
             None => {
                 return Err(PlannerError::TableNotFound {
@@ -598,7 +661,7 @@ impl SQLPlanner {
                 let Some(rel) = self.relation_opt() else {
                     table_not_found_err!(table_name);
                 };
-                let Some(table_rel) = self.table_map.get(&table_name) else {
+                let Some(table_rel) = self.get_table_from_current_scope(&table_name) else {
                     table_not_found_err!(table_name);
                 };
                 let right_schema = table_rel.inner.schema();
@@ -1181,9 +1244,6 @@ impl SQLPlanner {
 /// /// This function examines various clauses and options in the provided [sqlparser::ast::Query]
 /// and returns an error if any unsupported features are encountered.
 fn check_query_features(query: &sqlparser::ast::Query) -> SQLPlannerResult<()> {
-    if let Some(with) = &query.with {
-        unsupported_sql_err!("WITH: {with}")
-    }
     if !query.limit_by.is_empty() {
         unsupported_sql_err!("LIMIT BY");
     }
