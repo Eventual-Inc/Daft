@@ -104,6 +104,9 @@ lto = 'fat'
 [profile.rust-analyzer]
 inherits = "dev"
 
+[profile.test]
+debug = true
+
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 libc = {version = "^0.2.150", default-features = false}
 tikv-jemallocator = {version = "0.5.4", features = [
