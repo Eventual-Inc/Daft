@@ -1,7 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use chrono::Duration;
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use daft_core::prelude::*;
 use daft_dsl::{
     col,
@@ -916,46 +915,169 @@ impl SQLPlanner {
             SQLExpr::Subscript { expr, subscript } => self.plan_subscript(expr, subscript.as_ref()),
             SQLExpr::Array(_) => unsupported_sql_err!("ARRAY"),
             SQLExpr::Interval(interval) => {
-                let expr = self.plan_expr(&interval.value)?;
-                let time_unit = interval.leading_field.as_ref().ok_or_else(|| {
-                    PlannerError::invalid_operation("Interval must have a leading field")
-                })?;
+                use regex::Regex;
 
-                let expr = expr
-                    .as_literal()
-                    .and_then(|lit| lit.as_str())
-                    .ok_or_else(|| {
-                        PlannerError::invalid_operation("Interval value must be a string")
-                    })?;
+                /// A private struct represents a single parsed interval unit and its value
+                #[derive(Debug)]
+                struct IntervalPart {
+                    count: i64,
+                    unit: DateTimeField,
+                }
 
-                let count = expr
-                    .parse::<i64>()
-                    .map_err(|e| DaftError::ValueError(format!("Invalid interval count: {e}")))?;
+                // Local function to parse interval string to interval parts
+                fn parse_interval_string(expr: &str) -> Result<Vec<IntervalPart>, PlannerError> {
+                    let expr = expr.trim().trim_matches('\'');
 
-                let duration = match time_unit {
-                    DateTimeField::Year => Duration::days(365 * count),
-                    DateTimeField::Week(_) => Duration::weeks(count),
-                    DateTimeField::Day => Duration::days(count),
-                    DateTimeField::Hour => Duration::hours(count),
-                    DateTimeField::Minute => Duration::minutes(count),
-                    DateTimeField::Second => Duration::seconds(count),
-                    DateTimeField::Microsecond => Duration::microseconds(count),
-                    DateTimeField::Microseconds => Duration::microseconds(count),
-                    DateTimeField::Millisecond => Duration::milliseconds(count),
-                    DateTimeField::Milliseconds => Duration::milliseconds(count),
-                    DateTimeField::Nanosecond => Duration::nanoseconds(count),
-                    DateTimeField::Nanoseconds => Duration::nanoseconds(count),
-                    _ => return Err(DaftError::ValueError(format!(
-                        "Invalid interval unit: {time_unit}. Expected one of: week, day, hour, minute, second, millisecond, microsecond, nanosecond"
-                    )).into()),
-                };
+                    let re = Regex::new(r"(-?\d+)\s*(year|years|month|months|day|days|hour|hours|minute|minutes|second|seconds|millisecond|milliseconds|microsecond|microseconds|nanosecond|nanoseconds|week|weeks)")
+                        .map_err(|e|PlannerError::invalid_operation(format!("Invalid regex pattern: {}", e)))?;
 
-                Ok(Arc::new(Expr::Literal(LiteralValue::Duration(
-                    duration
-                        .num_microseconds()
-                        .ok_or_else(|| DaftError::ValueError("Interval overflow".to_string()))?,
-                    TimeUnit::Microseconds,
-                ))))
+                    let mut parts = Vec::new();
+
+                    for cap in re.captures_iter(expr) {
+                        let count: i64 = cap[1].parse().map_err(|e| {
+                            PlannerError::invalid_operation(format!("Invalid interval count: {e}"))
+                        })?;
+
+                        let unit = match &cap[2].to_lowercase()[..] {
+                            "year" | "years" => DateTimeField::Year,
+                            "month" | "months" => DateTimeField::Month,
+                            "week" | "weeks" => DateTimeField::Week(None),
+                            "day" | "days" => DateTimeField::Day,
+                            "hour" | "hours" => DateTimeField::Hour,
+                            "minute" | "minutes" => DateTimeField::Minute,
+                            "second" | "seconds" => DateTimeField::Second,
+                            "millisecond" | "milliseconds" => DateTimeField::Millisecond,
+                            "microsecond" | "microseconds" => DateTimeField::Microsecond,
+                            "nanosecond" | "nanoseconds" => DateTimeField::Nanosecond,
+                            _ => {
+                                return Err(PlannerError::invalid_operation(format!(
+                                    "Invalid interval unit: {}",
+                                    &cap[2]
+                                )))
+                            }
+                        };
+
+                        parts.push(IntervalPart { count, unit });
+                    }
+
+                    if parts.is_empty() {
+                        return Err(PlannerError::invalid_operation("Invalid interval format."));
+                    }
+
+                    Ok(parts)
+                }
+
+                // Local function to convert parts to interval values
+                fn interval_parts_to_values(parts: Vec<IntervalPart>) -> (i64, i64, i64) {
+                    let mut total_months = 0i64;
+                    let mut total_days = 0i64;
+                    let mut total_nanos = 0i64;
+
+                    for part in parts {
+                        match part.unit {
+                            DateTimeField::Year => total_months += 12 * part.count,
+                            DateTimeField::Month => total_months += part.count,
+                            DateTimeField::Week(_) => total_days += 7 * part.count,
+                            DateTimeField::Day => total_days += part.count,
+                            DateTimeField::Hour => total_nanos += part.count * 3_600_000_000_000,
+                            DateTimeField::Minute => total_nanos += part.count * 60_000_000_000,
+                            DateTimeField::Second => total_nanos += part.count * 1_000_000_000,
+                            DateTimeField::Millisecond | DateTimeField::Milliseconds => {
+                                total_nanos += part.count * 1_000_000;
+                            }
+                            DateTimeField::Microsecond | DateTimeField::Microseconds => {
+                                total_nanos += part.count * 1_000;
+                            }
+                            DateTimeField::Nanosecond | DateTimeField::Nanoseconds => {
+                                total_nanos += part.count;
+                            }
+                            _ => {}
+                        }
+                    }
+
+                    (total_months, total_days, total_nanos)
+                }
+
+                match interval {
+                    // If leading_field is specified, treat it as the old style single-unit interval
+                    // e.g., INTERVAL '12' YEAR
+                    sqlparser::ast::Interval {
+                        value,
+                        leading_field: Some(time_unit),
+                        ..
+                    } => {
+                        let expr = self.plan_expr(value)?;
+
+                        let expr =
+                            expr.as_literal()
+                                .and_then(|lit| lit.as_str())
+                                .ok_or_else(|| {
+                                    PlannerError::invalid_operation(
+                                        "Interval value must be a string",
+                                    )
+                                })?;
+
+                        let count = expr.parse::<i64>().map_err(|e| {
+                            PlannerError::unsupported_sql(format!("Invalid interval count: {e}"))
+                        })?;
+
+                        let (months, days, nanoseconds) = match time_unit {
+                            DateTimeField::Year => (12 * count, 0, 0),
+                            DateTimeField::Month => (count, 0, 0),
+                            DateTimeField::Week(_) => (0, 7 * count, 0),
+                            DateTimeField::Day => (0, count, 0),
+                            DateTimeField::Hour => (0, 0, count * 3_600_000_000_000),
+                            DateTimeField::Minute => (0, 0, count * 60_000_000_000),
+                            DateTimeField::Second => (0, 0, count * 1_000_000_000),
+                            DateTimeField::Microsecond | DateTimeField::Microseconds => (0, 0, count * 1_000),
+                            DateTimeField::Millisecond | DateTimeField::Milliseconds => (0, 0, count * 1_000_000),
+                            DateTimeField::Nanosecond | DateTimeField::Nanoseconds => (0, 0, count),
+                            _ => return Err(PlannerError::invalid_operation(format!(
+                                "Invalid interval unit: {time_unit}. Expected one of: year, month, week, day, hour, minute, second, millisecond, microsecond, nanosecond"
+                            ))),
+                        };
+
+                        Ok(Arc::new(Expr::Literal(LiteralValue::Interval(
+                            daft_core::datatypes::IntervalValue::new(
+                                months as i32,
+                                days as i32,
+                                nanoseconds,
+                            ),
+                        ))))
+                    }
+
+                    // If no leading_field is specified, treat it as the new style multi-unit interval
+                    // e.g., INTERVAL '12 years 3 months 7 days'
+                    sqlparser::ast::Interval {
+                        value,
+                        leading_field: None,
+                        ..
+                    } => {
+                        let expr = self.plan_expr(value)?;
+
+                        let expr =
+                            expr.as_literal()
+                                .and_then(|lit| lit.as_str())
+                                .ok_or_else(|| {
+                                    PlannerError::invalid_operation(
+                                        "Interval value must be a string",
+                                    )
+                                })?;
+
+                        let parts = parse_interval_string(expr)
+                            .map_err(|e| PlannerError::invalid_operation(e.to_string()))?;
+
+                        let (months, days, nanoseconds) = interval_parts_to_values(parts);
+
+                        Ok(Arc::new(Expr::Literal(LiteralValue::Interval(
+                            daft_core::datatypes::IntervalValue::new(
+                                months as i32,
+                                days as i32,
+                                nanoseconds,
+                            ),
+                        ))))
+                    }
+                }
             }
             SQLExpr::MatchAgainst { .. } => unsupported_sql_err!("MATCH AGAINST"),
             SQLExpr::Wildcard => unsupported_sql_err!("WILDCARD"),

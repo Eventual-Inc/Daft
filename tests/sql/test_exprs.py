@@ -3,7 +3,7 @@ import datetime
 import pytest
 
 import daft
-from daft import col
+from daft import col, interval
 from daft.sql.sql import SQLCatalog
 
 
@@ -143,30 +143,34 @@ def test_is_in_edge_cases():
 @pytest.mark.parametrize(
     "date_values, ts_values, expected_intervals",
     [
-        # Adjust expected intervals to match actual datetime and date object formats
         (
-            ["2022-01-01", "2020-02-29", "2019-05-15"],
-            ["2022-01-01 10:00:00", "2020-02-29 23:59:59", "2019-05-15 12:34:56"],
+            ["2022-01-01", "2020-02-29", "2029-05-15"],
+            ["2022-01-01 10:00:00", "2020-02-29 23:59:59", "2029-05-15 12:34:56"],
             {
                 "date_add_day": [
                     datetime.date(2022, 1, 2),
                     datetime.date(2020, 3, 1),
-                    datetime.date(2019, 5, 16),
+                    datetime.date(2029, 5, 16),
                 ],
-                "date_sub_year": [
-                    datetime.date(2021, 1, 1),
-                    datetime.date(2019, 3, 1),  # datetime.date(2019, 2, 28)
-                    datetime.date(2018, 5, 15),
+                "date_sub_month": [
+                    datetime.date(2021, 12, 1),
+                    datetime.date(2020, 1, 31),
+                    datetime.date(2029, 4, 14),
+                ],
+                "ts_sub_year": [
+                    datetime.datetime(2021, 1, 1, 10),
+                    datetime.datetime(2019, 2, 28, 23, 59, 59),
+                    datetime.datetime(2028, 5, 15, 12, 34, 56),
                 ],
                 "ts_add_hour": [
                     datetime.datetime(2022, 1, 1, 11, 0, 0),
                     datetime.datetime(2020, 3, 1, 0, 59, 59),
-                    datetime.datetime(2019, 5, 15, 13, 34, 56),
+                    datetime.datetime(2029, 5, 15, 13, 34, 56),
                 ],
                 "ts_sub_minute": [
-                    datetime.datetime(2022, 1, 1, 9, 59, 0),
-                    datetime.datetime(2020, 2, 29, 23, 58, 59),
-                    datetime.datetime(2019, 5, 15, 12, 33, 56),
+                    datetime.datetime(2022, 1, 1, 9, 57, 21),
+                    datetime.datetime(2020, 2, 29, 23, 57, 20),
+                    datetime.datetime(2029, 5, 15, 12, 32, 17),
                 ],
             },
         ),
@@ -179,21 +183,13 @@ def test_interval_comparison(date_values, ts_values, expected_intervals):
     )
     catalog = SQLCatalog({"test": df})
 
-    # Define interval function for DataFrame operations
-    def interval(unit, multiplier=1):
-        if unit == "year":
-            td = datetime.timedelta(days=365 * multiplier)
-        else:
-            td = datetime.timedelta(**{unit: multiplier})
-        total_microseconds = int(td.total_seconds() * 1_000_000)
-        return daft.lit(total_microseconds).cast(daft.DataType.duration("us"))
-
     expected_df = (
         df.select(
-            (col("date") + interval("days", 1)).alias("date_add_day"),
-            (col("date") - interval("year", 1)).alias("date_sub_year"),
-            (col("ts") + interval("hours", 1)).alias("ts_add_hour"),
-            (col("ts") - interval("minutes", 1)).alias("ts_sub_minute"),
+            (col("date") + interval(days=1)).alias("date_add_day"),
+            (col("date") - interval(months=1)).alias("date_sub_month"),
+            (col("ts") - interval(years=1, days=0)).alias("ts_sub_year"),
+            (col("ts") + interval(hours=1)).alias("ts_add_hour"),
+            (col("ts") - interval(minutes=1, seconds=99)).alias("ts_sub_minute"),
         )
         .collect()
         .to_pydict()
@@ -204,9 +200,10 @@ def test_interval_comparison(date_values, ts_values, expected_intervals):
             """
         SELECT
             date + INTERVAL '1' day AS date_add_day,
-            date - INTERVAL '1' year AS date_sub_year,
+            date - INTERVAL '1 months' AS date_sub_month,
+            ts - INTERVAL '1 year 0 days' AS ts_sub_year,
             ts + INTERVAL '1' hour AS ts_add_hour,
-            ts - INTERVAL '1' minute AS ts_sub_minute
+            ts - INTERVAL '1 minutes 99 second' AS ts_sub_minute
         FROM test
         """,
             catalog=catalog,
@@ -215,5 +212,4 @@ def test_interval_comparison(date_values, ts_values, expected_intervals):
         .to_pydict()
     )
 
-    # Compare SQL results with DataFrame-based expected results
-    assert actual_sql == expected_df == expected_intervals
+    assert expected_df == actual_sql == expected_intervals
