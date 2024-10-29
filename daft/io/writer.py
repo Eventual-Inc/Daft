@@ -87,30 +87,23 @@ class FileWriterBase(ABC):
         """
         pass
 
+    @abstractmethod
     def write(self, table: MicroPartition) -> None:
         """Write data to the file using the appropriate writer.
 
         Args:
             table: MicroPartition containing the data to be written.
         """
-        if self.current_writer is None:
-            self.current_writer = self._create_writer(table.schema().to_pyarrow_schema())
-        self.current_writer.write_table(table.to_arrow())
+        pass
 
+    @abstractmethod
     def close(self) -> Table:
         """Close the writer and return metadata about the written file.
 
         Returns:
             Table containing metadata about the written file, including path and partition values.
         """
-        if self.current_writer is not None:
-            self.current_writer.close()
-
-        metadata = {"path": Series.from_pylist([self.full_path])}
-        if self.partition_values is not None:
-            for col_name in self.partition_values.column_names():
-                metadata[col_name] = self.partition_values.get_column(col_name)
-        return Table.from_pydict(metadata)
+        pass
 
 
 class ParquetFileWriter(FileWriterBase):
@@ -140,6 +133,21 @@ class ParquetFileWriter(FileWriterBase):
             filesystem=self.fs,
         )
 
+    def write(self, table: MicroPartition) -> None:
+        if self.current_writer is None:
+            self.current_writer = self._create_writer(table.schema().to_pyarrow_schema())
+        self.current_writer.write_table(table.to_arrow())
+
+    def close(self) -> Table:
+        if self.current_writer is not None:
+            self.current_writer.close()
+
+        metadata = {"path": Series.from_pylist([self.full_path])}
+        if self.partition_values is not None:
+            for col_name in self.partition_values.column_names():
+                metadata[col_name] = self.partition_values.get_column(col_name)
+        return Table.from_pydict(metadata)
+
 
 class CSVFileWriter(FileWriterBase):
     def __init__(
@@ -162,3 +170,18 @@ class CSVFileWriter(FileWriterBase):
             self.full_path,
             schema,
         )
+
+    def write(self, table: MicroPartition) -> None:
+        if self.current_writer is None:
+            self.current_writer = self._create_writer(table.schema().to_pyarrow_schema())
+        self.current_writer.write_table(table.to_arrow())
+
+    def close(self) -> Table:
+        if self.current_writer is not None:
+            self.current_writer.close()
+
+        metadata = {"path": Series.from_pylist([self.full_path])}
+        if self.partition_values is not None:
+            for col_name in self.partition_values.column_names():
+                metadata[col_name] = self.partition_values.get_column(col_name)
+        return Table.from_pydict(metadata)
