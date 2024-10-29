@@ -91,8 +91,11 @@ impl ActorHandle {
 
 impl Drop for ActorHandle {
     fn drop(&mut self) {
-        // Ignore errors since you shouldn't panic in a drop
-        let _ = self.teardown();
+        let result = self.teardown();
+
+        if let Err(e) = result {
+            log::error!("Error tearing down stateful UDF actor: {}", e);
+        }
     }
 }
 

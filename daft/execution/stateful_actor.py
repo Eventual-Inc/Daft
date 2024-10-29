@@ -59,6 +59,8 @@ def stateful_actor_event_loop(uninitialized_projection: ExpressionsProjection, c
 
 
 class StatefulActorHandle:
+    """Handle class for initializing, interacting with, and tearing down a single local stateful actor process."""
+
     def __init__(self, projection: list[PyExpr]) -> None:
         self.handle_conn, actor_conn = mp.Pipe()
 

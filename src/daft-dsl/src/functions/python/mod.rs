@@ -236,6 +236,7 @@ pub fn extract_partial_stateful_udf_py(
         .collect()
 }
 
+/// Helper function that extracts all `StatefulPythonUDF` expressions from a given expression tree
 pub fn extract_stateful_udf_exprs(expr: ExprRef) -> Vec<StatefulPythonUDF> {
     let mut stateful_udf_exprs = Vec::new();
 
