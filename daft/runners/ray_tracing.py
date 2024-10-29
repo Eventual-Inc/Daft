@@ -14,7 +14,7 @@ import os
 import pathlib
 import time
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, TextIO
+from typing import TYPE_CHECKING, Any, Iterator, TextIO
 
 try:
     import ray
@@ -58,7 +58,8 @@ def tracing_enabled():
 
 
 @contextlib.contextmanager
-def ray_tracer(execution_id: str):
+def ray_tracer(execution_id: str) -> Iterator[RunnerTracer]:
+    """Instantiates a RunnerTracer for the duration of the code block"""
     # Dump the RayRunner trace if we detect an active Ray session, otherwise we give up and do not write the trace
     filepath: pathlib.Path | None
     if pathlib.Path(DEFAULT_RAY_LOGS_LOCATION).exists() and tracing_enabled():
@@ -74,6 +75,7 @@ def ray_tracer(execution_id: str):
     if filepath is not None:
         # Get the metrics actor and block until ready
         metrics_actor = ray_metrics.get_metrics_actor(execution_id)
+        metrics_actor.wait()
 
         with open(filepath, "w") as f:
             # Yield the tracer
@@ -91,6 +93,7 @@ class TraceWriter:
 
     file: TextIO | None
     start: float
+    has_written_event: bool = False
 
     def write_header(self) -> None:
         """Initialize the JSON file with an opening bracket"""
@@ -104,8 +107,11 @@ class TraceWriter:
             event: The metadata event to write
         """
         if self.file is not None:
+            if self.has_written_event:
+                self.file.write(",\n")
             self.file.write(json.dumps(event))
             self.file.write(",\n")
+            self.has_written_event = True
 
     def write_event(self, event: dict[str, Any], ts: int | None = None) -> int:
         """Write a single trace event to the file
@@ -117,10 +123,11 @@ class TraceWriter:
         Returns:
             The timestamp that was used for the event
         """
-        if ts is None:
-            ts = int((time.time() - self.start) * 1000 * 1000)
-
         if self.file is not None:
+            if ts is None:
+                ts = int((time.time() - self.start) * 1000 * 1000)
+            if self.has_written_event:
+                self.file.write(",\n")
             self.file.write(
                 json.dumps(
                     {
@@ -130,14 +137,11 @@ class TraceWriter:
                 )
             )
             self.file.write(",\n")
-        return ts
+            self.has_written_event = True
+        return ts or -1
 
     def write_footer(self) -> None:
         if self.file is not None:
-            # Remove the trailing comma
-            self.file.seek(self.file.tell() - 2, os.SEEK_SET)
-            self.file.truncate()
-
             # Close with a closing square bracket
             self.file.write("]")
 
