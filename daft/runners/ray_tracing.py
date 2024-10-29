@@ -72,12 +72,14 @@ def ray_tracer(execution_id: str):
         filepath = None
 
     if filepath is not None:
+        # Get the metrics actor and block until ready
+        metrics_actor = ray_metrics.get_metrics_actor(execution_id)
+        metrics_actor.wait()
+
         with open(filepath, "w") as f:
             # Yield the tracer
             runner_tracer = RunnerTracer(f)
             yield runner_tracer
-
-            metrics_actor = ray_metrics.get_metrics_actor(execution_id)
             runner_tracer.finalize(metrics_actor)
     else:
         runner_tracer = RunnerTracer(None)

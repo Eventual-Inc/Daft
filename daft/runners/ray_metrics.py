@@ -52,6 +52,10 @@ class _MetricsActor:
             lambda: defaultdict(lambda: set())
         )
 
+    def ready(self):
+        # Discussion on how to check if an actor is ready: https://github.com/ray-project/ray/issues/14923
+        return None
+
     def mark_task_start(
         self, execution_id: str, task_id: str, start: float, node_id: str, worker_id: str, stage_id: int
     ):
@@ -96,6 +100,10 @@ class _MetricsActor:
 class MetricsActorHandle:
     execution_id: str
     actor: ray.actor.ActorHandle
+
+    def wait(self) -> None:
+        """Call to block until the underlying actor is ready"""
+        return ray.get(self.actor.ready.remote())
 
     def mark_task_start(
         self,
