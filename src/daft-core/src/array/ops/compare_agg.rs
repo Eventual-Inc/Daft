@@ -8,15 +8,14 @@ use crate::{
 };
 
 fn grouped_cmp_native<T, F>(
-    data_array: &DataArray<T>,
+    arrow_array: &PrimitiveArray<T>,
     mut op: F,
     groups: &GroupIndices,
-) -> DaftResult<DataArray<T>>
+) -> DaftResult<Box<PrimitiveArray<T>>>
 where
-    T: DaftNumericType,
-    F: Fn(T::Native, T::Native) -> T::Native,
+    T: NumericNative,
+    F: Fn(T, T) -> T,
 {
-    let arrow_array = data_array.as_arrow();
     let cmp_per_group = if arrow_array.null_count() > 0 {
         let cmp_values_iter = groups.iter().map(|g| {
             let reduced_val = g
@@ -50,10 +49,7 @@ where
             }),
         ))
     };
-    Ok(DataArray::from((
-        data_array.field.name.as_ref(),
-        cmp_per_group,
-    )))
+    Ok(cmp_per_group)
 }
 
 use super::as_arrow::AsArrow;
@@ -84,24 +80,79 @@ where
         Self::new(self.field.clone(), arrow_array)
     }
     fn grouped_min(&self, groups: &GroupIndices) -> Self::Output {
-        grouped_cmp_native(
-            self,
-            |l, r| match l.lt(&r) {
-                true => l,
-                false => r,
-            },
-            groups,
+        Ok(Self::from((
+            self.name(),
+            grouped_cmp_native(
+                self.as_arrow(),
+                |l, r| match l.lt(&r) {
+                    true => l,
+                    false => r,
+                },
+                groups,
+            )?,
+        )))
+    }
+
+    fn grouped_max(&self, groups: &GroupIndices) -> Self::Output {
+        Ok(Self::from((
+            self.name(),
+            grouped_cmp_native(
+                self.as_arrow(),
+                |l, r| match l.gt(&r) {
+                    true => l,
+                    false => r,
+                },
+                groups,
+            )?,
+        )))
+    }
+}
+
+impl DaftCompareAggable for Decimal128Array {
+    type Output = DaftResult<Self>;
+
+    fn min(&self) -> Self::Output {
+        let primitive_arr = self.as_arrow();
+
+        let result = arrow2::compute::aggregate::min_primitive(primitive_arr);
+        let arrow_array = Box::new(arrow2::array::PrimitiveArray::from([result]));
+
+        Self::new(self.field.clone(), arrow_array)
+    }
+
+    fn max(&self) -> Self::Output {
+        let primitive_arr = self.as_arrow();
+
+        let result = arrow2::compute::aggregate::max_primitive(primitive_arr);
+        let arrow_array = Box::new(arrow2::array::PrimitiveArray::from([result]));
+
+        Self::new(self.field.clone(), arrow_array)
+    }
+    fn grouped_min(&self, groups: &GroupIndices) -> Self::Output {
+        Self::new(
+            self.field.clone(),
+            grouped_cmp_native(
+                self.as_arrow(),
+                |l, r| match l.lt(&r) {
+                    true => l,
+                    false => r,
+                },
+                groups,
+            )?,
         )
     }
 
     fn grouped_max(&self, groups: &GroupIndices) -> Self::Output {
-        grouped_cmp_native(
-            self,
-            |l, r| match l.gt(&r) {
-                true => l,
-                false => r,
-            },
-            groups,
+        Self::new(
+            self.field.clone(),
+            grouped_cmp_native(
+                self.as_arrow(),
+                |l, r| match l.gt(&r) {
+                    true => l,
+                    false => r,
+                },
+                groups,
+            )?,
         )
     }
 }

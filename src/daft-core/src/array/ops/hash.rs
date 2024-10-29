@@ -6,10 +6,10 @@ use super::as_arrow::AsArrow;
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{
-        logical::{DateArray, Decimal128Array, TimeArray, TimestampArray},
-        BinaryArray, BooleanArray, DaftNumericType, FixedSizeBinaryArray, Int16Array, Int32Array,
-        Int64Array, Int8Array, NullArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array,
-        Utf8Array,
+        logical::{DateArray, TimeArray, TimestampArray},
+        BinaryArray, BooleanArray, DaftNumericType, Decimal128Array, FixedSizeBinaryArray,
+        Int16Array, Int32Array, Int64Array, Int8Array, NullArray, UInt16Array, UInt32Array,
+        UInt64Array, UInt8Array, Utf8Array,
     },
     kernels,
     series::Series,
@@ -319,7 +319,11 @@ impl TimestampArray {
 
 impl Decimal128Array {
     pub fn murmur3_32(&self) -> DaftResult<Int32Array> {
-        let arr = self.physical.as_arrow();
+        let arr = self
+            .data()
+            .as_any()
+            .downcast_ref::<arrow2::array::PrimitiveArray<i128>>()
+            .expect("this should be a decimal array");
         let hashes = arr.into_iter().map(|d| {
             d.map(|d| {
                 let twos_compliment = u128::from_ne_bytes(d.to_ne_bytes());

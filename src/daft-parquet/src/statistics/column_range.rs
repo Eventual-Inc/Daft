@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use arrow2::array::PrimitiveArray;
 use daft_core::prelude::*;
 use daft_stats::ColumnRangeStatistics;
@@ -127,17 +129,13 @@ fn make_decimal_column_range_statistics(
     }
     let l = convert_i128(lower, lower.len());
     let u = convert_i128(upper, upper.len());
-    let lower = Int128Array::from(("lower", [l].as_slice()));
-    let upper = Int128Array::from(("upper", [u].as_slice()));
-    let daft_type = daft_core::datatypes::DataType::Decimal128(p, s);
 
-    let lower = Decimal128Array::new(
-        daft_core::datatypes::Field::new("lower", daft_type.clone()),
-        lower,
-    )
-    .into_series();
-    let upper = Decimal128Array::new(daft_core::datatypes::Field::new("upper", daft_type), upper)
-        .into_series();
+    let daft_type = daft_core::datatypes::DataType::Decimal128(p, s);
+    let lower_field = Arc::new(daft_core::datatypes::Field::new("lower", daft_type.clone()));
+    let upper_field = Arc::new(daft_core::datatypes::Field::new("upper", daft_type.clone()));
+
+    let lower = Decimal128Array::from_iter(lower_field, std::iter::once(Some(l))).into_series();
+    let upper = Decimal128Array::from_iter(upper_field, std::iter::once(Some(u))).into_series();
 
     Ok(ColumnRangeStatistics::new(Some(lower), Some(upper))?)
 }

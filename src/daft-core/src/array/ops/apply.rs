@@ -4,11 +4,15 @@ use arrow2::array::PrimitiveArray;
 use common_error::{DaftError, DaftResult};
 
 use super::full::FullNull;
-use crate::{array::DataArray, datatypes::DaftNumericType, utils::arrow::arrow_bitmap_and_helper};
+use crate::{
+    array::DataArray,
+    datatypes::{DaftNumericType, DaftPrimitiveType},
+    utils::arrow::arrow_bitmap_and_helper,
+};
 
 impl<T> DataArray<T>
 where
-    T: DaftNumericType,
+    T: DaftPrimitiveType,
 {
     // applies a native function to a numeric DataArray maintaining validity of the source array.
     pub fn apply<F>(&self, func: F) -> DaftResult<Self>
@@ -20,7 +24,7 @@ where
             PrimitiveArray::from_trusted_len_values_iter(arr.values_iter().map(|v| func(*v)))
                 .with_validity(arr.validity().cloned());
 
-        Ok(Self::from((self.name(), Box::new(result_arr))))
+        Self::new(self.field.clone(), Box::new(result_arr))
     }
 
     // applies a native binary function to two DataArrays, maintaining validity.
@@ -44,7 +48,7 @@ where
                     zip(lhs_arr.values_iter(), rhs_arr.values_iter()).map(|(a, b)| func(*a, *b)),
                 )
                 .with_validity(validity);
-                Ok(Self::from((self.name(), Box::new(result_arr))))
+                Self::new(self.field.clone(), Box::new(result_arr))
             }
             (l_size, 1) => {
                 if let Some(value) = rhs.get(0) {
@@ -61,7 +65,7 @@ where
                         rhs_arr.values_iter().map(|v| func(value, *v)),
                     )
                     .with_validity(rhs_arr.validity().cloned());
-                    Ok(Self::from((self.name(), Box::new(result_arr))))
+                    Self::new(self.field.clone(), Box::new(result_arr))
                 } else {
                     Ok(Self::full_null(self.name(), self.data_type(), r_size))
                 }

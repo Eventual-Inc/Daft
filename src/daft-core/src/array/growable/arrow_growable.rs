@@ -168,6 +168,12 @@ impl_arrow_backed_data_array_growable!(
     arrow2::array::growable::GrowablePrimitive<'a, months_days_ns>
 );
 
+impl_arrow_backed_data_array_growable!(
+    ArrowDecimal128Growable,
+    Decimal128Type,
+    arrow2::array::growable::GrowablePrimitive<'a, i128>
+);
+
 /// ExtensionTypes are slightly different, because they have a dynamic inner type
 pub struct ArrowExtensionGrowable<'a> {
     name: String,

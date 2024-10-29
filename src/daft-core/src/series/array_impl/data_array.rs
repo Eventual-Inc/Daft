@@ -181,5 +181,6 @@ impl_series_like_for_data_array!(Float64Array);
 impl_series_like_for_data_array!(Utf8Array);
 impl_series_like_for_data_array!(ExtensionArray);
 impl_series_like_for_data_array!(IntervalArray);
+impl_series_like_for_data_array!(Decimal128Array);
 #[cfg(feature = "python")]
 impl_series_like_for_data_array!(PythonArray);

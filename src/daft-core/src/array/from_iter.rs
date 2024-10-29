@@ -1,7 +1,12 @@
+use std::sync::Arc;
+
 use arrow2::types::months_days_ns;
 
 use super::DataArray;
-use crate::{array::prelude::*, datatypes::prelude::*};
+use crate::{
+    array::prelude::*,
+    datatypes::{prelude::*, DaftPrimitiveType},
+};
 
 impl<T> DataArray<T>
 where
@@ -14,6 +19,17 @@ where
         let arrow_array =
             Box::new(arrow2::array::PrimitiveArray::<T::Native>::from_trusted_len_iter(iter));
         Self::new(Field::new(name, T::get_dtype()).into(), arrow_array).unwrap()
+    }
+}
+
+impl Decimal128Array {
+    pub fn from_iter(
+        field: Arc<Field>,
+        iter: impl arrow2::trusted_len::TrustedLen<Item = Option<i128>>,
+    ) -> Self {
+        let arrow_array =
+            Box::new(arrow2::array::PrimitiveArray::<i128>::from_trusted_len_iter(iter));
+        Self::new(field, arrow_array).unwrap()
     }
 }
 

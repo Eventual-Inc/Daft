@@ -7,11 +7,10 @@ use crate::datatypes::PythonArray;
 use crate::{
     array::DataArray,
     datatypes::{
-        logical::{DateArray, Decimal128Array, DurationArray, TimeArray, TimestampArray},
-        BinaryArray, BooleanArray, DaftNumericType, FixedSizeBinaryArray, IntervalArray, NullArray,
-        Utf8Array,
+        logical::{DateArray, DurationArray, TimeArray, TimestampArray},
+        BinaryArray, BooleanArray, DaftNumericType, DaftPrimitiveType, Decimal128Array,
+        FixedSizeBinaryArray, IntervalArray, NullArray, Utf8Array,
     },
-    prelude::DaftArrayType,
 };
 
 pub trait AsArrow {
@@ -25,7 +24,7 @@ pub trait AsArrow {
 
 impl<T> AsArrow for DataArray<T>
 where
-    T: DaftNumericType,
+    T: DaftPrimitiveType,
 {
     type Output = array::PrimitiveArray<T::Native>;
 
@@ -67,7 +66,6 @@ impl_asarrow_dataarray!(IntervalArray, array::PrimitiveArray<months_days_ns>);
 #[cfg(feature = "python")]
 impl_asarrow_dataarray!(PythonArray, PseudoArrowArray<pyo3::PyObject>);
 
-impl_asarrow_logicalarray!(Decimal128Array, array::PrimitiveArray<i128>);
 impl_asarrow_logicalarray!(DateArray, array::PrimitiveArray<i32>);
 impl_asarrow_logicalarray!(TimeArray, array::PrimitiveArray<i64>);
 impl_asarrow_logicalarray!(DurationArray, array::PrimitiveArray<i64>);

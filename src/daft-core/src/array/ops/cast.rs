@@ -37,12 +37,12 @@ use crate::{
     },
     datatypes::{
         logical::{
-            DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
+            DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, LogicalArray, MapArray,
             SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
-        DaftArrayType, DaftArrowBackedType, DaftLogicalType, DataType, Field, ImageMode,
-        Int32Array, Int64Array, NullArray, TimeUnit, UInt64Array, Utf8Array,
+        DaftArrayType, DaftArrowBackedType, DaftLogicalType, DataType, Decimal128Array, Field,
+        ImageMode, Int32Array, Int64Array, NullArray, TimeUnit, UInt64Array, Utf8Array,
     },
     series::{IntoSeries, Series},
     utils::display::display_time64,
@@ -412,40 +412,40 @@ impl DurationArray {
     }
 }
 
-impl Decimal128Array {
-    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
-        match dtype {
-            #[cfg(feature = "python")]
-            DataType::Python => cast_logical_to_python_array(self, dtype),
-            DataType::Int128 => Ok(self.physical.clone().into_series()),
-            dtype if dtype.is_numeric() => self.physical.cast(dtype),
-            DataType::Decimal128(_, _) => {
-                // Use the arrow2 Decimal128 casting logic.
-                let target_arrow_type = dtype.to_arrow()?;
-                let arrow_decimal_array = self
-                    .as_arrow()
-                    .clone()
-                    .to(self.data_type().to_arrow()?)
-                    .to_boxed();
-                let casted_arrow_array = cast(
-                    arrow_decimal_array.as_ref(),
-                    &target_arrow_type,
-                    CastOptions {
-                        wrapped: true,
-                        partial: false,
-                    },
-                )?;
+// impl Decimal128Array {
+//     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+//         match dtype {
+//             #[cfg(feature = "python")]
+//             DataType::Python => cast_logical_to_python_array(self, dtype),
+//             DataType::Int128 => Ok(self.physical.clone().into_series()),
+//             dtype if dtype.is_numeric() => self.physical.cast(dtype),
+//             DataType::Decimal128(_, _) => {
+//                 // Use the arrow2 Decimal128 casting logic.
+//                 let target_arrow_type = dtype.to_arrow()?;
+//                 let arrow_decimal_array = self
+//                     .as_arrow()
+//                     .clone()
+//                     .to(self.data_type().to_arrow()?)
+//                     .to_boxed();
+//                 let casted_arrow_array = cast(
+//                     arrow_decimal_array.as_ref(),
+//                     &target_arrow_type,
+//                     CastOptions {
+//                         wrapped: true,
+//                         partial: false,
+//                     },
+//                 )?;
 
-                let new_field = Arc::new(Field::new(self.name(), dtype.clone()));
-                Series::from_arrow(new_field, casted_arrow_array)
-            }
-            _ => Err(DaftError::TypeError(format!(
-                "Cannot cast Decimal128 to {}",
-                dtype
-            ))),
-        }
-    }
-}
+//                 let new_field = Arc::new(Field::new(self.name(), dtype.clone()));
+//                 Series::from_arrow(new_field, casted_arrow_array)
+//             }
+//             _ => Err(DaftError::TypeError(format!(
+//                 "Cannot cast Decimal128 to {}",
+//                 dtype
+//             ))),
+//         }
+//     }
+// }
 
 #[cfg(feature = "python")]
 macro_rules! pycast_then_arrowcast {

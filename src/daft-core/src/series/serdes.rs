@@ -10,7 +10,7 @@ use crate::{
     },
     datatypes::{
         logical::{
-            DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
+            DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
             SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
@@ -219,15 +219,11 @@ impl<'d> serde::Deserialize<'d> for Series {
                         let validity = validity.map(|v| v.bool().unwrap().as_bitmap().clone());
                         Ok(FixedSizeListArray::new(field, flat_child, validity).into_series())
                     }
-                    DataType::Decimal128(..) => {
-                        type PType = <<Decimal128Type as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
-                        let physical = map.next_value::<Series>()?;
-                        Ok(Decimal128Array::new(
-                            field,
-                            physical.downcast::<PType>().unwrap().clone(),
-                        )
-                        .into_series())
-                    }
+                    DataType::Decimal128(..) => Ok(Int128Array::from_iter(
+                        field.name.as_str(),
+                        map.next_value::<Vec<Option<i128>>>()?.into_iter(),
+                    )
+                    .into_series()),
                     DataType::Timestamp(..) => {
                         type PType = <<TimestampType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
                         let physical = map.next_value::<Series>()?;

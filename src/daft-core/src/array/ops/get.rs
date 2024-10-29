@@ -5,18 +5,17 @@ use crate::{
     array::{DataArray, FixedSizeListArray, ListArray},
     datatypes::{
         logical::{
-            DateArray, Decimal128Array, DurationArray, LogicalArrayImpl, MapArray, TimeArray,
-            TimestampArray,
+            DateArray, DurationArray, LogicalArrayImpl, MapArray, TimeArray, TimestampArray,
         },
-        BinaryArray, BooleanArray, DaftLogicalType, DaftNumericType, ExtensionArray,
-        FixedSizeBinaryArray, IntervalArray, NullArray, Utf8Array,
+        BinaryArray, BooleanArray, DaftLogicalType, DaftNumericType, DaftPrimitiveType,
+        Decimal128Array, ExtensionArray, FixedSizeBinaryArray, IntervalArray, NullArray, Utf8Array,
     },
     series::Series,
 };
 
 impl<T> DataArray<T>
 where
-    T: DaftNumericType,
+    T: DaftPrimitiveType,
 {
     #[inline]
     pub fn get(&self, idx: usize) -> Option<T::Native> {
@@ -72,7 +71,6 @@ impl_array_arrow_get!(Utf8Array, &str);
 impl_array_arrow_get!(BooleanArray, bool);
 impl_array_arrow_get!(BinaryArray, &[u8]);
 impl_array_arrow_get!(FixedSizeBinaryArray, &[u8]);
-impl_array_arrow_get!(Decimal128Array, i128);
 impl_array_arrow_get!(DateArray, i32);
 impl_array_arrow_get!(TimeArray, i64);
 impl_array_arrow_get!(DurationArray, i64);

@@ -1,6 +1,5 @@
 use arrow2::array::PrimitiveArray;
 use common_error::{DaftError, DaftResult};
-use logical::Decimal128Array;
 
 use crate::{
     array::{
@@ -67,27 +66,21 @@ impl Series {
                 .into_series()),
                 None => Ok(DaftSumAggable::sum(&self.downcast::<Float64Array>()?)?.into_series()),
             },
-            DataType::Decimal128(_, _) => match groups {
-                Some(groups) => Ok(Decimal128Array::new(
-                    Field {
-                        dtype: try_sum_supertype(self.data_type())?,
-                        ..self.field().clone()
-                    },
-                    DaftSumAggable::grouped_sum(
-                        &self.as_physical()?.downcast::<Int128Array>()?,
+            DataType::Decimal128(_, _) => {
+                let casted = self.cast(&try_sum_supertype(self.data_type())?)?;
+
+                match groups {
+                    Some(groups) => Ok(DaftSumAggable::grouped_sum(
+                        &casted.downcast::<Decimal128Array>()?,
                         groups,
-                    )?,
-                )
-                .into_series()),
-                None => Ok(Decimal128Array::new(
-                    Field {
-                        dtype: try_sum_supertype(self.data_type())?,
-                        ..self.field().clone()
-                    },
-                    DaftSumAggable::sum(&self.as_physical()?.downcast::<Int128Array>()?)?,
-                )
-                .into_series()),
-            },
+                    )?
+                    .into_series()),
+                    None => {
+                        Ok(DaftSumAggable::sum(&casted.downcast::<Decimal128Array>()?)?
+                            .into_series())
+                    }
+                }
+            }
             other => Err(DaftError::TypeError(format!(
                 "Numeric sum is not implemented for type {}",
                 other

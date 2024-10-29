@@ -8,6 +8,7 @@ use std::{
 use common_error::{DaftError, DaftResult};
 use common_hashable_float_wrapper::FloatWrapper;
 use daft_core::{
+    array::ops::arrow2,
     datatypes::IntervalValue,
     prelude::*,
     utils::display::{
@@ -238,9 +239,11 @@ impl LiteralValue {
             )
             .into_series(),
             Self::Float64(val) => Float64Array::from(("literal", [*val].as_slice())).into_series(),
-            Self::Decimal(val, ..) => {
-                let physical = Int128Array::from(("literal", [*val].as_slice()));
-                Decimal128Array::new(Field::new("literal", self.get_type()), physical).into_series()
+            Self::Decimal(val, p, s) => {
+                let dtype = DataType::Decimal128(*p as usize, *s as usize);
+                let field = Field::new("literal", dtype);
+                Decimal128Array::from_iter(Arc::new(field), std::iter::once(Some(*val)))
+                    .into_series()
             }
             Self::Series(series) => series.clone().rename("literal"),
             #[cfg(feature = "python")]
@@ -540,8 +543,7 @@ pub fn literals_to_series(values: &[LiteralValue]) -> DaftResult<Series> {
         dtype @ DataType::Decimal128 { .. } => {
             let data = values.iter().map(|lit| unwrap_unchecked!(lit, Decimal));
 
-            let physical = Int128Array::from_iter("literal", data);
-            Decimal128Array::new(Field::new("literal", dtype), physical).into_series()
+            Decimal128Array::from_iter(Arc::new(Field::new("literal", dtype)), data).into_series()
         }
         _ => {
             return Err(DaftError::ValueError(format!(

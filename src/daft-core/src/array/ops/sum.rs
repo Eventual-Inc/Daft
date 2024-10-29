@@ -42,14 +42,14 @@ macro_rules! impl_daft_numeric_agg {
                     ))
                 };
 
-                Ok(DataArray::from((self.field.name.as_ref(), sum_per_group)))
+                DataArray::new(self.field.clone(), sum_per_group)
             }
         }
     };
 }
 
 impl_daft_numeric_agg!(Int64Type, i64);
-impl_daft_numeric_agg!(Int128Type, i128);
 impl_daft_numeric_agg!(UInt64Type, u64);
 impl_daft_numeric_agg!(Float32Type, f32);
 impl_daft_numeric_agg!(Float64Type, f64);
+impl_daft_numeric_agg!(Decimal128Type, i128);

@@ -225,12 +225,12 @@ impl_daft_arrow_datatype!(BinaryType, Binary);
 impl_daft_arrow_datatype!(FixedSizeBinaryType, Unknown);
 impl_daft_arrow_datatype!(Utf8Type, Utf8);
 impl_daft_arrow_datatype!(ExtensionType, Unknown);
+impl_daft_arrow_datatype!(Decimal128Type, Unknown);
 
 impl_nested_datatype!(FixedSizeListType, FixedSizeListArray);
 impl_nested_datatype!(StructType, StructArray);
 impl_nested_datatype!(ListType, ListArray);
 
-impl_daft_logical_data_array_datatype!(Decimal128Type, Unknown, Int128Type);
 impl_daft_logical_data_array_datatype!(TimestampType, Unknown, Int64Type);
 impl_daft_logical_data_array_datatype!(DateType, Date, Int32Type);
 impl_daft_logical_data_array_datatype!(TimeType, Unknown, Int64Type);
@@ -337,6 +337,7 @@ impl DaftNumericType for Int64Type {
 impl DaftNumericType for Int128Type {
     type Native = i128;
 }
+
 impl DaftNumericType for Float32Type {
     type Native = f32;
 }
@@ -348,6 +349,18 @@ pub trait DaftIntegerType: DaftNumericType
 where
     Self::Native: Ord,
 {
+}
+
+pub trait DaftPrimitiveType: Send + Sync + DaftArrowBackedType + 'static {
+    type Native: NumericNative;
+}
+
+impl<T: DaftNumericType> DaftPrimitiveType for T {
+    type Native = T::Native;
+}
+
+impl DaftPrimitiveType for Decimal128Type {
+    type Native = i128;
 }
 
 impl DaftIntegerType for UInt8Type {}
@@ -392,6 +405,7 @@ pub type FixedSizeBinaryArray = DataArray<FixedSizeBinaryType>;
 pub type Utf8Array = DataArray<Utf8Type>;
 pub type ExtensionArray = DataArray<ExtensionType>;
 pub type IntervalArray = DataArray<IntervalType>;
+pub type Decimal128Array = DataArray<Decimal128Type>;
 
 #[cfg(feature = "python")]
 pub type PythonArray = DataArray<PythonType>;
