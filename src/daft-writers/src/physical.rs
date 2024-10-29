@@ -7,6 +7,7 @@ use daft_table::Table;
 
 use crate::{FileWriter, WriterFactory};
 
+/// PhysicalWriterFactory is a factory for creating physical writers, i.e. parquet, csv writers.
 pub struct PhysicalWriterFactory {
     output_file_info: OutputFileInfo,
     native: bool, // TODO: Implement native writer

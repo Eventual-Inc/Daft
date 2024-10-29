@@ -22,6 +22,8 @@ use tracing::instrument;
 use super::blocking_sink::{BlockingSink, BlockingSinkStatus};
 use crate::{buffer::RowBasedBuffer, pipeline::PipelineResultType};
 
+// TargetBatchWriter is a writer that writes in batches of rows, i.e. for Parquet where we want to write
+// a row group at a time. It uses a buffer to accumulate rows until it has enough to write a batch.
 struct TargetBatchWriter {
     buffer: RowBasedBuffer,
     writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Option<Table>>>,
@@ -61,12 +63,12 @@ impl FileWriter for TargetBatchWriter {
     }
 }
 
-struct TargetBatchWriterFactory<I, R> {
-    writer_factory: Arc<dyn WriterFactory<Input = I, Result = R>>,
+struct TargetBatchWriterFactory {
+    writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<Table>>>,
     target_in_memory_chunk_rows: usize,
 }
 
-impl WriterFactory for TargetBatchWriterFactory<Arc<MicroPartition>, Option<Table>> {
+impl WriterFactory for TargetBatchWriterFactory {
     type Input = Arc<MicroPartition>;
     type Result = Option<Table>;
 
@@ -88,6 +90,8 @@ impl WriterFactory for TargetBatchWriterFactory<Arc<MicroPartition>, Option<Tabl
     }
 }
 
+// TargetFileSizeWriter is a writer that writes in files of a target size.
+// It rotates the writer when the current file reaches the target size.
 struct TargetFileSizeWriter {
     current_file_rows: usize,
     current_writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Option<Table>>>,
@@ -206,6 +210,8 @@ impl WriterFactory for TargetFileSizeWriterFactory {
     }
 }
 
+/// PartitionedWriter is a writer that partitions the input data by a set of columns, and writes each partition
+/// to a separate file. It uses a map to keep track of the writers for each partition.
 struct PartitionedWriter {
     per_partition_writers:
         HashMap<IndexHash, Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Vec<Table>>>>,
