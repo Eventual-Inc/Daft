@@ -40,6 +40,10 @@ class StartTaskEvent(TaskEvent):
     # Index of the worker within the node (not monotonically increasing)
     worker_idx: int
 
+    # The resources that Ray assigned to this task
+    ray_assigned_resources: dict
+    ray_task_id: str
+
 
 @dataclasses.dataclass(frozen=True)
 class EndTaskEvent(TaskEvent):
@@ -92,7 +96,15 @@ class _MetricsActor:
         return None
 
     def mark_task_start(
-        self, execution_id: str, task_id: str, start: float, node_id: str, worker_id: str, stage_id: int
+        self,
+        execution_id: str,
+        task_id: str,
+        start: float,
+        node_id: str,
+        worker_id: str,
+        stage_id: int,
+        ray_assigned_resources: dict,
+        ray_task_id: str,
     ):
         """Records a task start event"""
         # Update node info
@@ -106,6 +118,8 @@ class _MetricsActor:
                 start=start,
                 node_idx=node_idx,
                 worker_idx=worker_idx,
+                ray_assigned_resources=ray_assigned_resources,
+                ray_task_id=ray_task_id,
             )
         )
 
@@ -145,6 +159,8 @@ class MetricsActorHandle:
         node_id: str,
         worker_id: str,
         stage_id: int,
+        ray_assigned_resources: dict,
+        ray_task_id: str,
     ) -> None:
         self.actor.mark_task_start.remote(
             self.execution_id,
@@ -153,6 +169,8 @@ class MetricsActorHandle:
             node_id,
             worker_id,
             stage_id,
+            ray_assigned_resources,
+            ray_task_id,
         )
 
     def mark_task_end(

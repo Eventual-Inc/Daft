@@ -190,7 +190,7 @@ class RunnerTracer:
                     self._task_id_to_location[task_event.task_id] = (task_event.node_idx, task_event.worker_idx)
 
                     start_ts = int((task_event.start - self._start) * 1000 * 1000)
-                    # Write to the Async view (will group by the stage ID)
+                    # Write to the Async view (will nest under the task creation and dispatch)
                     self._write_event(
                         {
                             "id": task_event.task_id,
@@ -199,6 +199,11 @@ class RunnerTracer:
                             "ph": PHASE_ASYNC_BEGIN,
                             "pid": 1,
                             "tid": 2,
+                            "args": {
+                                "ray_assigned_resources": task_event.ray_assigned_resources,
+                                "ray_task_id": task_event.ray_task_id,
+                                "stage_id": task_event.stage_id,
+                            },
                         },
                         ts=start_ts,
                     )
@@ -210,6 +215,11 @@ class RunnerTracer:
                             "ph": PHASE_DURATION_BEGIN,
                             "pid": task_event.node_idx + NODE_PIDS_START,
                             "tid": task_event.worker_idx,
+                            "args": {
+                                "ray_assigned_resources": task_event.ray_assigned_resources,
+                                "ray_task_id": task_event.ray_task_id,
+                                "stage_id": task_event.stage_id,
+                            },
                         },
                         ts=start_ts,
                     )
@@ -632,7 +642,13 @@ def collect_ray_task_metrics(execution_id: str, task_id: str, stage_id: int):
 
         metrics_actor = ray_metrics.get_metrics_actor(execution_id)
         metrics_actor.mark_task_start(
-            task_id, time.time(), runtime_context.get_node_id(), runtime_context.get_worker_id(), stage_id
+            task_id,
+            time.time(),
+            runtime_context.get_node_id(),
+            runtime_context.get_worker_id(),
+            stage_id,
+            runtime_context.get_assigned_resources(),
+            runtime_context.get_task_id(),
         )
         yield
         metrics_actor.mark_task_end(task_id, time.time())
