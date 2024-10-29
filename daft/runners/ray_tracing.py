@@ -503,18 +503,6 @@ class RunnerTracer:
             }
         )
 
-    def task_not_ready(self, task_id: str):
-        self._write_event(
-            {
-                "id": task_id,
-                "category": "task",
-                "name": "task_awaited_not_ready",
-                "ph": PHASE_ASYNC_INSTANT,
-                "pid": 1,
-                "tid": 1,
-            }
-        )
-
     def task_received_as_ready(self, task_id: str, stage_id: int):
         self._write_event(
             {

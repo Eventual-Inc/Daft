@@ -796,7 +796,7 @@ class Scheduler(ActorPoolManager):
         timeout = 0.01
         num_returns = len(inflight_ref_to_task_id)
         with runner_tracer.awaiting(num_returns, timeout):
-            readies, not_readies = ray.wait(
+            readies, _ = ray.wait(
                 list(inflight_ref_to_task_id.keys()),
                 num_returns=num_returns,
                 timeout=timeout,
@@ -808,9 +808,6 @@ class Scheduler(ActorPoolManager):
             if ready in inflight_ref_to_task_id:
                 task_id = inflight_ref_to_task_id[ready]
                 runner_tracer.task_received_as_ready(task_id, inflight_tasks[task_id].stage_id)
-        for not_ready in not_readies:
-            if not_ready in inflight_ref_to_task_id:
-                runner_tracer.task_not_ready(inflight_ref_to_task_id[not_ready])
 
         return readies
 
