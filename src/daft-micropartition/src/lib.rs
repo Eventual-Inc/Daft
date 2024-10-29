@@ -2,11 +2,7 @@
 #![feature(iterator_try_reduce)]
 #![feature(iterator_try_collect)]
 
-use std::sync::Arc;
-
-use common_error::{DaftError, DaftResult};
-use common_file_formats::FileFormat;
-use daft_table::Table;
+use common_error::DaftError;
 use snafu::Snafu;
 mod micropartition;
 mod ops;
@@ -17,8 +13,6 @@ pub use micropartition::MicroPartition;
 pub mod python;
 #[cfg(feature = "python")]
 use pyo3::PyErr;
-#[cfg(feature = "python")]
-pub mod py_writers;
 #[cfg(feature = "python")]
 pub use python::register_modules;
 
@@ -64,37 +58,5 @@ impl From<Error> for pyo3::PyErr {
     fn from(value: Error) -> Self {
         let daft_error: DaftError = value.into();
         daft_error.into()
-    }
-}
-
-pub trait FileWriter: Send + Sync {
-    fn write(&self, data: &Arc<MicroPartition>) -> DaftResult<()>;
-    fn close(&self) -> DaftResult<Option<Table>>;
-}
-
-pub fn create_file_writer(
-    root_dir: &str,
-    file_idx: usize,
-    compression: &Option<String>,
-    io_config: &Option<daft_io::IOConfig>,
-    format: FileFormat,
-    partition: Option<&Table>,
-) -> DaftResult<Box<dyn FileWriter>> {
-    match format {
-        #[cfg(feature = "python")]
-        FileFormat::Parquet => Ok(Box::new(py_writers::PyArrowParquetWriter::new(
-            root_dir,
-            file_idx,
-            compression,
-            io_config,
-            partition,
-        )?)),
-        #[cfg(feature = "python")]
-        FileFormat::Csv => Ok(Box::new(py_writers::PyArrowCSVWriter::new(
-            root_dir, file_idx, io_config, partition,
-        )?)),
-        _ => Err(DaftError::ComputeError(
-            "Unsupported file format for physical write".to_string(),
-        )),
     }
 }

@@ -8,7 +8,6 @@ mod run;
 mod runtime_stats;
 mod sinks;
 mod sources;
-mod writes;
 
 use common_error::{DaftError, DaftResult};
 use lazy_static::lazy_static;

@@ -28,6 +28,7 @@ daft-scheduler = {path = "src/daft-scheduler", default-features = false}
 daft-sql = {path = "src/daft-sql", default-features = false}
 daft-stats = {path = "src/daft-stats", default-features = false}
 daft-table = {path = "src/daft-table", default-features = false}
+daft-writers = {path = "src/daft-writers", default-features = false}
 lazy_static = {workspace = true}
 log = {workspace = true}
 lzma-sys = {version = "*", features = ["static"]}
@@ -140,6 +141,7 @@ members = [
   "src/daft-functions",
   "src/daft-functions-json",
   "src/daft-sql",
+  "src/daft-writers",
   "src/hyperloglog"
 ]
 

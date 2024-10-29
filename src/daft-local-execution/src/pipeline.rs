@@ -1,9 +1,8 @@
-use std::{cmp::min, collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::{mermaid::MermaidDisplayVisitor, tree::TreeDisplay};
 use common_error::DaftResult;
-use common_file_formats::FileFormat;
 use daft_core::{
     datatypes::Field,
     prelude::{Schema, SchemaRef},
@@ -33,13 +32,9 @@ use crate::{
         aggregate::AggregateSink, blocking_sink::BlockingSinkNode, concat::ConcatSink,
         hash_join_build::HashJoinBuildSink, limit::LimitSink,
         outer_hash_join_probe::OuterHashJoinProbeSink, sort::SortSink,
-        streaming_sink::StreamingSinkNode,
+        streaming_sink::StreamingSinkNode, write::WriteSink,
     },
     sources::{empty_scan::EmptyScanSource, in_memory::InMemorySource},
-    writes::{
-        partitioned_write::PartitionedWriteNode, physical_write::PhysicalWriterFactory,
-        unpartitioned_write::UnpartitionedWriteNode,
-    },
     ExecutionRuntimeHandle, PipelineCreationSnafu,
 };
 
@@ -417,64 +412,17 @@ pub fn physical_plan_to_pipeline(
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
-            let estimated_row_size_bytes = data_schema.estimate_row_size_bytes();
-            let (inflation_factor, target_file_size, target_chunk_size) =
-                match file_info.file_format {
-                    FileFormat::Parquet => (
-                        cfg.parquet_inflation_factor,
-                        cfg.parquet_target_filesize,
-                        cfg.parquet_target_row_group_size,
-                    ),
-                    FileFormat::Csv => (
-                        cfg.csv_inflation_factor,
-                        cfg.csv_target_filesize,
-                        cfg.parquet_target_row_group_size, // Just assume same chunk size for CSV and Parquet for now
-                    ),
-                    _ => unreachable!("Physical write should only support Parquet and CSV"),
-                };
-            let file_size = target_file_size as f64 * inflation_factor;
-            let target_file_rows = if estimated_row_size_bytes > 0.0 {
-                file_size / estimated_row_size_bytes
-            } else {
-                file_size
-            } as usize;
-            let target_chunk_rows = min(
-                target_file_rows,
-                if estimated_row_size_bytes > 0.0 {
-                    target_chunk_size as f64 / estimated_row_size_bytes
-                } else {
-                    target_chunk_size as f64
-                } as usize,
-            );
-            let write_factory = PhysicalWriterFactory::new(file_info.clone());
-            let name = match (&file_info.partition_cols.is_some(), &file_info.file_format) {
-                (true, FileFormat::Parquet) => "PartitionedParquetWrite",
-                (true, FileFormat::Csv) => "PartitionedCSVWrite",
-                (false, FileFormat::Parquet) => "UnpartitionedParquetWrite",
-                (false, FileFormat::Csv) => "UnpartitionedCSVWrite",
-                _ => unreachable!("Physical write should only support Parquet and CSV"),
-            };
-            match &file_info.partition_cols {
-                Some(part_cols) => PartitionedWriteNode::new(
-                    name,
-                    child_node,
-                    Arc::new(write_factory),
-                    part_cols.clone(),
-                    target_file_rows,
-                    target_chunk_rows,
-                    file_schema.clone(),
-                )
-                .boxed(),
-                None => UnpartitionedWriteNode::new(
-                    name,
-                    child_node,
-                    Arc::new(write_factory),
-                    target_file_rows,
-                    target_chunk_rows,
-                    file_schema.clone(),
-                )
-                .boxed(),
-            }
+            let write_sink = WriteSink::new(
+                file_info.clone(),
+                data_schema.clone(),
+                file_schema.clone(),
+                cfg,
+            )
+            .context(PipelineCreationSnafu {
+                plan_name: physical_plan.name(),
+            })?
+            .boxed();
+            BlockingSinkNode::new(write_sink, child_node).boxed()
         }
     };
 

@@ -787,10 +787,10 @@ impl Table {
 
 impl PartialEq for Table {
     fn eq(&self, other: &Self) -> bool {
-        if self.schema != other.schema {
+        if self.len() != other.len() {
             return false;
         }
-        if self.len() != other.len() {
+        if self.schema != other.schema {
             return false;
         }
         for (lhs, rhs) in self.columns.iter().zip(other.columns.iter()) {

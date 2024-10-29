@@ -1710,6 +1710,7 @@ dependencies = [
  "daft-sql",
  "daft-stats",
  "daft-table",
+ "daft-writers",
  "lazy_static",
  "libc",
  "log",
@@ -1972,6 +1973,7 @@ dependencies = [
 name = "daft-local-execution"
 version = "0.3.0-dev0"
 dependencies = [
+ "async-trait",
  "common-daft-config",
  "common-display",
  "common-error",
@@ -1990,6 +1992,7 @@ dependencies = [
  "daft-plan",
  "daft-scan",
  "daft-table",
+ "daft-writers",
  "futures",
  "indexmap 2.5.0",
  "itertools 0.11.0",
@@ -2244,6 +2247,42 @@ dependencies = [
  "pyo3",
  "rand 0.8.5",
  "serde",
+]
+
+[[package]]
+name = "daft-writers"
+version = "0.3.0-dev0"
+dependencies = [
+ "async-trait",
+ "common-daft-config",
+ "common-display",
+ "common-error",
+ "common-file-formats",
+ "common-runtime",
+ "common-tracing",
+ "daft-core",
+ "daft-csv",
+ "daft-dsl",
+ "daft-functions",
+ "daft-io",
+ "daft-json",
+ "daft-micropartition",
+ "daft-parquet",
+ "daft-physical-plan",
+ "daft-plan",
+ "daft-scan",
+ "daft-table",
+ "futures",
+ "indexmap 2.5.0",
+ "itertools 0.11.0",
+ "lazy_static",
+ "log",
+ "num-format",
+ "pyo3",
+ "snafu",
+ "tokio",
+ "tokio-stream",
+ "tracing",
 ]
 
 [[package]]

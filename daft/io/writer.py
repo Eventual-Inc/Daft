@@ -1,7 +1,8 @@
 import uuid
+from abc import ABC, abstractmethod
 from typing import Dict, Optional, Union
 
-from daft.daft import IOConfig, PyTable
+from daft.daft import IOConfig
 from daft.dependencies import pa, pacsv, pq
 from daft.filesystem import (
     _resolve_paths_and_filesystem,
@@ -16,7 +17,9 @@ from daft.table.table import Table
 def partition_values_to_str_mapping(
     partition_values: Table,
 ) -> Dict[str, str]:
-    null_part = Series.from_pylist([None])
+    null_part = Series.from_pylist(
+        [None]
+    )  # This is to ensure that the null values are replaced with the default_partition_fallback value
     pkey_names = partition_values.column_names()
 
     partition_strings = {}
@@ -40,13 +43,13 @@ def partition_string_mapping_to_postfix(
     return postfix
 
 
-class FileWriterBase:
+class FileWriterBase(ABC):
     def __init__(
         self,
         root_dir: str,
         file_idx: int,
         file_format: str,
-        partition_values: Optional[PyTable] = None,
+        partition_values: Optional[Table] = None,
         compression: Optional[str] = None,
         io_config: Optional[IOConfig] = None,
         default_partition_fallback: str = "__HIVE_DEFAULT_PARTITION__",
@@ -57,7 +60,7 @@ class FileWriterBase:
         is_local_fs = canonicalized_protocol == "file"
 
         self.file_name = f"{uuid.uuid4()}-{file_idx}.{file_format}"
-        self.partition_values = Table._from_pytable(partition_values) if partition_values is not None else None
+        self.partition_values = partition_values
         if self.partition_values is not None:
             partition_strings = partition_values_to_str_mapping(self.partition_values)
             postfix = partition_string_mapping_to_postfix(partition_strings, default_partition_fallback)
@@ -72,15 +75,34 @@ class FileWriterBase:
         self.compression = compression if compression is not None else "none"
         self.current_writer: Optional[Union[pq.ParquetWriter, pacsv.CSVWriter]] = None
 
-    def _create_writer(self, schema: pa.Schema):
-        raise NotImplementedError("Subclasses must implement this method.")
+    @abstractmethod
+    def _create_writer(self, schema: pa.Schema) -> Union[pq.ParquetWriter, pacsv.CSVWriter]:
+        """Create a writer instance for the specific file format.
 
-    def write(self, table: MicroPartition):
+        Args:
+            schema: PyArrow schema defining the structure of the data to be written.
+
+        Returns:
+            A writer instance specific to the file format (Parquet or CSV).
+        """
+        pass
+
+    def write(self, table: MicroPartition) -> None:
+        """Write data to the file using the appropriate writer.
+
+        Args:
+            table: MicroPartition containing the data to be written.
+        """
         if self.current_writer is None:
             self.current_writer = self._create_writer(table.schema().to_pyarrow_schema())
         self.current_writer.write_table(table.to_arrow())
 
-    def close(self) -> PyTable:
+    def close(self) -> Table:
+        """Close the writer and return metadata about the written file.
+
+        Returns:
+            Table containing metadata about the written file, including path and partition values.
+        """
         if self.current_writer is not None:
             self.current_writer.close()
 
@@ -88,7 +110,7 @@ class FileWriterBase:
         if self.partition_values is not None:
             for col_name in self.partition_values.column_names():
                 metadata[col_name] = self.partition_values.get_column(col_name)
-        return Table.from_pydict(metadata)._table
+        return Table.from_pydict(metadata)
 
 
 class ParquetFileWriter(FileWriterBase):
@@ -96,11 +118,18 @@ class ParquetFileWriter(FileWriterBase):
         self,
         root_dir: str,
         file_idx: int,
-        partition_values: Optional[PyTable] = None,
+        partition_values: Optional[Table] = None,
         compression: str = "none",
         io_config: Optional[IOConfig] = None,
     ):
-        super().__init__(root_dir, file_idx, "parquet", partition_values, compression, io_config)
+        super().__init__(
+            root_dir=root_dir,
+            file_idx=file_idx,
+            file_format="parquet",
+            partition_values=partition_values,
+            compression=compression,
+            io_config=io_config,
+        )
 
     def _create_writer(self, schema: pa.Schema) -> pq.ParquetWriter:
         return pq.ParquetWriter(
@@ -117,13 +146,13 @@ class CSVFileWriter(FileWriterBase):
         self,
         root_dir: str,
         file_idx: int,
-        partition_values: Optional[PyTable] = None,
+        partition_values: Optional[Table] = None,
         io_config: Optional[IOConfig] = None,
     ):
         super().__init__(
-            root_dir,
-            file_idx,
-            "csv",
+            root_dir=root_dir,
+            file_idx=file_idx,
+            file_format="csv",
             partition_values=partition_values,
             io_config=io_config,
         )
