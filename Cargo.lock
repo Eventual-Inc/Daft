@@ -2263,8 +2263,11 @@ name = "daft-writers"
 version = "0.3.0-dev0"
 dependencies = [
  "common-buffer",
+ "common-daft-config",
  "common-error",
  "common-file-formats",
+ "daft-core",
+ "daft-dsl",
  "daft-io",
  "daft-micropartition",
  "daft-plan",

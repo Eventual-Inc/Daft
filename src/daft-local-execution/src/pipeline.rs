@@ -1,4 +1,4 @@
-use std::{cmp::min, collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::{mermaid::MermaidDisplayVisitor, tree::TreeDisplay};
@@ -17,7 +17,7 @@ use daft_physical_plan::{
 };
 use daft_plan::{populate_aggregation_stages, JoinType};
 use daft_table::ProbeState;
-use daft_writers::{PhysicalWriterFactory, TargetBatchWriterFactory};
+use daft_writers::make_writer_factory;
 use indexmap::IndexSet;
 use snafu::ResultExt;
 
@@ -31,16 +31,10 @@ use crate::{
         unpivot::UnpivotOperator,
     },
     sinks::{
-        aggregate::AggregateSink,
-        blocking_sink::BlockingSinkNode,
-        concat::ConcatSink,
-        hash_join_build::HashJoinBuildSink,
-        limit::LimitSink,
-        outer_hash_join_probe::OuterHashJoinProbeSink,
-        partitioned_write::{PartitionedWriteSink, PartitionedWriterFactory},
-        sort::SortSink,
-        streaming_sink::StreamingSinkNode,
-        unpartitioned_write::{TargetFileSizeWriterFactory, UnpartitionedWriteSink},
+        aggregate::AggregateSink, blocking_sink::BlockingSinkNode, concat::ConcatSink,
+        hash_join_build::HashJoinBuildSink, limit::LimitSink,
+        outer_hash_join_probe::OuterHashJoinProbeSink, sort::SortSink,
+        streaming_sink::StreamingSinkNode, write::WriteSink,
     },
     sources::{empty_scan::EmptyScanSource, in_memory::InMemorySource},
     ExecutionRuntimeHandle, PipelineCreationSnafu,
@@ -420,99 +414,21 @@ pub fn physical_plan_to_pipeline(
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
-            let estimated_row_size_bytes = data_schema.estimate_row_size_bytes();
-            let base_writer_factory = PhysicalWriterFactory::new(file_info.clone());
-            let write_sink = match file_info.file_format {
-                FileFormat::Parquet => {
-                    let target_in_memory_file_size =
-                        cfg.parquet_target_filesize as f64 * cfg.parquet_inflation_factor;
-                    let target_in_memory_row_group_size =
-                        cfg.parquet_target_row_group_size as f64 * cfg.parquet_inflation_factor;
-
-                    let target_file_rows = if estimated_row_size_bytes > 0.0 {
-                        target_in_memory_file_size / estimated_row_size_bytes
-                    } else {
-                        target_in_memory_file_size
-                    } as usize;
-
-                    let target_row_group_rows = min(
-                        target_file_rows,
-                        if estimated_row_size_bytes > 0.0 {
-                            target_in_memory_row_group_size / estimated_row_size_bytes
-                        } else {
-                            target_in_memory_row_group_size
-                        } as usize,
-                    );
-
-                    let row_group_writer_factory = TargetBatchWriterFactory::new(
-                        Arc::new(base_writer_factory),
-                        target_row_group_rows,
-                    );
-
-                    let file_writer_factory = TargetFileSizeWriterFactory::new(
-                        Arc::new(row_group_writer_factory),
-                        target_file_rows,
-                    );
-
-                    if let Some(partition_cols) = &file_info.partition_cols {
-                        let partitioned_writer_factory = PartitionedWriterFactory::new(
-                            Arc::new(file_writer_factory),
-                            partition_cols.clone(),
-                        );
-                        PartitionedWriteSink::new(
-                            "PartitionedParquetWrite",
-                            partition_cols.clone(),
-                            partitioned_writer_factory,
-                            file_schema.clone(),
-                        )
-                        .arced()
-                    } else {
-                        UnpartitionedWriteSink::new(
-                            "UnpartitionedParquetWrite",
-                            file_writer_factory,
-                            file_schema.clone(),
-                        )
-                        .arced()
-                    }
-                }
-                FileFormat::Csv => {
-                    let target_in_memory_file_size =
-                        cfg.csv_target_filesize as f64 * cfg.csv_inflation_factor;
-                    let target_file_rows = if estimated_row_size_bytes > 0.0 {
-                        target_in_memory_file_size / estimated_row_size_bytes
-                    } else {
-                        target_in_memory_file_size
-                    } as usize;
-
-                    let file_writer_factory = TargetFileSizeWriterFactory::new(
-                        Arc::new(base_writer_factory),
-                        target_file_rows,
-                    );
-
-                    if let Some(partition_cols) = &file_info.partition_cols {
-                        let partitioned_writer_factory = PartitionedWriterFactory::new(
-                            Arc::new(file_writer_factory),
-                            partition_cols.clone(),
-                        );
-                        PartitionedWriteSink::new(
-                            "PartitionedCsvWrite",
-                            partition_cols.clone(),
-                            partitioned_writer_factory,
-                            file_schema.clone(),
-                        )
-                        .arced()
-                    } else {
-                        UnpartitionedWriteSink::new(
-                            "UnpartitionedCsvWrite",
-                            file_writer_factory,
-                            file_schema.clone(),
-                        )
-                        .arced()
-                    }
-                }
-                _ => unreachable!("Physical write should only support Parquet and CSV"),
+            let writer_factory = make_writer_factory(file_info, data_schema, cfg);
+            let name = match (file_info.file_format, file_info.partition_cols.is_some()) {
+                (FileFormat::Parquet, true) => "PartitionedParquet",
+                (FileFormat::Parquet, false) => "Parquet",
+                (FileFormat::Csv, true) => "PartitionedCsv",
+                (FileFormat::Csv, false) => "Csv",
+                (_, _) => panic!("Unsupported file format"),
             };
-            BlockingSinkNode::new(write_sink, child_node).boxed()
+            let write_sink = WriteSink::new(
+                name,
+                writer_factory,
+                file_info.partition_cols.clone(),
+                file_schema.clone(),
+            );
+            BlockingSinkNode::new(Arc::new(write_sink), child_node).boxed()
         }
     };
 
