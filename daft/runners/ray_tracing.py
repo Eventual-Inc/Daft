@@ -241,16 +241,21 @@ class RunnerTracer:
                     )
 
                     # Write to the node view (group by node ID)
-                    node_idx, worker_idx = self._task_id_to_location[task_event.task_id]
-                    self._write_event(
-                        {
-                            "name": "task_remote_execution",
-                            "ph": PHASE_DURATION_END,
-                            "pid": node_idx + NODE_PIDS_START,
-                            "tid": worker_idx,
-                        },
-                        ts=end_ts,
-                    )
+                    node_idx, worker_idx = self._task_id_to_location.get(task_event.task_id, (None, None))
+                    if node_idx is None or worker_idx is None:
+                        logger.error(
+                            "Tracing received a EndTaskEvent without a corresponding StartTaskEvent that provides location information."
+                        )
+                    else:
+                        self._write_event(
+                            {
+                                "name": "task_remote_execution",
+                                "ph": PHASE_DURATION_END,
+                                "pid": node_idx + NODE_PIDS_START,
+                                "tid": worker_idx,
+                            },
+                            ts=end_ts,
+                        )
                 else:
                     raise NotImplementedError(f"Unhandled TaskEvent: {task_event}")
 
