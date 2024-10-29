@@ -177,7 +177,7 @@ class RunnerTracer:
 
     def _flush_task_metrics(self):
         if self._metrics_actor is not None:
-            task_events, new_idx = self._metrics_actor.drain_task_events(self._task_event_idx)
+            task_events, new_idx = self._metrics_actor.get_task_events(self._task_event_idx)
             self._task_event_idx = new_idx
 
             for task_event in task_events:

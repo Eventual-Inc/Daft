@@ -113,7 +113,7 @@ class _MetricsActor:
         # Add an EndTaskEvent
         self._task_events[execution_id].append(EndTaskEvent(task_id=task_id, end=end))
 
-    def drain_task_events(self, execution_id: str, idx: int) -> tuple[list[TaskEvent], int]:
+    def get_task_events(self, execution_id: str, idx: int) -> tuple[list[TaskEvent], int]:
         events = self._task_events[execution_id]
         return (events[idx:], len(events))
 
@@ -166,12 +166,12 @@ class MetricsActorHandle:
             end,
         )
 
-    def drain_task_events(self, idx: int) -> tuple[list[TaskEvent], int]:
+    def get_task_events(self, idx: int) -> tuple[list[TaskEvent], int]:
         """Collect task metrics from a given logical event index
 
         Returns the task metrics and the new logical event index (to be used as a pagination offset token on subsequent requests)
         """
-        return ray.get(self.actor.drain_task_events.remote(self.execution_id, idx))
+        return ray.get(self.actor.get_task_events.remote(self.execution_id, idx))
 
     def collect_and_close(self) -> dict[str, set[str]]:
         """Collect node metrics and close the metrics actor for this execution"""
