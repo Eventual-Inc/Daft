@@ -380,6 +380,9 @@ class RunnerTracer:
             }
         )
 
+        # On the end of every wave, perform a flush of the latest metrics from the MetricsActor
+        self._flush_task_metrics()
+
     def count_inflight_tasks(self, count: int):
         self._write_event(
             {
