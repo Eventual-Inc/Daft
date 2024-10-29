@@ -19,30 +19,6 @@ METRICS_ACTOR_NAME = "metrics"
 METRICS_ACTOR_NAMESPACE = "daft"
 
 
-@dataclasses.dataclass
-class TaskMetric:
-    task_id: str
-    stage_id: int | None
-    node_id: str
-    worker_id: str
-    start: float
-    end: float | None
-
-
-@dataclasses.dataclass(frozen=True)
-class StartExecutionMetrics:
-    """Holds the metrics for a given execution ID"""
-
-    task_metrics: dict[str, TaskMetric] = dataclasses.field(default_factory=lambda: {})
-
-
-@dataclasses.dataclass
-class EndExecutionMetrics:
-    """Holds the metrics for a given execution ID for the ending of task executions"""
-
-    task_ends: dict[str, float] = dataclasses.field(default_factory=lambda: {})
-
-
 @dataclasses.dataclass(frozen=True)
 class TaskEvent:
     task_id: str
@@ -50,71 +26,105 @@ class TaskEvent:
 
 @dataclasses.dataclass(frozen=True)
 class StartTaskEvent(TaskEvent):
+    """Marks the start of a task, along with available metadata"""
+
+    # Start Unix timestamp
     start: float
+
+    # What stage this task belongs to
     stage_id: int
+
+    # Index of the node
     node_idx: int
+
+    # Index of the worker within the node (not monotonically increasing)
     worker_idx: int
 
 
 @dataclasses.dataclass(frozen=True)
 class EndTaskEvent(TaskEvent):
+    """Marks the end of a task, along with available metadata"""
+
+    # End Unix timestamp
     end: float
+
+
+class _NodeInfo:
+    """Information about nodes and their workers"""
+
+    def __init__(self):
+        self.node_to_workers = {}
+        self.node_idxs = {}
+        self.worker_idxs = {}
+
+    def get_node_and_worker_idx(self, node_id: str, worker_id: str) -> tuple[int, int]:
+        """Returns a node and worker index for the provided IDs"""
+        # Truncate to save space
+        node_id = node_id[:8]
+        worker_id = worker_id[:8]
+
+        if node_id not in self.node_to_workers:
+            self.node_to_workers[node_id] = []
+            self.node_idxs[node_id] = len(self.node_idxs)
+        node_idx = self.node_idxs[node_id]
+
+        if worker_id not in self.worker_idxs:
+            self.worker_idxs[worker_id] = len(self.worker_idxs)
+            self.node_to_workers[node_id].append(worker_id)
+        worker_idx = self.worker_idxs[worker_id]
+
+        return node_idx, worker_idx
+
+    def collect_node_info(self) -> dict[str, list[str]]:
+        """Returns a dictionary of {node_id: [worker_ids...]}"""
+        return self.node_to_workers.copy()
 
 
 @ray.remote(num_cpus=0)
 class _MetricsActor:
     def __init__(self):
-        self.task_events: dict[str, list[TaskEvent]] = defaultdict(lambda: [])
-        self.execution_node_and_worker_ids: dict[str, dict[str, set[str]]] = defaultdict(
-            lambda: defaultdict(lambda: set())
-        )
-        self.execution_node_idxs: dict[str, dict[str, int]] = defaultdict(lambda: {})
-        self.execution_worker_idxs: dict[str, dict[str, int]] = defaultdict(lambda: {})
+        self._task_events: dict[str, list[TaskEvent]] = defaultdict(lambda: [])
+        self._node_info: dict[str, _NodeInfo] = defaultdict(lambda: _NodeInfo())
 
     def ready(self):
+        """Returns when the metrics actor is ready"""
         # Discussion on how to check if an actor is ready: https://github.com/ray-project/ray/issues/14923
         return None
 
     def mark_task_start(
         self, execution_id: str, task_id: str, start: float, node_id: str, worker_id: str, stage_id: int
     ):
+        """Records a task start event"""
         # Update node info
-        node_id_trunc, worker_id_trunc = node_id[:8], worker_id[:16]
-        if node_id_trunc not in self.execution_node_and_worker_ids[execution_id]:
-            self.execution_node_idxs[execution_id][node_id_trunc] = len(self.execution_node_idxs[execution_id])
-        if worker_id_trunc not in self.execution_worker_idxs[execution_id]:
-            self.execution_worker_idxs[execution_id][worker_id_trunc] = len(self.execution_worker_idxs[execution_id])
-        self.execution_node_and_worker_ids[execution_id][node_id_trunc].add(worker_id_trunc)
+        node_idx, worker_idx = self._node_info[execution_id].get_node_and_worker_idx(node_id, worker_id)
 
         # Add a StartTaskEvent
-        self.task_events[execution_id].append(
+        self._task_events[execution_id].append(
             StartTaskEvent(
                 task_id=task_id,
                 stage_id=stage_id,
                 start=start,
-                node_idx=self.execution_node_idxs[execution_id][node_id_trunc],
-                worker_idx=self.execution_worker_idxs[execution_id][worker_id_trunc],
+                node_idx=node_idx,
+                worker_idx=worker_idx,
             )
         )
 
     def mark_task_end(self, execution_id: str, task_id: str, end: float):
         # Add an EndTaskEvent
-        self.task_events[execution_id].append(EndTaskEvent(task_id=task_id, end=end))
+        self._task_events[execution_id].append(EndTaskEvent(task_id=task_id, end=end))
 
     def drain_task_events(self, execution_id: str, idx: int) -> tuple[list[TaskEvent], int]:
-        events = self.task_events[execution_id]
+        events = self._task_events[execution_id]
         return (events[idx:], len(events))
 
-    def collect_and_close(self, execution_id: str) -> dict[str, set[str]]:
+    def collect_and_close(self, execution_id: str) -> dict[str, list[str]]:
         """Collect the metrics associated with this execution, cleaning up the memory used for this execution ID"""
         # Data about the available nodes and worker IDs in those nodes
-        node_data = self.execution_node_and_worker_ids[execution_id]
+        node_data = self._node_info[execution_id].collect_node_info()
 
         # Clean up the stats for this execution
-        del self.task_events[execution_id]
-        del self.execution_node_idxs[execution_id]
-        del self.execution_worker_idxs[execution_id]
-        del self.execution_node_and_worker_ids[execution_id]
+        del self._task_events[execution_id]
+        del self._node_info[execution_id]
 
         return node_data
 
