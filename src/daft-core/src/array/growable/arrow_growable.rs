@@ -113,11 +113,6 @@ impl_arrow_backed_data_array_growable!(
     arrow2::array::growable::GrowablePrimitive<'a, i64>
 );
 impl_arrow_backed_data_array_growable!(
-    ArrowInt128Growable,
-    Int128Type,
-    arrow2::array::growable::GrowablePrimitive<'a, i128>
-);
-impl_arrow_backed_data_array_growable!(
     ArrowUInt8Growable,
     UInt8Type,
     arrow2::array::growable::GrowablePrimitive<'a, u8>

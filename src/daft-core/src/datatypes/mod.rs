@@ -182,11 +182,12 @@ impl_daft_arrow_datatype!(Int8Type, Int8);
 impl_daft_arrow_datatype!(Int16Type, Int16);
 impl_daft_arrow_datatype!(Int32Type, Int32);
 impl_daft_arrow_datatype!(Int64Type, Int64);
-impl_daft_arrow_datatype!(Int128Type, Int128);
 impl_daft_arrow_datatype!(UInt8Type, UInt8);
 impl_daft_arrow_datatype!(UInt16Type, UInt16);
 impl_daft_arrow_datatype!(UInt32Type, UInt32);
 impl_daft_arrow_datatype!(UInt64Type, UInt64);
+impl_daft_arrow_datatype!(Int128Type, Unknown);
+
 impl_daft_arrow_datatype!(
     IntervalType,
     Interval,
@@ -334,8 +335,9 @@ impl DaftNumericType for Int32Type {
 impl DaftNumericType for Int64Type {
     type Native = i64;
 }
+
 impl DaftNumericType for Int128Type {
-    type Native = i128;
+    type Native = i64;
 }
 
 impl DaftNumericType for Float32Type {
@@ -371,7 +373,6 @@ impl DaftIntegerType for Int8Type {}
 impl DaftIntegerType for Int16Type {}
 impl DaftIntegerType for Int32Type {}
 impl DaftIntegerType for Int64Type {}
-impl DaftIntegerType for Int128Type {}
 
 pub trait DaftFloatType: DaftNumericType
 where
@@ -393,7 +394,6 @@ pub type Int8Array = DataArray<Int8Type>;
 pub type Int16Array = DataArray<Int16Type>;
 pub type Int32Array = DataArray<Int32Type>;
 pub type Int64Array = DataArray<Int64Type>;
-pub type Int128Array = DataArray<Int128Type>;
 pub type UInt8Array = DataArray<UInt8Type>;
 pub type UInt16Array = DataArray<UInt16Type>;
 pub type UInt32Array = DataArray<UInt32Type>;

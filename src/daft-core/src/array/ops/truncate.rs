@@ -53,9 +53,7 @@ impl Decimal128Array {
                 i - remainder
             })
         });
-        let array = Box::new(arrow2::array::PrimitiveArray::from_iter(trun_value));
-
-        Decimal128Array::new(self.field.clone(), array.boxed())
+        Ok(Decimal128Array::from_iter(self.field.clone(), trun_value))
     }
 }
 

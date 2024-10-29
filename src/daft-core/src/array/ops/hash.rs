@@ -1,5 +1,8 @@
+use std::sync::Arc;
+
 use arrow2::types::Index;
 use common_error::{DaftError, DaftResult};
+use daft_schema::{dtype::DataType, field::Field};
 use xxhash_rust::xxh3::{xxh3_64, xxh3_64_with_seed};
 
 use super::as_arrow::AsArrow;
@@ -7,9 +10,9 @@ use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{
         logical::{DateArray, TimeArray, TimestampArray},
-        BinaryArray, BooleanArray, DaftNumericType, Decimal128Array, FixedSizeBinaryArray,
-        Int16Array, Int32Array, Int64Array, Int8Array, NullArray, UInt16Array, UInt32Array,
-        UInt64Array, UInt8Array, Utf8Array,
+        BinaryArray, BooleanArray, DaftNumericType, DaftPrimitiveType, Decimal128Array,
+        FixedSizeBinaryArray, Int16Array, Int32Array, Int64Array, Int8Array, NullArray,
+        UInt16Array, UInt32Array, UInt64Array, UInt8Array, Utf8Array,
     },
     kernels,
     series::Series,
@@ -18,7 +21,7 @@ use crate::{
 
 impl<T> DataArray<T>
 where
-    T: DaftNumericType,
+    T: DaftPrimitiveType,
 {
     pub fn hash(&self, seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
         let as_arrowed = self.as_arrow();
@@ -106,14 +109,14 @@ fn hash_list(
     if let Some(seed_arr) = seed {
         let combined_validity = arrow_bitmap_and_helper(validity, seed.unwrap().validity());
         UInt64Array::from_iter(
-            name,
+            Arc::new(Field::new(name, DataType::UInt64)),
             u64::range(0, offsets.len() - 1).unwrap().map(|i| {
                 let start = offsets[i as usize] as usize;
                 let end = offsets[i as usize + 1] as usize;
                 // apply the current seed across this row
                 let cur_seed_opt = seed_arr.get(i as usize);
                 let flat_seed = UInt64Array::from_iter(
-                    "seed",
+                    Arc::new(Field::new("seed", DataType::UInt64)),
                     std::iter::repeat(cur_seed_opt).take(end - start),
                 );
                 let hashed_child = flat_child
@@ -146,7 +149,7 @@ fn hash_list(
         const OFFSET: usize = (u64::BITS as usize) / 8; // how many bytes per u64
         let combined_validity = validity.cloned();
         UInt64Array::from_iter(
-            name,
+            Arc::new(Field::new(name, DataType::UInt64)),
             u64::range(0, offsets.len() - 1).unwrap().map(|i| {
                 let start = (offsets[i as usize] as usize) * OFFSET;
                 let end = (offsets[i as usize + 1] as usize) * OFFSET;

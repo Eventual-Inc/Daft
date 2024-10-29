@@ -8,8 +8,8 @@ use super::{as_arrow::AsArrow, from_arrow::FromArrow, full::FullNull, DaftCompar
 use crate::{
     array::DataArray,
     datatypes::{
-        BinaryArray, BooleanArray, DaftArrowBackedType, DaftNumericType, DataType, Field,
-        FixedSizeBinaryArray, NullArray, Utf8Array,
+        BinaryArray, BooleanArray, DaftArrowBackedType, DaftNumericType, DaftPrimitiveType,
+        DataType, Field, FixedSizeBinaryArray, NullArray, Utf8Array,
     },
     utils::arrow::arrow_bitmap_and_helper,
 };
@@ -25,7 +25,7 @@ where
 
 impl<T> DaftCompare<&Self> for DataArray<T>
 where
-    T: DaftNumericType,
+    T: DaftPrimitiveType,
 {
     type Output = DaftResult<BooleanArray>;
 
@@ -272,7 +272,7 @@ where
 
 impl<T> DataArray<T>
 where
-    T: DaftNumericType,
+    T: DaftPrimitiveType,
 {
     fn compare_to_scalar(
         &self,
@@ -295,7 +295,7 @@ where
 
 impl<T, Scalar> DaftCompare<Scalar> for DataArray<T>
 where
-    T: DaftNumericType,
+    T: DaftPrimitiveType,
     Scalar: ToPrimitive,
 {
     type Output = BooleanArray;
