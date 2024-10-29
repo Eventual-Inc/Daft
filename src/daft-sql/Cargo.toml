@@ -10,7 +10,6 @@ daft-plan = {path = "../daft-plan"}
 once_cell = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 sqlparser = {workspace = true}
-chrono.workspace = true
 regex.workspace = true
 snafu.workspace = true
 
