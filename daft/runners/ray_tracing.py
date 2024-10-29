@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 # We add the trace by default to the latest session logs of the Ray Runner
 # This lets us access our logs via the Ray dashboard when running Ray jobs
-DEFAULT_RAY_LOGS_LOCATION = pathlib.Path("/tmp") / "ray" / "session_latest"
+DEFAULT_RAY_LOGS_LOCATION = pathlib.Path("/tmp") / "ray" / "session_latest" / "logs"
 DEFAULT_DAFT_TRACE_LOCATION = DEFAULT_RAY_LOGS_LOCATION / "daft"
 
 # IDs and names for the visualized data
