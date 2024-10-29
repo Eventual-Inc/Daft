@@ -20,7 +20,7 @@ def partition_strings_to_path(
 
 def partition_values_to_str_mapping(
     partition_values: Union[MicroPartition, Table],
-) -> Dict[str, str]:
+) -> Dict[str, Series]:
     null_part = Series.from_pylist(
         [None]
     )  # This is to ensure that the null values are replaced with the default_partition_fallback value
@@ -32,7 +32,7 @@ def partition_values_to_str_mapping(
         column = partition_values.get_column(c)
         string_names = column._to_str_values()
         null_filled = column.is_null().if_else(null_part, string_names)
-        partition_strings[c] = null_filled.to_pylist()[0]
+        partition_strings[c] = null_filled
 
     return partition_strings
 

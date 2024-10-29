@@ -4,6 +4,7 @@ pub mod concat;
 pub mod hash_join_build;
 pub mod limit;
 pub mod outer_hash_join_probe;
+pub mod partitioned_write;
 pub mod sort;
 pub mod streaming_sink;
-pub mod write;
+pub mod unpartitioned_write;

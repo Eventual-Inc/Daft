@@ -1,7 +1,9 @@
+mod batch;
 mod physical;
 #[cfg(feature = "python")]
 mod python;
 
+pub use batch::{TargetBatchWriter, TargetBatchWriterFactory};
 use common_error::DaftResult;
 use daft_table::Table;
 pub use physical::PhysicalWriterFactory;

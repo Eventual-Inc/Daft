@@ -37,7 +37,10 @@ class FileWriterBase(ABC):
         self.file_name = f"{uuid.uuid4()}-{file_idx}.{file_format}"
         self.partition_values = partition_values
         if self.partition_values is not None:
-            partition_strings = partition_values_to_str_mapping(self.partition_values)
+            partition_strings = {
+                key: values.to_pylist()[0]
+                for key, values in partition_values_to_str_mapping(self.partition_values).items()
+            }
             self.dir_path = partition_strings_to_path(self.resolved_path, partition_strings, default_partition_fallback)
         else:
             self.dir_path = f"{self.resolved_path}"

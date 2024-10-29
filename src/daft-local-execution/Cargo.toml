@@ -1,5 +1,6 @@
 [dependencies]
 async-trait = {workspace = true}
+common-buffer = {path = "../common/buffer", default-features = false}
 common-daft-config = {path = "../common/daft-config", default-features = false}
 common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}
@@ -21,7 +22,6 @@ daft-table = {path = "../daft-table", default-features = false}
 daft-writers = {path = "../daft-writers", default-features = false}
 futures = {workspace = true}
 indexmap = {workspace = true}
-itertools = {workspace = true}
 lazy_static = {workspace = true}
 log = {workspace = true}
 num-format = "0.4.4"

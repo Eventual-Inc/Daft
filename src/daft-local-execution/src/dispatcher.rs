@@ -1,13 +1,11 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use common_buffer::RowBasedBuffer;
 use common_error::DaftResult;
 use daft_dsl::ExprRef;
 
-use crate::{
-    buffer::RowBasedBuffer, channel::Sender, pipeline::PipelineResultType,
-    runtime_stats::CountingReceiver,
-};
+use crate::{channel::Sender, pipeline::PipelineResultType, runtime_stats::CountingReceiver};
 
 #[async_trait]
 pub(crate) trait Dispatcher {

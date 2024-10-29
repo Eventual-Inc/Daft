@@ -1299,6 +1299,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "common-buffer"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-error",
+ "futures",
+ "lazy_static",
+ "log",
+ "oneshot",
+ "tokio",
+]
+
+[[package]]
 name = "common-daft-config"
 version = "0.3.0-dev0"
 dependencies = [
@@ -1681,6 +1693,7 @@ dependencies = [
 name = "daft"
 version = "0.3.0-dev0"
 dependencies = [
+ "common-buffer",
  "common-daft-config",
  "common-display",
  "common-file-formats",
@@ -1974,6 +1987,7 @@ name = "daft-local-execution"
 version = "0.3.0-dev0"
 dependencies = [
  "async-trait",
+ "common-buffer",
  "common-daft-config",
  "common-display",
  "common-error",
@@ -1995,7 +2009,6 @@ dependencies = [
  "daft-writers",
  "futures",
  "indexmap 2.5.0",
- "itertools 0.11.0",
  "lazy_static",
  "log",
  "num-format",
@@ -2012,6 +2025,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow2",
  "bincode",
+ "common-buffer",
  "common-error",
  "common-file-formats",
  "common-runtime",
@@ -2254,6 +2268,7 @@ name = "daft-writers"
 version = "0.3.0-dev0"
 dependencies = [
  "async-trait",
+ "common-buffer",
  "common-daft-config",
  "common-display",
  "common-error",

@@ -1,5 +1,6 @@
 use std::sync::{Arc, Mutex};
 
+use common_buffer::RowBasedBuffer;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_runtime::get_compute_runtime;
@@ -7,7 +8,6 @@ use daft_micropartition::MicroPartition;
 use tracing::{info_span, instrument};
 
 use crate::{
-    buffer::RowBasedBuffer,
     channel::{create_channel, PipelineChannel, Receiver, Sender},
     pipeline::{PipelineNode, PipelineResultType},
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
@@ -175,7 +175,7 @@ impl IntermediateNode {
         };
 
         for (idx, mut receiver) in receivers.into_iter().enumerate() {
-            let mut buffer = RowBasedBuffer::new(morsel_size);
+            let mut buffer = RowBasedBuffer::<Arc<MicroPartition>>::new(morsel_size);
             while let Some(morsel) = receiver.recv().await {
                 if morsel.should_broadcast() {
                     for worker_sender in &worker_senders {
