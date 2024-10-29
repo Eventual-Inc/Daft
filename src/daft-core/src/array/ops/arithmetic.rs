@@ -8,6 +8,7 @@ use crate::{
     array::{DataArray, FixedSizeListArray},
     datatypes::{DaftNumericType, DataType, Field, Utf8Array},
     kernels::utf8::add_utf8_arrays,
+    prelude::{DaftArrayType, Decimal128Array},
     series::Series,
 };
 // Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -39,7 +40,8 @@ fn arithmetic_helper<T, Kernel, F>(
 ) -> DaftResult<DataArray<T>>
 where
     T: DaftNumericType,
-    Kernel: Fn(&PrimitiveArray<T::Native>, &PrimitiveArray<T::Native>) -> PrimitiveArray<T::Native>,
+    Kernel:
+        FnOnce(&PrimitiveArray<T::Native>, &PrimitiveArray<T::Native>) -> PrimitiveArray<T::Native>,
     F: Fn(T::Native, T::Native) -> T::Native,
 {
     match (lhs.len(), rhs.len()) {
@@ -76,6 +78,80 @@ where
     type Output = DaftResult<DataArray<T>>;
     fn add(self, rhs: Self) -> Self::Output {
         arithmetic_helper(self, rhs, basic::add, |l, r| l + r)
+    }
+}
+
+impl Add for &Decimal128Array {
+    type Output = DaftResult<Decimal128Array>;
+    fn add(self, rhs: Self) -> Self::Output {
+        assert_eq!(self.data_type(), rhs.data_type());
+        let left_physical = &self.physical;
+        let right_physical = &rhs.physical;
+        let physical = arithmetic_helper(
+            left_physical,
+            right_physical,
+            arrow2::compute::arithmetics::decimal::add,
+            |l, r| l + r,
+        )?;
+        Ok(Decimal128Array::new(self.field.clone(), physical))
+    }
+}
+
+impl Sub for &Decimal128Array {
+    type Output = DaftResult<Decimal128Array>;
+    fn sub(self, rhs: Self) -> Self::Output {
+        assert_eq!(self.data_type(), rhs.data_type());
+        let left_physical = &self.physical;
+        let right_physical = &rhs.physical;
+        let physical = arithmetic_helper(
+            left_physical,
+            right_physical,
+            arrow2::compute::arithmetics::decimal::sub,
+            |l, r| l - r,
+        )?;
+        Ok(Decimal128Array::new(self.field.clone(), physical))
+    }
+}
+
+impl Mul for &Decimal128Array {
+    type Output = DaftResult<Decimal128Array>;
+    fn mul(self, rhs: Self) -> Self::Output {
+        assert_eq!(self.data_type(), rhs.data_type());
+        let target_arrow_type = self.data_type().to_arrow()?;
+        let left_physical = &self.physical;
+        let right_physical = &rhs.physical;
+        println!(
+            "{:?} {:?}",
+            left_physical.as_arrow().data_type(),
+            right_physical.as_arrow().data_type()
+        );
+        let physical = arithmetic_helper(
+            left_physical,
+            right_physical,
+            move |l, r| {
+                // let l = l.clone().to(target_arrow_type.clone());
+                // let r = r.clone().to(target_arrow_type);
+                arrow2::compute::arithmetics::decimal::mul(&l, &r)
+            },
+            |l, r| l * r,
+        )?;
+        Ok(Decimal128Array::new(self.field.clone(), physical))
+    }
+}
+
+impl Div for &Decimal128Array {
+    type Output = DaftResult<Decimal128Array>;
+    fn div(self, rhs: Self) -> Self::Output {
+        assert_eq!(self.data_type(), rhs.data_type());
+        let left_physical = &self.physical;
+        let right_physical = &rhs.physical;
+        let physical = arithmetic_helper(
+            left_physical,
+            right_physical,
+            arrow2::compute::arithmetics::decimal::div,
+            |l, r| l / r,
+        )?;
+        Ok(Decimal128Array::new(self.field.clone(), physical))
     }
 }
 

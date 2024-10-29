@@ -11,6 +11,7 @@ use crate::{
         BinaryArray, BooleanArray, DaftNumericType, FixedSizeBinaryArray, IntervalArray, NullArray,
         Utf8Array,
     },
+    prelude::DaftArrayType,
 };
 
 pub trait AsArrow {
