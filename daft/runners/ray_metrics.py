@@ -43,14 +43,33 @@ class EndExecutionMetrics:
     task_ends: dict[str, float] = dataclasses.field(default_factory=lambda: {})
 
 
+@dataclasses.dataclass(frozen=True)
+class TaskEvent:
+    task_id: str
+
+
+@dataclasses.dataclass(frozen=True)
+class StartTaskEvent(TaskEvent):
+    start: float
+    stage_id: int
+    node_idx: int
+    worker_idx: int
+
+
+@dataclasses.dataclass(frozen=True)
+class EndTaskEvent(TaskEvent):
+    end: float
+
+
 @ray.remote(num_cpus=0)
 class _MetricsActor:
     def __init__(self):
-        self.start_execution_metrics: dict[str, StartExecutionMetrics] = defaultdict(lambda: StartExecutionMetrics())
-        self.end_execution_metrics: dict[str, EndExecutionMetrics] = defaultdict(lambda: EndExecutionMetrics())
+        self.task_events: dict[str, list[TaskEvent]] = defaultdict(lambda: [])
         self.execution_node_and_worker_ids: dict[str, dict[str, set[str]]] = defaultdict(
             lambda: defaultdict(lambda: set())
         )
+        self.execution_node_idxs: dict[str, dict[str, int]] = defaultdict(lambda: {})
+        self.execution_worker_idxs: dict[str, dict[str, int]] = defaultdict(lambda: {})
 
     def ready(self):
         # Discussion on how to check if an actor is ready: https://github.com/ray-project/ray/issues/14923
@@ -60,40 +79,44 @@ class _MetricsActor:
         self, execution_id: str, task_id: str, start: float, node_id: str, worker_id: str, stage_id: int
     ):
         # Update node info
-        node_id_trunc, worker_id_trunc = node_id[:8], worker_id[:8]
+        node_id_trunc, worker_id_trunc = node_id[:8], worker_id[:16]
+        if node_id_trunc not in self.execution_node_and_worker_ids[execution_id]:
+            self.execution_node_idxs[execution_id][node_id_trunc] = len(self.execution_node_idxs[execution_id])
+        if worker_id_trunc not in self.execution_worker_idxs[execution_id]:
+            self.execution_worker_idxs[execution_id][worker_id_trunc] = len(self.execution_worker_idxs[execution_id])
         self.execution_node_and_worker_ids[execution_id][node_id_trunc].add(worker_id_trunc)
 
-        # Update task info
-        self.start_execution_metrics[execution_id].task_metrics[task_id] = TaskMetric(
-            task_id=task_id,
-            stage_id=stage_id,
-            start=start,
-            node_id=node_id_trunc,
-            worker_id=worker_id_trunc,
-            end=None,
+        # Add a StartTaskEvent
+        self.task_events[execution_id].append(
+            StartTaskEvent(
+                task_id=task_id,
+                stage_id=stage_id,
+                start=start,
+                node_idx=self.execution_node_idxs[execution_id][node_id_trunc],
+                worker_idx=self.execution_worker_idxs[execution_id][worker_id_trunc],
+            )
         )
 
     def mark_task_end(self, execution_id: str, task_id: str, end: float):
-        self.end_execution_metrics[execution_id].task_ends[task_id] = end
+        # Add an EndTaskEvent
+        self.task_events[execution_id].append(EndTaskEvent(task_id=task_id, end=end))
 
-    def collect_metrics(self, execution_id: str) -> tuple[list[TaskMetric], dict[str, set[str]]]:
+    def drain_task_events(self, execution_id: str, idx: int) -> tuple[list[TaskEvent], int]:
+        events = self.task_events[execution_id]
+        return (events[idx:], len(events))
+
+    def collect_and_close(self, execution_id: str) -> dict[str, set[str]]:
         """Collect the metrics associated with this execution, cleaning up the memory used for this execution ID"""
         # Data about the available nodes and worker IDs in those nodes
         node_data = self.execution_node_and_worker_ids[execution_id]
 
-        # Data about task
-        start_execution_metrics = self.start_execution_metrics[execution_id]
-        task_metrics = list(start_execution_metrics.task_metrics.values())
-        for tm in task_metrics:
-            if tm.task_id in self.end_execution_metrics[execution_id].task_ends:
-                tm.end = self.end_execution_metrics[execution_id].task_ends[tm.task_id]
-
         # Clean up the stats for this execution
-        del self.start_execution_metrics[execution_id]
-        del self.end_execution_metrics[execution_id]
+        del self.task_events[execution_id]
+        del self.execution_node_idxs[execution_id]
+        del self.execution_worker_idxs[execution_id]
         del self.execution_node_and_worker_ids[execution_id]
 
-        return task_metrics, node_data
+        return node_data
 
 
 @dataclasses.dataclass(frozen=True)
@@ -133,8 +156,16 @@ class MetricsActorHandle:
             end,
         )
 
-    def collect_metrics(self) -> tuple[list[TaskMetric], dict[str, set[str]]]:
-        return ray.get(self.actor.collect_metrics.remote(self.execution_id))
+    def drain_task_events(self, idx: int) -> tuple[list[TaskEvent], int]:
+        """Collect task metrics from a given logical event index
+
+        Returns the task metrics and the new logical event index (to be used as a pagination offset token on subsequent requests)
+        """
+        return ray.get(self.actor.drain_task_events.remote(self.execution_id, idx))
+
+    def collect_and_close(self) -> dict[str, set[str]]:
+        """Collect node metrics and close the metrics actor for this execution"""
+        return ray.get(self.actor.collect_and_close.remote(self.execution_id))
 
 
 # Creating/getting an actor from multiple threads is not safe.

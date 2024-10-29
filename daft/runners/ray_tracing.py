@@ -74,15 +74,14 @@ def ray_tracer(execution_id: str):
     if filepath is not None:
         # Get the metrics actor and block until ready
         metrics_actor = ray_metrics.get_metrics_actor(execution_id)
-        metrics_actor.wait()
 
         with open(filepath, "w") as f:
             # Yield the tracer
-            runner_tracer = RunnerTracer(f)
+            runner_tracer = RunnerTracer(f, metrics_actor)
             yield runner_tracer
-            runner_tracer.finalize(metrics_actor)
+            runner_tracer.finalize()
     else:
-        runner_tracer = RunnerTracer(None)
+        runner_tracer = RunnerTracer(None, None)
         yield runner_tracer
 
 
@@ -144,10 +143,14 @@ class TraceWriter:
 
 
 class RunnerTracer:
-    def __init__(self, file: TextIO | None):
+    def __init__(self, file: TextIO | None, metrics_actor: ray_metrics.MetricsActorHandle | None):
         start = time.time()
         self._start = start
         self._stage_start_end: dict[int, tuple[int, int]] = {}
+        self._task_id_to_location: dict[str, tuple[int, int]] = {}
+        self._task_event_idx = 0
+
+        self._metrics_actor = metrics_actor
 
         self._writer = TraceWriter(file, start)
         self._writer.write_header()
@@ -172,9 +175,87 @@ class RunnerTracer:
             logger.exception("Failed to write trace metadata to file: %s", e)
             return
 
-    def finalize(self, metrics_actor: ray_metrics.MetricsActorHandle) -> None:
+    def _flush_task_metrics(self):
+        if self._metrics_actor is not None:
+            task_events, new_idx = self._metrics_actor.drain_task_events(self._task_event_idx)
+            self._task_event_idx = new_idx
+
+            for task_event in task_events:
+                if isinstance(task_event, ray_metrics.StartTaskEvent):
+                    # Record which pid/tid to associate this task_id with
+                    self._task_id_to_location[task_event.task_id] = (task_event.node_idx, task_event.worker_idx)
+
+                    start_ts = int((task_event.start - self._start) * 1000 * 1000)
+                    # Write to the Async view (will group by the stage ID)
+                    self._write_event(
+                        {
+                            "id": task_event.task_id,
+                            "category": "task",
+                            "name": "task_remote_execution",
+                            "ph": PHASE_ASYNC_BEGIN,
+                            "pid": 1,
+                            "tid": 2,
+                        },
+                        ts=start_ts,
+                    )
+
+                    # Write to the node view (group by node ID)
+                    self._write_event(
+                        {
+                            "name": "task_remote_execution",
+                            "ph": PHASE_DURATION_BEGIN,
+                            "pid": task_event.node_idx + NODE_PIDS_START,
+                            "tid": task_event.worker_idx,
+                        },
+                        ts=start_ts,
+                    )
+                    self._write_event(
+                        {
+                            "name": "stage-to-node-flow",
+                            "id": task_event.stage_id,
+                            "ph": PHASE_FLOW_FINISH,
+                            "bp": "e",  # enclosed, since the stage "encloses" the execution
+                            "pid": task_event.node_idx + NODE_PIDS_START,
+                            "tid": task_event.worker_idx,
+                        },
+                        ts=start_ts,
+                    )
+                elif isinstance(task_event, ray_metrics.EndTaskEvent):
+                    end_ts = int((task_event.end - self._start) * 1000 * 1000)
+
+                    # Write to the Async view (will group by the stage ID)
+                    self._write_event(
+                        {
+                            "id": task_event.task_id,
+                            "category": "task",
+                            "name": "task_remote_execution",
+                            "ph": PHASE_ASYNC_END,
+                            "pid": 1,
+                            "tid": 2,
+                        },
+                        ts=end_ts,
+                    )
+
+                    # Write to the node view (group by node ID)
+                    node_idx, worker_idx = self._task_id_to_location[task_event.task_id]
+                    self._write_event(
+                        {
+                            "name": "task_remote_execution",
+                            "ph": PHASE_DURATION_END,
+                            "pid": node_idx + NODE_PIDS_START,
+                            "tid": worker_idx,
+                        },
+                        ts=end_ts,
+                    )
+                else:
+                    raise NotImplementedError(f"Unhandled TaskEvent: {task_event}")
+
+    def finalize(self) -> None:
+        # Retrieve final task metrics
+        self._flush_task_metrics()
+
         # Retrieve metrics from the metrics actor (blocking call)
-        task_metrics, node_metrics = metrics_actor.collect_metrics()
+        node_metrics = self._metrics_actor.collect_and_close() if self._metrics_actor is not None else {}
 
         # Write out labels for the nodes and other traced events
         nodes_to_pid_mapping = {node_id: i + NODE_PIDS_START for i, node_id in enumerate(node_metrics)}
@@ -188,9 +269,7 @@ class RunnerTracer:
             [(pid, tid, f"Worker {worker_id}") for (_, worker_id), (pid, tid) in nodes_workers_to_tid_mapping.items()],
         )
 
-        # Write out collected metrics
-        for metric in task_metrics:
-            self._write_task_metric(metric, nodes_workers_to_tid_mapping)
+        # Write out stages now that everything is completed
         self._write_stages()
 
         # End the file with the appropriate footer
@@ -267,69 +346,6 @@ class RunnerTracer:
                 },
                 ts=end_ts,
             )
-
-    def _write_task_metric(
-        self, metric: ray_metrics.TaskMetric, nodes_workers_to_pid_tid_mapping: dict[tuple[str, str], tuple[int, int]]
-    ):
-        # Write to the Async view (will group by the stage ID)
-        self._write_event(
-            {
-                "id": metric.task_id,
-                "category": "task",
-                "name": "task_remote_execution",
-                "ph": PHASE_ASYNC_BEGIN,
-                "pid": 1,
-                "tid": metric.stage_id,
-            },
-            ts=int((metric.start - self._start) * 1000 * 1000),
-        )
-        if metric.end is not None:
-            self._write_event(
-                {
-                    "id": metric.task_id,
-                    "category": "task",
-                    "name": "task_remote_execution",
-                    "ph": PHASE_ASYNC_END,
-                    "pid": 1,
-                    "tid": metric.stage_id,
-                },
-                ts=int((metric.end - self._start) * 1000 * 1000),
-            )
-
-        # Write to the node/worker view
-        pid, tid = nodes_workers_to_pid_tid_mapping.get((metric.node_id, metric.worker_id), (None, None))
-        if pid is not None and tid is not None:
-            start_ts = int((metric.start - self._start) * 1000 * 1000)
-            self._write_event(
-                {
-                    "name": "task_remote_execution",
-                    "ph": PHASE_DURATION_BEGIN,
-                    "pid": pid,
-                    "tid": tid,
-                },
-                ts=start_ts,
-            )
-            self._write_event(
-                {
-                    "name": "stage-to-node-flow",
-                    "id": metric.stage_id,
-                    "ph": PHASE_FLOW_FINISH,
-                    "bp": "e",  # enclosed, since the stage "encloses" the execution
-                    "pid": pid,
-                    "tid": tid,
-                },
-                ts=start_ts,
-            )
-            if metric.end is not None:
-                self._write_event(
-                    {
-                        "name": "task_remote_execution",
-                        "ph": PHASE_DURATION_END,
-                        "pid": pid,
-                        "tid": tid,
-                    },
-                    ts=int((metric.end - self._start) * 1000 * 1000),
-                )
 
     ###
     # Tracing of scheduler dispatching
