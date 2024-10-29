@@ -1303,11 +1303,6 @@ name = "common-buffer"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
- "futures",
- "lazy_static",
- "log",
- "oneshot",
- "tokio",
 ]
 
 [[package]]
@@ -2267,37 +2262,14 @@ dependencies = [
 name = "daft-writers"
 version = "0.3.0-dev0"
 dependencies = [
- "async-trait",
  "common-buffer",
- "common-daft-config",
- "common-display",
  "common-error",
  "common-file-formats",
- "common-runtime",
- "common-tracing",
- "daft-core",
- "daft-csv",
- "daft-dsl",
- "daft-functions",
  "daft-io",
- "daft-json",
  "daft-micropartition",
- "daft-parquet",
- "daft-physical-plan",
  "daft-plan",
- "daft-scan",
  "daft-table",
- "futures",
- "indexmap 2.5.0",
- "itertools 0.11.0",
- "lazy_static",
- "log",
- "num-format",
  "pyo3",
- "snafu",
- "tokio",
- "tokio-stream",
- "tracing",
 ]
 
 [[package]]
