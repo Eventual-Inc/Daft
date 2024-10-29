@@ -35,10 +35,6 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
-    - uses: Swatinem/rust-cache@v2
-      with:
-        key: ${{ runner.os }}-build-artifact-s3
-        cache-all-crates: 'true'
     - name: Assume GitHub Actions AWS Credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
@@ -59,6 +55,7 @@ jobs:
         manylinux: auto
         args: --profile ${{ inputs.rust-profile }} --out dist
         before-script-linux: yum -y install perl-IPC-Cmd
+        sccache: true
       env:
         RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
     - name: Build wheels - Linux aarch64
@@ -71,6 +68,7 @@ jobs:
         container: messense/manylinux_2_24-cross:aarch64
         args: --profile ${{ inputs.rust-profile }} --out dist
         before-script-linux: export JEMALLOC_SYS_WITH_LG_PAGE=16
+        sccache: true
     - name: Copy all files as zip for Glue
       run: for file in dist/*.whl; do cp $file dist/`basename $file .whl`.zip; done
     - name: Upload files to s3
