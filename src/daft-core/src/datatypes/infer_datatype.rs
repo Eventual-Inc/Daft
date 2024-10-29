@@ -198,7 +198,7 @@ impl<'a> Add for InferDataType<'a> {
                     let p_prime = std::cmp::max(p1 - s1, p2 - s2) + s_max + 1;
 
 
-                    if p_prime < 1 || p_prime > 34 {
+                    if !(1..=34).contains(&p_prime) {
                         Err(DaftError::TypeError(
                             format!("Cannot infer supertypes for addition on types: {}, {} result precision: {p_prime} exceed bounds of [1, 34]", self, other)
                         ))
@@ -251,7 +251,7 @@ impl<'a> Sub for InferDataType<'a> {
                 (DataType::Decimal128(p1, s1), DataType::Decimal128(p2, s2)) => {
                     let s_max = *std::cmp::max(s1, s2);
                     let p_prime = std::cmp::max(p1 - s1, p2 - s2) + s_max + 1;
-                    if p_prime < 1 || p_prime > 34 {
+                    if !(1..=34).contains(&p_prime) {
                         Err(DaftError::TypeError(
                             format!("Cannot infer supertypes for subtraction on types: {}, {} result precision: {p_prime} exceed bounds of [1, 34]", self, other)
                         ))
@@ -313,7 +313,7 @@ impl<'a> Mul for InferDataType<'a> {
                 (DataType::Decimal128(p1, s1), DataType::Decimal128(p2, s2)) => {
                     let s_prime = s1 + s2;
                     let p_prime = p1 + p2;
-                    if p_prime < 1 || p_prime > 34 {
+                    if !(1..=34).contains(&p_prime) {
                         Err(DaftError::TypeError(
                             format!("Cannot infer supertypes for multiply on types: {}, {} result precision: {p_prime} exceed bounds of [1, 34]", self, other)
                         ))

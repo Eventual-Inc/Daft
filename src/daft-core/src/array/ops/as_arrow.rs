@@ -8,8 +8,8 @@ use crate::{
     array::DataArray,
     datatypes::{
         logical::{DateArray, DurationArray, TimeArray, TimestampArray},
-        BinaryArray, BooleanArray, DaftNumericType, DaftPrimitiveType, Decimal128Array,
-        FixedSizeBinaryArray, IntervalArray, NullArray, Utf8Array,
+        BinaryArray, BooleanArray, DaftPrimitiveType, FixedSizeBinaryArray, IntervalArray,
+        NullArray, Utf8Array,
     },
 };
 

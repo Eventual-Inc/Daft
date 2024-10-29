@@ -53,7 +53,7 @@ impl Decimal128Array {
                 i - remainder
             })
         });
-        Ok(Decimal128Array::from_iter(self.field.clone(), trun_value))
+        Ok(Self::from_iter(self.field.clone(), trun_value))
     }
 }
 

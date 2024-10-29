@@ -8,7 +8,6 @@ use std::{
 use common_error::{DaftError, DaftResult};
 use common_hashable_float_wrapper::FloatWrapper;
 use daft_core::{
-    array::ops::arrow2,
     datatypes::IntervalValue,
     prelude::*,
     utils::display::{

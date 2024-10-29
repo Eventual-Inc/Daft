@@ -7,9 +7,9 @@ use super::{ops::as_arrow::AsArrow, DataArray, FixedSizeListArray, ListArray, St
 use crate::datatypes::PythonArray;
 use crate::{
     datatypes::{
-        logical::LogicalArray, BinaryArray, BooleanArray, DaftLogicalType, DaftNumericType,
-        DaftPrimitiveType, DataType, ExtensionArray, FixedSizeBinaryArray, Int64Array,
-        IntervalArray, NullArray, Utf8Array,
+        logical::LogicalArray, BinaryArray, BooleanArray, DaftLogicalType, DaftPrimitiveType,
+        DataType, ExtensionArray, FixedSizeBinaryArray, Int64Array, IntervalArray, NullArray,
+        Utf8Array,
     },
     series::{IntoSeries, Series},
 };

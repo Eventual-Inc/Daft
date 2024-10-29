@@ -1,6 +1,6 @@
 use std::iter::zip;
 
-use arrow2::array::{Array, PrimitiveArray};
+use arrow2::array::PrimitiveArray;
 use common_error::{DaftError, DaftResult};
 
 use super::full::FullNull;

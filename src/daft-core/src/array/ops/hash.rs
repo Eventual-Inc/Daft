@@ -10,9 +10,9 @@ use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{
         logical::{DateArray, TimeArray, TimestampArray},
-        BinaryArray, BooleanArray, DaftNumericType, DaftPrimitiveType, Decimal128Array,
-        FixedSizeBinaryArray, Int16Array, Int32Array, Int64Array, Int8Array, NullArray,
-        UInt16Array, UInt32Array, UInt64Array, UInt8Array, Utf8Array,
+        BinaryArray, BooleanArray, DaftPrimitiveType, Decimal128Array, FixedSizeBinaryArray,
+        Int16Array, Int32Array, Int64Array, Int8Array, NullArray, UInt16Array, UInt32Array,
+        UInt64Array, UInt8Array, Utf8Array,
     },
     kernels,
     series::Series,

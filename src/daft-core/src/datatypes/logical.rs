@@ -3,7 +3,7 @@ use std::{marker::PhantomData, sync::Arc};
 use common_error::DaftResult;
 
 use super::{
-    DaftArrayType, DaftDataType, DataArray, DataType, Decimal128Type, DurationType, EmbeddingType,
+    DaftArrayType, DaftDataType, DataArray, DataType, DurationType, EmbeddingType,
     FixedShapeImageType, FixedShapeSparseTensorType, FixedShapeTensorType, FixedSizeListArray,
     ImageType, MapType, SparseTensorType, TensorType, TimeType, TimestampType,
 };

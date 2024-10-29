@@ -132,7 +132,7 @@ fn make_decimal_column_range_statistics(
 
     let daft_type = daft_core::datatypes::DataType::Decimal128(p, s);
     let lower_field = Arc::new(daft_core::datatypes::Field::new("lower", daft_type.clone()));
-    let upper_field = Arc::new(daft_core::datatypes::Field::new("upper", daft_type.clone()));
+    let upper_field = Arc::new(daft_core::datatypes::Field::new("upper", daft_type));
 
     let lower = Decimal128Array::from_iter(lower_field, std::iter::once(Some(l))).into_series();
     let upper = Decimal128Array::from_iter(upper_field, std::iter::once(Some(u))).into_series();

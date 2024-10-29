@@ -8,8 +8,8 @@ use super::{as_arrow::AsArrow, from_arrow::FromArrow, full::FullNull, DaftCompar
 use crate::{
     array::DataArray,
     datatypes::{
-        BinaryArray, BooleanArray, DaftArrowBackedType, DaftNumericType, DaftPrimitiveType,
-        DataType, Field, FixedSizeBinaryArray, NullArray, Utf8Array,
+        BinaryArray, BooleanArray, DaftArrowBackedType, DaftPrimitiveType, DataType, Field,
+        FixedSizeBinaryArray, NullArray, Utf8Array,
     },
     utils::arrow::arrow_bitmap_and_helper,
 };

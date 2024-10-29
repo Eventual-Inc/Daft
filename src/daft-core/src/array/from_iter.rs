@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use arrow2::{
-    array::{MutableArray, MutablePrimitiveArray, PrimitiveArray},
+    array::{MutablePrimitiveArray, PrimitiveArray},
     types::months_days_ns,
 };
 

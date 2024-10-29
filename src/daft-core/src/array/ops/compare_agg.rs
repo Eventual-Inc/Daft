@@ -1,4 +1,4 @@
-use arrow2::array::{Array, PrimitiveArray};
+use arrow2::array::Array;
 use common_error::DaftResult;
 
 use super::{full::FullNull, DaftCompareAggable, GroupIndices};

@@ -7,8 +7,8 @@ use crate::{
         logical::{
             DateArray, DurationArray, LogicalArrayImpl, MapArray, TimeArray, TimestampArray,
         },
-        BinaryArray, BooleanArray, DaftLogicalType, DaftNumericType, DaftPrimitiveType,
-        Decimal128Array, ExtensionArray, FixedSizeBinaryArray, IntervalArray, NullArray, Utf8Array,
+        BinaryArray, BooleanArray, DaftLogicalType, DaftPrimitiveType, ExtensionArray,
+        FixedSizeBinaryArray, IntervalArray, NullArray, Utf8Array,
     },
     series::Series,
 };

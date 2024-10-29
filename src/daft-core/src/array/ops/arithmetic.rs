@@ -8,7 +8,7 @@ use crate::{
     array::{DataArray, FixedSizeListArray},
     datatypes::{DaftNumericType, DaftPrimitiveType, DataType, Field, Utf8Array},
     kernels::utf8::add_utf8_arrays,
-    prelude::{DaftArrayType, Decimal128Array},
+    prelude::Decimal128Array,
     series::Series,
 };
 // Permission is hereby granted, free of charge, to any person obtaining a copy

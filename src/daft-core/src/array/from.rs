@@ -10,8 +10,8 @@ use common_error::{DaftError, DaftResult};
 use crate::{
     array::DataArray,
     datatypes::{
-        BinaryArray, BooleanArray, DaftNumericType, DaftPhysicalType, DaftPrimitiveType, DataType,
-        Field, FixedSizeBinaryArray, NullArray, Utf8Array, Utf8Type,
+        BinaryArray, BooleanArray, DaftNumericType, DaftPhysicalType, DataType, Field,
+        FixedSizeBinaryArray, NullArray, Utf8Array, Utf8Type,
     },
 };
 
