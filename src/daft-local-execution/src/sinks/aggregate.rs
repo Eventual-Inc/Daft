@@ -91,7 +91,7 @@ impl BlockingSink for AggregateSink {
                 .map(std::convert::AsRef::as_ref)
                 .collect::<Vec<_>>(),
         )?;
-        let agged = Arc::new(concated.agg(&self.group_by, &self.agg_exprs)?);
+        let agged = Arc::new(concated.agg(&self.agg_exprs, &self.group_by)?);
         Ok(Some(agged.into()))
     }
 
