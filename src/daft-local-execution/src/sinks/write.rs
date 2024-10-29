@@ -19,8 +19,14 @@ use daft_table::Table;
 use daft_writers::{FileWriter, PhysicalWriterFactory, WriterFactory};
 use tracing::instrument;
 
-use super::blocking_sink::{BlockingSink, BlockingSinkStatus};
-use crate::{buffer::RowBasedBuffer, pipeline::PipelineResultType};
+use super::blocking_sink::{
+    BlockingSink, BlockingSinkState, BlockingSinkStatus, DynBlockingSinkState,
+};
+use crate::{
+    buffer::RowBasedBuffer,
+    dispatcher::{Dispatcher, RoundRobinBufferedDispatcher},
+    pipeline::PipelineResultType,
+};
 
 // TargetBatchWriter is a writer that writes in batches of rows, i.e. for Parquet where we want to write
 // a row group at a time. It uses a buffer to accumulate rows until it has enough to write a batch.
@@ -310,10 +316,53 @@ impl FileWriter for PartitionedWriter {
     }
 }
 
+struct PartitionedWriterFactory {
+    writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<Table>>>,
+    partition_cols: Vec<ExprRef>,
+}
+
+impl WriterFactory for PartitionedWriterFactory {
+    type Input = Arc<MicroPartition>;
+    type Result = Vec<Table>;
+
+    fn create_writer(
+        &self,
+        _file_idx: usize,
+        _partition_values: Option<&Table>,
+    ) -> DaftResult<Box<dyn FileWriter<Input = Self::Input, Result = Self::Result>>> {
+        Ok(Box::new(PartitionedWriter::new(
+            self.writer_factory.clone(),
+            self.partition_cols.clone(),
+        ))
+            as Box<
+                dyn FileWriter<Input = Self::Input, Result = Self::Result>,
+            >)
+    }
+}
+
+struct WriteState {
+    writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Vec<Table>>>,
+}
+
+impl WriteState {
+    pub fn new(
+        writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Vec<Table>>>,
+    ) -> Self {
+        Self { writer }
+    }
+}
+
+impl DynBlockingSinkState for WriteState {
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
 pub struct WriteSink {
     name: &'static str,
-    writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Vec<Table>>>,
+    writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<Table>>>,
     file_schema: SchemaRef,
+    partition_cols: Option<Vec<ExprRef>>,
 }
 
 impl WriteSink {
@@ -325,7 +374,7 @@ impl WriteSink {
     ) -> DaftResult<Self> {
         let estimated_row_size_bytes = data_schema.estimate_row_size_bytes();
         let base_writer_factory = PhysicalWriterFactory::new(file_info.clone());
-        let (writer, name) = match file_info.file_format {
+        let (writer_factory, name) = match file_info.file_format {
             FileFormat::Parquet => {
                 let target_in_memory_file_size =
                     cfg.parquet_target_filesize as f64 * cfg.parquet_inflation_factor;
@@ -352,26 +401,23 @@ impl WriteSink {
                     target_in_memory_chunk_rows: target_row_group_rows,
                 };
 
+                let file_writer_factory = Arc::new(TargetFileSizeWriterFactory {
+                    writer_factory: Arc::new(row_group_writer_factory),
+                    target_in_memory_file_rows: target_file_rows,
+                });
+
                 if let Some(partition_cols) = &file_info.partition_cols {
-                    let file_writer_factory = TargetFileSizeWriterFactory {
-                        writer_factory: Arc::new(row_group_writer_factory),
-                        target_in_memory_file_rows: target_file_rows,
-                    };
-                    let partitioned_writer = Box::new(PartitionedWriter::new(
-                        Arc::new(file_writer_factory),
-                        partition_cols.clone(),
-                    ));
+                    let partitioned_writer_factory = Arc::new(PartitionedWriterFactory {
+                        writer_factory: file_writer_factory,
+                        partition_cols: partition_cols.clone(),
+                    });
                     (
-                        partitioned_writer as Box<dyn FileWriter<Input = _, Result = _>>,
+                        partitioned_writer_factory as Arc<dyn WriterFactory<Input = _, Result = _>>,
                         "PartitionedParquetWrite",
                     )
                 } else {
                     (
-                        Box::new(TargetFileSizeWriter::new(
-                            target_file_rows,
-                            Arc::new(row_group_writer_factory),
-                            None,
-                        )?) as Box<dyn FileWriter<Input = _, Result = _>>,
+                        file_writer_factory as Arc<dyn WriterFactory<Input = _, Result = _>>,
                         "UnpartitionedParquetWrite",
                     )
                 }
@@ -385,26 +431,23 @@ impl WriteSink {
                     target_in_memory_file_size
                 } as usize;
 
+                let file_writer_factory = Arc::new(TargetFileSizeWriterFactory {
+                    writer_factory: Arc::new(base_writer_factory),
+                    target_in_memory_file_rows: target_file_rows,
+                });
+
                 if let Some(partition_cols) = &file_info.partition_cols {
-                    let file_writer_factory = TargetFileSizeWriterFactory {
-                        writer_factory: Arc::new(base_writer_factory),
-                        target_in_memory_file_rows: target_file_rows,
-                    };
-                    let partitioned_writer = Box::new(PartitionedWriter::new(
-                        Arc::new(file_writer_factory),
-                        partition_cols.clone(),
-                    ));
+                    let partitioned_writer_factory = Arc::new(PartitionedWriterFactory {
+                        writer_factory: file_writer_factory,
+                        partition_cols: partition_cols.clone(),
+                    });
                     (
-                        partitioned_writer as Box<dyn FileWriter<Input = _, Result = _>>,
+                        partitioned_writer_factory as Arc<dyn WriterFactory<Input = _, Result = _>>,
                         "PartitionedCsvWrite",
                     )
                 } else {
                     (
-                        Box::new(TargetFileSizeWriter::new(
-                            target_file_rows,
-                            Arc::new(base_writer_factory),
-                            None,
-                        )?) as Box<dyn FileWriter<Input = _, Result = _>>,
+                        file_writer_factory as Arc<dyn WriterFactory<Input = _, Result = _>>,
                         "UnpartitionedCsvWrite",
                     )
                 }
@@ -413,8 +456,9 @@ impl WriteSink {
         };
         Ok(Self {
             name,
-            writer,
+            writer_factory,
             file_schema,
+            partition_cols: file_info.partition_cols,
         })
     }
     pub fn boxed(self) -> Box<dyn BlockingSink> {
@@ -424,22 +468,67 @@ impl WriteSink {
 
 impl BlockingSink for WriteSink {
     #[instrument(skip_all, name = "WriteSink::sink")]
-    fn sink(&mut self, input: &Arc<MicroPartition>) -> DaftResult<BlockingSinkStatus> {
-        self.writer.write(input)?;
-        Ok(BlockingSinkStatus::NeedMoreInput)
+    fn sink(
+        &self,
+        input: &Arc<MicroPartition>,
+        state_handle: &BlockingSinkState,
+    ) -> DaftResult<BlockingSinkStatus> {
+        state_handle.with_state_mut::<WriteState, _, _>(|state| {
+            state.writer.write(input)?;
+            Ok(BlockingSinkStatus::NeedMoreInput)
+        })
     }
 
     #[instrument(skip_all, name = "WriteSink::finalize")]
-    fn finalize(&mut self) -> DaftResult<Option<PipelineResultType>> {
-        let result = self.writer.close()?;
+    fn finalize(
+        &self,
+        states: Vec<Box<dyn DynBlockingSinkState>>,
+    ) -> DaftResult<Option<PipelineResultType>> {
+        let mut results = vec![];
+        for mut state in states {
+            let state = state
+                .as_any_mut()
+                .downcast_mut::<WriteState>()
+                .expect("State type mismatch");
+            results.extend(state.writer.close()?);
+        }
         let mp = Arc::new(MicroPartition::new_loaded(
             self.file_schema.clone(),
-            result.into(),
+            results.into(),
             None,
         ));
         Ok(Some(mp.into()))
     }
+
     fn name(&self) -> &'static str {
         self.name
+    }
+
+    fn make_state(&self) -> DaftResult<Box<dyn DynBlockingSinkState>> {
+        let writer = self.writer_factory.create_writer(0, None)?;
+        Ok(Box::new(WriteState::new(writer)) as Box<dyn DynBlockingSinkState>)
+    }
+
+    fn max_concurrency(&self) -> usize {
+        if self.partition_cols.is_some() {
+            *crate::NUM_CPUS
+        } else {
+            1
+        }
+    }
+
+    fn make_dispatcher(
+        &self,
+        runtime_handle: &crate::ExecutionRuntimeHandle,
+    ) -> Arc<dyn Dispatcher> {
+        if let Some(partition_cols) = &self.partition_cols {
+            Arc::new(crate::dispatcher::PartitionedDispatcher::new(
+                partition_cols.clone(),
+            ))
+        } else {
+            Arc::new(RoundRobinBufferedDispatcher::new(
+                runtime_handle.default_morsel_size(),
+            ))
+        }
     }
 }

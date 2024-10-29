@@ -1,39 +1,11 @@
 use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
-use common_file_formats::FileFormat;
+use common_error::DaftResult;
 use daft_micropartition::{python::PyMicroPartition, MicroPartition};
 use daft_table::{python::PyTable, Table};
 use pyo3::{types::PyAnyMethods, PyObject, Python};
 
 use crate::FileWriter;
-
-pub fn create_pyarrow_file_writer(
-    root_dir: &str,
-    file_idx: usize,
-    compression: &Option<String>,
-    io_config: &Option<daft_io::IOConfig>,
-    format: FileFormat,
-    partition: Option<&Table>,
-) -> DaftResult<Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Option<Table>>>> {
-    match format {
-        #[cfg(feature = "python")]
-        FileFormat::Parquet => Ok(Box::new(PyArrowWriter::new_parquet_writer(
-            root_dir,
-            file_idx,
-            compression,
-            io_config,
-            partition,
-        )?)),
-        #[cfg(feature = "python")]
-        FileFormat::Csv => Ok(Box::new(PyArrowWriter::new_csv_writer(
-            root_dir, file_idx, io_config, partition,
-        )?)),
-        _ => Err(DaftError::ComputeError(
-            "Unsupported file format for physical write".to_string(),
-        )),
-    }
-}
 
 pub struct PyArrowWriter {
     py_writer: PyObject,

@@ -59,6 +59,7 @@ python = [
   "daft-table/python",
   "daft-functions/python",
   "daft-functions-json/python",
+  "daft-writers/python",
   "common-daft-config/python",
   "common-system-info/python",
   "common-display/python",

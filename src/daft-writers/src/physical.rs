@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
+use common_file_formats::FileFormat;
 use daft_micropartition::MicroPartition;
 use daft_plan::OutputFileInfo;
 use daft_table::Table;
@@ -34,24 +35,43 @@ impl WriterFactory for PhysicalWriterFactory {
         match self.native {
             true => unimplemented!(),
             false => {
-                #[cfg(feature = "python")]
-                {
-                    let writer = crate::python::create_pyarrow_file_writer(
-                        &self.output_file_info.root_dir,
-                        file_idx,
-                        &self.output_file_info.compression,
-                        &self.output_file_info.io_config,
-                        self.output_file_info.file_format,
-                        partition_values,
-                    )?;
-                    Ok(writer)
-                }
-
-                #[cfg(not(feature = "python"))]
-                {
-                    unimplemented!()
-                }
+                let writer = create_pyarrow_file_writer(
+                    &self.output_file_info.root_dir,
+                    file_idx,
+                    &self.output_file_info.compression,
+                    &self.output_file_info.io_config,
+                    self.output_file_info.file_format,
+                    partition_values,
+                )?;
+                Ok(writer)
             }
         }
+    }
+}
+
+pub fn create_pyarrow_file_writer(
+    root_dir: &str,
+    file_idx: usize,
+    compression: &Option<String>,
+    io_config: &Option<daft_io::IOConfig>,
+    format: FileFormat,
+    partition: Option<&Table>,
+) -> DaftResult<Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Option<Table>>>> {
+    match format {
+        #[cfg(feature = "python")]
+        FileFormat::Parquet => Ok(Box::new(crate::python::PyArrowWriter::new_parquet_writer(
+            root_dir,
+            file_idx,
+            compression,
+            io_config,
+            partition,
+        )?)),
+        #[cfg(feature = "python")]
+        FileFormat::Csv => Ok(Box::new(crate::python::PyArrowWriter::new_csv_writer(
+            root_dir, file_idx, io_config, partition,
+        )?)),
+        _ => Err(DaftError::ComputeError(
+            "Unsupported file format for physical write".to_string(),
+        )),
     }
 }

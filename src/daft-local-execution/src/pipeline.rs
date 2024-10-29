@@ -197,7 +197,7 @@ pub fn physical_plan_to_pipeline(
                 vec![],
             );
             let second_stage_node =
-                BlockingSinkNode::new(second_stage_agg_sink.boxed(), post_first_agg_node).boxed();
+                BlockingSinkNode::new(Arc::new(second_stage_agg_sink), post_first_agg_node).boxed();
 
             let final_stage_project = ProjectOperator::new(final_exprs);
 
@@ -239,7 +239,7 @@ pub fn physical_plan_to_pipeline(
                 group_by.clone(),
             );
             let second_stage_node =
-                BlockingSinkNode::new(second_stage_agg_sink.boxed(), post_first_agg_node).boxed();
+                BlockingSinkNode::new(Arc::new(second_stage_agg_sink), post_first_agg_node).boxed();
 
             let final_stage_project = ProjectOperator::new(final_exprs);
 
@@ -287,7 +287,7 @@ pub fn physical_plan_to_pipeline(
         }) => {
             let sort_sink = SortSink::new(sort_by.clone(), descending.clone());
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
-            BlockingSinkNode::new(sort_sink.boxed(), child_node).boxed()
+            BlockingSinkNode::new(Arc::new(sort_sink), child_node).boxed()
         }
 
         LocalPhysicalPlan::HashJoin(HashJoin {
@@ -358,7 +358,7 @@ pub fn physical_plan_to_pipeline(
                 let build_sink = HashJoinBuildSink::new(key_schema, casted_build_on, join_type)?;
                 let build_child_node = physical_plan_to_pipeline(build_child, psets, cfg)?;
                 let build_node =
-                    BlockingSinkNode::new(build_sink.boxed(), build_child_node).boxed();
+                    BlockingSinkNode::new(Arc::new(build_sink), build_child_node).boxed();
 
                 let probe_child_node = physical_plan_to_pipeline(probe_child, psets, cfg)?;
 
@@ -420,9 +420,8 @@ pub fn physical_plan_to_pipeline(
             )
             .context(PipelineCreationSnafu {
                 plan_name: physical_plan.name(),
-            })?
-            .boxed();
-            BlockingSinkNode::new(write_sink, child_node).boxed()
+            })?;
+            BlockingSinkNode::new(Arc::new(write_sink), child_node).boxed()
         }
     };
 
