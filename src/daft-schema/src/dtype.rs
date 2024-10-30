@@ -30,9 +30,6 @@ pub enum DataType {
     /// An [`i64`]
     Int64,
 
-    /// An [`i128`]
-    Int128,
-
     /// An [`u8`]
     UInt8,
 
@@ -212,10 +209,6 @@ impl DataType {
             Self::Int16 => Ok(ArrowType::Int16),
             Self::Int32 => Ok(ArrowType::Int32),
             Self::Int64 => Ok(ArrowType::Int64),
-            // Must maintain same default mapping as Arrow2, otherwise this will throw errors in
-            // DataArray<Int128Type>::new() which makes strong assumptions about the arrow/Daft types
-            // https://github.com/jorgecarleitao/arrow2/blob/b0734542c2fef5d2d0c7b6ffce5d094de371168a/src/datatypes/mod.rs#L493
-            Self::Int128 => Ok(ArrowType::Decimal(32, 32)),
             Self::UInt8 => Ok(ArrowType::UInt8),
             Self::UInt16 => Ok(ArrowType::UInt16),
             Self::UInt32 => Ok(ArrowType::UInt32),
@@ -311,7 +304,6 @@ impl DataType {
     pub fn to_physical(&self) -> Self {
         use DataType::*;
         match self {
-            Decimal128(..) => Int128,
             Date => Int32,
             Duration(_) | Timestamp(..) | Time(_) => Int64,
 
@@ -374,7 +366,6 @@ impl DataType {
             | Self::Int16
             | Self::Int32
             | Self::Int64
-            | Self::Int128
             | Self::UInt8
             | Self::UInt16
             | Self::UInt32
@@ -427,7 +418,6 @@ impl DataType {
                 | Self::Int16
                 | Self::Int32
                 | Self::Int64
-                | Self::Int128
                 | Self::UInt8
                 | Self::UInt16
                 | Self::UInt32
@@ -565,7 +555,7 @@ impl DataType {
             Self::Int16 => Some(2.),
             Self::Int32 => Some(4.),
             Self::Int64 => Some(8.),
-            Self::Int128 => Some(16.),
+            Self::Decimal128(..) => Some(16.),
             Self::UInt8 => Some(1.),
             Self::UInt16 => Some(2.),
             Self::UInt32 => Some(4.),
@@ -596,8 +586,7 @@ impl DataType {
     pub fn is_logical(&self) -> bool {
         matches!(
             self,
-            Self::Decimal128(..)
-                | Self::Date
+            Self::Date
                 | Self::Time(..)
                 | Self::Timestamp(..)
                 | Self::Duration(..)
