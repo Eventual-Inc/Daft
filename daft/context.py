@@ -94,7 +94,7 @@ def _get_runner_config_from_env() -> _RunnerConfig:
         raise ValueError(f"Unsupported DAFT_RUNNER variable: {runner_from_envvar}")
 
     # Retrieve the runner from current initialized Ray environment, only if not running in a Ray worker
-    elif not in_ray_worker and (ray_is_initialized or ray_in_job_on_head_node):
+    elif not in_ray_worker and (ray_is_initialized or ray_is_in_job):
         return _RayRunnerConfig(
             address=None,  # No address supplied, use the existing connection
             max_task_backlog=task_backlog,
