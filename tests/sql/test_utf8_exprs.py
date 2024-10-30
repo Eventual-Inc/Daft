@@ -62,7 +62,8 @@ def test_utf8_exprs():
         normalize(a, remove_punct:=true, lowercase:=true) as normalize_remove_punct_lower_a,
         normalize(a, remove_punct:=true, lowercase:=true, white_space:=true) as normalize_remove_punct_lower_ws_a,
         tokenize_encode(a, 'r50k_base') as tokenize_encode_a,
-        tokenize_decode(tokenize_encode(a, 'r50k_base'), 'r50k_base') as tokenize_decode_a
+        tokenize_decode(tokenize_encode(a, 'r50k_base'), 'r50k_base') as tokenize_decode_a,
+        concat(a, '---') as concat_a,
     FROM df
     """
     actual = daft.sql(sql).collect()
@@ -105,6 +106,7 @@ def test_utf8_exprs():
             .alias("normalize_remove_punct_lower_ws_a"),
             col("a").str.tokenize_encode("r50k_base").alias("tokenize_encode_a"),
             col("a").str.tokenize_encode("r50k_base").str.tokenize_decode("r50k_base").alias("tokenize_decode_a"),
+            col("a").str.concat("---").alias("concat_a"),
         )
         .collect()
         .to_pydict()
