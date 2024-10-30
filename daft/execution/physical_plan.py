@@ -1148,6 +1148,8 @@ def sort_merge_join_aligned_boundaries(
                     )
                     for per_part_boundaries in per_partition_bounds
                 ],
+                num_input_partitions=len(range_fanout_plan),
+                num_output_partitions=num_partitions,
             )
         )
 
@@ -1443,9 +1445,78 @@ def coalesce(
                 return
 
 
+def pre_shuffle_merge(
+    fanout_plan: InProgressPhysicalPlan[PartitionT],
+    stage_id: int,
+    num_mappers: int,
+    num_reducers: int,
+) -> InProgressPhysicalPlan[PartitionT]:
+    """Merge the intermediate partitions from the fanout_plan before shuffling them."""
+
+    # If we have only one mapper then we don't need to merge.
+    if num_mappers < 2:
+        yield from fanout_plan
+        return
+
+    # Hard code the map to merge ratio to 5.
+    num_maps_per_merge = num_mappers // 5
+
+    # If we determined that the num map tasks per merge is too small, then don't merge.
+    if num_maps_per_merge < 2:
+        yield from fanout_plan
+        return
+
+    materializations: deque[MultiOutputPartitionTask[PartitionT]] = deque()
+    no_more_input = False
+    while True:
+        ready_to_merge = [task for task in list(materializations)[:num_maps_per_merge] if task.done()]
+
+        # If we have enough partitions to merge, or we have no more input and all partitions are ready to merge, merge.
+        if len(ready_to_merge) == num_maps_per_merge or (
+            no_more_input and len(ready_to_merge) == len(materializations)
+        ):
+            for _ in range(num_maps_per_merge):
+                materializations.popleft()
+
+            # Todo: How to determine scheduling placement for the merge tasks.
+            merge_step = PartitionTaskBuilder[PartitionT](
+                inputs=[p for step in ready_to_merge for p in step.partitions()],
+                partial_metadatas=[m for step in ready_to_merge for m in step.partition_metadatas()],
+                resource_request=ResourceRequest(
+                    memory_bytes=sum(
+                        m.size_bytes
+                        for step in ready_to_merge
+                        for m in step.partition_metadatas()
+                        if m.size_bytes is not None
+                    ),
+                ),
+            ).add_instruction(
+                instruction=execution_step.PreShuffleMerge(_num_outputs=num_reducers, num_map_jobs=num_maps_per_merge)
+            )
+            yield merge_step
+
+        # If we don't have enough partitions to merge, yield a map task
+        try:
+            child_step = next(fanout_plan)
+            if isinstance(child_step, PartitionTaskBuilder):
+                child_step = child_step.finalize_partition_task_multi_output(stage_id=stage_id)
+                materializations.append(child_step)
+            yield child_step
+
+        except StopIteration:
+            no_more_input = True
+            if len(materializations) > 0:
+                logger.debug("reduce blocked on completion of a merger task in: %s", materializations)
+                yield None
+            else:
+                break
+
+
 def reduce(
     fanout_plan: InProgressPhysicalPlan[PartitionT],
     reduce_instructions: ReduceInstruction | list[ReduceInstruction],
+    num_input_partitions: int,
+    num_output_partitions: int,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Reduce the result of fanout_plan.
 
@@ -1458,7 +1529,15 @@ def reduce(
     materializations = list()
     stage_id = next(stage_id_counter)
 
-    # Dispatch all fanouts.
+    turn_on_pre_shuffle_merge = 1
+    if turn_on_pre_shuffle_merge:
+        fanout_plan = pre_shuffle_merge(
+            fanout_plan=fanout_plan,
+            stage_id=stage_id,
+            num_mappers=num_input_partitions,
+            num_reducers=num_output_partitions,
+        )
+
     for step in fanout_plan:
         if isinstance(step, PartitionTaskBuilder):
             step = step.finalize_partition_task_multi_output(stage_id=stage_id)
@@ -1514,6 +1593,7 @@ def sort(
     stage_id_sampling = next(stage_id_counter)
 
     sample_size = get_context().daft_execution_config.sample_size_for_sort
+    num_input_partitions = len(source_materializations)
     for source in source_materializations:
         while not source.done():
             logger.debug("sort blocked on completion of source: %s", source)
@@ -1592,6 +1672,8 @@ def sort(
             )
             for per_part_boundaries in per_partition_bounds
         ],
+        num_input_partitions=num_input_partitions,
+        num_output_partitions=num_partitions,
     )
 
 
