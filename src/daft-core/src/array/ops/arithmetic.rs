@@ -112,7 +112,7 @@ impl Mul for &Decimal128Array {
     fn mul(self, rhs: Self) -> Self::Output {
         assert_eq!(self.data_type(), rhs.data_type());
 
-        let DataType::Decimal128(p, s) = self.data_type() else {
+        let DataType::Decimal128(_, s) = self.data_type() else {
             unreachable!("This should always be a Decimal128")
         };
         let scale = 10i128.pow(*s as u32);
@@ -286,7 +286,7 @@ impl Div for &Decimal128Array {
     type Output = DaftResult<Decimal128Array>;
     fn div(self, rhs: Self) -> Self::Output {
         assert_eq!(self.data_type(), rhs.data_type());
-        let DataType::Decimal128(p, s) = self.data_type() else {
+        let DataType::Decimal128(_, s) = self.data_type() else {
             unreachable!("This should always be a Decimal128")
         };
         let scale = 10i128.pow(*s as u32);
