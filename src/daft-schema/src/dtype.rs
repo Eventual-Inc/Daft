@@ -379,6 +379,26 @@ impl DataType {
     }
 
     #[inline]
+    pub fn is_primitive(&self) -> bool {
+        match self {
+            Self::Int8
+            | Self::Int16
+            | Self::Int32
+            | Self::Int64
+            | Self::UInt8
+            | Self::UInt16
+            | Self::UInt32
+            | Self::UInt64
+            // DataType::Float16
+            | Self::Float32
+            | Self::Float64
+            | Self::Decimal128(..) => true,
+            Self::Extension(_, inner, _) => inner.is_primitive(),
+            _ => false
+        }
+    }
+
+    #[inline]
     pub fn assert_is_numeric(&self) -> DaftResult<()> {
         if self.is_numeric() {
             Ok(())
