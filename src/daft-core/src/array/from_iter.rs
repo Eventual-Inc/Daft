@@ -28,12 +28,13 @@ where
         Self::new(field, data_array.boxed()).unwrap()
     }
 
-    pub fn from_values_iter(
-        field: Arc<Field>,
+    pub fn from_values_iter<F: Into<Arc<Field>>>(
+        field: F,
         iter: impl arrow2::trusted_len::TrustedLen<Item = T::Native>,
     ) -> Self {
         // this is a workaround to prevent overflow issues when dealing with i128 and decimal
         // typical behavior would be the result array would always be Decimal(32, 32)
+        let field = field.into();
         let mut array = MutablePrimitiveArray::<T::Native>::from(field.dtype.to_arrow().unwrap());
         array.extend_trusted_len_values(iter);
         let data_array: PrimitiveArray<_> = array.into();

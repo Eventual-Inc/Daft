@@ -241,8 +241,7 @@ impl LiteralValue {
             Self::Decimal(val, p, s) => {
                 let dtype = DataType::Decimal128(*p as usize, *s as usize);
                 let field = Field::new("literal", dtype);
-                Decimal128Array::from_iter(Arc::new(field), std::iter::once(Some(*val)))
-                    .into_series()
+                Decimal128Array::from_values_iter(field, std::iter::once(*val)).into_series()
             }
             Self::Series(series) => series.clone().rename("literal"),
             #[cfg(feature = "python")]
@@ -538,12 +537,12 @@ pub fn literals_to_series(values: &[LiteralValue]) -> DaftResult<Series> {
         DataType::Float64 => {
             let data = values.iter().map(|lit| unwrap_unchecked!(lit, Float64));
 
-            Float64Array::from_iter(Arc::new(Field::new("literal", dtype)), data).into_series()
+            Float64Array::from_iter(Field::new("literal", dtype), data).into_series()
         }
         dtype @ DataType::Decimal128 { .. } => {
             let data = values.iter().map(|lit| unwrap_unchecked!(lit, Decimal));
 
-            Decimal128Array::from_iter(Arc::new(Field::new("literal", dtype)), data).into_series()
+            Decimal128Array::from_iter(Field::new("literal", dtype), data).into_series()
         }
         _ => {
             return Err(DaftError::ValueError(format!(

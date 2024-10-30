@@ -186,6 +186,8 @@ impl_daft_arrow_datatype!(UInt8Type, UInt8);
 impl_daft_arrow_datatype!(UInt16Type, UInt16);
 impl_daft_arrow_datatype!(UInt32Type, UInt32);
 impl_daft_arrow_datatype!(UInt64Type, UInt64);
+
+// This Type isn't actually used but has to be kept around to ensure that i128 is recognized as a primitive
 impl_daft_arrow_datatype!(Int128Type, Unknown);
 
 impl_daft_arrow_datatype!(
@@ -337,7 +339,7 @@ impl DaftNumericType for Int64Type {
 }
 
 impl DaftNumericType for Int128Type {
-    type Native = i64;
+    type Native = i128;
 }
 
 impl DaftNumericType for Float32Type {
