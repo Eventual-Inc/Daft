@@ -2318,6 +2318,7 @@ dependencies = [
  "daft-plan",
  "once_cell",
  "pyo3",
+ "regex",
  "rstest",
  "snafu",
  "sqlparser",

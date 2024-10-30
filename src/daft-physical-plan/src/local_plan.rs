@@ -13,6 +13,7 @@ pub enum LocalPhysicalPlan {
     PhysicalScan(PhysicalScan),
     EmptyScan(EmptyScan),
     Project(Project),
+    ActorPoolProject(ActorPoolProject),
     Filter(Filter),
     Limit(Limit),
     Explode(Explode),
@@ -127,6 +128,20 @@ impl LocalPhysicalPlan {
         schema: SchemaRef,
     ) -> LocalPhysicalPlanRef {
         Self::Project(Project {
+            input,
+            projection,
+            schema,
+            plan_stats: PlanStats {},
+        })
+        .arced()
+    }
+
+    pub(crate) fn actor_pool_project(
+        input: LocalPhysicalPlanRef,
+        projection: Vec<ExprRef>,
+        schema: SchemaRef,
+    ) -> LocalPhysicalPlanRef {
+        Self::ActorPoolProject(ActorPoolProject {
             input,
             projection,
             schema,
@@ -280,6 +295,7 @@ impl LocalPhysicalPlan {
             | Self::Filter(Filter { schema, .. })
             | Self::Limit(Limit { schema, .. })
             | Self::Project(Project { schema, .. })
+            | Self::ActorPoolProject(ActorPoolProject { schema, .. })
             | Self::UnGroupedAggregate(UnGroupedAggregate { schema, .. })
             | Self::HashAggregate(HashAggregate { schema, .. })
             | Self::Pivot(Pivot { schema, .. })
@@ -316,6 +332,14 @@ pub struct EmptyScan {
 
 #[derive(Debug)]
 pub struct Project {
+    pub input: LocalPhysicalPlanRef,
+    pub projection: Vec<ExprRef>,
+    pub schema: SchemaRef,
+    pub plan_stats: PlanStats,
+}
+
+#[derive(Debug)]
+pub struct ActorPoolProject {
     pub input: LocalPhysicalPlanRef,
     pub projection: Vec<ExprRef>,
     pub schema: SchemaRef,

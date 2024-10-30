@@ -2,7 +2,7 @@ use common_error::DaftResult;
 use common_treenode::{DynTreeNode, Transformed, TreeNode};
 
 use crate::{
-    physical_ops::FanoutByHash, physical_optimization::rules::PhysicalOptimizerRule,
+    partitioning::HashClusteringConfig, physical_optimization::rules::PhysicalOptimizerRule,
     ClusteringSpec, PhysicalPlan, PhysicalPlanRef,
 };
 pub struct DropRepartitionPhysical {}
@@ -22,26 +22,23 @@ impl PhysicalOptimizerRule for DropRepartitionPhysical {
             }
 
             match c.as_ref() {
-                PhysicalPlan::FanoutByHash(FanoutByHash {
-                    partition_by,
-                    num_partitions,
-                    ..
-                }) => {
-                    if *partition_by == cur_spec.partition_by()
-                        && *num_partitions == cur_spec.num_partitions()
-                    {
-                        Ok(Transformed::yes(child.clone()))
-                    } else {
-                        Ok(Transformed::no(c))
+                PhysicalPlan::ShuffleExchange(shuffle_exchange) => {
+                    let shuffle_clustering_spec = shuffle_exchange.clustering_spec();
+                    match shuffle_clustering_spec.as_ref() {
+                        // If the current node is a ShuffleExchange that is a hash partitioning, and it matches it's child
+                        // partitioning, then we can skip this ShuffleExchange entirely
+                        ClusteringSpec::Hash(HashClusteringConfig { num_partitions, by }) => {
+                            if *by == cur_spec.partition_by()
+                                && *num_partitions == cur_spec.num_partitions()
+                            {
+                                Ok(Transformed::yes(child.clone()))
+                            } else {
+                                Ok(Transformed::no(c))
+                            }
+                        }
+                        _ => Ok(Transformed::no(c)),
                     }
                 }
-                // remove extra reducemerge
-                PhysicalPlan::ReduceMerge(..) => match child.as_ref() {
-                    PhysicalPlan::FanoutByHash(..)
-                    | PhysicalPlan::FanoutByRange(..)
-                    | PhysicalPlan::FanoutRandom(..) => Ok(Transformed::no(c)),
-                    _ => Ok(Transformed::yes(child.clone())),
-                },
                 _ => Ok(Transformed::no(c)),
             }
         })
@@ -59,7 +56,7 @@ mod tests {
     use super::DropRepartitionPhysical;
     use crate::{
         partitioning::UnknownClusteringConfig,
-        physical_ops::{EmptyScan, FanoutByHash, ReduceMerge},
+        physical_ops::{EmptyScan, ShuffleExchangeFactory},
         physical_optimization::rules::PhysicalOptimizerRule,
         ClusteringSpec, PhysicalPlan, PhysicalPlanRef,
     };
@@ -77,10 +74,9 @@ mod tests {
         num_partitions: usize,
         partition_by: Vec<ExprRef>,
     ) -> PhysicalPlanRef {
-        PhysicalPlan::ReduceMerge(ReduceMerge::new(
-            PhysicalPlan::FanoutByHash(FanoutByHash::new(plan, num_partitions, partition_by))
-                .into(),
-        ))
+        PhysicalPlan::ShuffleExchange(
+            ShuffleExchangeFactory::new(plan).get_hash_partitioning(partition_by, num_partitions),
+        )
         .into()
     }
 

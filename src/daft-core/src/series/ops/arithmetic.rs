@@ -62,6 +62,12 @@ impl Add for &Series {
                 })
             }
             // ----------------
+            // Decimal Types
+            // ----------------
+            DataType::Decimal128(..) => {
+                Ok(cast_downcast_op!(lhs, rhs, &output_type, Decimal128Array, add)?.into_series())
+            }
+            // ----------------
             // FixedSizeLists of numeric types (fsl, embedding, tensor, etc.)
             // ----------------
             output_type if output_type.is_fixed_size_numeric() => {
@@ -160,6 +166,12 @@ impl Sub for &Series {
                 fixed_size_binary_op(lhs, rhs, output_type, FixedSizeBinaryOp::Sub)
             }
             // ----------------
+            // Decimal Types
+            // ----------------
+            DataType::Decimal128(..) => {
+                Ok(cast_downcast_op!(lhs, rhs, &output_type, Decimal128Array, sub)?.into_series())
+            }
+            // ----------------
             // Temporal types
             // ----------------
             output_type
@@ -245,6 +257,12 @@ impl Mul for &Series {
                 })
             }
             // ----------------
+            // Decimal Types
+            // ----------------
+            DataType::Decimal128(..) => {
+                Ok(cast_downcast_op!(lhs, rhs, &output_type, Decimal128Array, mul)?.into_series())
+            }
+            // ----------------
             // FixedSizeLists of numeric types (fsl, embedding, tensor, etc.)
             // ----------------
             output_type if output_type.is_fixed_size_numeric() => {
@@ -277,6 +295,12 @@ impl Div for &Series {
                 )
             }
             // ----------------
+            // Decimal Types
+            // ----------------
+            DataType::Decimal128(..) => {
+                Ok(cast_downcast_op!(lhs, rhs, &output_type, Decimal128Array, div)?.into_series())
+            }
+            // ----------------
             // FixedSizeLists of numeric types (fsl, embedding, tensor, etc.)
             // ----------------
             output_type if output_type.is_fixed_size_numeric() => {
@@ -292,6 +316,7 @@ impl Rem for &Series {
     fn rem(self, rhs: Self) -> Self::Output {
         let output_type =
             InferDataType::from(self.data_type()).rem(InferDataType::from(rhs.data_type()))?;
+
         let lhs = self;
         match &output_type {
             #[cfg(feature = "python")]

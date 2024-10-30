@@ -60,7 +60,7 @@ impl ColumnRangeStatistics {
             DataType::Null |
 
             // Numeric types
-            DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 | DataType::Int128 |
+            DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 |
             DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 |
             DataType::Float32 | DataType::Float64 | DataType::Decimal128(..) | DataType::Boolean |
 
