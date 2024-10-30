@@ -6,7 +6,7 @@ use crate::{
     array::ops::DaftBetween,
     datatypes::{BooleanArray, DataType, InferDataType},
     series::{IntoSeries, Series},
-    with_match_numeric_daft_types,
+    with_match_primitive_daft_types,
 };
 
 impl Series {
@@ -31,8 +31,8 @@ impl Series {
                     .clone()
                     .into_series()),
                 DataType::Null => Ok(Self::full_null(self.name(), &DataType::Boolean, self.len())),
-                ref v if v.is_numeric() => {
-                    with_match_numeric_daft_types!(comp_type, |$T| {
+                ref v if v.is_primitive() => {
+                    with_match_primitive_daft_types!(comp_type, |$T| {
                             let casted_value = it_value.cast(&comp_type)?;
                             let casted_lower = it_lower.cast(&comp_type)?;
                             let casted_upper = it_upper.cast(&comp_type)?;
