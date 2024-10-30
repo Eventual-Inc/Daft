@@ -354,7 +354,7 @@ impl DataType {
             FixedShapeSparseTensor(dtype, shape) => Struct(vec![
                 Field::new("values", List(Box::new(*dtype.clone()))),
                 {
-                    let largest_index = shape.iter().product::<u64>();
+                    let largest_index = shape.iter().product::<u64>() - 1;
                     let minimal_indices_dtype = {
                         if largest_index <= u8::MAX as u64 {
                             Self::UInt8

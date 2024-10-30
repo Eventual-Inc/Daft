@@ -1612,6 +1612,18 @@ fn cast_sparse_to_dense_for_inner_dtype(
     Ok(item)
 }
 
+pub fn minimal_uint_dtype(value: u64) -> DataType {
+    if value <= u8::MAX as u64 {
+        DataType::UInt8
+    } else if value <= u16::MAX as u64 {
+        DataType::UInt16
+    } else if value <= u32::MAX as u64 {
+        DataType::UInt32
+    } else {
+        DataType::UInt64
+    }
+}
+
 impl SparseTensorArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         match dtype {
@@ -1678,11 +1690,14 @@ impl SparseTensorArray {
                         shape,
                     )));
                 };
-                let values_array =
-                    va.cast(&DataType::List(Box::new(inner_dtype.as_ref().clone())))?;
+
+                let largest_index = shape.iter().product::<u64>() - 1;
+                let indices_minimal_inner_dtype = minimal_uint_dtype(largest_index);
+                let values_array = va.cast(&DataType::List(Box::new(inner_dtype.as_ref().clone())))?;
+                let indices_array = ia.cast(&DataType::List(Box::new(indices_minimal_inner_dtype)))?;
                 let struct_array = StructArray::new(
                     Field::new(self.name(), dtype.to_physical()),
-                    vec![values_array, ia.clone().into_series()],
+                    vec![values_array, indices_array],
                     va.validity().cloned(),
                 );
                 let sparse_tensor_array = FixedShapeSparseTensorArray::new(
@@ -1760,6 +1775,7 @@ impl FixedShapeSparseTensorArray {
 
                 let values_arr =
                     va.cast(&DataType::List(Box::new(inner_dtype.as_ref().clone())))?;
+                let indices_arr = ia.cast(&DataType::List(Box::new(DataType::UInt64)))?;
 
                 // List -> Struct
                 let shape_offsets = arrow2::offset::OffsetsBuffer::try_from(shape_offsets)?;
@@ -1778,7 +1794,7 @@ impl FixedShapeSparseTensorArray {
                     Field::new(self.name(), physical_type),
                     vec![
                         values_arr,
-                        ia.clone().into_series(),
+                        indices_arr,
                         shapes_array.into_series(),
                     ],
                     validity.cloned(),
