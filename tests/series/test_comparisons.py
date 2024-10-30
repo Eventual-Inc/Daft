@@ -11,24 +11,26 @@ import pytz
 from daft import DataType, Series
 
 arrow_int_types = [pa.int8(), pa.uint8(), pa.int16(), pa.uint16(), pa.int32(), pa.uint32(), pa.int64(), pa.uint64()]
+arrow_decimal_types = [pa.decimal128(4, 0), pa.decimal128(5, 1)]
 arrow_string_types = [pa.string(), pa.large_string()]
 arrow_float_types = [pa.float32(), pa.float64()]
 arrow_binary_types = [pa.binary(), pa.large_binary()]
+arrow_number_types = arrow_int_types + arrow_decimal_types + arrow_float_types
 
 
-VALID_INT_STRING_COMPARISONS = list(itertools.product(arrow_int_types, repeat=2)) + list(
+VALID_INT_STRING_COMPARISONS = list(itertools.product(arrow_int_types + arrow_decimal_types, repeat=2)) + list(
     itertools.product(arrow_string_types, repeat=2)
 )
 
 
 @pytest.mark.parametrize("l_dtype, r_dtype", VALID_INT_STRING_COMPARISONS)
 def test_comparisons_int_and_str(l_dtype, r_dtype) -> None:
-    l_arrow = pa.array([1, 2, 3, None, 5, None])
-    r_arrow = pa.array([1, 3, 1, 5, None, None])
+    l_arrow = pa.array([1, 2, 3, None, 5, None], type=l_dtype)
+    r_arrow = pa.array([1, 3, 1, 5, None, None], type=r_dtype)
     # eq, lt, gt, None, None, None
 
-    left = Series.from_arrow(l_arrow.cast(l_dtype))
-    right = Series.from_arrow(r_arrow.cast(r_dtype))
+    left = Series.from_arrow(l_arrow)
+    right = Series.from_arrow(r_arrow)
     lt = (left < right).to_pylist()
     assert lt == [False, True, False, None, None, None]
 
@@ -50,12 +52,12 @@ def test_comparisons_int_and_str(l_dtype, r_dtype) -> None:
 
 @pytest.mark.parametrize("l_dtype, r_dtype", VALID_INT_STRING_COMPARISONS)
 def test_comparisons_int_and_str_left_scalar(l_dtype, r_dtype) -> None:
-    l_arrow = pa.array([2])
-    r_arrow = pa.array([1, 2, 3, None])
+    l_arrow = pa.array([2], type=l_dtype)
+    r_arrow = pa.array([1, 2, 3, None], type=r_dtype)
     # gt, eq, lt
 
-    left = Series.from_arrow(l_arrow.cast(l_dtype))
-    right = Series.from_arrow(r_arrow.cast(r_dtype))
+    left = Series.from_arrow(l_arrow)
+    right = Series.from_arrow(r_arrow)
 
     lt = (left < right).to_pylist()
     assert lt == [False, False, True, None]
@@ -78,12 +80,12 @@ def test_comparisons_int_and_str_left_scalar(l_dtype, r_dtype) -> None:
 
 @pytest.mark.parametrize("l_dtype, r_dtype", VALID_INT_STRING_COMPARISONS)
 def test_comparisons_int_and_str_right_scalar(l_dtype, r_dtype) -> None:
-    l_arrow = pa.array([1, 2, 3, None, 5, None])
-    r_arrow = pa.array([2])
+    l_arrow = pa.array([1, 2, 3, None, 5, None], type=l_dtype)
+    r_arrow = pa.array([2], type=r_dtype)
     # lt, eq, gt, None, gt, None
 
-    left = Series.from_arrow(l_arrow.cast(l_dtype))
-    right = Series.from_arrow(r_arrow.cast(r_dtype))
+    left = Series.from_arrow(l_arrow)
+    right = Series.from_arrow(r_arrow)
     lt = (left < right).to_pylist()
     assert lt == [True, False, False, None, False, None]
 
@@ -105,11 +107,11 @@ def test_comparisons_int_and_str_right_scalar(l_dtype, r_dtype) -> None:
 
 @pytest.mark.parametrize("l_dtype, r_dtype", VALID_INT_STRING_COMPARISONS)
 def test_comparisons_int_and_str_right_null_scalar(l_dtype, r_dtype) -> None:
-    l_arrow = pa.array([1, 2, 3, None, 5, None])
+    l_arrow = pa.array([1, 2, 3, None, 5, None], type=l_dtype)
     r_arrow = pa.array([None], type=r_dtype)
     # lt, eq, gt, None, gt, None
 
-    left = Series.from_arrow(l_arrow.cast(l_dtype))
+    left = Series.from_arrow(l_arrow)
     right = Series.from_arrow(r_arrow)
     lt = (left < right).to_pylist()
     assert lt == [None, None, None, None, None, None]
@@ -130,14 +132,16 @@ def test_comparisons_int_and_str_right_null_scalar(l_dtype, r_dtype) -> None:
     assert gt == [None, None, None, None, None, None]
 
 
-@pytest.mark.parametrize("l_dtype, r_dtype", itertools.product(arrow_int_types + arrow_float_types, repeat=2))
+@pytest.mark.parametrize(
+    "l_dtype, r_dtype", itertools.product(arrow_int_types + arrow_float_types + arrow_decimal_types, repeat=2)
+)
 def test_comparisons_int_and_float(l_dtype, r_dtype) -> None:
-    l_arrow = pa.array([1, 2, 3, None, 5, None])
-    r_arrow = pa.array([1, 3, 1, 5, None, None])
+    l_arrow = pa.array([1, 2, 3, None, 5, None], type=l_dtype)
+    r_arrow = pa.array([1, 3, 1, 5, None, None], type=r_dtype)
     # eq, lt, gt, None, None, None
 
-    left = Series.from_arrow(l_arrow.cast(l_dtype))
-    right = Series.from_arrow(r_arrow.cast(r_dtype))
+    left = Series.from_arrow(l_arrow)
+    right = Series.from_arrow(r_arrow)
     lt = (left < right).to_pylist()
     assert lt == [False, True, False, None, None, None]
 
@@ -157,14 +161,16 @@ def test_comparisons_int_and_float(l_dtype, r_dtype) -> None:
     assert gt == [False, False, True, None, None, None]
 
 
-@pytest.mark.parametrize("l_dtype, r_dtype", itertools.product(arrow_int_types + arrow_float_types, repeat=2))
+@pytest.mark.parametrize(
+    "l_dtype, r_dtype", itertools.product(arrow_int_types + arrow_float_types + arrow_decimal_types, repeat=2)
+)
 def test_comparisons_int_and_float_right_scalar(l_dtype, r_dtype) -> None:
-    l_arrow = pa.array([1, 2, 3, None, 5, None])
-    r_arrow = pa.array([2])
+    l_arrow = pa.array([1, 2, 3, None, 5, None], type=l_dtype)
+    r_arrow = pa.array([2], type=r_dtype)
     # lt, eq, gt, None, gt, None
 
-    left = Series.from_arrow(l_arrow.cast(l_dtype))
-    right = Series.from_arrow(r_arrow.cast(r_dtype))
+    left = Series.from_arrow(l_arrow)
+    right = Series.from_arrow(r_arrow)
     lt = (left < right).to_pylist()
     assert lt == [True, False, False, None, False, None]
 
@@ -184,13 +190,15 @@ def test_comparisons_int_and_float_right_scalar(l_dtype, r_dtype) -> None:
     assert gt == [False, False, True, None, True, None]
 
 
-@pytest.mark.parametrize("l_dtype, r_dtype", itertools.product(arrow_int_types + arrow_float_types, repeat=2))
+@pytest.mark.parametrize(
+    "l_dtype, r_dtype", itertools.product(arrow_int_types + arrow_float_types + arrow_decimal_types, repeat=2)
+)
 def test_comparisons_int_and_float_right_null_scalar(l_dtype, r_dtype) -> None:
-    l_arrow = pa.array([1, 2, 3, None, 5, None])
+    l_arrow = pa.array([1, 2, 3, None, 5, None], type=l_dtype)
     r_arrow = pa.array([None], type=r_dtype)
     # lt, eq, gt, None, gt, None
 
-    left = Series.from_arrow(l_arrow.cast(l_dtype))
+    left = Series.from_arrow(l_arrow)
     right = Series.from_arrow(r_arrow)
     lt = (left < right).to_pylist()
     assert lt == [None, None, None, None, None, None]

@@ -9,13 +9,25 @@ import pytest
 from daft import DataType, Series
 
 arrow_int_types = [pa.int8(), pa.uint8(), pa.int16(), pa.uint16(), pa.int32(), pa.uint32(), pa.int64(), pa.uint64()]
-arrow_decimal_types = [pa.decimal128(10, 4), pa.decimal128(8, 5)]
+arrow_decimal_types = [pa.decimal128(4, 0), pa.decimal128(5, 1)]
 arrow_float_types = [pa.float32(), pa.float64()]
-arrow_number_types = arrow_decimal_types  # TODO(sammy) DO NOT MERGE - restore to all numbers
+arrow_number_types = arrow_int_types + arrow_decimal_types + arrow_float_types
 arrow_string_types = [pa.string(), pa.large_string()]
 
 
-@pytest.mark.parametrize("l_dtype, r_dtype", itertools.product(arrow_number_types, repeat=2))
+def arrow_number_combinations():
+    for left in arrow_number_types:
+        for right in arrow_number_types:
+            # we can't perform all ops on decimal and 64 bit ints
+            if pa.types.is_decimal(left) and (pa.types.is_int64(right) or pa.types.is_uint64(right)):
+                continue
+            if pa.types.is_decimal(right) and (pa.types.is_int64(left) or pa.types.is_uint64(left)):
+                continue
+
+            yield (left, right)
+
+
+@pytest.mark.parametrize("l_dtype, r_dtype", arrow_number_combinations())
 def test_arithmetic_numbers_array(l_dtype, r_dtype) -> None:
     l_arrow = pa.array([1, 2, 3, None, 5, None], type=l_dtype)
     r_arrow = pa.array([1, 4, 1, 5, None, None], type=r_dtype)
@@ -49,7 +61,7 @@ def test_arithmetic_numbers_array(l_dtype, r_dtype) -> None:
         assert mod.to_pylist() == [0, 2, 0, None, None, None]
 
 
-@pytest.mark.parametrize("l_dtype, r_dtype", itertools.product(arrow_number_types, repeat=2))
+@pytest.mark.parametrize("l_dtype, r_dtype", arrow_number_combinations())
 def test_arithmetic_numbers_left_scalar(l_dtype, r_dtype) -> None:
     l_arrow = pa.array([1], type=l_dtype)
     r_arrow = pa.array([1, 4, 1, 5, None, None], type=r_dtype)
@@ -84,7 +96,7 @@ def test_arithmetic_numbers_left_scalar(l_dtype, r_dtype) -> None:
         assert mod.to_pylist() == [0, 1, 0, 1, None, None]
 
 
-@pytest.mark.parametrize("l_dtype, r_dtype", itertools.product(arrow_number_types, repeat=2))
+@pytest.mark.parametrize("l_dtype, r_dtype", arrow_number_combinations())
 def test_arithmetic_numbers_right_scalar(l_dtype, r_dtype) -> None:
     l_arrow = pa.array([1, 2, 3, None, 5, None], type=l_dtype)
     r_arrow = pa.array([1], type=r_dtype)
@@ -119,7 +131,7 @@ def test_arithmetic_numbers_right_scalar(l_dtype, r_dtype) -> None:
         assert mod.to_pylist() == [0, 0, 0, None, 0, None]
 
 
-@pytest.mark.parametrize("l_dtype, r_dtype", itertools.product(arrow_number_types, repeat=2))
+@pytest.mark.parametrize("l_dtype, r_dtype", arrow_number_combinations())
 def test_arithmetic_numbers_null_scalar(l_dtype, r_dtype) -> None:
     l_arrow = pa.array([1, 2, 3, None, 5, None], type=l_dtype)
     r_arrow = pa.array([None], type=r_dtype)
