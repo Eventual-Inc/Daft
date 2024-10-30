@@ -11,7 +11,7 @@ import pytz
 from daft import DataType, Series
 
 arrow_int_types = [pa.int8(), pa.uint8(), pa.int16(), pa.uint16(), pa.int32(), pa.uint32(), pa.int64(), pa.uint64()]
-arrow_decimal_types = [pa.decimal128(4, 0), pa.decimal128(5, 1)]
+arrow_decimal_types = [pa.decimal128(20, 5), pa.decimal128(15, 9)]
 arrow_string_types = [pa.string(), pa.large_string()]
 arrow_float_types = [pa.float32(), pa.float64()]
 arrow_binary_types = [pa.binary(), pa.large_binary()]
@@ -23,10 +23,16 @@ VALID_INT_STRING_COMPARISONS = list(itertools.product(arrow_int_types + arrow_de
 )
 
 
+def make_array(data: list, type=None) -> pa.array:
+    if type is not None and (pa.types.is_string(type) or pa.types.is_large_string(type)):
+        data = [str(x) if x is not None else None for x in data]
+    return pa.array(data, type=type)
+
+
 @pytest.mark.parametrize("l_dtype, r_dtype", VALID_INT_STRING_COMPARISONS)
 def test_comparisons_int_and_str(l_dtype, r_dtype) -> None:
-    l_arrow = pa.array([1, 2, 3, None, 5, None], type=l_dtype)
-    r_arrow = pa.array([1, 3, 1, 5, None, None], type=r_dtype)
+    l_arrow = make_array([1, 2, 3, None, 5, None], type=l_dtype)
+    r_arrow = make_array([1, 3, 1, 5, None, None], type=r_dtype)
     # eq, lt, gt, None, None, None
 
     left = Series.from_arrow(l_arrow)
@@ -52,8 +58,8 @@ def test_comparisons_int_and_str(l_dtype, r_dtype) -> None:
 
 @pytest.mark.parametrize("l_dtype, r_dtype", VALID_INT_STRING_COMPARISONS)
 def test_comparisons_int_and_str_left_scalar(l_dtype, r_dtype) -> None:
-    l_arrow = pa.array([2], type=l_dtype)
-    r_arrow = pa.array([1, 2, 3, None], type=r_dtype)
+    l_arrow = make_array([2], type=l_dtype)
+    r_arrow = make_array([1, 2, 3, None], type=r_dtype)
     # gt, eq, lt
 
     left = Series.from_arrow(l_arrow)
@@ -80,8 +86,8 @@ def test_comparisons_int_and_str_left_scalar(l_dtype, r_dtype) -> None:
 
 @pytest.mark.parametrize("l_dtype, r_dtype", VALID_INT_STRING_COMPARISONS)
 def test_comparisons_int_and_str_right_scalar(l_dtype, r_dtype) -> None:
-    l_arrow = pa.array([1, 2, 3, None, 5, None], type=l_dtype)
-    r_arrow = pa.array([2], type=r_dtype)
+    l_arrow = make_array([1, 2, 3, None, 5, None], type=l_dtype)
+    r_arrow = make_array([2], type=r_dtype)
     # lt, eq, gt, None, gt, None
 
     left = Series.from_arrow(l_arrow)
@@ -107,8 +113,8 @@ def test_comparisons_int_and_str_right_scalar(l_dtype, r_dtype) -> None:
 
 @pytest.mark.parametrize("l_dtype, r_dtype", VALID_INT_STRING_COMPARISONS)
 def test_comparisons_int_and_str_right_null_scalar(l_dtype, r_dtype) -> None:
-    l_arrow = pa.array([1, 2, 3, None, 5, None], type=l_dtype)
-    r_arrow = pa.array([None], type=r_dtype)
+    l_arrow = make_array([1, 2, 3, None, 5, None], type=l_dtype)
+    r_arrow = make_array([None], type=r_dtype)
     # lt, eq, gt, None, gt, None
 
     left = Series.from_arrow(l_arrow)
@@ -136,8 +142,8 @@ def test_comparisons_int_and_str_right_null_scalar(l_dtype, r_dtype) -> None:
     "l_dtype, r_dtype", itertools.product(arrow_int_types + arrow_float_types + arrow_decimal_types, repeat=2)
 )
 def test_comparisons_int_and_float(l_dtype, r_dtype) -> None:
-    l_arrow = pa.array([1, 2, 3, None, 5, None], type=l_dtype)
-    r_arrow = pa.array([1, 3, 1, 5, None, None], type=r_dtype)
+    l_arrow = make_array([1, 2, 3, None, 5, None], type=l_dtype)
+    r_arrow = make_array([1, 3, 1, 5, None, None], type=r_dtype)
     # eq, lt, gt, None, None, None
 
     left = Series.from_arrow(l_arrow)
@@ -165,8 +171,8 @@ def test_comparisons_int_and_float(l_dtype, r_dtype) -> None:
     "l_dtype, r_dtype", itertools.product(arrow_int_types + arrow_float_types + arrow_decimal_types, repeat=2)
 )
 def test_comparisons_int_and_float_right_scalar(l_dtype, r_dtype) -> None:
-    l_arrow = pa.array([1, 2, 3, None, 5, None], type=l_dtype)
-    r_arrow = pa.array([2], type=r_dtype)
+    l_arrow = make_array([1, 2, 3, None, 5, None], type=l_dtype)
+    r_arrow = make_array([2], type=r_dtype)
     # lt, eq, gt, None, gt, None
 
     left = Series.from_arrow(l_arrow)
@@ -194,8 +200,8 @@ def test_comparisons_int_and_float_right_scalar(l_dtype, r_dtype) -> None:
     "l_dtype, r_dtype", itertools.product(arrow_int_types + arrow_float_types + arrow_decimal_types, repeat=2)
 )
 def test_comparisons_int_and_float_right_null_scalar(l_dtype, r_dtype) -> None:
-    l_arrow = pa.array([1, 2, 3, None, 5, None], type=l_dtype)
-    r_arrow = pa.array([None], type=r_dtype)
+    l_arrow = make_array([1, 2, 3, None, 5, None], type=l_dtype)
+    r_arrow = make_array([None], type=r_dtype)
     # lt, eq, gt, None, gt, None
 
     left = Series.from_arrow(l_arrow)
@@ -220,8 +226,8 @@ def test_comparisons_int_and_float_right_null_scalar(l_dtype, r_dtype) -> None:
 
 
 def test_comparisons_boolean_array() -> None:
-    l_arrow = pa.array([False, False, None, True, None])
-    r_arrow = pa.array([True, False, True, None, None])
+    l_arrow = make_array([False, False, None, True, None])
+    r_arrow = make_array([True, False, True, None, None])
     # lt, eq, lt, None
 
     left = Series.from_arrow(l_arrow)
@@ -256,8 +262,8 @@ def test_comparisons_boolean_array() -> None:
 
 
 def test_comparisons_boolean_array_right_scalar() -> None:
-    l_arrow = pa.array([False, True, None])
-    r_arrow = pa.array([True])
+    l_arrow = make_array([False, True, None])
+    r_arrow = make_array([True])
 
     left = Series.from_arrow(l_arrow)
     right = Series.from_arrow(r_arrow)
@@ -289,7 +295,7 @@ def test_comparisons_boolean_array_right_scalar() -> None:
     _xor = (left ^ right).to_pylist()
     assert _xor == [True, False, None]
 
-    r_arrow = pa.array([False])
+    r_arrow = make_array([False])
     right = Series.from_arrow(r_arrow)
 
     lt = (left < right).to_pylist()
@@ -319,7 +325,7 @@ def test_comparisons_boolean_array_right_scalar() -> None:
     _xor = (left ^ right).to_pylist()
     assert _xor == [False, True, None]
 
-    r_arrow = pa.array([None], type=pa.bool_())
+    r_arrow = make_array([None], type=pa.bool_())
     right = Series.from_arrow(r_arrow)
 
     lt = (left < right).to_pylist()
@@ -351,8 +357,8 @@ def test_comparisons_boolean_array_right_scalar() -> None:
 
 
 def test_comparisons_boolean_array_left_scalar() -> None:
-    l_arrow = pa.array([True])
-    r_arrow = pa.array([False, True, None])
+    l_arrow = make_array([True])
+    r_arrow = make_array([False, True, None])
     # lt, eq, lt, None
 
     left = Series.from_arrow(l_arrow)
@@ -387,7 +393,7 @@ def test_comparisons_boolean_array_left_scalar() -> None:
 
 
 def test_comparisons_bad_right_value() -> None:
-    l_arrow = pa.array([1, 2, 3, None, 5, None])
+    l_arrow = make_array([1, 2, 3, None, 5, None])
 
     left = Series.from_arrow(l_arrow)
     right = [1, 2, 3, None, 5, None]
@@ -421,8 +427,8 @@ def test_comparisons_bad_right_value() -> None:
 
 
 def test_boolean_array_mismatch_length() -> None:
-    l_arrow = pa.array([False, True, None, None])
-    r_arrow = pa.array([False, True, False, True, None])
+    l_arrow = make_array([False, True, None, None])
+    r_arrow = make_array([False, True, False, True, None])
 
     left = Series.from_arrow(l_arrow)
     right = Series.from_arrow(r_arrow)
@@ -456,8 +462,8 @@ def test_boolean_array_mismatch_length() -> None:
 
 
 def test_logical_ops_with_non_boolean() -> None:
-    l_arrow = pa.array([False, True, None, None])
-    r_arrow = pa.array([1, 2, 3, 4])
+    l_arrow = make_array([False, True, None, None])
+    r_arrow = make_array([1, 2, 3, 4])
 
     left = Series.from_arrow(l_arrow)
     right = Series.from_arrow(r_arrow)
@@ -510,8 +516,8 @@ def test_comparisons_dates() -> None:
 
 @pytest.mark.parametrize("l_dtype, r_dtype", itertools.product(arrow_binary_types, repeat=2))
 def test_comparisons_binary(l_dtype, r_dtype) -> None:
-    l_arrow = pa.array([b"1", b"22", b"333", None, b"55555", None])
-    r_arrow = pa.array([b"1", b"333", b"1", b"55555", None, None])
+    l_arrow = make_array([b"1", b"22", b"333", None, b"55555", None])
+    r_arrow = make_array([b"1", b"333", b"1", b"55555", None, None])
     # eq, lt, gt, None, None, None
 
     left = Series.from_arrow(l_arrow.cast(l_dtype))
@@ -537,8 +543,8 @@ def test_comparisons_binary(l_dtype, r_dtype) -> None:
 
 @pytest.mark.parametrize("l_dtype, r_dtype", itertools.product(arrow_binary_types, repeat=2))
 def test_comparisons_binary_left_scalar(l_dtype, r_dtype) -> None:
-    l_arrow = pa.array([b"22"])
-    r_arrow = pa.array([b"1", b"22", b"333", None])
+    l_arrow = make_array([b"22"])
+    r_arrow = make_array([b"1", b"22", b"333", None])
     # gt, eq, lt
 
     left = Series.from_arrow(l_arrow.cast(l_dtype))
@@ -565,8 +571,8 @@ def test_comparisons_binary_left_scalar(l_dtype, r_dtype) -> None:
 
 @pytest.mark.parametrize("l_dtype, r_dtype", itertools.product(arrow_binary_types, repeat=2))
 def test_comparisons_binary_right_scalar(l_dtype, r_dtype) -> None:
-    l_arrow = pa.array([b"1", b"22", b"333", None, b"55555", None])
-    r_arrow = pa.array([b"22"])
+    l_arrow = make_array([b"1", b"22", b"333", None, b"55555", None])
+    r_arrow = make_array([b"22"])
     # lt, eq, gt, None, gt, None
 
     left = Series.from_arrow(l_arrow.cast(l_dtype))
@@ -591,8 +597,8 @@ def test_comparisons_binary_right_scalar(l_dtype, r_dtype) -> None:
 
 
 def test_comparisons_fixed_size_binary() -> None:
-    l_arrow = pa.array([b"11111", b"22222", b"33333", None, b"12345", None], type=pa.binary(5))
-    r_arrow = pa.array([b"11111", b"33333", b"11111", b"12345", None, None], type=pa.binary(5))
+    l_arrow = make_array([b"11111", b"22222", b"33333", None, b"12345", None], type=pa.binary(5))
+    r_arrow = make_array([b"11111", b"33333", b"11111", b"12345", None, None], type=pa.binary(5))
     # eq, lt, gt, None, None, None
 
     left = Series.from_arrow(l_arrow)
@@ -617,8 +623,8 @@ def test_comparisons_fixed_size_binary() -> None:
 
 
 def test_comparisons_fixed_size_binary_left_scalar() -> None:
-    l_arrow = pa.array([b"222"], type=pa.binary(3))
-    r_arrow = pa.array([b"111", b"222", b"333", None], type=pa.binary(3))
+    l_arrow = make_array([b"222"], type=pa.binary(3))
+    r_arrow = make_array([b"111", b"222", b"333", None], type=pa.binary(3))
     # gt, eq, lt
 
     left = Series.from_arrow(l_arrow)
@@ -644,8 +650,8 @@ def test_comparisons_fixed_size_binary_left_scalar() -> None:
 
 
 def test_comparisons_fixed_size_binary_right_scalar() -> None:
-    l_arrow = pa.array([b"111", b"222", b"333", None, b"555", None], type=pa.binary(3))
-    r_arrow = pa.array([b"222"], type=pa.binary(3))
+    l_arrow = make_array([b"111", b"222", b"333", None, b"555", None], type=pa.binary(3))
+    r_arrow = make_array([b"222"], type=pa.binary(3))
     # lt, eq, gt, None, gt, None
 
     left = Series.from_arrow(l_arrow)
