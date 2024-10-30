@@ -5,12 +5,12 @@ use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{
         logical::{
-            DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
+            DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
             SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
-        BinaryArray, BooleanArray, DaftNumericType, DataType, ExtensionArray, FixedSizeBinaryArray,
-        IntervalArray, IntervalValue, NullArray, UInt64Array, Utf8Array,
+        BinaryArray, BooleanArray, DaftNumericType, DataType, Decimal128Array, ExtensionArray,
+        FixedSizeBinaryArray, IntervalArray, IntervalValue, NullArray, UInt64Array, Utf8Array,
     },
     series::Series,
     utils::display::{
