@@ -30,9 +30,6 @@ ifeq ($(IS_M1), 1)
 	CFLAGS="${CFLAGS} -I /opt/homebrew/opt/openssl/include"	\
 	LDFLAGS="${LDFLAGS} -L /opt/homebrew/opt/openssl/lib" \
 	$(VENV_BIN)/uv pip install -r requirements-dev.txt
-	# duckdb doesn't install correctly through uv on M1. it installs the wrong arch
-	pip uninstall -y duckdb
-	pip install duckdb
 else
 	$(VENV_BIN)/uv pip install -r requirements-dev.txt
 endif
