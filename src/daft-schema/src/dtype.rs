@@ -351,9 +351,23 @@ impl DataType {
                 Field::new("indices", List(Box::new(Self::UInt64))),
                 Field::new("shape", List(Box::new(Self::UInt64))),
             ]),
-            FixedShapeSparseTensor(dtype, _) => Struct(vec![
+            FixedShapeSparseTensor(dtype, shape) => Struct(vec![
                 Field::new("values", List(Box::new(*dtype.clone()))),
-                Field::new("indices", List(Box::new(Self::UInt64))),
+                {
+                    let largest_index = shape.iter().product::<u64>();
+                    let minimal_indices_dtype = {
+                        if largest_index <= u8::MAX as u64 {
+                            Self::UInt8
+                        } else if largest_index <= u16::MAX as u64 {
+                            Self::UInt16
+                        } else if largest_index <= u32::MAX as u64 {
+                            Self::UInt32
+                        } else {
+                            Self::UInt64
+                        }
+                    };
+                    Field::new("indices", List(Box::new(minimal_indices_dtype)))
+                }
             ]),
             _ => {
                 assert!(self.is_physical());
