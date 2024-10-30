@@ -10,10 +10,10 @@ use daft_plan::physical_ops::{DeltaLakeWrite, IcebergWrite, LanceWrite};
 use daft_plan::{
     logical_to_physical,
     physical_ops::{
-        ActorPoolProject, Aggregate, BroadcastJoin, Coalesce, Concat, EmptyScan, Explode,
-        FanoutByHash, FanoutRandom, Filter, Flatten, HashJoin, InMemoryScan, Limit,
-        MonotonicallyIncreasingId, Pivot, Project, ReduceMerge, Sample, Sort, SortMergeJoin, Split,
-        TabularScan, TabularWriteCsv, TabularWriteJson, TabularWriteParquet, Unpivot,
+        ActorPoolProject, Aggregate, BroadcastJoin, Concat, EmptyScan, Explode, Filter, HashJoin,
+        InMemoryScan, Limit, MonotonicallyIncreasingId, Pivot, Project, Sample, Sort,
+        SortMergeJoin, TabularScan, TabularWriteCsv, TabularWriteJson, TabularWriteParquet,
+        Unpivot,
     },
     InMemoryInfo, PhysicalPlan, PhysicalPlanRef, QueryStageOutput,
 };
@@ -262,6 +262,8 @@ fn physical_plan_to_partition_tasks(
     psets: &HashMap<String, Vec<PyObject>>,
     actor_pool_manager: &PyObject,
 ) -> PyResult<PyObject> {
+    use daft_plan::physical_ops::{ShuffleExchange, ShuffleExchangeStrategy};
+
     match physical_plan {
         PhysicalPlan::InMemoryScan(InMemoryScan {
             in_memory_info: InMemoryInfo { cache_key, .. },
@@ -481,68 +483,83 @@ fn physical_plan_to_partition_tasks(
                 ))?;
             Ok(py_iter.into())
         }
-        PhysicalPlan::Split(Split {
-            input,
-            input_num_partitions,
-            output_num_partitions,
-        }) => {
+        PhysicalPlan::ShuffleExchange(ShuffleExchange { input, strategy }) => {
             let upstream_iter =
                 physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?;
-            let py_iter = py
-                .import_bound(pyo3::intern!(py, "daft.execution.physical_plan"))?
-                .getattr(pyo3::intern!(py, "split"))?
-                .call1((upstream_iter, *input_num_partitions, *output_num_partitions))?;
-            Ok(py_iter.into())
-        }
-        PhysicalPlan::Flatten(Flatten { input }) => {
-            let upstream_iter =
-                physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?;
-            let py_iter = py
-                .import_bound(pyo3::intern!(py, "daft.execution.physical_plan"))?
-                .getattr(pyo3::intern!(py, "flatten_plan"))?
-                .call1((upstream_iter,))?;
-            Ok(py_iter.into())
-        }
-        PhysicalPlan::FanoutRandom(FanoutRandom {
-            input,
-            num_partitions,
-        }) => {
-            let upstream_iter =
-                physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?;
-            let py_iter = py
-                .import_bound(pyo3::intern!(py, "daft.execution.physical_plan"))?
-                .getattr(pyo3::intern!(py, "fanout_random"))?
-                .call1((upstream_iter, *num_partitions))?;
-            Ok(py_iter.into())
-        }
-        PhysicalPlan::FanoutByHash(FanoutByHash {
-            input,
-            num_partitions,
-            partition_by,
-        }) => {
-            let upstream_iter =
-                physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?;
-            let partition_by_pyexprs: Vec<PyExpr> = partition_by
-                .iter()
-                .map(|expr| PyExpr::from(expr.clone()))
-                .collect();
-            let py_iter = py
-                .import_bound(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
-                .getattr(pyo3::intern!(py, "split_by_hash"))?
-                .call1((upstream_iter, *num_partitions, partition_by_pyexprs))?;
-            Ok(py_iter.into())
-        }
-        PhysicalPlan::FanoutByRange(_) => unimplemented!(
-            "FanoutByRange not implemented, since only use case (sorting) doesn't need it yet."
-        ),
-        PhysicalPlan::ReduceMerge(ReduceMerge { input }) => {
-            let upstream_iter =
-                physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?;
-            let py_iter = py
-                .import_bound(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
-                .getattr(pyo3::intern!(py, "reduce_merge"))?
-                .call1((upstream_iter,))?;
-            Ok(py_iter.into())
+            let input_num_partitions = input.clustering_spec().num_partitions();
+            match strategy {
+                ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce { target_spec } => {
+                    let mapped = match target_spec.as_ref() {
+                        daft_plan::ClusteringSpec::Hash(hash_clustering_config) => {
+                            let partition_by_pyexprs: Vec<PyExpr> = hash_clustering_config
+                                .by
+                                .iter()
+                                .map(|expr| PyExpr::from(expr.clone()))
+                                .collect();
+                            py.import_bound(pyo3::intern!(
+                                py,
+                                "daft.execution.rust_physical_plan_shim"
+                            ))?
+                            .getattr(pyo3::intern!(py, "fanout_by_hash"))?
+                            .call1((
+                                upstream_iter,
+                                hash_clustering_config.num_partitions,
+                                partition_by_pyexprs,
+                            ))?
+                        }
+                        daft_plan::ClusteringSpec::Random(random_clustering_config) => py
+                            .import_bound(pyo3::intern!(py, "daft.execution.physical_plan"))?
+                            .getattr(pyo3::intern!(py, "fanout_random"))?
+                            .call1((upstream_iter, random_clustering_config.num_partitions()))?,
+                        daft_plan::ClusteringSpec::Range(_) => {
+                            unimplemented!("FanoutByRange not implemented, since only use case (sorting) doesn't need it yet.");
+                        }
+                        daft_plan::ClusteringSpec::Unknown(_) => {
+                            unreachable!("Cannot use NaiveFullyMaterializingMapReduce ShuffleExchange to map to an Unknown ClusteringSpec");
+                        }
+                    };
+                    let reduced = py
+                        .import_bound(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
+                        .getattr(pyo3::intern!(py, "reduce_merge"))?
+                        .call1((mapped,))?;
+                    Ok(reduced.into())
+                }
+                ShuffleExchangeStrategy::SplitOrCoalesceToTargetNum {
+                    target_num_partitions,
+                } => {
+                    match target_num_partitions.cmp(&input_num_partitions) {
+                        std::cmp::Ordering::Equal => Ok(upstream_iter),
+                        std::cmp::Ordering::Greater => {
+                            // Split if more outputs than inputs
+                            let split = py
+                                .import_bound(pyo3::intern!(py, "daft.execution.physical_plan"))?
+                                .getattr(pyo3::intern!(py, "split"))?
+                                .call1((
+                                    upstream_iter,
+                                    input_num_partitions,
+                                    *target_num_partitions,
+                                ))?;
+                            let flattened = py
+                                .import_bound(pyo3::intern!(py, "daft.execution.physical_plan"))?
+                                .getattr(pyo3::intern!(py, "flatten_plan"))?
+                                .call1((split,))?;
+                            Ok(flattened.into())
+                        }
+                        std::cmp::Ordering::Less => {
+                            // Coalesce if fewer outputs than inputs
+                            let coalesced = py
+                                .import_bound(pyo3::intern!(py, "daft.execution.physical_plan"))?
+                                .getattr(pyo3::intern!(py, "coalesce"))?
+                                .call1((
+                                    upstream_iter,
+                                    input_num_partitions,
+                                    *target_num_partitions,
+                                ))?;
+                            Ok(coalesced.into())
+                        }
+                    }
+                }
+            }
         }
         PhysicalPlan::Aggregate(Aggregate {
             aggregations,
@@ -591,19 +608,6 @@ fn physical_plan_to_partition_tasks(
                     value_column_pyexpr,
                     names.clone(),
                 ))?;
-            Ok(py_iter.into())
-        }
-        PhysicalPlan::Coalesce(Coalesce {
-            input,
-            num_from,
-            num_to,
-        }) => {
-            let upstream_iter =
-                physical_plan_to_partition_tasks(input, py, psets, actor_pool_manager)?;
-            let py_iter = py
-                .import_bound(pyo3::intern!(py, "daft.execution.physical_plan"))?
-                .getattr(pyo3::intern!(py, "coalesce"))?
-                .call1((upstream_iter, *num_from, *num_to))?;
             Ok(py_iter.into())
         }
         PhysicalPlan::Concat(Concat { other, input }) => {

@@ -132,7 +132,7 @@ impl IntermediateOperator for AntiSemiProbeOperator {
         "AntiSemiProbeOperator"
     }
 
-    fn make_state(&self) -> Box<dyn DynIntermediateOpState> {
-        Box::new(AntiSemiProbeState::Building)
+    fn make_state(&self) -> DaftResult<Box<dyn DynIntermediateOpState>> {
+        Ok(Box::new(AntiSemiProbeState::Building))
     }
 }

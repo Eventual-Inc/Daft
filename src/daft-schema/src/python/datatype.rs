@@ -349,6 +349,10 @@ impl PyDataType {
         Ok(self.dtype.is_numeric())
     }
 
+    pub fn is_integer(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_integer())
+    }
+
     pub fn is_image(&self) -> PyResult<bool> {
         Ok(self.dtype.is_image())
     }
