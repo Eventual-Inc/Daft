@@ -34,7 +34,6 @@ where
         R: DaftNumericType,
         F: Fn(T::Native, R::Native) -> T::Native + Copy,
     {
-        assert_eq!(self.data_type(), rhs.data_type());
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let lhs_arr: &PrimitiveArray<T::Native> =
