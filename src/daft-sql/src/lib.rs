@@ -154,9 +154,10 @@ mod tests {
     #[case::orderby_multi("select * from tbl1 order by i32 desc, f32 asc")]
     #[case::whenthen("select case when i32 = 1 then 'a' else 'b' end from tbl1")]
     #[case::globalagg("select max(i32) from tbl1")]
+    #[case::cte("with cte as (select * from tbl1) select * from cte")]
     fn test_compiles(mut planner: SQLPlanner, #[case] query: &str) -> SQLPlannerResult<()> {
         let plan = planner.plan_sql(query);
-        assert!(plan.is_ok(), "query: {query}\nerror: {plan:?}");
+        assert!(&plan.is_ok(), "query: {query}\nerror: {plan:?}");
 
         Ok(())
     }
