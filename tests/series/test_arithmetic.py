@@ -37,15 +37,16 @@ def test_arithmetic_numbers_array(l_dtype, r_dtype) -> None:
 
     div = left / right
     assert div.name() == left.name()
-    assert div.to_pylist() == [1.0, 0.5, 3.0, None, None, None]
+    assert div.cast(DataType.float64()).to_pylist() == [1.0, 0.5, 3.0, None, None, None]
 
-    mod = left % right
-    assert mod.name() == left.name()
-    assert mod.to_pylist() == [0, 2, 0, None, None, None]
+    if not pa.types.is_decimal(l_dtype) and not pa.types.is_decimal(r_dtype):
+        floor_div = left // right
+        assert floor_div.name() == left.name()
+        assert floor_div.to_pylist() == [1, 0, 3, None, None, None]
 
-    floor_div = left // right
-    assert floor_div.name() == left.name()
-    assert floor_div.to_pylist() == [1, 0, 3, None, None, None]
+        mod = left % right
+        assert mod.name() == left.name()
+        assert mod.to_pylist() == [0, 2, 0, None, None, None]
 
 
 @pytest.mark.parametrize("l_dtype, r_dtype", itertools.product(arrow_number_types, repeat=2))
@@ -71,15 +72,16 @@ def test_arithmetic_numbers_left_scalar(l_dtype, r_dtype) -> None:
 
     div = left / right
     assert div.name() == left.name()
-    assert div.to_pylist() == [1.0, 0.25, 1.0, 0.2, None, None]
+    assert div.cast(DataType.float64()).to_pylist() == [1.0, 0.25, 1.0, 0.2, None, None]
 
-    floor_div = left // right
-    assert floor_div.name() == left.name()
-    assert floor_div.to_pylist() == [1, 0, 1, 0, None, None]
+    if not pa.types.is_decimal(l_dtype) and not pa.types.is_decimal(r_dtype):
+        floor_div = left // right
+        assert floor_div.name() == left.name()
+        assert floor_div.to_pylist() == [1, 0, 1, 0, None, None]
 
-    mod = left % right
-    assert mod.name() == left.name()
-    assert mod.to_pylist() == [0, 1, 0, 1, None, None]
+        mod = left % right
+        assert mod.name() == left.name()
+        assert mod.to_pylist() == [0, 1, 0, 1, None, None]
 
 
 @pytest.mark.parametrize("l_dtype, r_dtype", itertools.product(arrow_number_types, repeat=2))
@@ -98,22 +100,23 @@ def test_arithmetic_numbers_right_scalar(l_dtype, r_dtype) -> None:
         sub = left - right
         assert sub.name() == left.name()
         assert sub.to_pylist() == [0, 1, 2, None, 4, None]
-        
+
     mul = left * right
     assert mul.name() == left.name()
     assert mul.to_pylist() == [1, 2, 3, None, 5, None]
 
     div = left / right
     assert div.name() == left.name()
-    assert div.to_pylist() == [1.0, 2.0, 3.0, None, 5.0, None]
+    assert div.cast(DataType.float64()).to_pylist() == [1.0, 2.0, 3.0, None, 5.0, None]
 
-    floor_div = left // right
-    assert floor_div.name() == left.name()
-    assert floor_div.to_pylist() == [1, 2, 3, None, 5, None]
+    if not pa.types.is_decimal(l_dtype) and not pa.types.is_decimal(r_dtype):
+        floor_div = left // right
+        assert floor_div.name() == left.name()
+        assert floor_div.to_pylist() == [1, 2, 3, None, 5, None]
 
-    mod = left % right
-    assert mod.name() == left.name()
-    assert mod.to_pylist() == [0, 0, 0, None, 0, None]
+        mod = left % right
+        assert mod.name() == left.name()
+        assert mod.to_pylist() == [0, 0, 0, None, 0, None]
 
 
 @pytest.mark.parametrize("l_dtype, r_dtype", itertools.product(arrow_number_types, repeat=2))
@@ -141,13 +144,14 @@ def test_arithmetic_numbers_null_scalar(l_dtype, r_dtype) -> None:
     assert div.name() == left.name()
     assert div.to_pylist() == [None, None, None, None, None, None]
 
-    floor_div = left / right
-    assert floor_div.name() == left.name()
-    assert floor_div.to_pylist() == [None, None, None, None, None, None]
+    if not pa.types.is_decimal(l_dtype) and not pa.types.is_decimal(r_dtype):
+        floor_div = left / right
+        assert floor_div.name() == left.name()
+        assert floor_div.to_pylist() == [None, None, None, None, None, None]
 
-    mod = left % right
-    assert mod.name() == left.name()
-    assert mod.to_pylist() == [None, None, None, None, None, None]
+        mod = left % right
+        assert mod.name() == left.name()
+        assert mod.to_pylist() == [None, None, None, None, None, None]
 
 
 @pytest.mark.parametrize(

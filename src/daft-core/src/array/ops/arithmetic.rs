@@ -111,24 +111,16 @@ impl Mul for &Decimal128Array {
     type Output = DaftResult<Decimal128Array>;
     fn mul(self, rhs: Self) -> Self::Output {
         assert_eq!(self.data_type(), rhs.data_type());
+
+        let DataType::Decimal128(p, s) = self.data_type() else {
+            unreachable!("This should always be a Decimal128")
+        };
+        let scale = 10i128.pow(*s as u32);
         arithmetic_helper(
             self,
             rhs,
             arrow2::compute::arithmetics::decimal::mul,
-            |l, r| l * r,
-        )
-    }
-}
-
-impl Div for &Decimal128Array {
-    type Output = DaftResult<Decimal128Array>;
-    fn div(self, rhs: Self) -> Self::Output {
-        assert_eq!(self.data_type(), rhs.data_type());
-        arithmetic_helper(
-            self,
-            rhs,
-            arrow2::compute::arithmetics::decimal::div,
-            |l, r| l / r,
+            |l, r| (l * r) / scale,
         )
     }
 }
@@ -279,6 +271,69 @@ where
                                 PrimitiveArray::from_trusted_len_iter_unchecked(values_iter)
                             };
                             DataArray::from((self.name(), Box::new(arrow_array)))
+                        }
+                    })
+                }
+                (a, b) => Err(DaftError::ValueError(format!(
+                    "Cannot apply operation on arrays of different lengths: {a} vs {b}"
+                ))),
+            }
+        }
+    }
+}
+
+impl Div for &Decimal128Array {
+    type Output = DaftResult<Decimal128Array>;
+    fn div(self, rhs: Self) -> Self::Output {
+        assert_eq!(self.data_type(), rhs.data_type());
+        let DataType::Decimal128(p, s) = self.data_type() else {
+            unreachable!("This should always be a Decimal128")
+        };
+        let scale = 10i128.pow(*s as u32);
+
+        if rhs.data().null_count() == 0 {
+            arithmetic_helper(
+                self,
+                rhs,
+                arrow2::compute::arithmetics::decimal::div,
+                |l, r| ((l * scale) / r),
+            )
+        } else {
+            match (self.len(), rhs.len()) {
+                (a, b) if a == b => {
+                    let values = self
+                        .as_arrow()
+                        .iter()
+                        .zip(rhs.as_arrow().iter())
+                        .map(|(l, r)| match (l, r) {
+                            (None, _) => None,
+                            (_, None) => None,
+                            (Some(l), Some(r)) => Some((l * scale) / r),
+                        });
+                    Ok(Decimal128Array::from_iter(self.field.clone(), values))
+                }
+                // broadcast right path
+                (_, 1) => {
+                    let opt_rhs = rhs.get(0);
+                    match opt_rhs {
+                        None => Ok(DataArray::full_null(
+                            self.name(),
+                            self.data_type(),
+                            self.len(),
+                        )),
+                        Some(rhs) => self.apply(|lhs| ((lhs * scale) / rhs)),
+                    }
+                }
+                (1, _) => {
+                    let opt_lhs = self.get(0);
+                    Ok(match opt_lhs {
+                        None => DataArray::full_null(rhs.name(), rhs.data_type(), rhs.len()),
+                        Some(lhs) => {
+                            let values_iter = rhs
+                                .as_arrow()
+                                .iter()
+                                .map(|v| v.map(|v| ((lhs * scale) / *v)));
+                            Decimal128Array::from_iter(self.field.clone(), values_iter)
                         }
                     })
                 }

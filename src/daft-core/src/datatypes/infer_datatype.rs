@@ -283,6 +283,30 @@ impl<'a> Div for InferDataType<'a> {
         match (&self.0, &other.0) {
             #[cfg(feature = "python")]
             (DataType::Python, _) | (_, DataType::Python) => Ok(DataType::Python),
+
+            (DataType::Decimal128(p1, s1), DataType::Decimal128(_, s2)) => {
+                let s1 = *s1 as i64;
+                let s2 = *s2 as i64;
+                let p1 = *p1 as i64;
+
+                let s_prime = s1 - s2 + std::cmp::max(6, p1+s2+1);
+                let p_prime = p1 - s1 + s_prime;
+                if !(1..=34).contains(&p_prime) {
+                    Err(DaftError::TypeError(
+                        format!("Cannot infer supertypes for divide on types: {}, {} result precision: {p_prime} exceed bounds of [1, 34]", self, other)
+                    ))
+                } else if s_prime > 34 || s_prime < 0{
+                    Err(DaftError::TypeError(
+                        format!("Cannot infer supertypes for divide on types: {}, {} result scale: {s_prime} exceed bounds of [0, 34]", self, other)
+                    ))
+                } else if s_prime > p_prime {
+                    Err(DaftError::TypeError(
+                        format!("Cannot infer supertypes for divide on types: {}, {} result scale: {s_prime} exceed precision {p_prime}", self, other)
+                    ))
+                } else {
+                    Ok(DataType::Decimal128(p_prime as usize, s_prime as usize))
+                }
+            }
             (s, o) if s.is_numeric() && o.is_numeric() => Ok(DataType::Float64),
             _ => Err(DaftError::TypeError(format!(
                 "Cannot divide types: {}, {}",
@@ -351,7 +375,7 @@ impl<'a> Rem for InferDataType<'a> {
                 #[cfg(feature = "python")]
                 (DataType::Python, _) | (_, DataType::Python) => Ok(DataType::Python),
                 _ => Err(DaftError::TypeError(format!(
-                    "Cannot modulus types: {}, {}",
+                    "Cannot modulo types: {}, {}",
                     self, other
                 ))),
             })
