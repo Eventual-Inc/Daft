@@ -8,12 +8,13 @@ logger = logging.getLogger(__name__)
 
 
 def gen_tpcds(basedir: str, scale_factor: float):
-    db = duckdb.connect()
+    db = duckdb.connect(f"{basedir}/tpcds.db")
     db.sql(f"call dsdgen(sf = {scale_factor})")
     if not os.path.exists(basedir):
         os.makedirs(basedir)
     for item in db.sql("show tables").fetchall():
         tbl = item[0]
+        print(f"Exporting {tbl} to {basedir}/{tbl}.parquet")
         db.sql(f"COPY {tbl} TO '{basedir}/{tbl}.parquet'")
 
 
