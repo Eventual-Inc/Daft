@@ -7,8 +7,8 @@ use super::as_arrow::AsArrow;
 use crate::{
     array::DataArray,
     datatypes::{
-        logical::Decimal128Array, DaftNumericType, Int16Type, Int32Type, Int64Type, Int8Type,
-        UInt16Type, UInt32Type, UInt64Type, UInt8Type, Utf8Array,
+        DaftNumericType, Decimal128Array, Int16Type, Int32Type, Int64Type, Int8Type, UInt16Type,
+        UInt32Type, UInt64Type, UInt8Type, Utf8Array,
     },
     prelude::BinaryArray,
 };
@@ -53,11 +53,7 @@ impl Decimal128Array {
                 i - remainder
             })
         });
-        let array = Box::new(arrow2::array::PrimitiveArray::from_iter(trun_value));
-        Ok(Decimal128Array::new(
-            self.field.clone(),
-            DataArray::from((self.name(), array)),
-        ))
+        Ok(Self::from_iter(self.field.clone(), trun_value))
     }
 }
 
