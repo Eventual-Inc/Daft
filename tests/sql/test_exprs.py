@@ -45,6 +45,7 @@ def test_hash_exprs():
         hash(a, seed:=0) as hash_a_seed_0,
         minhash(a, num_hashes:=10, ngram_size:= 100, seed:=10) as minhash_a,
         minhash(a, num_hashes:=10, ngram_size:= 100) as minhash_a_no_seed,
+        minhash(a, num_hashes:=10, ngram_size:= 100, seed:=10, hash_function:='xxhash') as minhash_a_xxhash,
     FROM df
     """)
         .collect()
@@ -58,6 +59,7 @@ def test_hash_exprs():
             col("a").hash(seed=0).alias("hash_a_seed_0"),
             col("a").minhash(num_hashes=10, ngram_size=100, seed=10).alias("minhash_a"),
             col("a").minhash(num_hashes=10, ngram_size=100).alias("minhash_a_no_seed"),
+            col("a").minhash(num_hashes=10, ngram_size=100, seed=10, hash_function="xxhash").alias("minhash_a_xxhash"),
         )
         .collect()
         .to_pydict()

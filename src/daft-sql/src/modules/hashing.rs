@@ -115,8 +115,11 @@ impl SQLFunction for SQLMinhash {
         match inputs {
             [input, args @ ..] => {
                 let input = planner.plan_function_arg(input)?;
-                let args: MinHashFunction =
-                    planner.plan_function_args(args, &["num_hashes", "ngram_size", "seed"], 0)?;
+                let args: MinHashFunction = planner.plan_function_args(
+                    args,
+                    &["num_hashes", "ngram_size", "seed", "hash_function"],
+                    0,
+                )?;
 
                 Ok(minhash(
                     input,
