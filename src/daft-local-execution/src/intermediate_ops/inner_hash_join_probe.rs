@@ -189,7 +189,7 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
         "InnerHashJoinProbeOperator"
     }
 
-    fn make_state(&self) -> Box<dyn DynIntermediateOpState> {
-        Box::new(InnerHashJoinProbeState::Building)
+    fn make_state(&self) -> DaftResult<Box<dyn DynIntermediateOpState>> {
+        Ok(Box::new(InnerHashJoinProbeState::Building))
     }
 }
