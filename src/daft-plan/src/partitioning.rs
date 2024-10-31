@@ -406,6 +406,10 @@ impl RandomClusteringConfig {
         Self { num_partitions }
     }
 
+    pub fn num_partitions(&self) -> usize {
+        self.num_partitions
+    }
+
     pub fn multiline_display(&self) -> Vec<String> {
         vec![format!("Num partitions = {}", self.num_partitions)]
     }

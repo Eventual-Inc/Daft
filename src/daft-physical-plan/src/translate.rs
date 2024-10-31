@@ -1,7 +1,7 @@
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use daft_core::{join::JoinStrategy, prelude::Schema};
 use daft_dsl::ExprRef;
-use daft_plan::{LogicalPlan, LogicalPlanRef, SourceInfo};
+use daft_plan::{JoinType, LogicalPlan, LogicalPlanRef, SourceInfo};
 
 use crate::local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
 
@@ -42,6 +42,14 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 input,
                 project.projection.clone(),
                 project.projected_schema.clone(),
+            ))
+        }
+        LogicalPlan::ActorPoolProject(actor_pool_project) => {
+            let input = translate(&actor_pool_project.input)?;
+            Ok(LocalPhysicalPlan::actor_pool_project(
+                input,
+                actor_pool_project.projection.clone(),
+                actor_pool_project.projected_schema.clone(),
             ))
         }
         LogicalPlan::Sample(sample) => {
@@ -119,8 +127,18 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             ))
         }
         LogicalPlan::Join(join) => {
+            if join.left_on.is_empty()
+                && join.right_on.is_empty()
+                && join.join_type == JoinType::Inner
+            {
+                return Err(DaftError::not_implemented(
+                    "Joins without join conditions (cross join) are not supported yet",
+                ));
+            }
             if join.join_strategy.is_some_and(|x| x != JoinStrategy::Hash) {
-                todo!("Only hash join is supported for now")
+                return Err(DaftError::not_implemented(
+                    "Only hash join is supported for now",
+                ));
             }
             let left = translate(&join.left)?;
             let right = translate(&join.right)?;
@@ -157,6 +175,21 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
         LogicalPlan::Repartition(repartition) => {
             log::warn!("Repartition Not supported for Local Executor!; This will be a No-Op");
             translate(&repartition.input)
+        }
+        LogicalPlan::Sink(sink) => {
+            use daft_plan::SinkInfo;
+            let input = translate(&sink.input)?;
+            let data_schema = input.schema().clone();
+            match sink.sink_info.as_ref() {
+                SinkInfo::OutputFileInfo(info) => Ok(LocalPhysicalPlan::physical_write(
+                    input,
+                    data_schema,
+                    sink.schema.clone(),
+                    info.clone(),
+                )),
+                #[cfg(feature = "python")]
+                SinkInfo::CatalogInfo(_) => todo!("CatalogInfo not yet implemented"),
+            }
         }
         LogicalPlan::Explode(explode) => {
             let input = translate(&explode.input)?;

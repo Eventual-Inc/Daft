@@ -501,6 +501,9 @@ class DataType:
     def _is_numeric_type(self) -> builtins.bool:
         return self._dtype.is_numeric()
 
+    def _is_integer(self) -> builtins.bool:
+        return self._dtype.is_integer()
+
     def _is_list(self) -> builtins.bool:
         return self._dtype.is_list()
 

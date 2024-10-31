@@ -1,4 +1,5 @@
 [dependencies]
+async-trait = {workspace = true}
 common-daft-config = {path = "../common/daft-config", default-features = false}
 common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}
@@ -17,6 +18,7 @@ daft-physical-plan = {path = "../daft-physical-plan", default-features = false}
 daft-plan = {path = "../daft-plan", default-features = false}
 daft-scan = {path = "../daft-scan", default-features = false}
 daft-table = {path = "../daft-table", default-features = false}
+daft-writers = {path = "../daft-writers", default-features = false}
 futures = {workspace = true}
 indexmap = {workspace = true}
 lazy_static = {workspace = true}
@@ -29,7 +31,7 @@ tokio-stream = {workspace = true}
 tracing = {workspace = true}
 
 [features]
-python = ["dep:pyo3", "common-daft-config/python", "common-file-formats/python", "common-error/python", "daft-dsl/python", "daft-io/python", "daft-micropartition/python", "daft-plan/python", "daft-scan/python", "common-display/python"]
+python = ["dep:pyo3", "common-daft-config/python", "common-file-formats/python", "common-error/python", "daft-dsl/python", "daft-io/python", "daft-micropartition/python", "daft-plan/python", "daft-scan/python", "daft-writers/python", "common-display/python"]
 
 [lints]
 workspace = true

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_resource_request::ResourceRequest;
 use daft_core::prelude::*;
 use daft_dsl::{AggExpr, ExprRef};
-use daft_plan::InMemoryInfo;
+use daft_plan::{InMemoryInfo, OutputFileInfo};
 use daft_scan::{ScanTask, ScanTaskRef};
 
 pub type LocalPhysicalPlanRef = Arc<LocalPhysicalPlan>;
@@ -13,6 +13,7 @@ pub enum LocalPhysicalPlan {
     PhysicalScan(PhysicalScan),
     EmptyScan(EmptyScan),
     Project(Project),
+    ActorPoolProject(ActorPoolProject),
     Filter(Filter),
     Limit(Limit),
     Explode(Explode),
@@ -127,6 +128,20 @@ impl LocalPhysicalPlan {
         schema: SchemaRef,
     ) -> LocalPhysicalPlanRef {
         Self::Project(Project {
+            input,
+            projection,
+            schema,
+            plan_stats: PlanStats {},
+        })
+        .arced()
+    }
+
+    pub(crate) fn actor_pool_project(
+        input: LocalPhysicalPlanRef,
+        projection: Vec<ExprRef>,
+        schema: SchemaRef,
+    ) -> LocalPhysicalPlanRef {
+        Self::ActorPoolProject(ActorPoolProject {
             input,
             projection,
             schema,
@@ -272,7 +287,22 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    #[must_use]
+    pub(crate) fn physical_write(
+        input: LocalPhysicalPlanRef,
+        data_schema: SchemaRef,
+        file_schema: SchemaRef,
+        file_info: OutputFileInfo,
+    ) -> LocalPhysicalPlanRef {
+        Self::PhysicalWrite(PhysicalWrite {
+            input,
+            data_schema,
+            file_schema,
+            file_info,
+            plan_stats: PlanStats {},
+        })
+        .arced()
+    }
+
     pub fn schema(&self) -> &SchemaRef {
         match self {
             Self::PhysicalScan(PhysicalScan { schema, .. })
@@ -280,6 +310,7 @@ impl LocalPhysicalPlan {
             | Self::Filter(Filter { schema, .. })
             | Self::Limit(Limit { schema, .. })
             | Self::Project(Project { schema, .. })
+            | Self::ActorPoolProject(ActorPoolProject { schema, .. })
             | Self::UnGroupedAggregate(UnGroupedAggregate { schema, .. })
             | Self::HashAggregate(HashAggregate { schema, .. })
             | Self::Pivot(Pivot { schema, .. })
@@ -316,6 +347,14 @@ pub struct EmptyScan {
 
 #[derive(Debug)]
 pub struct Project {
+    pub input: LocalPhysicalPlanRef,
+    pub projection: Vec<ExprRef>,
+    pub schema: SchemaRef,
+    pub plan_stats: PlanStats,
+}
+
+#[derive(Debug)]
+pub struct ActorPoolProject {
     pub input: LocalPhysicalPlanRef,
     pub projection: Vec<ExprRef>,
     pub schema: SchemaRef,
@@ -423,7 +462,13 @@ pub struct Concat {
 }
 
 #[derive(Debug)]
-pub struct PhysicalWrite {}
+pub struct PhysicalWrite {
+    pub input: LocalPhysicalPlanRef,
+    pub data_schema: SchemaRef,
+    pub file_schema: SchemaRef,
+    pub file_info: OutputFileInfo,
+    pub plan_stats: PlanStats,
+}
 
 #[derive(Debug)]
 pub struct PlanStats {}

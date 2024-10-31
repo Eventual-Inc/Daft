@@ -6,8 +6,8 @@ use common_treenode::Transformed;
 use super::{
     logical_plan_tracker::LogicalPlanTracker,
     rules::{
-        DropRepartition, OptimizerRule, PushDownFilter, PushDownLimit, PushDownProjection,
-        SplitActorPoolProjects,
+        DropRepartition, EliminateCrossJoin, OptimizerRule, PushDownFilter, PushDownLimit,
+        PushDownProjection, SplitActorPoolProjects,
     },
 };
 use crate::LogicalPlan;
@@ -112,6 +112,7 @@ impl Optimizer {
                 Box::new(DropRepartition::new()),
                 Box::new(PushDownFilter::new()),
                 Box::new(PushDownProjection::new()),
+                Box::new(EliminateCrossJoin::new()),
             ],
             // Use a fixed-point policy for the pushdown rules: PushDownProjection can produce a Filter node
             // at the current node, which would require another batch application in order to have a chance to push

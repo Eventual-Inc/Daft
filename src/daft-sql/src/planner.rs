@@ -11,9 +11,10 @@ use daft_functions::numeric::{ceil::ceil, floor::floor};
 use daft_plan::{LogicalPlanBuilder, LogicalPlanRef};
 use sqlparser::{
     ast::{
-        ArrayElemTypeDef, BinaryOperator, CastKind, Distinct, ExactNumberInfo, ExcludeSelectItem,
-        GroupByExpr, Ident, Query, SelectItem, Statement, StructField, Subscript, TableAlias,
-        TableWithJoins, TimezoneInfo, UnaryOperator, Value, WildcardAdditionalOptions,
+        ArrayElemTypeDef, BinaryOperator, CastKind, DateTimeField, Distinct, ExactNumberInfo,
+        ExcludeSelectItem, GroupByExpr, Ident, Query, SelectItem, SetExpr, Statement, StructField,
+        Subscript, TableAlias, TableWithJoins, TimezoneInfo, UnaryOperator, Value,
+        WildcardAdditionalOptions, With,
     },
     dialect::GenericDialect,
     parser::{Parser, ParserOptions},
@@ -26,6 +27,7 @@ use crate::{
     error::{PlannerError, SQLPlannerResult},
     invalid_operation_err, table_not_found_err, unsupported_sql_err,
 };
+
 /// A named logical plan
 /// This is used to keep track of the table name associated with a logical plan while planning a SQL query
 #[derive(Debug, Clone)]
@@ -64,14 +66,16 @@ pub struct SQLPlanner {
     catalog: SQLCatalog,
     current_relation: Option<Relation>,
     table_map: HashMap<String, Relation>,
+    cte_map: HashMap<String, Relation>,
 }
 
 impl Default for SQLPlanner {
     fn default() -> Self {
         Self {
             catalog: SQLCatalog::new(),
-            current_relation: None,
-            table_map: HashMap::new(),
+            current_relation: Default::default(),
+            table_map: Default::default(),
+            cte_map: Default::default(),
         }
     }
 }
@@ -80,8 +84,7 @@ impl SQLPlanner {
     pub fn new(context: SQLCatalog) -> Self {
         Self {
             catalog: context,
-            current_relation: None,
-            table_map: HashMap::new(),
+            ..Default::default()
         }
     }
 
@@ -100,6 +103,69 @@ impl SQLPlanner {
     fn clear_context(&mut self) {
         self.current_relation = None;
         self.table_map.clear();
+        self.cte_map.clear();
+    }
+
+    fn get_table_from_current_scope(&self, name: &str) -> Option<Relation> {
+        let table = self.table_map.get(name).cloned();
+        table
+            .or_else(|| self.cte_map.get(name).cloned())
+            .or_else(|| {
+                self.catalog
+                    .get_table(name)
+                    .map(|table| Relation::new(table.into(), name.to_string()))
+            })
+    }
+
+    fn register_cte(
+        &mut self,
+        mut rel: Relation,
+        column_aliases: &[Ident],
+    ) -> SQLPlannerResult<()> {
+        if !column_aliases.is_empty() {
+            let schema = rel.schema();
+            let columns = schema.names();
+            if columns.len() != column_aliases.len() {
+                invalid_operation_err!(
+                    "Column count mismatch: expected {} columns, found {}",
+                    column_aliases.len(),
+                    columns.len()
+                );
+            }
+
+            let projection = columns
+                .into_iter()
+                .zip(column_aliases)
+                .map(|(name, alias)| col(name).alias(ident_to_str(alias)))
+                .collect::<Vec<_>>();
+
+            rel.inner = rel.inner.select(projection)?;
+        }
+        self.cte_map.insert(rel.get_name(), rel);
+        Ok(())
+    }
+
+    fn plan_ctes(&mut self, with: &With) -> SQLPlannerResult<()> {
+        if with.recursive {
+            unsupported_sql_err!("Recursive CTEs are not supported");
+        }
+
+        for cte in &with.cte_tables {
+            if cte.materialized.is_some() {
+                unsupported_sql_err!("MATERIALIZED is not supported");
+            }
+
+            if cte.from.is_some() {
+                invalid_operation_err!("FROM should only exist in recursive CTEs");
+            }
+
+            let name = ident_to_str(&cte.alias.name);
+            let plan = self.plan_query(&cte.query)?;
+            let rel = Relation::new(plan, name);
+
+            self.register_cte(rel, cte.alias.columns.as_slice())?;
+        }
+        Ok(())
     }
 
     pub fn plan_sql(&mut self, sql: &str) -> SQLPlannerResult<LogicalPlanRef> {
@@ -134,22 +200,28 @@ impl SQLPlanner {
     fn plan_query(&mut self, query: &Query) -> SQLPlannerResult<LogicalPlanBuilder> {
         check_query_features(query)?;
 
-        let selection = query.body.as_select().ok_or_else(|| {
-            PlannerError::invalid_operation(format!(
-                "Only SELECT queries are supported, got: '{}'",
-                query.body
-            ))
-        })?;
+        let selection = match query.body.as_ref() {
+            SetExpr::Select(selection) => selection,
+            SetExpr::Query(_) => unsupported_sql_err!("Subqueries are not supported"),
+            SetExpr::SetOperation { .. } => {
+                unsupported_sql_err!("Set operations are not supported")
+            }
+            SetExpr::Values(..) => unsupported_sql_err!("VALUES are not supported"),
+            SetExpr::Insert(..) => unsupported_sql_err!("INSERT is not supported"),
+            SetExpr::Update(..) => unsupported_sql_err!("UPDATE is not supported"),
+            SetExpr::Table(..) => unsupported_sql_err!("TABLE is not supported"),
+        };
 
         check_select_features(selection)?;
 
-        // FROM/JOIN
-        let from = selection.clone().from;
-        if from.len() != 1 {
-            unsupported_sql_err!("Only exactly one table is supported");
+        if let Some(with) = &query.with {
+            self.plan_ctes(with)?;
         }
 
-        self.current_relation = Some(self.plan_from(&from[0])?);
+        // FROM/JOIN
+        let from = selection.clone().from;
+        let rel = self.plan_from(&from)?;
+        self.current_relation = Some(rel);
 
         // WHERE
         if let Some(selection) = &selection.selection {
@@ -293,7 +365,34 @@ impl SQLPlanner {
         Ok((exprs, desc))
     }
 
-    fn plan_from(&mut self, from: &TableWithJoins) -> SQLPlannerResult<Relation> {
+    fn plan_from(&mut self, from: &[TableWithJoins]) -> SQLPlannerResult<Relation> {
+        if from.len() > 1 {
+            // todo!("cross join")
+            let mut from_iter = from.iter();
+
+            let first = from_iter.next().unwrap();
+            let mut rel = self.plan_relation(&first.relation)?;
+            self.table_map.insert(rel.get_name(), rel.clone());
+            for tbl in from_iter {
+                let right = self.plan_relation(&tbl.relation)?;
+                self.table_map.insert(right.get_name(), right.clone());
+                let right_join_prefix = Some(format!("{}.", right.get_name()));
+
+                rel.inner = rel.inner.join(
+                    right.inner,
+                    vec![],
+                    vec![],
+                    JoinType::Inner,
+                    None,
+                    None,
+                    right_join_prefix.as_deref(),
+                )?;
+            }
+            return Ok(rel);
+        }
+
+        let from = from.iter().next().unwrap();
+
         fn collect_compound_identifiers(
             left: &[Ident],
             right: &[Ident],
@@ -454,7 +553,7 @@ impl SQLPlanner {
         Ok(left_rel)
     }
 
-    fn plan_relation(&self, rel: &sqlparser::ast::TableFactor) -> SQLPlannerResult<Relation> {
+    fn plan_relation(&mut self, rel: &sqlparser::ast::TableFactor) -> SQLPlannerResult<Relation> {
         let (rel, alias) = match rel {
             sqlparser::ast::TableFactor::Table {
                 name,
@@ -472,12 +571,48 @@ impl SQLPlanner {
                 ..
             } => {
                 let table_name = name.to_string();
-                let plan = self
-                    .catalog
-                    .get_table(&table_name)
-                    .ok_or_else(|| PlannerError::table_not_found(table_name.clone()))?;
-                let plan_builder = LogicalPlanBuilder::new(plan, None);
-                (Relation::new(plan_builder, table_name), alias.clone())
+                let Some(rel) = self.get_table_from_current_scope(&table_name) else {
+                    table_not_found_err!(table_name)
+                };
+                (rel, alias.clone())
+            }
+            sqlparser::ast::TableFactor::Derived {
+                lateral,
+                subquery,
+                alias: Some(alias),
+            } => {
+                if *lateral {
+                    unsupported_sql_err!("LATERAL");
+                }
+                let subquery = self.plan_query(subquery)?;
+                let rel_name = ident_to_str(&alias.name);
+                let rel = Relation::new(subquery, rel_name);
+
+                (rel, Some(alias.clone()))
+            }
+            sqlparser::ast::TableFactor::TableFunction { .. } => {
+                unsupported_sql_err!("Unsupported table factor: TableFunction")
+            }
+            sqlparser::ast::TableFactor::Function { .. } => {
+                unsupported_sql_err!("Unsupported table factor: Function")
+            }
+            sqlparser::ast::TableFactor::UNNEST { .. } => {
+                unsupported_sql_err!("Unsupported table factor: UNNEST")
+            }
+            sqlparser::ast::TableFactor::JsonTable { .. } => {
+                unsupported_sql_err!("Unsupported table factor: JsonTable")
+            }
+            sqlparser::ast::TableFactor::NestedJoin { .. } => {
+                unsupported_sql_err!("Unsupported table factor: NestedJoin")
+            }
+            sqlparser::ast::TableFactor::Pivot { .. } => {
+                unsupported_sql_err!("Unsupported table factor: Pivot")
+            }
+            sqlparser::ast::TableFactor::Unpivot { .. } => {
+                unsupported_sql_err!("Unsupported table factor: Unpivot")
+            }
+            sqlparser::ast::TableFactor::MatchRecognize { .. } => {
+                unsupported_sql_err!("Unsupported table factor: MatchRecognize")
             }
             _ => unsupported_sql_err!("Unsupported table factor"),
         };
@@ -494,7 +629,7 @@ impl SQLPlanner {
 
         let root = idents.next().unwrap();
         let root = ident_to_str(root);
-        let current_relation = match self.table_map.get(&root) {
+        let current_relation = match self.get_table_from_current_scope(&root) {
             Some(rel) => rel,
             None => {
                 return Err(PlannerError::TableNotFound {
@@ -518,6 +653,7 @@ impl SQLPlanner {
             // If duplicate columns are present in the schema, it adds the table name as a prefix. (df.column_name)
             // So we first check if the prefixed column name is present in the schema.
             let current_schema = self.relation_opt().unwrap().inner.schema();
+
             let f = current_schema.get_field(&ident_str).ok();
             if let Some(field) = f {
                 Ok(vec![col(field.name.clone())])
@@ -598,7 +734,7 @@ impl SQLPlanner {
                 let Some(rel) = self.relation_opt() else {
                     table_not_found_err!(table_name);
                 };
-                let Some(table_rel) = self.table_map.get(&table_name) else {
+                let Some(table_rel) = self.get_table_from_current_scope(&table_name) else {
                     table_not_found_err!(table_name);
                 };
                 let right_schema = table_rel.inner.schema();
@@ -645,7 +781,7 @@ impl SQLPlanner {
             Value::Null => LiteralValue::Null,
             _ => {
                 return Err(PlannerError::invalid_operation(
-                    "Only string, number, boolean and null literals are supported",
+                    "Only string, number, boolean and null literals are supported. Instead found: `{value}`",
                 ))
             }
         })
@@ -655,7 +791,7 @@ impl SQLPlanner {
         if let sqlparser::ast::Expr::Value(v) = expr {
             self.value_to_lit(v)
         } else {
-            invalid_operation_err!("Only string, number, boolean and null literals are supported");
+            invalid_operation_err!("Only string, number, boolean and null literals are supported. Instead found: `{expr}`");
         }
     }
     pub(crate) fn plan_expr(&self, expr: &sqlparser::ast::Expr) -> SQLPlannerResult<ExprRef> {
@@ -913,7 +1049,171 @@ impl SQLPlanner {
             SQLExpr::Map(_) => unsupported_sql_err!("MAP"),
             SQLExpr::Subscript { expr, subscript } => self.plan_subscript(expr, subscript.as_ref()),
             SQLExpr::Array(_) => unsupported_sql_err!("ARRAY"),
-            SQLExpr::Interval(_) => unsupported_sql_err!("INTERVAL"),
+            SQLExpr::Interval(interval) => {
+                use regex::Regex;
+
+                /// A private struct represents a single parsed interval unit and its value
+                #[derive(Debug)]
+                struct IntervalPart {
+                    count: i64,
+                    unit: DateTimeField,
+                }
+
+                // Local function to parse interval string to interval parts
+                fn parse_interval_string(expr: &str) -> Result<Vec<IntervalPart>, PlannerError> {
+                    let expr = expr.trim().trim_matches('\'');
+
+                    let re = Regex::new(r"(-?\d+)\s*(year|years|month|months|day|days|hour|hours|minute|minutes|second|seconds|millisecond|milliseconds|microsecond|microseconds|nanosecond|nanoseconds|week|weeks)")
+                        .map_err(|e|PlannerError::invalid_operation(format!("Invalid regex pattern: {}", e)))?;
+
+                    let mut parts = Vec::new();
+
+                    for cap in re.captures_iter(expr) {
+                        let count: i64 = cap[1].parse().map_err(|e| {
+                            PlannerError::invalid_operation(format!("Invalid interval count: {e}"))
+                        })?;
+
+                        let unit = match &cap[2].to_lowercase()[..] {
+                            "year" | "years" => DateTimeField::Year,
+                            "month" | "months" => DateTimeField::Month,
+                            "week" | "weeks" => DateTimeField::Week(None),
+                            "day" | "days" => DateTimeField::Day,
+                            "hour" | "hours" => DateTimeField::Hour,
+                            "minute" | "minutes" => DateTimeField::Minute,
+                            "second" | "seconds" => DateTimeField::Second,
+                            "millisecond" | "milliseconds" => DateTimeField::Millisecond,
+                            "microsecond" | "microseconds" => DateTimeField::Microsecond,
+                            "nanosecond" | "nanoseconds" => DateTimeField::Nanosecond,
+                            _ => {
+                                return Err(PlannerError::invalid_operation(format!(
+                                    "Invalid interval unit: {}",
+                                    &cap[2]
+                                )))
+                            }
+                        };
+
+                        parts.push(IntervalPart { count, unit });
+                    }
+
+                    if parts.is_empty() {
+                        return Err(PlannerError::invalid_operation("Invalid interval format."));
+                    }
+
+                    Ok(parts)
+                }
+
+                // Local function to convert parts to interval values
+                fn interval_parts_to_values(parts: Vec<IntervalPart>) -> (i64, i64, i64) {
+                    let mut total_months = 0i64;
+                    let mut total_days = 0i64;
+                    let mut total_nanos = 0i64;
+
+                    for part in parts {
+                        match part.unit {
+                            DateTimeField::Year => total_months += 12 * part.count,
+                            DateTimeField::Month => total_months += part.count,
+                            DateTimeField::Week(_) => total_days += 7 * part.count,
+                            DateTimeField::Day => total_days += part.count,
+                            DateTimeField::Hour => total_nanos += part.count * 3_600_000_000_000,
+                            DateTimeField::Minute => total_nanos += part.count * 60_000_000_000,
+                            DateTimeField::Second => total_nanos += part.count * 1_000_000_000,
+                            DateTimeField::Millisecond | DateTimeField::Milliseconds => {
+                                total_nanos += part.count * 1_000_000;
+                            }
+                            DateTimeField::Microsecond | DateTimeField::Microseconds => {
+                                total_nanos += part.count * 1_000;
+                            }
+                            DateTimeField::Nanosecond | DateTimeField::Nanoseconds => {
+                                total_nanos += part.count;
+                            }
+                            _ => {}
+                        }
+                    }
+
+                    (total_months, total_days, total_nanos)
+                }
+
+                match interval {
+                    // If leading_field is specified, treat it as the old style single-unit interval
+                    // e.g., INTERVAL '12' YEAR
+                    sqlparser::ast::Interval {
+                        value,
+                        leading_field: Some(time_unit),
+                        ..
+                    } => {
+                        let expr = self.plan_expr(value)?;
+
+                        let expr =
+                            expr.as_literal()
+                                .and_then(|lit| lit.as_str())
+                                .ok_or_else(|| {
+                                    PlannerError::invalid_operation(
+                                        "Interval value must be a string",
+                                    )
+                                })?;
+
+                        let count = expr.parse::<i64>().map_err(|e| {
+                            PlannerError::unsupported_sql(format!("Invalid interval count: {e}"))
+                        })?;
+
+                        let (months, days, nanoseconds) = match time_unit {
+                            DateTimeField::Year => (12 * count, 0, 0),
+                            DateTimeField::Month => (count, 0, 0),
+                            DateTimeField::Week(_) => (0, 7 * count, 0),
+                            DateTimeField::Day => (0, count, 0),
+                            DateTimeField::Hour => (0, 0, count * 3_600_000_000_000),
+                            DateTimeField::Minute => (0, 0, count * 60_000_000_000),
+                            DateTimeField::Second => (0, 0, count * 1_000_000_000),
+                            DateTimeField::Microsecond | DateTimeField::Microseconds => (0, 0, count * 1_000),
+                            DateTimeField::Millisecond | DateTimeField::Milliseconds => (0, 0, count * 1_000_000),
+                            DateTimeField::Nanosecond | DateTimeField::Nanoseconds => (0, 0, count),
+                            _ => return Err(PlannerError::invalid_operation(format!(
+                                "Invalid interval unit: {time_unit}. Expected one of: year, month, week, day, hour, minute, second, millisecond, microsecond, nanosecond"
+                            ))),
+                        };
+
+                        Ok(Arc::new(Expr::Literal(LiteralValue::Interval(
+                            daft_core::datatypes::IntervalValue::new(
+                                months as i32,
+                                days as i32,
+                                nanoseconds,
+                            ),
+                        ))))
+                    }
+
+                    // If no leading_field is specified, treat it as the new style multi-unit interval
+                    // e.g., INTERVAL '12 years 3 months 7 days'
+                    sqlparser::ast::Interval {
+                        value,
+                        leading_field: None,
+                        ..
+                    } => {
+                        let expr = self.plan_expr(value)?;
+
+                        let expr =
+                            expr.as_literal()
+                                .and_then(|lit| lit.as_str())
+                                .ok_or_else(|| {
+                                    PlannerError::invalid_operation(
+                                        "Interval value must be a string",
+                                    )
+                                })?;
+
+                        let parts = parse_interval_string(expr)
+                            .map_err(|e| PlannerError::invalid_operation(e.to_string()))?;
+
+                        let (months, days, nanoseconds) = interval_parts_to_values(parts);
+
+                        Ok(Arc::new(Expr::Literal(LiteralValue::Interval(
+                            daft_core::datatypes::IntervalValue::new(
+                                months as i32,
+                                days as i32,
+                                nanoseconds,
+                            ),
+                        ))))
+                    }
+                }
+            }
             SQLExpr::MatchAgainst { .. } => unsupported_sql_err!("MATCH AGAINST"),
             SQLExpr::Wildcard => unsupported_sql_err!("WILDCARD"),
             SQLExpr::QualifiedWildcard(_) => unsupported_sql_err!("QUALIFIED WILDCARD"),
@@ -941,6 +1241,7 @@ impl SQLPlanner {
             BinaryOperator::NotEq => Ok(Operator::NotEq),
             BinaryOperator::And => Ok(Operator::And),
             BinaryOperator::Or => Ok(Operator::Or),
+            BinaryOperator::DuckIntegerDivide => Ok(Operator::FloorDivide),
             other => unsupported_sql_err!("Unsupported operator: '{other}'"),
         }
     }
@@ -1180,9 +1481,6 @@ impl SQLPlanner {
 /// /// This function examines various clauses and options in the provided [sqlparser::ast::Query]
 /// and returns an error if any unsupported features are encountered.
 fn check_query_features(query: &sqlparser::ast::Query) -> SQLPlannerResult<()> {
-    if let Some(with) = &query.with {
-        unsupported_sql_err!("WITH: {with}")
-    }
     if !query.limit_by.is_empty() {
         unsupported_sql_err!("LIMIT BY");
     }

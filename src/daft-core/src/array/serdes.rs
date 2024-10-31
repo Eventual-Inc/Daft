@@ -7,7 +7,7 @@ use super::{ops::as_arrow::AsArrow, DataArray, FixedSizeListArray, ListArray, St
 use crate::datatypes::PythonArray;
 use crate::{
     datatypes::{
-        logical::LogicalArray, BinaryArray, BooleanArray, DaftLogicalType, DaftNumericType,
+        logical::LogicalArray, BinaryArray, BooleanArray, DaftLogicalType, DaftPrimitiveType,
         DataType, ExtensionArray, FixedSizeBinaryArray, Int64Array, IntervalArray, NullArray,
         Utf8Array,
     },
@@ -51,7 +51,7 @@ where
     }
 }
 
-impl<T: DaftNumericType> serde::Serialize for DataArray<T> {
+impl<T: DaftPrimitiveType> serde::Serialize for DataArray<T> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,

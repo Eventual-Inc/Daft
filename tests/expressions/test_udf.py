@@ -17,9 +17,6 @@ from daft.udf import udf
 
 @pytest.fixture(scope="function", params=[False, True])
 def actor_pool_enabled(request):
-    if request.param and get_context().daft_execution_config.enable_native_executor:
-        pytest.skip("Native executor does not support stateful UDFs")
-
     original_config = get_context().daft_planning_config
     try:
         set_planning_config(
