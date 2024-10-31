@@ -1,10 +1,11 @@
 use daft_core::array::ops::Utf8NormalizeOptions;
 use daft_dsl::{
+    binary_op,
     functions::{
         self,
         utf8::{normalize, Utf8Expr},
     },
-    ExprRef, LiteralValue,
+    ExprRef, LiteralValue, Operator,
 };
 use daft_functions::{
     count_matches::{utf8_count_matches, CountMatchesFunction},
@@ -62,6 +63,7 @@ impl SQLModule for SQLModuleUtf8 {
         parent.add_fn("normalize", SQLNormalize);
         parent.add_fn("tokenize_encode", SQLTokenizeEncode);
         parent.add_fn("tokenize_decode", SQLTokenizeDecode);
+        parent.add_fn("concat", SQLConcat);
     }
 }
 
@@ -537,5 +539,34 @@ impl SQLFunction for SQLTokenizeDecode {
             }
             _ => invalid_operation_err!("Invalid arguments for tokenize_decode"),
         }
+    }
+}
+
+pub struct SQLConcat;
+
+impl SQLFunction for SQLConcat {
+    fn to_expr(
+        &self,
+        inputs: &[sqlparser::ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        let inputs = inputs
+            .iter()
+            .map(|input| planner.plan_function_arg(input))
+            .collect::<SQLPlannerResult<Vec<_>>>()?;
+        let mut inputs = inputs.into_iter();
+
+        let Some(mut first) = inputs.next() else {
+            invalid_operation_err!("concat requires at least one argument")
+        };
+        for input in inputs {
+            first = binary_op(Operator::Plus, first, input);
+        }
+
+        Ok(first)
+    }
+
+    fn docstrings(&self, _: &str) -> String {
+        "Concatenate the inputs into a single string".to_string()
     }
 }
