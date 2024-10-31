@@ -1597,7 +1597,9 @@ fn cast_sparse_to_dense_for_inner_dtype(
                     continue;
                 }
                 let index_series: Series = non_zero_indices_array.get(i).unwrap();
-                let index_array = index_series.u64().unwrap().as_arrow();
+                let index_array = index_series.downcast::<<$T as DaftDataType>::ArrayType>()
+                .unwrap()
+                .as_arrow();
                 let values_series: Series = non_zero_values_array.get(i).unwrap();
                 let values_array = values_series.downcast::<<$T as DaftDataType>::ArrayType>()
                 .unwrap()
