@@ -1,16 +1,21 @@
 use std::{
     future::Future,
     panic::AssertUnwindSafe,
+    pin::Pin,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc, OnceLock,
     },
+    task::{Context, Poll},
 };
 
 use common_error::{DaftError, DaftResult};
 use futures::FutureExt;
 use lazy_static::lazy_static;
-use tokio::{runtime::RuntimeFlavor, task::JoinError};
+use tokio::{
+    runtime::{Handle, RuntimeFlavor},
+    task::JoinSet,
+};
 
 lazy_static! {
     static ref NUM_CPUS: usize = std::thread::available_parallelism().unwrap().get();
@@ -29,6 +34,38 @@ pub type RuntimeRef = Arc<Runtime>;
 enum PoolType {
     Compute,
     IO,
+}
+
+// A spawned task on a Runtime that can be awaited
+// This is a wrapper around a JoinSet that allows us to cancel the task by dropping it
+pub struct RuntimeTask<T> {
+    joinset: JoinSet<T>,
+}
+
+impl<T> RuntimeTask<T> {
+    pub fn new<F>(handle: &Handle, future: F) -> Self
+    where
+        F: Future<Output = T> + Send + 'static,
+        T: Send + 'static,
+    {
+        let mut joinset = JoinSet::new();
+        joinset.spawn_on(future, handle);
+        Self { joinset }
+    }
+}
+
+impl<T: Send + 'static> Future for RuntimeTask<T> {
+    type Output = DaftResult<T>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        match Pin::new(&mut self.joinset).poll_join_next(cx) {
+            Poll::Ready(Some(result)) => {
+                Poll::Ready(result.map_err(|e| DaftError::External(e.into())))
+            }
+            Poll::Ready(None) => panic!("JoinSet unexpectedly empty"),
+            Poll::Pending => Poll::Pending,
+        }
+    }
 }
 
 pub struct Runtime {
@@ -87,18 +124,12 @@ impl Runtime {
     }
 
     // Spawn a task on the runtime
-    pub fn spawn<F>(
-        &self,
-        future: F,
-    ) -> impl Future<Output = Result<F::Output, JoinError>> + Send + 'static
+    pub fn spawn<F>(&self, future: F) -> RuntimeTask<F::Output>
     where
         F: Future + Send + 'static,
         F::Output: Send + 'static,
     {
-        // Spawn it on a joinset on the runtime, such that if the future gets dropped, the task is cancelled
-        let mut joinset = tokio::task::JoinSet::new();
-        joinset.spawn_on(future, self.runtime.handle());
-        async move { joinset.join_next().await.expect("just spawned task") }.boxed()
+        RuntimeTask::new(self.runtime.handle(), future)
     }
 }
 

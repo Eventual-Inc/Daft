@@ -4,7 +4,6 @@ use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_runtime::get_compute_runtime;
 use daft_micropartition::MicroPartition;
-use snafu::ResultExt;
 use tracing::{info_span, instrument};
 
 use super::buffer::OperatorBuffer;
@@ -12,7 +11,7 @@ use crate::{
     channel::{create_channel, PipelineChannel, Receiver, Sender},
     pipeline::{PipelineNode, PipelineResultType},
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
-    ExecutionRuntimeHandle, JoinSnafu, NUM_CPUS,
+    ExecutionRuntimeHandle, NUM_CPUS,
 };
 
 pub(crate) trait DynIntermediateOpState: Send + Sync {
@@ -120,7 +119,7 @@ impl IntermediateNode {
                 let fut = async move {
                     rt_context.in_span(&span, || op.execute(idx, &morsel, &state_wrapper))
                 };
-                let result = compute_runtime.spawn(fut).await.context(JoinSnafu)??;
+                let result = compute_runtime.spawn(fut).await??;
                 match result {
                     IntermediateOperatorResult::NeedMoreInput(Some(mp)) => {
                         let _ = sender.send(mp.into()).await;

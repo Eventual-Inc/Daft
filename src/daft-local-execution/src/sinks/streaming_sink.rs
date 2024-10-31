@@ -125,7 +125,7 @@ impl StreamingSinkNode {
                 let fut = async move {
                     rt_context.in_span(&span, || op.execute(idx, &morsel, state_wrapper.as_ref()))
                 };
-                let result = compute_runtime.spawn(fut).await.context(JoinSnafu)??;
+                let result = compute_runtime.spawn(fut).await??;
                 match result {
                     StreamingSinkOutput::NeedMoreInput(mp) => {
                         if let Some(mp) = mp {
@@ -286,8 +286,7 @@ impl PipelineNode for StreamingSinkNode {
                             op.finalize(finished_states)
                         })
                     })
-                    .await
-                    .context(JoinSnafu)??;
+                    .await??;
                 if let Some(res) = finalized_result {
                     let _ = destination_sender.send(res.into()).await;
                 }

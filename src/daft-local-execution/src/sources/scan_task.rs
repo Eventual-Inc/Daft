@@ -183,8 +183,7 @@ async fn get_delete_map(
             }
             Ok(Some(delete_map))
         })
-        .await
-        .context(JoinSnafu)?
+        .await?
 }
 
 async fn stream_scan_task(
