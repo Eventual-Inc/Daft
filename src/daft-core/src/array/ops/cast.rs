@@ -1982,9 +1982,14 @@ impl FixedShapeTensorArray {
                     offsets_cloned.into(),
                     validity.cloned(),
                 );
+
+                let largest_index = tensor_shape.iter().product::<u64>() - 1;
+                let indices_minimal_inner_dtype = minimal_uint_dtype(largest_index);
+                let casted_indices = indices_list_arr.cast(&DataType::List(Box::new(indices_minimal_inner_dtype)))?;
+
                 let sparse_struct_array = StructArray::new(
                     Field::new(self.name(), dtype.to_physical()),
-                    vec![data_list_arr.into_series(), indices_list_arr.into_series()],
+                    vec![data_list_arr.into_series(), casted_indices],
                     validity.cloned(),
                 );
                 Ok(FixedShapeSparseTensorArray::new(
