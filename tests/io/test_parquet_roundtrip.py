@@ -12,13 +12,6 @@ from daft import DataType, Series, TimeUnit
 
 PYARROW_GE_8_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (8, 0, 0)
 
-from daft import context
-
-pytestmark = pytest.mark.skipif(
-    context.get_context().daft_execution_config.enable_native_executor is True,
-    reason="Native executor fails for these tests",
-)
-
 
 @pytest.mark.skipif(
     not PYARROW_GE_8_0_0,

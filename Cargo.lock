@@ -1803,12 +1803,14 @@ dependencies = [
  "daft-micropartition",
  "daft-minhash",
  "daft-parquet",
+ "daft-physical-plan",
  "daft-plan",
  "daft-scan",
  "daft-scheduler",
  "daft-sql",
  "daft-stats",
  "daft-table",
+ "daft-writers",
  "lazy_static",
  "libc",
  "log",
@@ -2084,6 +2086,7 @@ dependencies = [
 name = "daft-local-execution"
 version = "0.3.0-dev0"
 dependencies = [
+ "async-trait",
  "common-daft-config",
  "common-display",
  "common-error",
@@ -2102,6 +2105,7 @@ dependencies = [
  "daft-plan",
  "daft-scan",
  "daft-table",
+ "daft-writers",
  "futures",
  "indexmap 2.5.0",
  "lazy_static",
@@ -2361,6 +2365,22 @@ dependencies = [
  "pyo3",
  "rand 0.8.5",
  "serde",
+]
+
+[[package]]
+name = "daft-writers"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-daft-config",
+ "common-error",
+ "common-file-formats",
+ "daft-core",
+ "daft-dsl",
+ "daft-io",
+ "daft-micropartition",
+ "daft-plan",
+ "daft-table",
+ "pyo3",
 ]
 
 [[package]]

@@ -7,12 +7,8 @@ import pyarrow as pa
 import pytest
 
 import daft
-from daft import DataType, TimeUnit, context
+from daft import DataType, TimeUnit
 
-pytestmark = pytest.mark.skipif(
-    context.get_context().daft_execution_config.enable_native_executor is True,
-    reason="Native executor fails for these tests",
-)
 PYARROW_GE_11_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (11, 0, 0)
 
 
