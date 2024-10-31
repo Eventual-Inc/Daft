@@ -117,7 +117,10 @@ impl ScalarUDF for CosineDistanceFunction {
                     }
                 }?;
 
-                let output = Float64Array::from_iter(source_name, res.into_iter());
+                let output = Float64Array::from_iter(
+                    Field::new(source_name, DataType::Float64),
+                    res.into_iter(),
+                );
 
                 Ok(output.into_series())
             }

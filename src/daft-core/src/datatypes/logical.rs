@@ -3,7 +3,7 @@ use std::{marker::PhantomData, sync::Arc};
 use common_error::DaftResult;
 
 use super::{
-    DaftArrayType, DaftDataType, DataArray, DataType, Decimal128Type, DurationType, EmbeddingType,
+    DaftArrayType, DaftDataType, DataArray, DataType, DurationType, EmbeddingType,
     FixedShapeImageType, FixedShapeSparseTensorType, FixedShapeTensorType, FixedSizeListArray,
     ImageType, MapType, SparseTensorType, TensorType, TimeType, TimestampType,
 };
@@ -164,7 +164,7 @@ impl MapArray {
 
 pub type LogicalArray<L> =
     LogicalArrayImpl<L, <<L as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType>;
-pub type Decimal128Array = LogicalArray<Decimal128Type>;
+// pub type Decimal128Array = LogicalArray<Decimal128Type>;
 pub type DateArray = LogicalArray<DateType>;
 pub type TimeArray = LogicalArray<TimeType>;
 pub type DurationArray = LogicalArray<DurationType>;

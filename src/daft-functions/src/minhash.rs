@@ -1,9 +1,12 @@
+use std::hash::BuildHasherDefault;
+
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 use daft_dsl::{
     functions::{ScalarFunction, ScalarUDF},
     ExprRef,
 };
+use daft_hash::{HashFunctionKind, MurBuildHasher, Sha1Hasher};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -11,6 +14,7 @@ pub struct MinHashFunction {
     pub num_hashes: usize,
     pub ngram_size: usize,
     pub seed: u32,
+    pub hash_function: HashFunctionKind,
 }
 
 #[typetag::serde]
@@ -24,12 +28,26 @@ impl ScalarUDF for MinHashFunction {
     }
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
-        match inputs {
-            [input] => input.minhash(self.num_hashes, self.ngram_size, self.seed),
-            _ => Err(DaftError::ValueError(format!(
+        let [input] = inputs else {
+            return Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()
-            ))),
+            )));
+        };
+
+        match self.hash_function {
+            HashFunctionKind::MurmurHash3 => {
+                let hasher = MurBuildHasher::new(self.seed);
+                input.minhash(self.num_hashes, self.ngram_size, self.seed, &hasher)
+            }
+            HashFunctionKind::XxHash => {
+                let hasher = xxhash_rust::xxh64::Xxh64Builder::new(self.seed as u64);
+                input.minhash(self.num_hashes, self.ngram_size, self.seed, &hasher)
+            }
+            HashFunctionKind::Sha1 => {
+                let hasher = BuildHasherDefault::<Sha1Hasher>::default();
+                input.minhash(self.num_hashes, self.ngram_size, self.seed, &hasher)
+            }
         }
     }
 
@@ -56,12 +74,19 @@ impl ScalarUDF for MinHashFunction {
 }
 
 #[must_use]
-pub fn minhash(input: ExprRef, num_hashes: usize, ngram_size: usize, seed: u32) -> ExprRef {
+pub fn minhash(
+    input: ExprRef,
+    num_hashes: usize,
+    ngram_size: usize,
+    seed: u32,
+    hash_function: HashFunctionKind,
+) -> ExprRef {
     ScalarFunction::new(
         MinHashFunction {
             num_hashes,
             ngram_size,
             seed,
+            hash_function,
         },
         vec![input],
     )
@@ -71,10 +96,19 @@ pub fn minhash(input: ExprRef, num_hashes: usize, ngram_size: usize, seed: u32) 
 #[cfg(feature = "python")]
 pub mod python {
     use daft_dsl::python::PyExpr;
+    use daft_hash::HashFunctionKind;
     use pyo3::{exceptions::PyValueError, pyfunction, PyResult};
 
     #[pyfunction]
-    pub fn minhash(expr: PyExpr, num_hashes: i64, ngram_size: i64, seed: i64) -> PyResult<PyExpr> {
+    pub fn minhash(
+        expr: PyExpr,
+        num_hashes: i64,
+        ngram_size: i64,
+        seed: i64,
+        hash_function: &str,
+    ) -> PyResult<PyExpr> {
+        let hash_function: HashFunctionKind = hash_function.parse()?;
+
         if num_hashes <= 0 {
             return Err(PyValueError::new_err(format!(
                 "num_hashes must be positive: {num_hashes}"
@@ -92,6 +126,7 @@ pub mod python {
             num_hashes as usize,
             ngram_size as usize,
             cast_seed,
+            hash_function,
         );
         Ok(expr.into())
     }
