@@ -129,7 +129,7 @@ impl IntermediateNode {
                 let fut = async move {
                     rt_context.in_span(&span, || op.execute(idx, &morsel, &state_wrapper))
                 };
-                let result = compute_runtime.await_on(fut).await??;
+                let result = compute_runtime.spawn(fut).await??;
                 match result {
                     IntermediateOperatorResult::NeedMoreInput(Some(mp)) => {
                         let _ = sender.send(mp.into()).await;

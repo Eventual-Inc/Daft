@@ -111,14 +111,13 @@ fn run_glob_parallel(
             let stream = io_client
                 .glob(glob_input, None, None, None, io_stats, Some(file_format))
                 .await?;
-            let results = stream.collect::<Vec<_>>().await;
-            Result::<_, daft_io::Error>::Ok(futures::stream::iter(results))
+            let results = stream.map_err(|e| e.into()).collect::<Vec<_>>().await;
+            DaftResult::Ok(futures::stream::iter(results))
         })
     }))
     .buffered(num_parallel_tasks)
-    .map(|v| v.map_err(|e| daft_io::Error::JoinError { source: e })?)
+    .map(|stream| stream?)
     .try_flatten()
-    .map(|v| Ok(v?))
     .boxed();
 
     // Construct a static-lifetime BoxStreamIterator
