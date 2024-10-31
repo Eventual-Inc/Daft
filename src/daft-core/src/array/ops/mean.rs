@@ -25,3 +25,11 @@ impl DaftMeanAggable for DataArray<Float64Type> {
         Ok(Self::from((self.field.name.as_ref(), data)))
     }
 }
+
+impl DaftMeanAggable for DataArray<Decimal128Type> {
+    type Output = DaftResult<Self>;
+
+    fn mean(&self) -> Self::Output {}
+
+    fn grouped_mean(&self, groups: &GroupIndices) -> Self::Output {}
+}

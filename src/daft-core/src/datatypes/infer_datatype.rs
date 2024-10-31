@@ -110,13 +110,13 @@ impl<'a> InferDataType<'a> {
                 let s_max = *std::cmp::max(s1, s2);
                 let p_prime = std::cmp::max(p1 - s1, p2 - s2) + s_max;
 
-                let d_type = if !(1..=34).contains(&p_prime) {
+                let d_type = if !(1..=38).contains(&p_prime) {
                     Err(DaftError::TypeError(
-                        format!("Cannot infer supertypes for comparison on types: {}, {} result precision: {p_prime} exceed bounds of [1, 34]", self, other)
+                        format!("Cannot infer supertypes for comparison on types: {}, {} result precision: {p_prime} exceed bounds of [1, 38]", self, other)
                     ))
-                } else if s_max > 34 {
+                } else if s_max > 38 {
                     Err(DaftError::TypeError(
-                        format!("Cannot infer supertypes for comparison on types: {}, {} result scale: {s_max} exceed bounds of [0, 34]", self, other)
+                        format!("Cannot infer supertypes for comparison on types: {}, {} result scale: {s_max} exceed bounds of [0, 38]", self, other)
                     ))
                 } else if s_max > p_prime {
                     Err(DaftError::TypeError(
@@ -237,13 +237,13 @@ impl<'a> Add for InferDataType<'a> {
                     let p_prime = std::cmp::max(p1 - s1, p2 - s2) + s_max + 1;
 
 
-                    if !(1..=34).contains(&p_prime) {
+                    if !(1..=38).contains(&p_prime) {
                         Err(DaftError::TypeError(
-                            format!("Cannot infer supertypes for addition on types: {}, {} result precision: {p_prime} exceed bounds of [1, 34]", self, other)
+                            format!("Cannot infer supertypes for addition on types: {}, {} result precision: {p_prime} exceed bounds of [1, 38]", self, other)
                         ))
-                    } else if s_max > 34 {
+                    } else if s_max > 38 {
                         Err(DaftError::TypeError(
-                            format!("Cannot infer supertypes for addition on types: {}, {} result scale: {s_max} exceed bounds of [0, 34]", self, other)
+                            format!("Cannot infer supertypes for addition on types: {}, {} result scale: {s_max} exceed bounds of [0, 38]", self, other)
                         ))
                     } else if s_max > p_prime {
                         Err(DaftError::TypeError(
@@ -293,13 +293,13 @@ impl<'a> Sub for InferDataType<'a> {
                 (DataType::Decimal128(p1, s1), DataType::Decimal128(p2, s2)) => {
                     let s_max = *std::cmp::max(s1, s2);
                     let p_prime = std::cmp::max(p1 - s1, p2 - s2) + s_max + 1;
-                    if !(1..=34).contains(&p_prime) {
+                    if !(1..=38).contains(&p_prime) {
                         Err(DaftError::TypeError(
-                            format!("Cannot infer supertypes for subtraction on types: {}, {} result precision: {p_prime} exceed bounds of [1, 34]", self, other)
+                            format!("Cannot infer supertypes for subtraction on types: {}, {} result precision: {p_prime} exceed bounds of [1, 38]", self, other)
                         ))
-                    } else if s_max > 34 {
+                    } else if s_max > 38 {
                         Err(DaftError::TypeError(
-                            format!("Cannot infer supertypes for subtraction on types: {}, {} result scale: {s_max} exceed bounds of [0, 34]", self, other)
+                            format!("Cannot infer supertypes for subtraction on types: {}, {} result scale: {s_max} exceed bounds of [0, 38]", self, other)
                         ))
                     } else if s_max > p_prime {
                         Err(DaftError::TypeError(
@@ -337,13 +337,13 @@ impl<'a> Div for InferDataType<'a> {
                     let p1 = *p1 as i64;
                     let s_prime = s1 - s2 + std::cmp::max(6, p1+s2+1);
                     let p_prime = p1 - s1 + s_prime;
-                    if !(1..=34).contains(&p_prime) {
+                    if !(1..=38).contains(&p_prime) {
                         Err(DaftError::TypeError(
-                            format!("Cannot infer supertypes for divide on types: {}, {} result precision: {p_prime} exceed bounds of [1, 34]. scale: {s_prime}", self, other)
+                            format!("Cannot infer supertypes for divide on types: {}, {} result precision: {p_prime} exceed bounds of [1, 38]. scale: {s_prime}", self, other)
                         ))
                     } else if !(0..=34).contains(&s_prime){
                         Err(DaftError::TypeError(
-                            format!("Cannot infer supertypes for divide on types: {}, {} result scale: {s_prime} exceed bounds of [0, 34]. precision: {p_prime}", self, other)
+                            format!("Cannot infer supertypes for divide on types: {}, {} result scale: {s_prime} exceed bounds of [0, 38]. precision: {p_prime}", self, other)
                         ))
                     } else if s_prime > p_prime {
                         Err(DaftError::TypeError(
@@ -384,13 +384,13 @@ impl<'a> Mul for InferDataType<'a> {
                 (DataType::Decimal128(p1, s1), DataType::Decimal128(p2, s2)) => {
                     let s_prime = s1 + s2;
                     let p_prime = p1 + p2;
-                    if !(1..=34).contains(&p_prime) {
+                    if !(1..=38).contains(&p_prime) {
                         Err(DaftError::TypeError(
-                            format!("Cannot infer supertypes for multiply on types: {}, {} result precision: {p_prime} exceed bounds of [1, 34]", self, other)
+                            format!("Cannot infer supertypes for multiply on types: {}, {} result precision: {p_prime} exceed bounds of [1, 38]", self, other)
                         ))
                     } else if s_prime > 34 {
                         Err(DaftError::TypeError(
-                            format!("Cannot infer supertypes for multiply on types: {}, {} result scale: {s_prime} exceed bounds of [0, 34]", self, other)
+                            format!("Cannot infer supertypes for multiply on types: {}, {} result scale: {s_prime} exceed bounds of [0, 38]", self, other)
                         ))
                     } else if s_prime > p_prime {
                         Err(DaftError::TypeError(
