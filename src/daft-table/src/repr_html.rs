@@ -30,10 +30,6 @@ pub fn html_value(s: &Series, idx: usize) -> String {
             let arr = s.i64().unwrap();
             arr.html_value(idx)
         }
-        DataType::Int128 => {
-            let arr = s.i128().unwrap();
-            arr.html_value(idx)
-        }
         DataType::UInt8 => {
             let arr = s.u8().unwrap();
             arr.html_value(idx)

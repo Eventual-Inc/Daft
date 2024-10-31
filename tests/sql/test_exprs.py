@@ -1,7 +1,10 @@
+import datetime
+
 import pytest
 
 import daft
-from daft import col
+from daft import col, interval
+from daft.sql.sql import SQLCatalog
 
 
 def test_nested():
@@ -42,6 +45,7 @@ def test_hash_exprs():
         hash(a, seed:=0) as hash_a_seed_0,
         minhash(a, num_hashes:=10, ngram_size:= 100, seed:=10) as minhash_a,
         minhash(a, num_hashes:=10, ngram_size:= 100) as minhash_a_no_seed,
+        minhash(a, num_hashes:=10, ngram_size:= 100, seed:=10, hash_function:='xxhash') as minhash_a_xxhash,
     FROM df
     """)
         .collect()
@@ -55,6 +59,7 @@ def test_hash_exprs():
             col("a").hash(seed=0).alias("hash_a_seed_0"),
             col("a").minhash(num_hashes=10, ngram_size=100, seed=10).alias("minhash_a"),
             col("a").minhash(num_hashes=10, ngram_size=100).alias("minhash_a_no_seed"),
+            col("a").minhash(num_hashes=10, ngram_size=100, seed=10, hash_function="xxhash").alias("minhash_a_xxhash"),
         )
         .collect()
         .to_pydict()
@@ -135,3 +140,78 @@ def test_is_in_edge_cases():
     # Test with mixed types in the IN list
     with pytest.raises(Exception, match="All literals must have the same data type"):
         daft.sql("SELECT * FROM df WHERE nums IN (1, '2', 3.0)").collect().to_pydict()
+
+
+@pytest.mark.parametrize(
+    "date_values, ts_values, expected_intervals",
+    [
+        (
+            ["2022-01-01", "2020-02-29", "2029-05-15"],
+            ["2022-01-01 10:00:00", "2020-02-29 23:59:59", "2029-05-15 12:34:56"],
+            {
+                "date_add_day": [
+                    datetime.date(2022, 1, 2),
+                    datetime.date(2020, 3, 1),
+                    datetime.date(2029, 5, 16),
+                ],
+                "date_sub_month": [
+                    datetime.date(2021, 12, 1),
+                    datetime.date(2020, 1, 31),
+                    datetime.date(2029, 4, 14),
+                ],
+                "ts_sub_year": [
+                    datetime.datetime(2021, 1, 1, 10),
+                    datetime.datetime(2019, 2, 28, 23, 59, 59),
+                    datetime.datetime(2028, 5, 15, 12, 34, 56),
+                ],
+                "ts_add_hour": [
+                    datetime.datetime(2022, 1, 1, 11, 0, 0),
+                    datetime.datetime(2020, 3, 1, 0, 59, 59),
+                    datetime.datetime(2029, 5, 15, 13, 34, 56),
+                ],
+                "ts_sub_minute": [
+                    datetime.datetime(2022, 1, 1, 9, 57, 21),
+                    datetime.datetime(2020, 2, 29, 23, 57, 20),
+                    datetime.datetime(2029, 5, 15, 12, 32, 17),
+                ],
+            },
+        ),
+    ],
+)
+def test_interval_comparison(date_values, ts_values, expected_intervals):
+    # Create DataFrame with date and timestamp columns
+    df = daft.from_pydict({"date": date_values, "ts": ts_values}).select(
+        col("date").cast(daft.DataType.date()), col("ts").str.to_datetime("%Y-%m-%d %H:%M:%S")
+    )
+    catalog = SQLCatalog({"test": df})
+
+    expected_df = (
+        df.select(
+            (col("date") + interval(days=1)).alias("date_add_day"),
+            (col("date") - interval(months=1)).alias("date_sub_month"),
+            (col("ts") - interval(years=1, days=0)).alias("ts_sub_year"),
+            (col("ts") + interval(hours=1)).alias("ts_add_hour"),
+            (col("ts") - interval(minutes=1, seconds=99)).alias("ts_sub_minute"),
+        )
+        .collect()
+        .to_pydict()
+    )
+
+    actual_sql = (
+        daft.sql(
+            """
+        SELECT
+            date + INTERVAL '1' day AS date_add_day,
+            date - INTERVAL '1 months' AS date_sub_month,
+            ts - INTERVAL '1 year 0 days' AS ts_sub_year,
+            ts + INTERVAL '1' hour AS ts_add_hour,
+            ts - INTERVAL '1 minutes 99 second' AS ts_sub_minute
+        FROM test
+        """,
+            catalog=catalog,
+        )
+        .collect()
+        .to_pydict()
+    )
+
+    assert expected_df == actual_sql == expected_intervals

@@ -1,6 +1,10 @@
-use std::ops::{Add, Div, Mul, Rem, Sub};
+use std::{
+    hash::BuildHasherDefault,
+    ops::{Add, Div, Mul, Rem, Sub},
+};
 
 use common_arrow_ffi as ffi;
+use daft_hash::{HashFunctionKind, MurBuildHasher, Sha1Hasher};
 use daft_schema::python::PyDataType;
 use pyo3::{
     exceptions::PyValueError,
@@ -319,7 +323,15 @@ impl PySeries {
         Ok(self.series.hash(seed_array)?.into_series().into())
     }
 
-    pub fn minhash(&self, num_hashes: i64, ngram_size: i64, seed: i64) -> PyResult<Self> {
+    pub fn minhash(
+        &self,
+        num_hashes: i64,
+        ngram_size: i64,
+        seed: i64,
+        hash_function: &str,
+    ) -> PyResult<Self> {
+        let hash_function: HashFunctionKind = hash_function.parse()?;
+
         if num_hashes <= 0 {
             return Err(PyValueError::new_err(format!(
                 "num_hashes must be positive: {num_hashes}"
@@ -330,12 +342,27 @@ impl PySeries {
                 "ngram_size must be positive: {ngram_size}"
             )));
         }
-        let cast_seed = seed as u32;
+        let seed = seed as u32;
 
-        Ok(self
-            .series
-            .minhash(num_hashes as usize, ngram_size as usize, cast_seed)?
-            .into())
+        let num_hashes = num_hashes as usize;
+        let ngram_size = ngram_size as usize;
+
+        let result = match hash_function {
+            HashFunctionKind::MurmurHash3 => {
+                let hasher = MurBuildHasher::new(seed);
+                self.series.minhash(num_hashes, ngram_size, seed, &hasher)
+            }
+            HashFunctionKind::XxHash => {
+                let hasher = xxhash_rust::xxh64::Xxh64Builder::new(seed as u64);
+                self.series.minhash(num_hashes, ngram_size, seed, &hasher)
+            }
+            HashFunctionKind::Sha1 => {
+                let hasher = BuildHasherDefault::<Sha1Hasher>::default();
+                self.series.minhash(num_hashes, ngram_size, seed, &hasher)
+            }
+        }?;
+
+        Ok(result.into())
     }
 
     pub fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<Self> {

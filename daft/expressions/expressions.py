@@ -1196,6 +1196,7 @@ class Expression:
         num_hashes: int,
         ngram_size: int,
         seed: int = 1,
+        hash_function: Literal["murmurhash3", "xxhash", "sha1"] = "murmurhash3",
     ) -> Expression:
         """
         Runs the MinHash algorithm on the series.
@@ -1204,7 +1205,6 @@ class Expression:
         repeating with `num_hashes` permutations. Returns as a list of 32-bit unsigned integers.
 
         Tokens for the ngrams are delimited by spaces.
-        MurmurHash is used for the initial hash.
         The strings are not normalized or pre-processed, so it is recommended
         to normalize the strings yourself.
 
@@ -1212,11 +1212,16 @@ class Expression:
             num_hashes: The number of hash permutations to compute.
             ngram_size: The number of tokens in each shingle/ngram.
             seed (optional): Seed used for generating permutations and the initial string hashes. Defaults to 1.
+            hash_function (optional): Hash function to use for initial string hashing. One of "murmurhash3", "xxhash", or "sha1". Defaults to "murmurhash3".
+
         """
         assert isinstance(num_hashes, int)
         assert isinstance(ngram_size, int)
         assert isinstance(seed, int)
-        return Expression._from_pyexpr(native.minhash(self._expr, num_hashes, ngram_size, seed))
+        assert isinstance(hash_function, str)
+        assert hash_function in ["murmurhash3", "xxhash", "sha1"], f"Hash function {hash_function} not found"
+
+        return Expression._from_pyexpr(native.minhash(self._expr, num_hashes, ngram_size, seed, hash_function))
 
     def name(self) -> builtins.str:
         return self._expr.name()

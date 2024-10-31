@@ -12,8 +12,9 @@ use daft_core::{
 use daft_dsl::{col, join::get_common_join_keys, Expr};
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{
-    Concat, EmptyScan, Explode, Filter, HashAggregate, HashJoin, InMemoryScan, Limit,
-    LocalPhysicalPlan, PhysicalWrite, Pivot, Project, Sample, Sort, UnGroupedAggregate, Unpivot,
+    ActorPoolProject, Concat, EmptyScan, Explode, Filter, HashAggregate, HashJoin, InMemoryScan,
+    Limit, LocalPhysicalPlan, PhysicalWrite, Pivot, Project, Sample, Sort, UnGroupedAggregate,
+    Unpivot,
 };
 use daft_plan::{populate_aggregation_stages, JoinType};
 use daft_table::ProbeState;
@@ -24,11 +25,11 @@ use snafu::ResultExt;
 use crate::{
     channel::PipelineChannel,
     intermediate_ops::{
-        aggregate::AggregateOperator, anti_semi_hash_join_probe::AntiSemiProbeOperator,
-        explode::ExplodeOperator, filter::FilterOperator,
-        inner_hash_join_probe::InnerHashJoinProbeOperator, intermediate_op::IntermediateNode,
-        pivot::PivotOperator, project::ProjectOperator, sample::SampleOperator,
-        unpivot::UnpivotOperator,
+        actor_pool_project::ActorPoolProjectOperator, aggregate::AggregateOperator,
+        anti_semi_hash_join_probe::AntiSemiProbeOperator, explode::ExplodeOperator,
+        filter::FilterOperator, inner_hash_join_probe::InnerHashJoinProbeOperator,
+        intermediate_op::IntermediateNode, pivot::PivotOperator, project::ProjectOperator,
+        sample::SampleOperator, unpivot::UnpivotOperator,
     },
     sinks::{
         aggregate::AggregateSink, blocking_sink::BlockingSinkNode, concat::ConcatSink,
@@ -129,6 +130,13 @@ pub fn physical_plan_to_pipeline(
             input, projection, ..
         }) => {
             let proj_op = ProjectOperator::new(projection.clone());
+            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            IntermediateNode::new(Arc::new(proj_op), vec![child_node]).boxed()
+        }
+        LocalPhysicalPlan::ActorPoolProject(ActorPoolProject {
+            input, projection, ..
+        }) => {
+            let proj_op = ActorPoolProjectOperator::new(projection.clone());
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
             IntermediateNode::new(Arc::new(proj_op), vec![child_node]).boxed()
         }

@@ -1,6 +1,7 @@
 use std::{
     borrow::Cow,
     iter::{self, Repeat, Take},
+    sync::Arc,
 };
 
 use aho_corasick::{AhoCorasickBuilder, MatchKind};
@@ -1368,8 +1369,11 @@ impl Utf8Array {
     ) -> DaftResult<UInt64Array> {
         if patterns.null_count() == patterns.len() {
             // no matches
-            return UInt64Array::from_iter(self.name(), iter::repeat(Some(0)).take(self.len()))
-                .with_validity(self.validity().cloned());
+            return UInt64Array::from_iter(
+                Arc::new(Field::new(self.name(), DataType::UInt64)),
+                iter::repeat(Some(0)).take(self.len()),
+            )
+            .with_validity(self.validity().cloned());
         }
 
         let patterns = patterns.as_arrow().iter().flatten();
@@ -1400,7 +1404,10 @@ impl Utf8Array {
                 }
             })
         });
-        Ok(UInt64Array::from_iter(self.name(), iter))
+        Ok(UInt64Array::from_iter(
+            Arc::new(Field::new(self.name(), DataType::UInt64)),
+            iter,
+        ))
     }
 
     fn unary_broadcasted_op<ScalarKernel>(&self, operation: ScalarKernel) -> DaftResult<Self>

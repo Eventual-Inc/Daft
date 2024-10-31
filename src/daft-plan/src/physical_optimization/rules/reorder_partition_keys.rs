@@ -4,7 +4,9 @@ use daft_dsl::{is_partition_compatible, ExprRef};
 
 use crate::{
     partitioning::HashClusteringConfig,
-    physical_ops::{Aggregate, Explode, FanoutByHash, HashJoin, Project, Unpivot},
+    physical_ops::{
+        Aggregate, Explode, HashJoin, Project, ShuffleExchange, ShuffleExchangeStrategy, Unpivot,
+    },
     physical_optimization::{plan_context::PlanContext, rules::PhysicalOptimizerRule},
     ClusteringSpec, PhysicalPlan, PhysicalPlanRef,
 };
@@ -114,19 +116,18 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
                     });
                     Ok(Transformed::yes(c.with_plan(new_plan.into()).propagate()))
                 }
-                PhysicalPlan::FanoutByHash(FanoutByHash { input, num_partitions, .. }) => {
-                    let new_plan = PhysicalPlan::FanoutByHash(FanoutByHash {
-                        input: input.clone(),
-                        num_partitions: *num_partitions,
-                        partition_by: c.context.clone()
-                    });
-                    Ok(Transformed::yes(c.with_plan(new_plan.into()).propagate()))
-                }
                 PhysicalPlan::Aggregate(Aggregate { input, aggregations, .. }) => {
                     let new_plan = PhysicalPlan::Aggregate(Aggregate {
                         input: input.clone(),
                         aggregations: aggregations.clone(),
                         groupby: c.context.clone(),
+                    });
+                    Ok(Transformed::yes(c.with_plan(new_plan.into()).propagate()))
+                }
+                PhysicalPlan::ShuffleExchange(ShuffleExchange{input, strategy: ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce { .. }}) => {
+                    let new_plan = PhysicalPlan::ShuffleExchange(ShuffleExchange {
+                        input: input.clone(),
+                        strategy: ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce { target_spec: new_spec.into() }
                     });
                     Ok(Transformed::yes(c.with_plan(new_plan.into()).propagate()))
                 }
@@ -136,22 +137,17 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
                 PhysicalPlan::Limit(..) |
                 PhysicalPlan::Sample(..) |
                 PhysicalPlan::MonotonicallyIncreasingId(..) |
-                PhysicalPlan::Flatten(..) |
-                PhysicalPlan::ReduceMerge(..) |
                 PhysicalPlan::Pivot(..) |
                 PhysicalPlan::TabularWriteCsv(..) |
                 PhysicalPlan::TabularWriteJson(..) |
                 PhysicalPlan::TabularWriteParquet(..) => Ok(Transformed::no(c.propagate())),
 
                 // the rest should have been dealt with earlier
+                PhysicalPlan::ShuffleExchange(ShuffleExchange {strategy: ShuffleExchangeStrategy::SplitOrCoalesceToTargetNum { .. }, ..}) |
                 PhysicalPlan::Sort(..) |
                 PhysicalPlan::InMemoryScan(..) |
                 PhysicalPlan::TabularScan(..) |
                 PhysicalPlan::EmptyScan(..) |
-                PhysicalPlan::Split(..) |
-                PhysicalPlan::Coalesce(..) |
-                PhysicalPlan::FanoutRandom(..) |
-                PhysicalPlan::FanoutByRange(..) |
                 PhysicalPlan::Concat(..) |
                 PhysicalPlan::HashJoin(..) |
                 PhysicalPlan::SortMergeJoin(..) |
@@ -176,7 +172,7 @@ mod tests {
 
     use crate::{
         partitioning::UnknownClusteringConfig,
-        physical_ops::{EmptyScan, FanoutByHash, HashJoin, ReduceMerge},
+        physical_ops::{EmptyScan, HashJoin, ShuffleExchangeFactory},
         physical_optimization::rules::{
             reorder_partition_keys::ReorderPartitionKeys, PhysicalOptimizerRule,
         },
@@ -196,10 +192,9 @@ mod tests {
         num_partitions: usize,
         partition_by: Vec<ExprRef>,
     ) -> PhysicalPlanRef {
-        PhysicalPlan::ReduceMerge(ReduceMerge::new(
-            PhysicalPlan::FanoutByHash(FanoutByHash::new(plan, num_partitions, partition_by))
-                .into(),
-        ))
+        PhysicalPlan::ShuffleExchange(
+            ShuffleExchangeFactory::new(plan).get_hash_partitioning(partition_by, num_partitions),
+        )
         .into()
     }
 
