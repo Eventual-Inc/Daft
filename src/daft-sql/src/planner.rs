@@ -246,6 +246,17 @@ impl SQLPlanner {
                     .collect::<SQLPlannerResult<Vec<_>>>()?;
             }
         }
+        let sort_exprs = query
+            .order_by
+            .clone()
+            .map(|order_by| {
+                if order_by.interpolate.is_some() {
+                    unsupported_sql_err!("ORDER BY [query] [INTERPOLATE]");
+                }
+                // TODO: if ordering by a column not in the projection, this will fail.
+                self.plan_order_by_exprs(order_by.exprs.as_slice())
+            })
+            .transpose()?;
 
         // split the selection into the groupby expressions and the rest
         let (groupby_selection, to_select) = selection
@@ -271,6 +282,9 @@ impl SQLPlanner {
                 rel.inner = rel.inner.aggregate(to_select, vec![])?;
             } else {
                 rel.inner = rel.inner.select(to_select)?;
+                if let Some((sort_exprs, descending)) = sort_exprs.clone() {
+                    rel.inner = rel.inner.sort(sort_exprs, descending)?;
+                }
             }
         }
 
@@ -282,18 +296,6 @@ impl SQLPlanner {
             Some(Distinct::On(_)) => unsupported_sql_err!("DISTINCT ON"),
             None => {}
         }
-
-        let sort_exprs = query
-            .order_by
-            .clone()
-            .map(|order_by| {
-                if order_by.interpolate.is_some() {
-                    unsupported_sql_err!("ORDER BY [query] [INTERPOLATE]");
-                }
-                // TODO: if ordering by a column not in the projection, this will fail.
-                self.plan_order_by_exprs(order_by.exprs.as_slice())
-            })
-            .transpose()?;
 
         // Properly apply or remove the groupby columns from the selection
         // This needs to be done after the orderby
