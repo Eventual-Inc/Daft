@@ -1,11 +1,13 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use common_buffer::RowBasedBuffer;
 use common_error::DaftResult;
 use daft_dsl::ExprRef;
 
-use crate::{channel::Sender, pipeline::PipelineResultType, runtime_stats::CountingReceiver};
+use crate::{
+    buffer::RowBasedBuffer, channel::Sender, pipeline::PipelineResultType,
+    runtime_stats::CountingReceiver,
+};
 
 #[async_trait]
 pub(crate) trait Dispatcher {
@@ -47,7 +49,7 @@ impl Dispatcher for RoundRobinBufferedDispatcher {
                     let _ = worker_sender.send(morsel.clone()).await;
                 }
             } else {
-                buffer.push(morsel.as_data().clone());
+                buffer.push(morsel.as_data());
                 if let Some(ready) = buffer.pop_enough()? {
                     for r in ready {
                         let _ = send_to_next_worker(r.into()).await;

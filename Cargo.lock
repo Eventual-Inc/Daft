@@ -1381,13 +1381,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "common-buffer"
-version = "0.3.0-dev0"
-dependencies = [
- "common-error",
-]
-
-[[package]]
 name = "common-daft-config"
 version = "0.3.0-dev0"
 dependencies = [
@@ -1787,7 +1780,6 @@ dependencies = [
 name = "daft"
 version = "0.3.0-dev0"
 dependencies = [
- "common-buffer",
  "common-daft-config",
  "common-display",
  "common-file-formats",
@@ -2095,7 +2087,6 @@ name = "daft-local-execution"
 version = "0.3.0-dev0"
 dependencies = [
  "async-trait",
- "common-buffer",
  "common-daft-config",
  "common-display",
  "common-error",
@@ -2133,7 +2124,6 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow2",
  "bincode",
- "common-buffer",
  "common-error",
  "common-file-formats",
  "common-runtime",
@@ -2381,7 +2371,6 @@ dependencies = [
 name = "daft-writers"
 version = "0.3.0-dev0"
 dependencies = [
- "common-buffer",
  "common-daft-config",
  "common-error",
  "common-file-formats",

@@ -7,9 +7,7 @@ use daft_micropartition::MicroPartition;
 use daft_plan::JoinType;
 use daft_table::{make_probeable_builder, ProbeState, ProbeableBuilder, Table};
 
-use super::blocking_sink::{
-    BlockingSink, BlockingSinkState, BlockingSinkStatus, DynBlockingSinkState,
-};
+use super::blocking_sink::{BlockingSink, BlockingSinkState, BlockingSinkStatus};
 use crate::pipeline::PipelineResultType;
 
 enum ProbeTableState {
@@ -76,7 +74,7 @@ impl ProbeTableState {
     }
 }
 
-impl DynBlockingSinkState for ProbeTableState {
+impl BlockingSinkState for ProbeTableState {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
@@ -110,17 +108,19 @@ impl BlockingSink for HashJoinBuildSink {
     fn sink(
         &self,
         input: &Arc<MicroPartition>,
-        state_handle: &BlockingSinkState,
+        mut state: Box<dyn BlockingSinkState>,
     ) -> DaftResult<BlockingSinkStatus> {
-        state_handle.with_state_mut::<ProbeTableState, _, _>(|state| {
-            state.add_tables(input)?;
-            Ok(BlockingSinkStatus::NeedMoreInput)
-        })
+        state
+            .as_any_mut()
+            .downcast_mut::<ProbeTableState>()
+            .expect("HashJoinBuildSink should have ProbeTableState")
+            .add_tables(input)?;
+        Ok(BlockingSinkStatus::NeedMoreInput(state))
     }
 
     fn finalize(
         &self,
-        states: Vec<Box<dyn DynBlockingSinkState>>,
+        states: Vec<Box<dyn BlockingSinkState>>,
     ) -> DaftResult<Option<PipelineResultType>> {
         assert_eq!(states.len(), 1);
         let mut state = states.into_iter().next().unwrap();
@@ -140,7 +140,7 @@ impl BlockingSink for HashJoinBuildSink {
         1
     }
 
-    fn make_state(&self) -> DaftResult<Box<dyn DynBlockingSinkState>> {
+    fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
         Ok(Box::new(ProbeTableState::new(
             &self.key_schema,
             self.projection.clone(),

@@ -32,10 +32,15 @@ use crate::{
         sample::SampleOperator, unpivot::UnpivotOperator,
     },
     sinks::{
-        aggregate::AggregateSink, blocking_sink::BlockingSinkNode, concat::ConcatSink,
-        hash_join_build::HashJoinBuildSink, limit::LimitSink,
-        outer_hash_join_probe::OuterHashJoinProbeSink, sort::SortSink,
-        streaming_sink::StreamingSinkNode, write::WriteSink,
+        aggregate::AggregateSink,
+        blocking_sink::BlockingSinkNode,
+        concat::ConcatSink,
+        hash_join_build::HashJoinBuildSink,
+        limit::LimitSink,
+        outer_hash_join_probe::OuterHashJoinProbeSink,
+        sort::SortSink,
+        streaming_sink::StreamingSinkNode,
+        write::{WriteFormat, WriteSink},
     },
     sources::{empty_scan::EmptyScanSource, in_memory::InMemorySource},
     ExecutionRuntimeHandle, PipelineCreationSnafu,
@@ -423,15 +428,15 @@ pub fn physical_plan_to_pipeline(
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
             let writer_factory = make_writer_factory(file_info, data_schema, cfg);
-            let name = match (file_info.file_format, file_info.partition_cols.is_some()) {
-                (FileFormat::Parquet, true) => "PartitionedParquet",
-                (FileFormat::Parquet, false) => "Parquet",
-                (FileFormat::Csv, true) => "PartitionedCsv",
-                (FileFormat::Csv, false) => "Csv",
+            let write_format = match (file_info.file_format, file_info.partition_cols.is_some()) {
+                (FileFormat::Parquet, true) => WriteFormat::PartitionedParquet,
+                (FileFormat::Parquet, false) => WriteFormat::Parquet,
+                (FileFormat::Csv, true) => WriteFormat::PartitionedCsv,
+                (FileFormat::Csv, false) => WriteFormat::Csv,
                 (_, _) => panic!("Unsupported file format"),
             };
             let write_sink = WriteSink::new(
-                name,
+                write_format,
                 writer_factory,
                 file_info.partition_cols.clone(),
                 file_schema.clone(),

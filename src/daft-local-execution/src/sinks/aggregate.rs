@@ -5,9 +5,7 @@ use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
-use super::blocking_sink::{
-    BlockingSink, BlockingSinkState, BlockingSinkStatus, DynBlockingSinkState,
-};
+use super::blocking_sink::{BlockingSink, BlockingSinkState, BlockingSinkStatus};
 use crate::{pipeline::PipelineResultType, NUM_CPUS};
 
 enum AggregateState {
@@ -24,18 +22,18 @@ impl AggregateState {
         }
     }
 
-    fn finalize(&mut self) -> DaftResult<Vec<Arc<MicroPartition>>> {
+    fn finalize(&mut self) -> Vec<Arc<MicroPartition>> {
         let res = if let Self::Accumulating(ref mut parts) = self {
             std::mem::take(parts)
         } else {
             panic!("AggregateSink should be in Accumulating state");
         };
         *self = Self::Done;
-        Ok(res)
+        res
     }
 }
 
-impl DynBlockingSinkState for AggregateState {
+impl BlockingSinkState for AggregateState {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
@@ -60,37 +58,29 @@ impl BlockingSink for AggregateSink {
     fn sink(
         &self,
         input: &Arc<MicroPartition>,
-        state_handle: &BlockingSinkState,
+        mut state: Box<dyn BlockingSinkState>,
     ) -> DaftResult<BlockingSinkStatus> {
-        state_handle.with_state_mut::<AggregateState, _, _>(|state| {
-            state.push(input.clone());
-            Ok(BlockingSinkStatus::NeedMoreInput)
-        })
+        state
+            .as_any_mut()
+            .downcast_mut::<AggregateState>()
+            .expect("AggregateSink should have AggregateState")
+            .push(input.clone());
+        Ok(BlockingSinkStatus::NeedMoreInput(state))
     }
 
     #[instrument(skip_all, name = "AggregateSink::finalize")]
     fn finalize(
         &self,
-        states: Vec<Box<dyn DynBlockingSinkState>>,
+        states: Vec<Box<dyn BlockingSinkState>>,
     ) -> DaftResult<Option<PipelineResultType>> {
-        let mut all_parts = vec![];
-        for mut state in states {
-            let state = state
+        let all_parts = states.into_iter().flat_map(|mut state| {
+            state
                 .as_any_mut()
                 .downcast_mut::<AggregateState>()
-                .expect("State type mismatch");
-            all_parts.extend(state.finalize()?);
-        }
-        assert!(
-            !all_parts.is_empty(),
-            "We can not finalize AggregateSink with no data"
-        );
-        let concated = MicroPartition::concat(
-            &all_parts
-                .iter()
-                .map(std::convert::AsRef::as_ref)
-                .collect::<Vec<_>>(),
-        )?;
+                .expect("AggregateSink should have AggregateState")
+                .finalize()
+        });
+        let concated = MicroPartition::concat(all_parts)?;
         let agged = Arc::new(concated.agg(&self.agg_exprs, &self.group_by)?);
         Ok(Some(agged.into()))
     }
@@ -103,7 +93,7 @@ impl BlockingSink for AggregateSink {
         *NUM_CPUS
     }
 
-    fn make_state(&self) -> DaftResult<Box<dyn DynBlockingSinkState>> {
+    fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
         Ok(Box::new(AggregateState::Accumulating(vec![])))
     }
 }

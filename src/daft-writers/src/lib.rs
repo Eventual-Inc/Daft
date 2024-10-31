@@ -1,4 +1,5 @@
 #![feature(hash_raw_entry)]
+#![feature(let_chains)]
 mod batch;
 mod file;
 mod partition;
@@ -28,7 +29,10 @@ pub trait FileWriter: Send + Sync {
     type Input;
     type Result;
 
+    /// Write data to the file.
     fn write(&mut self, data: &Self::Input) -> DaftResult<()>;
+
+    /// Close the file and return the result. The caller should NOT write to the file after calling this method.
     fn close(&mut self) -> DaftResult<Self::Result>;
 }
 

@@ -1,5 +1,4 @@
 [dependencies]
-common-buffer = {path = "src/common/buffer", default-features = false}
 common-daft-config = {path = "src/common/daft-config", default-features = false}
 common-display = {path = "src/common/display", default-features = false}
 common-file-formats = {path = "src/common/file-formats", default-features = false}

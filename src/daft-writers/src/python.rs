@@ -9,6 +9,7 @@ use crate::FileWriter;
 
 pub struct PyArrowWriter {
     py_writer: PyObject,
+    is_closed: bool,
 }
 
 impl PyArrowWriter {
@@ -45,6 +46,7 @@ impl PyArrowWriter {
             ))?;
             Ok(Self {
                 py_writer: py_writer.into(),
+                is_closed: false,
             })
         })
     }
@@ -79,6 +81,7 @@ impl PyArrowWriter {
             ))?;
             Ok(Self {
                 py_writer: py_writer.into(),
+                is_closed: false,
             })
         })
     }
@@ -89,6 +92,7 @@ impl FileWriter for PyArrowWriter {
     type Result = Option<Table>;
 
     fn write(&mut self, data: &Self::Input) -> DaftResult<()> {
+        assert!(!self.is_closed, "Cannot write to a closed PyArrowWriter");
         Python::with_gil(|py| {
             let py_micropartition = py
                 .import_bound(pyo3::intern!(py, "daft.table"))?
@@ -102,6 +106,7 @@ impl FileWriter for PyArrowWriter {
     }
 
     fn close(&mut self) -> DaftResult<Self::Result> {
+        self.is_closed = true;
         Python::with_gil(|py| {
             let result = self
                 .py_writer

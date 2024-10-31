@@ -20,6 +20,7 @@ struct PartitionedWriter {
     saved_partition_values: Vec<Table>,
     writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<Table>>>,
     partition_by: Vec<ExprRef>,
+    is_closed: bool,
 }
 
 impl PartitionedWriter {
@@ -32,6 +33,7 @@ impl PartitionedWriter {
             saved_partition_values: vec![],
             writer_factory,
             partition_by,
+            is_closed: false,
         }
     }
 
@@ -51,6 +53,11 @@ impl FileWriter for PartitionedWriter {
     type Result = Vec<Table>;
 
     fn write(&mut self, input: &Arc<MicroPartition>) -> DaftResult<()> {
+        assert!(
+            !self.is_closed,
+            "Cannot write to a closed PartitionedWriter"
+        );
+
         let (split_tables, partition_values) =
             Self::partition(self.partition_by.as_slice(), input)?;
         let partition_values_hash = partition_values.hash_rows()?;
@@ -108,6 +115,7 @@ impl FileWriter for PartitionedWriter {
         for (_, mut writer) in self.per_partition_writers.drain() {
             results.extend(writer.close()?);
         }
+        self.is_closed = true;
         Ok(results)
     }
 }

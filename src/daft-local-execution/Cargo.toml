@@ -1,6 +1,5 @@
 [dependencies]
 async-trait = {workspace = true}
-common-buffer = {path = "../common/buffer", default-features = false}
 common-daft-config = {path = "../common/daft-config", default-features = false}
 common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}

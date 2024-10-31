@@ -15,6 +15,7 @@ struct TargetFileSizeWriter {
     target_in_memory_file_rows: usize,
     results: Vec<Table>,
     partition_values: Option<Table>,
+    is_closed: bool,
 }
 
 impl TargetFileSizeWriter {
@@ -32,6 +33,7 @@ impl TargetFileSizeWriter {
             target_in_memory_file_rows,
             results: vec![],
             partition_values,
+            is_closed: false,
         })
     }
 
@@ -39,7 +41,6 @@ impl TargetFileSizeWriter {
         if let Some(result) = self.current_writer.close()? {
             self.results.push(result);
         }
-        self.current_file_rows = 0;
         self.current_writer = self
             .writer_factory
             .create_writer(self.results.len(), self.partition_values.as_ref())?;
@@ -52,43 +53,48 @@ impl FileWriter for TargetFileSizeWriter {
     type Result = Vec<Table>;
 
     fn write(&mut self, input: &Arc<MicroPartition>) -> DaftResult<()> {
+        assert!(
+            !self.is_closed,
+            "Cannot write to a closed TargetFileSizeWriter"
+        );
         use std::cmp::Ordering;
-        match (input.len() + self.current_file_rows).cmp(&self.target_in_memory_file_rows) {
-            Ordering::Equal => {
-                self.current_writer.write(input)?;
-                self.rotate_writer()?;
-            }
-            Ordering::Greater => {
-                // Finish up the current writer first
-                let remaining_rows = self.target_in_memory_file_rows - self.current_file_rows;
-                let (to_write, mut remaining) = input.split_at(remaining_rows)?;
-                self.current_writer.write(&to_write.into())?;
-                self.rotate_writer()?;
 
-                // Write as many full files as possible
-                let num_full_files = remaining.len() / self.target_in_memory_file_rows;
-                for _ in 0..num_full_files {
-                    let (to_write, new_remaining) =
-                        remaining.split_at(self.target_in_memory_file_rows)?;
+        let mut local_offset = 0;
+
+        loop {
+            let remaining_input_rows = input.len() - local_offset;
+            let rows_until_target = self.target_in_memory_file_rows - self.current_file_rows;
+
+            match remaining_input_rows.cmp(&rows_until_target) {
+                Ordering::Equal => {
+                    // Write exactly what's needed to fill the current file
+                    let to_write =
+                        input.slice(local_offset, local_offset + remaining_input_rows)?;
                     self.current_writer.write(&to_write.into())?;
                     self.rotate_writer()?;
-                    remaining = new_remaining;
-                }
-
-                // Write the remaining rows
-                if !remaining.is_empty() {
-                    self.current_file_rows = remaining.len();
-                    self.current_writer.write(&remaining.into())?;
-                } else {
                     self.current_file_rows = 0;
+                    return Ok(());
                 }
-            }
-            Ordering::Less => {
-                self.current_writer.write(input)?;
-                self.current_file_rows += input.len();
+                Ordering::Less => {
+                    // Write remaining input and update counter
+                    let to_write =
+                        input.slice(local_offset, local_offset + remaining_input_rows)?;
+                    self.current_writer.write(&to_write.into())?;
+                    self.current_file_rows += remaining_input_rows;
+                    return Ok(());
+                }
+                Ordering::Greater => {
+                    // Write what fits in current file
+                    let to_write = input.slice(local_offset, local_offset + rows_until_target)?;
+                    self.current_writer.write(&to_write.into())?;
+                    self.rotate_writer()?;
+                    self.current_file_rows = 0;
+
+                    // Update offset and continue loop
+                    local_offset += rows_until_target;
+                }
             }
         }
-        Ok(())
     }
 
     fn close(&mut self) -> DaftResult<Self::Result> {
@@ -97,6 +103,7 @@ impl FileWriter for TargetFileSizeWriter {
                 self.results.push(result);
             }
         }
+        self.is_closed = true;
         Ok(std::mem::take(&mut self.results))
     }
 }

@@ -5,7 +5,6 @@ use std::{
 };
 
 use arrow2::io::parquet::read::schema::infer_schema_with_options;
-use common_buffer::Bufferable;
 use common_error::DaftResult;
 use common_file_formats::{CsvSourceConfig, FileFormatConfig, ParquetSourceConfig};
 use common_runtime::get_io_runtime;
@@ -1274,28 +1273,6 @@ impl Display for MicroPartition {
         }
 
         Ok(())
-    }
-}
-
-impl Bufferable for MicroPartition {
-    fn len(&self) -> usize {
-        self.len()
-    }
-
-    fn concat(parts: &[&Self]) -> DaftResult<Self>
-    where
-        Self: Sized,
-    {
-        let concated = Self::concat(parts)?;
-        Ok(concated)
-    }
-
-    fn slice(&self, start: usize, end: usize) -> DaftResult<Self>
-    where
-        Self: Sized,
-    {
-        let sliced = self.slice(start, end)?;
-        Ok(sliced)
     }
 }
 

@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use common_buffer::RowBasedBuffer;
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 use daft_table::Table;
@@ -8,10 +7,12 @@ use daft_table::Table;
 use crate::{FileWriter, WriterFactory};
 
 // TargetBatchWriter is a writer that writes in batches of rows, i.e. for Parquet where we want to write
-// a row group at a time. It uses a buffer to accumulate rows until it has enough to write a batch.
+// a row group at a time.
 pub struct TargetBatchWriter {
-    buffer: RowBasedBuffer<Arc<MicroPartition>>,
+    target_in_memory_chunk_rows: usize,
     writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Option<Table>>>,
+    leftovers: Option<Arc<MicroPartition>>,
+    is_closed: bool,
 }
 
 impl TargetBatchWriter {
@@ -20,8 +21,10 @@ impl TargetBatchWriter {
         writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Option<Table>>>,
     ) -> Self {
         Self {
-            buffer: RowBasedBuffer::new(target_in_memory_chunk_rows),
+            target_in_memory_chunk_rows,
             writer,
+            leftovers: None,
+            is_closed: false,
         }
     }
 }
@@ -31,19 +34,51 @@ impl FileWriter for TargetBatchWriter {
     type Result = Option<Table>;
 
     fn write(&mut self, input: &Arc<MicroPartition>) -> DaftResult<()> {
-        self.buffer.push(input.clone());
-        if let Some(ready) = self.buffer.pop_enough()? {
-            for r in ready {
-                self.writer.write(&r)?;
+        assert!(
+            !self.is_closed,
+            "Cannot write to a closed TargetBatchWriter"
+        );
+        let input = if let Some(leftovers) = self.leftovers.take() {
+            MicroPartition::concat([&leftovers, input])?.into()
+        } else {
+            input.clone()
+        };
+
+        let mut local_offset = 0;
+        loop {
+            let remaining_rows = input.len() - local_offset;
+
+            use std::cmp::Ordering;
+            match remaining_rows.cmp(&self.target_in_memory_chunk_rows) {
+                Ordering::Equal => {
+                    // Write exactly one chunk
+                    let chunk = input.slice(local_offset, local_offset + remaining_rows)?;
+                    return self.writer.write(&chunk.into());
+                }
+                Ordering::Less => {
+                    // Store remaining rows as leftovers
+                    let remainder = input.slice(local_offset, local_offset + remaining_rows)?;
+                    self.leftovers = Some(remainder.into());
+                    return Ok(());
+                }
+                Ordering::Greater => {
+                    // Write a complete chunk and continue
+                    let chunk = input.slice(
+                        local_offset,
+                        local_offset + self.target_in_memory_chunk_rows,
+                    )?;
+                    self.writer.write(&chunk.into())?;
+                    local_offset += self.target_in_memory_chunk_rows;
+                }
             }
         }
-        Ok(())
     }
 
     fn close(&mut self) -> DaftResult<Self::Result> {
-        if let Some(ready) = self.buffer.pop_all()? {
-            self.writer.write(&ready)?;
+        if let Some(leftovers) = self.leftovers.take() {
+            self.writer.write(&leftovers)?;
         }
+        self.is_closed = true;
         self.writer.close()
     }
 }

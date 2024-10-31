@@ -1,6 +1,6 @@
 import uuid
 from abc import ABC, abstractmethod
-from typing import Optional, Union
+from typing import Optional
 
 from daft.daft import IOConfig
 from daft.dependencies import pa, pacsv, pq
@@ -50,7 +50,6 @@ class FileWriterBase(ABC):
             self.fs.create_dir(self.dir_path, recursive=True)
 
         self.compression = compression if compression is not None else "none"
-        self.current_writer: Optional[Union[pq.ParquetWriter, pacsv.CSVWriter]] = None
 
     @abstractmethod
     def write(self, table: MicroPartition) -> None:
@@ -63,7 +62,7 @@ class FileWriterBase(ABC):
 
     @abstractmethod
     def close(self) -> Table:
-        """Close the writer and return metadata about the written file.
+        """Close the writer and return metadata about the written file. Write should not be called after close.
 
         Returns:
             Table containing metadata about the written file, including path and partition values.
@@ -88,6 +87,8 @@ class ParquetFileWriter(FileWriterBase):
             compression=compression,
             io_config=io_config,
         )
+        self.is_closed = False
+        self.current_writer: Optional[pq.ParquetWriter] = None
 
     def _create_writer(self, schema: pa.Schema) -> pq.ParquetWriter:
         return pq.ParquetWriter(
@@ -99,6 +100,7 @@ class ParquetFileWriter(FileWriterBase):
         )
 
     def write(self, table: MicroPartition) -> None:
+        assert not self.is_closed, "Cannot write to a closed ParquetFileWriter"
         if self.current_writer is None:
             self.current_writer = self._create_writer(table.schema().to_pyarrow_schema())
         self.current_writer.write_table(table.to_arrow())
@@ -107,6 +109,7 @@ class ParquetFileWriter(FileWriterBase):
         if self.current_writer is not None:
             self.current_writer.close()
 
+        self.is_closed = True
         metadata = {"path": Series.from_pylist([self.full_path])}
         if self.partition_values is not None:
             for col_name in self.partition_values.column_names():
@@ -129,6 +132,8 @@ class CSVFileWriter(FileWriterBase):
             partition_values=partition_values,
             io_config=io_config,
         )
+        self.current_writer: Optional[pacsv.CSVWriter] = None
+        self.is_closed = False
 
     def _create_writer(self, schema: pa.Schema) -> pacsv.CSVWriter:
         return pacsv.CSVWriter(
@@ -137,6 +142,7 @@ class CSVFileWriter(FileWriterBase):
         )
 
     def write(self, table: MicroPartition) -> None:
+        assert not self.is_closed, "Cannot write to a closed CSVFileWriter"
         if self.current_writer is None:
             self.current_writer = self._create_writer(table.schema().to_pyarrow_schema())
         self.current_writer.write_table(table.to_arrow())
@@ -145,6 +151,7 @@ class CSVFileWriter(FileWriterBase):
         if self.current_writer is not None:
             self.current_writer.close()
 
+        self.is_closed = True
         metadata = {"path": Series.from_pylist([self.full_path])}
         if self.partition_values is not None:
             for col_name in self.partition_values.column_names():

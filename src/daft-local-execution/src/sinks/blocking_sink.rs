@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
@@ -14,52 +14,28 @@ use crate::{
     runtime_stats::RuntimeStatsContext,
     ExecutionRuntimeHandle, JoinSnafu, TaskSet,
 };
-pub trait DynBlockingSinkState: Send + Sync {
+pub trait BlockingSinkState: Send + Sync {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
 }
 
-pub(crate) struct BlockingSinkState {
-    inner: Mutex<Box<dyn DynBlockingSinkState>>,
-}
-
-impl BlockingSinkState {
-    fn new(inner: Box<dyn DynBlockingSinkState>) -> Arc<Self> {
-        Arc::new(Self {
-            inner: Mutex::new(inner),
-        })
-    }
-
-    pub(crate) fn with_state_mut<T: DynBlockingSinkState + 'static, F, R>(&self, f: F) -> R
-    where
-        F: FnOnce(&mut T) -> R,
-    {
-        let mut guard = self.inner.lock().unwrap();
-        let state = guard
-            .as_any_mut()
-            .downcast_mut::<T>()
-            .expect("State type mismatch");
-        f(state)
-    }
-}
-
 pub enum BlockingSinkStatus {
-    NeedMoreInput,
+    NeedMoreInput(Box<dyn BlockingSinkState>),
     #[allow(dead_code)]
-    Finished,
+    Finished(Box<dyn BlockingSinkState>),
 }
 
 pub trait BlockingSink: Send + Sync {
     fn sink(
         &self,
         input: &Arc<MicroPartition>,
-        state_handle: &BlockingSinkState,
+        state: Box<dyn BlockingSinkState>,
     ) -> DaftResult<BlockingSinkStatus>;
     fn finalize(
         &self,
-        states: Vec<Box<dyn DynBlockingSinkState>>,
+        states: Vec<Box<dyn BlockingSinkState>>,
     ) -> DaftResult<Option<PipelineResultType>>;
     fn name(&self) -> &'static str;
-    fn make_state(&self) -> DaftResult<Box<dyn DynBlockingSinkState>>;
+    fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>>;
     fn make_dispatcher(&self, runtime_handle: &ExecutionRuntimeHandle) -> Arc<dyn Dispatcher> {
         Arc::new(RoundRobinBufferedDispatcher::new(
             runtime_handle.default_morsel_size(),
@@ -94,41 +70,34 @@ impl BlockingSinkNode {
         op: Arc<dyn BlockingSink>,
         mut input_receiver: Receiver<PipelineResultType>,
         rt_context: Arc<RuntimeStatsContext>,
-    ) -> DaftResult<Box<dyn DynBlockingSinkState>> {
+    ) -> DaftResult<Box<dyn BlockingSinkState>> {
         let span = info_span!("BlockingSink::Sink");
         let compute_runtime = get_compute_runtime();
-        let state_wrapper = BlockingSinkState::new(op.make_state()?);
+        let mut state = op.make_state()?;
         while let Some(morsel) = input_receiver.recv().await {
             let op = op.clone();
             let morsel = morsel.clone();
             let span = span.clone();
             let rt_context = rt_context.clone();
-            let state_wrapper = state_wrapper.clone();
-            let fut = async move {
-                rt_context.in_span(&span, || op.sink(morsel.as_data(), &state_wrapper))
-            };
+            let fut = async move { rt_context.in_span(&span, || op.sink(morsel.as_data(), state)) };
             let result = compute_runtime.await_on(fut).await??;
             match result {
-                BlockingSinkStatus::NeedMoreInput => {}
-                BlockingSinkStatus::Finished => {
-                    break;
+                BlockingSinkStatus::NeedMoreInput(new_state) => {
+                    state = new_state;
+                }
+                BlockingSinkStatus::Finished(new_state) => {
+                    return Ok(new_state);
                 }
             }
         }
 
-        // Take the state out of the Arc and Mutex because we need to return it.
-        // It should be guaranteed that the ONLY holder of state at this point is this function.
-        Ok(Arc::into_inner(state_wrapper)
-            .expect("Completed worker should have exclusive access to state wrapper")
-            .inner
-            .into_inner()
-            .expect("Completed worker should have exclusive access to inner state"))
+        Ok(state)
     }
 
     fn spawn_workers(
         op: Arc<dyn BlockingSink>,
         input_receivers: Vec<Receiver<PipelineResultType>>,
-        task_set: &mut TaskSet<DaftResult<Box<dyn DynBlockingSinkState>>>,
+        task_set: &mut TaskSet<DaftResult<Box<dyn BlockingSinkState>>>,
         stats: Arc<RuntimeStatsContext>,
     ) {
         for input_receiver in input_receivers {
