@@ -565,4 +565,12 @@ impl SQLFunction for SQLConcat {
 
         Ok(first)
     }
+
+    fn docstrings(&self, _: &str) -> String {
+        "Concatenate the inputs into a single string".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["...inputs"]
+    }
 }
