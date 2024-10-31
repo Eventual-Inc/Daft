@@ -101,8 +101,6 @@ def _get_runner_config_from_env() -> _RunnerConfig:
             force_client_mode=ray_force_client_mode,
         )
 
-
-
     # Fall back on PyRunner
     else:
         return _PyRunnerConfig(use_thread_pool=use_thread_pool)
