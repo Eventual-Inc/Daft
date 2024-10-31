@@ -22,12 +22,14 @@ daft-local-execution = {path = "src/daft-local-execution", default-features = fa
 daft-micropartition = {path = "src/daft-micropartition", default-features = false}
 daft-minhash = {path = "src/daft-minhash", default-features = false}
 daft-parquet = {path = "src/daft-parquet", default-features = false}
+daft-physical-plan = {path = "src/daft-physical-plan", default-features = false}
 daft-plan = {path = "src/daft-plan", default-features = false}
 daft-scan = {path = "src/daft-scan", default-features = false}
 daft-scheduler = {path = "src/daft-scheduler", default-features = false}
 daft-sql = {path = "src/daft-sql", default-features = false}
 daft-stats = {path = "src/daft-stats", default-features = false}
 daft-table = {path = "src/daft-table", default-features = false}
+daft-writers = {path = "src/daft-writers", default-features = false}
 lazy_static = {workspace = true}
 log = {workspace = true}
 lzma-sys = {version = "*", features = ["static"]}
@@ -53,12 +55,20 @@ python = [
   "daft-local-execution/python",
   "daft-micropartition/python",
   "daft-parquet/python",
+  "daft-physical-plan/python",
   "daft-plan/python",
   "daft-scan/python",
   "daft-scheduler/python",
   "daft-sql/python",
   "daft-stats/python",
   "daft-table/python",
+  "daft-functions/python",
+  "daft-functions-json/python",
+  "daft-writers/python",
+  "common-daft-config/python",
+  "common-system-info/python",
+  "common-display/python",
+  "common-resource-request/python",
   "dep:pyo3",
   "dep:pyo3-log"
 ]
@@ -141,6 +151,7 @@ members = [
   "src/daft-scheduler",
   "src/daft-sketch",
   "src/daft-sql",
+  "src/daft-writers",
   "src/daft-table",
   "src/hyperloglog",
   "src/parquet2"
