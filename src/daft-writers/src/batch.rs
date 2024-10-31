@@ -118,3 +118,78 @@ impl WriterFactory for TargetBatchWriterFactory {
         )))
     }
 }
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+    use crate::test::{make_dummy_mp, DummyWriterFactory};
+
+    #[test]
+    fn test_target_batch_writer_exact_batch() {
+        let dummy_writer_factory = DummyWriterFactory;
+        let mut writer =
+            TargetBatchWriter::new(1, dummy_writer_factory.create_writer(0, None).unwrap());
+
+        let mp = make_dummy_mp(1);
+        writer.write(&mp).unwrap();
+        let res = writer.close().unwrap();
+
+        assert!(res.is_some());
+        let write_count = res
+            .unwrap()
+            .get_column("write_count")
+            .unwrap()
+            .u64()
+            .unwrap()
+            .get(0)
+            .unwrap();
+        assert_eq!(write_count, 1);
+    }
+
+    #[test]
+    fn test_target_batch_writer_small_batches() {
+        let dummy_writer_factory = DummyWriterFactory;
+        let mut writer =
+            TargetBatchWriter::new(3, dummy_writer_factory.create_writer(0, None).unwrap());
+
+        for _ in 0..8 {
+            let mp = make_dummy_mp(1);
+            writer.write(&mp).unwrap();
+        }
+        let res = writer.close().unwrap();
+
+        assert!(res.is_some());
+        let write_count = res
+            .unwrap()
+            .get_column("write_count")
+            .unwrap()
+            .u64()
+            .unwrap()
+            .get(0)
+            .unwrap();
+        assert_eq!(write_count, 3);
+    }
+
+    #[test]
+    fn test_target_batch_writer_big_batch() {
+        let dummy_writer_factory = DummyWriterFactory;
+        let mut writer =
+            TargetBatchWriter::new(3, dummy_writer_factory.create_writer(0, None).unwrap());
+
+        let mp = make_dummy_mp(10);
+        writer.write(&mp).unwrap();
+        let res = writer.close().unwrap();
+
+        assert!(res.is_some());
+        let write_count = res
+            .unwrap()
+            .get_column("write_count")
+            .unwrap()
+            .u64()
+            .unwrap()
+            .get(0)
+            .unwrap();
+        assert_eq!(write_count, 4);
+    }
+}

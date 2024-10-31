@@ -5,6 +5,9 @@ mod file;
 mod partition;
 mod physical;
 
+#[cfg(test)]
+mod test;
+
 #[cfg(feature = "python")]
 mod python;
 

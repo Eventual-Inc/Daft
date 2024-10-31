@@ -144,3 +144,72 @@ impl WriterFactory for TargetFileSizeWriterFactory {
             >)
     }
 }
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+    use crate::test::{make_dummy_mp, DummyWriterFactory};
+
+    #[test]
+    fn test_target_file_writer_exact_file() {
+        let dummy_writer_factory = DummyWriterFactory;
+        let mut writer =
+            TargetFileSizeWriter::new(1, Arc::new(dummy_writer_factory), None).unwrap();
+
+        let mp = make_dummy_mp(1);
+        writer.write(&mp).unwrap();
+        let res = writer.close().unwrap();
+        assert_eq!(res.len(), 1);
+    }
+
+    #[test]
+    fn test_target_file_writer_less_rows_for_one_file() {
+        let dummy_writer_factory = DummyWriterFactory;
+        let mut writer =
+            TargetFileSizeWriter::new(3, Arc::new(dummy_writer_factory), None).unwrap();
+
+        let mp = make_dummy_mp(2);
+        writer.write(&mp).unwrap();
+        let res = writer.close().unwrap();
+        assert_eq!(res.len(), 1);
+    }
+
+    #[test]
+    fn test_target_file_writer_more_rows_for_one_file() {
+        let dummy_writer_factory = DummyWriterFactory;
+        let mut writer =
+            TargetFileSizeWriter::new(3, Arc::new(dummy_writer_factory), None).unwrap();
+
+        let mp = make_dummy_mp(4);
+        writer.write(&mp).unwrap();
+        let res = writer.close().unwrap();
+        assert_eq!(res.len(), 2);
+    }
+
+    #[test]
+    fn test_target_file_writer_multiple_files() {
+        let dummy_writer_factory = DummyWriterFactory;
+        let mut writer =
+            TargetFileSizeWriter::new(3, Arc::new(dummy_writer_factory), None).unwrap();
+
+        let mp = make_dummy_mp(10);
+        writer.write(&mp).unwrap();
+        let res = writer.close().unwrap();
+        assert_eq!(res.len(), 4);
+    }
+
+    #[test]
+    fn test_target_file_writer_many_writes_many_files() {
+        let dummy_writer_factory = DummyWriterFactory;
+        let mut writer =
+            TargetFileSizeWriter::new(3, Arc::new(dummy_writer_factory), None).unwrap();
+
+        for _ in 0..10 {
+            let mp = make_dummy_mp(1);
+            writer.write(&mp).unwrap();
+        }
+        let res = writer.close().unwrap();
+        assert_eq!(res.len(), 4);
+    }
+}

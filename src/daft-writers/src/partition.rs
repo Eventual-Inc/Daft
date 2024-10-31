@@ -15,6 +15,7 @@ use crate::{FileWriter, WriterFactory};
 /// PartitionedWriter is a writer that partitions the input data by a set of columns, and writes each partition
 /// to a separate file. It uses a map to keep track of the writers for each partition.
 struct PartitionedWriter {
+    // TODO: Figure out a way to NOT use the IndexHash + RawEntryMut pattern here. Ideally we want to store ScalarValues, aka. single Rows of the partition values as keys for the hashmap.
     per_partition_writers:
         HashMap<IndexHash, Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Vec<Table>>>>,
     saved_partition_values: Vec<Table>,
