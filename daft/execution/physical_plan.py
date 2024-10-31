@@ -55,7 +55,6 @@ T = TypeVar("T")
 if TYPE_CHECKING:
     import pathlib
 
-    from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
@@ -123,7 +122,8 @@ def iceberg_write(
     base_path: str,
     iceberg_schema: IcebergSchema,
     iceberg_properties: IcebergTableProperties,
-    partition_spec: IcebergPartitionSpec,
+    partition_spec_id: int,
+    partition_cols: ExpressionsProjection,
     io_config: IOConfig | None,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Write the results of `child_plan` into pyiceberg data files described by `write_info`."""
@@ -134,7 +134,8 @@ def iceberg_write(
                 base_path=base_path,
                 iceberg_schema=iceberg_schema,
                 iceberg_properties=iceberg_properties,
-                partition_spec=partition_spec,
+                partition_spec_id=partition_spec_id,
+                partition_cols=partition_cols,
                 io_config=io_config,
             ),
         )

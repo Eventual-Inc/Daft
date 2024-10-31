@@ -19,7 +19,6 @@ from daft.logical.schema import Schema
 from daft.runners.partitioning import PartitionT
 
 if TYPE_CHECKING:
-    from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
@@ -347,7 +346,8 @@ def write_iceberg(
     base_path: str,
     iceberg_schema: IcebergSchema,
     iceberg_properties: IcebergTableProperties,
-    partition_spec: IcebergPartitionSpec,
+    partition_spec_id: int,
+    partition_cols: list[PyExpr],
     io_config: IOConfig | None,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     return physical_plan.iceberg_write(
@@ -355,7 +355,8 @@ def write_iceberg(
         base_path=base_path,
         iceberg_schema=iceberg_schema,
         iceberg_properties=iceberg_properties,
-        partition_spec=partition_spec,
+        partition_spec_id=partition_spec_id,
+        partition_cols=ExpressionsProjection([Expression._from_pyexpr(expr) for expr in partition_cols]),
         io_config=io_config,
     )
 

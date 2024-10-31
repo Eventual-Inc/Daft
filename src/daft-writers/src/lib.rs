@@ -9,6 +9,8 @@ mod physical;
 mod test;
 
 #[cfg(feature = "python")]
+mod catalog;
+#[cfg(feature = "python")]
 mod python;
 
 use std::{cmp::min, sync::Arc};
@@ -53,7 +55,7 @@ pub trait WriterFactory: Send + Sync {
     ) -> DaftResult<Box<dyn FileWriter<Input = Self::Input, Result = Self::Result>>>;
 }
 
-pub fn make_writer_factory(
+pub fn make_physical_writer_factory(
     file_info: &OutputFileInfo,
     schema: &SchemaRef,
     cfg: &DaftExecutionConfig,
@@ -123,5 +125,73 @@ pub fn make_writer_factory(
             }
         }
         _ => unreachable!("Physical write should only support Parquet and CSV"),
+    }
+}
+
+#[cfg(feature = "python")]
+pub fn make_catalog_writer_factory(
+    catalog_info: &daft_plan::CatalogType,
+    schema: &SchemaRef,
+    cfg: &DaftExecutionConfig,
+) -> Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<Table>>> {
+    use catalog::CatalogWriterFactory;
+    use daft_dsl::col;
+    use daft_plan::CatalogType;
+
+    let estimated_row_size_bytes = schema.estimate_row_size_bytes();
+    let base_writer_factory = CatalogWriterFactory::new(catalog_info.clone());
+    let target_in_memory_file_size =
+        cfg.parquet_target_filesize as f64 * cfg.parquet_inflation_factor;
+    let target_in_memory_row_group_size =
+        cfg.parquet_target_row_group_size as f64 * cfg.parquet_inflation_factor;
+
+    let target_file_rows = if estimated_row_size_bytes > 0.0 {
+        target_in_memory_file_size / estimated_row_size_bytes
+    } else {
+        target_in_memory_file_size
+    } as usize;
+
+    let target_row_group_rows = min(
+        target_file_rows,
+        if estimated_row_size_bytes > 0.0 {
+            target_in_memory_row_group_size / estimated_row_size_bytes
+        } else {
+            target_in_memory_row_group_size
+        } as usize,
+    );
+
+    let row_group_writer_factory =
+        TargetBatchWriterFactory::new(Arc::new(base_writer_factory), target_row_group_rows);
+
+    let file_writer_factory =
+        TargetFileSizeWriterFactory::new(Arc::new(row_group_writer_factory), target_file_rows);
+
+    match catalog_info {
+        CatalogType::Iceberg(ic) if !ic.partition_cols.is_empty() => {
+            let partitioned_writer_factory = PartitionedWriterFactory::new(
+                Arc::new(file_writer_factory),
+                ic.partition_cols.clone(),
+            );
+            Arc::new(partitioned_writer_factory)
+        }
+        CatalogType::DeltaLake(dl) => {
+            if let Some(partition_cols) = &dl.partition_cols
+                && !partition_cols.is_empty()
+            {
+                println!("partition_cols: {:?}", partition_cols);
+                let partition_col_exprs = partition_cols
+                    .iter()
+                    .map(|name| col(name.as_str()))
+                    .collect::<Vec<_>>();
+                let partitioned_writer_factory = PartitionedWriterFactory::new(
+                    Arc::new(file_writer_factory),
+                    partition_col_exprs,
+                );
+                Arc::new(partitioned_writer_factory)
+            } else {
+                Arc::new(file_writer_factory)
+            }
+        }
+        _ => Arc::new(file_writer_factory),
     }
 }

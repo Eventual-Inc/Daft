@@ -49,13 +49,8 @@ pub enum CatalogType {
 pub struct IcebergCatalogInfo {
     pub table_name: String,
     pub table_location: String,
-    #[serde(
-        serialize_with = "serialize_py_object",
-        deserialize_with = "deserialize_py_object"
-    )]
-    #[derivative(PartialEq = "ignore")]
-    #[derivative(Hash = "ignore")]
-    pub partition_spec: PyObject,
+    pub partition_spec_id: i64,
+    pub partition_cols: Vec<ExprRef>,
     #[serde(
         serialize_with = "serialize_py_object",
         deserialize_with = "deserialize_py_object"
