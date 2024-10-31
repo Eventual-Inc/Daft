@@ -139,7 +139,7 @@ async fn get_delete_map(
         .get_io_client_and_runtime()?;
     let scan_tasks = scan_tasks.to_vec();
     runtime
-        .await_on(async move {
+        .spawn(async move {
             let mut delete_map = scan_tasks
                 .iter()
                 .flat_map(|st| st.sources.iter().map(|s| s.get_path().to_string()))
