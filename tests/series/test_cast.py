@@ -1205,3 +1205,19 @@ def test_series_cast_fixed_shape_sparse_to_python() -> None:
     given = series.to_pylist()
     expected = [to_coo_sparse_dict(ndarray) if ndarray is not None else None for ndarray in data]
     np.testing.assert_equal(given, expected)
+
+
+@pytest.mark.parametrize("indices_dtype", [np.uint8, np.uint16])
+def test_fixed_shape_sparse_indices_dtype(indices_dtype: np.dtype):
+    def get_inner_indices_dtype(fixed_shape_sparse_dtype: DataType) -> pa.DataType:
+        arrow_sparse_dtype = fixed_shape_sparse_dtype.to_arrow_dtype()
+        indices_dtype = arrow_sparse_dtype.field('indices').type.value_type
+        return indices_dtype
+    
+    largest_index_possible = np.iinfo(indices_dtype).max
+    tensor_shape  = (largest_index_possible + 1, 1)
+    series = Series.from_pylist([np.zeros(shape=tensor_shape, dtype=np.uint8)]).cast(DataType.tensor(DataType.uint8(), shape=tensor_shape))
+    sparse_series = series.cast(DataType.sparse_tensor(DataType.uint8(), shape=tensor_shape))
+
+    actual_dtype = get_inner_indices_dtype(sparse_series.datatype())
+    assert actual_dtype == pa.from_numpy_dtype(indices_dtype)
