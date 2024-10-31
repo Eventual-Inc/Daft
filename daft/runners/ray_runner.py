@@ -750,6 +750,7 @@ class Scheduler(ActorPoolManager):
                                 next_step.set_result(
                                     [RayMaterializedResult(partition, accessor, 0) for partition in next_step.inputs]
                                 )
+                                next_step.set_done()
                                 next_step = next(tasks)
 
                             else:
