@@ -283,15 +283,17 @@ impl SQLPlanner {
             None => {}
         }
 
-        if let Some(order_by) = &query.order_by {
-            if order_by.interpolate.is_some() {
-                unsupported_sql_err!("ORDER BY [query] [INTERPOLATE]");
-            }
-            // TODO: if ordering by a column not in the projection, this will fail.
-            let (exprs, descending) = self.plan_order_by_exprs(order_by.exprs.as_slice())?;
-            let rel = self.relation_mut();
-            rel.inner = rel.inner.sort(exprs, descending)?;
-        }
+        let sort_exprs = query
+            .order_by
+            .clone()
+            .map(|order_by| {
+                if order_by.interpolate.is_some() {
+                    unsupported_sql_err!("ORDER BY [query] [INTERPOLATE]");
+                }
+                // TODO: if ordering by a column not in the projection, this will fail.
+                self.plan_order_by_exprs(order_by.exprs.as_slice())
+            })
+            .transpose()?;
 
         // Properly apply or remove the groupby columns from the selection
         // This needs to be done after the orderby
@@ -327,6 +329,9 @@ impl SQLPlanner {
                 .collect();
 
             rel.inner = rel.inner.select(selection_colums)?;
+            if let Some((sort_exprs, descending)) = sort_exprs {
+                rel.inner = rel.inner.sort(sort_exprs, descending)?;
+            }
         }
 
         if let Some(limit) = &query.limit {
@@ -995,7 +1000,7 @@ impl SQLPlanner {
                     },
                 )
             }
-            SQLExpr::Exists { .. } => unsupported_sql_err!("EXISTS"),
+            SQLExpr::Exists { .. } => unsupported_sql_err!("EXISTS SUBQUERY"),
             SQLExpr::Subquery(_) => unsupported_sql_err!("SUBQUERY"),
             SQLExpr::GroupingSets(_) => unsupported_sql_err!("GROUPING SETS"),
             SQLExpr::Cube(_) => unsupported_sql_err!("CUBE"),
