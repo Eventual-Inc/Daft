@@ -7,10 +7,10 @@ import pytest
 import ray
 
 import daft
+from daft import udf
 from daft.context import get_context, set_planning_config
 from daft.datatype import DataType
 from daft.internal.gpu import cuda_visible_devices
-from daft.udf import udf
 
 pytestmark = pytest.mark.skipif(
     get_context().daft_execution_config.enable_native_executor is True,
