@@ -776,9 +776,14 @@ class Scheduler(ActorPoolManager):
         return readies
 
     def _is_active(self, execution_id: str):
+        """Checks if the execution for the provided `execution_id` is still active"""
         return self.active_by_df.get(execution_id, False)
 
     def _place_in_queue(self, execution_id: str, item: ray.ObjectRef):
+        """Places a result into the queue for the provided `execution_id
+
+        NOTE: This will block and poll busily until space is available on the queue
+        `"""
         while self._is_active(execution_id):
             try:
                 self.results_by_df[execution_id].put(item, timeout=0.1)
