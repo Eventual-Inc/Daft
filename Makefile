@@ -63,7 +63,7 @@ test: .venv build  ## Run tests
 
 .PHONY: dsdgen
 dsdgen: .venv ## Generate TPC-DS data
-	$(VENV_BIN)/python benchmarking/tpcds/datagen.py --scale-factor=$(SCALE_FACTOR) --tpch-gen-folder=$(OUTPUT_DIR)
+	$(VENV_BIN)/python benchmarking/tpcds/datagen.py --scale-factor=$(SCALE_FACTOR) --tpcds-gen-folder=$(OUTPUT_DIR)
 
 .PHONY: clean
 clean:

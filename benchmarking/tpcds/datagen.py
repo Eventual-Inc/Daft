@@ -21,8 +21,8 @@ def gen_tpcds(basedir: str, scale_factor: float):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--tpch-gen-folder",
-        default="data/tpch-dbgen",
+        "--tpcds-gen-folder",
+        default="data/tpcds-dbgen",
         help="Path to the folder containing the TPCH dbgen tool and generated data",
     )
     parser.add_argument("--scale-factor", default=0.01, help="Scale factor to run on in GB", type=float)
@@ -31,10 +31,9 @@ if __name__ == "__main__":
     num_parts = args.scale_factor
 
     logger.info(
-        "Generating data at %s with: scale_factor=%s num_parts=%s generate_sqlite_db=%s generate_parquet=%s",
+        "Generating data at %s with: scale_factor=%s",
         args.tpch_gen_folder,
         args.scale_factor,
-        num_parts,
     )
 
     gen_tpcds(basedir=args.tpch_gen_folder, scale_factor=args.scale_factor)
