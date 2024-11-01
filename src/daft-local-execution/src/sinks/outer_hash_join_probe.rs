@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use common_error::DaftResult;
 use common_runtime::RuntimeRef;
 use daft_core::{
@@ -365,7 +364,6 @@ impl OuterHashJoinProbeSink {
     }
 }
 
-#[async_trait]
 impl StreamingSink for OuterHashJoinProbeSink {
     #[instrument(skip_all, name = "OuterHashJoinProbeSink::execute")]
     fn execute(

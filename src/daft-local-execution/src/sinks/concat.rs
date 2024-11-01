@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use common_runtime::RuntimeRef;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
@@ -23,7 +22,6 @@ impl StreamingSinkState for ConcatSinkState {
 
 pub struct ConcatSink {}
 
-#[async_trait]
 impl StreamingSink for ConcatSink {
     /// By default, if the streaming_sink is called with maintain_order = true, input is distributed round-robin to the workers,
     /// and the output is received in the same order. Therefore, the 'execute' method does not need to do anything.

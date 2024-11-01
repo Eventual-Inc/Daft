@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_runtime::{get_compute_runtime, RuntimeRef};
@@ -35,7 +34,6 @@ pub(crate) enum IntermediateOperatorResultType {
 pub(crate) type IntermediateOperatorResult =
     MaybeFuture<DaftResult<(Box<dyn IntermediateOpState>, IntermediateOperatorResultType)>>;
 
-#[async_trait]
 pub trait IntermediateOperator: Send + Sync {
     fn execute(
         &self,

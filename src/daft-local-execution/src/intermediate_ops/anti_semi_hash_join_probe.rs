@@ -106,7 +106,6 @@ impl AntiSemiProbeOperator {
     }
 }
 
-#[async_trait::async_trait]
 impl IntermediateOperator for AntiSemiProbeOperator {
     #[instrument(skip_all, name = "AntiSemiOperator::execute")]
     fn execute(

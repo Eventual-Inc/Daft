@@ -160,7 +160,6 @@ impl InnerHashJoinProbeOperator {
     }
 }
 
-#[async_trait::async_trait]
 impl IntermediateOperator for InnerHashJoinProbeOperator {
     #[instrument(skip_all, name = "InnerHashJoinOperator::execute")]
     fn execute(
