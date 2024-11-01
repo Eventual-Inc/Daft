@@ -454,8 +454,6 @@ pub fn physical_plan_to_pipeline(
             use daft_plan::CatalogType;
 
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
-            let writer_factory =
-                daft_writers::make_catalog_writer_factory(catalog_type, data_schema, cfg);
             let (partition_by, write_format) = match catalog_type {
                 CatalogType::Iceberg(ic) => {
                     if !ic.partition_cols.is_empty() {
@@ -482,6 +480,12 @@ pub fn physical_plan_to_pipeline(
                 }
                 _ => panic!("Unsupported catalog type"),
             };
+            let writer_factory = daft_writers::make_catalog_writer_factory(
+                catalog_type,
+                data_schema,
+                &partition_by,
+                cfg,
+            );
             let write_sink = WriteSink::new(
                 write_format,
                 writer_factory,

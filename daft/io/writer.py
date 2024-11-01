@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, List, Optional, Tuple
 
 from daft.context import get_context
 from daft.daft import IOConfig
-from daft.dependencies import pa, pacsv, pq
+from daft.dependencies import pa, pacsv, pafs, pq
 from daft.filesystem import (
     _resolve_paths_and_filesystem,
     canonicalize_protocol,
@@ -39,7 +39,7 @@ class FileWriterBase(ABC):
         compression: Optional[str] = None,
         io_config: Optional[IOConfig] = None,
         version: Optional[int] = None,
-        resolved_path_and_fs: Optional[Tuple[str, pa.fs]] = None,
+        resolved_path_and_fs: Optional[Tuple[str, pafs.FileSystem]] = None,
         default_partition_fallback: Optional[str] = None,
     ):
         if resolved_path_and_fs is None:
@@ -101,7 +101,7 @@ class ParquetFileWriter(FileWriterBase):
         compression: Optional[str] = None,
         io_config: Optional[IOConfig] = None,
         version: Optional[int] = None,
-        resolved_path_and_fs: Optional[Tuple[str, pa.fs]] = None,
+        resolved_path_and_fs: Optional[Tuple[str, pafs.FileSystem]] = None,
         default_partition_fallback: Optional[str] = None,
         metadata_collector: Optional[List[pq.FileMetaData]] = None,
     ):
