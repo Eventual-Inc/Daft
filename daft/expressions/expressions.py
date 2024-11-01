@@ -623,6 +623,11 @@ class Expression:
         expr = native.floor(self._expr)
         return Expression._from_pyexpr(expr)
 
+    def clip(self, min: Expression, max: Expression) -> Expression:
+        min_expr = Expression._to_expression(min)
+        max_expr = Expression._to_expression(max)
+        return Expression._from_pyexpr(native.clip(self._expr, min_expr._expr, max_expr._expr))
+
     def sign(self) -> Expression:
         """The sign of a numeric expression (``expr.sign()``)"""
         expr = native.sign(self._expr)

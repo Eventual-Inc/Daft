@@ -12,6 +12,7 @@ pub(crate) mod broadcast;
 pub(crate) mod cast;
 mod cbrt;
 mod ceil;
+mod clip;
 mod compare_agg;
 mod comparison;
 mod concat;
