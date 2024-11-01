@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
+use common_runtime::RuntimeRef;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
 use super::intermediate_op::{
-    IntermediateOperator, IntermediateOperatorResult, IntermediateOperatorState,
+    IntermediateOpState, IntermediateOperator, IntermediateOperatorResult,
+    IntermediateOperatorResultType,
 };
 
 pub struct SampleOperator {
@@ -28,14 +29,23 @@ impl IntermediateOperator for SampleOperator {
     #[instrument(skip_all, name = "SampleOperator::execute")]
     fn execute(
         &self,
-        _idx: usize,
         input: &Arc<MicroPartition>,
-        _state: &IntermediateOperatorState,
-    ) -> DaftResult<IntermediateOperatorResult> {
-        let out = input.sample_by_fraction(self.fraction, self.with_replacement, self.seed)?;
-        Ok(IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(
-            out,
-        ))))
+        state: Box<dyn IntermediateOpState>,
+        runtime_ref: &RuntimeRef,
+    ) -> IntermediateOperatorResult {
+        let input = input.clone();
+        let fraction = self.fraction;
+        let with_replacement = self.with_replacement;
+        let seed = self.seed;
+        runtime_ref
+            .spawn(async move {
+                let out = input.sample_by_fraction(fraction, with_replacement, seed)?;
+                Ok((
+                    state,
+                    IntermediateOperatorResultType::NeedMoreInput(Some(Arc::new(out))),
+                ))
+            })
+            .into()
     }
 
     fn name(&self) -> &'static str {

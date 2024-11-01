@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
+use common_runtime::RuntimeRef;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
 use super::intermediate_op::{
-    IntermediateOperator, IntermediateOperatorResult, IntermediateOperatorState,
+    IntermediateOpState, IntermediateOperator, IntermediateOperatorResult,
+    IntermediateOperatorResultType,
 };
 
 pub struct ProjectOperator {
@@ -23,15 +24,21 @@ impl IntermediateOperator for ProjectOperator {
     #[instrument(skip_all, name = "ProjectOperator::execute")]
     fn execute(
         &self,
-        _idx: usize,
         input: &Arc<MicroPartition>,
-        _state: &IntermediateOperatorState,
-    ) -> DaftResult<IntermediateOperatorResult> {
-        println!("ProjectOperator::execute");
-        let out = input.eval_expression_list(&self.projection)?;
-        Ok(IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(
-            out,
-        ))))
+        state: Box<dyn IntermediateOpState>,
+        runtime_ref: &RuntimeRef,
+    ) -> IntermediateOperatorResult {
+        let input = input.clone();
+        let projection = self.projection.clone();
+        runtime_ref
+            .spawn(async move {
+                let out = input.eval_expression_list(&projection)?;
+                Ok((
+                    state,
+                    IntermediateOperatorResultType::NeedMoreInput(Some(Arc::new(out))),
+                ))
+            })
+            .into()
     }
 
     fn name(&self) -> &'static str {

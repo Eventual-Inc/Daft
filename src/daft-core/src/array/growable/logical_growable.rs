@@ -83,6 +83,5 @@ impl_logical_growable!(
     FixedShapeSparseTensorType
 );
 impl_logical_growable!(LogicalImageGrowable, ImageType);
-impl_logical_growable!(LogicalDecimal128Growable, Decimal128Type);
 impl_logical_growable!(LogicalTensorGrowable, TensorType);
 impl_logical_growable!(LogicalMapGrowable, MapType);

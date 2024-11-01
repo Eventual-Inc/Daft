@@ -1,8 +1,12 @@
+use core::str;
 use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
 use arrow2::{
     datatypes::Field,
-    io::csv::read_async::{read_rows, AsyncReaderBuilder, ByteRecord},
+    io::csv::{
+        read_async,
+        read_async::{read_rows, AsyncReaderBuilder},
+    },
 };
 use async_compat::{Compat, CompatExt};
 use common_error::{DaftError, DaftResult};
@@ -12,7 +16,7 @@ use daft_compression::CompressionCodec;
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
 use daft_decoding::deserialize::deserialize_column;
 use daft_dsl::optimization::get_required_columns;
-use daft_io::{GetResult, IOClient, IOStatsRef};
+use daft_io::{parse_url, GetResult, IOClient, IOStatsRef, SourceType};
 use daft_table::Table;
 use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
 use rayon::{
@@ -35,8 +39,13 @@ use crate::{
     CsvReadOptions,
 };
 
-trait ByteRecordChunkStream: Stream<Item = super::Result<Vec<ByteRecord>>> {}
-impl<S> ByteRecordChunkStream for S where S: Stream<Item = super::Result<Vec<ByteRecord>>> {}
+trait ByteRecordChunkStream: Stream<Item = super::Result<Vec<read_async::ByteRecord>>> {}
+impl<S> ByteRecordChunkStream for S where
+    S: Stream<Item = super::Result<Vec<read_async::ByteRecord>>>
+{
+}
+
+use crate::local::{read_csv_local, stream_csv_local};
 
 type TableChunkResult =
     super::Result<Context<JoinHandle<DaftResult<Table>>, super::JoinSnafu, super::Error>>;
@@ -146,23 +155,37 @@ pub async fn stream_csv(
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
 ) -> DaftResult<BoxStream<'static, DaftResult<Table>>> {
-    let stream = stream_csv_single(
-        &uri,
-        convert_options,
-        parse_options,
-        read_options,
-        io_client,
-        io_stats,
-        max_chunks_in_flight,
-    )
-    .await?;
-
-    Ok(Box::pin(stream))
+    let uri = uri.as_str();
+    let (source_type, _) = parse_url(uri)?;
+    let is_compressed = CompressionCodec::from_uri(uri).is_some();
+    if matches!(source_type, SourceType::File) && !is_compressed {
+        let stream = stream_csv_local(
+            uri,
+            convert_options,
+            parse_options.unwrap_or_default(),
+            read_options,
+            io_client,
+            io_stats,
+            max_chunks_in_flight,
+        )
+        .await?;
+        Ok(Box::pin(stream))
+    } else {
+        let stream = stream_csv_single(
+            uri,
+            convert_options,
+            parse_options,
+            read_options,
+            io_client,
+            io_stats,
+            max_chunks_in_flight,
+        )
+        .await?;
+        Ok(Box::pin(stream))
+    }
 }
 
-// Parallel version of table concat
-// get rid of this once Table APIs are parallel
-fn tables_concat(mut tables: Vec<Table>) -> DaftResult<Table> {
+pub fn tables_concat(mut tables: Vec<Table>) -> DaftResult<Table> {
     if tables.is_empty() {
         return Err(DaftError::ValueError(
             "Need at least 1 Table to perform concat".to_string(),
@@ -210,6 +233,21 @@ async fn read_csv_single_into_table(
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
 ) -> DaftResult<Table> {
+    let (source_type, _) = parse_url(uri)?;
+    let is_compressed = CompressionCodec::from_uri(uri).is_some();
+    if matches!(source_type, SourceType::File) && !is_compressed {
+        return read_csv_local(
+            uri,
+            convert_options,
+            parse_options.unwrap_or_default(),
+            read_options,
+            io_client,
+            io_stats,
+            max_chunks_in_flight,
+        )
+        .await;
+    }
+
     let predicate = convert_options
         .as_ref()
         .and_then(|opts| opts.predicate.clone());
@@ -327,7 +365,7 @@ async fn read_csv_single_into_table(
     }
 }
 
-async fn stream_csv_single(
+pub async fn stream_csv_single(
     uri: &str,
     convert_options: Option<CsvConvertOptions>,
     parse_options: Option<CsvParseOptions>,
@@ -558,7 +596,7 @@ where
                 estimated_rows_per_desired_chunk.max(8).min(num_rows - total_rows_read)
             };
             let mut chunk_buffer = vec![
-                ByteRecord::with_capacity(record_buffer_size, num_fields);
+                read_async::ByteRecord::with_capacity(record_buffer_size, num_fields);
                 chunk_size_rows
             ];
 
@@ -577,7 +615,7 @@ where
 
             chunk_buffer.truncate(rows_read);
             if rows_read > 0 {
-                yield chunk_buffer
+                yield chunk_buffer;
             }
         }
     }
@@ -639,7 +677,7 @@ fn parse_into_column_array_chunk_stream(
     }))
 }
 
-fn fields_to_projection_indices(
+pub fn fields_to_projection_indices(
     fields: &[arrow2::datatypes::Field],
     include_columns: &Option<Vec<String>>,
 ) -> Arc<Vec<usize>> {

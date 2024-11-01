@@ -1,18 +1,40 @@
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 from daft import Series
 from daft.expressions import ExpressionsProjection
+from daft.table.table import Table
 
 from .micropartition import MicroPartition
 
 
 def partition_strings_to_path(
-    root_path: str, parts: Dict[str, str], partition_null_fallback: str = "__HIVE_DEFAULT_PARTITION__"
+    root_path: str,
+    parts: Dict[str, str],
+    partition_null_fallback: str = "__HIVE_DEFAULT_PARTITION__",
 ) -> str:
     keys = parts.keys()
     values = [partition_null_fallback if value is None else value for value in parts.values()]
     postfix = "/".join(f"{k}={v}" for k, v in zip(keys, values))
     return f"{root_path}/{postfix}"
+
+
+def partition_values_to_str_mapping(
+    partition_values: Union[MicroPartition, Table],
+) -> Dict[str, Series]:
+    null_part = Series.from_pylist(
+        [None]
+    )  # This is to ensure that the null values are replaced with the default_partition_fallback value
+    pkey_names = partition_values.column_names()
+
+    partition_strings = {}
+
+    for c in pkey_names:
+        column = partition_values.get_column(c)
+        string_names = column._to_str_values()
+        null_filled = column.is_null().if_else(null_part, string_names)
+        partition_strings[c] = null_filled
+
+    return partition_strings
 
 
 class PartitionedTable:
@@ -56,20 +78,10 @@ class PartitionedTable:
 
         If the table is not partitioned, returns None.
         """
-        null_part = Series.from_pylist([None])
         partition_values = self.partition_values()
 
         if partition_values is None:
             return None
         else:
-            pkey_names = partition_values.column_names()
-
-            partition_strings = {}
-
-            for c in pkey_names:
-                column = partition_values.get_column(c)
-                string_names = column._to_str_values()
-                null_filled = column.is_null().if_else(null_part, string_names)
-                partition_strings[c] = null_filled
-
+            partition_strings = partition_values_to_str_mapping(partition_values)
             return MicroPartition.from_pydict(partition_strings)

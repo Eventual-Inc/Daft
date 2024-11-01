@@ -1,7 +1,9 @@
 use std::{collections::HashMap, sync::Arc};
 
+use common_daft_config::DaftExecutionConfig;
 use common_display::{mermaid::MermaidDisplayVisitor, tree::TreeDisplay};
 use common_error::DaftResult;
+use common_file_formats::FileFormat;
 use daft_core::{
     datatypes::Field,
     prelude::{Schema, SchemaRef},
@@ -10,29 +12,38 @@ use daft_core::{
 use daft_dsl::join::get_common_join_keys;
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{
-    Concat, EmptyScan, Explode, Filter, HashAggregate, HashJoin, InMemoryScan, Limit,
-    LocalPhysicalPlan, Pivot, Project, Sample, Sort, UnGroupedAggregate, Unpivot,
+    ActorPoolProject, Concat, EmptyScan, Explode, Filter, HashAggregate, HashJoin, InMemoryScan,
+    Limit, LocalPhysicalPlan, PhysicalWrite, Pivot, Project, Sample, Sort, UnGroupedAggregate,
+    Unpivot,
 };
 use daft_plan::JoinType;
+use daft_writers::make_writer_factory;
 use indexmap::IndexSet;
 use snafu::ResultExt;
 
 use crate::{
     channel::Receiver,
     intermediate_ops::{
+        actor_pool_project::ActorPoolProjectOperator,
         anti_semi_hash_join_probe::AntiSemiProbeOperator, explode::ExplodeOperator,
         filter::FilterOperator, inner_hash_join_probe::InnerHashJoinProbeOperator,
-        intermediate_op::IntermediateNode, pivot::PivotOperator, project::ProjectOperator,
-        sample::SampleOperator, unpivot::UnpivotOperator,
+        intermediate_op::IntermediateNode, project::ProjectOperator, sample::SampleOperator,
+        unpivot::UnpivotOperator,
     },
     sinks::{
-        aggregate::AggregateSink, blocking_sink::BlockingSinkNode, concat::ConcatSink,
-        hash_join_build::HashJoinBuildSink, limit::LimitSink,
-        outer_hash_join_probe::OuterHashJoinProbeSink, sort::SortSink,
+        aggregate::AggregateSink,
+        blocking_sink::BlockingSinkNode,
+        concat::ConcatSink,
+        hash_join_build::{HashJoinBuildSink, ProbeStateBridge},
+        limit::LimitSink,
+        outer_hash_join_probe::OuterHashJoinProbeSink,
+        pivot::PivotSink,
+        sort::SortSink,
         streaming_sink::StreamingSinkNode,
+        write::{WriteFormat, WriteSink},
     },
     sources::{empty_scan::EmptyScanSource, in_memory::InMemorySource},
-    ExecutionRuntimeHandle, PipelineCreationSnafu, ProbeStateBridge,
+    ExecutionRuntimeHandle, PipelineCreationSnafu,
 };
 
 pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
@@ -62,6 +73,7 @@ pub(crate) fn viz_pipeline(root: &dyn PipelineNode) -> String {
 pub(crate) fn physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
     psets: &HashMap<String, Vec<Arc<MicroPartition>>>,
+    cfg: &Arc<DaftExecutionConfig>,
 ) -> crate::Result<Box<dyn PipelineNode>> {
     use daft_physical_plan::PhysicalScan;
 
@@ -85,7 +97,14 @@ pub(crate) fn physical_plan_to_pipeline(
             input, projection, ..
         }) => {
             let proj_op = ProjectOperator::new(projection.clone());
-            let child_node = physical_plan_to_pipeline(input, psets)?;
+            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            IntermediateNode::new(Arc::new(proj_op), vec![child_node]).boxed()
+        }
+        LocalPhysicalPlan::ActorPoolProject(ActorPoolProject {
+            input, projection, ..
+        }) => {
+            let proj_op = ActorPoolProjectOperator::new(projection.clone());
+            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
             IntermediateNode::new(Arc::new(proj_op), vec![child_node]).boxed()
         }
         LocalPhysicalPlan::Sample(Sample {
@@ -96,33 +115,33 @@ pub(crate) fn physical_plan_to_pipeline(
             ..
         }) => {
             let sample_op = SampleOperator::new(*fraction, *with_replacement, *seed);
-            let child_node = physical_plan_to_pipeline(input, psets)?;
+            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
             IntermediateNode::new(Arc::new(sample_op), vec![child_node]).boxed()
         }
         LocalPhysicalPlan::Filter(Filter {
             input, predicate, ..
         }) => {
             let filter_op = FilterOperator::new(predicate.clone());
-            let child_node = physical_plan_to_pipeline(input, psets)?;
+            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
             IntermediateNode::new(Arc::new(filter_op), vec![child_node]).boxed()
         }
         LocalPhysicalPlan::Explode(Explode {
             input, to_explode, ..
         }) => {
             let explode_op = ExplodeOperator::new(to_explode.clone());
-            let child_node = physical_plan_to_pipeline(input, psets)?;
+            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
             IntermediateNode::new(Arc::new(explode_op), vec![child_node]).boxed()
         }
         LocalPhysicalPlan::Limit(Limit {
             input, num_rows, ..
         }) => {
             let sink = LimitSink::new(*num_rows as usize);
-            let child_node = physical_plan_to_pipeline(input, psets)?;
+            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
             StreamingSinkNode::new(Arc::new(sink), vec![child_node]).boxed()
         }
         LocalPhysicalPlan::Concat(Concat { input, other, .. }) => {
-            let left_child = physical_plan_to_pipeline(input, psets)?;
-            let right_child = physical_plan_to_pipeline(other, psets)?;
+            let left_child = physical_plan_to_pipeline(input, psets, cfg)?;
+            let right_child = physical_plan_to_pipeline(other, psets, cfg)?;
             let sink = ConcatSink {};
             StreamingSinkNode::new(Arc::new(sink), vec![left_child, right_child]).boxed()
         }
@@ -132,7 +151,7 @@ pub(crate) fn physical_plan_to_pipeline(
             schema,
             ..
         }) => {
-            let child_node = physical_plan_to_pipeline(input, psets)?;
+            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
             let agg_sink = AggregateSink::new(aggregations, &[], schema);
             BlockingSinkNode::new(Arc::new(agg_sink), child_node).boxed()
         }
@@ -143,7 +162,7 @@ pub(crate) fn physical_plan_to_pipeline(
             schema,
             ..
         }) => {
-            let child_node = physical_plan_to_pipeline(input, psets)?;
+            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
             let agg_sink = AggregateSink::new(aggregations, group_by, schema);
             BlockingSinkNode::new(Arc::new(agg_sink), child_node).boxed()
         }
@@ -155,7 +174,7 @@ pub(crate) fn physical_plan_to_pipeline(
             value_name,
             ..
         }) => {
-            let child_node = physical_plan_to_pipeline(input, psets)?;
+            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
             let unpivot_op = UnpivotOperator::new(
                 ids.clone(),
                 values.clone(),
@@ -169,17 +188,23 @@ pub(crate) fn physical_plan_to_pipeline(
             group_by,
             pivot_column,
             value_column,
+            aggregation,
             names,
             ..
         }) => {
-            let pivot_op = PivotOperator::new(
-                group_by.clone(),
+            let pivot_sink = PivotSink::new(
+                group_by,
                 pivot_column.clone(),
                 value_column.clone(),
+                aggregation.clone(),
                 names.clone(),
-            );
-            let child_node = physical_plan_to_pipeline(input, psets)?;
-            IntermediateNode::new(Arc::new(pivot_op), vec![child_node]).boxed()
+                input.schema(),
+            )
+            .with_context(|_| PipelineCreationSnafu {
+                plan_name: physical_plan.name(),
+            })?;
+            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            BlockingSinkNode::new(Arc::new(pivot_sink), child_node).boxed()
         }
         LocalPhysicalPlan::Sort(Sort {
             input,
@@ -188,7 +213,7 @@ pub(crate) fn physical_plan_to_pipeline(
             ..
         }) => {
             let sort_sink = SortSink::new(sort_by.clone(), descending.clone());
-            let child_node = physical_plan_to_pipeline(input, psets)?;
+            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
             BlockingSinkNode::new(Arc::new(sort_sink), child_node).boxed()
         }
 
@@ -264,11 +289,11 @@ pub(crate) fn physical_plan_to_pipeline(
                     join_type,
                     probe_state_bridge.clone(),
                 )?;
-                let build_child_node = physical_plan_to_pipeline(build_child, psets)?;
+                let build_child_node = physical_plan_to_pipeline(build_child, psets, cfg)?;
                 let build_node =
                     BlockingSinkNode::new(Arc::new(build_sink), build_child_node).boxed();
 
-                let probe_child_node = physical_plan_to_pipeline(probe_child, psets)?;
+                let probe_child_node = physical_plan_to_pipeline(probe_child, psets, cfg)?;
 
                 match join_type {
                     JoinType::Anti | JoinType::Semi => Ok(IntermediateNode::new(
@@ -315,8 +340,29 @@ pub(crate) fn physical_plan_to_pipeline(
                 plan_name: physical_plan.name(),
             })?
         }
-        _ => {
-            unimplemented!("Physical plan not supported: {}", physical_plan.name());
+        LocalPhysicalPlan::PhysicalWrite(PhysicalWrite {
+            input,
+            file_info,
+            data_schema,
+            file_schema,
+            ..
+        }) => {
+            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            let writer_factory = make_writer_factory(file_info, data_schema, cfg);
+            let write_format = match (file_info.file_format, file_info.partition_cols.is_some()) {
+                (FileFormat::Parquet, true) => WriteFormat::PartitionedParquet,
+                (FileFormat::Parquet, false) => WriteFormat::Parquet,
+                (FileFormat::Csv, true) => WriteFormat::PartitionedCsv,
+                (FileFormat::Csv, false) => WriteFormat::Csv,
+                (_, _) => panic!("Unsupported file format"),
+            };
+            let write_sink = WriteSink::new(
+                write_format,
+                writer_factory,
+                file_info.partition_cols.clone(),
+                file_schema.clone(),
+            );
+            BlockingSinkNode::new(Arc::new(write_sink), child_node).boxed()
         }
     };
 

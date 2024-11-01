@@ -61,8 +61,8 @@ impl_dataarray_take!(BinaryArray);
 impl_dataarray_take!(NullArray);
 impl_dataarray_take!(ExtensionArray);
 impl_dataarray_take!(IntervalArray);
+impl_dataarray_take!(Decimal128Array);
 
-impl_logicalarray_take!(Decimal128Array);
 impl_logicalarray_take!(DateArray);
 impl_logicalarray_take!(TimeArray);
 impl_logicalarray_take!(DurationArray);

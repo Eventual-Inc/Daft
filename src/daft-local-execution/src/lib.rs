@@ -9,11 +9,8 @@ mod runtime_stats;
 mod sinks;
 mod sources;
 
-use std::sync::{Arc, OnceLock};
-
-use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
-use daft_table::ProbeState;
+use common_runtime::RuntimeTask;
 use lazy_static::lazy_static;
 pub use run::NativeExecutor;
 use snafu::{futures::TryFutureExt, Snafu};
@@ -22,35 +19,29 @@ lazy_static! {
     pub static ref NUM_CPUS: usize = std::thread::available_parallelism().unwrap().get();
 }
 
-pub(crate) type ProbeStateBridgeRef = Arc<ProbeStateBridge>;
-pub(crate) struct ProbeStateBridge {
-    inner: OnceLock<Arc<ProbeState>>,
-    notify: tokio::sync::Notify,
+pub(crate) enum MaybeFuture<T> {
+    Immediate(T),
+    Future(RuntimeTask<T>),
 }
 
-impl ProbeStateBridge {
-    fn new() -> Arc<Self> {
-        Arc::new(Self {
-            inner: OnceLock::new(),
-            notify: tokio::sync::Notify::new(),
-        })
-    }
-
-    fn set_probe_state(&self, state: Arc<ProbeState>) {
-        assert!(
-            !self.inner.set(state).is_err(),
-            "ProbeStateBridge should be set only once"
-        );
-        self.notify.notify_waiters();
-    }
-
-    async fn get_probe_state(&self) -> Arc<ProbeState> {
-        loop {
-            if let Some(state) = self.inner.get() {
-                return state.clone();
-            }
-            self.notify.notified().await;
+impl<T: Send + Sync + 'static> MaybeFuture<T> {
+    pub(crate) async fn output(self) -> DaftResult<T> {
+        match self {
+            Self::Immediate(v) => Ok(v),
+            Self::Future(f) => f.await,
         }
+    }
+}
+
+impl<T: Send + Sync + 'static> From<T> for MaybeFuture<T> {
+    fn from(v: T) -> Self {
+        Self::Immediate(v)
+    }
+}
+
+impl<T: Send + Sync + 'static> From<RuntimeTask<T>> for MaybeFuture<T> {
+    fn from(f: RuntimeTask<T>) -> Self {
+        Self::Future(f)
     }
 }
 
@@ -112,17 +103,8 @@ impl ExecutionRuntimeHandle {
         self.worker_set.shutdown().await;
     }
 
-    fn determine_morsel_size(&self, operator_morsel_size: Option<usize>) -> Option<usize> {
-        match operator_morsel_size {
-            None => None,
-            Some(_)
-                if self.default_morsel_size
-                    != DaftExecutionConfig::default().default_morsel_size =>
-            {
-                Some(self.default_morsel_size)
-            }
-            size => size,
-        }
+    fn default_morsel_size(&self) -> usize {
+        self.default_morsel_size
     }
 }
 

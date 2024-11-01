@@ -7,9 +7,7 @@ use daft_micropartition::MicroPartition;
 use daft_plan::populate_aggregation_stages;
 use tracing::instrument;
 
-use super::blocking_sink::{
-    BlockingSink, BlockingSinkState, BlockingSinkStatus, DynBlockingSinkState,
-};
+use super::blocking_sink::{BlockingSink, BlockingSinkState, BlockingSinkStatus};
 use crate::NUM_CPUS;
 
 enum AggregateState {
@@ -26,18 +24,18 @@ impl AggregateState {
         }
     }
 
-    fn finalize(&mut self) -> DaftResult<Vec<Arc<MicroPartition>>> {
+    fn finalize(&mut self) -> Vec<Arc<MicroPartition>> {
         let res = if let Self::Accumulating(ref mut parts) = self {
             std::mem::take(parts)
         } else {
             panic!("AggregateSink should be in Accumulating state");
         };
         *self = Self::Done;
-        Ok(res)
+        res
     }
 }
 
-impl DynBlockingSinkState for AggregateState {
+impl BlockingSinkState for AggregateState {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
@@ -85,43 +83,35 @@ impl BlockingSink for AggregateSink {
     fn sink(
         &self,
         input: &Arc<MicroPartition>,
-        state_handle: &BlockingSinkState,
+        mut state: Box<dyn BlockingSinkState>,
     ) -> DaftResult<BlockingSinkStatus> {
-        state_handle.with_state_mut::<AggregateState, _, _>(|state| {
-            if self.sink_aggs.is_empty() {
-                state.push(input.clone());
-            } else {
-                let agged = input.agg(&self.sink_aggs, &self.sink_group_by)?;
-                state.push(agged.into());
-            }
-            Ok(BlockingSinkStatus::NeedMoreInput)
-        })
+        let agg_state = state
+            .as_any_mut()
+            .downcast_mut::<AggregateState>()
+            .expect("AggregateSink should have AggregateState");
+        if self.sink_aggs.is_empty() {
+            agg_state.push(input.clone());
+        } else {
+            let agged = input.agg(&self.sink_aggs, &self.sink_group_by)?;
+            agg_state.push(agged.into());
+        }
+        Ok(BlockingSinkStatus::NeedMoreInput(state))
     }
 
     #[instrument(skip_all, name = "AggregateSink::finalize")]
     fn finalize(
         &self,
-        states: Vec<Box<dyn DynBlockingSinkState>>,
+        states: Vec<Box<dyn BlockingSinkState>>,
     ) -> DaftResult<Option<Arc<MicroPartition>>> {
-        let mut all_parts = vec![];
-        for mut state in states {
-            let state = state
+        let all_parts = states.into_iter().flat_map(|mut state| {
+            state
                 .as_any_mut()
                 .downcast_mut::<AggregateState>()
-                .expect("State type mismatch");
-            all_parts.extend(state.finalize()?);
-        }
-        assert!(
-            !all_parts.is_empty(),
-            "We can not finalize AggregateSink with no data"
-        );
-        let concated = MicroPartition::concat(
-            &all_parts
-                .iter()
-                .map(std::convert::AsRef::as_ref)
-                .collect::<Vec<_>>(),
-        )?;
-        let agged = Arc::new(concated.agg(&self.finalize_aggs, &self.finalize_group_by)?);
+                .expect("AggregateSink should have AggregateState")
+                .finalize()
+        });
+        let concated = MicroPartition::concat(all_parts)?;
+        let agged = concated.agg(&self.finalize_aggs, &self.finalize_group_by)?;
         let projected = Arc::new(agged.eval_expression_list(&self.final_projections)?);
         Ok(Some(projected))
     }
@@ -134,7 +124,16 @@ impl BlockingSink for AggregateSink {
         *NUM_CPUS
     }
 
-    fn make_state(&self) -> DaftResult<Box<dyn DynBlockingSinkState>> {
+    fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
         Ok(Box::new(AggregateState::Accumulating(vec![])))
+    }
+
+    fn make_dispatcher(
+        &self,
+        runtime_handle: &crate::ExecutionRuntimeHandle,
+    ) -> Arc<dyn crate::dispatcher::Dispatcher> {
+        Arc::new(crate::dispatcher::UnorderedDispatcher::new(Some(
+            runtime_handle.default_morsel_size(),
+        )))
     }
 }

@@ -214,7 +214,7 @@ def sort(
     )
 
 
-def split_by_hash(
+def fanout_by_hash(
     input: physical_plan.InProgressPhysicalPlan[PartitionT],
     num_partitions: int,
     partition_by: list[PyExpr],

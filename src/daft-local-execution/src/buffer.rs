@@ -21,9 +21,9 @@ impl RowBasedBuffer {
     }
 
     // Push a morsel to the buffer
-    pub fn push(&mut self, part: Arc<MicroPartition>) {
+    pub fn push(&mut self, part: &Arc<MicroPartition>) {
         self.curr_len += part.len();
-        self.buffer.push_back(part);
+        self.buffer.push_back(part.clone());
     }
 
     // Pop enough morsels that reach the threshold
@@ -40,36 +40,26 @@ impl RowBasedBuffer {
                     self.curr_len = 0;
                     Ok(Some(vec![part]))
                 } else {
-                    let chunk = MicroPartition::concat(
-                        &std::mem::take(&mut self.buffer)
-                            .iter()
-                            .map(|x| x.as_ref())
-                            .collect::<Vec<_>>(),
-                    )?;
+                    let chunk = MicroPartition::concat(std::mem::take(&mut self.buffer))?;
                     self.curr_len = 0;
-                    Ok(Some(vec![Arc::new(chunk)]))
+                    Ok(Some(vec![chunk.into()]))
                 }
             }
             Greater => {
                 let num_ready_chunks = self.curr_len / self.threshold;
-                let concated = MicroPartition::concat(
-                    &std::mem::take(&mut self.buffer)
-                        .iter()
-                        .map(|x| x.as_ref())
-                        .collect::<Vec<_>>(),
-                )?;
+                let concated = MicroPartition::concat(std::mem::take(&mut self.buffer))?;
                 let mut start = 0;
                 let mut parts_to_return = Vec::with_capacity(num_ready_chunks);
                 for _ in 0..num_ready_chunks {
                     let end = start + self.threshold;
-                    let part = Arc::new(concated.slice(start, end)?);
-                    parts_to_return.push(part);
+                    let part = concated.slice(start, end)?;
+                    parts_to_return.push(part.into());
                     start = end;
                 }
                 if start < concated.len() {
-                    let part = Arc::new(concated.slice(start, concated.len())?);
+                    let part = concated.slice(start, concated.len())?;
                     self.curr_len = part.len();
-                    self.buffer.push_back(part);
+                    self.buffer.push_back(part.into());
                 } else {
                     self.curr_len = 0;
                 }
@@ -84,14 +74,9 @@ impl RowBasedBuffer {
         if self.buffer.is_empty() {
             Ok(None)
         } else {
-            let concated = MicroPartition::concat(
-                &std::mem::take(&mut self.buffer)
-                    .iter()
-                    .map(|x| x.as_ref())
-                    .collect::<Vec<_>>(),
-            )?;
+            let concated = MicroPartition::concat(std::mem::take(&mut self.buffer))?;
             self.curr_len = 0;
-            Ok(Some(Arc::new(concated)))
+            Ok(Some(concated.into()))
         }
     }
 }

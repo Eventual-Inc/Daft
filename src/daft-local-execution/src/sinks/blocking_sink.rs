@@ -1,6 +1,5 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use common_daft_config::DaftExecutionConfig;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_runtime::get_compute_runtime;
@@ -9,62 +8,36 @@ use snafu::ResultExt;
 use tracing::{info_span, instrument};
 
 use crate::{
-    channel::{create_channel, create_ordering_aware_sender_channel, Receiver},
-    dispatcher::dispatch,
+    channel::{create_channel, Receiver},
+    dispatcher::Dispatcher,
     pipeline::PipelineNode,
-    runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
+    runtime_stats::RuntimeStatsContext,
     ExecutionRuntimeHandle, JoinSnafu, TaskSet,
 };
-pub trait DynBlockingSinkState: Send + Sync {
+pub trait BlockingSinkState: Send + Sync {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
 }
 
-pub(crate) struct BlockingSinkState {
-    inner: Mutex<Box<dyn DynBlockingSinkState>>,
-}
-
-impl BlockingSinkState {
-    fn new(inner: Box<dyn DynBlockingSinkState>) -> Arc<Self> {
-        Arc::new(Self {
-            inner: Mutex::new(inner),
-        })
-    }
-
-    pub(crate) fn with_state_mut<T: DynBlockingSinkState + 'static, F, R>(&self, f: F) -> R
-    where
-        F: FnOnce(&mut T) -> R,
-    {
-        let mut guard = self.inner.lock().unwrap();
-        let state = guard
-            .as_any_mut()
-            .downcast_mut::<T>()
-            .expect("State type mismatch");
-        f(state)
-    }
-}
-
 pub enum BlockingSinkStatus {
-    NeedMoreInput,
+    NeedMoreInput(Box<dyn BlockingSinkState>),
     #[allow(dead_code)]
-    Finished,
+    Finished(Box<dyn BlockingSinkState>),
 }
 
 pub trait BlockingSink: Send + Sync {
     fn sink(
         &self,
         input: &Arc<MicroPartition>,
-        state_handle: &BlockingSinkState,
+        state: Box<dyn BlockingSinkState>,
     ) -> DaftResult<BlockingSinkStatus>;
     fn finalize(
         &self,
-        states: Vec<Box<dyn DynBlockingSinkState>>,
+        states: Vec<Box<dyn BlockingSinkState>>,
     ) -> DaftResult<Option<Arc<MicroPartition>>>;
     fn name(&self) -> &'static str;
-    fn make_state(&self) -> DaftResult<Box<dyn DynBlockingSinkState>>;
+    fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>>;
+    fn make_dispatcher(&self, runtime_handle: &ExecutionRuntimeHandle) -> Arc<dyn Dispatcher>;
     fn max_concurrency(&self) -> usize;
-    fn morsel_size(&self) -> Option<usize> {
-        Some(DaftExecutionConfig::default().default_morsel_size)
-    }
 }
 
 pub struct BlockingSinkNode {
@@ -91,44 +64,39 @@ impl BlockingSinkNode {
     #[instrument(level = "info", skip_all, name = "BlockingSink::run_worker")]
     async fn run_worker(
         op: Arc<dyn BlockingSink>,
-        input_receiver: Receiver<(usize, Arc<MicroPartition>)>,
+        input_receiver: Receiver<Arc<MicroPartition>>,
         rt_context: Arc<RuntimeStatsContext>,
-    ) -> DaftResult<Box<dyn DynBlockingSinkState>> {
+    ) -> DaftResult<Box<dyn BlockingSinkState>> {
         let span = info_span!("BlockingSink::Sink");
         let compute_runtime = get_compute_runtime();
-        let state_wrapper = BlockingSinkState::new(op.make_state()?);
-        while let Ok((_, morsel)) = input_receiver.recv_async().await {
+        let mut state = op.make_state()?;
+        while let Some(morsel) = input_receiver.recv().await {
             let op = op.clone();
             let span = span.clone();
             let rt_context = rt_context.clone();
-            let state_wrapper = state_wrapper.clone();
-            let fut = async move { rt_context.in_span(&span, || op.sink(&morsel, &state_wrapper)) };
-            let result = compute_runtime.await_on(fut).await??;
+            let fut = async move { rt_context.in_span(&span, || op.sink(&morsel, state)) };
+            let result = compute_runtime.spawn(fut).await??;
             match result {
-                BlockingSinkStatus::NeedMoreInput => {}
-                BlockingSinkStatus::Finished => {
-                    break;
+                BlockingSinkStatus::NeedMoreInput(new_state) => {
+                    state = new_state;
+                }
+                BlockingSinkStatus::Finished(new_state) => {
+                    return Ok(new_state);
                 }
             }
         }
 
-        // Take the state out of the Arc and Mutex because we need to return it.
-        // It should be guaranteed that the ONLY holder of state at this point is this function.
-        Ok(Arc::into_inner(state_wrapper)
-            .expect("Completed worker should have exclusive access to state wrapper")
-            .inner
-            .into_inner()
-            .expect("Completed worker should have exclusive access to inner state"))
+        Ok(state)
     }
 
     fn spawn_workers(
         op: Arc<dyn BlockingSink>,
-        input_receivers: Vec<Receiver<(usize, Arc<MicroPartition>)>>,
-        task_set: &mut TaskSet<DaftResult<Box<dyn DynBlockingSinkState>>>,
+        input_receivers: Vec<Receiver<Arc<MicroPartition>>>,
+        task_set: &mut TaskSet<DaftResult<Box<dyn BlockingSinkState>>>,
         stats: Arc<RuntimeStatsContext>,
     ) {
-        for receiver in input_receivers {
-            task_set.spawn(Self::run_worker(op.clone(), receiver, stats.clone()));
+        for input_receiver in input_receivers {
+            task_set.spawn(Self::run_worker(op.clone(), input_receiver, stats.clone()));
         }
     }
 }
@@ -166,23 +134,26 @@ impl PipelineNode for BlockingSinkNode {
         _maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
-        let child_results_receiver = self.child.start(false, runtime_handle)?;
-        let child_results_receiver =
-            CountingReceiver::new(child_results_receiver, self.runtime_stats.clone());
+        let child_results_receiver = self
+            .child
+            .start(false, runtime_handle)?
+            .into_counting_receiver(self.runtime_stats.clone());
 
         let (destination_sender, destination_receiver) = create_channel(1);
         let destination_sender =
-            CountingSender::new(destination_sender, self.runtime_stats.clone());
+            destination_sender.into_counting_sender(self.runtime_stats.clone());
+
         let op = self.op.clone();
         let runtime_stats = self.runtime_stats.clone();
         let num_workers = op.max_concurrency();
-        let (input_senders, input_receivers) =
-            create_ordering_aware_sender_channel(false, num_workers);
-        let morsel_size = runtime_handle.determine_morsel_size(op.morsel_size());
-        runtime_handle.spawn(
-            dispatch(vec![child_results_receiver], input_senders, morsel_size),
+        let dispatcher = op.make_dispatcher(runtime_handle);
+        let input_receivers = dispatcher.dispatch(
+            vec![child_results_receiver],
+            num_workers,
+            runtime_handle,
             self.name(),
         );
+
         runtime_handle.spawn(
             async move {
                 let mut task_set = TaskSet::new();
@@ -201,7 +172,7 @@ impl PipelineNode for BlockingSinkNode {
 
                 let compute_runtime = get_compute_runtime();
                 let finalized_result = compute_runtime
-                    .await_on(async move {
+                    .spawn(async move {
                         runtime_stats.in_span(&info_span!("BlockingSinkNode::finalize"), || {
                             op.finalize(finished_states)
                         })

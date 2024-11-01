@@ -14,6 +14,7 @@ use crate::{
         BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, FixedSizeBinaryArray,
         Float32Array, Float64Array, NullArray, Utf8Array,
     },
+    prelude::Decimal128Array,
 };
 
 /// Given a list of values, return a `(Vec<u64>, Vec<Vec<u64>>)`.
@@ -76,6 +77,17 @@ where
 {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
         let array: &arrow2::array::PrimitiveArray<<T as DaftNumericType>::Native> = self.as_arrow();
+        if array.null_count() > 0 {
+            make_groups(array.iter())
+        } else {
+            make_groups(array.values_iter())
+        }
+    }
+}
+
+impl IntoGroups for Decimal128Array {
+    fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
+        let array = self.as_arrow();
         if array.null_count() > 0 {
             make_groups(array.iter())
         } else {

@@ -5,9 +5,7 @@ use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
-use super::blocking_sink::{
-    BlockingSink, BlockingSinkState, BlockingSinkStatus, DynBlockingSinkState,
-};
+use super::blocking_sink::{BlockingSink, BlockingSinkState, BlockingSinkStatus};
 use crate::NUM_CPUS;
 
 enum SortState {
@@ -24,18 +22,18 @@ impl SortState {
         }
     }
 
-    fn finalize(&mut self) -> DaftResult<Vec<Arc<MicroPartition>>> {
+    fn finalize(&mut self) -> Vec<Arc<MicroPartition>> {
         let res = if let Self::Building(ref mut parts) = self {
             std::mem::take(parts)
         } else {
             panic!("SortSink should be in Building state");
         };
         *self = Self::Done;
-        Ok(res)
+        res
     }
 }
 
-impl DynBlockingSinkState for SortState {
+impl BlockingSinkState for SortState {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
@@ -59,37 +57,29 @@ impl BlockingSink for SortSink {
     fn sink(
         &self,
         input: &Arc<MicroPartition>,
-        state_handle: &BlockingSinkState,
+        mut state: Box<dyn BlockingSinkState>,
     ) -> DaftResult<BlockingSinkStatus> {
-        state_handle.with_state_mut::<SortState, _, _>(|state| {
-            state.push(input.clone());
-            Ok(BlockingSinkStatus::NeedMoreInput)
-        })
+        state
+            .as_any_mut()
+            .downcast_mut::<SortState>()
+            .expect("SortSink should have sort state")
+            .push(input.clone());
+        Ok(BlockingSinkStatus::NeedMoreInput(state))
     }
 
     #[instrument(skip_all, name = "SortSink::finalize")]
     fn finalize(
         &self,
-        states: Vec<Box<dyn DynBlockingSinkState>>,
+        states: Vec<Box<dyn BlockingSinkState>>,
     ) -> DaftResult<Option<Arc<MicroPartition>>> {
-        let mut parts = Vec::new();
-        for mut state in states {
+        let parts = states.into_iter().flat_map(|mut state| {
             let state = state
                 .as_any_mut()
                 .downcast_mut::<SortState>()
                 .expect("State type mismatch");
-            parts.extend(state.finalize()?);
-        }
-        assert!(
-            !parts.is_empty(),
-            "We can not finalize SortSink with no data"
-        );
-        let concated = MicroPartition::concat(
-            &parts
-                .iter()
-                .map(std::convert::AsRef::as_ref)
-                .collect::<Vec<_>>(),
-        )?;
+            state.finalize()
+        });
+        let concated = MicroPartition::concat(parts)?;
         let sorted = Arc::new(concated.sort(&self.sort_by, &self.descending)?);
         Ok(Some(sorted))
     }
@@ -98,16 +88,20 @@ impl BlockingSink for SortSink {
         "SortResult"
     }
 
-    fn make_state(&self) -> DaftResult<Box<dyn DynBlockingSinkState>> {
+    fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
         Ok(Box::new(SortState::Building(Vec::new())))
-    }
-
-    // SortSink currently does not do any computation in the sink method, so no need to buffer.
-    fn morsel_size(&self) -> Option<usize> {
-        None
     }
 
     fn max_concurrency(&self) -> usize {
         *NUM_CPUS
+    }
+
+    fn make_dispatcher(
+        &self,
+        runtime_handle: &crate::ExecutionRuntimeHandle,
+    ) -> Arc<dyn crate::dispatcher::Dispatcher> {
+        Arc::new(crate::dispatcher::UnorderedDispatcher::new(Some(
+            runtime_handle.default_morsel_size(),
+        )))
     }
 }

@@ -13,9 +13,12 @@ daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
 daft-table = {path = "../daft-table", default-features = false}
 futures = {workspace = true}
+memchr = "2.7.2"
+parking_lot = "0.12.3"
 pyo3 = {workspace = true, optional = true}
 rayon = {workspace = true}
 serde = {workspace = true}
+smallvec = "1.13.2"
 snafu = {workspace = true}
 tokio = {workspace = true}
 tokio-util = {workspace = true}

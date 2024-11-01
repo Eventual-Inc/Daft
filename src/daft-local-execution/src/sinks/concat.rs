@@ -1,17 +1,21 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use common_error::DaftResult;
+use common_runtime::RuntimeRef;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
 use super::streaming_sink::{
-    DynStreamingSinkState, StreamingSink, StreamingSinkOutput, StreamingSinkState,
+    StreamingSink, StreamingSinkExecuteOutput, StreamingSinkFinalizeOutput,
+    StreamingSinkOutputType, StreamingSinkState,
 };
-use crate::NUM_CPUS;
+use crate::{
+    dispatcher::{Dispatcher, RoundRobinDispatcher, UnorderedDispatcher},
+    ExecutionRuntimeHandle, MaybeFuture, NUM_CPUS,
+};
 
 struct ConcatSinkState {}
-impl DynStreamingSinkState for ConcatSinkState {
+impl StreamingSinkState for ConcatSinkState {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
@@ -27,11 +31,14 @@ impl StreamingSink for ConcatSink {
     #[instrument(skip_all, name = "ConcatSink::sink")]
     fn execute(
         &self,
-        _index: usize,
         input: &Arc<MicroPartition>,
-        _state_handle: &StreamingSinkState,
-    ) -> DaftResult<StreamingSinkOutput> {
-        Ok(StreamingSinkOutput::NeedMoreInput(Some(input.clone())))
+        state: Box<dyn StreamingSinkState>,
+        _runtime_ref: &RuntimeRef,
+    ) -> StreamingSinkExecuteOutput {
+        MaybeFuture::Immediate(Ok((
+            state,
+            StreamingSinkOutputType::NeedMoreInput(Some(input.clone())),
+        )))
     }
 
     fn name(&self) -> &'static str {
@@ -40,12 +47,13 @@ impl StreamingSink for ConcatSink {
 
     fn finalize(
         &self,
-        _states: Vec<Box<dyn DynStreamingSinkState>>,
-    ) -> DaftResult<Option<Arc<MicroPartition>>> {
-        Ok(None)
+        _states: Vec<Box<dyn StreamingSinkState>>,
+        _runtime_ref: &RuntimeRef,
+    ) -> StreamingSinkFinalizeOutput {
+        MaybeFuture::Immediate(Ok(None))
     }
 
-    async fn make_state(&self) -> Box<dyn DynStreamingSinkState> {
+    fn make_state(&self) -> Box<dyn StreamingSinkState> {
         Box::new(ConcatSinkState {})
     }
 
@@ -53,8 +61,19 @@ impl StreamingSink for ConcatSink {
         *NUM_CPUS
     }
 
-    /// The ConcatSink does not do any computation in the sink method, so no need to buffer.
-    fn morsel_size(&self) -> Option<usize> {
-        None
+    fn make_dispatcher(
+        &self,
+        runtime_handle: &ExecutionRuntimeHandle,
+        maintain_order: bool,
+    ) -> Arc<dyn Dispatcher> {
+        if maintain_order {
+            Arc::new(RoundRobinDispatcher::new(Some(
+                runtime_handle.default_morsel_size(),
+            )))
+        } else {
+            Arc::new(UnorderedDispatcher::new(Some(
+                runtime_handle.default_morsel_size(),
+            )))
+        }
     }
 }

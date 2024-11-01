@@ -1,12 +1,17 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use common_error::DaftResult;
+use common_runtime::RuntimeRef;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
 use super::streaming_sink::{
-    DynStreamingSinkState, StreamingSink, StreamingSinkOutput, StreamingSinkState,
+    StreamingSink, StreamingSinkExecuteOutput, StreamingSinkFinalizeOutput,
+    StreamingSinkOutputType, StreamingSinkState,
+};
+use crate::{
+    dispatcher::{Dispatcher, UnorderedDispatcher},
+    ExecutionRuntimeHandle, MaybeFuture,
 };
 
 struct LimitSinkState {
@@ -23,7 +28,7 @@ impl LimitSinkState {
     }
 }
 
-impl DynStreamingSinkState for LimitSinkState {
+impl StreamingSinkState for LimitSinkState {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
@@ -44,32 +49,39 @@ impl StreamingSink for LimitSink {
     #[instrument(skip_all, name = "LimitSink::sink")]
     fn execute(
         &self,
-        index: usize,
         input: &Arc<MicroPartition>,
-        state_handle: &StreamingSinkState,
-    ) -> DaftResult<StreamingSinkOutput> {
-        assert_eq!(index, 0);
+        mut state: Box<dyn StreamingSinkState>,
+        runtime_ref: &RuntimeRef,
+    ) -> StreamingSinkExecuteOutput {
         let input_num_rows = input.len();
 
-        state_handle.with_state_mut::<LimitSinkState, _, _>(|state| {
-            let remaining = state.get_remaining_mut();
-            use std::cmp::Ordering::{Equal, Greater, Less};
-            match input_num_rows.cmp(remaining) {
-                Less => {
-                    *remaining -= input_num_rows;
-                    Ok(StreamingSinkOutput::NeedMoreInput(Some(input.clone())))
-                }
-                Equal => {
-                    *remaining = 0;
-                    Ok(StreamingSinkOutput::Finished(Some(input.clone())))
-                }
-                Greater => {
-                    let taken = input.head(*remaining)?;
-                    *remaining = 0;
-                    Ok(StreamingSinkOutput::Finished(Some(Arc::new(taken))))
-                }
+        let remaining = state
+            .as_any_mut()
+            .downcast_mut::<LimitSinkState>()
+            .expect("Limit sink should have LimitSinkState")
+            .get_remaining_mut();
+        use std::cmp::Ordering::{Equal, Greater, Less};
+        match input_num_rows.cmp(remaining) {
+            Less => {
+                *remaining -= input_num_rows;
+                MaybeFuture::Immediate(Ok((state, StreamingSinkOutputType::NeedMoreInput(None))))
             }
-        })
+            Equal => {
+                *remaining = 0;
+                MaybeFuture::Immediate(Ok((state, StreamingSinkOutputType::Finished(None))))
+            }
+            Greater => {
+                let input = input.clone();
+                let to_head = *remaining;
+                *remaining = 0;
+                let fut = runtime_ref.spawn(async move {
+                    let taken = input.head(to_head)?;
+                    Ok((state, StreamingSinkOutputType::Finished(Some(taken.into()))))
+                });
+
+                MaybeFuture::Future(fut)
+            }
+        }
     }
 
     fn name(&self) -> &'static str {
@@ -78,12 +90,13 @@ impl StreamingSink for LimitSink {
 
     fn finalize(
         &self,
-        _states: Vec<Box<dyn DynStreamingSinkState>>,
-    ) -> DaftResult<Option<Arc<MicroPartition>>> {
-        Ok(None)
+        _states: Vec<Box<dyn StreamingSinkState>>,
+        _runtime_ref: &RuntimeRef,
+    ) -> StreamingSinkFinalizeOutput {
+        MaybeFuture::Immediate(Ok(None))
     }
 
-    async fn make_state(&self) -> Box<dyn DynStreamingSinkState> {
+    fn make_state(&self) -> Box<dyn StreamingSinkState> {
         Box::new(LimitSinkState::new(self.limit))
     }
 
@@ -91,8 +104,13 @@ impl StreamingSink for LimitSink {
         1
     }
 
-    /// Limits are greedy and should consume all input data whenever possible.
-    fn morsel_size(&self) -> Option<usize> {
-        None
+    fn make_dispatcher(
+        &self,
+        _runtime_handle: &ExecutionRuntimeHandle,
+        _maintain_order: bool,
+    ) -> Arc<dyn Dispatcher> {
+        // LimitSink should be greedy, and accept all input as soon as possible.
+        // It is also not concurrent, so we don't need to worry about ordering.
+        Arc::new(UnorderedDispatcher::new(None))
     }
 }

@@ -118,7 +118,7 @@ fn run_local(
     results_buffer_size: Option<usize>,
 ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<Arc<MicroPartition>>> + Send>> {
     refresh_chrome_trace();
-    let pipeline = physical_plan_to_pipeline(physical_plan, &psets)?;
+    let pipeline = physical_plan_to_pipeline(physical_plan, &psets, &cfg)?;
     let (tx, rx) = create_channel(results_buffer_size.unwrap_or(1));
     let handle = std::thread::spawn(move || {
         let runtime = tokio::runtime::Builder::new_current_thread()
@@ -129,8 +129,8 @@ fn run_local(
             let mut runtime_handle = ExecutionRuntimeHandle::new(cfg.default_morsel_size);
             let receiver = pipeline.start(true, &mut runtime_handle)?;
 
-            while let Ok(val) = receiver.recv_async().await {
-                let _ = tx.send_async(val).await;
+            while let Some(val) = receiver.recv().await {
+                let _ = tx.send(val).await;
             }
 
             while let Some(result) = runtime_handle.join_next().await {
@@ -180,7 +180,7 @@ fn run_local(
         type Item = DaftResult<Arc<MicroPartition>>;
 
         fn next(&mut self) -> Option<Self::Item> {
-            match self.receiver.recv().ok() {
+            match self.receiver.blocking_recv() {
                 Some(part) => Some(Ok(part)),
                 None => {
                     if self.handle.is_some() {

@@ -121,7 +121,7 @@ impl CountingSender {
         v: Arc<MicroPartition>,
     ) -> Result<(), SendError<Arc<MicroPartition>>> {
         let len = v.len();
-        self.sender.send_async(v).await?;
+        self.sender.send(v).await?;
         self.rt.mark_rows_emitted(len as u64);
         Ok(())
     }
@@ -141,7 +141,7 @@ impl CountingReceiver {
     }
     #[inline]
     pub(crate) async fn recv(&self) -> Option<Arc<MicroPartition>> {
-        let v = self.receiver.recv_async().await.ok();
+        let v = self.receiver.recv().await;
         if let Some(ref v) = v {
             let len = v.len();
             self.rt.mark_rows_received(len as u64);
