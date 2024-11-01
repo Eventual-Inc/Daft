@@ -788,6 +788,7 @@ class Unpivot(SingleOutputInstruction):
 class HashJoin(SingleOutputInstruction):
     left_on: ExpressionsProjection
     right_on: ExpressionsProjection
+    null_equals_nulls: list[bool] | None
     how: JoinType
     is_swapped: bool
 
@@ -810,6 +811,7 @@ class HashJoin(SingleOutputInstruction):
             right,
             left_on=self.left_on,
             right_on=self.right_on,
+            null_equals_nulls=self.null_equals_nulls,
             how=self.how,
         )
         return [result]

@@ -243,6 +243,7 @@ def hash_join(
     right: physical_plan.InProgressPhysicalPlan[PartitionT],
     left_on: list[PyExpr],
     right_on: list[PyExpr],
+    null_equals_nulls: list[bool] | None,
     join_type: JoinType,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     left_on_expr_proj = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in left_on])
@@ -253,6 +254,7 @@ def hash_join(
         left_on=left_on_expr_proj,
         right_on=right_on_expr_proj,
         how=join_type,
+        null_equals_nulls=null_equals_nulls,
     )
 
 
@@ -303,6 +305,7 @@ def broadcast_join(
     receiver: physical_plan.InProgressPhysicalPlan[PartitionT],
     left_on: list[PyExpr],
     right_on: list[PyExpr],
+    null_equals_nulls: list[bool] | None,
     join_type: JoinType,
     is_swapped: bool,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
@@ -315,6 +318,7 @@ def broadcast_join(
         right_on=right_on_expr_proj,
         how=join_type,
         is_swapped=is_swapped,
+        null_equals_nulls=null_equals_nulls,
     )
 
 

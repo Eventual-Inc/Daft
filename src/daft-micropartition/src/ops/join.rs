@@ -82,11 +82,17 @@ impl MicroPartition {
         right: &Self,
         left_on: &[ExprRef],
         right_on: &[ExprRef],
+        null_equals_nulls: Option<Vec<bool>>,
         how: JoinType,
     ) -> DaftResult<Self> {
         let io_stats = IOStatsContext::new("MicroPartition::hash_join");
+        let null_equals_nulls = null_equals_nulls.unwrap_or_else(|| vec![false; left_on.len()]);
+        let table_join =
+            |lt: &Table, rt: &Table, lo: &[ExprRef], ro: &[ExprRef], _how: JoinType| {
+                Table::hash_join(lt, rt, lo, ro, null_equals_nulls.as_slice(), _how)
+            };
 
-        self.join(right, io_stats, left_on, right_on, how, Table::hash_join)
+        self.join(right, io_stats, left_on, right_on, how, table_join)
     }
 
     pub fn sort_merge_join(

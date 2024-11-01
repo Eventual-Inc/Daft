@@ -1549,6 +1549,7 @@ class PyMicroPartition:
         right: PyMicroPartition,
         left_on: list[PyExpr],
         right_on: list[PyExpr],
+        null_equals_nulls: list[bool] | None,
         how: JoinType,
     ) -> PyMicroPartition: ...
     def pivot(

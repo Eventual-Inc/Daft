@@ -461,11 +461,36 @@ impl LogicalPlanBuilder {
         join_suffix: Option<&str>,
         join_prefix: Option<&str>,
     ) -> DaftResult<Self> {
+        self.join_with_null_safe_equal(
+            right,
+            left_on,
+            right_on,
+            None,
+            join_type,
+            join_strategy,
+            join_suffix,
+            join_prefix,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn join_with_null_safe_equal<Right: Into<LogicalPlanRef>>(
+        &self,
+        right: Right,
+        left_on: Vec<ExprRef>,
+        right_on: Vec<ExprRef>,
+        null_equals_nulls: Option<Vec<bool>>,
+        join_type: JoinType,
+        join_strategy: Option<JoinStrategy>,
+        join_suffix: Option<&str>,
+        join_prefix: Option<&str>,
+    ) -> DaftResult<Self> {
         let logical_plan: LogicalPlan = logical_ops::Join::try_new(
             self.plan.clone(),
             right.into(),
             left_on,
             right_on,
+            null_equals_nulls,
             join_type,
             join_strategy,
             join_suffix,
