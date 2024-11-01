@@ -510,6 +510,7 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
                             self._resources.release(resources)
 
                             next_step.set_result(materialized_results)
+                            next_step.set_done()
 
                         else:
                             # Submit the task for execution.
@@ -572,6 +573,7 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
                     )
 
                     done_task.set_result(materialized_results)
+                    done_task.set_done()
 
                 if next_step is None:
                     next_step = next(plan)
