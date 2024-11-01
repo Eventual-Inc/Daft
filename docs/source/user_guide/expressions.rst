@@ -582,3 +582,259 @@ The :meth:`.if_else() <daft.expressions.Expression.if_else>` method is a useful 
     (Showing first 3 of 3 rows)
 
 This is a useful expression for cleaning your data!
+
+
+Temporal Expressions
+####################
+
+Daft provides rich support for working with temporal data types like Timestamp and Duration. Let's explore some common temporal operations:
+
+Basic Temporal Operations
+*************************
+
+You can perform arithmetic operations with timestamps and durations, such as adding a duration to a timestamp or calculating the duration between two timestamps:
+
+.. tabs::
+
+    .. group-tab:: 🐍 Python
+
+        .. code:: python
+
+            import datetime
+            
+            df = daft.from_pydict({
+                "timestamp": [
+                    datetime.datetime(2021, 1, 1, 0, 1, 1),
+                    datetime.datetime(2021, 1, 1, 0, 1, 59),
+                    datetime.datetime(2021, 1, 1, 0, 2, 0),
+                ]
+            })
+            
+            # Add 10 seconds to each timestamp
+            df = df.with_column(
+                "plus_10_seconds", 
+                df["timestamp"] + datetime.timedelta(seconds=10)
+            )
+            
+            df.show()
+
+    .. group-tab:: ⚙️ SQL
+
+        .. code:: python
+
+            import datetime
+
+            df = daft.from_pydict({
+                "timestamp": [
+                    datetime.datetime(2021, 1, 1, 0, 1, 1),
+                    datetime.datetime(2021, 1, 1, 0, 1, 59),
+                    datetime.datetime(2021, 1, 1, 0, 2, 0),
+                ]
+            })
+
+            # Add 10 seconds to each timestamp and calculate duration between timestamps
+            df = daft.sql("""
+                SELECT
+                    timestamp,
+                    timestamp + INTERVAL '10 seconds' as plus_10_seconds,
+                FROM df
+            """)
+
+            df.show()
+
+.. code-block:: text
+    :caption: Output
+
+    ╭───────────────────────────────┬───────────────────────────────╮                                                                                 
+    │ timestamp                     ┆ plus_10_seconds               │
+    │ ---                           ┆ ---                           │
+    │ Timestamp(Microseconds, None) ┆ Timestamp(Microseconds, None) │
+    ╞═══════════════════════════════╪═══════════════════════════════╡
+    │ 2021-01-01 00:01:01           ┆ 2021-01-01 00:01:11           │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 2021-01-01 00:01:59           ┆ 2021-01-01 00:02:09           │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 2021-01-01 00:02:00           ┆ 2021-01-01 00:02:10           │
+    ╰───────────────────────────────┴───────────────────────────────╯
+
+Temporal Component Extraction
+*****************************
+
+The :meth:`.dt.* <daft.expressions.Expression.dt>` method namespace provides extraction methods for the components of a timestamp, such as year, month, day, hour, minute, and second:
+
+.. tabs::
+
+    .. group-tab:: 🐍 Python
+
+        .. code:: python
+
+            df = daft.from_pydict({
+                "timestamp": [
+                    datetime.datetime(2021, 1, 1, 0, 1, 1),
+                    datetime.datetime(2021, 1, 1, 0, 1, 59),
+                    datetime.datetime(2021, 1, 1, 0, 2, 0),
+                ]
+            })
+
+            # Extract year, month, day, hour, minute, and second from the timestamp
+            df = df.with_columns({
+                "year": df["timestamp"].dt.year(),
+                "month": df["timestamp"].dt.month(),
+                "day": df["timestamp"].dt.day(),
+                "hour": df["timestamp"].dt.hour(),
+                "minute": df["timestamp"].dt.minute(),
+                "second": df["timestamp"].dt.second()
+            })
+
+            df.show()
+
+    .. group-tab:: ⚙️ SQL
+
+        .. code:: python
+
+            df = daft.from_pydict({
+                "timestamp": [
+                    datetime.datetime(2021, 1, 1, 0, 1, 1),
+                    datetime.datetime(2021, 1, 1, 0, 1, 59),
+                    datetime.datetime(2021, 1, 1, 0, 2, 0),
+                ]
+            })
+
+            # Extract year, month, day, hour, minute, and second from the timestamp
+            df = daft.sql("""
+                SELECT
+                    timestamp,
+                    year(timestamp) as year,
+                    month(timestamp) as month,
+                    day(timestamp) as day,
+                    hour(timestamp) as hour,
+                    minute(timestamp) as minute,
+                    second(timestamp) as second
+                FROM df
+            """)
+
+            df.show()
+
+.. code-block:: text
+    :caption: Output
+
+    ╭───────────────────────────────┬───────┬────────┬────────┬────────┬────────┬────────╮                                                            
+    │ timestamp                     ┆ year  ┆ month  ┆ day    ┆ hour   ┆ minute ┆ second │
+    │ ---                           ┆ ---   ┆ ---    ┆ ---    ┆ ---    ┆ ---    ┆ ---    │
+    │ Timestamp(Microseconds, None) ┆ Int32 ┆ UInt32 ┆ UInt32 ┆ UInt32 ┆ UInt32 ┆ UInt32 │
+    ╞═══════════════════════════════╪═══════╪════════╪════════╪════════╪════════╪════════╡
+    │ 2021-01-01 00:01:01           ┆ 2021  ┆ 1      ┆ 1      ┆ 0      ┆ 1      ┆ 1      │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+    │ 2021-01-01 00:01:59           ┆ 2021  ┆ 1      ┆ 1      ┆ 0      ┆ 1      ┆ 59     │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+    │ 2021-01-01 00:02:00           ┆ 2021  ┆ 1      ┆ 1      ┆ 0      ┆ 2      ┆ 0      │
+    ╰───────────────────────────────┴───────┴────────┴────────┴────────┴────────┴────────╯
+
+Time Zone Operations
+********************
+
+You can parse strings as timestamps with time zones and convert between different time zones:
+
+.. tabs::
+
+    .. group-tab:: 🐍 Python
+
+        .. code:: python
+
+            df = daft.from_pydict({
+                "timestamp_str": [
+                    "2021-01-01 00:00:00.123 +0800",
+                    "2021-01-02 12:30:00.456 +0800"
+                ]
+            })
+            
+            # Parse the timestamp string with time zone and convert to New York time
+            df = df.with_column(
+                "ny_time",
+                df["timestamp_str"].str.to_datetime(
+                    "%Y-%m-%d %H:%M:%S%.3f %z",
+                    timezone="America/New_York"
+                )
+            )
+
+            df.show()
+
+    .. group-tab:: ⚙️ SQL
+
+        .. code:: python
+
+            df = daft.from_pydict({
+                "timestamp_str": [
+                    "2021-01-01 00:00:00.123 +0800",
+                    "2021-01-02 12:30:00.456 +0800"
+                ]
+            })
+            
+            # Parse the timestamp string with time zone and convert to New York time
+            df = daft.sql("""
+                SELECT
+                    timestamp_str,
+                    to_datetime(timestamp_str, '%Y-%m-%d %H:%M:%S%.3f %z', 'America/New_York') as ny_time
+                FROM df
+            """)
+
+            df.show()
+
+.. code-block:: text
+    :caption: Output
+
+    ╭───────────────────────────────┬───────────────────────────────────────────────────╮                                                             
+    │ timestamp_str                 ┆ ny_time                                           │
+    │ ---                           ┆ ---                                               │
+    │ Utf8                          ┆ Timestamp(Milliseconds, Some("America/New_York")) │
+    ╞═══════════════════════════════╪═══════════════════════════════════════════════════╡
+    │ 2021-01-01 00:00:00.123 +0800 ┆ 2020-12-31 11:00:00.123 EST                       │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 2021-01-02 12:30:00.456 +0800 ┆ 2021-01-01 23:30:00.456 EST                       │
+    ╰───────────────────────────────┴───────────────────────────────────────────────────╯
+
+Temporal Truncation
+*******************
+
+The :meth:`.dt.truncate() <daft.expressions.Expression.dt.truncate>` method allows you to truncate timestamps to specific time units. This can be useful for grouping data by time periods.
+For example, to truncate timestamps to the nearest hour:
+
+.. tabs::
+
+    .. group-tab:: 🐍 Python
+
+        .. code:: python
+
+            df = daft.from_pydict({
+                "timestamp": [
+                    datetime.datetime(2021, 1, 7, 0, 1, 1),
+                    datetime.datetime(2021, 1, 8, 0, 1, 59),
+                    datetime.datetime(2021, 1, 9, 0, 30, 0),
+                    datetime.datetime(2021, 1, 10, 1, 59, 59),
+                ]
+            })
+
+            # Truncate timestamps to the nearest hour
+            df = df.with_column(
+                "hour_start",
+                df["timestamp"].dt.truncate("1 hour")
+            )
+            
+            df.show()
+
+.. code-block:: text
+    :caption: Output
+
+    ╭───────────────────────────────┬───────────────────────────────╮                                                                                 
+    │ timestamp                     ┆ hour_start                    │
+    │ ---                           ┆ ---                           │
+    │ Timestamp(Microseconds, None) ┆ Timestamp(Microseconds, None) │
+    ╞═══════════════════════════════╪═══════════════════════════════╡
+    │ 2021-01-07 00:01:01           ┆ 2021-01-07 00:00:00           │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 2021-01-08 00:01:59           ┆ 2021-01-08 00:00:00           │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 2021-01-09 00:30:00           ┆ 2021-01-09 00:00:00           │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 2021-01-10 01:59:59           ┆ 2021-01-10 01:00:00           │
+    ╰───────────────────────────────┴───────────────────────────────╯
