@@ -10,7 +10,7 @@ from .micropartition import MicroPartition
 def partition_strings_to_path(
     root_path: str,
     parts: Dict[str, str],
-    partition_null_fallback: Optional[str] = "__HIVE_DEFAULT_PARTITION__",
+    partition_null_fallback: str = "__HIVE_DEFAULT_PARTITION__",
 ) -> str:
     keys = parts.keys()
     values = [partition_null_fallback if value is None else value for value in parts.values()]

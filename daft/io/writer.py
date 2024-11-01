@@ -62,7 +62,15 @@ class FileWriterBase(ABC):
                 key: values.to_pylist()[0]
                 for key, values in partition_values_to_str_mapping(self.partition_values).items()
             }
-            self.dir_path = partition_strings_to_path(resolved_path, self.partition_strings, default_partition_fallback)
+            self.dir_path = partition_strings_to_path(
+                resolved_path,
+                self.partition_strings,
+                (
+                    default_partition_fallback
+                    if default_partition_fallback is not None
+                    else "__HIVE_DEFAULT_PARTITION__"
+                ),
+            )
         else:
             self.partition_strings = {}
             self.dir_path = f"{resolved_path}"
