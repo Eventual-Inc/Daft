@@ -12,7 +12,7 @@ from daft.filesystem import (
 from daft.iceberg.iceberg_write import (
     coerce_pyarrow_table_to_schema,
     make_iceberg_data_file,
-    to_partition_representation,
+    make_iceberg_record,
 )
 from daft.series import Series
 from daft.table.micropartition import MicroPartition
@@ -212,7 +212,6 @@ class IcebergWriter(ParquetFileWriter):
         io_config: Optional[IOConfig] = None,
     ):
         from pyiceberg.io.pyarrow import schema_to_pyarrow
-        from pyiceberg.typedef import Record as IcebergRecord
 
         super().__init__(
             root_dir=root_dir,
@@ -226,13 +225,9 @@ class IcebergWriter(ParquetFileWriter):
             metadata_collector=[],
         )
 
-        if partition_values is None:
-            self.part_record = IcebergRecord()
-        else:
-            part_vals = partition_values.to_pylist()[0]
-            iceberg_part_vals = {k: to_partition_representation(v) for k, v in part_vals.items()}
-            self.part_record = IcebergRecord(**iceberg_part_vals)
-
+        self.part_record = make_iceberg_record(
+            partition_values.to_pylist()[0] if partition_values is not None else None
+        )
         self.iceberg_schema = schema
         self.file_schema = schema_to_pyarrow(schema)
         self.partition_spec_id = partition_spec_id

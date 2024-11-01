@@ -1,7 +1,7 @@
 import datetime
 import uuid
 import warnings
-from typing import TYPE_CHECKING, Any, Iterator, List, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Tuple
 
 from daft import Expression, col, lit
 from daft.datatype import DataType
@@ -236,11 +236,19 @@ class IcebergWriteVisitors:
         return MicroPartition.from_pydict({col_name: self.data_files})
 
 
+def make_iceberg_record(partition_values: Optional[Dict[str, Any]]) -> "IcebergRecord":
+    from pyiceberg.typedef import Record as IcebergRecord
+
+    if partition_values:
+        iceberg_part_vals = {k: to_partition_representation(v) for k, v in partition_values.items()}
+        return IcebergRecord(**iceberg_part_vals)
+    else:
+        return IcebergRecord()
+
+
 def partitioned_table_to_iceberg_iter(
     partitioned: PartitionedTable, root_path: str, schema: "pa.Schema"
 ) -> Iterator[Tuple["pa.Table", str, "IcebergRecord"]]:
-    from pyiceberg.typedef import Record as IcebergRecord
-
     partition_values = partitioned.partition_values()
 
     if partition_values:
@@ -252,8 +260,7 @@ def partitioned_table_to_iceberg_iter(
             partition_values.to_pylist(),
             partition_strings.to_pylist(),
         ):
-            iceberg_part_vals = {k: to_partition_representation(v) for k, v in part_vals.items()}
-            part_record = IcebergRecord(**iceberg_part_vals)
+            part_record = make_iceberg_record(part_vals)
             part_path = partition_strings_to_path(root_path, part_strs, partition_null_fallback="null")
 
             arrow_table = coerce_pyarrow_table_to_schema(table.to_arrow(), schema)
@@ -262,4 +269,4 @@ def partitioned_table_to_iceberg_iter(
     else:
         arrow_table = coerce_pyarrow_table_to_schema(partitioned.table.to_arrow(), schema)
 
-        yield arrow_table, root_path, IcebergRecord()
+        yield arrow_table, root_path, make_iceberg_record(None)
