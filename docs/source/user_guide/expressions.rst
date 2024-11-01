@@ -601,7 +601,7 @@ You can perform arithmetic operations with timestamps and durations, such as add
         .. code:: python
 
             import datetime
-            
+
             df = daft.from_pydict({
                 "timestamp": [
                     datetime.datetime(2021, 1, 1, 0, 1, 1),
@@ -609,13 +609,13 @@ You can perform arithmetic operations with timestamps and durations, such as add
                     datetime.datetime(2021, 1, 1, 0, 2, 0),
                 ]
             })
-            
+
             # Add 10 seconds to each timestamp
             df = df.with_column(
-                "plus_10_seconds", 
+                "plus_10_seconds",
                 df["timestamp"] + datetime.timedelta(seconds=10)
             )
-            
+
             df.show()
 
     .. group-tab:: ⚙️ SQL
@@ -645,7 +645,7 @@ You can perform arithmetic operations with timestamps and durations, such as add
 .. code-block:: text
     :caption: Output
 
-    ╭───────────────────────────────┬───────────────────────────────╮                                                                                 
+    ╭───────────────────────────────┬───────────────────────────────╮
     │ timestamp                     ┆ plus_10_seconds               │
     │ ---                           ┆ ---                           │
     │ Timestamp(Microseconds, None) ┆ Timestamp(Microseconds, None) │
@@ -718,7 +718,7 @@ The :meth:`.dt.* <daft.expressions.Expression.dt>` method namespace provides ext
 .. code-block:: text
     :caption: Output
 
-    ╭───────────────────────────────┬───────┬────────┬────────┬────────┬────────┬────────╮                                                            
+    ╭───────────────────────────────┬───────┬────────┬────────┬────────┬────────┬────────╮
     │ timestamp                     ┆ year  ┆ month  ┆ day    ┆ hour   ┆ minute ┆ second │
     │ ---                           ┆ ---   ┆ ---    ┆ ---    ┆ ---    ┆ ---    ┆ ---    │
     │ Timestamp(Microseconds, None) ┆ Int32 ┆ UInt32 ┆ UInt32 ┆ UInt32 ┆ UInt32 ┆ UInt32 │
@@ -747,7 +747,7 @@ You can parse strings as timestamps with time zones and convert between differen
                     "2021-01-02 12:30:00.456 +0800"
                 ]
             })
-            
+
             # Parse the timestamp string with time zone and convert to New York time
             df = df.with_column(
                 "ny_time",
@@ -769,7 +769,7 @@ You can parse strings as timestamps with time zones and convert between differen
                     "2021-01-02 12:30:00.456 +0800"
                 ]
             })
-            
+
             # Parse the timestamp string with time zone and convert to New York time
             df = daft.sql("""
                 SELECT
@@ -783,7 +783,7 @@ You can parse strings as timestamps with time zones and convert between differen
 .. code-block:: text
     :caption: Output
 
-    ╭───────────────────────────────┬───────────────────────────────────────────────────╮                                                             
+    ╭───────────────────────────────┬───────────────────────────────────────────────────╮
     │ timestamp_str                 ┆ ny_time                                           │
     │ ---                           ┆ ---                                               │
     │ Utf8                          ┆ Timestamp(Milliseconds, Some("America/New_York")) │
@@ -819,13 +819,13 @@ For example, to truncate timestamps to the nearest hour:
                 "hour_start",
                 df["timestamp"].dt.truncate("1 hour")
             )
-            
+
             df.show()
 
 .. code-block:: text
     :caption: Output
 
-    ╭───────────────────────────────┬───────────────────────────────╮                                                                                 
+    ╭───────────────────────────────┬───────────────────────────────╮
     │ timestamp                     ┆ hour_start                    │
     │ ---                           ┆ ---                           │
     │ Timestamp(Microseconds, None) ┆ Timestamp(Microseconds, None) │
