@@ -882,7 +882,9 @@ class Scheduler(ActorPoolManager):
                             break
 
                     ###
-                    # Await: wait for some work to be completed from the current wave's dispatch
+                    # Await:
+                    # Wait for some work to be completed from the current wave's dispatch
+                    # Then we perform the necessary record-keeping on tasks that were retrieved as ready.
                     ###
                     readies = self._await_tasks(inflight_ref_to_task)
                     for ready in readies:
