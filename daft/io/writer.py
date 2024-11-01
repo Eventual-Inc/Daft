@@ -2,7 +2,6 @@ import uuid
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, List, Optional, Tuple
 
-from daft.context import get_context
 from daft.daft import IOConfig
 from daft.dependencies import pa, pacsv, pafs, pq
 from daft.filesystem import (
@@ -22,7 +21,7 @@ from daft.table.partitioning import (
     partition_values_to_str_mapping,
 )
 from daft.table.table import Table
-from daft.table.table_io import make_deltalake_add_action
+from daft.table.table_io import make_deltalake_add_action, make_deltalake_fs, sanitize_table_for_deltalake
 
 if TYPE_CHECKING:
     from pyiceberg.schema import Schema as IcebergSchema
@@ -276,14 +275,7 @@ class DeltalakeWriter(ParquetFileWriter):
         partition_values: Optional[Table] = None,
         io_config: Optional[IOConfig] = None,
     ):
-        from deltalake.writer import DeltaStorageHandler
-        from pyarrow.fs import PyFileSystem
-
-        from daft.io.object_store_options import io_config_to_storage_options
-
-        io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
-        storage_options = io_config_to_storage_options(io_config, root_dir)
-        fs = PyFileSystem(DeltaStorageHandler(root_dir, storage_options))
+        fs = make_deltalake_fs(root_dir, io_config)
 
         super().__init__(
             root_dir=root_dir,
@@ -301,17 +293,12 @@ class DeltalakeWriter(ParquetFileWriter):
 
     def write(self, table: MicroPartition):
         assert not self.is_closed, "Cannot write to a closed DeltalakeFileWriter"
-        from deltalake.schema import _convert_pa_schema_to_delta
 
-        from daft.io._deltalake import large_dtypes_kwargs
-
-        arrow_table = table.to_arrow()
-        if self.partition_values is not None:
-            partition_keys = self.partition_values.column_names()
-            arrow_table = arrow_table.drop_columns(partition_keys)
-
-        converted_schema = _convert_pa_schema_to_delta(arrow_table.schema, **large_dtypes_kwargs(self.large_dtypes))
-        converted_arrow_table = arrow_table.cast(converted_schema)
+        converted_arrow_table = sanitize_table_for_deltalake(
+            table,
+            self.large_dtypes,
+            self.partition_values.column_names() if self.partition_values is not None else None,
+        )
         if self.current_writer is None:
             self.current_writer = self._create_writer(converted_arrow_table.schema)
         self.current_writer.write_table(converted_arrow_table)

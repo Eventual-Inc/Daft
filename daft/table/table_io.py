@@ -596,15 +596,29 @@ def write_iceberg(
     return visitors.to_metadata()
 
 
+def sanitize_table_for_deltalake(
+    table: MicroPartition, large_dtypes: bool, partition_keys: list[str] | None = None
+) -> pa.Table:
+    from deltalake.schema import _convert_pa_schema_to_delta
+
+    from daft.io._deltalake import large_dtypes_kwargs
+
+    arrow_table = table.to_arrow()
+
+    # Remove partition keys from the table since they are already encoded as keys
+    if partition_keys is not None:
+        arrow_table = arrow_table.drop_columns(partition_keys)
+
+    arrow_batch = _convert_pa_schema_to_delta(arrow_table.schema, **large_dtypes_kwargs(large_dtypes))
+    return arrow_table.cast(arrow_batch)
+
+
 def partitioned_table_to_deltalake_iter(
     partitioned: PartitionedTable, large_dtypes: bool
 ) -> Iterator[tuple[pa.Table, str, dict[str, str | None]]]:
     """
     Iterates over partitions, yielding each partition as an Arrow table, along with their respective paths and partition values.
     """
-    from deltalake.schema import _convert_pa_schema_to_delta
-
-    from daft.io._deltalake import large_dtypes_kwargs
 
     partition_values = partitioned.partition_values()
 
@@ -615,22 +629,10 @@ def partitioned_table_to_deltalake_iter(
 
         for part_table, part_strs in zip(partitioned.partitions(), partition_strings.to_pylist()):
             part_path = partition_strings_to_path("", part_strs)
-            arrow_table = part_table.to_arrow()
-
-            # Remove partition keys from the table since they are already encoded as keys
-            arrow_table_no_pkeys = arrow_table.drop_columns(partition_keys)
-
-            converted_schema = _convert_pa_schema_to_delta(
-                arrow_table_no_pkeys.schema, **large_dtypes_kwargs(large_dtypes)
-            )
-            converted_arrow_table = arrow_table_no_pkeys.cast(converted_schema)
-
+            converted_arrow_table = sanitize_table_for_deltalake(part_table, large_dtypes, partition_keys)
             yield converted_arrow_table, part_path, part_strs
     else:
-        arrow_table = partitioned.table.to_arrow()
-        arrow_batch = _convert_pa_schema_to_delta(arrow_table.schema, **large_dtypes_kwargs(large_dtypes))
-        converted_arrow_table = arrow_table.cast(arrow_batch)
-
+        converted_arrow_table = sanitize_table_for_deltalake(partitioned.table, large_dtypes)
         yield converted_arrow_table, "/", {}
 
 
@@ -670,6 +672,17 @@ def make_deltalake_add_action(
         True,
         json.dumps(stats, cls=DeltaJSONEncoder),
     )
+
+
+def make_deltalake_fs(path: str, io_config: IOConfig | None = None):
+    from deltalake.writer import DeltaStorageHandler
+    from pyarrow.fs import PyFileSystem
+
+    from daft.io.object_store_options import io_config_to_storage_options
+
+    io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
+    storage_options = io_config_to_storage_options(io_config, path)
+    return PyFileSystem(DeltaStorageHandler(path, storage_options))
 
 
 class DeltaLakeWriteVisitors:
@@ -721,19 +734,12 @@ def write_deltalake(
     partition_cols: list[str] | None = None,
     io_config: IOConfig | None = None,
 ):
-    from deltalake.writer import DeltaStorageHandler
-    from pyarrow.fs import PyFileSystem
-
-    from daft.io.object_store_options import io_config_to_storage_options
-
     protocol = get_protocol_from_path(base_path)
     canonicalized_protocol = canonicalize_protocol(protocol)
 
     is_local_fs = canonicalized_protocol == "file"
 
-    io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
-    storage_options = io_config_to_storage_options(io_config, base_path)
-    fs = PyFileSystem(DeltaStorageHandler(base_path, storage_options))
+    fs = make_deltalake_fs(base_path, io_config=io_config)
 
     execution_config = get_context().daft_execution_config
 
@@ -758,7 +764,7 @@ def write_deltalake(
 
         target_row_groups = max(math.ceil(size_bytes / target_row_group_size / inflation_factor), 1)
         rows_per_row_group = max(min(math.ceil(num_rows / target_row_groups), rows_per_file), 1)
-        print(part_path)
+
         _write_tabular_arrow_table(
             arrow_table=part_table,
             schema=None,
