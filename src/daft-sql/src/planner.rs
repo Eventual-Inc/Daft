@@ -1,19 +1,23 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use common_error::DaftResult;
 use daft_core::prelude::*;
 use daft_dsl::{
     col,
     functions::utf8::{ilike, like, to_date, to_datetime},
-    has_agg, lit, literals_to_series, null_lit, Expr, ExprRef, LiteralValue, Operator,
+    has_agg, has_agg_nested, lit, literals_to_series, null_lit, Expr, ExprRef, LiteralValue,
+    Operator,
 };
 use daft_functions::numeric::{ceil::ceil, floor::floor};
 use daft_plan::{LogicalPlanBuilder, LogicalPlanRef};
 use sqlparser::{
     ast::{
         ArrayElemTypeDef, BinaryOperator, CastKind, Distinct, ExactNumberInfo, ExcludeSelectItem,
-        GroupByExpr, Ident, Query, SelectItem, Statement, StructField, Subscript, TableAlias,
-        TableWithJoins, TimezoneInfo, UnaryOperator, Value, WildcardAdditionalOptions,
+        GroupByExpr, Ident, OrderBy, Query, SelectItem, Statement, StructField, Subscript,
+        TableAlias, TableWithJoins, TimezoneInfo, UnaryOperator, Value, WildcardAdditionalOptions,
     },
     dialect::GenericDialect,
     parser::{Parser, ParserOptions},
@@ -132,6 +136,38 @@ impl SQLPlanner {
         }
     }
 
+    fn apply_order_by(
+        &mut self,
+        order_by: &Option<OrderBy>,
+        projection: &[ExprRef],
+    ) -> SQLPlannerResult<()> {
+        if let Some(order_by) = order_by {
+            if order_by.interpolate.is_some() {
+                unsupported_sql_err!("ORDER BY [query] [INTERPOLATE]");
+            }
+            if order_by.exprs.is_empty() {
+                return Ok(());
+            }
+
+            let (exprs, descending) = self.plan_order_by_exprs(order_by.exprs.as_slice())?;
+            dbg!(&exprs);
+            // since the order by expression can be the alias from the projection, we need to
+            // unresolve any aliases in the order by expressions
+            // ex: SELECT a as b FROM t ORDER BY b
+            // in this case, we need to resolve b to a
+            let exprs = exprs
+                .into_iter()
+                .map(|e| unresolve_alias(e, projection))
+                .collect();
+            let rel = self.relation_mut();
+
+            rel.inner = rel.inner.sort(dbg!(exprs), descending)?;
+            Ok(())
+        } else {
+            Ok(())
+        }
+    }
+
     fn plan_query(&mut self, query: &Query) -> SQLPlannerResult<LogicalPlanBuilder> {
         check_query_features(query)?;
 
@@ -147,6 +183,7 @@ impl SQLPlanner {
         // FROM/JOIN
         let from = selection.clone().from;
         let rel = self.plan_from(&from)?;
+        let schema = rel.schema();
         self.current_relation = Some(rel);
 
         // WHERE
@@ -173,30 +210,105 @@ impl SQLPlanner {
             }
         }
 
-        // split the selection into the groupby expressions and the rest
-        let (groupby_selection, to_select) = selection
+        let mut to_select = selection
             .projection
             .iter()
             .map(|expr| self.select_item_to_expr(expr))
             .collect::<SQLPlannerResult<Vec<_>>>()?
             .into_iter()
             .flatten()
-            .partition::<Vec<_>, _>(|expr| {
-                groupby_exprs
-                    .iter()
-                    .any(|e| expr.input_mapping() == e.input_mapping())
-            });
+            .collect::<Vec<_>>();
+        let mut aliased_exprs = Vec::with_capacity(to_select.len());
 
         if !groupby_exprs.is_empty() {
+            // this block is needed to ensure that the borrow checker is happy with the mutable borrow of self
+            {
+                let rel = self.relation_mut();
+
+                let selection_cols = schema
+                    .fields
+                    .iter()
+                    .map(|(name, _)| col(name.as_ref()))
+                    .chain(to_select.clone())
+                    .collect::<HashSet<_>>();
+
+                // remove all of the aliases from the aggs and groupby expressions
+                let aggs = selection_cols
+                    .clone()
+                    .into_iter()
+                    .filter(has_agg_nested)
+                    .collect::<Vec<_>>();
+
+                let original_groupby_keys = groupby_exprs
+                    .iter()
+                    .map(|e| unresolve_alias(e.clone(), &to_select))
+                    .collect::<Vec<_>>();
+
+                println!("1.\n{}", rel.schema());
+                rel.inner = rel
+                    .inner
+                    .aggregate(dbg!(aggs), dbg!(original_groupby_keys))?;
+                println!("2.\n{}", rel.schema());
+
+                if query.order_by.is_some() {
+                    for expr in &to_select {
+                        if let Expr::Alias(inner, alias) = expr.as_ref() {
+                            aliased_exprs.push(col(alias.clone()).alias(inner.name()));
+                        } else {
+                            aliased_exprs.push(expr.clone());
+                        }
+                    }
+                }
+            }
+
+            self.apply_order_by(&query.order_by, &dbg!(aliased_exprs))?;
+            println!("3.\n{}", self.relation_mut().schema());
+            // finally fix the selection ordering to match the of the original projection
+            let to_select = to_select
+                .into_iter()
+                .map(|expr| {
+                    // aggs are already resolved
+                    if has_agg_nested(&expr) {
+                        let name = expr.name();
+
+                        col(name)
+                    } else {
+                        expr
+                    }
+                })
+                .collect::<Vec<_>>();
+
             let rel = self.relation_mut();
-            rel.inner = rel.inner.aggregate(to_select, groupby_exprs.clone())?;
+            rel.inner = rel.inner.select(dbg!(to_select))?;
         } else if !to_select.is_empty() {
-            let rel = self.relation_mut();
-            let has_aggs = to_select.iter().any(has_agg);
-            if has_aggs {
-                rel.inner = rel.inner.aggregate(to_select, vec![])?;
-            } else {
-                rel.inner = rel.inner.select(to_select)?;
+            {
+                let has_aggs = to_select.iter().any(has_agg_nested);
+                if has_aggs {
+                    let rel = self.relation_mut();
+                    rel.inner = rel.inner.aggregate(to_select.clone(), vec![])?;
+                    self.apply_order_by(&query.order_by, &to_select)?;
+                } else {
+                    let selection = if query.order_by.is_some() {
+                        schema
+                            .fields
+                            .iter()
+                            .map(|(name, _)| col(name.as_ref()))
+                            .chain(to_select.clone())
+                            .collect::<HashSet<_>>()
+                            .into_iter()
+                            .collect::<Vec<_>>()
+                    } else {
+                        to_select.clone()
+                    };
+
+                    let rel = self.relation_mut();
+                    rel.inner = rel.inner.select(selection.into_iter().collect())?;
+
+                    self.apply_order_by(&query.order_by, &to_select)?;
+
+                    let rel = self.relation_mut();
+                    rel.inner = rel.inner.select(dbg!(&to_select).clone())?;
+                }
             }
         }
 
@@ -207,52 +319,6 @@ impl SQLPlanner {
             }
             Some(Distinct::On(_)) => unsupported_sql_err!("DISTINCT ON"),
             None => {}
-        }
-
-        if let Some(order_by) = &query.order_by {
-            if order_by.interpolate.is_some() {
-                unsupported_sql_err!("ORDER BY [query] [INTERPOLATE]");
-            }
-            // TODO: if ordering by a column not in the projection, this will fail.
-            let (exprs, descending) = self.plan_order_by_exprs(order_by.exprs.as_slice())?;
-            let rel = self.relation_mut();
-            rel.inner = rel.inner.sort(exprs, descending)?;
-        }
-
-        // Properly apply or remove the groupby columns from the selection
-        // This needs to be done after the orderby
-        // otherwise, the orderby will not be able to reference the grouping columns
-        //
-        // ex: SELECT sum(a) as sum_a, max(a) as max_a, b as c FROM table GROUP BY b
-        //
-        // The groupby columns are [b]
-        // the evaluation of sum(a) and max(a) are already handled by the earlier aggregate,
-        // so our projection is [sum_a, max_a, (b as c)]
-        // leaving us to handle (b as c)
-        //
-        // we filter for the columns in the schema that are not in the groupby keys,
-        // [sum_a, max_a, b] -> [sum_a, max_a]
-        //
-        // Then we add the groupby columns back in with the correct expressions
-        // this gives us the final projection: [sum_a, max_a, (b as c)]
-        if !groupby_exprs.is_empty() {
-            let rel = self.relation_mut();
-            let schema = rel.inner.schema();
-
-            let groupby_keys = groupby_exprs
-                .iter()
-                .map(|e| Ok(e.to_field(&schema)?.name))
-                .collect::<DaftResult<Vec<_>>>()?;
-
-            let selection_colums = schema
-                .exclude(groupby_keys.as_ref())?
-                .names()
-                .iter()
-                .map(|n| col(n.as_str()))
-                .chain(groupby_selection)
-                .collect();
-
-            rel.inner = rel.inner.select(selection_colums)?;
         }
 
         if let Some(limit) = &query.limit {
@@ -1343,4 +1409,41 @@ fn idents_to_str(idents: &[Ident]) -> String {
         .map(ident_to_str)
         .collect::<Vec<_>>()
         .join(".")
+}
+
+/// unresolves an alias in a projection
+/// Example:
+/// ```sql
+/// SELECT a as b, c FROM t group by b
+/// ```
+/// in this case if you tried to unresolve the expr `b` using the projections [`a as b`, `c`] you would get `a`
+///
+/// Since sql allows you to use the alias in the group by or the order by clause, we need to unresolve the alias to the original expression
+/// ex:
+/// All of the following are valid sql queries
+/// `select a as b, c from t group by b`
+/// `select a as b, c from t group by a`
+/// `select a as b, c from t group by a order by a`
+/// `select a as b, c from t group by a order by b`
+/// `select a as b, c from t group by b order by a`
+/// `select a as b, c from t group by b order by b`
+///
+/// In all of the above cases, the group by and order by clauses are resolved to the original expression `a`
+///
+/// This is needed for resolving group by and order by clauses
+fn unresolve_alias(expr: ExprRef, projection: &[ExprRef]) -> ExprRef {
+    projection
+        .iter()
+        .find_map(|p| {
+            if let Expr::Alias(e, alias) = &p.as_ref() {
+                if expr.name() == alias.as_ref() {
+                    Some(e.clone())
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+        .unwrap_or(expr)
 }

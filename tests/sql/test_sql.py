@@ -221,3 +221,39 @@ def test_sql_distinct():
     actual = daft.sql("SELECT DISTINCT n FROM df").collect().to_pydict()
     expected = df.distinct().collect().to_pydict()
     assert actual == expected
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "select utf8 from tbl1 order by utf8",
+        "select utf8 from tbl1 order by utf8 asc",
+        "select utf8 from tbl1 order by utf8 desc",
+        "select utf8 as a from tbl1 order by a",
+        "select utf8 as a from tbl1 order by utf8",
+        "select utf8 as a from tbl1 order by utf8 asc",
+        "select utf8 as a from tbl1 order by utf8 desc",
+        "select utf8 from tbl1 group by utf8 order by utf8",
+        "select utf8 as a from tbl1 group by utf8 order by utf8",
+        "select utf8 as a from tbl1 group by a order by utf8",
+        "select utf8 as a from tbl1 group by a order by a",
+        "select sum(i32), utf8 as a from tbl1 group by utf8 order by a",
+        "select sum(i32) as s, utf8 as a from tbl1 group by utf8 order by s",
+    ],
+)
+def test_compiles(query):
+    tbl1 = daft.from_pydict(
+        {
+            "utf8": ["group1", "group1", "group2", "group2"],
+            "i32": [1, 2, 3, 3],
+        }
+    )
+    catalog = SQLCatalog({"tbl1": tbl1})
+    try:
+        res = daft.sql(query, catalog=catalog)
+        data = res.collect().to_pydict()
+        assert data
+
+    except Exception as e:
+        print(f"Error: {e}")
+        raise
