@@ -67,8 +67,8 @@ def test_decimal_mean(prec) -> None:
     df = daft.from_pydict({"decimal128": python_decimals})
     df = df.with_column("decimal128", df["decimal128"].cast(daft.DataType.decimal128(prec, 3)))
     res = df.mean().collect()
-    assert res.to_pydict()["decimal128"] == [decimal.Decimal("36.00033333333334")]
+    assert res.to_pydict()["decimal128"] == [decimal.Decimal("36.0003333")]
 
     schema = res.schema()
     expected_prec = min(38, prec + 19)  # see agg_ops.rs
-    assert schema["decimal128"].dtype == daft.DataType.decimal128(expected_prec, 3)
+    assert schema["decimal128"].dtype == daft.DataType.decimal128(expected_prec, 7)

@@ -3,9 +3,11 @@ use std::sync::Arc;
 use arrow2::array::PrimitiveArray;
 use common_error::DaftResult;
 
+use super::{DaftCountAggable, DaftSumAggable};
 use crate::{
     array::ops::{DaftMeanAggable, GroupIndices},
     datatypes::*,
+    prelude::CountMode,
     utils::stats,
 };
 
@@ -29,7 +31,16 @@ impl DaftMeanAggable for DataArray<Float64Type> {
 impl DaftMeanAggable for DataArray<Decimal128Type> {
     type Output = DaftResult<Self>;
 
-    fn mean(&self) -> Self::Output {}
+    fn mean(&self) -> Self::Output {
+        let count = self.count(CountMode::Valid)?.get(0);
+        let sum = self.sum()?.get(0);
 
-    fn grouped_mean(&self, groups: &GroupIndices) -> Self::Output {}
+        let val = sum.zip(count).map(|(s, c)| s / (c as i128));
+
+        Ok(Self::from_iter(self.field.clone(), std::iter::once(val)))
+    }
+
+    fn grouped_mean(&self, groups: &GroupIndices) -> Self::Output {
+        todo!("grouped mean")
+    }
 }
