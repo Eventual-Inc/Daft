@@ -33,6 +33,7 @@ xxhash>=3.0.0
 Pillow==10.4.0
 opencv-python==4.8.1.78
 tiktoken==0.7.0
+duckdb==1.1.2
 
 # Pyarrow
 pyarrow==16.0.0; python_version >= '3.9'
