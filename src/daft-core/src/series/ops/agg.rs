@@ -168,14 +168,21 @@ impl Series {
     }
 
     pub fn stddev(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
-        // Upcast all numeric types to float64 and use f64 stddev kernel.
-        self.data_type().assert_is_numeric()?;
-        let casted = self.cast(&DataType::Float64)?;
-        let casted = casted.f64()?;
-        let series = groups
-            .map_or_else(|| casted.stddev(), |groups| casted.grouped_stddev(groups))?
-            .into_series();
-        Ok(series)
+        let target_type = try_stddev_aggregation_supertype(self.data_type())?;
+        match target_type {
+            DataType::Float64 => {
+                let casted = self.cast(&DataType::Float64)?;
+                let casted = casted.f64()?;
+                let series = groups
+                    .map_or_else(|| casted.stddev(), |groups| casted.grouped_stddev(groups))?
+                    .into_series();
+                Ok(series)
+            }
+            _ => Err(DaftError::not_implemented(format!(
+                "StdDev not implemented for {target_type}, source type: {}",
+                self.data_type()
+            ))),
+        }
     }
 
     pub fn min(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {

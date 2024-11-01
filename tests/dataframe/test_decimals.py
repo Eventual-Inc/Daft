@@ -72,3 +72,15 @@ def test_decimal_mean(prec) -> None:
     schema = res.schema()
     expected_prec = min(38, prec + 19)  # see agg_ops.rs
     assert schema["decimal128"].dtype == daft.DataType.decimal128(expected_prec, 7)
+
+
+@pytest.mark.parametrize("prec", [5, 30])
+def test_decimal_stddev(prec) -> None:
+    python_decimals = [decimal.Decimal("-1.010"), decimal.Decimal("99.001"), decimal.Decimal("10.010")]
+    df = daft.from_pydict({"decimal128": python_decimals})
+    df = df.with_column("decimal128", df["decimal128"].cast(daft.DataType.decimal128(prec, 3)))
+    res = df.agg(df["decimal128"].stddev())  ## TODO: we can't do `select(df['x'].stddev())` make ticket
+    assert pytest.approx(res.to_pydict()["decimal128"][0]) == 44.774792762098734
+
+    schema = res.schema()
+    assert schema["decimal128"].dtype == daft.DataType.float64()
