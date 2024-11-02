@@ -28,8 +28,8 @@ use crate::{
         actor_pool_project::ActorPoolProjectOperator, aggregate::AggregateOperator,
         anti_semi_hash_join_probe::AntiSemiProbeOperator, explode::ExplodeOperator,
         filter::FilterOperator, inner_hash_join_probe::InnerHashJoinProbeOperator,
-        intermediate_op::IntermediateNode, pivot::PivotOperator, project::ProjectOperator,
-        sample::SampleOperator, unpivot::UnpivotOperator,
+        intermediate_op::IntermediateNode, project::ProjectOperator, sample::SampleOperator,
+        unpivot::UnpivotOperator,
     },
     sinks::{
         aggregate::AggregateSink,
@@ -38,6 +38,7 @@ use crate::{
         hash_join_build::HashJoinBuildSink,
         limit::LimitSink,
         outer_hash_join_probe::OuterHashJoinProbeSink,
+        pivot::PivotSink,
         sort::SortSink,
         streaming_sink::StreamingSinkNode,
         write::{WriteFormat, WriteSink},
@@ -282,17 +283,53 @@ pub fn physical_plan_to_pipeline(
             group_by,
             pivot_column,
             value_column,
+            aggregation,
             names,
             ..
         }) => {
-            let pivot_op = PivotOperator::new(
+            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            let group_by_with_pivot = group_by
+                .iter()
+                .chain(std::iter::once(pivot_column))
+                .cloned()
+                .collect::<Vec<_>>();
+            let aggregate_fields = group_by_with_pivot
+                .iter()
+                .map(|expr| expr.to_field(input.schema()))
+                .chain(std::iter::once(aggregation.to_field(input.schema())))
+                .collect::<DaftResult<Vec<_>>>()
+                .unwrap();
+            let aggregate_schema = Schema::new(aggregate_fields).unwrap();
+            let (first_stage_aggs, second_stage_aggs, final_exprs) = populate_aggregation_stages(
+                &[aggregation.clone()],
+                &aggregate_schema.into(),
+                &group_by_with_pivot,
+            );
+            let agg_op = AggregateOperator::new(
+                first_stage_aggs
+                    .values()
+                    .cloned()
+                    .map(|e| Arc::new(Expr::Agg(e)))
+                    .collect(),
+                group_by_with_pivot.clone(),
+            );
+            let agg_op_node = IntermediateNode::new(Arc::new(agg_op), vec![child_node]).boxed();
+            let sink_group_by = group_by_with_pivot.iter().map(|e| col(e.name())).collect();
+            let pivot_sink = PivotSink::new(
+                sink_group_by,
+                second_stage_aggs
+                    .values()
+                    .cloned()
+                    .map(|e| Arc::new(Expr::Agg(e)))
+                    .collect(),
+                final_exprs,
                 group_by.clone(),
                 pivot_column.clone(),
                 value_column.clone(),
                 names.clone(),
             );
-            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
-            IntermediateNode::new(Arc::new(pivot_op), vec![child_node]).boxed()
+
+            BlockingSinkNode::new(Arc::new(pivot_sink), agg_op_node).boxed()
         }
         LocalPhysicalPlan::Sort(Sort {
             input,
