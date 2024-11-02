@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_dsl::ExprRef;
+use daft_dsl::{AggExpr, Expr, ExprRef};
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
@@ -40,32 +40,26 @@ impl BlockingSinkState for PivotState {
 }
 
 pub struct PivotSink {
-    pub group_by_with_pivot: Vec<ExprRef>,
-    pub aggregations: Vec<ExprRef>,
-    pub post_agg_projection: Vec<ExprRef>,
     pub group_by: Vec<ExprRef>,
     pub pivot_column: ExprRef,
     pub value_column: ExprRef,
+    pub aggregation: AggExpr,
     pub names: Vec<String>,
 }
 
 impl PivotSink {
     pub fn new(
-        group_by_with_pivot: Vec<ExprRef>,
-        aggregations: Vec<ExprRef>,
-        post_agg_projection: Vec<ExprRef>,
         group_by: Vec<ExprRef>,
         pivot_column: ExprRef,
         value_column: ExprRef,
+        aggregation: AggExpr,
         names: Vec<String>,
     ) -> Self {
         Self {
-            group_by_with_pivot,
-            aggregations,
-            post_agg_projection,
             group_by,
             pivot_column,
             value_column,
+            aggregation,
             names,
         }
     }
@@ -99,9 +93,17 @@ impl BlockingSink for PivotSink {
                 .finalize()
         });
         let concated = MicroPartition::concat(all_parts)?;
-        let agged = concated.agg(&self.aggregations, &self.group_by_with_pivot)?;
-        let projected = agged.eval_expression_list(&self.post_agg_projection)?;
-        let pivoted = Arc::new(projected.pivot(
+        let group_by_with_pivot = self
+            .group_by
+            .iter()
+            .chain(std::iter::once(&self.pivot_column))
+            .cloned()
+            .collect::<Vec<_>>();
+        let agged = concated.agg(
+            &[Expr::Agg(self.aggregation.clone()).into()],
+            &group_by_with_pivot,
+        )?;
+        let pivoted = Arc::new(agged.pivot(
             &self.group_by,
             self.pivot_column.clone(),
             self.value_column.clone(),
