@@ -75,8 +75,13 @@ def ray_tracer(execution_id: str, daft_execution_config: PyDaftExecutionConfig) 
         with open(filepath, "w") as f:
             # Yield the tracer
             runner_tracer = RunnerTracer(f, metrics_actor)
-            yield runner_tracer
-            runner_tracer.finalize()
+
+            try:
+                yield runner_tracer
+
+            # Use `finally` to cleanup and finalize the JSON even in cases where the job is killed with SIGKILL
+            finally:
+                runner_tracer.finalize()
     else:
         runner_tracer = RunnerTracer(None, None)
         yield runner_tracer
