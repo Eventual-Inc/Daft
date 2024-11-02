@@ -13,6 +13,7 @@ use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use daft_plan::JoinType;
 use daft_table::{GrowableTable, ProbeState, Table};
+use futures::{stream, StreamExt};
 use indexmap::IndexSet;
 use tracing::{info_span, instrument};
 
@@ -77,12 +78,12 @@ impl IndexBitmap {
     }
 }
 
-enum OuterHashJoinProbeState {
+enum OuterHashJoinState {
     Building(ProbeStateBridgeRef, bool),
     Probing(Arc<ProbeState>, Option<IndexBitmapBuilder>),
 }
 
-impl OuterHashJoinProbeState {
+impl OuterHashJoinState {
     async fn get_or_build_probe_state(&mut self) -> Arc<ProbeState> {
         match self {
             Self::Building(bridge, needs_bitmap) => {
@@ -96,16 +97,23 @@ impl OuterHashJoinProbeState {
         }
     }
 
-    fn get_bitmap_builder(&mut self) -> &mut Option<IndexBitmapBuilder> {
-        if let Self::Probing(_, builder) = self {
-            builder
-        } else {
-            panic!("Bitmap builder should be set in Probing state")
+    async fn get_or_build_bitmap(&mut self) -> &mut Option<IndexBitmapBuilder> {
+        match self {
+            Self::Building(bridge, _) => {
+                let probe_state = bridge.get_probe_state().await;
+                let builder = IndexBitmapBuilder::new(probe_state.get_tables());
+                *self = Self::Probing(probe_state, Some(builder));
+                match self {
+                    Self::Probing(_, builder) => builder,
+                    _ => unreachable!(),
+                }
+            }
+            Self::Probing(_, builder) => builder,
         }
     }
 }
 
-impl StreamingSinkState for OuterHashJoinProbeState {
+impl StreamingSinkState for OuterHashJoinState {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
@@ -165,7 +173,7 @@ impl OuterHashJoinProbeSink {
 
     fn probe_left_right(
         input: &Arc<MicroPartition>,
-        probe_state: Arc<ProbeState>,
+        probe_state: &ProbeState,
         join_type: JoinType,
         probe_on: &[ExprRef],
         common_join_keys: &[String],
@@ -234,7 +242,7 @@ impl OuterHashJoinProbeSink {
 
     fn probe_outer(
         input: &Arc<MicroPartition>,
-        probe_state: Arc<ProbeState>,
+        probe_state: &ProbeState,
         bitmap_builder: &mut IndexBitmapBuilder,
         probe_on: &[ExprRef],
         common_join_keys: &[String],
@@ -305,7 +313,7 @@ impl OuterHashJoinProbeSink {
             .next()
             .expect("at least one state should be present")
             .as_any_mut()
-            .downcast_mut::<OuterHashJoinProbeState>()
+            .downcast_mut::<OuterHashJoinState>()
             .expect("OuterHashJoinProbeSink state should be OuterHashJoinProbeState");
         let tables = first_state
             .get_or_build_probe_state()
@@ -313,24 +321,30 @@ impl OuterHashJoinProbeSink {
             .get_tables()
             .clone();
         let first_bitmap = first_state
-            .get_bitmap_builder()
+            .get_or_build_bitmap()
+            .await
             .take()
-            .expect("bitmap should be set in outer join")
+            .expect("bitmap should be set")
             .build();
 
         let merged_bitmap = {
-            let bitmaps = std::iter::once(first_bitmap).chain(states_iter.map(|s| {
-                let state = s
-                    .as_any_mut()
-                    .downcast_mut::<OuterHashJoinProbeState>()
-                    .expect("OuterHashJoinProbeSink state should be OuterHashJoinProbeState");
-                state
-                    .get_bitmap_builder()
-                    .take()
-                    .expect("bitmap should be set in outer join")
-                    .build()
-            }));
-            bitmaps.fold(None, |acc, x| match acc {
+            let bitmaps = stream::once(async move { first_bitmap })
+                .chain(stream::iter(states_iter).then(|s| async move {
+                    let state = s
+                        .as_any_mut()
+                        .downcast_mut::<OuterHashJoinState>()
+                        .expect("OuterHashJoinProbeSink state should be OuterHashJoinProbeState");
+                    state
+                        .get_or_build_bitmap()
+                        .await
+                        .take()
+                        .expect("bitmap should be set")
+                        .build()
+                }))
+                .collect::<Vec<_>>()
+                .await;
+
+            bitmaps.into_iter().fold(None, |acc, x| match acc {
                 None => Some(x),
                 Some(acc) => Some(acc.merge(&x)),
             })
@@ -389,13 +403,13 @@ impl StreamingSink for OuterHashJoinProbeSink {
         let fut = runtime_ref.spawn(async move {
             let outer_join_state = state
                 .as_any_mut()
-                .downcast_mut::<OuterHashJoinProbeState>()
+                .downcast_mut::<OuterHashJoinState>()
                 .expect("OuterHashJoinProbeSink should have OuterHashJoinProbeState");
             let probe_state = outer_join_state.get_or_build_probe_state().await;
             let out = match join_type {
                 JoinType::Left | JoinType::Right => Self::probe_left_right(
                     &input,
-                    probe_state,
+                    &probe_state,
                     join_type,
                     &probe_on,
                     &common_join_keys,
@@ -404,12 +418,13 @@ impl StreamingSink for OuterHashJoinProbeSink {
                 ),
                 JoinType::Outer => {
                     let bitmap_builder = outer_join_state
-                        .get_bitmap_builder()
+                        .get_or_build_bitmap()
+                        .await
                         .as_mut()
-                        .expect("bitmap builder should be set in Outer join");
+                        .expect("bitmap should be set");
                     Self::probe_outer(
                         &input,
-                        probe_state,
+                        &probe_state,
                         bitmap_builder,
                         &probe_on,
                         &common_join_keys,
@@ -431,7 +446,7 @@ impl StreamingSink for OuterHashJoinProbeSink {
     }
 
     fn make_state(&self) -> Box<dyn StreamingSinkState> {
-        Box::new(OuterHashJoinProbeState::Building(
+        Box::new(OuterHashJoinState::Building(
             self.probe_state_bridge.clone(),
             self.join_type == JoinType::Outer,
         ))

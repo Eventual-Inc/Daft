@@ -62,11 +62,17 @@ impl StreamingSink for LimitSink {
         match input_num_rows.cmp(remaining) {
             Less => {
                 *remaining -= input_num_rows;
-                MaybeFuture::Immediate(Ok((state, StreamingSinkOutputType::NeedMoreInput(None))))
+                MaybeFuture::Immediate(Ok((
+                    state,
+                    StreamingSinkOutputType::NeedMoreInput(Some(input.clone())),
+                )))
             }
             Equal => {
                 *remaining = 0;
-                MaybeFuture::Immediate(Ok((state, StreamingSinkOutputType::Finished(None))))
+                MaybeFuture::Immediate(Ok((
+                    state,
+                    StreamingSinkOutputType::Finished(Some(input.clone())),
+                )))
             }
             Greater => {
                 let input = input.clone();
