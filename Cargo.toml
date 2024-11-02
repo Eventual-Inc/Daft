@@ -175,6 +175,7 @@ comfy-table = "7.1.1"
 common-error = {path = "src/common/error", default-features = false}
 daft-hash = {path = "src/daft-hash"}
 derivative = "2.2.0"
+derive_builder = "0.20.2"
 divan = "0.1.14"
 dyn-clone = "1"
 futures = "0.3.30"
