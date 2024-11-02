@@ -10,7 +10,6 @@ import contextlib
 import dataclasses
 import json
 import logging
-import os
 import pathlib
 import time
 from datetime import datetime
@@ -26,6 +25,7 @@ from daft.runners import ray_metrics
 
 if TYPE_CHECKING:
     from daft import ResourceRequest
+    from daft.daft import PyDaftExecutionConfig
     from daft.execution.physical_plan import MaterializedPhysicalPlan
 
 logger = logging.getLogger(__name__)
@@ -52,17 +52,12 @@ PHASE_FLOW_START = "s"
 PHASE_FLOW_FINISH = "f"
 
 
-def tracing_enabled():
-    """Checks if tracing is enabled in the current environment"""
-    return os.getenv("DAFT_RUNNER_TRACING") != "0"
-
-
 @contextlib.contextmanager
-def ray_tracer(execution_id: str) -> Iterator[RunnerTracer]:
+def ray_tracer(execution_id: str, daft_execution_config: PyDaftExecutionConfig) -> Iterator[RunnerTracer]:
     """Instantiates a RunnerTracer for the duration of the code block"""
     # Dump the RayRunner trace if we detect an active Ray session, otherwise we give up and do not write the trace
     filepath: pathlib.Path | None
-    if pathlib.Path(DEFAULT_RAY_LOGS_LOCATION).exists() and tracing_enabled():
+    if pathlib.Path(DEFAULT_RAY_LOGS_LOCATION).exists() and daft_execution_config.enable_ray_tracing:
         trace_filename = (
             f"trace_RayRunner.{execution_id}.{datetime.replace(datetime.now(), microsecond=0).isoformat()[:-3]}.json"
         )
@@ -631,9 +626,9 @@ class MaterializedPhysicalPlanWrapper:
 
 
 @contextlib.contextmanager
-def collect_ray_task_metrics(execution_id: str, task_id: str, stage_id: int):
+def collect_ray_task_metrics(execution_id: str, task_id: str, stage_id: int, execution_config: PyDaftExecutionConfig):
     """Context manager that will ping the metrics actor to record various execution metrics about a given task"""
-    if tracing_enabled():
+    if execution_config.enable_ray_tracing:
         import time
 
         runtime_context = ray.get_runtime_context()

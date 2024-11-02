@@ -1819,6 +1819,7 @@ class PyDaftExecutionConfig:
         enable_aqe: bool | None = None,
         enable_native_executor: bool | None = None,
         default_morsel_size: int | None = None,
+        enable_ray_tracing: bool | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
     def scan_tasks_min_size_bytes(self) -> int: ...
@@ -1854,6 +1855,8 @@ class PyDaftExecutionConfig:
     def enable_native_executor(self) -> bool: ...
     @property
     def default_morsel_size(self) -> int: ...
+    @property
+    def enable_ray_tracing(self) -> bool: ...
 
 class PyDaftPlanningConfig:
     @staticmethod

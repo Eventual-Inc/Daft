@@ -492,7 +492,7 @@ def single_partition_pipeline(
 ) -> list[list[PartitionMetadata] | MicroPartition]:
     with execution_config_ctx(
         config=daft_execution_config,
-    ), ray_tracing.collect_ray_task_metrics(job_id, task_id, stage_id):
+    ), ray_tracing.collect_ray_task_metrics(job_id, task_id, stage_id, daft_execution_config):
         return build_partitions(instruction_stack, partial_metadatas, *inputs)
 
 
@@ -508,7 +508,7 @@ def fanout_pipeline(
     *inputs: MicroPartition,
 ) -> list[list[PartitionMetadata] | MicroPartition]:
     with execution_config_ctx(config=daft_execution_config), ray_tracing.collect_ray_task_metrics(
-        job_id, task_id, stage_id
+        job_id, task_id, stage_id, daft_execution_config
     ):
         return build_partitions(instruction_stack, partial_metadatas, *inputs)
 
@@ -527,7 +527,7 @@ def reduce_pipeline(
     import ray
 
     with execution_config_ctx(config=daft_execution_config), ray_tracing.collect_ray_task_metrics(
-        job_id, task_id, stage_id
+        job_id, task_id, stage_id, daft_execution_config
     ):
         return build_partitions(instruction_stack, partial_metadatas, *ray.get(inputs))
 
@@ -546,7 +546,7 @@ def reduce_and_fanout(
     import ray
 
     with execution_config_ctx(config=daft_execution_config), ray_tracing.collect_ray_task_metrics(
-        job_id, task_id, stage_id
+        job_id, task_id, stage_id, daft_execution_config
     ):
         return build_partitions(instruction_stack, partial_metadatas, *ray.get(inputs))
 
@@ -853,7 +853,7 @@ class Scheduler(ActorPoolManager):
             f"{datetime.replace(datetime.now(), second=0, microsecond=0).isoformat()[:-3]}.json"
         )
 
-        with profiler(profile_filename), ray_tracing.ray_tracer(result_uuid) as runner_tracer:
+        with profiler(profile_filename), ray_tracing.ray_tracer(result_uuid, daft_execution_config) as runner_tracer:
             raw_tasks = plan_scheduler.to_partition_tasks(
                 psets,
                 self,
