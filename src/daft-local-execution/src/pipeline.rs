@@ -288,23 +288,32 @@ pub fn physical_plan_to_pipeline(
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            // Pivot is a two stage operation. The first stage aggregates the values, grouped by both the group by columns and the pivot column.
+            // The second stage is a pivot operation where the values are pivoted into columns based on the pivot column.
+
             let group_by_with_pivot = group_by
                 .iter()
                 .chain(std::iter::once(pivot_column))
                 .cloned()
                 .collect::<Vec<_>>();
-            let aggregate_fields = group_by_with_pivot
-                .iter()
-                .map(|expr| expr.to_field(input.schema()))
-                .chain(std::iter::once(aggregation.to_field(input.schema())))
-                .collect::<DaftResult<Vec<_>>>()
-                .unwrap();
-            let aggregate_schema = Schema::new(aggregate_fields).unwrap();
+            let aggregate_schema = || -> DaftResult<_> {
+                let fields = group_by_with_pivot
+                    .iter()
+                    .map(|expr| expr.to_field(input.schema()))
+                    .chain(std::iter::once(aggregation.to_field(input.schema())))
+                    .collect::<DaftResult<Vec<_>>>()?;
+                Schema::new(fields)
+            }()
+            .with_context(|_| PipelineCreationSnafu {
+                plan_name: physical_plan.name(),
+            })?;
             let (first_stage_aggs, second_stage_aggs, final_exprs) = populate_aggregation_stages(
                 &[aggregation.clone()],
                 &aggregate_schema.into(),
                 &group_by_with_pivot,
             );
+
+            // The first stage aggregates the values, grouped by both the group by columns and the pivot column.
             let agg_op = AggregateOperator::new(
                 first_stage_aggs
                     .values()
@@ -314,6 +323,8 @@ pub fn physical_plan_to_pipeline(
                 group_by_with_pivot.clone(),
             );
             let agg_op_node = IntermediateNode::new(Arc::new(agg_op), vec![child_node]).boxed();
+
+            // The second stage is a pivot operation where the values are pivoted into columns based on the pivot column.
             let sink_group_by = group_by_with_pivot.iter().map(|e| col(e.name())).collect();
             let pivot_sink = PivotSink::new(
                 sink_group_by,
@@ -328,7 +339,6 @@ pub fn physical_plan_to_pipeline(
                 value_column.clone(),
                 names.clone(),
             );
-
             BlockingSinkNode::new(Arc::new(pivot_sink), agg_op_node).boxed()
         }
         LocalPhysicalPlan::Sort(Sort {
