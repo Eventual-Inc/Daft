@@ -596,7 +596,6 @@ class Scheduler(ActorPoolManager):
 
         self.reserved_cores = 0
 
-        self.execution_configs_objref_by_df: dict[str, ray.ObjectRef] = dict()
         self.threads_by_df: dict[str, threading.Thread] = dict()
         self.results_by_df: dict[str, Queue] = {}
         self.active_by_df: dict[str, bool] = dict()
@@ -629,7 +628,6 @@ class Scheduler(ActorPoolManager):
         daft_execution_config: PyDaftExecutionConfig,
         results_buffer_size: int | None = None,
     ) -> None:
-        self.execution_configs_objref_by_df[result_uuid] = ray.put(daft_execution_config)
         self.results_by_df[result_uuid] = Queue(maxsize=1 if results_buffer_size is not None else -1)
         self.active_by_df[result_uuid] = True
         self.results_buffer_size_by_df[result_uuid] = results_buffer_size
@@ -641,6 +639,7 @@ class Scheduler(ActorPoolManager):
                 "plan_scheduler": plan_scheduler,
                 "psets": psets,
                 "result_uuid": result_uuid,
+                "daft_execution_config": daft_execution_config,
             },
         )
         t.start()
@@ -758,14 +757,14 @@ class Scheduler(ActorPoolManager):
         self,
         execution_id: str,
         tasks_to_dispatch: list[PartitionTask],
-        daft_execution_config: PyDaftExecutionConfig,
+        daft_execution_config_objref: ray.ObjectRef,
         runner_tracer: RunnerTracer,
     ) -> Iterator[tuple[PartitionTask, list[ray.ObjectRef]]]:
         """Iteratively Dispatches a batch of tasks to the Ray backend"""
         with runner_tracer.dispatching():
             for task in tasks_to_dispatch:
                 if task.actor_pool_id is None:
-                    results = _build_partitions(execution_id, daft_execution_config, task, runner_tracer)
+                    results = _build_partitions(execution_id, daft_execution_config_objref, task, runner_tracer)
                 else:
                     actor_pool = self._actor_pools.get(task.actor_pool_id)
                     assert actor_pool is not None, "Ray actor pool must live for as long as the tasks."
@@ -837,11 +836,14 @@ class Scheduler(ActorPoolManager):
         plan_scheduler: PhysicalPlanScheduler,
         psets: dict[str, ray.ObjectRef],
         result_uuid: str,
+        daft_execution_config: PyDaftExecutionConfig,
     ) -> None:
+        # Put execution config into cluster once to share it amongst all tasks
+        daft_execution_config_objref = ray.put(daft_execution_config)
+
         # Get executable tasks from plan scheduler.
         results_buffer_size = self.results_buffer_size_by_df[result_uuid]
 
-        daft_execution_config = self.execution_configs_objref_by_df[result_uuid]
         inflight_tasks: dict[str, PartitionTask[ray.ObjectRef]] = dict()
         inflight_ref_to_task: dict[ray.ObjectRef, str] = dict()
         pbar = ProgressBar(use_ray_tqdm=self.use_ray_tqdm)
@@ -915,7 +917,7 @@ class Scheduler(ActorPoolManager):
                             for task, result_obj_refs in self._dispatch_tasks(
                                 result_uuid,
                                 tasks_to_dispatch,
-                                daft_execution_config,
+                                daft_execution_config_objref,
                                 runner_tracer,
                             ):
                                 inflight_tasks[task.id()] = task
