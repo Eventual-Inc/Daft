@@ -10,12 +10,6 @@ from daft.errors import ExpressionTypeError
 from tests.utils import sort_arrow_table
 
 
-@pytest.fixture(scope="function", autouse=True)
-def set_default_morsel_size():
-    with context.execution_config_ctx(default_morsel_size=1):
-        yield
-
-
 def skip_invalid_join_strategies(join_strategy, join_type):
     if context.get_context().daft_execution_config.enable_native_executor is True:
         if join_strategy not in [None, "hash"]:
@@ -78,7 +72,7 @@ def test_rename_join_keys_in_dataframe(make_df):
     indirect=True,
 )
 @pytest.mark.parametrize("join_type", ["inner", "left", "right", "outer"])
-def test_joins(join_strategy, join_type, make_df, n_partitions: int):
+def test_joins(join_strategy, join_type, make_df, n_partitions: int, with_morsel_size):
     skip_invalid_join_strategies(join_strategy, join_type)
 
     df = make_df(
@@ -110,7 +104,7 @@ def test_joins(join_strategy, join_type, make_df, n_partitions: int):
     indirect=True,
 )
 @pytest.mark.parametrize("join_type", ["inner", "left", "right", "outer"])
-def test_multicol_joins(join_strategy, join_type, make_df, n_partitions: int):
+def test_multicol_joins(join_strategy, join_type, make_df, n_partitions: int, with_morsel_size):
     skip_invalid_join_strategies(join_strategy, join_type)
 
     df = make_df(
@@ -144,7 +138,7 @@ def test_multicol_joins(join_strategy, join_type, make_df, n_partitions: int):
     indirect=True,
 )
 @pytest.mark.parametrize("join_type", ["inner", "left", "right", "outer"])
-def test_dupes_join_key(join_strategy, join_type, make_df, n_partitions: int):
+def test_dupes_join_key(join_strategy, join_type, make_df, n_partitions: int, with_morsel_size):
     skip_invalid_join_strategies(join_strategy, join_type)
 
     df = make_df(
@@ -174,7 +168,7 @@ def test_dupes_join_key(join_strategy, join_type, make_df, n_partitions: int):
     indirect=True,
 )
 @pytest.mark.parametrize("join_type", ["inner", "left", "right", "outer"])
-def test_multicol_dupes_join_key(join_strategy, join_type, make_df, n_partitions: int):
+def test_multicol_dupes_join_key(join_strategy, join_type, make_df, n_partitions: int, with_morsel_size):
     skip_invalid_join_strategies(join_strategy, join_type)
 
     df = make_df(
@@ -206,7 +200,7 @@ def test_multicol_dupes_join_key(join_strategy, join_type, make_df, n_partitions
     indirect=True,
 )
 @pytest.mark.parametrize("join_type", ["inner", "left", "right", "outer"])
-def test_joins_all_same_key(join_strategy, join_type, make_df, n_partitions: int):
+def test_joins_all_same_key(join_strategy, join_type, make_df, n_partitions: int, with_morsel_size):
     skip_invalid_join_strategies(join_strategy, join_type)
 
     df = make_df(
@@ -280,7 +274,9 @@ def test_joins_all_same_key(join_strategy, join_type, make_df, n_partitions: int
         ),
     ],
 )
-def test_joins_no_overlap_disjoint(join_strategy, join_type, flip, expected, make_df, n_partitions: int):
+def test_joins_no_overlap_disjoint(
+    join_strategy, join_type, flip, expected, make_df, n_partitions: int, with_morsel_size
+):
     skip_invalid_join_strategies(join_strategy, join_type)
 
     df1 = make_df(
@@ -361,7 +357,9 @@ def test_joins_no_overlap_disjoint(join_strategy, join_type, flip, expected, mak
         ),
     ],
 )
-def test_joins_no_overlap_interleaved(join_strategy, join_type, flip, expected, make_df, n_partitions: int):
+def test_joins_no_overlap_interleaved(
+    join_strategy, join_type, flip, expected, make_df, n_partitions: int, with_morsel_size
+):
     skip_invalid_join_strategies(join_strategy, join_type)
 
     df1 = make_df(
@@ -400,7 +398,7 @@ def test_joins_no_overlap_interleaved(join_strategy, join_type, flip, expected, 
     indirect=True,
 )
 @pytest.mark.parametrize("join_type", ["inner", "left", "right", "outer"])
-def test_limit_after_join(join_strategy, join_type, make_df, n_partitions: int):
+def test_limit_after_join(join_strategy, join_type, make_df, n_partitions: int, with_morsel_size):
     skip_invalid_join_strategies(join_strategy, join_type)
 
     data = {
@@ -467,7 +465,7 @@ def test_limit_after_join(join_strategy, join_type, make_df, n_partitions: int):
         ),
     ],
 )
-def test_join_with_null(join_strategy, join_type, expected, make_df, repartition_nparts):
+def test_join_with_null(join_strategy, join_type, expected, make_df, repartition_nparts, with_morsel_size):
     skip_invalid_join_strategies(join_strategy, join_type)
 
     daft_df = make_df(
@@ -533,7 +531,7 @@ def test_join_with_null(join_strategy, join_type, expected, make_df, repartition
         ),
     ],
 )
-def test_join_with_null_multikey(join_strategy, join_type, expected, make_df, repartition_nparts):
+def test_join_with_null_multikey(join_strategy, join_type, expected, make_df, repartition_nparts, with_morsel_size):
     skip_invalid_join_strategies(join_strategy, join_type)
 
     daft_df = make_df(
@@ -616,7 +614,9 @@ def test_join_with_null_multikey(join_strategy, join_type, expected, make_df, re
         ),
     ],
 )
-def test_join_with_null_asymmetric_multikey(join_strategy, join_type, expected, make_df, repartition_nparts):
+def test_join_with_null_asymmetric_multikey(
+    join_strategy, join_type, expected, make_df, repartition_nparts, with_morsel_size
+):
     skip_invalid_join_strategies(join_strategy, join_type)
 
     daft_df = make_df(
@@ -691,7 +691,7 @@ def test_join_with_null_asymmetric_multikey(join_strategy, join_type, expected, 
         ),
     ],
 )
-def test_join_all_null(join_strategy, join_type, expected, make_df, repartition_nparts):
+def test_join_all_null(join_strategy, join_type, expected, make_df, repartition_nparts, with_morsel_size):
     skip_invalid_join_strategies(join_strategy, join_type)
 
     daft_df = make_df(
@@ -725,7 +725,7 @@ def test_join_all_null(join_strategy, join_type, expected, make_df, repartition_
     indirect=True,
 )
 @pytest.mark.parametrize("join_type", ["inner", "left", "right", "outer"])
-def test_join_null_type_column(join_strategy, join_type, make_df):
+def test_join_null_type_column(join_strategy, join_type, make_df, with_morsel_size):
     skip_invalid_join_strategies(join_strategy, join_type)
 
     daft_df = make_df(
@@ -770,7 +770,7 @@ def test_join_null_type_column(join_strategy, join_type, make_df):
         ),
     ],
 )
-def test_join_semi_anti(join_strategy, join_type, expected, make_df, repartition_nparts):
+def test_join_semi_anti(join_strategy, join_type, expected, make_df, repartition_nparts, with_morsel_size):
     skip_invalid_join_strategies(join_strategy, join_type)
 
     daft_df1 = make_df(
@@ -823,7 +823,9 @@ def test_join_semi_anti(join_strategy, join_type, expected, make_df, repartition
         ),
     ],
 )
-def test_join_semi_anti_different_names(join_strategy, join_type, expected, make_df, repartition_nparts):
+def test_join_semi_anti_different_names(
+    join_strategy, join_type, expected, make_df, repartition_nparts, with_morsel_size
+):
     skip_invalid_join_strategies(join_strategy, join_type)
 
     daft_df1 = make_df(
@@ -858,7 +860,7 @@ def test_join_semi_anti_different_names(join_strategy, join_type, expected, make
 
 
 @pytest.mark.parametrize("join_type", ["inner", "left", "right", "outer"])
-def test_join_true_join_keys(join_type, make_df):
+def test_join_true_join_keys(join_type, make_df, with_morsel_size):
     daft_df = make_df(
         {
             "id": [1, 2, 3],
@@ -930,7 +932,7 @@ def test_join_true_join_keys(join_type, make_df):
         ),
     ],
 )
-def test_join_with_alias_in_key(join_strategy, join_type, expected, make_df):
+def test_join_with_alias_in_key(join_strategy, join_type, expected, make_df, with_morsel_size):
     skip_invalid_join_strategies(join_strategy, join_type)
 
     daft_df1 = make_df(
@@ -1001,7 +1003,7 @@ def test_join_with_alias_in_key(join_strategy, join_type, expected, make_df):
         ),
     ],
 )
-def test_join_same_name_alias(join_strategy, join_type, expected, make_df):
+def test_join_same_name_alias(join_strategy, join_type, expected, make_df, with_morsel_size):
     skip_invalid_join_strategies(join_strategy, join_type)
 
     daft_df1 = make_df(
@@ -1072,7 +1074,7 @@ def test_join_same_name_alias(join_strategy, join_type, expected, make_df):
         ),
     ],
 )
-def test_join_same_name_alias_with_compute(join_strategy, join_type, expected, make_df):
+def test_join_same_name_alias_with_compute(join_strategy, join_type, expected, make_df, with_morsel_size):
     skip_invalid_join_strategies(join_strategy, join_type)
 
     daft_df1 = make_df(
@@ -1104,7 +1106,7 @@ def test_join_same_name_alias_with_compute(join_strategy, join_type, expected, m
         ("_right", "prefix.", "prefix.score_right"),
     ],
 )
-def test_join_suffix_and_prefix(suffix, prefix, expected, make_df):
+def test_join_suffix_and_prefix(suffix, prefix, expected, make_df, with_morsel_size):
     df1 = daft.from_pydict({"idx": [1, 2], "val": [10, 20]})
     df2 = daft.from_pydict({"idx": [3], "score": [0.1]})
     df3 = daft.from_pydict({"idx": [1], "score": [0.1]})

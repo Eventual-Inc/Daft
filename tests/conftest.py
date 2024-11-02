@@ -170,3 +170,10 @@ def assert_df_equals(
         except AssertionError:
             print(f"Failed assertion for col: {col}")
             raise
+
+
+@pytest.fixture(scope="function", params=[1, None])
+def with_morsel_size(request):
+    morsel_size = request.param
+    with daft.context.execution_config_ctx(default_morsel_size=morsel_size):
+        yield

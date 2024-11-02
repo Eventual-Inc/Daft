@@ -1,18 +1,11 @@
 import pytest
 
-import daft
 from daft import col
 from daft.datatype import DataType
 
 
-@pytest.fixture(scope="function", autouse=True)
-def set_default_morsel_size():
-    with daft.context.execution_config_ctx(default_morsel_size=1):
-        yield
-
-
 @pytest.mark.parametrize("n_partitions", [2])
-def test_unpivot(make_df, n_partitions):
+def test_unpivot(make_df, n_partitions, with_morsel_size):
     df = make_df(
         {
             "id": ["x", "y", "z"],
@@ -36,7 +29,7 @@ def test_unpivot(make_df, n_partitions):
 
 
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
-def test_unpivot_no_values(make_df, n_partitions):
+def test_unpivot_no_values(make_df, n_partitions, with_morsel_size):
     df = make_df(
         {
             "id": ["x", "y", "z"],
@@ -60,7 +53,7 @@ def test_unpivot_no_values(make_df, n_partitions):
 
 
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
-def test_unpivot_different_types(make_df, n_partitions):
+def test_unpivot_different_types(make_df, n_partitions, with_morsel_size):
     df = make_df(
         {
             "id": ["x", "y", "z"],
@@ -84,7 +77,7 @@ def test_unpivot_different_types(make_df, n_partitions):
 
 
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
-def test_unpivot_incompatible_types(make_df, n_partitions):
+def test_unpivot_incompatible_types(make_df, n_partitions, with_morsel_size):
     df = make_df(
         {
             "id": ["x", "y", "z"],
@@ -99,7 +92,7 @@ def test_unpivot_incompatible_types(make_df, n_partitions):
 
 
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
-def test_unpivot_nulls(make_df, n_partitions):
+def test_unpivot_nulls(make_df, n_partitions, with_morsel_size):
     df = make_df(
         {
             "id": ["x", "y", "z"],
@@ -123,7 +116,7 @@ def test_unpivot_nulls(make_df, n_partitions):
 
 
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
-def test_unpivot_null_column(make_df, n_partitions):
+def test_unpivot_null_column(make_df, n_partitions, with_morsel_size):
     df = make_df(
         {
             "id": ["x", "y", "z"],
@@ -147,7 +140,7 @@ def test_unpivot_null_column(make_df, n_partitions):
 
 
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
-def test_unpivot_multiple_ids(make_df, n_partitions):
+def test_unpivot_multiple_ids(make_df, n_partitions, with_morsel_size):
     df = make_df(
         {
             "id1": ["x", "y", "z"],
@@ -173,7 +166,7 @@ def test_unpivot_multiple_ids(make_df, n_partitions):
 
 
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
-def test_unpivot_no_ids(make_df, n_partitions):
+def test_unpivot_no_ids(make_df, n_partitions, with_morsel_size):
     df = make_df(
         {
             "a": [1, 3, 5],
@@ -195,7 +188,7 @@ def test_unpivot_no_ids(make_df, n_partitions):
 
 
 @pytest.mark.parametrize("n_partitions", [1, 2, 4])
-def test_unpivot_expr(make_df, n_partitions):
+def test_unpivot_expr(make_df, n_partitions, with_morsel_size):
     df = make_df(
         {
             "id": ["x", "y", "z"],

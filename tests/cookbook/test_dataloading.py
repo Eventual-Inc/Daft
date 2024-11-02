@@ -10,7 +10,7 @@ from tests.conftest import assert_df_equals
 from tests.cookbook.assets import COOKBOOK_DATA_CSV
 
 
-def test_load(daft_df, service_requests_csv_pd_df, repartition_nparts):
+def test_load(daft_df, service_requests_csv_pd_df, repartition_nparts, with_morsel_size):
     """Loading data from a CSV or Parquet works"""
     pd_slice = service_requests_csv_pd_df
     daft_slice = daft_df.repartition(repartition_nparts)
