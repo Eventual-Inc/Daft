@@ -68,10 +68,12 @@ enum Error {
 }
 
 #[derive(Builder)]
-#[builder(setter(into, strip_option))]
+#[builder(setter(into))]
 struct ParsedAzureUri {
     pub protocol: String,
+    #[builder(setter(strip_option), default)]
     pub account_name: Option<String>,
+    #[builder(setter(strip_option), default)]
     pub container_and_key: Option<(String, String)>,
 }
 
