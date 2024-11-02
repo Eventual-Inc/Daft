@@ -46,7 +46,7 @@ if TYPE_CHECKING:
     import builtins
 
     from daft.io import IOConfig
-    from daft.udfs import PartialStatefulUDF, PartialStatelessUDF
+    from daft.udf import PartialStatefulUDF, PartialStatelessUDF
 # This allows Sphinx to correctly work against our "namespaced" accessor functions by overriding @property to
 # return a class instance of the namespace instead of a property object.
 elif os.getenv("DAFT_SPHINX_BUILD") == "1":
@@ -1001,7 +1001,7 @@ class Expression:
         Returns:
             Expression: New expression after having run the function on the expression
         """
-        from daft.udfs import CommonUDFArgs, StatelessUDF
+        from daft.udf import CommonUDFArgs, StatelessUDF
 
         def batch_func(self_series):
             return [func(x) for x in self_series.to_pylist()]

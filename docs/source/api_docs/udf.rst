@@ -6,9 +6,9 @@ User-Defined Functions (UDFs) are a mechanism to run Python code on the data tha
 A UDF can be used just like :doc:`Expressions <../user_guide/expressions>`, allowing users to express computation that
 should be executed by Daft lazily.
 
-To write a UDF, you should use the :func:`@udf <daft.udfs.udf>` decorator, which can decorate either a Python
-function or a Python class, producing either a :class:`StatelessUDF <daft.udfs.StatelessUDF>` or
-:class:`StatefulUDF <daft.udfs.StatefulUDF>` respectively.
+To write a UDF, you should use the :func:`@udf <daft.udf.udf>` decorator, which can decorate either a Python
+function or a Python class, producing either a :class:`StatelessUDF <daft.udf.StatelessUDF>` or
+:class:`StatefulUDF <daft.udf.StatefulUDF>` respectively.
 
 For more details, please consult the :doc:`UDF User Guide <../user_guide/udf>`
 
@@ -23,10 +23,10 @@ Creating UDFs
 Using UDFs
 ==========
 
-.. autoclass:: daft.udfs.StatelessUDF
+.. autoclass:: daft.udf.StatelessUDF
    :members:
    :special-members: __call__
 
-.. autoclass:: daft.udfs.StatefulUDF
+.. autoclass:: daft.udf.StatefulUDF
    :members:
    :special-members: __call__

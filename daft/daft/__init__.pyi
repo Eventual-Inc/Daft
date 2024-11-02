@@ -9,7 +9,7 @@ from daft.io.scan import ScanOperator
 from daft.plan_scheduler.physical_plan_scheduler import PartitionT
 from daft.runners.partitioning import PartitionCacheEntry
 from daft.sql.sql_connection import SQLConnection
-from daft.udfs import InitArgsType, PartialStatefulUDF, PartialStatelessUDF
+from daft.udf import InitArgsType, PartialStatefulUDF, PartialStatelessUDF
 
 if TYPE_CHECKING:
     import pyarrow as pa

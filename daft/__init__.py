@@ -89,7 +89,7 @@ from daft.io import (
 )
 from daft.series import Series
 from daft.sql import sql, sql_expr
-from daft.udfs import udf
+from daft.udf import udf
 from daft.viz import register_viz_hook
 
 to_struct = Expression.to_struct

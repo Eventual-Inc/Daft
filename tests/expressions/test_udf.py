@@ -12,7 +12,7 @@ from daft.expressions import Expression
 from daft.expressions.testing import expr_structurally_equal
 from daft.series import Series
 from daft.table import MicroPartition
-from daft.udfs import udf
+from daft.udf import udf
 
 
 @pytest.fixture(scope="function", params=[False, True])
