@@ -624,8 +624,18 @@ class Expression:
         return Expression._from_pyexpr(expr)
 
     def clip(self, min: Expression, max: Expression) -> Expression:
+        """Clips an expression to the given minimum and maximum values (``expr.clip(min, max)``).
+
+        Args:
+            min: Minimum value to clip to. If None (or column value is Null), no lower clipping is applied.
+            max: Maximum value to clip to. If None (or column value is Null), no upper clipping is applied.
+
+        Panics if max < min.
+        """
         min_expr = Expression._to_expression(min)
         max_expr = Expression._to_expression(max)
+        if max_expr < min_expr:
+            raise ValueError("max must be greater than or equal to min")
         return Expression._from_pyexpr(native.clip(self._expr, min_expr._expr, max_expr._expr))
 
     def sign(self) -> Expression:

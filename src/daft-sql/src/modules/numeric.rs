@@ -99,7 +99,7 @@ impl SQLFunction for SQLNumericExpr {
             Self::Exp => "Calculates the exponential of a number (e^x).",
             Self::Floor => "Rounds a number down to the nearest integer.",
             Self::Round => "Rounds a number to a specified number of decimal places.",
-            Self::Clip => "Clips a number to a specified range.",
+            Self::Clip => "Clips a number to a specified range. If left bound is None, no lower clipping is applied. If right bound is None, no upper clipping is applied. Panics if right bound < left bound.",
             Self::Sign => "Returns the sign of a number (-1, 0, or 1).",
             Self::Sqrt => "Calculates the square root of a number.",
             Self::Sin => "Calculates the sine of an angle in radians.",

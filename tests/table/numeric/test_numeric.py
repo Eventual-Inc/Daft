@@ -363,6 +363,60 @@ def test_table_round_bad_input() -> None:
         table.eval_expression_list([col("a").round(-2)])
 
 
+def test_clip_one_sided_bounding():
+    table = MicroPartition.from_pydict({"a": [1, 2, 3, 4, 5]})
+    clip_table = table.eval_expression_list([col("a").clip(None, 3)])
+    expected = [1, 2, 3, 3, 3]
+    assert clip_table.get_column("a").to_pylist() == expected
+
+    clip_table = table.eval_expression_list([col("a").clip(3, None)])
+    expected = [3, 3, 3, 4, 5]
+    assert clip_table.get_column("a").to_pylist() == expected
+
+
+def test_clip_integer_float_promotion():
+    table = MicroPartition.from_pydict({"a": [1, 2, 3, 4, 5]})
+    clip_table = table.eval_expression_list([col("a").clip(2.5, 4.5)])
+    expected = [2.5, 2.5, 3, 4, 4.5]
+    assert clip_table.get_column("a").to_pylist() == expected
+
+
+def test_clip_zero_handling():
+    table = MicroPartition.from_pydict({"a": [-0.0, 0.0, 1.0, -1.0]})
+    clip_table = table.eval_expression_list([col("a").clip(-0.5, 0.5)])
+    expected = [-0.0, 0.0, 0.5, -0.5]
+    assert clip_table.get_column("a").to_pylist() == expected
+
+
+def test_clip_empty_array():
+    table = MicroPartition.from_pydict({"a": []})
+    clip_table = table.eval_expression_list([col("a").clip(0, 1)])
+    expected = []
+    assert clip_table.get_column("a").to_pylist() == expected
+
+
+def test_clip_all_within_bounds():
+    table = MicroPartition.from_pydict({"a": [2, 3, 4]})
+    clip_table = table.eval_expression_list([col("a").clip(1, 5)])
+    expected = [2, 3, 4]
+    assert clip_table.get_column("a").to_pylist() == expected
+
+
+def test_clip_all_out_of_bounds():
+    table = MicroPartition.from_pydict({"a": [0, 1, 2, 3, 4, 5]})
+    clip_table = table.eval_expression_list([col("a").clip(2, 3)])
+    expected = [2, 2, 2, 3, 3, 3]
+    assert clip_table.get_column("a").to_pylist() == expected
+
+
+def test_clip_nan_handling():
+    table = MicroPartition.from_pydict({"a": [1, 2, np.nan, 4, 5]})
+    clip_table = table.eval_expression_list([col("a").clip(2, 4)])
+    expected = [2, 2, np.nan, 4, 4]
+    actual = clip_table.get_column("a").to_pylist()
+    assert all((a == b or (np.isnan(a) and np.isnan(b))) for a, b in zip(actual, expected))
+
+
 def test_table_numeric_log2() -> None:
     table = MicroPartition.from_pydict({"a": [0.1, 0.01, 1.5, None], "b": [1, 10, None, None]})
     log2_table = table.eval_expression_list([col("a").log2(), col("b").log2()])
