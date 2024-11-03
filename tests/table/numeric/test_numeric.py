@@ -417,6 +417,36 @@ def test_clip_nan_handling():
     assert all((a == b or (np.isnan(a) and np.isnan(b))) for a, b in zip(actual, expected))
 
 
+def test_clip_column_with_scalar():
+    table = MicroPartition.from_pydict({"a": [1, 2, 3, 4, 5]})
+    # Clip with column as lower bound and scalar as upper bound
+    clip_table = table.eval_expression_list([col("a").clip(col("a"), 4)])
+    expected = [1, 2, 3, 4, 4]
+    assert clip_table.get_column("a").to_pylist() == expected
+
+    # Clip with scalar as lower bound and column as upper bound
+    clip_table = table.eval_expression_list([col("a").clip(2, col("a"))])
+    expected = [2, 2, 3, 4, 5]
+    assert clip_table.get_column("a").to_pylist() == expected
+
+
+def test_clip_invalid_bounds():
+    table = MicroPartition.from_pydict({"a": [1, 2, 3, 4, 5], "b": [2, 3, 4, 5, 6]})
+
+    # Test with column as lower bound and scalar as upper bound where upper < lower
+    with pytest.raises(ValueError, match="Upper bound must be greater than or equal to lower bound"):
+        table.eval_expression_list([col("a").clip(col("b"), 1)])
+
+    # Test with scalar as lower bound and column as upper bound where upper < lower
+    with pytest.raises(ValueError, match="Upper bound must be greater than or equal to lower bound"):
+        table.eval_expression_list([col("a").clip(6, col("b"))])
+
+    # Test with both bounds as columns where some upper values < lower values
+    table = MicroPartition.from_pydict({"a": [1, 2, 3, 4, 5], "b": [2, 1, 4, 3, 6]})
+    with pytest.raises(ValueError, match="Upper bound must be greater than or equal to lower bound"):
+        table.eval_expression_list([col("a").clip(col("b"), col("a"))])
+
+
 def test_table_numeric_log2() -> None:
     table = MicroPartition.from_pydict({"a": [0.1, 0.01, 1.5, None], "b": [1, 10, None, None]})
     log2_table = table.eval_expression_list([col("a").log2(), col("b").log2()])
