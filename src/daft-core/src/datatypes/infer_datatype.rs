@@ -65,9 +65,6 @@ impl<'a> InferDataType<'a> {
             (DataType::Null, _, _) => {
                 Err(DaftError::TypeError("Cannot clip null values".to_string()))
             } // These checks are for situations where the Python bindings pass in a None directly.
-            (_, DataType::Null, DataType::Null) => Err(DaftError::TypeError(
-                "Cannot clip values with null min and max".to_string(),
-            )), // As above.
             (input_type, min_type, max_type) => {
                 // This path gets called when the Python bindings pass in a Series, but note that there can still be nulls within the series.
                 let mut output_type = (*input_type).clone();

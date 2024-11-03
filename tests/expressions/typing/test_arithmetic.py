@@ -124,7 +124,7 @@ def test_round(unary_data_fixture):
 def test_clip(ternary_data_fixture):
     data, min, max = ternary_data_fixture
     assert_typing_resolve_vs_runtime_behavior(
-        data=(data,),
+        data=ternary_data_fixture,
         expr=col(data.name()).clip(col(min.name()), col(max.name())),
         run_kernel=lambda: data.clip(min, max),
         resolvable=is_numeric(data.datatype())

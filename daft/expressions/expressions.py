@@ -634,8 +634,6 @@ class Expression:
         """
         min_expr = Expression._to_expression(min)
         max_expr = Expression._to_expression(max)
-        if max_expr < min_expr:
-            raise ValueError("max must be greater than or equal to min")
         return Expression._from_pyexpr(native.clip(self._expr, min_expr._expr, max_expr._expr))
 
     def sign(self) -> Expression:

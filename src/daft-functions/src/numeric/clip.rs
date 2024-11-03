@@ -1,6 +1,6 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    datatypes::InferDataType,
+    datatypes::{DataType, InferDataType},
     prelude::{Field, Schema},
     series::Series,
 };
@@ -33,6 +33,29 @@ impl ScalarUDF for Clip {
         let array_field = inputs[0].to_field(schema)?;
         let min_field = inputs[1].to_field(schema)?;
         let max_field = inputs[2].to_field(schema)?;
+
+        // Check if the array_field is numeric
+        if !array_field.dtype.is_numeric() {
+            return Err(DaftError::TypeError(format!(
+                "Expected array input to be numeric, got {}",
+                array_field.dtype
+            )));
+        }
+
+        // Check if min_field and max_field are numeric or null
+        if !(min_field.dtype.is_numeric() || min_field.dtype == DataType::Null) {
+            return Err(DaftError::TypeError(format!(
+                "Expected min input to be numeric or null, got {}",
+                min_field.dtype
+            )));
+        }
+
+        if !(max_field.dtype.is_numeric() || max_field.dtype == DataType::Null) {
+            return Err(DaftError::TypeError(format!(
+                "Expected max input to be numeric or null, got {}",
+                max_field.dtype
+            )));
+        }
 
         let output_type = InferDataType::clip_op(
             &InferDataType::from(&array_field.dtype),
