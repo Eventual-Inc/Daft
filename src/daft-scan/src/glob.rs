@@ -414,26 +414,25 @@ impl ScanOperator for GlobScanOperator {
                         Utf8Array::from_iter(fp_col, std::iter::once(Some(trimmed))).into_series();
                     partition_values.push(file_paths_column_series);
                 }
-                // Turn the partition values, if any, into a 1D table to evaluate against partition filters.
-                let partition_values = if partition_values.is_empty() {
-                    Table::empty(None)?
-                } else {
-                    Table::from_nonempty_columns(partition_values)?
-                };
-                // Check if the partition values satisfy the partition filters, if any.
-                if let Some(partition_filters) = &pushdowns.partition_filters {
-                    let filter_result = partition_values.filter(&[partition_filters.clone()])?;
-                    if filter_result.is_empty() {
-                        // Skip the current file since it does not satisfy the partition filters.
-                        return Ok(None);
+                let (partition_spec, generated_fields) = if !partition_values.is_empty() {
+                    let partition_values_table = Table::from_nonempty_columns(partition_values)?;
+                    // If there are partition values, evaluate them against partition filters, if any.
+                    if let Some(partition_filters) = &pushdowns.partition_filters {
+                        let filter_result =
+                            partition_values_table.filter(&[partition_filters.clone()])?;
+                        if filter_result.is_empty() {
+                            // Skip the current file since it does not satisfy the partition filters.
+                            return Ok(None);
+                        }
                     }
-                }
-                let generated_fields =
-                    (!partition_values.is_empty()).then(|| partition_values.schema.clone());
-                let partition_spec = Some(PartitionSpec {
-                    keys: partition_values,
-                });
-
+                    let generated_fields = partition_values_table.schema.clone();
+                    let partition_spec = PartitionSpec {
+                        keys: partition_values_table,
+                    };
+                    (Some(partition_spec), Some(generated_fields))
+                } else {
+                    (None, None)
+                };
                 let row_group = row_groups
                     .as_ref()
                     .and_then(|rgs| rgs.get(idx).cloned())
