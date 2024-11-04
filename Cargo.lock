@@ -5104,9 +5104,9 @@ dependencies = [
 
 [[package]]
 name = "serde_arrow"
-version = "0.11.6"
+version = "0.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff56acef131ef74bacc5e86c5038b524d61dee59d65c9e3e5e0f35b9de98cf99"
+checksum = "279666cb25d6b695ccca5bdff67218ea2a4191d4c037d426445142d6fbbc1f12"
 dependencies = [
  "arrow2",
  "bytemuck",

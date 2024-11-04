@@ -4,7 +4,7 @@ common-error = {path = "../common/error", default-features = false}
 lazy_static = {workspace = true}
 # NOTE: The "arrow2-0-17" feature is supposed to build serde_arrow against arrow2=0.17, but when building Daft
 # we respect a [patch.crates.io] which overrides this behavior to use our arrow2 fork
-serde_arrow = {version = "0.11.0", features = ["arrow2-0-17"]}
+serde_arrow = {version = "0.12.2", features = ["arrow2-0-17"]}
 sketches-ddsketch = {workspace = true}
 snafu = {workspace = true}
 
