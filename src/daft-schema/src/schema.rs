@@ -272,10 +272,6 @@ impl Schema {
             .collect::<DaftResult<Vec<_>>>()?;
         Self::new(new_fields)
     }
-
-    pub fn contains(&self, field: &Field) -> bool {
-        self.fields.contains_key(&field.name)
-    }
 }
 
 impl Hash for Schema {

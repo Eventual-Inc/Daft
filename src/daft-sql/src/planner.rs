@@ -328,17 +328,13 @@ impl SQLPlanner {
             let fld = fld?;
             let name = fld.name.clone();
 
-            if has_agg(p) {
-                final_projection.push(col(name.as_ref()));
+            // if there is an orderby, then the final projection will only contain the columns that are in the orderby
+            final_projection.push(if has_orderby {
+                col(name.as_ref())
             } else {
-                // if there is an orderby, then the final projection will only contain the columns that are in the orderby
-                final_projection.push(if has_orderby {
-                    col(name.as_ref())
-                } else {
-                    // otherwise we just do a normal projection
-                    p.clone()
-                });
-            }
+                // otherwise we just do a normal projection
+                p.clone()
+            });
         }
 
         if has_orderby {
