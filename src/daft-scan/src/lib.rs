@@ -487,25 +487,29 @@ impl ScanTask {
 
     #[must_use]
     pub fn materialized_schema(&self) -> SchemaRef {
-        let mut fields = self.schema.fields.clone();
-        // Extend the schema with generated fields.
-        if let Some(generated_fields) = &self.generated_fields {
-            fields.extend(
-                generated_fields
-                    .fields
-                    .iter()
-                    .map(|(name, field)| (name.clone(), field.clone())),
-            );
+        match (&self.generated_fields, &self.pushdowns.columns) {
+            (None, None) => self.schema.clone(),
+            _ => {
+                let mut fields = self.schema.fields.clone();
+                // Extend the schema with generated fields.
+                if let Some(generated_fields) = &self.generated_fields {
+                    fields.extend(
+                        generated_fields
+                            .fields
+                            .iter()
+                            .map(|(name, field)| (name.clone(), field.clone())),
+                    );
+                }
+                // Filter the schema based on the pushdown column filters.
+                if let Some(columns) = &self.pushdowns.columns {
+                    fields = fields
+                        .into_iter()
+                        .filter(|(name, _)| columns.contains(name))
+                        .collect();
+                }
+                Arc::new(Schema { fields })
+            }
         }
-        // Filter the schema based on the pushdown column filters.
-        fields = match &self.pushdowns.columns {
-            None => fields,
-            Some(columns) => fields
-                .into_iter()
-                .filter(|(name, _)| columns.contains(name))
-                .collect(),
-        };
-        Arc::new(Schema { fields })
     }
 
     /// Obtain an accurate, exact num_rows from the ScanTask, or `None` if this is not possible
