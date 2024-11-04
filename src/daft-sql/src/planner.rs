@@ -494,13 +494,14 @@ impl SQLPlanner {
 
         let has_orderby_before_projection = !orderbys_before_projection.is_empty();
         let has_orderby_after_projection = !orderbys_after_projection.is_empty();
+
         ensure!(
             !(has_orderby_before_projection && has_orderby_after_projection),
             "ORDER BYs are in both final and non-final projections. This should not happen. Please report this bug."
         );
 
         // order bys that are not in the final projection
-        if !orderbys_before_projection.is_empty() {
+        if has_orderby_before_projection {
             rel.inner = rel
                 .inner
                 .sort(orderbys_before_projection, orderbys_before_projection_desc)?;
@@ -508,7 +509,7 @@ impl SQLPlanner {
         rel.inner = rel.inner.select(final_projection)?;
 
         // order bys that are in the final projection
-        if !orderbys_after_projection.is_empty() {
+        if has_orderby_after_projection {
             rel.inner = rel
                 .inner
                 .sort(orderbys_after_projection, orderbys_after_projection_desc)?;
