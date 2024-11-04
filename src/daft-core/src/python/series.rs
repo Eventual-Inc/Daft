@@ -31,7 +31,7 @@ use crate::{
 #[pyclass]
 #[derive(Clone)]
 pub struct PySeries {
-    pub series: series::Series,
+    pub series: Series,
 }
 
 #[pymethods]

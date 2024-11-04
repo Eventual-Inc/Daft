@@ -67,7 +67,7 @@ impl<T: AsRef<str>> AsRef<[u8]> for StrAsBytes<T> {
 /// * A slice of `values` taken from two consecutives `offsets` is valid `utf8`.
 /// * `len` is equal to `validity.len()`, when defined.
 #[derive(Clone)]
-pub struct Utf8Array<O: Offset> {
+pub struct Utf8Array<O: Offset = i64> {
     data_type: DataType,
     offsets: OffsetsBuffer<O>,
     values: Buffer<u8>,

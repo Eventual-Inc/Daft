@@ -109,7 +109,8 @@ pub enum AggExpr {
     #[display("sum({_0})")]
     Sum(ExprRef),
 
-    #[display("approx_percentile({}, percentiles={:?}, force_list_output={})", _0.child, _0.percentiles, _0.force_list_output)]
+    #[display("approx_percentile({}, percentiles={:?}, force_list_output={})", _0.child, _0.percentiles, _0.force_list_output
+    )]
     ApproxPercentile(ApproxPercentileParams),
 
     #[display("approx_count_distinct({_0})")]
@@ -155,8 +156,36 @@ pub enum SketchType {
     HyperLogLog,
 }
 
-pub fn col<S: Into<Arc<str>>>(name: S) -> ExprRef {
-    Expr::Column(name.into()).into()
+pub trait ToArcStr {
+    fn to_arc_str(self) -> Arc<str>;
+}
+
+impl ToArcStr for &str {
+    fn to_arc_str(self) -> Arc<str> {
+        self.into()
+    }
+}
+
+impl ToArcStr for String {
+    fn to_arc_str(self) -> Arc<str> {
+        self.into()
+    }
+}
+
+impl ToArcStr for Arc<str> {
+    fn to_arc_str(self) -> Arc<str> {
+        self
+    }
+}
+
+impl ToArcStr for &String {
+    fn to_arc_str(self) -> Arc<str> {
+        Arc::from(self.as_str())
+    }
+}
+
+pub fn col(name: impl ToArcStr) -> ExprRef {
+    Expr::Column(name.to_arc_str()).into()
 }
 
 pub fn binary_op(op: Operator, left: ExprRef, right: ExprRef) -> ExprRef {

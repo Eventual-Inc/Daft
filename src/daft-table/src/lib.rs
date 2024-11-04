@@ -59,6 +59,10 @@ fn _validate_schema(schema: &Schema, columns: &[Series]) -> DaftResult<()> {
 }
 
 impl Table {
+    pub fn get_inner_arrow_arrays(&self) -> Vec<Box<dyn arrow2::array::Array>> {
+        self.columns.iter().map(|s| s.inner.to_arrow()).collect()
+    }
+
     /// Create a new [`Table`] and handle broadcasting of any unit-length columns
     ///
     /// Note that this function is slow. You might instead be looking for [`Table::new_with_size`] which does not perform broadcasting
@@ -182,18 +186,27 @@ impl Table {
         Ok(Self::new_unchecked(schema, columns, num_rows))
     }
 
+    /// Returns the number of columns in the table.
     pub fn num_columns(&self) -> usize {
         self.columns.len()
     }
 
+    /// Returns a vector containing the names of all columns in the table.
     pub fn column_names(&self) -> Vec<String> {
         self.schema.names()
     }
 
+    /// Returns the number of rows in the table. todo: refactor to num_rows
     pub fn len(&self) -> usize {
         self.num_rows
     }
 
+    /// Returns the number of rows in the table.
+    pub fn num_rows(&self) -> usize {
+        self.num_rows
+    }
+
+    /// Returns true if the table contains no rows.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }

@@ -16,6 +16,8 @@ if TYPE_CHECKING:
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
+def connect_start(addr: str) -> None: ...
+
 class ImageMode(Enum):
     """
     Supported image modes for Daft's image type.

@@ -4,13 +4,15 @@ use std::{
 };
 
 use common_daft_config::DaftPlanningConfig;
-use common_display::mermaid::MermaidDisplayOptions;
+use common_display::{mermaid::MermaidDisplayOptions, DisplayAs, DisplayLevel};
 use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormat, FileFormatConfig, ParquetSourceConfig};
 use common_io_config::IOConfig;
 use daft_core::{
+    datatypes::Utf8Array,
     join::{JoinStrategy, JoinType},
     prelude::TimeUnit,
+    series::IntoSeries,
 };
 use daft_dsl::{col, ExprRef};
 use daft_scan::{
@@ -32,7 +34,7 @@ use {
     daft_schema::python::schema::PySchema,
     pyo3::prelude::*,
 };
-
+use daft_schema::dtype::DataType;
 use crate::{
     logical_ops,
     logical_optimization::{Optimizer, OptimizerConfig},
@@ -245,6 +247,52 @@ impl LogicalPlanBuilder {
         ParquetScanBuilder::new(glob_path)
     }
 
+    /// Add a new column to the logical plan.
+    pub fn with_column(&self, name: &str, expr: impl Into<ExprRef>) -> DaftResult<Self> {
+        let expr = expr.into();
+        let current_schema = self.schema();
+        let mut new_exprs: Vec<ExprRef> = current_schema
+            .fields
+            .iter()
+            .map(|(field_name, _)| col(field_name))
+            .collect();
+
+        new_exprs.push(expr.alias(name));
+
+        self.select(new_exprs)
+    }
+
+    /// Select specific columns or expressions to include in the logical plan.
+    ///
+    /// This method creates a new logical plan that projects only the specified columns or expressions.
+    /// It's particularly useful for reducing the number of columns in the output or for creating
+    /// new columns based on expressions.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use daft_plan::LogicalPlanBuilder;
+    /// use daft_dsl::{col, lit};
+    /// use daft_schema::dtype::DataType;
+    ///
+    /// let builder: LogicalPlanBuilder = unimplemented!("You will need to replace this with your own logic");
+    ///
+    /// // Select existing columns
+    /// let result = builder.select(vec![col("name"), col("age")]);
+    ///
+    /// // Select with expressions
+    /// let result = builder.select(vec![
+    ///     col("name"),
+    ///     (col("age") + lit(1)).alias("age_next_year"),
+    ///     col("salary").cast(DataType::Float64),
+    /// ]);
+    ///
+    /// // Select with a complex expression
+    /// let result = builder.select(vec![
+    ///     col("name"),
+    ///     (col("salary") * lit(1.1)).alias("increased_salary"),
+    /// ]);
+    /// ```
     pub fn select(&self, to_select: Vec<ExprRef>) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
             logical_ops::Project::try_new(self.plan.clone(), to_select)?.into();

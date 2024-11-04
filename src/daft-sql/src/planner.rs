@@ -579,9 +579,9 @@ impl SQLPlanner {
 
                 // switch left/right operands if the caller has them in reverse
                 if &left_rel.get_name() == tbl_b || &right_rel.get_name() == tbl_a {
-                    Ok((vec![col(col_b.as_ref())], vec![col(col_a.as_ref())]))
+                    Ok((vec![col(col_b)], vec![col(col_a)]))
                 } else {
-                    Ok((vec![col(col_a.as_ref())], vec![col(col_b.as_ref())]))
+                    Ok((vec![col(col_a)], vec![col(col_b)]))
                 }
             } else {
                 unsupported_sql_err!("collect_compound_identifiers: Expected left.len() == 2 && right.len() == 2, but found left.len() == {:?}, right.len() == {:?}", left.len(), right.len());
@@ -911,7 +911,7 @@ impl SQLPlanner {
                             schema
                                 .names()
                                 .iter()
-                                .map(|n| col(n.as_ref()))
+                                .map(col)
                                 .collect::<Vec<_>>()
                         })
                         .map_err(std::convert::Into::into)
