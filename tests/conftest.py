@@ -180,4 +180,4 @@ def assert_df_equals(
 def with_morsel_size(request):
     morsel_size = request.param
     with daft.context.execution_config_ctx(default_morsel_size=morsel_size):
-        yield
+        yield morsel_size
