@@ -41,6 +41,13 @@ impl DaftMeanAggable for DataArray<Decimal128Type> {
     }
 
     fn grouped_mean(&self, groups: &GroupIndices) -> Self::Output {
-        todo!("grouped mean")
+        let grouped_sum = self.grouped_sum(groups)?;
+        let grouped_count = self.grouped_count(groups, CountMode::Valid)?;
+
+        let means = grouped_sum
+            .into_iter()
+            .zip(&grouped_count)
+            .map(|(sum, count)| sum.zip(count).map(|(s, c)| s / (*c as i128)));
+        Ok(Self::from_iter(self.field.clone(), means))
     }
 }

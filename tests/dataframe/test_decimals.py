@@ -111,7 +111,7 @@ def test_decimal_grouped_mean(prec) -> None:
     assert res.to_pydict() == {"group": [0, 1], "decimal128": [decimal.Decimal("4.500"), decimal.Decimal("99.001")]}
     schema = res.schema()
     expected_prec = min(38, prec + 19)  # see agg_ops.rs
-    assert schema["decimal128"].dtype == daft.DataType.decimal128(expected_prec, 3)
+    assert schema["decimal128"].dtype == daft.DataType.decimal128(expected_prec, 7)
 
 
 @pytest.mark.parametrize("prec", [5, 30])
