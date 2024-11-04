@@ -1,4 +1,4 @@
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 
 #[cfg(feature = "python")]
 use crate::series::utils::python_fn::py_between_op_utilfn;
@@ -6,7 +6,7 @@ use crate::{
     array::ops::DaftBetween,
     datatypes::{BooleanArray, DataType, InferDataType},
     series::{IntoSeries, Series},
-    with_match_numeric_daft_types,
+    with_match_primitive_daft_types,
 };
 
 impl Series {
@@ -22,6 +22,7 @@ impl Series {
         } else {
             (self.clone(), lower.clone(), upper.clone())
         };
+
         if output_type == DataType::Boolean {
             match comp_type {
                 #[cfg(feature = "python")]
@@ -30,15 +31,21 @@ impl Series {
                     .clone()
                     .into_series()),
                 DataType::Null => Ok(Self::full_null(self.name(), &DataType::Boolean, self.len())),
-                _ => with_match_numeric_daft_types!(comp_type, |$T| {
-                        let casted_value = it_value.cast(&comp_type)?;
-                        let casted_lower = it_lower.cast(&comp_type)?;
-                        let casted_upper = it_upper.cast(&comp_type)?;
-                        let value = casted_value.downcast::<<$T as DaftDataType>::ArrayType>()?;
-                        let lower = casted_lower.downcast::<<$T as DaftDataType>::ArrayType>()?;
-                        let upper = casted_upper.downcast::<<$T as DaftDataType>::ArrayType>()?;
-                        Ok(value.between(lower, upper)?.into_series())
-                }),
+                ref v if v.is_primitive() => {
+                    with_match_primitive_daft_types!(comp_type, |$T| {
+                            let casted_value = it_value.cast(&comp_type)?;
+                            let casted_lower = it_lower.cast(&comp_type)?;
+                            let casted_upper = it_upper.cast(&comp_type)?;
+                            let value = casted_value.downcast::<<$T as DaftDataType>::ArrayType>()?;
+                            let lower = casted_lower.downcast::<<$T as DaftDataType>::ArrayType>()?;
+                            let upper = casted_upper.downcast::<<$T as DaftDataType>::ArrayType>()?;
+                            Ok(value.between(lower, upper)?.into_series())
+                    })
+                }
+                other => Err(DaftError::ValueError(format!(
+                    "Unsupported data type for between operation: {:?}",
+                    other
+                ))),
             }
         } else {
             unreachable!()

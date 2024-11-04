@@ -6,8 +6,8 @@ use common_runtime::get_compute_runtime;
 use daft_micropartition::MicroPartition;
 use tracing::{info_span, instrument};
 
-use super::buffer::OperatorBuffer;
 use crate::{
+    buffer::RowBasedBuffer,
     channel::{create_channel, PipelineChannel, Receiver, Sender},
     pipeline::{PipelineNode, PipelineResultType},
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
@@ -63,8 +63,18 @@ pub trait IntermediateOperator: Send + Sync {
         state: &IntermediateOperatorState,
     ) -> DaftResult<IntermediateOperatorResult>;
     fn name(&self) -> &'static str;
-    fn make_state(&self) -> Box<dyn DynIntermediateOpState> {
-        Box::new(DefaultIntermediateOperatorState {})
+    fn make_state(&self) -> DaftResult<Box<dyn DynIntermediateOpState>> {
+        Ok(Box::new(DefaultIntermediateOperatorState {}))
+    }
+    /// The maximum number of concurrent workers that can be spawned for this operator.
+    /// Each worker will has its own IntermediateOperatorState.
+    fn max_concurrency(&self) -> usize {
+        *NUM_CPUS
+    }
+
+    /// The input morsel size expected by this operator. If None, use the default size.
+    fn morsel_size(&self) -> Option<usize> {
+        None
     }
 }
 
@@ -108,7 +118,7 @@ impl IntermediateNode {
     ) -> DaftResult<()> {
         let span = info_span!("IntermediateOp::execute");
         let compute_runtime = get_compute_runtime();
-        let state_wrapper = IntermediateOperatorState::new(op.make_state());
+        let state_wrapper = IntermediateOperatorState::new(op.make_state()?);
         while let Some((idx, morsel)) = receiver.recv().await {
             loop {
                 let op = op.clone();
@@ -119,7 +129,7 @@ impl IntermediateNode {
                 let fut = async move {
                     rt_context.in_span(&span, || op.execute(idx, &morsel, &state_wrapper))
                 };
-                let result = compute_runtime.await_on(fut).await??;
+                let result = compute_runtime.spawn(fut).await??;
                 match result {
                     IntermediateOperatorResult::NeedMoreInput(Some(mp)) => {
                         let _ = sender.send(mp.into()).await;
@@ -175,26 +185,23 @@ impl IntermediateNode {
         };
 
         for (idx, mut receiver) in receivers.into_iter().enumerate() {
-            let mut buffer = OperatorBuffer::new(morsel_size);
+            let mut buffer = RowBasedBuffer::new(morsel_size);
             while let Some(morsel) = receiver.recv().await {
                 if morsel.should_broadcast() {
                     for worker_sender in &worker_senders {
                         let _ = worker_sender.send((idx, morsel.clone())).await;
                     }
                 } else {
-                    buffer.push(morsel.as_data().clone());
-                    if let Some(ready) = buffer.try_clear() {
-                        let _ = send_to_next_worker(idx, ready?.into()).await;
+                    buffer.push(morsel.as_data());
+                    if let Some(ready) = buffer.pop_enough()? {
+                        for part in ready {
+                            let _ = send_to_next_worker(idx, part.into()).await;
+                        }
                     }
                 }
             }
-            // Buffer may still have some morsels left above the threshold
-            while let Some(ready) = buffer.try_clear() {
-                let _ = send_to_next_worker(idx, ready?.into()).await;
-            }
-            // Clear all remaining morsels
-            if let Some(last_morsel) = buffer.clear_all() {
-                let _ = send_to_next_worker(idx, last_morsel?.into()).await;
+            if let Some(ready) = buffer.pop_all()? {
+                let _ = send_to_next_worker(idx, ready.into()).await;
             }
         }
         Ok(())
@@ -243,17 +250,20 @@ impl PipelineNode for IntermediateNode {
             child_result_receivers
                 .push(child_result_channel.get_receiver_with_stats(&self.runtime_stats));
         }
-        let mut destination_channel = PipelineChannel::new(*NUM_CPUS, maintain_order);
+        let op = self.intermediate_op.clone();
+        let num_workers = op.max_concurrency();
+        let mut destination_channel = PipelineChannel::new(num_workers, maintain_order);
 
         let worker_senders =
-            self.spawn_workers(*NUM_CPUS, &mut destination_channel, runtime_handle);
+            self.spawn_workers(num_workers, &mut destination_channel, runtime_handle);
         runtime_handle.spawn(
             Self::send_to_workers(
                 child_result_receivers,
                 worker_senders,
-                runtime_handle.default_morsel_size(),
+                op.morsel_size()
+                    .unwrap_or_else(|| runtime_handle.default_morsel_size()),
             ),
-            self.intermediate_op.name(),
+            op.name(),
         );
         Ok(destination_channel)
     }

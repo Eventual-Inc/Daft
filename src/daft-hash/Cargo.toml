@@ -1,0 +1,13 @@
+[dependencies]
+common-error = {workspace = true}
+mur3 = {workspace = true}
+serde = {workspace = true, features = ["derive"]}
+sha1 = {workspace = true}
+
+[lints]
+workspace = true
+
+[package]
+edition = {workspace = true}
+name = "daft-hash"
+version = {workspace = true}

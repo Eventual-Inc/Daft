@@ -1,5 +1,7 @@
 #![feature(let_chains)]
+mod buffer;
 mod channel;
+mod dispatcher;
 mod intermediate_ops;
 mod pipeline;
 mod run;

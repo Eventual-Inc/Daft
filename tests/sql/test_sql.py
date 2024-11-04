@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 import daft
+from daft import col
 from daft.exceptions import DaftCoreException
 from daft.sql.sql import SQLCatalog
 from tests.assets import TPCH_QUERIES
@@ -257,3 +258,63 @@ def test_compiles(query):
     except Exception as e:
         print(f"Error: {e}")
         raise
+
+
+def test_sql_cte():
+    df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6], "c": ["a", "b", "c"]})
+    actual = (
+        daft.sql("""
+        WITH cte1 AS (select * FROM df)
+        SELECT * FROM cte1
+        """)
+        .collect()
+        .to_pydict()
+    )
+
+    expected = df.collect().to_pydict()
+
+    assert actual == expected
+
+
+def test_sql_cte_column_aliases():
+    df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6], "c": ["a", "b", "c"]})
+    actual = (
+        daft.sql("""
+        WITH cte1 (cte_a, cte_b, cte_c) AS (select * FROM df)
+        SELECT * FROM cte1
+        """)
+        .collect()
+        .to_pydict()
+    )
+
+    expected = (
+        df.select(
+            col("a").alias("cte_a"),
+            col("b").alias("cte_b"),
+            col("c").alias("cte_c"),
+        )
+        .collect()
+        .to_pydict()
+    )
+
+    assert actual == expected
+
+
+def test_sql_multiple_ctes():
+    df1 = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6], "c": ["a", "b", "c"]})
+    df2 = daft.from_pydict({"x": [1, 0, 3], "y": [True, None, False], "z": [1.0, 2.0, 3.0]})
+    actual = (
+        daft.sql("""
+        WITH
+            cte1 AS (select * FROM df1),
+            cte2 AS (select x as a, y, z FROM df2)
+        SELECT *
+        FROM cte1
+        JOIN cte2 USING (a)
+        """)
+        .collect()
+        .to_pydict()
+    )
+    expected = df1.join(df2.select(col("x").alias("a"), "y", "z"), on="a").collect().to_pydict()
+
+    assert actual == expected

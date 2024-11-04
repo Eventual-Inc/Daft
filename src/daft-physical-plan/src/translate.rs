@@ -44,6 +44,14 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 project.projected_schema.clone(),
             ))
         }
+        LogicalPlan::ActorPoolProject(actor_pool_project) => {
+            let input = translate(&actor_pool_project.input)?;
+            Ok(LocalPhysicalPlan::actor_pool_project(
+                input,
+                actor_pool_project.projection.clone(),
+                actor_pool_project.projected_schema.clone(),
+            ))
+        }
         LogicalPlan::Sample(sample) => {
             let input = translate(&sample.input)?;
             Ok(LocalPhysicalPlan::sample(
@@ -167,6 +175,21 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
         LogicalPlan::Repartition(repartition) => {
             log::warn!("Repartition Not supported for Local Executor!; This will be a No-Op");
             translate(&repartition.input)
+        }
+        LogicalPlan::Sink(sink) => {
+            use daft_plan::SinkInfo;
+            let input = translate(&sink.input)?;
+            let data_schema = input.schema().clone();
+            match sink.sink_info.as_ref() {
+                SinkInfo::OutputFileInfo(info) => Ok(LocalPhysicalPlan::physical_write(
+                    input,
+                    data_schema,
+                    sink.schema.clone(),
+                    info.clone(),
+                )),
+                #[cfg(feature = "python")]
+                SinkInfo::CatalogInfo(_) => todo!("CatalogInfo not yet implemented"),
+            }
         }
         LogicalPlan::Explode(explode) => {
             let input = translate(&explode.input)?;
