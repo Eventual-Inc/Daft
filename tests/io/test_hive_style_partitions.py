@@ -23,14 +23,15 @@ SCHEMA = pa.schema(
 SAMPLE_DATA = pa.table(
     {
         "id": range(100),
-        "str_col": ["str" + str(i % 5) for i in range(100)],
-        "int_col": [i % 7 for i in range(100)],
-        "date_col": [date(2024, 1, i % 28 + 1) for i in range(100)],
-        "timestamp_col": [datetime(2024, 1, i % 28 + 1, i % 24) for i in range(100)],
+        "str_col": ["str" + str(i % 3) for i in range(100)],
+        "int_col": [i % 3 for i in range(100)],
+        # We use nonsensical coarse partitions for data and timestamp types to reduce test latency.
+        "date_col": [date(2024, 1, i % 3 + 1) for i in range(100)],
+        "timestamp_col": [datetime(2024, 1, i % 3 + 1, i % 3) for i in range(100)],
         "value": range(100),
         # Include some nulls.
-        "nullable_str": [None if i % 10 == 1 else f"val{i}" for i in range(100)],
-        "nullable_int": [None if i % 7 == 1 else i for i in range(100)],
+        "nullable_str": [None if i % 10 == 1 else f"val{i % 3}" for i in range(100)],
+        "nullable_int": [None if i % 7 == 1 else i % 3 for i in range(100)],
     },
     schema=SCHEMA,
 )
