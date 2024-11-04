@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
-use daft_core::prelude::Field;
 use daft_schema::schema::SchemaRef;
 
 use crate::{
@@ -47,7 +46,7 @@ impl ScanOperator for AnonymousScanOperator {
         None
     }
 
-    fn generated_fields(&self) -> Option<&indexmap::IndexMap<String, Field>> {
+    fn generated_fields(&self) -> Option<SchemaRef> {
         None
     }
 

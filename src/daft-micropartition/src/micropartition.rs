@@ -22,7 +22,6 @@ use daft_scan::{
 };
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
 use daft_table::Table;
-use indexmap::IndexMap;
 use parquet2::metadata::FileMetaData;
 use snafu::ResultExt;
 #[cfg(feature = "python")]
@@ -1027,7 +1026,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     parquet_metadata: Option<Vec<Arc<FileMetaData>>>,
     chunk_size: Option<usize>,
-    generated_fields: Option<IndexMap<String, Field>>,
+    generated_fields: Option<SchemaRef>,
 ) -> DaftResult<MicroPartition> {
     if let Some(so) = start_offset
         && so > 0

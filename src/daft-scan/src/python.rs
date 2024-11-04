@@ -45,7 +45,6 @@ pub mod pylib {
     use common_error::DaftResult;
     use common_file_formats::{python::PyFileFormatConfig, FileFormatConfig};
     use common_py_serde::impl_bincode_py_state_serialization;
-    use daft_core::prelude::Field;
     use daft_dsl::python::PyExpr;
     use daft_schema::{
         python::{field::PyField, schema::PySchema},
@@ -221,7 +220,7 @@ pub mod pylib {
         fn file_path_column(&self) -> Option<&str> {
             None
         }
-        fn generated_fields(&self) -> Option<&indexmap::IndexMap<String, Field>> {
+        fn generated_fields(&self) -> Option<SchemaRef> {
             None
         }
         fn can_absorb_filter(&self) -> bool {

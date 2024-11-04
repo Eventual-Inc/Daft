@@ -16,7 +16,6 @@ use daft_schema::{
     schema::{Schema, SchemaRef},
 };
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
-use indexmap::IndexMap;
 use itertools::Itertools;
 use parquet2::metadata::FileMetaData;
 use serde::{Deserialize, Serialize};
@@ -73,8 +72,8 @@ pub enum Error {
         fpc2
     ))]
     DifferingGeneratedFieldsInScanTaskMerge {
-        fpc1: Option<IndexMap<String, Field>>,
-        fpc2: Option<IndexMap<String, Field>>,
+        fpc1: Option<SchemaRef>,
+        fpc2: Option<SchemaRef>,
     },
 
     #[snafu(display(
@@ -378,7 +377,7 @@ pub struct ScanTask {
     pub size_bytes_on_disk: Option<u64>,
     pub metadata: Option<TableMetadata>,
     pub statistics: Option<TableStatistics>,
-    pub generated_fields: Option<IndexMap<String, Field>>,
+    pub generated_fields: Option<SchemaRef>,
 }
 pub type ScanTaskRef = Arc<ScanTask>;
 
@@ -390,7 +389,7 @@ impl ScanTask {
         schema: SchemaRef,
         storage_config: Arc<StorageConfig>,
         pushdowns: Pushdowns,
-        generated_fields: Option<IndexMap<String, Field>>,
+        generated_fields: Option<SchemaRef>,
     ) -> Self {
         assert!(!sources.is_empty());
         debug_assert!(
@@ -493,6 +492,7 @@ impl ScanTask {
         if let Some(generated_fields) = &self.generated_fields {
             fields.extend(
                 generated_fields
+                    .fields
                     .iter()
                     .map(|(name, field)| (name.clone(), field.clone())),
             );
@@ -820,7 +820,7 @@ pub trait ScanOperator: Send + Sync + Debug {
     // Partition fields are automatically included in scan output schemas (e.g.,
     // in ScanTask::materialized_schema), while generated fields require special handling.
     // Thus, we maintain separate representations for partitioning keys and generated fields.
-    fn generated_fields(&self) -> Option<&IndexMap<String, Field>>;
+    fn generated_fields(&self) -> Option<SchemaRef>;
 
     fn can_absorb_filter(&self) -> bool;
     fn can_absorb_select(&self) -> bool;
