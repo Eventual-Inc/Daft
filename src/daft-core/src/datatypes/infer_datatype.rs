@@ -341,7 +341,7 @@ impl<'a> Div for InferDataType<'a> {
                         Err(DaftError::TypeError(
                             format!("Cannot infer supertypes for divide on types: {}, {} result precision: {p_prime} exceed bounds of [1, 38]. scale: {s_prime}", self, other)
                         ))
-                    } else if !(0..=34).contains(&s_prime){
+                    } else if !(0..=38).contains(&s_prime){
                         Err(DaftError::TypeError(
                             format!("Cannot infer supertypes for divide on types: {}, {} result scale: {s_prime} exceed bounds of [0, 38]. precision: {p_prime}", self, other)
                         ))
