@@ -125,7 +125,7 @@ impl StreamingSinkNode {
                 let fut = async move {
                     rt_context.in_span(&span, || op.execute(idx, &morsel, state_wrapper.as_ref()))
                 };
-                let result = compute_runtime.await_on(fut).await??;
+                let result = compute_runtime.spawn(fut).await??;
                 match result {
                     StreamingSinkOutput::NeedMoreInput(mp) => {
                         if let Some(mp) = mp {
@@ -281,7 +281,7 @@ impl PipelineNode for StreamingSinkNode {
 
                 let compute_runtime = get_compute_runtime();
                 let finalized_result = compute_runtime
-                    .await_on(async move {
+                    .spawn(async move {
                         runtime_stats.in_span(&info_span!("StreamingSinkNode::finalize"), || {
                             op.finalize(finished_states)
                         })

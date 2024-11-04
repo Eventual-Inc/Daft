@@ -9,12 +9,12 @@ use daft_core::{
     prelude::SchemaRef,
     utils::{
         dyn_compare::{build_dyn_multi_array_compare, MultiDynArrayComparator},
-        identity_hash_set::IdentityBuildHasher,
+        identity_hash_set::{IdentityBuildHasher, IndexHash},
     },
 };
 
 use super::{ArrowTableEntry, IndicesMapper, Probeable, ProbeableBuilder};
-use crate::{ops::hash::IndexHash, Table};
+use crate::Table;
 
 pub struct ProbeTable {
     schema: SchemaRef,

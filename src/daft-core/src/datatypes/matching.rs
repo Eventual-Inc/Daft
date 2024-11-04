@@ -24,7 +24,6 @@ macro_rules! with_match_daft_types {(
         Float32 => __with_ty__! { Float32Type },
         Float64 => __with_ty__! { Float64Type },
         Image(..) => __with_ty__! { ImageType },
-        Int128 => __with_ty__! { Int128Type },
         Int16 => __with_ty__! { Int16Type },
         Int32 => __with_ty__! { Int32Type },
         Int64 => __with_ty__! { Int64Type },
@@ -68,7 +67,7 @@ macro_rules! with_match_physical_daft_types {(
         Int16 => __with_ty__! { Int16Type },
         Int32 => __with_ty__! { Int32Type },
         Int64 => __with_ty__! { Int64Type },
-        Int128 => __with_ty__! { Int128Type },
+        Decimal128(_, _) => __with_ty__! { Decimal128Type },
         UInt8 => __with_ty__! { UInt8Type },
         UInt16 => __with_ty__! { UInt16Type },
         UInt32 => __with_ty__! { UInt32Type },
@@ -114,6 +113,8 @@ macro_rules! with_match_arrow_daft_types {(
         // Float16 => __with_ty__! { Float16Type },
         Float32 => __with_ty__! { Float32Type },
         Float64 => __with_ty__! { Float64Type },
+        Decimal128(..) => __with_ty__! { Decimal128Type },
+
         // Date => __with_ty__! { DateType },
         // Timestamp(_, _) => __with_ty__! { TimestampType },
         List(_) => __with_ty__! { ListType },
@@ -139,7 +140,7 @@ macro_rules! with_match_comparable_daft_types {(
         Int16 => __with_ty__! { Int16Type },
         Int32 => __with_ty__! { Int32Type },
         Int64 => __with_ty__! { Int64Type },
-        Int128 => __with_ty__! { Int128Type },
+        Decimal128(..) => __with_ty__! { Decimal128Type },
         UInt8 => __with_ty__! { UInt8Type },
         UInt16 => __with_ty__! { UInt16Type },
         UInt32 => __with_ty__! { UInt32Type },
@@ -170,7 +171,7 @@ macro_rules! with_match_hashable_daft_types {(
         Int16 => __with_ty__! { Int16Type },
         Int32 => __with_ty__! { Int32Type },
         Int64 => __with_ty__! { Int64Type },
-        Int128 => __with_ty__! { Int128Type },
+        Decimal128(..) => __with_ty__! { Decimal128Type },
         UInt8 => __with_ty__! { UInt8Type },
         UInt16 => __with_ty__! { UInt16Type },
         UInt32 => __with_ty__! { UInt32Type },
@@ -208,6 +209,31 @@ macro_rules! with_match_numeric_daft_types {(
         // Float16 => __with_ty__! { Float16Type },
         Float32 => __with_ty__! { Float32Type },
         Float64 => __with_ty__! { Float64Type },
+        _ => panic!("{:?} not implemented", $key_type)
+    }
+})}
+
+#[macro_export]
+macro_rules! with_match_primitive_daft_types {(
+    $key_type:expr, | $_:tt $T:ident | $($body:tt)*
+) => ({
+    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
+    use $crate::datatypes::DataType::*;
+    use $crate::datatypes::*;
+
+    match $key_type {
+        Int8 => __with_ty__! { Int8Type },
+        Int16 => __with_ty__! { Int16Type },
+        Int32 => __with_ty__! { Int32Type },
+        Int64 => __with_ty__! { Int64Type },
+        UInt8 => __with_ty__! { UInt8Type },
+        UInt16 => __with_ty__! { UInt16Type },
+        UInt32 => __with_ty__! { UInt32Type },
+        UInt64 => __with_ty__! { UInt64Type },
+        // Float16 => __with_ty__! { Float16Type },
+        Float32 => __with_ty__! { Float32Type },
+        Float64 => __with_ty__! { Float64Type },
+        Decimal128(..) => __with_ty__! { Decimal128Type },
         _ => panic!("{:?} not implemented", $key_type)
     }
 })}

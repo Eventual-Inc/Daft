@@ -12,6 +12,7 @@ mod object_store_glob;
 mod s3_like;
 mod stats;
 mod stream_utils;
+
 use azure_blob::AzureBlobSource;
 use common_file_formats::FileFormat;
 use google_cloud::GCSSource;

@@ -750,6 +750,7 @@ class Scheduler(ActorPoolManager):
                                 next_step.set_result(
                                     [RayMaterializedResult(partition, accessor, 0) for partition in next_step.inputs]
                                 )
+                                next_step.set_done()
                                 next_step = next(tasks)
 
                             else:
@@ -816,6 +817,8 @@ class Scheduler(ActorPoolManager):
                                 completed_task_ids.append(task_id)
                                 # Mark the entire task associated with the result as done.
                                 task = inflight_tasks[task_id]
+                                task.set_done()
+
                                 if isinstance(task, SingleOutputPartitionTask):
                                     del inflight_ref_to_task[ready]
                                 elif isinstance(task, MultiOutputPartitionTask):

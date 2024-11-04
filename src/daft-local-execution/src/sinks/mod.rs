@@ -6,3 +6,4 @@ pub mod limit;
 pub mod outer_hash_join_probe;
 pub mod sort;
 pub mod streaming_sink;
+pub mod write;
