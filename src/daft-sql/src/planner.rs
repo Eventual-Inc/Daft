@@ -422,10 +422,10 @@ impl SQLPlanner {
                     // this is likely an alias
                     unresolve_alias(e, &final_projection)
                 } else {
-                    e
+                    Ok(e)
                 }
             })
-            .collect::<Vec<_>>();
+            .collect::<SQLPlannerResult<Vec<_>>>()?;
 
         if has_orderby {
             let order_by = query.order_by.as_ref().unwrap();
@@ -476,7 +476,7 @@ impl SQLPlanner {
 
         if let Some(orderby_exprs) = orderby_exprs {
             // this needs to be done after the aggregation and any projections
-            // because the orderby may reference an alias, or not be in the final projection at all
+            // because the orderby may reference an alias, or an intermediate column that is not in the final projection
             let schema = rel.schema();
             for (i, expr) in orderby_exprs.iter().enumerate() {
                 if let Err(DaftError::FieldNotFound(_)) = expr.to_field(&schema) {
@@ -1822,7 +1822,7 @@ fn idents_to_str(idents: &[Ident]) -> String {
 /// In all of the above cases, the group by and order by clauses are resolved to the original expression `a`
 ///
 /// This is needed for resolving group by and order by clauses
-fn unresolve_alias(expr: ExprRef, projection: &[ExprRef]) -> ExprRef {
+fn unresolve_alias(expr: ExprRef, projection: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
     projection
         .iter()
         .find_map(|p| {
@@ -1836,5 +1836,5 @@ fn unresolve_alias(expr: ExprRef, projection: &[ExprRef]) -> ExprRef {
                 None
             }
         })
-        .unwrap_or(expr)
+        .ok_or_else(|| PlannerError::column_not_found(expr.name(), "projection"))
 }
