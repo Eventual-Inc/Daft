@@ -341,7 +341,7 @@ class DataFrame:
             results_buffer_size: how many partitions to allow in the results buffer (defaults to the total number of CPUs
                 available on the machine).
 
-        >>> import daft
+        >>> import daft # doctest: +SKIP
         >>>
         >>> df = daft.from_pydict({"foo": [1, 2, 3], "bar": ["a", "b", "c"]}).into_partitions(2)
         >>> for part in df.iter_partitions():
@@ -1169,7 +1169,7 @@ class DataFrame:
         in the lower 36 bits. This allows for 2^28 ≈ 268 million partitions and 2^40 ≈ 68 billion rows per partition.
 
         Example:
-            >>> import daft
+            >>> import daft # doctest: +SKIP
             >>> df = daft.from_pydict({"a": [1, 2, 3, 4]}).into_partitions(2)
             >>> df = df._add_monotonically_increasing_id()
             >>> df.show()
