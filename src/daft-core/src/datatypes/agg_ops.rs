@@ -49,7 +49,7 @@ pub fn try_mean_aggregation_supertype(dtype: &DataType) -> DaftResult<DataType> 
             }
         }
         _ => Err(DaftError::TypeError(format!(
-            "StdDev is not supported for: {}",
+            "Mean is not supported for: {}",
             dtype
         ))),
     }
