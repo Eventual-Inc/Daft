@@ -3,13 +3,12 @@ use std::{
     sync::Arc,
 };
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 use daft_dsl::{
     col,
     functions::utf8::{ilike, like, to_date, to_datetime},
-    has_agg, has_agg_nested, lit, literals_to_series, null_lit, Expr, ExprRef, LiteralValue,
-    Operator,
+    has_agg_nested, lit, literals_to_series, null_lit, Expr, ExprRef, LiteralValue, Operator,
 };
 use daft_functions::numeric::{ceil::ceil, floor::floor};
 use daft_plan::{LogicalPlanBuilder, LogicalPlanRef};
@@ -148,8 +147,17 @@ impl SQLPlanner {
             if order_by.exprs.is_empty() {
                 return Ok(());
             }
+            let rel = self.relation_mut();
+            println!("s:\n{}", rel.schema());
+            let columns = rel
+                .schema()
+                .names()
+                .iter()
+                .map(|e| col(e.as_str()))
+                .collect::<Vec<_>>();
 
             let (exprs, descending) = self.plan_order_by_exprs(order_by.exprs.as_slice())?;
+
             dbg!(&exprs);
             // since the order by expression can be the alias from the projection, we need to
             // unresolve any aliases in the order by expressions
@@ -159,6 +167,7 @@ impl SQLPlanner {
                 .into_iter()
                 .map(|e| unresolve_alias(e, projection))
                 .collect();
+
             let rel = self.relation_mut();
 
             rel.inner = rel.inner.sort(dbg!(exprs), descending)?;
@@ -210,7 +219,7 @@ impl SQLPlanner {
             }
         }
 
-        let mut to_select = selection
+        let mut projections = selection
             .projection
             .iter()
             .map(|expr| self.select_item_to_expr(expr))
@@ -218,9 +227,32 @@ impl SQLPlanner {
             .into_iter()
             .flatten()
             .collect::<Vec<_>>();
-        let mut aliased_exprs = Vec::with_capacity(to_select.len());
+
+        let mut aliased_exprs = Vec::with_capacity(projections.len());
 
         if !groupby_exprs.is_empty() {
+            // Final/selected cols, accounting for 'SELECT *' modifiers
+            let mut retained_cols = Vec::with_capacity(projections.len());
+            let has_orderby = query.order_by.is_some();
+
+            if has_orderby {
+                let schema_cols = schema.fields.iter().map(|(n, _)| col(n.as_str()));
+                retained_cols.extend(schema_cols);
+            }
+            for p in projections.iter() {
+                let name = p.to_field(&schema)?.name;
+                retained_cols.push(if has_orderby {
+                    col(name.as_ref())
+                } else {
+                    p.clone()
+                });
+            }
+            if has_orderby {
+                let rel = self.relation_mut();
+
+                rel.inner = rel.inner.select(projections)?;
+                projections = retained_cols;
+            }
             // this block is needed to ensure that the borrow checker is happy with the mutable borrow of self
             {
                 let rel = self.relation_mut();
@@ -229,7 +261,7 @@ impl SQLPlanner {
                     .fields
                     .iter()
                     .map(|(name, _)| col(name.as_ref()))
-                    .chain(to_select.clone())
+                    .chain(projections.clone())
                     .collect::<HashSet<_>>();
 
                 // remove all of the aliases from the aggs and groupby expressions
@@ -241,7 +273,7 @@ impl SQLPlanner {
 
                 let original_groupby_keys = groupby_exprs
                     .iter()
-                    .map(|e| unresolve_alias(e.clone(), &to_select))
+                    .map(|e| unresolve_alias(e.clone(), &projections))
                     .collect::<Vec<_>>();
 
                 println!("1.\n{}", rel.schema());
@@ -251,7 +283,7 @@ impl SQLPlanner {
                 println!("2.\n{}", rel.schema());
 
                 if query.order_by.is_some() {
-                    for expr in &to_select {
+                    for expr in &projections {
                         if let Expr::Alias(inner, alias) = expr.as_ref() {
                             aliased_exprs.push(col(alias.clone()).alias(inner.name()));
                         } else {
@@ -264,7 +296,7 @@ impl SQLPlanner {
             self.apply_order_by(&query.order_by, &dbg!(aliased_exprs))?;
             println!("3.\n{}", self.relation_mut().schema());
             // finally fix the selection ordering to match the of the original projection
-            let to_select = to_select
+            let to_select = projections
                 .into_iter()
                 .map(|expr| {
                     // aggs are already resolved
@@ -280,34 +312,79 @@ impl SQLPlanner {
 
             let rel = self.relation_mut();
             rel.inner = rel.inner.select(dbg!(to_select))?;
-        } else if !to_select.is_empty() {
-            {
-                let has_aggs = to_select.iter().any(has_agg_nested);
-                if has_aggs {
-                    let rel = self.relation_mut();
-                    rel.inner = rel.inner.aggregate(to_select.clone(), vec![])?;
-                    self.apply_order_by(&query.order_by, &to_select)?;
+        } else {
+            // Final/selected cols
+            // if there is an orderby, and it references a column that is not part of the final projection (such as an alias)
+            // then we need to keep the original column in the projection, and remove it at the end
+            // ex: `SELECT a as b, c FROM t ORDER BY a`
+            // we need to keep a, and c in the first projection
+            // but only c in the final projection
+            // We only will apply 2 projections if there is an order by and the order by references a column that is not in the final projection
+
+            let mut final_projection = Vec::with_capacity(projections.len());
+            let mut pre_orderby_projections = Vec::with_capacity(projections.len());
+
+            let mut projection_fields = Vec::with_capacity(projections.len());
+
+            let has_orderby = query.order_by.is_some();
+
+            for p in projections.iter() {
+                let fld = p.to_field(&schema)?;
+                let name = fld.name.clone();
+                projection_fields.push(fld);
+                // if there is an orderby, then the final projection will only contain the columns that are in the orderby
+                final_projection.push(if has_orderby {
+                    col(name.as_ref())
                 } else {
-                    let selection = if query.order_by.is_some() {
-                        schema
-                            .fields
-                            .iter()
-                            .map(|(name, _)| col(name.as_ref()))
-                            .chain(to_select.clone())
-                            .collect::<HashSet<_>>()
-                            .into_iter()
-                            .collect::<Vec<_>>()
-                    } else {
-                        to_select.clone()
-                    };
+                    // otherwise we just do a normal projection
+                    p.clone()
+                });
+            }
 
+            let projection_schema = Schema::new(projection_fields)?;
+
+            if has_orderby {
+                let order_by = query.order_by.as_ref().unwrap();
+
+                if order_by.interpolate.is_some() {
+                    unsupported_sql_err!("ORDER BY [query] [INTERPOLATE]");
+                };
+                if order_by.exprs.is_empty() {
+                    unsupported_sql_err!("ORDER BY []");
+                }
+
+                let (orderby_exprs, orderby_desc) =
+                    self.plan_order_by_exprs(order_by.exprs.as_slice())?;
+
+                for expr in &orderby_exprs {
+                    if let Err(DaftError::FieldNotFound(_)) = expr.to_field(&projection_schema) {
+                        // this is likely an alias
+                        pre_orderby_projections.push(expr.clone());
+                    }
+                }
+                // if the orderby references a column that is not in the final projection
+                // then we need an additional projection
+                let needs_additional_projection = !pre_orderby_projections.is_empty();
+
+                if needs_additional_projection {
                     let rel = self.relation_mut();
-                    rel.inner = rel.inner.select(selection.into_iter().collect())?;
-
-                    self.apply_order_by(&query.order_by, &to_select)?;
-
+                    let pre_orderby_projections = projections
+                        .iter()
+                        .cloned()
+                        .chain(pre_orderby_projections)
+                        .collect::<Vec<_>>();
+                    rel.inner = rel.inner.select(pre_orderby_projections)?;
+                } else {
                     let rel = self.relation_mut();
-                    rel.inner = rel.inner.select(dbg!(&to_select).clone())?;
+                    rel.inner = rel.inner.select(projections)?;
+                }
+
+                let rel = self.relation_mut();
+                rel.inner = rel.inner.sort(orderby_exprs, orderby_desc)?;
+
+                if needs_additional_projection {
+                    let rel = self.relation_mut();
+                    rel.inner = rel.inner.select(final_projection)?;
                 }
             }
         }
@@ -1436,6 +1513,8 @@ fn unresolve_alias(expr: ExprRef, projection: &[ExprRef]) -> ExprRef {
         .iter()
         .find_map(|p| {
             if let Expr::Alias(e, alias) = &p.as_ref() {
+                dbg!(&alias);
+                dbg!(&expr);
                 if expr.name() == alias.as_ref() {
                     Some(e.clone())
                 } else {
