@@ -28,6 +28,11 @@ class _PyRunnerConfig(_RunnerConfig):
 
 
 @dataclasses.dataclass(frozen=True)
+class _NativeRunnerConfig(_RunnerConfig):
+    name = "native"
+
+
+@dataclasses.dataclass(frozen=True)
 class _RayRunnerConfig(_RunnerConfig):
     name = "ray"
     address: str | None
@@ -178,6 +183,11 @@ class DaftContext:
 
             assert isinstance(runner_config, _PyRunnerConfig)
             self._runner = PyRunner(use_thread_pool=runner_config.use_thread_pool)
+        elif runner_config.name == "native":
+            from daft.runners.native_runner import NativeRunner
+
+            assert isinstance(runner_config, _NativeRunnerConfig)
+            self._runner = NativeRunner()
 
         else:
             raise NotImplementedError(f"Runner config not implemented: {runner_config.name}")
@@ -264,6 +274,24 @@ def set_runner_py(use_thread_pool: bool | None = None) -> DaftContext:
         return ctx
 
 
+def set_runner_native() -> DaftContext:
+    """Set the runner for executing Daft dataframes to the native runner.
+
+    Alternatively, users can set this behavior via an environment variable: DAFT_RUNNER=native
+
+    Returns:
+        DaftContext: Daft context after setting the native runner
+    """
+    ctx = get_context()
+    with ctx._lock:
+        if ctx._disallow_set_runner:
+            raise RuntimeError("Cannot set runner more than once")
+
+        ctx._runner_config = _NativeRunnerConfig()
+        ctx._disallow_set_runner = True
+        return ctx
+
+
 @contextlib.contextmanager
 def planning_config_ctx(**kwargs):
     """Context manager that wraps set_planning_config to reset the config to its original setting afternwards"""
@@ -329,7 +357,6 @@ def set_execution_config(
     shuffle_aggregation_default_partitions: int | None = None,
     read_sql_partition_size_bytes: int | None = None,
     enable_aqe: bool | None = None,
-    enable_native_executor: bool | None = None,
     default_morsel_size: int | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution. These configuration values
@@ -365,7 +392,6 @@ def set_execution_config(
         shuffle_aggregation_default_partitions: Maximum number of partitions to create when performing aggregations. Defaults to 200, unless the number of input partitions is less than 200.
         read_sql_partition_size_bytes: Target size of partition when reading from SQL databases. Defaults to 512MB
         enable_aqe: Enables Adaptive Query Execution, Defaults to False
-        enable_native_executor: Enables new local executor. Defaults to False
         default_morsel_size: Default size of morsels used for the new local executor. Defaults to 131072 rows.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
@@ -390,7 +416,6 @@ def set_execution_config(
             shuffle_aggregation_default_partitions=shuffle_aggregation_default_partitions,
             read_sql_partition_size_bytes=read_sql_partition_size_bytes,
             enable_aqe=enable_aqe,
-            enable_native_executor=enable_native_executor,
             default_morsel_size=default_morsel_size,
         )
 

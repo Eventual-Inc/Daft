@@ -6,7 +6,7 @@ import daft
 from daft import context
 
 pytestmark = pytest.mark.skipif(
-    context.get_context().daft_execution_config.enable_native_executor is True,
+    context.get_context().runner_config.name == "native",
     reason="Native executor fails for these tests",
 )
 
