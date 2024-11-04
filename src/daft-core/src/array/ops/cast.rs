@@ -1839,11 +1839,39 @@ impl FixedShapeSparseTensorArray {
                 Ok(fixed_shape_tensor_array.into_series())
             }
             #[cfg(feature = "python")]
-            (DataType::Python, DataType::FixedShapeSparseTensor(inner_dtype, _)) => {
-                let sparse_tensor_series =
-                    self.cast(&DataType::SparseTensor(inner_dtype.clone()))?;
-                let sparse_pytensor_series = sparse_tensor_series.cast(&DataType::Python)?;
-                Ok(sparse_pytensor_series)
+            (DataType::Python, DataType::FixedShapeSparseTensor(_, tensor_shape)) => {
+                Python::with_gil(|py| {
+                    let mut pydicts: Vec<Py<PyAny>> = Vec::with_capacity(self.len());
+                    let va = self.values_array();
+                    let ia = self.indices_array();
+                    let pyarrow = py.import_bound(pyo3::intern!(py, "pyarrow"))?;
+                    for (values_array, indices_array) in va.into_iter().zip(ia.into_iter()) {
+                        if let (Some(values_array), Some(indices_array)) =
+                            (values_array, indices_array)
+                        {
+                            let py_values_array =
+                                ffi::to_py_array(py, values_array.to_arrow(), &pyarrow)?
+                                    .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?;
+                            let py_indices_array =
+                                ffi::to_py_array(py, indices_array.to_arrow(), &pyarrow)?
+                                    .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?;
+                            let pydict = pyo3::types::PyDict::new_bound(py);
+                            pydict.set_item("values", py_values_array)?;
+                            pydict.set_item("indices", py_indices_array)?;
+                            pydict.set_item("shape", tensor_shape)?;
+                            pydicts.push(pydict.unbind().into());
+                        } else {
+                            pydicts.push(py.None());
+                        }
+                    }
+                    let py_objects_array =
+                        PseudoArrowArray::new(pydicts.into(), self.physical.validity().cloned());
+                    Ok(PythonArray::new(
+                        Field::new(self.name(), dtype.clone()).into(),
+                        py_objects_array.to_boxed(),
+                    )?
+                    .into_series())
+                })
             }
             (_, _) => self.physical.cast(dtype),
         }
