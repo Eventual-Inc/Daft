@@ -1,8 +1,8 @@
 use common_error::DaftError;
-use snafu::Snafu;
+pub use snafu::{prelude::*, Snafu};
 use sqlparser::{parser::ParserError, tokenizer::TokenizerError};
-
 #[derive(Debug, Snafu)]
+#[snafu(visibility(pub(crate)))]
 pub enum PlannerError {
     #[snafu(display("Tokenization error: {source}"))]
     TokenizeError { source: TokenizerError },
@@ -29,6 +29,12 @@ pub enum PlannerError {
 
 impl From<DaftError> for PlannerError {
     fn from(value: DaftError) -> Self {
+        DaftSnafu {};
+        ColumnNotFoundSnafu {
+            column_name: "a".to_string(),
+            relation: "b".to_string(),
+        };
+
         Self::DaftError { source: value }
     }
 }

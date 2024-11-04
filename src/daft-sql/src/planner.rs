@@ -8,16 +8,16 @@ use daft_core::prelude::*;
 use daft_dsl::{
     col,
     functions::utf8::{ilike, like, to_date, to_datetime},
-    has_agg_nested, lit, literals_to_series, null_lit, resolve_exprs, resolve_single_expr, Expr,
-    ExprRef, LiteralValue, Operator,
+    has_agg, has_agg_nested, lit, literals_to_series, null_lit, Expr, ExprRef, LiteralValue,
+    Operator,
 };
 use daft_functions::numeric::{ceil::ceil, floor::floor};
 use daft_plan::{LogicalPlanBuilder, LogicalPlanRef};
 use sqlparser::{
     ast::{
         ArrayElemTypeDef, BinaryOperator, CastKind, Distinct, ExactNumberInfo, ExcludeSelectItem,
-        GroupByExpr, Ident, OrderBy, Query, SelectItem, Statement, StructField, Subscript,
-        TableAlias, TableWithJoins, TimezoneInfo, UnaryOperator, Value, WildcardAdditionalOptions,
+        GroupByExpr, Ident, Query, SelectItem, Statement, StructField, Subscript, TableAlias,
+        TableWithJoins, TimezoneInfo, UnaryOperator, Value, WildcardAdditionalOptions,
     },
     dialect::GenericDialect,
     parser::{Parser, ParserOptions},
@@ -25,10 +25,8 @@ use sqlparser::{
 };
 
 use crate::{
-    catalog::SQLCatalog,
-    column_not_found_err,
-    error::{PlannerError, SQLPlannerResult},
-    invalid_operation_err, table_not_found_err, unsupported_sql_err,
+    catalog::SQLCatalog, column_not_found_err, error::*, invalid_operation_err,
+    table_not_found_err, unsupported_sql_err,
 };
 
 /// A named logical plan
@@ -177,27 +175,31 @@ impl SQLPlanner {
                     .collect::<SQLPlannerResult<Vec<_>>>()?;
             }
         }
+        let mut projections = Vec::with_capacity(selection.projection.len());
+        let mut projection_fields = Vec::with_capacity(selection.projection.len());
+        for expr in &selection.projection {
+            let exprs = self.select_item_to_expr(expr, &schema)?;
 
-        let projections = selection
-            .projection
-            .iter()
-            .map(|expr| self.select_item_to_expr(expr))
-            .collect::<SQLPlannerResult<Vec<_>>>()?
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>();
-        let projection_schema = Schema::new(
-            projections
+            let fields = exprs
                 .iter()
-                .cloned()
-                .map(|expr| expr.to_field(&schema).map_err(|e| e.into()))
-                .collect::<SQLPlannerResult<Vec<_>>>()?,
-        )?;
+                .map(|expr| expr.to_field(&schema).map_err(PlannerError::from))
+                .collect::<SQLPlannerResult<Vec<_>>>();
+            dbg!(&fields);
+            let fields = fields?;
+
+            projections.extend(exprs);
+
+            projection_fields.extend(fields);
+        }
+        dbg!(&projection_fields);
+        dbg!(&projections);
+        let projection_schema = Schema::new(projection_fields)?;
 
         let has_orderby = query.order_by.is_some();
+        let has_aggs = projections.iter().any(|expr| has_agg(expr));
 
-        if !groupby_exprs.is_empty() {
-            self.plan_query_with_groupby(
+        if has_aggs {
+            self.plan_aggregate_query(
                 &projections,
                 &schema,
                 has_orderby,
@@ -206,13 +208,7 @@ impl SQLPlanner {
                 &projection_schema,
             )?;
         } else {
-            self.plan_query_without_groupby(
-                projections,
-                schema,
-                has_orderby,
-                query,
-                projection_schema,
-            )?;
+            self.plan_non_agg_query(projections, schema, has_orderby, query, projection_schema)?;
         }
 
         match &selection.distinct {
@@ -239,7 +235,7 @@ impl SQLPlanner {
         Ok(self.current_relation.clone().unwrap().inner)
     }
 
-    fn plan_query_without_groupby(
+    fn plan_non_agg_query(
         &mut self,
         projections: Vec<Arc<Expr>>,
         schema: Arc<Schema>,
@@ -255,26 +251,30 @@ impl SQLPlanner {
         // but only c in the final projection
         // We only will apply 2 projections if there is an order by and the order by references a column that is not in the final projection
         let mut final_projection = Vec::with_capacity(projections.len());
-        let mut pre_orderby_projections = Vec::with_capacity(projections.len());
+        let mut orderby_projection = Vec::with_capacity(projections.len());
+        let mut aggs = Vec::with_capacity(projections.len());
         for p in projections.iter() {
-            if let Expr::Column(c) = p.as_ref() {
-                if c.as_ref() == "*" {
-                    let (exprs, _) = resolve_exprs(vec![p.clone()], &schema, false)?;
-                    pre_orderby_projections.extend(exprs);
-                }
-                pre_orderby_projections.push(p.clone());
-            }
-            let fld = p.to_field(&schema)?;
+            let fld = p.to_field(&schema);
+            dbg!(&fld);
+
+            let fld = fld?;
             let name = fld.name.clone();
-            // if there is an orderby, then the final projection will only contain the columns that are in the orderby
-            final_projection.push(if has_orderby {
-                col(name.as_ref())
+
+            if has_agg_nested(p) {
+                aggs.push(p.clone());
+                final_projection.push(col(name.as_ref()));
             } else {
-                // otherwise we just do a normal projection
-                p.clone()
-            });
+                // if there is an orderby, then the final projection will only contain the columns that are in the orderby
+                final_projection.push(if has_orderby {
+                    col(name.as_ref())
+                } else {
+                    // otherwise we just do a normal projection
+                    p.clone()
+                });
+            }
         }
-        Ok(if has_orderby {
+
+        if has_orderby {
             let order_by = query.order_by.as_ref().unwrap();
 
             if order_by.interpolate.is_some() {
@@ -287,19 +287,19 @@ impl SQLPlanner {
             for expr in &orderby_exprs {
                 if let Err(DaftError::FieldNotFound(_)) = expr.to_field(&projection_schema) {
                     // this is likely an alias
-                    pre_orderby_projections.push(expr.clone());
+                    orderby_projection.push(expr.clone());
                 }
             }
             // if the orderby references a column that is not in the final projection
             // then we need an additional projection
-            let needs_projection = !pre_orderby_projections.is_empty();
+            let needs_projection = !orderby_projection.is_empty();
 
             if needs_projection {
                 let rel = self.relation_mut();
                 let pre_orderby_projections = projections
                     .iter()
                     .cloned()
-                    .chain(pre_orderby_projections)
+                    .chain(orderby_projection)
                     .collect::<HashSet<_>>() // dedup
                     .into_iter()
                     .collect::<Vec<_>>();
@@ -319,10 +319,12 @@ impl SQLPlanner {
         } else {
             let rel = self.relation_mut();
             rel.inner = rel.inner.select(projections)?;
-        })
+        }
+
+        Ok(())
     }
 
-    fn plan_query_with_groupby(
+    fn plan_aggregate_query(
         &mut self,
         projections: &Vec<Arc<Expr>>,
         schema: &Arc<Schema>,
@@ -338,6 +340,7 @@ impl SQLPlanner {
         let mut orderby_desc = None;
         for p in projections.iter() {
             let fld = p.to_field(schema)?;
+
             let name = fld.name.clone();
             if has_agg_nested(p) {
                 // this is an aggregate, so it is resolved during `.agg`. So we just push the column name
@@ -363,6 +366,7 @@ impl SQLPlanner {
                 }
             })
             .collect::<Vec<_>>();
+
         if has_orderby {
             let order_by = query.order_by.as_ref().unwrap();
 
@@ -383,8 +387,9 @@ impl SQLPlanner {
             }
         }
         let rel = self.relation_mut();
-        rel.inner = rel.inner.aggregate(aggs, groupby_exprs)?;
-        let needs_projection = !orderby_projection.is_empty();
+        println!("1.\n{}", rel.schema());
+        rel.inner = rel.inner.aggregate(aggs, dbg!(groupby_exprs))?;
+        let needs_projection = !dbg!(&orderby_projection).is_empty();
         if needs_projection {
             let orderby_projection = rel
                 .schema()
@@ -396,14 +401,17 @@ impl SQLPlanner {
                 .into_iter()
                 .collect::<Vec<_>>();
 
-            rel.inner = rel.inner.select(orderby_projection)?;
+            rel.inner = rel.inner.select(dbg!(orderby_projection))?;
+            println!("1.5.\n{}", rel.schema());
         }
+        println!("2.\n{}", rel.schema());
 
-        let rel = self.relation_mut();
-        if let Some(orderby_exprs) = orderby_exprs {
-            rel.inner = rel.inner.sort(orderby_exprs, orderby_desc.unwrap())?;
-        }
         rel.inner = rel.inner.select(final_projection)?;
+        println!("3.\n{}", rel.schema());
+        if let Some(orderby_exprs) = orderby_exprs {
+            rel.inner = rel.inner.sort(dbg!(orderby_exprs), orderby_desc.unwrap())?;
+            println!("4.\n{}", rel.schema());
+        }
         Ok(())
     }
 
@@ -707,7 +715,11 @@ impl SQLPlanner {
         }
     }
 
-    fn select_item_to_expr(&self, item: &SelectItem) -> SQLPlannerResult<Vec<ExprRef>> {
+    fn select_item_to_expr(
+        &self,
+        item: &SelectItem,
+        schema: &Schema,
+    ) -> SQLPlannerResult<Vec<ExprRef>> {
         fn wildcard_exclude(
             schema: SchemaRef,
             exclusion: &ExcludeSelectItem,
@@ -756,7 +768,15 @@ impl SQLPlanner {
                         })
                         .map_err(std::convert::Into::into)
                 } else {
-                    Ok(vec![col("*")])
+                    if schema.is_empty() {
+                        Ok(vec![col("*")])
+                    } else {
+                        Ok(schema
+                            .names()
+                            .iter()
+                            .map(|n| col(n.as_ref()))
+                            .collect::<Vec<_>>())
+                    }
                 }
             }
             SelectItem::QualifiedWildcard(object_name, wildcard_opts) => {
@@ -1463,7 +1483,8 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> SQLPlannerResult<ExprRef> {
         .with_tokens(tokens);
 
     let expr = parser.parse_select_item()?;
-    let exprs = planner.select_item_to_expr(&expr)?;
+    let empty_schema = Schema::empty();
+    let exprs = planner.select_item_to_expr(&expr, &empty_schema)?;
     if exprs.len() != 1 {
         invalid_operation_err!("expected a single expression, found {}", exprs.len())
     }

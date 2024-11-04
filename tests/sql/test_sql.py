@@ -105,7 +105,7 @@ def test_sql_global_agg():
     df = daft.sql("SELECT max(n) max_n, sum(n) sum_n FROM test", catalog=catalog)
     assert df.collect().to_pydict() == {"max_n": [3], "sum_n": [6]}
     # If there is agg and non-agg, it should fail
-    with pytest.raises(Exception, match="Expected aggregation"):
+    with pytest.raises(Exception, match="Column not found"):
         daft.sql("SELECT n,max(n) max_n FROM test", catalog=catalog)
 
 
