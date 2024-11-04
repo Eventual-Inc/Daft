@@ -7,6 +7,7 @@ import os
 import warnings
 from typing import TYPE_CHECKING, ClassVar
 
+from daft import get_build_type
 from daft.daft import IOConfig, PyDaftExecutionConfig, PyDaftPlanningConfig
 
 if TYPE_CHECKING:
@@ -47,6 +48,7 @@ def _get_runner_config_from_env() -> _RunnerConfig:
 
     1. PyRunner: set DAFT_RUNNER=py
     2. RayRunner: set DAFT_RUNNER=ray and optionally RAY_ADDRESS=ray://...
+    3. NativeRunner: set DAFT_RUNNER=native
     """
     runner_from_envvar = os.getenv("DAFT_RUNNER")
 
@@ -95,6 +97,8 @@ def _get_runner_config_from_env() -> _RunnerConfig:
         )
     elif runner_from_envvar and runner_from_envvar.upper() == "PY":
         return _PyRunnerConfig(use_thread_pool=use_thread_pool)
+    elif runner_from_envvar and runner_from_envvar.upper() == "NATIVE":
+        return _NativeRunnerConfig()
     elif runner_from_envvar is not None:
         raise ValueError(f"Unsupported DAFT_RUNNER variable: {runner_from_envvar}")
 
@@ -105,6 +109,10 @@ def _get_runner_config_from_env() -> _RunnerConfig:
             max_task_backlog=task_backlog,
             force_client_mode=ray_force_client_mode,
         )
+
+    # Use native runner if in dev mode
+    elif get_build_type() == "dev":
+        return _NativeRunnerConfig()
 
     # Fall back on PyRunner
     else:
