@@ -61,7 +61,7 @@ def test_sparse_tensor_repr():
 
 
 @pytest.mark.parametrize("indices_dtype", [np.uint8, np.uint16])
-def test_fixed_shape_sparse_indices_dtype(indices_dtype: np.dtype):
+def test_fixed_shape_sparse_minimal_indices_dtype(indices_dtype: np.dtype):
     def get_inner_indices_dtype(fixed_shape_sparse_dtype: DataType) -> pa.DataType:
         arrow_sparse_dtype = fixed_shape_sparse_dtype.to_arrow_dtype()
         indices_field_idx = arrow_sparse_dtype.get_field_index("indices")
