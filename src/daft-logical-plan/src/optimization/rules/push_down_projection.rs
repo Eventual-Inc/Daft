@@ -489,6 +489,11 @@ impl PushDownProjection {
                 // since Distinct implicitly requires all parent columns.
                 Ok(Transformed::no(plan))
             }
+            LogicalPlan::Intersect(_) => {
+                // Cannot push down past an Intersect,
+                // since Intersect implicitly requires all parent columns.
+                Ok(Transformed::no(plan))
+            }
             LogicalPlan::Pivot(_) | LogicalPlan::MonotonicallyIncreasingId(_) => {
                 // Cannot push down past a Pivot/MonotonicallyIncreasingId because it changes the schema.
                 Ok(Transformed::no(plan))

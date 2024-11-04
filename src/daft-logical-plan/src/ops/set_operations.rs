@@ -96,4 +96,14 @@ impl Intersect {
             join.map(|j| logical_plan::Distinct::new(j.into()).into())
         }
     }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        if self.is_all {
+            res.push("Intersect All:".to_string());
+        } else {
+            res.push("Intersect:".to_string());
+        }
+        res
+    }
 }
