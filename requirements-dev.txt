@@ -22,7 +22,7 @@ memray==1.13.4; platform_system != "Windows"
 pytest-codspeed==2.2.1
 
 # Testing dependencies
-lxml==5.1.0
+lxml==5.3.0
 dask==2023.5.0; python_version == '3.8'
 dask[dataframe]==2024.4.1; python_version >= '3.9'
 numpy; python_version < '3.9'
