@@ -64,12 +64,14 @@ def test_sparse_tensor_repr():
 def test_fixed_shape_sparse_indices_dtype(indices_dtype: np.dtype):
     def get_inner_indices_dtype(fixed_shape_sparse_dtype: DataType) -> pa.DataType:
         arrow_sparse_dtype = fixed_shape_sparse_dtype.to_arrow_dtype()
-        indices_dtype = arrow_sparse_dtype.field('indices').type.value_type
+        indices_dtype = arrow_sparse_dtype.field("indices").type.value_type
         return indices_dtype
-    
+
     largest_index_possible = np.iinfo(indices_dtype).max
-    tensor_shape  = (largest_index_possible + 1, 1)
-    series = Series.from_pylist([np.zeros(shape=tensor_shape, dtype=np.uint8)]).cast(DataType.tensor(DataType.uint8(), shape=tensor_shape))
+    tensor_shape = (largest_index_possible + 1, 1)
+    series = Series.from_pylist([np.zeros(shape=tensor_shape, dtype=np.uint8)]).cast(
+        DataType.tensor(DataType.uint8(), shape=tensor_shape)
+    )
     sparse_series = series.cast(DataType.sparse_tensor(DataType.uint8(), shape=tensor_shape))
 
     actual_dtype = get_inner_indices_dtype(sparse_series.datatype())

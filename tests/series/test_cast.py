@@ -1166,12 +1166,18 @@ def test_series_cast_fixed_size_list_to_list() -> None:
 ### Sparse ###
 
 
+def minimal_indices_dtype(shape: tuple[int]) -> np.dtype:
+    largest_index_possible = np.prod(shape) - 1
+    minimal_dtype = np.min_scalar_type(largest_index_possible)
+    return minimal_dtype
+
+
 def to_coo_sparse_dict(ndarray: np.ndarray) -> dict[str, np.ndarray]:
     flat_array = ndarray.ravel()
     indices = np.flatnonzero(flat_array)
     values = flat_array[indices]
     shape = list(ndarray.shape)
-    
+
     indices_dtype = minimal_indices_dtype(shape)
     indices = indices.astype(indices_dtype)
     return {"values": values, "indices": indices, "shape": shape}
