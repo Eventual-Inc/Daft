@@ -2136,7 +2136,6 @@ dependencies = [
  "daft-scan",
  "daft-stats",
  "daft-table",
- "indexmap 2.5.0",
  "parquet2",
  "pyo3",
  "snafu",
