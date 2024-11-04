@@ -8,8 +8,7 @@ use daft_core::prelude::*;
 use daft_dsl::{
     col,
     functions::utf8::{ilike, like, to_date, to_datetime},
-    has_agg, has_agg_nested, lit, literals_to_series, null_lit, Expr, ExprRef, LiteralValue,
-    Operator,
+    has_agg, lit, literals_to_series, null_lit, Expr, ExprRef, LiteralValue, Operator,
 };
 use daft_functions::numeric::{ceil::ceil, floor::floor};
 use daft_plan::{LogicalPlanBuilder, LogicalPlanRef};
@@ -184,17 +183,14 @@ impl SQLPlanner {
                 .iter()
                 .map(|expr| expr.to_field(&schema).map_err(PlannerError::from))
                 .collect::<SQLPlannerResult<Vec<_>>>();
-            dbg!(&fields);
             let fields = fields?;
 
             projections.extend(exprs);
 
             projection_fields.extend(fields);
         }
-        dbg!(&projection_fields);
-        dbg!(&projections);
-        let projection_schema = Schema::new(projection_fields)?;
 
+        let projection_schema = Schema::new(projection_fields)?;
         let has_orderby = query.order_by.is_some();
         let has_aggs = projections.iter().any(|expr| has_agg(expr));
 
@@ -255,12 +251,11 @@ impl SQLPlanner {
         let mut aggs = Vec::with_capacity(projections.len());
         for p in projections.iter() {
             let fld = p.to_field(&schema);
-            dbg!(&fld);
 
             let fld = fld?;
             let name = fld.name.clone();
 
-            if has_agg_nested(p) {
+            if has_agg(p) {
                 aggs.push(p.clone());
                 final_projection.push(col(name.as_ref()));
             } else {
@@ -342,7 +337,7 @@ impl SQLPlanner {
             let fld = p.to_field(schema)?;
 
             let name = fld.name.clone();
-            if has_agg_nested(p) {
+            if has_agg(p) {
                 // this is an aggregate, so it is resolved during `.agg`. So we just push the column name
                 final_projection.push(col(name.as_ref()));
                 // add it to the aggs list
@@ -380,16 +375,18 @@ impl SQLPlanner {
             orderby_desc = Some(desc);
 
             for expr in &exprs {
+                // if the orderby references a column that is not in the final projection
+                // then we need an additional projection
                 if let Err(DaftError::FieldNotFound(_)) = expr.to_field(projection_schema) {
-                    // this is likely an alias
                     orderby_projection.push(expr.clone());
                 }
             }
         }
+
         let rel = self.relation_mut();
-        println!("1.\n{}", rel.schema());
-        rel.inner = rel.inner.aggregate(aggs, dbg!(groupby_exprs))?;
-        let needs_projection = !dbg!(&orderby_projection).is_empty();
+        rel.inner = rel.inner.aggregate(aggs, groupby_exprs)?;
+
+        let needs_projection = !orderby_projection.is_empty();
         if needs_projection {
             let orderby_projection = rel
                 .schema()
@@ -401,16 +398,44 @@ impl SQLPlanner {
                 .into_iter()
                 .collect::<Vec<_>>();
 
-            rel.inner = rel.inner.select(dbg!(orderby_projection))?;
-            println!("1.5.\n{}", rel.schema());
+            rel.inner = rel.inner.select(orderby_projection)?;
         }
-        println!("2.\n{}", rel.schema());
+
+        // these are orderbys that are part of the final projection
+        let mut final_orderbys = Vec::new();
+        let mut final_orderby_desc = Vec::new();
+
+        if let Some(orderby_exprs) = orderby_exprs {
+            // this needs to be done after the aggregation and any projections
+            // because the orderby may reference an alias, or not be in the final projection at all
+            let schema = rel.schema();
+            let mut orderbys = Vec::new();
+            let mut orderbys_desc = Vec::new();
+            for (i, expr) in orderby_exprs.iter().enumerate() {
+                if let Err(DaftError::FieldNotFound(_)) = expr.to_field(&schema) {
+                    final_orderbys.push(expr.clone());
+                    let desc = orderby_desc.clone().map(|o| o[i]).unwrap();
+                    final_orderby_desc.push(desc);
+                } else {
+                    let desc = orderby_desc.clone().map(|o| o[i]).unwrap();
+
+                    orderbys.push(expr.clone());
+                    orderbys_desc.push(desc);
+                }
+            }
+
+            if !orderbys.is_empty() && !final_orderbys.is_empty() {
+                panic!("final orderbys and orderbys should be disjoint");
+            }
+            // order bys that are not in the final projection
+            if !orderbys.is_empty() {
+                rel.inner = rel.inner.sort(orderbys, orderbys_desc)?;
+            }
+        }
 
         rel.inner = rel.inner.select(final_projection)?;
-        println!("3.\n{}", rel.schema());
-        if let Some(orderby_exprs) = orderby_exprs {
-            rel.inner = rel.inner.sort(dbg!(orderby_exprs), orderby_desc.unwrap())?;
-            println!("4.\n{}", rel.schema());
+        if !final_orderbys.is_empty() {
+            rel.inner = rel.inner.sort(final_orderbys, final_orderby_desc)?;
         }
         Ok(())
     }

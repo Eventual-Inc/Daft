@@ -1094,14 +1094,6 @@ pub fn has_agg(expr: &ExprRef) -> bool {
     expr.exists(|e| matches!(e.as_ref(), Expr::Agg(_)))
 }
 
-pub fn has_agg_nested(expr: &ExprRef) -> bool {
-    match expr.as_ref() {
-        Expr::Agg(_) => true,
-        Expr::Alias(expr, _) => has_agg_nested(expr),
-        _ => false,
-    }
-}
-
 pub fn has_stateful_udf(expr: &ExprRef) -> bool {
     expr.exists(|e| {
         matches!(
