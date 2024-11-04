@@ -1,11 +1,8 @@
-use std::sync::Arc;
-
 use arrow2::datatypes::DataType;
 use common_error::DaftResult;
 use daft_core::{datatypes::Utf8Array, series::Series};
 use daft_decoding::inference::infer;
 use daft_schema::{dtype::DaftDataType, field::Field, schema::Schema};
-use daft_table::Table;
 use indexmap::IndexMap;
 
 const DEFAULT_HIVE_PARTITION_NAME: &str = "__HIVE_DEFAULT_PARTITION__";
@@ -62,11 +59,11 @@ pub fn parse_hive_partitioning(uri: &str) -> DaftResult<IndexMap<String, String>
 /// Takes hive partition key-value pairs as `partitions`, and the schema of the containing table as
 /// `table_schema`, and returns a 1-dimensional table containing the partition keys as columns, and
 /// their partition values as the singular row of values.
-pub fn hive_partitions_to_1d_table(
+pub fn hive_partitions_to_series(
     partitions: &IndexMap<String, String>,
     table_schema: &Schema,
-) -> DaftResult<Table> {
-    let partition_series = partitions
+) -> DaftResult<Vec<Series>> {
+    partitions
         .iter()
         .filter_map(|(key, value)| {
             if table_schema.fields.contains_key(key) {
@@ -81,20 +78,7 @@ pub fn hive_partitions_to_1d_table(
                 None
             }
         })
-        .collect::<DaftResult<Vec<_>>>()?;
-    let partition_fields = table_schema
-        .fields
-        .clone()
-        .into_iter()
-        .map(|(_, field)| field)
-        .filter(|field| partitions.contains_key(&field.name))
-        .collect();
-    let partition_schema = Schema::new(partition_fields)?;
-    Ok(Table::new_unchecked(
-        Arc::new(partition_schema),
-        partition_series,
-        1,
-    ))
+        .collect::<DaftResult<Vec<_>>>()
 }
 
 /// Turns hive partition key-value pairs into a schema with the partitions' keys as field names, and

@@ -18,7 +18,7 @@ use futures::{stream::BoxStream, StreamExt, TryStreamExt};
 use snafu::Snafu;
 
 use crate::{
-    hive::{hive_partitions_to_1d_table, hive_partitions_to_schema, parse_hive_partitioning},
+    hive::{hive_partitions_to_schema, hive_partitions_to_series, parse_hive_partitioning},
     storage_config::StorageConfig,
     ChunkSpec, DataSource, PartitionField, Pushdowns, ScanOperator, ScanTask, ScanTaskRef,
 };
@@ -400,27 +400,26 @@ impl ScanOperator for GlobScanOperator {
                     size: size_bytes,
                     ..
                 } = f?;
-                // Create a table of partition values based on whether a file_path_column is set
-                // (this column is inherently a partition).
-                let mut partition_values = if let Some(fp_col) = &file_path_column {
+                // Create partition values from hive partitions, if any.
+                let mut partition_values = if hive_partitioning {
+                    let hive_partitions = parse_hive_partitioning(&path)?;
+                    hive_partitions_to_series(&hive_partitions, &partition_schema)?
+                } else {
+                    vec![]
+                };
+                // Extend partition values based on whether a file_path_column is set (this column is inherently a partition).
+                if let Some(fp_col) = &file_path_column {
                     let trimmed = path.trim_start_matches("file://");
                     let file_paths_column_series =
                         Utf8Array::from_iter(fp_col, std::iter::once(Some(trimmed))).into_series();
-                    Table::from_nonempty_columns(vec![file_paths_column_series; 1])?
-                } else {
-                    Table::empty(None)?
-                };
-                // Extend the partition values with hive partitions.
-                if hive_partitioning {
-                    let hive_partitions = parse_hive_partitioning(&path)?;
-                    let hive_partition_values =
-                        hive_partitions_to_1d_table(&hive_partitions, &partition_schema)?;
-                    partition_values = if partition_values.is_empty() {
-                        hive_partition_values
-                    } else {
-                        partition_values.union(&hive_partition_values)?
-                    };
+                    partition_values.push(file_paths_column_series);
                 }
+                // Turn the partition values, if any, into a 1D table to evaluate against partition filters.
+                let partition_values = if partition_values.is_empty() {
+                    Table::empty(None)?
+                } else {
+                    Table::from_nonempty_columns(partition_values)?
+                };
                 // Check if the partition values satisfy the partition filters, if any.
                 if let Some(partition_filters) = &pushdowns.partition_filters {
                     let filter_result = partition_values.filter(&[partition_filters.clone()])?;
