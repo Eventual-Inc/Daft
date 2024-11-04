@@ -527,7 +527,6 @@ impl MicroPartition {
                         iceberg_delete_files.extend(delete_files.iter().map(String::as_str));
                     }
                 }
-                // let file_path_column = if let Some(generated_fields) = scan_task.generated_fields
 
                 read_parquet_into_micropartition(
                     uris.as_slice(),
