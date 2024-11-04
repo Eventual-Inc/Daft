@@ -747,10 +747,6 @@ impl PartitionField {
     pub fn clone_field(&self) -> Field {
         self.field.clone()
     }
-
-    pub fn clone_source_field(&self) -> Option<Field> {
-        self.source_field.clone()
-    }
 }
 
 impl Display for PartitionField {
