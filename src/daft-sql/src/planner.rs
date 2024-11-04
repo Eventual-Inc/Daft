@@ -192,7 +192,7 @@ impl SQLPlanner {
 
         let projection_schema = Schema::new(projection_fields)?;
         let has_orderby = query.order_by.is_some();
-        let has_aggs = projections.iter().any(|expr| has_agg(expr));
+        let has_aggs = projections.iter().any(has_agg);
 
         if has_aggs {
             self.plan_aggregate_query(
@@ -248,15 +248,13 @@ impl SQLPlanner {
         // We only will apply 2 projections if there is an order by and the order by references a column that is not in the final projection
         let mut final_projection = Vec::with_capacity(projections.len());
         let mut orderby_projection = Vec::with_capacity(projections.len());
-        let mut aggs = Vec::with_capacity(projections.len());
-        for p in projections.iter() {
+        for p in &projections {
             let fld = p.to_field(&schema);
 
             let fld = fld?;
             let name = fld.name.clone();
 
             if has_agg(p) {
-                aggs.push(p.clone());
                 final_projection.push(col(name.as_ref()));
             } else {
                 // if there is an orderby, then the final projection will only contain the columns that are in the orderby
@@ -289,8 +287,8 @@ impl SQLPlanner {
             // then we need an additional projection
             let needs_projection = !orderby_projection.is_empty();
 
+            let rel = self.relation_mut();
             if needs_projection {
-                let rel = self.relation_mut();
                 let pre_orderby_projections = projections
                     .iter()
                     .cloned()
@@ -298,18 +296,15 @@ impl SQLPlanner {
                     .collect::<HashSet<_>>() // dedup
                     .into_iter()
                     .collect::<Vec<_>>();
-                rel.inner = rel.inner.select(dbg!(pre_orderby_projections))?;
+                rel.inner = rel.inner.select(pre_orderby_projections)?;
             } else {
-                let rel = self.relation_mut();
-                rel.inner = rel.inner.select(dbg!(projections))?;
+                rel.inner = rel.inner.select(projections)?;
             }
 
-            let rel = self.relation_mut();
             rel.inner = rel.inner.sort(orderby_exprs, orderby_desc)?;
 
             if needs_projection {
-                let rel = self.relation_mut();
-                rel.inner = rel.inner.select(dbg!(final_projection))?;
+                rel.inner = rel.inner.select(final_projection)?;
             }
         } else {
             let rel = self.relation_mut();
@@ -333,7 +328,7 @@ impl SQLPlanner {
         let mut aggs = Vec::with_capacity(projections.len());
         let mut orderby_exprs = None;
         let mut orderby_desc = None;
-        for p in projections.iter() {
+        for p in projections {
             let fld = p.to_field(schema)?;
 
             let name = fld.name.clone();
@@ -402,40 +397,51 @@ impl SQLPlanner {
         }
 
         // these are orderbys that are part of the final projection
-        let mut final_orderbys = Vec::new();
-        let mut final_orderby_desc = Vec::new();
+        let mut orderbys_after_projection = Vec::new();
+        let mut orderbys_after_projection_desc = Vec::new();
+
+        // these are orderbys that are not part of the final projection
+        let mut orderbys_before_projection = Vec::new();
+        let mut orderbys_before_projection_desc = Vec::new();
 
         if let Some(orderby_exprs) = orderby_exprs {
             // this needs to be done after the aggregation and any projections
             // because the orderby may reference an alias, or not be in the final projection at all
             let schema = rel.schema();
-            let mut orderbys = Vec::new();
-            let mut orderbys_desc = Vec::new();
             for (i, expr) in orderby_exprs.iter().enumerate() {
                 if let Err(DaftError::FieldNotFound(_)) = expr.to_field(&schema) {
-                    final_orderbys.push(expr.clone());
+                    orderbys_after_projection.push(expr.clone());
                     let desc = orderby_desc.clone().map(|o| o[i]).unwrap();
-                    final_orderby_desc.push(desc);
+                    orderbys_after_projection_desc.push(desc);
                 } else {
                     let desc = orderby_desc.clone().map(|o| o[i]).unwrap();
 
-                    orderbys.push(expr.clone());
-                    orderbys_desc.push(desc);
+                    orderbys_before_projection.push(expr.clone());
+                    orderbys_before_projection_desc.push(desc);
                 }
-            }
-
-            if !orderbys.is_empty() && !final_orderbys.is_empty() {
-                panic!("final orderbys and orderbys should be disjoint");
-            }
-            // order bys that are not in the final projection
-            if !orderbys.is_empty() {
-                rel.inner = rel.inner.sort(orderbys, orderbys_desc)?;
             }
         }
 
+        let has_orderby_before_projection = !orderbys_before_projection.is_empty();
+        let has_orderby_after_projection = !orderbys_after_projection.is_empty();
+        assert!(
+            !(has_orderby_before_projection && has_orderby_after_projection),
+            "ORDER BYs are in both final and non-final projections. This should not happen. Please report this bug."
+        );
+
+        // order bys that are not in the final projection
+        if !orderbys_before_projection.is_empty() {
+            rel.inner = rel
+                .inner
+                .sort(orderbys_before_projection, orderbys_before_projection_desc)?;
+        }
         rel.inner = rel.inner.select(final_projection)?;
-        if !final_orderbys.is_empty() {
-            rel.inner = rel.inner.sort(final_orderbys, final_orderby_desc)?;
+
+        // order bys that are in the final projection
+        if !orderbys_after_projection.is_empty() {
+            rel.inner = rel
+                .inner
+                .sort(orderbys_after_projection, orderbys_after_projection_desc)?;
         }
         Ok(())
     }
@@ -792,16 +798,14 @@ impl SQLPlanner {
                                 .collect::<Vec<_>>()
                         })
                         .map_err(std::convert::Into::into)
+                } else if schema.is_empty() {
+                    Ok(vec![col("*")])
                 } else {
-                    if schema.is_empty() {
-                        Ok(vec![col("*")])
-                    } else {
-                        Ok(schema
-                            .names()
-                            .iter()
-                            .map(|n| col(n.as_ref()))
-                            .collect::<Vec<_>>())
-                    }
+                    Ok(schema
+                        .names()
+                        .iter()
+                        .map(|n| col(n.as_ref()))
+                        .collect::<Vec<_>>())
                 }
             }
             SelectItem::QualifiedWildcard(object_name, wildcard_opts) => {

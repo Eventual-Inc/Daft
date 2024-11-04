@@ -29,12 +29,6 @@ pub enum PlannerError {
 
 impl From<DaftError> for PlannerError {
     fn from(value: DaftError) -> Self {
-        DaftSnafu {};
-        ColumnNotFoundSnafu {
-            column_name: "a".to_string(),
-            relation: "b".to_string(),
-        };
-
         Self::DaftError { source: value }
     }
 }
