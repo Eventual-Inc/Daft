@@ -367,7 +367,7 @@ impl DataType {
                         }
                     };
                     Field::new("indices", List(Box::new(minimal_indices_dtype)))
-                }
+                },
             ]),
             _ => {
                 assert!(self.is_physical());
