@@ -356,11 +356,11 @@ impl DataType {
                 {
                     let largest_index = shape.iter().product::<u64>() - 1;
                     let minimal_indices_dtype = {
-                        if largest_index <= u8::MAX as u64 {
+                        if u8::try_from(largest_index).is_ok() {
                             Self::UInt8
-                        } else if largest_index <= u16::MAX as u64 {
+                        } else if u16::try_from(largest_index).is_ok() {
                             Self::UInt16
-                        } else if largest_index <= u32::MAX as u64 {
+                        } else if u32::try_from(largest_index).is_ok() {
                             Self::UInt32
                         } else {
                             Self::UInt64

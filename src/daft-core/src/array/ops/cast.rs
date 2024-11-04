@@ -1613,11 +1613,11 @@ fn cast_sparse_to_dense_for_inner_dtype(
 }
 
 pub fn minimal_uint_dtype(value: u64) -> DataType {
-    if value <= u8::MAX as u64 {
+    if u8::try_from(value).is_ok() {
         DataType::UInt8
-    } else if value <= u16::MAX as u64 {
+    } else if u16::try_from(value).is_ok() {
         DataType::UInt16
-    } else if value <= u32::MAX as u64 {
+    } else if u32::try_from(value).is_ok() {
         DataType::UInt32
     } else {
         DataType::UInt64
@@ -1693,8 +1693,10 @@ impl SparseTensorArray {
 
                 let largest_index = shape.iter().product::<u64>() - 1;
                 let indices_minimal_inner_dtype = minimal_uint_dtype(largest_index);
-                let values_array = va.cast(&DataType::List(Box::new(inner_dtype.as_ref().clone())))?;
-                let indices_array = ia.cast(&DataType::List(Box::new(indices_minimal_inner_dtype)))?;
+                let values_array =
+                    va.cast(&DataType::List(Box::new(inner_dtype.as_ref().clone())))?;
+                let indices_array =
+                    ia.cast(&DataType::List(Box::new(indices_minimal_inner_dtype)))?;
                 let struct_array = StructArray::new(
                     Field::new(self.name(), dtype.to_physical()),
                     vec![values_array, indices_array],
@@ -1792,11 +1794,7 @@ impl FixedShapeSparseTensorArray {
                 let physical_type = dtype.to_physical();
                 let struct_array = StructArray::new(
                     Field::new(self.name(), physical_type),
-                    vec![
-                        values_arr,
-                        indices_arr,
-                        shapes_array.into_series(),
-                    ],
+                    vec![values_arr, indices_arr, shapes_array.into_series()],
                     validity.cloned(),
                 );
                 Ok(
@@ -1985,7 +1983,8 @@ impl FixedShapeTensorArray {
 
                 let largest_index = tensor_shape.iter().product::<u64>() - 1;
                 let indices_minimal_inner_dtype = minimal_uint_dtype(largest_index);
-                let casted_indices = indices_list_arr.cast(&DataType::List(Box::new(indices_minimal_inner_dtype)))?;
+                let casted_indices = indices_list_arr
+                    .cast(&DataType::List(Box::new(indices_minimal_inner_dtype)))?;
 
                 let sparse_struct_array = StructArray::new(
                     Field::new(self.name(), dtype.to_physical()),
