@@ -47,7 +47,7 @@ lancedb>=0.6.10; python_version >= '3.8'
 
 #Iceberg
 pyiceberg==0.7.0; python_version >= '3.8'
-tenacity==8.2.3; python_version >= '3.8'
+tenacity==9.0.0; python_version >= '3.8'
 
 # Delta Lake
 deltalake==0.5.8; platform_system == "Windows"
