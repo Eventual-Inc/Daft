@@ -91,10 +91,8 @@ def gen_tpch(request):
 def get_df(gen_tpch, request):
     (csv_files_location, parquet_files_location, in_memory_tables, num_parts), _ = gen_tpch
     source_type = request.param
-    print(f"Source Type: {source_type}")
 
     def _get_df(tbl_name: str):
-        print(f"Table Name: {tbl_name}, Source Type: {source_type}")
         if source_type == "csv":
             local_fs = LocalFileSystem()
             nonchunked_filepath = f"{csv_files_location}/{tbl_name}.tbl"

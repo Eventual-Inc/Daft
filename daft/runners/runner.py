@@ -19,13 +19,16 @@ if TYPE_CHECKING:
 
 class Runner(Generic[PartitionT]):
     def __init__(self) -> None:
-        self._part_set_cache = PartitionSetCache()
+        self._part_set_cache = self.initialize_partition_set_cache()
 
     def get_partition_set_from_cache(self, pset_id: str) -> PartitionCacheEntry:
         return self._part_set_cache.get_partition_set(pset_id=pset_id)
 
     def put_partition_set_into_cache(self, pset: PartitionSet) -> PartitionCacheEntry:
         return self._part_set_cache.put_partition_set(pset=pset)
+
+    @abstractmethod
+    def initialize_partition_set_cache(self) -> PartitionSetCache: ...
 
     @abstractmethod
     def runner_io(self) -> RunnerIO: ...

@@ -9,9 +9,11 @@ from daft.execution.native_executor import NativeExecutor
 from daft.filesystem import glob_path_with_stats
 from daft.runners import runner_io
 from daft.runners.partitioning import (
+    LOCAL_PARTITION_SET_CACHE,
     LocalMaterializedResult,
     LocalPartitionSet,
     PartitionCacheEntry,
+    PartitionSetCache,
 )
 from daft.runners.runner import Runner
 from daft.table import MicroPartition
@@ -45,6 +47,9 @@ class NativeRunnerIO(runner_io.RunnerIO):
 class NativeRunner(Runner[MicroPartition]):
     def __init__(self) -> None:
         super().__init__()
+
+    def initialize_partition_set_cache(self) -> PartitionSetCache:
+        return LOCAL_PARTITION_SET_CACHE
 
     def runner_io(self) -> NativeRunnerIO:
         return NativeRunnerIO()

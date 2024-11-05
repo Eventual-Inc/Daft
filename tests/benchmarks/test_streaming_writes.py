@@ -3,9 +3,12 @@ import pytest
 import daft
 from tests.benchmarks.conftest import IS_CI
 
+ENGINES = ["native", "python"]
+
 
 @pytest.mark.skipif(IS_CI, reason="Write benchmarks are not run in CI")
 @pytest.mark.benchmark(group="write")
+@pytest.mark.parametrize("engine", ENGINES)
 @pytest.mark.parametrize(
     "file_type, target_file_size, target_row_group_size",
     [
@@ -24,6 +27,7 @@ def test_streaming_write(
     tmp_path,
     get_df,
     benchmark_with_memray,
+    engine,
     file_type,
     target_file_size,
     target_row_group_size,
@@ -33,12 +37,26 @@ def test_streaming_write(
     daft_df = get_df("lineitem")
 
     def f():
-        if file_type == "parquet":
-            return daft_df.write_parquet(tmp_path, partition_cols=partition_cols)
-        elif file_type == "csv":
-            return daft_df.write_csv(tmp_path, partition_cols=partition_cols)
+        if engine == "native":
+            daft.context.set_runner_native()
+        elif engine == "python":
+            daft.context.set_runner_py()
         else:
-            raise ValueError(f"{file_type} unsupported")
+            raise ValueError(f"{engine} unsupported")
+
+        ctx = daft.context.execution_config_ctx(
+            parquet_target_filesize=target_file_size,
+            parquet_target_row_group_size=target_row_group_size,
+            csv_target_filesize=target_file_size,
+        )
+
+        with ctx:
+            if file_type == "parquet":
+                return daft_df.write_parquet(tmp_path, partition_cols=partition_cols)
+            elif file_type == "csv":
+                return daft_df.write_csv(tmp_path, partition_cols=partition_cols)
+            else:
+                raise ValueError(f"{file_type} unsupported")
 
     benchmark_group = f"parts-{num_parts}-partition-cols-{partition_cols}-file-type-{file_type}-target-file-size-{target_file_size}-target-row-group-size-{target_row_group_size}"
     result_files = benchmark_with_memray(f, benchmark_group).to_pydict()["path"]

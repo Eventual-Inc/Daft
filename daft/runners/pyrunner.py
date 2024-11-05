@@ -16,12 +16,14 @@ from daft.filesystem import glob_path_with_stats
 from daft.internal.gpu import cuda_visible_devices
 from daft.runners import runner_io
 from daft.runners.partitioning import (
+    LOCAL_PARTITION_SET_CACHE,
     LocalMaterializedResult,
     LocalPartitionSet,
     MaterializedResult,
     PartialPartitionMetadata,
     PartitionCacheEntry,
     PartitionMetadata,
+    PartitionSetCache,
 )
 from daft.runners.profiler import profiler
 from daft.runners.progress_bar import ProgressBar
@@ -314,6 +316,9 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
             gpus,
             memory_bytes,
         )
+
+    def initialize_partition_set_cache(self) -> PartitionSetCache:
+        return LOCAL_PARTITION_SET_CACHE
 
     def runner_io(self) -> PyRunnerIO:
         return PyRunnerIO()
