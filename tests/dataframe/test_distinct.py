@@ -3,15 +3,8 @@ from __future__ import annotations
 import pyarrow as pa
 import pytest
 
-import daft
 from daft.datatype import DataType
 from tests.utils import sort_arrow_table
-
-
-@pytest.fixture(scope="function", autouse=True)
-def set_default_morsel_size():
-    with daft.context.execution_config_ctx(default_morsel_size=1):
-        yield
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 5])

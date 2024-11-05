@@ -5,12 +5,6 @@ import pytest
 import daft
 
 
-@pytest.fixture(scope="function", autouse=True)
-def set_default_morsel_size():
-    with daft.context.execution_config_ctx(default_morsel_size=1):
-        yield
-
-
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
 def test_map_groups(make_df, repartition_nparts, with_morsel_size):
     daft_df = make_df(

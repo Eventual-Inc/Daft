@@ -15,12 +15,6 @@ from daft.utils import freeze
 from tests.utils import sort_arrow_table
 
 
-@pytest.fixture(scope="function", autouse=True)
-def set_default_morsel_size():
-    with daft.context.execution_config_ctx(default_morsel_size=1):
-        yield
-
-
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
 def test_agg_global(make_df, repartition_nparts, with_morsel_size):
     daft_df = make_df(

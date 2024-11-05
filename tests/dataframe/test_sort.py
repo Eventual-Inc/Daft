@@ -5,19 +5,12 @@ import math
 import pyarrow as pa
 import pytest
 
-import daft
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 
 ###
 # Validation tests
 ###
-
-
-@pytest.fixture(scope="function", autouse=True)
-def set_default_morsel_size():
-    with daft.context.execution_config_ctx(default_morsel_size=1):
-        yield
 
 
 def test_disallowed_sort_null(make_df):
