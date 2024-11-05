@@ -28,8 +28,8 @@ use crate::{
         actor_pool_project::ActorPoolProjectOperator, aggregate::AggregateOperator,
         anti_semi_hash_join_probe::AntiSemiProbeOperator, explode::ExplodeOperator,
         filter::FilterOperator, inner_hash_join_probe::InnerHashJoinProbeOperator,
-        intermediate_op::IntermediateNode, pivot::PivotOperator, project::ProjectOperator,
-        sample::SampleOperator, unpivot::UnpivotOperator,
+        intermediate_op::IntermediateNode, project::ProjectOperator, sample::SampleOperator,
+        unpivot::UnpivotOperator,
     },
     sinks::{
         aggregate::AggregateSink,
@@ -38,6 +38,7 @@ use crate::{
         hash_join_build::HashJoinBuildSink,
         limit::LimitSink,
         outer_hash_join_probe::OuterHashJoinProbeSink,
+        pivot::PivotSink,
         sort::SortSink,
         streaming_sink::StreamingSinkNode,
         write::{WriteFormat, WriteSink},
@@ -282,17 +283,19 @@ pub fn physical_plan_to_pipeline(
             group_by,
             pivot_column,
             value_column,
+            aggregation,
             names,
             ..
         }) => {
-            let pivot_op = PivotOperator::new(
+            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            let pivot_sink = PivotSink::new(
                 group_by.clone(),
                 pivot_column.clone(),
                 value_column.clone(),
+                aggregation.clone(),
                 names.clone(),
             );
-            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
-            IntermediateNode::new(Arc::new(pivot_op), vec![child_node]).boxed()
+            BlockingSinkNode::new(Arc::new(pivot_sink), child_node).boxed()
         }
         LocalPhysicalPlan::Sort(Sort {
             input,

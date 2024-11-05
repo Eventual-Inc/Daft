@@ -48,7 +48,7 @@ def assert_equal(df: daft.DataFrame, expected):
 # We want to test cases in which the "singular partition" optimization is hit and cases where it's not.
 @pytest.mark.parametrize("data_and_expected", TESTS)
 @pytest.mark.parametrize("partition_size", [None, 2, 3])
-def test_approx_count_distinct(data_and_expected, partition_size):
+def test_approx_count_distinct(data_and_expected, partition_size, with_morsel_size):
     data, expected = data_and_expected
     df = make_df(data)
     if partition_size:
@@ -61,7 +61,7 @@ def test_approx_count_distinct(data_and_expected, partition_size):
 # Test creating data with empty partitions against the HLL algo.
 # We want to test if empty partitions mess with the final global result.
 @pytest.mark.parametrize("data_and_expected", TESTS)
-def test_approx_count_distinct_on_dfs_with_empty_partitions(data_and_expected):
+def test_approx_count_distinct_on_dfs_with_empty_partitions(data_and_expected, with_morsel_size):
     data, expected = data_and_expected
     df = make_asymmetric_df(data)
     df = df.agg(col("a").approx_count_distinct())
@@ -75,7 +75,7 @@ def test_approx_count_distinct_on_dfs_with_empty_partitions(data_and_expected):
 # We should always test `NULL` values as the "absence" of values.
 # Therefore, the existence of a `NULL` should never affect the approx_count_distinct value that is returned (even if it's in a column of type `NULL`).
 @pytest.mark.parametrize("data_and_expected", TESTS)
-def test_approx_count_distinct_on_null_values(data_and_expected):
+def test_approx_count_distinct_on_null_values(data_and_expected, with_morsel_size):
     data, expected = data_and_expected
     data = data + [None] * 10
     df = make_df(data)

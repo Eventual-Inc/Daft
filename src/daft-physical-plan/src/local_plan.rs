@@ -205,6 +205,7 @@ impl LocalPhysicalPlan {
         group_by: Vec<ExprRef>,
         pivot_column: ExprRef,
         value_column: ExprRef,
+        aggregation: AggExpr,
         names: Vec<String>,
         schema: SchemaRef,
     ) -> LocalPhysicalPlanRef {
@@ -213,6 +214,7 @@ impl LocalPhysicalPlan {
             group_by,
             pivot_column,
             value_column,
+            aggregation,
             names,
             schema,
             plan_stats: PlanStats {},
@@ -438,6 +440,7 @@ pub struct Pivot {
     pub group_by: Vec<ExprRef>,
     pub pivot_column: ExprRef,
     pub value_column: ExprRef,
+    pub aggregation: AggExpr,
     pub names: Vec<String>,
     pub schema: SchemaRef,
     pub plan_stats: PlanStats,
