@@ -18,7 +18,7 @@ use futures::{stream::BoxStream, StreamExt, TryStreamExt};
 use snafu::Snafu;
 
 use crate::{
-    hive::{hive_partitions_to_schema, hive_partitions_to_series, parse_hive_partitioning},
+    hive::{hive_partitions_to_fields, hive_partitions_to_series, parse_hive_partitioning},
     storage_config::StorageConfig,
     ChunkSpec, DataSource, PartitionField, Pushdowns, ScanOperator, ScanTask, ScanTaskRef,
 };
@@ -176,30 +176,33 @@ impl GlobScanOperator {
             }
             .into()),
         }?;
-        // If hive partitioning is set, create partition keys from the hive partition keys.
-        let (mut partitioning_keys, mut generated_fields) = if hive_partitioning {
+        // If hive partitioning is set, create partition fields from the hive partitions.
+        let mut partition_fields = if hive_partitioning {
             let hive_partitions = parse_hive_partitioning(&first_filepath)?;
-            let hive_partition_schema = hive_partitions_to_schema(&hive_partitions)?;
-            let hive_partition_schema = match user_provided_schema.clone() {
-                Some(hint) => hive_partition_schema.apply_hints(&hint)?,
-                None => hive_partition_schema,
+            hive_partitions_to_fields(&hive_partitions)
+        } else {
+            vec![]
+        };
+        // If file path column is set, extend the partition fields.
+        if let Some(fp_col) = &file_path_column {
+            let fp_field = Field::new(fp_col, DataType::Utf8);
+            partition_fields.push(fp_field);
+        }
+        let (partitioning_keys, generated_fields) = if partition_fields.is_empty() {
+            (vec![], Schema::empty())
+        } else {
+            let generated_fields = Schema::new(partition_fields)?;
+            let generated_fields = match user_provided_schema.clone() {
+                Some(hint) => generated_fields.apply_hints(&hint)?,
+                None => generated_fields,
             };
-            let hive_partitioning_keys = (&hive_partition_schema.fields)
+            // Extract partitioning keys only after the user's schema hints have been applied.
+            let partitioning_keys = (&generated_fields.fields)
                 .into_iter()
                 .map(|(_, field)| PartitionField::new(field.clone(), None, None))
                 .collect::<Result<Vec<_>, _>>()?;
-            (hive_partitioning_keys, hive_partition_schema)
-        } else {
-            (vec![], Schema::empty())
+            (partitioning_keys, generated_fields)
         };
-        // If file path column is set, extend the partition keys.
-        if let Some(fp_col) = &file_path_column {
-            let partition_field =
-                PartitionField::new(Field::new(fp_col, DataType::Utf8), None, None)?;
-            generated_fields = generated_fields
-                .non_distinct_union(&Schema::new(vec![partition_field.field.clone()])?);
-            partitioning_keys.push(partition_field);
-        }
 
         let schema = match infer_schema {
             true => {

@@ -81,11 +81,10 @@ pub fn hive_partitions_to_series(
         .collect::<DaftResult<Vec<_>>>()
 }
 
-/// Turns hive partition key-value pairs into a schema with the partitions' keys as field names, and
-/// inferring field types from the partitions' values. We don't do schema type inference here as the
-/// user is expected to provide the schema for hive-partitioned fields.
-pub fn hive_partitions_to_schema(partitions: &IndexMap<String, String>) -> DaftResult<Schema> {
-    let partition_fields: Vec<Field> = partitions
+/// Turns hive partition key-value pairs into a vector of fields with the partitions' keys as field names, and
+/// inferring field types from the partitions' values.
+pub fn hive_partitions_to_fields(partitions: &IndexMap<String, String>) -> Vec<Field> {
+    partitions
         .iter()
         .map(|(key, value)| {
             let inferred_type = infer(value.as_bytes());
@@ -98,8 +97,7 @@ pub fn hive_partitions_to_schema(partitions: &IndexMap<String, String>) -> DaftR
             };
             Field::new(key, DaftDataType::from(&inferred_type))
         })
-        .collect();
-    Schema::new(partition_fields)
+        .collect()
 }
 
 #[cfg(test)]
