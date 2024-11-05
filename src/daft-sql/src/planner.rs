@@ -256,8 +256,7 @@ impl SQLPlanner {
             let fields = exprs
                 .iter()
                 .map(|expr| expr.to_field(&schema).map_err(PlannerError::from))
-                .collect::<SQLPlannerResult<Vec<_>>>();
-            let fields = fields?;
+                .collect::<SQLPlannerResult<Vec<_>>>()?;
 
             projections.extend(exprs);
 
