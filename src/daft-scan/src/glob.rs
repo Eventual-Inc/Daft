@@ -198,7 +198,7 @@ impl GlobScanOperator {
                 PartitionField::new(Field::new(fp_col, DataType::Utf8), None, None)?;
             generated_fields = generated_fields
                 .non_distinct_union(&Schema::new(vec![partition_field.field.clone()])?);
-            partitioning_keys.extend(std::iter::once(partition_field));
+            partitioning_keys.push(partition_field);
         }
 
         let schema = match infer_schema {
