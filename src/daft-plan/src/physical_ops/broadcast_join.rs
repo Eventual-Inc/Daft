@@ -13,6 +13,7 @@ pub struct BroadcastJoin {
     pub receiver: PhysicalPlanRef,
     pub left_on: Vec<ExprRef>,
     pub right_on: Vec<ExprRef>,
+    pub null_equals_nulls: Option<Vec<bool>>,
     pub join_type: JoinType,
     pub is_swapped: bool,
 }
@@ -23,6 +24,7 @@ impl BroadcastJoin {
         receiver: PhysicalPlanRef,
         left_on: Vec<ExprRef>,
         right_on: Vec<ExprRef>,
+        null_equals_nulls: Option<Vec<bool>>,
         join_type: JoinType,
         is_swapped: bool,
     ) -> Self {
@@ -31,6 +33,7 @@ impl BroadcastJoin {
             receiver,
             left_on,
             right_on,
+            null_equals_nulls,
             join_type,
             is_swapped,
         }
@@ -57,6 +60,13 @@ impl BroadcastJoin {
                     self.right_on.iter().map(|e| e.to_string()).join(", ")
                 ));
             }
+        }
+
+        if let Some(null_equals_nulls) = &self.null_equals_nulls {
+            res.push(format!(
+                "Null equals Nulls = [{}]",
+                null_equals_nulls.iter().map(|b| b.to_string()).join(", ")
+            ));
         }
         res.push(format!("Is swapped = {}", self.is_swapped));
         res

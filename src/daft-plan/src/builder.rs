@@ -5,7 +5,7 @@ use std::{
 
 use common_daft_config::DaftPlanningConfig;
 use common_display::mermaid::MermaidDisplayOptions;
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormat, FileFormatConfig, ParquetSourceConfig};
 use common_io_config::IOConfig;
 use daft_core::{
@@ -19,7 +19,6 @@ use daft_scan::{
     PhysicalScanInfo, Pushdowns, ScanOperatorRef,
 };
 use daft_schema::{
-    dtype::DataType,
     field::Field,
     schema::{Schema, SchemaRef},
 };
@@ -201,46 +200,41 @@ impl LogicalPlanBuilder {
             partitioning_keys.into(),
             pushdowns.clone().unwrap_or_default(),
         ));
+        // If file path column is specified, check that it doesn't conflict with any column names in the schema.
+        if let Some(file_path_column) = &scan_operator.0.file_path_column() {
+            if schema.names().contains(&(*file_path_column).to_string()) {
+                return Err(DaftError::ValueError(format!(
+                    "Attempting to make a Schema with a file path column name that already exists: {}",
+                    file_path_column
+                )));
+            }
+        }
+        // Add generated fields to the schema.
+        let schema_with_generated_fields = {
+            if let Some(generated_fields) = scan_operator.0.generated_fields() {
+                // We use the non-distinct union here because some scan operators have table schema information that
+                // already contain partitioned fields. For example,the deltalake scan operator takes the table schema.
+                Arc::new(schema.non_distinct_union(&generated_fields))
+            } else {
+                schema
+            }
+        };
         // If column selection (projection) pushdown is specified, prune unselected columns from the schema.
-        // If file path column is specified, add it to the schema.
-        let output_schema = match (&pushdowns, &scan_operator.0.file_path_column()) {
-            (
-                Some(Pushdowns {
-                    columns: Some(columns),
-                    ..
-                }),
-                file_path_column_opt,
-            ) if columns.len() < schema.fields.len() => {
-                let pruned_fields = schema
-                    .fields
-                    .iter()
-                    .filter(|(name, _)| columns.contains(name))
-                    .map(|(_, field)| field.clone());
-
-                let finalized_fields = match file_path_column_opt {
-                    Some(file_path_column) => pruned_fields
-                        .chain(std::iter::once(Field::new(
-                            (*file_path_column).to_string(),
-                            DataType::Utf8,
-                        )))
-                        .collect::<Vec<_>>(),
-                    None => pruned_fields.collect::<Vec<_>>(),
-                };
-                Arc::new(Schema::new(finalized_fields)?)
-            }
-            (None, Some(file_path_column)) => {
-                let schema_with_file_path = schema
-                    .fields
-                    .values()
-                    .cloned()
-                    .chain(std::iter::once(Field::new(
-                        (*file_path_column).to_string(),
-                        DataType::Utf8,
-                    )))
-                    .collect::<Vec<_>>();
-                Arc::new(Schema::new(schema_with_file_path)?)
-            }
-            _ => schema,
+        let output_schema = if let Some(Pushdowns {
+            columns: Some(columns),
+            ..
+        }) = &pushdowns
+            && columns.len() < schema_with_generated_fields.fields.len()
+        {
+            let pruned_upstream_schema = schema_with_generated_fields
+                .fields
+                .iter()
+                .filter(|&(name, _)| columns.contains(name))
+                .map(|(_, field)| field.clone())
+                .collect::<Vec<_>>();
+            Arc::new(Schema::new(pruned_upstream_schema)?)
+        } else {
+            schema_with_generated_fields
         };
         let logical_plan: LogicalPlan =
             logical_ops::Source::new(output_schema, source_info.into()).into();
@@ -461,11 +455,36 @@ impl LogicalPlanBuilder {
         join_suffix: Option<&str>,
         join_prefix: Option<&str>,
     ) -> DaftResult<Self> {
+        self.join_with_null_safe_equal(
+            right,
+            left_on,
+            right_on,
+            None,
+            join_type,
+            join_strategy,
+            join_suffix,
+            join_prefix,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn join_with_null_safe_equal<Right: Into<LogicalPlanRef>>(
+        &self,
+        right: Right,
+        left_on: Vec<ExprRef>,
+        right_on: Vec<ExprRef>,
+        null_equals_nulls: Option<Vec<bool>>,
+        join_type: JoinType,
+        join_strategy: Option<JoinStrategy>,
+        join_suffix: Option<&str>,
+        join_prefix: Option<&str>,
+    ) -> DaftResult<Self> {
         let logical_plan: LogicalPlan = logical_ops::Join::try_new(
             self.plan.clone(),
             right.into(),
             left_on,
             right_on,
+            null_equals_nulls,
             join_type,
             join_strategy,
             join_suffix,
@@ -640,6 +659,7 @@ pub struct ParquetScanBuilder {
     pub multithreaded: bool,
     pub schema: Option<SchemaRef>,
     pub file_path_column: Option<String>,
+    pub hive_partitioning: bool,
 }
 
 impl ParquetScanBuilder {
@@ -661,6 +681,7 @@ impl ParquetScanBuilder {
             schema: None,
             io_config: None,
             file_path_column: None,
+            hive_partitioning: false,
         }
     }
     pub fn infer_schema(mut self, infer_schema: bool) -> Self {
@@ -693,6 +714,7 @@ impl ParquetScanBuilder {
         self.multithreaded = multithreaded;
         self
     }
+
     pub fn schema(mut self, schema: SchemaRef) -> Self {
         self.schema = Some(schema);
         self
@@ -700,6 +722,11 @@ impl ParquetScanBuilder {
 
     pub fn file_path_column(mut self, file_path_column: String) -> Self {
         self.file_path_column = Some(file_path_column);
+        self
+    }
+
+    pub fn hive_partitioning(mut self, hive_partitioning: bool) -> Self {
+        self.hive_partitioning = hive_partitioning;
         self
     }
 
@@ -720,6 +747,7 @@ impl ParquetScanBuilder {
             self.infer_schema,
             self.schema,
             self.file_path_column,
+            self.hive_partitioning,
         )?);
 
         LogicalPlanBuilder::table_scan(ScanOperatorRef(operator), None)

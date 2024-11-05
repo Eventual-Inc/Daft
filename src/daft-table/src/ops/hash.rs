@@ -32,8 +32,8 @@ impl Table {
         let comparator = build_multi_array_is_equal(
             self.columns.as_slice(),
             self.columns.as_slice(),
-            true,
-            true,
+            vec![true; self.columns.len()].as_slice(),
+            vec![true; self.columns.len()].as_slice(),
         )?;
 
         let mut probe_table =
@@ -77,8 +77,8 @@ impl Table {
         let comparator = build_multi_array_is_equal(
             self.columns.as_slice(),
             self.columns.as_slice(),
-            true,
-            true,
+            vec![true; self.columns.len()].as_slice(),
+            vec![true; self.columns.len()].as_slice(),
         )?;
 
         let mut probe_table =

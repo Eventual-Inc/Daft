@@ -780,6 +780,7 @@ class ScanOperatorHandle:
         glob_path: list[str],
         file_format_config: FileFormatConfig,
         storage_config: StorageConfig,
+        hive_partitioning: bool,
         infer_schema: bool,
         schema: PySchema | None = None,
         file_path_column: str | None = None,
@@ -1549,6 +1550,7 @@ class PyMicroPartition:
         right: PyMicroPartition,
         left_on: list[PyExpr],
         right_on: list[PyExpr],
+        null_equals_nulls: list[bool] | None,
         how: JoinType,
     ) -> PyMicroPartition: ...
     def pivot(

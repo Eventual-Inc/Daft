@@ -260,6 +260,7 @@ impl PyMicroPartition {
         left_on: Vec<PyExpr>,
         right_on: Vec<PyExpr>,
         how: JoinType,
+        null_equals_nulls: Option<Vec<bool>>,
     ) -> PyResult<Self> {
         let left_exprs: Vec<daft_dsl::ExprRef> =
             left_on.into_iter().map(std::convert::Into::into).collect();
@@ -272,6 +273,7 @@ impl PyMicroPartition {
                     &right.inner,
                     left_exprs.as_slice(),
                     right_exprs.as_slice(),
+                    null_equals_nulls,
                     how,
                 )?
                 .into())

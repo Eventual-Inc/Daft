@@ -650,6 +650,7 @@ mod tests {
     #[rstest]
     fn filter_commutes_with_join_left_side(
         #[values(false, true)] push_into_left_scan: bool,
+        #[values(false, true)] null_equals_null: bool,
         #[values(JoinType::Inner, JoinType::Left, JoinType::Anti, JoinType::Semi)] how: JoinType,
     ) -> DaftResult<()> {
         let left_scan_op = dummy_scan_operator(vec![
@@ -666,12 +667,18 @@ mod tests {
         );
         let right_scan_plan = dummy_scan_node(right_scan_op.clone());
         let join_on = vec![col("b")];
+        let null_equals_nulls = if null_equals_null {
+            Some(vec![true])
+        } else {
+            None
+        };
         let pred = col("a").lt(lit(2));
         let plan = left_scan_plan
-            .join(
+            .join_with_null_safe_equal(
                 &right_scan_plan,
                 join_on.clone(),
                 join_on.clone(),
+                null_equals_nulls.clone(),
                 how,
                 None,
                 None,
@@ -688,10 +695,11 @@ mod tests {
             left_scan_plan.filter(pred)?
         };
         let expected = expected_left_filter_scan
-            .join(
+            .join_with_null_safe_equal(
                 &right_scan_plan,
                 join_on.clone(),
                 join_on,
+                null_equals_nulls,
                 how,
                 None,
                 None,
@@ -706,6 +714,7 @@ mod tests {
     #[rstest]
     fn filter_commutes_with_join_right_side(
         #[values(false, true)] push_into_right_scan: bool,
+        #[values(false, true)] null_equals_null: bool,
         #[values(JoinType::Inner, JoinType::Right)] how: JoinType,
     ) -> DaftResult<()> {
         let left_scan_op = dummy_scan_operator(vec![
@@ -722,12 +731,18 @@ mod tests {
             Pushdowns::default().with_limit(if push_into_right_scan { None } else { Some(1) }),
         );
         let join_on = vec![col("b")];
+        let null_equals_nulls = if null_equals_null {
+            Some(vec![true])
+        } else {
+            None
+        };
         let pred = col("c").lt(lit(2.0));
         let plan = left_scan_plan
-            .join(
+            .join_with_null_safe_equal(
                 &right_scan_plan,
                 join_on.clone(),
                 join_on.clone(),
+                null_equals_nulls.clone(),
                 how,
                 None,
                 None,
@@ -744,10 +759,11 @@ mod tests {
             right_scan_plan.filter(pred)?
         };
         let expected = left_scan_plan
-            .join(
+            .join_with_null_safe_equal(
                 &expected_right_filter_scan,
                 join_on.clone(),
                 join_on,
+                null_equals_nulls,
                 how,
                 None,
                 None,
@@ -763,6 +779,7 @@ mod tests {
     fn filter_commutes_with_join_on_join_key(
         #[values(false, true)] push_into_left_scan: bool,
         #[values(false, true)] push_into_right_scan: bool,
+        #[values(false, true)] null_equals_null: bool,
         #[values(
             JoinType::Inner,
             JoinType::Left,
@@ -791,12 +808,18 @@ mod tests {
             Pushdowns::default().with_limit(if push_into_right_scan { None } else { Some(1) }),
         );
         let join_on = vec![col("b")];
+        let null_equals_nulls = if null_equals_null {
+            Some(vec![true])
+        } else {
+            None
+        };
         let pred = col("b").lt(lit(2));
         let plan = left_scan_plan
-            .join(
+            .join_with_null_safe_equal(
                 &right_scan_plan,
                 join_on.clone(),
                 join_on.clone(),
+                null_equals_nulls.clone(),
                 how,
                 None,
                 None,
@@ -821,10 +844,11 @@ mod tests {
             right_scan_plan.filter(pred)?
         };
         let expected = expected_left_filter_scan
-            .join(
+            .join_with_null_safe_equal(
                 &expected_right_filter_scan,
                 join_on.clone(),
                 join_on,
+                null_equals_nulls,
                 how,
                 None,
                 None,
@@ -838,6 +862,7 @@ mod tests {
     /// Tests that Filter can be pushed into the left side of a Join.
     #[rstest]
     fn filter_does_not_commute_with_join_left_side(
+        #[values(false, true)] null_equal_null: bool,
         #[values(JoinType::Right, JoinType::Outer)] how: JoinType,
     ) -> DaftResult<()> {
         let left_scan_op = dummy_scan_operator(vec![
@@ -851,12 +876,18 @@ mod tests {
         let left_scan_plan = dummy_scan_node(left_scan_op.clone());
         let right_scan_plan = dummy_scan_node(right_scan_op.clone());
         let join_on = vec![col("b")];
+        let null_equals_nulls = if null_equal_null {
+            Some(vec![true])
+        } else {
+            None
+        };
         let pred = col("a").lt(lit(2));
         let plan = left_scan_plan
-            .join(
+            .join_with_null_safe_equal(
                 &right_scan_plan,
                 join_on.clone(),
                 join_on,
+                null_equals_nulls,
                 how,
                 None,
                 None,
@@ -873,6 +904,7 @@ mod tests {
     /// Tests that Filter can be pushed into the right side of a Join.
     #[rstest]
     fn filter_does_not_commute_with_join_right_side(
+        #[values(false, true)] null_equal_null: bool,
         #[values(JoinType::Left, JoinType::Outer)] how: JoinType,
     ) -> DaftResult<()> {
         let left_scan_op = dummy_scan_operator(vec![
@@ -886,12 +918,18 @@ mod tests {
         let left_scan_plan = dummy_scan_node(left_scan_op.clone());
         let right_scan_plan = dummy_scan_node(right_scan_op.clone());
         let join_on = vec![col("b")];
+        let null_equals_nulls = if null_equal_null {
+            Some(vec![true])
+        } else {
+            None
+        };
         let pred = col("c").lt(lit(2.0));
         let plan = left_scan_plan
-            .join(
+            .join_with_null_safe_equal(
                 &right_scan_plan,
                 join_on.clone(),
                 join_on,
+                null_equals_nulls,
                 how,
                 None,
                 None,

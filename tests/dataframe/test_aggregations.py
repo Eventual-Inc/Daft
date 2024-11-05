@@ -16,7 +16,7 @@ from tests.utils import sort_arrow_table
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
-def test_agg_global(make_df, repartition_nparts):
+def test_agg_global(make_df, repartition_nparts, with_morsel_size):
     daft_df = make_df(
         {
             "id": [1, 2, 3],
@@ -48,7 +48,7 @@ def test_agg_global(make_df, repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
-def test_agg_global_all_null(make_df, repartition_nparts):
+def test_agg_global_all_null(make_df, repartition_nparts, with_morsel_size):
     daft_df = make_df(
         {
             "id": [0, 1, 2, 3],
@@ -115,7 +115,7 @@ def test_agg_global_empty(make_df):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 7])
-def test_agg_groupby(make_df, repartition_nparts):
+def test_agg_groupby(make_df, repartition_nparts, with_morsel_size):
     daft_df = make_df(
         {
             "group": [1, 1, 1, 2, 2, 2],
@@ -157,7 +157,7 @@ def test_agg_groupby(make_df, repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
-def test_agg_groupby_all_null(make_df, repartition_nparts):
+def test_agg_groupby_all_null(make_df, repartition_nparts, with_morsel_size):
     daft_df = make_df(
         {
             "id": [0, 1, 2, 3, 4],
@@ -212,7 +212,7 @@ def test_agg_groupby_null_type_column(make_df):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
-def test_null_groupby_keys(make_df, repartition_nparts):
+def test_null_groupby_keys(make_df, repartition_nparts, with_morsel_size):
     daft_df = make_df(
         {
             "id": [0, 1, 2, 3, 4],
@@ -235,7 +235,7 @@ def test_null_groupby_keys(make_df, repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
-def test_all_null_groupby_keys(make_df, repartition_nparts):
+def test_all_null_groupby_keys(make_df, repartition_nparts, with_morsel_size):
     daft_df = make_df(
         {
             "id": [0, 1, 2],
@@ -315,7 +315,7 @@ def test_agg_groupby_empty(make_df):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 7])
-def test_agg_groupby_with_alias(make_df, repartition_nparts):
+def test_agg_groupby_with_alias(make_df, repartition_nparts, with_morsel_size):
     daft_df = make_df(
         {
             "group": [1, 1, 1, 2, 2, 2],
@@ -360,6 +360,9 @@ def test_agg_groupby_with_alias(make_df, repartition_nparts):
 class CustomObject:
     val: int
 
+    def __hash__(self):
+        return hash(self.val)
+
 
 def test_agg_pyobjects():
     objects = [CustomObject(val=0), None, CustomObject(val=1)]
@@ -375,7 +378,7 @@ def test_agg_pyobjects():
     res = df.to_pydict()
 
     assert res["count"] == [2]
-    assert res["list"] == [objects]
+    assert set(res["list"][0]) == set(objects)
 
 
 def test_groupby_agg_pyobjects():
@@ -397,11 +400,12 @@ def test_groupby_agg_pyobjects():
     res = df.to_pydict()
     assert res["groups"] == [1, 2]
     assert res["count"] == [2, 1]
-    assert res["list"] == [[objects[0], objects[2], objects[4]], [objects[1], objects[3]]]
+    assert set(res["list"][0]) == set([objects[0], objects[2], objects[4]])
+    assert set(res["list"][1]) == set([objects[1], objects[3]])
 
 
 @pytest.mark.parametrize("shuffle_aggregation_default_partitions", [None, 20])
-def test_groupby_result_partitions_smaller_than_input(shuffle_aggregation_default_partitions):
+def test_groupby_result_partitions_smaller_than_input(shuffle_aggregation_default_partitions, with_morsel_size):
     if shuffle_aggregation_default_partitions is None:
         min_partitions = get_context().daft_execution_config.shuffle_aggregation_default_partitions
     else:
@@ -428,7 +432,7 @@ def test_groupby_result_partitions_smaller_than_input(shuffle_aggregation_defaul
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
-def test_agg_any_value(make_df, repartition_nparts):
+def test_agg_any_value(make_df, repartition_nparts, with_morsel_size):
     daft_df = make_df(
         {
             "group": [1, 1, 1, 2, 2, 2],
@@ -446,7 +450,7 @@ def test_agg_any_value(make_df, repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
-def test_agg_any_value_ignore_nulls(make_df, repartition_nparts):
+def test_agg_any_value_ignore_nulls(make_df, repartition_nparts, with_morsel_size):
     daft_df = make_df(
         {
             "group": [1, 1, 1, 2, 2, 2, 3, 3, 3],

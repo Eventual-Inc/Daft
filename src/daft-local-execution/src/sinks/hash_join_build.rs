@@ -25,11 +25,16 @@ impl ProbeTableState {
     fn new(
         key_schema: &SchemaRef,
         projection: Vec<ExprRef>,
+        nulls_equal_aware: Option<&Vec<bool>>,
         join_type: &JoinType,
     ) -> DaftResult<Self> {
         let track_indices = !matches!(join_type, JoinType::Anti | JoinType::Semi);
         Ok(Self::Building {
-            probe_table_builder: Some(make_probeable_builder(key_schema.clone(), track_indices)?),
+            probe_table_builder: Some(make_probeable_builder(
+                key_schema.clone(),
+                nulls_equal_aware,
+                track_indices,
+            )?),
             projection,
             tables: Vec::new(),
         })
@@ -83,6 +88,7 @@ impl BlockingSinkState for ProbeTableState {
 pub struct HashJoinBuildSink {
     key_schema: SchemaRef,
     projection: Vec<ExprRef>,
+    nulls_equal_aware: Option<Vec<bool>>,
     join_type: JoinType,
 }
 
@@ -90,11 +96,13 @@ impl HashJoinBuildSink {
     pub(crate) fn new(
         key_schema: SchemaRef,
         projection: Vec<ExprRef>,
+        nulls_equal_aware: Option<Vec<bool>>,
         join_type: &JoinType,
     ) -> DaftResult<Self> {
         Ok(Self {
             key_schema,
             projection,
+            nulls_equal_aware,
             join_type: *join_type,
         })
     }
@@ -144,6 +152,7 @@ impl BlockingSink for HashJoinBuildSink {
         Ok(Box::new(ProbeTableState::new(
             &self.key_schema,
             self.projection.clone(),
+            self.nulls_equal_aware.as_ref(),
             &self.join_type,
         )?))
     }

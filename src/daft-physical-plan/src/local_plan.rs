@@ -205,6 +205,7 @@ impl LocalPhysicalPlan {
         group_by: Vec<ExprRef>,
         pivot_column: ExprRef,
         value_column: ExprRef,
+        aggregation: AggExpr,
         names: Vec<String>,
         schema: SchemaRef,
     ) -> LocalPhysicalPlanRef {
@@ -213,6 +214,7 @@ impl LocalPhysicalPlan {
             group_by,
             pivot_column,
             value_column,
+            aggregation,
             names,
             schema,
             plan_stats: PlanStats {},
@@ -259,6 +261,7 @@ impl LocalPhysicalPlan {
         right: LocalPhysicalPlanRef,
         left_on: Vec<ExprRef>,
         right_on: Vec<ExprRef>,
+        null_equals_null: Option<Vec<bool>>,
         join_type: JoinType,
         schema: SchemaRef,
     ) -> LocalPhysicalPlanRef {
@@ -267,6 +270,7 @@ impl LocalPhysicalPlan {
             right,
             left_on,
             right_on,
+            null_equals_null,
             join_type,
             schema,
         })
@@ -438,6 +442,7 @@ pub struct Pivot {
     pub group_by: Vec<ExprRef>,
     pub pivot_column: ExprRef,
     pub value_column: ExprRef,
+    pub aggregation: AggExpr,
     pub names: Vec<String>,
     pub schema: SchemaRef,
     pub plan_stats: PlanStats,
@@ -449,6 +454,7 @@ pub struct HashJoin {
     pub right: LocalPhysicalPlanRef,
     pub left_on: Vec<ExprRef>,
     pub right_on: Vec<ExprRef>,
+    pub null_equals_null: Option<Vec<bool>>,
     pub join_type: JoinType,
     pub schema: SchemaRef,
 }

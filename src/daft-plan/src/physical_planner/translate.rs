@@ -400,6 +400,7 @@ pub(super) fn translate_single_logical_node(
             right,
             left_on,
             right_on,
+            null_equals_nulls,
             join_type,
             join_strategy,
             ..
@@ -474,6 +475,9 @@ pub(super) fn translate_single_logical_node(
             } else {
                 is_right_hash_partitioned || is_right_sort_partitioned
             };
+            let has_null_safe_equals = null_equals_nulls
+                .as_ref()
+                .map_or(false, |v| v.iter().any(|b| *b));
             let join_strategy = join_strategy.unwrap_or_else(|| {
                 fn keys_are_primitive(on: &[ExprRef], schema: &SchemaRef) -> bool {
                     on.iter().all(|expr| {
@@ -506,6 +510,7 @@ pub(super) fn translate_single_logical_node(
                 // TODO(Clark): Also do a sort-merge join if a downstream op needs the table to be sorted on the join key.
                 // TODO(Clark): Look into defaulting to sort-merge join over hash join under more input partitioning setups.
                 // TODO(Kevin): Support sort-merge join for other types of joins.
+                // TODO(advancedxy): Rewrite null safe equals to support SMJ
                 } else if *join_type == JoinType::Inner
                     && keys_are_primitive(left_on, &left.schema())
                     && keys_are_primitive(right_on, &right.schema())
@@ -513,6 +518,7 @@ pub(super) fn translate_single_logical_node(
                     && (!is_larger_partitioned
                         || (left_is_larger && is_left_sort_partitioned
                             || !left_is_larger && is_right_sort_partitioned))
+                    && !has_null_safe_equals
                 {
                     JoinStrategy::SortMerge
                 // Otherwise, use a hash join.
@@ -544,6 +550,7 @@ pub(super) fn translate_single_logical_node(
                         right_physical,
                         left_on.clone(),
                         right_on.clone(),
+                        null_equals_nulls.clone(),
                         *join_type,
                         is_swapped,
                     ))
@@ -553,6 +560,11 @@ pub(super) fn translate_single_logical_node(
                     if *join_type != JoinType::Inner {
                         return Err(common_error::DaftError::ValueError(
                             "Sort-merge join currently only supports inner joins".to_string(),
+                        ));
+                    }
+                    if has_null_safe_equals {
+                        return Err(common_error::DaftError::ValueError(
+                            "Sort-merge join does not support null-safe equals yet".to_string(),
                         ));
                     }
 
@@ -645,6 +657,7 @@ pub(super) fn translate_single_logical_node(
                         right_physical,
                         left_on.clone(),
                         right_on.clone(),
+                        null_equals_nulls.clone(),
                         *join_type,
                     ))
                     .arced())

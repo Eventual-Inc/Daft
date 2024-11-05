@@ -626,6 +626,7 @@ fn physical_plan_to_partition_tasks(
             right,
             left_on,
             right_on,
+            null_equals_nulls,
             join_type,
             ..
         }) => {
@@ -649,6 +650,7 @@ fn physical_plan_to_partition_tasks(
                     upstream_right_iter,
                     left_on_pyexprs,
                     right_on_pyexprs,
+                    null_equals_nulls.clone(),
                     *join_type,
                 ))?;
             Ok(py_iter.into())
@@ -706,6 +708,7 @@ fn physical_plan_to_partition_tasks(
             receiver: right,
             left_on,
             right_on,
+            null_equals_nulls,
             join_type,
             is_swapped,
         }) => {
@@ -729,6 +732,7 @@ fn physical_plan_to_partition_tasks(
                     upstream_right_iter,
                     left_on_pyexprs,
                     right_on_pyexprs,
+                    null_equals_nulls.clone(),
                     *join_type,
                     *is_swapped,
                 ))?;

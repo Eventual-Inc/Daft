@@ -227,10 +227,11 @@ Project1 --> Limit0
             .build();
 
         let plan = LogicalPlanBuilder::new(subplan, None)
-            .join(
+            .join_with_null_safe_equal(
                 subplan2,
                 vec![col("id")],
                 vec![col("id")],
+                Some(vec![true]),
                 JoinType::Inner,
                 None,
                 None,
