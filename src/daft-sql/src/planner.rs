@@ -25,7 +25,7 @@ use sqlparser::{
 };
 
 use crate::{
-    catalog::SQLCatalog, column_not_found_err, ensure, error::*, invalid_operation_err,
+    catalog::SQLCatalog, column_not_found_err, error::*, invalid_operation_err,
     table_not_found_err, unsupported_sql_err,
 };
 
@@ -495,9 +495,10 @@ impl SQLPlanner {
         let has_orderby_before_projection = !orderbys_before_projection.is_empty();
         let has_orderby_after_projection = !orderbys_after_projection.is_empty();
 
-        // order bys that are not in the final projection
         // PERF(cory): if there are order bys from both parts, can we combine them into a single sort instead of two?
         // or can we optimize them into a single sort?
+
+        // order bys that are not in the final projection
         if has_orderby_before_projection {
             rel.inner = rel
                 .inner
