@@ -1,0 +1,41 @@
+name: Commit Diff
+
+on:
+  workflow_dispatch:
+    # inputs:
+    #   commit_hash_1:
+    #     description: "First commit hash"
+    #     required: true
+    #   commit_hash_2:
+    #     description: "Second commit hash"
+    #     required: true
+
+jobs:
+  checkout-and-diff:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+      with:
+        fetch-depth: 0
+
+      # - name: Check out first commit
+      #   id: commit_hash_1
+      #   run: |
+      #     git checkout ${{ github.event.inputs.commit_hash_1 }}
+      #     mkdir -p ../commit_hash_1
+      #     mv * ../commit_hash_1
+      #     mv .[!.]* ../commit_hash_1
+
+      # - name: Check out second commit
+      #   id: commit_hash_2
+      #   run: |
+      #     git checkout ${{ github.event.inputs.commit_hash_2 }}
+      #     mkdir -p ../commit_hash_2
+      #     mv * ../commit_hash_2
+      #     mv .[!.]* ../commit_hash_2
+
+      # - name: Run diff between commits
+      #   run: |
+      #     ls -las ../commit_hash_1
+      #     ls -las ../commit_hash_2
