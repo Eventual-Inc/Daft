@@ -496,11 +496,14 @@ impl SQLPlanner {
         let has_orderby_after_projection = !orderbys_after_projection.is_empty();
 
         // order bys that are not in the final projection
+        // PERF(cory): if there are order bys from both parts, can we combine them into a single sort instead of two?
+        // or can we optimize them into a single sort?
         if has_orderby_before_projection {
             rel.inner = rel
                 .inner
                 .sort(orderbys_before_projection, orderbys_before_projection_desc)?;
         }
+
         rel.inner = rel.inner.select(final_projection)?;
 
         // order bys that are in the final projection
