@@ -780,6 +780,7 @@ class ScanOperatorHandle:
         glob_path: list[str],
         file_format_config: FileFormatConfig,
         storage_config: StorageConfig,
+        hive_partitioning: bool,
         infer_schema: bool,
         schema: PySchema | None = None,
         file_path_column: str | None = None,

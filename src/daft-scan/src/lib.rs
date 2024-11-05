@@ -12,7 +12,6 @@ use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormatConfig;
 use daft_dsl::ExprRef;
 use daft_schema::{
-    dtype::DataType,
     field::Field,
     schema::{Schema, SchemaRef},
 };
@@ -24,6 +23,7 @@ use serde::{Deserialize, Serialize};
 mod anonymous;
 pub use anonymous::AnonymousScanOperator;
 pub mod glob;
+mod hive;
 use common_daft_config::DaftExecutionConfig;
 pub mod scan_task_iters;
 
@@ -71,9 +71,9 @@ pub enum Error {
         fpc1,
         fpc2
     ))]
-    DifferingFilePathColumnsInScanTaskMerge {
-        fpc1: Option<String>,
-        fpc2: Option<String>,
+    DifferingGeneratedFieldsInScanTaskMerge {
+        fpc1: Option<SchemaRef>,
+        fpc2: Option<SchemaRef>,
     },
 
     #[snafu(display(
@@ -377,7 +377,7 @@ pub struct ScanTask {
     pub size_bytes_on_disk: Option<u64>,
     pub metadata: Option<TableMetadata>,
     pub statistics: Option<TableStatistics>,
-    pub file_path_column: Option<String>,
+    pub generated_fields: Option<SchemaRef>,
 }
 pub type ScanTaskRef = Arc<ScanTask>;
 
@@ -389,7 +389,7 @@ impl ScanTask {
         schema: SchemaRef,
         storage_config: Arc<StorageConfig>,
         pushdowns: Pushdowns,
-        file_path_column: Option<String>,
+        generated_fields: Option<SchemaRef>,
     ) -> Self {
         assert!(!sources.is_empty());
         debug_assert!(
@@ -430,7 +430,7 @@ impl ScanTask {
             size_bytes_on_disk,
             metadata,
             statistics,
-            file_path_column,
+            generated_fields,
         }
     }
 
@@ -465,10 +465,10 @@ impl ScanTask {
                 p2: sc2.pushdowns.clone(),
             });
         }
-        if sc1.file_path_column != sc2.file_path_column {
-            return Err(Error::DifferingFilePathColumnsInScanTaskMerge {
-                fpc1: sc1.file_path_column.clone(),
-                fpc2: sc2.file_path_column.clone(),
+        if sc1.generated_fields != sc2.generated_fields {
+            return Err(Error::DifferingGeneratedFieldsInScanTaskMerge {
+                fpc1: sc1.generated_fields.clone(),
+                fpc2: sc2.generated_fields.clone(),
             });
         }
         Ok(Self::new(
@@ -481,46 +481,34 @@ impl ScanTask {
             sc1.schema.clone(),
             sc1.storage_config.clone(),
             sc1.pushdowns.clone(),
-            sc1.file_path_column.clone(),
+            sc1.generated_fields.clone(),
         ))
     }
 
     #[must_use]
     pub fn materialized_schema(&self) -> SchemaRef {
-        match (&self.pushdowns.columns, &self.file_path_column) {
+        match (&self.generated_fields, &self.pushdowns.columns) {
             (None, None) => self.schema.clone(),
-            (Some(columns), file_path_column_opt) => {
-                let filtered_fields = self
-                    .schema
-                    .fields
-                    .clone()
-                    .into_iter()
-                    .filter(|(name, _)| columns.contains(name));
-
-                let fields = match file_path_column_opt {
-                    Some(file_path_column) => filtered_fields
-                        .chain(std::iter::once((
-                            file_path_column.to_string(),
-                            Field::new(file_path_column.to_string(), DataType::Utf8),
-                        )))
-                        .collect(),
-                    None => filtered_fields.collect(),
-                };
-
+            _ => {
+                let mut fields = self.schema.fields.clone();
+                // Extend the schema with generated fields.
+                if let Some(generated_fields) = &self.generated_fields {
+                    fields.extend(
+                        generated_fields
+                            .fields
+                            .iter()
+                            .map(|(name, field)| (name.clone(), field.clone())),
+                    );
+                }
+                // Filter the schema based on the pushdown column filters.
+                if let Some(columns) = &self.pushdowns.columns {
+                    fields = fields
+                        .into_iter()
+                        .filter(|(name, _)| columns.contains(name))
+                        .collect();
+                }
                 Arc::new(Schema { fields })
             }
-            (None, Some(file_path_column)) => Arc::new(Schema {
-                fields: self
-                    .schema
-                    .fields
-                    .clone()
-                    .into_iter()
-                    .chain(std::iter::once((
-                        file_path_column.to_string(),
-                        Field::new(file_path_column.to_string(), DataType::Utf8),
-                    )))
-                    .collect(),
-            }),
         }
     }
 
@@ -755,6 +743,10 @@ impl PartitionField {
             }),
         }
     }
+
+    pub fn clone_field(&self) -> Field {
+        self.field.clone()
+    }
 }
 
 impl Display for PartitionField {
@@ -818,6 +810,17 @@ pub trait ScanOperator: Send + Sync + Debug {
     fn schema(&self) -> SchemaRef;
     fn partitioning_keys(&self) -> &[PartitionField];
     fn file_path_column(&self) -> Option<&str>;
+    // Although generated fields are often added to the partition spec, generated fields and
+    // partition fields are handled differently:
+    // 1. Generated fields: Currently from file paths or Hive partitions,
+    //    although in the future these may be extended to generated and virtual columns.
+    // 2. Partition fields: Originally from Iceberg, specifying both source and (possibly
+    //    transformed) partition fields.
+    //
+    // Partition fields are automatically included in scan output schemas (e.g.,
+    // in ScanTask::materialized_schema), while generated fields require special handling.
+    // Thus, we maintain separate representations for partitioning keys and generated fields.
+    fn generated_fields(&self) -> Option<SchemaRef>;
 
     fn can_absorb_filter(&self) -> bool;
     fn can_absorb_select(&self) -> bool;
@@ -1102,6 +1105,7 @@ mod test {
             false,
             Some(Arc::new(Schema::empty())),
             None,
+            false,
         )
         .unwrap();
 

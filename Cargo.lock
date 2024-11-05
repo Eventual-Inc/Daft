@@ -2238,6 +2238,7 @@ dependencies = [
 name = "daft-scan"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow2",
  "common-daft-config",
  "common-display",
  "common-error",
@@ -2247,6 +2248,7 @@ dependencies = [
  "common-runtime",
  "daft-core",
  "daft-csv",
+ "daft-decoding",
  "daft-dsl",
  "daft-io",
  "daft-json",
@@ -2255,11 +2257,13 @@ dependencies = [
  "daft-stats",
  "daft-table",
  "futures",
+ "indexmap 2.5.0",
  "itertools 0.11.0",
  "parquet2",
  "pyo3",
  "serde",
  "snafu",
+ "urlencoding",
 ]
 
 [[package]]
