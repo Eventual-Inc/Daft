@@ -74,7 +74,7 @@ fn run_udf(
     let pyseries = pyseries?;
 
     // Run the function on the converted Vec<Bound<PyAny>>
-    let py_udf_module = PyModule::import_bound(py, pyo3::intern!(py, "daft.udfs"))?;
+    let py_udf_module = PyModule::import_bound(py, pyo3::intern!(py, "daft.udf"))?;
     let run_udf_func = py_udf_module.getattr(pyo3::intern!(py, "run_udf"))?;
     let result = run_udf_func.call1((
         func,                                   // Function to run
