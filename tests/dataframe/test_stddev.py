@@ -55,7 +55,7 @@ TESTS = [
 
 
 @pytest.mark.parametrize("data_and_expected", TESTS)
-def test_stddev_with_single_partition(data_and_expected):
+def test_stddev_with_single_partition(data_and_expected, with_morsel_size):
     data, expected = data_and_expected
     df = daft.from_pydict({"a": data})
     result = df.agg(daft.col("a").stddev()).collect()
@@ -71,7 +71,7 @@ def test_stddev_with_single_partition(data_and_expected):
 
 
 @pytest.mark.parametrize("data_and_expected", TESTS)
-def test_stddev_with_multiple_partitions(data_and_expected):
+def test_stddev_with_multiple_partitions(data_and_expected, with_morsel_size):
     data, expected = data_and_expected
     df = daft.from_pydict({"a": data}).into_partitions(2)
     result = df.agg(daft.col("a").stddev()).collect()
@@ -105,7 +105,7 @@ def unzip_rows(rows: list) -> Tuple[List, List]:
 
 
 @pytest.mark.parametrize("data_and_expected", GROUPED_TESTS)
-def test_grouped_stddev_with_single_partition(data_and_expected):
+def test_grouped_stddev_with_single_partition(data_and_expected, with_morsel_size):
     nums, expected_keys, expected_stddevs = data_and_expected
     expected_df = daft.from_pydict({"keys": expected_keys, "data": expected_stddevs})
     keys, data = unzip_rows(nums)
@@ -128,7 +128,7 @@ def test_grouped_stddev_with_single_partition(data_and_expected):
 
 
 @pytest.mark.parametrize("data_and_expected", GROUPED_TESTS)
-def test_grouped_stddev_with_multiple_partitions(data_and_expected):
+def test_grouped_stddev_with_multiple_partitions(data_and_expected, with_morsel_size):
     nums, expected_keys, expected_stddevs = data_and_expected
     expected_df = daft.from_pydict({"keys": expected_keys, "data": expected_stddevs})
     keys, data = unzip_rows(nums)

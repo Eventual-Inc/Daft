@@ -192,18 +192,14 @@ pub(crate) fn physical_plan_to_pipeline(
             names,
             ..
         }) => {
+            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
             let pivot_sink = PivotSink::new(
-                group_by,
+                group_by.clone(),
                 pivot_column.clone(),
                 value_column.clone(),
                 aggregation.clone(),
                 names.clone(),
-                input.schema(),
-            )
-            .with_context(|_| PipelineCreationSnafu {
-                plan_name: physical_plan.name(),
-            })?;
-            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            );
             BlockingSinkNode::new(Arc::new(pivot_sink), child_node).boxed()
         }
         LocalPhysicalPlan::Sort(Sort {

@@ -7,6 +7,7 @@ import pyarrow as pa
 import pytest
 
 import daft
+import daft.context
 from daft.table import MicroPartition
 
 # import all conftest
@@ -170,3 +171,13 @@ def assert_df_equals(
         except AssertionError:
             print(f"Failed assertion for col: {col}")
             raise
+
+
+@pytest.fixture(
+    scope="function",
+    params=[1, None] if daft.context.get_context().daft_execution_config.enable_native_executor else [None],
+)
+def with_morsel_size(request):
+    morsel_size = request.param
+    with daft.context.execution_config_ctx(default_morsel_size=morsel_size):
+        yield morsel_size

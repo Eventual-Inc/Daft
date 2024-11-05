@@ -15,7 +15,7 @@ def set_default_morsel_size():
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
-def test_distinct_with_nulls(make_df, repartition_nparts):
+def test_distinct_with_nulls(make_df, repartition_nparts, with_morsel_size):
     daft_df = make_df(
         {
             "id": [1, None, None, None],
@@ -35,7 +35,7 @@ def test_distinct_with_nulls(make_df, repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
-def test_distinct_with_all_nulls(make_df, repartition_nparts):
+def test_distinct_with_all_nulls(make_df, repartition_nparts, with_morsel_size):
     daft_df = make_df(
         {
             "id": [None, None, None, None],
@@ -55,7 +55,7 @@ def test_distinct_with_all_nulls(make_df, repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2])
-def test_distinct_with_empty(make_df, repartition_nparts):
+def test_distinct_with_empty(make_df, repartition_nparts, with_morsel_size):
     daft_df = make_df(
         {
             "id": [1],
