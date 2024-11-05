@@ -244,7 +244,7 @@ class DataFrame:
         Example:
 
         >>> import daft
-        >>>
+        >>> daft.context.set_runner_ray()
         >>> df = daft.from_pydict({"foo": [1, 2, 3], "bar": ["a", "b", "c"]})
         >>> for row in df.iter_rows():
         ...     print(row)
@@ -1169,7 +1169,8 @@ class DataFrame:
         in the lower 36 bits. This allows for 2^28 ≈ 268 million partitions and 2^40 ≈ 68 billion rows per partition.
 
         Example:
-            >>> import daft # doctest: +SKIP
+            >>> import daft
+            >>> daft.context.set_runner_ray()
             >>> df = daft.from_pydict({"a": [1, 2, 3, 4]}).into_partitions(2)
             >>> df = df._add_monotonically_increasing_id()
             >>> df.show()
