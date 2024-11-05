@@ -13,6 +13,7 @@ pub struct HashJoin {
     pub right: PhysicalPlanRef,
     pub left_on: Vec<ExprRef>,
     pub right_on: Vec<ExprRef>,
+    pub null_equals_nulls: Option<Vec<bool>>,
     pub join_type: JoinType,
 }
 
@@ -22,6 +23,7 @@ impl HashJoin {
         right: PhysicalPlanRef,
         left_on: Vec<ExprRef>,
         right_on: Vec<ExprRef>,
+        null_equals_nulls: Option<Vec<bool>>,
         join_type: JoinType,
     ) -> Self {
         Self {
@@ -29,6 +31,7 @@ impl HashJoin {
             right,
             left_on,
             right_on,
+            null_equals_nulls,
             join_type,
         }
     }
@@ -54,6 +57,12 @@ impl HashJoin {
                     self.right_on.iter().map(|e| e.to_string()).join(", ")
                 ));
             }
+        }
+        if let Some(null_equals_nulls) = &self.null_equals_nulls {
+            res.push(format!(
+                "Null equals Nulls = [{}]",
+                null_equals_nulls.iter().map(|b| b.to_string()).join(", ")
+            ));
         }
         res
     }

@@ -272,6 +272,7 @@ mod tests {
             plan2,
             vec![col("b"), col("a")],
             vec![col("x"), col("y")],
+            None,
             JoinType::Inner,
         ))
         .arced();
@@ -285,6 +286,7 @@ mod tests {
             add_repartition(base2, 1, vec![col("x"), col("y")]),
             vec![col("b"), col("a")],
             vec![col("x"), col("y")],
+            None,
             JoinType::Inner,
         ))
         .arced();

@@ -29,6 +29,7 @@ pub struct Join {
 
     pub left_on: Vec<ExprRef>,
     pub right_on: Vec<ExprRef>,
+    pub null_equals_nulls: Option<Vec<bool>>,
     pub join_type: JoinType,
     pub join_strategy: Option<JoinStrategy>,
     pub output_schema: SchemaRef,
@@ -40,6 +41,7 @@ impl std::hash::Hash for Join {
         std::hash::Hash::hash(&self.right, state);
         std::hash::Hash::hash(&self.left_on, state);
         std::hash::Hash::hash(&self.right_on, state);
+        std::hash::Hash::hash(&self.null_equals_nulls, state);
         std::hash::Hash::hash(&self.join_type, state);
         std::hash::Hash::hash(&self.join_strategy, state);
         std::hash::Hash::hash(&self.output_schema, state);
@@ -53,6 +55,7 @@ impl Join {
         right: Arc<LogicalPlan>,
         left_on: Vec<ExprRef>,
         right_on: Vec<ExprRef>,
+        null_equals_nulls: Option<Vec<bool>>,
         join_type: JoinType,
         join_strategy: Option<JoinStrategy>,
         join_suffix: Option<&str>,
@@ -92,6 +95,16 @@ impl Join {
             }
         }
 
+        if let Some(null_equals_null) = &null_equals_nulls {
+            if null_equals_null.len() != left_on.len() {
+                return Err(DaftError::ValueError(
+                    "null_equals_nulls must have the same length as left_on or right_on"
+                        .to_string(),
+                ))
+                .context(CreationSnafu);
+            }
+        }
+
         if matches!(join_type, JoinType::Anti | JoinType::Semi) {
             // The output schema is the same as the left input schema for anti and semi joins.
 
@@ -102,6 +115,7 @@ impl Join {
                 right,
                 left_on,
                 right_on,
+                null_equals_nulls,
                 join_type,
                 join_strategy,
                 output_schema,
@@ -188,6 +202,7 @@ impl Join {
                 right,
                 left_on,
                 right_on,
+                null_equals_nulls,
                 join_type,
                 join_strategy,
                 output_schema,
@@ -275,6 +290,12 @@ impl Join {
                     self.right_on.iter().map(|e| e.to_string()).join(", ")
                 ));
             }
+        }
+        if let Some(null_equals_nulls) = &self.null_equals_nulls {
+            res.push(format!(
+                "Null equals Nulls = [{}]",
+                null_equals_nulls.iter().map(|b| b.to_string()).join(", ")
+            ));
         }
         res.push(format!(
             "Output schema = {}",

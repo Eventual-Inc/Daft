@@ -346,6 +346,7 @@ def hash_join(
     right_plan: InProgressPhysicalPlan[PartitionT],
     left_on: ExpressionsProjection,
     right_on: ExpressionsProjection,
+    null_equals_nulls: None | list[bool],
     how: JoinType,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Hash-based pairwise join the partitions from `left_child_plan` and `right_child_plan` together."""
@@ -387,6 +388,7 @@ def hash_join(
                 instruction=execution_step.HashJoin(
                     left_on=left_on,
                     right_on=right_on,
+                    null_equals_nulls=null_equals_nulls,
                     how=how,
                     is_swapped=False,
                 )
@@ -432,6 +434,7 @@ def _create_broadcast_join_step(
     receiver_part: SingleOutputPartitionTask[PartitionT],
     left_on: ExpressionsProjection,
     right_on: ExpressionsProjection,
+    null_equals_nulls: None | list[bool],
     how: JoinType,
     is_swapped: bool,
 ) -> PartitionTaskBuilder[PartitionT]:
@@ -477,6 +480,7 @@ def _create_broadcast_join_step(
         instruction=execution_step.BroadcastJoin(
             left_on=left_on,
             right_on=right_on,
+            null_equals_nulls=null_equals_nulls,
             how=how,
             is_swapped=is_swapped,
         )
@@ -488,6 +492,7 @@ def broadcast_join(
     receiver_plan: InProgressPhysicalPlan[PartitionT],
     left_on: ExpressionsProjection,
     right_on: ExpressionsProjection,
+    null_equals_nulls: None | list[bool],
     how: JoinType,
     is_swapped: bool,
 ) -> InProgressPhysicalPlan[PartitionT]:
@@ -530,7 +535,15 @@ def broadcast_join(
         # Broadcast all broadcaster partitions to each new receiver partition that was materialized on this dispatch loop.
         while receiver_requests and receiver_requests[0].done():
             receiver_part = receiver_requests.popleft()
-            yield _create_broadcast_join_step(broadcaster_parts, receiver_part, left_on, right_on, how, is_swapped)
+            yield _create_broadcast_join_step(
+                broadcaster_parts,
+                receiver_part,
+                left_on,
+                right_on,
+                null_equals_nulls,
+                how,
+                is_swapped,
+            )
 
         # Execute single child step to pull in more input partitions.
         try:

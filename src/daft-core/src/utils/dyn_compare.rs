@@ -34,16 +34,16 @@ pub fn build_dyn_compare(
 
 pub fn build_dyn_multi_array_compare(
     schema: &Schema,
-    nulls_equal: bool,
-    nans_equal: bool,
+    nulls_equal: &[bool],
+    nans_equal: &[bool],
 ) -> DaftResult<MultiDynArrayComparator> {
     let mut fn_list = Vec::with_capacity(schema.len());
-    for field in schema.fields.values() {
+    for (idx, field) in schema.fields.values().enumerate() {
         fn_list.push(build_dyn_compare(
             &field.dtype,
             &field.dtype,
-            nulls_equal,
-            nans_equal,
+            nulls_equal[idx],
+            nans_equal[idx],
         )?);
     }
     let combined_fn = Box::new(

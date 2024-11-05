@@ -248,6 +248,7 @@ class MicroPartition:
         right: MicroPartition,
         left_on: ExpressionsProjection,
         right_on: ExpressionsProjection,
+        null_equals_nulls: list[bool] | None = None,
         how: JoinType = JoinType.Inner,
     ) -> MicroPartition:
         if len(left_on) != len(right_on):
@@ -262,7 +263,13 @@ class MicroPartition:
         right_exprs = [e._expr for e in right_on]
 
         return MicroPartition._from_pymicropartition(
-            self._micropartition.hash_join(right._micropartition, left_on=left_exprs, right_on=right_exprs, how=how)
+            self._micropartition.hash_join(
+                right._micropartition,
+                left_on=left_exprs,
+                right_on=right_exprs,
+                null_equals_nulls=null_equals_nulls,
+                how=how,
+            )
         )
 
     def sort_merge_join(

@@ -419,6 +419,7 @@ impl SQLPlanner {
             left_rel: &Relation,
             right_rel: &Relation,
         ) -> SQLPlannerResult<(Vec<ExprRef>, Vec<ExprRef>)> {
+            // TODO: support null safe equal, a.k.a. <=>.
             if let sqlparser::ast::Expr::BinaryOp { left, op, right } = expression {
                 match *op {
                     BinaryOperator::Eq => {
