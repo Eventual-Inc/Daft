@@ -130,7 +130,9 @@ pub fn run_local(
             let mut receiver = pipeline.start(true, &mut runtime_handle)?.get_receiver();
 
             while let Some(val) = receiver.recv().await {
-                let _ = tx.send(val.as_data().clone()).await;
+                if tx.send(val.as_data().clone()).await.is_err() {
+                    break;
+                }
             }
 
             while let Some(result) = runtime_handle.join_next().await {

@@ -1,25 +1,28 @@
 use std::sync::Arc;
 
 use common_display::{tree::TreeDisplay, utils::bytes_to_human_readable};
+use common_error::DaftResult;
+use daft_core::prelude::SchemaRef;
 use daft_io::{IOStatsContext, IOStatsRef};
 use daft_micropartition::MicroPartition;
 use futures::{stream::BoxStream, StreamExt};
+use snafu::ResultExt;
 
 use crate::{
     channel::PipelineChannel, pipeline::PipelineNode, runtime_stats::RuntimeStatsContext,
-    ExecutionRuntimeHandle,
+    ExecutionRuntimeHandle, PipelineExecutionSnafu,
 };
 
-pub type SourceStream<'a> = BoxStream<'a, Arc<MicroPartition>>;
+pub type SourceStream<'a> = BoxStream<'a, DaftResult<Arc<MicroPartition>>>;
 
 pub trait Source: Send + Sync {
     fn name(&self) -> &'static str;
     fn get_data(
         &self,
         maintain_order: bool,
-        runtime_handle: &mut ExecutionRuntimeHandle,
         io_stats: IOStatsRef,
-    ) -> crate::Result<SourceStream<'static>>;
+    ) -> DaftResult<SourceStream<'static>>;
+    fn schema(&self) -> &SchemaRef;
 }
 
 struct SourceNode {
@@ -70,16 +73,28 @@ impl PipelineNode for SourceNode {
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
     ) -> crate::Result<PipelineChannel> {
-        let mut source_stream =
-            self.source
-                .get_data(maintain_order, runtime_handle, self.io_stats.clone())?;
+        let mut source_stream = self
+            .source
+            .get_data(maintain_order, self.io_stats.clone())
+            .with_context(|_| PipelineExecutionSnafu {
+                node_name: self.name(),
+            })?;
 
+        let schema = self.source.schema().clone();
         let mut channel = PipelineChannel::new(1, maintain_order);
         let counting_sender = channel.get_next_sender_with_stats(&self.runtime_stats);
         runtime_handle.spawn(
             async move {
+                let mut has_data = false;
                 while let Some(part) = source_stream.next().await {
-                    let _ = counting_sender.send(part.into()).await;
+                    has_data = true;
+                    if counting_sender.send(part?.into()).await.is_err() {
+                        return Ok(());
+                    }
+                }
+                if !has_data {
+                    let empty = Arc::new(MicroPartition::empty(Some(schema)));
+                    let _ = counting_sender.send(empty.into()).await;
                 }
                 Ok(())
             },

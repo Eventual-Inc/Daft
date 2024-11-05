@@ -46,13 +46,17 @@ impl Dispatcher for RoundRobinBufferedDispatcher {
         while let Some(morsel) = receiver.recv().await {
             if morsel.should_broadcast() {
                 for worker_sender in &worker_senders {
-                    let _ = worker_sender.send(morsel.clone()).await;
+                    if worker_sender.send(morsel.clone()).await.is_err() {
+                        return Ok(());
+                    }
                 }
             } else {
                 buffer.push(morsel.as_data());
                 if let Some(ready) = buffer.pop_enough()? {
                     for r in ready {
-                        let _ = send_to_next_worker(r.into()).await;
+                        if send_to_next_worker(r.into()).await.is_err() {
+                            return Ok(());
+                        }
                     }
                 }
             }
@@ -85,7 +89,9 @@ impl Dispatcher for PartitionedDispatcher {
         while let Some(morsel) = receiver.recv().await {
             if morsel.should_broadcast() {
                 for worker_sender in &worker_senders {
-                    let _ = worker_sender.send(morsel.clone()).await;
+                    if worker_sender.send(morsel.clone()).await.is_err() {
+                        return Ok(());
+                    }
                 }
             } else {
                 let partitions = morsel
@@ -93,7 +99,13 @@ impl Dispatcher for PartitionedDispatcher {
                     .partition_by_hash(&self.partition_by, worker_senders.len())?;
                 for (partition, worker_sender) in partitions.into_iter().zip(worker_senders.iter())
                 {
-                    let _ = worker_sender.send(Arc::new(partition).into()).await;
+                    if worker_sender
+                        .send(Arc::new(partition).into())
+                        .await
+                        .is_err()
+                    {
+                        return Ok(());
+                    }
                 }
             }
         }

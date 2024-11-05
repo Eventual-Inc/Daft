@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
+use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
 use daft_io::IOStatsRef;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
 use super::source::Source;
-use crate::{sources::source::SourceStream, ExecutionRuntimeHandle};
+use crate::sources::source::SourceStream;
 
 pub struct EmptyScanSource {
     schema: SchemaRef,
@@ -26,13 +27,15 @@ impl Source for EmptyScanSource {
     fn get_data(
         &self,
         _maintain_order: bool,
-        _runtime_handle: &mut ExecutionRuntimeHandle,
         _io_stats: IOStatsRef,
-    ) -> crate::Result<SourceStream<'static>> {
+    ) -> DaftResult<SourceStream<'static>> {
         let empty = Arc::new(MicroPartition::empty(Some(self.schema.clone())));
-        Ok(Box::pin(futures::stream::once(async { empty })))
+        Ok(Box::pin(futures::stream::once(async { Ok(empty) })))
     }
     fn name(&self) -> &'static str {
         "EmptyScanSource"
+    }
+    fn schema(&self) -> &SchemaRef {
+        &self.schema
     }
 }
