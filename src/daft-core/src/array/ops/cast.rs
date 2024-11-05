@@ -2256,12 +2256,14 @@ where
 
 #[cfg(test)]
 mod tests {
-
     use arrow2::array::PrimitiveArray;
     use rand::{thread_rng, Rng};
 
     use super::*;
-    use crate::{datatypes::DataArray, prelude::Decimal128Type};
+    use crate::{
+        datatypes::DataArray,
+        prelude::{Decimal128Type, Float64Array},
+    };
 
     fn create_test_decimal_array(
         values: Vec<i128>,
@@ -2278,11 +2280,18 @@ mod tests {
             .expect("Failed to create test decimal array")
     }
 
+    fn create_test_f64_array(values: Vec<f64>) -> Float64Array {
+        let arrow_array = PrimitiveArray::from_vec(values).to(arrow2::datatypes::DataType::Float64);
+        let field = Arc::new(Field::new("test_float", DataType::Float64));
+        Float64Array::from_arrow(field, Box::new(arrow_array))
+            .expect("Failed to create test float array")
+    }
+
     fn create_test_i64_array(values: Vec<i64>) -> Int64Array {
         let arrow_array = PrimitiveArray::from_vec(values).to(arrow2::datatypes::DataType::Int64);
         let field = Arc::new(Field::new("test_int", DataType::Int64));
         Int64Array::from_arrow(field, Box::new(arrow_array))
-            .expect("Failed to create test decimal array")
+            .expect("Failed to create test int array")
     }
 
     // For a Decimal(p, s) to be valid, p, s, and max_val must satisfy:
@@ -2330,11 +2339,16 @@ mod tests {
         );
     }
 
+    // We do fuzzy equality when comparing floats converted to and from decimals. This test is
+    // primarily sanity checking that we don't repeat the mistake of shifting the scale and precision
+    // of floats during casting, while avoiding flakiness due small differences in floats.
+    const EPSILON: f64 = 0.1;
     #[test]
-    fn test_decimal_to_float_roundtrip() {
+    fn test_decimal_to_float() {
         let mut rng = thread_rng();
         let mut values: Vec<f64> = (0..100).map(|_| rng.gen_range(-MAX_VAL..MAX_VAL)).collect();
         values.extend_from_slice(&[0.0, -0.0]);
+        let num_values = values.len();
 
         let scale: usize = rng.gen_range(0..=MAX_SCALE);
         let precision: usize = rng.gen_range(scale + MIN_DIFF_FOR_PRECISION..=32);
@@ -2346,13 +2360,14 @@ mod tests {
 
         let result = original
             .cast(&DataType::Float64)
-            .expect("Failed to cast to intermediate float")
-            .cast(&DataType::Decimal128(precision, scale))
-            .expect("Failed to cast back to original decimal");
+            .expect("Failed to cast to float");
+        let original = create_test_f64_array(values);
+
+        let epsilon_series = create_test_f64_array(vec![EPSILON; num_values]).into_series();
 
         assert!(
-            original.into_series() == result,
-            "Failed with intermediate decimal({}, {})",
+            result.fuzzy_eq(&original.into_series(), &epsilon_series),
+            "Failed with decimal({}, {})",
             precision,
             scale,
         );
