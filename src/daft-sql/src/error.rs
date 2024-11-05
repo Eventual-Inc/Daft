@@ -1,5 +1,5 @@
 use common_error::DaftError;
-pub use snafu::Snafu;
+use snafu::Snafu;
 use sqlparser::{parser::ParserError, tokenizer::TokenizerError};
 #[derive(Debug, Snafu)]
 pub enum PlannerError {
