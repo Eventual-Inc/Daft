@@ -310,6 +310,7 @@ pub fn physical_plan_to_pipeline(
             right,
             left_on,
             right_on,
+            null_equals_null,
             join_type,
             schema,
         }) => {
@@ -368,9 +369,13 @@ pub fn physical_plan_to_pipeline(
                     .zip(key_schema.fields.values())
                     .map(|(e, f)| e.clone().cast(&f.dtype))
                     .collect::<Vec<_>>();
-
                 // we should move to a builder pattern
-                let build_sink = HashJoinBuildSink::new(key_schema, casted_build_on, join_type)?;
+                let build_sink = HashJoinBuildSink::new(
+                    key_schema,
+                    casted_build_on,
+                    null_equals_null.clone(),
+                    join_type,
+                )?;
                 let build_child_node = physical_plan_to_pipeline(build_child, psets, cfg)?;
                 let build_node =
                     BlockingSinkNode::new(Arc::new(build_sink), build_child_node).boxed();

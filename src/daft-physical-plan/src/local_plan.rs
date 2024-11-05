@@ -259,6 +259,7 @@ impl LocalPhysicalPlan {
         right: LocalPhysicalPlanRef,
         left_on: Vec<ExprRef>,
         right_on: Vec<ExprRef>,
+        null_equals_null: Option<Vec<bool>>,
         join_type: JoinType,
         schema: SchemaRef,
     ) -> LocalPhysicalPlanRef {
@@ -267,6 +268,7 @@ impl LocalPhysicalPlan {
             right,
             left_on,
             right_on,
+            null_equals_null,
             join_type,
             schema,
         })
@@ -449,6 +451,7 @@ pub struct HashJoin {
     pub right: LocalPhysicalPlanRef,
     pub left_on: Vec<ExprRef>,
     pub right_on: Vec<ExprRef>,
+    pub null_equals_null: Option<Vec<bool>>,
     pub join_type: JoinType,
     pub schema: SchemaRef,
 }

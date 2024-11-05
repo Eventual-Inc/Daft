@@ -147,6 +147,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 right,
                 join.left_on.clone(),
                 join.right_on.clone(),
+                join.null_equals_nulls.clone(),
                 join.join_type,
                 join.output_schema.clone(),
             ))
