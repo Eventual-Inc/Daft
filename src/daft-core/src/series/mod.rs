@@ -4,7 +4,7 @@ mod ops;
 mod serdes;
 mod series_like;
 mod utils;
-use std::sync::Arc;
+use std::{ops::Sub, sync::Arc};
 
 pub use array_impl::IntoSeries;
 use common_display::table_display::{make_comfy_table, StrValue};
@@ -147,5 +147,26 @@ impl Series {
     {
         let data: &DataArray<N::DAFTTYPE> = self.downcast()?;
         Ok(data.as_slice())
+    }
+
+    /// Helper function to check that two series of floats are within some `epsilon` of each other.
+    pub fn fuzzy_eq(&self, other: &Self, epsilon: &Self) -> bool {
+        if self.data_type() != other.data_type() {
+            return false;
+        }
+        match self.data_type() {
+            DataType::Float32 | DataType::Float64 => {
+                let diff = self
+                    .sub(other)
+                    .expect("Failed to subtract one series from the other")
+                    .abs()
+                    .expect("Failed to get absolute difference between the two given series");
+                match diff.lte(epsilon) {
+                    Ok(arr) => arr.into_iter().all(|x| x.unwrap_or(false)),
+                    Err(_) => false,
+                }
+            }
+            _ => self == other,
+        }
     }
 }

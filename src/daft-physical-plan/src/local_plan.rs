@@ -38,10 +38,8 @@ pub enum LocalPhysicalPlan {
     PhysicalWrite(PhysicalWrite),
     // TabularWriteJson(TabularWriteJson),
     // TabularWriteCsv(TabularWriteCsv),
-    // #[cfg(feature = "python")]
-    // IcebergWrite(IcebergWrite),
-    // #[cfg(feature = "python")]
-    // DeltaLakeWrite(DeltaLakeWrite),
+    #[cfg(feature = "python")]
+    CatalogWrite(CatalogWrite),
     // #[cfg(feature = "python")]
     // LanceWrite(LanceWrite),
 }
@@ -309,6 +307,23 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    #[cfg(feature = "python")]
+    pub(crate) fn catalog_write(
+        input: LocalPhysicalPlanRef,
+        catalog_type: daft_plan::CatalogType,
+        data_schema: SchemaRef,
+        file_schema: SchemaRef,
+    ) -> LocalPhysicalPlanRef {
+        Self::CatalogWrite(CatalogWrite {
+            input,
+            catalog_type,
+            data_schema,
+            file_schema,
+            plan_stats: PlanStats {},
+        })
+        .arced()
+    }
+
     pub fn schema(&self) -> &SchemaRef {
         match self {
             Self::PhysicalScan(PhysicalScan { schema, .. })
@@ -476,6 +491,16 @@ pub struct PhysicalWrite {
     pub data_schema: SchemaRef,
     pub file_schema: SchemaRef,
     pub file_info: OutputFileInfo,
+    pub plan_stats: PlanStats,
+}
+
+#[cfg(feature = "python")]
+#[derive(Debug)]
+pub struct CatalogWrite {
+    pub input: LocalPhysicalPlanRef,
+    pub catalog_type: daft_plan::CatalogType,
+    pub data_schema: SchemaRef,
+    pub file_schema: SchemaRef,
     pub plan_stats: PlanStats,
 }
 

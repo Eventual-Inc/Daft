@@ -13,7 +13,6 @@ from daft.udf import InitArgsType, PartialStatefulUDF, PartialStatelessUDF
 
 if TYPE_CHECKING:
     import pyarrow as pa
-    from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
@@ -1756,7 +1755,8 @@ class LogicalPlanBuilder:
         self,
         table_name: str,
         table_location: str,
-        partition_spec: IcebergPartitionSpec,
+        partition_spec_id: int,
+        partition_cols: list[PyExpr],
         iceberg_schema: IcebergSchema,
         iceberg_properties: IcebergTableProperties,
         catalog_columns: list[str],

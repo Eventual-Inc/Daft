@@ -292,16 +292,26 @@ class LogicalPlanBuilder:
         return LogicalPlanBuilder(builder)
 
     def write_iceberg(self, table: IcebergTable) -> LogicalPlanBuilder:
+        from daft.iceberg.iceberg_write import get_missing_columns, partition_field_to_expr
         from daft.io._iceberg import _convert_iceberg_file_io_properties_to_io_config
 
         name = ".".join(table.name())
         location = f"{table.location()}/data"
         partition_spec = table.spec()
         schema = table.schema()
+        missing_columns = get_missing_columns(self.schema().to_pyarrow_schema(), schema)
+        builder = (
+            self._builder
+            if len(missing_columns) == 0
+            else self._builder.with_columns([c._expr for c in missing_columns])
+        )
+        partition_cols = [partition_field_to_expr(field, schema)._expr for field in partition_spec.fields]
         props = table.properties
         columns = [col.name for col in schema.columns]
         io_config = _convert_iceberg_file_io_properties_to_io_config(table.io.properties)
-        builder = self._builder.iceberg_write(name, location, partition_spec, schema, props, columns, io_config)
+        builder = builder.iceberg_write(
+            name, location, partition_spec.spec_id, partition_cols, schema, props, columns, io_config
+        )
         return LogicalPlanBuilder(builder)
 
     def write_deltalake(

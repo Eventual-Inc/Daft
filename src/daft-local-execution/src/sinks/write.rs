@@ -20,6 +20,10 @@ pub enum WriteFormat {
     PartitionedParquet,
     Csv,
     PartitionedCsv,
+    Iceberg,
+    PartitionedIceberg,
+    Deltalake,
+    PartitionedDeltalake,
 }
 
 struct WriteState {
@@ -106,6 +110,10 @@ impl BlockingSink for WriteSink {
             WriteFormat::PartitionedParquet => "PartitionedParquetSink",
             WriteFormat::Csv => "CsvSink",
             WriteFormat::PartitionedCsv => "PartitionedCsvSink",
+            WriteFormat::Iceberg => "IcebergSink",
+            WriteFormat::PartitionedIceberg => "PartitionedIcebergSink",
+            WriteFormat::Deltalake => "DeltalakeSink",
+            WriteFormat::PartitionedDeltalake => "PartitionedDeltalakeSink",
         }
     }
 

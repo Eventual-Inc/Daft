@@ -336,9 +336,35 @@ mod tests {
 
         let expected = LogicalPlanBuilder::new(tbl_1, None)
             .aggregate(vec![col("i32").max()], vec![])?
+            .select(vec![col("i32")])?
             .build();
 
         assert_eq!(plan, expected);
+        Ok(())
+    }
+
+    #[rstest]
+    #[case::basic("select utf8 from tbl1 order by utf8")]
+    #[case::asc("select utf8 from tbl1 order by utf8 asc")]
+    #[case::desc("select utf8 from tbl1 order by utf8 desc")]
+    #[case::with_alias("select utf8 as a from tbl1 order by a")]
+    #[case::with_alias_in_projection_only("select utf8 as a from tbl1 order by utf8")]
+    #[case::with_groupby("select utf8, sum(i32) from tbl1 group by utf8 order by utf8")]
+    #[case::with_groupby_and_alias(
+        "select utf8 as a, sum(i32) from tbl1 group by utf8 order by utf8"
+    )]
+    #[case::with_groupby_and_alias_mixed("select utf8 as a from tbl1 group by a order by utf8")]
+    #[case::with_groupby_and_alias_mixed_2("select utf8 as a from tbl1 group by utf8 order by a")]
+    #[case::with_groupby_and_alias_mixed_asc(
+        "select utf8 as a from tbl1 group by utf8 order by a asc"
+    )]
+    fn test_compiles_orderby(mut planner: SQLPlanner, #[case] query: &str) -> SQLPlannerResult<()> {
+        let plan = planner.plan_sql(query);
+        if let Err(e) = plan {
+            panic!("query: {query}\nerror: {e:?}");
+        }
+        assert!(plan.is_ok(), "query: {query}\nerror: {plan:?}");
+
         Ok(())
     }
 }
