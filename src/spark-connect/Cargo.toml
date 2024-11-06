@@ -1,6 +1,3 @@
-[build-dependencies]
-tonic-build = {version = "0.12.3"}
-
 [dependencies]
 prost = "0.13.3"
 prost-wkt-types = "0.6.0"

@@ -5,6 +5,8 @@ tonic-build = {version = "0.12.3"}
 workspace = true
 
 [package]
-edition = {workspace = true}
+edition = "2021"
 name = "spark-connect-script"
-version = {workspace = true}
+version = "0.0.1"
+
+[workspace]
