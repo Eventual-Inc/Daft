@@ -9,14 +9,18 @@
 
 use dashmap::DashMap;
 use eyre::Context;
+use futures::{StreamExt, TryStreamExt};
 #[cfg(feature = "python")]
 use pyo3::types::PyModuleMethods;
 use spark_connect::{
+    analyze_plan_response,
+    command::CommandType,
+    plan::OpType,
     spark_connect_service_server::{SparkConnectService, SparkConnectServiceServer},
     AddArtifactsRequest, AddArtifactsResponse, AnalyzePlanRequest, AnalyzePlanResponse,
     ArtifactStatusesRequest, ArtifactStatusesResponse, ConfigRequest, ConfigResponse,
     ExecutePlanRequest, ExecutePlanResponse, FetchErrorDetailsRequest, FetchErrorDetailsResponse,
-    InterruptRequest, InterruptResponse, ReattachExecuteRequest, ReleaseExecuteRequest,
+    InterruptRequest, InterruptResponse, Plan, ReattachExecuteRequest, ReleaseExecuteRequest,
     ReleaseExecuteResponse, ReleaseSessionRequest, ReleaseSessionResponse,
 };
 use tonic::{transport::Server, Request, Response, Status};
@@ -25,7 +29,9 @@ use uuid::Uuid;
 
 use crate::session::Session;
 
+mod command;
 mod config;
+mod convert;
 mod err;
 mod session;
 pub mod util;
@@ -128,9 +134,90 @@ impl SparkConnectService for DaftSparkConnectService {
     #[tracing::instrument(skip_all)]
     async fn execute_plan(
         &self,
-        _request: Request<ExecutePlanRequest>,
+        request: Request<ExecutePlanRequest>,
     ) -> Result<Response<Self::ExecutePlanStream>, Status> {
-        unimplemented_err!("Unsupported plan type")
+        let request = request.into_inner();
+
+        let session = self.get_session(&request.session_id)?;
+
+        let Some(operation) = request.operation_id else {
+            return invalid_argument_err!("Operation ID is required");
+        };
+
+        // Proceed with executing the plan...
+        let Some(plan) = request.plan else {
+            return invalid_argument_err!("Plan is required");
+        };
+
+        let Some(plan) = plan.op_type else {
+            return invalid_argument_err!("Plan operation is required");
+        };
+
+        use spark_connect::plan::OpType;
+
+        match plan {
+            OpType::Root(relation) => {
+                let result = session.handle_root_command(relation, operation).await?;
+                return Ok(Response::new(result));
+            }
+            OpType::Command(command) => {
+                let Some(command) = command.command_type else {
+                    return invalid_argument_err!("Command type is required");
+                };
+
+                match command {
+                    CommandType::RegisterFunction(_) => {
+                        unimplemented_err!("RegisterFunction not implemented")
+                    }
+                    CommandType::WriteOperation(_) => {
+                        unimplemented_err!("WriteOperation not implemented")
+                    }
+                    CommandType::CreateDataframeView(_) => {
+                        unimplemented_err!("CreateDataframeView not implemented")
+                    }
+                    CommandType::WriteOperationV2(_) => {
+                        unimplemented_err!("WriteOperationV2 not implemented")
+                    }
+                    CommandType::SqlCommand(..) => {
+                        unimplemented_err!("SQL execution not yet implemented")
+                    }
+                    CommandType::WriteStreamOperationStart(_) => {
+                        unimplemented_err!("WriteStreamOperationStart not implemented")
+                    }
+                    CommandType::StreamingQueryCommand(_) => {
+                        unimplemented_err!("StreamingQueryCommand not implemented")
+                    }
+                    CommandType::GetResourcesCommand(_) => {
+                        unimplemented_err!("GetResourcesCommand not implemented")
+                    }
+                    CommandType::StreamingQueryManagerCommand(_) => {
+                        unimplemented_err!("StreamingQueryManagerCommand not implemented")
+                    }
+                    CommandType::RegisterTableFunction(_) => {
+                        unimplemented_err!("RegisterTableFunction not implemented")
+                    }
+                    CommandType::StreamingQueryListenerBusCommand(_) => {
+                        unimplemented_err!("StreamingQueryListenerBusCommand not implemented")
+                    }
+                    CommandType::RegisterDataSource(_) => {
+                        unimplemented_err!("RegisterDataSource not implemented")
+                    }
+                    CommandType::CreateResourceProfileCommand(_) => {
+                        unimplemented_err!("CreateResourceProfileCommand not implemented")
+                    }
+                    CommandType::CheckpointCommand(_) => {
+                        unimplemented_err!("CheckpointCommand not implemented")
+                    }
+                    CommandType::RemoveCachedRemoteRelationCommand(_) => {
+                        unimplemented_err!("RemoveCachedRemoteRelationCommand not implemented")
+                    }
+                    CommandType::MergeIntoTableCommand(_) => {
+                        unimplemented_err!("MergeIntoTableCommand not implemented")
+                    }
+                    CommandType::Extension(_) => unimplemented_err!("Extension not implemented"),
+                }
+            }
+        }?
     }
 
     #[tracing::instrument(skip_all)]
@@ -172,9 +259,49 @@ impl SparkConnectService for DaftSparkConnectService {
     #[tracing::instrument(skip_all)]
     async fn analyze_plan(
         &self,
-        _request: Request<AnalyzePlanRequest>,
+        request: Request<AnalyzePlanRequest>,
     ) -> Result<Response<AnalyzePlanResponse>, Status> {
-        unimplemented_err!("Analyze plan operation is not yet implemented")
+        use spark_connect::analyze_plan_request::*;
+        let request = request.into_inner();
+
+        let AnalyzePlanRequest {
+            session_id,
+            analyze,
+            ..
+        } = request;
+
+        let Some(analyze) = analyze else {
+            return Err(Status::invalid_argument("analyze is required"));
+        };
+
+        match analyze {
+            Analyze::Schema(Schema { plan }) => {
+                let Some(Plan { op_type }) = plan else {
+                    return Err(Status::invalid_argument("plan is required"));
+                };
+
+                let Some(OpType::Root(relation)) = op_type else {
+                    return Err(Status::invalid_argument("op_type is required to be root"));
+                };
+
+                let result = convert::connect_schema(relation)?;
+
+                let schema = analyze_plan_response::DdlParse {
+                    parsed: Some(result),
+                };
+
+                let response = AnalyzePlanResponse {
+                    session_id,
+                    server_side_session_id: String::new(),
+                    result: Some(analyze_plan_response::Result::DdlParse(schema)),
+                };
+
+                println!("response: {response:#?}");
+
+                Ok(Response::new(response))
+            }
+            _ => unimplemented_err!("Analyze plan operation is not yet implemented"),
+        }
     }
 
     #[tracing::instrument(skip_all)]

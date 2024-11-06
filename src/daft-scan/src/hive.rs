@@ -134,7 +134,7 @@ mod tests {
         let partitions = parse_hive_partitioning(uri).unwrap();
 
         assert_eq!(partitions.get("year"), Some(&"2024".to_string()));
-        assert_eq!(partitions.get("region"), Some(&"".to_string()));
+        assert_eq!(partitions.get("region"), Some(&String::new()));
     }
 
     #[test]
@@ -251,7 +251,7 @@ mod tests {
         let partitions = parse_hive_partitioning(uri).unwrap();
 
         assert_eq!(partitions.len(), 2);
-        assert_eq!(partitions.get("empty_key"), Some(&"".to_string()));
-        assert_eq!(partitions.get("another"), Some(&"".to_string()));
+        assert_eq!(partitions.get("empty_key"), Some(&String::new()));
+        assert_eq!(partitions.get("another"), Some(&String::new()));
     }
 }
