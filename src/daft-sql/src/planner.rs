@@ -592,27 +592,31 @@ impl SQLPlanner {
             expression: &sqlparser::ast::Expr,
             left_rel: &Relation,
             right_rel: &Relation,
-        ) -> SQLPlannerResult<(Vec<ExprRef>, Vec<ExprRef>)> {
-            // TODO: support null safe equal, a.k.a. <=>.
+        ) -> SQLPlannerResult<(Vec<ExprRef>, Vec<ExprRef>, Vec<bool>)> {
             if let sqlparser::ast::Expr::BinaryOp { left, op, right } = expression {
                 match *op {
-                    BinaryOperator::Eq => {
+                    BinaryOperator::Eq | BinaryOperator::Spaceship => {
                         if let (
                             sqlparser::ast::Expr::CompoundIdentifier(left),
                             sqlparser::ast::Expr::CompoundIdentifier(right),
                         ) = (left.as_ref(), right.as_ref())
                         {
+                            let null_equals_null = *op == BinaryOperator::Spaceship;
                             collect_compound_identifiers(left, right, left_rel, right_rel)
+                                .map(|(left, right)| (left, right, vec![null_equals_null]))
                         } else {
-                            unsupported_sql_err!("JOIN clauses support '=' constraints on identifiers; found lhs={:?}, rhs={:?}", left, right);
+                            unsupported_sql_err!("JOIN clauses support '='/'<=>' constraints on identifiers; found lhs={:?}, rhs={:?}", left, right);
                         }
                     }
                     BinaryOperator::And => {
-                        let (mut left_i, mut right_i) = process_join_on(left, left_rel, right_rel)?;
-                        let (mut left_j, mut right_j) = process_join_on(left, left_rel, right_rel)?;
+                        let (mut left_i, mut right_i, mut null_equals_nulls_i) =
+                            process_join_on(left, left_rel, right_rel)?;
+                        let (mut left_j, mut right_j, mut null_equals_nulls_j) =
+                            process_join_on(left, left_rel, right_rel)?;
                         left_i.append(&mut left_j);
                         right_i.append(&mut right_j);
-                        Ok((left_i, right_i))
+                        null_equals_nulls_i.append(&mut null_equals_nulls_j);
+                        Ok((left_i, right_i, null_equals_nulls_i))
                     }
                     _ => {
                         unsupported_sql_err!("JOIN clauses support '=' constraints combined with 'AND'; found op = '{:?}'", op);
@@ -645,12 +649,14 @@ impl SQLPlanner {
 
             match &join.join_operator {
                 Inner(JoinConstraint::On(expr)) => {
-                    let (left_on, right_on) = process_join_on(expr, &left_rel, &right_rel)?;
+                    let (left_on, right_on, null_equals_nulls) =
+                        process_join_on(expr, &left_rel, &right_rel)?;
 
-                    left_rel.inner = left_rel.inner.join(
+                    left_rel.inner = left_rel.inner.join_with_null_safe_equal(
                         right_rel.inner,
                         left_on,
                         right_on,
+                        Some(null_equals_nulls),
                         JoinType::Inner,
                         None,
                         None,
@@ -674,12 +680,14 @@ impl SQLPlanner {
                     )?;
                 }
                 LeftOuter(JoinConstraint::On(expr)) => {
-                    let (left_on, right_on) = process_join_on(expr, &left_rel, &right_rel)?;
+                    let (left_on, right_on, null_equals_nulls) =
+                        process_join_on(expr, &left_rel, &right_rel)?;
 
-                    left_rel.inner = left_rel.inner.join(
+                    left_rel.inner = left_rel.inner.join_with_null_safe_equal(
                         right_rel.inner,
                         left_on,
                         right_on,
+                        Some(null_equals_nulls),
                         JoinType::Left,
                         None,
                         None,
@@ -687,12 +695,14 @@ impl SQLPlanner {
                     )?;
                 }
                 RightOuter(JoinConstraint::On(expr)) => {
-                    let (left_on, right_on) = process_join_on(expr, &left_rel, &right_rel)?;
+                    let (left_on, right_on, null_equals_nulls) =
+                        process_join_on(expr, &left_rel, &right_rel)?;
 
-                    left_rel.inner = left_rel.inner.join(
+                    left_rel.inner = left_rel.inner.join_with_null_safe_equal(
                         right_rel.inner,
                         left_on,
                         right_on,
+                        Some(null_equals_nulls),
                         JoinType::Right,
                         None,
                         None,
@@ -701,12 +711,14 @@ impl SQLPlanner {
                 }
 
                 FullOuter(JoinConstraint::On(expr)) => {
-                    let (left_on, right_on) = process_join_on(expr, &left_rel, &right_rel)?;
+                    let (left_on, right_on, null_equals_nulls) =
+                        process_join_on(expr, &left_rel, &right_rel)?;
 
-                    left_rel.inner = left_rel.inner.join(
+                    left_rel.inner = left_rel.inner.join_with_null_safe_equal(
                         right_rel.inner,
                         left_on,
                         right_on,
+                        Some(null_equals_nulls),
                         JoinType::Outer,
                         None,
                         None,
@@ -1109,7 +1121,26 @@ impl SQLPlanner {
             SQLExpr::Convert { .. } => unsupported_sql_err!("CONVERT"),
             SQLExpr::Cast { .. } => unsupported_sql_err!("CAST"),
             SQLExpr::AtTimeZone { .. } => unsupported_sql_err!("AT TIME ZONE"),
-            SQLExpr::Extract { .. } => unsupported_sql_err!("EXTRACT"),
+            SQLExpr::Extract {
+                field,
+                syntax: _,
+                expr,
+            } => {
+                use daft_functions::temporal::{self as dt};
+                let expr = self.plan_expr(expr)?;
+
+                match field {
+                    DateTimeField::Year => Ok(dt::dt_year(expr)),
+                    DateTimeField::Month => Ok(dt::dt_month(expr)),
+                    DateTimeField::Day => Ok(dt::dt_day(expr)),
+                    DateTimeField::DayOfWeek => Ok(dt::dt_day_of_week(expr)),
+                    DateTimeField::Date => Ok(dt::dt_date(expr)),
+                    DateTimeField::Hour => Ok(dt::dt_hour(expr)),
+                    DateTimeField::Minute => Ok(dt::dt_minute(expr)),
+                    DateTimeField::Second => Ok(dt::dt_second(expr)),
+                    other => unsupported_sql_err!("EXTRACT ({other})"),
+                }
+            }
             SQLExpr::Ceil { expr, .. } => Ok(ceil(self.plan_expr(expr)?)),
             SQLExpr::Floor { expr, .. } => Ok(floor(self.plan_expr(expr)?)),
             SQLExpr::Position { .. } => unsupported_sql_err!("POSITION"),
