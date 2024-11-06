@@ -1800,11 +1800,11 @@ dependencies = [
  "daft-io",
  "daft-json",
  "daft-local-execution",
+ "daft-logical-plan",
  "daft-micropartition",
  "daft-minhash",
  "daft-parquet",
  "daft-physical-plan",
- "daft-plan",
  "daft-scan",
  "daft-scheduler",
  "daft-sql",
@@ -2101,10 +2101,10 @@ dependencies = [
  "daft-functions",
  "daft-io",
  "daft-json",
+ "daft-logical-plan",
  "daft-micropartition",
  "daft-parquet",
  "daft-physical-plan",
- "daft-plan",
  "daft-scan",
  "daft-table",
  "daft-writers",
@@ -2118,6 +2118,38 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tracing",
+]
+
+[[package]]
+name = "daft-logical-plan"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow2",
+ "common-daft-config",
+ "common-display",
+ "common-error",
+ "common-file-formats",
+ "common-io-config",
+ "common-py-serde",
+ "common-resource-request",
+ "common-treenode",
+ "daft-core",
+ "daft-dsl",
+ "daft-functions",
+ "daft-scan",
+ "daft-schema",
+ "daft-table",
+ "derivative",
+ "indexmap 2.5.0",
+ "itertools 0.11.0",
+ "log",
+ "pretty_assertions",
+ "pyo3",
+ "rstest",
+ "serde",
+ "snafu",
+ "test-log",
+ "uuid 1.10.0",
 ]
 
 [[package]]
@@ -2194,46 +2226,23 @@ dependencies = [
 name = "daft-physical-plan"
 version = "0.3.0-dev0"
 dependencies = [
- "common-error",
- "common-resource-request",
- "daft-core",
- "daft-dsl",
- "daft-plan",
- "daft-scan",
- "log",
- "strum 0.26.3",
-]
-
-[[package]]
-name = "daft-plan"
-version = "0.3.0-dev0"
-dependencies = [
- "arrow2",
  "common-daft-config",
  "common-display",
  "common-error",
  "common-file-formats",
- "common-io-config",
- "common-py-serde",
  "common-resource-request",
  "common-treenode",
  "daft-core",
  "daft-dsl",
  "daft-functions",
+ "daft-logical-plan",
  "daft-scan",
  "daft-schema",
- "daft-table",
- "derivative",
- "indexmap 2.5.0",
  "itertools 0.11.0",
  "log",
- "pretty_assertions",
- "pyo3",
  "rstest",
  "serde",
- "snafu",
- "test-log",
- "uuid 1.10.0",
+ "strum 0.26.3",
 ]
 
 [[package]]
@@ -2280,7 +2289,8 @@ dependencies = [
  "common-py-serde",
  "daft-core",
  "daft-dsl",
- "daft-plan",
+ "daft-logical-plan",
+ "daft-physical-plan",
  "daft-scan",
  "pyo3",
  "rstest",
@@ -2331,7 +2341,7 @@ dependencies = [
  "daft-dsl",
  "daft-functions",
  "daft-functions-json",
- "daft-plan",
+ "daft-logical-plan",
  "once_cell",
  "pyo3",
  "regex",
@@ -2383,8 +2393,8 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-io",
+ "daft-logical-plan",
  "daft-micropartition",
- "daft-plan",
  "daft-table",
  "pyo3",
 ]

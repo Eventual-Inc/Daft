@@ -1,12 +1,8 @@
-#[allow(unused)]
-mod local_plan;
-mod translate;
+#![feature(let_chains)]
+#![feature(assert_matches)]
 
-#[cfg(feature = "python")]
-pub use local_plan::CatalogWrite;
-pub use local_plan::{
-    ActorPoolProject, Concat, EmptyScan, Explode, Filter, HashAggregate, HashJoin, InMemoryScan,
-    Limit, LocalPhysicalPlan, LocalPhysicalPlanRef, PhysicalScan, PhysicalWrite, Pivot, Project,
-    Sample, Sort, UnGroupedAggregate, Unpivot,
-};
-pub use translate::translate;
+pub mod local_plan;
+pub mod physical_plan;
+
+#[cfg(test)]
+mod test;

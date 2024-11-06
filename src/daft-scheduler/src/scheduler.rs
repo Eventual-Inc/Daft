@@ -5,20 +5,21 @@ use common_error::DaftResult;
 use common_file_formats::FileFormat;
 use common_py_serde::impl_bincode_py_state_serialization;
 use daft_dsl::ExprRef;
+use daft_logical_plan::InMemoryInfo;
 #[cfg(feature = "python")]
-use daft_plan::physical_ops::{DeltaLakeWrite, IcebergWrite, LanceWrite};
-use daft_plan::{
+use daft_logical_plan::{DeltaLakeCatalogInfo, IcebergCatalogInfo, LanceCatalogInfo};
+#[cfg(feature = "python")]
+use daft_physical_plan::physical_plan::ops::{DeltaLakeWrite, IcebergWrite, LanceWrite};
+use daft_physical_plan::physical_plan::{
     logical_to_physical,
-    physical_ops::{
+    ops::{
         ActorPoolProject, Aggregate, BroadcastJoin, Concat, EmptyScan, Explode, Filter, HashJoin,
         InMemoryScan, Limit, MonotonicallyIncreasingId, Pivot, Project, Sample, Sort,
         SortMergeJoin, TabularScan, TabularWriteCsv, TabularWriteJson, TabularWriteParquet,
         Unpivot,
     },
-    InMemoryInfo, PhysicalPlan, PhysicalPlanRef, QueryStageOutput,
+    PhysicalPlan, PhysicalPlanRef, QueryStageOutput,
 };
-#[cfg(feature = "python")]
-use daft_plan::{DeltaLakeCatalogInfo, IcebergCatalogInfo, LanceCatalogInfo};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
 use {
@@ -28,7 +29,7 @@ use {
     daft_core::python::PySchema,
     daft_dsl::python::PyExpr,
     daft_dsl::Expr,
-    daft_plan::{OutputFileInfo, PyLogicalPlanBuilder},
+    daft_logical_plan::{OutputFileInfo, PyLogicalPlanBuilder},
     daft_scan::python::pylib::PyScanTask,
     pyo3::{pyclass, pymethods, types::PyAnyMethods, PyObject, PyRef, PyRefMut, PyResult, Python},
     std::collections::HashMap,
@@ -263,7 +264,7 @@ fn physical_plan_to_partition_tasks(
     psets: &HashMap<String, Vec<PyObject>>,
     actor_pool_manager: &PyObject,
 ) -> PyResult<PyObject> {
-    use daft_plan::physical_ops::{ShuffleExchange, ShuffleExchangeStrategy};
+    use daft_physical_plan::physical_plan::ops::{ShuffleExchange, ShuffleExchangeStrategy};
 
     match physical_plan {
         PhysicalPlan::InMemoryScan(InMemoryScan {
@@ -491,7 +492,7 @@ fn physical_plan_to_partition_tasks(
             match strategy {
                 ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce { target_spec } => {
                     let mapped = match target_spec.as_ref() {
-                        daft_plan::ClusteringSpec::Hash(hash_clustering_config) => {
+                        daft_logical_plan::ClusteringSpec::Hash(hash_clustering_config) => {
                             let partition_by_pyexprs: Vec<PyExpr> = hash_clustering_config
                                 .by
                                 .iter()
@@ -508,14 +509,14 @@ fn physical_plan_to_partition_tasks(
                                 partition_by_pyexprs,
                             ))?
                         }
-                        daft_plan::ClusteringSpec::Random(random_clustering_config) => py
+                        daft_logical_plan::ClusteringSpec::Random(random_clustering_config) => py
                             .import_bound(pyo3::intern!(py, "daft.execution.physical_plan"))?
                             .getattr(pyo3::intern!(py, "fanout_random"))?
                             .call1((upstream_iter, random_clustering_config.num_partitions()))?,
-                        daft_plan::ClusteringSpec::Range(_) => {
+                        daft_logical_plan::ClusteringSpec::Range(_) => {
                             unimplemented!("FanoutByRange not implemented, since only use case (sorting) doesn't need it yet.");
                         }
-                        daft_plan::ClusteringSpec::Unknown(_) => {
+                        daft_logical_plan::ClusteringSpec::Unknown(_) => {
                             unreachable!("Cannot use NaiveFullyMaterializingMapReduce ShuffleExchange to map to an Unknown ClusteringSpec");
                         }
                     };

@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use daft_plan::{LogicalPlan, LogicalPlanRef};
+use daft_logical_plan::{LogicalPlan, LogicalPlanRef};
 
 /// A simple map of table names to logical plans
 #[derive(Debug, Clone)]

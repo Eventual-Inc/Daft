@@ -10,12 +10,12 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_tracing::refresh_chrome_trace;
 use daft_micropartition::MicroPartition;
-use daft_physical_plan::{translate, LocalPhysicalPlan};
+use daft_physical_plan::local_plan::{translate, LocalPhysicalPlan};
 #[cfg(feature = "python")]
 use {
     common_daft_config::PyDaftExecutionConfig,
+    daft_logical_plan::PyLogicalPlanBuilder,
     daft_micropartition::python::PyMicroPartition,
-    daft_plan::PyLogicalPlanBuilder,
     pyo3::{pyclass, pymethods, IntoPy, PyObject, PyRef, PyRefMut, PyResult, Python},
 };
 
