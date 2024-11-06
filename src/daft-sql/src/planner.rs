@@ -1136,7 +1136,6 @@ impl SQLPlanner {
                     DateTimeField::DayOfWeek => Ok(dt::dt_day_of_week(expr)),
                     DateTimeField::DayOfYear => unsupported_sql_err!("EXTRACT (DOY)"),
                     DateTimeField::Date => Ok(dt::dt_date(expr)),
-                    DateTimeField::Datetime => todo!(),
                     DateTimeField::Hour => Ok(dt::dt_hour(expr)),
                     DateTimeField::Minute => Ok(dt::dt_minute(expr)),
                     DateTimeField::Second => Ok(dt::dt_second(expr)),
