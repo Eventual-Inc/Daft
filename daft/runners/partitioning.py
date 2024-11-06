@@ -420,6 +420,3 @@ class PartitionSetCache:
         with self._lock:
             del self.__uuid_to_partition_set
             self.__uuid_to_partition_set = weakref.WeakValueDictionary()
-
-
-LOCAL_PARTITION_SET_CACHE = PartitionSetCache()

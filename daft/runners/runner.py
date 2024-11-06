@@ -16,6 +16,8 @@ if TYPE_CHECKING:
     from daft.runners.runner_io import RunnerIO
     from daft.table import MicroPartition
 
+LOCAL_PARTITION_SET_CACHE = PartitionSetCache()
+
 
 class Runner(Generic[PartitionT]):
     def __init__(self) -> None:
