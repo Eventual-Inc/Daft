@@ -342,7 +342,7 @@ class DataFrame:
                 available on the machine).
 
         >>> import daft
-        >>> _ = daft.context.set_runner_py()
+        >>>
         >>> df = daft.from_pydict({"foo": [1, 2, 3], "bar": ["a", "b", "c"]}).into_partitions(2)
         >>> for part in df.iter_partitions():
         ...     print(part)
@@ -1170,7 +1170,6 @@ class DataFrame:
 
         Example:
             >>> import daft
-            >>> _ = daft.context.set_runner_py()
             >>> df = daft.from_pydict({"a": [1, 2, 3, 4]}).into_partitions(2)
             >>> df = df._add_monotonically_increasing_id()
             >>> df.show()
