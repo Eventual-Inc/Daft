@@ -318,3 +318,85 @@ def test_sql_multiple_ctes():
     expected = df1.join(df2.select(col("x").alias("a"), "y", "z"), on="a").collect().to_pydict()
 
     assert actual == expected
+
+
+def test_union():
+    df1 = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6], "c": ["a", "b", "c"]})
+    actual = (
+        daft.sql("""
+        select * from (
+            SELECT * FROM df1
+            UNION
+            SELECT * FROM df1
+        ) order by a
+        """)
+        .collect()
+        .to_pydict()
+    )
+
+    expected = df1.collect().to_pydict()
+
+    assert actual == expected
+
+
+def test_union_all():
+    df1 = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6], "c": ["a", "b", "c"]})
+    actual = (
+        daft.sql("""
+        select * from (
+            SELECT * FROM df1
+            UNION ALL
+            SELECT * FROM df1
+        ) order by a
+        """)
+        .collect()
+        .to_pydict()
+    )
+
+    expected = df1.concat(df1).sort("a").collect().to_pydict()
+
+    assert actual == expected
+
+
+def test_union_2():
+    df1 = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6], "c": ["a", "b", "c"]})
+    df2 = daft.from_pydict({"a": [4, 5, 6], "b": [7, 8, 9], "c": ["d", "e", "f"]})
+    actual = (
+        daft.sql("""
+        select * from (
+            SELECT * FROM df1
+            UNION
+            SELECT * FROM df2
+        ) order by a
+        """)
+        .collect()
+        .to_pydict()
+    )
+
+    expected = df1.concat(df2).sort("a").collect().to_pydict()
+
+    assert actual == expected
+
+
+def test_union_nested():
+    df1 = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6], "c": ["a", "b", "c"]})
+    actual = (
+        daft.sql("""
+        select * from (
+            SELECT * FROM df1
+            UNION ALL
+            SELECT * FROM (
+                SELECT * FROM df1
+                UNION ALL
+                SELECT * FROM df1
+                UNION ALL
+                SELECT * FROM df1
+            )
+        ) order by a
+        """)
+        .collect()
+        .to_pydict()
+    )
+    inner = df1.concat(df1).concat(df1)
+    expected = df1.concat(inner).sort("a").collect().to_pydict()
+    assert actual == expected

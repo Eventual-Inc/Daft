@@ -204,8 +204,64 @@ impl SQLPlanner {
         let selection = match query.body.as_ref() {
             SetExpr::Select(selection) => selection,
             SetExpr::Query(_) => unsupported_sql_err!("Subqueries are not supported"),
-            SetExpr::SetOperation { .. } => {
-                unsupported_sql_err!("Set operations are not supported")
+            SetExpr::SetOperation {
+                op,
+                set_quantifier,
+                left,
+                right,
+            } => {
+                use sqlparser::ast::{SetOperator, SetQuantifier};
+                fn make_query(set_expr: &SetExpr) -> Query {
+                    Query {
+                        with: None,
+                        body: Box::new(set_expr.clone()),
+                        order_by: None,
+                        limit: None,
+                        limit_by: vec![],
+                        offset: None,
+                        fetch: None,
+                        locks: vec![],
+                        for_clause: None,
+                        settings: None,
+                        format_clause: None,
+                    }
+                }
+                match (op, set_quantifier) {
+                    // UNION ALL
+                    (SetOperator::Union, SetQuantifier::All) => {
+                        let left = make_query(left);
+                        let right = make_query(right);
+
+                        let left = self.plan_query(&left)?;
+                        let right = self.plan_query(&right)?;
+                        return left.concat(&right).map_err(|e| e.into());
+                    }
+                    (SetOperator::Union, SetQuantifier::Distinct) => {
+                        unsupported_sql_err!("UNION DISTINCT is not supported.")
+                    }
+                    (SetOperator::Union, SetQuantifier::ByName) => {
+                        unsupported_sql_err!("UNION BY NAME is not supported")
+                    }
+                    (SetOperator::Union, SetQuantifier::AllByName) => {
+                        unsupported_sql_err!("UNION ALL BY NAME is not supported")
+                    }
+                    (SetOperator::Union, SetQuantifier::DistinctByName) => {
+                        unsupported_sql_err!("UNION DISTINCT BY NAME is not supported.")
+                    }
+                    (SetOperator::Union, SetQuantifier::None) => {
+                        let left = make_query(left);
+                        let right = make_query(right);
+
+                        let left = self.plan_query(&left)?;
+                        let right = self.plan_query(&right)?;
+                        return left.concat(&right)?.distinct().map_err(|e| e.into());
+                    }
+                    (SetOperator::Except, _) => unsupported_sql_err!("EXCEPT is not supported"),
+
+                    (SetOperator::Intersect, _) => {
+                        unsupported_sql_err!("INTERSECT is not supported. Use INNER JOIN instead")
+                    }
+                }
             }
             SetExpr::Values(..) => unsupported_sql_err!("VALUES are not supported"),
             SetExpr::Insert(..) => unsupported_sql_err!("INSERT is not supported"),
@@ -766,17 +822,22 @@ impl SQLPlanner {
             sqlparser::ast::TableFactor::Derived {
                 lateral,
                 subquery,
-                alias: Some(alias),
+                alias,
             } => {
                 if *lateral {
                     unsupported_sql_err!("LATERAL");
                 }
                 let subquery = self.plan_query(subquery)?;
-                let rel_name = ident_to_str(&alias.name);
+                let rel_name = alias
+                    .clone()
+                    .map(|alias| ident_to_str(&alias.name))
+                    .unwrap_or_else(|| "subquery".to_string());
+
                 let rel = Relation::new(subquery, rel_name);
 
-                (rel, Some(alias.clone()))
+                (rel, alias.clone())
             }
+
             sqlparser::ast::TableFactor::TableFunction { .. } => {
                 unsupported_sql_err!("Unsupported table factor: TableFunction")
             }
@@ -801,7 +862,6 @@ impl SQLPlanner {
             sqlparser::ast::TableFactor::MatchRecognize { .. } => {
                 unsupported_sql_err!("Unsupported table factor: MatchRecognize")
             }
-            _ => unsupported_sql_err!("Unsupported table factor"),
         };
         if let Some(alias) = alias {
             Ok(rel.with_alias(alias))
