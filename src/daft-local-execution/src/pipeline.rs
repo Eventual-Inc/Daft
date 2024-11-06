@@ -120,7 +120,7 @@ pub fn physical_plan_to_pipeline(
     let out: Box<dyn PipelineNode> = match physical_plan {
         LocalPhysicalPlan::EmptyScan(EmptyScan { schema, .. }) => {
             let source = EmptyScanSource::new(schema.clone());
-            source.boxed().into()
+            source.arced().into()
         }
         LocalPhysicalPlan::PhysicalScan(PhysicalScan {
             scan_tasks,
@@ -130,12 +130,12 @@ pub fn physical_plan_to_pipeline(
         }) => {
             let scan_task_source =
                 ScanTaskSource::new(scan_tasks.clone(), pushdowns.clone(), schema.clone(), cfg);
-            scan_task_source.boxed().into()
+            scan_task_source.arced().into()
         }
         LocalPhysicalPlan::InMemoryScan(InMemoryScan { info, .. }) => {
             let partitions = psets.get(&info.cache_key).expect("Cache key not found");
             InMemorySource::new(partitions.clone(), info.source_schema.clone())
-                .boxed()
+                .arced()
                 .into()
         }
         LocalPhysicalPlan::Project(Project {

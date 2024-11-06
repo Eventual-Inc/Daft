@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
 use daft_io::IOStatsRef;
@@ -18,14 +19,15 @@ impl InMemorySource {
     pub fn new(data: Vec<Arc<MicroPartition>>, schema: SchemaRef) -> Self {
         Self { data, schema }
     }
-    pub fn boxed(self) -> Box<dyn Source> {
-        Box::new(self) as Box<dyn Source>
+    pub fn arced(self) -> Arc<dyn Source> {
+        Arc::new(self) as Arc<dyn Source>
     }
 }
 
+#[async_trait]
 impl Source for InMemorySource {
     #[instrument(name = "InMemorySource::get_data", level = "info", skip_all)]
-    fn get_data(
+    async fn get_data(
         &self,
         _maintain_order: bool,
         _io_stats: IOStatsRef,

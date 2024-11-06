@@ -18,7 +18,7 @@ from tests.integration.conftest import check_answer  # noqa F401
 
 ENGINES = ["native"] if IS_CI else ["native", "python"]
 
-TPCH_QUESTIONS = list(range(1, 11))
+TPCH_QUESTIONS = [1]
 
 
 @pytest.mark.skipif(

@@ -3,6 +3,7 @@ use std::{
     sync::Arc,
 };
 
+use async_trait::async_trait;
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
@@ -12,7 +13,7 @@ use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_io::IOStatsRef;
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_micropartition::MicroPartition;
-use daft_parquet::read::{read_parquet_bulk, ParquetSchemaInferenceOptions};
+use daft_parquet::read::{read_parquet_bulk_async, ParquetSchemaInferenceOptions};
 use daft_scan::{storage_config::StorageConfig, ChunkSpec, Pushdowns, ScanTask};
 use futures::{Stream, StreamExt, TryStreamExt};
 use snafu::ResultExt;
@@ -74,19 +75,21 @@ impl ScanTaskSource {
         }
     }
 
-    pub fn boxed(self) -> Box<dyn Source> {
-        Box::new(self) as Box<dyn Source>
+    pub fn arced(self) -> Arc<dyn Source> {
+        Arc::new(self) as Arc<dyn Source>
     }
 }
+
+#[async_trait]
 impl Source for ScanTaskSource {
     #[instrument(name = "ScanTaskSource::get_data", level = "info", skip_all)]
-    fn get_data(
+    async fn get_data(
         &self,
         maintain_order: bool,
         io_stats: IOStatsRef,
     ) -> DaftResult<SourceStream<'static>> {
         let io_runtime = get_io_runtime(true);
-        let delete_map = get_delete_map(&self.scan_tasks)?;
+        let delete_map = get_delete_map(&self.scan_tasks).await?;
         let stream =
             futures::stream::iter(self.scan_tasks.clone().into_iter().map(move |scan_task| {
                 let io_stats = io_stats.clone();
@@ -118,7 +121,9 @@ impl Source for ScanTaskSource {
 }
 
 // Read all iceberg delete files and return a map of file paths to delete positions
-fn get_delete_map(scan_tasks: &[Arc<ScanTask>]) -> DaftResult<Option<HashMap<String, Vec<i64>>>> {
+async fn get_delete_map(
+    scan_tasks: &[Arc<ScanTask>],
+) -> DaftResult<Option<HashMap<String, Vec<i64>>>> {
     let delete_files = scan_tasks
         .iter()
         .flat_map(|st| {
@@ -133,60 +138,58 @@ fn get_delete_map(scan_tasks: &[Arc<ScanTask>]) -> DaftResult<Option<HashMap<Str
         return Ok(None);
     }
 
-    let (io_config, multi_threaded_io) = match scan_tasks.first().unwrap().storage_config.as_ref() {
-        StorageConfig::Native(native_storage_config) => (
-            native_storage_config.io_config.as_ref(),
-            native_storage_config.multithreaded_io,
-        ),
+    let (runtime, io_client) = scan_tasks
+        .first()
+        .unwrap() // Safe to unwrap because we checked that the list is not empty
+        .storage_config
+        .get_io_client_and_runtime()?;
+    let scan_tasks = scan_tasks.to_vec();
+    runtime
+        .spawn(async move {
+            let mut delete_map = scan_tasks
+                .iter()
+                .flat_map(|st| st.sources.iter().map(|s| s.get_path().to_string()))
+                .map(|path| (path, vec![]))
+                .collect::<std::collections::HashMap<_, _>>();
+            let columns_to_read = Some(vec!["file_path".to_string(), "pos".to_string()]);
+            let result = read_parquet_bulk_async(
+                delete_files.into_iter().collect(),
+                columns_to_read,
+                None,
+                None,
+                None,
+                None,
+                io_client,
+                None,
+                *NUM_CPUS,
+                ParquetSchemaInferenceOptions::new(None),
+                None,
+                None,
+                None,
+                None,
+            )
+            .await?;
 
-        #[cfg(feature = "python")]
-        StorageConfig::Python(python_storage_config) => {
-            (python_storage_config.io_config.as_ref(), true)
-        }
-    };
-    let io_config = Arc::new(io_config.cloned().unwrap_or_default());
-    let io_client = daft_io::get_io_client(multi_threaded_io, io_config)?;
-    let mut delete_map = scan_tasks
-        .iter()
-        .flat_map(|st| st.sources.iter().map(|s| s.get_path().to_string()))
-        .map(|path| (path, vec![]))
-        .collect::<std::collections::HashMap<_, _>>();
-    let columns_to_read = vec!["file_path", "pos"];
-    let result = read_parquet_bulk(
-        &delete_files.iter().map(|f| f.as_str()).collect::<Vec<_>>(),
-        Some(columns_to_read.as_slice()),
-        None,
-        None,
-        None,
-        None,
-        io_client,
-        None,
-        *NUM_CPUS,
-        multi_threaded_io,
-        &ParquetSchemaInferenceOptions::new(None),
-        None,
-        None,
-        None,
-        None,
-    )?;
+            for table_result in result {
+                let table = table_result?;
+                // values in the file_path column are guaranteed by the iceberg spec to match the full URI of the corresponding data file
+                // https://iceberg.apache.org/spec/#position-delete-files
+                let file_paths = table.get_column("file_path")?.downcast::<Utf8Array>()?;
+                let positions = table.get_column("pos")?.downcast::<Int64Array>()?;
 
-    for table in result {
-        // values in the file_path column are guaranteed by the iceberg spec to match the full URI of the corresponding data file
-        // https://iceberg.apache.org/spec/#position-delete-files
-        let file_paths = table.get_column("file_path")?.downcast::<Utf8Array>()?;
-        let positions = table.get_column("pos")?.downcast::<Int64Array>()?;
-
-        for (file, pos) in file_paths
-            .as_arrow()
-            .values_iter()
-            .zip(positions.as_arrow().values_iter())
-        {
-            if delete_map.contains_key(file) {
-                delete_map.get_mut(file).unwrap().push(*pos);
+                for (file, pos) in file_paths
+                    .as_arrow()
+                    .values_iter()
+                    .zip(positions.as_arrow().values_iter())
+                {
+                    if delete_map.contains_key(file) {
+                        delete_map.get_mut(file).unwrap().push(*pos);
+                    }
+                }
             }
-        }
-    }
-    Ok(Some(delete_map))
+            Ok(Some(delete_map))
+        })
+        .await?
 }
 
 async fn stream_scan_task(
