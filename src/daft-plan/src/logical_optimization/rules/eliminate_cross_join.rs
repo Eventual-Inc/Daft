@@ -41,6 +41,8 @@ impl OptimizerRule for EliminateCrossJoin {
                 LogicalPlan::Join(Join {
                     join_type: JoinType::Inner,
                     join_strategy: None,
+                    // TODO: consider support eliminate cross join with null_equals_nulls
+                    null_equals_nulls: None,
                     ..
                 })
             );
@@ -63,6 +65,8 @@ impl OptimizerRule for EliminateCrossJoin {
             LogicalPlan::Join(Join {
                 join_type: JoinType::Inner,
                 join_strategy: None,
+                // TODO: consider support eliminate cross join with null_equals_nulls
+                null_equals_nulls: None,
                 ..
             })
         ) {
@@ -306,8 +310,8 @@ fn find_inner_join(
                 left: left_input,
                 right: right_input,
                 left_on: left_keys,
-                null_equals_nulls: None,
                 right_on: right_keys,
+                null_equals_nulls: None,
                 join_type: JoinType::Inner,
                 join_strategy: None,
                 output_schema: Arc::new(join_schema),
