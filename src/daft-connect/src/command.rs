@@ -1,29 +1,40 @@
-use std::future::ready;
+use std::{ops::ControlFlow, thread};
 
 use arrow2::io::ipc::write::StreamWriter;
+use common_file_formats::FileFormat;
 use daft_table::Table;
 use eyre::Context;
-use futures::stream;
+use futures::TryStreamExt;
 use spark_connect::{
     execute_plan_response::{ArrowBatch, ResponseType, ResultComplete},
     spark_connect_service_server::SparkConnectService,
-    ExecutePlanResponse, Relation,
+    write_operation::{SaveMode, SaveType},
+    ExecutePlanResponse, Relation, WriteOperation,
 };
+use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::Status;
 use uuid::Uuid;
 
-use crate::{convert::convert_data, DaftSparkConnectService, Session};
+use crate::{
+    convert::{convert_data, run_local, to_logical_plan},
+    invalid_argument_err, unimplemented_err, DaftSparkConnectService, Session,
+};
 
 type DaftStream = <DaftSparkConnectService as SparkConnectService>::ExecutePlanStream;
 
-pub struct PlanIds {
-    session: String,
-    server_side_session: String,
-    operation: String,
+struct ExecutablePlanChannel {
+    session_id: String,
+    server_side_session_id: String,
+    operation_id: String,
+    tx: tokio::sync::mpsc::UnboundedSender<eyre::Result<ExecutePlanResponse>>,
 }
 
-impl PlanIds {
-    pub fn gen_response(&self, table: &Table) -> eyre::Result<ExecutePlanResponse> {
+pub trait ConcreteDataChannel {
+    fn send_table(&mut self, table: &Table) -> eyre::Result<()>;
+}
+
+impl ConcreteDataChannel for ExecutablePlanChannel {
+    fn send_table(&mut self, table: &Table) -> eyre::Result<()> {
         let mut data = Vec::new();
 
         let mut writer = StreamWriter::new(
@@ -50,9 +61,9 @@ impl PlanIds {
             .wrap_err("Failed to write Arrow chunk to stream writer")?;
 
         let response = ExecutePlanResponse {
-            session_id: self.session.to_string(),
-            server_side_session_id: self.server_side_session.to_string(),
-            operation_id: self.operation.to_string(),
+            session_id: self.session_id.to_string(),
+            server_side_session_id: self.server_side_session_id.to_string(),
+            operation_id: self.operation_id.to_string(),
             response_id: Uuid::new_v4().to_string(), // todo: implement this
             metrics: None,                           // todo: implement this
             observed_metrics: vec![],
@@ -64,7 +75,11 @@ impl PlanIds {
             })),
         };
 
-        Ok(response)
+        self.tx
+            .send(Ok(response))
+            .wrap_err("Error sending response to client")?;
+
+        Ok(())
     }
 }
 
@@ -74,31 +89,162 @@ impl Session {
         command: Relation,
         operation_id: String,
     ) -> Result<DaftStream, Status> {
-        use futures::{StreamExt, TryStreamExt};
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
 
-        let context = PlanIds {
-            session: self.client_side_session_id().to_string(),
-            server_side_session: self.server_side_session_id().to_string(),
-            operation: operation_id.clone(),
-        };
-
-        let finished = ExecutePlanResponse {
+        let mut channel = ExecutablePlanChannel {
             session_id: self.client_side_session_id().to_string(),
             server_side_session_id: self.server_side_session_id().to_string(),
-            operation_id,
-            response_id: Uuid::new_v4().to_string(),
-            metrics: None,
-            observed_metrics: vec![],
-            schema: None,
-            response_type: Some(ResponseType::ResultComplete(ResultComplete {})),
+            operation_id: operation_id.clone(),
+            tx: tx.clone(),
         };
 
-        let stream = convert_data(command, &context)
-            .map_err(|e| Status::internal(e.to_string()))?
-            .chain(stream::once(ready(Ok(finished))));
+        thread::spawn({
+            let session_id = self.client_side_session_id().to_string();
+            let server_side_session_id = self.server_side_session_id().to_string();
+            move || {
+                let result = convert_data(command, &mut channel);
 
-        Ok(Box::pin(
-            stream.map_err(|e| Status::internal(e.to_string())),
-        ))
+                if let Err(e) = result {
+                    tx.send(Err(e)).unwrap();
+                } else {
+                    let finished = ExecutePlanResponse {
+                        session_id,
+                        server_side_session_id,
+                        operation_id: operation_id.to_string(),
+                        response_id: Uuid::new_v4().to_string(),
+                        metrics: None,
+                        observed_metrics: vec![],
+                        schema: None,
+                        response_type: Some(ResponseType::ResultComplete(ResultComplete {})),
+                    };
+
+                    tx.send(Ok(finished)).unwrap();
+                }
+            }
+        });
+
+        let recv_stream =
+            UnboundedReceiverStream::new(rx).map_err(|e| Status::internal(e.to_string()));
+
+        Ok(Box::pin(recv_stream))
+    }
+
+    pub fn handle_write_operation(
+        &self,
+        operation: WriteOperation,
+        operation_id: String,
+    ) -> Result<DaftStream, Status> {
+        let mode = operation.mode();
+
+        let WriteOperation {
+            input,
+            source,
+            sort_column_names,
+            partitioning_columns,
+            bucket_by,
+            options,
+            clustering_columns,
+            save_type,
+            mode: _,
+        } = operation;
+
+        let Some(input) = input else {
+            return invalid_argument_err!("input is None");
+        };
+
+        let source = source.unwrap_or_else(|| "parquet".to_string());
+        if source != "parquet" {
+            return unimplemented_err!(
+                "Only writing parquet is supported for now but got {source}"
+            );
+        }
+
+        match mode {
+            SaveMode::Unspecified => {}
+            SaveMode::Append => {
+                return unimplemented_err!("Append mode is not yet supported");
+            }
+            SaveMode::Overwrite => {
+                return unimplemented_err!("Overwrite mode is not yet supported");
+            }
+            SaveMode::ErrorIfExists => {
+                return unimplemented_err!("ErrorIfExists mode is not yet supported");
+            }
+            SaveMode::Ignore => {
+                return unimplemented_err!("Ignore mode is not yet supported");
+            }
+        }
+
+        if !sort_column_names.is_empty() {
+            return unimplemented_err!("Sort by columns is not yet supported");
+        }
+
+        if !partitioning_columns.is_empty() {
+            return unimplemented_err!("Partitioning columns is not yet supported");
+        }
+
+        if bucket_by.is_some() {
+            return unimplemented_err!("Bucket by columns is not yet supported");
+        }
+
+        if !options.is_empty() {
+            return unimplemented_err!("Options are not yet supported");
+        }
+
+        if !clustering_columns.is_empty() {
+            return unimplemented_err!("Clustering columns is not yet supported");
+        }
+        let Some(save_type) = save_type else {
+            return invalid_argument_err!("save_type is required");
+        };
+
+        let save_path = match save_type {
+            SaveType::Path(path) => path,
+            SaveType::Table(_) => {
+                return unimplemented_err!("Save type table is not yet supported");
+            }
+        };
+
+        thread::scope(|scope| {
+            let res = scope.spawn(|| {
+                let plan = to_logical_plan(input)
+                    .map_err(|_| Status::internal("Failed to convert to logical plan"))?;
+
+                // todo: assuming this is parquet
+                // todo: is save_path right?
+                let plan = plan
+                    .table_write(&save_path, FileFormat::Parquet, None, None, None)
+                    .map_err(|_| Status::internal("Failed to write table"))?;
+
+                let plan = plan.build();
+
+                run_local(
+                    &plan,
+                    |_table| ControlFlow::Continue(()),
+                    || ControlFlow::Break(()),
+                )
+                .map_err(|e| Status::internal(format!("Failed to write table: {e}")))?;
+
+                Result::<(), Status>::Ok(())
+            });
+
+            res.join().unwrap()
+        })?;
+
+        let session_id = self.client_side_session_id().to_string();
+        let server_side_session_id = self.server_side_session_id().to_string();
+
+        Ok(Box::pin(futures::stream::once(async {
+            Ok(ExecutePlanResponse {
+                session_id,
+                server_side_session_id,
+                operation_id,
+                response_id: "abcxyz".to_string(),
+                metrics: None,
+                observed_metrics: vec![],
+                schema: None,
+                response_type: Some(ResponseType::ResultComplete(ResultComplete {})),
+            })
+        })))
     }
 }

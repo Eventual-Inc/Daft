@@ -1,18 +1,12 @@
-use std::future::ready;
-
 use daft_core::prelude::Series;
 use daft_schema::prelude::Schema;
 use daft_table::Table;
 use eyre::{ensure, Context};
-use futures::{stream, Stream};
-use spark_connect::{ExecutePlanResponse, Range};
+use spark_connect::Range;
 
-use crate::command::PlanIds;
+use crate::command::ConcreteDataChannel;
 
-pub fn range(
-    range: Range,
-    channel: &PlanIds,
-) -> eyre::Result<impl Stream<Item = eyre::Result<ExecutePlanResponse>> + Unpin> {
+pub fn range(range: Range, channel: &mut impl ConcreteDataChannel) -> eyre::Result<()> {
     let Range {
         start,
         end,
@@ -42,7 +36,7 @@ pub fn range(
         len,
     )?;
 
-    let response = channel.gen_response(&singleton_table)?;
+    channel.send_table(&singleton_table)?;
 
-    Ok(stream::once(ready(Ok(response))))
+    Ok(())
 }

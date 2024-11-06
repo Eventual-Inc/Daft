@@ -28,23 +28,19 @@
 //! ```mermaid
 //!
 //! ```
-
 use eyre::{eyre, Context};
-use futures::Stream;
-use spark_connect::{relation::RelType, ExecutePlanResponse, Relation};
+use spark_connect::{relation::RelType, Relation};
 use tracing::trace;
 
-use crate::convert::formatting::RelTypeExt;
+use crate::{command::ConcreteDataChannel, convert::formatting::RelTypeExt};
+
+mod show_string;
+use show_string::show_string;
 
 mod range;
 use range::range;
 
-use crate::command::PlanIds;
-
-pub fn convert_data(
-    plan: Relation,
-    context: &PlanIds,
-) -> eyre::Result<impl Stream<Item = eyre::Result<ExecutePlanResponse>> + Unpin> {
+pub fn convert_data(plan: Relation, encoder: &mut impl ConcreteDataChannel) -> eyre::Result<()> {
     // First check common fields if needed
     if let Some(common) = &plan.common {
         // contains metadata shared across all relation types
@@ -55,7 +51,8 @@ pub fn convert_data(
     let rel_type = plan.rel_type.ok_or_else(|| eyre!("rel_type is None"))?;
 
     match rel_type {
-        RelType::Range(input) => range(input, context).wrap_err("parsing Range"),
+        RelType::ShowString(input) => show_string(*input, encoder).wrap_err("parsing ShowString"),
+        RelType::Range(input) => range(input, encoder).wrap_err("parsing Range"),
         other => Err(eyre!("Unsupported top-level relation: {}", other.name())),
     }
 }
