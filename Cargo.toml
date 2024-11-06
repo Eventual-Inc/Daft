@@ -155,7 +155,7 @@ members = [
   "src/daft-writers",
   "src/hyperloglog",
   "src/parquet2",
-  "src/spark-connect-script",
+  # "src/spark-connect-script",
   "src/spark-connect"
 ]
 
