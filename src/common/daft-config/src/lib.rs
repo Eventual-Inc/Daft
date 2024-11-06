@@ -57,6 +57,7 @@ pub struct DaftExecutionConfig {
     pub enable_aqe: bool,
     pub enable_native_executor: bool,
     pub default_morsel_size: usize,
+    pub enable_pre_shuffle_merge: bool,
 }
 
 impl Default for DaftExecutionConfig {
@@ -80,6 +81,7 @@ impl Default for DaftExecutionConfig {
             enable_aqe: false,
             enable_native_executor: false,
             default_morsel_size: 128 * 1024,
+            enable_pre_shuffle_merge: false,
         }
     }
 }

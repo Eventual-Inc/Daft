@@ -326,6 +326,7 @@ def set_execution_config(
     enable_aqe: bool | None = None,
     enable_native_executor: bool | None = None,
     default_morsel_size: int | None = None,
+    enable_pre_shuffle_merge: bool | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution. These configuration values
     are used when a Dataframe is executed (e.g. calls to `.write_*`, `.collect()` or `.show()`)
@@ -362,6 +363,7 @@ def set_execution_config(
         enable_aqe: Enables Adaptive Query Execution, Defaults to False
         enable_native_executor: Enables new local executor. Defaults to False
         default_morsel_size: Default size of morsels used for the new local executor. Defaults to 131072 rows.
+        enable_pre_shuffle_merge: Enables pre-shuffle merge for shuffle operations. Defaults to False
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
@@ -387,6 +389,7 @@ def set_execution_config(
             enable_aqe=enable_aqe,
             enable_native_executor=enable_native_executor,
             default_morsel_size=default_morsel_size,
+            enable_pre_shuffle_merge=enable_pre_shuffle_merge,
         )
 
         ctx._daft_execution_config = new_daft_execution_config

@@ -107,6 +107,7 @@ impl PyDaftExecutionConfig {
         enable_aqe: Option<bool>,
         enable_native_executor: Option<bool>,
         default_morsel_size: Option<usize>,
+        enable_pre_shuffle_merge: Option<bool>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
@@ -168,6 +169,9 @@ impl PyDaftExecutionConfig {
         }
         if let Some(default_morsel_size) = default_morsel_size {
             config.default_morsel_size = default_morsel_size;
+        }
+        if let Some(enable_pre_shuffle_merge) = enable_pre_shuffle_merge {
+            config.enable_pre_shuffle_merge = enable_pre_shuffle_merge;
         }
 
         Ok(Self {
@@ -255,6 +259,10 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn default_morsel_size(&self) -> PyResult<usize> {
         Ok(self.config.default_morsel_size)
+    }
+    #[getter]
+    fn enable_pre_shuffle_merge(&self) -> PyResult<bool> {
+        Ok(self.config.enable_pre_shuffle_merge)
     }
 }
 

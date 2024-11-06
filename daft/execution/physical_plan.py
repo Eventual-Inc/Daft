@@ -1470,11 +1470,7 @@ def pre_shuffle_merge(
                 inputs=[p.partition() for p in ready_to_merge],
                 partial_metadatas=[m.partition_metadata() for m in ready_to_merge],
                 resource_request=ResourceRequest(
-                    memory_bytes=sum(
-                        m.partition_metadata().size_bytes
-                        for m in ready_to_merge
-                        if m.partition_metadata().size_bytes is not None
-                    ),
+                    memory_bytes=sum(m.partition_metadata().size_bytes or 0 for m in ready_to_merge),
                 ),
             ).add_instruction(
                 instruction=execution_step.ReduceMerge(),

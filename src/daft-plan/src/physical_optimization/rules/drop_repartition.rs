@@ -74,9 +74,11 @@ mod tests {
         num_partitions: usize,
         partition_by: Vec<ExprRef>,
     ) -> PhysicalPlanRef {
-        PhysicalPlan::ShuffleExchange(
-            ShuffleExchangeFactory::new(plan).get_hash_partitioning(partition_by, num_partitions),
-        )
+        PhysicalPlan::ShuffleExchange(ShuffleExchangeFactory::new(plan).get_hash_partitioning(
+            partition_by,
+            num_partitions,
+            None,
+        ))
         .into()
     }
 
