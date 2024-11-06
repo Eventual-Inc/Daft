@@ -204,15 +204,119 @@ impl SQLPlanner {
         let selection = match query.body.as_ref() {
             SetExpr::Select(selection) => selection,
             SetExpr::Query(_) => unsupported_sql_err!("Subqueries are not supported"),
-            SetExpr::SetOperation { .. } => {
-                unsupported_sql_err!("Set operations are not supported")
+            SetExpr::SetOperation {
+                op,
+                set_quantifier,
+                left,
+                right,
+            } => {
+                use sqlparser::ast::{SetOperator, SetQuantifier};
+                fn make_query(set_expr: &SetExpr) -> Query {
+                    Query {
+                        with: None,
+                        body: Box::new(set_expr.clone()),
+                        order_by: None,
+                        limit: None,
+                        limit_by: vec![],
+                        offset: None,
+                        fetch: None,
+                        locks: vec![],
+                        for_clause: None,
+                        settings: None,
+                        format_clause: None,
+                    }
+                }
+                match (op, set_quantifier) {
+                    // UNION ALL
+                    (SetOperator::Union, SetQuantifier::All) => {
+                        let left = make_query(left);
+                        let right = make_query(right);
+
+                        let left = self.plan_query(&left)?;
+                        let right = self.plan_query(&right)?;
+                        return left.concat(&right).map_err(|e| e.into());
+                    }
+                    (SetOperator::Union, SetQuantifier::Distinct) => {
+                        unsupported_sql_err!("UNION DISTINCT is not supported.")
+                    }
+                    (SetOperator::Union, SetQuantifier::ByName) => {
+                        unsupported_sql_err!("UNION BY NAME is not supported")
+                    }
+                    (SetOperator::Union, SetQuantifier::AllByName) => {
+                        unsupported_sql_err!("UNION ALL BY NAME is not supported")
+                    }
+                    (SetOperator::Union, SetQuantifier::DistinctByName) => {
+                        unsupported_sql_err!("UNION DISTINCT BY NAME is not supported.")
+                    }
+                    (SetOperator::Union, SetQuantifier::None) => {
+                        let left = make_query(left);
+                        let right = make_query(right);
+
+                        let left = self.plan_query(&left)?;
+                        let right = self.plan_query(&right)?;
+                        return left.concat(&right)?.distinct().map_err(|e| e.into());
+                    }
+                    (SetOperator::Except, SetQuantifier::None) => {
+                        let left = make_query(left);
+                        let right = make_query(right);
+                        let left = self.plan_query(&left)?;
+                        let right = self.plan_query(&right)?;
+                        let left_schema = left.schema();
+                        let right_schema = right.schema();
+                        if left_schema != right_schema {
+                            invalid_operation_err!("EXCEPT queries must have the same schema")
+                        }
+                        if left_schema.is_empty() {
+                            invalid_operation_err!("EXCEPT queries must have at least one column")
+                        }
+                        let left_on = left_schema
+                            .names()
+                            .into_iter()
+                            .map(|n| col(n.as_ref()))
+                            .collect::<Vec<_>>();
+
+                        let right_on = right_schema
+                            .names()
+                            .into_iter()
+                            .map(|n| col(n.as_ref()).alias(format!("right.{}", n)))
+                            .collect::<Vec<_>>();
+
+                        let Some(Expr::Alias(_, alias)) = right_on.first().map(|e| e.as_ref())
+                        else {
+                            unreachable!("we know right_on has at least one element")
+                        };
+
+                        let first_from_right = col(alias.as_ref());
+
+                        let joined = left.join_with_null_safe_equal(
+                            right,
+                            left_on.clone(),
+                            right_on,
+                            None,
+                            JoinType::Left,
+                            None,
+                            None,
+                            None,
+                        )?;
+
+                        return joined
+                            .filter(first_from_right.is_null())
+                            .and_then(|plan| plan.select(left_on))
+                            .map_err(|e| e.into());
+                    }
+                    (SetOperator::Except, _) => {
+                        unsupported_sql_err!("EXCEPT is not supported")
+                    }
+                    (SetOperator::Intersect, _) => {
+                        unsupported_sql_err!("INTERSECT is not supported. Use INNER JOIN instead")
+                    }
+                }
             }
             SetExpr::Values(..) => unsupported_sql_err!("VALUES are not supported"),
             SetExpr::Insert(..) => unsupported_sql_err!("INSERT is not supported"),
             SetExpr::Update(..) => unsupported_sql_err!("UPDATE is not supported"),
             SetExpr::Table(..) => unsupported_sql_err!("TABLE is not supported"),
         };
-
         check_select_features(selection)?;
 
         if let Some(with) = &query.with {
@@ -579,9 +683,15 @@ impl SQLPlanner {
 
                 // switch left/right operands if the caller has them in reverse
                 if &left_rel.get_name() == tbl_b || &right_rel.get_name() == tbl_a {
-                    Ok((vec![col(col_b.as_ref())], vec![col(col_a.as_ref())]))
+                    Ok((
+                        vec![col(col_b.as_ref()).alias(format!("{tbl_b}.{col_b}",))],
+                        vec![col(col_a.as_ref())],
+                    ))
                 } else {
-                    Ok((vec![col(col_a.as_ref())], vec![col(col_b.as_ref())]))
+                    Ok((
+                        vec![col(col_a.as_ref())],
+                        vec![col(col_b.as_ref()).alias(format!("{tbl_b}.{col_b}",))],
+                    ))
                 }
             } else {
                 unsupported_sql_err!("collect_compound_identifiers: Expected left.len() == 2 && right.len() == 2, but found left.len() == {:?}, right.len() == {:?}", left.len(), right.len());
