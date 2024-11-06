@@ -54,7 +54,7 @@ impl ScanTaskSource {
                             count += 1;
 
                             // Stop adding tasks if we would exceed the row limit
-                            if remaining_rows < 0.0 {
+                            if remaining_rows <= 0.0 {
                                 break;
                             }
                         }
