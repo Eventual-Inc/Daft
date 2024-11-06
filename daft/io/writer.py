@@ -76,7 +76,8 @@ class FileWriterBase(ABC):
         self.compression = compression if compression is not None else "none"
 
     def resolve_path_and_fs(self, root_dir: str, io_config: Optional[IOConfig] = None):
-        return _resolve_paths_and_filesystem(root_dir, io_config=io_config)
+        [resolved_path], fs = _resolve_paths_and_filesystem(root_dir, io_config=io_config)
+        return resolved_path, fs
 
     @abstractmethod
     def write(self, table: MicroPartition) -> None:
@@ -127,6 +128,7 @@ class ParquetFileWriter(FileWriterBase):
         opts = {}
         if self.metadata_collector is not None:
             opts["metadata_collector"] = self.metadata_collector
+        print("self.full_path", self.full_path)
         return pq.ParquetWriter(
             self.full_path,
             schema,
