@@ -244,6 +244,7 @@ class DataFrame:
         Example:
 
         >>> import daft
+        >>>
         >>> df = daft.from_pydict({"foo": [1, 2, 3], "bar": ["a", "b", "c"]})
         >>> for row in df.iter_rows():
         ...     print(row)
