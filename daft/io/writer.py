@@ -1,9 +1,10 @@
 import uuid
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, List, Optional, Tuple
+from typing import TYPE_CHECKING, List, Optional
 
 from daft.daft import IOConfig
-from daft.dependencies import pa, pacsv, pafs, pq
+from daft.delta_lake.delta_lake_write import make_deltalake_add_action, make_deltalake_fs, sanitize_table_for_deltalake
+from daft.dependencies import pa, pacsv, pq
 from daft.filesystem import (
     _resolve_paths_and_filesystem,
     canonicalize_protocol,
@@ -21,7 +22,6 @@ from daft.table.partitioning import (
     partition_values_to_str_mapping,
 )
 from daft.table.table import Table
-from daft.table.table_io import make_deltalake_add_action, make_deltalake_fs, sanitize_table_for_deltalake
 
 if TYPE_CHECKING:
     from pyiceberg.schema import Schema as IcebergSchema
@@ -38,14 +38,9 @@ class FileWriterBase(ABC):
         compression: Optional[str] = None,
         io_config: Optional[IOConfig] = None,
         version: Optional[int] = None,
-        resolved_path_and_fs: Optional[Tuple[str, pafs.FileSystem]] = None,
         default_partition_fallback: Optional[str] = None,
     ):
-        if resolved_path_and_fs is None:
-            [resolved_path], self.fs = _resolve_paths_and_filesystem(root_dir, io_config=io_config)
-        else:
-            resolved_path, self.fs = resolved_path_and_fs
-
+        resolved_path, self.fs = self.resolve_path_and_fs(root_dir, io_config=io_config)
         protocol = get_protocol_from_path(root_dir)
         canonicalized_protocol = canonicalize_protocol(protocol)
         is_local_fs = canonicalized_protocol == "file"
@@ -80,6 +75,9 @@ class FileWriterBase(ABC):
 
         self.compression = compression if compression is not None else "none"
 
+    def resolve_path_and_fs(self, root_dir: str, io_config: Optional[IOConfig] = None):
+        return _resolve_paths_and_filesystem(root_dir, io_config=io_config)
+
     @abstractmethod
     def write(self, table: MicroPartition) -> None:
         """Write data to the file using the appropriate writer.
@@ -108,7 +106,6 @@ class ParquetFileWriter(FileWriterBase):
         compression: Optional[str] = None,
         io_config: Optional[IOConfig] = None,
         version: Optional[int] = None,
-        resolved_path_and_fs: Optional[Tuple[str, pafs.FileSystem]] = None,
         default_partition_fallback: Optional[str] = None,
         metadata_collector: Optional[List[pq.FileMetaData]] = None,
     ):
@@ -120,7 +117,6 @@ class ParquetFileWriter(FileWriterBase):
             compression=compression,
             io_config=io_config,
             version=version,
-            resolved_path_and_fs=resolved_path_and_fs,
             default_partition_fallback=default_partition_fallback,
         )
         self.is_closed = False
@@ -220,7 +216,6 @@ class IcebergWriter(ParquetFileWriter):
             compression="zstd",
             io_config=io_config,
             version=None,
-            resolved_path_and_fs=None,
             default_partition_fallback="null",
             metadata_collector=[],
         )
@@ -270,8 +265,6 @@ class DeltalakeWriter(ParquetFileWriter):
         partition_values: Optional[Table] = None,
         io_config: Optional[IOConfig] = None,
     ):
-        fs = make_deltalake_fs(root_dir, io_config)
-
         super().__init__(
             root_dir=root_dir,
             file_idx=file_idx,
@@ -279,12 +272,14 @@ class DeltalakeWriter(ParquetFileWriter):
             compression=None,
             io_config=io_config,
             version=version,
-            resolved_path_and_fs=("", fs),
             default_partition_fallback=None,
             metadata_collector=[],
         )
 
         self.large_dtypes = large_dtypes
+
+    def resolve_path_and_fs(self, root_dir: str, io_config: Optional[IOConfig] = None):
+        return "", make_deltalake_fs(root_dir, io_config)
 
     def write(self, table: MicroPartition):
         assert not self.is_closed, "Cannot write to a closed DeltalakeFileWriter"
