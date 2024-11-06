@@ -7,7 +7,10 @@ use tracing::instrument;
 use super::streaming_sink::{
     DynStreamingSinkState, StreamingSink, StreamingSinkOutput, StreamingSinkState,
 };
-use crate::pipeline::PipelineResultType;
+use crate::{
+    dispatcher::{Dispatcher, RoundRobinBufferedDispatcher},
+    pipeline::PipelineResultType,
+};
 
 struct ConcatSinkState {
     // The index of the last morsel of data that was received, which should be strictly non-decreasing.
@@ -63,5 +66,12 @@ impl StreamingSink for ConcatSink {
     /// Since the ConcatSink does not do any computation, it does not need to spawn multiple workers.
     fn max_concurrency(&self) -> usize {
         1
+    }
+
+    fn make_dispatcher(
+        &self,
+        _runtime_handle: &crate::ExecutionRuntimeHandle,
+    ) -> Arc<dyn Dispatcher> {
+        Arc::new(RoundRobinBufferedDispatcher::new(None))
     }
 }

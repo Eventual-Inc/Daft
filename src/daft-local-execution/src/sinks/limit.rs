@@ -7,7 +7,7 @@ use tracing::instrument;
 use super::streaming_sink::{
     DynStreamingSinkState, StreamingSink, StreamingSinkOutput, StreamingSinkState,
 };
-use crate::pipeline::PipelineResultType;
+use crate::{dispatcher::Dispatcher, pipeline::PipelineResultType};
 
 struct LimitSinkState {
     remaining: usize,
@@ -89,5 +89,12 @@ impl StreamingSink for LimitSink {
 
     fn max_concurrency(&self) -> usize {
         1
+    }
+
+    fn make_dispatcher(
+        &self,
+        _runtime_handle: &crate::ExecutionRuntimeHandle,
+    ) -> Arc<dyn Dispatcher> {
+        Arc::new(crate::dispatcher::RoundRobinBufferedDispatcher::new(None))
     }
 }

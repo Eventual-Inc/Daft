@@ -129,9 +129,9 @@ impl BlockingSink for WriteSink {
         if let Some(partition_by) = &self.partition_by {
             Arc::new(PartitionedDispatcher::new(partition_by.clone()))
         } else {
-            Arc::new(RoundRobinBufferedDispatcher::new(
+            Arc::new(RoundRobinBufferedDispatcher::new(Some(
                 runtime_handle.default_morsel_size(),
-            ))
+            )))
         }
     }
 

@@ -18,7 +18,7 @@ use tracing::{info_span, instrument};
 use super::streaming_sink::{
     DynStreamingSinkState, StreamingSink, StreamingSinkOutput, StreamingSinkState,
 };
-use crate::pipeline::PipelineResultType;
+use crate::{dispatcher::RoundRobinBufferedDispatcher, pipeline::PipelineResultType};
 
 struct IndexBitmapBuilder {
     mutable_bitmaps: Vec<MutableBitmap>,
@@ -412,5 +412,14 @@ impl StreamingSink for OuterHashJoinProbeSink {
         } else {
             Ok(None)
         }
+    }
+
+    fn make_dispatcher(
+        &self,
+        runtime_handle: &crate::ExecutionRuntimeHandle,
+    ) -> Arc<dyn crate::dispatcher::Dispatcher> {
+        Arc::new(RoundRobinBufferedDispatcher::new(Some(
+            runtime_handle.default_morsel_size(),
+        )))
     }
 }

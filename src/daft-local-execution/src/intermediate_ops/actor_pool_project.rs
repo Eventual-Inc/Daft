@@ -15,7 +15,7 @@ use super::intermediate_op::{
     DynIntermediateOpState, IntermediateOperator, IntermediateOperatorResult,
     IntermediateOperatorState,
 };
-use crate::pipeline::PipelineResultType;
+use crate::{dispatcher::RoundRobinBufferedDispatcher, pipeline::PipelineResultType};
 
 struct ActorHandle {
     #[cfg(feature = "python")]
@@ -172,7 +172,13 @@ impl IntermediateOperator for ActorPoolProjectOperator {
         self.concurrency
     }
 
-    fn morsel_size(&self) -> Option<usize> {
-        self.batch_size
+    fn make_dispatcher(
+        &self,
+        runtime_handle: &crate::ExecutionRuntimeHandle,
+    ) -> Arc<dyn crate::dispatcher::Dispatcher> {
+        Arc::new(RoundRobinBufferedDispatcher::new(Some(
+            self.batch_size
+                .unwrap_or_else(|| runtime_handle.default_morsel_size()),
+        )))
     }
 }

@@ -13,17 +13,17 @@ use crate::{
 pub(crate) trait Dispatcher {
     async fn dispatch(
         &self,
-        receiver: CountingReceiver,
-        worker_senders: Vec<Sender<PipelineResultType>>,
+        receivers: Vec<CountingReceiver>,
+        worker_senders: Vec<Sender<(usize, PipelineResultType)>>,
     ) -> DaftResult<()>;
 }
 
 pub(crate) struct RoundRobinBufferedDispatcher {
-    morsel_size: usize,
+    morsel_size: Option<usize>,
 }
 
 impl RoundRobinBufferedDispatcher {
-    pub(crate) fn new(morsel_size: usize) -> Self {
+    pub(crate) fn new(morsel_size: Option<usize>) -> Self {
         Self { morsel_size }
     }
 }
@@ -32,38 +32,44 @@ impl RoundRobinBufferedDispatcher {
 impl Dispatcher for RoundRobinBufferedDispatcher {
     async fn dispatch(
         &self,
-        mut receiver: CountingReceiver,
-        worker_senders: Vec<Sender<PipelineResultType>>,
+        receivers: Vec<CountingReceiver>,
+        worker_senders: Vec<Sender<(usize, PipelineResultType)>>,
     ) -> DaftResult<()> {
         let mut next_worker_idx = 0;
-        let mut send_to_next_worker = |data: PipelineResultType| {
+        let mut send_to_next_worker = |idx, data: PipelineResultType| {
             let next_worker_sender = worker_senders.get(next_worker_idx).unwrap();
             next_worker_idx = (next_worker_idx + 1) % worker_senders.len();
-            next_worker_sender.send(data)
+            next_worker_sender.send((idx, data))
         };
 
-        let mut buffer = RowBasedBuffer::new(self.morsel_size);
-        while let Some(morsel) = receiver.recv().await {
-            if morsel.should_broadcast() {
-                for worker_sender in &worker_senders {
-                    if worker_sender.send(morsel.clone()).await.is_err() {
-                        return Ok(());
-                    }
-                }
-            } else {
-                buffer.push(morsel.as_data());
-                if let Some(ready) = buffer.pop_enough()? {
-                    for r in ready {
-                        if send_to_next_worker(r.into()).await.is_err() {
+        let mut buffer = self.morsel_size.map(RowBasedBuffer::new);
+        for (idx, mut receiver) in receivers.into_iter().enumerate() {
+            while let Some(morsel) = receiver.recv().await {
+                if morsel.should_broadcast() {
+                    for worker_sender in &worker_senders {
+                        if worker_sender.send((idx, morsel.clone())).await.is_err() {
                             return Ok(());
                         }
                     }
+                } else if let Some(ref mut buffer) = buffer {
+                    buffer.push(morsel.as_data());
+                    if let Some(ready) = buffer.pop_enough()? {
+                        for r in ready {
+                            if send_to_next_worker(idx, r.into()).await.is_err() {
+                                return Ok(());
+                            }
+                        }
+                    }
+                } else if send_to_next_worker(idx, morsel).await.is_err() {
+                    return Ok(());
                 }
             }
-        }
-        // Clear all remaining morsels
-        if let Some(last_morsel) = buffer.pop_all()? {
-            let _ = send_to_next_worker(last_morsel.into()).await;
+            // Clear all remaining morsels
+            if let Some(ref mut buffer) = buffer {
+                if let Some(last_morsel) = buffer.pop_all()? {
+                    let _ = send_to_next_worker(idx, last_morsel.into()).await;
+                }
+            }
         }
         Ok(())
     }
@@ -83,28 +89,31 @@ impl PartitionedDispatcher {
 impl Dispatcher for PartitionedDispatcher {
     async fn dispatch(
         &self,
-        mut receiver: CountingReceiver,
-        worker_senders: Vec<Sender<PipelineResultType>>,
+        receivers: Vec<CountingReceiver>,
+        worker_senders: Vec<Sender<(usize, PipelineResultType)>>,
     ) -> DaftResult<()> {
-        while let Some(morsel) = receiver.recv().await {
-            if morsel.should_broadcast() {
-                for worker_sender in &worker_senders {
-                    if worker_sender.send(morsel.clone()).await.is_err() {
-                        return Ok(());
+        for (idx, mut receiver) in receivers.into_iter().enumerate() {
+            while let Some(morsel) = receiver.recv().await {
+                if morsel.should_broadcast() {
+                    for worker_sender in &worker_senders {
+                        if worker_sender.send((idx, morsel.clone())).await.is_err() {
+                            return Ok(());
+                        }
                     }
-                }
-            } else {
-                let partitions = morsel
-                    .as_data()
-                    .partition_by_hash(&self.partition_by, worker_senders.len())?;
-                for (partition, worker_sender) in partitions.into_iter().zip(worker_senders.iter())
-                {
-                    if worker_sender
-                        .send(Arc::new(partition).into())
-                        .await
-                        .is_err()
+                } else {
+                    let partitions = morsel
+                        .as_data()
+                        .partition_by_hash(&self.partition_by, worker_senders.len())?;
+                    for (partition, worker_sender) in
+                        partitions.into_iter().zip(worker_senders.iter())
                     {
-                        return Ok(());
+                        if worker_sender
+                            .send((idx, Arc::new(partition).into()))
+                            .await
+                            .is_err()
+                        {
+                            return Ok(());
+                        }
                     }
                 }
             }

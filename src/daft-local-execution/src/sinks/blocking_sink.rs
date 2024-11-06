@@ -37,9 +37,9 @@ pub trait BlockingSink: Send + Sync {
     fn name(&self) -> &'static str;
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>>;
     fn make_dispatcher(&self, runtime_handle: &ExecutionRuntimeHandle) -> Arc<dyn Dispatcher> {
-        Arc::new(RoundRobinBufferedDispatcher::new(
+        Arc::new(RoundRobinBufferedDispatcher::new(Some(
             runtime_handle.default_morsel_size(),
-        ))
+        )))
     }
     fn max_concurrency(&self) -> usize;
 }
@@ -68,13 +68,13 @@ impl BlockingSinkNode {
     #[instrument(level = "info", skip_all, name = "BlockingSink::run_worker")]
     async fn run_worker(
         op: Arc<dyn BlockingSink>,
-        mut input_receiver: Receiver<PipelineResultType>,
+        mut input_receiver: Receiver<(usize, PipelineResultType)>,
         rt_context: Arc<RuntimeStatsContext>,
     ) -> DaftResult<Box<dyn BlockingSinkState>> {
         let span = info_span!("BlockingSink::Sink");
         let compute_runtime = get_compute_runtime();
         let mut state = op.make_state()?;
-        while let Some(morsel) = input_receiver.recv().await {
+        while let Some((_, morsel)) = input_receiver.recv().await {
             let op = op.clone();
             let morsel = morsel.clone();
             let span = span.clone();
@@ -96,7 +96,7 @@ impl BlockingSinkNode {
 
     fn spawn_workers(
         op: Arc<dyn BlockingSink>,
-        input_receivers: Vec<Receiver<PipelineResultType>>,
+        input_receivers: Vec<Receiver<(usize, PipelineResultType)>>,
         task_set: &mut TaskSet<DaftResult<Box<dyn BlockingSinkState>>>,
         stats: Arc<RuntimeStatsContext>,
     ) {
@@ -153,7 +153,11 @@ impl PipelineNode for BlockingSinkNode {
         let (input_senders, input_receivers) = (0..num_workers).map(|_| create_channel(1)).unzip();
         let dispatcher = op.make_dispatcher(runtime_handle);
         runtime_handle.spawn(
-            async move { dispatcher.dispatch(counting_receiver, input_senders).await },
+            async move {
+                dispatcher
+                    .dispatch(vec![counting_receiver], input_senders)
+                    .await
+            },
             self.name(),
         );
 

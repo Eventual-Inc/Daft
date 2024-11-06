@@ -12,6 +12,7 @@ use crate::{
         create_channel, create_ordering_aware_receiver_channel, OrderingAwareReceiver, Receiver,
         Sender,
     },
+    dispatcher::Dispatcher,
     pipeline::{PipelineNode, PipelineResultType},
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
     ExecutionRuntimeHandle, JoinSnafu, TaskSet, NUM_CPUS,
@@ -80,6 +81,8 @@ pub trait StreamingSink: Send + Sync {
     fn max_concurrency(&self) -> usize {
         *NUM_CPUS
     }
+
+    fn make_dispatcher(&self, runtime_handle: &ExecutionRuntimeHandle) -> Arc<dyn Dispatcher>;
 }
 
 pub struct StreamingSinkNode {
@@ -184,35 +187,6 @@ impl StreamingSinkNode {
         }
         output_receiver
     }
-
-    // Forwards input from the children to the workers in a round-robin fashion.
-    // Always exhausts the input from one child before moving to the next.
-    async fn forward_input_to_workers(
-        receivers: Vec<CountingReceiver>,
-        worker_senders: Vec<Sender<(usize, PipelineResultType)>>,
-    ) -> DaftResult<()> {
-        let mut next_worker_idx = 0;
-        let mut send_to_next_worker = |idx, data: PipelineResultType| {
-            let next_worker_sender = worker_senders.get(next_worker_idx).unwrap();
-            next_worker_idx = (next_worker_idx + 1) % worker_senders.len();
-            next_worker_sender.send((idx, data))
-        };
-
-        for (idx, mut receiver) in receivers.into_iter().enumerate() {
-            while let Some(morsel) = receiver.recv().await {
-                if morsel.should_broadcast() {
-                    for worker_sender in &worker_senders {
-                        if worker_sender.send((idx, morsel.clone())).await.is_err() {
-                            return Ok(());
-                        }
-                    }
-                } else if send_to_next_worker(idx, morsel.clone()).await.is_err() {
-                    return Ok(());
-                }
-            }
-        }
-        Ok(())
-    }
 }
 
 impl TreeDisplay for StreamingSinkNode {
@@ -269,8 +243,13 @@ impl PipelineNode for StreamingSinkNode {
         let runtime_stats = self.runtime_stats.clone();
         let num_workers = op.max_concurrency();
         let (input_senders, input_receivers) = (0..num_workers).map(|_| create_channel(1)).unzip();
+        let dispatcher = op.make_dispatcher(runtime_handle);
         runtime_handle.spawn(
-            Self::forward_input_to_workers(child_result_receivers, input_senders),
+            async move {
+                dispatcher
+                    .dispatch(child_result_receivers, input_senders)
+                    .await
+            },
             self.name(),
         );
         runtime_handle.spawn(

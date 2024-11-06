@@ -7,11 +7,11 @@ use daft_micropartition::MicroPartition;
 use tracing::{info_span, instrument};
 
 use crate::{
-    buffer::RowBasedBuffer,
     channel::{
         create_channel, create_ordering_aware_receiver_channel, OrderingAwareReceiver, Receiver,
         Sender,
     },
+    dispatcher::{Dispatcher, RoundRobinBufferedDispatcher},
     pipeline::{PipelineNode, PipelineResultType},
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
     ExecutionRuntimeHandle, NUM_CPUS,
@@ -75,9 +75,13 @@ pub trait IntermediateOperator: Send + Sync {
         *NUM_CPUS
     }
 
-    /// The input morsel size expected by this operator. If None, use the default size.
-    fn morsel_size(&self) -> Option<usize> {
-        None
+    fn make_dispatcher(
+        &self,
+        runtime_handle: &crate::ExecutionRuntimeHandle,
+    ) -> Arc<dyn Dispatcher> {
+        Arc::new(RoundRobinBufferedDispatcher::new(Some(
+            runtime_handle.default_morsel_size(),
+        )))
     }
 }
 
@@ -175,45 +179,6 @@ impl IntermediateNode {
         }
         output_receiver
     }
-
-    pub async fn send_to_workers(
-        receivers: Vec<CountingReceiver>,
-        worker_senders: Vec<Sender<(usize, PipelineResultType)>>,
-        morsel_size: usize,
-    ) -> DaftResult<()> {
-        let mut next_worker_idx = 0;
-        let mut send_to_next_worker = |idx, data: PipelineResultType| {
-            let next_worker_sender = worker_senders.get(next_worker_idx).unwrap();
-            next_worker_idx = (next_worker_idx + 1) % worker_senders.len();
-            next_worker_sender.send((idx, data))
-        };
-
-        for (idx, mut receiver) in receivers.into_iter().enumerate() {
-            let mut buffer = RowBasedBuffer::new(morsel_size);
-            while let Some(morsel) = receiver.recv().await {
-                if morsel.should_broadcast() {
-                    for worker_sender in &worker_senders {
-                        if worker_sender.send((idx, morsel.clone())).await.is_err() {
-                            return Ok(());
-                        }
-                    }
-                } else {
-                    buffer.push(morsel.as_data());
-                    if let Some(ready) = buffer.pop_enough()? {
-                        for part in ready {
-                            if send_to_next_worker(idx, part.into()).await.is_err() {
-                                return Ok(());
-                            }
-                        }
-                    }
-                }
-            }
-            if let Some(ready) = buffer.pop_all()? {
-                let _ = send_to_next_worker(idx, ready.into()).await;
-            }
-        }
-        Ok(())
-    }
 }
 
 impl TreeDisplay for IntermediateNode {
@@ -268,13 +233,14 @@ impl PipelineNode for IntermediateNode {
         let (input_senders, input_receivers) = (0..num_workers).map(|_| create_channel(1)).unzip();
         let mut output_receiver =
             self.spawn_workers(input_receivers, runtime_handle, maintain_order);
+
+        let dispatcher = op.make_dispatcher(runtime_handle);
         runtime_handle.spawn(
-            Self::send_to_workers(
-                child_result_receivers,
-                input_senders,
-                op.morsel_size()
-                    .unwrap_or_else(|| runtime_handle.default_morsel_size()),
-            ),
+            async move {
+                dispatcher
+                    .dispatch(child_result_receivers, input_senders)
+                    .await
+            },
             op.name(),
         );
         runtime_handle.spawn(
