@@ -111,7 +111,7 @@ def test_deltalake_write_overwrite_cloud(cloud_paths):
 
 
 @pytest.mark.skipif(
-    context.get_context().daft_execution_config.enable_native_executor is True,
+    context.get_context().runner_config.name == "native",
     reason="Native executor does not support repartitioning",
 )
 def test_deltalake_write_overwrite_multi_partition(tmp_path):
@@ -184,7 +184,7 @@ def test_deltalake_write_ignore(tmp_path):
 
 
 @pytest.mark.skipif(
-    context.get_context().daft_execution_config.enable_native_executor is True,
+    context.get_context().runner_config.name == "native",
     reason="Native executor does not support repartitioning",
 )
 def test_deltalake_write_with_empty_partition(tmp_path, base_table):

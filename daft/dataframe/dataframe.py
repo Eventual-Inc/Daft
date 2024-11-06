@@ -244,7 +244,6 @@ class DataFrame:
         Example:
 
         >>> import daft
-        >>> daft.context.set_runner_ray()
         >>> df = daft.from_pydict({"foo": [1, 2, 3], "bar": ["a", "b", "c"]})
         >>> for row in df.iter_rows():
         ...     print(row)
@@ -341,8 +340,8 @@ class DataFrame:
             results_buffer_size: how many partitions to allow in the results buffer (defaults to the total number of CPUs
                 available on the machine).
 
-        >>> import daft # doctest: +SKIP
-        >>>
+        >>> import daft
+        >>> daft.context.set_runner_py()
         >>> df = daft.from_pydict({"foo": [1, 2, 3], "bar": ["a", "b", "c"]}).into_partitions(2)
         >>> for part in df.iter_partitions():
         ...     print(part)
@@ -1170,7 +1169,7 @@ class DataFrame:
 
         Example:
             >>> import daft
-            >>> daft.context.set_runner_ray()
+            >>> daft.context.set_runner_py()
             >>> df = daft.from_pydict({"a": [1, 2, 3, 4]}).into_partitions(2)
             >>> df = df._add_monotonically_increasing_id()
             >>> df.show()

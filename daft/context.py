@@ -266,6 +266,7 @@ def set_runner_ray(
             max_task_backlog=max_task_backlog,
             force_client_mode=force_client_mode,
         )
+        ctx._runner = None
         return ctx
 
 
@@ -283,6 +284,7 @@ def set_runner_py(use_thread_pool: bool | None = None) -> DaftContext:
             raise RuntimeError("Cannot set runner more than once")
 
         ctx._runner_config = _PyRunnerConfig(use_thread_pool=use_thread_pool)
+        ctx._runner = None
         return ctx
 
 
@@ -300,6 +302,7 @@ def set_runner_native() -> DaftContext:
             raise RuntimeError("Cannot set runner more than once")
 
         ctx._runner_config = _NativeRunnerConfig()
+        ctx._runner = None
         return ctx
 
 
