@@ -3,6 +3,7 @@ use std::{
     sync::Arc,
 };
 
+use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use common_runtime::get_io_runtime;
@@ -12,7 +13,7 @@ use daft_io::IOStatsRef;
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_micropartition::MicroPartition;
 use daft_parquet::read::{read_parquet_bulk, ParquetSchemaInferenceOptions};
-use daft_scan::{storage_config::StorageConfig, ChunkSpec, ScanTask};
+use daft_scan::{storage_config::StorageConfig, ChunkSpec, Pushdowns, ScanTask};
 use futures::{Stream, StreamExt, TryStreamExt};
 use snafu::ResultExt;
 use tracing::instrument;
@@ -24,12 +25,53 @@ use crate::{
 
 pub struct ScanTaskSource {
     scan_tasks: Vec<Arc<ScanTask>>,
+    num_parallel_tasks: usize,
     schema: SchemaRef,
 }
 
 impl ScanTaskSource {
-    pub fn new(scan_tasks: Vec<Arc<ScanTask>>, schema: SchemaRef) -> Self {
-        Self { scan_tasks, schema }
+    pub fn new(
+        scan_tasks: Vec<Arc<ScanTask>>,
+        pushdowns: Pushdowns,
+        schema: SchemaRef,
+        cfg: &DaftExecutionConfig,
+    ) -> Self {
+        // Determine the number of parallel tasks to run based on available CPU cores and row limits
+        let num_parallel_tasks = match pushdowns.limit {
+            // If we have a row limit, we need to calculate how many parallel tasks we can run
+            // without exceeding the limit
+            Some(limit) => {
+                let mut count = 0;
+                let mut remaining_rows = limit as f64;
+
+                // Only examine tasks up to the number of available CPU cores
+                for scan_task in scan_tasks.iter().take(*NUM_CPUS) {
+                    match scan_task.approx_num_rows(Some(cfg)) {
+                        // If we can estimate the number of rows for this task
+                        Some(estimated_rows) => {
+                            remaining_rows -= estimated_rows;
+                            count += 1;
+
+                            // Stop adding tasks if we would exceed the row limit
+                            if remaining_rows < 0.0 {
+                                break;
+                            }
+                        }
+                        // If we can't estimate rows, conservatively include the task
+                        // This ensures we don't underutilize available resources
+                        None => count += 1,
+                    }
+                }
+                count
+            }
+            // If there's no row limit, use all available CPU cores
+            None => *NUM_CPUS,
+        };
+        Self {
+            scan_tasks,
+            num_parallel_tasks,
+            schema,
+        }
     }
 
     pub fn boxed(self) -> Box<dyn Source> {
@@ -59,7 +101,7 @@ impl Source for ScanTaskSource {
                     .await
                 })
             }))
-            .buffered(*NUM_CPUS)
+            .buffered(self.num_parallel_tasks)
             .map(|s| s?)
             .try_flatten();
 

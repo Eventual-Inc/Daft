@@ -123,9 +123,13 @@ pub fn physical_plan_to_pipeline(
             source.boxed().into()
         }
         LocalPhysicalPlan::PhysicalScan(PhysicalScan {
-            scan_tasks, schema, ..
+            scan_tasks,
+            pushdowns,
+            schema,
+            ..
         }) => {
-            let scan_task_source = ScanTaskSource::new(scan_tasks.clone(), schema.clone());
+            let scan_task_source =
+                ScanTaskSource::new(scan_tasks.clone(), pushdowns.clone(), schema.clone(), cfg);
             scan_task_source.boxed().into()
         }
         LocalPhysicalPlan::InMemoryScan(InMemoryScan { info, .. }) => {

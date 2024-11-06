@@ -19,6 +19,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                     } else {
                         Ok(LocalPhysicalPlan::physical_scan(
                             scan_tasks,
+                            info.pushdowns.clone(),
                             source.output_schema.clone(),
                         ))
                     }
