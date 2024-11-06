@@ -1863,6 +1863,7 @@ dependencies = [
  "num-traits",
  "numpy",
  "pyo3",
+ "rand 0.8.5",
  "regex",
  "serde",
  "sketches-ddsketch",
