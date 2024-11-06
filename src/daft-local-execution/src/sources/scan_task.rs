@@ -26,7 +26,7 @@ use crate::{
 
 pub struct ScanTaskSource {
     scan_tasks: Vec<Arc<ScanTask>>,
-    num_parallel_tasks: usize,
+    _num_parallel_tasks: usize,
     schema: SchemaRef,
 }
 
@@ -70,7 +70,7 @@ impl ScanTaskSource {
         };
         Self {
             scan_tasks,
-            num_parallel_tasks,
+            _num_parallel_tasks: num_parallel_tasks,
             schema,
         }
     }
@@ -104,7 +104,7 @@ impl Source for ScanTaskSource {
                     .await
                 })
             }))
-            .buffered(self.num_parallel_tasks)
+            .buffered(1)
             .map(|s| s?)
             .try_flatten();
 
