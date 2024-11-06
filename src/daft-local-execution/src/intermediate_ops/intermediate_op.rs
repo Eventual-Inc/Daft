@@ -8,9 +8,12 @@ use tracing::{info_span, instrument};
 
 use crate::{
     buffer::RowBasedBuffer,
-    channel::{create_channel, PipelineChannel, Receiver, Sender},
+    channel::{
+        create_channel, create_ordering_aware_receiver_channel, OrderingAwareReceiver, Receiver,
+        Sender,
+    },
     pipeline::{PipelineNode, PipelineResultType},
-    runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
+    runtime_stats::{CountingReceiver, RuntimeStatsContext},
     ExecutionRuntimeHandle, NUM_CPUS,
 };
 
@@ -112,8 +115,8 @@ impl IntermediateNode {
     #[instrument(level = "info", skip_all, name = "IntermediateOperator::run_worker")]
     pub async fn run_worker(
         op: Arc<dyn IntermediateOperator>,
-        mut receiver: Receiver<(usize, PipelineResultType)>,
-        sender: CountingSender,
+        receiver: Receiver<(usize, PipelineResultType)>,
+        sender: Sender<PipelineResultType>,
         rt_context: Arc<RuntimeStatsContext>,
     ) -> DaftResult<()> {
         let span = info_span!("IntermediateOp::execute");
@@ -153,27 +156,24 @@ impl IntermediateNode {
 
     pub fn spawn_workers(
         &self,
-        num_workers: usize,
-        destination_channel: &mut PipelineChannel,
+        input_receivers: Vec<Receiver<(usize, PipelineResultType)>>,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> Vec<Sender<(usize, PipelineResultType)>> {
-        let mut worker_senders = Vec::with_capacity(num_workers);
-        for _ in 0..num_workers {
-            let (worker_sender, worker_receiver) = create_channel(1);
-            let destination_sender =
-                destination_channel.get_next_sender_with_stats(&self.runtime_stats);
+        maintain_order: bool,
+    ) -> OrderingAwareReceiver<PipelineResultType> {
+        let (output_sender, output_receiver) =
+            create_ordering_aware_receiver_channel(maintain_order, input_receivers.len());
+        for (input_receiver, output_sender) in input_receivers.into_iter().zip(output_sender) {
             runtime_handle.spawn(
                 Self::run_worker(
                     self.intermediate_op.clone(),
-                    worker_receiver,
-                    destination_sender,
+                    input_receiver,
+                    output_sender,
                     self.runtime_stats.clone(),
                 ),
                 self.intermediate_op.name(),
             );
-            worker_senders.push(worker_sender);
         }
-        worker_senders
+        output_receiver
     }
 
     pub async fn send_to_workers(
@@ -188,7 +188,7 @@ impl IntermediateNode {
             next_worker_sender.send((idx, data))
         };
 
-        for (idx, mut receiver) in receivers.into_iter().enumerate() {
+        for (idx, receiver) in receivers.into_iter().enumerate() {
             let mut buffer = RowBasedBuffer::new(morsel_size);
             while let Some(morsel) = receiver.recv().await {
                 if morsel.should_broadcast() {
@@ -251,29 +251,43 @@ impl PipelineNode for IntermediateNode {
         &mut self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> crate::Result<PipelineChannel> {
+    ) -> crate::Result<Receiver<PipelineResultType>> {
         let mut child_result_receivers = Vec::with_capacity(self.children.len());
         for child in &mut self.children {
-            let child_result_channel = child.start(maintain_order, runtime_handle)?;
+            let child_result_receiver = child.start(maintain_order, runtime_handle)?;
             child_result_receivers
-                .push(child_result_channel.get_receiver_with_stats(&self.runtime_stats));
+                .push(child_result_receiver.into_counting_receiver(self.runtime_stats.clone()));
         }
         let op = self.intermediate_op.clone();
         let num_workers = op.max_concurrency();
-        let mut destination_channel = PipelineChannel::new(num_workers, maintain_order);
+        let (destination_sender, destination_receiver) = create_channel(1);
+        let destination_sender =
+            destination_sender.into_counting_sender(self.runtime_stats.clone());
 
-        let worker_senders =
-            self.spawn_workers(num_workers, &mut destination_channel, runtime_handle);
+        let (input_senders, input_receivers) = (0..num_workers).map(|_| create_channel(1)).unzip();
+        let mut output_receiver =
+            self.spawn_workers(input_receivers, runtime_handle, maintain_order);
         runtime_handle.spawn(
             Self::send_to_workers(
                 child_result_receivers,
-                worker_senders,
+                input_senders,
                 op.morsel_size()
                     .unwrap_or_else(|| runtime_handle.default_morsel_size()),
             ),
             op.name(),
         );
-        Ok(destination_channel)
+        runtime_handle.spawn(
+            async move {
+                while let Some(morsel) = output_receiver.recv().await {
+                    if destination_sender.send(morsel).await.is_err() {
+                        return Ok(());
+                    }
+                }
+                Ok(())
+            },
+            op.name(),
+        );
+        Ok(destination_receiver)
     }
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self

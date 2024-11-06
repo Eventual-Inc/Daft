@@ -9,7 +9,9 @@ use daft_micropartition::MicroPartition;
 use futures::{stream::BoxStream, StreamExt};
 
 use crate::{
-    channel::PipelineChannel, pipeline::PipelineNode, runtime_stats::RuntimeStatsContext,
+    channel::{create_channel, Receiver},
+    pipeline::{PipelineNode, PipelineResultType},
+    runtime_stats::RuntimeStatsContext,
     ExecutionRuntimeHandle,
 };
 
@@ -73,11 +75,11 @@ impl PipelineNode for SourceNode {
         &mut self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> crate::Result<PipelineChannel> {
+    ) -> crate::Result<Receiver<PipelineResultType>> {
         let source = self.source.clone();
         let io_stats = self.io_stats.clone();
-        let mut channel = PipelineChannel::new(1, maintain_order);
-        let counting_sender = channel.get_next_sender_with_stats(&self.runtime_stats);
+        let (destination_sender, destination_receiver) = create_channel(1);
+        let counting_sender = destination_sender.into_counting_sender(self.runtime_stats.clone());
         runtime_handle.spawn(
             async move {
                 let mut has_data = false;
@@ -96,7 +98,7 @@ impl PipelineNode for SourceNode {
             },
             self.name(),
         );
-        Ok(channel)
+        Ok(destination_receiver)
     }
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self

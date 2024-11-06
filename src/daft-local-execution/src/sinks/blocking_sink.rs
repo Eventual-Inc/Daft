@@ -8,7 +8,7 @@ use snafu::ResultExt;
 use tracing::{info_span, instrument};
 
 use crate::{
-    channel::{create_channel, PipelineChannel, Receiver},
+    channel::{create_channel, Receiver},
     dispatcher::{Dispatcher, RoundRobinBufferedDispatcher},
     pipeline::{PipelineNode, PipelineResultType},
     runtime_stats::RuntimeStatsContext,
@@ -68,7 +68,7 @@ impl BlockingSinkNode {
     #[instrument(level = "info", skip_all, name = "BlockingSink::run_worker")]
     async fn run_worker(
         op: Arc<dyn BlockingSink>,
-        mut input_receiver: Receiver<PipelineResultType>,
+        input_receiver: Receiver<PipelineResultType>,
         rt_context: Arc<RuntimeStatsContext>,
     ) -> DaftResult<Box<dyn BlockingSinkState>> {
         let span = info_span!("BlockingSink::Sink");
@@ -136,17 +136,18 @@ impl PipelineNode for BlockingSinkNode {
 
     fn start(
         &mut self,
-        maintain_order: bool,
+        _maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> crate::Result<PipelineChannel> {
+    ) -> crate::Result<Receiver<PipelineResultType>> {
         let child = self.child.as_mut();
         let child_results_receiver = child
             .start(false, runtime_handle)?
-            .get_receiver_with_stats(&self.runtime_stats);
+            .into_counting_receiver(self.runtime_stats.clone());
 
-        let mut destination_channel = PipelineChannel::new(1, maintain_order);
+        let (destination_sender, destination_receiver) = create_channel(1);
         let destination_sender =
-            destination_channel.get_next_sender_with_stats(&self.runtime_stats);
+            destination_sender.into_counting_sender(self.runtime_stats.clone());
+
         let op = self.op.clone();
         let runtime_stats = self.runtime_stats.clone();
         let num_workers = op.max_concurrency();
@@ -192,7 +193,7 @@ impl PipelineNode for BlockingSinkNode {
             },
             self.name(),
         );
-        Ok(destination_channel)
+        Ok(destination_receiver)
     }
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self

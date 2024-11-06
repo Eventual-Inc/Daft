@@ -5,10 +5,8 @@ use std::{
     time::Instant,
 };
 
-use tokio::sync::mpsc::error::SendError;
-
 use crate::{
-    channel::{PipelineReceiver, Sender},
+    channel::{Receiver, Sender},
     pipeline::PipelineResultType,
 };
 
@@ -121,7 +119,7 @@ impl CountingSender {
     pub(crate) async fn send(
         &self,
         v: PipelineResultType,
-    ) -> Result<(), SendError<PipelineResultType>> {
+    ) -> Result<(), loole::SendError<PipelineResultType>> {
         let len = match v {
             PipelineResultType::Data(ref mp) => mp.len(),
             PipelineResultType::ProbeState(ref state) => {
@@ -135,16 +133,19 @@ impl CountingSender {
 }
 
 pub struct CountingReceiver {
-    receiver: PipelineReceiver,
+    receiver: Receiver<PipelineResultType>,
     rt: Arc<RuntimeStatsContext>,
 }
 
 impl CountingReceiver {
-    pub(crate) fn new(receiver: PipelineReceiver, rt: Arc<RuntimeStatsContext>) -> Self {
+    pub(crate) fn new(
+        receiver: Receiver<PipelineResultType>,
+        rt: Arc<RuntimeStatsContext>,
+    ) -> Self {
         Self { receiver, rt }
     }
     #[inline]
-    pub(crate) async fn recv(&mut self) -> Option<PipelineResultType> {
+    pub(crate) async fn recv(&self) -> Option<PipelineResultType> {
         let v = self.receiver.recv().await;
         if let Some(ref v) = v {
             let len = match v {

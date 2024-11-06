@@ -24,7 +24,7 @@ use indexmap::IndexSet;
 use snafu::ResultExt;
 
 use crate::{
-    channel::PipelineChannel,
+    channel::Receiver,
     intermediate_ops::{
         actor_pool_project::ActorPoolProjectOperator, aggregate::AggregateOperator,
         anti_semi_hash_join_probe::AntiSemiProbeOperator, explode::ExplodeOperator,
@@ -86,14 +86,14 @@ impl PipelineResultType {
     }
 }
 
-pub trait PipelineNode: Sync + Send + TreeDisplay {
+pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
     fn children(&self) -> Vec<&dyn PipelineNode>;
     fn name(&self) -> &'static str;
     fn start(
         &mut self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> crate::Result<PipelineChannel>;
+    ) -> crate::Result<Receiver<PipelineResultType>>;
 
     fn as_tree_display(&self) -> &dyn TreeDisplay;
 }

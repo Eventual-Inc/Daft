@@ -8,7 +8,10 @@ use snafu::ResultExt;
 use tracing::{info_span, instrument};
 
 use crate::{
-    channel::{create_channel, PipelineChannel, Receiver, Sender},
+    channel::{
+        create_channel, create_ordering_aware_receiver_channel, OrderingAwareReceiver, Receiver,
+        Sender,
+    },
     pipeline::{PipelineNode, PipelineResultType},
     runtime_stats::{CountingReceiver, RuntimeStatsContext},
     ExecutionRuntimeHandle, JoinSnafu, TaskSet, NUM_CPUS,
@@ -104,7 +107,7 @@ impl StreamingSinkNode {
     #[instrument(level = "info", skip_all, name = "StreamingSink::run_worker")]
     async fn run_worker(
         op: Arc<dyn StreamingSink>,
-        mut input_receiver: Receiver<(usize, PipelineResultType)>,
+        input_receiver: Receiver<(usize, PipelineResultType)>,
         output_sender: Sender<Arc<MicroPartition>>,
         rt_context: Arc<RuntimeStatsContext>,
     ) -> DaftResult<Box<dyn DynStreamingSinkState>> {
@@ -167,13 +170,15 @@ impl StreamingSinkNode {
         input_receivers: Vec<Receiver<(usize, PipelineResultType)>>,
         task_set: &mut TaskSet<DaftResult<Box<dyn DynStreamingSinkState>>>,
         stats: Arc<RuntimeStatsContext>,
-    ) -> Receiver<Arc<MicroPartition>> {
-        let (output_sender, output_receiver) = create_channel(input_receivers.len());
-        for input_receiver in input_receivers {
+        maintain_order: bool,
+    ) -> OrderingAwareReceiver<Arc<MicroPartition>> {
+        let (output_sender, output_receiver) =
+            create_ordering_aware_receiver_channel(maintain_order, input_receivers.len());
+        for (input_receiver, output_sender) in input_receivers.into_iter().zip(output_sender) {
             task_set.spawn(Self::run_worker(
                 op.clone(),
                 input_receiver,
-                output_sender.clone(),
+                output_sender,
                 stats.clone(),
             ));
         }
@@ -193,7 +198,7 @@ impl StreamingSinkNode {
             next_worker_sender.send((idx, data))
         };
 
-        for (idx, mut receiver) in receivers.into_iter().enumerate() {
+        for (idx, receiver) in receivers.into_iter().enumerate() {
             while let Some(morsel) = receiver.recv().await {
                 if morsel.should_broadcast() {
                     for worker_sender in &worker_senders {
@@ -247,17 +252,17 @@ impl PipelineNode for StreamingSinkNode {
         &mut self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> crate::Result<PipelineChannel> {
+    ) -> crate::Result<Receiver<PipelineResultType>> {
         let mut child_result_receivers = Vec::with_capacity(self.children.len());
         for child in &mut self.children {
-            let child_result_channel = child.start(maintain_order, runtime_handle)?;
+            let child_result_receiver = child.start(maintain_order, runtime_handle)?;
             child_result_receivers
-                .push(child_result_channel.get_receiver_with_stats(&self.runtime_stats.clone()));
+                .push(child_result_receiver.into_counting_receiver(self.runtime_stats.clone()));
         }
 
-        let mut destination_channel = PipelineChannel::new(1, maintain_order);
+        let (destination_sender, destination_receiver) = create_channel(1);
         let destination_sender =
-            destination_channel.get_next_sender_with_stats(&self.runtime_stats);
+            destination_sender.into_counting_sender(self.runtime_stats.clone());
 
         let op = self.op.clone();
         let runtime_stats = self.runtime_stats.clone();
@@ -275,6 +280,7 @@ impl PipelineNode for StreamingSinkNode {
                     input_receivers,
                     &mut task_set,
                     runtime_stats.clone(),
+                    maintain_order,
                 );
 
                 while let Some(morsel) = output_receiver.recv().await {
@@ -304,7 +310,7 @@ impl PipelineNode for StreamingSinkNode {
             },
             self.name(),
         );
-        Ok(destination_channel)
+        Ok(destination_receiver)
     }
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self
