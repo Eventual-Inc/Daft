@@ -1121,7 +1121,26 @@ impl SQLPlanner {
             SQLExpr::Convert { .. } => unsupported_sql_err!("CONVERT"),
             SQLExpr::Cast { .. } => unsupported_sql_err!("CAST"),
             SQLExpr::AtTimeZone { .. } => unsupported_sql_err!("AT TIME ZONE"),
-            SQLExpr::Extract { .. } => unsupported_sql_err!("EXTRACT"),
+            SQLExpr::Extract {
+                field,
+                syntax: _,
+                expr,
+            } => {
+                use daft_functions::temporal::{self as dt};
+                let expr = self.plan_expr(expr)?;
+
+                match field {
+                    DateTimeField::Year => Ok(dt::dt_year(expr)),
+                    DateTimeField::Month => Ok(dt::dt_month(expr)),
+                    DateTimeField::Day => Ok(dt::dt_day(expr)),
+                    DateTimeField::DayOfWeek => Ok(dt::dt_day_of_week(expr)),
+                    DateTimeField::Date => Ok(dt::dt_date(expr)),
+                    DateTimeField::Hour => Ok(dt::dt_hour(expr)),
+                    DateTimeField::Minute => Ok(dt::dt_minute(expr)),
+                    DateTimeField::Second => Ok(dt::dt_second(expr)),
+                    other => unsupported_sql_err!("EXTRACT ({other})"),
+                }
+            }
             SQLExpr::Ceil { expr, .. } => Ok(ceil(self.plan_expr(expr)?)),
             SQLExpr::Floor { expr, .. } => Ok(floor(self.plan_expr(expr)?)),
             SQLExpr::Position { .. } => unsupported_sql_err!("POSITION"),
