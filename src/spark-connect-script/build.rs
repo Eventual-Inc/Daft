@@ -1,11 +1,12 @@
 fn main() -> std::io::Result<()> {
     let mut config = tonic_build::Config::new();
 
-    config
-        .type_attribute(".", "#[derive(serde::Serialize)]")
-        .extern_path(".google.protobuf.Any", "::prost_wkt_types::Any")
-        .extern_path(".google.protobuf.Timestamp", "::prost_wkt_types::Timestamp")
-        .extern_path(".google.protobuf.Value", "::prost_wkt_types::Value");
+    // todo: having issues with prost_wkt_types on Windows
+    // config
+    //     .type_attribute(".", "#[derive(serde::Serialize)]")
+    //     .extern_path(".google.protobuf.Any", "::prost_wkt_types::Any")
+    //     .extern_path(".google.protobuf.Timestamp", "::prost_wkt_types::Timestamp")
+    //     .extern_path(".google.protobuf.Value", "::prost_wkt_types::Value");
 
     tonic_build::configure()
         .build_server(true)

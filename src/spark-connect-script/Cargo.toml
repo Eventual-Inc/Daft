@@ -1,9 +1,6 @@
 [build-dependencies]
 tonic-build = {version = "0.12.3"}
 
-[lints]
-workspace = true
-
 [package]
 edition = "2021"
 name = "spark-connect-script"
