@@ -194,7 +194,8 @@ fn iceberg_write(
             &iceberg_info.table_location,
             &iceberg_info.iceberg_schema,
             &iceberg_info.iceberg_properties,
-            &iceberg_info.partition_spec,
+            iceberg_info.partition_spec_id,
+            exprs_to_pyexprs(&iceberg_info.partition_cols),
             iceberg_info
                 .io_config
                 .as_ref()

@@ -85,6 +85,86 @@ impl PyArrowWriter {
             })
         })
     }
+
+    pub fn new_iceberg_writer(
+        root_dir: &str,
+        file_idx: usize,
+        schema: &pyo3::Py<pyo3::PyAny>,
+        properties: &pyo3::Py<pyo3::PyAny>,
+        partition_spec_id: i64,
+        partition_values: Option<&Table>,
+        io_config: &Option<daft_io::IOConfig>,
+    ) -> DaftResult<Self> {
+        Python::with_gil(|py| {
+            let file_writer_module = py.import_bound(pyo3::intern!(py, "daft.io.writer"))?;
+            let file_writer_class = file_writer_module.getattr("IcebergWriter")?;
+            let _from_pytable = py
+                .import_bound(pyo3::intern!(py, "daft.table"))?
+                .getattr(pyo3::intern!(py, "Table"))?
+                .getattr(pyo3::intern!(py, "_from_pytable"))?;
+            let partition_values = match partition_values {
+                Some(pv) => {
+                    let py_table = _from_pytable.call1((PyTable::from(pv.clone()),))?;
+                    Some(py_table)
+                }
+                None => None,
+            };
+            let py_writer = file_writer_class.call1((
+                root_dir,
+                file_idx,
+                schema,
+                properties,
+                partition_spec_id,
+                partition_values,
+                io_config.as_ref().map(|cfg| daft_io::python::IOConfig {
+                    config: cfg.clone(),
+                }),
+            ))?;
+            Ok(Self {
+                py_writer: py_writer.into(),
+                is_closed: false,
+            })
+        })
+    }
+
+    pub fn new_deltalake_writer(
+        root_dir: &str,
+        file_idx: usize,
+        version: i32,
+        large_dtypes: bool,
+        partition_values: Option<&Table>,
+        io_config: &Option<daft_io::IOConfig>,
+    ) -> DaftResult<Self> {
+        Python::with_gil(|py| {
+            let file_writer_module = py.import_bound(pyo3::intern!(py, "daft.io.writer"))?;
+            let file_writer_class = file_writer_module.getattr("DeltalakeWriter")?;
+            let _from_pytable = py
+                .import_bound(pyo3::intern!(py, "daft.table"))?
+                .getattr(pyo3::intern!(py, "Table"))?
+                .getattr(pyo3::intern!(py, "_from_pytable"))?;
+            let partition_values = match partition_values {
+                Some(pv) => {
+                    let py_table = _from_pytable.call1((PyTable::from(pv.clone()),))?;
+                    Some(py_table)
+                }
+                None => None,
+            };
+            let py_writer = file_writer_class.call1((
+                root_dir,
+                file_idx,
+                version,
+                large_dtypes,
+                partition_values,
+                io_config.as_ref().map(|cfg| daft_io::python::IOConfig {
+                    config: cfg.clone(),
+                }),
+            ))?;
+            Ok(Self {
+                py_writer: py_writer.into(),
+                is_closed: false,
+            })
+        })
+    }
 }
 
 impl FileWriter for PyArrowWriter {

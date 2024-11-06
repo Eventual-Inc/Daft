@@ -18,7 +18,7 @@ use daft_physical_plan::{
 };
 use daft_plan::{populate_aggregation_stages, JoinType};
 use daft_table::ProbeState;
-use daft_writers::make_writer_factory;
+use daft_writers::make_physical_writer_factory;
 use indexmap::IndexSet;
 use snafu::ResultExt;
 
@@ -435,7 +435,7 @@ pub fn physical_plan_to_pipeline(
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
-            let writer_factory = make_writer_factory(file_info, data_schema, cfg);
+            let writer_factory = make_physical_writer_factory(file_info, data_schema, cfg);
             let write_format = match (file_info.file_format, file_info.partition_cols.is_some()) {
                 (FileFormat::Parquet, true) => WriteFormat::PartitionedParquet,
                 (FileFormat::Parquet, false) => WriteFormat::Parquet,
@@ -447,6 +447,57 @@ pub fn physical_plan_to_pipeline(
                 write_format,
                 writer_factory,
                 file_info.partition_cols.clone(),
+                file_schema.clone(),
+            );
+            BlockingSinkNode::new(Arc::new(write_sink), child_node).boxed()
+        }
+        #[cfg(feature = "python")]
+        LocalPhysicalPlan::CatalogWrite(daft_physical_plan::CatalogWrite {
+            input,
+            catalog_type,
+            data_schema,
+            file_schema,
+            ..
+        }) => {
+            use daft_plan::CatalogType;
+
+            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            let (partition_by, write_format) = match catalog_type {
+                CatalogType::Iceberg(ic) => {
+                    if !ic.partition_cols.is_empty() {
+                        (
+                            Some(ic.partition_cols.clone()),
+                            WriteFormat::PartitionedIceberg,
+                        )
+                    } else {
+                        (None, WriteFormat::Iceberg)
+                    }
+                }
+                CatalogType::DeltaLake(dl) => {
+                    if let Some(partition_cols) = &dl.partition_cols
+                        && !partition_cols.is_empty()
+                    {
+                        let partition_col_exprs = partition_cols
+                            .iter()
+                            .map(|name| col(name.as_str()))
+                            .collect::<Vec<_>>();
+                        (Some(partition_col_exprs), WriteFormat::PartitionedDeltalake)
+                    } else {
+                        (None, WriteFormat::Deltalake)
+                    }
+                }
+                _ => panic!("Unsupported catalog type"),
+            };
+            let writer_factory = daft_writers::make_catalog_writer_factory(
+                catalog_type,
+                data_schema,
+                &partition_by,
+                cfg,
+            );
+            let write_sink = WriteSink::new(
+                write_format,
+                writer_factory,
+                partition_by,
                 file_schema.clone(),
             );
             BlockingSinkNode::new(Arc::new(write_sink), child_node).boxed()
