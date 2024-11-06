@@ -99,6 +99,12 @@ impl Table {
         Ok(Self::new_unchecked(schema, columns?, num_rows))
     }
 
+    pub fn get_inner_arrow_arrays(
+        &self,
+    ) -> impl Iterator<Item = Box<dyn arrow2::array::Array>> + '_ {
+        self.columns.iter().map(|s| s.to_arrow())
+    }
+
     /// Create a new [`Table`] and validate against `num_rows`
     ///
     /// Note that this function is slow. You might instead be looking for [`Table::new_unchecked`] if you've already performed your own validation logic.
@@ -191,6 +197,10 @@ impl Table {
     }
 
     pub fn len(&self) -> usize {
+        self.num_rows
+    }
+
+    pub fn num_rows(&self) -> usize {
         self.num_rows
     }
 
