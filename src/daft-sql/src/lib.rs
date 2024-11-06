@@ -135,6 +135,7 @@ mod tests {
     #[case("select list_utf8[0] from tbl1")]
     #[case::slice("select list_utf8[0:2] from tbl1")]
     #[case::join("select * from tbl2 join tbl3 on tbl2.id = tbl3.id")]
+    #[case::null_safe_join("select * from tbl2 left join tbl3 on tbl2.id <=> tbl3.id")]
     #[case::from("select tbl2.text from tbl2")]
     #[case::using("select tbl2.text from tbl2 join tbl3 using (id)")]
     #[case(
@@ -247,19 +248,26 @@ mod tests {
         Ok(())
     }
 
-    #[rstest]
+    #[rstest(
+        null_equals_null => [false, true]
+    )]
     fn test_join(
         mut planner: SQLPlanner,
         tbl_2: LogicalPlanRef,
         tbl_3: LogicalPlanRef,
+        null_equals_null: bool,
     ) -> SQLPlannerResult<()> {
-        let sql = "select * from tbl2 join tbl3 on tbl2.id = tbl3.id";
-        let plan = planner.plan_sql(sql)?;
+        let sql = format!(
+            "select * from tbl2 join tbl3 on tbl2.id {} tbl3.id",
+            if null_equals_null { "<=>" } else { "=" }
+        );
+        let plan = planner.plan_sql(&sql)?;
         let expected = LogicalPlanBuilder::new(tbl_2, None)
-            .join(
+            .join_with_null_safe_equal(
                 tbl_3,
                 vec![col("id")],
                 vec![col("id")],
+                Some(vec![null_equals_null]),
                 JoinType::Inner,
                 None,
                 None,
