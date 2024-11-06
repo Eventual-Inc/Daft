@@ -6,4 +6,7 @@ edition = "2021"
 name = "spark-connect-script"
 version = "0.0.1"
 
+[package.metadata.cargo-machete]
+ignored = ["tonic-build"]
+
 [workspace]
