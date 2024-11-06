@@ -521,7 +521,7 @@ fn physical_plan_to_partition_tasks(
                     let reduced = py
                         .import_bound(pyo3::intern!(py, "daft.execution.rust_physical_plan_shim"))?
                         .getattr(pyo3::intern!(py, "reduce_merge"))?
-                        .call1((mapped, input_num_partitions, target_spec.num_partitions()))?;
+                        .call1((mapped))?;
                     Ok(reduced.into())
                 }
                 ShuffleExchangeStrategy::SplitOrCoalesceToTargetNum {

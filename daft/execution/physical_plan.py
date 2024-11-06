@@ -1148,8 +1148,6 @@ def sort_merge_join_aligned_boundaries(
                     )
                     for per_part_boundaries in per_partition_bounds
                 ],
-                num_input_partitions=len(range_fanout_plan),
-                num_output_partitions=num_partitions,
             )
         )
 
@@ -1570,7 +1568,6 @@ def sort(
     stage_id_sampling = next(stage_id_counter)
 
     sample_size = get_context().daft_execution_config.sample_size_for_sort
-    num_input_partitions = len(source_materializations)
     for source in source_materializations:
         while not source.done():
             logger.debug("sort blocked on completion of source: %s", source)
@@ -1649,8 +1646,6 @@ def sort(
             )
             for per_part_boundaries in per_partition_bounds
         ],
-        num_input_partitions=num_input_partitions,
-        num_output_partitions=num_partitions,
     )
 
 

@@ -233,11 +233,9 @@ def fanout_by_hash(
 
 def reduce_merge(
     input: physical_plan.InProgressPhysicalPlan[PartitionT],
-    num_input_partitions: int,
-    num_output_partitions: int,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     reduce_instruction = execution_step.ReduceMerge()
-    return physical_plan.reduce(input, reduce_instruction, num_input_partitions, num_output_partitions)
+    return physical_plan.reduce(input, reduce_instruction)
 
 
 def hash_join(
