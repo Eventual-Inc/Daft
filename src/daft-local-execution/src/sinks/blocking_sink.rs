@@ -11,7 +11,7 @@ use crate::{
     channel::{create_channel, Receiver},
     dispatcher::{Dispatcher, RoundRobinBufferedDispatcher},
     pipeline::{PipelineNode, PipelineResultType},
-    runtime_stats::RuntimeStatsContext,
+    runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
     ExecutionRuntimeHandle, JoinSnafu, TaskSet,
 };
 pub trait BlockingSinkState: Send + Sync {
@@ -68,7 +68,7 @@ impl BlockingSinkNode {
     #[instrument(level = "info", skip_all, name = "BlockingSink::run_worker")]
     async fn run_worker(
         op: Arc<dyn BlockingSink>,
-        input_receiver: Receiver<PipelineResultType>,
+        mut input_receiver: Receiver<PipelineResultType>,
         rt_context: Arc<RuntimeStatsContext>,
     ) -> DaftResult<Box<dyn BlockingSinkState>> {
         let span = info_span!("BlockingSink::Sink");
@@ -140,13 +140,12 @@ impl PipelineNode for BlockingSinkNode {
         runtime_handle: &mut ExecutionRuntimeHandle,
     ) -> crate::Result<Receiver<PipelineResultType>> {
         let child = self.child.as_mut();
-        let child_results_receiver = child
-            .start(false, runtime_handle)?
-            .into_counting_receiver(self.runtime_stats.clone());
+        let child_results_receiver = child.start(false, runtime_handle)?;
+        let counting_receiver =
+            CountingReceiver::new(child_results_receiver, self.runtime_stats.clone());
 
         let (destination_sender, destination_receiver) = create_channel(1);
-        let destination_sender =
-            destination_sender.into_counting_sender(self.runtime_stats.clone());
+        let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
 
         let op = self.op.clone();
         let runtime_stats = self.runtime_stats.clone();
@@ -154,11 +153,7 @@ impl PipelineNode for BlockingSinkNode {
         let (input_senders, input_receivers) = (0..num_workers).map(|_| create_channel(1)).unzip();
         let dispatcher = op.make_dispatcher(runtime_handle);
         runtime_handle.spawn(
-            async move {
-                dispatcher
-                    .dispatch(child_results_receiver, input_senders)
-                    .await
-            },
+            async move { dispatcher.dispatch(counting_receiver, input_senders).await },
             self.name(),
         );
 
@@ -187,7 +182,7 @@ impl PipelineNode for BlockingSinkNode {
                     })
                     .await??;
                 if let Some(res) = finalized_result {
-                    let _ = destination_sender.send(res).await;
+                    let _ = counting_sender.send(res).await;
                 }
                 Ok(())
             },

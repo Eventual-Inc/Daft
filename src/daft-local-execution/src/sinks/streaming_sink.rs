@@ -13,7 +13,7 @@ use crate::{
         Sender,
     },
     pipeline::{PipelineNode, PipelineResultType},
-    runtime_stats::{CountingReceiver, RuntimeStatsContext},
+    runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
     ExecutionRuntimeHandle, JoinSnafu, TaskSet, NUM_CPUS,
 };
 
@@ -107,7 +107,7 @@ impl StreamingSinkNode {
     #[instrument(level = "info", skip_all, name = "StreamingSink::run_worker")]
     async fn run_worker(
         op: Arc<dyn StreamingSink>,
-        input_receiver: Receiver<(usize, PipelineResultType)>,
+        mut input_receiver: Receiver<(usize, PipelineResultType)>,
         output_sender: Sender<Arc<MicroPartition>>,
         rt_context: Arc<RuntimeStatsContext>,
     ) -> DaftResult<Box<dyn DynStreamingSinkState>> {
@@ -198,7 +198,7 @@ impl StreamingSinkNode {
             next_worker_sender.send((idx, data))
         };
 
-        for (idx, receiver) in receivers.into_iter().enumerate() {
+        for (idx, mut receiver) in receivers.into_iter().enumerate() {
             while let Some(morsel) = receiver.recv().await {
                 if morsel.should_broadcast() {
                     for worker_sender in &worker_senders {
@@ -256,13 +256,14 @@ impl PipelineNode for StreamingSinkNode {
         let mut child_result_receivers = Vec::with_capacity(self.children.len());
         for child in &mut self.children {
             let child_result_receiver = child.start(maintain_order, runtime_handle)?;
-            child_result_receivers
-                .push(child_result_receiver.into_counting_receiver(self.runtime_stats.clone()));
+            child_result_receivers.push(CountingReceiver::new(
+                child_result_receiver,
+                self.runtime_stats.clone(),
+            ));
         }
 
         let (destination_sender, destination_receiver) = create_channel(1);
-        let destination_sender =
-            destination_sender.into_counting_sender(self.runtime_stats.clone());
+        let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
 
         let op = self.op.clone();
         let runtime_stats = self.runtime_stats.clone();
@@ -284,7 +285,7 @@ impl PipelineNode for StreamingSinkNode {
                 );
 
                 while let Some(morsel) = output_receiver.recv().await {
-                    if destination_sender.send(morsel.into()).await.is_err() {
+                    if counting_sender.send(morsel.into()).await.is_err() {
                         break;
                     }
                 }
@@ -304,7 +305,7 @@ impl PipelineNode for StreamingSinkNode {
                     })
                     .await??;
                 if let Some(res) = finalized_result {
-                    let _ = destination_sender.send(res.into()).await;
+                    let _ = counting_sender.send(res.into()).await;
                 }
                 Ok(())
             },

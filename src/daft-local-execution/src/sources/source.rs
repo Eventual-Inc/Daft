@@ -11,7 +11,7 @@ use futures::{stream::BoxStream, StreamExt};
 use crate::{
     channel::{create_channel, Receiver},
     pipeline::{PipelineNode, PipelineResultType},
-    runtime_stats::RuntimeStatsContext,
+    runtime_stats::{CountingSender, RuntimeStatsContext},
     ExecutionRuntimeHandle,
 };
 
@@ -79,7 +79,7 @@ impl PipelineNode for SourceNode {
         let source = self.source.clone();
         let io_stats = self.io_stats.clone();
         let (destination_sender, destination_receiver) = create_channel(1);
-        let counting_sender = destination_sender.into_counting_sender(self.runtime_stats.clone());
+        let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
         runtime_handle.spawn(
             async move {
                 let mut has_data = false;

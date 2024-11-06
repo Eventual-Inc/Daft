@@ -32,7 +32,7 @@ impl RoundRobinBufferedDispatcher {
 impl Dispatcher for RoundRobinBufferedDispatcher {
     async fn dispatch(
         &self,
-        receiver: CountingReceiver,
+        mut receiver: CountingReceiver,
         worker_senders: Vec<Sender<PipelineResultType>>,
     ) -> DaftResult<()> {
         let mut next_worker_idx = 0;
@@ -83,7 +83,7 @@ impl PartitionedDispatcher {
 impl Dispatcher for PartitionedDispatcher {
     async fn dispatch(
         &self,
-        receiver: CountingReceiver,
+        mut receiver: CountingReceiver,
         worker_senders: Vec<Sender<PipelineResultType>>,
     ) -> DaftResult<()> {
         while let Some(morsel) = receiver.recv().await {

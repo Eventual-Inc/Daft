@@ -13,7 +13,7 @@ use crate::{
         Sender,
     },
     pipeline::{PipelineNode, PipelineResultType},
-    runtime_stats::{CountingReceiver, RuntimeStatsContext},
+    runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
     ExecutionRuntimeHandle, NUM_CPUS,
 };
 
@@ -115,7 +115,7 @@ impl IntermediateNode {
     #[instrument(level = "info", skip_all, name = "IntermediateOperator::run_worker")]
     pub async fn run_worker(
         op: Arc<dyn IntermediateOperator>,
-        receiver: Receiver<(usize, PipelineResultType)>,
+        mut receiver: Receiver<(usize, PipelineResultType)>,
         sender: Sender<PipelineResultType>,
         rt_context: Arc<RuntimeStatsContext>,
     ) -> DaftResult<()> {
@@ -188,7 +188,7 @@ impl IntermediateNode {
             next_worker_sender.send((idx, data))
         };
 
-        for (idx, receiver) in receivers.into_iter().enumerate() {
+        for (idx, mut receiver) in receivers.into_iter().enumerate() {
             let mut buffer = RowBasedBuffer::new(morsel_size);
             while let Some(morsel) = receiver.recv().await {
                 if morsel.should_broadcast() {
@@ -255,14 +255,15 @@ impl PipelineNode for IntermediateNode {
         let mut child_result_receivers = Vec::with_capacity(self.children.len());
         for child in &mut self.children {
             let child_result_receiver = child.start(maintain_order, runtime_handle)?;
-            child_result_receivers
-                .push(child_result_receiver.into_counting_receiver(self.runtime_stats.clone()));
+            child_result_receivers.push(CountingReceiver::new(
+                child_result_receiver,
+                self.runtime_stats.clone(),
+            ));
         }
         let op = self.intermediate_op.clone();
         let num_workers = op.max_concurrency();
         let (destination_sender, destination_receiver) = create_channel(1);
-        let destination_sender =
-            destination_sender.into_counting_sender(self.runtime_stats.clone());
+        let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
 
         let (input_senders, input_receivers) = (0..num_workers).map(|_| create_channel(1)).unzip();
         let mut output_receiver =
@@ -279,7 +280,7 @@ impl PipelineNode for IntermediateNode {
         runtime_handle.spawn(
             async move {
                 while let Some(morsel) = output_receiver.recv().await {
-                    if destination_sender.send(morsel).await.is_err() {
+                    if counting_sender.send(morsel).await.is_err() {
                         return Ok(());
                     }
                 }
