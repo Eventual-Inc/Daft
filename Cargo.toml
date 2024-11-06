@@ -96,6 +96,9 @@ inherits = "release"
 lto = 'thin'
 strip = "none"  # dont strip
 
+[profile.release]
+strip = true
+
 [profile.release-lto]
 codegen-units = 1
 inherits = "release"
