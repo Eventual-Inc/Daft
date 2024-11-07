@@ -28,7 +28,8 @@ python = [
   "common-py-serde/python",
   "daft-core/python",
   "daft-dsl/python",
-  "daft-logical-plan/python"
+  "daft-logical-plan/python",
+  "daft-physical-plan/python"
 ]
 
 [lints]
