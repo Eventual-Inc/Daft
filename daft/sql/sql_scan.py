@@ -185,54 +185,58 @@ class SQLScanOperator(ScanOperator):
             )
 
         if self._partition_bound_strategy == PartitionBoundStrategy.PERCENTILE:
-            # Try to get percentiles using percentile_disc.
-            # Favor percentile_disc over percentile_cont because we want exact values to do <= and >= comparisons.
-            percentiles = [i / num_scan_tasks for i in range(num_scan_tasks + 1)]
-            # Use the OVER clause for SQL Server
-            over_clause = "OVER ()" if self.conn.dialect in ["mssql", "tsql"] else ""
-            percentile_sql = self.conn.construct_sql_query(
-                self.sql,
-                projection=[
-                    f"percentile_disc({percentile}) WITHIN GROUP (ORDER BY {self._partition_col}) {over_clause} AS bound_{i}"
-                    for i, percentile in enumerate(percentiles)
-                ],
-                limit=1,
-            )
-            pa_table = self.conn.execute_sql_query(percentile_sql)
-
-            if pa_table.num_rows != 1:
-                raise RuntimeError(f"Failed to get partition bounds: expected 1 row, but got {pa_table.num_rows}.")
-
-            if pa_table.num_columns != num_scan_tasks + 1:
-                raise RuntimeError(
-                    f"Failed to get partition bounds: expected {num_scan_tasks + 1} percentiles, but got {pa_table.num_columns}."
+            try:
+                # Try to get percentiles using percentile_disc.
+                # Favor percentile_disc over percentile_cont because we want exact values to do <= and >= comparisons.
+                percentiles = [i / num_scan_tasks for i in range(num_scan_tasks + 1)]
+                # Use the OVER clause for SQL Server dialects
+                over_clause = "OVER ()" if self.conn.dialect in ["mssql", "tsql"] else ""
+                percentile_sql = self.conn.construct_sql_query(
+                    self.sql,
+                    projection=[
+                        f"percentile_disc({percentile}) WITHIN GROUP (ORDER BY {self._partition_col}) {over_clause} AS bound_{i}"
+                        for i, percentile in enumerate(percentiles)
+                    ],
+                    limit=1,
                 )
+                pa_table = self.conn.execute_sql_query(percentile_sql)
 
-            pydict = Table.from_arrow(pa_table).to_pydict()
-            assert pydict.keys() == {f"bound_{i}" for i in range(num_scan_tasks + 1)}
-            bounds = [pydict[f"bound_{i}"][0] for i in range(num_scan_tasks + 1)]
+                if pa_table.num_rows != 1:
+                    raise RuntimeError(f"Failed to get partition bounds: expected 1 row, but got {pa_table.num_rows}.")
 
-        elif self._partition_bound_strategy == PartitionBoundStrategy.MIN_MAX:
-            min_max_sql = self.conn.construct_sql_query(
-                self.sql, projection=[f"MIN({self._partition_col}) as min", f"MAX({self._partition_col}) as max"]
-            )
-            pa_table = self.conn.execute_sql_query(min_max_sql)
+                if pa_table.num_columns != num_scan_tasks + 1:
+                    raise RuntimeError(
+                        f"Failed to get partition bounds: expected {num_scan_tasks + 1} percentiles, but got {pa_table.num_columns}."
+                    )
 
-            if pa_table.num_rows != 1:
-                raise RuntimeError(f"Failed to get partition bounds: expected 1 row, but got {pa_table.num_rows}.")
-            if pa_table.num_columns != 2:
-                raise RuntimeError(
-                    f"Failed to get partition bounds: expected 2 columns, but got {pa_table.num_columns}."
+                pydict = Table.from_arrow(pa_table).to_pydict()
+                assert pydict.keys() == {f"bound_{i}" for i in range(num_scan_tasks + 1)}
+                return [pydict[f"bound_{i}"][0] for i in range(num_scan_tasks + 1)]
+
+            except Exception as e:
+                warnings.warn(
+                    f"Failed to calculate partition bounds for read_sql using percentile strategy: {str(e)}. "
+                    "Falling back to MIN_MAX strategy."
                 )
+                self._partition_bound_strategy = PartitionBoundStrategy.MIN_MAX
 
-            pydict = Table.from_arrow(pa_table).to_pydict()
-            assert pydict.keys() == {"min", "max"}
-            min_val = pydict["min"][0]
-            max_val = pydict["max"][0]
-            range_size = (max_val - min_val) / num_scan_tasks
-            bounds = [min_val + range_size * i for i in range(num_scan_tasks)] + [max_val]
+        # Either MIN_MAX was explicitly specified or percentile calculation failed
+        min_max_sql = self.conn.construct_sql_query(
+            self.sql, projection=[f"MIN({self._partition_col}) as min", f"MAX({self._partition_col}) as max"]
+        )
+        pa_table = self.conn.execute_sql_query(min_max_sql)
 
-        return bounds
+        if pa_table.num_rows != 1:
+            raise RuntimeError(f"Failed to get partition bounds: expected 1 row, but got {pa_table.num_rows}.")
+        if pa_table.num_columns != 2:
+            raise RuntimeError(f"Failed to get partition bounds: expected 2 columns, but got {pa_table.num_columns}.")
+
+        pydict = Table.from_arrow(pa_table).to_pydict()
+        assert pydict.keys() == {"min", "max"}
+        min_val = pydict["min"][0]
+        max_val = pydict["max"][0]
+        range_size = (max_val - min_val) / num_scan_tasks
+        return [min_val + range_size * i for i in range(num_scan_tasks)] + [max_val]
 
     def _single_scan_task(self, pushdowns: Pushdowns, total_rows: int | None, total_size: float) -> Iterator[ScanTask]:
         return iter([self._construct_scan_task(pushdowns, num_rows=total_rows, size_bytes=math.ceil(total_size))])
