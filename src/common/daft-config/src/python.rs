@@ -105,6 +105,7 @@ impl PyDaftExecutionConfig {
         shuffle_aggregation_default_partitions: Option<usize>,
         read_sql_partition_size_bytes: Option<usize>,
         enable_aqe: Option<bool>,
+        enable_native_executor: Option<bool>,
         default_morsel_size: Option<usize>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
@@ -161,6 +162,9 @@ impl PyDaftExecutionConfig {
 
         if let Some(enable_aqe) = enable_aqe {
             config.enable_aqe = enable_aqe;
+        }
+        if let Some(enable_native_executor) = enable_native_executor {
+            config.enable_native_executor = enable_native_executor;
         }
         if let Some(default_morsel_size) = default_morsel_size {
             config.default_morsel_size = default_morsel_size;
@@ -243,6 +247,10 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn enable_aqe(&self) -> PyResult<bool> {
         Ok(self.config.enable_aqe)
+    }
+    #[getter]
+    fn enable_native_executor(&self) -> PyResult<bool> {
+        Ok(self.config.enable_native_executor)
     }
     #[getter]
     fn default_morsel_size(&self) -> PyResult<usize> {

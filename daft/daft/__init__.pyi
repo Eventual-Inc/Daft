@@ -1817,6 +1817,7 @@ class PyDaftExecutionConfig:
         shuffle_aggregation_default_partitions: int | None = None,
         read_sql_partition_size_bytes: int | None = None,
         enable_aqe: bool | None = None,
+        enable_native_executor: bool | None = None,
         default_morsel_size: int | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
@@ -1849,6 +1850,8 @@ class PyDaftExecutionConfig:
     def read_sql_partition_size_bytes(self) -> int: ...
     @property
     def enable_aqe(self) -> bool: ...
+    @property
+    def enable_native_executor(self) -> bool: ...
     @property
     def default_morsel_size(self) -> int: ...
 

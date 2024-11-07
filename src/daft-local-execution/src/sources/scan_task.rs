@@ -205,7 +205,6 @@ async fn stream_scan_task(
     delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
     maintain_order: bool,
 ) -> DaftResult<impl Stream<Item = DaftResult<Arc<MicroPartition>>> + Send> {
-    println!("stream_scan_task");
     let pushdown_columns = scan_task.pushdowns.columns.as_ref().map(|v| {
         v.iter()
             .map(std::string::String::as_str)

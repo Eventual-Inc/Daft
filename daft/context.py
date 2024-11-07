@@ -371,6 +371,7 @@ def set_execution_config(
     shuffle_aggregation_default_partitions: int | None = None,
     read_sql_partition_size_bytes: int | None = None,
     enable_aqe: bool | None = None,
+    enable_native_executor: bool | None = None,
     default_morsel_size: int | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution. These configuration values
@@ -406,6 +407,7 @@ def set_execution_config(
         shuffle_aggregation_default_partitions: Maximum number of partitions to create when performing aggregations. Defaults to 200, unless the number of input partitions is less than 200.
         read_sql_partition_size_bytes: Target size of partition when reading from SQL databases. Defaults to 512MB
         enable_aqe: Enables Adaptive Query Execution, Defaults to False
+        enable_native_executor: Enables the native executor, Defaults to False
         default_morsel_size: Default size of morsels used for the new local executor. Defaults to 131072 rows.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
@@ -430,6 +432,7 @@ def set_execution_config(
             shuffle_aggregation_default_partitions=shuffle_aggregation_default_partitions,
             read_sql_partition_size_bytes=read_sql_partition_size_bytes,
             enable_aqe=enable_aqe,
+            enable_native_executor=enable_native_executor,
             default_morsel_size=default_morsel_size,
         )
 
