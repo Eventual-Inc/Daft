@@ -2342,7 +2342,6 @@ mod tests {
     // We do fuzzy equality when comparing floats converted to and from decimals. This test is
     // primarily sanity checking that we don't repeat the mistake of shifting the scale and precision
     // of floats during casting, while avoiding flakiness due small differences in floats.
-    const EPSILON: f64 = 0.1;
     #[test]
     fn test_decimal_to_float() {
         let mut rng = thread_rng();
@@ -2352,6 +2351,9 @@ mod tests {
 
         let scale: usize = rng.gen_range(0..=MAX_SCALE);
         let precision: usize = rng.gen_range(scale + MIN_DIFF_FOR_PRECISION..=32);
+        // when the scale is 0, the created decimal values are integers, the epsilon should be 1
+        let epsilon = if scale == 0 { 1f64 } else { 0.1f64 };
+
         let i128_values: Vec<i128> = values
             .iter()
             .map(|&x| (x * 10_f64.powi(scale as i32) as f64) as i128)
@@ -2363,7 +2365,7 @@ mod tests {
             .expect("Failed to cast to float");
         let original = create_test_f64_array(values);
 
-        let epsilon_series = create_test_f64_array(vec![EPSILON; num_values]).into_series();
+        let epsilon_series = create_test_f64_array(vec![epsilon; num_values]).into_series();
 
         assert!(
             result.fuzzy_eq(&original.into_series(), &epsilon_series),
