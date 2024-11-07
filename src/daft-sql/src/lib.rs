@@ -249,7 +249,7 @@ mod tests {
     }
 
     #[rstest(
-        null_equals_null => [false]
+        null_equals_null => [false, true]
     )]
     fn test_join(
         mut planner: SQLPlanner,
