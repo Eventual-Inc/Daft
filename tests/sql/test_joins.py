@@ -109,25 +109,3 @@ def test_joins_with_duplicate_columns():
     }
 
     assert actual.to_pydict() == expected
-
-
-def test_except():
-    table1 = daft.from_pydict({"id": [1, 2, 3, 4], "value": ["a", "b", "c", "d"]})
-    table2 = daft.from_pydict({"id": [2, 3, 4, 5], "value": ["b", "c", "d", "e"]})
-
-    catalog = SQLCatalog({"table1": table1, "table2": table2})
-
-    actual = (
-        daft.sql(
-            """
-        SELECT * from table1 t1 EXCEPT select * from table2 t2
-        """,
-            catalog,
-        )
-        .collect()
-        .to_pydict()
-    )
-
-    expected = {"id": [1], "value": ["a"]}
-
-    assert actual == expected

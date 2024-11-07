@@ -205,97 +205,9 @@ impl SQLPlanner {
             SetExpr::Select(selection) => selection,
             SetExpr::Query(_) => unsupported_sql_err!("Subqueries are not supported"),
             SetExpr::SetOperation {
-                op,
-                set_quantifier,
-                left,
-                right,
+                op, set_quantifier, ..
             } => {
-                use sqlparser::ast::{SetOperator, SetQuantifier};
-                fn make_query(set_expr: &SetExpr) -> Query {
-                    Query {
-                        with: None,
-                        body: Box::new(set_expr.clone()),
-                        order_by: None,
-                        limit: None,
-                        limit_by: vec![],
-                        offset: None,
-                        fetch: None,
-                        locks: vec![],
-                        for_clause: None,
-                        settings: None,
-                        format_clause: None,
-                    }
-                }
-                match (op, set_quantifier) {
-                    // UNION ALL
-                    (SetOperator::Union, SetQuantifier::All) => {
-                        let left = make_query(left);
-                        let right = make_query(right);
-
-                        let left = self.plan_query(&left)?;
-                        let right = self.plan_query(&right)?;
-                        return left.concat(&right).map_err(|e| e.into());
-                    }
-                    (SetOperator::Union, SetQuantifier::Distinct) => {
-                        unsupported_sql_err!("UNION DISTINCT is not supported.")
-                    }
-                    (SetOperator::Union, SetQuantifier::ByName) => {
-                        unsupported_sql_err!("UNION BY NAME is not supported")
-                    }
-                    (SetOperator::Union, SetQuantifier::AllByName) => {
-                        unsupported_sql_err!("UNION ALL BY NAME is not supported")
-                    }
-                    (SetOperator::Union, SetQuantifier::DistinctByName) => {
-                        unsupported_sql_err!("UNION DISTINCT BY NAME is not supported.")
-                    }
-                    (SetOperator::Union, SetQuantifier::None) => {
-                        let left = make_query(left);
-                        let right = make_query(right);
-
-                        let left = self.plan_query(&left)?;
-                        let right = self.plan_query(&right)?;
-                        return left.concat(&right)?.distinct().map_err(|e| e.into());
-                    }
-                    // We use an ANTI join on all columns to implement EXCEPT
-                    (SetOperator::Except, SetQuantifier::None) => {
-                        let left = make_query(left);
-                        let right = make_query(right);
-                        let left = self.plan_query(&left)?;
-                        let right = self.plan_query(&right)?;
-                        let left_schema = left.schema();
-                        let right_schema = right.schema();
-                        if left_schema != right_schema {
-                            invalid_operation_err!("EXCEPT queries must have the same schema")
-                        }
-                        if left_schema.is_empty() {
-                            invalid_operation_err!("EXCEPT queries must have at least one column")
-                        }
-                        let left_on = left_schema
-                            .names()
-                            .into_iter()
-                            .map(|n| col(n.as_ref()))
-                            .collect::<Vec<_>>();
-
-                        let joined = left.join_with_null_safe_equal(
-                            right,
-                            left_on.clone(),
-                            left_on,
-                            None,
-                            JoinType::Anti,
-                            None,
-                            None,
-                            None,
-                        )?;
-
-                        return Ok(joined);
-                    }
-                    (SetOperator::Except, _) => {
-                        unsupported_sql_err!("EXCEPT is not supported")
-                    }
-                    (SetOperator::Intersect, _) => {
-                        unsupported_sql_err!("INTERSECT is not supported. Use INNER JOIN instead")
-                    }
-                }
+                unsupported_sql_err!("{op} {set_quantifier} is not supported.",)
             }
             SetExpr::Values(..) => unsupported_sql_err!("VALUES are not supported"),
             SetExpr::Insert(..) => unsupported_sql_err!("INSERT is not supported"),
