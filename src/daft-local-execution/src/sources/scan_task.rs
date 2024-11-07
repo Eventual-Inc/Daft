@@ -17,16 +17,18 @@ use daft_parquet::read::{read_parquet_bulk_async, ParquetSchemaInferenceOptions}
 use daft_scan::{storage_config::StorageConfig, ChunkSpec, Pushdowns, ScanTask};
 use futures::{Stream, StreamExt, TryStreamExt};
 use snafu::ResultExt;
+use tokio_stream::wrappers::ReceiverStream;
 use tracing::instrument;
 
 use crate::{
+    channel::create_channel,
     sources::source::{Source, SourceStream},
     NUM_CPUS,
 };
 
 pub struct ScanTaskSource {
     scan_tasks: Vec<Arc<ScanTask>>,
-    _num_parallel_tasks: usize,
+    num_parallel_tasks: usize,
     schema: SchemaRef,
 }
 
@@ -38,7 +40,7 @@ impl ScanTaskSource {
         cfg: &DaftExecutionConfig,
     ) -> Self {
         // Determine the number of parallel tasks to run based on available CPU cores and row limits
-        let num_parallel_tasks = match pushdowns.limit {
+        let mut num_parallel_tasks = match pushdowns.limit {
             // If we have a row limit, we need to calculate how many parallel tasks we can run
             // without exceeding the limit
             Some(limit) => {
@@ -68,11 +70,33 @@ impl ScanTaskSource {
             // If there's no row limit, use all available CPU cores
             None => *NUM_CPUS,
         };
+        num_parallel_tasks = num_parallel_tasks.min(scan_tasks.len());
         Self {
             scan_tasks,
-            _num_parallel_tasks: num_parallel_tasks,
+            num_parallel_tasks,
             schema,
         }
+    }
+
+    #[instrument(
+        name = "ScanTaskSource::process_scan_task_stream",
+        level = "info",
+        skip_all
+    )]
+    async fn process_scan_task_stream(
+        scan_task: Arc<ScanTask>,
+        maintain_order: bool,
+        io_stats: IOStatsRef,
+        delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
+    ) -> DaftResult<impl Stream<Item = DaftResult<Arc<MicroPartition>>> + Send> {
+        let (tx, rx) = create_channel(1);
+        let mut stream = stream_scan_task(scan_task, io_stats, delete_map, maintain_order).await?;
+        while let Some(partition) = stream.next().await {
+            if tx.send(partition).await.is_err() {
+                break;
+            }
+        }
+        Ok(ReceiverStream::new(rx))
     }
 
     pub fn arced(self) -> Arc<dyn Source> {
@@ -89,26 +113,33 @@ impl Source for ScanTaskSource {
         io_stats: IOStatsRef,
     ) -> DaftResult<SourceStream<'static>> {
         let io_runtime = get_io_runtime(true);
-        let delete_map = get_delete_map(&self.scan_tasks).await?;
-        let stream =
+        let delete_map = get_delete_map(&self.scan_tasks).await?.map(Arc::new);
+        let stream_of_streams =
             futures::stream::iter(self.scan_tasks.clone().into_iter().map(move |scan_task| {
                 let io_stats = io_stats.clone();
                 let delete_map = delete_map.clone();
                 io_runtime.spawn(async move {
-                    stream_scan_task(
-                        scan_task.clone(),
-                        io_stats.clone(),
-                        delete_map.map(Arc::new),
-                        maintain_order,
-                    )
-                    .await
+                    Self::process_scan_task_stream(scan_task, maintain_order, io_stats, delete_map)
+                        .await
                 })
-            }))
-            .buffered(1)
-            .map(|s| s?)
-            .try_flatten();
+            }));
 
-        Ok(Box::pin(stream))
+        match maintain_order {
+            true => {
+                let buffered_and_flattened = stream_of_streams
+                    .buffered(self.num_parallel_tasks)
+                    .map(|r| r?)
+                    .try_flatten();
+                Ok(Box::pin(buffered_and_flattened))
+            }
+            false => {
+                let buffered_and_flattened = stream_of_streams
+                    .buffer_unordered(self.num_parallel_tasks)
+                    .map(|r| r?)
+                    .try_flatten_unordered(None);
+                Ok(Box::pin(buffered_and_flattened))
+            }
+        }
     }
 
     fn name(&self) -> &'static str {
