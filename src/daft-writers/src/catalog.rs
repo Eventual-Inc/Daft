@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
+use daft_logical_plan::{CatalogType, DeltaLakeCatalogInfo, IcebergCatalogInfo};
 use daft_micropartition::MicroPartition;
-use daft_plan::{CatalogType, DeltaLakeCatalogInfo, IcebergCatalogInfo};
 use daft_table::Table;
 
 use crate::{python::PyArrowWriter, FileWriter, WriterFactory};

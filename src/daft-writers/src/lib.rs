@@ -21,8 +21,8 @@ use common_error::DaftResult;
 use common_file_formats::FileFormat;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
+use daft_logical_plan::OutputFileInfo;
 use daft_micropartition::MicroPartition;
-use daft_plan::OutputFileInfo;
 use daft_table::Table;
 use file::TargetFileSizeWriterFactory;
 use partition::PartitionedWriterFactory;
@@ -116,7 +116,7 @@ pub fn make_physical_writer_factory(
 
 #[cfg(feature = "python")]
 pub fn make_catalog_writer_factory(
-    catalog_info: &daft_plan::CatalogType,
+    catalog_info: &daft_logical_plan::CatalogType,
     schema: &SchemaRef,
     partition_cols: &Option<Vec<ExprRef>>,
     cfg: &DaftExecutionConfig,

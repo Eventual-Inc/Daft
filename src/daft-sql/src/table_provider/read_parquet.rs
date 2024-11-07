@@ -1,5 +1,5 @@
 use daft_core::prelude::TimeUnit;
-use daft_plan::{LogicalPlanBuilder, ParquetScanBuilder};
+use daft_logical_plan::{LogicalPlanBuilder, ParquetScanBuilder};
 use sqlparser::ast::TableFunctionArgs;
 
 use super::SQLTableFunction;

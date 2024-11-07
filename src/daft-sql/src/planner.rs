@@ -11,7 +11,7 @@ use daft_dsl::{
     has_agg, lit, literals_to_series, null_lit, Expr, ExprRef, LiteralValue, Operator,
 };
 use daft_functions::numeric::{ceil::ceil, floor::floor};
-use daft_plan::{LogicalPlanBuilder, LogicalPlanRef};
+use daft_logical_plan::{LogicalPlanBuilder, LogicalPlanRef};
 use sqlparser::{
     ast::{
         ArrayElemTypeDef, BinaryOperator, CastKind, DateTimeField, Distinct, ExactNumberInfo,
