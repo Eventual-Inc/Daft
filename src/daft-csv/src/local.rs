@@ -252,23 +252,21 @@ pub async fn stream_csv_local(
     );
 
     // Create CSV buffer pool.
-    let n_threads: usize = std::thread::available_parallelism()
-        .unwrap_or(NonZeroUsize::new(2).unwrap())
-        .into();
     let record_buffer_size = (estimated_mean_row_size + estimated_std_row_size).ceil() as usize;
     let chunk_size = read_options
         .as_ref()
         .and_then(|opt| opt.chunk_size.or_else(|| opt.buffer_size.map(|bs| bs / 8)))
         .unwrap_or(DEFAULT_CSV_BUFFER_SIZE);
     let chunk_size_rows = (chunk_size as f64 / record_buffer_size as f64).ceil() as usize;
-
     // TODO(desmond): We might consider creating per-process buffer pools and slab pools.
     let buffer_pool = Arc::new(CsvBufferPool::new(
         record_buffer_size,
         num_fields,
         chunk_size_rows,
-        n_threads * 2,
     ));
+    let n_threads: usize = std::thread::available_parallelism()
+        .unwrap_or(NonZeroUsize::new(2).unwrap())
+        .into();
     stream_csv_as_tables(
         file,
         buffer_pool,
