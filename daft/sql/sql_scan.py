@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import math
 import warnings
-from enum import Enum, auto
+from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from daft.context import get_context
@@ -31,8 +31,15 @@ logger = logging.getLogger(__name__)
 
 
 class PartitionBoundStrategy(Enum):
-    PERCENTILE = auto()
-    MIN_MAX = auto()
+    PERCENTILE = "percentile"
+    MIN_MAX = "min-max"
+
+    @classmethod
+    def from_str(cls, value: str) -> PartitionBoundStrategy:
+        try:
+            return cls(value.lower())
+        except ValueError:
+            raise ValueError(f"Invalid PartitionBoundStrategy: {value}, must be either 'percentile' or 'min-max'")
 
 
 class SQLScanOperator(ScanOperator):
@@ -47,6 +54,7 @@ class SQLScanOperator(ScanOperator):
         schema: dict[str, DataType] | None,
         partition_col: str | None = None,
         num_partitions: int | None = None,
+        partition_bound_strategy: PartitionBoundStrategy | None = None,
     ) -> None:
         super().__init__()
         self.sql = sql
@@ -55,6 +63,7 @@ class SQLScanOperator(ScanOperator):
         self._disable_pushdowns_to_sql = disable_pushdowns_to_sql
         self._partition_col = partition_col
         self._num_partitions = num_partitions
+        self._partition_bound_strategy = partition_bound_strategy
         self._schema = self._attempt_schema_read(infer_schema, infer_schema_length, schema)
 
     def schema(self) -> Schema:
@@ -79,7 +88,7 @@ class SQLScanOperator(ScanOperator):
         if num_scan_tasks == 1 or self._partition_col is None:
             return self._single_scan_task(pushdowns, total_rows, total_size)
 
-        partition_bounds, strategy = self._get_partition_bounds_and_strategy(num_scan_tasks)
+        partition_bounds = self._get_partition_bounds(num_scan_tasks)
         partition_bounds_sql = [lit(bound)._to_sql() for bound in partition_bounds]
 
         if any(bound is None for bound in partition_bounds_sql):
@@ -88,7 +97,11 @@ class SQLScanOperator(ScanOperator):
             )
             return self._single_scan_task(pushdowns, total_rows, total_size)
 
-        size_bytes = math.ceil(total_size / num_scan_tasks) if strategy == PartitionBoundStrategy.PERCENTILE else None
+        size_bytes = (
+            math.ceil(total_size / num_scan_tasks)
+            if self._partition_bound_strategy == PartitionBoundStrategy.PERCENTILE
+            else None
+        )
         scan_tasks = []
         for i in range(num_scan_tasks):
             left_clause = f"{self._partition_col} >= {partition_bounds_sql[i]}"
@@ -159,8 +172,19 @@ class SQLScanOperator(ScanOperator):
 
         return pa_table.column(0)[0].as_py()
 
-    def _attempt_partition_bounds_read(self, num_scan_tasks: int) -> tuple[Any, PartitionBoundStrategy]:
-        try:
+    def _get_partition_bounds(self, num_scan_tasks: int) -> list[Any]:
+        if self._partition_col is None:
+            raise ValueError("Failed to get partition bounds: partition_col must be specified to partition the data.")
+
+        if not (
+            self._schema[self._partition_col].dtype._is_temporal_type()
+            or self._schema[self._partition_col].dtype._is_numeric_type()
+        ):
+            raise ValueError(
+                f"Failed to get partition bounds: {self._partition_col} is not a numeric or temporal type, and cannot be used for partitioning."
+            )
+
+        if self._partition_bound_strategy == PartitionBoundStrategy.PERCENTILE:
             # Try to get percentiles using percentile_disc.
             # Favor percentile_disc over percentile_cont because we want exact values to do <= and >= comparisons.
             percentiles = [i / num_scan_tasks for i in range(num_scan_tasks + 1)]
@@ -175,40 +199,10 @@ class SQLScanOperator(ScanOperator):
                 limit=1,
             )
             pa_table = self.conn.execute_sql_query(percentile_sql)
-            return pa_table, PartitionBoundStrategy.PERCENTILE
 
-        except RuntimeError as e:
-            # If percentiles fails, use the min and max of the partition column
-            logger.info(
-                "Failed to get percentiles using percentile_cont, falling back to min and max. Error: %s",
-                e,
-            )
+            if pa_table.num_rows != 1:
+                raise RuntimeError(f"Failed to get partition bounds: expected 1 row, but got {pa_table.num_rows}.")
 
-            min_max_sql = self.conn.construct_sql_query(
-                self.sql, projection=[f"MIN({self._partition_col}) as min", f"MAX({self._partition_col}) as max"]
-            )
-            pa_table = self.conn.execute_sql_query(min_max_sql)
-
-            return pa_table, PartitionBoundStrategy.MIN_MAX
-
-    def _get_partition_bounds_and_strategy(self, num_scan_tasks: int) -> tuple[list[Any], PartitionBoundStrategy]:
-        if self._partition_col is None:
-            raise ValueError("Failed to get partition bounds: partition_col must be specified to partition the data.")
-
-        if not (
-            self._schema[self._partition_col].dtype._is_temporal_type()
-            or self._schema[self._partition_col].dtype._is_numeric_type()
-        ):
-            raise ValueError(
-                f"Failed to get partition bounds: {self._partition_col} is not a numeric or temporal type, and cannot be used for partitioning."
-            )
-
-        pa_table, strategy = self._attempt_partition_bounds_read(num_scan_tasks)
-
-        if pa_table.num_rows != 1:
-            raise RuntimeError(f"Failed to get partition bounds: expected 1 row, but got {pa_table.num_rows}.")
-
-        if strategy == PartitionBoundStrategy.PERCENTILE:
             if pa_table.num_columns != num_scan_tasks + 1:
                 raise RuntimeError(
                     f"Failed to get partition bounds: expected {num_scan_tasks + 1} percentiles, but got {pa_table.num_columns}."
@@ -218,7 +212,14 @@ class SQLScanOperator(ScanOperator):
             assert pydict.keys() == {f"bound_{i}" for i in range(num_scan_tasks + 1)}
             bounds = [pydict[f"bound_{i}"][0] for i in range(num_scan_tasks + 1)]
 
-        elif strategy == PartitionBoundStrategy.MIN_MAX:
+        elif self._partition_bound_strategy == PartitionBoundStrategy.MIN_MAX:
+            min_max_sql = self.conn.construct_sql_query(
+                self.sql, projection=[f"MIN({self._partition_col}) as min", f"MAX({self._partition_col}) as max"]
+            )
+            pa_table = self.conn.execute_sql_query(min_max_sql)
+
+            if pa_table.num_rows != 1:
+                raise RuntimeError(f"Failed to get partition bounds: expected 1 row, but got {pa_table.num_rows}.")
             if pa_table.num_columns != 2:
                 raise RuntimeError(
                     f"Failed to get partition bounds: expected 2 columns, but got {pa_table.num_columns}."
@@ -231,7 +232,7 @@ class SQLScanOperator(ScanOperator):
             range_size = (max_val - min_val) / num_scan_tasks
             bounds = [min_val + range_size * i for i in range(num_scan_tasks)] + [max_val]
 
-        return bounds, strategy
+        return bounds
 
     def _single_scan_task(self, pushdowns: Pushdowns, total_rows: int | None, total_size: float) -> Iterator[ScanTask]:
         return iter([self._construct_scan_task(pushdowns, num_rows=total_rows, size_bytes=math.ceil(total_size))])
