@@ -2,10 +2,11 @@ use std::sync::Arc;
 
 use daft_scan::PhysicalScanInfo;
 use daft_schema::schema::SchemaRef;
+use serde::{Deserialize, Serialize};
 
 use crate::source_info::{InMemoryInfo, PlaceHolderInfo, SourceInfo};
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Source {
     /// The schema of the output of this node (the source data schema).
     /// May be a subset of the source data schema; executors should push down this projection if possible.

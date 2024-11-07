@@ -44,7 +44,9 @@ pub mod pylib {
     use common_daft_config::PyDaftExecutionConfig;
     use common_error::DaftResult;
     use common_file_formats::{python::PyFileFormatConfig, FileFormatConfig};
-    use common_py_serde::impl_bincode_py_state_serialization;
+    use common_py_serde::{
+        deserialize_py_object, impl_bincode_py_state_serialization, serialize_py_object,
+    };
     use daft_dsl::python::PyExpr;
     use daft_schema::{
         python::{field::PyField, schema::PySchema},
@@ -66,6 +68,7 @@ pub mod pylib {
         storage_config::{PyStorageConfig, PythonStorageConfig},
         DataSource, PartitionField, Pushdowns, ScanOperator, ScanOperatorRef, ScanTask,
     };
+
     #[pyclass(module = "daft.daft", frozen)]
     #[derive(Debug, Clone)]
     pub struct ScanOperatorHandle {
@@ -137,8 +140,12 @@ pub mod pylib {
         }
     }
     #[pyclass(module = "daft.daft")]
-    #[derive(Debug)]
+    #[derive(Debug, Serialize, Deserialize)]
     struct PythonScanOperatorBridge {
+        #[serde(
+            serialize_with = "serialize_py_object",
+            deserialize_with = "deserialize_py_object"
+        )]
         operator: PyObject,
         schema: SchemaRef,
         partitioning_keys: Vec<PartitionField>,
@@ -210,6 +217,7 @@ pub mod pylib {
         }
     }
 
+    #[typetag::serde]
     impl ScanOperator for PythonScanOperatorBridge {
         fn partitioning_keys(&self) -> &[crate::PartitionField] {
             &self.partitioning_keys

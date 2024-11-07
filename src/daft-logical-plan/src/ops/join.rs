@@ -12,6 +12,7 @@ use daft_dsl::{
     resolve_exprs, Expr, ExprRef,
 };
 use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 use uuid::Uuid;
 
@@ -21,7 +22,7 @@ use crate::{
     LogicalPlan,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Join {
     // Upstream nodes.
     pub left: Arc<LogicalPlan>,

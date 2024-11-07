@@ -5,12 +5,13 @@ use common_error::DaftError;
 use daft_dsl::optimization::get_required_columns;
 use daft_schema::schema::SchemaRef;
 use indexmap::IndexSet;
+use serde::{Deserialize, Serialize};
 use snafu::Snafu;
 
 pub use crate::ops::*;
 
 /// Logical plan for a Daft query.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum LogicalPlan {
     Source(Source),
     Project(Project),

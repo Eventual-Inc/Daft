@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
 use common_error::DaftError;
+use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
 use crate::{logical_plan, logical_plan::CreationSnafu, LogicalPlan};
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Concat {
     // Upstream nodes.
     pub input: Arc<LogicalPlan>,

@@ -3,12 +3,14 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use daft_schema::schema::SchemaRef;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     storage_config::StorageConfig, ChunkSpec, DataSource, PartitionField, Pushdowns, ScanOperator,
     ScanTask, ScanTaskRef,
 };
-#[derive(Debug)]
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct AnonymousScanOperator {
     files: Vec<String>,
     schema: SchemaRef,
@@ -33,6 +35,7 @@ impl AnonymousScanOperator {
     }
 }
 
+#[typetag::serde]
 impl ScanOperator for AnonymousScanOperator {
     fn schema(&self) -> SchemaRef {
         self.schema.clone()

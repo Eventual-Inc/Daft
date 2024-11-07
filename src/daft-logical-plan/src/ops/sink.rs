@@ -3,12 +3,13 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use daft_core::prelude::*;
 use daft_dsl::resolve_exprs;
+use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
 use crate::sink_info::CatalogType;
 use crate::{sink_info::SinkInfo, LogicalPlan, OutputFileInfo};
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Sink {
     // Upstream node.
     pub input: Arc<LogicalPlan>,

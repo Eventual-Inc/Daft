@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
 use daft_core::prelude::*;
+use serde::{Deserialize, Serialize};
 
 use crate::LogicalPlan;
 
-#[derive(Hash, Eq, PartialEq, Debug, Clone)]
+#[derive(Hash, Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct MonotonicallyIncreasingId {
     pub input: Arc<LogicalPlan>,
     pub schema: Arc<Schema>,

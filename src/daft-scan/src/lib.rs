@@ -806,6 +806,7 @@ impl Display for PartitionTransform {
     }
 }
 
+#[typetag::serde(tag = "type")]
 pub trait ScanOperator: Send + Sync + Debug {
     fn schema(&self) -> SchemaRef;
     fn partitioning_keys(&self) -> &[PartitionField];
@@ -847,7 +848,7 @@ impl Display for dyn ScanOperator {
 /// [`ScanOperatorRef`] should be thus held by structs that need to check the "sameness" of the
 /// underlying ScanOperator instance, for example in the Scan nodes in a logical plan which need
 /// to check for sameness of Scan nodes during plan optimization.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanOperatorRef(pub Arc<dyn ScanOperator>);
 
 impl Hash for ScanOperatorRef {
@@ -870,7 +871,7 @@ impl Display for ScanOperatorRef {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PhysicalScanInfo {
     pub scan_op: ScanOperatorRef,
     pub source_schema: SchemaRef,

@@ -12,6 +12,7 @@ use daft_dsl::{
 };
 use daft_schema::schema::{Schema, SchemaRef};
 use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
 use crate::{
@@ -19,7 +20,7 @@ use crate::{
     LogicalPlan,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ActorPoolProject {
     // Upstream node.
     pub input: Arc<LogicalPlan>,

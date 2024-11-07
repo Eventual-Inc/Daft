@@ -2,13 +2,14 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_dsl::resolve_exprs;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     partitioning::{HashRepartitionConfig, RepartitionSpec},
     LogicalPlan,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Repartition {
     // Upstream node.
     pub input: Arc<LogicalPlan>,

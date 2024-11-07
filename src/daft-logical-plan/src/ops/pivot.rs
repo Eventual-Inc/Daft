@@ -4,6 +4,7 @@ use daft_core::prelude::*;
 use daft_dsl::{resolve_exprs, resolve_single_aggexpr, resolve_single_expr, AggExpr, ExprRef};
 use daft_schema::schema::{Schema, SchemaRef};
 use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
 use crate::{
@@ -11,7 +12,7 @@ use crate::{
     LogicalPlan,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Pivot {
     pub input: Arc<LogicalPlan>,
     pub group_by: Vec<ExprRef>,

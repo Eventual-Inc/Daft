@@ -4,11 +4,12 @@ use common_error::DaftError;
 use daft_core::prelude::*;
 use daft_dsl::{resolve_exprs, ExprRef};
 use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
 use crate::{logical_plan, logical_plan::CreationSnafu, LogicalPlan};
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Sort {
     // Upstream node.
     pub input: Arc<LogicalPlan>,

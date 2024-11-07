@@ -15,6 +15,7 @@ use daft_schema::{
 use daft_stats::PartitionSpec;
 use daft_table::Table;
 use futures::{stream::BoxStream, StreamExt, TryStreamExt};
+use serde::{Deserialize, Serialize};
 use snafu::Snafu;
 
 use crate::{
@@ -22,7 +23,8 @@ use crate::{
     storage_config::StorageConfig,
     ChunkSpec, DataSource, PartitionField, Pushdowns, ScanOperator, ScanTask, ScanTaskRef,
 };
-#[derive(Debug)]
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct GlobScanOperator {
     glob_paths: Vec<String>,
     file_format_config: Arc<FileFormatConfig>,
@@ -298,6 +300,7 @@ impl GlobScanOperator {
     }
 }
 
+#[typetag::serde]
 impl ScanOperator for GlobScanOperator {
     fn schema(&self) -> SchemaRef {
         self.schema.clone()

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use common_error::DaftError;
 use daft_core::prelude::*;
 use daft_dsl::{resolve_single_expr, ExprRef};
+use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
 use crate::{
@@ -10,7 +11,7 @@ use crate::{
     LogicalPlan,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Filter {
     // Upstream node.
     pub input: Arc<LogicalPlan>,
