@@ -17,11 +17,9 @@ use daft_parquet::read::{read_parquet_bulk_async, ParquetSchemaInferenceOptions}
 use daft_scan::{storage_config::StorageConfig, ChunkSpec, Pushdowns, ScanTask};
 use futures::{Stream, StreamExt, TryStreamExt};
 use snafu::ResultExt;
-use tokio_stream::wrappers::ReceiverStream;
 use tracing::instrument;
 
 use crate::{
-    channel::create_channel,
     sources::source::{Source, SourceStream},
     NUM_CPUS,
 };
@@ -78,27 +76,6 @@ impl ScanTaskSource {
         }
     }
 
-    #[instrument(
-        name = "ScanTaskSource::process_scan_task_stream",
-        level = "info",
-        skip_all
-    )]
-    async fn process_scan_task_stream(
-        scan_task: Arc<ScanTask>,
-        maintain_order: bool,
-        io_stats: IOStatsRef,
-        delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
-    ) -> DaftResult<impl Stream<Item = DaftResult<Arc<MicroPartition>>> + Send> {
-        let (tx, rx) = create_channel(1);
-        let mut stream = stream_scan_task(scan_task, io_stats, delete_map, maintain_order).await?;
-        while let Some(partition) = stream.next().await {
-            if tx.send(partition).await.is_err() {
-                break;
-            }
-        }
-        Ok(ReceiverStream::new(rx))
-    }
-
     pub fn arced(self) -> Arc<dyn Source> {
         Arc::new(self) as Arc<dyn Source>
     }
@@ -119,8 +96,7 @@ impl Source for ScanTaskSource {
                 let io_stats = io_stats.clone();
                 let delete_map = delete_map.clone();
                 io_runtime.spawn(async move {
-                    Self::process_scan_task_stream(scan_task, maintain_order, io_stats, delete_map)
-                        .await
+                    stream_scan_task(scan_task, io_stats, delete_map, maintain_order).await
                 })
             }));
 
@@ -229,6 +205,7 @@ async fn stream_scan_task(
     delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
     maintain_order: bool,
 ) -> DaftResult<impl Stream<Item = DaftResult<Arc<MicroPartition>>> + Send> {
+    println!("stream_scan_task");
     let pushdown_columns = scan_task.pushdowns.columns.as_ref().map(|v| {
         v.iter()
             .map(std::string::String::as_str)
