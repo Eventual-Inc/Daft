@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
+use daft_logical_plan::OutputFileInfo;
 use daft_micropartition::MicroPartition;
-use daft_plan::OutputFileInfo;
 use daft_table::Table;
 
 use crate::{FileWriter, WriterFactory};

@@ -9,8 +9,8 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::ExprRef;
+use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;
-use daft_plan::JoinType;
 use daft_table::{GrowableTable, ProbeState, Table};
 use indexmap::IndexSet;
 use tracing::{info_span, instrument};

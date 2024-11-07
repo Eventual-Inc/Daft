@@ -26,7 +26,7 @@ mod tests {
     use catalog::SQLCatalog;
     use daft_core::prelude::*;
     use daft_dsl::{col, lit};
-    use daft_plan::{
+    use daft_logical_plan::{
         logical_plan::Source, source_info::PlaceHolderInfo, ClusteringSpec, LogicalPlan,
         LogicalPlanBuilder, LogicalPlanRef, SourceInfo,
     };
