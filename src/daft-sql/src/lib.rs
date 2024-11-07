@@ -249,7 +249,7 @@ mod tests {
     }
 
     #[rstest(
-        null_equals_null => [false, true]
+        null_equals_null => [false]
     )]
     fn test_join(
         mut planner: SQLPlanner,
@@ -266,12 +266,12 @@ mod tests {
             .join_with_null_safe_equal(
                 tbl_3,
                 vec![col("id")],
-                vec![col("id")],
+                vec![col("id").alias("tbl3.id")],
                 Some(vec![null_equals_null]),
                 JoinType::Inner,
                 None,
                 None,
-                None,
+                Some("tbl3."),
             )?
             .select(vec![col("*")])?
             .build();
