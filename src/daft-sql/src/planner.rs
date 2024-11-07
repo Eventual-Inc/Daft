@@ -256,6 +256,7 @@ impl SQLPlanner {
                         let right = self.plan_query(&right)?;
                         return left.concat(&right)?.distinct().map_err(|e| e.into());
                     }
+                    // We use an ANTI join on all columns to implement EXCEPT
                     (SetOperator::Except, SetQuantifier::None) => {
                         let left = make_query(left);
                         let right = make_query(right);
@@ -275,34 +276,18 @@ impl SQLPlanner {
                             .map(|n| col(n.as_ref()))
                             .collect::<Vec<_>>();
 
-                        let right_on = right_schema
-                            .names()
-                            .into_iter()
-                            .map(|n| col(n.as_ref()).alias(format!("right.{}", n)))
-                            .collect::<Vec<_>>();
-
-                        let Some(Expr::Alias(_, alias)) = right_on.first().map(|e| e.as_ref())
-                        else {
-                            unreachable!("we know right_on has at least one element")
-                        };
-
-                        let first_from_right = col(alias.as_ref());
-
                         let joined = left.join_with_null_safe_equal(
                             right,
                             left_on.clone(),
-                            right_on,
+                            left_on,
                             None,
-                            JoinType::Left,
+                            JoinType::Anti,
                             None,
                             None,
                             None,
                         )?;
 
-                        return joined
-                            .filter(first_from_right.is_null())
-                            .and_then(|plan| plan.select(left_on))
-                            .map_err(|e| e.into());
+                        return Ok(joined);
                     }
                     (SetOperator::Except, _) => {
                         unsupported_sql_err!("EXCEPT is not supported")
