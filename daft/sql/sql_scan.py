@@ -202,12 +202,10 @@ class SQLScanOperator(ScanOperator):
                 pa_table = self.conn.execute_sql_query(percentile_sql)
 
                 if pa_table.num_rows != 1:
-                    raise RuntimeError(f"Failed to get partition bounds: expected 1 row, but got {pa_table.num_rows}.")
+                    raise RuntimeError(f"Expected 1 row, but got {pa_table.num_rows}.")
 
                 if pa_table.num_columns != num_scan_tasks + 1:
-                    raise RuntimeError(
-                        f"Failed to get partition bounds: expected {num_scan_tasks + 1} percentiles, but got {pa_table.num_columns}."
-                    )
+                    raise RuntimeError(f"Expected {num_scan_tasks + 1} percentiles, but got {pa_table.num_columns}.")
 
                 pydict = Table.from_arrow(pa_table).to_pydict()
                 assert pydict.keys() == {f"bound_{i}" for i in range(num_scan_tasks + 1)}
