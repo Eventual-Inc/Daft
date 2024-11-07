@@ -3,7 +3,7 @@ tonic-build = {version = "0.12.3"}
 
 [package]
 edition = "2021"
-name = "spark-connect-script"
+name = "spark-connect-generation-script"
 version = "0.0.1"
 
 [package.metadata.cargo-machete]

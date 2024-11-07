@@ -156,7 +156,7 @@ members = [
   "src/hyperloglog",
   "src/parquet2",
   # "src/spark-connect-script",
-  "src/spark-connect"
+  "src/generated/spark-connect"
 ]
 
 [workspace.dependencies]
