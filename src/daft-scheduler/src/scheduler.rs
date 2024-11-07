@@ -9,8 +9,8 @@ use daft_logical_plan::InMemoryInfo;
 #[cfg(feature = "python")]
 use daft_logical_plan::{DeltaLakeCatalogInfo, IcebergCatalogInfo, LanceCatalogInfo};
 #[cfg(feature = "python")]
-use daft_physical_plan::physical_plan::ops::{DeltaLakeWrite, IcebergWrite, LanceWrite};
-use daft_physical_plan::physical_plan::{
+use daft_physical_plan::ops::{DeltaLakeWrite, IcebergWrite, LanceWrite};
+use daft_physical_plan::{
     logical_to_physical,
     ops::{
         ActorPoolProject, Aggregate, BroadcastJoin, Concat, EmptyScan, Explode, Filter, HashJoin,
@@ -264,7 +264,7 @@ fn physical_plan_to_partition_tasks(
     psets: &HashMap<String, Vec<PyObject>>,
     actor_pool_manager: &PyObject,
 ) -> PyResult<PyObject> {
-    use daft_physical_plan::physical_plan::ops::{ShuffleExchange, ShuffleExchangeStrategy};
+    use daft_physical_plan::ops::{ShuffleExchange, ShuffleExchangeStrategy};
 
     match physical_plan {
         PhysicalPlan::InMemoryScan(InMemoryScan {

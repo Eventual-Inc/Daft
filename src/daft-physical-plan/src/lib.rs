@@ -1,8 +1,18 @@
-#![feature(let_chains)]
 #![feature(assert_matches)]
+#![feature(let_chains)]
 
-pub mod local_plan;
-pub mod physical_plan;
+mod display;
+pub mod ops;
+mod optimization;
+mod physical_planner;
+mod plan;
+mod treenode;
 
 #[cfg(test)]
 mod test;
+
+pub use physical_planner::{
+    logical_to_physical, populate_aggregation_stages, AdaptivePlanner, MaterializedResults,
+    QueryStageOutput,
+};
+pub use plan::{PhysicalPlan, PhysicalPlanRef};

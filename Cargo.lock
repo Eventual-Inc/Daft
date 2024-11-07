@@ -2101,6 +2101,7 @@ dependencies = [
  "daft-functions",
  "daft-io",
  "daft-json",
+ "daft-local-plan",
  "daft-logical-plan",
  "daft-micropartition",
  "daft-parquet",
@@ -2118,6 +2119,22 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tracing",
+]
+
+[[package]]
+name = "daft-local-plan"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-display",
+ "common-error",
+ "common-resource-request",
+ "daft-core",
+ "daft-dsl",
+ "daft-logical-plan",
+ "daft-scan",
+ "log",
+ "serde",
+ "strum 0.26.3",
 ]
 
 [[package]]

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_daft_config::DaftExecutionConfig;
 use daft_core::prelude::Schema;
 use daft_logical_plan::{InMemoryInfo, LogicalPlan};
-use daft_physical_plan::physical_plan::{AdaptivePlanner, MaterializedResults};
+use daft_physical_plan::{AdaptivePlanner, MaterializedResults};
 #[cfg(feature = "python")]
 use {
     common_daft_config::PyDaftExecutionConfig, daft_logical_plan::PyLogicalPlanBuilder,
