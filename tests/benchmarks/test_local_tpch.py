@@ -22,7 +22,7 @@ TPCH_QUESTIONS = list(range(1, 11))
 
 
 @pytest.mark.skipif(
-    daft.context.get_context().runner_config.name not in {"py"},
+    daft.context.get_context().runner_config.name not in {"py", "native"},
     reason="requires PyRunner to be in use",
 )
 @pytest.mark.benchmark(group="tpch")
@@ -32,16 +32,15 @@ def test_tpch(tmp_path, check_answer, get_df, benchmark_with_memray, engine, q):
 
     def f():
         if engine == "native":
-            ctx = daft.context.execution_config_ctx(enable_native_executor=True)
+            daft.context.set_runner_native()
         elif engine == "python":
-            ctx = daft.context.execution_config_ctx(enable_native_executor=False)
+            daft.context.set_runner_py()
         else:
             raise ValueError(f"{engine} unsupported")
 
-        with ctx:
-            question = getattr(answers, f"q{q}")
-            daft_df = question(get_df)
-            return daft_df.to_arrow()
+        question = getattr(answers, f"q{q}")
+        daft_df = question(get_df)
+        return daft_df.to_arrow()
 
     benchmark_group = f"q{q}-parts-{num_parts}"
     daft_pd_df = benchmark_with_memray(f, benchmark_group).to_pandas()

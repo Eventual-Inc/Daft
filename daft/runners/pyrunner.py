@@ -23,10 +23,11 @@ from daft.runners.partitioning import (
     PartialPartitionMetadata,
     PartitionCacheEntry,
     PartitionMetadata,
+    PartitionSetCache,
 )
 from daft.runners.profiler import profiler
 from daft.runners.progress_bar import ProgressBar
-from daft.runners.runner import Runner
+from daft.runners.runner import LOCAL_PARTITION_SET_CACHE, Runner
 from daft.table import MicroPartition
 
 if TYPE_CHECKING:
@@ -316,6 +317,9 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
             memory_bytes,
         )
 
+    def initialize_partition_set_cache(self) -> PartitionSetCache:
+        return LOCAL_PARTITION_SET_CACHE
+
     def runner_io(self) -> PyRunnerIO:
         return PyRunnerIO()
 
@@ -369,6 +373,7 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
             # physical plan to executable tasks.
             if daft_execution_config.enable_native_executor:
                 logger.info("Using native executor")
+
                 executor = NativeExecutor.from_logical_plan_builder(builder)
                 results_gen = executor.run(
                     {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()},

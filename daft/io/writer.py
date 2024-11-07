@@ -175,8 +175,9 @@ class CSVFileWriter(FileWriterBase):
         self.is_closed = False
 
     def _create_writer(self, schema: pa.Schema) -> pacsv.CSVWriter:
+        output_file = self.fs.open_output_stream(self.full_path)
         return pacsv.CSVWriter(
-            self.full_path,
+            output_file,
             schema,
         )
 

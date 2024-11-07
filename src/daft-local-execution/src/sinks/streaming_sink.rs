@@ -129,12 +129,18 @@ impl StreamingSinkNode {
                 match result {
                     StreamingSinkOutput::NeedMoreInput(mp) => {
                         if let Some(mp) = mp {
-                            let _ = output_sender.send(mp).await;
+                            if output_sender.send(mp).await.is_err() {
+                                finished = true;
+                                break;
+                            }
                         }
                         break;
                     }
                     StreamingSinkOutput::HasMoreOutput(mp) => {
-                        let _ = output_sender.send(mp).await;
+                        if output_sender.send(mp).await.is_err() {
+                            finished = true;
+                            break;
+                        }
                     }
                     StreamingSinkOutput::Finished(mp) => {
                         if let Some(mp) = mp {
@@ -191,10 +197,12 @@ impl StreamingSinkNode {
             while let Some(morsel) = receiver.recv().await {
                 if morsel.should_broadcast() {
                     for worker_sender in &worker_senders {
-                        let _ = worker_sender.send((idx, morsel.clone())).await;
+                        if worker_sender.send((idx, morsel.clone())).await.is_err() {
+                            return Ok(());
+                        }
                     }
-                } else {
-                    let _ = send_to_next_worker(idx, morsel.clone()).await;
+                } else if send_to_next_worker(idx, morsel.clone()).await.is_err() {
+                    return Ok(());
                 }
             }
         }
@@ -270,7 +278,9 @@ impl PipelineNode for StreamingSinkNode {
                 );
 
                 while let Some(morsel) = output_receiver.recv().await {
-                    let _ = destination_sender.send(morsel.into()).await;
+                    if destination_sender.send(morsel.into()).await.is_err() {
+                        break;
+                    }
                 }
 
                 let mut finished_states = Vec::with_capacity(num_workers);
