@@ -145,6 +145,7 @@ members = [
   "src/daft-io",
   "src/daft-json",
   "src/daft-local-execution",
+  "src/daft-local-plan",
   "src/daft-logical-plan",
   "src/daft-micropartition",
   "src/daft-parquet",
