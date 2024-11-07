@@ -2165,7 +2165,6 @@ dependencies = [
  "serde",
  "snafu",
  "test-log",
- "typetag",
  "uuid 1.10.0",
 ]
 
