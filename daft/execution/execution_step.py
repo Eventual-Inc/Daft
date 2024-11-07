@@ -19,7 +19,6 @@ from daft.table import MicroPartition, table_io
 if TYPE_CHECKING:
     import pathlib
 
-    from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
@@ -52,6 +51,9 @@ class PartitionTask(Generic[PartitionT]):
     # This is used when a specific executor (e.g. an Actor pool) must be provisioned and used for the task
     actor_pool_id: str | None
 
+    # Indicates if the PartitionTask is "done" or not
+    is_done: bool = False
+
     _id: int = field(default_factory=lambda: next(ID_GEN))
 
     def id(self) -> str:
@@ -59,14 +61,23 @@ class PartitionTask(Generic[PartitionT]):
 
     def done(self) -> bool:
         """Whether the PartitionT result of this task is available."""
-        raise NotImplementedError()
+        return self.is_done
+
+    def set_done(self):
+        """Sets the PartitionTask as done."""
+        assert not self.is_done, "Cannot set PartitionTask as done more than once"
+        self.is_done = True
 
     def cancel(self) -> None:
         """If possible, cancel the execution of this PartitionTask."""
         raise NotImplementedError()
 
     def set_result(self, result: list[MaterializedResult[PartitionT]]) -> None:
-        """Set the result of this Task. For use by the Task executor."""
+        """Set the result of this Task. For use by the Task executor.
+
+        NOTE: A PartitionTask may contain a `result` without being `.done()`. This is because
+        results can potentially contain futures which are yet to be completed.
+        """
         raise NotImplementedError
 
     def is_empty(self) -> bool:
@@ -189,9 +200,6 @@ class SingleOutputPartitionTask(PartitionTask[PartitionT]):
         [partition] = result
         self._result = partition
 
-    def done(self) -> bool:
-        return self._result is not None
-
     def result(self) -> MaterializedResult[PartitionT]:
         assert self._result is not None, "Cannot call .result() on a PartitionTask that is not done"
         return self._result
@@ -236,9 +244,6 @@ class MultiOutputPartitionTask(PartitionTask[PartitionT]):
     def set_result(self, result: list[MaterializedResult[PartitionT]]) -> None:
         assert self._results is None, f"Cannot set result twice. Result is already {self._results}"
         self._results = result
-
-    def done(self) -> bool:
-        return self._results is not None
 
     def cancel(self) -> None:
         if self._results is not None:
@@ -391,7 +396,8 @@ class WriteIceberg(SingleOutputInstruction):
     base_path: str
     iceberg_schema: IcebergSchema
     iceberg_properties: IcebergTableProperties
-    partition_spec: IcebergPartitionSpec
+    partition_spec_id: int
+    partition_cols: ExpressionsProjection
     io_config: IOConfig | None
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
@@ -419,7 +425,8 @@ class WriteIceberg(SingleOutputInstruction):
             base_path=self.base_path,
             schema=self.iceberg_schema,
             properties=self.iceberg_properties,
-            partition_spec=self.partition_spec,
+            partition_spec_id=self.partition_spec_id,
+            partition_cols=self.partition_cols,
             io_config=self.io_config,
         )
 
@@ -782,6 +789,7 @@ class Unpivot(SingleOutputInstruction):
 class HashJoin(SingleOutputInstruction):
     left_on: ExpressionsProjection
     right_on: ExpressionsProjection
+    null_equals_nulls: list[bool] | None
     how: JoinType
     is_swapped: bool
 
@@ -804,6 +812,7 @@ class HashJoin(SingleOutputInstruction):
             right,
             left_on=self.left_on,
             right_on=self.right_on,
+            null_equals_nulls=self.null_equals_nulls,
             how=self.how,
         )
         return [result]

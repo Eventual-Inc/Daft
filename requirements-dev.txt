@@ -8,7 +8,7 @@ docker
 requests<2.32.0
 
 # Tracing
-orjson==3.9.5  # orjson recommended for viztracer
+orjson==3.10.11  # orjson recommended for viztracer
 py-spy==0.3.14
 viztracer==0.15.6
 
@@ -33,6 +33,7 @@ xxhash>=3.0.0
 Pillow==10.4.0
 opencv-python==4.8.1.78
 tiktoken==0.7.0
+duckdb==1.1.2
 
 # Pyarrow
 pyarrow==16.0.0; python_version >= '3.9'

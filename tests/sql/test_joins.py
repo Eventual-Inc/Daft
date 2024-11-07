@@ -1,5 +1,6 @@
 import daft
 from daft import col
+from daft.sql import SQLCatalog
 
 
 def test_joins_using():
@@ -23,6 +24,20 @@ def test_joins_with_alias():
     actual = df_sql.collect().to_pydict()
 
     expected = df1.join(df2, on="idx").filter(col("score") > 0.1).collect().to_pydict()
+
+    assert actual == expected
+
+
+def test_joins_with_spaceship():
+    df1 = daft.from_pydict({"idx": [1, 2, None], "val": [10, 20, 30]})
+    df2 = daft.from_pydict({"idx": [1, 2, None], "score": [0.1, 0.2, None]})
+
+    catalog = SQLCatalog({"df1": df1, "df2": df2})
+    df_sql = daft.sql("select idx, val, score from df1 join df2 on (df1.idx<=>df2.idx)", catalog=catalog)
+
+    actual = df_sql.collect().to_pydict()
+
+    expected = {"idx": [1, 2, None], "val": [10, 20, 30], "score": [0.1, 0.2, None]}
 
     assert actual == expected
 

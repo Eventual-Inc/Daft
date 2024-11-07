@@ -129,17 +129,21 @@ impl IntermediateNode {
                 let fut = async move {
                     rt_context.in_span(&span, || op.execute(idx, &morsel, &state_wrapper))
                 };
-                let result = compute_runtime.await_on(fut).await??;
+                let result = compute_runtime.spawn(fut).await??;
                 match result {
                     IntermediateOperatorResult::NeedMoreInput(Some(mp)) => {
-                        let _ = sender.send(mp.into()).await;
+                        if sender.send(mp.into()).await.is_err() {
+                            return Ok(());
+                        }
                         break;
                     }
                     IntermediateOperatorResult::NeedMoreInput(None) => {
                         break;
                     }
                     IntermediateOperatorResult::HasMoreOutput(mp) => {
-                        let _ = sender.send(mp.into()).await;
+                        if sender.send(mp.into()).await.is_err() {
+                            return Ok(());
+                        }
                     }
                 }
             }
@@ -189,13 +193,17 @@ impl IntermediateNode {
             while let Some(morsel) = receiver.recv().await {
                 if morsel.should_broadcast() {
                     for worker_sender in &worker_senders {
-                        let _ = worker_sender.send((idx, morsel.clone())).await;
+                        if worker_sender.send((idx, morsel.clone())).await.is_err() {
+                            return Ok(());
+                        }
                     }
                 } else {
                     buffer.push(morsel.as_data());
                     if let Some(ready) = buffer.pop_enough()? {
                         for part in ready {
-                            let _ = send_to_next_worker(idx, part.into()).await;
+                            if send_to_next_worker(idx, part.into()).await.is_err() {
+                                return Ok(());
+                            }
                         }
                     }
                 }

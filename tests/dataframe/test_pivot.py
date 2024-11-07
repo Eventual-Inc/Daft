@@ -2,7 +2,7 @@ import pytest
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
-def test_pivot(make_df, repartition_nparts):
+def test_pivot(make_df, repartition_nparts, with_morsel_size):
     daft_df = make_df(
         {
             "group": ["A", "A", "B", "B"],
@@ -23,7 +23,7 @@ def test_pivot(make_df, repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
-def test_pivot_with_col_names(make_df, repartition_nparts):
+def test_pivot_with_col_names(make_df, repartition_nparts, with_morsel_size):
     daft_df = make_df(
         {
             "group": ["A", "A", "B", "B"],
@@ -50,7 +50,7 @@ def test_pivot_with_col_names(make_df, repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
-def test_pivot_with_col_names_subset(make_df, repartition_nparts):
+def test_pivot_with_col_names_subset(make_df, repartition_nparts, with_morsel_size):
     daft_df = make_df(
         {
             "group": ["A", "A", "B", "B"],
@@ -76,7 +76,7 @@ def test_pivot_with_col_names_subset(make_df, repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
-def test_pivot_with_col_names_superset(make_df, repartition_nparts):
+def test_pivot_with_col_names_superset(make_df, repartition_nparts, with_morsel_size):
     daft_df = make_df(
         {
             "group": ["A", "A", "B", "B"],
@@ -104,7 +104,7 @@ def test_pivot_with_col_names_superset(make_df, repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
-def test_pivot_with_nulls(make_df, repartition_nparts):
+def test_pivot_with_nulls(make_df, repartition_nparts, with_morsel_size):
     daft_df = make_df(
         {
             "group": ["A", None, "B", "B"],
@@ -136,7 +136,7 @@ def test_pivot_with_nulls(make_df, repartition_nparts):
         ("count", {"group": ["A", "B"], "1": [2, 2]}),
     ],
 )
-def test_pivot_with_different_aggs(make_df, repartition_nparts, agg_fn, expected):
+def test_pivot_with_different_aggs(make_df, repartition_nparts, agg_fn, expected, with_morsel_size):
     daft_df = make_df(
         {
             "group": ["A", "A", "B", "B"],
@@ -151,7 +151,7 @@ def test_pivot_with_different_aggs(make_df, repartition_nparts, agg_fn, expected
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
-def test_pivot_with_multiple_group_by(make_df, repartition_nparts):
+def test_pivot_with_multiple_group_by(make_df, repartition_nparts, with_morsel_size):
     daft_df = make_df(
         {
             "group1": ["A", "A", "A", "B", "B", "B"],
@@ -173,7 +173,7 @@ def test_pivot_with_multiple_group_by(make_df, repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
-def test_pivot_with_downstream_ops(make_df, repartition_nparts):
+def test_pivot_with_downstream_ops(make_df, repartition_nparts, with_morsel_size):
     daft_df = make_df(
         {
             "group": ["A", "A", "B", "B"],

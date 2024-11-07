@@ -2253,3 +2253,158 @@ where
         .into_series())
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use arrow2::array::PrimitiveArray;
+    use rand::{thread_rng, Rng};
+
+    use super::*;
+    use crate::{
+        datatypes::DataArray,
+        prelude::{Decimal128Type, Float64Array},
+    };
+
+    fn create_test_decimal_array(
+        values: Vec<i128>,
+        precision: usize,
+        scale: usize,
+    ) -> DataArray<Decimal128Type> {
+        let arrow_array = PrimitiveArray::from_vec(values)
+            .to(arrow2::datatypes::DataType::Decimal(precision, scale));
+        let field = Arc::new(Field::new(
+            "test_decimal",
+            DataType::Decimal128(precision, scale),
+        ));
+        DataArray::<Decimal128Type>::from_arrow(field, Box::new(arrow_array))
+            .expect("Failed to create test decimal array")
+    }
+
+    fn create_test_f64_array(values: Vec<f64>) -> Float64Array {
+        let arrow_array = PrimitiveArray::from_vec(values).to(arrow2::datatypes::DataType::Float64);
+        let field = Arc::new(Field::new("test_float", DataType::Float64));
+        Float64Array::from_arrow(field, Box::new(arrow_array))
+            .expect("Failed to create test float array")
+    }
+
+    fn create_test_i64_array(values: Vec<i64>) -> Int64Array {
+        let arrow_array = PrimitiveArray::from_vec(values).to(arrow2::datatypes::DataType::Int64);
+        let field = Arc::new(Field::new("test_int", DataType::Int64));
+        Int64Array::from_arrow(field, Box::new(arrow_array))
+            .expect("Failed to create test int array")
+    }
+
+    // For a Decimal(p, s) to be valid, p, s, and max_val must satisfy:
+    //   p > ceil(log_9(max_val * 10^s)) - 1
+    // So with a max_val of 10^10, we get:
+    //   p > ceil(log_9(10^(10+s))) - 1
+    // Since p <= 32, for this inequality to hold, we need s <= 20.
+    const MAX_VAL: f64 = 1e10;
+    const MAX_SCALE: usize = 20;
+    const MIN_DIFF_FOR_PRECISION: usize = 12;
+    #[test]
+    fn test_decimal_to_decimal_cast() {
+        let mut rng = thread_rng();
+        let mut values: Vec<f64> = (0..100).map(|_| rng.gen_range(-MAX_VAL..MAX_VAL)).collect();
+        values.extend_from_slice(&[0.0, -0.0]);
+
+        let initial_scale: usize = rng.gen_range(0..=MAX_SCALE);
+        let initial_precision: usize = rng.gen_range(initial_scale + MIN_DIFF_FOR_PRECISION..=32);
+        let min_integral_comp = initial_precision - initial_scale;
+        let i128_values: Vec<i128> = values
+            .iter()
+            .map(|&x| (x * 10_f64.powi(initial_scale as i32) as f64) as i128)
+            .collect();
+        let original = create_test_decimal_array(i128_values, initial_precision, initial_scale);
+
+        // We always widen the Decimal, otherwise we lose information and can no longer compare with the original Decimal values.
+        let intermediate_scale: usize = rng.gen_range(initial_scale..=32 - min_integral_comp);
+        let intermediate_precision: usize =
+            rng.gen_range(intermediate_scale + min_integral_comp..=32);
+
+        let result = original
+            .cast(&DataType::Decimal128(
+                intermediate_precision,
+                intermediate_scale,
+            ))
+            .expect("Failed to cast to intermediate decimal")
+            .cast(&DataType::Decimal128(initial_precision, initial_scale))
+            .expect("Failed to cast back to original decimal");
+
+        assert!(
+            original.into_series() == result,
+            "Failed with intermediate decimal({}, {})",
+            intermediate_precision,
+            intermediate_scale,
+        );
+    }
+
+    // We do fuzzy equality when comparing floats converted to and from decimals. This test is
+    // primarily sanity checking that we don't repeat the mistake of shifting the scale and precision
+    // of floats during casting, while avoiding flakiness due small differences in floats.
+    #[test]
+    fn test_decimal_to_float() {
+        let mut rng = thread_rng();
+        let mut values: Vec<f64> = (0..100).map(|_| rng.gen_range(-MAX_VAL..MAX_VAL)).collect();
+        values.extend_from_slice(&[0.0, -0.0]);
+        let num_values = values.len();
+
+        let scale: usize = rng.gen_range(0..=MAX_SCALE);
+        let precision: usize = rng.gen_range(scale + MIN_DIFF_FOR_PRECISION..=32);
+        // when the scale is 0, the created decimal values are integers, the epsilon should be 1
+        let epsilon = if scale == 0 { 1f64 } else { 0.1f64 };
+
+        let i128_values: Vec<i128> = values
+            .iter()
+            .map(|&x| (x * 10_f64.powi(scale as i32) as f64) as i128)
+            .collect();
+        let original = create_test_decimal_array(i128_values, precision, scale);
+
+        let result = original
+            .cast(&DataType::Float64)
+            .expect("Failed to cast to float");
+        let original = create_test_f64_array(values);
+
+        let epsilon_series = create_test_f64_array(vec![epsilon; num_values]).into_series();
+
+        assert!(
+            result.fuzzy_eq(&original.into_series(), &epsilon_series),
+            "Failed with decimal({}, {})",
+            precision,
+            scale,
+        );
+    }
+
+    // 2^63 gives us 18 unrestricted digits. So precision - scale has to be <= 18.
+    const MAX_DIFF_FOR_PRECISION: usize = 18;
+    #[test]
+    fn test_decimal_to_int() {
+        let mut rng = thread_rng();
+        let mut values: Vec<f64> = (0..100).map(|_| rng.gen_range(-MAX_VAL..MAX_VAL)).collect();
+        values.extend_from_slice(&[0.0, -0.0]);
+
+        let scale: usize = rng.gen_range(0..=MAX_SCALE);
+        let precision: usize =
+            rng.gen_range(scale + MIN_DIFF_FOR_PRECISION..=scale + MAX_DIFF_FOR_PRECISION);
+        let i128_values: Vec<i128> = values
+            .iter()
+            .map(|&x| (x * 10_f64.powi(scale as i32) as f64) as i128)
+            .collect();
+        let original = create_test_decimal_array(i128_values, precision, scale);
+
+        let result = original
+            .cast(&DataType::Int64)
+            .expect("Failed to cast to int64");
+
+        // Convert the original floats directly to integers.
+        let values = values.into_iter().map(|f| f as i64).collect();
+        let original = create_test_i64_array(values);
+
+        assert!(
+            original.into_series() == result,
+            "Failed with decimal({}, {})",
+            precision,
+            scale,
+        );
+    }
+}

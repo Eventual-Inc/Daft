@@ -1,7 +1,7 @@
 pub mod read_parquet;
 use std::{collections::HashMap, sync::Arc};
 
-use daft_plan::LogicalPlanBuilder;
+use daft_logical_plan::LogicalPlanBuilder;
 use once_cell::sync::Lazy;
 use read_parquet::ReadParquetFunction;
 use sqlparser::ast::TableFunctionArgs;

@@ -9,13 +9,13 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_tracing::refresh_chrome_trace;
+use daft_local_plan::{translate, LocalPhysicalPlan};
 use daft_micropartition::MicroPartition;
-use daft_physical_plan::{translate, LocalPhysicalPlan};
 #[cfg(feature = "python")]
 use {
     common_daft_config::PyDaftExecutionConfig,
+    daft_logical_plan::PyLogicalPlanBuilder,
     daft_micropartition::python::PyMicroPartition,
-    daft_plan::PyLogicalPlanBuilder,
     pyo3::{pyclass, pymethods, IntoPy, PyObject, PyRef, PyRefMut, PyResult, Python},
 };
 
@@ -130,7 +130,9 @@ pub fn run_local(
             let mut receiver = pipeline.start(true, &mut runtime_handle)?.get_receiver();
 
             while let Some(val) = receiver.recv().await {
-                let _ = tx.send(val.as_data().clone()).await;
+                if tx.send(val.as_data().clone()).await.is_err() {
+                    break;
+                }
             }
 
             while let Some(result) = runtime_handle.join_next().await {

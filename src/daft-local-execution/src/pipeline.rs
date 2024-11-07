@@ -10,15 +10,16 @@ use daft_core::{
     utils::supertype,
 };
 use daft_dsl::{col, join::get_common_join_keys, Expr};
-use daft_micropartition::MicroPartition;
-use daft_physical_plan::{
+use daft_local_plan::{
     ActorPoolProject, Concat, EmptyScan, Explode, Filter, HashAggregate, HashJoin, InMemoryScan,
     Limit, LocalPhysicalPlan, PhysicalWrite, Pivot, Project, Sample, Sort, UnGroupedAggregate,
     Unpivot,
 };
-use daft_plan::{populate_aggregation_stages, JoinType};
+use daft_logical_plan::JoinType;
+use daft_micropartition::MicroPartition;
+use daft_physical_plan::populate_aggregation_stages;
 use daft_table::ProbeState;
-use daft_writers::make_writer_factory;
+use daft_writers::make_physical_writer_factory;
 use indexmap::IndexSet;
 use snafu::ResultExt;
 
@@ -28,8 +29,8 @@ use crate::{
         actor_pool_project::ActorPoolProjectOperator, aggregate::AggregateOperator,
         anti_semi_hash_join_probe::AntiSemiProbeOperator, explode::ExplodeOperator,
         filter::FilterOperator, inner_hash_join_probe::InnerHashJoinProbeOperator,
-        intermediate_op::IntermediateNode, pivot::PivotOperator, project::ProjectOperator,
-        sample::SampleOperator, unpivot::UnpivotOperator,
+        intermediate_op::IntermediateNode, project::ProjectOperator, sample::SampleOperator,
+        unpivot::UnpivotOperator,
     },
     sinks::{
         aggregate::AggregateSink,
@@ -38,6 +39,7 @@ use crate::{
         hash_join_build::HashJoinBuildSink,
         limit::LimitSink,
         outer_hash_join_probe::OuterHashJoinProbeSink,
+        pivot::PivotSink,
         sort::SortSink,
         streaming_sink::StreamingSinkNode,
         write::{WriteFormat, WriteSink},
@@ -113,22 +115,28 @@ pub fn physical_plan_to_pipeline(
     psets: &HashMap<String, Vec<Arc<MicroPartition>>>,
     cfg: &Arc<DaftExecutionConfig>,
 ) -> crate::Result<Box<dyn PipelineNode>> {
-    use daft_physical_plan::PhysicalScan;
+    use daft_local_plan::PhysicalScan;
 
     use crate::sources::scan_task::ScanTaskSource;
     let out: Box<dyn PipelineNode> = match physical_plan {
         LocalPhysicalPlan::EmptyScan(EmptyScan { schema, .. }) => {
             let source = EmptyScanSource::new(schema.clone());
-            source.boxed().into()
+            source.arced().into()
         }
-        LocalPhysicalPlan::PhysicalScan(PhysicalScan { scan_tasks, .. }) => {
-            let scan_task_source = ScanTaskSource::new(scan_tasks.clone());
-            scan_task_source.boxed().into()
+        LocalPhysicalPlan::PhysicalScan(PhysicalScan {
+            scan_tasks,
+            pushdowns,
+            schema,
+            ..
+        }) => {
+            let scan_task_source =
+                ScanTaskSource::new(scan_tasks.clone(), pushdowns.clone(), schema.clone(), cfg);
+            scan_task_source.arced().into()
         }
         LocalPhysicalPlan::InMemoryScan(InMemoryScan { info, .. }) => {
             let partitions = psets.get(&info.cache_key).expect("Cache key not found");
             InMemorySource::new(partitions.clone(), info.source_schema.clone())
-                .boxed()
+                .arced()
                 .into()
         }
         LocalPhysicalPlan::Project(Project {
@@ -282,17 +290,19 @@ pub fn physical_plan_to_pipeline(
             group_by,
             pivot_column,
             value_column,
+            aggregation,
             names,
             ..
         }) => {
-            let pivot_op = PivotOperator::new(
+            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            let pivot_sink = PivotSink::new(
                 group_by.clone(),
                 pivot_column.clone(),
                 value_column.clone(),
+                aggregation.clone(),
                 names.clone(),
             );
-            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
-            IntermediateNode::new(Arc::new(pivot_op), vec![child_node]).boxed()
+            BlockingSinkNode::new(Arc::new(pivot_sink), child_node).boxed()
         }
         LocalPhysicalPlan::Sort(Sort {
             input,
@@ -310,6 +320,7 @@ pub fn physical_plan_to_pipeline(
             right,
             left_on,
             right_on,
+            null_equals_null,
             join_type,
             schema,
         }) => {
@@ -368,9 +379,13 @@ pub fn physical_plan_to_pipeline(
                     .zip(key_schema.fields.values())
                     .map(|(e, f)| e.clone().cast(&f.dtype))
                     .collect::<Vec<_>>();
-
                 // we should move to a builder pattern
-                let build_sink = HashJoinBuildSink::new(key_schema, casted_build_on, join_type)?;
+                let build_sink = HashJoinBuildSink::new(
+                    key_schema,
+                    casted_build_on,
+                    null_equals_null.clone(),
+                    join_type,
+                )?;
                 let build_child_node = physical_plan_to_pipeline(build_child, psets, cfg)?;
                 let build_node =
                     BlockingSinkNode::new(Arc::new(build_sink), build_child_node).boxed();
@@ -427,7 +442,7 @@ pub fn physical_plan_to_pipeline(
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
-            let writer_factory = make_writer_factory(file_info, data_schema, cfg);
+            let writer_factory = make_physical_writer_factory(file_info, data_schema, cfg);
             let write_format = match (file_info.file_format, file_info.partition_cols.is_some()) {
                 (FileFormat::Parquet, true) => WriteFormat::PartitionedParquet,
                 (FileFormat::Parquet, false) => WriteFormat::Parquet,
@@ -439,6 +454,57 @@ pub fn physical_plan_to_pipeline(
                 write_format,
                 writer_factory,
                 file_info.partition_cols.clone(),
+                file_schema.clone(),
+            );
+            BlockingSinkNode::new(Arc::new(write_sink), child_node).boxed()
+        }
+        #[cfg(feature = "python")]
+        LocalPhysicalPlan::CatalogWrite(daft_local_plan::CatalogWrite {
+            input,
+            catalog_type,
+            data_schema,
+            file_schema,
+            ..
+        }) => {
+            use daft_logical_plan::CatalogType;
+
+            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            let (partition_by, write_format) = match catalog_type {
+                CatalogType::Iceberg(ic) => {
+                    if !ic.partition_cols.is_empty() {
+                        (
+                            Some(ic.partition_cols.clone()),
+                            WriteFormat::PartitionedIceberg,
+                        )
+                    } else {
+                        (None, WriteFormat::Iceberg)
+                    }
+                }
+                CatalogType::DeltaLake(dl) => {
+                    if let Some(partition_cols) = &dl.partition_cols
+                        && !partition_cols.is_empty()
+                    {
+                        let partition_col_exprs = partition_cols
+                            .iter()
+                            .map(|name| col(name.as_str()))
+                            .collect::<Vec<_>>();
+                        (Some(partition_col_exprs), WriteFormat::PartitionedDeltalake)
+                    } else {
+                        (None, WriteFormat::Deltalake)
+                    }
+                }
+                _ => panic!("Unsupported catalog type"),
+            };
+            let writer_factory = daft_writers::make_catalog_writer_factory(
+                catalog_type,
+                data_schema,
+                &partition_by,
+                cfg,
+            );
+            let write_sink = WriteSink::new(
+                write_format,
+                writer_factory,
+                partition_by,
                 file_schema.clone(),
             );
             BlockingSinkNode::new(Arc::new(write_sink), child_node).boxed()

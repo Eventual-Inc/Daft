@@ -8,7 +8,7 @@ from tests.conftest import assert_df_equals
 
 
 def skip_invalid_join_strategies(join_strategy):
-    if context.get_context().daft_execution_config.enable_native_executor is True:
+    if context.get_context().runner_config.name == "native":
         if join_strategy not in [None, "hash"]:
             pytest.skip("Native executor fails for these tests")
 
@@ -18,7 +18,7 @@ def skip_invalid_join_strategies(join_strategy):
     [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"],
     indirect=True,
 )
-def test_simple_join(join_strategy, daft_df, service_requests_csv_pd_df, repartition_nparts):
+def test_simple_join(join_strategy, daft_df, service_requests_csv_pd_df, repartition_nparts, with_morsel_size):
     skip_invalid_join_strategies(join_strategy)
     daft_df = daft_df.repartition(repartition_nparts)
     daft_df_left = daft_df.select(col("Unique Key"), col("Borough"))
@@ -41,7 +41,7 @@ def test_simple_join(join_strategy, daft_df, service_requests_csv_pd_df, reparti
     [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"],
     indirect=True,
 )
-def test_simple_self_join(join_strategy, daft_df, service_requests_csv_pd_df, repartition_nparts):
+def test_simple_self_join(join_strategy, daft_df, service_requests_csv_pd_df, repartition_nparts, with_morsel_size):
     skip_invalid_join_strategies(join_strategy)
     daft_df = daft_df.repartition(repartition_nparts)
     daft_df = daft_df.select(col("Unique Key"), col("Borough"))
@@ -68,7 +68,9 @@ def test_simple_self_join(join_strategy, daft_df, service_requests_csv_pd_df, re
     [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"],
     indirect=True,
 )
-def test_simple_join_missing_rvalues(join_strategy, daft_df, service_requests_csv_pd_df, repartition_nparts):
+def test_simple_join_missing_rvalues(
+    join_strategy, daft_df, service_requests_csv_pd_df, repartition_nparts, with_morsel_size
+):
     skip_invalid_join_strategies(join_strategy)
     daft_df_right = daft_df.sort("Unique Key").limit(25).repartition(repartition_nparts)
     daft_df_left = daft_df.repartition(repartition_nparts)
@@ -94,7 +96,9 @@ def test_simple_join_missing_rvalues(join_strategy, daft_df, service_requests_cs
     [None, "hash", "sort_merge", "sort_merge_aligned_boundaries", "broadcast"],
     indirect=True,
 )
-def test_simple_join_missing_lvalues(join_strategy, daft_df, service_requests_csv_pd_df, repartition_nparts):
+def test_simple_join_missing_lvalues(
+    join_strategy, daft_df, service_requests_csv_pd_df, repartition_nparts, with_morsel_size
+):
     skip_invalid_join_strategies(join_strategy)
     daft_df_right = daft_df.repartition(repartition_nparts)
     daft_df_left = daft_df.sort(col("Unique Key")).limit(25).repartition(repartition_nparts)

@@ -1386,6 +1386,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "common-io-config",
  "common-py-serde",
+ "log",
  "pyo3",
  "serde",
 ]
@@ -1800,11 +1801,12 @@ dependencies = [
  "daft-io",
  "daft-json",
  "daft-local-execution",
+ "daft-local-plan",
+ "daft-logical-plan",
  "daft-micropartition",
  "daft-minhash",
  "daft-parquet",
  "daft-physical-plan",
- "daft-plan",
  "daft-scan",
  "daft-scheduler",
  "daft-sql",
@@ -1863,6 +1865,7 @@ dependencies = [
  "num-traits",
  "numpy",
  "pyo3",
+ "rand 0.8.5",
  "regex",
  "serde",
  "sketches-ddsketch",
@@ -2026,6 +2029,7 @@ dependencies = [
  "common-file-formats",
  "common-io-config",
  "common-runtime",
+ "derive_builder",
  "futures",
  "globset",
  "google-cloud-storage",
@@ -2099,10 +2103,11 @@ dependencies = [
  "daft-functions",
  "daft-io",
  "daft-json",
+ "daft-local-plan",
+ "daft-logical-plan",
  "daft-micropartition",
  "daft-parquet",
  "daft-physical-plan",
- "daft-plan",
  "daft-scan",
  "daft-table",
  "daft-writers",
@@ -2114,8 +2119,53 @@ dependencies = [
  "pyo3",
  "snafu",
  "tokio",
- "tokio-stream",
  "tracing",
+]
+
+[[package]]
+name = "daft-local-plan"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-error",
+ "common-resource-request",
+ "daft-core",
+ "daft-dsl",
+ "daft-logical-plan",
+ "daft-scan",
+ "log",
+ "strum 0.26.3",
+]
+
+[[package]]
+name = "daft-logical-plan"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow2",
+ "common-daft-config",
+ "common-display",
+ "common-error",
+ "common-file-formats",
+ "common-io-config",
+ "common-py-serde",
+ "common-resource-request",
+ "common-treenode",
+ "daft-core",
+ "daft-dsl",
+ "daft-functions",
+ "daft-scan",
+ "daft-schema",
+ "daft-table",
+ "derivative",
+ "indexmap 2.5.0",
+ "itertools 0.11.0",
+ "log",
+ "pretty_assertions",
+ "pyo3",
+ "rstest",
+ "serde",
+ "snafu",
+ "test-log",
+ "uuid 1.10.0",
 ]
 
 [[package]]
@@ -2192,18 +2242,26 @@ dependencies = [
 name = "daft-physical-plan"
 version = "0.3.0-dev0"
 dependencies = [
+ "common-daft-config",
+ "common-display",
  "common-error",
+ "common-file-formats",
  "common-resource-request",
+ "common-treenode",
  "daft-core",
  "daft-dsl",
- "daft-plan",
+ "daft-functions",
+ "daft-logical-plan",
  "daft-scan",
+ "daft-schema",
+ "itertools 0.11.0",
  "log",
- "strum 0.26.3",
+ "rstest",
+ "serde",
 ]
 
 [[package]]
-name = "daft-plan"
+name = "daft-scan"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow2",
@@ -2213,40 +2271,10 @@ dependencies = [
  "common-file-formats",
  "common-io-config",
  "common-py-serde",
- "common-resource-request",
- "common-treenode",
- "daft-core",
- "daft-dsl",
- "daft-functions",
- "daft-scan",
- "daft-schema",
- "daft-table",
- "derivative",
- "indexmap 2.5.0",
- "itertools 0.11.0",
- "log",
- "pretty_assertions",
- "pyo3",
- "rstest",
- "serde",
- "snafu",
- "test-log",
- "uuid 1.10.0",
-]
-
-[[package]]
-name = "daft-scan"
-version = "0.3.0-dev0"
-dependencies = [
- "common-daft-config",
- "common-display",
- "common-error",
- "common-file-formats",
- "common-io-config",
- "common-py-serde",
  "common-runtime",
  "daft-core",
  "daft-csv",
+ "daft-decoding",
  "daft-dsl",
  "daft-io",
  "daft-json",
@@ -2255,11 +2283,13 @@ dependencies = [
  "daft-stats",
  "daft-table",
  "futures",
+ "indexmap 2.5.0",
  "itertools 0.11.0",
  "parquet2",
  "pyo3",
  "serde",
  "snafu",
+ "urlencoding",
 ]
 
 [[package]]
@@ -2274,7 +2304,8 @@ dependencies = [
  "common-py-serde",
  "daft-core",
  "daft-dsl",
- "daft-plan",
+ "daft-logical-plan",
+ "daft-physical-plan",
  "daft-scan",
  "pyo3",
  "rstest",
@@ -2325,7 +2356,7 @@ dependencies = [
  "daft-dsl",
  "daft-functions",
  "daft-functions-json",
- "daft-plan",
+ "daft-logical-plan",
  "once_cell",
  "pyo3",
  "regex",
@@ -2377,10 +2408,45 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-io",
+ "daft-logical-plan",
  "daft-micropartition",
- "daft-plan",
  "daft-table",
  "pyo3",
+]
+
+[[package]]
+name = "darling"
+version = "0.20.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6f63b86c8a8826a49b8c21f08a2d07338eec8d900540f8630dc76284be802989"
+dependencies = [
+ "darling_core",
+ "darling_macro",
+]
+
+[[package]]
+name = "darling_core"
+version = "0.20.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "95133861a8032aaea082871032f5815eb9e98cef03fa916ab4500513994df9e5"
+dependencies = [
+ "fnv",
+ "ident_case",
+ "proc-macro2",
+ "quote",
+ "strsim",
+ "syn 2.0.74",
+]
+
+[[package]]
+name = "darling_macro"
+version = "0.20.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d336a2a514f6ccccaa3e09b02d41d35330c07ddf03a62165fcec10bb561c7806"
+dependencies = [
+ "darling_core",
+ "quote",
+ "syn 2.0.74",
 ]
 
 [[package]]
@@ -2419,6 +2485,37 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "derive_builder"
+version = "0.20.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "507dfb09ea8b7fa618fcf76e953f4f5e192547945816d5358edffe39f6f94947"
+dependencies = [
+ "derive_builder_macro",
+]
+
+[[package]]
+name = "derive_builder_core"
+version = "0.20.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d5bcf7b024d6835cfb3d473887cd966994907effbe9227e8c8219824d06c4e8"
+dependencies = [
+ "darling",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.74",
+]
+
+[[package]]
+name = "derive_builder_macro"
+version = "0.20.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab63b0e2bf4d5928aff72e83a7dace85d7bba5fe12dcc3c5a572d78caffd3f3c"
+dependencies = [
+ "derive_builder_core",
+ "syn 2.0.74",
 ]
 
 [[package]]
@@ -3237,6 +3334,12 @@ checksum = "f31827a206f56af32e590ba56d5d2d085f558508192593743f16b2306495269f"
 dependencies = [
  "cc",
 ]
+
+[[package]]
+name = "ident_case"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b9e0384b61958566e926dc50660321d12159025e767c18e043daf26b70104c39"
 
 [[package]]
 name = "idna"
