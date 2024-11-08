@@ -110,29 +110,21 @@ def test_sql_global_agg():
         daft.sql("SELECT n,max(n) max_n FROM test", catalog=catalog)
 
 
-def test_sql_groupby_agg():
+@pytest.mark.parametrize(
+    "query,expected",
+    [
+        ("SELECT sum(v) as sum FROM test GROUP BY n ORDER BY n", {"sum": [3, 7]}),
+        ("SELECT n, sum(v) as sum FROM test GROUP BY n ORDER BY n", {"n": [1, 2], "sum": [3, 7]}),
+        ("SELECT max(v) as max, sum(v) as sum FROM test GROUP BY n ORDER BY n", {"max": [2, 4], "sum": [3, 7]}),
+        ("SELECT n as n_alias, sum(v) as sum FROM test GROUP BY n ORDER BY n", {"n_alias": [1, 2], "sum": [3, 7]}),
+        ("SELECT n, sum(v) as sum FROM test GROUP BY n ORDER BY sum", {"n": [1, 2], "sum": [3, 7]}),
+    ],
+)
+def test_sql_groupby_agg(query, expected):
     df = daft.from_pydict({"n": [1, 1, 2, 2], "v": [1, 2, 3, 4]})
     catalog = SQLCatalog({"test": df})
-    actual = daft.sql("SELECT sum(v) as sum FROM test GROUP BY n ORDER BY n", catalog=catalog)
-    assert actual.collect().to_pydict() == {"sum": [3, 7]}
-
-    # test with grouping column
-    actual = daft.sql("SELECT n, sum(v) as sum FROM test GROUP BY n ORDER BY n", catalog=catalog)
-    assert actual.collect().to_pydict() == {"n": [1, 2], "sum": [3, 7]}
-
-    # test with multiple columns
-    actual = daft.sql("SELECT max(v) as max, sum(v) as sum FROM test GROUP BY n ORDER BY n", catalog=catalog)
-    assert actual.collect().to_pydict() == {"max": [2, 4], "sum": [3, 7]}
-
-    # test with aliased grouping key
-    actual = daft.sql("SELECT n as n_alias, sum(v) as sum FROM test GROUP BY n ORDER BY n", catalog=catalog)
-    assert actual.collect().to_pydict() == {"n_alias": [1, 2], "sum": [3, 7]}
-
-    actual = daft.sql("SELECT n, sum(v) as sum FROM test GROUP BY n ORDER BY -n", catalog=catalog)
-    assert actual.collect().to_pydict() == {"n": [2, 1], "sum": [7, 3]}
-
-    actual = daft.sql("SELECT n, sum(v) as sum FROM test GROUP BY n ORDER BY sum", catalog=catalog)
-    assert actual.collect().to_pydict() == {"n": [1, 2], "sum": [3, 7]}
+    actual = daft.sql(query, catalog=catalog)
+    assert actual.collect().to_pydict() == expected
 
 
 def test_sql_count_star():
