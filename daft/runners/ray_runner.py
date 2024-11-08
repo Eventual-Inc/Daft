@@ -339,7 +339,7 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
 
     def wait(self) -> None:
         deduped_object_refs = {r.partition() for r in self._results.values()}
-        ray.wait(list(deduped_object_refs))
+        ray.wait(list(deduped_object_refs), fetch_local=False, num_returns=len(deduped_object_refs))
 
 
 def _from_arrow_type_with_ray_data_extensions(arrow_type: pa.lib.DataType) -> DataType:
