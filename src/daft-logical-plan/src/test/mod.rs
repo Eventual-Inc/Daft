@@ -68,15 +68,41 @@ pub fn dummy_scan_node_with_pushdowns(
     scan_op: ScanOperatorRef,
     pushdowns: Pushdowns,
 ) -> LogicalPlanBuilder {
-    // LogicalPlanBuilder::table_scan(common_scan_info::ScanOperatorRef(scan_op), Some(pushdowns))
-    //     .unwrap()
     let schema = scan_op.0.schema();
+
+    let schema_with_generated_fields = {
+        if let Some(generated_fields) = scan_op.0.generated_fields() {
+            // We use the non-distinct union here because some scan operators have table schema information that
+            // already contain partitioned fields. For example,the deltalake scan operator takes the table schema.
+            Arc::new(schema.non_distinct_union(&generated_fields))
+        } else {
+            schema.clone()
+        }
+    };
+    // If column selection (projection) pushdown is specified, prune unselected columns from the schema.
+    let output_schema = if let Pushdowns {
+        columns: Some(columns),
+        ..
+    } = &pushdowns
+        && columns.len() < schema_with_generated_fields.fields.len()
+    {
+        let pruned_upstream_schema = schema_with_generated_fields
+            .fields
+            .iter()
+            .filter(|&(name, _)| columns.contains(name))
+            .map(|(_, field)| field.clone())
+            .collect::<Vec<_>>();
+        Arc::new(Schema::new(pruned_upstream_schema).unwrap())
+    } else {
+        schema_with_generated_fields
+    };
+
     LogicalPlanBuilder::new(
         Source::new(
-            schema.clone(),
+            output_schema,
             SourceInfo::Physical(PhysicalScanInfo::new(
                 scan_op.clone(),
-                schema.clone(),
+                schema,
                 scan_op.0.partitioning_keys().into(),
                 pushdowns,
             ))
