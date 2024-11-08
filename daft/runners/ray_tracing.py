@@ -30,26 +30,16 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+
 # We add the trace by default to the latest session logs of the Ray Runner
 # This lets us access our logs via the Ray dashboard when running Ray jobs
-DEFAULT_RAY_LOGS_LOCATION = pathlib.Path("/tmp") / "ray" / "session_latest" / "logs"
-DEFAULT_DAFT_TRACE_LOCATION = DEFAULT_RAY_LOGS_LOCATION / "daft"
+def get_log_location() -> pathlib.Path:
+    return pathlib.Path("/tmp") / "ray" / "session_latest" / "logs"
 
-# IDs and names for the visualized data
-SCHEDULER_PID = 1
-STAGES_PID = 2
-NODE_PIDS_START = 100
 
-# Event Phases with human-readable const names
-PHASE_METADATA = "M"
-PHASE_DURATION_BEGIN = "B"
-PHASE_DURATION_END = "E"
-PHASE_INSTANT = "i"
-PHASE_ASYNC_BEGIN = "b"
-PHASE_ASYNC_END = "e"
-PHASE_ASYNC_INSTANT = "n"
-PHASE_FLOW_START = "s"
-PHASE_FLOW_FINISH = "f"
+def get_daft_trace_location(log_location: pathlib.Path) -> pathlib.Path:
+    return log_location / "daft"
+
 
 FILE_WRITE_BUFFERING_DEFAULT = 1024 * 1024  # 1MB
 
@@ -58,14 +48,15 @@ FILE_WRITE_BUFFERING_DEFAULT = 1024 * 1024  # 1MB
 def ray_tracer(execution_id: str, daft_execution_config: PyDaftExecutionConfig) -> Iterator[RunnerTracer]:
     """Instantiates a RunnerTracer for the duration of the code block"""
     # Dump the RayRunner trace if we detect an active Ray session, otherwise we give up and do not write the trace
+    ray_logs_location = get_log_location()
     filepath: pathlib.Path | None
-    if pathlib.Path(DEFAULT_RAY_LOGS_LOCATION).exists() and daft_execution_config.enable_ray_tracing:
+    if ray_logs_location.exists() and daft_execution_config.enable_ray_tracing:
         trace_filename = (
             f"trace_RayRunner.{execution_id}.{datetime.replace(datetime.now(), microsecond=0).isoformat()[:-3]}.json"
         )
-        daft_trace_location = pathlib.Path(DEFAULT_DAFT_TRACE_LOCATION)
+        daft_trace_location = get_daft_trace_location(ray_logs_location)
         daft_trace_location.mkdir(exist_ok=True, parents=True)
-        filepath = DEFAULT_DAFT_TRACE_LOCATION / trace_filename
+        filepath = daft_trace_location / trace_filename
     else:
         filepath = None
 
@@ -146,6 +137,22 @@ class TraceWriter:
 
 
 class RunnerTracer:
+    # IDs and names for the visualized data
+    SCHEDULER_PID = 1
+    STAGES_PID = 2
+    NODE_PIDS_START = 100
+
+    # Event Phases with human-readable const names
+    PHASE_METADATA = "M"
+    PHASE_DURATION_BEGIN = "B"
+    PHASE_DURATION_END = "E"
+    PHASE_INSTANT = "i"
+    PHASE_ASYNC_BEGIN = "b"
+    PHASE_ASYNC_END = "e"
+    PHASE_ASYNC_INSTANT = "n"
+    PHASE_FLOW_START = "s"
+    PHASE_FLOW_FINISH = "f"
+
     def __init__(self, file: TextIO | None, metrics_actor: ray_metrics.MetricsActorHandle | None):
         start = time.time()
         self._start = start
@@ -178,6 +185,9 @@ class RunnerTracer:
             logger.exception("Failed to write trace metadata to file: %s", e)
             return
 
+    def _get_trace_timestamp(self, task_event_start: float) -> int:
+        return int((task_event_start - self._start) * 1000 * 1000)
+
     def _flush_task_metrics(self):
         if self._metrics_actor is not None:
             task_events, new_idx = self._metrics_actor.get_task_events(self._task_event_idx)
@@ -188,14 +198,14 @@ class RunnerTracer:
                     # Record which pid/tid to associate this task_id with
                     self._task_id_to_location[task_event.task_id] = (task_event.node_idx, task_event.worker_idx)
 
-                    start_ts = int((task_event.start - self._start) * 1000 * 1000)
+                    start_ts = self._get_trace_timestamp(task_event.start)
                     # Write to the Async view (will nest under the task creation and dispatch)
                     self._write_event(
                         {
                             "id": task_event.task_id,
                             "category": "task",
                             "name": "task_remote_execution",
-                            "ph": PHASE_ASYNC_BEGIN,
+                            "ph": RunnerTracer.PHASE_ASYNC_BEGIN,
                             "pid": 1,
                             "tid": 2,
                             "args": {
@@ -211,8 +221,8 @@ class RunnerTracer:
                     self._write_event(
                         {
                             "name": "task_remote_execution",
-                            "ph": PHASE_DURATION_BEGIN,
-                            "pid": task_event.node_idx + NODE_PIDS_START,
+                            "ph": RunnerTracer.PHASE_DURATION_BEGIN,
+                            "pid": task_event.node_idx + RunnerTracer.NODE_PIDS_START,
                             "tid": task_event.worker_idx,
                             "args": {
                                 "ray_assigned_resources": task_event.ray_assigned_resources,
@@ -226,15 +236,15 @@ class RunnerTracer:
                         {
                             "name": "stage-to-node-flow",
                             "id": task_event.stage_id,
-                            "ph": PHASE_FLOW_FINISH,
+                            "ph": RunnerTracer.PHASE_FLOW_FINISH,
                             "bp": "e",  # enclosed, since the stage "encloses" the execution
-                            "pid": task_event.node_idx + NODE_PIDS_START,
+                            "pid": task_event.node_idx + RunnerTracer.NODE_PIDS_START,
                             "tid": task_event.worker_idx,
                         },
                         ts=start_ts,
                     )
                 elif isinstance(task_event, ray_metrics.EndTaskEvent):
-                    end_ts = int((task_event.end - self._start) * 1000 * 1000)
+                    end_ts = self._get_trace_timestamp(task_event.end)
 
                     # Write to the Async view (will group by the stage ID)
                     self._write_event(
@@ -242,7 +252,7 @@ class RunnerTracer:
                             "id": task_event.task_id,
                             "category": "task",
                             "name": "task_remote_execution",
-                            "ph": PHASE_ASYNC_END,
+                            "ph": RunnerTracer.PHASE_ASYNC_END,
                             "pid": 1,
                             "tid": 2,
                         },
@@ -259,8 +269,8 @@ class RunnerTracer:
                         self._write_event(
                             {
                                 "name": "task_remote_execution",
-                                "ph": PHASE_DURATION_END,
-                                "pid": node_idx + NODE_PIDS_START,
+                                "ph": RunnerTracer.PHASE_DURATION_END,
+                                "pid": node_idx + RunnerTracer.NODE_PIDS_START,
                                 "tid": worker_idx,
                             },
                             ts=end_ts,
@@ -276,7 +286,7 @@ class RunnerTracer:
         node_metrics = self._metrics_actor.collect_and_close() if self._metrics_actor is not None else {}
 
         # Write out labels for the nodes and other traced events
-        nodes_to_pid_mapping = {node_id: i + NODE_PIDS_START for i, node_id in enumerate(node_metrics)}
+        nodes_to_pid_mapping = {node_id: i + RunnerTracer.NODE_PIDS_START for i, node_id in enumerate(node_metrics)}
         nodes_workers_to_tid_mapping = {
             (node_id, worker_id): (pid, tid)
             for node_id, pid in nodes_to_pid_mapping.items()
@@ -305,25 +315,25 @@ class RunnerTracer:
             thread_meta: Pass in custom names for threads a a list of (pid, tid, name).
         """
         for pid, name in [
-            (SCHEDULER_PID, "Scheduler"),
-            (STAGES_PID, "Stages"),
+            (RunnerTracer.SCHEDULER_PID, "Scheduler"),
+            (RunnerTracer.STAGES_PID, "Stages"),
         ] + process_meta:
             self._write_metadata(
                 {
                     "name": "process_name",
-                    "ph": PHASE_METADATA,
+                    "ph": RunnerTracer.PHASE_METADATA,
                     "pid": pid,
                     "args": {"name": name},
                 }
             )
 
         for pid, tid, name in [
-            (SCHEDULER_PID, 1, "_run_plan dispatch loop"),
+            (RunnerTracer.SCHEDULER_PID, 1, "_run_plan dispatch loop"),
         ] + thread_meta:
             self._write_metadata(
                 {
                     "name": "thread_name",
-                    "ph": PHASE_METADATA,
+                    "ph": RunnerTracer.PHASE_METADATA,
                     "pid": pid,
                     "tid": tid,
                     "args": {"name": name},
@@ -336,7 +346,7 @@ class RunnerTracer:
             self._write_event(
                 {
                     "name": f"stage-{stage_id}",
-                    "ph": PHASE_DURATION_BEGIN,
+                    "ph": RunnerTracer.PHASE_DURATION_BEGIN,
                     "pid": 2,
                     "tid": stage_id,
                 },
@@ -348,7 +358,7 @@ class RunnerTracer:
                 {
                     "name": "stage-to-node-flow",
                     "id": stage_id,
-                    "ph": PHASE_FLOW_START,
+                    "ph": RunnerTracer.PHASE_FLOW_START,
                     "pid": 2,
                     "tid": stage_id,
                 },
@@ -358,7 +368,7 @@ class RunnerTracer:
             self._write_event(
                 {
                     "name": f"stage-{stage_id}",
-                    "ph": PHASE_DURATION_END,
+                    "ph": RunnerTracer.PHASE_DURATION_END,
                     "pid": 2,
                     "tid": stage_id,
                 },
@@ -376,7 +386,7 @@ class RunnerTracer:
                 "name": f"wave-{wave_num}",
                 "pid": 1,
                 "tid": 1,
-                "ph": PHASE_DURATION_BEGIN,
+                "ph": RunnerTracer.PHASE_DURATION_BEGIN,
                 "args": {"wave_num": wave_num},
             }
         )
@@ -393,7 +403,7 @@ class RunnerTracer:
                 "name": f"wave-{wave_num}",
                 "pid": 1,
                 "tid": 1,
-                "ph": PHASE_DURATION_END,
+                "ph": RunnerTracer.PHASE_DURATION_END,
                 "args": metrics,
             }
         )
@@ -419,7 +429,7 @@ class RunnerTracer:
                 "name": "dispatch_batching",
                 "pid": 1,
                 "tid": 1,
-                "ph": PHASE_DURATION_BEGIN,
+                "ph": RunnerTracer.PHASE_DURATION_BEGIN,
             }
         )
         yield
@@ -428,7 +438,7 @@ class RunnerTracer:
                 "name": "dispatch_batching",
                 "pid": 1,
                 "tid": 1,
-                "ph": PHASE_DURATION_END,
+                "ph": RunnerTracer.PHASE_DURATION_END,
             }
         )
 
@@ -439,7 +449,7 @@ class RunnerTracer:
                 "name": "dispatching",
                 "pid": 1,
                 "tid": 1,
-                "ph": PHASE_DURATION_BEGIN,
+                "ph": RunnerTracer.PHASE_DURATION_BEGIN,
             }
         )
         yield
@@ -448,7 +458,7 @@ class RunnerTracer:
                 "name": "dispatching",
                 "pid": 1,
                 "tid": 1,
-                "ph": PHASE_DURATION_END,
+                "ph": RunnerTracer.PHASE_DURATION_END,
             }
         )
 
@@ -460,7 +470,7 @@ class RunnerTracer:
                 "name": name,
                 "pid": 1,
                 "tid": 1,
-                "ph": PHASE_DURATION_BEGIN,
+                "ph": RunnerTracer.PHASE_DURATION_BEGIN,
                 "args": {
                     "waiting_for_num_results": waiting_for_num_results,
                     "wait_timeout_s": str(wait_timeout_s),
@@ -473,7 +483,7 @@ class RunnerTracer:
                 "name": name,
                 "pid": 1,
                 "tid": 1,
-                "ph": PHASE_DURATION_END,
+                "ph": RunnerTracer.PHASE_DURATION_END,
             }
         )
 
@@ -484,7 +494,7 @@ class RunnerTracer:
                 "name": "next(tasks)",
                 "pid": 1,
                 "tid": 1,
-                "ph": PHASE_DURATION_BEGIN,
+                "ph": RunnerTracer.PHASE_DURATION_BEGIN,
             }
         )
 
@@ -500,7 +510,7 @@ class RunnerTracer:
                 "name": "next(tasks)",
                 "pid": 1,
                 "tid": 1,
-                "ph": PHASE_DURATION_END,
+                "ph": RunnerTracer.PHASE_DURATION_END,
                 "args": args,
             }
         )
@@ -511,7 +521,7 @@ class RunnerTracer:
                 "id": task_id,
                 "category": "task",
                 "name": f"task_execution.stage-{stage_id}",
-                "ph": PHASE_ASYNC_BEGIN,
+                "ph": RunnerTracer.PHASE_ASYNC_BEGIN,
                 "args": {
                     "task_id": task_id,
                     "resource_request": {
@@ -536,7 +546,7 @@ class RunnerTracer:
                 "id": task_id,
                 "category": "task",
                 "name": "task_dispatch",
-                "ph": PHASE_ASYNC_BEGIN,
+                "ph": RunnerTracer.PHASE_ASYNC_BEGIN,
                 "pid": 1,
                 "tid": 1,
             }
@@ -548,7 +558,7 @@ class RunnerTracer:
                 "id": task_id,
                 "category": "task",
                 "name": "task_dispatch",
-                "ph": PHASE_ASYNC_END,
+                "ph": RunnerTracer.PHASE_ASYNC_END,
                 "pid": 1,
                 "tid": 1,
             }
@@ -558,7 +568,7 @@ class RunnerTracer:
                 "id": task_id,
                 "category": "task",
                 "name": f"task_execution.stage-{stage_id}",
-                "ph": PHASE_ASYNC_END,
+                "ph": RunnerTracer.PHASE_ASYNC_END,
                 "pid": 1,
                 "tid": 1,
             }
