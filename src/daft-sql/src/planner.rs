@@ -653,8 +653,33 @@ impl SQLPlanner {
                             let null_equals_null = *op == BinaryOperator::Spaceship;
                             collect_compound_identifiers(left, right, left_rel, right_rel)
                                 .map(|(left, right)| (left, right, vec![null_equals_null]))
+                        } else if let (
+                            sqlparser::ast::Expr::Identifier(left),
+                            sqlparser::ast::Expr::Identifier(right),
+                        ) = (left.as_ref(), right.as_ref())
+                        {
+                            let left = ident_to_str(left);
+                            let right = ident_to_str(right);
+
+                            // we don't know which table the identifiers belong to, so we need to check both
+                            let left_schema = left_rel.schema();
+                            let right_schema = right_rel.schema();
+
+                            // if the left side is in the left schema, then we assume the right side is in the right schema
+                            let (left_on, right_on) = if left_schema.get_field(&left).is_ok() {
+                                (col(left), col(right))
+                            // if the right side is in the left schema, then we assume the left side is in the right schema
+                            } else if right_schema.get_field(&left).is_ok() {
+                                (col(right), col(left))
+                            } else {
+                                unsupported_sql_err!("JOIN clauses must reference columns in the joined tables; found `{}`", left);
+                            };
+
+                            let null_equals_null = *op == BinaryOperator::Spaceship;
+
+                            Ok((vec![left_on], vec![right_on], vec![null_equals_null]))
                         } else {
-                            unsupported_sql_err!("JOIN clauses support '='/'<=>' constraints on identifiers; found lhs={:?}, rhs={:?}", left, right);
+                            unsupported_sql_err!("JOIN clauses support '='/'<=>' constraints on identifiers; found `{left} {op} {right}`");
                         }
                     }
                     BinaryOperator::And => {
@@ -668,7 +693,7 @@ impl SQLPlanner {
                         Ok((left_i, right_i, null_equals_nulls_i))
                     }
                     _ => {
-                        unsupported_sql_err!("JOIN clauses support '=' constraints combined with 'AND'; found op = '{:?}'", op);
+                        unsupported_sql_err!("JOIN clauses support '=' constraints combined with 'AND'; found op = '{}'", op);
                     }
                 }
             } else if let sqlparser::ast::Expr::Nested(expr) = expression {
