@@ -51,6 +51,8 @@ PHASE_ASYNC_INSTANT = "n"
 PHASE_FLOW_START = "s"
 PHASE_FLOW_FINISH = "f"
 
+FILE_WRITE_BUFFERING_DEFAULT = 1024 * 1024  # 1MB
+
 
 @contextlib.contextmanager
 def ray_tracer(execution_id: str, daft_execution_config: PyDaftExecutionConfig) -> Iterator[RunnerTracer]:
@@ -72,7 +74,7 @@ def ray_tracer(execution_id: str, daft_execution_config: PyDaftExecutionConfig) 
         metrics_actor = ray_metrics.get_metrics_actor(execution_id)
         metrics_actor.wait()
 
-        with open(filepath, "w") as f:
+        with open(filepath, "w", buffering=FILE_WRITE_BUFFERING_DEFAULT) as f:
             # Yield the tracer
             runner_tracer = RunnerTracer(f, metrics_actor)
 
@@ -109,7 +111,7 @@ class TraceWriter:
         if self.file is not None:
             if self.has_written_event:
                 self.file.write(",\n")
-            self.file.write(json.dumps(event))
+            json.dump(event, self.file)
             self.has_written_event = True
 
     def write_event(self, event: dict[str, Any], ts: int | None = None) -> int:
@@ -127,13 +129,12 @@ class TraceWriter:
                 ts = int((time.time() - self.start) * 1000 * 1000)
             if self.has_written_event:
                 self.file.write(",\n")
-            self.file.write(
-                json.dumps(
-                    {
-                        **event,
-                        "ts": ts,
-                    }
-                )
+            json.dump(
+                {
+                    **event,
+                    "ts": ts,
+                },
+                self.file,
             )
             self.has_written_event = True
         return ts or -1
@@ -569,31 +570,42 @@ class RunnerTracer:
 
 
 @dataclasses.dataclass(frozen=True)
-class RayFunctionWrapper:
+class _RayFunctionWrapper:
     """Wrapper around a Ray remote function that allows us to intercept calls and record the call for a given task ID"""
 
     f: ray.remote_function.RemoteFunction
 
-    def with_tracing(self, runner_tracer: RunnerTracer, task: PartitionTask) -> RayRunnableFunctionWrapper:
-        return RayRunnableFunctionWrapper(f=self.f, runner_tracer=runner_tracer, task=task)
+    def with_tracing(self, runner_tracer: RunnerTracer, task: PartitionTask) -> _RayRunnableFunctionWrapper:
+        return _RayRunnableFunctionWrapper(f=self.f, runner_tracer=runner_tracer, task=task)
 
-    def options(self, *args, **kwargs) -> RayFunctionWrapper:
+    def options(self, *args, **kwargs) -> _RayFunctionWrapper:
         return dataclasses.replace(self, f=self.f.options(*args, **kwargs))
 
-    @classmethod
-    def wrap(cls, f: ray.remote_function.RemoteFunction):
-        return cls(f=f)
+
+def ray_remote_traced(f: ray.remote_function.RemoteFunction):
+    """Decorates a Ray Remote function to ensure that we can trace it
+
+    Usage:
+
+    >>> @ray_remote_traced
+    >>> @ray.remote
+    >>> def f():
+    >>>     ...
+    >>>
+    >>> f.with_tracing(tracer, task).remote(...)
+    """
+    return _RayFunctionWrapper(f=f)
 
 
 @dataclasses.dataclass(frozen=True)
-class RayRunnableFunctionWrapper:
+class _RayRunnableFunctionWrapper:
     """Runnable variant of RayFunctionWrapper that supports `.remote` calls"""
 
     f: ray.remote_function.RemoteFunction
     runner_tracer: RunnerTracer
     task: PartitionTask
 
-    def options(self, *args, **kwargs) -> RayRunnableFunctionWrapper:
+    def options(self, *args, **kwargs) -> _RayRunnableFunctionWrapper:
         return dataclasses.replace(self, f=self.f.options(*args, **kwargs))
 
     def remote(self, *args, **kwargs):

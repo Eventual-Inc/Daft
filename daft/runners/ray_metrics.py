@@ -87,8 +87,8 @@ class _NodeInfo:
 @ray.remote(num_cpus=0)
 class _MetricsActor:
     def __init__(self):
-        self._task_events: dict[str, list[TaskEvent]] = defaultdict(lambda: [])
-        self._node_info: dict[str, _NodeInfo] = defaultdict(lambda: _NodeInfo())
+        self._task_events: dict[str, list[TaskEvent]] = defaultdict(list)
+        self._node_info: dict[str, _NodeInfo] = defaultdict(_NodeInfo)
 
     def ready(self):
         """Returns when the metrics actor is ready"""
@@ -150,7 +150,7 @@ class MetricsActorHandle:
 
     def wait(self) -> None:
         """Call to block until the underlying actor is ready"""
-        return ray.get(self.actor.ready.remote())
+        return ray.wait([self.actor.ready.remote()], fetch_local=False)
 
     def mark_task_start(
         self,
@@ -203,7 +203,7 @@ class MetricsActorHandle:
 #
 # Pattern from Ray Data's _StatsActor:
 # https://github.com/ray-project/ray/blob/0b1d0d8f01599796e1109060821583e270048b6e/python/ray/data/_internal/stats.py#L447-L449
-_metrics_actor_lock: threading.RLock = threading.RLock()
+_metrics_actor_lock: threading.Lock = threading.Lock()
 
 
 def get_metrics_actor(execution_id: str) -> MetricsActorHandle:
