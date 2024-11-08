@@ -38,21 +38,17 @@ def test_streaming_write(
 
     def f():
         if engine == "native":
-            ctx = daft.context.execution_config_ctx(
-                enable_native_executor=True,
-                parquet_target_filesize=target_file_size,
-                parquet_target_row_group_size=target_row_group_size,
-                csv_target_filesize=target_file_size,
-            )
+            daft.context.set_runner_native()
         elif engine == "python":
-            ctx = daft.context.execution_config_ctx(
-                enable_native_executor=False,
-                parquet_target_filesize=target_file_size,
-                parquet_target_row_group_size=target_row_group_size,
-                csv_target_filesize=target_file_size,
-            )
+            daft.context.set_runner_py()
         else:
             raise ValueError(f"{engine} unsupported")
+
+        ctx = daft.context.execution_config_ctx(
+            parquet_target_filesize=target_file_size,
+            parquet_target_row_group_size=target_row_group_size,
+            csv_target_filesize=target_file_size,
+        )
 
         with ctx:
             if file_type == "parquet":

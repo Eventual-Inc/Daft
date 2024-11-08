@@ -3,8 +3,8 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
+use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;
-use daft_plan::JoinType;
 use daft_table::{make_probeable_builder, ProbeState, ProbeableBuilder, Table};
 
 use super::blocking_sink::{BlockingSink, BlockingSinkState, BlockingSinkStatus};

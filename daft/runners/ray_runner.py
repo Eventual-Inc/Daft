@@ -62,6 +62,7 @@ from daft.runners.partitioning import (
     PartitionCacheEntry,
     PartitionMetadata,
     PartitionSet,
+    PartitionSetCache,
 )
 from daft.runners.profiler import profiler
 from daft.runners.runner import Runner
@@ -1151,6 +1152,9 @@ class RayRunner(Runner[ray.ObjectRef]):
                 max_task_backlog=max_task_backlog,
                 use_ray_tqdm=False,
             )
+
+    def initialize_partition_set_cache(self) -> PartitionSetCache:
+        return PartitionSetCache()
 
     def active_plans(self) -> list[str]:
         if self.ray_client_mode:

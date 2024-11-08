@@ -19,7 +19,7 @@ Daft refers to this as a "clustering specification", and you are able to see thi
     controlling parallelism and how much data is being materialized at a time.
 
     However, Daft's new experimental execution engine will remove the concept of partitioning entirely for local execution.
-    You may enable it with ``DAFT_ENABLE_NATIVE_EXECUTOR=1``. Instead of using partitioning to control parallelism,
+    You may enable it with ``DAFT_RUNNER=native``. Instead of using partitioning to control parallelism,
     this new execution engine performs a streaming-based execution on small "morsels" of data, which provides much
     more stable memory utilization while improving the user experience with not having to worry about partitioning.
 

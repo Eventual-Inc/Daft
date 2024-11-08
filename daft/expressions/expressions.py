@@ -1001,7 +1001,7 @@ class Expression:
         Returns:
             Expression: New expression after having run the function on the expression
         """
-        from daft.udf import StatelessUDF
+        from daft.udf import CommonUDFArgs, StatelessUDF
 
         def batch_func(self_series):
             return [func(x) for x in self_series.to_pylist()]
@@ -1015,8 +1015,10 @@ class Expression:
             name=name,
             func=batch_func,
             return_dtype=return_dtype,
-            resource_request=None,
-            batch_size=None,
+            common_args=CommonUDFArgs(
+                resource_request=None,
+                batch_size=None,
+            ),
         )(self)
 
     def is_null(self) -> Expression:

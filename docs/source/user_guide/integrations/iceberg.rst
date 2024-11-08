@@ -118,8 +118,10 @@ When reading from an Iceberg table into Daft:
 Roadmap
 *******
 
-Here are features of Iceberg that are works-in-progress.
+Here are some features of Iceberg that are works-in-progress:
 
-1. Iceberg V2 merge-on-read features
-2. Writing to partitioned Iceberg tables (this is currently pending functionality to be added to the PyIceberg library)
-3. More extensive usage of Iceberg-provided statistics to further optimize queries
+1. Reading Iceberg V2 equality deletes
+2. More extensive usage of Iceberg-provided statistics to further optimize queries
+3. Copy-on-write and merge-on-read writes
+
+A more detailed Iceberg roadmap for Daft can be found on `our Github Issues page <https://github.com/Eventual-Inc/Daft/issues/2458>`_.

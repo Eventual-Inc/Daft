@@ -175,7 +175,7 @@ def assert_df_equals(
 
 @pytest.fixture(
     scope="function",
-    params=[1, None] if daft.context.get_context().daft_execution_config.enable_native_executor else [None],
+    params=[1, None] if daft.context.get_context().runner_config.name == "native" else [None],
 )
 def with_morsel_size(request):
     morsel_size = request.param

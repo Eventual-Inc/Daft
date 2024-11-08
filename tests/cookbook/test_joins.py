@@ -8,7 +8,7 @@ from tests.conftest import assert_df_equals
 
 
 def skip_invalid_join_strategies(join_strategy):
-    if context.get_context().daft_execution_config.enable_native_executor is True:
+    if context.get_context().runner_config.name == "native":
         if join_strategy not in [None, "hash"]:
             pytest.skip("Native executor fails for these tests")
 

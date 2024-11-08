@@ -10,13 +10,14 @@ use daft_core::{
     utils::supertype,
 };
 use daft_dsl::{col, join::get_common_join_keys, Expr};
-use daft_micropartition::MicroPartition;
-use daft_physical_plan::{
+use daft_local_plan::{
     ActorPoolProject, Concat, EmptyScan, Explode, Filter, HashAggregate, HashJoin, InMemoryScan,
     Limit, LocalPhysicalPlan, PhysicalWrite, Pivot, Project, Sample, Sort, UnGroupedAggregate,
     Unpivot,
 };
-use daft_plan::{populate_aggregation_stages, JoinType};
+use daft_logical_plan::JoinType;
+use daft_micropartition::MicroPartition;
+use daft_physical_plan::populate_aggregation_stages;
 use daft_table::ProbeState;
 use daft_writers::make_physical_writer_factory;
 use indexmap::IndexSet;
@@ -114,22 +115,28 @@ pub fn physical_plan_to_pipeline(
     psets: &HashMap<String, Vec<Arc<MicroPartition>>>,
     cfg: &Arc<DaftExecutionConfig>,
 ) -> crate::Result<Box<dyn PipelineNode>> {
-    use daft_physical_plan::PhysicalScan;
+    use daft_local_plan::PhysicalScan;
 
     use crate::sources::scan_task::ScanTaskSource;
     let out: Box<dyn PipelineNode> = match physical_plan {
         LocalPhysicalPlan::EmptyScan(EmptyScan { schema, .. }) => {
             let source = EmptyScanSource::new(schema.clone());
-            source.boxed().into()
+            source.arced().into()
         }
-        LocalPhysicalPlan::PhysicalScan(PhysicalScan { scan_tasks, .. }) => {
-            let scan_task_source = ScanTaskSource::new(scan_tasks.clone());
-            scan_task_source.boxed().into()
+        LocalPhysicalPlan::PhysicalScan(PhysicalScan {
+            scan_tasks,
+            pushdowns,
+            schema,
+            ..
+        }) => {
+            let scan_task_source =
+                ScanTaskSource::new(scan_tasks.clone(), pushdowns.clone(), schema.clone(), cfg);
+            scan_task_source.arced().into()
         }
         LocalPhysicalPlan::InMemoryScan(InMemoryScan { info, .. }) => {
             let partitions = psets.get(&info.cache_key).expect("Cache key not found");
             InMemorySource::new(partitions.clone(), info.source_schema.clone())
-                .boxed()
+                .arced()
                 .into()
         }
         LocalPhysicalPlan::Project(Project {
@@ -452,14 +459,14 @@ pub fn physical_plan_to_pipeline(
             BlockingSinkNode::new(Arc::new(write_sink), child_node).boxed()
         }
         #[cfg(feature = "python")]
-        LocalPhysicalPlan::CatalogWrite(daft_physical_plan::CatalogWrite {
+        LocalPhysicalPlan::CatalogWrite(daft_local_plan::CatalogWrite {
             input,
             catalog_type,
             data_schema,
             file_schema,
             ..
         }) => {
-            use daft_plan::CatalogType;
+            use daft_logical_plan::CatalogType;
 
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
             let (partition_by, write_format) = match catalog_type {
