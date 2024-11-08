@@ -266,13 +266,13 @@ mod tests {
             .join_with_null_safe_equal(
                 tbl_3,
                 vec![col("id")],
-                vec![col("id").alias("tbl3.id")],
+                vec![col("id")],
                 Some(vec![null_equals_null]),
                 JoinType::Inner,
                 None,
                 None,
                 Some("tbl3."),
-                false,
+                true,
             )?
             .select(vec![col("*")])?
             .build();
