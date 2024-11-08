@@ -3,6 +3,7 @@ use std::{sync::Arc, vec};
 use common_error::{DaftError, DaftResult};
 use common_file_formats::{CsvSourceConfig, FileFormat, FileFormatConfig, ParquetSourceConfig};
 use common_runtime::RuntimeRef;
+use common_scan_info::{BoxScanTaskLikeIter, PartitionField, Pushdowns, ScanOperator};
 use daft_core::{prelude::Utf8Array, series::IntoSeries};
 use daft_csv::CsvParseOptions;
 use daft_io::{parse_url, FileMetadata, IOClient, IOStatsContext, IOStatsRef};
@@ -20,7 +21,7 @@ use snafu::Snafu;
 use crate::{
     hive::{hive_partitions_to_fields, hive_partitions_to_series, parse_hive_partitioning},
     storage_config::StorageConfig,
-    ChunkSpec, DataSource, PartitionField, Pushdowns, ScanOperator, ScanTask, ScanTaskRef,
+    ChunkSpec, DataSource, ScanTask,
 };
 #[derive(Debug)]
 pub struct GlobScanOperator {
@@ -355,10 +356,7 @@ impl ScanOperator for GlobScanOperator {
         lines
     }
 
-    fn to_scan_tasks(
-        &self,
-        pushdowns: Pushdowns,
-    ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<ScanTaskRef>> + 'static>> {
+    fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<BoxScanTaskLikeIter> {
         let (io_runtime, io_client) = self.storage_config.get_io_client_and_runtime()?;
         let io_stats = IOStatsContext::new(format!(
             "GlobScanOperator::to_scan_tasks for {:#?}",

@@ -5,6 +5,7 @@ common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}
 common-file-formats = {path = "../common/file-formats", default-features = false}
 common-runtime = {path = "../common/runtime", default-features = false}
+common-scan-info = {path = "../common/scan-info", default-features = false}
 common-tracing = {path = "../common/tracing", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-csv = {path = "../daft-csv", default-features = false}
@@ -36,6 +37,7 @@ python = [
   "common-daft-config/python",
   "common-file-formats/python",
   "common-error/python",
+  "common-scan-info/python",
   "daft-dsl/python",
   "daft-io/python",
   "daft-local-plan/python",

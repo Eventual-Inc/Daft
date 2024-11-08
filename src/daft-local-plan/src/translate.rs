@@ -13,7 +13,9 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 SourceInfo::Physical(info) => {
                     // We should be able to pass the ScanOperator into the physical plan directly but we need to figure out the serialization story
                     let scan_tasks_iter = info.scan_op.0.to_scan_tasks(info.pushdowns.clone())?;
-                    let scan_tasks = scan_tasks_iter.collect::<DaftResult<Vec<_>>>()?;
+                    let scan_tasks = scan_tasks_iter
+                        .map(|st| Ok(st?.as_any_arc().downcast().unwrap()))
+                        .collect::<DaftResult<Vec<_>>>()?;
                     if scan_tasks.is_empty() {
                         Ok(LocalPhysicalPlan::empty_scan(source.output_schema.clone()))
                     } else {

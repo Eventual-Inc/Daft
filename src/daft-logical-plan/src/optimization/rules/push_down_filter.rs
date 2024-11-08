@@ -4,6 +4,7 @@ use std::{
 };
 
 use common_error::DaftResult;
+use common_scan_info::{rewrite_predicate_for_partitioning, PredicateGroups};
 use common_treenode::{DynTreeNode, Transformed, TreeNode};
 use daft_core::join::JoinType;
 use daft_dsl::{
@@ -13,7 +14,6 @@ use daft_dsl::{
     },
     ExprRef,
 };
-use daft_scan::{rewrite_predicate_for_partitioning, PredicateGroups};
 
 use super::OptimizerRule;
 use crate::{
@@ -353,9 +353,9 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
+    use common_scan_info::Pushdowns;
     use daft_core::prelude::*;
     use daft_dsl::{col, lit};
-    use daft_scan::Pushdowns;
     use rstest::rstest;
 
     use crate::{

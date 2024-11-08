@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
 use common_resource_request::ResourceRequest;
+use common_scan_info::Pushdowns;
 use daft_core::prelude::*;
 use daft_dsl::{AggExpr, ExprRef};
 use daft_logical_plan::{InMemoryInfo, OutputFileInfo};
-use daft_scan::{Pushdowns, ScanTask, ScanTaskRef};
+use daft_scan::{ScanTask, ScanTaskRef};
 
 pub type LocalPhysicalPlanRef = Arc<LocalPhysicalPlan>;
 #[derive(Debug, strum::IntoStaticStr)]

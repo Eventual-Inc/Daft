@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
 use common_file_formats::FileFormatConfig;
+use common_scan_info::{Pushdowns, ScanOperator};
 use daft_logical_plan::builder::LogicalPlanBuilder;
 use daft_scan::{
     storage_config::{NativeStorageConfig, StorageConfig},
-    AnonymousScanOperator, Pushdowns, ScanOperator,
+    AnonymousScanOperator,
 };
 use daft_schema::{field::Field, schema::Schema};
 
@@ -29,5 +30,6 @@ pub fn dummy_scan_node_with_pushdowns(
     scan_op: Arc<dyn ScanOperator>,
     pushdowns: Pushdowns,
 ) -> LogicalPlanBuilder {
-    LogicalPlanBuilder::table_scan(daft_scan::ScanOperatorRef(scan_op), Some(pushdowns)).unwrap()
+    daft_scan::builder::table_scan(common_scan_info::ScanOperatorRef(scan_op), Some(pushdowns))
+        .unwrap()
 }

@@ -45,11 +45,12 @@ pub mod pylib {
     use common_error::DaftResult;
     use common_file_formats::{python::PyFileFormatConfig, FileFormatConfig};
     use common_py_serde::impl_bincode_py_state_serialization;
-    use daft_dsl::python::PyExpr;
-    use daft_schema::{
-        python::{field::PyField, schema::PySchema},
-        schema::SchemaRef,
+    use common_scan_info::{
+        python::pylib::{PyPartitionField, PyPushdowns},
+        PartitionField, Pushdowns, ScanOperator, ScanOperatorRef, ScanTaskLike,
     };
+    use daft_logical_plan::PyLogicalPlanBuilder;
+    use daft_schema::{python::schema::PySchema, schema::SchemaRef};
     use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
     use daft_table::{python::PyTable, Table};
     use pyo3::{
@@ -64,7 +65,7 @@ pub mod pylib {
         anonymous::AnonymousScanOperator,
         glob::GlobScanOperator,
         storage_config::{PyStorageConfig, PythonStorageConfig},
-        DataSource, PartitionField, Pushdowns, ScanOperator, ScanOperatorRef, ScanTask,
+        DataSource, ScanTask,
     };
     #[pyclass(module = "daft.daft", frozen)]
     #[derive(Debug, Clone)]
@@ -211,7 +212,7 @@ pub mod pylib {
     }
 
     impl ScanOperator for PythonScanOperatorBridge {
-        fn partitioning_keys(&self) -> &[crate::PartitionField] {
+        fn partitioning_keys(&self) -> &[PartitionField] {
             &self.partitioning_keys
         }
         fn schema(&self) -> daft_schema::schema::SchemaRef {
@@ -242,7 +243,7 @@ pub mod pylib {
             &self,
             pushdowns: Pushdowns,
         ) -> common_error::DaftResult<
-            Box<dyn Iterator<Item = common_error::DaftResult<crate::ScanTaskRef>>>,
+            Box<dyn Iterator<Item = common_error::DaftResult<Arc<dyn ScanTaskLike>>>>,
         > {
             let scan_tasks = Python::with_gil(|py| {
                 let pypd = PyPushdowns(pushdowns.into()).into_py(py);
@@ -254,7 +255,7 @@ pub mod pylib {
                     pyiter
                         .map(|v| {
                             let pyscantask = v?.extract::<PyScanTask>()?.0;
-                            DaftResult::Ok(pyscantask)
+                            DaftResult::Ok(pyscantask as Arc<dyn ScanTaskLike>)
                         })
                         .collect::<Vec<_>>(),
                 )
@@ -460,136 +461,20 @@ pub mod pylib {
 
     impl_bincode_py_state_serialization!(PyScanTask);
 
-    #[pyclass(module = "daft.daft", name = "PartitionField", frozen)]
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct PyPartitionField(Arc<PartitionField>);
-
-    #[pymethods]
-    impl PyPartitionField {
-        #[new]
-        fn new(
-            field: PyField,
-            source_field: Option<PyField>,
-            transform: Option<PyPartitionTransform>,
-        ) -> PyResult<Self> {
-            let p_field = PartitionField::new(
-                field.field,
-                source_field.map(std::convert::Into::into),
-                transform.map(|e| e.0),
-            )?;
-            Ok(Self(Arc::new(p_field)))
-        }
-
-        pub fn __repr__(&self) -> PyResult<String> {
-            Ok(format!("{}", self.0))
-        }
-
-        #[getter]
-        pub fn field(&self) -> PyResult<PyField> {
-            Ok(self.0.field.clone().into())
-        }
-    }
-
-    #[pyclass(module = "daft.daft", name = "PartitionTransform", frozen)]
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct PyPartitionTransform(crate::PartitionTransform);
-
-    #[pymethods]
-    impl PyPartitionTransform {
-        #[staticmethod]
-        pub fn identity() -> PyResult<Self> {
-            Ok(Self(crate::PartitionTransform::Identity))
-        }
-
-        #[staticmethod]
-        pub fn year() -> PyResult<Self> {
-            Ok(Self(crate::PartitionTransform::Year))
-        }
-
-        #[staticmethod]
-        pub fn month() -> PyResult<Self> {
-            Ok(Self(crate::PartitionTransform::Month))
-        }
-
-        #[staticmethod]
-        pub fn day() -> PyResult<Self> {
-            Ok(Self(crate::PartitionTransform::Day))
-        }
-
-        #[staticmethod]
-        pub fn hour() -> PyResult<Self> {
-            Ok(Self(crate::PartitionTransform::Hour))
-        }
-
-        #[staticmethod]
-        pub fn void() -> PyResult<Self> {
-            Ok(Self(crate::PartitionTransform::Void))
-        }
-
-        #[staticmethod]
-        pub fn iceberg_bucket(n: u64) -> PyResult<Self> {
-            Ok(Self(crate::PartitionTransform::IcebergBucket(n)))
-        }
-
-        #[staticmethod]
-        pub fn iceberg_truncate(n: u64) -> PyResult<Self> {
-            Ok(Self(crate::PartitionTransform::IcebergTruncate(n)))
-        }
-
-        pub fn __repr__(&self) -> PyResult<String> {
-            Ok(format!("{}", self.0))
-        }
-    }
-
-    #[pyclass(module = "daft.daft", name = "Pushdowns", frozen)]
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct PyPushdowns(Arc<Pushdowns>);
-    #[pymethods]
-    impl PyPushdowns {
-        pub fn __repr__(&self) -> PyResult<String> {
-            Ok(format!("{:#?}", self.0))
-        }
-        #[getter]
-        #[must_use]
-        pub fn limit(&self) -> Option<usize> {
-            self.0.limit
-        }
-
-        #[getter]
-        #[must_use]
-        pub fn filters(&self) -> Option<PyExpr> {
-            self.0.filters.as_ref().map(|e| PyExpr { expr: e.clone() })
-        }
-
-        #[getter]
-        #[must_use]
-        pub fn partition_filters(&self) -> Option<PyExpr> {
-            self.0
-                .partition_filters
-                .as_ref()
-                .map(|e| PyExpr { expr: e.clone() })
-        }
-
-        #[getter]
-        #[must_use]
-        pub fn columns(&self) -> Option<Vec<String>> {
-            self.0.columns.as_deref().cloned()
-        }
-
-        pub fn filter_required_column_names(&self) -> Option<Vec<String>> {
-            self.0
-                .filters
-                .as_ref()
-                .map(daft_dsl::optimization::get_required_columns)
-        }
+    #[pyfunction]
+    pub fn logical_plan_table_scan(
+        scan_operator: ScanOperatorHandle,
+    ) -> PyResult<PyLogicalPlanBuilder> {
+        Ok(crate::builder::table_scan(scan_operator.into(), None)?.into())
     }
 }
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<pylib::ScanOperatorHandle>()?;
     parent.add_class::<pylib::PyScanTask>()?;
-    parent.add_class::<pylib::PyPartitionField>()?;
-    parent.add_class::<pylib::PyPartitionTransform>()?;
-    parent.add_class::<pylib::PyPushdowns>()?;
+    parent.add_function(wrap_pyfunction_bound!(
+        pylib::logical_plan_table_scan,
+        parent
+    )?)?;
     Ok(())
 }

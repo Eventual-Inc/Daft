@@ -7,6 +7,7 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
+use common_scan_info::PhysicalScanInfo;
 use daft_core::prelude::*;
 use daft_dsl::{
     col, functions::agg::merge_mean, is_partition_compatible, AggExpr, ApproxPercentileParams,
@@ -29,7 +30,6 @@ use daft_logical_plan::{
     sink_info::{OutputFileInfo, SinkInfo},
     source_info::{PlaceHolderInfo, SourceInfo},
 };
-use daft_scan::PhysicalScanInfo;
 
 use crate::{ops::*, PhysicalPlan, PhysicalPlanRef};
 
@@ -46,7 +46,12 @@ pub(super) fn translate_single_logical_node(
                 source_schema,
                 ..
             }) => {
-                let scan_tasks = scan_op.0.to_scan_tasks(pushdowns.clone())?;
+                let scan_tasks = Box::new(
+                    scan_op
+                        .0
+                        .to_scan_tasks(pushdowns.clone())?
+                        .map(|st| Ok(st?.as_any_arc().downcast().unwrap())),
+                );
 
                 let scan_tasks = daft_scan::scan_task_iters::split_by_row_groups(
                     scan_tasks,

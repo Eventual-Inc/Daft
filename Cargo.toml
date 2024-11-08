@@ -5,6 +5,7 @@ common-file-formats = {path = "src/common/file-formats", default-features = fals
 common-hashable-float-wrapper = {path = "src/common/hashable-float-wrapper", default-features = false}
 common-resource-request = {path = "src/common/resource-request", default-features = false}
 common-runtime = {path = "src/common/runtime", default-features = false}
+common-scan-info = {path = "src/common/scan-info", default-features = false}
 common-system-info = {path = "src/common/system-info", default-features = false}
 common-tracing = {path = "src/common/tracing", default-features = false}
 common-version = {path = "src/common/version", default-features = false}
@@ -44,6 +45,7 @@ python = [
   "common-daft-config/python",
   "common-display/python",
   "common-resource-request/python",
+  "common-scan-info/python",
   "common-system-info/python",
   "daft-core/python",
   "daft-csv/python",
@@ -133,6 +135,7 @@ members = [
   "src/common/display",
   "src/common/error",
   "src/common/io-config",
+  "src/common/scan-info",
   "src/common/system-info",
   "src/common/treenode",
   "src/daft-core",
