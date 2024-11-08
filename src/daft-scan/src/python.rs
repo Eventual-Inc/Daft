@@ -2,6 +2,8 @@ use common_py_serde::{deserialize_py_object, serialize_py_object};
 use pyo3::{prelude::*, types::PyTuple};
 use serde::{Deserialize, Serialize};
 
+use crate::storage_config::{NativeStorageConfig, PyStorageConfig, PythonStorageConfig};
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PyObjectSerializableWrapper(
     #[serde(
@@ -470,11 +472,16 @@ pub mod pylib {
 }
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
+    parent.add_class::<PyStorageConfig>()?;
+    parent.add_class::<NativeStorageConfig>()?;
+    parent.add_class::<PythonStorageConfig>()?;
+
     parent.add_class::<pylib::ScanOperatorHandle>()?;
     parent.add_class::<pylib::PyScanTask>()?;
     parent.add_function(wrap_pyfunction_bound!(
         pylib::logical_plan_table_scan,
         parent
     )?)?;
+
     Ok(())
 }
