@@ -1,14 +1,19 @@
+import pytest
+
 import daft
 
-df = daft.from_pydict(
-    {
-        "text": ["g1", "g1", "g2", "g3", "g3", "g1"],
-        "n": [1, 2, 3, 3, 4, 100],
-    }
-)
+
+@pytest.fixture()
+def df():
+    return daft.from_pydict(
+        {
+            "text": ["g1", "g1", "g2", "g3", "g3", "g1"],
+            "n": [1, 2, 3, 3, 4, 100],
+        }
+    )
 
 
-def test_orderby_basic():
+def test_orderby_basic(df):
     df = daft.sql("""
         SELECT * from df order by n
     """)
@@ -19,7 +24,7 @@ def test_orderby_basic():
     }
 
 
-def test_orderby_compound():
+def test_orderby_compound(df):
     df = daft.sql("""
         SELECT * from df order by n, text
     """)
@@ -30,7 +35,7 @@ def test_orderby_compound():
     }
 
 
-def test_orderby_desc():
+def test_orderby_desc(df):
     df = daft.sql("""
         SELECT n from df order by n desc
     """)
@@ -40,7 +45,7 @@ def test_orderby_desc():
     }
 
 
-def test_orderby_groupby():
+def test_orderby_groupby(df):
     df = daft.sql("""
         SELECT
             text,
@@ -56,7 +61,7 @@ def test_orderby_groupby():
     }
 
 
-def test_orderby_groupby_expr():
+def test_orderby_groupby_expr(df):
     df = daft.sql("""
 SELECT
     text,
@@ -69,7 +74,7 @@ order by count(*) DESC
     assert df.collect().to_pydict() == {"text": ["g1", "g3", "g2"], "count_star": [3, 2, 1]}
 
 
-def test_groupby_orderby_non_final_expr():
+def test_groupby_orderby_non_final_expr(df):
     df = daft.sql("""
         SELECT
             text,
@@ -85,7 +90,7 @@ def test_groupby_orderby_non_final_expr():
     }
 
 
-def test_groupby_orderby_count_star():
+def test_groupby_orderby_count_star(df):
     df = daft.sql("""
         SELECT
             text,
