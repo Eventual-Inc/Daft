@@ -1,4 +1,4 @@
-use std::{ops::Range, sync::Arc};
+use std::{ops::Range, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use common_io_config::GCSConfig;
@@ -94,6 +94,12 @@ impl From<Error> for super::Error {
                     store: super::SourceType::GCS,
                     source: err,
                 },
+                err @ GError::HttpMiddleware(_) | err @ GError::InvalidRangeHeader(_) => {
+                    Self::UnableToOpenFile {
+                        path,
+                        source: err.into(),
+                    }
+                }
             },
             NotFound { ref path } => Self::NotFound {
                 path: path.into(),
@@ -393,7 +399,37 @@ impl GCSSource {
         if config.project_id.is_some() {
             client_config.project_id.clone_from(&config.project_id);
         }
+        {
+            use reqwest_middleware::ClientBuilder;
+            use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
+            use retry_policies::Jitter;
+            let retry_policy = ExponentialBackoff::builder()
+                .base(2)
+                .jitter(Jitter::Bounded)
+                .retry_bounds(
+                    Duration::from_millis(config.retry_initial_backoff_ms),
+                    Duration::from_secs(60),
+                )
+                .build_with_max_retries(config.num_tries);
 
+            let base_client = reqwest_middleware::reqwest::ClientBuilder::default()
+                .connect_timeout(Duration::from_millis(config.connect_timeout_ms))
+                .read_timeout(Duration::from_millis(config.read_timeout_ms))
+                .build()
+                .unwrap();
+
+            let mid_client = ClientBuilder::new(base_client)
+                // reqwest-retry already comes with a default retry strategy that matches http standards
+                // override it only if you need a custom one due to non standard behavior
+                .with(
+                    RetryTransientMiddleware::new_with_policy(retry_policy)
+                        .with_retry_log_level(tracing::Level::WARN), // TODO: update before merge
+                )
+                .build();
+            client_config.http = Some(mid_client);
+        }
+
+        // client_config.http = Some()
         let client = Client::new(client_config);
         Ok(Self {
             client: GCSClientWrapper(client),

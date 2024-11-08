@@ -20,7 +20,7 @@ common-runtime = {path = "../common/runtime", default-features = false}
 derive_builder = {workspace = true}
 futures = {workspace = true}
 globset = "0.4"
-google-cloud-storage = {version = "0.15.0", default-features = false, features = ["default-tls", "auth"]}
+google-cloud-storage = {version = "0.22.1", default-features = false, features = ["default-tls", "auth"]}
 google-cloud-token = {version = "0.1.2"}
 home = "0.5.9"
 hyper = "0.14.27"
@@ -32,10 +32,14 @@ openssl-sys = {version = "0.9.102", features = ["vendored"]}
 pyo3 = {workspace = true, optional = true}
 rand = "0.8.5"
 regex = {version = "1.10.4"}
+reqwest-middleware = "*"
+reqwest-retry = "*"
+retry-policies = "*"
 serde = {workspace = true}
 snafu = {workspace = true}
 tokio = {workspace = true}
 tokio-stream = {workspace = true}
+tracing = {workspace = true}
 url = {workspace = true}
 
 [dependencies.reqwest]
