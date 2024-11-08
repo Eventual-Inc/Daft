@@ -157,7 +157,9 @@ members = [
   "src/daft-table",
   "src/daft-writers",
   "src/hyperloglog",
-  "src/parquet2"
+  "src/parquet2",
+  # "src/spark-connect-script",
+  "src/generated/spark-connect"
 ]
 
 [workspace.dependencies]
