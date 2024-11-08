@@ -28,6 +28,17 @@ impl DaftMeanAggable for DataArray<Float64Type> {
     }
 }
 
+impl DataArray<Decimal128Type> {
+    pub fn merge_mean(&self, counts: &DataArray<UInt64Type>) -> DaftResult<Self> {
+        assert_eq!(self.len(), counts.len());
+        let means = self
+            .into_iter()
+            .zip(counts)
+            .map(|(sum, count)| sum.zip(count).map(|(s, c)| s / (*c as i128)));
+        Ok(Self::from_iter(self.field.clone(), means))
+    }
+}
+
 impl DaftMeanAggable for DataArray<Decimal128Type> {
     type Output = DaftResult<Self>;
 
@@ -43,11 +54,6 @@ impl DaftMeanAggable for DataArray<Decimal128Type> {
     fn grouped_mean(&self, groups: &GroupIndices) -> Self::Output {
         let grouped_sum = self.grouped_sum(groups)?;
         let grouped_count = self.grouped_count(groups, CountMode::Valid)?;
-
-        let means = grouped_sum
-            .into_iter()
-            .zip(&grouped_count)
-            .map(|(sum, count)| sum.zip(count).map(|(s, c)| s / (*c as i128)));
-        Ok(Self::from_iter(self.field.clone(), means))
+        grouped_sum.merge_mean(&grouped_count)
     }
 }
