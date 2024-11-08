@@ -988,7 +988,6 @@ def test_agg_concat_on_string_null_list() -> None:
         "a", col("a").cast(DataType.string())
     )
     res = df3.agg(col("a").agg_concat()).to_pydict()
-    print(res)
     expected = [None]
     assert res["a"] == expected
     assert len(res["a"]) == 1
