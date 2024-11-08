@@ -162,6 +162,7 @@ mod test {
                 None,
                 None,
                 None,
+                false,
             )?
             .filter(col("first_name").eq(lit("hello")))?
             .select(vec![col("first_name")])?
@@ -236,6 +237,7 @@ Project1 --> Limit0
                 None,
                 None,
                 None,
+                false,
             )?
             .filter(col("first_name").eq(lit("hello")))?
             .select(vec![col("first_name")])?

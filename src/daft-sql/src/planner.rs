@@ -553,15 +553,9 @@ impl SQLPlanner {
                 self.table_map.insert(right.get_name(), right.clone());
                 let right_join_prefix = Some(format!("{}.", right.get_name()));
 
-                rel.inner = rel.inner.join(
-                    right.inner,
-                    vec![],
-                    vec![],
-                    JoinType::Inner,
-                    None,
-                    None,
-                    right_join_prefix.as_deref(),
-                )?;
+                rel.inner =
+                    rel.inner
+                        .cross_join(right.inner, None, right_join_prefix.as_deref())?;
             }
             return Ok(rel);
         }
@@ -580,15 +574,9 @@ impl SQLPlanner {
 
                 // switch left/right operands if the caller has them in reverse
                 if &left_rel.get_name() == tbl_b || &right_rel.get_name() == tbl_a {
-                    Ok((
-                        vec![col(col_b.as_ref()).alias(format!("{tbl_b}.{col_b}",))],
-                        vec![col(col_a.as_ref())],
-                    ))
+                    Ok((vec![col(col_b.as_ref())], vec![col(col_a.as_ref())]))
                 } else {
-                    Ok((
-                        vec![col(col_a.as_ref())],
-                        vec![col(col_b.as_ref()).alias(format!("{tbl_b}.{col_b}",))],
-                    ))
+                    Ok((vec![col(col_a.as_ref())], vec![col(col_b.as_ref())]))
                 }
             } else {
                 unsupported_sql_err!("collect_compound_identifiers: Expected left.len() == 2 && right.len() == 2, but found left.len() == {:?}, right.len() == {:?}", left.len(), right.len());
@@ -643,10 +631,7 @@ impl SQLPlanner {
         for join in &from.joins {
             use sqlparser::ast::{
                 JoinConstraint,
-                JoinOperator::{
-                    AsOf, CrossApply, CrossJoin, FullOuter, Inner, LeftAnti, LeftOuter, LeftSemi,
-                    OuterApply, RightAnti, RightOuter, RightSemi,
-                },
+                JoinOperator::{FullOuter, Inner, LeftAnti, LeftOuter, LeftSemi, RightOuter},
             };
             let right_rel = self.plan_relation(&join.relation)?;
             self.table_map
@@ -654,94 +639,45 @@ impl SQLPlanner {
             let right_rel_name = right_rel.get_name();
             let right_join_prefix = Some(format!("{right_rel_name}."));
 
-            match &join.join_operator {
-                Inner(JoinConstraint::On(expr)) => {
+            let (join_type, constraint) = match &join.join_operator {
+                Inner(constraint) => (JoinType::Inner, constraint),
+                LeftOuter(constraint) => (JoinType::Left, constraint),
+                RightOuter(constraint) => (JoinType::Right, constraint),
+                FullOuter(constraint) => (JoinType::Outer, constraint),
+                LeftSemi(constraint) => (JoinType::Semi, constraint),
+                LeftAnti(constraint) => (JoinType::Anti, constraint),
+
+                _ => unsupported_sql_err!("Unsupported join type: {:?}", join.join_operator),
+            };
+
+            let (left_on, right_on, null_eq_null, keep_join_keys) = match &constraint {
+                JoinConstraint::On(expr) => {
                     let (left_on, right_on, null_equals_nulls) =
                         process_join_on(expr, &left_rel, &right_rel)?;
-
-                    left_rel.inner = left_rel.inner.join_with_null_safe_equal(
-                        right_rel.inner,
-                        left_on,
-                        right_on,
-                        Some(null_equals_nulls),
-                        JoinType::Inner,
-                        None,
-                        None,
-                        right_join_prefix.as_deref(),
-                    )?;
+                    (left_on, right_on, Some(null_equals_nulls), true)
                 }
-                Inner(JoinConstraint::Using(idents)) => {
+                JoinConstraint::Using(idents) => {
                     let on = idents
                         .iter()
                         .map(|i| col(i.value.clone()))
                         .collect::<Vec<_>>();
-
-                    left_rel.inner = left_rel.inner.join(
-                        right_rel.inner,
-                        on.clone(),
-                        on,
-                        JoinType::Inner,
-                        None,
-                        None,
-                        right_join_prefix.as_deref(),
-                    )?;
+                    (on.clone(), on, None, false)
                 }
-                LeftOuter(JoinConstraint::On(expr)) => {
-                    let (left_on, right_on, null_equals_nulls) =
-                        process_join_on(expr, &left_rel, &right_rel)?;
-
-                    left_rel.inner = left_rel.inner.join_with_null_safe_equal(
-                        right_rel.inner,
-                        left_on,
-                        right_on,
-                        Some(null_equals_nulls),
-                        JoinType::Left,
-                        None,
-                        None,
-                        right_join_prefix.as_deref(),
-                    )?;
-                }
-                RightOuter(JoinConstraint::On(expr)) => {
-                    let (left_on, right_on, null_equals_nulls) =
-                        process_join_on(expr, &left_rel, &right_rel)?;
-
-                    left_rel.inner = left_rel.inner.join_with_null_safe_equal(
-                        right_rel.inner,
-                        left_on,
-                        right_on,
-                        Some(null_equals_nulls),
-                        JoinType::Right,
-                        None,
-                        None,
-                        right_join_prefix.as_deref(),
-                    )?;
-                }
-
-                FullOuter(JoinConstraint::On(expr)) => {
-                    let (left_on, right_on, null_equals_nulls) =
-                        process_join_on(expr, &left_rel, &right_rel)?;
-
-                    left_rel.inner = left_rel.inner.join_with_null_safe_equal(
-                        right_rel.inner,
-                        left_on,
-                        right_on,
-                        Some(null_equals_nulls),
-                        JoinType::Outer,
-                        None,
-                        None,
-                        right_join_prefix.as_deref(),
-                    )?;
-                }
-                CrossJoin => unsupported_sql_err!("CROSS JOIN"),
-                LeftSemi(_) => unsupported_sql_err!("LEFT SEMI JOIN"),
-                RightSemi(_) => unsupported_sql_err!("RIGHT SEMI JOIN"),
-                LeftAnti(_) => unsupported_sql_err!("LEFT ANTI JOIN"),
-                RightAnti(_) => unsupported_sql_err!("RIGHT ANTI JOIN"),
-                CrossApply => unsupported_sql_err!("CROSS APPLY"),
-                OuterApply => unsupported_sql_err!("OUTER APPLY"),
-                AsOf { .. } => unsupported_sql_err!("AS OF"),
-                join_type => unsupported_sql_err!("join type: {join_type:?}"),
+                JoinConstraint::Natural => unsupported_sql_err!("NATURAL JOIN not supported"),
+                JoinConstraint::None => unsupported_sql_err!("JOIN without ON/USING not supported"),
             };
+
+            left_rel.inner = left_rel.inner.join_with_null_safe_equal(
+                right_rel.inner,
+                left_on,
+                right_on,
+                null_eq_null,
+                join_type,
+                None,
+                None,
+                right_join_prefix.as_deref(),
+                keep_join_keys,
+            )?;
         }
 
         Ok(left_rel)

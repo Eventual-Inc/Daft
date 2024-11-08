@@ -272,6 +272,7 @@ mod tests {
                 None,
                 None,
                 Some("tbl3."),
+                false,
             )?
             .select(vec![col("*")])?
             .build();

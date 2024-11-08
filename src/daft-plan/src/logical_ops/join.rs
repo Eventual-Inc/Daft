@@ -60,6 +60,11 @@ impl Join {
         join_strategy: Option<JoinStrategy>,
         join_suffix: Option<&str>,
         join_prefix: Option<&str>,
+        // if true, then duplicate column names will be kept
+        // ex: select * from a left join b on a.id = b.id
+        // if true, then the resulting schema will have two columns named id (id, and b.id)
+        // In SQL the join column is always kept, while in dataframes it is not
+        keep_join_keys: bool,
     ) -> logical_plan::Result<Self> {
         let (left_on, _) = resolve_exprs(left_on, &left.schema(), false).context(CreationSnafu)?;
         let (right_on, _) =
@@ -136,19 +141,27 @@ impl Join {
             let right_rename_mapping: HashMap<_, _> = right_names
                 .iter()
                 .filter_map(|name| {
-                    if !names_so_far.contains(name) || common_join_keys.contains(name) {
+                    if !names_so_far.contains(name)
+                        || (common_join_keys.contains(name) && !keep_join_keys)
+                    {
                         None
                     } else {
                         let mut new_name = name.clone();
                         while names_so_far.contains(&new_name) {
-                            if let Some(prefix) = join_prefix {
-                                new_name = format!("{}{}", prefix, new_name);
-                            } else if join_suffix.is_none() {
-                                new_name = format!("right.{}", new_name);
-                            }
-                            if let Some(suffix) = join_suffix {
-                                new_name = format!("{}{}", new_name, suffix);
-                            }
+                            new_name = match (join_prefix, join_suffix) {
+                                (Some(prefix), Some(suffix)) => {
+                                    format!("{}{}{}", prefix, new_name, suffix)
+                                }
+                                (Some(prefix), None) => {
+                                    format!("{}{}", prefix, new_name)
+                                }
+                                (None, Some(suffix)) => {
+                                    format!("{}{}", new_name, suffix)
+                                }
+                                (None, None) => {
+                                    format!("right.{}", new_name)
+                                }
+                            };
                         }
                         names_so_far.insert(new_name.clone());
 
@@ -253,6 +266,7 @@ impl Join {
                     }
                     _ => {
                         let unique_id = Uuid::new_v4().to_string();
+
                         let renamed_left_expr =
                             left_expr.alias(format!("{}_{}", left_expr.name(), unique_id));
                         let renamed_right_expr =
