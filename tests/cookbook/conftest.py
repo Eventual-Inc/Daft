@@ -42,7 +42,10 @@ def service_requests_csv_pd_df():
     return pd.read_csv(COOKBOOK_DATA_CSV, keep_default_na=False)[COLUMNS]
 
 
-@pytest.fixture(scope="module", params=[1, 2])
+@pytest.fixture(
+    scope="module",
+    params=[1, 2] if daft.context.get_context().runner_config.name != "native" else [1],
+)
 def repartition_nparts(request):
     """Adds a `n_repartitions` parameter to test cases which provides the number of
     partitions that the test case should repartition its dataset into for testing

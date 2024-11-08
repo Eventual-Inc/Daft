@@ -46,6 +46,10 @@ impl ScanOperator for AnonymousScanOperator {
         None
     }
 
+    fn generated_fields(&self) -> Option<SchemaRef> {
+        None
+    }
+
     fn can_absorb_filter(&self) -> bool {
         false
     }

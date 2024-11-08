@@ -13,8 +13,7 @@ from daft.internal.gpu import cuda_visible_devices
 from daft.udf import udf
 
 pytestmark = pytest.mark.skipif(
-    get_context().daft_execution_config.enable_native_executor is True,
-    reason="Native executor fails for these tests",
+    get_context().runner_config.name == "native", reason="Native runner does not support GPU tests yet"
 )
 
 

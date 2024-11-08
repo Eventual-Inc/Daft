@@ -75,6 +75,7 @@ impl Table {
         right: &Self,
         left_on: &[ExprRef],
         right_on: &[ExprRef],
+        null_equals_nulls: &[bool],
         how: JoinType,
     ) -> DaftResult<Self> {
         if left_on.len() != right_on.len() {
@@ -92,12 +93,20 @@ impl Table {
         }
 
         match how {
-            JoinType::Inner => hash_inner_join(self, right, left_on, right_on),
-            JoinType::Left => hash_left_right_join(self, right, left_on, right_on, true),
-            JoinType::Right => hash_left_right_join(self, right, left_on, right_on, false),
-            JoinType::Outer => hash_outer_join(self, right, left_on, right_on),
-            JoinType::Semi => hash_semi_anti_join(self, right, left_on, right_on, false),
-            JoinType::Anti => hash_semi_anti_join(self, right, left_on, right_on, true),
+            JoinType::Inner => hash_inner_join(self, right, left_on, right_on, null_equals_nulls),
+            JoinType::Left => {
+                hash_left_right_join(self, right, left_on, right_on, null_equals_nulls, true)
+            }
+            JoinType::Right => {
+                hash_left_right_join(self, right, left_on, right_on, null_equals_nulls, false)
+            }
+            JoinType::Outer => hash_outer_join(self, right, left_on, right_on, null_equals_nulls),
+            JoinType::Semi => {
+                hash_semi_anti_join(self, right, left_on, right_on, null_equals_nulls, false)
+            }
+            JoinType::Anti => {
+                hash_semi_anti_join(self, right, left_on, right_on, null_equals_nulls, true)
+            }
         }
     }
 

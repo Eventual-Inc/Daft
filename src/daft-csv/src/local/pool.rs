@@ -8,8 +8,6 @@ use parking_lot::{Mutex, RwLock};
 
 // The default size of a slab used for reading CSV files in chunks. Currently set to 4 MiB. This can be tuned.
 pub const SLABSIZE: usize = 4 * 1024 * 1024;
-// The default number of slabs in a slab pool. With 20 slabs, we reserve a total of 80 MiB of memory for reading file data.
-const SLABPOOL_DEFAULT_SIZE: usize = 20;
 
 #[derive(Clone, Debug, Default)]
 pub struct CsvSlab(Vec<read::ByteRecord>);
@@ -53,16 +51,10 @@ pub struct CsvBuffer {
 }
 
 impl CsvBufferPool {
-    pub fn new(
-        record_size: usize,
-        num_fields: usize,
-        num_rows: usize,
-        initial_pool_size: usize,
-    ) -> Self {
-        let chunk_buffers =
-            vec![CsvSlab::new(record_size, num_fields, num_rows); initial_pool_size];
+    pub fn new(record_size: usize, num_fields: usize, num_rows: usize) -> Self {
         Self {
-            buffers: Mutex::new(chunk_buffers),
+            // We start off with an empty pool. Buffers will be allocated on demand.
+            buffers: Mutex::new(vec![]),
             record_size,
             num_fields,
             num_rows,
@@ -108,14 +100,9 @@ pub struct FileSlabPool {
 
 impl FileSlabPool {
     pub fn new() -> Arc<Self> {
-        let slabs: Vec<RwLock<FileSlabState>> = (0..SLABPOOL_DEFAULT_SIZE)
-            // We get uninitialized buffers because we will always populate the buffers with a file read before use.
-            .map(|_| Box::new_uninit_slice(SLABSIZE))
-            .map(|x| unsafe { x.assume_init() })
-            .map(|buffer| RwLock::new(FileSlabState::new(buffer, 0)))
-            .collect();
         Arc::new(Self {
-            slabs: Mutex::new(slabs),
+            // We start off with an empty pool. Slabs will be allocated on demand.
+            slabs: Mutex::new(vec![]),
         })
     }
 

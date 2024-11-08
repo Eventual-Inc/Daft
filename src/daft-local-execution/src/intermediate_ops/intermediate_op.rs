@@ -6,8 +6,8 @@ use common_runtime::get_compute_runtime;
 use daft_micropartition::MicroPartition;
 use tracing::{info_span, instrument};
 
-use super::buffer::OperatorBuffer;
 use crate::{
+    buffer::RowBasedBuffer,
     channel::{create_channel, PipelineChannel, Receiver, Sender},
     pipeline::{PipelineNode, PipelineResultType},
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
@@ -129,17 +129,21 @@ impl IntermediateNode {
                 let fut = async move {
                     rt_context.in_span(&span, || op.execute(idx, &morsel, &state_wrapper))
                 };
-                let result = compute_runtime.await_on(fut).await??;
+                let result = compute_runtime.spawn(fut).await??;
                 match result {
                     IntermediateOperatorResult::NeedMoreInput(Some(mp)) => {
-                        let _ = sender.send(mp.into()).await;
+                        if sender.send(mp.into()).await.is_err() {
+                            return Ok(());
+                        }
                         break;
                     }
                     IntermediateOperatorResult::NeedMoreInput(None) => {
                         break;
                     }
                     IntermediateOperatorResult::HasMoreOutput(mp) => {
-                        let _ = sender.send(mp.into()).await;
+                        if sender.send(mp.into()).await.is_err() {
+                            return Ok(());
+                        }
                     }
                 }
             }
@@ -185,26 +189,27 @@ impl IntermediateNode {
         };
 
         for (idx, mut receiver) in receivers.into_iter().enumerate() {
-            let mut buffer = OperatorBuffer::new(morsel_size);
+            let mut buffer = RowBasedBuffer::new(morsel_size);
             while let Some(morsel) = receiver.recv().await {
                 if morsel.should_broadcast() {
                     for worker_sender in &worker_senders {
-                        let _ = worker_sender.send((idx, morsel.clone())).await;
+                        if worker_sender.send((idx, morsel.clone())).await.is_err() {
+                            return Ok(());
+                        }
                     }
                 } else {
-                    buffer.push(morsel.as_data().clone());
-                    if let Some(ready) = buffer.try_clear() {
-                        let _ = send_to_next_worker(idx, ready?.into()).await;
+                    buffer.push(morsel.as_data());
+                    if let Some(ready) = buffer.pop_enough()? {
+                        for part in ready {
+                            if send_to_next_worker(idx, part.into()).await.is_err() {
+                                return Ok(());
+                            }
+                        }
                     }
                 }
             }
-            // Buffer may still have some morsels left above the threshold
-            while let Some(ready) = buffer.try_clear() {
-                let _ = send_to_next_worker(idx, ready?.into()).await;
-            }
-            // Clear all remaining morsels
-            if let Some(last_morsel) = buffer.clear_all() {
-                let _ = send_to_next_worker(idx, last_morsel?.into()).await;
+            if let Some(ready) = buffer.pop_all()? {
+                let _ = send_to_next_worker(idx, ready.into()).await;
             }
         }
         Ok(())

@@ -134,6 +134,7 @@ impl PyTable {
             left_on.into_iter().map(std::convert::Into::into).collect();
         let right_exprs: Vec<daft_dsl::ExprRef> =
             right_on.into_iter().map(std::convert::Into::into).collect();
+        let null_equals_nulls = vec![false; left_exprs.len()];
         py.allow_threads(|| {
             Ok(self
                 .table
@@ -141,6 +142,7 @@ impl PyTable {
                     &right.table,
                     left_exprs.as_slice(),
                     right_exprs.as_slice(),
+                    null_equals_nulls.as_slice(),
                     how,
                 )?
                 .into())

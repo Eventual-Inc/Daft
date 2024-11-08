@@ -36,7 +36,6 @@ use super::{adjusted_precision_scale, get_parameters, max_value, number_digits};
 /// ```
 pub fn mul(lhs: &PrimitiveArray<i128>, rhs: &PrimitiveArray<i128>) -> PrimitiveArray<i128> {
     let (precision, scale) = get_parameters(lhs.data_type(), rhs.data_type()).unwrap();
-
     let scale = 10i128.pow(scale as u32);
     let max = max_value(precision);
 

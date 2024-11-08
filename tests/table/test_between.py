@@ -1,4 +1,5 @@
 import datetime
+from decimal import Decimal
 
 import pytest
 
@@ -12,6 +13,27 @@ from daft.table import MicroPartition
         pytest.param([1, 2, 3, 4], 1, 2, [True, True, False, False], id="IntIntInt"),
         pytest.param([1, 2, 3, 4], 1.0, 2.0, [True, True, False, False], id="IntFloatFloat"),
         pytest.param([1, 2, 3, 4], 1, 2.0, [True, True, False, False], id="IntIntFloat"),
+        pytest.param(
+            [Decimal("1.0"), Decimal("2.0"), Decimal("3.0"), Decimal("4.0")],
+            Decimal("1.0"),
+            Decimal("2.0"),
+            [True, True, False, False],
+            id="DecimalDecimalDecimal",
+        ),
+        pytest.param(
+            [Decimal("1.0"), Decimal("2.0"), Decimal("3.0"), Decimal("4.0")],
+            1,
+            Decimal("2.0"),
+            [True, True, False, False],
+            id="DecimalIntDecimal",
+        ),
+        pytest.param(
+            [Decimal("1.0"), Decimal("2.0"), Decimal("3.0"), Decimal("4.0")],
+            1.0,
+            2.0,
+            [True, True, False, False],
+            id="DecimalFloatFloat",
+        ),
         pytest.param([1.0, 2.0, 3.0, 4.0], 1.0, 2.0, [True, True, False, False], id="FloatFloatFloat"),
         pytest.param([1.0, 2.0, 3.0, 4.0], 1, 2, [True, True, False, False], id="FloatIntInt"),
         pytest.param([1.0, 2.0, 3.0, 4.0], 1, 2.0, [True, True, False, False], id="FloatIntFloat"),
@@ -42,6 +64,20 @@ def test_table_expr_between_scalars(value, lower, upper, expected) -> None:
         pytest.param([1, 2, 3, 4], [1, 1, 1, 1], [2, 2, 2, 2], [True, True, False, False], id="IntIntInt"),
         pytest.param(
             [1, 2, 3, 4], [1.0, 1.0, 1.0, 1.0], [2.0, 2.0, 2.0, 2.0], [True, True, False, False], id="IntFloatFloat"
+        ),
+        pytest.param(
+            [Decimal("1.0"), Decimal("2.0"), Decimal("3.0"), Decimal("4.0")],
+            [Decimal("1.0"), Decimal("1.0"), Decimal("1.0"), Decimal("1.0")],
+            [Decimal("2.0"), Decimal("2.0"), Decimal("2.0"), Decimal("2.0")],
+            [True, True, False, False],
+            id="DecimalDecimalDecimal",
+        ),
+        pytest.param(
+            [Decimal("1.0"), Decimal("2.0"), Decimal("3.0"), Decimal("4.0")],
+            [1, 1, 1, 1],
+            [2.0, 2.0, 2.0, 2.0],
+            [True, True, False, False],
+            id="DecimalIntFloat",
         ),
         pytest.param([1, 2, 3, 4], [1, 1, 1, 1], [2.0, 2.0, 2.0, 2.0], [True, True, False, False], id="IntIntFloat"),
         pytest.param(

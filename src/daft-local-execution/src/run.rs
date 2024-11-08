@@ -9,13 +9,13 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_tracing::refresh_chrome_trace;
+use daft_local_plan::{translate, LocalPhysicalPlan};
 use daft_micropartition::MicroPartition;
-use daft_physical_plan::{translate, LocalPhysicalPlan};
 #[cfg(feature = "python")]
 use {
     common_daft_config::PyDaftExecutionConfig,
+    daft_logical_plan::PyLogicalPlanBuilder,
     daft_micropartition::python::PyMicroPartition,
-    daft_plan::PyLogicalPlanBuilder,
     pyo3::{pyclass, pymethods, IntoPy, PyObject, PyRef, PyRefMut, PyResult, Python},
 };
 
@@ -118,7 +118,7 @@ pub fn run_local(
     results_buffer_size: Option<usize>,
 ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<Arc<MicroPartition>>> + Send>> {
     refresh_chrome_trace();
-    let mut pipeline = physical_plan_to_pipeline(physical_plan, &psets)?;
+    let mut pipeline = physical_plan_to_pipeline(physical_plan, &psets, &cfg)?;
     let (tx, rx) = create_channel(results_buffer_size.unwrap_or(1));
     let handle = std::thread::spawn(move || {
         let runtime = tokio::runtime::Builder::new_current_thread()
@@ -130,7 +130,9 @@ pub fn run_local(
             let mut receiver = pipeline.start(true, &mut runtime_handle)?.get_receiver();
 
             while let Some(val) = receiver.recv().await {
-                let _ = tx.send(val.as_data().clone()).await;
+                if tx.send(val.as_data().clone()).await.is_err() {
+                    break;
+                }
             }
 
             while let Some(result) = runtime_handle.join_next().await {

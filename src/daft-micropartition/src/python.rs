@@ -148,8 +148,8 @@ impl PyMicroPartition {
 
     #[staticmethod]
     pub fn concat(py: Python, to_concat: Vec<Self>) -> PyResult<Self> {
-        let mps: Vec<_> = to_concat.iter().map(|t| t.inner.as_ref()).collect();
-        py.allow_threads(|| Ok(MicroPartition::concat(mps.as_slice())?.into()))
+        let mps_iter = to_concat.iter().map(|t| t.inner.as_ref());
+        py.allow_threads(|| Ok(MicroPartition::concat(mps_iter)?.into()))
     }
 
     pub fn slice(&self, py: Python, start: i64, end: i64) -> PyResult<Self> {
@@ -262,6 +262,7 @@ impl PyMicroPartition {
         left_on: Vec<PyExpr>,
         right_on: Vec<PyExpr>,
         how: JoinType,
+        null_equals_nulls: Option<Vec<bool>>,
     ) -> PyResult<Self> {
         let left_exprs: Vec<daft_dsl::ExprRef> =
             left_on.into_iter().map(std::convert::Into::into).collect();
@@ -274,6 +275,7 @@ impl PyMicroPartition {
                     &right.inner,
                     left_exprs.as_slice(),
                     right_exprs.as_slice(),
+                    null_equals_nulls,
                     how,
                 )?
                 .into())

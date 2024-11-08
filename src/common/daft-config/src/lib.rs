@@ -100,6 +100,7 @@ impl DaftExecutionConfig {
         if let Ok(val) = std::env::var(exec_env_var_name)
             && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
         {
+            log::warn!("DAFT_ENABLE_NATIVE_EXECUTOR will be deprecated and removed in the future. Please switch to using DAFT_RUNNER=NATIVE instead.");
             cfg.enable_native_executor = true;
         }
         cfg
