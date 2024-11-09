@@ -1210,6 +1210,7 @@ mod tests {
                 Some(JoinStrategy::Hash),
                 None,
                 None,
+                false,
             )?
             .build();
         logical_to_physical(logical_plan, cfg)

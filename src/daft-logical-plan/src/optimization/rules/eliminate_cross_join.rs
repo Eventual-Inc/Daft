@@ -524,6 +524,7 @@ mod tests {
                 None,
                 None,
                 None,
+                false,
             )?
             .build();
 
@@ -554,6 +555,7 @@ mod tests {
                 None,
                 None,
                 None,
+                false,
             )?
             .filter(col("a").eq(col("right.a")).or(col("right.b").eq(col("a"))))?
             .build();
@@ -588,6 +590,7 @@ mod tests {
                 None,
                 None,
                 None,
+                false,
             )?
             .filter(expr2.and(expr4))?
             .build();
@@ -622,6 +625,7 @@ mod tests {
                 None,
                 None,
                 None,
+                false,
             )?
             .filter(expr2.or(expr4))?
             .build();
@@ -682,6 +686,7 @@ mod tests {
                 None,
                 None,
                 None,
+                false,
             )?
             .filter(col("t2.c").lt(lit(15u32)).or(col("t2.c").eq(lit(688u32))))?
             .build();
@@ -699,6 +704,7 @@ mod tests {
                 None,
                 None,
                 None,
+                false,
             )?
             .filter(
                 col("t4.c")
@@ -724,6 +730,7 @@ mod tests {
                 None,
                 None,
                 None,
+                false,
             )?
             .filter(col("t4.c").lt(lit(15u32)).or(col("t4.c").eq(lit(688u32))))?
             .build();

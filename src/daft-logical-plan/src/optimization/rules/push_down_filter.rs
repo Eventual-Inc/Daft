@@ -683,6 +683,7 @@ mod tests {
                 None,
                 None,
                 None,
+                false,
             )?
             .filter(pred.clone())?
             .build();
@@ -704,6 +705,7 @@ mod tests {
                 None,
                 None,
                 None,
+                false,
             )?
             .build();
         assert_optimized_plan_eq(plan, expected)?;
@@ -747,6 +749,7 @@ mod tests {
                 None,
                 None,
                 None,
+                false,
             )?
             .filter(pred.clone())?
             .build();
@@ -768,6 +771,7 @@ mod tests {
                 None,
                 None,
                 None,
+                false,
             )?
             .build();
         assert_optimized_plan_eq(plan, expected)?;
@@ -824,6 +828,7 @@ mod tests {
                 None,
                 None,
                 None,
+                false,
             )?
             .filter(pred.clone())?
             .build();
@@ -853,6 +858,7 @@ mod tests {
                 None,
                 None,
                 None,
+                false,
             )?
             .build();
         assert_optimized_plan_eq(plan, expected)?;
@@ -892,6 +898,7 @@ mod tests {
                 None,
                 None,
                 None,
+                false,
             )?
             .filter(pred)?
             .build();
@@ -934,6 +941,7 @@ mod tests {
                 None,
                 None,
                 None,
+                false,
             )?
             .filter(pred)?
             .build();
