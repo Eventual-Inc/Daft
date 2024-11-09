@@ -52,13 +52,18 @@ enum Error {
     NotFound { path: String },
     #[snafu(display("Unable to grab semaphore. {}", source))]
     UnableToGrabSemaphore { source: tokio::sync::AcquireError },
+
+    #[snafu(display("Unable to create Http Client {}", source))]
+    UnableToCreateClient {
+        source: reqwest_middleware::reqwest::Error,
+    },
 }
 
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
         use Error::{
-            InvalidUrl, NotAFile, NotFound, UnableToGrabSemaphore, UnableToListObjects,
-            UnableToLoadCredentials, UnableToOpenFile, UnableToReadBytes,
+            InvalidUrl, NotAFile, NotFound, UnableToCreateClient, UnableToGrabSemaphore,
+            UnableToListObjects, UnableToLoadCredentials, UnableToOpenFile, UnableToReadBytes,
         };
         match error {
             UnableToReadBytes { path, source }
@@ -116,6 +121,10 @@ impl From<Error> for super::Error {
             },
             NotAFile { path } => Self::NotAFile { path },
             UnableToGrabSemaphore { .. } => Self::Generic {
+                store: crate::SourceType::GCS,
+                source: error.into(),
+            },
+            UnableToCreateClient { .. } => Self::UnableToCreateClient {
                 store: crate::SourceType::GCS,
                 source: error.into(),
             },
@@ -448,7 +457,7 @@ impl GCSSource {
                 .pool_idle_timeout(Duration::from_secs(60))
                 .pool_max_idle_per_host(70)
                 .build()
-                .unwrap();
+                .context(UnableToCreateClientSnafu)?;
 
             let mid_client = ClientBuilder::new(base_client)
                 // reqwest-retry already comes with a default retry strategy that matches http standards
