@@ -148,6 +148,9 @@ impl From<Error> for super::Error {
 
 struct GCSClientWrapper {
     client: Client,
+    /// Used to limit the concurrent connections to GCS at any given time.
+    /// Acquired when we initiate a connection to GCS
+    /// Released when the stream for that connection is exhausted
     connection_pool_sema: Arc<Semaphore>,
 }
 
