@@ -497,5 +497,5 @@ def test_read_timeout_gcs(multithreaded_io):
         )
     )
 
-    with pytest.raises((ReadTimeoutError, ConnectTimeoutError), match=f"timed out when trying to connect to {url}"):
+    with pytest.raises((ReadTimeoutError, ConnectTimeoutError), match=f"Read timed out when trying to read {url}"):
         MicroPartition.read_parquet(url, io_config=read_timeout_config, multithreaded_io=multithreaded_io).to_arrow()
