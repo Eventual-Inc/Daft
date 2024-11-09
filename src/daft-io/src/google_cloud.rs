@@ -438,7 +438,7 @@ impl GCSSource {
         if config.project_id.is_some() {
             client_config.project_id.clone_from(&config.project_id);
         }
-        {
+        client_config.http = Some({
             use reqwest_middleware::ClientBuilder;
             use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
             use retry_policies::Jitter;
@@ -459,18 +459,16 @@ impl GCSSource {
                 .build()
                 .context(UnableToCreateClientSnafu)?;
 
-            let mid_client = ClientBuilder::new(base_client)
+            ClientBuilder::new(base_client)
                 // reqwest-retry already comes with a default retry strategy that matches http standards
                 // override it only if you need a custom one due to non standard behavior
                 .with(
                     RetryTransientMiddleware::new_with_policy(retry_policy)
                         .with_retry_log_level(tracing::Level::DEBUG),
                 )
-                .build();
-            client_config.http = Some(mid_client);
-        }
+                .build()
+        });
 
-        // client_config.http = Some()
         let client = Client::new(client_config);
 
         let connection_pool_sema = Arc::new(tokio::sync::Semaphore::new(
