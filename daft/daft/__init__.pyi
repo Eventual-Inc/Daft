@@ -600,11 +600,11 @@ class GCSConfig:
     credentials: str | None
     token: str | None
     anonymous: bool
-    max_connections: int | None
-    retry_initial_backoff_ms: int | None
-    connect_timeout_ms: int | None
-    read_timeout_ms: int | None
-    num_tries: int | None
+    max_connections: int
+    retry_initial_backoff_ms: int
+    connect_timeout_ms: int
+    read_timeout_ms: int
+    num_tries: int
 
     def __init__(
         self,
