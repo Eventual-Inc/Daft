@@ -25,12 +25,12 @@ use crate::{config, s3::S3CredentialsProvider};
 ///     access_key (str, optional): AWS Secret Access Key, defaults to auto-detection from the current environment
 ///     credentials_provider (Callable[[], S3Credentials], optional): Custom credentials provider function, should return a `S3Credentials` object
 ///     buffer_time (int, optional): Amount of time in seconds before the actual credential expiration time where credentials given by `credentials_provider` are considered expired, defaults to 10s
-///     max_connections (int, optional): Maximum number of connections to S3 at any time, defaults to 64
+///     max_connections (int, optional): Maximum number of connections to S3 at any time per io thread, defaults to 8
 ///     session_token (str, optional): AWS Session Token, required only if `key_id` and `access_key` are temporary credentials
 ///     retry_initial_backoff_ms (int, optional): Initial backoff duration in milliseconds for an S3 retry, defaults to 1000ms
-///     connect_timeout_ms (int, optional): Timeout duration to wait to make a connection to S3 in milliseconds, defaults to 10 seconds
-///     read_timeout_ms (int, optional): Timeout duration to wait to read the first byte from S3 in milliseconds, defaults to 10 seconds
-///     num_tries (int, optional): Number of attempts to make a connection, defaults to 5
+///     connect_timeout_ms (int, optional): Timeout duration to wait to make a connection to S3 in milliseconds, defaults to 30 seconds
+///     read_timeout_ms (int, optional): Timeout duration to wait to read the first byte from S3 in milliseconds, defaults to 30 seconds
+///     num_tries (int, optional): Number of attempts to make a connection, defaults to 25
 ///     retry_mode (str, optional): Retry Mode when a request fails, current supported values are `standard` and `adaptive`, defaults to `adaptive`
 ///     anonymous (bool, optional): Whether or not to use "anonymous mode", which will access S3 without any credentials
 ///     use_ssl (bool, optional): Whether or not to use SSL, which require accessing S3 over HTTPS rather than HTTP, defaults to True
@@ -107,6 +107,11 @@ pub struct AzureConfig {
 ///     credentials (str, optional): Path to credentials file or JSON string with credentials
 ///     token (str, optional): OAuth2 token to use for authentication. You likely want to use `credentials` instead, since it can be used to refresh the token. This value is used when vended by a data catalog.
 ///     anonymous (bool, optional): Whether or not to use "anonymous mode", which will access Google Storage without any credentials. Defaults to false
+///     max_connections (int, optional): Maximum number of connections to GCS at any time per io thread, defaults to 8
+///     retry_initial_backoff_ms (int, optional): Initial backoff duration in milliseconds for an GCS retry, defaults to 1000ms
+///     connect_timeout_ms (int, optional): Timeout duration to wait to make a connection to GCS in milliseconds, defaults to 30 seconds
+///     read_timeout_ms (int, optional): Timeout duration to wait to read the first byte from GCS in milliseconds, defaults to 30 seconds
+///     num_tries (int, optional): Number of attempts to make a connection, defaults to 5
 ///
 /// Example:
 ///     >>> io_config = IOConfig(gcs=GCSConfig(anonymous=True))
@@ -848,6 +853,11 @@ impl GCSConfig {
         credentials: Option<String>,
         token: Option<String>,
         anonymous: Option<bool>,
+        max_connections: Option<u32>,
+        retry_initial_backoff_ms: Option<u64>,
+        connect_timeout_ms: Option<u64>,
+        read_timeout_ms: Option<u64>,
+        num_tries: Option<u32>,
     ) -> Self {
         let def = crate::GCSConfig::default();
         Self {
@@ -858,10 +868,17 @@ impl GCSConfig {
                     .or(def.credentials),
                 token: token.or(def.token),
                 anonymous: anonymous.unwrap_or(def.anonymous),
+                max_connections_per_io_thread: max_connections
+                    .unwrap_or(def.max_connections_per_io_thread),
+                retry_initial_backoff_ms: retry_initial_backoff_ms
+                    .unwrap_or(def.retry_initial_backoff_ms),
+                connect_timeout_ms: connect_timeout_ms.unwrap_or(def.connect_timeout_ms),
+                read_timeout_ms: read_timeout_ms.unwrap_or(def.read_timeout_ms),
+                num_tries: num_tries.unwrap_or(def.num_tries),
             },
         }
     }
-
+    #[allow(clippy::too_many_arguments)]
     #[must_use]
     pub fn replace(
         &self,
@@ -869,6 +886,11 @@ impl GCSConfig {
         credentials: Option<String>,
         token: Option<String>,
         anonymous: Option<bool>,
+        max_connections: Option<u32>,
+        retry_initial_backoff_ms: Option<u64>,
+        connect_timeout_ms: Option<u64>,
+        read_timeout_ms: Option<u64>,
+        num_tries: Option<u32>,
     ) -> Self {
         Self {
             config: crate::GCSConfig {
@@ -878,6 +900,13 @@ impl GCSConfig {
                     .or_else(|| self.config.credentials.clone()),
                 token: token.or_else(|| self.config.token.clone()),
                 anonymous: anonymous.unwrap_or(self.config.anonymous),
+                max_connections_per_io_thread: max_connections
+                    .unwrap_or(self.config.max_connections_per_io_thread),
+                retry_initial_backoff_ms: retry_initial_backoff_ms
+                    .unwrap_or(self.config.retry_initial_backoff_ms),
+                connect_timeout_ms: connect_timeout_ms.unwrap_or(self.config.connect_timeout_ms),
+                read_timeout_ms: read_timeout_ms.unwrap_or(self.config.read_timeout_ms),
+                num_tries: num_tries.unwrap_or(self.config.num_tries),
             },
         }
     }
@@ -912,6 +941,31 @@ impl GCSConfig {
     #[getter]
     pub fn anonymous(&self) -> PyResult<bool> {
         Ok(self.config.anonymous)
+    }
+
+    #[getter]
+    pub fn max_connections(&self) -> PyResult<u32> {
+        Ok(self.config.max_connections_per_io_thread)
+    }
+
+    #[getter]
+    pub fn retry_initial_backoff_ms(&self) -> PyResult<u64> {
+        Ok(self.config.retry_initial_backoff_ms)
+    }
+
+    #[getter]
+    pub fn connect_timeout_ms(&self) -> PyResult<u64> {
+        Ok(self.config.connect_timeout_ms)
+    }
+
+    #[getter]
+    pub fn read_timeout_ms(&self) -> PyResult<u64> {
+        Ok(self.config.read_timeout_ms)
+    }
+
+    #[getter]
+    pub fn num_tries(&self) -> PyResult<u32> {
+        Ok(self.config.num_tries)
     }
 }
 

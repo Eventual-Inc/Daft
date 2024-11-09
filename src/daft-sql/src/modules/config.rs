@@ -372,14 +372,27 @@ pub(crate) fn expr_to_iocfg(expr: &ExprRef) -> SQLPlannerResult<IOConfig> {
             let credentials = get_value!("credentials", Utf8)?;
             let token = get_value!("token", Utf8)?;
             let anonymous = get_value!("anonymous", Boolean)?;
-            let default = GCSConfig::default();
+            let max_connections_per_io_thread =
+                get_value!("max_connections_per_io_thread", UInt32)?;
+            let retry_initial_backoff_ms = get_value!("retry_initial_backoff_ms", UInt64)?;
+            let connect_timeout_ms = get_value!("connect_timeout_ms", UInt64)?;
+            let read_timeout_ms = get_value!("read_timeout_ms", UInt64)?;
+            let num_tries = get_value!("num_tries", UInt32)?;
 
+            let default = GCSConfig::default();
             Ok(IOConfig {
                 gcs: GCSConfig {
                     project_id,
                     credentials: credentials.map(|s| s.into()),
                     token,
                     anonymous: anonymous.unwrap_or(default.anonymous),
+                    max_connections_per_io_thread: max_connections_per_io_thread
+                        .unwrap_or(default.max_connections_per_io_thread),
+                    retry_initial_backoff_ms: retry_initial_backoff_ms
+                        .unwrap_or(default.retry_initial_backoff_ms),
+                    connect_timeout_ms: connect_timeout_ms.unwrap_or(default.connect_timeout_ms),
+                    read_timeout_ms: read_timeout_ms.unwrap_or(default.read_timeout_ms),
+                    num_tries: num_tries.unwrap_or(default.num_tries),
                 },
                 ..Default::default()
             })
