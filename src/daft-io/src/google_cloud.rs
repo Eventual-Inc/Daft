@@ -2,6 +2,7 @@ use std::{ops::Range, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use common_io_config::GCSConfig;
+use common_runtime::get_io_pool_num_threads;
 use futures::{stream::BoxStream, TryStreamExt};
 use google_cloud_storage::{
     client::{google_cloud_auth::credentials::CredentialsFile, Client, ClientConfig},
@@ -12,6 +13,7 @@ use google_cloud_storage::{
 };
 use google_cloud_token::{TokenSource, TokenSourceProvider};
 use snafu::{IntoError, ResultExt, Snafu};
+use tokio::sync::Semaphore;
 
 use crate::{
     object_io::{FileMetadata, FileType, LSResult, ObjectSource},
@@ -48,13 +50,15 @@ enum Error {
     NotAFile { path: String },
     #[snafu(display("Not a File: \"{}\"", path))]
     NotFound { path: String },
+    #[snafu(display("Unable to grab semaphore. {}", source))]
+    UnableToGrabSemaphore { source: tokio::sync::AcquireError },
 }
 
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
         use Error::{
-            InvalidUrl, NotAFile, NotFound, UnableToListObjects, UnableToLoadCredentials,
-            UnableToOpenFile, UnableToReadBytes,
+            InvalidUrl, NotAFile, NotFound, UnableToGrabSemaphore, UnableToListObjects,
+            UnableToLoadCredentials, UnableToOpenFile, UnableToReadBytes,
         };
         match error {
             UnableToReadBytes { path, source }
@@ -111,11 +115,18 @@ impl From<Error> for super::Error {
                 source: source.into(),
             },
             NotAFile { path } => Self::NotAFile { path },
+            UnableToGrabSemaphore { .. } => Self::Generic {
+                store: crate::SourceType::GCS,
+                source: error.into(),
+            },
         }
     }
 }
 
-struct GCSClientWrapper(Client);
+struct GCSClientWrapper {
+    client: Client,
+    connection_pool_sema: Arc<Semaphore>,
+}
 
 fn parse_uri(uri: &url::Url) -> super::Result<(&str, &str)> {
     let bucket = match uri.host_str() {
@@ -142,8 +153,13 @@ impl GCSClientWrapper {
         if key.is_empty() {
             return Err(Error::NotAFile { path: uri.into() }.into());
         }
-
-        let client = &self.0;
+        let permit = self
+            .connection_pool_sema
+            .clone()
+            .acquire_owned()
+            .await
+            .context(UnableToGrabSemaphoreSnafu)?;
+        let client = &self.client;
         let req = GetObjectRequest {
             bucket: bucket.into(),
             object: key.into(),
@@ -178,7 +194,7 @@ impl GCSClientWrapper {
         Ok(GetResult::Stream(
             io_stats_on_bytestream(response, io_stats),
             size,
-            None,
+            Some(permit),
             None,
         ))
     }
@@ -189,7 +205,14 @@ impl GCSClientWrapper {
         if key.is_empty() {
             return Err(Error::NotAFile { path: uri.into() }.into());
         }
-        let client = &self.0;
+
+        let _permit = self
+            .connection_pool_sema
+            .acquire()
+            .await
+            .context(UnableToGrabSemaphoreSnafu)?;
+
+        let client = &self.client;
         let req = GetObjectRequest {
             bucket: bucket.into(),
             object: key.into(),
@@ -268,7 +291,14 @@ impl GCSClientWrapper {
     ) -> super::Result<LSResult> {
         let uri = url::Url::parse(path).with_context(|_| InvalidUrlSnafu { path })?;
         let (bucket, key) = parse_uri(&uri)?;
-        let client = &self.0;
+
+        let _permit = self
+            .connection_pool_sema
+            .acquire()
+            .await
+            .context(UnableToGrabSemaphoreSnafu)?;
+
+        let client = &self.client;
 
         if posix {
             // Attempt to forcefully ls the key as a directory (by ensuring a "/" suffix)
@@ -415,6 +445,8 @@ impl GCSSource {
             let base_client = reqwest_middleware::reqwest::ClientBuilder::default()
                 .connect_timeout(Duration::from_millis(config.connect_timeout_ms))
                 .read_timeout(Duration::from_millis(config.read_timeout_ms))
+                .pool_idle_timeout(Duration::from_secs(60))
+                .pool_max_idle_per_host(70)
                 .build()
                 .unwrap();
 
@@ -423,7 +455,7 @@ impl GCSSource {
                 // override it only if you need a custom one due to non standard behavior
                 .with(
                     RetryTransientMiddleware::new_with_policy(retry_policy)
-                        .with_retry_log_level(tracing::Level::WARN), // TODO: update before merge
+                        .with_retry_log_level(tracing::Level::DEBUG),
                 )
                 .build();
             client_config.http = Some(mid_client);
@@ -431,8 +463,16 @@ impl GCSSource {
 
         // client_config.http = Some()
         let client = Client::new(client_config);
+
+        let connection_pool_sema = Arc::new(tokio::sync::Semaphore::new(
+            (config.max_connections_per_io_thread as usize)
+                * get_io_pool_num_threads().expect("Should be running in tokio pool"),
+        ));
         Ok(Self {
-            client: GCSClientWrapper(client),
+            client: GCSClientWrapper {
+                client,
+                connection_pool_sema,
+            },
         }
         .into())
     }
