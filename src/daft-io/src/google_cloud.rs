@@ -79,10 +79,24 @@ impl From<Error> for super::Error {
                         path,
                         source: err.into(),
                     },
-                    _ => Self::UnableToOpenFile {
-                        path,
-                        source: err.into(),
-                    },
+                    _ => {
+                        if err.is_connect() {
+                            Self::ConnectTimeout {
+                                path,
+                                source: err.into(),
+                            }
+                        } else if err.is_timeout() {
+                            Self::ReadTimeout {
+                                path,
+                                source: err.into(),
+                            }
+                        } else {
+                            Self::UnableToOpenFile {
+                                path,
+                                source: err.into(),
+                            }
+                        }
+                    }
                 },
                 GError::Response(err) => match err.code {
                     404 | 410 => Self::NotFound {
