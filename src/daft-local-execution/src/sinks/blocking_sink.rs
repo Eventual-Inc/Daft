@@ -2,17 +2,17 @@ use std::sync::Arc;
 
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
-use common_runtime::get_compute_runtime;
+use common_runtime::{get_compute_runtime, RuntimeRef};
 use daft_micropartition::MicroPartition;
 use snafu::ResultExt;
 use tracing::{info_span, instrument};
 
 use crate::{
     channel::{create_channel, Receiver},
-    dispatcher::{Dispatcher, RoundRobinBufferedDispatcher},
-    pipeline::{PipelineNode, PipelineResultType},
+    dispatcher::{Dispatcher, RoundRobinDispatcher},
+    pipeline::PipelineNode,
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
-    ExecutionRuntimeHandle, JoinSnafu, TaskSet,
+    ExecutionRuntimeHandle, JoinSnafu, OperatorOutput, TaskSet,
 };
 pub trait BlockingSinkState: Send + Sync {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
@@ -29,15 +29,17 @@ pub trait BlockingSink: Send + Sync {
         &self,
         input: &Arc<MicroPartition>,
         state: Box<dyn BlockingSinkState>,
-    ) -> DaftResult<BlockingSinkStatus>;
+        runtime: &RuntimeRef,
+    ) -> OperatorOutput<DaftResult<BlockingSinkStatus>>;
     fn finalize(
         &self,
         states: Vec<Box<dyn BlockingSinkState>>,
-    ) -> DaftResult<Option<PipelineResultType>>;
+        runtime: &RuntimeRef,
+    ) -> OperatorOutput<DaftResult<Option<Arc<MicroPartition>>>>;
     fn name(&self) -> &'static str;
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>>;
     fn make_dispatcher(&self, runtime_handle: &ExecutionRuntimeHandle) -> Arc<dyn Dispatcher> {
-        Arc::new(RoundRobinBufferedDispatcher::new(Some(
+        Arc::new(RoundRobinDispatcher::new(Some(
             runtime_handle.default_morsel_size(),
         )))
     }
@@ -68,19 +70,17 @@ impl BlockingSinkNode {
     #[instrument(level = "info", skip_all, name = "BlockingSink::run_worker")]
     async fn run_worker(
         op: Arc<dyn BlockingSink>,
-        mut input_receiver: Receiver<(usize, PipelineResultType)>,
+        input_receiver: Receiver<Arc<MicroPartition>>,
         rt_context: Arc<RuntimeStatsContext>,
     ) -> DaftResult<Box<dyn BlockingSinkState>> {
         let span = info_span!("BlockingSink::Sink");
         let compute_runtime = get_compute_runtime();
         let mut state = op.make_state()?;
-        while let Some((_, morsel)) = input_receiver.recv().await {
-            let op = op.clone();
-            let morsel = morsel.clone();
-            let span = span.clone();
-            let rt_context = rt_context.clone();
-            let fut = async move { rt_context.in_span(&span, || op.sink(morsel.as_data(), state)) };
-            let result = compute_runtime.spawn(fut).await??;
+        while let Some(morsel) = input_receiver.recv().await {
+            let result = rt_context
+                .in_span(&span, || op.sink(&morsel, state, &compute_runtime))
+                .unwrap()
+                .await??;
             match result {
                 BlockingSinkStatus::NeedMoreInput(new_state) => {
                     state = new_state;
@@ -96,7 +96,7 @@ impl BlockingSinkNode {
 
     fn spawn_workers(
         op: Arc<dyn BlockingSink>,
-        input_receivers: Vec<Receiver<(usize, PipelineResultType)>>,
+        input_receivers: Vec<Receiver<Arc<MicroPartition>>>,
         task_set: &mut TaskSet<DaftResult<Box<dyn BlockingSinkState>>>,
         stats: Arc<RuntimeStatsContext>,
     ) {
@@ -135,12 +135,11 @@ impl PipelineNode for BlockingSinkNode {
     }
 
     fn start(
-        &mut self,
+        &self,
         _maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> crate::Result<Receiver<PipelineResultType>> {
-        let child = self.child.as_mut();
-        let child_results_receiver = child.start(false, runtime_handle)?;
+    ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
+        let child_results_receiver = self.child.start(false, runtime_handle)?;
         let counting_receiver =
             CountingReceiver::new(child_results_receiver, self.runtime_stats.clone());
 
@@ -150,14 +149,11 @@ impl PipelineNode for BlockingSinkNode {
         let op = self.op.clone();
         let runtime_stats = self.runtime_stats.clone();
         let num_workers = op.max_concurrency();
-        let (input_senders, input_receivers) = (0..num_workers).map(|_| create_channel(1)).unzip();
         let dispatcher = op.make_dispatcher(runtime_handle);
-        runtime_handle.spawn(
-            async move {
-                dispatcher
-                    .dispatch(vec![counting_receiver], input_senders)
-                    .await
-            },
+        let input_receivers = dispatcher.dispatch(
+            vec![counting_receiver],
+            num_workers,
+            runtime_handle,
             self.name(),
         );
 
@@ -178,12 +174,11 @@ impl PipelineNode for BlockingSinkNode {
                 }
 
                 let compute_runtime = get_compute_runtime();
-                let finalized_result = compute_runtime
-                    .spawn(async move {
-                        runtime_stats.in_span(&info_span!("BlockingSinkNode::finalize"), || {
-                            op.finalize(finished_states)
-                        })
+                let finalized_result = runtime_stats
+                    .in_span(&info_span!("BlockingSinkNode::finalize"), || {
+                        op.finalize(finished_states, &compute_runtime)
                     })
+                    .unwrap()
                     .await??;
                 if let Some(res) = finalized_result {
                     let _ = counting_sender.send(res).await;

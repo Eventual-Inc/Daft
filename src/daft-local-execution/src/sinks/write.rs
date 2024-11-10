@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use common_runtime::RuntimeRef;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
@@ -10,9 +11,8 @@ use tracing::instrument;
 
 use super::blocking_sink::{BlockingSink, BlockingSinkState, BlockingSinkStatus};
 use crate::{
-    dispatcher::{Dispatcher, PartitionedDispatcher, RoundRobinBufferedDispatcher},
-    pipeline::PipelineResultType,
-    NUM_CPUS,
+    dispatcher::{Dispatcher, PartitionedDispatcher, RoundRobinDispatcher},
+    OperatorOutput, NUM_CPUS,
 };
 
 pub enum WriteFormat {
@@ -73,35 +73,45 @@ impl BlockingSink for WriteSink {
         &self,
         input: &Arc<MicroPartition>,
         mut state: Box<dyn BlockingSinkState>,
-    ) -> DaftResult<BlockingSinkStatus> {
-        state
-            .as_any_mut()
-            .downcast_mut::<WriteState>()
-            .expect("WriteSink should have WriteState")
-            .writer
-            .write(input)?;
-        Ok(BlockingSinkStatus::NeedMoreInput(state))
+        runtime_ref: &RuntimeRef,
+    ) -> OperatorOutput<DaftResult<BlockingSinkStatus>> {
+        let input = input.clone();
+        let fut = runtime_ref.spawn(async move {
+            state
+                .as_any_mut()
+                .downcast_mut::<WriteState>()
+                .expect("WriteSink should have WriteState")
+                .writer
+                .write(&input)?;
+            Ok(BlockingSinkStatus::NeedMoreInput(state))
+        });
+        OperatorOutput::Future(fut)
     }
 
     #[instrument(skip_all, name = "WriteSink::finalize")]
     fn finalize(
         &self,
         states: Vec<Box<dyn BlockingSinkState>>,
-    ) -> DaftResult<Option<PipelineResultType>> {
-        let mut results = vec![];
-        for mut state in states {
-            let state = state
-                .as_any_mut()
-                .downcast_mut::<WriteState>()
-                .expect("State type mismatch");
-            results.extend(state.writer.close()?);
-        }
-        let mp = Arc::new(MicroPartition::new_loaded(
-            self.file_schema.clone(),
-            results.into(),
-            None,
-        ));
-        Ok(Some(mp.into()))
+        runtime: &RuntimeRef,
+    ) -> OperatorOutput<DaftResult<Option<Arc<MicroPartition>>>> {
+        let file_schema = self.file_schema.clone();
+        let fut = runtime.spawn(async move {
+            let mut results = vec![];
+            for mut state in states {
+                let state = state
+                    .as_any_mut()
+                    .downcast_mut::<WriteState>()
+                    .expect("State type mismatch");
+                results.extend(state.writer.close()?);
+            }
+            let mp = Arc::new(MicroPartition::new_loaded(
+                file_schema,
+                results.into(),
+                None,
+            ));
+            Ok(Some(mp.into()))
+        });
+        OperatorOutput::Future(fut)
     }
 
     fn name(&self) -> &'static str {
@@ -129,7 +139,7 @@ impl BlockingSink for WriteSink {
         if let Some(partition_by) = &self.partition_by {
             Arc::new(PartitionedDispatcher::new(partition_by.clone()))
         } else {
-            Arc::new(RoundRobinBufferedDispatcher::new(Some(
+            Arc::new(RoundRobinDispatcher::new(Some(
                 runtime_handle.default_morsel_size(),
             )))
         }

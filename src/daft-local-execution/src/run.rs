@@ -118,7 +118,7 @@ pub fn run_local(
     results_buffer_size: Option<usize>,
 ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<Arc<MicroPartition>>> + Send>> {
     refresh_chrome_trace();
-    let mut pipeline = physical_plan_to_pipeline(physical_plan, &psets, &cfg)?;
+    let pipeline = physical_plan_to_pipeline(physical_plan, &psets, &cfg)?;
     let (tx, rx) = create_channel(results_buffer_size.unwrap_or(1));
     let handle = std::thread::spawn(move || {
         let runtime = tokio::runtime::Builder::new_current_thread()
@@ -127,10 +127,10 @@ pub fn run_local(
             .expect("Failed to create tokio runtime");
         let execution_task = async {
             let mut runtime_handle = ExecutionRuntimeHandle::new(cfg.default_morsel_size);
-            let mut receiver = pipeline.start(true, &mut runtime_handle)?;
+            let receiver = pipeline.start(true, &mut runtime_handle)?;
 
             while let Some(val) = receiver.recv().await {
-                if tx.send(val.as_data().clone()).await.is_err() {
+                if tx.send(val).await.is_err() {
                     break;
                 }
             }

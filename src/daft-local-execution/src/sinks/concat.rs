@@ -1,22 +1,16 @@
 use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
+use common_runtime::RuntimeRef;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
-use super::streaming_sink::{
-    DynStreamingSinkState, StreamingSink, StreamingSinkOutput, StreamingSinkState,
-};
+use super::streaming_sink::{StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput, StreamingSinkState};
 use crate::{
-    dispatcher::{Dispatcher, RoundRobinBufferedDispatcher},
-    pipeline::PipelineResultType,
+    dispatcher::{Dispatcher, RoundRobinDispatcher, UnorderedDispatcher}, ExecutionRuntimeHandle, OperatorOutput, NUM_CPUS
 };
 
-struct ConcatSinkState {
-    // The index of the last morsel of data that was received, which should be strictly non-decreasing.
-    pub curr_idx: usize,
-}
-impl DynStreamingSinkState for ConcatSinkState {
+struct ConcatSinkState {}
+impl StreamingSinkState for ConcatSinkState {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
@@ -25,27 +19,20 @@ impl DynStreamingSinkState for ConcatSinkState {
 pub struct ConcatSink {}
 
 impl StreamingSink for ConcatSink {
-    /// Execute for the ConcatSink operator does not do any computation and simply returns the input data.
-    /// It only expects that the indices of the input data are strictly non-decreasing.
-    /// TODO(Colin): If maintain_order is false, technically we could accept any index. Make this optimization later.
+    /// By default, if the streaming_sink is called with maintain_order = true, input is distributed round-robin to the workers,
+    /// and the output is received in the same order. Therefore, the 'execute' method does not need to do anything.
+    /// If maintain_order = false, the input is distributed randomly to the workers, and the output is received in random order.
     #[instrument(skip_all, name = "ConcatSink::sink")]
     fn execute(
         &self,
-        index: usize,
-        input: &PipelineResultType,
-        state_handle: &StreamingSinkState,
-    ) -> DaftResult<StreamingSinkOutput> {
-        state_handle.with_state_mut::<ConcatSinkState, _, _>(|state| {
-            // If the index is the same as the current index or one more than the current index, then we can accept the morsel.
-            if state.curr_idx == index || state.curr_idx + 1 == index {
-                state.curr_idx = index;
-                Ok(StreamingSinkOutput::NeedMoreInput(Some(
-                    input.as_data().clone(),
-                )))
-            } else {
-                Err(DaftError::ComputeError(format!("Concat sink received out-of-order data. Expected index to be {} or {}, but got {}.", state.curr_idx, state.curr_idx + 1, index)))
-            }
-        })
+        input: &Arc<MicroPartition>,
+        state: Box<dyn StreamingSinkState>,
+        _runtime_ref: &RuntimeRef,
+    ) -> OperatorOutput<StreamingSinkExecuteResult> {
+        OperatorOutput::Immediate(Ok((
+            state,
+            StreamingSinkOutput::NeedMoreInput(Some(input.clone())),
+        )))
     }
 
     fn name(&self) -> &'static str {
@@ -54,24 +41,33 @@ impl StreamingSink for ConcatSink {
 
     fn finalize(
         &self,
-        _states: Vec<Box<dyn DynStreamingSinkState>>,
-    ) -> DaftResult<Option<Arc<MicroPartition>>> {
-        Ok(None)
+        _states: Vec<Box<dyn StreamingSinkState>>,
+        _runtime_ref: &RuntimeRef,
+    ) -> OperatorOutput<StreamingSinkFinalizeResult> {
+        OperatorOutput::Immediate(Ok(None))
     }
 
-    fn make_state(&self) -> Box<dyn DynStreamingSinkState> {
-        Box::new(ConcatSinkState { curr_idx: 0 })
+    fn make_state(&self) -> Box<dyn StreamingSinkState> {
+        Box::new(ConcatSinkState {})
     }
 
-    /// Since the ConcatSink does not do any computation, it does not need to spawn multiple workers.
     fn max_concurrency(&self) -> usize {
-        1
+        *NUM_CPUS
     }
 
     fn make_dispatcher(
         &self,
-        _runtime_handle: &crate::ExecutionRuntimeHandle,
+        runtime_handle: &ExecutionRuntimeHandle,
+        maintain_order: bool,
     ) -> Arc<dyn Dispatcher> {
-        Arc::new(RoundRobinBufferedDispatcher::new(None))
+        if maintain_order {
+            Arc::new(RoundRobinDispatcher::new(Some(
+                runtime_handle.default_morsel_size(),
+            )))
+        } else {
+            Arc::new(UnorderedDispatcher::new(Some(
+                runtime_handle.default_morsel_size(),
+            )))
+        }
     }
 }

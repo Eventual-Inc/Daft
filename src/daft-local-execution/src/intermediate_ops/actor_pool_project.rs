@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use common_runtime::RuntimeRef;
 #[cfg(feature = "python")]
 use daft_dsl::python::PyExpr;
 use daft_dsl::{functions::python::extract_stateful_udf_exprs, ExprRef};
@@ -12,10 +13,12 @@ use pyo3::prelude::*;
 use tracing::instrument;
 
 use super::intermediate_op::{
-    DynIntermediateOpState, IntermediateOperator, IntermediateOperatorResult,
-    IntermediateOperatorState,
+    IntermediateOpState, IntermediateOperator, IntermediateOperatorResult,
 };
-use crate::{dispatcher::RoundRobinBufferedDispatcher, pipeline::PipelineResultType};
+use crate::{
+    dispatcher::{RoundRobinDispatcher, UnorderedDispatcher},
+    OperatorOutput,
+};
 
 struct ActorHandle {
     #[cfg(feature = "python")]
@@ -108,7 +111,7 @@ struct ActorPoolProjectState {
     pub actor_handle: ActorHandle,
 }
 
-impl DynIntermediateOpState for ActorPoolProjectState {
+impl IntermediateOpState for ActorPoolProjectState {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
@@ -145,23 +148,31 @@ impl IntermediateOperator for ActorPoolProjectOperator {
     #[instrument(skip_all, name = "ActorPoolProjectOperator::execute")]
     fn execute(
         &self,
-        _idx: usize,
-        input: &PipelineResultType,
-        state: &IntermediateOperatorState,
-    ) -> DaftResult<IntermediateOperatorResult> {
-        state.with_state_mut::<ActorPoolProjectState, _, _>(|state| {
-            state
+        input: &Arc<MicroPartition>,
+        mut state: Box<dyn IntermediateOpState>,
+        runtime: &RuntimeRef,
+    ) -> OperatorOutput<DaftResult<(Box<dyn IntermediateOpState>, IntermediateOperatorResult)>>
+    {
+        let input = input.clone();
+        let fut = runtime.spawn(async move {
+            let actor_pool_project_state = state
+                .as_any_mut()
+                .downcast_mut::<ActorPoolProjectState>()
+                .expect("ActorPoolProjectState");
+            let res = actor_pool_project_state
                 .actor_handle
-                .eval_input(input.as_data().clone())
-                .map(|result| IntermediateOperatorResult::NeedMoreInput(Some(result)))
-        })
+                .eval_input(input)
+                .map(|result| IntermediateOperatorResult::NeedMoreInput(Some(result)))?;
+            Ok((state, res))
+        });
+        fut.into()
     }
 
     fn name(&self) -> &'static str {
         "ActorPoolProject"
     }
 
-    fn make_state(&self) -> DaftResult<Box<dyn DynIntermediateOpState>> {
+    fn make_state(&self) -> DaftResult<Box<dyn IntermediateOpState>> {
         // TODO: Pass relevant CUDA_VISIBLE_DEVICES to the actor
         Ok(Box::new(ActorPoolProjectState {
             actor_handle: ActorHandle::try_new(&self.projection)?,
@@ -175,10 +186,18 @@ impl IntermediateOperator for ActorPoolProjectOperator {
     fn make_dispatcher(
         &self,
         runtime_handle: &crate::ExecutionRuntimeHandle,
+        maintain_order: bool,
     ) -> Arc<dyn crate::dispatcher::Dispatcher> {
-        Arc::new(RoundRobinBufferedDispatcher::new(Some(
-            self.batch_size
-                .unwrap_or_else(|| runtime_handle.default_morsel_size()),
-        )))
+        if maintain_order {
+            Arc::new(RoundRobinDispatcher::new(Some(
+                self.batch_size
+                    .unwrap_or_else(|| runtime_handle.default_morsel_size()),
+            )))
+        } else {
+            Arc::new(UnorderedDispatcher::new(Some(
+                self.batch_size
+                    .unwrap_or_else(|| runtime_handle.default_morsel_size()),
+            )))
+        }
     }
 }

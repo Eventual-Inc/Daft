@@ -1,8 +1,8 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
-use common_runtime::get_compute_runtime;
+use common_runtime::{get_compute_runtime, RuntimeRef};
 use daft_micropartition::MicroPartition;
 use snafu::ResultExt;
 use tracing::{info_span, instrument};
@@ -13,37 +13,13 @@ use crate::{
         Sender,
     },
     dispatcher::Dispatcher,
-    pipeline::{PipelineNode, PipelineResultType},
+    pipeline::PipelineNode,
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
-    ExecutionRuntimeHandle, JoinSnafu, TaskSet, NUM_CPUS,
+    ExecutionRuntimeHandle, JoinSnafu, OperatorOutput, TaskSet, NUM_CPUS,
 };
 
-pub trait DynStreamingSinkState: Send + Sync {
+pub trait StreamingSinkState: Send + Sync {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
-}
-
-pub(crate) struct StreamingSinkState {
-    inner: Mutex<Box<dyn DynStreamingSinkState>>,
-}
-
-impl StreamingSinkState {
-    fn new(inner: Box<dyn DynStreamingSinkState>) -> Arc<Self> {
-        Arc::new(Self {
-            inner: Mutex::new(inner),
-        })
-    }
-
-    pub(crate) fn with_state_mut<T: DynStreamingSinkState + 'static, F, R>(&self, f: F) -> R
-    where
-        F: FnOnce(&mut T) -> R,
-    {
-        let mut guard = self.inner.lock().unwrap();
-        let state = guard
-            .as_any_mut()
-            .downcast_mut::<T>()
-            .expect("State type mismatch");
-        f(state)
-    }
 }
 
 pub enum StreamingSinkOutput {
@@ -53,28 +29,33 @@ pub enum StreamingSinkOutput {
     Finished(Option<Arc<MicroPartition>>),
 }
 
+pub(crate) type StreamingSinkExecuteResult =
+    DaftResult<(Box<dyn StreamingSinkState>, StreamingSinkOutput)>;
+pub(crate) type StreamingSinkFinalizeResult = DaftResult<Option<Arc<MicroPartition>>>;
+
 pub trait StreamingSink: Send + Sync {
     /// Execute the StreamingSink operator on the morsel of input data,
     /// received from the child with the given index,
     /// with the given state.
     fn execute(
         &self,
-        index: usize,
-        input: &PipelineResultType,
-        state_handle: &StreamingSinkState,
-    ) -> DaftResult<StreamingSinkOutput>;
+        input: &Arc<MicroPartition>,
+        state: Box<dyn StreamingSinkState>,
+        runtime: &RuntimeRef,
+    ) -> OperatorOutput<StreamingSinkExecuteResult>;
 
     /// Finalize the StreamingSink operator, with the given states from each worker.
     fn finalize(
         &self,
-        states: Vec<Box<dyn DynStreamingSinkState>>,
-    ) -> DaftResult<Option<Arc<MicroPartition>>>;
+        states: Vec<Box<dyn StreamingSinkState>>,
+        runtime: &RuntimeRef,
+    ) -> OperatorOutput<StreamingSinkFinalizeResult>;
 
     /// The name of the StreamingSink operator.
     fn name(&self) -> &'static str;
 
     /// Create a new worker-local state for this StreamingSink.
-    fn make_state(&self) -> Box<dyn DynStreamingSinkState>;
+    fn make_state(&self) -> Box<dyn StreamingSinkState>;
 
     /// The maximum number of concurrent workers that can be spawned for this sink.
     /// Each worker will has its own StreamingSinkState.
@@ -82,7 +63,11 @@ pub trait StreamingSink: Send + Sync {
         *NUM_CPUS
     }
 
-    fn make_dispatcher(&self, runtime_handle: &ExecutionRuntimeHandle) -> Arc<dyn Dispatcher>;
+    fn make_dispatcher(
+        &self,
+        runtime_handle: &ExecutionRuntimeHandle,
+        maintain_order: bool,
+    ) -> Arc<dyn Dispatcher>;
 }
 
 pub struct StreamingSinkNode {
@@ -110,68 +95,50 @@ impl StreamingSinkNode {
     #[instrument(level = "info", skip_all, name = "StreamingSink::run_worker")]
     async fn run_worker(
         op: Arc<dyn StreamingSink>,
-        mut input_receiver: Receiver<(usize, PipelineResultType)>,
+        input_receiver: Receiver<Arc<MicroPartition>>,
         output_sender: Sender<Arc<MicroPartition>>,
         rt_context: Arc<RuntimeStatsContext>,
-    ) -> DaftResult<Box<dyn DynStreamingSinkState>> {
+    ) -> DaftResult<Box<dyn StreamingSinkState>> {
         let span = info_span!("StreamingSink::Execute");
         let compute_runtime = get_compute_runtime();
-        let state_wrapper = StreamingSinkState::new(op.make_state());
-        let mut finished = false;
-        while let Some((idx, morsel)) = input_receiver.recv().await {
-            if finished {
-                break;
-            }
+        let mut state = op.make_state();
+        while let Some(morsel) = input_receiver.recv().await {
             loop {
-                let op = op.clone();
-                let morsel = morsel.clone();
-                let span = span.clone();
-                let rt_context = rt_context.clone();
-                let state_wrapper = state_wrapper.clone();
-                let fut = async move {
-                    rt_context.in_span(&span, || op.execute(idx, &morsel, state_wrapper.as_ref()))
-                };
-                let result = compute_runtime.spawn(fut).await??;
-                match result {
+                let output =
+                    rt_context.in_span(&span, || op.execute(&morsel, state, &compute_runtime));
+                let result = output.unwrap().await??;
+                state = result.0;
+                match result.1 {
                     StreamingSinkOutput::NeedMoreInput(mp) => {
                         if let Some(mp) = mp {
                             if output_sender.send(mp).await.is_err() {
-                                finished = true;
-                                break;
+                                return Ok(state);
                             }
                         }
                         break;
                     }
                     StreamingSinkOutput::HasMoreOutput(mp) => {
                         if output_sender.send(mp).await.is_err() {
-                            finished = true;
-                            break;
+                            return Ok(state);
                         }
                     }
                     StreamingSinkOutput::Finished(mp) => {
                         if let Some(mp) = mp {
                             let _ = output_sender.send(mp).await;
                         }
-                        finished = true;
-                        break;
+                        return Ok(state);
                     }
                 }
             }
         }
 
-        // Take the state out of the Arc and Mutex because we need to return it.
-        // It should be guaranteed that the ONLY holder of state at this point is this function.
-        Ok(Arc::into_inner(state_wrapper)
-            .expect("Completed worker should have exclusive access to state wrapper")
-            .inner
-            .into_inner()
-            .expect("Completed worker should have exclusive access to inner state"))
+        Ok(state)
     }
 
     fn spawn_workers(
         op: Arc<dyn StreamingSink>,
-        input_receivers: Vec<Receiver<(usize, PipelineResultType)>>,
-        task_set: &mut TaskSet<DaftResult<Box<dyn DynStreamingSinkState>>>,
+        input_receivers: Vec<Receiver<Arc<MicroPartition>>>,
+        task_set: &mut TaskSet<DaftResult<Box<dyn StreamingSinkState>>>,
         stats: Arc<RuntimeStatsContext>,
         maintain_order: bool,
     ) -> OrderingAwareReceiver<Arc<MicroPartition>> {
@@ -223,12 +190,12 @@ impl PipelineNode for StreamingSinkNode {
     }
 
     fn start(
-        &mut self,
+        &self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> crate::Result<Receiver<PipelineResultType>> {
+    ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
         let mut child_result_receivers = Vec::with_capacity(self.children.len());
-        for child in &mut self.children {
+        for child in &self.children {
             let child_result_receiver = child.start(maintain_order, runtime_handle)?;
             child_result_receivers.push(CountingReceiver::new(
                 child_result_receiver,
@@ -242,14 +209,11 @@ impl PipelineNode for StreamingSinkNode {
         let op = self.op.clone();
         let runtime_stats = self.runtime_stats.clone();
         let num_workers = op.max_concurrency();
-        let (input_senders, input_receivers) = (0..num_workers).map(|_| create_channel(1)).unzip();
-        let dispatcher = op.make_dispatcher(runtime_handle);
-        runtime_handle.spawn(
-            async move {
-                dispatcher
-                    .dispatch(child_result_receivers, input_senders)
-                    .await
-            },
+        let dispatcher = op.make_dispatcher(runtime_handle, maintain_order);
+        let input_receivers = dispatcher.dispatch(
+            child_result_receivers,
+            num_workers,
+            runtime_handle,
             self.name(),
         );
         runtime_handle.spawn(
@@ -276,12 +240,11 @@ impl PipelineNode for StreamingSinkNode {
                 }
 
                 let compute_runtime = get_compute_runtime();
-                let finalized_result = compute_runtime
-                    .spawn(async move {
-                        runtime_stats.in_span(&info_span!("StreamingSinkNode::finalize"), || {
-                            op.finalize(finished_states)
-                        })
+                let finalized_result = runtime_stats
+                    .in_span(&info_span!("StreamingSinkNode::finalize"), || {
+                        op.finalize(finished_states, &compute_runtime)
                     })
+                    .unwrap()
                     .await??;
                 if let Some(res) = finalized_result {
                     let _ = counting_sender.send(res.into()).await;

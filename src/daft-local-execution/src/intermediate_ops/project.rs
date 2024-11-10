@@ -1,21 +1,25 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use common_runtime::RuntimeRef;
 use daft_dsl::ExprRef;
+use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
 use super::intermediate_op::{
-    IntermediateOperator, IntermediateOperatorResult, IntermediateOperatorState,
+    IntermediateOpState, IntermediateOperator, IntermediateOperatorResult,
 };
-use crate::pipeline::PipelineResultType;
+use crate::OperatorOutput;
 
 pub struct ProjectOperator {
-    projection: Vec<ExprRef>,
+    projection: Arc<Vec<ExprRef>>,
 }
 
 impl ProjectOperator {
     pub fn new(projection: Vec<ExprRef>) -> Self {
-        Self { projection }
+        Self {
+            projection: Arc::new(projection),
+        }
     }
 }
 
@@ -23,14 +27,22 @@ impl IntermediateOperator for ProjectOperator {
     #[instrument(skip_all, name = "ProjectOperator::execute")]
     fn execute(
         &self,
-        _idx: usize,
-        input: &PipelineResultType,
-        _state: &IntermediateOperatorState,
-    ) -> DaftResult<IntermediateOperatorResult> {
-        let out = input.as_data().eval_expression_list(&self.projection)?;
-        Ok(IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(
-            out,
-        ))))
+        input: &Arc<MicroPartition>,
+        state: Box<dyn IntermediateOpState>,
+        runtime: &RuntimeRef,
+    ) -> OperatorOutput<DaftResult<(Box<dyn IntermediateOpState>, IntermediateOperatorResult)>>
+    {
+        let input = input.clone();
+        let projection = self.projection.clone();
+        runtime
+            .spawn(async move {
+                let out = input.eval_expression_list(&projection)?;
+                Ok((
+                    state,
+                    IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(out))),
+                ))
+            })
+            .into()
     }
 
     fn name(&self) -> &'static str {

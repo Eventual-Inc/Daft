@@ -10,12 +10,39 @@ mod sinks;
 mod sources;
 
 use common_error::{DaftError, DaftResult};
+use common_runtime::RuntimeTask;
 use lazy_static::lazy_static;
 pub use run::NativeExecutor;
 use snafu::{futures::TryFutureExt, Snafu};
 
 lazy_static! {
     pub static ref NUM_CPUS: usize = std::thread::available_parallelism().unwrap().get();
+}
+
+pub(crate) enum OperatorOutput<T> {
+    Immediate(T),
+    Future(RuntimeTask<T>),
+}
+
+impl<T: Send + Sync + 'static> OperatorOutput<T> {
+    async fn unwrap(self) -> DaftResult<T> {
+        match self {
+            Self::Immediate(v) => Ok(v),
+            Self::Future(f) => f.await,
+        }
+    }
+}
+
+impl<T: Send + Sync + 'static> From<T> for OperatorOutput<T> {
+    fn from(v: T) -> Self {
+        Self::Immediate(v)
+    }
+}
+
+impl<T: Send + Sync + 'static> From<RuntimeTask<T>> for OperatorOutput<T> {
+    fn from(f: RuntimeTask<T>) -> Self {
+        Self::Future(f)
+    }
 }
 
 pub(crate) struct TaskSet<T> {

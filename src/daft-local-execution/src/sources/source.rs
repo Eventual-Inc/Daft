@@ -10,7 +10,7 @@ use futures::{stream::BoxStream, StreamExt};
 
 use crate::{
     channel::{create_channel, Receiver},
-    pipeline::{PipelineNode, PipelineResultType},
+    pipeline::PipelineNode,
     runtime_stats::{CountingSender, RuntimeStatsContext},
     ExecutionRuntimeHandle,
 };
@@ -72,10 +72,10 @@ impl PipelineNode for SourceNode {
         vec![]
     }
     fn start(
-        &mut self,
+        &self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> crate::Result<Receiver<PipelineResultType>> {
+    ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
         let source = self.source.clone();
         let io_stats = self.io_stats.clone();
         let (destination_sender, destination_receiver) = create_channel(1);
@@ -86,13 +86,13 @@ impl PipelineNode for SourceNode {
                 let mut source_stream = source.get_data(maintain_order, io_stats).await?;
                 while let Some(part) = source_stream.next().await {
                     has_data = true;
-                    if counting_sender.send(part?.into()).await.is_err() {
+                    if counting_sender.send(part?).await.is_err() {
                         return Ok(());
                     }
                 }
                 if !has_data {
                     let empty = Arc::new(MicroPartition::empty(Some(source.schema().clone())));
-                    let _ = counting_sender.send(empty.into()).await;
+                    let _ = counting_sender.send(empty).await;
                 }
                 Ok(())
             },

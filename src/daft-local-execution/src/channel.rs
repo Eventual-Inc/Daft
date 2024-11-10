@@ -1,8 +1,32 @@
-pub type Sender<T> = tokio::sync::mpsc::Sender<T>;
-pub type Receiver<T> = tokio::sync::mpsc::Receiver<T>;
+use loole::SendError;
 
-pub fn create_channel<T>(buffer_size: usize) -> (Sender<T>, Receiver<T>) {
-    tokio::sync::mpsc::channel(buffer_size)
+#[derive(Clone)]
+pub(crate) struct Sender<T>(loole::Sender<T>)
+where
+    T: Clone;
+impl<T: Clone> Sender<T> {
+    pub(crate) async fn send(&self, val: T) -> Result<(), SendError<T>> {
+        self.0.send_async(val).await
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct Receiver<T>(loole::Receiver<T>)
+where
+    T: Clone;
+impl<T: Clone> Receiver<T> {
+    pub(crate) async fn recv(&self) -> Option<T> {
+        self.0.recv_async().await.ok()
+    }
+
+    pub(crate) fn blocking_recv(&self) -> Option<T> {
+        self.0.recv().ok()
+    }
+}
+
+pub(crate) fn create_channel<T: Clone>(buffer_size: usize) -> (Sender<T>, Receiver<T>) {
+    let (tx, rx) = loole::bounded(buffer_size);
+    (Sender(tx), Receiver(rx))
 }
 
 pub(crate) fn create_ordering_aware_receiver_channel<T: Clone>(
