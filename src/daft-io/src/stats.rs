@@ -67,19 +67,19 @@ impl IOStatsContext {
     }
 
     #[inline]
-    pub(crate) fn mark_head_requests(&self, num_requests: usize) {
+    pub fn mark_head_requests(&self, num_requests: usize) {
         self.num_head_requests
             .fetch_add(num_requests, atomic::Ordering::Relaxed);
     }
 
     #[inline]
-    pub(crate) fn mark_list_requests(&self, num_requests: usize) {
+    pub fn mark_list_requests(&self, num_requests: usize) {
         self.num_list_requests
             .fetch_add(num_requests, atomic::Ordering::Relaxed);
     }
 
     #[inline]
-    pub(crate) fn mark_put_requests(&self, num_requests: usize) {
+    pub fn mark_put_requests(&self, num_requests: usize) {
         self.num_put_requests
             .fetch_add(num_requests, atomic::Ordering::Relaxed);
     }
@@ -111,7 +111,7 @@ impl IOStatsContext {
     }
 
     #[inline]
-    pub(crate) fn mark_bytes_uploaded(&self, bytes_uploaded: usize) {
+    pub fn mark_bytes_uploaded(&self, bytes_uploaded: usize) {
         self.bytes_uploaded
             .fetch_add(bytes_uploaded, atomic::Ordering::Relaxed);
     }

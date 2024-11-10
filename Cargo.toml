@@ -143,6 +143,7 @@ members = [
   "src/daft-hash",
   "src/daft-image",
   "src/daft-io",
+  "src/io-backends/aws",
   "src/daft-json",
   "src/daft-local-execution",
   "src/daft-local-plan",

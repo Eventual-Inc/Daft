@@ -3613,6 +3613,55 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f958d3d68f4167080a18141e10381e7634563984a537f2a49a30fd8e53ac5767"
 
 [[package]]
+name = "io-backends-aws"
+version = "0.3.0-dev0"
+dependencies = [
+ "async-recursion",
+ "async-stream",
+ "async-trait",
+ "aws-config",
+ "aws-credential-types",
+ "aws-sdk-s3",
+ "aws-sig-auth",
+ "aws-smithy-async",
+ "aws-smithy-client",
+ "azure_core",
+ "azure_identity",
+ "azure_storage",
+ "azure_storage_blobs",
+ "bytes",
+ "common-error",
+ "common-io-config",
+ "common-runtime",
+ "daft-io",
+ "derive_builder",
+ "futures",
+ "globset",
+ "google-cloud-storage",
+ "google-cloud-token",
+ "home",
+ "hyper 0.14.30",
+ "hyper-tls 0.5.0",
+ "itertools 0.11.0",
+ "lazy_static",
+ "log",
+ "md5",
+ "openssl-sys",
+ "pyo3",
+ "rand 0.8.5",
+ "regex",
+ "reqwest-middleware",
+ "reqwest-retry",
+ "retry-policies",
+ "serde",
+ "snafu",
+ "tokio",
+ "tokio-stream",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "ipnet"
 version = "2.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
