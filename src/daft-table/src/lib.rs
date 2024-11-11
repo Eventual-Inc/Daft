@@ -578,6 +578,9 @@ impl Table {
                     Ok(if_true_series.if_else(&if_false_series, &predicate_series)?)
                 }
             },
+            Subquery(subquery) => {
+                todo!("Subquery evaluation not yet implemented: {:?}", subquery)
+            }
         }?;
 
         if expected_field.name != series.field().name {

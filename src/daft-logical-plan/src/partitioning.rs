@@ -309,6 +309,15 @@ fn translate_clustering_spec_expr(
 
             Ok(newpred.if_else(newtrue, newfalse))
         }
+        Expr::Subquery(subquery) => {
+            let new_children = subquery
+                .required_columns()
+                .iter()
+                .map(|e| translate_clustering_spec_expr(e, old_colname_to_new_colname))
+                .collect::<Result<Vec<_>, _>>()?;
+            let subquery = subquery.with_new_children(new_children);
+            Ok(Expr::Subquery(subquery).arced())
+        }
         // Cannot have agg exprs in clustering specs.
         Expr::Agg(_) => Err(()),
     }

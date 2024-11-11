@@ -359,6 +359,23 @@ fn replace_column_with_semantic_id(
                     Transformed::yes(Expr::ScalarFunction(func).into())
                 }
             }
+            Expr::Subquery(subquery) => {
+                let transforms = subquery
+                    .required_columns()
+                    .iter()
+                    .map(|e| {
+                        replace_column_with_semantic_id(e.clone(), subexprs_to_replace, schema)
+                    })
+                    .collect::<Vec<_>>();
+                if transforms.iter().all(|e| !e.transformed) {
+                    Transformed::no(e)
+                } else {
+                    let subquery = subquery
+                        .with_new_children(transforms.iter().map(|t| t.data.clone()).collect());
+
+                    Transformed::yes(Expr::Subquery(subquery).into())
+                }
+            }
         }
     }
 }
