@@ -366,8 +366,7 @@ class RayRunnerIO(runner_io.RunnerIO):
         return (
             ray.get(_glob_path_into_file_infos.remote(source_paths, file_format_config, io_config=io_config))
             .to_table()
-            .to_file_infos()
-            ._table
+            ._table.to_file_infos()
         )
 
     def partition_set_from_ray_dataset(
