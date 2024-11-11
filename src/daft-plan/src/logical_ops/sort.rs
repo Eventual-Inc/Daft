@@ -65,3 +65,11 @@ impl Sort {
         res
     }
 }
+
+use crate::stats::{ApproxStats, Stats};
+impl Stats for Sort {
+    fn approximate_stats(&self) -> ApproxStats {
+        // Sorting does not affect cardinality.
+        self.input.approximate_stats()
+    }
+}

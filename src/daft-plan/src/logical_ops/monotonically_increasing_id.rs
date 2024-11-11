@@ -31,3 +31,11 @@ impl MonotonicallyIncreasingId {
         }
     }
 }
+
+use crate::stats::{ApproxStats, Stats};
+impl Stats for MonotonicallyIncreasingId {
+    fn approximate_stats(&self) -> ApproxStats {
+        // TODO(desmond): We can do better estimations with the projection schema. For now, reuse the old logic.
+        self.input.approximate_stats()
+    }
+}

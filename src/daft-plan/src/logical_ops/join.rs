@@ -283,3 +283,24 @@ impl Join {
         res
     }
 }
+
+use crate::stats::{ApproxStats, Stats};
+impl Stats for Join {
+    fn approximate_stats(&self) -> ApproxStats {
+        // Assume a Primary-key + Foreign-Key join which would yield the max of the two tables.
+        // TODO(desmond): We can do better estimations here. For now, use the old logic.
+        let left_stats = self.left.approximate_stats();
+        let right_stats = self.right.approximate_stats();
+
+        ApproxStats {
+            lower_bound_rows: 0,
+            upper_bound_rows: left_stats
+                .upper_bound_rows
+                .and_then(|l| right_stats.upper_bound_rows.map(|r| l.max(r))),
+            lower_bound_bytes: 0,
+            upper_bound_bytes: left_stats
+                .upper_bound_bytes
+                .and_then(|l| right_stats.upper_bound_bytes.map(|r| l.max(r))),
+        }
+    }
+}

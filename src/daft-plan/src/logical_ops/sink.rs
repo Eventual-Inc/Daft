@@ -109,3 +109,12 @@ impl Sink {
         res
     }
 }
+
+use crate::stats::{ApproxStats, Stats};
+impl Stats for Sink {
+    fn approximate_stats(&self) -> ApproxStats {
+        // Post-write DataFrame will contain paths to files that were written.
+        // TODO(desmond): Estimate output size via root directory and estimates for # of partitions given partitioning column.
+        ApproxStats::empty()
+    }
+}

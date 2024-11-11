@@ -83,3 +83,17 @@ impl Unpivot {
         res
     }
 }
+
+use crate::stats::{ApproxStats, Stats};
+impl Stats for Unpivot {
+    fn approximate_stats(&self) -> ApproxStats {
+        let input_stats = self.input.approximate_stats();
+        let num_values = self.values.len();
+        ApproxStats {
+            lower_bound_rows: input_stats.lower_bound_rows * num_values,
+            upper_bound_rows: input_stats.upper_bound_rows.map(|v| v * num_values),
+            lower_bound_bytes: input_stats.lower_bound_bytes,
+            upper_bound_bytes: input_stats.upper_bound_bytes,
+        }
+    }
+}

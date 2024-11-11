@@ -29,3 +29,10 @@ impl Concat {
         Ok(Self { input, other })
     }
 }
+
+use crate::stats::{ApproxStats, Stats};
+impl Stats for Concat {
+    fn approximate_stats(&self) -> ApproxStats {
+        &self.input.approximate_stats() + &self.other.approximate_stats()
+    }
+}

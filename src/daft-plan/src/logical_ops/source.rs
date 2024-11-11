@@ -3,7 +3,10 @@ use std::sync::Arc;
 use daft_scan::PhysicalScanInfo;
 use daft_schema::schema::SchemaRef;
 
-use crate::source_info::{InMemoryInfo, PlaceHolderInfo, SourceInfo};
+use crate::{
+    source_info::{InMemoryInfo, PlaceHolderInfo, SourceInfo},
+    stats::{ApproxStats, Stats},
+};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Source {
@@ -13,6 +16,29 @@ pub struct Source {
 
     /// Information about the source data location.
     pub source_info: Arc<SourceInfo>,
+}
+
+impl Stats for Source {
+    fn approximate_stats(&self) -> ApproxStats {
+        match &*self.source_info {
+            SourceInfo::InMemory(InMemoryInfo {
+                size_bytes,
+                num_rows,
+                ..
+            }) => ApproxStats {
+                lower_bound_rows: *num_rows,
+                upper_bound_rows: Some(*num_rows),
+                lower_bound_bytes: *size_bytes,
+                upper_bound_bytes: Some(*size_bytes),
+            },
+            SourceInfo::Physical(PhysicalScanInfo { .. }) => {
+                // TODO(desmond): We can potentially get stats for scans during schema inference. For now,
+                // we assume that stats are unavailable for scan nodes during logical plan optimization.
+                ApproxStats::empty()
+            }
+            SourceInfo::PlaceHolder(_) => ApproxStats::empty(),
+        }
+    }
 }
 
 impl Source {

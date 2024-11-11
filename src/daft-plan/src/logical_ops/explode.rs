@@ -69,3 +69,16 @@ impl Explode {
         res
     }
 }
+
+use crate::stats::{ApproxStats, Stats};
+impl Stats for Explode {
+    fn approximate_stats(&self) -> ApproxStats {
+        let input_stats = self.input.approximate_stats();
+        ApproxStats {
+            lower_bound_rows: input_stats.lower_bound_rows,
+            upper_bound_rows: None,
+            lower_bound_bytes: input_stats.lower_bound_bytes,
+            upper_bound_bytes: None,
+        }
+    }
+}

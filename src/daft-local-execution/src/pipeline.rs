@@ -315,18 +315,27 @@ pub fn physical_plan_to_pipeline(
             right_on,
             join_type,
             schema,
+            ..
         }) => {
             let left_schema = left.schema();
             let right_schema = right.schema();
 
-            // Determine the build and probe sides based on the join type
-            // Currently it is a naive determination, in the future we should leverage the cardinality of the tables
-            // to determine the build and probe sides
+            // Determine the build and probe sides based on the join type and cardinalities.
             let build_on_left = match join_type {
-                JoinType::Inner => true,
-                JoinType::Right => true,
-                JoinType::Outer => true,
+                JoinType::Inner => {
+                    left.get_plan_stats().approx_stats.upper_bound_bytes
+                        <= right.get_plan_stats().approx_stats.upper_bound_bytes
+                }
+                JoinType::Outer => {
+                    left.get_plan_stats().approx_stats.upper_bound_bytes
+                        <= right.get_plan_stats().approx_stats.upper_bound_bytes
+                }
+                // TODO(desmond): We might potentially want to flip the probe table side for
+                // left/right outer joins if one side is significantly larger. Needs tuning.
+                // For left outer joins, we build on right so we can stream the left side.
                 JoinType::Left => false,
+                // For right outer joins, we build on left so we can stream the right side.
+                JoinType::Right => true,
                 JoinType::Anti | JoinType::Semi => false,
             };
             let (build_on, probe_on, build_child, probe_child) = match build_on_left {

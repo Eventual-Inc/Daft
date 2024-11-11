@@ -47,3 +47,11 @@ impl Repartition {
         res
     }
 }
+
+use crate::stats::{ApproxStats, Stats};
+impl Stats for Repartition {
+    fn approximate_stats(&self) -> ApproxStats {
+        // Repartitioning does no affect cardinality.
+        self.input.approximate_stats()
+    }
+}

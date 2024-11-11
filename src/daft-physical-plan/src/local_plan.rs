@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_resource_request::ResourceRequest;
 use daft_core::prelude::*;
 use daft_dsl::{AggExpr, ExprRef};
-use daft_plan::{InMemoryInfo, OutputFileInfo};
+use daft_plan::{stats::ApproxStats, InMemoryInfo, OutputFileInfo};
 use daft_scan::{ScanTask, ScanTaskRef};
 
 pub type LocalPhysicalPlanRef = Arc<LocalPhysicalPlan>;
@@ -58,10 +58,13 @@ impl LocalPhysicalPlan {
         self.into()
     }
 
-    pub(crate) fn in_memory_scan(in_memory_info: InMemoryInfo) -> LocalPhysicalPlanRef {
+    pub(crate) fn in_memory_scan(
+        in_memory_info: InMemoryInfo,
+        approx_stats: ApproxStats,
+    ) -> LocalPhysicalPlanRef {
         Self::InMemoryScan(InMemoryScan {
             info: in_memory_info,
-            plan_stats: PlanStats {},
+            plan_stats: PlanStats { approx_stats },
         })
         .arced()
     }
@@ -69,41 +72,50 @@ impl LocalPhysicalPlan {
     pub(crate) fn physical_scan(
         scan_tasks: Vec<ScanTaskRef>,
         schema: SchemaRef,
+        approx_stats: ApproxStats,
     ) -> LocalPhysicalPlanRef {
         Self::PhysicalScan(PhysicalScan {
             scan_tasks,
             schema,
-            plan_stats: PlanStats {},
+            plan_stats: PlanStats { approx_stats },
         })
         .arced()
     }
 
-    pub(crate) fn empty_scan(schema: SchemaRef) -> LocalPhysicalPlanRef {
+    pub(crate) fn empty_scan(schema: SchemaRef, approx_stats: ApproxStats) -> LocalPhysicalPlanRef {
         Self::EmptyScan(EmptyScan {
             schema,
-            plan_stats: PlanStats {},
+            plan_stats: PlanStats { approx_stats },
         })
         .arced()
     }
 
-    pub(crate) fn filter(input: LocalPhysicalPlanRef, predicate: ExprRef) -> LocalPhysicalPlanRef {
+    pub(crate) fn filter(
+        input: LocalPhysicalPlanRef,
+        predicate: ExprRef,
+        approx_stats: ApproxStats,
+    ) -> LocalPhysicalPlanRef {
         let schema = input.schema().clone();
         Self::Filter(Filter {
             input,
             predicate,
             schema,
-            plan_stats: PlanStats {},
+            plan_stats: PlanStats { approx_stats },
         })
         .arced()
     }
 
-    pub(crate) fn limit(input: LocalPhysicalPlanRef, num_rows: i64) -> LocalPhysicalPlanRef {
+    pub(crate) fn limit(
+        input: LocalPhysicalPlanRef,
+        num_rows: i64,
+        approx_stats: ApproxStats,
+    ) -> LocalPhysicalPlanRef {
         let schema = input.schema().clone();
         Self::Limit(Limit {
             input,
             num_rows,
             schema,
-            plan_stats: PlanStats {},
+            plan_stats: PlanStats { approx_stats },
         })
         .arced()
     }
@@ -112,12 +124,13 @@ impl LocalPhysicalPlan {
         input: LocalPhysicalPlanRef,
         to_explode: Vec<ExprRef>,
         schema: SchemaRef,
+        approx_stats: ApproxStats,
     ) -> LocalPhysicalPlanRef {
         Self::Explode(Explode {
             input,
             to_explode,
             schema,
-            plan_stats: PlanStats {},
+            plan_stats: PlanStats { approx_stats },
         })
         .arced()
     }
@@ -126,12 +139,13 @@ impl LocalPhysicalPlan {
         input: LocalPhysicalPlanRef,
         projection: Vec<ExprRef>,
         schema: SchemaRef,
+        approx_stats: ApproxStats,
     ) -> LocalPhysicalPlanRef {
         Self::Project(Project {
             input,
             projection,
             schema,
-            plan_stats: PlanStats {},
+            plan_stats: PlanStats { approx_stats },
         })
         .arced()
     }
@@ -140,12 +154,13 @@ impl LocalPhysicalPlan {
         input: LocalPhysicalPlanRef,
         projection: Vec<ExprRef>,
         schema: SchemaRef,
+        approx_stats: ApproxStats,
     ) -> LocalPhysicalPlanRef {
         Self::ActorPoolProject(ActorPoolProject {
             input,
             projection,
             schema,
-            plan_stats: PlanStats {},
+            plan_stats: PlanStats { approx_stats },
         })
         .arced()
     }
@@ -154,12 +169,13 @@ impl LocalPhysicalPlan {
         input: LocalPhysicalPlanRef,
         aggregations: Vec<AggExpr>,
         schema: SchemaRef,
+        approx_stats: ApproxStats,
     ) -> LocalPhysicalPlanRef {
         Self::UnGroupedAggregate(UnGroupedAggregate {
             input,
             aggregations,
             schema,
-            plan_stats: PlanStats {},
+            plan_stats: PlanStats { approx_stats },
         })
         .arced()
     }
@@ -169,13 +185,14 @@ impl LocalPhysicalPlan {
         aggregations: Vec<AggExpr>,
         group_by: Vec<ExprRef>,
         schema: SchemaRef,
+        approx_stats: ApproxStats,
     ) -> LocalPhysicalPlanRef {
         Self::HashAggregate(HashAggregate {
             input,
             aggregations,
             group_by,
             schema,
-            plan_stats: PlanStats {},
+            plan_stats: PlanStats { approx_stats },
         })
         .arced()
     }
@@ -187,6 +204,7 @@ impl LocalPhysicalPlan {
         variable_name: String,
         value_name: String,
         schema: SchemaRef,
+        approx_stats: ApproxStats,
     ) -> LocalPhysicalPlanRef {
         Self::Unpivot(Unpivot {
             input,
@@ -195,7 +213,7 @@ impl LocalPhysicalPlan {
             variable_name,
             value_name,
             schema,
-            plan_stats: PlanStats {},
+            plan_stats: PlanStats { approx_stats },
         })
         .arced()
     }
@@ -208,6 +226,7 @@ impl LocalPhysicalPlan {
         aggregation: AggExpr,
         names: Vec<String>,
         schema: SchemaRef,
+        approx_stats: ApproxStats,
     ) -> LocalPhysicalPlanRef {
         Self::Pivot(Pivot {
             input,
@@ -217,7 +236,7 @@ impl LocalPhysicalPlan {
             aggregation,
             names,
             schema,
-            plan_stats: PlanStats {},
+            plan_stats: PlanStats { approx_stats },
         })
         .arced()
     }
@@ -226,6 +245,7 @@ impl LocalPhysicalPlan {
         input: LocalPhysicalPlanRef,
         sort_by: Vec<ExprRef>,
         descending: Vec<bool>,
+        approx_stats: ApproxStats,
     ) -> LocalPhysicalPlanRef {
         let schema = input.schema().clone();
         Self::Sort(Sort {
@@ -233,7 +253,7 @@ impl LocalPhysicalPlan {
             sort_by,
             descending,
             schema,
-            plan_stats: PlanStats {},
+            plan_stats: PlanStats { approx_stats },
         })
         .arced()
     }
@@ -243,6 +263,7 @@ impl LocalPhysicalPlan {
         fraction: f64,
         with_replacement: bool,
         seed: Option<u64>,
+        approx_stats: ApproxStats,
     ) -> LocalPhysicalPlanRef {
         let schema = input.schema().clone();
         Self::Sample(Sample {
@@ -251,7 +272,7 @@ impl LocalPhysicalPlan {
             with_replacement,
             seed,
             schema,
-            plan_stats: PlanStats {},
+            plan_stats: PlanStats { approx_stats },
         })
         .arced()
     }
@@ -263,6 +284,7 @@ impl LocalPhysicalPlan {
         right_on: Vec<ExprRef>,
         join_type: JoinType,
         schema: SchemaRef,
+        approx_stats: ApproxStats,
     ) -> LocalPhysicalPlanRef {
         Self::HashJoin(HashJoin {
             left,
@@ -271,6 +293,7 @@ impl LocalPhysicalPlan {
             right_on,
             join_type,
             schema,
+            plan_stats: PlanStats { approx_stats },
         })
         .arced()
     }
@@ -278,13 +301,14 @@ impl LocalPhysicalPlan {
     pub(crate) fn concat(
         input: LocalPhysicalPlanRef,
         other: LocalPhysicalPlanRef,
+        approx_stats: ApproxStats,
     ) -> LocalPhysicalPlanRef {
         let schema = input.schema().clone();
         Self::Concat(Concat {
             input,
             other,
             schema,
-            plan_stats: PlanStats {},
+            plan_stats: PlanStats { approx_stats },
         })
         .arced()
     }
@@ -294,13 +318,14 @@ impl LocalPhysicalPlan {
         data_schema: SchemaRef,
         file_schema: SchemaRef,
         file_info: OutputFileInfo,
+        approx_stats: ApproxStats,
     ) -> LocalPhysicalPlanRef {
         Self::PhysicalWrite(PhysicalWrite {
             input,
             data_schema,
             file_schema,
             file_info,
-            plan_stats: PlanStats {},
+            plan_stats: PlanStats { approx_stats },
         })
         .arced()
     }
@@ -323,6 +348,50 @@ impl LocalPhysicalPlan {
             | Self::Unpivot(Unpivot { schema, .. })
             | Self::Concat(Concat { schema, .. }) => schema,
             Self::InMemoryScan(InMemoryScan { info, .. }) => &info.source_schema,
+            _ => todo!("{:?}", self),
+        }
+    }
+
+    pub fn get_plan_stats(&self) -> &PlanStats {
+        match self {
+            Self::InMemoryScan(InMemoryScan { plan_stats, .. })
+            | Self::PhysicalScan(PhysicalScan { plan_stats, .. })
+            | Self::EmptyScan(EmptyScan { plan_stats, .. })
+            | Self::Filter(Filter { plan_stats, .. })
+            | Self::Limit(Limit { plan_stats, .. })
+            | Self::Project(Project { plan_stats, .. })
+            | Self::ActorPoolProject(ActorPoolProject { plan_stats, .. })
+            | Self::UnGroupedAggregate(UnGroupedAggregate { plan_stats, .. })
+            | Self::HashAggregate(HashAggregate { plan_stats, .. })
+            | Self::Pivot(Pivot { plan_stats, .. })
+            | Self::Sort(Sort { plan_stats, .. })
+            | Self::Sample(Sample { plan_stats, .. })
+            | Self::HashJoin(HashJoin { plan_stats, .. })
+            | Self::Explode(Explode { plan_stats, .. })
+            | Self::Unpivot(Unpivot { plan_stats, .. })
+            | Self::Concat(Concat { plan_stats, .. }) => plan_stats,
+            _ => todo!("{:?}", self),
+        }
+    }
+
+    pub fn approximate_stats(&self) -> &ApproxStats {
+        match self {
+            Self::InMemoryScan(InMemoryScan { plan_stats, .. })
+            | Self::PhysicalScan(PhysicalScan { plan_stats, .. })
+            | Self::EmptyScan(EmptyScan { plan_stats, .. })
+            | Self::Filter(Filter { plan_stats, .. })
+            | Self::Limit(Limit { plan_stats, .. })
+            | Self::Project(Project { plan_stats, .. })
+            | Self::ActorPoolProject(ActorPoolProject { plan_stats, .. })
+            | Self::UnGroupedAggregate(UnGroupedAggregate { plan_stats, .. })
+            | Self::HashAggregate(HashAggregate { plan_stats, .. })
+            | Self::Pivot(Pivot { plan_stats, .. })
+            | Self::Sort(Sort { plan_stats, .. })
+            | Self::Sample(Sample { plan_stats, .. })
+            | Self::HashJoin(HashJoin { plan_stats, .. })
+            | Self::Explode(Explode { plan_stats, .. })
+            | Self::Unpivot(Unpivot { plan_stats, .. })
+            | Self::Concat(Concat { plan_stats, .. }) => &plan_stats.approx_stats,
             _ => todo!("{:?}", self),
         }
     }
@@ -454,6 +523,7 @@ pub struct HashJoin {
     pub right_on: Vec<ExprRef>,
     pub join_type: JoinType,
     pub schema: SchemaRef,
+    pub plan_stats: PlanStats,
 }
 
 #[derive(Debug)]
@@ -474,4 +544,6 @@ pub struct PhysicalWrite {
 }
 
 #[derive(Debug)]
-pub struct PlanStats {}
+pub struct PlanStats {
+    pub approx_stats: ApproxStats,
+}

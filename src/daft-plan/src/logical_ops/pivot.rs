@@ -82,3 +82,12 @@ impl Pivot {
         res
     }
 }
+
+use crate::stats::{ApproxStats, Stats};
+impl Stats for Pivot {
+    fn approximate_stats(&self) -> ApproxStats {
+        // TODO(desmond): Pivoting does affect cardinality, but for now
+        // we keep the old logic.
+        self.input.approximate_stats()
+    }
+}

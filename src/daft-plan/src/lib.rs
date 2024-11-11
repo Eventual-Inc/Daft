@@ -15,6 +15,7 @@ mod physical_plan;
 mod physical_planner;
 mod sink_info;
 pub mod source_info;
+pub mod stats;
 #[cfg(test)]
 mod test;
 mod treenode;

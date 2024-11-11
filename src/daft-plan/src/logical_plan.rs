@@ -8,6 +8,7 @@ use indexmap::IndexSet;
 use snafu::Snafu;
 
 pub use crate::logical_ops::*;
+use crate::stats::{ApproxStats, Stats};
 
 /// Logical plan for a Daft query.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -37,6 +38,31 @@ impl LogicalPlan {
     pub fn arced(self) -> Arc<Self> {
         Arc::new(self)
     }
+
+    pub fn approximate_stats(&self) -> ApproxStats {
+        match self {
+            Self::Source(source) => source.approximate_stats(),
+            Self::Project(project) => project.approximate_stats(),
+            Self::ActorPoolProject(actor_pool_project) => actor_pool_project.approximate_stats(),
+            Self::MonotonicallyIncreasingId(monotonically_increasing_id) => {
+                monotonically_increasing_id.approximate_stats()
+            }
+            Self::Filter(filter) => filter.approximate_stats(),
+            Self::Limit(limit) => limit.approximate_stats(),
+            Self::Explode(explode) => explode.approximate_stats(),
+            Self::Unpivot(unpivot) => unpivot.approximate_stats(),
+            Self::Sort(sort) => sort.approximate_stats(),
+            Self::Pivot(pivot) => pivot.approximate_stats(),
+            Self::Repartition(repartition) => repartition.approximate_stats(),
+            Self::Distinct(distinct) => distinct.approximate_stats(),
+            Self::Aggregate(aggregate) => aggregate.approximate_stats(),
+            Self::Concat(concat) => concat.approximate_stats(),
+            Self::Join(join) => join.approximate_stats(),
+            Self::Sink(sink) => sink.approximate_stats(),
+            Self::Sample(sample) => sample.approximate_stats(),
+        }
+    }
+
     pub fn schema(&self) -> SchemaRef {
         match self {
             Self::Source(Source { output_schema, .. }) => output_schema.clone(),

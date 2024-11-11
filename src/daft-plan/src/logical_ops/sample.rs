@@ -55,3 +55,12 @@ impl Sample {
         res
     }
 }
+
+use crate::stats::{ApproxStats, Stats};
+impl Stats for Sample {
+    fn approximate_stats(&self) -> ApproxStats {
+        self.input
+            .approximate_stats()
+            .apply(|v| ((v as f64) * self.fraction) as usize)
+    }
+}

@@ -20,6 +20,14 @@ pub struct Project {
     pub projected_schema: SchemaRef,
 }
 
+use crate::stats::{ApproxStats, Stats};
+impl Stats for Project {
+    fn approximate_stats(&self) -> ApproxStats {
+        // TODO(desmond): We can do better estimations with the projection schema. For now, reuse the old logic.
+        self.input.approximate_stats()
+    }
+}
+
 impl Project {
     pub(crate) fn try_new(input: Arc<LogicalPlan>, projection: Vec<ExprRef>) -> Result<Self> {
         let (projection, fields) =

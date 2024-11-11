@@ -67,3 +67,31 @@ impl Aggregate {
         res
     }
 }
+
+use crate::stats::{ApproxStats, Stats};
+impl Stats for Aggregate {
+    fn approximate_stats(&self) -> ApproxStats {
+        let input_stats = self.input.approximate_stats();
+        // TODO(desmond): We can use the schema here for better estimations. For now, use the old logic.
+        let est_bytes_per_row_lower =
+            input_stats.lower_bound_bytes / (input_stats.lower_bound_rows.max(1));
+        let est_bytes_per_row_upper = input_stats
+            .upper_bound_bytes
+            .and_then(|bytes| input_stats.upper_bound_rows.map(|rows| bytes / rows.max(1)));
+        if self.groupby.is_empty() {
+            ApproxStats {
+                lower_bound_rows: input_stats.lower_bound_rows.min(1),
+                upper_bound_rows: Some(1),
+                lower_bound_bytes: input_stats.lower_bound_bytes.min(1) * est_bytes_per_row_lower,
+                upper_bound_bytes: est_bytes_per_row_upper,
+            }
+        } else {
+            ApproxStats {
+                lower_bound_rows: input_stats.lower_bound_rows.min(1),
+                upper_bound_rows: input_stats.upper_bound_rows,
+                lower_bound_bytes: input_stats.lower_bound_bytes.min(1) * est_bytes_per_row_lower,
+                upper_bound_bytes: input_stats.upper_bound_bytes,
+            }
+        }
+    }
+}

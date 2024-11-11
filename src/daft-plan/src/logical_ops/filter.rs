@@ -33,3 +33,18 @@ impl Filter {
         Ok(Self { input, predicate })
     }
 }
+
+use crate::stats::{ApproxStats, Stats};
+impl Stats for Filter {
+    fn approximate_stats(&self) -> ApproxStats {
+        // Assume no row/column pruning in cardinality-affecting operations.
+        // TODO(desmond): We can do better estimations here. For now, reuse the old logic.
+        let input_stats = self.input.approximate_stats();
+        ApproxStats {
+            lower_bound_rows: 0,
+            upper_bound_rows: input_stats.upper_bound_rows,
+            lower_bound_bytes: 0,
+            upper_bound_bytes: input_stats.upper_bound_bytes,
+        }
+    }
+}
