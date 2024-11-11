@@ -1,10 +1,7 @@
 use common_py_serde::impl_bincode_py_state_serialization;
-use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
-use {
-    // daft_table::python::PyTable,
-    pyo3::{exceptions::PyKeyError, pyclass, pymethods, PyObject, PyResult, Python},
-};
+use pyo3::{exceptions::PyKeyError, pyclass, pymethods, PyObject, PyResult, Python};
+use serde::{Deserialize, Serialize};
 
 /// Metadata for a single file.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -60,12 +57,6 @@ impl FileInfos {
         Self::new_internal(file_paths, file_sizes, num_rows)
     }
 
-    // /// Create from a Daft table with "path", "size", and "num_rows" columns.
-    // #[staticmethod]
-    // pub fn from_table(table: PyTable) -> PyResult<Self> {
-    //     Ok(Self::from_table_internal(table.table)?)
-    // }
-
     /// Concatenate two FileInfos together.
     pub fn extend(&mut self, new_infos: Self) {
         self.file_paths.extend(new_infos.file_paths);
@@ -83,11 +74,6 @@ impl FileInfos {
             self.num_rows[0],
         ))
     }
-
-    // /// Convert to a Daft table with "path", "size", and "num_rows" columns.
-    // pub fn to_table(&self) -> PyResult<PyTable> {
-    //     Ok(self.to_table_internal()?.into())
-    // }
 
     pub fn __len__(&self) -> PyResult<usize> {
         Ok(self.len())
