@@ -66,7 +66,6 @@ pub mod pylib {
         storage_config::{PyStorageConfig, PythonStorageConfig},
         DataSource, PartitionField, Pushdowns, ScanOperator, ScanOperatorRef, ScanTask,
     };
-
     #[pyclass(module = "daft.daft", frozen)]
     #[derive(Debug, Clone)]
     pub struct ScanOperatorHandle {

@@ -4,13 +4,7 @@ from typing import TYPE_CHECKING, Iterator, List, Optional
 
 from daft import context
 from daft.api_annotations import PublicAPI
-from daft.daft import (
-    IOConfig,
-    Pushdowns,
-    PyTable,
-    ScanOperatorHandle,
-    ScanTask,
-)
+from daft.daft import IOConfig, Pushdowns, PyTable, ScanOperatorHandle, ScanTask
 from daft.dataframe import DataFrame
 from daft.io.object_store_options import io_config_to_storage_options
 from daft.io.scan import PartitionField, ScanOperator
