@@ -38,26 +38,6 @@ impl PartialEq for PythonTablesFactoryArgs {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum PythonFactoryFunctionType {
-    NameAndModule(String, String),
-    #[serde(
-        serialize_with = "serialize_py_object",
-        deserialize_with = "deserialize_py_object"
-    )]
-    Function(PyObject),
-}
-
-impl PartialEq for PythonFactoryFunctionType {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::NameAndModule(a, b), Self::NameAndModule(c, d)) => a == c && b == d,
-            (Self::Function(a), Self::Function(b)) => a.as_ptr() as isize == b.as_ptr() as isize,
-            _ => false,
-        }
-    }
-}
-
 pub mod pylib {
     use std::sync::Arc;
 
@@ -420,10 +400,10 @@ pub mod pylib {
         #[staticmethod]
         pub fn python_factory_func_scan_task(
             py: Python,
+            module: String,
+            func_name: String,
             func_args: Vec<Bound<PyAny>>,
             schema: PySchema,
-            module_and_func_name: Option<(String, String)>,
-            func: Option<PyObject>,
             num_rows: Option<i64>,
             size_bytes: Option<u64>,
             pushdowns: Option<PyPushdowns>,
@@ -432,17 +412,9 @@ pub mod pylib {
             let statistics = stats
                 .map(|s| TableStatistics::from_stats_table(&s.table))
                 .transpose()?;
-            let func_type = match (module_and_func_name, func) {
-                (Some((module, func_name)), None) => {
-                    super::PythonFactoryFunctionType::NameAndModule(module, func_name)
-                }
-                (None, Some(func)) => super::PythonFactoryFunctionType::Function(func),
-                _ => {
-                    panic!("Exactly one of module_and_func_name or func must be provided")
-                }
-            };
             let data_source = DataSource::PythonFactoryFunction {
-                func: func_type,
+                module,
+                func_name,
                 func_args: PythonTablesFactoryArgs::new(
                     func_args.iter().map(|pyany| pyany.into_py(py)).collect(),
                 ),
