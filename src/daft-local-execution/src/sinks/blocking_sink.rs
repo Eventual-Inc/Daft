@@ -9,7 +9,7 @@ use tracing::{info_span, instrument};
 
 use crate::{
     channel::{create_channel, Receiver},
-    dispatcher::{Dispatcher, RoundRobinDispatcher},
+    dispatcher::{Dispatcher, UnorderedDispatcher},
     pipeline::PipelineNode,
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
     ExecutionRuntimeHandle, JoinSnafu, OperatorOutput, TaskSet,
@@ -42,7 +42,7 @@ pub trait BlockingSink: Send + Sync {
     fn name(&self) -> &'static str;
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>>;
     fn make_dispatcher(&self, runtime_handle: &ExecutionRuntimeHandle) -> Arc<dyn Dispatcher> {
-        Arc::new(RoundRobinDispatcher::new(Some(
+        Arc::new(UnorderedDispatcher::new(Some(
             runtime_handle.default_morsel_size(),
         )))
     }

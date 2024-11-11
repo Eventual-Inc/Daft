@@ -11,6 +11,7 @@ use common_error::DaftResult;
 use common_tracing::refresh_chrome_trace;
 use daft_local_plan::{translate, LocalPhysicalPlan};
 use daft_micropartition::MicroPartition;
+use tokio_util::sync::CancellationToken;
 #[cfg(feature = "python")]
 use {
     common_daft_config::PyDaftExecutionConfig,
@@ -46,6 +47,13 @@ impl LocalPartitionIterator {
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub struct NativeExecutor {
     local_physical_plan: Arc<LocalPhysicalPlan>,
+    cancel: CancellationToken,
+}
+
+impl Drop for NativeExecutor {
+    fn drop(&mut self) {
+        self.cancel.cancel();
+    }
 }
 
 #[cfg(feature = "python")]
@@ -61,6 +69,7 @@ impl NativeExecutor {
             let local_physical_plan = translate(&logical_plan)?;
             Ok(Self {
                 local_physical_plan,
+                cancel: CancellationToken::new(),
             })
         })
     }
@@ -90,6 +99,7 @@ impl NativeExecutor {
                 native_psets,
                 cfg.config,
                 results_buffer_size,
+                self.cancel.clone(),
             )
         })?;
         let iter = Box::new(out.map(|part| {
@@ -116,6 +126,7 @@ pub fn run_local(
     psets: HashMap<String, Vec<Arc<MicroPartition>>>,
     cfg: Arc<DaftExecutionConfig>,
     results_buffer_size: Option<usize>,
+    cancel: CancellationToken,
 ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<Arc<MicroPartition>>> + Send>> {
     refresh_chrome_trace();
     let pipeline = physical_plan_to_pipeline(physical_plan, &psets, &cfg)?;
@@ -164,6 +175,10 @@ pub fn run_local(
         local_set.block_on(&runtime, async {
             tokio::select! {
                 biased;
+                () = cancel.cancelled() => {
+                    log::info!("Execution engine cancelled");
+                    Ok(())
+                }
                 _ = tokio::signal::ctrl_c() => {
                     log::info!("Received Ctrl-C, shutting down execution engine");
                     Ok(())

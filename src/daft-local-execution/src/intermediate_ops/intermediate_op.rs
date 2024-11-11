@@ -59,11 +59,11 @@ pub trait IntermediateOperator: Send + Sync {
         maintain_order: bool,
     ) -> Arc<dyn Dispatcher> {
         if maintain_order {
-            Arc::new(UnorderedDispatcher::new(Some(
+            Arc::new(RoundRobinDispatcher::new(Some(
                 runtime_handle.default_morsel_size(),
             )))
         } else {
-            Arc::new(RoundRobinDispatcher::new(Some(
+            Arc::new(UnorderedDispatcher::new(Some(
                 runtime_handle.default_morsel_size(),
             )))
         }

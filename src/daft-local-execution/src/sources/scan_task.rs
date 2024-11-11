@@ -37,6 +37,7 @@ impl ScanTaskSource {
         schema: SchemaRef,
         cfg: &DaftExecutionConfig,
     ) -> Self {
+        let max_parallel_tasks = 8;
         // Determine the number of parallel tasks to run based on available CPU cores and row limits
         let mut num_parallel_tasks = match pushdowns.limit {
             // If we have a row limit, we need to calculate how many parallel tasks we can run
@@ -46,7 +47,7 @@ impl ScanTaskSource {
                 let mut remaining_rows = limit as f64;
 
                 // Only examine tasks up to the number of available CPU cores
-                for scan_task in scan_tasks.iter().take(*NUM_CPUS) {
+                for scan_task in scan_tasks.iter().take(max_parallel_tasks) {
                     match scan_task.approx_num_rows(Some(cfg)) {
                         // If we can estimate the number of rows for this task
                         Some(estimated_rows) => {
@@ -66,7 +67,7 @@ impl ScanTaskSource {
                 count
             }
             // If there's no row limit, use all available CPU cores
-            None => *NUM_CPUS,
+            None => max_parallel_tasks,
         };
         num_parallel_tasks = num_parallel_tasks.min(scan_tasks.len());
         Self {
