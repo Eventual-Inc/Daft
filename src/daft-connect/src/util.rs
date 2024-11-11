@@ -1,21 +1,5 @@
 use std::net::ToSocketAddrs;
 
-#[macro_export]
-macro_rules! invalid_argument {
-    ($arg: tt) => {{
-        let msg = format!($arg);
-        ::tonic::Status::invalid_argument(msg)
-    }};
-}
-
-#[macro_export]
-macro_rules! unimplemented_err {
-    ($arg: tt) => {{
-        let msg = format!($arg);
-        ::tonic::Status::unimplemented(msg)
-    }};
-}
-
 pub fn parse_spark_connect_address(addr: &str) -> eyre::Result<std::net::SocketAddr> {
     // Check if address starts with "sc://"
     if !addr.starts_with("sc://") {

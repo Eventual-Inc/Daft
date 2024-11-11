@@ -26,6 +26,7 @@ use uuid::Uuid;
 use crate::session::Session;
 
 mod config;
+mod err;
 mod session;
 pub mod util;
 
@@ -103,7 +104,7 @@ impl SparkConnectService for DaftSparkConnectService {
         &self,
         _request: Request<ExecutePlanRequest>,
     ) -> Result<Response<Self::ExecutePlanStream>, Status> {
-        Err(unimplemented_err!("Unsupported plan type"))
+        unimplemented_err!("Unsupported plan type")
     }
 
     #[tracing::instrument(skip_all)]
@@ -139,9 +140,7 @@ impl SparkConnectService for DaftSparkConnectService {
         &self,
         _request: Request<tonic::Streaming<AddArtifactsRequest>>,
     ) -> Result<Response<AddArtifactsResponse>, Status> {
-        Err(unimplemented_err!(
-            "add_artifacts operation is not yet implemented"
-        ))
+        unimplemented_err!("add_artifacts operation is not yet implemented")
     }
 
     #[tracing::instrument(skip_all)]
@@ -149,9 +148,7 @@ impl SparkConnectService for DaftSparkConnectService {
         &self,
         _request: Request<AnalyzePlanRequest>,
     ) -> Result<Response<AnalyzePlanResponse>, Status> {
-        Err(unimplemented_err!(
-            "Analyze plan operation is not yet implemented"
-        ))
+        unimplemented_err!("Analyze plan operation is not yet implemented")
     }
 
     #[tracing::instrument(skip_all)]
@@ -159,9 +156,7 @@ impl SparkConnectService for DaftSparkConnectService {
         &self,
         _request: Request<ArtifactStatusesRequest>,
     ) -> Result<Response<ArtifactStatusesResponse>, Status> {
-        Err(unimplemented_err!(
-            "artifact_status operation is not yet implemented"
-        ))
+        unimplemented_err!("artifact_status operation is not yet implemented")
     }
 
     #[tracing::instrument(skip_all)]
@@ -170,9 +165,7 @@ impl SparkConnectService for DaftSparkConnectService {
         _request: Request<InterruptRequest>,
     ) -> Result<Response<InterruptResponse>, Status> {
         println!("got interrupt");
-        Err(unimplemented_err!(
-            "interrupt operation is not yet implemented"
-        ))
+        unimplemented_err!("interrupt operation is not yet implemented")
     }
 
     #[tracing::instrument(skip_all)]
@@ -180,9 +173,7 @@ impl SparkConnectService for DaftSparkConnectService {
         &self,
         _request: Request<ReattachExecuteRequest>,
     ) -> Result<Response<Self::ReattachExecuteStream>, Status> {
-        Err(unimplemented_err!(
-            "reattach_execute operation is not yet implemented"
-        ))
+        unimplemented_err!("reattach_execute operation is not yet implemented")
     }
 
     #[tracing::instrument(skip_all)]
@@ -190,9 +181,7 @@ impl SparkConnectService for DaftSparkConnectService {
         &self,
         _request: Request<ReleaseExecuteRequest>,
     ) -> Result<Response<ReleaseExecuteResponse>, Status> {
-        Err(unimplemented_err!(
-            "release_execute operation is not yet implemented"
-        ))
+        unimplemented_err!("release_execute operation is not yet implemented")
     }
 
     #[tracing::instrument(skip_all)]
@@ -201,9 +190,7 @@ impl SparkConnectService for DaftSparkConnectService {
         _request: Request<ReleaseSessionRequest>,
     ) -> Result<Response<ReleaseSessionResponse>, Status> {
         println!("got release session");
-        Err(unimplemented_err!(
-            "release_session operation is not yet implemented"
-        ))
+        unimplemented_err!("release_session operation is not yet implemented")
     }
 
     #[tracing::instrument(skip_all)]
@@ -212,9 +199,7 @@ impl SparkConnectService for DaftSparkConnectService {
         _request: Request<FetchErrorDetailsRequest>,
     ) -> Result<Response<FetchErrorDetailsResponse>, Status> {
         println!("got fetch error details");
-        Err(unimplemented_err!(
-            "fetch_error_details operation is not yet implemented"
-        ))
+        unimplemented_err!("fetch_error_details operation is not yet implemented")
     }
 }
 #[cfg(feature = "python")]
