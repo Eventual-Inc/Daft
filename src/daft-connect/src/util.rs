@@ -87,10 +87,9 @@ mod tests {
         let addr = "sc://";
         let result = parse_spark_connect_address(addr);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Invalid address format"));
+
+        let err = result.unwrap_err().to_string();
+        assert_eq!(err, "invalid socket address");
     }
 
     #[test]
