@@ -16,11 +16,13 @@ use daft_schema::{
     schema::{Schema, SchemaRef},
 };
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
+use data_size_estimator::DataSizeEstimator;
 use itertools::Itertools;
 use parquet2::metadata::FileMetaData;
 use serde::{Deserialize, Serialize};
 
 mod anonymous;
+mod data_size_estimator;
 pub use anonymous::AnonymousScanOperator;
 pub mod glob;
 mod hive;
@@ -821,6 +823,9 @@ pub trait ScanOperator: Send + Sync + Debug {
     // in ScanTask::materialized_schema), while generated fields require special handling.
     // Thus, we maintain separate representations for partitioning keys and generated fields.
     fn generated_fields(&self) -> Option<SchemaRef>;
+
+    /// Retrieve a DataSizeEstimator that can provide more accurate estimations of data from file sizes on disk
+    fn data_size_estimator(&self) -> Option<&dyn DataSizeEstimator>;
 
     fn can_absorb_filter(&self) -> bool;
     fn can_absorb_select(&self) -> bool;

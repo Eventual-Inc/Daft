@@ -217,6 +217,13 @@ pub mod pylib {
         fn schema(&self) -> daft_schema::schema::SchemaRef {
             self.schema.clone()
         }
+        fn data_size_estimator(
+            &self,
+        ) -> Option<&dyn crate::data_size_estimator::DataSizeEstimator> {
+            // TODO(jay): have the Python ScanOperators return an appropriate DataSizeEstimator from stats
+            // obtained from table formats/catalogs
+            None
+        }
         fn file_path_column(&self) -> Option<&str> {
             None
         }

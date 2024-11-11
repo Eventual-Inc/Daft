@@ -18,6 +18,7 @@ use futures::{stream::BoxStream, StreamExt, TryStreamExt};
 use snafu::Snafu;
 
 use crate::{
+    data_size_estimator::{DataSizeEstimator, ParquetDataSizeEstimator},
     hive::{hive_partitions_to_fields, hive_partitions_to_series, parse_hive_partitioning},
     storage_config::StorageConfig,
     ChunkSpec, DataSource, PartitionField, Pushdowns, ScanOperator, ScanTask, ScanTaskRef,
@@ -32,6 +33,7 @@ pub struct GlobScanOperator {
     hive_partitioning: bool,
     partitioning_keys: Vec<PartitionField>,
     generated_fields: SchemaRef,
+    data_size_estimator: Option<Box<dyn DataSizeEstimator>>,
 }
 
 /// Wrapper struct that implements a sync Iterator for a BoxStream
@@ -204,9 +206,9 @@ impl GlobScanOperator {
             (partitioning_keys, generated_fields)
         };
 
-        let schema = match infer_schema {
+        let (schema, data_size_estimator) = match infer_schema {
             true => {
-                let inferred_schema = match file_format_config.as_ref() {
+                let (inferred_schema, data_size_estimator) = match file_format_config.as_ref() {
                     &FileFormatConfig::Parquet(ParquetSourceConfig {
                         coerce_int96_timestamp_unit,
                         ref field_id_mapping,
@@ -216,7 +218,7 @@ impl GlobScanOperator {
                             "GlobScanOperator constructor read_parquet_schema: for uri {first_filepath}"
                         ));
 
-                        let (schema, _metadata) = daft_parquet::read::read_parquet_schema(
+                        let (schema, parquet_meta) = daft_parquet::read::read_parquet_schema(
                             first_filepath.as_str(),
                             io_client,
                             Some(io_stats),
@@ -226,8 +228,15 @@ impl GlobScanOperator {
                             },
                             field_id_mapping.clone(),
                         )?;
+                        let schema = Arc::new(schema);
 
-                        schema
+                        (
+                            schema.clone(),
+                            Some(Box::new(ParquetDataSizeEstimator::from_parquet_metadata(
+                                schema,
+                                &parquet_meta,
+                            )) as Box<dyn DataSizeEstimator>),
+                        )
                     }
                     FileFormatConfig::Csv(CsvSourceConfig {
                         delimiter,
@@ -254,15 +263,18 @@ impl GlobScanOperator {
                             io_client,
                             Some(io_stats),
                         )?;
-                        schema
+                        (Arc::new(schema), None)
                     }
-                    FileFormatConfig::Json(_) => daft_json::schema::read_json_schema(
-                        first_filepath.as_str(),
-                        None,
-                        None,
-                        io_client,
-                        Some(io_stats),
-                    )?,
+                    FileFormatConfig::Json(_) => {
+                        let inferred_schema = daft_json::schema::read_json_schema(
+                            first_filepath.as_str(),
+                            None,
+                            None,
+                            io_client,
+                            Some(io_stats),
+                        )?;
+                        (Arc::new(inferred_schema), None)
+                    }
                     #[cfg(feature = "python")]
                     FileFormatConfig::Database(_) => {
                         return Err(DaftError::ValueError(
@@ -276,14 +288,16 @@ impl GlobScanOperator {
                         ))
                     }
                 };
-                match user_provided_schema {
+                let inferred_schema = match user_provided_schema {
                     Some(hint) => Arc::new(inferred_schema.apply_hints(&hint)?),
-                    None => Arc::new(inferred_schema),
-                }
+                    None => inferred_schema,
+                };
+                (inferred_schema, data_size_estimator)
             }
-            false => {
-                user_provided_schema.expect("Schema must be provided if infer_schema is false")
-            }
+            false => (
+                user_provided_schema.expect("Schema must be provided if infer_schema is false"),
+                None,
+            ),
         };
         Ok(Self {
             glob_paths,
@@ -294,6 +308,7 @@ impl GlobScanOperator {
             hive_partitioning,
             partitioning_keys,
             generated_fields: Arc::new(generated_fields),
+            data_size_estimator,
         })
     }
 }
@@ -301,6 +316,10 @@ impl GlobScanOperator {
 impl ScanOperator for GlobScanOperator {
     fn schema(&self) -> SchemaRef {
         self.schema.clone()
+    }
+
+    fn data_size_estimator(&self) -> Option<&dyn DataSizeEstimator> {
+        self.data_size_estimator.as_ref().map(|dse| dse.as_ref())
     }
 
     fn partitioning_keys(&self) -> &[PartitionField] {
