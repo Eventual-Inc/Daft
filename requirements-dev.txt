@@ -94,3 +94,4 @@ sphinx-tabs==3.4.5
 
 # Daft connect testing
 pyspark==3.5.3
+grpcio==1.67.0
