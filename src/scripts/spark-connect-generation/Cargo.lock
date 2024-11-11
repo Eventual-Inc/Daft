@@ -270,7 +270,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "spark-connect-script"
+name = "spark-connect-generation-script"
 version = "0.0.1"
 dependencies = [
  "tonic-build",
