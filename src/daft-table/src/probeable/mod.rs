@@ -14,12 +14,19 @@ struct ArrowTableEntry(Vec<Box<dyn arrow2::array::Array>>);
 
 pub fn make_probeable_builder(
     schema: SchemaRef,
+    nulls_equal_aware: Option<&Vec<bool>>,
     track_indices: bool,
 ) -> DaftResult<Box<dyn ProbeableBuilder>> {
     if track_indices {
-        Ok(Box::new(ProbeTableBuilder(ProbeTable::new(schema)?)))
+        Ok(Box::new(ProbeTableBuilder(ProbeTable::new(
+            schema,
+            nulls_equal_aware,
+        )?)))
     } else {
-        Ok(Box::new(ProbeSetBuilder(ProbeSet::new(schema)?)))
+        Ok(Box::new(ProbeSetBuilder(ProbeSet::new(
+            schema,
+            nulls_equal_aware,
+        )?)))
     }
 }
 

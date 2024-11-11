@@ -46,6 +46,8 @@ pub enum DaftError {
     FmtError(#[from] std::fmt::Error),
     #[error("DaftError::RegexError {0}")]
     RegexError(#[from] regex::Error),
+    #[error("DaftError::FromUtf8Error {0}")]
+    FromUtf8Error(#[from] std::string::FromUtf8Error),
     #[error("Not Yet Implemented: {0}")]
     NotImplemented(String),
 }

@@ -5,19 +5,43 @@ use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
-use super::blocking_sink::{BlockingSink, BlockingSinkStatus};
-use crate::pipeline::PipelineResultType;
+use super::blocking_sink::{BlockingSink, BlockingSinkState, BlockingSinkStatus};
+use crate::{pipeline::PipelineResultType, NUM_CPUS};
 
 enum AggregateState {
     Accumulating(Vec<Arc<MicroPartition>>),
-    #[allow(dead_code)]
-    Done(Arc<MicroPartition>),
+    Done,
+}
+
+impl AggregateState {
+    fn push(&mut self, part: Arc<MicroPartition>) {
+        if let Self::Accumulating(ref mut parts) = self {
+            parts.push(part);
+        } else {
+            panic!("AggregateSink should be in Accumulating state");
+        }
+    }
+
+    fn finalize(&mut self) -> Vec<Arc<MicroPartition>> {
+        let res = if let Self::Accumulating(ref mut parts) = self {
+            std::mem::take(parts)
+        } else {
+            panic!("AggregateSink should be in Accumulating state");
+        };
+        *self = Self::Done;
+        res
+    }
+}
+
+impl BlockingSinkState for AggregateState {
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
 
 pub struct AggregateSink {
     agg_exprs: Vec<ExprRef>,
     group_by: Vec<ExprRef>,
-    state: AggregateState,
 }
 
 impl AggregateSink {
@@ -25,47 +49,51 @@ impl AggregateSink {
         Self {
             agg_exprs,
             group_by,
-            state: AggregateState::Accumulating(vec![]),
         }
-    }
-
-    pub fn boxed(self) -> Box<dyn BlockingSink> {
-        Box::new(self)
     }
 }
 
 impl BlockingSink for AggregateSink {
     #[instrument(skip_all, name = "AggregateSink::sink")]
-    fn sink(&mut self, input: &Arc<MicroPartition>) -> DaftResult<BlockingSinkStatus> {
-        if let AggregateState::Accumulating(parts) = &mut self.state {
-            parts.push(input.clone());
-            Ok(BlockingSinkStatus::NeedMoreInput)
-        } else {
-            panic!("AggregateSink should be in Accumulating state");
-        }
+    fn sink(
+        &self,
+        input: &Arc<MicroPartition>,
+        mut state: Box<dyn BlockingSinkState>,
+    ) -> DaftResult<BlockingSinkStatus> {
+        state
+            .as_any_mut()
+            .downcast_mut::<AggregateState>()
+            .expect("AggregateSink should have AggregateState")
+            .push(input.clone());
+        Ok(BlockingSinkStatus::NeedMoreInput(state))
     }
 
     #[instrument(skip_all, name = "AggregateSink::finalize")]
-    fn finalize(&mut self) -> DaftResult<Option<PipelineResultType>> {
-        if let AggregateState::Accumulating(parts) = &mut self.state {
-            assert!(
-                !parts.is_empty(),
-                "We can not finalize AggregateSink with no data"
-            );
-            let concated = MicroPartition::concat(
-                &parts
-                    .iter()
-                    .map(std::convert::AsRef::as_ref)
-                    .collect::<Vec<_>>(),
-            )?;
-            let agged = Arc::new(concated.agg(&self.agg_exprs, &self.group_by)?);
-            self.state = AggregateState::Done(agged.clone());
-            Ok(Some(agged.into()))
-        } else {
-            panic!("AggregateSink should be in Accumulating state");
-        }
+    fn finalize(
+        &self,
+        states: Vec<Box<dyn BlockingSinkState>>,
+    ) -> DaftResult<Option<PipelineResultType>> {
+        let all_parts = states.into_iter().flat_map(|mut state| {
+            state
+                .as_any_mut()
+                .downcast_mut::<AggregateState>()
+                .expect("AggregateSink should have AggregateState")
+                .finalize()
+        });
+        let concated = MicroPartition::concat(all_parts)?;
+        let agged = Arc::new(concated.agg(&self.agg_exprs, &self.group_by)?);
+        Ok(Some(agged.into()))
     }
+
     fn name(&self) -> &'static str {
         "AggregateSink"
+    }
+
+    fn max_concurrency(&self) -> usize {
+        *NUM_CPUS
+    }
+
+    fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
+        Ok(Box::new(AggregateState::Accumulating(vec![])))
     }
 }

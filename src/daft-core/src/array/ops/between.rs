@@ -3,12 +3,12 @@ use common_error::{DaftError, DaftResult};
 use super::{DaftBetween, DaftCompare, DaftLogical};
 use crate::{
     array::DataArray,
-    datatypes::{BooleanArray, DaftNumericType},
+    datatypes::{BooleanArray, DaftPrimitiveType},
 };
 
 impl<T> DaftBetween<&Self, &Self> for DataArray<T>
 where
-    T: DaftNumericType,
+    T: DaftPrimitiveType,
 {
     type Output = DaftResult<BooleanArray>;
 

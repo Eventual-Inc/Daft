@@ -19,7 +19,6 @@ from daft.logical.schema import Schema
 from daft.runners.partitioning import PartitionT
 
 if TYPE_CHECKING:
-    from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
@@ -243,6 +242,7 @@ def hash_join(
     right: physical_plan.InProgressPhysicalPlan[PartitionT],
     left_on: list[PyExpr],
     right_on: list[PyExpr],
+    null_equals_nulls: list[bool] | None,
     join_type: JoinType,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     left_on_expr_proj = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in left_on])
@@ -253,6 +253,7 @@ def hash_join(
         left_on=left_on_expr_proj,
         right_on=right_on_expr_proj,
         how=join_type,
+        null_equals_nulls=null_equals_nulls,
     )
 
 
@@ -303,6 +304,7 @@ def broadcast_join(
     receiver: physical_plan.InProgressPhysicalPlan[PartitionT],
     left_on: list[PyExpr],
     right_on: list[PyExpr],
+    null_equals_nulls: list[bool] | None,
     join_type: JoinType,
     is_swapped: bool,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
@@ -315,6 +317,7 @@ def broadcast_join(
         right_on=right_on_expr_proj,
         how=join_type,
         is_swapped=is_swapped,
+        null_equals_nulls=null_equals_nulls,
     )
 
 
@@ -347,7 +350,8 @@ def write_iceberg(
     base_path: str,
     iceberg_schema: IcebergSchema,
     iceberg_properties: IcebergTableProperties,
-    partition_spec: IcebergPartitionSpec,
+    partition_spec_id: int,
+    partition_cols: list[PyExpr],
     io_config: IOConfig | None,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     return physical_plan.iceberg_write(
@@ -355,7 +359,8 @@ def write_iceberg(
         base_path=base_path,
         iceberg_schema=iceberg_schema,
         iceberg_properties=iceberg_properties,
-        partition_spec=partition_spec,
+        partition_spec_id=partition_spec_id,
+        partition_cols=ExpressionsProjection([Expression._from_pyexpr(expr) for expr in partition_cols]),
         io_config=io_config,
     )
 

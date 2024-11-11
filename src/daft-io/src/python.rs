@@ -12,7 +12,7 @@ mod py {
     #[pyfunction]
     fn io_glob(
         py: Python,
-        path: String,
+        input: String,
         multithreaded_io: Option<bool>,
         io_config: Option<common_io_config::python::IOConfig>,
         fanout_limit: Option<usize>,
@@ -20,7 +20,7 @@ mod py {
         limit: Option<usize>,
     ) -> PyResult<Vec<Bound<PyDict>>> {
         let multithreaded_io = multithreaded_io.unwrap_or(true);
-        let io_stats = IOStatsContext::new(format!("io_glob for {path}"));
+        let io_stats = IOStatsContext::new(format!("io_glob for {input}"));
         let io_stats_handle = io_stats;
 
         let lsr: DaftResult<Vec<_>> = py.allow_threads(|| {
@@ -28,11 +28,11 @@ mod py {
                 multithreaded_io,
                 io_config.unwrap_or_default().config.into(),
             )?;
-            let (scheme, path) = parse_url(&path)?;
+            let (_, path) = parse_url(&input)?;
             let runtime_handle = get_io_runtime(multithreaded_io);
 
-            runtime_handle.block_on_current_thread(async move {
-                let source = io_client.get_source(&scheme).await?;
+            runtime_handle.block_on_current_thread(async {
+                let source = io_client.get_source(&input).await?;
                 let files = source
                     .glob(
                         path.as_ref(),

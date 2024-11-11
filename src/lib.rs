@@ -111,7 +111,7 @@ pub mod pylib {
         daft_parquet::register_modules(m)?;
         daft_csv::register_modules(m)?;
         daft_json::register_modules(m)?;
-        daft_plan::register_modules(m)?;
+        daft_logical_plan::register_modules(m)?;
         daft_micropartition::register_modules(m)?;
         daft_scan::register_modules(m)?;
         daft_scheduler::register_modules(m)?;

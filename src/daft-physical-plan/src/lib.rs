@@ -1,10 +1,18 @@
-#[allow(unused)]
-mod local_plan;
-mod translate;
+#![feature(assert_matches)]
+#![feature(let_chains)]
 
-pub use local_plan::{
-    ActorPoolProject, Concat, EmptyScan, Explode, Filter, HashAggregate, HashJoin, InMemoryScan,
-    Limit, LocalPhysicalPlan, LocalPhysicalPlanRef, PhysicalScan, PhysicalWrite, Pivot, Project,
-    Sample, Sort, UnGroupedAggregate, Unpivot,
+mod display;
+pub mod ops;
+mod optimization;
+mod physical_planner;
+mod plan;
+mod treenode;
+
+#[cfg(test)]
+mod test;
+
+pub use physical_planner::{
+    logical_to_physical, populate_aggregation_stages, AdaptivePlanner, MaterializedResults,
+    QueryStageOutput,
 };
-pub use translate::translate;
+pub use plan::{PhysicalPlan, PhysicalPlanRef};

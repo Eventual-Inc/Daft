@@ -1,6 +1,6 @@
 use common_daft_config::PyDaftPlanningConfig;
 use daft_dsl::python::PyExpr;
-use daft_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
+use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
 use pyo3::prelude::*;
 
 use crate::{catalog::SQLCatalog, functions::SQL_FUNCTIONS, planner::SQLPlanner};
