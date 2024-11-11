@@ -4,7 +4,13 @@ from typing import TYPE_CHECKING, Iterator, List, Optional
 
 from daft import context
 from daft.api_annotations import PublicAPI
-from daft.daft import IOConfig, Pushdowns, PyTable, ScanOperatorHandle, ScanTask
+from daft.daft import (
+    IOConfig,
+    Pushdowns,
+    PyTable,
+    ScanOperatorHandle,
+    ScanTask,
+)
 from daft.dataframe import DataFrame
 from daft.io.object_store_options import io_config_to_storage_options
 from daft.io.scan import PartitionField, ScanOperator
@@ -122,13 +128,10 @@ class LanceDBScanOperator(ScanOperator):
             num_rows = None
 
             yield ScanTask.python_factory_func_scan_task(
+                module=_lancedb_table_factory_function.__module__,
+                func_name=_lancedb_table_factory_function.__name__,
                 func_args=(fragment, required_columns),
                 schema=self.schema()._schema,
-                module_and_func_name=(
-                    _lancedb_table_factory_function.__module__,
-                    _lancedb_table_factory_function.__name__,
-                ),
-                func=None,
                 num_rows=num_rows,
                 size_bytes=size_bytes,
                 pushdowns=pushdowns,

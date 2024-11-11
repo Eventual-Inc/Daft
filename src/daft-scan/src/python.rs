@@ -79,13 +79,37 @@ pub mod pylib {
     };
     use serde::{Deserialize, Serialize};
 
-    use super::PythonTablesFactoryArgs;
+    use super::{PythonFactoryFunctionType, PythonTablesFactoryArgs};
     use crate::{
         anonymous::AnonymousScanOperator,
         glob::GlobScanOperator,
         storage_config::{PyStorageConfig, PythonStorageConfig},
         DataSource, PartitionField, Pushdowns, ScanOperator, ScanOperatorRef, ScanTask,
     };
+
+    #[pyclass(module = "daft.daft", frozen)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct PythonFactoryFunction {
+        pub inner: PythonFactoryFunctionType,
+    }
+
+    #[pymethods]
+    impl PythonFactoryFunction {
+        #[staticmethod]
+        pub fn from_name_and_module(module: String, func_name: String) -> Self {
+            Self {
+                inner: PythonFactoryFunctionType::NameAndModule(module, func_name),
+            }
+        }
+
+        #[staticmethod]
+        pub fn from_function(func: PyObject) -> Self {
+            Self {
+                inner: PythonFactoryFunctionType::Function(func),
+            }
+        }
+    }
+
     #[pyclass(module = "daft.daft", frozen)]
     #[derive(Debug, Clone)]
     pub struct ScanOperatorHandle {
@@ -420,10 +444,10 @@ pub mod pylib {
         #[staticmethod]
         pub fn python_factory_func_scan_task(
             py: Python,
+            module: String,
+            func_name: String,
             func_args: Vec<Bound<PyAny>>,
             schema: PySchema,
-            module_and_func_name: Option<(String, String)>,
-            func: Option<PyObject>,
             num_rows: Option<i64>,
             size_bytes: Option<u64>,
             pushdowns: Option<PyPushdowns>,
@@ -432,17 +456,9 @@ pub mod pylib {
             let statistics = stats
                 .map(|s| TableStatistics::from_stats_table(&s.table))
                 .transpose()?;
-            let func_type = match (module_and_func_name, func) {
-                (Some((module, func_name)), None) => {
-                    super::PythonFactoryFunctionType::NameAndModule(module, func_name)
-                }
-                (None, Some(func)) => super::PythonFactoryFunctionType::Function(func),
-                _ => {
-                    panic!("Exactly one of module_and_func_name or func must be provided")
-                }
-            };
             let data_source = DataSource::PythonFactoryFunction {
-                func: func_type,
+                module,
+                func_name,
                 func_args: PythonTablesFactoryArgs::new(
                     func_args.iter().map(|pyany| pyany.into_py(py)).collect(),
                 ),
@@ -614,6 +630,7 @@ pub mod pylib {
 }
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
+    parent.add_class::<pylib::PythonFactoryFunction>()?;
     parent.add_class::<pylib::ScanOperatorHandle>()?;
     parent.add_class::<pylib::PyScanTask>()?;
     parent.add_class::<pylib::PyPartitionField>()?;
