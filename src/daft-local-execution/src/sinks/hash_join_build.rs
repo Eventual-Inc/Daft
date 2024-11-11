@@ -8,9 +8,15 @@ use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;
 use daft_table::{make_probeable_builder, ProbeState, ProbeableBuilder, Table};
 
-use super::blocking_sink::{BlockingSink, BlockingSinkState, BlockingSinkStatus};
-use crate::OperatorOutput;
+use super::blocking_sink::{
+    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
+    BlockingSinkStatus,
+};
 
+/// ProbeStateBridge is a bridge between the build and probe phase of a hash join.
+/// It is used to pass the probe state from the build phase to the probe phase.
+/// The build phase sets the probe state once building is complete, and the probe phase
+/// waits for the probe state to be set via the `get_probe_state` method.
 pub(crate) type ProbeStateBridgeRef = Arc<ProbeStateBridge>;
 pub(crate) struct ProbeStateBridge {
     inner: OnceLock<Arc<ProbeState>>,
@@ -151,24 +157,25 @@ impl BlockingSink for HashJoinBuildSink {
         input: &Arc<MicroPartition>,
         mut state: Box<dyn BlockingSinkState>,
         runtime: &RuntimeRef,
-    ) -> OperatorOutput<DaftResult<BlockingSinkStatus>> {
+    ) -> BlockingSinkSinkResult {
         let input = input.clone();
-        let fut = runtime.spawn(async move {
-            let probe_table_state: &mut ProbeTableState = state
-                .as_any_mut()
-                .downcast_mut::<ProbeTableState>()
-                .expect("HashJoinBuildSink should have ProbeTableState");
-            probe_table_state.add_tables(&input)?;
-            Ok(BlockingSinkStatus::NeedMoreInput(state))
-        });
-        OperatorOutput::Future(fut)
+        runtime
+            .spawn(async move {
+                let probe_table_state: &mut ProbeTableState = state
+                    .as_any_mut()
+                    .downcast_mut::<ProbeTableState>()
+                    .expect("HashJoinBuildSink should have ProbeTableState");
+                probe_table_state.add_tables(&input)?;
+                Ok(BlockingSinkStatus::NeedMoreInput(state))
+            })
+            .into()
     }
 
     fn finalize(
         &self,
         states: Vec<Box<dyn BlockingSinkState>>,
         _runtime: &RuntimeRef,
-    ) -> OperatorOutput<DaftResult<Option<Arc<MicroPartition>>>> {
+    ) -> BlockingSinkFinalizeResult {
         assert_eq!(states.len(), 1);
         let mut state = states.into_iter().next().unwrap();
         let probe_table_state = state
@@ -178,7 +185,7 @@ impl BlockingSink for HashJoinBuildSink {
         let finalized_probe_state = probe_table_state.finalize();
         self.probe_state_bridge
             .set_probe_state(finalized_probe_state.into());
-        OperatorOutput::Immediate(Ok(None))
+        Ok(None).into()
     }
 
     fn max_concurrency(&self) -> usize {

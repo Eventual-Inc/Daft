@@ -11,6 +11,18 @@ use crate::{
     ExecutionRuntimeHandle,
 };
 
+/// The `Dispatcher` trait defines the interface for dispatching morsels to workers.
+///
+/// The `dispatch` method takes:
+/// - A vector of input receivers
+/// - The number of workers
+/// - A runtime handle for the current execution context
+/// - The name of the operator
+///
+/// It returns a vector of receivers (one per worker) that will receive the morsels.
+///
+/// Implementations must spawn a task on the runtime handle that reads from the
+/// input receivers and distributes morsels to the worker receivers.
 pub(crate) trait Dispatcher {
     fn dispatch(
         &self,
@@ -21,6 +33,8 @@ pub(crate) trait Dispatcher {
     ) -> Vec<Receiver<Arc<MicroPartition>>>;
 }
 
+/// A dispatcher that distributes morsels to workers in a round-robin fashion.
+/// Used if the operator requires maintaining the order of the input.
 pub(crate) struct RoundRobinDispatcher {
     morsel_size: Option<usize>,
 }
@@ -54,10 +68,8 @@ impl RoundRobinDispatcher {
                             }
                         }
                     }
-                } else {
-                    if send_to_next_worker(morsel).await.is_err() {
-                        return Ok(());
-                    }
+                } else if send_to_next_worker(morsel).await.is_err() {
+                    return Ok(());
                 }
             }
             // Clear all remaining morsels
@@ -92,6 +104,8 @@ impl Dispatcher for RoundRobinDispatcher {
     }
 }
 
+/// A dispatcher that distributes morsels to workers in an unordered fashion.
+/// Used if the operator does not require maintaining the order of the input.
 pub(crate) struct UnorderedDispatcher {
     morsel_size: Option<usize>,
 }
@@ -118,10 +132,8 @@ impl UnorderedDispatcher {
                             }
                         }
                     }
-                } else {
-                    if worker_sender.send(morsel).await.is_err() {
-                        return Ok(());
-                    }
+                } else if worker_sender.send(morsel).await.is_err() {
+                    return Ok(());
                 }
             }
             // Clear all remaining morsels
@@ -156,6 +168,8 @@ impl Dispatcher for UnorderedDispatcher {
     }
 }
 
+/// A dispatcher that distributes morsels to workers based on a partitioning expression.
+/// Used if the operator requires partitioning the input, i.e. partitioned writes.
 pub(crate) struct PartitionedDispatcher {
     partition_by: Vec<ExprRef>,
 }

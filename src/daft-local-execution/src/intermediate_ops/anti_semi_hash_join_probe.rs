@@ -10,9 +10,10 @@ use daft_table::{GrowableTable, Probeable};
 use tracing::{info_span, instrument};
 
 use super::intermediate_op::{
-    IntermediateOpState, IntermediateOperator, IntermediateOperatorResult,
+    IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
+    IntermediateOperatorResult,
 };
-use crate::{sinks::hash_join_build::ProbeStateBridgeRef, OperatorOutput};
+use crate::sinks::hash_join_build::ProbeStateBridgeRef;
 
 enum AntiSemiProbeState {
     Building(ProbeStateBridgeRef),
@@ -118,8 +119,7 @@ impl IntermediateOperator for AntiSemiProbeOperator {
         input: &Arc<MicroPartition>,
         mut state: Box<dyn IntermediateOpState>,
         runtime: &RuntimeRef,
-    ) -> OperatorOutput<DaftResult<(Box<dyn IntermediateOpState>, IntermediateOperatorResult)>>
-    {
+    ) -> IntermediateOpExecuteResult {
         if input.is_empty() {
             let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));
             return Ok((

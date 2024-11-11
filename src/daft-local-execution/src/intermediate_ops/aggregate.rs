@@ -1,15 +1,14 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
 use common_runtime::RuntimeRef;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
 use super::intermediate_op::{
-    IntermediateOpState, IntermediateOperator, IntermediateOperatorResult,
+    IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
+    IntermediateOperatorResult,
 };
-use crate::OperatorOutput;
 
 struct AggParams {
     agg_exprs: Vec<ExprRef>,
@@ -38,8 +37,7 @@ impl IntermediateOperator for AggregateOperator {
         input: &Arc<MicroPartition>,
         state: Box<dyn IntermediateOpState>,
         runtime: &RuntimeRef,
-    ) -> OperatorOutput<DaftResult<(Box<dyn IntermediateOpState>, IntermediateOperatorResult)>>
-    {
+    ) -> IntermediateOpExecuteResult {
         let input = input.clone();
         let params = self.params.clone();
         runtime

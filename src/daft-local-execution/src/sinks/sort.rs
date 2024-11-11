@@ -6,8 +6,11 @@ use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
-use super::blocking_sink::{BlockingSink, BlockingSinkState, BlockingSinkStatus};
-use crate::{OperatorOutput, NUM_CPUS};
+use super::blocking_sink::{
+    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
+    BlockingSinkStatus,
+};
+use crate::NUM_CPUS;
 
 enum SortState {
     Building(Vec<Arc<MicroPartition>>),
@@ -66,13 +69,13 @@ impl BlockingSink for SortSink {
         input: &Arc<MicroPartition>,
         mut state: Box<dyn BlockingSinkState>,
         _runtime_ref: &RuntimeRef,
-    ) -> OperatorOutput<DaftResult<BlockingSinkStatus>> {
+    ) -> BlockingSinkSinkResult {
         state
             .as_any_mut()
             .downcast_mut::<SortState>()
             .expect("SortSink should have sort state")
             .push(input.clone());
-        OperatorOutput::Immediate(Ok(BlockingSinkStatus::NeedMoreInput(state)))
+        Ok(BlockingSinkStatus::NeedMoreInput(state)).into()
     }
 
     #[instrument(skip_all, name = "SortSink::finalize")]
@@ -80,21 +83,22 @@ impl BlockingSink for SortSink {
         &self,
         states: Vec<Box<dyn BlockingSinkState>>,
         runtime: &RuntimeRef,
-    ) -> OperatorOutput<DaftResult<Option<Arc<MicroPartition>>>> {
+    ) -> BlockingSinkFinalizeResult {
         let params = self.params.clone();
-        let fut = runtime.spawn(async move {
-            let parts = states.into_iter().flat_map(|mut state| {
-                let state = state
-                    .as_any_mut()
-                    .downcast_mut::<SortState>()
-                    .expect("State type mismatch");
-                state.finalize()
-            });
-            let concated = MicroPartition::concat(parts)?;
-            let sorted = Arc::new(concated.sort(&params.sort_by, &params.descending)?);
-            Ok(Some(sorted.into()))
-        });
-        OperatorOutput::Future(fut)
+        runtime
+            .spawn(async move {
+                let parts = states.into_iter().flat_map(|mut state| {
+                    let state = state
+                        .as_any_mut()
+                        .downcast_mut::<SortState>()
+                        .expect("State type mismatch");
+                    state.finalize()
+                });
+                let concated = MicroPartition::concat(parts)?;
+                let sorted = Arc::new(concated.sort(&params.sort_by, &params.descending)?);
+                Ok(Some(sorted))
+            })
+            .into()
     }
 
     fn name(&self) -> &'static str {

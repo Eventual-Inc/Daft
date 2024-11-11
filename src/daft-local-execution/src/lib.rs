@@ -19,29 +19,33 @@ lazy_static! {
     pub static ref NUM_CPUS: usize = std::thread::available_parallelism().unwrap().get();
 }
 
+/// The `OperatorOutput` enum represents the output of an operator.
+/// It can be either `Ready` or `Pending`.
+/// If the output is `Ready`, the value is immediately available.
+/// If the output is `Pending`, the value is not yet available and a `RuntimeTask` is returned.
 pub(crate) enum OperatorOutput<T> {
-    Immediate(T),
-    Future(RuntimeTask<T>),
+    Ready(T),
+    Pending(RuntimeTask<T>),
 }
 
 impl<T: Send + Sync + 'static> OperatorOutput<T> {
-    async fn unwrap(self) -> DaftResult<T> {
+    async fn await_output(self) -> DaftResult<T> {
         match self {
-            Self::Immediate(v) => Ok(v),
-            Self::Future(f) => f.await,
+            Self::Ready(v) => Ok(v),
+            Self::Pending(task) => task.await,
         }
     }
 }
 
 impl<T: Send + Sync + 'static> From<T> for OperatorOutput<T> {
-    fn from(v: T) -> Self {
-        Self::Immediate(v)
+    fn from(value: T) -> Self {
+        Self::Ready(value)
     }
 }
 
 impl<T: Send + Sync + 'static> From<RuntimeTask<T>> for OperatorOutput<T> {
-    fn from(f: RuntimeTask<T>) -> Self {
-        Self::Future(f)
+    fn from(task: RuntimeTask<T>) -> Self {
+        Self::Pending(task)
     }
 }
 

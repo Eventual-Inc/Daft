@@ -34,13 +34,15 @@ pub enum IntermediateOperatorResult {
     HasMoreOutput(Arc<MicroPartition>),
 }
 
+pub(crate) type IntermediateOpExecuteResult =
+    OperatorOutput<DaftResult<(Box<dyn IntermediateOpState>, IntermediateOperatorResult)>>;
 pub trait IntermediateOperator: Send + Sync {
     fn execute(
         &self,
         input: &Arc<MicroPartition>,
         state: Box<dyn IntermediateOpState>,
         runtime: &RuntimeRef,
-    ) -> OperatorOutput<DaftResult<(Box<dyn IntermediateOpState>, IntermediateOperatorResult)>>;
+    ) -> IntermediateOpExecuteResult;
     fn name(&self) -> &'static str;
     fn make_state(&self) -> DaftResult<Box<dyn IntermediateOpState>> {
         Ok(Box::new(DefaultIntermediateOperatorState {}))
@@ -113,12 +115,12 @@ impl IntermediateNode {
             loop {
                 let result = rt_context
                     .in_span(&span, || op.execute(&morsel, state, &compute_runtime))
-                    .unwrap()
+                    .await_output()
                     .await??;
                 state = result.0;
                 match result.1 {
                     IntermediateOperatorResult::NeedMoreInput(Some(mp)) => {
-                        if sender.send(mp.into()).await.is_err() {
+                        if sender.send(mp).await.is_err() {
                             return Ok(());
                         }
                         break;
@@ -127,7 +129,7 @@ impl IntermediateNode {
                         break;
                     }
                     IntermediateOperatorResult::HasMoreOutput(mp) => {
-                        if sender.send(mp.into()).await.is_err() {
+                        if sender.send(mp).await.is_err() {
                             return Ok(());
                         }
                     }

@@ -10,7 +10,7 @@ use super::streaming_sink::{
 };
 use crate::{
     dispatcher::{Dispatcher, UnorderedDispatcher},
-    ExecutionRuntimeHandle, OperatorOutput,
+    ExecutionRuntimeHandle,
 };
 
 struct LimitSinkState {
@@ -50,7 +50,7 @@ impl StreamingSink for LimitSink {
         input: &Arc<MicroPartition>,
         mut state: Box<dyn StreamingSinkState>,
         runtime_ref: &RuntimeRef,
-    ) -> OperatorOutput<StreamingSinkExecuteResult> {
+    ) -> StreamingSinkExecuteResult {
         let input_num_rows = input.len();
 
         let remaining = state
@@ -62,28 +62,26 @@ impl StreamingSink for LimitSink {
         match input_num_rows.cmp(remaining) {
             Less => {
                 *remaining -= input_num_rows;
-                OperatorOutput::Immediate(Ok((
+                Ok((
                     state,
                     StreamingSinkOutput::NeedMoreInput(Some(input.clone())),
-                )))
+                ))
+                .into()
             }
             Equal => {
                 *remaining = 0;
-                OperatorOutput::Immediate(Ok((
-                    state,
-                    StreamingSinkOutput::Finished(Some(input.clone())),
-                )))
+                Ok((state, StreamingSinkOutput::Finished(Some(input.clone())))).into()
             }
             Greater => {
                 let input = input.clone();
                 let to_head = *remaining;
                 *remaining = 0;
-                let fut = runtime_ref.spawn(async move {
-                    let taken = input.head(to_head)?;
-                    Ok((state, StreamingSinkOutput::Finished(Some(taken.into()))))
-                });
-
-                OperatorOutput::Future(fut)
+                runtime_ref
+                    .spawn(async move {
+                        let taken = input.head(to_head)?;
+                        Ok((state, StreamingSinkOutput::Finished(Some(taken.into()))))
+                    })
+                    .into()
             }
         }
     }
@@ -96,8 +94,8 @@ impl StreamingSink for LimitSink {
         &self,
         _states: Vec<Box<dyn StreamingSinkState>>,
         _runtime_ref: &RuntimeRef,
-    ) -> OperatorOutput<StreamingSinkFinalizeResult> {
-        OperatorOutput::Immediate(Ok(None))
+    ) -> StreamingSinkFinalizeResult {
+        Ok(None).into()
     }
 
     fn make_state(&self) -> Box<dyn StreamingSinkState> {

@@ -24,18 +24,21 @@ pub enum BlockingSinkStatus {
     Finished(Box<dyn BlockingSinkState>),
 }
 
+pub(crate) type BlockingSinkSinkResult = OperatorOutput<DaftResult<BlockingSinkStatus>>;
+pub(crate) type BlockingSinkFinalizeResult =
+    OperatorOutput<DaftResult<Option<Arc<MicroPartition>>>>;
 pub trait BlockingSink: Send + Sync {
     fn sink(
         &self,
         input: &Arc<MicroPartition>,
         state: Box<dyn BlockingSinkState>,
         runtime: &RuntimeRef,
-    ) -> OperatorOutput<DaftResult<BlockingSinkStatus>>;
+    ) -> BlockingSinkSinkResult;
     fn finalize(
         &self,
         states: Vec<Box<dyn BlockingSinkState>>,
         runtime: &RuntimeRef,
-    ) -> OperatorOutput<DaftResult<Option<Arc<MicroPartition>>>>;
+    ) -> BlockingSinkFinalizeResult;
     fn name(&self) -> &'static str;
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>>;
     fn make_dispatcher(&self, runtime_handle: &ExecutionRuntimeHandle) -> Arc<dyn Dispatcher> {
@@ -79,7 +82,7 @@ impl BlockingSinkNode {
         while let Some(morsel) = input_receiver.recv().await {
             let result = rt_context
                 .in_span(&span, || op.sink(&morsel, state, &compute_runtime))
-                .unwrap()
+                .await_output()
                 .await??;
             match result {
                 BlockingSinkStatus::NeedMoreInput(new_state) => {
@@ -178,7 +181,7 @@ impl PipelineNode for BlockingSinkNode {
                     .in_span(&info_span!("BlockingSinkNode::finalize"), || {
                         op.finalize(finished_states, &compute_runtime)
                     })
-                    .unwrap()
+                    .await_output()
                     .await??;
                 if let Some(res) = finalized_result {
                     let _ = counting_sender.send(res).await;

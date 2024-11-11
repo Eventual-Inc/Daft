@@ -1,11 +1,9 @@
-use loole::SendError;
-
 #[derive(Clone)]
 pub(crate) struct Sender<T>(loole::Sender<T>)
 where
     T: Clone;
 impl<T: Clone> Sender<T> {
-    pub(crate) async fn send(&self, val: T) -> Result<(), SendError<T>> {
+    pub(crate) async fn send(&self, val: T) -> Result<(), loole::SendError<T>> {
         self.0.send_async(val).await
     }
 }
@@ -29,6 +27,9 @@ pub(crate) fn create_channel<T: Clone>(buffer_size: usize) -> (Sender<T>, Receiv
     (Sender(tx), Receiver(rx))
 }
 
+/// A multi-producer, single-consumer channel that is aware of the ordering of the senders.
+/// If `ordered` is true, the receiver will try to receive from each sender in a round-robin fashion.
+/// This is useful when collecting results from multiple workers in a specific order.
 pub(crate) fn create_ordering_aware_receiver_channel<T: Clone>(
     ordered: bool,
     buffer_size: usize,
@@ -65,6 +66,7 @@ impl<T: Clone> OrderingAwareReceiver<T> {
     }
 }
 
+/// A round-robin receiver that tries to receive from each receiver in a round-robin fashion.
 pub(crate) struct RoundRobinReceiver<T: Clone> {
     receivers: Vec<Receiver<T>>,
     curr_receiver_idx: usize,

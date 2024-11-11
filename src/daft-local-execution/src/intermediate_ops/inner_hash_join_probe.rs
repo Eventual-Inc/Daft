@@ -10,9 +10,10 @@ use indexmap::IndexSet;
 use tracing::{info_span, instrument};
 
 use super::intermediate_op::{
-    IntermediateOpState, IntermediateOperator, IntermediateOperatorResult,
+    IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
+    IntermediateOperatorResult,
 };
-use crate::{sinks::hash_join_build::ProbeStateBridgeRef, OperatorOutput};
+use crate::sinks::hash_join_build::ProbeStateBridgeRef;
 
 enum InnerHashJoinProbeState {
     Building(ProbeStateBridgeRef),
@@ -38,12 +39,16 @@ impl IntermediateOpState for InnerHashJoinProbeState {
     }
 }
 
-pub struct InnerHashJoinProbeOperator {
+struct InnerHashJoinParams {
     probe_on: Vec<ExprRef>,
     common_join_keys: Vec<String>,
     left_non_join_columns: Vec<String>,
     right_non_join_columns: Vec<String>,
     build_on_left: bool,
+}
+
+pub struct InnerHashJoinProbeOperator {
+    params: Arc<InnerHashJoinParams>,
     output_schema: SchemaRef,
     probe_state_bridge: ProbeStateBridgeRef,
 }
@@ -74,11 +79,13 @@ impl InnerHashJoinProbeOperator {
             .collect();
         let common_join_keys = common_join_keys.into_iter().collect();
         Self {
-            probe_on,
-            common_join_keys,
-            left_non_join_columns,
-            right_non_join_columns,
-            build_on_left,
+            params: Arc::new(InnerHashJoinParams {
+                probe_on,
+                common_join_keys,
+                left_non_join_columns,
+                right_non_join_columns,
+                build_on_left,
+            }),
             output_schema: output_schema.clone(),
             probe_state_bridge,
         }
@@ -166,40 +173,39 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
         input: &Arc<MicroPartition>,
         mut state: Box<dyn IntermediateOpState>,
         runtime_ref: &RuntimeRef,
-    ) -> OperatorOutput<DaftResult<(Box<dyn IntermediateOpState>, IntermediateOperatorResult)>>
-    {
+    ) -> IntermediateOpExecuteResult {
         if input.is_empty() {
             let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));
-            return OperatorOutput::Immediate(Ok((
+            return Ok((
                 state,
                 IntermediateOperatorResult::NeedMoreInput(Some(empty)),
-            )));
+            ))
+            .into();
         }
 
         let input = input.clone();
-        let probe_on = self.probe_on.clone();
-        let common_join_keys = self.common_join_keys.clone();
-        let left_non_join_columns = self.left_non_join_columns.clone();
-        let right_non_join_columns = self.right_non_join_columns.clone();
-        let build_on_left = self.build_on_left;
-        let fut = runtime_ref.spawn(async move {
-            let inner_join_state = state
-                .as_any_mut()
-                .downcast_mut::<InnerHashJoinProbeState>()
-                .expect("InnerHashJoinProbeState should be used with InnerHashJoinProbeOperator");
-            let probe_state = inner_join_state.get_or_await_probe_state().await;
-            let res = Self::probe_inner(
-                &input,
-                &probe_state,
-                &probe_on,
-                &common_join_keys,
-                &left_non_join_columns,
-                &right_non_join_columns,
-                build_on_left,
-            );
-            Ok((state, IntermediateOperatorResult::NeedMoreInput(Some(res?))))
-        });
-        OperatorOutput::Future(fut)
+        let params = self.params.clone();
+        runtime_ref
+            .spawn(async move {
+                let inner_join_state = state
+                    .as_any_mut()
+                    .downcast_mut::<InnerHashJoinProbeState>()
+                    .expect(
+                        "InnerHashJoinProbeState should be used with InnerHashJoinProbeOperator",
+                    );
+                let probe_state = inner_join_state.get_or_await_probe_state().await;
+                let res = Self::probe_inner(
+                    &input,
+                    &probe_state,
+                    &params.probe_on,
+                    &params.common_join_keys,
+                    &params.left_non_join_columns,
+                    &params.right_non_join_columns,
+                    params.build_on_left,
+                );
+                Ok((state, IntermediateOperatorResult::NeedMoreInput(Some(res?))))
+            })
+            .into()
     }
 
     fn name(&self) -> &'static str {

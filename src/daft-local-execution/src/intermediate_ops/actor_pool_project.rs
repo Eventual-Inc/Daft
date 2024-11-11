@@ -13,12 +13,10 @@ use pyo3::prelude::*;
 use tracing::instrument;
 
 use super::intermediate_op::{
-    IntermediateOpState, IntermediateOperator, IntermediateOperatorResult,
+    IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
+    IntermediateOperatorResult,
 };
-use crate::{
-    dispatcher::{RoundRobinDispatcher, UnorderedDispatcher},
-    OperatorOutput,
-};
+use crate::dispatcher::{RoundRobinDispatcher, UnorderedDispatcher};
 
 struct ActorHandle {
     #[cfg(feature = "python")]
@@ -151,8 +149,7 @@ impl IntermediateOperator for ActorPoolProjectOperator {
         input: &Arc<MicroPartition>,
         mut state: Box<dyn IntermediateOpState>,
         runtime: &RuntimeRef,
-    ) -> OperatorOutput<DaftResult<(Box<dyn IntermediateOpState>, IntermediateOperatorResult)>>
-    {
+    ) -> IntermediateOpExecuteResult {
         let input = input.clone();
         let fut = runtime.spawn(async move {
             let actor_pool_project_state = state

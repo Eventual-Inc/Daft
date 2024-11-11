@@ -4,9 +4,13 @@ use common_runtime::RuntimeRef;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
-use super::streaming_sink::{StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput, StreamingSinkState};
+use super::streaming_sink::{
+    StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
+    StreamingSinkState,
+};
 use crate::{
-    dispatcher::{Dispatcher, RoundRobinDispatcher, UnorderedDispatcher}, ExecutionRuntimeHandle, OperatorOutput, NUM_CPUS
+    dispatcher::{Dispatcher, RoundRobinDispatcher, UnorderedDispatcher},
+    ExecutionRuntimeHandle, NUM_CPUS,
 };
 
 struct ConcatSinkState {}
@@ -28,11 +32,12 @@ impl StreamingSink for ConcatSink {
         input: &Arc<MicroPartition>,
         state: Box<dyn StreamingSinkState>,
         _runtime_ref: &RuntimeRef,
-    ) -> OperatorOutput<StreamingSinkExecuteResult> {
-        OperatorOutput::Immediate(Ok((
+    ) -> StreamingSinkExecuteResult {
+        Ok((
             state,
             StreamingSinkOutput::NeedMoreInput(Some(input.clone())),
-        )))
+        ))
+        .into()
     }
 
     fn name(&self) -> &'static str {
@@ -43,8 +48,8 @@ impl StreamingSink for ConcatSink {
         &self,
         _states: Vec<Box<dyn StreamingSinkState>>,
         _runtime_ref: &RuntimeRef,
-    ) -> OperatorOutput<StreamingSinkFinalizeResult> {
-        OperatorOutput::Immediate(Ok(None))
+    ) -> StreamingSinkFinalizeResult {
+        Ok(None).into()
     }
 
     fn make_state(&self) -> Box<dyn StreamingSinkState> {

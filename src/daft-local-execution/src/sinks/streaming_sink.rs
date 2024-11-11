@@ -30,9 +30,9 @@ pub enum StreamingSinkOutput {
 }
 
 pub(crate) type StreamingSinkExecuteResult =
-    DaftResult<(Box<dyn StreamingSinkState>, StreamingSinkOutput)>;
-pub(crate) type StreamingSinkFinalizeResult = DaftResult<Option<Arc<MicroPartition>>>;
-
+    OperatorOutput<DaftResult<(Box<dyn StreamingSinkState>, StreamingSinkOutput)>>;
+pub(crate) type StreamingSinkFinalizeResult =
+    OperatorOutput<DaftResult<Option<Arc<MicroPartition>>>>;
 pub trait StreamingSink: Send + Sync {
     /// Execute the StreamingSink operator on the morsel of input data,
     /// received from the child with the given index,
@@ -42,14 +42,14 @@ pub trait StreamingSink: Send + Sync {
         input: &Arc<MicroPartition>,
         state: Box<dyn StreamingSinkState>,
         runtime: &RuntimeRef,
-    ) -> OperatorOutput<StreamingSinkExecuteResult>;
+    ) -> StreamingSinkExecuteResult;
 
     /// Finalize the StreamingSink operator, with the given states from each worker.
     fn finalize(
         &self,
         states: Vec<Box<dyn StreamingSinkState>>,
         runtime: &RuntimeRef,
-    ) -> OperatorOutput<StreamingSinkFinalizeResult>;
+    ) -> StreamingSinkFinalizeResult;
 
     /// The name of the StreamingSink operator.
     fn name(&self) -> &'static str;
@@ -106,7 +106,7 @@ impl StreamingSinkNode {
             loop {
                 let output =
                     rt_context.in_span(&span, || op.execute(&morsel, state, &compute_runtime));
-                let result = output.unwrap().await??;
+                let result = output.await_output().await??;
                 state = result.0;
                 match result.1 {
                     StreamingSinkOutput::NeedMoreInput(mp) => {
@@ -228,7 +228,7 @@ impl PipelineNode for StreamingSinkNode {
                 );
 
                 while let Some(morsel) = output_receiver.recv().await {
-                    if counting_sender.send(morsel.into()).await.is_err() {
+                    if counting_sender.send(morsel).await.is_err() {
                         break;
                     }
                 }
@@ -244,10 +244,10 @@ impl PipelineNode for StreamingSinkNode {
                     .in_span(&info_span!("StreamingSinkNode::finalize"), || {
                         op.finalize(finished_states, &compute_runtime)
                     })
-                    .unwrap()
+                    .await_output()
                     .await??;
                 if let Some(res) = finalized_result {
-                    let _ = counting_sender.send(res.into()).await;
+                    let _ = counting_sender.send(res).await;
                 }
                 Ok(())
             },

@@ -9,10 +9,13 @@ use daft_table::Table;
 use daft_writers::{FileWriter, WriterFactory};
 use tracing::instrument;
 
-use super::blocking_sink::{BlockingSink, BlockingSinkState, BlockingSinkStatus};
+use super::blocking_sink::{
+    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
+    BlockingSinkStatus,
+};
 use crate::{
     dispatcher::{Dispatcher, PartitionedDispatcher, RoundRobinDispatcher},
-    OperatorOutput, NUM_CPUS,
+    NUM_CPUS,
 };
 
 pub enum WriteFormat {
@@ -74,18 +77,19 @@ impl BlockingSink for WriteSink {
         input: &Arc<MicroPartition>,
         mut state: Box<dyn BlockingSinkState>,
         runtime_ref: &RuntimeRef,
-    ) -> OperatorOutput<DaftResult<BlockingSinkStatus>> {
+    ) -> BlockingSinkSinkResult {
         let input = input.clone();
-        let fut = runtime_ref.spawn(async move {
-            state
-                .as_any_mut()
-                .downcast_mut::<WriteState>()
-                .expect("WriteSink should have WriteState")
-                .writer
-                .write(&input)?;
-            Ok(BlockingSinkStatus::NeedMoreInput(state))
-        });
-        OperatorOutput::Future(fut)
+        runtime_ref
+            .spawn(async move {
+                state
+                    .as_any_mut()
+                    .downcast_mut::<WriteState>()
+                    .expect("WriteSink should have WriteState")
+                    .writer
+                    .write(&input)?;
+                Ok(BlockingSinkStatus::NeedMoreInput(state))
+            })
+            .into()
     }
 
     #[instrument(skip_all, name = "WriteSink::finalize")]
@@ -93,25 +97,26 @@ impl BlockingSink for WriteSink {
         &self,
         states: Vec<Box<dyn BlockingSinkState>>,
         runtime: &RuntimeRef,
-    ) -> OperatorOutput<DaftResult<Option<Arc<MicroPartition>>>> {
+    ) -> BlockingSinkFinalizeResult {
         let file_schema = self.file_schema.clone();
-        let fut = runtime.spawn(async move {
-            let mut results = vec![];
-            for mut state in states {
-                let state = state
-                    .as_any_mut()
-                    .downcast_mut::<WriteState>()
-                    .expect("State type mismatch");
-                results.extend(state.writer.close()?);
-            }
-            let mp = Arc::new(MicroPartition::new_loaded(
-                file_schema,
-                results.into(),
-                None,
-            ));
-            Ok(Some(mp.into()))
-        });
-        OperatorOutput::Future(fut)
+        runtime
+            .spawn(async move {
+                let mut results = vec![];
+                for mut state in states {
+                    let state = state
+                        .as_any_mut()
+                        .downcast_mut::<WriteState>()
+                        .expect("State type mismatch");
+                    results.extend(state.writer.close()?);
+                }
+                let mp = Arc::new(MicroPartition::new_loaded(
+                    file_schema,
+                    results.into(),
+                    None,
+                ));
+                Ok(Some(mp))
+            })
+            .into()
     }
 
     fn name(&self) -> &'static str {
