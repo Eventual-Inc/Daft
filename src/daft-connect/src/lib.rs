@@ -81,8 +81,6 @@ pub fn start(addr: &str) -> eyre::Result<ConnectionHandle> {
             eprintln!("Daft-Connect server error: {e:?}");
         }
 
-        println!("done with runtime");
-
         eyre::Result::<_>::Ok(())
     });
 
