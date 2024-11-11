@@ -388,6 +388,7 @@ impl LogicalPlanBuilder {
         join_strategy: Option<JoinStrategy>,
         join_suffix: Option<&str>,
         join_prefix: Option<&str>,
+        keep_join_keys: bool,
     ) -> DaftResult<Self> {
         self.join_with_null_safe_equal(
             right,
@@ -398,6 +399,7 @@ impl LogicalPlanBuilder {
             join_strategy,
             join_suffix,
             join_prefix,
+            keep_join_keys,
         )
     }
 
@@ -412,6 +414,7 @@ impl LogicalPlanBuilder {
         join_strategy: Option<JoinStrategy>,
         join_suffix: Option<&str>,
         join_prefix: Option<&str>,
+        keep_join_keys: bool,
     ) -> DaftResult<Self> {
         let logical_plan: LogicalPlan = ops::Join::try_new(
             self.plan.clone(),
@@ -423,6 +426,7 @@ impl LogicalPlanBuilder {
             join_strategy,
             join_suffix,
             join_prefix,
+            keep_join_keys,
         )?
         .into();
         Ok(self.with_new_plan(logical_plan))
@@ -442,6 +446,7 @@ impl LogicalPlanBuilder {
             None,
             join_suffix,
             join_prefix,
+            false, // no join keys to keep
         )
     }
 
@@ -771,6 +776,7 @@ impl PyLogicalPlanBuilder {
                 join_strategy,
                 join_suffix,
                 join_prefix,
+                false, // dataframes do not keep the join keys when joining
             )?
             .into())
     }

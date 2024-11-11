@@ -600,6 +600,11 @@ class GCSConfig:
     credentials: str | None
     token: str | None
     anonymous: bool
+    max_connections: int
+    retry_initial_backoff_ms: int
+    connect_timeout_ms: int
+    read_timeout_ms: int
+    num_tries: int
 
     def __init__(
         self,
@@ -607,6 +612,11 @@ class GCSConfig:
         credentials: str | None = None,
         token: str | None = None,
         anonymous: bool | None = None,
+        max_connections: int | None = None,
+        retry_initial_backoff_ms: int | None = None,
+        connect_timeout_ms: int | None = None,
+        read_timeout_ms: int | None = None,
+        num_tries: int | None = None,
     ): ...
     def replace(
         self,
@@ -614,6 +624,11 @@ class GCSConfig:
         credentials: str | None = None,
         token: str | None = None,
         anonymous: bool | None = None,
+        max_connections: int | None = None,
+        retry_initial_backoff_ms: int | None = None,
+        connect_timeout_ms: int | None = None,
+        read_timeout_ms: int | None = None,
+        num_tries: int | None = None,
     ) -> GCSConfig:
         """Replaces values if provided, returning a new GCSConfig"""
         ...
@@ -1819,6 +1834,7 @@ class PyDaftExecutionConfig:
         enable_aqe: bool | None = None,
         enable_native_executor: bool | None = None,
         default_morsel_size: int | None = None,
+        enable_ray_tracing: bool | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
     def scan_tasks_min_size_bytes(self) -> int: ...
@@ -1854,6 +1870,8 @@ class PyDaftExecutionConfig:
     def enable_native_executor(self) -> bool: ...
     @property
     def default_morsel_size(self) -> int: ...
+    @property
+    def enable_ray_tracing(self) -> bool: ...
 
 class PyDaftPlanningConfig:
     @staticmethod
