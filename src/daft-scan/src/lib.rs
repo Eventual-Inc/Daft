@@ -347,10 +347,7 @@ impl DisplayAs for DataSource {
                     Self::Database { path, .. } => format!("Database {{{path}}}"),
                     #[cfg(feature = "python")]
                     Self::PythonFactoryFunction {
-                        module,
-                        func_name,
-                        func_args: _,
-                        ..
+                        module, func_name, ..
                     } => {
                         format!("{module}:{func_name}")
                     }

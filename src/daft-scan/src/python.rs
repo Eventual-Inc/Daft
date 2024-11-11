@@ -38,26 +38,6 @@ impl PartialEq for PythonTablesFactoryArgs {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum PythonFactoryFunctionType {
-    NameAndModule(String, String),
-    #[serde(
-        serialize_with = "serialize_py_object",
-        deserialize_with = "deserialize_py_object"
-    )]
-    Function(PyObject),
-}
-
-impl PartialEq for PythonFactoryFunctionType {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::NameAndModule(a, b), Self::NameAndModule(c, d)) => a == c && b == d,
-            (Self::Function(a), Self::Function(b)) => a.as_ptr() as isize == b.as_ptr() as isize,
-            _ => false,
-        }
-    }
-}
-
 pub mod pylib {
     use std::sync::Arc;
 
@@ -79,36 +59,13 @@ pub mod pylib {
     };
     use serde::{Deserialize, Serialize};
 
-    use super::{PythonFactoryFunctionType, PythonTablesFactoryArgs};
+    use super::PythonTablesFactoryArgs;
     use crate::{
         anonymous::AnonymousScanOperator,
         glob::GlobScanOperator,
         storage_config::{PyStorageConfig, PythonStorageConfig},
         DataSource, PartitionField, Pushdowns, ScanOperator, ScanOperatorRef, ScanTask,
     };
-
-    #[pyclass(module = "daft.daft", frozen)]
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct PythonFactoryFunction {
-        pub inner: PythonFactoryFunctionType,
-    }
-
-    #[pymethods]
-    impl PythonFactoryFunction {
-        #[staticmethod]
-        pub fn from_name_and_module(module: String, func_name: String) -> Self {
-            Self {
-                inner: PythonFactoryFunctionType::NameAndModule(module, func_name),
-            }
-        }
-
-        #[staticmethod]
-        pub fn from_function(func: PyObject) -> Self {
-            Self {
-                inner: PythonFactoryFunctionType::Function(func),
-            }
-        }
-    }
 
     #[pyclass(module = "daft.daft", frozen)]
     #[derive(Debug, Clone)]
@@ -630,7 +587,6 @@ pub mod pylib {
 }
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
-    parent.add_class::<pylib::PythonFactoryFunction>()?;
     parent.add_class::<pylib::ScanOperatorHandle>()?;
     parent.add_class::<pylib::PyScanTask>()?;
     parent.add_class::<pylib::PyPartitionField>()?;
