@@ -12,7 +12,7 @@ def spark_session():
     from daft.daft import connect_start
 
     # Start Daft Connect server
-    connect_start("sc://localhost:50051")
+    server = connect_start("sc://localhost:50051")
 
     # Initialize Spark Connect session
     session = SparkSession.builder.appName("DaftConfigTest").remote("sc://localhost:50051").getOrCreate()
@@ -20,6 +20,7 @@ def spark_session():
     yield session
 
     # Cleanup
+    server.shutdown()
     session.stop()
     time.sleep(2)  # Allow time for session cleanup
 

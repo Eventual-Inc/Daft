@@ -7,6 +7,8 @@
 #![feature(try_trait_v2_residual)]
 #![warn(unused)]
 
+use std::thread::JoinHandle;
+
 use dashmap::DashMap;
 use eyre::Context;
 #[cfg(feature = "python")]
@@ -30,7 +32,22 @@ mod err;
 mod session;
 pub mod util;
 
-pub fn start(addr: &str) -> eyre::Result<()> {
+#[cfg_attr(feature = "python", pyo3::pyclass)]
+pub struct ConnectionHandle {
+    shutdown_signal: Option<tokio::sync::oneshot::Sender<()>>,
+}
+
+#[cfg_attr(feature = "python", pyo3::pymethods)]
+impl ConnectionHandle {
+    pub fn shutdown(&mut self) {
+        let Some(shutdown_signal) = self.shutdown_signal.take() else {
+            return;
+        };
+        shutdown_signal.send(()).unwrap();
+    }
+}
+
+pub fn start(addr: &str) -> eyre::Result<ConnectionHandle> {
     info!("Daft-Connect server listening on {addr}");
     let addr = util::parse_spark_connect_address(addr)?;
 
@@ -38,14 +55,27 @@ pub fn start(addr: &str) -> eyre::Result<()> {
 
     info!("Daft-Connect server listening on {addr}");
 
+    let (shutdown_signal, shutdown_receiver) = tokio::sync::oneshot::channel();
+
+    let handle = ConnectionHandle {
+        shutdown_signal: Some(shutdown_signal),
+    };
+
     std::thread::spawn(move || {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let result = runtime
             .block_on(async {
-                Server::builder()
-                    .add_service(SparkConnectServiceServer::new(service))
-                    .serve(addr)
-                    .await
+                tokio::select! {
+                    result = Server::builder()
+                        .add_service(SparkConnectServiceServer::new(service))
+                        .serve(addr) => {
+                        result
+                    }
+                    _ = shutdown_receiver => {
+                        info!("Received shutdown signal");
+                        Ok(())
+                    }
+                }
             })
             .wrap_err_with(|| format!("Failed to start server on {addr}"));
 
@@ -58,7 +88,7 @@ pub fn start(addr: &str) -> eyre::Result<()> {
         eyre::Result::<_>::Ok(())
     });
 
-    Ok(())
+    Ok(handle)
 }
 
 #[derive(Default)]
@@ -205,12 +235,13 @@ impl SparkConnectService for DaftSparkConnectService {
 #[cfg(feature = "python")]
 #[pyo3::pyfunction]
 #[pyo3(name = "connect_start")]
-pub fn py_connect_start(addr: &str) -> pyo3::PyResult<()> {
+pub fn py_connect_start(addr: &str) -> pyo3::PyResult<ConnectionHandle> {
     start(addr).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:?}")))
 }
 
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &pyo3::Bound<pyo3::types::PyModule>) -> pyo3::PyResult<()> {
     parent.add_function(pyo3::wrap_pyfunction_bound!(py_connect_start, parent)?)?;
+    parent.add_class::<ConnectionHandle>()?;
     Ok(())
 }
