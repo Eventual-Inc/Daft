@@ -8,7 +8,7 @@ use daft_core::prelude::*;
 use daft_dsl::{
     col,
     functions::utf8::{ilike, like, to_date, to_datetime},
-    has_agg, lit, literals_to_series, null_lit, Expr, ExprRef, LiteralValue, Operator,
+    has_agg, lit, literals_to_series, null_lit, AggExpr, Expr, ExprRef, LiteralValue, Operator,
 };
 use daft_functions::numeric::{ceil::ceil, floor::floor};
 use daft_logical_plan::{LogicalPlanBuilder, LogicalPlanRef};
@@ -204,15 +204,16 @@ impl SQLPlanner {
         let selection = match query.body.as_ref() {
             SetExpr::Select(selection) => selection,
             SetExpr::Query(_) => unsupported_sql_err!("Subqueries are not supported"),
-            SetExpr::SetOperation { .. } => {
-                unsupported_sql_err!("Set operations are not supported")
+            SetExpr::SetOperation {
+                op, set_quantifier, ..
+            } => {
+                unsupported_sql_err!("{op} {set_quantifier} is not supported.",)
             }
             SetExpr::Values(..) => unsupported_sql_err!("VALUES are not supported"),
             SetExpr::Insert(..) => unsupported_sql_err!("INSERT is not supported"),
             SetExpr::Update(..) => unsupported_sql_err!("UPDATE is not supported"),
             SetExpr::Table(..) => unsupported_sql_err!("TABLE is not supported"),
         };
-
         check_select_features(selection)?;
 
         if let Some(with) = &query.with {
@@ -393,10 +394,16 @@ impl SQLPlanner {
         projection_schema: &Schema,
     ) -> Result<(), PlannerError> {
         let mut final_projection = Vec::with_capacity(projections.len());
-        let mut orderby_projection = Vec::with_capacity(projections.len());
         let mut aggs = Vec::with_capacity(projections.len());
-        let mut orderby_exprs = None;
-        let mut orderby_desc = None;
+
+        // these are orderbys that are part of the final projection
+        let mut orderbys_after_projection = Vec::new();
+        let mut orderbys_after_projection_desc = Vec::new();
+
+        // these are orderbys that are not part of the final projection
+        let mut orderbys_before_projection = Vec::new();
+        let mut orderbys_before_projection_desc = Vec::new();
+
         for p in projections {
             let fld = p.to_field(schema)?;
 
@@ -435,14 +442,101 @@ impl SQLPlanner {
 
             let (exprs, desc) = self.plan_order_by_exprs(order_by.exprs.as_slice())?;
 
-            orderby_exprs = Some(exprs.clone());
-            orderby_desc = Some(desc);
+            for (i, expr) in exprs.iter().enumerate() {
+                // the orderby is ordered by a column of the projection
+                // ex: SELECT a as b FROM t ORDER BY b
+                // so we don't need an additional projection
 
-            for expr in &exprs {
-                // if the orderby references a column that is not in the final projection
-                // then we need an additional projection
-                if let Err(DaftError::FieldNotFound(_)) = expr.to_field(projection_schema) {
-                    orderby_projection.push(expr.clone());
+                if let Ok(fld) = expr.to_field(projection_schema) {
+                    // check if it's an aggregate
+                    // ex: SELECT sum(a) FROM t ORDER BY sum(a)
+
+                    // special handling for count(*)
+                    // TODO: this is a hack, we should handle this better
+                    //
+                    // Since count(*) will always be `Ok` for `to_field(schema)`
+                    // we need to manually check if it's in the final schema or not
+                    if let Expr::Alias(e, alias) = expr.as_ref() {
+                        if alias.as_ref() == "count"
+                            && matches!(e.as_ref(), Expr::Agg(AggExpr::Count(_, CountMode::All)))
+                        {
+                            if let Some(alias) = aggs.iter().find_map(|agg| {
+                                if let Expr::Alias(e, alias) = agg.as_ref() {
+                                    if e == expr {
+                                        Some(alias)
+                                    } else {
+                                        None
+                                    }
+                                } else {
+                                    None
+                                }
+                            }) {
+                                // its a count(*) that is already in the final projection
+                                // ex: SELECT count(*) as c FROM t ORDER BY count(*)
+                                orderbys_after_projection.push(col(alias.as_ref()));
+                                orderbys_after_projection_desc.push(desc[i]);
+                            } else {
+                                // its a count(*) that is not in the final projection
+                                // ex: SELECT sum(n) FROM t ORDER BY count(*);
+                                aggs.push(expr.clone());
+                                orderbys_before_projection.push(col(fld.name.as_ref()));
+                                orderbys_before_projection_desc.push(desc[i]);
+                            }
+                        }
+                    } else if has_agg(expr) {
+                        // aggregates part of the final projection are already resolved
+                        // so we just need to push the column name
+                        orderbys_after_projection.push(col(fld.name.as_ref()));
+                        orderbys_after_projection_desc.push(desc[i]);
+                    } else {
+                        orderbys_after_projection.push(expr.clone());
+                        orderbys_after_projection_desc.push(desc[i]);
+                    }
+
+                // the orderby is ordered by an expr from the original schema
+                // ex: SELECT sum(b) FROM t ORDER BY sum(a)
+                } else if let Ok(fld) = expr.to_field(schema) {
+                    // check if it's an aggregate
+                    if has_agg(expr) {
+                        // check if it's an alias of something in the aggs
+                        // if so, we can just use that column
+                        // This way we avoid computing the aggregate twice
+                        //
+                        // ex: SELECT sum(a) as b FROM t ORDER BY sum(a);
+                        if let Some(alias) = aggs.iter().find_map(|p| {
+                            if let Expr::Alias(e, alias) = p.as_ref() {
+                                if e == expr {
+                                    Some(alias)
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        }) {
+                            orderbys_after_projection.push(col(alias.as_ref()));
+                            orderbys_after_projection_desc.push(desc[i]);
+                        } else {
+                            // its an aggregate that is not part of the final projection
+                            // ex: SELECT sum(a) FROM t ORDER BY sum(b)
+                            // so we need need to add it to the aggs list
+                            aggs.push(expr.clone());
+
+                            // then add it to the orderbys that are not part of the final projection
+                            orderbys_before_projection.push(col(fld.name.as_ref()));
+                            orderbys_before_projection_desc.push(desc[i]);
+                        }
+                    } else {
+                        // we know it's a column of the original schema
+                        // and its nt part of the final projection
+                        // so we need an additional projection
+                        // ex: SELECT sum(a) FROM t ORDER BY b
+
+                        orderbys_before_projection.push(col(fld.name.as_ref()));
+                        orderbys_before_projection_desc.push(desc[i]);
+                    }
+                } else {
+                    panic!("unexpected order by expr");
                 }
             }
         }
@@ -450,52 +544,13 @@ impl SQLPlanner {
         let rel = self.relation_mut();
         rel.inner = rel.inner.aggregate(aggs, groupby_exprs)?;
 
-        let needs_projection = !orderby_projection.is_empty();
-        if needs_projection {
-            let orderby_projection = rel
-                .schema()
-                .names()
-                .iter()
-                .map(|n| col(n.as_str()))
-                .chain(orderby_projection)
-                .collect::<HashSet<_>>() // dedup
-                .into_iter()
-                .collect::<Vec<_>>();
-
-            rel.inner = rel.inner.select(orderby_projection)?;
-        }
-
-        // these are orderbys that are part of the final projection
-        let mut orderbys_after_projection = Vec::new();
-        let mut orderbys_after_projection_desc = Vec::new();
-
-        // these are orderbys that are not part of the final projection
-        let mut orderbys_before_projection = Vec::new();
-        let mut orderbys_before_projection_desc = Vec::new();
-
-        if let Some(orderby_exprs) = orderby_exprs {
-            // this needs to be done after the aggregation and any projections
-            // because the orderby may reference an alias, or an intermediate column that is not in the final projection
-            let schema = rel.schema();
-            for (i, expr) in orderby_exprs.iter().enumerate() {
-                if let Err(DaftError::FieldNotFound(_)) = expr.to_field(&schema) {
-                    orderbys_after_projection.push(expr.clone());
-                    let desc = orderby_desc.clone().map(|o| o[i]).unwrap();
-                    orderbys_after_projection_desc.push(desc);
-                } else {
-                    let desc = orderby_desc.clone().map(|o| o[i]).unwrap();
-
-                    orderbys_before_projection.push(expr.clone());
-                    orderbys_before_projection_desc.push(desc);
-                }
-            }
-        }
-
         let has_orderby_before_projection = !orderbys_before_projection.is_empty();
         let has_orderby_after_projection = !orderbys_after_projection.is_empty();
 
+        // ----------------
         // PERF(cory): if there are order bys from both parts, can we combine them into a single sort instead of two?
         // or can we optimize them into a single sort?
+        // ----------------
 
         // order bys that are not in the final projection
         if has_orderby_before_projection {
@@ -504,6 +559,7 @@ impl SQLPlanner {
                 .sort(orderbys_before_projection, orderbys_before_projection_desc)?;
         }
 
+        // apply the final projection
         rel.inner = rel.inner.select(final_projection)?;
 
         // order bys that are in the final projection
@@ -541,7 +597,6 @@ impl SQLPlanner {
 
     fn plan_from(&mut self, from: &[TableWithJoins]) -> SQLPlannerResult<Relation> {
         if from.len() > 1 {
-            // todo!("cross join")
             let mut from_iter = from.iter();
 
             let first = from_iter.next().unwrap();
@@ -552,15 +607,9 @@ impl SQLPlanner {
                 self.table_map.insert(right.get_name(), right.clone());
                 let right_join_prefix = Some(format!("{}.", right.get_name()));
 
-                rel.inner = rel.inner.join(
-                    right.inner,
-                    vec![],
-                    vec![],
-                    JoinType::Inner,
-                    None,
-                    None,
-                    right_join_prefix.as_deref(),
-                )?;
+                rel.inner =
+                    rel.inner
+                        .cross_join(right.inner, None, right_join_prefix.as_deref())?;
             }
             return Ok(rel);
         }
@@ -604,8 +653,33 @@ impl SQLPlanner {
                             let null_equals_null = *op == BinaryOperator::Spaceship;
                             collect_compound_identifiers(left, right, left_rel, right_rel)
                                 .map(|(left, right)| (left, right, vec![null_equals_null]))
+                        } else if let (
+                            sqlparser::ast::Expr::Identifier(left),
+                            sqlparser::ast::Expr::Identifier(right),
+                        ) = (left.as_ref(), right.as_ref())
+                        {
+                            let left = ident_to_str(left);
+                            let right = ident_to_str(right);
+
+                            // we don't know which table the identifiers belong to, so we need to check both
+                            let left_schema = left_rel.schema();
+                            let right_schema = right_rel.schema();
+
+                            // if the left side is in the left schema, then we assume the right side is in the right schema
+                            let (left_on, right_on) = if left_schema.get_field(&left).is_ok() {
+                                (col(left), col(right))
+                            // if the right side is in the left schema, then we assume the left side is in the right schema
+                            } else if right_schema.get_field(&left).is_ok() {
+                                (col(right), col(left))
+                            } else {
+                                unsupported_sql_err!("JOIN clauses must reference columns in the joined tables; found `{}`", left);
+                            };
+
+                            let null_equals_null = *op == BinaryOperator::Spaceship;
+
+                            Ok((vec![left_on], vec![right_on], vec![null_equals_null]))
                         } else {
-                            unsupported_sql_err!("JOIN clauses support '='/'<=>' constraints on identifiers; found lhs={:?}, rhs={:?}", left, right);
+                            unsupported_sql_err!("JOIN clauses support '='/'<=>' constraints on identifiers; found `{left} {op} {right}`");
                         }
                     }
                     BinaryOperator::And => {
@@ -619,7 +693,7 @@ impl SQLPlanner {
                         Ok((left_i, right_i, null_equals_nulls_i))
                     }
                     _ => {
-                        unsupported_sql_err!("JOIN clauses support '=' constraints combined with 'AND'; found op = '{:?}'", op);
+                        unsupported_sql_err!("JOIN clauses support '=' constraints combined with 'AND'; found op = '{}'", op);
                     }
                 }
             } else if let sqlparser::ast::Expr::Nested(expr) = expression {
@@ -636,10 +710,7 @@ impl SQLPlanner {
         for join in &from.joins {
             use sqlparser::ast::{
                 JoinConstraint,
-                JoinOperator::{
-                    AsOf, CrossApply, CrossJoin, FullOuter, Inner, LeftAnti, LeftOuter, LeftSemi,
-                    OuterApply, RightAnti, RightOuter, RightSemi,
-                },
+                JoinOperator::{FullOuter, Inner, LeftAnti, LeftOuter, LeftSemi, RightOuter},
             };
             let right_rel = self.plan_relation(&join.relation)?;
             self.table_map
@@ -647,94 +718,45 @@ impl SQLPlanner {
             let right_rel_name = right_rel.get_name();
             let right_join_prefix = Some(format!("{right_rel_name}."));
 
-            match &join.join_operator {
-                Inner(JoinConstraint::On(expr)) => {
+            let (join_type, constraint) = match &join.join_operator {
+                Inner(constraint) => (JoinType::Inner, constraint),
+                LeftOuter(constraint) => (JoinType::Left, constraint),
+                RightOuter(constraint) => (JoinType::Right, constraint),
+                FullOuter(constraint) => (JoinType::Outer, constraint),
+                LeftSemi(constraint) => (JoinType::Semi, constraint),
+                LeftAnti(constraint) => (JoinType::Anti, constraint),
+
+                _ => unsupported_sql_err!("Unsupported join type: {:?}", join.join_operator),
+            };
+
+            let (left_on, right_on, null_eq_null, keep_join_keys) = match &constraint {
+                JoinConstraint::On(expr) => {
                     let (left_on, right_on, null_equals_nulls) =
                         process_join_on(expr, &left_rel, &right_rel)?;
-
-                    left_rel.inner = left_rel.inner.join_with_null_safe_equal(
-                        right_rel.inner,
-                        left_on,
-                        right_on,
-                        Some(null_equals_nulls),
-                        JoinType::Inner,
-                        None,
-                        None,
-                        right_join_prefix.as_deref(),
-                    )?;
+                    (left_on, right_on, Some(null_equals_nulls), true)
                 }
-                Inner(JoinConstraint::Using(idents)) => {
+                JoinConstraint::Using(idents) => {
                     let on = idents
                         .iter()
                         .map(|i| col(i.value.clone()))
                         .collect::<Vec<_>>();
-
-                    left_rel.inner = left_rel.inner.join(
-                        right_rel.inner,
-                        on.clone(),
-                        on,
-                        JoinType::Inner,
-                        None,
-                        None,
-                        right_join_prefix.as_deref(),
-                    )?;
+                    (on.clone(), on, None, false)
                 }
-                LeftOuter(JoinConstraint::On(expr)) => {
-                    let (left_on, right_on, null_equals_nulls) =
-                        process_join_on(expr, &left_rel, &right_rel)?;
-
-                    left_rel.inner = left_rel.inner.join_with_null_safe_equal(
-                        right_rel.inner,
-                        left_on,
-                        right_on,
-                        Some(null_equals_nulls),
-                        JoinType::Left,
-                        None,
-                        None,
-                        right_join_prefix.as_deref(),
-                    )?;
-                }
-                RightOuter(JoinConstraint::On(expr)) => {
-                    let (left_on, right_on, null_equals_nulls) =
-                        process_join_on(expr, &left_rel, &right_rel)?;
-
-                    left_rel.inner = left_rel.inner.join_with_null_safe_equal(
-                        right_rel.inner,
-                        left_on,
-                        right_on,
-                        Some(null_equals_nulls),
-                        JoinType::Right,
-                        None,
-                        None,
-                        right_join_prefix.as_deref(),
-                    )?;
-                }
-
-                FullOuter(JoinConstraint::On(expr)) => {
-                    let (left_on, right_on, null_equals_nulls) =
-                        process_join_on(expr, &left_rel, &right_rel)?;
-
-                    left_rel.inner = left_rel.inner.join_with_null_safe_equal(
-                        right_rel.inner,
-                        left_on,
-                        right_on,
-                        Some(null_equals_nulls),
-                        JoinType::Outer,
-                        None,
-                        None,
-                        right_join_prefix.as_deref(),
-                    )?;
-                }
-                CrossJoin => unsupported_sql_err!("CROSS JOIN"),
-                LeftSemi(_) => unsupported_sql_err!("LEFT SEMI JOIN"),
-                RightSemi(_) => unsupported_sql_err!("RIGHT SEMI JOIN"),
-                LeftAnti(_) => unsupported_sql_err!("LEFT ANTI JOIN"),
-                RightAnti(_) => unsupported_sql_err!("RIGHT ANTI JOIN"),
-                CrossApply => unsupported_sql_err!("CROSS APPLY"),
-                OuterApply => unsupported_sql_err!("OUTER APPLY"),
-                AsOf { .. } => unsupported_sql_err!("AS OF"),
-                join_type => unsupported_sql_err!("join type: {join_type:?}"),
+                JoinConstraint::Natural => unsupported_sql_err!("NATURAL JOIN not supported"),
+                JoinConstraint::None => unsupported_sql_err!("JOIN without ON/USING not supported"),
             };
+
+            left_rel.inner = left_rel.inner.join_with_null_safe_equal(
+                right_rel.inner,
+                left_on,
+                right_on,
+                null_eq_null,
+                join_type,
+                None,
+                None,
+                right_join_prefix.as_deref(),
+                keep_join_keys,
+            )?;
         }
 
         Ok(left_rel)

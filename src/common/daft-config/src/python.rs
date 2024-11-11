@@ -108,6 +108,7 @@ impl PyDaftExecutionConfig {
         enable_native_executor: Option<bool>,
         default_morsel_size: Option<usize>,
         enable_pre_shuffle_merge: Option<bool>,
+        enable_ray_tracing: Option<bool>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
@@ -172,6 +173,10 @@ impl PyDaftExecutionConfig {
         }
         if let Some(enable_pre_shuffle_merge) = enable_pre_shuffle_merge {
             config.enable_pre_shuffle_merge = enable_pre_shuffle_merge;
+        }
+
+        if let Some(enable_ray_tracing) = enable_ray_tracing {
+            config.enable_ray_tracing = enable_ray_tracing;
         }
 
         Ok(Self {
@@ -263,6 +268,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn enable_pre_shuffle_merge(&self) -> PyResult<bool> {
         Ok(self.config.enable_pre_shuffle_merge)
+    }
+
+    #[getter]
+    fn enable_ray_tracing(&self) -> PyResult<bool> {
+        Ok(self.config.enable_ray_tracing)
     }
 }
 

@@ -114,7 +114,6 @@ def test_repr():
 def test_repr_html():
     schema = TABLE.schema()
     out_repr = schema._repr_html_()
-    print(out_repr)
     assert (
         out_repr
         == f"""<table class="dataframe">
