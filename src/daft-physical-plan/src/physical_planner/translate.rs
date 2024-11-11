@@ -53,6 +53,7 @@ pub(super) fn translate_single_logical_node(
                     cfg.parquet_split_row_groups_max_files,
                     cfg.scan_tasks_min_size_bytes,
                     cfg.scan_tasks_max_size_bytes,
+                    scan_op.0.data_size_estimator(),
                 );
 
                 // Apply transformations on the ScanTasks to optimize

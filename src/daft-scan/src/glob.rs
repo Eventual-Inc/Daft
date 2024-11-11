@@ -33,7 +33,7 @@ pub struct GlobScanOperator {
     hive_partitioning: bool,
     partitioning_keys: Vec<PartitionField>,
     generated_fields: SchemaRef,
-    data_size_estimator: Option<Box<dyn DataSizeEstimator>>,
+    data_size_estimator: Option<Arc<dyn DataSizeEstimator>>,
 }
 
 /// Wrapper struct that implements a sync Iterator for a BoxStream
@@ -232,10 +232,10 @@ impl GlobScanOperator {
 
                         (
                             schema.clone(),
-                            Some(Box::new(ParquetDataSizeEstimator::from_parquet_metadata(
+                            Some(Arc::new(ParquetDataSizeEstimator::from_parquet_metadata(
                                 schema,
                                 &parquet_meta,
-                            )) as Box<dyn DataSizeEstimator>),
+                            )) as Arc<dyn DataSizeEstimator>),
                         )
                     }
                     FileFormatConfig::Csv(CsvSourceConfig {
@@ -318,8 +318,8 @@ impl ScanOperator for GlobScanOperator {
         self.schema.clone()
     }
 
-    fn data_size_estimator(&self) -> Option<&dyn DataSizeEstimator> {
-        self.data_size_estimator.as_ref().map(|dse| dse.as_ref())
+    fn data_size_estimator(&self) -> Option<Arc<dyn DataSizeEstimator>> {
+        self.data_size_estimator.as_ref().map(|dse| dse.clone())
     }
 
     fn partitioning_keys(&self) -> &[PartitionField] {

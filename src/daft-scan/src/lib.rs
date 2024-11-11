@@ -825,7 +825,7 @@ pub trait ScanOperator: Send + Sync + Debug {
     fn generated_fields(&self) -> Option<SchemaRef>;
 
     /// Retrieve a DataSizeEstimator that can provide more accurate estimations of data from file sizes on disk
-    fn data_size_estimator(&self) -> Option<&dyn DataSizeEstimator>;
+    fn data_size_estimator(&self) -> Option<Arc<dyn DataSizeEstimator>>;
 
     fn can_absorb_filter(&self) -> bool;
     fn can_absorb_select(&self) -> bool;

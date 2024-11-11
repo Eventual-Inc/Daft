@@ -2,11 +2,11 @@ use std::{collections::HashMap, fmt::Debug};
 
 use daft_schema::schema::SchemaRef;
 
-use crate::ScanTaskRef;
+use crate::ScanTask;
 
 pub trait DataSizeEstimator: Debug + Sync + Send {
     /// Estimate how much memory a given ScanTask is going to be when fully materialized given the size on disk
-    fn estimate_in_memory_size_bytes(&self, scan_task: ScanTaskRef) -> Option<usize>;
+    fn estimate_in_memory_size_bytes(&self, scan_task: &ScanTask) -> Option<usize>;
 }
 
 #[derive(Debug)]
@@ -115,7 +115,7 @@ impl ParquetDataSizeEstimator {
 }
 
 impl DataSizeEstimator for ParquetDataSizeEstimator {
-    fn estimate_in_memory_size_bytes(&self, scan_task: ScanTaskRef) -> Option<usize> {
+    fn estimate_in_memory_size_bytes(&self, scan_task: &ScanTask) -> Option<usize> {
         // We can only estimate the in memory size if provided with size of the ScanTask on disk
         let size_on_disk = scan_task.size_bytes_on_disk()?;
 

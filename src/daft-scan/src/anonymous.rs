@@ -38,7 +38,9 @@ impl ScanOperator for AnonymousScanOperator {
         self.schema.clone()
     }
 
-    fn data_size_estimator(&self) -> Option<&dyn crate::data_size_estimator::DataSizeEstimator> {
+    fn data_size_estimator(
+        &self,
+    ) -> Option<Arc<dyn crate::data_size_estimator::DataSizeEstimator>> {
         None
     }
 

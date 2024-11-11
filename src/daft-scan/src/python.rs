@@ -219,7 +219,7 @@ pub mod pylib {
         }
         fn data_size_estimator(
             &self,
-        ) -> Option<&dyn crate::data_size_estimator::DataSizeEstimator> {
+        ) -> Option<Arc<dyn crate::data_size_estimator::DataSizeEstimator>> {
             // TODO(jay): have the Python ScanOperators return an appropriate DataSizeEstimator from stats
             // obtained from table formats/catalogs
             None

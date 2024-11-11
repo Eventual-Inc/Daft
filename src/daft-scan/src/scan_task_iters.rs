@@ -8,7 +8,8 @@ use daft_parquet::read::read_parquet_metadata;
 use parquet2::metadata::RowGroupList;
 
 use crate::{
-    storage_config::StorageConfig, ChunkSpec, DataSource, Pushdowns, ScanTask, ScanTaskRef,
+    data_size_estimator::DataSizeEstimator, storage_config::StorageConfig, ChunkSpec, DataSource,
+    Pushdowns, ScanTask, ScanTaskRef,
 };
 
 type BoxScanTaskIter<'a> = Box<dyn Iterator<Item = DaftResult<ScanTaskRef>> + 'a>;
@@ -176,12 +177,14 @@ impl<'a> Iterator for MergeByFileSize<'a> {
     }
 }
 
+/// Splits ScanTasks by estimating their in-memory size
 #[must_use]
 pub fn split_by_row_groups(
     scan_tasks: BoxScanTaskIter,
     max_tasks: usize,
     min_size_bytes: usize,
     max_size_bytes: usize,
+    data_size_estimator: Option<Arc<dyn DataSizeEstimator>>,
 ) -> BoxScanTaskIter {
     let mut scan_tasks = itertools::peek_nth(scan_tasks);
 
@@ -215,9 +218,11 @@ pub fn split_by_row_groups(
                         &t.sources[..],
                         t.sources.first().map(DataSource::get_chunk_spec),
                         t.pushdowns.limit,
-                    ) && source
-                        .get_size_bytes()
-                        .map_or(true, |s| s > max_size_bytes as u64)
+                    ) && data_size_estimator
+                        .as_ref()
+                        .and_then(|data_size_estimator| data_size_estimator.estimate_in_memory_size_bytes(t.as_ref()))
+                        .map(|estimated_in_memory_size_bytes| estimated_in_memory_size_bytes >  max_size_bytes)
+                        .unwrap_or(true)
                       && source
                         .get_iceberg_delete_files()
                         .map_or(true, std::vec::Vec::is_empty)
