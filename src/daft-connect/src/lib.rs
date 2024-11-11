@@ -11,6 +11,7 @@ use std::ops::ControlFlow;
 
 use dashmap::DashMap;
 use eyre::Context;
+use futures::{StreamExt, TryStreamExt};
 #[cfg(feature = "python")]
 use pyo3::types::PyModuleMethods;
 use spark_connect::{
@@ -170,12 +171,8 @@ impl SparkConnectService for DaftSparkConnectService {
                     CommandType::RegisterFunction(_) => {
                         unimplemented_err!("RegisterFunction not implemented")
                     }
-                    CommandType::WriteOperation(op) => {
-                        println!("WriteOperation: {:#2?}", op);
-
-                        let result = session.handle_write_operation(op, operation)?;
-
-                        return Ok(Response::new(result));
+                    CommandType::WriteOperation(_) => {
+                        unimplemented_err!("WriteOperation not implemented")
                     }
                     CommandType::CreateDataframeView(_) => {
                         unimplemented_err!("CreateDataframeView not implemented")
@@ -304,67 +301,6 @@ impl SparkConnectService for DaftSparkConnectService {
                 println!("response: {response:#?}");
 
                 Ok(Response::new(response))
-            }
-            Analyze::TreeString(tree_string) => {
-                if let Some(level) = tree_string.level {
-                    warn!("Ignoring level {level} in TreeString");
-                }
-
-                let Some(plan) = tree_string.plan else {
-                    return invalid_argument_err!("TreeString must have a plan");
-                };
-
-                let Some(op_type) = plan.op_type else {
-                    return invalid_argument_err!("plan must have an op_type");
-                };
-
-                println!("op_type: {op_type:?}");
-
-                let OpType::Root(plan) = op_type else {
-                    return invalid_argument_err!("Only op_type Root is supported");
-                };
-
-                let logical_plan = match convert::to_logical_plan(plan) {
-                    Ok(lp) => lp,
-                    e => {
-                        return invalid_argument_err!("Failed to convert to logical plan: {e:?}");
-                    }
-                };
-
-                let logical_plan = logical_plan.build();
-
-                let res = std::thread::spawn(move || {
-                    let result = run_local(
-                        &logical_plan,
-                        |table| {
-                            let table = format!("{table}");
-                            ControlFlow::Break(table)
-                        },
-                        || ControlFlow::Continue(()),
-                    )
-                    .unwrap();
-
-                    let result = match result {
-                        ControlFlow::Break(x) => Some(x),
-                        ControlFlow::Continue(()) => None,
-                    }
-                    .unwrap();
-
-                    AnalyzePlanResponse {
-                        session_id,
-                        server_side_session_id: String::new(),
-                        result: Some(analyze_plan_response::Result::TreeString(
-                            analyze_plan_response::TreeString {
-                                tree_string: result,
-                            },
-                        )),
-                    }
-                });
-
-                let res = res.join().unwrap();
-
-                let response = Response::new(res);
-                Ok(response)
             }
             _ => unimplemented_err!("Analyze plan operation is not yet implemented"),
         }

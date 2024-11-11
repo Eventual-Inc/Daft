@@ -4,42 +4,43 @@ mod formatting;
 mod plan_conversion;
 mod schema_conversion;
 
-use std::{
-    collections::HashMap,
-    ops::{ControlFlow, Try},
-    sync::Arc,
-};
+use std::{collections::HashMap, pin::Pin, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
+use common_error::{DaftError, DaftResult};
 use daft_logical_plan::LogicalPlanRef;
 use daft_table::Table;
 pub use data_conversion::convert_data;
-use eyre::Context;
+use futures::{stream, Stream, StreamExt};
 pub use plan_conversion::to_logical_plan;
 pub use schema_conversion::connect_schema;
 
-pub fn run_local<T: Try>(
+pub fn run_local(
     logical_plan: &LogicalPlanRef,
-    mut f: impl FnMut(&Table) -> T,
-    default: impl FnOnce() -> T,
-) -> eyre::Result<T> {
+) -> DaftResult<impl Stream<Item = DaftResult<Table>>> {
     let physical_plan = daft_local_plan::translate(logical_plan)?;
     let cfg = Arc::new(DaftExecutionConfig::default());
     let psets = HashMap::new();
 
-    let stream = daft_local_execution::run_local(&physical_plan, psets, cfg, None)
-        .wrap_err("running local execution")?;
+    let stream = daft_local_execution::run_local(&physical_plan, psets, cfg, None)?;
 
-    for elem in stream {
-        let elem = elem?;
-        let tables = elem.get_tables()?;
+    let stream = stream
+        .map(|partition| match partition {
+            Ok(partition) => partition.get_tables().map_err(DaftError::from),
+            Err(err) => Err(err),
+        })
+        .flat_map(|tables| match tables {
+            Ok(tables) => {
+                let tables = Arc::try_unwrap(tables).unwrap();
 
-        for table in tables.as_slice() {
-            if let ControlFlow::Break(x) = f(table).branch() {
-                return Ok(T::from_residual(x));
+                let tables = tables.into_iter().map(Ok);
+                let stream: Pin<Box<dyn Stream<Item = DaftResult<Table>>>> =
+                    Box::pin(stream::iter(tables));
+
+                stream
             }
-        }
-    }
+            Err(err) => Box::pin(stream::once(async { Err(err) })),
+        });
 
-    Ok(default())
+    Ok(stream)
 }

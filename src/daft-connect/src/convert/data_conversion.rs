@@ -34,9 +34,6 @@ use tracing::trace;
 
 use crate::{command::ConcreteDataChannel, convert::formatting::RelTypeExt};
 
-mod show_string;
-use show_string::show_string;
-
 mod range;
 use range::range;
 
@@ -51,7 +48,6 @@ pub fn convert_data(plan: Relation, encoder: &mut impl ConcreteDataChannel) -> e
     let rel_type = plan.rel_type.ok_or_else(|| eyre!("rel_type is None"))?;
 
     match rel_type {
-        RelType::ShowString(input) => show_string(*input, encoder).wrap_err("parsing ShowString"),
         RelType::Range(input) => range(input, encoder).wrap_err("parsing Range"),
         other => Err(eyre!("Unsupported top-level relation: {}", other.name())),
     }

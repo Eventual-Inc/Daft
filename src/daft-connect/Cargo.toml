@@ -20,6 +20,7 @@ tokio-stream = "0.1.16"
 tonic = "0.12.3"
 tracing-subscriber = {version = "0.3.18", features = ["env-filter"]}
 tracing-tracy = "0.11.3"
+common-error.workspace = true
 tracing.workspace = true
 uuid = {version = "1.10.0", features = ["v4"]}
 
