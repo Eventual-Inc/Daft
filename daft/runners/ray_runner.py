@@ -135,7 +135,7 @@ def _glob_path_into_file_infos(
             raise FileNotFoundError(f"No files found at {path}")
         file_infos.extend(path_file_infos)
 
-    return MicroPartition._from_pytable(file_infos.to_table())
+    return MicroPartition._from_pytable(_PyTable.from_file_infos(file_infos))
 
 
 @ray.remote
@@ -363,9 +363,10 @@ class RayRunnerIO(runner_io.RunnerIO):
         io_config: IOConfig | None = None,
     ) -> FileInfos:
         # Synchronously fetch the file infos, for now.
-        return FileInfos.from_table(
+        return (
             ray.get(_glob_path_into_file_infos.remote(source_paths, file_format_config, io_config=io_config))
             .to_table()
+            .to_file_infos()
             ._table
         )
 
