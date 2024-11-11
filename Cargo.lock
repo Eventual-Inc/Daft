@@ -1896,7 +1896,6 @@ dependencies = [
  "futures",
  "pyo3",
  "spark-connect",
- "tempfile",
  "tokio",
  "tonic",
  "tracing",

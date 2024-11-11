@@ -11,9 +11,6 @@ uuid = {version = "1.10.0", features = ["v4"]}
 spark-connect.workspace = true
 tracing.workspace = true
 
-[dev-dependencies]
-tempfile = "3.4.0"
-
 [features]
 python = ["dep:pyo3"]
 
