@@ -14,6 +14,7 @@ daft-io = {path = "../../daft-io", default-features = false}
 futures = {workspace = true}
 hyper = "0.14.27"
 hyper-tls = "0.5.0"
+inventory = "*"
 log = {workspace = true}
 rand = "0.8.5"
 snafu = {workspace = true}

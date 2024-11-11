@@ -31,6 +31,7 @@ daft-sql = {path = "src/daft-sql", default-features = false}
 daft-stats = {path = "src/daft-stats", default-features = false}
 daft-table = {path = "src/daft-table", default-features = false}
 daft-writers = {path = "src/daft-writers", default-features = false}
+io-backends-aws = {path = "src/io-backends/aws", default-features = false}
 lazy_static = {workspace = true}
 log = {workspace = true}
 lzma-sys = {version = "*", features = ["static"]}

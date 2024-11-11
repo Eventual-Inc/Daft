@@ -7,7 +7,9 @@ mod py {
     use futures::TryStreamExt;
     use pyo3::{prelude::*, types::PyDict};
 
-    use crate::{get_io_client, parse_url, s3_like, stats::IOStatsContext};
+    use crate::{
+        get_io_client, parse_url, s3_like, stats::IOStatsContext, ObjectSourceFactoryEntry,
+    };
 
     #[pyfunction]
     fn io_glob(
@@ -71,6 +73,10 @@ mod py {
     }
 
     pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
+        for entry in inventory::iter::<ObjectSourceFactoryEntry> {
+            println!("Entry: {}", entry.source_type);
+        }
+
         common_io_config::python::register_modules(parent)?;
         parent.add_function(wrap_pyfunction_bound!(io_glob, parent)?)?;
         parent.add_function(wrap_pyfunction_bound!(s3_config_from_env, parent)?)?;

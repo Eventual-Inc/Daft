@@ -28,7 +28,9 @@ use common_error::{DaftError, DaftResult};
 pub use common_io_config::{AzureConfig, IOConfig, S3Config};
 use futures::stream::BoxStream;
 use object_io::StreamingRetryParams;
-pub use object_io::{FileMetadata, FileType, GetResult, LSResult, ObjectSource};
+pub use object_io::{
+    FileMetadata, FileType, GetResult, LSResult, ObjectSource, ObjectSourceFactory,
+};
 #[cfg(feature = "python")]
 pub use python::register_modules;
 use s3_like::S3LikeSource;
@@ -178,6 +180,22 @@ impl From<Error> for std::io::Error {
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
+
+pub struct ObjectSourceFactoryEntry {
+    source_type: SourceType,
+    factory: &'static dyn ObjectSourceFactory,
+}
+
+impl ObjectSourceFactoryEntry {
+    pub const fn new(source_type: SourceType, factory: &'static dyn ObjectSourceFactory) -> Self {
+        Self {
+            source_type,
+            factory,
+        }
+    }
+}
+
+inventory::collect!(ObjectSourceFactoryEntry);
 
 #[derive(Default)]
 pub struct IOClient {

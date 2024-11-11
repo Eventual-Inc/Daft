@@ -236,3 +236,11 @@ pub trait ObjectSource: Sync + Send {
         Ok(s.boxed())
     }
 }
+
+#[async_trait]
+pub trait ObjectSourceFactory: Send + Sync {
+    async fn get_source(
+        &self,
+        config: &common_io_config::IOConfig,
+    ) -> crate::Result<Arc<dyn ObjectSource>>;
+}

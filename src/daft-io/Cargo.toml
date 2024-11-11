@@ -25,6 +25,7 @@ google-cloud-token = {version = "0.1.2"}
 home = "0.5.9"
 hyper = "0.14.27"
 hyper-tls = "0.5.0"
+inventory = "*"
 itertools = {workspace = true}
 lazy_static = {workspace = true}
 log = {workspace = true}
