@@ -199,7 +199,7 @@ fn replace_column_with_semantic_id(
         Transformed::yes(new_expr.into())
     } else {
         match e.as_ref() {
-            Expr::Column(_) | Expr::Literal(_) => Transformed::no(e),
+            Expr::Column(_) | Expr::Literal(_) | Expr::Subquery(_) => Transformed::no(e),
             Expr::Agg(agg_expr) => replace_column_with_semantic_id_aggexpr(
                 agg_expr.clone(),
                 subexprs_to_replace,
@@ -359,21 +359,13 @@ fn replace_column_with_semantic_id(
                     Transformed::yes(Expr::ScalarFunction(func).into())
                 }
             }
-            Expr::Subquery(subquery) => {
-                let transforms = subquery
-                    .required_columns()
-                    .iter()
-                    .map(|e| {
-                        replace_column_with_semantic_id(e.clone(), subexprs_to_replace, schema)
-                    })
-                    .collect::<Vec<_>>();
-                if transforms.iter().all(|e| !e.transformed) {
+            Expr::InSubquery(expr, subquery) => {
+                let expr =
+                    replace_column_with_semantic_id(expr.clone(), subexprs_to_replace, schema);
+                if !expr.transformed {
                     Transformed::no(e)
                 } else {
-                    let subquery = subquery
-                        .with_new_children(transforms.iter().map(|t| t.data.clone()).collect());
-
-                    Transformed::yes(Expr::Subquery(subquery).into())
+                    Transformed::yes(Expr::InSubquery(expr.data, subquery.clone()).into())
                 }
             }
         }

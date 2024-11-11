@@ -579,6 +579,10 @@ impl Table {
                 }
             },
             Subquery(subquery) => {
+                let plan = subquery.plan.as_any().downcast_ref::<LogicalPlan>().unwrap();
+                todo!("Subquery evaluation not yet implemented: {:?}", subquery)
+            }
+            InSubquery(expr, subquery) => {
                 todo!("Subquery evaluation not yet implemented: {:?}", subquery)
             }
         }?;
