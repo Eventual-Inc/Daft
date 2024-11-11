@@ -1,21 +1,14 @@
 use std::{
-    any::Any,
     fmt::{Debug, Display},
     hash::{Hash, Hasher},
     sync::Arc,
 };
 
+use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use daft_schema::schema::SchemaRef;
 
-use crate::{PartitionField, Pushdowns};
-
-pub trait ScanTaskLike {
-    fn as_any(&self) -> &dyn Any;
-    fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
-}
-
-pub type BoxScanTaskLikeIter = Box<dyn Iterator<Item = DaftResult<Arc<dyn ScanTaskLike>>>>;
+use crate::{PartitionField, Pushdowns, ScanTaskLikeRef};
 
 pub trait ScanOperator: Send + Sync + Debug {
     fn schema(&self) -> SchemaRef;
@@ -37,7 +30,14 @@ pub trait ScanOperator: Send + Sync + Debug {
     fn can_absorb_select(&self) -> bool;
     fn can_absorb_limit(&self) -> bool;
     fn multiline_display(&self) -> Vec<String>;
-    fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<BoxScanTaskLikeIter>;
+
+    /// If cfg provided, `to_scan_tasks` should apply the appropriate transformations
+    /// (merging, splitting) to the outputted scan tasks
+    fn to_scan_tasks(
+        &self,
+        pushdowns: Pushdowns,
+        config: Option<&DaftExecutionConfig>,
+    ) -> DaftResult<Vec<ScanTaskLikeRef>>;
 }
 
 impl Display for dyn ScanOperator {

@@ -1,18 +1,12 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use common_io_config::IOConfig;
-use common_scan_info::{PhysicalScanInfo, Pushdowns, ScanOperatorRef};
+use common_scan_info::ScanOperatorRef;
 use daft_core::prelude::TimeUnit;
-use daft_logical_plan::{
-    builder::IntoGlobPath, logical_plan::LogicalPlan, ops, source_info::SourceInfo,
-    LogicalPlanBuilder,
-};
-use daft_schema::{
-    field::Field,
-    schema::{Schema, SchemaRef},
-};
+use daft_logical_plan::{builder::IntoGlobPath, LogicalPlanBuilder};
+use daft_schema::{field::Field, schema::SchemaRef};
 #[cfg(feature = "python")]
 use {crate::python::pylib::ScanOperatorHandle, pyo3::prelude::*};
 
@@ -20,58 +14,6 @@ use crate::{
     glob::GlobScanOperator,
     storage_config::{NativeStorageConfig, StorageConfig},
 };
-
-pub fn table_scan(
-    scan_operator: ScanOperatorRef,
-    pushdowns: Option<Pushdowns>,
-) -> DaftResult<LogicalPlanBuilder> {
-    let schema = scan_operator.0.schema();
-    let partitioning_keys = scan_operator.0.partitioning_keys();
-    let source_info = SourceInfo::Physical(PhysicalScanInfo::new(
-        scan_operator.clone(),
-        schema.clone(),
-        partitioning_keys.into(),
-        pushdowns.clone().unwrap_or_default(),
-    ));
-    // If file path column is specified, check that it doesn't conflict with any column names in the schema.
-    if let Some(file_path_column) = &scan_operator.0.file_path_column() {
-        if schema.names().contains(&(*file_path_column).to_string()) {
-            return Err(DaftError::ValueError(format!(
-                "Attempting to make a Schema with a file path column name that already exists: {}",
-                file_path_column
-            )));
-        }
-    }
-    // Add generated fields to the schema.
-    let schema_with_generated_fields = {
-        if let Some(generated_fields) = scan_operator.0.generated_fields() {
-            // We use the non-distinct union here because some scan operators have table schema information that
-            // already contain partitioned fields. For example,the deltalake scan operator takes the table schema.
-            Arc::new(schema.non_distinct_union(&generated_fields))
-        } else {
-            schema
-        }
-    };
-    // If column selection (projection) pushdown is specified, prune unselected columns from the schema.
-    let output_schema = if let Some(Pushdowns {
-        columns: Some(columns),
-        ..
-    }) = &pushdowns
-        && columns.len() < schema_with_generated_fields.fields.len()
-    {
-        let pruned_upstream_schema = schema_with_generated_fields
-            .fields
-            .iter()
-            .filter(|&(name, _)| columns.contains(name))
-            .map(|(_, field)| field.clone())
-            .collect::<Vec<_>>();
-        Arc::new(Schema::new(pruned_upstream_schema)?)
-    } else {
-        schema_with_generated_fields
-    };
-    let logical_plan: LogicalPlan = ops::Source::new(output_schema, source_info.into()).into();
-    Ok(LogicalPlanBuilder::new(logical_plan.into(), None))
-}
 
 pub struct ParquetScanBuilder {
     pub glob_paths: Vec<String>,
@@ -175,7 +117,7 @@ impl ParquetScanBuilder {
             self.hive_partitioning,
         )?);
 
-        table_scan(ScanOperatorRef(operator), None)
+        LogicalPlanBuilder::table_scan(ScanOperatorRef(operator), None)
     }
 }
 
@@ -211,7 +153,7 @@ pub fn delta_scan<T: AsRef<str>>(
             .to_object(py);
         let scan_operator_handle =
             ScanOperatorHandle::from_python_scan_operator(delta_lake_operator, py)?;
-        table_scan(scan_operator_handle.into(), None)
+        LogicalPlanBuilder::table_scan(scan_operator_handle.into(), None)
     })
 }
 

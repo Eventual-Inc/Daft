@@ -18,6 +18,7 @@ use daft_local_plan::{
 use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::populate_aggregation_stages;
+use daft_scan::ScanTaskRef;
 use daft_table::ProbeState;
 use daft_writers::make_physical_writer_factory;
 use indexmap::IndexSet;
@@ -129,8 +130,13 @@ pub fn physical_plan_to_pipeline(
             schema,
             ..
         }) => {
+            let scan_tasks = scan_tasks
+                .iter()
+                .map(|task| task.clone().as_any_arc().downcast().unwrap())
+                .collect::<Vec<ScanTaskRef>>();
+
             let scan_task_source =
-                ScanTaskSource::new(scan_tasks.clone(), pushdowns.clone(), schema.clone(), cfg);
+                ScanTaskSource::new(scan_tasks, pushdowns.clone(), schema.clone(), cfg);
             scan_task_source.arced().into()
         }
         LocalPhysicalPlan::InMemoryScan(InMemoryScan { info, .. }) => {

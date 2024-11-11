@@ -1,9 +1,10 @@
 use std::{sync::Arc, vec};
 
+use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::{CsvSourceConfig, FileFormat, FileFormatConfig, ParquetSourceConfig};
 use common_runtime::RuntimeRef;
-use common_scan_info::{BoxScanTaskLikeIter, PartitionField, Pushdowns, ScanOperator};
+use common_scan_info::{PartitionField, Pushdowns, ScanOperator, ScanTaskLike, ScanTaskLikeRef};
 use daft_core::{prelude::Utf8Array, series::IntoSeries};
 use daft_csv::CsvParseOptions;
 use daft_io::{parse_url, FileMetadata, IOClient, IOStatsContext, IOStatsRef};
@@ -20,6 +21,7 @@ use snafu::Snafu;
 
 use crate::{
     hive::{hive_partitions_to_fields, hive_partitions_to_series, parse_hive_partitioning},
+    scan_task_iters::{merge_by_sizes, split_by_row_groups, BoxScanTaskIter},
     storage_config::StorageConfig,
     ChunkSpec, DataSource, ScanTask,
 };
@@ -356,7 +358,11 @@ impl ScanOperator for GlobScanOperator {
         lines
     }
 
-    fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<BoxScanTaskLikeIter> {
+    fn to_scan_tasks(
+        &self,
+        pushdowns: Pushdowns,
+        cfg: Option<&DaftExecutionConfig>,
+    ) -> DaftResult<Vec<ScanTaskLikeRef>> {
         let (io_runtime, io_client) = self.storage_config.get_io_client_and_runtime()?;
         let io_stats = IOStatsContext::new(format!(
             "GlobScanOperator::to_scan_tasks for {:#?}",
@@ -394,7 +400,7 @@ impl ScanOperator for GlobScanOperator {
             .collect();
         let partition_schema = Schema::new(partition_fields)?;
         // Create one ScanTask per file.
-        Ok(Box::new(files.enumerate().filter_map(move |(idx, f)| {
+        let mut scan_tasks: BoxScanTaskIter = Box::new(files.enumerate().filter_map(|(idx, f)| {
             let scan_task_result = (|| {
                 let FileMetadata {
                     filepath: path,
@@ -462,6 +468,21 @@ impl ScanOperator for GlobScanOperator {
                 Ok(None) => None,
                 Err(e) => Some(Err(e)),
             }
-        })))
+        }));
+
+        if let Some(cfg) = cfg {
+            scan_tasks = split_by_row_groups(
+                scan_tasks,
+                cfg.parquet_split_row_groups_max_files,
+                cfg.scan_tasks_min_size_bytes,
+                cfg.scan_tasks_max_size_bytes,
+            );
+
+            scan_tasks = merge_by_sizes(scan_tasks, &pushdowns, cfg);
+        }
+
+        scan_tasks
+            .map(|st| st.map(|task| task as Arc<dyn ScanTaskLike>))
+            .collect()
     }
 }

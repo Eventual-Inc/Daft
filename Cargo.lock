@@ -1484,12 +1484,15 @@ dependencies = [
 name = "common-scan-info"
 version = "0.3.0-dev0"
 dependencies = [
+ "common-daft-config",
  "common-display",
  "common-error",
+ "common-file-formats",
  "daft-dsl",
  "daft-schema",
  "pyo3",
  "serde",
+ "typetag",
 ]
 
 [[package]]
@@ -2146,7 +2149,6 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-logical-plan",
- "daft-scan",
  "log",
  "strum 0.26.3",
 ]
@@ -2269,7 +2271,6 @@ dependencies = [
  "daft-dsl",
  "daft-functions",
  "daft-logical-plan",
- "daft-scan",
  "daft-schema",
  "itertools 0.11.0",
  "log",
@@ -2307,6 +2308,7 @@ dependencies = [
  "pyo3",
  "serde",
  "snafu",
+ "typetag",
  "urlencoding",
 ]
 

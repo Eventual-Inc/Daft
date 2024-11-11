@@ -5,9 +5,10 @@ use std::{
 
 use common_daft_config::DaftPlanningConfig;
 use common_display::mermaid::MermaidDisplayOptions;
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
 use common_io_config::IOConfig;
+use common_scan_info::{PhysicalScanInfo, Pushdowns, ScanOperatorRef};
 use daft_core::join::{JoinStrategy, JoinType};
 use daft_dsl::{col, ExprRef};
 use daft_schema::schema::{Schema, SchemaRef};
@@ -133,6 +134,58 @@ impl LogicalPlanBuilder {
         ));
         let logical_plan: LogicalPlan = ops::Source::new(schema, source_info.into()).into();
 
+        Ok(Self::new(logical_plan.into(), None))
+    }
+
+    pub fn table_scan(
+        scan_operator: ScanOperatorRef,
+        pushdowns: Option<Pushdowns>,
+    ) -> DaftResult<Self> {
+        let schema = scan_operator.0.schema();
+        let partitioning_keys = scan_operator.0.partitioning_keys();
+        let source_info = SourceInfo::Physical(PhysicalScanInfo::new(
+            scan_operator.clone(),
+            schema.clone(),
+            partitioning_keys.into(),
+            pushdowns.clone().unwrap_or_default(),
+        ));
+        // If file path column is specified, check that it doesn't conflict with any column names in the schema.
+        if let Some(file_path_column) = &scan_operator.0.file_path_column() {
+            if schema.names().contains(&(*file_path_column).to_string()) {
+                return Err(DaftError::ValueError(format!(
+                    "Attempting to make a Schema with a file path column name that already exists: {}",
+                    file_path_column
+                )));
+            }
+        }
+        // Add generated fields to the schema.
+        let schema_with_generated_fields = {
+            if let Some(generated_fields) = scan_operator.0.generated_fields() {
+                // We use the non-distinct union here because some scan operators have table schema information that
+                // already contain partitioned fields. For example,the deltalake scan operator takes the table schema.
+                Arc::new(schema.non_distinct_union(&generated_fields))
+            } else {
+                schema
+            }
+        };
+        // If column selection (projection) pushdown is specified, prune unselected columns from the schema.
+        let output_schema = if let Some(Pushdowns {
+            columns: Some(columns),
+            ..
+        }) = &pushdowns
+            && columns.len() < schema_with_generated_fields.fields.len()
+        {
+            let pruned_upstream_schema = schema_with_generated_fields
+                .fields
+                .iter()
+                .filter(|&(name, _)| columns.contains(name))
+                .map(|(_, field)| field.clone())
+                .collect::<Vec<_>>();
+            Arc::new(Schema::new(pruned_upstream_schema)?)
+        } else {
+            schema_with_generated_fields
+        };
+        let logical_plan: LogicalPlan = ops::Source::new(output_schema, source_info.into()).into();
         Ok(Self::new(logical_plan.into(), None))
     }
 

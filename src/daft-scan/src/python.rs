@@ -43,15 +43,15 @@ impl PartialEq for PythonTablesFactoryArgs {
 pub mod pylib {
     use std::sync::Arc;
 
-    use common_daft_config::PyDaftExecutionConfig;
+    use common_daft_config::{DaftExecutionConfig, PyDaftExecutionConfig};
     use common_error::DaftResult;
     use common_file_formats::{python::PyFileFormatConfig, FileFormatConfig};
     use common_py_serde::impl_bincode_py_state_serialization;
     use common_scan_info::{
         python::pylib::{PyPartitionField, PyPushdowns},
-        PartitionField, Pushdowns, ScanOperator, ScanOperatorRef, ScanTaskLike,
+        PartitionField, Pushdowns, ScanOperator, ScanOperatorRef, ScanTaskLike, ScanTaskLikeRef,
     };
-    use daft_logical_plan::PyLogicalPlanBuilder;
+    use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
     use daft_schema::{python::schema::PySchema, schema::SchemaRef};
     use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
     use daft_table::{python::PyTable, Table};
@@ -66,6 +66,7 @@ pub mod pylib {
     use crate::{
         anonymous::AnonymousScanOperator,
         glob::GlobScanOperator,
+        scan_task_iters::{merge_by_sizes, split_by_row_groups, BoxScanTaskIter},
         storage_config::{PyStorageConfig, PythonStorageConfig},
         DataSource, ScanTask,
     };
@@ -244,11 +245,10 @@ pub mod pylib {
         fn to_scan_tasks(
             &self,
             pushdowns: Pushdowns,
-        ) -> common_error::DaftResult<
-            Box<dyn Iterator<Item = common_error::DaftResult<Arc<dyn ScanTaskLike>>>>,
-        > {
+            cfg: Option<&DaftExecutionConfig>,
+        ) -> DaftResult<Vec<ScanTaskLikeRef>> {
             let scan_tasks = Python::with_gil(|py| {
-                let pypd = PyPushdowns(pushdowns.into()).into_py(py);
+                let pypd = PyPushdowns(pushdowns.clone().into()).into_py(py);
                 let pyiter =
                     self.operator
                         .call_method1(py, pyo3::intern!(py, "to_scan_tasks"), (pypd,))?;
@@ -257,12 +257,28 @@ pub mod pylib {
                     pyiter
                         .map(|v| {
                             let pyscantask = v?.extract::<PyScanTask>()?.0;
-                            DaftResult::Ok(pyscantask as Arc<dyn ScanTaskLike>)
+                            DaftResult::Ok(pyscantask)
                         })
                         .collect::<Vec<_>>(),
                 )
             })?;
-            Ok(Box::new(scan_tasks.into_iter()))
+
+            let mut scan_tasks: BoxScanTaskIter = Box::new(scan_tasks.into_iter());
+
+            if let Some(cfg) = cfg {
+                scan_tasks = split_by_row_groups(
+                    scan_tasks,
+                    cfg.parquet_split_row_groups_max_files,
+                    cfg.scan_tasks_min_size_bytes,
+                    cfg.scan_tasks_max_size_bytes,
+                );
+
+                scan_tasks = merge_by_sizes(scan_tasks, &pushdowns, cfg);
+            }
+
+            scan_tasks
+                .map(|st| st.map(|task| task as Arc<dyn ScanTaskLike>))
+                .collect()
         }
     }
 
@@ -467,7 +483,7 @@ pub mod pylib {
     pub fn logical_plan_table_scan(
         scan_operator: ScanOperatorHandle,
     ) -> PyResult<PyLogicalPlanBuilder> {
-        Ok(crate::builder::table_scan(scan_operator.into(), None)?.into())
+        Ok(LogicalPlanBuilder::table_scan(scan_operator.into(), None)?.into())
     }
 }
 

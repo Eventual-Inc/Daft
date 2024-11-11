@@ -46,24 +46,8 @@ pub(super) fn translate_single_logical_node(
                 source_schema,
                 ..
             }) => {
-                let scan_tasks = Box::new(
-                    scan_op
-                        .0
-                        .to_scan_tasks(pushdowns.clone())?
-                        .map(|st| Ok(st?.as_any_arc().downcast().unwrap())),
-                );
+                let scan_tasks = scan_op.0.to_scan_tasks(pushdowns.clone(), Some(cfg))?;
 
-                let scan_tasks = daft_scan::scan_task_iters::split_by_row_groups(
-                    scan_tasks,
-                    cfg.parquet_split_row_groups_max_files,
-                    cfg.scan_tasks_min_size_bytes,
-                    cfg.scan_tasks_max_size_bytes,
-                );
-
-                // Apply transformations on the ScanTasks to optimize
-                let scan_tasks =
-                    daft_scan::scan_task_iters::merge_by_sizes(scan_tasks, pushdowns, cfg);
-                let scan_tasks = scan_tasks.collect::<DaftResult<Vec<_>>>()?;
                 if scan_tasks.is_empty() {
                     let clustering_spec =
                         Arc::new(ClusteringSpec::Unknown(UnknownClusteringConfig::new(1)));

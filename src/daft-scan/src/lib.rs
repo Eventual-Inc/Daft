@@ -5,7 +5,7 @@ use std::{any::Any, borrow::Cow, fmt::Debug, sync::Arc};
 use common_display::DisplayAs;
 use common_error::DaftError;
 use common_file_formats::FileFormatConfig;
-use common_scan_info::{Pushdowns, ScanTaskLike};
+use common_scan_info::{Pushdowns, ScanTaskLike, ScanTaskLikeRef};
 use daft_schema::schema::{Schema, SchemaRef};
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
 use itertools::Itertools;
@@ -371,6 +371,7 @@ pub struct ScanTask {
     pub generated_fields: Option<SchemaRef>,
 }
 
+#[typetag::serde]
 impl ScanTaskLike for ScanTask {
     fn as_any(&self) -> &dyn Any {
         self
@@ -379,9 +380,52 @@ impl ScanTaskLike for ScanTask {
     fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
         self
     }
+
+    fn dyn_eq(&self, other: &dyn ScanTaskLike) -> bool {
+        other
+            .as_any()
+            .downcast_ref::<Self>()
+            .map_or(false, |a| a == self)
+    }
+
+    fn materialized_schema(&self) -> SchemaRef {
+        self.materialized_schema()
+    }
+
+    fn num_rows(&self) -> Option<usize> {
+        self.num_rows()
+    }
+
+    fn approx_num_rows(&self, config: Option<&DaftExecutionConfig>) -> Option<f64> {
+        self.approx_num_rows(config)
+    }
+
+    fn upper_bound_rows(&self) -> Option<usize> {
+        self.upper_bound_rows()
+    }
+
+    fn size_bytes_on_disk(&self) -> Option<usize> {
+        self.size_bytes_on_disk()
+    }
+
+    fn estimate_in_memory_size_bytes(&self, config: Option<&DaftExecutionConfig>) -> Option<usize> {
+        self.estimate_in_memory_size_bytes(config)
+    }
+
+    fn file_format_config(&self) -> Arc<FileFormatConfig> {
+        self.file_format_config.clone()
+    }
+
+    fn pushdowns(&self) -> &Pushdowns {
+        &self.pushdowns
+    }
+
+    fn schema(&self) -> SchemaRef {
+        self.schema.clone()
+    }
 }
 
-impl From<ScanTask> for Arc<dyn ScanTaskLike> {
+impl From<ScanTask> for ScanTaskLikeRef {
     fn from(task: ScanTask) -> Self {
         Arc::new(task)
     }

@@ -7,6 +7,8 @@ mod pushdowns;
 #[cfg(feature = "python")]
 pub mod python;
 mod scan_operator;
+mod scan_task;
+pub mod test;
 
 use std::{fmt::Debug, hash::Hash};
 
@@ -16,7 +18,8 @@ pub use partitioning::{PartitionField, PartitionTransform};
 pub use pushdowns::Pushdowns;
 #[cfg(feature = "python")]
 pub use python::register_modules;
-pub use scan_operator::{BoxScanTaskLikeIter, ScanOperator, ScanOperatorRef, ScanTaskLike};
+pub use scan_operator::{ScanOperator, ScanOperatorRef};
+pub use scan_task::{BoxScanTaskLikeIter, ScanTaskLike, ScanTaskLikeRef};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PhysicalScanInfo {
