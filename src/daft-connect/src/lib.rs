@@ -7,8 +7,6 @@
 #![feature(try_trait_v2_residual)]
 #![warn(unused)]
 
-use std::thread::JoinHandle;
-
 use dashmap::DashMap;
 use eyre::Context;
 #[cfg(feature = "python")]
