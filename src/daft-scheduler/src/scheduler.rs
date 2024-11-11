@@ -532,7 +532,7 @@ fn physical_plan_to_partition_tasks(
                         .getattr(pyo3::intern!(py, "pre_shuffle_merge"))?
                         .call1((upstream_iter,))?;
                     let mapped = match target_spec.as_ref() {
-                        daft_plan::ClusteringSpec::Hash(hash_clustering_config) => {
+                        daft_logical_plan::ClusteringSpec::Hash(hash_clustering_config) => {
                             let partition_by_pyexprs: Vec<PyExpr> = hash_clustering_config
                                 .by
                                 .iter()
@@ -549,14 +549,14 @@ fn physical_plan_to_partition_tasks(
                                 partition_by_pyexprs,
                             ))?
                         }
-                        daft_plan::ClusteringSpec::Random(random_clustering_config) => py
+                        daft_logical_plan::ClusteringSpec::Random(random_clustering_config) => py
                             .import_bound(pyo3::intern!(py, "daft.execution.physical_plan"))?
                             .getattr(pyo3::intern!(py, "fanout_random"))?
                             .call1((merged, random_clustering_config.num_partitions()))?,
-                        daft_plan::ClusteringSpec::Range(_) => {
+                        daft_logical_plan::ClusteringSpec::Range(_) => {
                             unimplemented!("FanoutByRange not implemented, since only use case (sorting) doesn't need it yet.");
                         }
-                        daft_plan::ClusteringSpec::Unknown(_) => {
+                        daft_logical_plan::ClusteringSpec::Unknown(_) => {
                             unreachable!("Cannot use NaiveFullyMaterializingMapReduce ShuffleExchange to map to an Unknown ClusteringSpec");
                         }
                     };

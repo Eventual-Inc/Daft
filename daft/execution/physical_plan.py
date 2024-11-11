@@ -1464,45 +1464,56 @@ def pre_shuffle_merge(
 
     stage_id = next(stage_id_counter)
 
-    # Hard coded to 4 for now.
-    num_maps_per_merge = 4
+    memory_threshold = 1 << 30  # 1 GB
 
-    materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
+    in_flight_maps: dict[str, SingleOutputPartitionTask[PartitionT]] = dict()
     no_more_input = False
     while True:
-        ready_to_merge = [task for task in list(materializations)[:num_maps_per_merge] if task.done()]
+        materialized_maps = [
+            (p, p.partition_metadata().size_bytes or memory_threshold + 1) for p in in_flight_maps.values() if p.done()
+        ]
 
-        # If we have enough partitions to merge, or we have no more input and all partitions are ready to merge, merge.
-        if len(ready_to_merge) == num_maps_per_merge or (
-            no_more_input and len(ready_to_merge) == len(materializations)
-        ):
-            for _ in range(num_maps_per_merge):
-                materializations.popleft()
+        if len(materialized_maps) > 1 or (no_more_input and len(materialized_maps) == len(in_flight_maps)):
+            # Sort the partitions by size.
+            materialized_maps.sort(key=lambda x: x[1])
 
-            # Todo: How to determine scheduling placement for the merge tasks.
-            merge_step = PartitionTaskBuilder[PartitionT](
-                inputs=[p.partition() for p in ready_to_merge],
-                partial_metadatas=[m.partition_metadata() for m in ready_to_merge],
-                resource_request=ResourceRequest(
-                    memory_bytes=sum(m.partition_metadata().size_bytes or 0 for m in ready_to_merge),
-                ),
-            ).add_instruction(
-                instruction=execution_step.ReduceMerge(),
-            )
-            yield merge_step
+            # Determine the groups of partitions to do merging on.
+            to_merge: list[list[SingleOutputPartitionTask[PartitionT]]] = []
+            curr_merge_group = [materialized_maps[0][0]]
+            curr_merge_group_size = materialized_maps[0][1]
+            for partition, size in materialized_maps[1:]:
+                if curr_merge_group_size + size > memory_threshold:
+                    to_merge.append(curr_merge_group)
+                    curr_merge_group = [partition]
+                    curr_merge_group_size = size
+                else:
+                    curr_merge_group.append(partition)
+                    curr_merge_group_size += size
+
+            for group in to_merge:
+                merge_step = PartitionTaskBuilder[PartitionT](
+                    inputs=[p.partition() for p in group],
+                    partial_metadatas=[m.partition_metadata() for m in group],
+                    resource_request=ResourceRequest(
+                        memory_bytes=sum(m.partition_metadata().size_bytes or 0 for m in group),
+                    ),
+                ).add_instruction(
+                    instruction=execution_step.ReduceMerge(),
+                )
+                yield merge_step
 
         # If we don't have enough partitions to merge, yield a map task
         try:
             child_step = next(map_plan)
             if isinstance(child_step, PartitionTaskBuilder):
                 child_step = child_step.finalize_partition_task_single_output(stage_id=stage_id)
-                materializations.append(child_step)
+                in_flight_maps[child_step.id()] = child_step
             yield child_step
 
         except StopIteration:
             no_more_input = True
-            if len(materializations) > 0:
-                logger.debug("PreShuffleMerge blocked on completion of a map task in: %s", materializations)
+            if len(in_flight_maps) > 0:
+                logger.debug("PreShuffleMerge blocked on completion of a map task in")
                 yield None
             else:
                 break
