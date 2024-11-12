@@ -1,6 +1,6 @@
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, Iterator, List
+from typing import TYPE_CHECKING, Callable, Iterator, List
 
 from daft.daft import Pushdowns, PyTable, ScanOperatorHandle, ScanTask
 from daft.dataframe import DataFrame
@@ -12,18 +12,14 @@ if TYPE_CHECKING:
     from daft.table.table import Table
 
 
-def _generator_factory_function(
-    func: Callable[[int, Any], Iterator["Table"]], i: int, *args: Any
-) -> Iterator["PyTable"]:
-    for table in func(i, *args):
+def _generator_factory_function(func: Callable[[], Iterator["Table"]]) -> Iterator["PyTable"]:
+    for table in func():
         yield table._table
 
 
 def read_generator(
-    generator: Callable[[int, Any], Iterator["Table"]],
-    num_partitions: int,
+    generators: Iterator[Callable[[], Iterator["Table"]]],
     schema: Schema,
-    *generator_args: Any,
 ) -> DataFrame:
     """Create a DataFrame from a generator function.
 
@@ -38,10 +34,8 @@ def read_generator(
     """
 
     generator_scan_operator = GeneratorScanOperator(
-        generator=generator,
-        num_partitions=num_partitions,
+        generators=generators,
         schema=schema,
-        generator_args=generator_args,
     )
     handle = ScanOperatorHandle.from_python_scan_operator(generator_scan_operator)
     builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
@@ -51,15 +45,11 @@ def read_generator(
 class GeneratorScanOperator(ScanOperator):
     def __init__(
         self,
-        generator: Callable[[int, Any], Iterator["Table"]],
-        num_partitions: int,
+        generators: Iterator[Callable[[], Iterator["Table"]]],
         schema: Schema,
-        generator_args: Any,
     ):
-        self._generator = generator
-        self._num_partitions = num_partitions
+        self._generators = generators
         self._schema = schema
-        self._generator_args = generator_args
 
     def display_name(self) -> str:
         return "GeneratorScanOperator"
@@ -86,11 +76,11 @@ class GeneratorScanOperator(ScanOperator):
         ]
 
     def to_scan_tasks(self, pushdowns: Pushdowns) -> Iterator[ScanTask]:
-        for i in range(self._num_partitions):
+        for generator in self._generators:
             yield ScanTask.python_factory_func_scan_task(
                 module=_generator_factory_function.__module__,
                 func_name=_generator_factory_function.__name__,
-                func_args=(self._generator, i, *self._generator_args),
+                func_args=(generator,),
                 schema=self.schema()._schema,
                 num_rows=None,
                 size_bytes=None,
