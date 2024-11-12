@@ -715,15 +715,15 @@ jobs:
 
     - name: Check disk usage before
       run: df -h
-      if: ${{ runner.os == 'ubuntu' }}
+      if: ${{ matrix.os == 'ubuntu' }}
     - name: Free Disk Space (Ubuntu)
       uses: jlumbroso/free-disk-space@main
       with:
         tool-cache: false
-      if: ${{ runner.os == 'ubuntu' }}
+      if: ${{ matrix.os == 'ubuntu' }}
     - name: Check disk usage
       run: df -h
-      if: ${{ runner.os == 'ubuntu' }}
+      if: ${{ matrix.os == 'ubuntu' }}
 
     - name: Generate code coverage
       run: mkdir -p report-output && cargo llvm-cov  --no-default-features --workspace --exclude spark-connect --lcov --output-path ./report-output/lcov.info
