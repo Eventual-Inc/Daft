@@ -120,7 +120,12 @@ lto = 'fat'
 inherits = "dev"
 
 [profile.test]
+codegen-units = 1
 debug = true
+debug-assertions = false
+incremental = false
+opt-level = 0
+overflow-checks = false
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 libc = {version = "^0.2.150", default-features = false}
