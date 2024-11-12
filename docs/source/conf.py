@@ -76,6 +76,8 @@ html_theme_options = {
     # This is how many levels are shown on the secondary sidebar
     "show_toc_level": 2,
 }
+# Set canonical link
+html_baseurl = "/stable/"
 
 # -- Copy button configuration
 

@@ -119,6 +119,7 @@ pub mod pylib {
         daft_sql::register_modules(m)?;
         daft_functions::register_modules(m)?;
         daft_functions_json::register_modules(m)?;
+        daft_connect::register_modules(m)?;
 
         m.add_wrapped(wrap_pyfunction!(version))?;
         m.add_wrapped(wrap_pyfunction!(build_type))?;
