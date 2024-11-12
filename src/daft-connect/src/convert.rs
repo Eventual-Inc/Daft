@@ -30,7 +30,7 @@ pub fn run_local(
         })
         .flat_map(|tables| match tables {
             Ok(tables) => {
-                let tables = Arc::try_unwrap(tables).unwrap();
+                let tables = Arc::unwrap_or_clone(tables);
 
                 let tables = tables.into_iter().map(Ok);
                 let stream: Pin<Box<dyn Stream<Item = DaftResult<Table>>>> =
