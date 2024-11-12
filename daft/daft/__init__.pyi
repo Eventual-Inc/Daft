@@ -421,13 +421,6 @@ class FileInfos:
 
     @staticmethod
     def from_infos(file_paths: list[str], file_sizes: list[int | None], num_rows: list[int | None]) -> FileInfos: ...
-    @staticmethod
-    def from_table(table: PyTable) -> FileInfos:
-        """
-        Create from a Daft table with "path", "size", and "num_rows" columns.
-        """
-        ...
-
     def extend(self, new_infos: FileInfos) -> FileInfos:
         """
         Concatenate two FileInfos together.
@@ -435,11 +428,6 @@ class FileInfos:
         ...
 
     def __getitem__(self, idx: int) -> FileInfo: ...
-    def to_table(self) -> PyTable:
-        """
-        Convert to a Daft table with "path", "size", and "num_rows" columns.
-        """
-
     def __len__(self) -> int: ...
 
 class HTTPConfig:
@@ -1539,6 +1527,9 @@ class PyTable:
     def to_arrow_record_batch(self) -> pa.RecordBatch: ...
     @staticmethod
     def empty(schema: PySchema | None = None) -> PyTable: ...
+    @staticmethod
+    def from_file_infos(file_infos: FileInfos) -> PyTable: ...
+    def to_file_infos(self) -> FileInfos: ...
 
 class PyMicroPartition:
     def schema(self) -> PySchema: ...

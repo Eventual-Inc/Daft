@@ -711,7 +711,6 @@ jobs:
       with:
         key: ${{ runner.os }}-rust-build
         cache-all-crates: 'true'
-
     - name: Free Disk Space (Ubuntu) # only run on ubuntu
       if: ${{ matrix.os == 'ubuntu' }}
       uses: jlumbroso/free-disk-space@main

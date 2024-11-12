@@ -1,18 +1,4 @@
 [dependencies]
-arrow2 = {workspace = true, features = [
-  "chrono-tz",
-  "compute_take",
-  "compute_cast",
-  "compute_aggregate",
-  "compute_if_then_else",
-  "compute_sort",
-  "compute_filter",
-  "compute_temporal",
-  "compute_comparison",
-  "compute_arithmetics",
-  "compute_concatenate",
-  "io_ipc"
-]}
 common-daft-config = {path = "../common/daft-config", default-features = false}
 common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}
@@ -26,7 +12,6 @@ daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-functions = {path = "../daft-functions", default-features = false}
 daft-schema = {path = "../daft-schema", default-features = false}
-daft-table = {path = "../daft-table", default-features = false}
 derivative = {workspace = true}
 indexmap = {workspace = true}
 itertools = {workspace = true}
@@ -55,7 +40,6 @@ python = [
   "daft-core/python",
   "daft-dsl/python",
   "daft-functions/python",
-  "daft-table/python",
   "daft-schema/python"
 ]
 

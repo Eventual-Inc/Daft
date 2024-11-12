@@ -2233,7 +2233,6 @@ dependencies = [
 name = "daft-logical-plan"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow2",
  "common-daft-config",
  "common-display",
  "common-error",
@@ -2247,7 +2246,6 @@ dependencies = [
  "daft-dsl",
  "daft-functions",
  "daft-schema",
- "daft-table",
  "derivative",
  "indexmap 2.5.0",
  "itertools 0.11.0",
@@ -2487,6 +2485,7 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-image",
+ "daft-logical-plan",
  "html-escape",
  "indexmap 2.5.0",
  "num-traits",
