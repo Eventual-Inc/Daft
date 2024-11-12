@@ -705,19 +705,14 @@ jobs:
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
+        bins: cargo-llvm-cov@0.6.14
+        components: llvm-tools-preview
     - uses: Swatinem/rust-cache@v2
       with:
         key: ${{ runner.os }}-rust-build
         cache-all-crates: 'true'
-
-    - name: Install cargo-llvm-cov
-      uses: taiki-e/install-action@cargo-llvm-cov
     - name: Generate code coverage
       run: mkdir -p report-output && cargo llvm-cov  --no-default-features --workspace --exclude spark-connect --lcov --output-path ./report-output/lcov.info
-      env:
-        CARGO_BUILD_JOBS: 1
-        CARGO_TEST_THREADS: 1
-        CARGO_PROFILE: test
     - name: Upload coverage report
       uses: actions/upload-artifact@v4
       with:
