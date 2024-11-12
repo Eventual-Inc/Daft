@@ -526,11 +526,14 @@ fn physical_plan_to_partition_tasks(
                         .call1((mapped,))?;
                     Ok(reduced.into())
                 }
-                ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge { target_spec } => {
+                ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge {
+                    target_spec,
+                    pre_shuffle_merge_threshold,
+                } => {
                     let merged = py
                         .import_bound(pyo3::intern!(py, "daft.execution.physical_plan"))?
                         .getattr(pyo3::intern!(py, "pre_shuffle_merge"))?
-                        .call1((upstream_iter,))?;
+                        .call1((upstream_iter, *pre_shuffle_merge_threshold))?;
                     let mapped = match target_spec.as_ref() {
                         daft_logical_plan::ClusteringSpec::Hash(hash_clustering_config) => {
                             let partition_by_pyexprs: Vec<PyExpr> = hash_clustering_config

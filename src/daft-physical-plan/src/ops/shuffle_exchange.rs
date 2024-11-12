@@ -28,7 +28,7 @@ impl ShuffleExchange {
             } => Arc::new(ClusteringSpec::Unknown(UnknownClusteringConfig::new(
                 *target_num_partitions,
             ))),
-            ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge { target_spec } => {
+            ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge { target_spec, .. } => {
                 target_spec.clone()
             }
         }
@@ -38,16 +38,13 @@ impl ShuffleExchange {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ShuffleExchangeStrategy {
     /// Fully materialize the data after the Map, and then pull results from the Reduce.
-    NaiveFullyMaterializingMapReduce {
-        target_spec: Arc<ClusteringSpec>,
-    },
+    NaiveFullyMaterializingMapReduce { target_spec: Arc<ClusteringSpec> },
 
     /// Sequentially splits/coalesce partitions in order to meet a target number of partitions
-    SplitOrCoalesceToTargetNum {
-        target_num_partitions: usize,
-    },
+    SplitOrCoalesceToTargetNum { target_num_partitions: usize },
 
     MapReduceWithPreShuffleMerge {
+        pre_shuffle_merge_threshold: usize,
         target_spec: Arc<ClusteringSpec>,
     },
 }
@@ -82,7 +79,7 @@ impl ShuffleExchange {
                     target_num_partitions,
                 ));
             }
-            ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge { target_spec } => {
+            ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge { target_spec, .. } => {
                 res.push("  Strategy: MapReduceWithPreShuffleMerge".to_string());
                 res.push(format!("  Target Spec: {:?}", target_spec));
                 res.push(format!(
@@ -126,6 +123,7 @@ impl ShuffleExchangeFactory {
             Some(cfg) if cfg.enable_pre_shuffle_merge => {
                 ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge {
                     target_spec: clustering_spec,
+                    pre_shuffle_merge_threshold: cfg.pre_shuffle_merge_threshold,
                 }
             }
             _ => ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce {
@@ -156,6 +154,7 @@ impl ShuffleExchangeFactory {
             Some(cfg) if cfg.enable_pre_shuffle_merge => {
                 ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge {
                     target_spec: clustering_spec,
+                    pre_shuffle_merge_threshold: cfg.pre_shuffle_merge_threshold,
                 }
             }
             _ => ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce {
@@ -182,6 +181,7 @@ impl ShuffleExchangeFactory {
             Some(cfg) if cfg.enable_pre_shuffle_merge => {
                 ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge {
                     target_spec: clustering_spec,
+                    pre_shuffle_merge_threshold: cfg.pre_shuffle_merge_threshold,
                 }
             }
             _ => ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce {

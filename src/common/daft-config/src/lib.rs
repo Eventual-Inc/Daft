@@ -58,6 +58,7 @@ pub struct DaftExecutionConfig {
     pub enable_native_executor: bool,
     pub default_morsel_size: usize,
     pub enable_pre_shuffle_merge: bool,
+    pub pre_shuffle_merge_threshold: usize,
     pub enable_ray_tracing: bool,
 }
 
@@ -83,6 +84,7 @@ impl Default for DaftExecutionConfig {
             enable_native_executor: false,
             default_morsel_size: 128 * 1024,
             enable_pre_shuffle_merge: false,
+            pre_shuffle_merge_threshold: 1024 * 1024 * 1024, // 1GB
             enable_ray_tracing: false,
         }
     }

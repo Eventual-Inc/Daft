@@ -1459,6 +1459,7 @@ def coalesce(
 
 def pre_shuffle_merge(
     map_plan: InProgressPhysicalPlan[PartitionT],
+    pre_shuffle_merge_threshold: int,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """
     Merges intermediate partitions from the map_plan based on memory constraints.
@@ -1474,7 +1475,6 @@ def pre_shuffle_merge(
         Merged partition tasks or processed child steps
     """
 
-    MEMORY_THRESHOLD = 1 << 30
     NUM_MAPS_THRESHOLD = 4
 
     stage_id = next(stage_id_counter)
@@ -1485,7 +1485,10 @@ def pre_shuffle_merge(
         # Get and sort materialized maps by size.
         materialized_maps = sorted(
             [
-                (p, p.partition_metadata().size_bytes or MEMORY_THRESHOLD + 1)  # Assume large size if unknown
+                (
+                    p,
+                    p.partition_metadata().size_bytes or pre_shuffle_merge_threshold + 1,
+                )  # Assume large size if unknown
                 for p in in_flight_maps.values()
                 if p.done()
             ],
@@ -1504,7 +1507,7 @@ def pre_shuffle_merge(
 
             # Group remaining maps based on memory threshold
             for partition, size in materialized_maps[1:]:
-                if current_size + size > MEMORY_THRESHOLD:
+                if current_size + size > pre_shuffle_merge_threshold:
                     merge_groups.append(current_group)
                     current_group = [partition]
                     current_size = size
@@ -1517,7 +1520,7 @@ def pre_shuffle_merge(
             # 2. Is the last group and we're done with input
             # 3. The partition exceeds the memory threshold
             if current_group:
-                if len(current_group) > 1 or done_with_input or current_size > MEMORY_THRESHOLD:
+                if len(current_group) > 1 or done_with_input or current_size > pre_shuffle_merge_threshold:
                     merge_groups.append(current_group)
 
             # Create merge steps and remove processed maps
