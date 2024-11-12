@@ -92,6 +92,7 @@ impl Intersect {
                 None,
                 None,
                 None,
+                false,
             );
             join.map(|j| logical_plan::Distinct::new(j.into()).into())
         }
