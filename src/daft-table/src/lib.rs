@@ -21,7 +21,7 @@ use daft_dsl::{
     col, functions::FunctionEvaluator, null_lit, AggExpr, ApproxPercentileParams, Expr, ExprRef,
     LiteralValue, SketchType,
 };
-use daft_logical_plan::{FileInfos, LogicalPlan};
+use daft_logical_plan::FileInfos;
 use num_traits::ToPrimitive;
 #[cfg(feature = "python")]
 pub mod ffi;
@@ -590,10 +590,10 @@ impl Table {
                     Ok(if_true_series.if_else(&if_false_series, &predicate_series)?)
                 }
             },
-            Subquery(subquery) => Err(DaftError::ComputeError(
+            Subquery(_subquery) => Err(DaftError::ComputeError(
                 "Subquery evaluation not yet implemented".to_string(),
             )),
-            InSubquery(_expr, subquery) => Err(DaftError::ComputeError(
+            InSubquery(_expr, _subquery) => Err(DaftError::ComputeError(
                 "Subquery evaluation not yet implemented".to_string(),
             )),
         }?;
