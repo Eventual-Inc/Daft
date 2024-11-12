@@ -1252,7 +1252,7 @@ impl SQLPlanner {
                 let mut this = Self::new(self.catalog.clone());
                 let subquery = this.plan_query(subquery)?;
                 println!("subquery: {:?}", subquery);
-                todo!()
+                unsupported_sql_err!("Subquery")
             }
             SQLExpr::GroupingSets(_) => unsupported_sql_err!("GROUPING SETS"),
             SQLExpr::Cube(_) => unsupported_sql_err!("CUBE"),

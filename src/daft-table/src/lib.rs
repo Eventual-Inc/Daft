@@ -590,17 +590,12 @@ impl Table {
                     Ok(if_true_series.if_else(&if_false_series, &predicate_series)?)
                 }
             },
-            Subquery(subquery) => {
-                let _plan = subquery
-                    .plan
-                    .as_any()
-                    .downcast_ref::<LogicalPlan>()
-                    .unwrap();
-                todo!("Subquery evaluation not yet implemented: {:?}", subquery)
-            }
-            InSubquery(_expr, subquery) => {
-                todo!("Subquery evaluation not yet implemented: {:?}", subquery)
-            }
+            Subquery(subquery) => Err(DaftError::ComputeError(
+                "Subquery evaluation not yet implemented".to_string(),
+            )),
+            InSubquery(_expr, subquery) => Err(DaftError::ComputeError(
+                "Subquery evaluation not yet implemented".to_string(),
+            )),
         }?;
 
         if expected_field.name != series.field().name {
