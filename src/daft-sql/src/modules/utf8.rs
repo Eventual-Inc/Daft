@@ -1,8 +1,5 @@
 use daft_core::array::ops::Utf8NormalizeOptions;
-use daft_dsl::{
-    binary_op,
-    ExprRef, LiteralValue, Operator,
-};
+use daft_dsl::{binary_op, ExprRef, LiteralValue, Operator};
 use daft_functions::{
     count_matches::{utf8_count_matches, CountMatchesFunction},
     tokenize::{tokenize_decode, tokenize_encode, TokenizeDecodeFunction, TokenizeEncodeFunction},

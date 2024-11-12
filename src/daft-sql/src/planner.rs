@@ -9,14 +9,13 @@ use daft_core::prelude::*;
 use daft_dsl::{
     col,
     has_agg, lit, literals_to_series, null_lit, AggExpr, Expr, ExprRef, LiteralValue, Operator,
-    Subquery,
+    Subquery
 };
 use daft_functions::{
     numeric::{ceil::ceil, floor::floor},
     utf8::{ilike, like, to_date, to_datetime},
 };
 use daft_logical_plan::{LogicalPlanBuilder, LogicalPlanRef};
-
 use sqlparser::{
     ast::{
         ArrayElemTypeDef, BinaryOperator, CastKind, DateTimeField, Distinct, ExactNumberInfo,
