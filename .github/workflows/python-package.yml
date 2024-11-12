@@ -713,7 +713,7 @@ jobs:
     - name: Install cargo-llvm-cov
       uses: taiki-e/install-action@cargo-llvm-cov
     - name: Generate code coverage
-      run: mkdir -p report-output && cargo llvm-cov clean --no-default-features --workspace --exclude spark-connect --lcov --output-path ./report-output/lcov.info
+      run: mkdir -p report-output && cargo llvm-cov  --no-default-features --workspace --exclude spark-connect --lcov --output-path ./report-output/lcov.info
       env:
         CARGO_BUILD_JOBS: 1
         CARGO_TEST_THREADS: 1
