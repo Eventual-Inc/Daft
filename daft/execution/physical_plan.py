@@ -1473,7 +1473,10 @@ def pre_shuffle_merge(
     Yields:
         Merged partition tasks or processed child steps
     """
-    MEMORY_THRESHOLD = 1 << 30  # 1 GB
+
+    MEMORY_THRESHOLD = 1 << 30
+    NUM_MAPS_THRESHOLD = 4
+
     stage_id = next(stage_id_counter)
     in_flight_maps: dict[str, SingleOutputPartitionTask[PartitionT]] = {}
     no_more_input = False
@@ -1489,10 +1492,11 @@ def pre_shuffle_merge(
             key=lambda x: x[1],
         )
 
-        # Process materialized maps if we have enough or if we're done with input
-        should_merge = len(materialized_maps) > 1 or (no_more_input and len(materialized_maps) == len(in_flight_maps))
+        # Try to merge materialized maps if we have enough (default to 4) or if we're done with input
+        enough_maps = len(materialized_maps) > NUM_MAPS_THRESHOLD
+        done_with_input = no_more_input and len(materialized_maps) == len(in_flight_maps)
 
-        if should_merge:
+        if enough_maps or done_with_input:
             # Initialize the first merge group
             merge_groups = []
             current_group = [materialized_maps[0][0]]
@@ -1508,9 +1512,13 @@ def pre_shuffle_merge(
                     current_group.append(partition)
                     current_size += size
 
-            # Add the last group if it exists
+            # Add the last group if it exists and is either:
+            # 1. Contains more than 1 partition
+            # 2. Is the last group and we're done with input
+            # 3. The partition exceeds the memory threshold
             if current_group:
-                merge_groups.append(current_group)
+                if len(current_group) > 1 or done_with_input or current_size > MEMORY_THRESHOLD:
+                    merge_groups.append(current_group)
 
             # Create merge steps and remove processed maps
             for group in merge_groups:
