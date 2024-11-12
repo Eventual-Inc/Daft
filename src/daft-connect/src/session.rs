@@ -8,12 +8,6 @@ pub struct Session {
     /// Also, <https://users.rust-lang.org/t/hashmap-vs-btreemap/13804/4>
     config_values: BTreeMap<String, String>,
 
-    #[expect(
-        unused,
-        reason = "this will be used in the future especially to pass spark connect tests"
-    )]
-    tables_by_name: HashMap<String, daft_table::Table>,
-
     id: String,
     server_side_session_id: String,
 }
@@ -32,7 +26,6 @@ impl Session {
         let server_side_session_id = server_side_session_id.to_string();
         Self {
             config_values: Default::default(),
-            tables_by_name: Default::default(),
             id,
             server_side_session_id,
         }
