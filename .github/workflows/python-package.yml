@@ -711,6 +711,17 @@ jobs:
       with:
         key: ${{ runner.os }}-rust-build
         cache-all-crates: 'true'
+    - name: Check disk usage before
+      run: df -h
+    - name: Free Disk Space (Ubuntu)
+      uses: jlumbroso/free-disk-space@main
+      with:
+        tool-cache: false
+    - name: Check disk usage
+      run: df -h
+    - name: Check directory sizes
+      run: du -sh /usr/local/* /opt/* /usr/* | sort -hr
+
     - name: Generate code coverage
       run: mkdir -p report-output && cargo llvm-cov  --no-default-features --workspace --exclude spark-connect --lcov --output-path ./report-output/lcov.info
     - name: Upload coverage report
