@@ -1,24 +1,19 @@
 use std::thread;
 
 use arrow2::io::ipc::write::StreamWriter;
-use common_file_formats::FileFormat;
 use daft_table::Table;
 use eyre::Context;
-use futures::{StreamExt, TryStreamExt};
+use futures::TryStreamExt;
 use spark_connect::{
     execute_plan_response::{ArrowBatch, ResponseType, ResultComplete},
     spark_connect_service_server::SparkConnectService,
-    write_operation::{SaveMode, SaveType},
-    ExecutePlanResponse, Relation, WriteOperation,
+    ExecutePlanResponse, Relation,
 };
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::Status;
 use uuid::Uuid;
 
-use crate::{
-    convert::{convert_data, run_local, to_logical_plan},
-    invalid_argument_err, unimplemented_err, DaftSparkConnectService, Session,
-};
+use crate::{convert::convert_data, DaftSparkConnectService, Session};
 
 type DaftStream = <DaftSparkConnectService as SparkConnectService>::ExecutePlanStream;
 

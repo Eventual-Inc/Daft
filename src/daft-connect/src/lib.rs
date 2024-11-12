@@ -7,11 +7,8 @@
 #![feature(try_trait_v2_residual)]
 #![deny(unused)]
 
-use std::ops::ControlFlow;
-
 use dashmap::DashMap;
 use eyre::Context;
-use futures::{StreamExt, TryStreamExt};
 #[cfg(feature = "python")]
 use pyo3::types::PyModuleMethods;
 use spark_connect::{
@@ -29,7 +26,7 @@ use tonic::{transport::Server, Request, Response, Status};
 use tracing::info;
 use uuid::Uuid;
 
-use crate::{convert::run_local, session::Session};
+use crate::session::Session;
 
 mod command;
 mod config;

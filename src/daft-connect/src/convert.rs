@@ -12,10 +12,9 @@ use daft_logical_plan::LogicalPlanRef;
 use daft_table::Table;
 pub use data_conversion::convert_data;
 use futures::{stream, Stream, StreamExt};
-pub use plan_conversion::to_logical_plan;
 pub use schema_conversion::connect_schema;
 
-pub fn run_local(
+pub fn run_local_to_tables(
     logical_plan: &LogicalPlanRef,
 ) -> DaftResult<impl Stream<Item = DaftResult<Table>>> {
     let physical_plan = daft_local_plan::translate(logical_plan)?;
