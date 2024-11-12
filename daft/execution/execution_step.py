@@ -877,8 +877,6 @@ class ReduceMerge(ReduceInstruction):
         return self._reduce_merge(inputs)
 
     def _reduce_merge(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
-        if len(inputs) == 1:
-            return inputs
         return [MicroPartition.concat(inputs)]
 
     def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
