@@ -147,8 +147,12 @@ class DaftContext:
         return cls._instance
 
     def runner(self) -> Runner:
+        """Retrieves the runner.
+
+        WARNING: This will set the runner if it has not yet been set.
+        """
         with self._lock:
-            return self._get_runner()
+            return self._get_or_create_runner()
 
     @property
     def daft_execution_config(self) -> PyDaftExecutionConfig:
@@ -161,21 +165,32 @@ class DaftContext:
             return self._daft_planning_config
 
     @property
-    def runner_config(self) -> _RunnerConfig:
+    def runner_config(self) -> _RunnerConfig | None:
+        """Retrieve the currently active runner config, or None if it has not yet been set"""
         with self._lock:
-            return self._get_runner_config()
+            return self._runner_config
 
-    def _get_runner_config(self) -> _RunnerConfig:
+    def _get_or_create_runner_config(self) -> _RunnerConfig:
+        """Gets the runner config.
+
+        WARNING: This function has side-effects and will set the runner config if it has not yet been set. Do not call this
+        from APIs that don't expect side-effects.
+        """
         if self._runner_config is not None:
             return self._runner_config
         self._runner_config = _get_runner_config_from_env()
         return self._runner_config
 
-    def _get_runner(self) -> Runner:
+    def _get_or_create_runner(self) -> Runner:
+        """Gets the runner.
+
+        WARNING: This function has side-effects and will set the runner if it has not yet been set. Do not call this
+        from APIs that don't expect side-effects.
+        """
         if self._runner is not None:
             return self._runner
 
-        runner_config = self._get_runner_config()
+        runner_config = self._get_or_create_runner_config()
         if runner_config.name == "ray":
             from daft.runners.ray_runner import RayRunner
 
@@ -202,17 +217,19 @@ class DaftContext:
         return self._runner
 
     @property
-    def is_ray_runner(self) -> bool:
+    def is_ray_runner(self) -> bool | None:
+        """Checks if running in the Ray Runner. Returns `None` if the runner is not yet set."""
         with self._lock:
-            runner_config = self._get_runner_config()
-            return isinstance(runner_config, _RayRunnerConfig)
+            if self._runner_config is None:
+                return None
+            return self._runner_config.name == "ray"
 
-    def can_set_runner(self, new_runner_name: str) -> bool:
+    def _can_set_runner(self, new_runner_name: str) -> bool:
         # If the runner has not been set yet, we can set it
         if self._runner_config is None:
             return True
         # If the runner has been set to the ray runner, we can't set it again
-        elif self._runner_config.name == "ray":
+        elif self._runner_config.name == "ray" and self._runner is not None:
             return False
         # If the runner has been set to a local runner, we can set it to a new local runner
         else:
@@ -253,7 +270,7 @@ def set_runner_ray(
 
     ctx = get_context()
     with ctx._lock:
-        if not ctx.can_set_runner("ray"):
+        if not ctx._can_set_runner("ray"):
             if noop_if_initialized:
                 warnings.warn(
                     "Calling daft.context.set_runner_ray(noop_if_initialized=True) multiple times has no effect beyond the first call."
@@ -280,7 +297,7 @@ def set_runner_py(use_thread_pool: bool | None = None) -> DaftContext:
     """
     ctx = get_context()
     with ctx._lock:
-        if not ctx.can_set_runner("py"):
+        if not ctx._can_set_runner("py"):
             raise RuntimeError("Cannot set runner more than once")
 
         ctx._runner_config = _PyRunnerConfig(use_thread_pool=use_thread_pool)
@@ -298,7 +315,7 @@ def set_runner_native() -> DaftContext:
     """
     ctx = get_context()
     with ctx._lock:
-        if not ctx.can_set_runner("native"):
+        if not ctx._can_set_runner("native"):
             raise RuntimeError("Cannot set runner more than once")
 
         ctx._runner_config = _NativeRunnerConfig()

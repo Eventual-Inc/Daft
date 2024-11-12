@@ -431,7 +431,8 @@ class DataType:
         elif isinstance(arrow_type, pa.BaseExtensionType):
             name = arrow_type.extension_name
 
-            if (get_context().runner_config.name == "ray") and (
+            runner_config = get_context().runner_config
+            if (runner_config and runner_config.name == "ray") and (
                 type(arrow_type).__reduce__ == pa.BaseExtensionType.__reduce__
             ):
                 raise ValueError(
