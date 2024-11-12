@@ -146,12 +146,18 @@ fn should_enable_explain_analyze() -> bool {
     }
 }
 
+pub type PartitionResult = DaftResult<Arc<MicroPartition>>;
+pub type SendableStream<T> = dyn Stream<Item = T> + Send;
+
+/// A pinned boxed stream that can be sent across thread boundaries
+pub type PinnedStream<T> = Pin<Box<SendableStream<T>>>;
+
 pub fn run_local(
     physical_plan: &LocalPhysicalPlan,
     psets: HashMap<String, Vec<Arc<MicroPartition>>>,
     cfg: Arc<DaftExecutionConfig>,
     results_buffer_size: Option<usize>,
-) -> DaftResult<Pin<Box<dyn Stream<Item = DaftResult<Arc<MicroPartition>>> + Send>>> {
+) -> DaftResult<PinnedStream<PartitionResult>> {
     refresh_chrome_trace();
     let mut pipeline = physical_plan_to_pipeline(physical_plan, &psets, &cfg)?;
     let (tx, rx) = create_channel(results_buffer_size.unwrap_or(1));

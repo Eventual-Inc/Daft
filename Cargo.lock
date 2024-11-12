@@ -1908,15 +1908,7 @@ name = "daft-connect"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow2",
- "common-daft-config",
- "common-error",
- "common-file-formats",
  "daft-core",
- "daft-dsl",
- "daft-local-execution",
- "daft-local-plan",
- "daft-logical-plan",
- "daft-physical-plan",
  "daft-schema",
  "daft-table",
  "dashmap",
@@ -1925,7 +1917,6 @@ dependencies = [
  "pyo3",
  "spark-connect",
  "tokio",
- "tokio-stream",
  "tonic",
  "tracing",
  "tracing-subscriber",
