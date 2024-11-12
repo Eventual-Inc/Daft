@@ -12,6 +12,7 @@ from daft.daft import (
     JoinType,
     PyDaftExecutionConfig,
     ScanOperatorHandle,
+    logical_plan_table_scan,
 )
 from daft.daft import LogicalPlanBuilder as _LogicalPlanBuilder
 from daft.expressions import Expression, col
@@ -142,7 +143,7 @@ class LogicalPlanBuilder:
         *,
         scan_operator: ScanOperatorHandle,
     ) -> LogicalPlanBuilder:
-        builder = _LogicalPlanBuilder.table_scan(scan_operator)
+        builder = logical_plan_table_scan(scan_operator)
         return cls(builder)
 
     def select(

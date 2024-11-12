@@ -287,7 +287,7 @@ fn physical_plan_to_partition_tasks(
                 .getattr(pyo3::intern!(py, "scan_with_tasks"))?
                 .call1((scan_tasks
                     .iter()
-                    .map(|scan_task| PyScanTask(scan_task.clone()))
+                    .map(|scan_task| PyScanTask(scan_task.clone().as_any_arc().downcast().unwrap()))
                     .collect::<Vec<PyScanTask>>(),))?;
             Ok(py_iter.into())
         }

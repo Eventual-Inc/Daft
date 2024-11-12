@@ -2,19 +2,19 @@ use std::sync::Arc;
 
 use common_display::{tree::TreeDisplay, DisplayAs, DisplayLevel};
 use common_file_formats::FileFormatConfig;
+use common_scan_info::ScanTaskLikeRef;
 use daft_logical_plan::partitioning::ClusteringSpec;
-use daft_scan::ScanTask;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TabularScan {
-    pub scan_tasks: Vec<Arc<ScanTask>>,
+    pub scan_tasks: Vec<ScanTaskLikeRef>,
     pub clustering_spec: Arc<ClusteringSpec>,
 }
 
 impl TabularScan {
     pub(crate) fn new(
-        scan_tasks: Vec<Arc<ScanTask>>,
+        scan_tasks: Vec<ScanTaskLikeRef>,
         clustering_spec: Arc<ClusteringSpec>,
     ) -> Self {
         Self {
@@ -53,7 +53,7 @@ Clustering spec = {{ {clustering_spec} }}
             );
             #[cfg(feature = "python")]
             if let FileFormatConfig::Database(config) =
-                scan.scan_tasks[0].file_format_config.as_ref()
+                scan.scan_tasks[0].file_format_config().as_ref()
             {
                 if num_scan_tasks == 1 {
                     writeln!(s, "SQL Query = {}", &config.sql).unwrap();
@@ -68,13 +68,13 @@ Clustering spec = {{ {clustering_spec} }}
             DisplayLevel::Default => {
                 let mut s = base_display(self);
                 // We're only going to display the pushdowns and schema for the first scan task.
-                let pushdown = &self.scan_tasks[0].pushdowns;
+                let pushdown = self.scan_tasks[0].pushdowns();
                 if !pushdown.is_empty() {
                     s.push_str(&pushdown.display_as(DisplayLevel::Compact));
                     s.push('\n');
                 }
 
-                let schema = &self.scan_tasks[0].schema;
+                let schema = self.scan_tasks[0].schema();
                 writeln!(
                     s,
                     "Schema: {{{}}}",

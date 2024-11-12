@@ -4,7 +4,7 @@ use std::{
     sync::atomic::AtomicUsize,
 };
 
-use daft_scan::PhysicalScanInfo;
+use common_scan_info::PhysicalScanInfo;
 use daft_schema::schema::SchemaRef;
 pub use file_info::{FileInfo, FileInfos};
 use serde::{Deserialize, Serialize};
