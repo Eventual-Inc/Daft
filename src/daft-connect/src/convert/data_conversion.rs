@@ -39,11 +39,11 @@ use crate::convert::formatting::RelTypeExt;
 mod range;
 use range::range;
 
-use crate::command::PlanContext;
+use crate::command::PlanIds;
 
 pub fn convert_data(
     plan: Relation,
-    context: &mut PlanContext,
+    context: &PlanIds,
 ) -> eyre::Result<impl Stream<Item = eyre::Result<ExecutePlanResponse>> + Unpin> {
     // First check common fields if needed
     if let Some(common) = &plan.common {

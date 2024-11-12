@@ -3,7 +3,7 @@ use std::future::ready;
 use arrow2::io::ipc::write::StreamWriter;
 use daft_table::Table;
 use eyre::Context;
-use futures::{stream, StreamExt, TryStreamExt};
+use futures::stream;
 use spark_connect::{
     execute_plan_response::{ArrowBatch, ResponseType, ResultComplete},
     spark_connect_service_server::SparkConnectService,
@@ -16,14 +16,14 @@ use crate::{convert::convert_data, DaftSparkConnectService, Session};
 
 type DaftStream = <DaftSparkConnectService as SparkConnectService>::ExecutePlanStream;
 
-pub struct PlanContext {
-    session_id: String,
-    server_side_session_id: String,
-    operation_id: String,
+pub struct PlanIds {
+    session: String,
+    server_side_session: String,
+    operation: String,
 }
 
-impl PlanContext {
-    pub fn gen_response(&mut self, table: &Table) -> eyre::Result<ExecutePlanResponse> {
+impl PlanIds {
+    pub fn gen_response(&self, table: &Table) -> eyre::Result<ExecutePlanResponse> {
         let mut data = Vec::new();
 
         let mut writer = StreamWriter::new(
@@ -50,9 +50,9 @@ impl PlanContext {
             .wrap_err("Failed to write Arrow chunk to stream writer")?;
 
         let response = ExecutePlanResponse {
-            session_id: self.session_id.to_string(),
-            server_side_session_id: self.server_side_session_id.to_string(),
-            operation_id: self.operation_id.to_string(),
+            session_id: self.session.to_string(),
+            server_side_session_id: self.server_side_session.to_string(),
+            operation_id: self.operation.to_string(),
             response_id: Uuid::new_v4().to_string(), // todo: implement this
             metrics: None,                           // todo: implement this
             observed_metrics: vec![],
@@ -74,10 +74,12 @@ impl Session {
         command: Relation,
         operation_id: String,
     ) -> Result<DaftStream, Status> {
-        let mut context = PlanContext {
-            session_id: self.client_side_session_id().to_string(),
-            server_side_session_id: self.server_side_session_id().to_string(),
-            operation_id: operation_id.clone(),
+        use futures::{StreamExt, TryStreamExt};
+
+        let context = PlanIds {
+            session: self.client_side_session_id().to_string(),
+            server_side_session: self.server_side_session_id().to_string(),
+            operation: operation_id.clone(),
         };
 
         let finished = ExecutePlanResponse {
@@ -91,7 +93,7 @@ impl Session {
             response_type: Some(ResponseType::ResultComplete(ResultComplete {})),
         };
 
-        let stream = convert_data(command, &mut context)
+        let stream = convert_data(command, &context)
             .map_err(|e| Status::internal(e.to_string()))?
             .chain(stream::once(ready(Ok(finished))));
 

@@ -5,11 +5,10 @@
 #![feature(iter_from_coroutine)]
 #![feature(stmt_expr_attributes)]
 #![feature(try_trait_v2_residual)]
-#![warn(unused)]
+#![deny(unused)]
 
 use dashmap::DashMap;
 use eyre::Context;
-use futures::{StreamExt, TryStreamExt};
 #[cfg(feature = "python")]
 use pyo3::types::PyModuleMethods;
 use spark_connect::{
@@ -24,7 +23,7 @@ use spark_connect::{
     ReleaseExecuteResponse, ReleaseSessionRequest, ReleaseSessionResponse,
 };
 use tonic::{transport::Server, Request, Response, Status};
-use tracing::{info, warn};
+use tracing::info;
 use uuid::Uuid;
 
 use crate::session::Session;
