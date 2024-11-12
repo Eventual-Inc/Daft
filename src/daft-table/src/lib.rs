@@ -591,10 +591,10 @@ impl Table {
                 }
             },
             Subquery(_subquery) => Err(DaftError::ComputeError(
-                "Subquery evaluation not yet implemented".to_string(),
+                "Subquery should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),
             )),
             InSubquery(_expr, _subquery) => Err(DaftError::ComputeError(
-                "Subquery evaluation not yet implemented".to_string(),
+                "IN <SUBQUERY> should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),
             )),
         }?;
 
