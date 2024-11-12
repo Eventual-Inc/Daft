@@ -10,7 +10,10 @@ use common_error::{DaftError, DaftResult};
 use common_hashable_float_wrapper::FloatWrapper;
 use common_treenode::TreeNode;
 use daft_core::{
-    datatypes::{try_mean_stddev_aggregation_supertype, try_sum_supertype, InferDataType},
+    datatypes::{
+        try_mean_aggregation_supertype, try_stddev_aggregation_supertype, try_sum_supertype,
+        InferDataType,
+    },
     prelude::*,
     utils::supertype::try_get_supertype,
 };
@@ -61,13 +64,13 @@ impl Subquery {
 
 impl Serialize for Subquery {
     fn serialize<S: serde::Serializer>(&self, _: S) -> Result<S::Ok, S::Error> {
-        return Err(serde::ser::Error::custom("Subquery cannot be serialized"));
+        Err(serde::ser::Error::custom("Subquery cannot be serialized"))
     }
 }
 
 impl<'de> Deserialize<'de> for Subquery {
     fn deserialize<D: serde::Deserializer<'de>>(_: D) -> Result<Self, D::Error> {
-        return Err(serde::de::Error::custom("Subquery cannot be deserialized"));
+        Err(serde::de::Error::custom("Subquery cannot be deserialized"))
     }
 }
 
@@ -441,13 +444,21 @@ impl AggExpr {
                 };
                 Ok(Field::new(field.name, dtype))
             }
-            Self::Mean(expr) | Self::Stddev(expr) => {
+            Self::Mean(expr) => {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(
                     field.name.as_str(),
-                    try_mean_stddev_aggregation_supertype(&field.dtype)?,
+                    try_mean_aggregation_supertype(&field.dtype)?,
                 ))
             }
+            Self::Stddev(expr) => {
+                let field = expr.to_field(schema)?;
+                Ok(Field::new(
+                    field.name.as_str(),
+                    try_stddev_aggregation_supertype(&field.dtype)?,
+                ))
+            }
+
             Self::Min(expr) | Self::Max(expr) | Self::AnyValue(expr, _) => {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(field.name.as_str(), field.dtype))
@@ -698,7 +709,7 @@ impl Expr {
             Self::Agg(agg_expr) => agg_expr.semantic_id(schema),
             Self::ScalarFunction(sf) => scalar_function_semantic_id(sf, schema),
 
-            Expr::Subquery(..) | Expr::InSubquery(..) => todo!("semantic_id for subquery"),
+            Self::Subquery(..) | Self::InSubquery(..) => todo!("semantic_id for subquery"),
         }
     }
 
@@ -707,7 +718,7 @@ impl Expr {
             // No children.
             Self::Column(..) => vec![],
             Self::Literal(..) => vec![],
-            Expr::Subquery(..) => vec![],
+            Self::Subquery(..) => vec![],
 
             // One child.
             Self::Not(expr)
@@ -715,7 +726,7 @@ impl Expr {
             | Self::NotNull(expr)
             | Self::Cast(expr, ..)
             | Self::Alias(expr, ..)
-            | Expr::InSubquery(expr, _) => {
+            | Self::InSubquery(expr, _) => {
                 vec![expr.clone()]
             }
             Self::Agg(agg_expr) => agg_expr.children(),

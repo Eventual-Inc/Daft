@@ -8,6 +8,7 @@ use std::{
     fmt::{Display, Formatter, Result},
 };
 
+use arrow2::array::Array;
 use common_display::table_display::{make_comfy_table, StrValue};
 use common_error::{DaftError, DaftResult};
 use daft_core::{
@@ -20,6 +21,7 @@ use daft_dsl::{
     col, functions::FunctionEvaluator, null_lit, AggExpr, ApproxPercentileParams, Expr, ExprRef,
     LiteralValue, SketchType,
 };
+use daft_logical_plan::{FileInfos, LogicalPlan};
 use num_traits::ToPrimitive;
 #[cfg(feature = "python")]
 pub mod ffi;
@@ -97,6 +99,12 @@ impl Table {
             .collect();
 
         Ok(Self::new_unchecked(schema, columns?, num_rows))
+    }
+
+    pub fn get_inner_arrow_arrays(
+        &self,
+    ) -> impl Iterator<Item = Box<dyn arrow2::array::Array>> + '_ {
+        self.columns.iter().map(|s| s.to_arrow())
     }
 
     /// Create a new [`Table`] and validate against `num_rows`
@@ -191,6 +199,10 @@ impl Table {
     }
 
     pub fn len(&self) -> usize {
+        self.num_rows
+    }
+
+    pub fn num_rows(&self) -> usize {
         self.num_rows
     }
 
@@ -579,10 +591,14 @@ impl Table {
                 }
             },
             Subquery(subquery) => {
-                let plan = subquery.plan.as_any().downcast_ref::<LogicalPlan>().unwrap();
+                let _plan = subquery
+                    .plan
+                    .as_any()
+                    .downcast_ref::<LogicalPlan>()
+                    .unwrap();
                 todo!("Subquery evaluation not yet implemented: {:?}", subquery)
             }
-            InSubquery(expr, subquery) => {
+            InSubquery(_expr, subquery) => {
                 todo!("Subquery evaluation not yet implemented: {:?}", subquery)
             }
         }?;
@@ -789,6 +805,66 @@ impl Table {
             Some(self.len()),
             max_col_width,
         )
+    }
+}
+impl TryFrom<Table> for FileInfos {
+    type Error = DaftError;
+
+    fn try_from(table: Table) -> DaftResult<Self> {
+        let file_paths = table
+            .get_column("path")?
+            .utf8()?
+            .data()
+            .as_any()
+            .downcast_ref::<arrow2::array::Utf8Array<i64>>()
+            .unwrap()
+            .iter()
+            .map(|s| s.unwrap().to_string())
+            .collect::<Vec<_>>();
+        let file_sizes = table
+            .get_column("size")?
+            .i64()?
+            .data()
+            .as_any()
+            .downcast_ref::<arrow2::array::Int64Array>()
+            .unwrap()
+            .iter()
+            .map(|n| n.copied())
+            .collect::<Vec<_>>();
+        let num_rows = table
+            .get_column("num_rows")?
+            .i64()?
+            .data()
+            .as_any()
+            .downcast_ref::<arrow2::array::Int64Array>()
+            .unwrap()
+            .iter()
+            .map(|n| n.copied())
+            .collect::<Vec<_>>();
+        Ok(Self::new_internal(file_paths, file_sizes, num_rows))
+    }
+}
+
+impl TryFrom<&FileInfos> for Table {
+    type Error = DaftError;
+
+    fn try_from(file_info: &FileInfos) -> DaftResult<Self> {
+        let columns = vec![
+            Series::try_from((
+                "path",
+                arrow2::array::Utf8Array::<i64>::from_iter_values(file_info.file_paths.iter())
+                    .to_boxed(),
+            ))?,
+            Series::try_from((
+                "size",
+                arrow2::array::PrimitiveArray::<i64>::from(&file_info.file_sizes).to_boxed(),
+            ))?,
+            Series::try_from((
+                "num_rows",
+                arrow2::array::PrimitiveArray::<i64>::from(&file_info.num_rows).to_boxed(),
+            ))?,
+        ];
+        Self::from_nonempty_columns(columns)
     }
 }
 

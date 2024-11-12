@@ -421,13 +421,6 @@ class FileInfos:
 
     @staticmethod
     def from_infos(file_paths: list[str], file_sizes: list[int | None], num_rows: list[int | None]) -> FileInfos: ...
-    @staticmethod
-    def from_table(table: PyTable) -> FileInfos:
-        """
-        Create from a Daft table with "path", "size", and "num_rows" columns.
-        """
-        ...
-
     def extend(self, new_infos: FileInfos) -> FileInfos:
         """
         Concatenate two FileInfos together.
@@ -435,11 +428,6 @@ class FileInfos:
         ...
 
     def __getitem__(self, idx: int) -> FileInfo: ...
-    def to_table(self) -> PyTable:
-        """
-        Convert to a Daft table with "path", "size", and "num_rows" columns.
-        """
-
     def __len__(self) -> int: ...
 
 class HTTPConfig:
@@ -600,6 +588,11 @@ class GCSConfig:
     credentials: str | None
     token: str | None
     anonymous: bool
+    max_connections: int
+    retry_initial_backoff_ms: int
+    connect_timeout_ms: int
+    read_timeout_ms: int
+    num_tries: int
 
     def __init__(
         self,
@@ -607,6 +600,11 @@ class GCSConfig:
         credentials: str | None = None,
         token: str | None = None,
         anonymous: bool | None = None,
+        max_connections: int | None = None,
+        retry_initial_backoff_ms: int | None = None,
+        connect_timeout_ms: int | None = None,
+        read_timeout_ms: int | None = None,
+        num_tries: int | None = None,
     ): ...
     def replace(
         self,
@@ -614,6 +612,11 @@ class GCSConfig:
         credentials: str | None = None,
         token: str | None = None,
         anonymous: bool | None = None,
+        max_connections: int | None = None,
+        retry_initial_backoff_ms: int | None = None,
+        connect_timeout_ms: int | None = None,
+        read_timeout_ms: int | None = None,
+        num_tries: int | None = None,
     ) -> GCSConfig:
         """Replaces values if provided, returning a new GCSConfig"""
         ...
@@ -786,6 +789,8 @@ class ScanOperatorHandle:
     ) -> ScanOperatorHandle: ...
     @staticmethod
     def from_python_scan_operator(operator: ScanOperator) -> ScanOperatorHandle: ...
+
+def logical_plan_table_scan(scan_operator: ScanOperatorHandle) -> LogicalPlanBuilder: ...
 
 class PartitionField:
     """
@@ -1231,6 +1236,10 @@ def sql_expr(sql: str) -> PyExpr: ...
 def list_sql_functions() -> list[SQLFunctionStub]: ...
 def utf8_count_matches(expr: PyExpr, patterns: PyExpr, whole_words: bool, case_sensitive: bool) -> PyExpr: ...
 def to_struct(inputs: list[PyExpr]) -> PyExpr: ...
+def connect_start(addr: str) -> ConnectionHandle: ...
+
+class ConnectionHandle:
+    def shutdown(self) -> None: ...
 
 # expr numeric ops
 def abs(expr: PyExpr) -> PyExpr: ...
@@ -1518,6 +1527,9 @@ class PyTable:
     def to_arrow_record_batch(self) -> pa.RecordBatch: ...
     @staticmethod
     def empty(schema: PySchema | None = None) -> PyTable: ...
+    @staticmethod
+    def from_file_infos(file_infos: FileInfos) -> PyTable: ...
+    def to_file_infos(self) -> FileInfos: ...
 
 class PyMicroPartition:
     def schema(self) -> PySchema: ...
@@ -1695,8 +1707,6 @@ class LogicalPlanBuilder:
         size_bytes: int,
         num_rows: int,
     ) -> LogicalPlanBuilder: ...
-    @staticmethod
-    def table_scan(scan_operator: ScanOperatorHandle) -> LogicalPlanBuilder: ...
     def with_planning_config(self, daft_planning_config: PyDaftPlanningConfig) -> LogicalPlanBuilder: ...
     def select(self, to_select: list[PyExpr]) -> LogicalPlanBuilder: ...
     def with_columns(self, columns: list[PyExpr]) -> LogicalPlanBuilder: ...
@@ -1819,6 +1829,7 @@ class PyDaftExecutionConfig:
         enable_aqe: bool | None = None,
         enable_native_executor: bool | None = None,
         default_morsel_size: int | None = None,
+        enable_ray_tracing: bool | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
     def scan_tasks_min_size_bytes(self) -> int: ...
@@ -1854,6 +1865,8 @@ class PyDaftExecutionConfig:
     def enable_native_executor(self) -> bool: ...
     @property
     def default_morsel_size(self) -> int: ...
+    @property
+    def enable_ray_tracing(self) -> bool: ...
 
 class PyDaftPlanningConfig:
     @staticmethod

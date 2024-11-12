@@ -204,8 +204,8 @@ def test_read_after_write_nested_fields(local_catalog):
 
 
 @pytest.mark.skipif(
-    context.get_context().daft_execution_config.enable_native_executor is True,
-    reason="Native executor does not into_partitions",
+    context.get_context().runner_config.name == "native",
+    reason="Native executor does not support into_partitions",
 )
 def test_read_after_write_with_empty_partition(local_catalog):
     df = daft.from_pydict({"x": [1, 2, 3]}).into_partitions(4)

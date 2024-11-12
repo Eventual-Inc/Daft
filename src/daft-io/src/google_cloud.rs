@@ -1,7 +1,8 @@
-use std::{ops::Range, sync::Arc};
+use std::{ops::Range, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use common_io_config::GCSConfig;
+use common_runtime::get_io_pool_num_threads;
 use futures::{stream::BoxStream, TryStreamExt};
 use google_cloud_storage::{
     client::{google_cloud_auth::credentials::CredentialsFile, Client, ClientConfig},
@@ -12,6 +13,7 @@ use google_cloud_storage::{
 };
 use google_cloud_token::{TokenSource, TokenSourceProvider};
 use snafu::{IntoError, ResultExt, Snafu};
+use tokio::sync::Semaphore;
 
 use crate::{
     object_io::{FileMetadata, FileType, LSResult, ObjectSource},
@@ -48,13 +50,20 @@ enum Error {
     NotAFile { path: String },
     #[snafu(display("Not a File: \"{}\"", path))]
     NotFound { path: String },
+    #[snafu(display("Unable to grab semaphore. {}", source))]
+    UnableToGrabSemaphore { source: tokio::sync::AcquireError },
+
+    #[snafu(display("Unable to create Http Client {}", source))]
+    UnableToCreateClient {
+        source: reqwest_middleware::reqwest::Error,
+    },
 }
 
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
         use Error::{
-            InvalidUrl, NotAFile, NotFound, UnableToListObjects, UnableToLoadCredentials,
-            UnableToOpenFile, UnableToReadBytes,
+            InvalidUrl, NotAFile, NotFound, UnableToCreateClient, UnableToGrabSemaphore,
+            UnableToListObjects, UnableToLoadCredentials, UnableToOpenFile, UnableToReadBytes,
         };
         match error {
             UnableToReadBytes { path, source }
@@ -70,10 +79,24 @@ impl From<Error> for super::Error {
                         path,
                         source: err.into(),
                     },
-                    _ => Self::UnableToOpenFile {
-                        path,
-                        source: err.into(),
-                    },
+                    _ => {
+                        if err.is_connect() {
+                            Self::ConnectTimeout {
+                                path,
+                                source: err.into(),
+                            }
+                        } else if err.is_timeout() {
+                            Self::ReadTimeout {
+                                path,
+                                source: err.into(),
+                            }
+                        } else {
+                            Self::UnableToOpenFile {
+                                path,
+                                source: err.into(),
+                            }
+                        }
+                    }
                 },
                 GError::Response(err) => match err.code {
                     404 | 410 => Self::NotFound {
@@ -94,6 +117,12 @@ impl From<Error> for super::Error {
                     store: super::SourceType::GCS,
                     source: err,
                 },
+                err @ GError::HttpMiddleware(_) | err @ GError::InvalidRangeHeader(_) => {
+                    Self::UnableToOpenFile {
+                        path,
+                        source: err.into(),
+                    }
+                }
             },
             NotFound { ref path } => Self::NotFound {
                 path: path.into(),
@@ -105,11 +134,25 @@ impl From<Error> for super::Error {
                 source: source.into(),
             },
             NotAFile { path } => Self::NotAFile { path },
+            UnableToGrabSemaphore { .. } => Self::Generic {
+                store: crate::SourceType::GCS,
+                source: error.into(),
+            },
+            UnableToCreateClient { .. } => Self::UnableToCreateClient {
+                store: crate::SourceType::GCS,
+                source: error.into(),
+            },
         }
     }
 }
 
-struct GCSClientWrapper(Client);
+struct GCSClientWrapper {
+    client: Client,
+    /// Used to limit the concurrent connections to GCS at any given time.
+    /// Acquired when we initiate a connection to GCS
+    /// Released when the stream for that connection is exhausted
+    connection_pool_sema: Arc<Semaphore>,
+}
 
 fn parse_uri(uri: &url::Url) -> super::Result<(&str, &str)> {
     let bucket = match uri.host_str() {
@@ -136,8 +179,13 @@ impl GCSClientWrapper {
         if key.is_empty() {
             return Err(Error::NotAFile { path: uri.into() }.into());
         }
-
-        let client = &self.0;
+        let permit = self
+            .connection_pool_sema
+            .clone()
+            .acquire_owned()
+            .await
+            .context(UnableToGrabSemaphoreSnafu)?;
+        let client = &self.client;
         let req = GetObjectRequest {
             bucket: bucket.into(),
             object: key.into(),
@@ -172,7 +220,7 @@ impl GCSClientWrapper {
         Ok(GetResult::Stream(
             io_stats_on_bytestream(response, io_stats),
             size,
-            None,
+            Some(permit),
             None,
         ))
     }
@@ -183,7 +231,14 @@ impl GCSClientWrapper {
         if key.is_empty() {
             return Err(Error::NotAFile { path: uri.into() }.into());
         }
-        let client = &self.0;
+
+        let _permit = self
+            .connection_pool_sema
+            .acquire()
+            .await
+            .context(UnableToGrabSemaphoreSnafu)?;
+
+        let client = &self.client;
         let req = GetObjectRequest {
             bucket: bucket.into(),
             object: key.into(),
@@ -262,7 +317,14 @@ impl GCSClientWrapper {
     ) -> super::Result<LSResult> {
         let uri = url::Url::parse(path).with_context(|_| InvalidUrlSnafu { path })?;
         let (bucket, key) = parse_uri(&uri)?;
-        let client = &self.0;
+
+        let _permit = self
+            .connection_pool_sema
+            .acquire()
+            .await
+            .context(UnableToGrabSemaphoreSnafu)?;
+
+        let client = &self.client;
 
         if posix {
             // Attempt to forcefully ls the key as a directory (by ensuring a "/" suffix)
@@ -393,10 +455,48 @@ impl GCSSource {
         if config.project_id.is_some() {
             client_config.project_id.clone_from(&config.project_id);
         }
+        client_config.http = Some({
+            use reqwest_middleware::ClientBuilder;
+            use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
+            use retry_policies::Jitter;
+            let retry_policy = ExponentialBackoff::builder()
+                .base(2)
+                .jitter(Jitter::Bounded)
+                .retry_bounds(
+                    Duration::from_millis(config.retry_initial_backoff_ms),
+                    Duration::from_secs(60),
+                )
+                .build_with_max_retries(config.num_tries);
+
+            let base_client = reqwest_middleware::reqwest::ClientBuilder::default()
+                .connect_timeout(Duration::from_millis(config.connect_timeout_ms))
+                .read_timeout(Duration::from_millis(config.read_timeout_ms))
+                .pool_idle_timeout(Duration::from_secs(60))
+                .pool_max_idle_per_host(70)
+                .build()
+                .context(UnableToCreateClientSnafu)?;
+
+            ClientBuilder::new(base_client)
+                // reqwest-retry already comes with a default retry strategy that matches http standards
+                // override it only if you need a custom one due to non standard behavior
+                .with(
+                    RetryTransientMiddleware::new_with_policy(retry_policy)
+                        .with_retry_log_level(tracing::Level::DEBUG),
+                )
+                .build()
+        });
 
         let client = Client::new(client_config);
+
+        let connection_pool_sema = Arc::new(tokio::sync::Semaphore::new(
+            (config.max_connections_per_io_thread as usize)
+                * get_io_pool_num_threads().expect("Should be running in tokio pool"),
+        ));
         Ok(Self {
-            client: GCSClientWrapper(client),
+            client: GCSClientWrapper {
+                client,
+                connection_pool_sema,
+            },
         }
         .into())
     }

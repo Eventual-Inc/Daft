@@ -7,9 +7,11 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
+use common_scan_info::PhysicalScanInfo;
 use daft_core::prelude::*;
 use daft_dsl::{
-    col, is_partition_compatible, AggExpr, ApproxPercentileParams, ExprRef, SketchType,
+    col, functions::agg::merge_mean, is_partition_compatible, AggExpr, ApproxPercentileParams,
+    ExprRef, SketchType,
 };
 use daft_functions::numeric::sqrt;
 use daft_logical_plan::{
@@ -28,7 +30,6 @@ use daft_logical_plan::{
     sink_info::{OutputFileInfo, SinkInfo},
     source_info::{PlaceHolderInfo, SourceInfo},
 };
-use daft_scan::PhysicalScanInfo;
 
 use crate::{ops::*, PhysicalPlan, PhysicalPlanRef};
 
@@ -45,19 +46,8 @@ pub(super) fn translate_single_logical_node(
                 source_schema,
                 ..
             }) => {
-                let scan_tasks = scan_op.0.to_scan_tasks(pushdowns.clone())?;
+                let scan_tasks = scan_op.0.to_scan_tasks(pushdowns.clone(), Some(cfg))?;
 
-                let scan_tasks = daft_scan::scan_task_iters::split_by_row_groups(
-                    scan_tasks,
-                    cfg.parquet_split_row_groups_max_files,
-                    cfg.scan_tasks_min_size_bytes,
-                    cfg.scan_tasks_max_size_bytes,
-                );
-
-                // Apply transformations on the ScanTasks to optimize
-                let scan_tasks =
-                    daft_scan::scan_task_iters::merge_by_sizes(scan_tasks, pushdowns, cfg);
-                let scan_tasks = scan_tasks.collect::<DaftResult<Vec<_>>>()?;
                 if scan_tasks.is_empty() {
                     let clustering_spec =
                         Arc::new(ClusteringSpec::Unknown(UnknownClusteringConfig::new(1)));
@@ -830,7 +820,7 @@ pub fn populate_aggregation_stages(
                         col(count_id.clone()).alias(sum_of_count_id.clone()),
                     ));
                 final_exprs.push(
-                    (col(sum_of_sum_id.clone()).div(col(sum_of_count_id.clone())))
+                    merge_mean(col(sum_of_sum_id.clone()), col(sum_of_count_id.clone()))
                         .alias(output_name),
                 );
             }
@@ -843,6 +833,9 @@ pub fn populate_aggregation_stages(
                 // Second stage, we `global_sqsum := sum(sum(X^2))`, `global_sum := sum(sum(X))` and `global_count := sum(count(X))` in order to get the global versions of the first stage.
                 // In the final projection, we then compute `sqrt((global_sqsum / global_count) - (global_sum / global_count) ^ 2)`.
 
+                // This is a workaround since we have different code paths for single stage and two stage aggregations.
+                // Currently all Std Dev types will be computed using floats.
+                let sub_expr = sub_expr.clone().cast(&DataType::Float64);
                 // first stage aggregation
                 let sum_id = add_to_stage(
                     AggExpr::Sum,
@@ -1206,6 +1199,7 @@ mod tests {
                 Some(JoinStrategy::Hash),
                 None,
                 None,
+                false,
             )?
             .build();
         logical_to_physical(logical_plan, cfg)

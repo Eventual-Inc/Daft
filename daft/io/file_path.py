@@ -6,6 +6,7 @@ from typing import Optional
 from daft.api_annotations import PublicAPI
 from daft.context import get_context
 from daft.daft import IOConfig
+from daft.daft import PyTable as _PyTable
 from daft.dataframe import DataFrame
 from daft.logical.builder import LogicalPlanBuilder
 from daft.runners.partitioning import LocalPartitionSet
@@ -46,7 +47,7 @@ def from_glob_path(path: str, io_config: Optional[IOConfig] = None) -> DataFrame
     io_config = context.daft_planning_config.default_io_config if io_config is None else io_config
     runner_io = context.runner().runner_io()
     file_infos = runner_io.glob_paths_details([path], io_config=io_config)
-    file_infos_table = MicroPartition._from_pytable(file_infos.to_table())
+    file_infos_table = MicroPartition._from_pytable(_PyTable.from_file_infos(file_infos))
     partition = LocalPartitionSet()
     partition.set_partition_from_table(0, file_infos_table)
     cache_entry = context.runner().put_partition_set_into_cache(partition)

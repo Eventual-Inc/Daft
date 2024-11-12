@@ -18,6 +18,7 @@ use daft_local_plan::{
 use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::populate_aggregation_stages;
+use daft_scan::ScanTaskRef;
 use daft_table::ProbeState;
 use daft_writers::make_physical_writer_factory;
 use indexmap::IndexSet;
@@ -121,16 +122,27 @@ pub fn physical_plan_to_pipeline(
     let out: Box<dyn PipelineNode> = match physical_plan {
         LocalPhysicalPlan::EmptyScan(EmptyScan { schema, .. }) => {
             let source = EmptyScanSource::new(schema.clone());
-            source.boxed().into()
+            source.arced().into()
         }
-        LocalPhysicalPlan::PhysicalScan(PhysicalScan { scan_tasks, .. }) => {
-            let scan_task_source = ScanTaskSource::new(scan_tasks.clone());
-            scan_task_source.boxed().into()
+        LocalPhysicalPlan::PhysicalScan(PhysicalScan {
+            scan_tasks,
+            pushdowns,
+            schema,
+            ..
+        }) => {
+            let scan_tasks = scan_tasks
+                .iter()
+                .map(|task| task.clone().as_any_arc().downcast().unwrap())
+                .collect::<Vec<ScanTaskRef>>();
+
+            let scan_task_source =
+                ScanTaskSource::new(scan_tasks, pushdowns.clone(), schema.clone(), cfg);
+            scan_task_source.arced().into()
         }
         LocalPhysicalPlan::InMemoryScan(InMemoryScan { info, .. }) => {
             let partitions = psets.get(&info.cache_key).expect("Cache key not found");
             InMemorySource::new(partitions.clone(), info.source_schema.clone())
-                .boxed()
+                .arced()
                 .into()
         }
         LocalPhysicalPlan::Project(Project {

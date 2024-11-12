@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use common_resource_request::ResourceRequest;
+use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use daft_core::prelude::*;
 use daft_dsl::{AggExpr, ExprRef};
 use daft_logical_plan::{InMemoryInfo, OutputFileInfo};
-use daft_scan::{ScanTask, ScanTaskRef};
 
 pub type LocalPhysicalPlanRef = Arc<LocalPhysicalPlan>;
 #[derive(Debug, strum::IntoStaticStr)]
@@ -65,11 +65,13 @@ impl LocalPhysicalPlan {
     }
 
     pub(crate) fn physical_scan(
-        scan_tasks: Vec<ScanTaskRef>,
+        scan_tasks: Vec<ScanTaskLikeRef>,
+        pushdowns: Pushdowns,
         schema: SchemaRef,
     ) -> LocalPhysicalPlanRef {
         Self::PhysicalScan(PhysicalScan {
             scan_tasks,
+            pushdowns,
             schema,
             plan_stats: PlanStats {},
         })
@@ -353,7 +355,8 @@ pub struct InMemoryScan {
 
 #[derive(Debug)]
 pub struct PhysicalScan {
-    pub scan_tasks: Vec<ScanTaskRef>,
+    pub scan_tasks: Vec<ScanTaskLikeRef>,
+    pub pushdowns: Pushdowns,
     pub schema: SchemaRef,
     pub plan_stats: PlanStats,
 }

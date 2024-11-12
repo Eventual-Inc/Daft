@@ -168,7 +168,7 @@ impl LogicalPlan {
     }
 
     pub fn name(&self) -> &'static str {
-        let name = match self {
+        match self {
             Self::Source(..) => "Source",
             Self::Project(..) => "Project",
             Self::ActorPoolProject(..) => "ActorPoolProject",
@@ -186,8 +186,7 @@ impl LogicalPlan {
             Self::Sink(..) => "Sink",
             Self::Sample(..) => "Sample",
             Self::MonotonicallyIncreasingId(..) => "MonotonicallyIncreasingId",
-        };
-        name
+        }
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
@@ -273,7 +272,8 @@ impl LogicalPlan {
                     *join_type,
                     *join_strategy,
                     None,  // The suffix is already eagerly computed in the constructor
-                    None // the prefix is already eagerly computed in the constructor
+                    None,  // the prefix is already eagerly computed in the constructor
+                    false // this is already eagerly computed in the constructor
                 ).unwrap()),
                 _ => panic!("Logical op {} has one input, but got two", self),
             },
@@ -316,11 +316,11 @@ impl SubqueryPlan for LogicalPlan {
     }
 
     fn name(&self) -> &'static str {
-        LogicalPlan::name(self)
+        Self::name(self)
     }
 
     fn schema(&self) -> SchemaRef {
-        LogicalPlan::schema(self)
+        Self::schema(self)
     }
 }
 
