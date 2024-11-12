@@ -23,6 +23,35 @@ def read_generator(
 ) -> DataFrame:
     """Create a DataFrame from a generator function.
 
+    Example:
+        >>> import daft
+        >>> from daft.io._generator import read_generator
+        >>> from daft.table.table import Table
+        >>> from functools import partial
+        >>>
+        >>> # Set runner to Ray for distributed processing
+        >>> daft.context.set_runner_ray()
+        >>>
+        >>> # Helper function to generate data for each partition
+        >>> def generate(num_rows: int):
+        ...     data = {"ints": [i for i in range(num_rows)]}
+        ...     yield Table.from_pydict(data)
+        >>>
+        >>> # Generator function that yields partial functions for each partition
+        >>> def generator(num_partitions: int):
+        ...     for i in range(num_partitions):
+        ...         yield partial(generate, 100)
+        >>>
+        >>> # Create DataFrame using read_generator and repartition the data
+        >>> df = (
+        ...     read_generator(
+        ...         generator(num_partitions=100),
+        ...         daft.Schema._from_field_name_and_types([("ints", daft.DataType.uint64())]),
+        ...     )
+        ...     .repartition(100, "ints")
+        ...     .collect()
+        ... )
+
     Args:
         generator (Callable[[int, Any], Iterator[Table]]): a generator function that generates data
         num_partitions (int): the number of partitions to generate
