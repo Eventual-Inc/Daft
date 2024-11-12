@@ -2,9 +2,7 @@ use std::{
     collections::HashMap,
     fs::File,
     io::Write,
-    pin::Pin,
     sync::Arc,
-    task::{Context, Poll},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -13,7 +11,6 @@ use common_error::DaftResult;
 use common_tracing::refresh_chrome_trace;
 use daft_local_plan::{translate, LocalPhysicalPlan};
 use daft_micropartition::MicroPartition;
-use futures::{Stream, StreamExt};
 #[cfg(feature = "python")]
 use {
     common_daft_config::PyDaftExecutionConfig,
@@ -49,34 +46,6 @@ impl LocalPartitionIterator {
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub struct NativeExecutor {
     local_physical_plan: Arc<LocalPhysicalPlan>,
-}
-
-/// A blocking iterator adapter for any Stream.
-pub struct BlockingStreamIter<S> {
-    stream: Pin<Box<S>>,
-}
-
-impl<S> BlockingStreamIter<S> {
-    /// Creates a new BlockingStreamIter from a Stream.
-    pub fn new(stream: S) -> Self
-    where
-        S: Stream + 'static,
-    {
-        Self {
-            stream: Box::pin(stream),
-        }
-    }
-}
-
-impl<S> Iterator for BlockingStreamIter<S>
-where
-    S: Stream + Unpin + 'static,
-{
-    type Item = S::Item;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        futures::executor::block_on(self.stream.as_mut().next())
-    }
 }
 
 #[cfg(feature = "python")]
@@ -115,7 +84,6 @@ impl NativeExecutor {
                 )
             })
             .collect();
-
         let out = py.allow_threads(|| {
             run_local(
                 &self.local_physical_plan,
@@ -124,9 +92,6 @@ impl NativeExecutor {
                 results_buffer_size,
             )
         })?;
-
-        let out = BlockingStreamIter::new(out);
-
         let iter = Box::new(out.map(|part| {
             part.map(|p| pyo3::Python::with_gil(|py| PyMicroPartition::from(p).into_py(py)))
         }));
@@ -146,18 +111,12 @@ fn should_enable_explain_analyze() -> bool {
     }
 }
 
-pub type PartitionResult = DaftResult<Arc<MicroPartition>>;
-pub type SendableStream<T> = dyn Stream<Item = T> + Send;
-
-/// A pinned boxed stream that can be sent across thread boundaries
-pub type PinnedStream<T> = Pin<Box<SendableStream<T>>>;
-
 pub fn run_local(
     physical_plan: &LocalPhysicalPlan,
     psets: HashMap<String, Vec<Arc<MicroPartition>>>,
     cfg: Arc<DaftExecutionConfig>,
     results_buffer_size: Option<usize>,
-) -> DaftResult<PinnedStream<PartitionResult>> {
+) -> DaftResult<Box<dyn Iterator<Item = DaftResult<Arc<MicroPartition>>> + Send>> {
     refresh_chrome_trace();
     let mut pipeline = physical_plan_to_pipeline(physical_plan, &psets, &cfg)?;
     let (tx, rx) = create_channel(results_buffer_size.unwrap_or(1));
@@ -214,18 +173,18 @@ pub fn run_local(
         })
     });
 
-    struct ReceiverStream {
+    struct ReceiverIterator {
         receiver: Receiver<Arc<MicroPartition>>,
         handle: Option<std::thread::JoinHandle<DaftResult<()>>>,
     }
 
-    impl Stream for ReceiverStream {
+    impl Iterator for ReceiverIterator {
         type Item = DaftResult<Arc<MicroPartition>>;
 
-        fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-            match self.receiver.poll_recv(cx) {
-                Poll::Ready(Some(part)) => Poll::Ready(Some(Ok(part))),
-                Poll::Ready(None) => {
+        fn next(&mut self) -> Option<Self::Item> {
+            match self.receiver.blocking_recv() {
+                Some(part) => Some(Ok(part)),
+                None => {
                     if self.handle.is_some() {
                         let join_result = self
                             .handle
@@ -234,18 +193,17 @@ pub fn run_local(
                             .join()
                             .expect("Execution engine thread panicked");
                         match join_result {
-                            Ok(()) => Poll::Ready(None),
-                            Err(e) => Poll::Ready(Some(Err(e))),
+                            Ok(()) => None,
+                            Err(e) => Some(Err(e)),
                         }
                     } else {
-                        Poll::Ready(None)
+                        None
                     }
                 }
-                Poll::Pending => Poll::Pending,
             }
         }
     }
-    Ok(Box::pin(ReceiverStream {
+    Ok(Box::new(ReceiverIterator {
         receiver: rx,
         handle: Some(handle),
     }))

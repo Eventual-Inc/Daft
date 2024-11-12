@@ -500,7 +500,7 @@ mod tests {
             expected, actual,
             "\n\nexpected:\n\n{expected:#?}\nactual:\n\n{actual:#?}\n\n"
         );
-        assert_eq!(starting_schema, actual.schema());
+        assert_eq!(starting_schema, actual.schema())
     }
 
     #[rstest]
@@ -664,8 +664,8 @@ mod tests {
             )?
             .build();
 
-        let plan = LogicalPlanBuilder::from(plan1)
-            .cross_join(plan2, None, Some("t3."))?
+        let plan = LogicalPlanBuilder::from(plan1.clone())
+            .cross_join(plan2.clone(), None, Some("t3."))?
             .filter(
                 col("t3.a")
                     .eq(col("a"))
