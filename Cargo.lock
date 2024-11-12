@@ -1535,6 +1535,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "common-scan-info"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-daft-config",
+ "common-display",
+ "common-error",
+ "common-file-formats",
+ "daft-dsl",
+ "daft-schema",
+ "pyo3",
+ "serde",
+ "typetag",
+]
+
+[[package]]
 name = "common-system-info"
 version = "0.3.0-dev0"
 dependencies = [
@@ -1841,6 +1856,7 @@ dependencies = [
  "common-hashable-float-wrapper",
  "common-resource-request",
  "common-runtime",
+ "common-scan-info",
  "common-system-info",
  "common-tracing",
  "common-version",
@@ -2172,6 +2188,7 @@ dependencies = [
  "common-error",
  "common-file-formats",
  "common-runtime",
+ "common-scan-info",
  "common-tracing",
  "daft-core",
  "daft-csv",
@@ -2204,10 +2221,10 @@ version = "0.3.0-dev0"
 dependencies = [
  "common-error",
  "common-resource-request",
+ "common-scan-info",
  "daft-core",
  "daft-dsl",
  "daft-logical-plan",
- "daft-scan",
  "log",
  "strum 0.26.3",
 ]
@@ -2224,11 +2241,11 @@ dependencies = [
  "common-io-config",
  "common-py-serde",
  "common-resource-request",
+ "common-scan-info",
  "common-treenode",
  "daft-core",
  "daft-dsl",
  "daft-functions",
- "daft-scan",
  "daft-schema",
  "daft-table",
  "derivative",
@@ -2253,6 +2270,7 @@ dependencies = [
  "common-error",
  "common-file-formats",
  "common-runtime",
+ "common-scan-info",
  "daft-core",
  "daft-csv",
  "daft-dsl",
@@ -2323,12 +2341,12 @@ dependencies = [
  "common-error",
  "common-file-formats",
  "common-resource-request",
+ "common-scan-info",
  "common-treenode",
  "daft-core",
  "daft-dsl",
  "daft-functions",
  "daft-logical-plan",
- "daft-scan",
  "daft-schema",
  "itertools 0.11.0",
  "log",
@@ -2348,12 +2366,13 @@ dependencies = [
  "common-io-config",
  "common-py-serde",
  "common-runtime",
+ "common-scan-info",
  "daft-core",
  "daft-csv",
  "daft-decoding",
- "daft-dsl",
  "daft-io",
  "daft-json",
+ "daft-logical-plan",
  "daft-parquet",
  "daft-schema",
  "daft-stats",
@@ -2365,6 +2384,7 @@ dependencies = [
  "pyo3",
  "serde",
  "snafu",
+ "typetag",
  "urlencoding",
 ]
 
@@ -2433,6 +2453,7 @@ dependencies = [
  "daft-functions",
  "daft-functions-json",
  "daft-logical-plan",
+ "daft-scan",
  "once_cell",
  "pyo3",
  "regex",

@@ -102,6 +102,7 @@ pub mod pylib {
         common_system_info::register_modules(m)?;
         common_resource_request::register_modules(m)?;
         common_file_formats::python::register_modules(m)?;
+        common_scan_info::register_modules(m)?;
         daft_core::register_modules(m)?;
         daft_core::python::register_modules(m)?;
         daft_local_execution::register_modules(m)?;

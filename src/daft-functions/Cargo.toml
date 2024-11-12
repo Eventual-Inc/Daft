@@ -15,7 +15,7 @@ paste = "1.0.15"
 pyo3 = {workspace = true, optional = true}
 tiktoken-rs = {workspace = true}
 tokio = {workspace = true}
-typetag = "0.2.16"
+typetag = {workspace = true}
 uuid = "1.10.0"
 xxhash-rust = {workspace = true, features = ["xxh64"]}
 bytes.workspace = true
