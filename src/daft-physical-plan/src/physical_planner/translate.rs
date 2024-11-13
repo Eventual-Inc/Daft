@@ -85,6 +85,9 @@ pub(super) fn translate_single_logical_node(
             SourceInfo::PlaceHolder(PlaceHolderInfo { source_id, .. }) => {
                 panic!("Placeholder {source_id} should not get to translation. This should have been optimized away");
             }
+            SourceInfo::RangeSource(_) => {
+                panic!("RangeSource is not yet supported for physical plan translation");
+            }
         },
         LogicalPlan::Project(LogicalProject { projection, .. }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");

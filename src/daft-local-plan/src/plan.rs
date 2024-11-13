@@ -10,6 +10,7 @@ pub type LocalPhysicalPlanRef = Arc<LocalPhysicalPlan>;
 #[derive(Debug, strum::IntoStaticStr)]
 pub enum LocalPhysicalPlan {
     InMemoryScan(InMemoryScan),
+    RangeSource(RangeSource),
     PhysicalScan(PhysicalScan),
     EmptyScan(EmptyScan),
     Project(Project),
@@ -49,6 +50,21 @@ impl LocalPhysicalPlan {
     pub fn name(&self) -> &'static str {
         // uses strum::IntoStaticStr
         self.into()
+    }
+
+    pub fn range_source(
+        start: i64,
+        end: i64,
+        step: usize,
+        num_partitions: usize,
+    ) -> LocalPhysicalPlanRef {
+        Self::RangeSource(RangeSource {
+            start,
+            end,
+            step,
+            num_partitions,
+        })
+        .arced()
     }
 
     #[must_use]
@@ -362,6 +378,14 @@ impl LocalPhysicalPlan {
             _ => todo!("{:?}", self),
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct RangeSource {
+    pub start: i64,
+    pub end: i64,
+    pub step: usize,
+    pub num_partitions: usize,
 }
 
 #[derive(Debug)]

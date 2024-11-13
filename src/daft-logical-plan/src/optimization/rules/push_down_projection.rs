@@ -174,6 +174,7 @@ impl PushDownProjection {
                     SourceInfo::PlaceHolder(..) => {
                         panic!("PlaceHolderInfo should not exist for optimization!");
                     }
+                    SourceInfo::RangeSource(_) => Ok(Transformed::no(plan)),
                 }
             }
             LogicalPlan::Project(upstream_projection) => {

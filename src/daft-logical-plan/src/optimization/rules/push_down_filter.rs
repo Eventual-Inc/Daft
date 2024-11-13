@@ -88,6 +88,8 @@ impl PushDownFilter {
                         return Ok(Transformed::no(plan))
                     }
 
+                    SourceInfo::RangeSource(_) => return Ok(Transformed::no(plan)),
+
                     // Pushdown filter into the Source node
                     SourceInfo::Physical(external_info) => {
                         let predicate = &filter.predicate;

@@ -26,6 +26,12 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 SourceInfo::PlaceHolder(_) => {
                     panic!("We should not encounter a PlaceHolder during translation")
                 }
+                SourceInfo::RangeSource(range) => Ok(LocalPhysicalPlan::range_source(
+                    range.start,
+                    range.end,
+                    range.step,
+                    range.num_partitions,
+                )),
             }
         }
         LogicalPlan::Filter(filter) => {

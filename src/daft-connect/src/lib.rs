@@ -5,7 +5,7 @@
 #![feature(iter_from_coroutine)]
 #![feature(stmt_expr_attributes)]
 #![feature(try_trait_v2_residual)]
-#![deny(unused)]
+// #![deny(unused)]
 
 use dashmap::DashMap;
 use eyre::Context;
@@ -28,11 +28,11 @@ use uuid::Uuid;
 
 use crate::session::Session;
 
-mod command;
 mod config;
-mod convert;
 mod err;
+mod op;
 mod session;
+mod translation;
 pub mod util;
 
 #[cfg_attr(feature = "python", pyo3::pyclass)]
@@ -168,8 +168,9 @@ impl SparkConnectService for DaftSparkConnectService {
                     CommandType::RegisterFunction(_) => {
                         unimplemented_err!("RegisterFunction not implemented")
                     }
-                    CommandType::WriteOperation(_) => {
-                        unimplemented_err!("WriteOperation not implemented")
+                    CommandType::WriteOperation(write_op) => {
+                        let result = session.handle_write_operation(write_op).await?;
+                        return Ok(Response::new(result));
                     }
                     CommandType::CreateDataframeView(_) => {
                         unimplemented_err!("CreateDataframeView not implemented")
@@ -283,7 +284,14 @@ impl SparkConnectService for DaftSparkConnectService {
                     return Err(Status::invalid_argument("op_type is required to be root"));
                 };
 
-                let result = convert::connect_schema(relation)?;
+                let result = match translation::relation_to_schema(relation) {
+                    Ok(schema) => schema,
+                    Err(e) => {
+                        return invalid_argument_err!(
+                            "Failed to translate relation to schema: {e}"
+                        );
+                    }
+                };
 
                 let schema = analyze_plan_response::DdlParse {
                     parsed: Some(result),

@@ -44,7 +44,7 @@ use crate::{
         streaming_sink::StreamingSinkNode,
         write::{WriteFormat, WriteSink},
     },
-    sources::{empty_scan::EmptyScanSource, in_memory::InMemorySource},
+    sources::{empty_scan::EmptyScanSource, in_memory::InMemorySource, range::RangeSource},
     ExecutionRuntimeContext, PipelineCreationSnafu,
 };
 
@@ -513,6 +513,11 @@ pub fn physical_plan_to_pipeline(
                 file_schema.clone(),
             );
             BlockingSinkNode::new(Arc::new(write_sink), child_node).boxed()
+        }
+        LocalPhysicalPlan::RangeSource(range) => {
+            RangeSource::new(range.start, range.end, range.step, range.num_partitions)
+                .arced()
+                .into()
         }
     };
 

@@ -1932,7 +1932,15 @@ name = "daft-connect"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow2",
+ "common-daft-config",
+ "common-error",
+ "common-file-formats",
  "daft-core",
+ "daft-local-execution",
+ "daft-local-plan",
+ "daft-logical-plan",
+ "daft-micropartition",
+ "daft-scan",
  "daft-schema",
  "daft-table",
  "dashmap",
@@ -1941,6 +1949,7 @@ dependencies = [
  "pyo3",
  "spark-connect",
  "tokio",
+ "tokio-util",
  "tonic",
  "tracing",
  "tracing-subscriber",
@@ -2211,6 +2220,7 @@ dependencies = [
 name = "daft-local-execution"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow2",
  "async-trait",
  "common-daft-config",
  "common-display",
@@ -2235,6 +2245,7 @@ dependencies = [
  "daft-writers",
  "futures",
  "indexmap 2.5.0",
+ "itertools 0.11.0",
  "lazy_static",
  "log",
  "loole",

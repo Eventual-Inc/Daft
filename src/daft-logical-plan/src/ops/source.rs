@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_scan_info::PhysicalScanInfo;
 use daft_schema::schema::SchemaRef;
 
-use crate::source_info::{InMemoryInfo, PlaceHolderInfo, SourceInfo};
+use crate::source_info::{InMemoryInfo, PlaceHolderInfo, RangeSourceInfo, SourceInfo};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Source {
@@ -55,6 +55,18 @@ impl Source {
                 res.push("PlaceHolder:".to_string());
                 res.push(format!("Source ID = {}", source_id));
                 res.extend(clustering_spec.multiline_display());
+            }
+            SourceInfo::RangeSource(RangeSourceInfo {
+                start,
+                end,
+                step,
+                num_partitions,
+            }) => {
+                res.push("Range Source:".to_string());
+                res.push(format!("Start = {}", start));
+                res.push(format!("End = {}", end));
+                res.push(format!("Step = {}", step));
+                res.push(format!("Number of partitions = {}", num_partitions));
             }
         }
         res.push(format!(

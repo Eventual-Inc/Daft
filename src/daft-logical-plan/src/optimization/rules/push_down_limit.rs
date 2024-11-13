@@ -65,6 +65,8 @@ impl PushDownLimit {
                             {
                                 Ok(Transformed::no(plan))
                             }
+
+                            SourceInfo::RangeSource(_) => Ok(Transformed::no(plan)),
                             // Pushdown limit into the Source node as a "local" limit
                             SourceInfo::Physical(external_info) => {
                                 let new_pushdowns = external_info.pushdowns.with_limit(Some(limit));

@@ -11,7 +11,11 @@ use common_io_config::IOConfig;
 use common_scan_info::{PhysicalScanInfo, Pushdowns, ScanOperatorRef};
 use daft_core::join::{JoinStrategy, JoinType};
 use daft_dsl::{col, ExprRef};
-use daft_schema::schema::{Schema, SchemaRef};
+use daft_schema::{
+    dtype::DataType,
+    field::Field,
+    schema::{Schema, SchemaRef},
+};
 #[cfg(feature = "python")]
 use {
     crate::sink_info::{CatalogInfo, IcebergCatalogInfo},
@@ -31,7 +35,7 @@ use crate::{
         HashRepartitionConfig, IntoPartitionsConfig, RandomShuffleConfig, RepartitionSpec,
     },
     sink_info::{OutputFileInfo, SinkInfo},
-    source_info::SourceInfo,
+    source_info::{RangeSourceInfo, SourceInfo},
     LogicalPlanRef,
 };
 
@@ -114,6 +118,22 @@ impl LogicalPlanBuilder {
         Self::new(self.plan.clone(), Some(config))
     }
 
+    pub fn range_source(start: i64, end: i64, step: usize, num_partitions: usize) -> Self {
+        let source_info = SourceInfo::RangeSource(RangeSourceInfo {
+            start,
+            end,
+            step,
+            num_partitions,
+        });
+
+        let schema = Schema::new(vec![Field::new("value", DataType::Int64)]).unwrap();
+
+        let logical_plan: LogicalPlan =
+            ops::Source::new(Arc::new(schema), source_info.into()).into();
+
+        Self::new(logical_plan.into(), None)
+    }
+
     #[cfg(feature = "python")]
     pub fn in_memory_scan(
         partition_key: &str,
@@ -135,6 +155,26 @@ impl LogicalPlanBuilder {
         let logical_plan: LogicalPlan = ops::Source::new(schema, source_info.into()).into();
 
         Ok(Self::new(logical_plan.into(), None))
+    }
+
+    pub fn in_memory_scan_not_python(
+        partition_key: &str,
+        schema: Arc<Schema>,
+        num_partitions: usize,
+        size_bytes: usize,
+        num_rows: usize,
+    ) -> Self {
+        use crate::InMemoryInfo;
+        let source_info = SourceInfo::InMemory(InMemoryInfo::new_not_python(
+            schema.clone(),
+            partition_key.into(),
+            num_partitions,
+            size_bytes,
+            num_rows,
+            None,
+        ));
+        let logical_plan: LogicalPlan = ops::Source::new(schema, source_info.into()).into();
+        Self::new(logical_plan.into(), None)
     }
 
     pub fn table_scan(

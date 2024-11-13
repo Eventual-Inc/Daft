@@ -1,20 +1,24 @@
-use std::future::ready;
+use std::pin::Pin;
 
 use arrow2::io::ipc::write::StreamWriter;
 use daft_table::Table;
 use eyre::Context;
-use futures::stream;
+use futures::{Stream, StreamExt, TryStreamExt};
 use spark_connect::{
     execute_plan_response::{ArrowBatch, ResponseType, ResultComplete},
     spark_connect_service_server::SparkConnectService,
-    ExecutePlanResponse, Relation,
+    ExecutePlanResponse,
 };
-use tonic::Status;
 use uuid::Uuid;
 
-use crate::{convert::convert_data, DaftSparkConnectService, Session};
+use crate::{DaftSparkConnectService, Session};
 
-type DaftStream = <DaftSparkConnectService as SparkConnectService>::ExecutePlanStream;
+mod root;
+mod write;
+
+pub type ExecuteStream = <DaftSparkConnectService as SparkConnectService>::ExecutePlanStream;
+pub type ExecuteRichStream =
+    Pin<Box<dyn Stream<Item = eyre::Result<ExecutePlanResponse>> + Send + Sync>>;
 
 pub struct PlanIds {
     session: String,
@@ -23,6 +27,32 @@ pub struct PlanIds {
 }
 
 impl PlanIds {
+    pub fn new(
+        client_side_session_id: impl Into<String>,
+        server_side_session_id: impl Into<String>,
+    ) -> Self {
+        let client_side_session_id = client_side_session_id.into();
+        let server_side_session_id = server_side_session_id.into();
+        Self {
+            session: client_side_session_id,
+            server_side_session: server_side_session_id,
+            operation: Uuid::new_v4().to_string(),
+        }
+    }
+
+    pub fn finished(&self) -> ExecutePlanResponse {
+        ExecutePlanResponse {
+            session_id: self.session.to_string(),
+            server_side_session_id: self.server_side_session.to_string(),
+            operation_id: self.operation.to_string(),
+            response_id: Uuid::new_v4().to_string(),
+            metrics: None,
+            observed_metrics: vec![],
+            schema: None,
+            response_type: Some(ResponseType::ResultComplete(ResultComplete {})),
+        }
+    }
+
     pub fn gen_response(&self, table: &Table) -> eyre::Result<ExecutePlanResponse> {
         let mut data = Vec::new();
 
@@ -68,37 +98,4 @@ impl PlanIds {
     }
 }
 
-impl Session {
-    pub async fn handle_root_command(
-        &self,
-        command: Relation,
-        operation_id: String,
-    ) -> Result<DaftStream, Status> {
-        use futures::{StreamExt, TryStreamExt};
-
-        let context = PlanIds {
-            session: self.client_side_session_id().to_string(),
-            server_side_session: self.server_side_session_id().to_string(),
-            operation: operation_id.clone(),
-        };
-
-        let finished = ExecutePlanResponse {
-            session_id: self.client_side_session_id().to_string(),
-            server_side_session_id: self.server_side_session_id().to_string(),
-            operation_id,
-            response_id: Uuid::new_v4().to_string(),
-            metrics: None,
-            observed_metrics: vec![],
-            schema: None,
-            response_type: Some(ResponseType::ResultComplete(ResultComplete {})),
-        };
-
-        let stream = convert_data(command, &context)
-            .map_err(|e| Status::internal(e.to_string()))?
-            .chain(stream::once(ready(Ok(finished))));
-
-        Ok(Box::pin(
-            stream.map_err(|e| Status::internal(e.to_string())),
-        ))
-    }
-}
+impl Session {}
