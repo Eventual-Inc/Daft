@@ -173,7 +173,7 @@ class DaftContext:
     def get_runner_config_name(self) -> Literal["ray"] | Literal["py"] | Literal["native"] | None:
         with self._lock:
             if self._runner_config is None:
-                return None
+                return _get_runner_config_from_env().name
             else:
                 return self._runner_config.name
 
