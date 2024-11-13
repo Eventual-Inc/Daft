@@ -11,6 +11,14 @@ use crate::{
     ExecutionRuntimeHandle,
 };
 
+/// Dispatcher is responsible for dispatching morsels to workers.
+/// The dispatcher can be one of the following:
+/// - RoundRobin: Dispatch morsels in a round-robin fashion to workers. Used if the operator requires input to be ordered.
+/// - Unordered: Dispatch morsels to workers without any order. Used if the operator does not require input to be ordered.
+/// - Partitioned: Dispatch morsels to workers based on the partitioning key. Used if the operator requires input to be partitioned, e.g. for partitioned writes.
+///
+/// The dispatcher has a `spawn_dispatch_task` method that spawns a task that receives from input receivers and dispatches morsels to workers.
+/// It returns a list of receivers, one for each worker, that the workers can use to receive morsels.
 pub(crate) enum Dispatcher {
     RoundRobin { morsel_size: Option<usize> },
     Unordered { morsel_size: Option<usize> },
