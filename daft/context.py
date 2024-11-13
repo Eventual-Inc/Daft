@@ -151,7 +151,34 @@ class DaftContext:
         WARNING: This will set the runner if it has not yet been set.
         """
         with self._lock:
-            return self._get_or_create_runner()
+            if self._runner is not None:
+                return self._runner
+
+            runner_config = _get_runner_config_from_env()
+            if runner_config.name == "ray":
+                from daft.runners.ray_runner import RayRunner
+
+                assert isinstance(runner_config, _RayRunnerConfig)
+                self._runner = RayRunner(
+                    address=runner_config.address,
+                    max_task_backlog=runner_config.max_task_backlog,
+                    force_client_mode=runner_config.force_client_mode,
+                )
+            elif runner_config.name == "py":
+                from daft.runners.pyrunner import PyRunner
+
+                assert isinstance(runner_config, _PyRunnerConfig)
+                self._runner = PyRunner(use_thread_pool=runner_config.use_thread_pool)
+            elif runner_config.name == "native":
+                from daft.runners.native_runner import NativeRunner
+
+                assert isinstance(runner_config, _NativeRunnerConfig)
+                self._runner = NativeRunner()
+
+            else:
+                raise NotImplementedError(f"Runner config not implemented: {runner_config.name}")
+
+            return self._runner
 
     @property
     def daft_execution_config(self) -> PyDaftExecutionConfig:
@@ -162,48 +189,6 @@ class DaftContext:
     def daft_planning_config(self) -> PyDaftPlanningConfig:
         with self._lock:
             return self._daft_planning_config
-
-    def _get_or_create_runner(self) -> Runner:
-        """Gets the runner."""
-        if self._runner is not None:
-            return self._runner
-
-        runner_config = _get_runner_config_from_env()
-        if runner_config.name == "ray":
-            from daft.runners.ray_runner import RayRunner
-
-            assert isinstance(runner_config, _RayRunnerConfig)
-            self._runner = RayRunner(
-                address=runner_config.address,
-                max_task_backlog=runner_config.max_task_backlog,
-                force_client_mode=runner_config.force_client_mode,
-            )
-        elif runner_config.name == "py":
-            from daft.runners.pyrunner import PyRunner
-
-            assert isinstance(runner_config, _PyRunnerConfig)
-            self._runner = PyRunner(use_thread_pool=runner_config.use_thread_pool)
-        elif runner_config.name == "native":
-            from daft.runners.native_runner import NativeRunner
-
-            assert isinstance(runner_config, _NativeRunnerConfig)
-            self._runner = NativeRunner()
-
-        else:
-            raise NotImplementedError(f"Runner config not implemented: {runner_config.name}")
-
-        return self._runner
-
-    def _can_set_runner(self, new_runner_name: str) -> bool:
-        # If the runner has not been set yet, we can set it
-        if self._runner is None:
-            return True
-        # If the runner has been set to the ray runner, we can't set it again
-        elif self._runner.name == "ray":
-            return False
-        # If the runner has been set to a local runner, we can set it to a new local runner
-        else:
-            return new_runner_name in {"py", "native"}
 
 
 _DaftContext = DaftContext()
@@ -240,7 +225,7 @@ def set_runner_ray(
 
     ctx = get_context()
     with ctx._lock:
-        if not ctx._can_set_runner("ray"):
+        if ctx._runner is not None:
             if noop_if_initialized:
                 warnings.warn(
                     "Calling daft.context.set_runner_ray(noop_if_initialized=True) multiple times has no effect beyond the first call."
@@ -268,7 +253,7 @@ def set_runner_py(use_thread_pool: bool | None = None) -> DaftContext:
     """
     ctx = get_context()
     with ctx._lock:
-        if not ctx._can_set_runner("py"):
+        if ctx._runner is not None and ctx._runner.name not in {"py", "native"}:
             raise RuntimeError("Cannot set runner more than once")
 
         from daft.runners.pyrunner import PyRunner
@@ -287,7 +272,7 @@ def set_runner_native() -> DaftContext:
     """
     ctx = get_context()
     with ctx._lock:
-        if not ctx._can_set_runner("native"):
+        if ctx._runner is not None and ctx._runner.name not in {"py", "native"}:
             raise RuntimeError("Cannot set runner more than once")
 
         from daft.runners.native_runner import NativeRunner
