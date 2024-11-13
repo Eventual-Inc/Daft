@@ -15,8 +15,6 @@ import urllib.error
 import urllib.request
 from typing import Any, Callable
 
-from daft import context
-
 _ANALYTICS_CLIENT = None
 _WRITE_KEY = "ZU2LLq6HFW0kMEY6TiGZoGnRzogXBUwa"
 _SEGMENT_BATCH_ENDPOINT = "https://api.segment.io/v1/batch"
@@ -92,10 +90,11 @@ class AnalyticsClient:
         self,
         daft_version: str,
         daft_build_type: str,
+        enabled: bool,
         publish_payload_function: Callable[[AnalyticsClient, dict[str, Any]], None] = _post_segment_track_endpoint,
         buffer_capacity: int = 100,
     ) -> None:
-        self._is_active = True
+        self._is_active = enabled
         self._daft_version = daft_version
         self._daft_build_type = daft_build_type
         self._session_key = _get_session_key()
@@ -106,9 +105,6 @@ class AnalyticsClient:
         # Buffer for events to be sent to Segment
         self._buffer_capacity = buffer_capacity
         self._buffer: list[AnalyticsEvent] = []
-
-    def _enable_analytics(self) -> None:
-        self._is_active = True
 
     def _append_to_log(self, event_name: str, data: dict[str, Any]) -> None:
         if self._is_active:
@@ -139,7 +135,6 @@ class AnalyticsClient:
         self._append_to_log(
             "Imported Daft",
             {
-                "runner": context.get_context().runner_config.name,
                 "platform": platform.platform(),
                 "python_version": platform.python_version(),
                 "DAFT_ANALYTICS_ENABLED": os.getenv("DAFT_ANALYTICS_ENABLED"),
@@ -173,18 +168,20 @@ class AnalyticsClient:
         )
 
 
-def init_analytics(daft_version: str, daft_build_type: str) -> AnalyticsClient:
+def init_analytics(daft_version: str, daft_build_type: str, user_opted_out: bool) -> AnalyticsClient:
     """Initialize the analytics module
 
     Returns:
         AnalyticsClient: initialized singleton AnalyticsClient
     """
+    enabled = (not user_opted_out) and daft_build_type != "dev"
+
     global _ANALYTICS_CLIENT
 
     if _ANALYTICS_CLIENT is not None:
         return _ANALYTICS_CLIENT
 
-    _ANALYTICS_CLIENT = AnalyticsClient(daft_version, daft_build_type)
+    _ANALYTICS_CLIENT = AnalyticsClient(daft_version, daft_build_type, enabled)
     atexit.register(_ANALYTICS_CLIENT._flush)
     return _ANALYTICS_CLIENT
 
