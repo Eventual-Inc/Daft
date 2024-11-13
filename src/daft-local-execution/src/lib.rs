@@ -19,7 +19,7 @@ use common_error::{DaftError, DaftResult};
 use common_runtime::RuntimeTask;
 use lazy_static::lazy_static;
 pub use run::{run_local, NativeExecutor};
-use snafu::{futures::TryFutureExt, Snafu};
+use snafu::{futures::TryFutureExt, ResultExt, Snafu};
 
 lazy_static! {
     pub static ref NUM_CPUS: usize = std::thread::available_parallelism().unwrap().get();
@@ -89,12 +89,34 @@ impl<T: 'static> TaskSet<T> {
     }
 }
 
-pub struct ExecutionRuntimeHandle {
+struct SpawnedTask<T>(tokio::task::JoinHandle<T>);
+impl<T> Future for SpawnedTask<T> {
+    type Output = crate::Result<T>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.get_mut();
+        Pin::new(&mut this.0).poll(cx).map(|r| r.context(JoinSnafu))
+    }
+}
+
+struct RuntimeHandle(tokio::runtime::Handle);
+impl RuntimeHandle {
+    fn spawn<F>(&self, future: F) -> SpawnedTask<F::Output>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
+        let join_handle = self.0.spawn(future);
+        SpawnedTask(join_handle)
+    }
+}
+
+pub struct ExecutionRuntimeContext {
     worker_set: TaskSet<crate::Result<()>>,
     default_morsel_size: usize,
 }
 
-impl ExecutionRuntimeHandle {
+impl ExecutionRuntimeContext {
     #[must_use]
     pub fn new(default_morsel_size: usize) -> Self {
         Self {
@@ -123,6 +145,10 @@ impl ExecutionRuntimeHandle {
     #[must_use]
     pub fn default_morsel_size(&self) -> usize {
         self.default_morsel_size
+    }
+
+    pub(crate) fn handle(&self) -> RuntimeHandle {
+        RuntimeHandle(tokio::runtime::Handle::current())
     }
 }
 

@@ -15,7 +15,7 @@ use super::blocking_sink::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, PartitionedDispatcher, UnorderedDispatcher},
-    ExecutionRuntimeHandle, NUM_CPUS,
+    ExecutionRuntimeContext, NUM_CPUS,
 };
 
 pub enum WriteFormat {
@@ -138,7 +138,7 @@ impl BlockingSink for WriteSink {
 
     fn dispatch_spawner(
         &self,
-        runtime_handle: &ExecutionRuntimeHandle,
+        runtime_handle: &ExecutionRuntimeContext,
     ) -> Arc<dyn DispatchSpawner> {
         if let Some(partition_by) = &self.partition_by {
             Arc::new(PartitionedDispatcher::new(partition_by.clone()))

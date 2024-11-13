@@ -10,7 +10,7 @@ use super::streaming_sink::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, UnorderedDispatcher},
-    ExecutionRuntimeHandle,
+    ExecutionRuntimeContext,
 };
 
 struct LimitSinkState {
@@ -103,7 +103,7 @@ impl StreamingSink for LimitSink {
 
     fn dispatch_spawner(
         &self,
-        _runtime_handle: &ExecutionRuntimeHandle,
+        _runtime_handle: &ExecutionRuntimeContext,
         _maintain_order: bool,
     ) -> Arc<dyn DispatchSpawner> {
         // Limits are greedy, so we don't need to buffer any input.

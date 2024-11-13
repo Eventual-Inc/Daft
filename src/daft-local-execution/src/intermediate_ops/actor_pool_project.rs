@@ -18,7 +18,7 @@ use super::intermediate_op::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
-    ExecutionRuntimeHandle,
+    ExecutionRuntimeContext,
 };
 
 struct ActorHandle {
@@ -184,7 +184,7 @@ impl IntermediateOperator for ActorPoolProjectOperator {
 
     fn dispatch_spawner(
         &self,
-        runtime_handle: &ExecutionRuntimeHandle,
+        runtime_handle: &ExecutionRuntimeContext,
         maintain_order: bool,
     ) -> Arc<dyn DispatchSpawner> {
         if maintain_order {

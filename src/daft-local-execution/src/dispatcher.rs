@@ -7,9 +7,8 @@ use daft_micropartition::MicroPartition;
 use crate::{
     buffer::RowBasedBuffer,
     channel::{create_channel, Receiver, Sender},
-    pipeline::PipelineNode,
     runtime_stats::CountingReceiver,
-    ExecutionRuntimeHandle,
+    RuntimeHandle, SpawnedTask,
 };
 
 /// The `DispatchSpawner` trait is implemented by types that can spawn a task that reads from
@@ -27,9 +26,13 @@ pub(crate) trait DispatchSpawner {
         &self,
         input_receivers: Vec<CountingReceiver>,
         num_workers: usize,
-        runtime_handle: &mut ExecutionRuntimeHandle,
-        pipeline_node: &dyn PipelineNode,
-    ) -> Vec<Receiver<Arc<MicroPartition>>>;
+        runtime_handle: &mut RuntimeHandle,
+    ) -> SpawnedDispatchResult;
+}
+
+pub(crate) struct SpawnedDispatchResult {
+    pub(crate) worker_receivers: Vec<Receiver<Arc<MicroPartition>>>,
+    pub(crate) spawned_dispatch_task: SpawnedTask<DaftResult<()>>,
 }
 
 /// A dispatcher that distributes morsels to workers in a round-robin fashion.
@@ -89,18 +92,19 @@ impl DispatchSpawner for RoundRobinDispatcher {
         &self,
         input_receivers: Vec<CountingReceiver>,
         num_workers: usize,
-        runtime_handle: &mut ExecutionRuntimeHandle,
-        pipeline_node: &dyn PipelineNode,
-    ) -> Vec<Receiver<Arc<MicroPartition>>> {
+        runtime_handle: &mut RuntimeHandle,
+    ) -> SpawnedDispatchResult {
         let (worker_senders, worker_receivers): (Vec<_>, Vec<_>) =
             (0..num_workers).map(|_| create_channel(1)).unzip();
         let morsel_size = self.morsel_size;
-        runtime_handle.spawn(
-            async move { Self::dispatch_inner(worker_senders, input_receivers, morsel_size).await },
-            pipeline_node.name(),
-        );
+        let task = runtime_handle.spawn(async move {
+            Self::dispatch_inner(worker_senders, input_receivers, morsel_size).await
+        });
 
-        worker_receivers
+        SpawnedDispatchResult {
+            worker_receivers,
+            spawned_dispatch_task: task,
+        }
     }
 }
 
@@ -154,19 +158,19 @@ impl DispatchSpawner for UnorderedDispatcher {
         &self,
         receiver: Vec<CountingReceiver>,
         num_workers: usize,
-        runtime_handle: &mut ExecutionRuntimeHandle,
-        pipeline_node: &dyn PipelineNode,
-    ) -> Vec<Receiver<Arc<MicroPartition>>> {
+        runtime_handle: &mut RuntimeHandle,
+    ) -> SpawnedDispatchResult {
         let (worker_sender, worker_receiver) = create_channel(num_workers);
         let worker_receivers = vec![worker_receiver; num_workers];
         let morsel_size = self.morsel_size;
 
-        runtime_handle.spawn(
-            async move { Self::dispatch_inner(worker_sender, receiver, morsel_size).await },
-            pipeline_node.name(),
-        );
+        let dispatch_task = runtime_handle
+            .spawn(async move { Self::dispatch_inner(worker_sender, receiver, morsel_size).await });
 
-        worker_receivers
+        SpawnedDispatchResult {
+            worker_receivers,
+            spawned_dispatch_task: dispatch_task,
+        }
     }
 }
 
@@ -206,19 +210,18 @@ impl DispatchSpawner for PartitionedDispatcher {
         &self,
         input_receivers: Vec<CountingReceiver>,
         num_workers: usize,
-        runtime_handle: &mut ExecutionRuntimeHandle,
-        pipeline_node: &dyn PipelineNode,
-    ) -> Vec<Receiver<Arc<MicroPartition>>> {
+        runtime_handle: &mut RuntimeHandle,
+    ) -> SpawnedDispatchResult {
         let (worker_senders, worker_receivers): (Vec<_>, Vec<_>) =
             (0..num_workers).map(|_| create_channel(1)).unzip();
         let partition_by = self.partition_by.clone();
-        runtime_handle.spawn(
-            async move {
-                Self::dispatch_inner(worker_senders, input_receivers, partition_by).await
-            },
-            pipeline_node.name(),
-        );
+        let dispatch_task = runtime_handle.spawn(async move {
+            Self::dispatch_inner(worker_senders, input_receivers, partition_by).await
+        });
 
-        worker_receivers
+        SpawnedDispatchResult {
+            worker_receivers,
+            spawned_dispatch_task: dispatch_task,
+        }
     }
 }

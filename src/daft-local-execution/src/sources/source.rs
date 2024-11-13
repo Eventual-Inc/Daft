@@ -12,7 +12,7 @@ use crate::{
     channel::{create_channel, Receiver},
     pipeline::PipelineNode,
     runtime_stats::{CountingSender, RuntimeStatsContext},
-    ExecutionRuntimeHandle,
+    ExecutionRuntimeContext,
 };
 
 pub type SourceStream<'a> = BoxStream<'a, DaftResult<Arc<MicroPartition>>>;
@@ -74,7 +74,7 @@ impl PipelineNode for SourceNode {
     fn start(
         &self,
         maintain_order: bool,
-        runtime_handle: &mut ExecutionRuntimeHandle,
+        runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
         let source = self.source.clone();
         let io_stats = self.io_stats.clone();

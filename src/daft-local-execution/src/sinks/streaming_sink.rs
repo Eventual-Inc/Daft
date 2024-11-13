@@ -15,7 +15,7 @@ use crate::{
     dispatcher::DispatchSpawner,
     pipeline::PipelineNode,
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
-    ExecutionRuntimeHandle, JoinSnafu, OperatorOutput, TaskSet, NUM_CPUS,
+    ExecutionRuntimeContext, JoinSnafu, OperatorOutput, TaskSet, NUM_CPUS,
 };
 
 pub trait StreamingSinkState: Send + Sync {
@@ -65,7 +65,7 @@ pub trait StreamingSink: Send + Sync {
 
     fn dispatch_spawner(
         &self,
-        runtime_handle: &ExecutionRuntimeHandle,
+        runtime_handle: &ExecutionRuntimeContext,
         maintain_order: bool,
     ) -> Arc<dyn DispatchSpawner>;
 }
@@ -193,7 +193,7 @@ impl PipelineNode for StreamingSinkNode {
     fn start(
         &self,
         maintain_order: bool,
-        runtime_handle: &mut ExecutionRuntimeHandle,
+        runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
         let mut child_result_receivers = Vec::with_capacity(self.children.len());
         for child in &self.children {
@@ -212,11 +212,14 @@ impl PipelineNode for StreamingSinkNode {
         let num_workers = op.max_concurrency();
 
         let dispatch_spawner = op.dispatch_spawner(runtime_handle, maintain_order);
-        let worker_receivers = dispatch_spawner.spawn_dispatch(
+        let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
             child_result_receivers,
             num_workers,
-            runtime_handle,
-            self,
+            &mut runtime_handle.handle(),
+        );
+        runtime_handle.spawn(
+            async move { spawned_dispatch_result.spawned_dispatch_task.await? },
+            self.name(),
         );
 
         runtime_handle.spawn(
@@ -224,7 +227,7 @@ impl PipelineNode for StreamingSinkNode {
                 let mut task_set = TaskSet::new();
                 let mut output_receiver = Self::spawn_workers(
                     op.clone(),
-                    worker_receivers,
+                    spawned_dispatch_result.worker_receivers,
                     &mut task_set,
                     runtime_stats.clone(),
                     maintain_order,

@@ -12,7 +12,7 @@ use crate::{
     dispatcher::{DispatchSpawner, UnorderedDispatcher},
     pipeline::PipelineNode,
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
-    ExecutionRuntimeHandle, JoinSnafu, OperatorOutput, TaskSet,
+    ExecutionRuntimeContext, JoinSnafu, OperatorOutput, TaskSet,
 };
 pub trait BlockingSinkState: Send + Sync {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
@@ -43,7 +43,7 @@ pub trait BlockingSink: Send + Sync {
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>>;
     fn dispatch_spawner(
         &self,
-        runtime_handle: &ExecutionRuntimeHandle,
+        runtime_handle: &ExecutionRuntimeContext,
     ) -> Arc<dyn DispatchSpawner> {
         Arc::new(UnorderedDispatcher::new(Some(
             runtime_handle.default_morsel_size(),
@@ -142,7 +142,7 @@ impl PipelineNode for BlockingSinkNode {
     fn start(
         &self,
         _maintain_order: bool,
-        runtime_handle: &mut ExecutionRuntimeHandle,
+        runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
         let child_results_receiver = self.child.start(false, runtime_handle)?;
         let counting_receiver =
@@ -156,11 +156,14 @@ impl PipelineNode for BlockingSinkNode {
         let num_workers = op.max_concurrency();
 
         let dispatch_spawner = op.dispatch_spawner(runtime_handle);
-        let worker_receivers = dispatch_spawner.spawn_dispatch(
+        let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
             vec![counting_receiver],
             num_workers,
-            runtime_handle,
-            self,
+            &mut runtime_handle.handle(),
+        );
+        runtime_handle.spawn(
+            async move { spawned_dispatch_result.spawned_dispatch_task.await? },
+            self.name(),
         );
 
         runtime_handle.spawn(
@@ -168,7 +171,7 @@ impl PipelineNode for BlockingSinkNode {
                 let mut task_set = TaskSet::new();
                 Self::spawn_workers(
                     op.clone(),
-                    worker_receivers,
+                    spawned_dispatch_result.worker_receivers,
                     &mut task_set,
                     runtime_stats.clone(),
                 );

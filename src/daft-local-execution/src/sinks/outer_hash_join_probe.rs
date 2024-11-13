@@ -26,7 +26,7 @@ use super::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
-    ExecutionRuntimeHandle,
+    ExecutionRuntimeContext,
 };
 
 struct IndexBitmapBuilder {
@@ -473,7 +473,7 @@ impl StreamingSink for OuterHashJoinProbeSink {
 
     fn dispatch_spawner(
         &self,
-        runtime_handle: &ExecutionRuntimeHandle,
+        runtime_handle: &ExecutionRuntimeContext,
         maintain_order: bool,
     ) -> Arc<dyn DispatchSpawner> {
         if maintain_order {

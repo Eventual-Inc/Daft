@@ -14,7 +14,7 @@ use crate::{
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
     pipeline::PipelineNode,
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
-    ExecutionRuntimeHandle, OperatorOutput, NUM_CPUS,
+    ExecutionRuntimeContext, OperatorOutput, NUM_CPUS,
 };
 
 pub(crate) trait IntermediateOpState: Send + Sync {
@@ -55,7 +55,7 @@ pub trait IntermediateOperator: Send + Sync {
 
     fn dispatch_spawner(
         &self,
-        runtime_handle: &ExecutionRuntimeHandle,
+        runtime_handle: &ExecutionRuntimeContext,
         maintain_order: bool,
     ) -> Arc<dyn DispatchSpawner> {
         if maintain_order {
@@ -143,7 +143,7 @@ impl IntermediateNode {
     pub fn spawn_workers(
         &self,
         input_receivers: Vec<Receiver<Arc<MicroPartition>>>,
-        runtime_handle: &mut ExecutionRuntimeHandle,
+        runtime_handle: &mut ExecutionRuntimeContext,
         maintain_order: bool,
     ) -> OrderingAwareReceiver<Arc<MicroPartition>> {
         let (output_sender, output_receiver) =
@@ -197,7 +197,7 @@ impl PipelineNode for IntermediateNode {
     fn start(
         &self,
         maintain_order: bool,
-        runtime_handle: &mut ExecutionRuntimeHandle,
+        runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
         let mut child_result_receivers = Vec::with_capacity(self.children.len());
         for child in &self.children {
@@ -215,15 +215,21 @@ impl PipelineNode for IntermediateNode {
         let dispatch_spawner = self
             .intermediate_op
             .dispatch_spawner(runtime_handle, maintain_order);
-        let worker_receivers = dispatch_spawner.spawn_dispatch(
+        let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
             child_result_receivers,
             num_workers,
-            runtime_handle,
-            self,
+            &mut runtime_handle.handle(),
+        );
+        runtime_handle.spawn(
+            async move { spawned_dispatch_result.spawned_dispatch_task.await? },
+            self.name(),
         );
 
-        let mut output_receiver =
-            self.spawn_workers(worker_receivers, runtime_handle, maintain_order);
+        let mut output_receiver = self.spawn_workers(
+            spawned_dispatch_result.worker_receivers,
+            runtime_handle,
+            maintain_order,
+        );
         runtime_handle.spawn(
             async move {
                 while let Some(morsel) = output_receiver.recv().await {

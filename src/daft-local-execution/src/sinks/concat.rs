@@ -10,7 +10,7 @@ use super::streaming_sink::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
-    ExecutionRuntimeHandle, NUM_CPUS,
+    ExecutionRuntimeContext, NUM_CPUS,
 };
 
 struct ConcatSinkState {}
@@ -58,7 +58,7 @@ impl StreamingSink for ConcatSink {
 
     fn dispatch_spawner(
         &self,
-        runtime_handle: &ExecutionRuntimeHandle,
+        runtime_handle: &ExecutionRuntimeContext,
         maintain_order: bool,
     ) -> Arc<dyn DispatchSpawner> {
         if maintain_order {

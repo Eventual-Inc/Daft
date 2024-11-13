@@ -23,7 +23,7 @@ use {
 use crate::{
     channel::{create_channel, Receiver},
     pipeline::{physical_plan_to_pipeline, viz_pipeline},
-    Error, ExecutionRuntimeHandle,
+    Error, ExecutionRuntimeContext,
 };
 
 #[cfg(feature = "python")]
@@ -137,7 +137,7 @@ pub fn run_local(
             .build()
             .expect("Failed to create tokio runtime");
         let execution_task = async {
-            let mut runtime_handle = ExecutionRuntimeHandle::new(cfg.default_morsel_size);
+            let mut runtime_handle = ExecutionRuntimeContext::new(cfg.default_morsel_size);
             let receiver = pipeline.start(true, &mut runtime_handle)?;
 
             while let Some(val) = receiver.recv().await {

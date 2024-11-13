@@ -45,7 +45,7 @@ use crate::{
         write::{WriteFormat, WriteSink},
     },
     sources::{empty_scan::EmptyScanSource, in_memory::InMemorySource},
-    ExecutionRuntimeHandle, PipelineCreationSnafu,
+    ExecutionRuntimeContext, PipelineCreationSnafu,
 };
 
 pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
@@ -54,7 +54,7 @@ pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
     fn start(
         &self,
         maintain_order: bool,
-        runtime_handle: &mut ExecutionRuntimeHandle,
+        runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>>;
 
     fn as_tree_display(&self) -> &dyn TreeDisplay;
