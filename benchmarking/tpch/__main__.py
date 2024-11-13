@@ -131,7 +131,7 @@ def run_all_benchmarks(
     get_df = get_df_with_parquet_folder(parquet_folder)
 
     daft_context = get_context()
-    metrics_builder = MetricsBuilder(daft_context.get_runner_config_name())
+    metrics_builder = MetricsBuilder(daft_context.get_or_create_runner().name)
 
     for i in questions:
         # Run as a Ray Job if dashboard URL is provided
@@ -212,7 +212,7 @@ def warmup_environment(requirements: str | None, parquet_folder: str):
     """Performs necessary setup of Daft on the current benchmarking environment"""
     ctx = daft.context.get_context()
 
-    if ctx.get_runner_config_name() == "ray":
+    if ctx.get_or_create_runner().name == "ray":
         runtime_env = get_ray_runtime_env(requirements)
 
         ray.init(
