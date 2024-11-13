@@ -113,7 +113,7 @@ def test_joins_with_duplicate_columns():
     assert actual.to_pydict() == expected
 
 
-@pytest.mark.parametrize("join_condition", ["x=y", "df1.x=y", "df1.x=df2.y" "y=x", "df2.y=x", "df2.y=df1.x"])
+@pytest.mark.parametrize("join_condition", ["x=y", "df1.x=y", "df1.x=df2.y", "y=x", "df2.y=x", "df2.y=df1.x"])
 def test_join_qualifiers(join_condition):
     df1 = daft.from_pydict({"x": [1, None], "val": [10, 20]})
     df2 = daft.from_pydict({"y": [1, None], "score": [0.1, 0.2]})
