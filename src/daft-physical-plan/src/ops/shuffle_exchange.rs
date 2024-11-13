@@ -55,10 +55,10 @@ impl ShuffleExchange {
         res.push("ShuffleExchange:".to_string());
         match &self.strategy {
             ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce { target_spec } => {
-                res.push("  Strategy: NaiveFullyMaterializingMapReduce".to_string());
-                res.push(format!("  Target Spec: {:?}", target_spec));
+                res.push("Strategy: NaiveFullyMaterializingMapReduce".to_string());
+                res.push(format!("Target Spec: {:?}", target_spec));
                 res.push(format!(
-                    "  Number of Partitions: {} → {}",
+                    "Number of Partitions: {} → {}",
                     self.input.clustering_spec().num_partitions(),
                     target_spec.num_partitions(),
                 ));
@@ -67,9 +67,9 @@ impl ShuffleExchange {
                 target_num_partitions,
             } => {
                 let input_num_partitions = self.input.clustering_spec().num_partitions();
-                res.push("  Strategy: SplitOrCoalesceToTargetNum".to_string());
+                res.push("Strategy: SplitOrCoalesceToTargetNum".to_string());
                 res.push(format!(
-                    "  {} Partitions: {} → {}",
+                    "{} Partitions: {} → {}",
                     if input_num_partitions >= *target_num_partitions {
                         "Coalescing"
                     } else {
@@ -80,10 +80,10 @@ impl ShuffleExchange {
                 ));
             }
             ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge { target_spec, .. } => {
-                res.push("  Strategy: MapReduceWithPreShuffleMerge".to_string());
-                res.push(format!("  Target Spec: {:?}", target_spec));
+                res.push("Strategy: MapReduceWithPreShuffleMerge".to_string());
+                res.push(format!("Target Spec: {:?}", target_spec));
                 res.push(format!(
-                    "  Number of Partitions: {} → {}",
+                    "Number of Partitions: {} → {}",
                     self.input.clustering_spec().num_partitions(),
                     target_spec.num_partitions(),
                 ));
@@ -120,7 +120,7 @@ impl ShuffleExchangeFactory {
         )));
 
         let strategy = match cfg {
-            Some(cfg) if cfg.enable_pre_shuffle_merge => {
+            Some(cfg) if cfg.shuffle_algorithm == "pre_shuffle_merge" => {
                 ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge {
                     target_spec: clustering_spec,
                     pre_shuffle_merge_threshold: cfg.pre_shuffle_merge_threshold,
@@ -151,7 +151,7 @@ impl ShuffleExchangeFactory {
         )));
 
         let strategy = match cfg {
-            Some(cfg) if cfg.enable_pre_shuffle_merge => {
+            Some(cfg) if cfg.shuffle_algorithm == "pre_shuffle_merge" => {
                 ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge {
                     target_spec: clustering_spec,
                     pre_shuffle_merge_threshold: cfg.pre_shuffle_merge_threshold,
@@ -178,7 +178,7 @@ impl ShuffleExchangeFactory {
         )));
 
         let strategy = match cfg {
-            Some(cfg) if cfg.enable_pre_shuffle_merge => {
+            Some(cfg) if cfg.shuffle_algorithm == "pre_shuffle_merge" => {
                 ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge {
                     target_spec: clustering_spec,
                     pre_shuffle_merge_threshold: cfg.pre_shuffle_merge_threshold,

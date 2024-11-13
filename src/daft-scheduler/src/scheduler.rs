@@ -531,7 +531,10 @@ fn physical_plan_to_partition_tasks(
                     pre_shuffle_merge_threshold,
                 } => {
                     let merged = py
-                        .import_bound(pyo3::intern!(py, "daft.execution.physical_plan"))?
+                        .import_bound(pyo3::intern!(
+                            py,
+                            "daft.execution.shuffles.pre_shuffle_merge"
+                        ))?
                         .getattr(pyo3::intern!(py, "pre_shuffle_merge"))?
                         .call1((upstream_iter, *pre_shuffle_merge_threshold))?;
                     let mapped = match target_spec.as_ref() {

@@ -1839,7 +1839,7 @@ class PyDaftExecutionConfig:
         enable_native_executor: bool | None = None,
         default_morsel_size: int | None = None,
         enable_ray_tracing: bool | None = None,
-        enable_pre_shuffle_merge: bool | None = None,
+        shuffle_algorithm: str | None = None,
         pre_shuffle_merge_threshold: int | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
@@ -1877,7 +1877,7 @@ class PyDaftExecutionConfig:
     @property
     def default_morsel_size(self) -> int: ...
     @property
-    def enable_pre_shuffle_merge(self) -> bool: ...
+    def shuffle_algorithm(self) -> str: ...
     @property
     def pre_shuffle_merge_threshold(self) -> int: ...
     @property
