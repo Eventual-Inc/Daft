@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from daft import context
 from daft.datatype import DataType
+from tests.conftest import get_tests_daft_runner_name
 
 pytestmark = pytest.mark.skipif(
-    context.get_context().runner_config.name == "native",
+    get_tests_daft_runner_name() == "native",
     reason="Native executor fails for these tests",
 )
 

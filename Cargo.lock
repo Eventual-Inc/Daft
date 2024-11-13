@@ -1907,6 +1907,10 @@ dependencies = [
 name = "daft-connect"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow2",
+ "daft-core",
+ "daft-schema",
+ "daft-table",
  "dashmap",
  "eyre",
  "futures",
