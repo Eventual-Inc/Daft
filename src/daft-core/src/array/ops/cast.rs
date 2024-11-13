@@ -1691,7 +1691,7 @@ impl SparseTensorArray {
                     )));
                 };
 
-                let largest_index = shape.iter().product::<u64>() - 1;
+                let largest_index = std::cmp::max(shape.iter().product::<u64>(), 1) - 1;
                 let indices_minimal_inner_dtype = minimal_uint_dtype(largest_index);
                 let values_array =
                     va.cast(&DataType::List(Box::new(inner_dtype.as_ref().clone())))?;
