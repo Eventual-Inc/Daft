@@ -136,12 +136,10 @@ class AnalyticsClient:
             self._buffer = []
 
     def track_import(self) -> None:
-        runner_config = context.get_context().runner_config
-        runner_name = runner_config and runner_config.name
         self._append_to_log(
             "Imported Daft",
             {
-                "runner": runner_name,
+                "runner": context.get_context().get_runner_config_name(),
                 "platform": platform.platform(),
                 "python_version": platform.python_version(),
                 "DAFT_ANALYTICS_ENABLED": os.getenv("DAFT_ANALYTICS_ENABLED"),
