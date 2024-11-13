@@ -1180,6 +1180,8 @@ class RayRoundRobinActorPool:
 
 
 class RayRunner(Runner[ray.ObjectRef]):
+    name = "ray"
+
     def __init__(
         self,
         address: str | None,

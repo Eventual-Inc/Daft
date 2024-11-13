@@ -4,10 +4,10 @@ import pyarrow as pa
 import pytest
 
 import daft
-from daft import context
+from tests.conftest import get_tests_daft_runner_name
 
 native_executor_skip = pytest.mark.skipif(
-    context.get_context().runner_config.name == "native",
+    get_tests_daft_runner_name() == "native",
     reason="Native executor fails for these tests",
 )
 

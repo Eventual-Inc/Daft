@@ -5,7 +5,7 @@ import dataclasses
 import logging
 import os
 import warnings
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, ClassVar, Literal
 
 from daft import get_build_type
 from daft.daft import IOConfig, PyDaftExecutionConfig, PyDaftPlanningConfig
@@ -19,7 +19,7 @@ import threading
 
 
 class _RunnerConfig:
-    name: ClassVar[str]
+    name: ClassVar[Literal["ray"] | Literal["py"] | Literal["native"]]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -146,9 +146,13 @@ class DaftContext:
                     cls._instance = super().__new__(cls)
         return cls._instance
 
-    def runner(self) -> Runner:
+    def get_or_create_runner(self) -> Runner:
+        """Retrieves the runner.
+
+        WARNING: This will set the runner if it has not yet been set.
+        """
         with self._lock:
-            return self._get_runner()
+            return self._get_or_create_runner()
 
     @property
     def daft_execution_config(self) -> PyDaftExecutionConfig:
@@ -160,22 +164,19 @@ class DaftContext:
         with self._lock:
             return self._daft_planning_config
 
-    @property
-    def runner_config(self) -> _RunnerConfig:
-        with self._lock:
-            return self._get_runner_config()
-
-    def _get_runner_config(self) -> _RunnerConfig:
+    def _get_or_create_runner_config(self) -> _RunnerConfig:
+        """Gets the runner config."""
         if self._runner_config is not None:
             return self._runner_config
         self._runner_config = _get_runner_config_from_env()
         return self._runner_config
 
-    def _get_runner(self) -> Runner:
+    def _get_or_create_runner(self) -> Runner:
+        """Gets the runner."""
         if self._runner is not None:
             return self._runner
 
-        runner_config = self._get_runner_config()
+        runner_config = self._get_or_create_runner_config()
         if runner_config.name == "ray":
             from daft.runners.ray_runner import RayRunner
 
@@ -201,13 +202,7 @@ class DaftContext:
 
         return self._runner
 
-    @property
-    def is_ray_runner(self) -> bool:
-        with self._lock:
-            runner_config = self._get_runner_config()
-            return isinstance(runner_config, _RayRunnerConfig)
-
-    def can_set_runner(self, new_runner_name: str) -> bool:
+    def _can_set_runner(self, new_runner_name: str) -> bool:
         # If the runner has not been set yet, we can set it
         if self._runner_config is None:
             return True
@@ -253,7 +248,7 @@ def set_runner_ray(
 
     ctx = get_context()
     with ctx._lock:
-        if not ctx.can_set_runner("ray"):
+        if not ctx._can_set_runner("ray"):
             if noop_if_initialized:
                 warnings.warn(
                     "Calling daft.context.set_runner_ray(noop_if_initialized=True) multiple times has no effect beyond the first call."
@@ -280,7 +275,7 @@ def set_runner_py(use_thread_pool: bool | None = None) -> DaftContext:
     """
     ctx = get_context()
     with ctx._lock:
-        if not ctx.can_set_runner("py"):
+        if not ctx._can_set_runner("py"):
             raise RuntimeError("Cannot set runner more than once")
 
         ctx._runner_config = _PyRunnerConfig(use_thread_pool=use_thread_pool)
@@ -298,7 +293,7 @@ def set_runner_native() -> DaftContext:
     """
     ctx = get_context()
     with ctx._lock:
-        if not ctx.can_set_runner("native"):
+        if not ctx._can_set_runner("native"):
             raise RuntimeError("Cannot set runner more than once")
 
         ctx._runner_config = _NativeRunnerConfig()
