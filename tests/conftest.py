@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from typing import Literal
 
 import pandas as pd
 import pyarrow as pa
@@ -26,6 +27,16 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "integration: mark test as an integration test that runs with external dependencies"
     )
+
+
+def get_tests_daft_runner_name() -> Literal["ray"] | Literal["py"] | Literal["native"]:
+    """Test utility that checks the environment variable for the runner that is being used for the test"""
+    name = os.getenv("DAFT_RUNNER")
+    assert name is not None, "Tests must be run with $DAFT_RUNNER env var"
+    name = name.lower()
+
+    assert name in {"ray", "py", "native"}, f"Runner name not recognized: {name}"
+    return name
 
 
 class UuidType(pa.ExtensionType):
@@ -175,7 +186,7 @@ def assert_df_equals(
 
 @pytest.fixture(
     scope="function",
-    params=[1, None] if daft.context.get_context().get_runner_config_name() == "native" else [None],
+    params=[1, None] if get_tests_daft_runner_name() == "native" else [None],
 )
 def with_morsel_size(request):
     morsel_size = request.param

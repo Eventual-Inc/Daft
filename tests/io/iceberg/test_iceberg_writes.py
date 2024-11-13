@@ -6,7 +6,7 @@ import decimal
 import pyarrow as pa
 import pytest
 
-from daft import context
+from tests.conftest import get_tests_daft_runner_name
 
 pyiceberg = pytest.importorskip("pyiceberg")
 
@@ -204,7 +204,7 @@ def test_read_after_write_nested_fields(local_catalog):
 
 
 @pytest.mark.skipif(
-    context.get_context().get_runner_config_name() == "native",
+    get_tests_daft_runner_name() == "native",
     reason="Native executor does not support into_partitions",
 )
 def test_read_after_write_with_empty_partition(local_catalog):

@@ -9,7 +9,7 @@ import pytest
 
 import daft
 from daft.expressions import col
-from tests.conftest import assert_df_equals
+from tests.conftest import assert_df_equals, get_tests_daft_runner_name
 
 
 def _get_filename():
@@ -91,7 +91,7 @@ def test_download_with_missing_urls_reraise_errors(files, use_native_downloader)
                 df.collect()
 
             # Ray's wrapping of the exception loses information about the `.cause`, but preserves it in the string error message
-            if daft.context.get_context().get_runner_config_name() == "ray":
+            if get_tests_daft_runner_name() == "ray":
                 assert "FileNotFoundError" in str(exc_info.value)
             else:
                 assert isinstance(exc_info.value.__cause__, FileNotFoundError)

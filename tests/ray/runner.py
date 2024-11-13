@@ -4,9 +4,10 @@ import pytest
 
 import daft
 from daft.context import get_context
+from tests.conftest import get_tests_daft_runner_name
 
 
-@pytest.mark.skipif(get_context().get_runner_config_name() != "ray", reason="Needs to run on Ray runner")
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="Needs to run on Ray runner")
 def test_active_plan_clean_up_df_show():
     with daft.execution_config_ctx(
         scan_tasks_min_size_bytes=0,
@@ -19,7 +20,7 @@ def test_active_plan_clean_up_df_show():
         assert len(runner.active_plans()) == 0
 
 
-@pytest.mark.skipif(get_context().get_runner_config_name() != "ray", reason="Needs to run on Ray runner")
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="Needs to run on Ray runner")
 def test_active_plan_single_iter_partitions():
     with daft.execution_config_ctx(
         scan_tasks_min_size_bytes=0,
@@ -35,7 +36,7 @@ def test_active_plan_single_iter_partitions():
         assert len(runner.active_plans()) == 0
 
 
-@pytest.mark.skipif(get_context().get_runner_config_name() != "ray", reason="Needs to run on Ray runner")
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="Needs to run on Ray runner")
 def test_active_plan_multiple_iter_partitions():
     with daft.execution_config_ctx(
         scan_tasks_min_size_bytes=0,
@@ -60,7 +61,7 @@ def test_active_plan_multiple_iter_partitions():
         assert len(runner.active_plans()) == 0
 
 
-@pytest.mark.skipif(get_context().get_runner_config_name() != "ray", reason="Needs to run on Ray runner")
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="Needs to run on Ray runner")
 def test_active_plan_with_show_and_write_parquet(tmpdir):
     with daft.execution_config_ctx(
         scan_tasks_min_size_bytes=0,
