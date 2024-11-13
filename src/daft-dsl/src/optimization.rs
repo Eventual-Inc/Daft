@@ -33,7 +33,9 @@ pub fn requires_computation(e: &Expr) -> bool {
         | Expr::FillNull(..)
         | Expr::IsIn { .. }
         | Expr::Between { .. }
-        | Expr::IfElse { .. } => true,
+        | Expr::IfElse { .. }
+        | Expr::Subquery { .. }
+        | Expr::InSubquery { .. } => true,
     }
 }
 

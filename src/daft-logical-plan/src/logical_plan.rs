@@ -2,7 +2,7 @@ use std::{num::NonZeroUsize, sync::Arc};
 
 use common_display::ascii::AsciiTreeDisplay;
 use common_error::DaftError;
-use daft_dsl::optimization::get_required_columns;
+use daft_dsl::{optimization::get_required_columns, SubqueryPlan};
 use daft_schema::schema::SchemaRef;
 use indexmap::IndexSet;
 use snafu::Snafu;
@@ -173,8 +173,8 @@ impl LogicalPlan {
         }
     }
 
-    pub fn name(&self) -> String {
-        let name = match self {
+    pub fn name(&self) -> &'static str {
+        match self {
             Self::Source(..) => "Source",
             Self::Project(..) => "Project",
             Self::ActorPoolProject(..) => "ActorPoolProject",
@@ -194,8 +194,7 @@ impl LogicalPlan {
             Self::Sink(..) => "Sink",
             Self::Sample(..) => "Sample",
             Self::MonotonicallyIncreasingId(..) => "MonotonicallyIncreasingId",
-        };
-        name.to_string()
+        }
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
@@ -324,6 +323,20 @@ impl LogicalPlan {
         let mut s = String::new();
         self.fmt_tree_indent_style(0, &mut s).unwrap();
         s
+    }
+}
+
+impl SubqueryPlan for LogicalPlan {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn name(&self) -> &'static str {
+        Self::name(self)
+    }
+
+    fn schema(&self) -> SchemaRef {
+        Self::schema(self)
     }
 }
 
