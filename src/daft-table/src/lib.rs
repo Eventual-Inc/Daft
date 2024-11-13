@@ -590,6 +590,12 @@ impl Table {
                     Ok(if_true_series.if_else(&if_false_series, &predicate_series)?)
                 }
             },
+            Subquery(_subquery) => Err(DaftError::ComputeError(
+                "Subquery should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),
+            )),
+            InSubquery(_expr, _subquery) => Err(DaftError::ComputeError(
+                "IN <SUBQUERY> should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),
+            )),
         }?;
 
         if expected_field.name != series.field().name {

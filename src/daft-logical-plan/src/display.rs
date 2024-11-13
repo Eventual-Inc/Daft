@@ -5,13 +5,13 @@ use common_display::{tree::TreeDisplay, DisplayLevel};
 impl TreeDisplay for crate::LogicalPlan {
     fn display_as(&self, level: DisplayLevel) -> String {
         match level {
-            DisplayLevel::Compact => self.name(),
+            DisplayLevel::Compact => self.name().to_string(),
             DisplayLevel::Default | DisplayLevel::Verbose => self.multiline_display().join("\n"),
         }
     }
 
     fn get_name(&self) -> String {
-        self.name()
+        self.name().to_string()
     }
 
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {

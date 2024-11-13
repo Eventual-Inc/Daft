@@ -9,6 +9,7 @@ use daft_dsl::{
     col,
     functions::utf8::{ilike, like, to_date, to_datetime},
     has_agg, lit, literals_to_series, null_lit, AggExpr, Expr, ExprRef, LiteralValue, Operator,
+    Subquery,
 };
 use daft_functions::numeric::{ceil::ceil, floor::floor};
 use daft_logical_plan::{LogicalPlanBuilder, LogicalPlanRef};
@@ -1172,8 +1173,21 @@ impl SQLPlanner {
                     Ok(expr)
                 }
             }
-            SQLExpr::InSubquery { .. } => {
-                unsupported_sql_err!("IN subquery")
+            SQLExpr::InSubquery {
+                expr,
+                subquery,
+                negated,
+            } => {
+                let expr = self.plan_expr(expr)?;
+                let mut this = Self::new(self.catalog.clone());
+                let subquery = this.plan_query(subquery)?.build();
+                let subquery = Subquery { plan: subquery };
+
+                if *negated {
+                    Ok(expr.in_subquery(subquery).not())
+                } else {
+                    Ok(expr.in_subquery(subquery))
+                }
             }
             SQLExpr::InUnnest { .. } => unsupported_sql_err!("IN UNNEST"),
             SQLExpr::Between {
@@ -1326,7 +1340,11 @@ impl SQLPlanner {
                 )
             }
             SQLExpr::Exists { .. } => unsupported_sql_err!("EXISTS"),
-            SQLExpr::Subquery(_) => unsupported_sql_err!("SUBQUERY"),
+            SQLExpr::Subquery(subquery) => {
+                let mut this = Self::new(self.catalog.clone());
+                let subquery = this.plan_query(subquery)?.build();
+                Ok(Expr::Subquery(Subquery { plan: subquery }).arced())
+            }
             SQLExpr::GroupingSets(_) => unsupported_sql_err!("GROUPING SETS"),
             SQLExpr::Cube(_) => unsupported_sql_err!("CUBE"),
             SQLExpr::Rollup(_) => unsupported_sql_err!("ROLLUP"),
