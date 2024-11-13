@@ -68,10 +68,11 @@ def read_parquet(
             "Specifying schema_hints is deprecated from Daft version >= 0.3.0! Instead, please use the 'schema' and 'infer_schema' arguments."
         )
 
-    is_ray_runner = context.get_context().is_ray_runner
     # If running on Ray, we want to limit the amount of concurrency and requests being made.
     # This is because each Ray worker process receives its own pool of thread workers and connections
-    multithreaded_io = not is_ray_runner if _multithreaded_io is None else _multithreaded_io
+    multithreaded_io = (
+        (context.get_context().get_or_create_runner().name != "ray") if _multithreaded_io is None else _multithreaded_io
+    )
 
     if isinstance(coerce_int96_timestamp_unit, str):
         coerce_int96_timestamp_unit = TimeUnit.from_str(coerce_int96_timestamp_unit)

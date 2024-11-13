@@ -146,7 +146,7 @@ class DaftContext:
                     cls._instance = super().__new__(cls)
         return cls._instance
 
-    def runner(self) -> Runner:
+    def get_or_create_runner(self) -> Runner:
         """Retrieves the runner.
 
         WARNING: This will set the runner if it has not yet been set.
@@ -179,22 +179,14 @@ class DaftContext:
                 return self._runner_config.name
 
     def _get_or_create_runner_config(self) -> _RunnerConfig:
-        """Gets the runner config.
-
-        WARNING: This function has side-effects and will set the runner config if it has not yet been set. Do not call this
-        from APIs that don't expect side-effects.
-        """
+        """Gets the runner config."""
         if self._runner_config is not None:
             return self._runner_config
         self._runner_config = _get_runner_config_from_env()
         return self._runner_config
 
     def _get_or_create_runner(self) -> Runner:
-        """Gets the runner.
-
-        WARNING: This function has side-effects and will set the runner if it has not yet been set. Do not call this
-        from APIs that don't expect side-effects.
-        """
+        """Gets the runner."""
         if self._runner is not None:
             return self._runner
 
@@ -223,14 +215,6 @@ class DaftContext:
             raise NotImplementedError(f"Runner config not implemented: {runner_config.name}")
 
         return self._runner
-
-    @property
-    def is_ray_runner(self) -> bool | None:
-        """Checks if running in the Ray Runner. Returns `None` if the runner is not yet set."""
-        with self._lock:
-            if self._runner_config is None:
-                return None
-            return self._runner_config.name == "ray"
 
     def _can_set_runner(self, new_runner_name: str) -> bool:
         # If the runner has not been set yet, we can set it

@@ -44,12 +44,12 @@ def from_glob_path(path: str, io_config: Optional[IOConfig] = None) -> DataFrame
     """
     context = get_context()
     io_config = context.daft_planning_config.default_io_config if io_config is None else io_config
-    runner_io = context.runner().runner_io()
+    runner_io = context.get_or_create_runner().runner_io()
     file_infos = runner_io.glob_paths_details([path], io_config=io_config)
     file_infos_table = MicroPartition._from_pytable(file_infos.to_table())
     partition = LocalPartitionSet()
     partition.set_partition_from_table(0, file_infos_table)
-    cache_entry = context.runner().put_partition_set_into_cache(partition)
+    cache_entry = context.get_or_create_runner().put_partition_set_into_cache(partition)
     size_bytes = partition.size_bytes()
     num_rows = len(partition)
 

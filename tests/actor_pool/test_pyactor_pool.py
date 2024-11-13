@@ -68,7 +68,7 @@ def test_pyactor_pool_not_enough_resources():
     cpu_count = multiprocessing.cpu_count()
     projection = ExpressionsProjection([MyStatefulUDF(daft.col("x"))])
 
-    runner = get_context().runner()
+    runner = get_context().get_or_create_runner()
     assert isinstance(runner, PyRunner)
 
     original_resources = deepcopy(runner._resources.available_resources)

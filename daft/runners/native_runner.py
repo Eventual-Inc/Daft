@@ -44,6 +44,8 @@ class NativeRunnerIO(runner_io.RunnerIO):
 
 
 class NativeRunner(Runner[MicroPartition]):
+    name = "native"
+
     def __init__(self) -> None:
         super().__init__()
 

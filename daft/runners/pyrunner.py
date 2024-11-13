@@ -289,6 +289,8 @@ class PyRunnerIO(runner_io.RunnerIO):
 
 
 class PyRunner(Runner[MicroPartition], ActorPoolManager):
+    name = "py"
+
     def __init__(self, use_thread_pool: bool | None) -> None:
         super().__init__()
 

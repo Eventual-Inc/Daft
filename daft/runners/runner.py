@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import TYPE_CHECKING, Generic, Iterator
+from typing import TYPE_CHECKING, ClassVar, Generic, Iterator, Literal
 
 from daft.runners.partitioning import (
     MaterializedResult,
@@ -20,6 +20,8 @@ LOCAL_PARTITION_SET_CACHE = PartitionSetCache()
 
 
 class Runner(Generic[PartitionT]):
+    name: ClassVar[Literal["ray"] | Literal["py"] | Literal["native"]]
+
     def __init__(self) -> None:
         self._part_set_cache = self.initialize_partition_set_cache()
 
