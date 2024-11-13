@@ -170,10 +170,11 @@ class DaftContext:
         with self._lock:
             return self._runner_config
 
-    def get_runner_config_name(self) -> Literal["ray"] | Literal["py"] | Literal["native"]:
+    def get_runner_config_name(self) -> Literal["ray"] | Literal["py"] | Literal["native"] | None:
+        """Retrieves the Runner Config name, or None if not yet set"""
         with self._lock:
             if self._runner_config is None:
-                return _get_runner_config_from_env().name
+                return None
             else:
                 return self._runner_config.name
 
