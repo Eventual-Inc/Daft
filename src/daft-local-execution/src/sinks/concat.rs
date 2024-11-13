@@ -8,10 +8,7 @@ use super::streaming_sink::{
     StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
     StreamingSinkState,
 };
-use crate::{
-    dispatcher::{DispatcherSpawner, RoundRobinDispatcher, UnorderedDispatcher},
-    ExecutionRuntimeHandle, NUM_CPUS,
-};
+use crate::{dispatcher::Dispatcher, ExecutionRuntimeHandle, NUM_CPUS};
 
 struct ConcatSinkState {}
 impl StreamingSinkState for ConcatSinkState {
@@ -56,19 +53,19 @@ impl StreamingSink for ConcatSink {
         *NUM_CPUS
     }
 
-    fn dispatcher_spawner(
+    fn dispatcher(
         &self,
         runtime_handle: &ExecutionRuntimeHandle,
         maintain_order: bool,
-    ) -> Arc<dyn DispatcherSpawner> {
+    ) -> Dispatcher {
         if maintain_order {
-            Arc::new(RoundRobinDispatcher::new(Some(
-                runtime_handle.default_morsel_size(),
-            )))
+            Dispatcher::RoundRobin {
+                morsel_size: Some(runtime_handle.default_morsel_size()),
+            }
         } else {
-            Arc::new(UnorderedDispatcher::new(Some(
-                runtime_handle.default_morsel_size(),
-            )))
+            Dispatcher::Unordered {
+                morsel_size: Some(runtime_handle.default_morsel_size()),
+            }
         }
     }
 }

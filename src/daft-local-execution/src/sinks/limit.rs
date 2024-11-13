@@ -8,10 +8,7 @@ use super::streaming_sink::{
     StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
     StreamingSinkState,
 };
-use crate::{
-    dispatcher::{DispatcherSpawner, UnorderedDispatcher},
-    ExecutionRuntimeHandle,
-};
+use crate::{dispatcher::Dispatcher, ExecutionRuntimeHandle};
 
 struct LimitSinkState {
     remaining: usize,
@@ -101,13 +98,11 @@ impl StreamingSink for LimitSink {
         1
     }
 
-    fn dispatcher_spawner(
+    fn dispatcher(
         &self,
         _runtime_handle: &ExecutionRuntimeHandle,
         _maintain_order: bool,
-    ) -> Arc<dyn DispatcherSpawner> {
-        // LimitSink should be greedy, and accept all input as soon as possible.
-        // It is also not concurrent, so we don't need to worry about ordering.
-        Arc::new(UnorderedDispatcher::new(None))
+    ) -> Dispatcher {
+        Dispatcher::Unordered { morsel_size: None }
     }
 }

@@ -4,7 +4,6 @@ use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_runtime::{get_compute_runtime, RuntimeRef};
 use daft_micropartition::MicroPartition;
-use futures::FutureExt;
 use snafu::ResultExt;
 use tracing::{info_span, instrument};
 
@@ -13,7 +12,7 @@ use crate::{
         create_channel, create_ordering_aware_receiver_channel, OrderingAwareReceiver, Receiver,
         Sender,
     },
-    dispatcher::DispatcherSpawner,
+    dispatcher::Dispatcher,
     pipeline::PipelineNode,
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
     ExecutionRuntimeHandle, JoinSnafu, OperatorOutput, TaskSet, NUM_CPUS,
@@ -64,11 +63,11 @@ pub trait StreamingSink: Send + Sync {
         *NUM_CPUS
     }
 
-    fn dispatcher_spawner(
+    fn dispatcher(
         &self,
         runtime_handle: &ExecutionRuntimeHandle,
         maintain_order: bool,
-    ) -> Arc<dyn DispatcherSpawner>;
+    ) -> Dispatcher;
 }
 
 pub struct StreamingSinkNode {
@@ -212,17 +211,20 @@ impl PipelineNode for StreamingSinkNode {
         let runtime_stats = self.runtime_stats.clone();
         let num_workers = op.max_concurrency();
 
-        let dispatcher = op
-            .dispatcher_spawner(runtime_handle, maintain_order)
-            .spawn_dispatcher(child_result_receivers, num_workers);
-        runtime_handle.spawn(dispatcher.dispatch_handle.map(|r| r?), self.name());
+        let dispatcher = op.dispatcher(runtime_handle, maintain_order);
+        let worker_receivers = dispatcher.spawn_dispatch_task(
+            child_result_receivers,
+            num_workers,
+            runtime_handle,
+            op.name(),
+        );
 
         runtime_handle.spawn(
             async move {
                 let mut task_set = TaskSet::new();
                 let mut output_receiver = Self::spawn_workers(
                     op.clone(),
-                    dispatcher.receivers,
+                    worker_receivers,
                     &mut task_set,
                     runtime_stats.clone(),
                     maintain_order,

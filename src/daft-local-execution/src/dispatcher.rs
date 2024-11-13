@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_runtime::RuntimeTask;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 
@@ -9,45 +8,59 @@ use crate::{
     buffer::RowBasedBuffer,
     channel::{create_channel, Receiver, Sender},
     runtime_stats::CountingReceiver,
+    ExecutionRuntimeHandle,
 };
 
-/// The `Dispatcher` trait defines the interface for dispatching morsels to workers.
-///
-/// The `dispatch` method takes:
-/// - A vector of input receivers
-/// - The number of workers
-/// - A runtime handle for the current execution context
-/// - The name of the operator
-///
-/// It returns a vector of receivers (one per worker) that will receive the morsels.
-///
-/// Implementations must spawn a task on the runtime handle that reads from the
-/// input receivers and distributes morsels to the worker receivers.
-pub(crate) trait DispatcherSpawner {
-    fn spawn_dispatcher(
+pub(crate) enum Dispatcher {
+    RoundRobin { morsel_size: Option<usize> },
+    Unordered { morsel_size: Option<usize> },
+    Partitioned { partition_by: Vec<ExprRef> },
+}
+
+impl Dispatcher {
+    pub(crate) fn spawn_dispatch_task(
         &self,
         input_receivers: Vec<CountingReceiver>,
         num_workers: usize,
-    ) -> SpawnedDispatcherResult;
-}
-
-pub(crate) struct SpawnedDispatcherResult {
-    pub receivers: Vec<Receiver<Arc<MicroPartition>>>,
-    pub dispatch_handle: RuntimeTask<DaftResult<()>>,
-}
-
-/// A dispatcher that distributes morsels to workers in a round-robin fashion.
-/// Used if the operator requires maintaining the order of the input.
-pub(crate) struct RoundRobinDispatcher {
-    morsel_size: Option<usize>,
-}
-
-impl RoundRobinDispatcher {
-    pub(crate) fn new(morsel_size: Option<usize>) -> Self {
-        Self { morsel_size }
+        runtime_handle: &mut ExecutionRuntimeHandle,
+        name: &'static str,
+    ) -> Vec<Receiver<Arc<MicroPartition>>> {
+        match self {
+            Self::RoundRobin { morsel_size } => {
+                let (worker_senders, worker_receivers): (Vec<_>, Vec<_>) =
+                    (0..num_workers).map(|_| create_channel(1)).unzip();
+                runtime_handle.spawn(
+                    Self::dispatch_round_robin(worker_senders, input_receivers, *morsel_size),
+                    name,
+                );
+                worker_receivers
+            }
+            Self::Unordered { morsel_size } => {
+                let (worker_sender, worker_receiver) = create_channel(num_workers);
+                let worker_receivers = vec![worker_receiver; num_workers];
+                runtime_handle.spawn(
+                    Self::dispatch_unordered(worker_sender, input_receivers, *morsel_size),
+                    name,
+                );
+                worker_receivers
+            }
+            Self::Partitioned { partition_by } => {
+                let (worker_senders, worker_receivers): (Vec<_>, Vec<_>) =
+                    (0..num_workers).map(|_| create_channel(1)).unzip();
+                runtime_handle.spawn(
+                    Self::dispatch_partitioned(
+                        worker_senders,
+                        input_receivers,
+                        partition_by.clone(),
+                    ),
+                    name,
+                );
+                worker_receivers
+            }
+        }
     }
 
-    async fn dispatch_inner(
+    async fn dispatch_round_robin(
         worker_senders: Vec<Sender<Arc<MicroPartition>>>,
         input_receivers: Vec<CountingReceiver>,
         morsel_size: Option<usize>,
@@ -86,40 +99,8 @@ impl RoundRobinDispatcher {
         }
         Ok(())
     }
-}
 
-impl DispatcherSpawner for RoundRobinDispatcher {
-    fn spawn_dispatcher(
-        &self,
-        input_receivers: Vec<CountingReceiver>,
-        num_workers: usize,
-    ) -> SpawnedDispatcherResult {
-        let (worker_senders, worker_receivers): (Vec<_>, Vec<_>) =
-            (0..num_workers).map(|_| create_channel(1)).unzip();
-        let morsel_size = self.morsel_size;
-        let current_handle = tokio::runtime::Handle::current();
-        let dispatcher_task = RuntimeTask::new(&current_handle, async move {
-            Self::dispatch_inner(worker_senders, input_receivers, morsel_size).await
-        });
-        SpawnedDispatcherResult {
-            receivers: worker_receivers,
-            dispatch_handle: dispatcher_task,
-        }
-    }
-}
-
-/// A dispatcher that distributes morsels to workers in an unordered fashion.
-/// Used if the operator does not require maintaining the order of the input.
-pub(crate) struct UnorderedDispatcher {
-    morsel_size: Option<usize>,
-}
-
-impl UnorderedDispatcher {
-    pub(crate) fn new(morsel_size: Option<usize>) -> Self {
-        Self { morsel_size }
-    }
-
-    async fn dispatch_inner(
+    async fn dispatch_unordered(
         worker_sender: Sender<Arc<MicroPartition>>,
         input_receivers: Vec<CountingReceiver>,
         morsel_size: Option<usize>,
@@ -151,42 +132,8 @@ impl UnorderedDispatcher {
         }
         Ok(())
     }
-}
 
-impl DispatcherSpawner for UnorderedDispatcher {
-    fn spawn_dispatcher(
-        &self,
-        receiver: Vec<CountingReceiver>,
-        num_workers: usize,
-    ) -> SpawnedDispatcherResult {
-        let (worker_sender, worker_receiver) = create_channel(num_workers);
-        let worker_receivers = vec![worker_receiver; num_workers];
-        let morsel_size = self.morsel_size;
-
-        let current_handle = tokio::runtime::Handle::current();
-        let dispatcher_task = RuntimeTask::new(&current_handle, async move {
-            Self::dispatch_inner(worker_sender, receiver, morsel_size).await
-        });
-
-        SpawnedDispatcherResult {
-            receivers: worker_receivers,
-            dispatch_handle: dispatcher_task,
-        }
-    }
-}
-
-/// A dispatcher that distributes morsels to workers based on a partitioning expression.
-/// Used if the operator requires partitioning the input, i.e. partitioned writes.
-pub(crate) struct PartitionedDispatcher {
-    partition_by: Vec<ExprRef>,
-}
-
-impl PartitionedDispatcher {
-    pub(crate) fn new(partition_by: Vec<ExprRef>) -> Self {
-        Self { partition_by }
-    }
-
-    async fn dispatch_inner(
+    async fn dispatch_partitioned(
         worker_senders: Vec<Sender<Arc<MicroPartition>>>,
         input_receivers: Vec<CountingReceiver>,
         partition_by: Vec<ExprRef>,
@@ -203,25 +150,5 @@ impl PartitionedDispatcher {
             }
         }
         Ok(())
-    }
-}
-
-impl DispatcherSpawner for PartitionedDispatcher {
-    fn spawn_dispatcher(
-        &self,
-        input_receivers: Vec<CountingReceiver>,
-        num_workers: usize,
-    ) -> SpawnedDispatcherResult {
-        let (worker_senders, worker_receivers): (Vec<_>, Vec<_>) =
-            (0..num_workers).map(|_| create_channel(1)).unzip();
-        let partition_by = self.partition_by.clone();
-        let current_handle = tokio::runtime::Handle::current();
-        let dispatcher_task = RuntimeTask::new(&current_handle, async move {
-            Self::dispatch_inner(worker_senders, input_receivers, partition_by).await
-        });
-        SpawnedDispatcherResult {
-            receivers: worker_receivers,
-            dispatch_handle: dispatcher_task,
-        }
     }
 }

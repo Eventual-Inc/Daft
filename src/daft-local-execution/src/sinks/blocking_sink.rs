@@ -4,13 +4,12 @@ use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_runtime::{get_compute_runtime, RuntimeRef};
 use daft_micropartition::MicroPartition;
-use futures::FutureExt;
 use snafu::ResultExt;
 use tracing::{info_span, instrument};
 
 use crate::{
     channel::{create_channel, Receiver},
-    dispatcher::{DispatcherSpawner, UnorderedDispatcher},
+    dispatcher::Dispatcher,
     pipeline::PipelineNode,
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
     ExecutionRuntimeHandle, JoinSnafu, OperatorOutput, TaskSet,
@@ -42,13 +41,10 @@ pub trait BlockingSink: Send + Sync {
     ) -> BlockingSinkFinalizeResult;
     fn name(&self) -> &'static str;
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>>;
-    fn dispatcher_spawner(
-        &self,
-        runtime_handle: &ExecutionRuntimeHandle,
-    ) -> Arc<dyn DispatcherSpawner> {
-        Arc::new(UnorderedDispatcher::new(Some(
-            runtime_handle.default_morsel_size(),
-        )))
+    fn dispatcher(&self, runtime_handle: &ExecutionRuntimeHandle) -> Dispatcher {
+        Dispatcher::Unordered {
+            morsel_size: Some(runtime_handle.default_morsel_size()),
+        }
     }
     fn max_concurrency(&self) -> usize;
 }
@@ -156,17 +152,20 @@ impl PipelineNode for BlockingSinkNode {
         let runtime_stats = self.runtime_stats.clone();
         let num_workers = op.max_concurrency();
 
-        let dispatcher_result = op
-            .dispatcher_spawner(runtime_handle)
-            .spawn_dispatcher(vec![counting_receiver], num_workers);
-        runtime_handle.spawn(dispatcher_result.dispatch_handle.map(|r| r?), self.name);
+        let dispatcher = op.dispatcher(runtime_handle);
+        let worker_receivers = dispatcher.spawn_dispatch_task(
+            vec![counting_receiver],
+            num_workers,
+            runtime_handle,
+            op.name(),
+        );
 
         runtime_handle.spawn(
             async move {
                 let mut task_set = TaskSet::new();
                 Self::spawn_workers(
                     op.clone(),
-                    dispatcher_result.receivers,
+                    worker_receivers,
                     &mut task_set,
                     runtime_stats.clone(),
                 );
