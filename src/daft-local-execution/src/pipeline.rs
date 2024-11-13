@@ -9,7 +9,7 @@ use daft_core::{
     prelude::{Schema, SchemaRef},
     utils::supertype,
 };
-use daft_dsl::{col, join::get_common_join_keys, Expr};
+use daft_dsl::{col, join::get_common_join_keys};
 use daft_local_plan::{
     ActorPoolProject, Concat, EmptyScan, Explode, Filter, HashAggregate, HashJoin, InMemoryScan,
     Limit, LocalPhysicalPlan, PhysicalWrite, Pivot, Project, Sample, Sort, UnGroupedAggregate,
@@ -17,7 +17,6 @@ use daft_local_plan::{
 };
 use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;
-use daft_physical_plan::populate_aggregation_stages;
 use daft_writers::make_physical_writer_factory;
 use indexmap::IndexSet;
 use snafu::ResultExt;
@@ -25,7 +24,7 @@ use snafu::ResultExt;
 use crate::{
     channel::Receiver,
     intermediate_ops::{
-        actor_pool_project::ActorPoolProjectOperator, aggregate::AggregateOperator,
+        actor_pool_project::ActorPoolProjectOperator,
         anti_semi_hash_join_probe::AntiSemiProbeOperator, explode::ExplodeOperator,
         filter::FilterOperator, inner_hash_join_probe::InnerHashJoinProbeOperator,
         intermediate_op::IntermediateNode, project::ProjectOperator, sample::SampleOperator,
@@ -35,6 +34,7 @@ use crate::{
         aggregate::AggregateSink,
         blocking_sink::BlockingSinkNode,
         concat::ConcatSink,
+        grouped_aggregate::GroupedAggregateSink,
         hash_join_build::{HashJoinBuildSink, ProbeStateBridge},
         limit::LimitSink,
         outer_hash_join_probe::OuterHashJoinProbeSink,
@@ -158,34 +158,9 @@ pub fn physical_plan_to_pipeline(
             schema,
             ..
         }) => {
-            let (first_stage_aggs, second_stage_aggs, final_exprs) =
-                populate_aggregation_stages(aggregations, schema, &[]);
-            let first_stage_agg_op = AggregateOperator::new(
-                first_stage_aggs
-                    .values()
-                    .cloned()
-                    .map(|e| Arc::new(Expr::Agg(e)))
-                    .collect(),
-                vec![],
-            );
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
-            let post_first_agg_node =
-                IntermediateNode::new(Arc::new(first_stage_agg_op), vec![child_node]).boxed();
-
-            let second_stage_agg_sink = AggregateSink::new(
-                second_stage_aggs
-                    .values()
-                    .cloned()
-                    .map(|e| Arc::new(Expr::Agg(e)))
-                    .collect(),
-                vec![],
-            );
-            let second_stage_node =
-                BlockingSinkNode::new(Arc::new(second_stage_agg_sink), post_first_agg_node).boxed();
-
-            let final_stage_project = ProjectOperator::new(final_exprs);
-
-            IntermediateNode::new(Arc::new(final_stage_project), vec![second_stage_node]).boxed()
+            let agg_sink = AggregateSink::new(aggregations, schema);
+            BlockingSinkNode::new(Arc::new(agg_sink), child_node).boxed()
         }
         LocalPhysicalPlan::HashAggregate(HashAggregate {
             input,
@@ -194,40 +169,9 @@ pub fn physical_plan_to_pipeline(
             schema,
             ..
         }) => {
-            let (first_stage_aggs, second_stage_aggs, final_exprs) =
-                populate_aggregation_stages(aggregations, schema, group_by);
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
-            let (post_first_agg_node, group_by) = if !first_stage_aggs.is_empty() {
-                let agg_op = AggregateOperator::new(
-                    first_stage_aggs
-                        .values()
-                        .cloned()
-                        .map(|e| Arc::new(Expr::Agg(e)))
-                        .collect(),
-                    group_by.clone(),
-                );
-                (
-                    IntermediateNode::new(Arc::new(agg_op), vec![child_node]).boxed(),
-                    &group_by.iter().map(|e| col(e.name())).collect(),
-                )
-            } else {
-                (child_node, group_by)
-            };
-
-            let second_stage_agg_sink = AggregateSink::new(
-                second_stage_aggs
-                    .values()
-                    .cloned()
-                    .map(|e| Arc::new(Expr::Agg(e)))
-                    .collect(),
-                group_by.clone(),
-            );
-            let second_stage_node =
-                BlockingSinkNode::new(Arc::new(second_stage_agg_sink), post_first_agg_node).boxed();
-
-            let final_stage_project = ProjectOperator::new(final_exprs);
-
-            IntermediateNode::new(Arc::new(final_stage_project), vec![second_stage_node]).boxed()
+            let agg_sink = GroupedAggregateSink::new(aggregations, group_by, schema);
+            BlockingSinkNode::new(Arc::new(agg_sink), child_node).boxed()
         }
         LocalPhysicalPlan::Unpivot(Unpivot {
             input,

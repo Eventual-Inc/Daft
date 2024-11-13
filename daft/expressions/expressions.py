@@ -26,7 +26,6 @@ from daft.daft import decimal_lit as _decimal_lit
 from daft.daft import duration_lit as _duration_lit
 from daft.daft import list_sort as _list_sort
 from daft.daft import lit as _lit
-from daft.daft import series_lit as _series_lit
 from daft.daft import stateful_udf as _stateful_udf
 from daft.daft import stateless_udf as _stateless_udf
 from daft.daft import time_lit as _time_lit
@@ -40,7 +39,7 @@ from daft.datatype import DataType, TimeUnit
 from daft.dependencies import pa
 from daft.expressions.testing import expr_structurally_equal
 from daft.logical.schema import Field, Schema
-from daft.series import Series, item_to_series
+from daft.series import item_to_series
 
 if TYPE_CHECKING:
     import builtins
@@ -126,8 +125,11 @@ def lit(value: object) -> Expression:
         sign, digits, exponent = value.as_tuple()
         assert isinstance(exponent, int)
         lit_value = _decimal_lit(sign == 1, digits, exponent)
-    elif isinstance(value, Series):
-        lit_value = _series_lit(value._series)
+    elif isinstance(value, list):
+        print("list")
+        pa_list = pa.scalar(value)
+        print(pa_list)
+        lit_value = _lit(value)
     else:
         lit_value = _lit(value)
     return Expression._from_pyexpr(lit_value)

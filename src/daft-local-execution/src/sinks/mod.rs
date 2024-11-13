@@ -1,6 +1,7 @@
 pub mod aggregate;
 pub mod blocking_sink;
 pub mod concat;
+pub mod grouped_aggregate;
 pub mod hash_join_build;
 pub mod limit;
 pub mod outer_hash_join_probe;
