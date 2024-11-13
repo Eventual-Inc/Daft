@@ -615,25 +615,73 @@ impl SQLPlanner {
         }
 
         let from = from.iter().next().unwrap();
-
         fn collect_compound_identifiers(
             left: &[Ident],
             right: &[Ident],
             left_rel: &Relation,
             right_rel: &Relation,
         ) -> SQLPlannerResult<(Vec<ExprRef>, Vec<ExprRef>)> {
-            if left.len() == 2 && right.len() == 2 {
-                let (tbl_a, col_a) = (&left[0].value, &left[1].value);
-                let (tbl_b, col_b) = (&right[0].value, &right[1].value);
-
-                // switch left/right operands if the caller has them in reverse
-                if &left_rel.get_name() == tbl_b || &right_rel.get_name() == tbl_a {
-                    Ok((vec![col(col_b.as_ref())], vec![col(col_a.as_ref())]))
-                } else {
-                    Ok((vec![col(col_a.as_ref())], vec![col(col_b.as_ref())]))
+            match (left, right) {
+                // both are fully qualified: `join on a.x = b.y`
+                ([tbl_a, col_a], [tbl_b, col_b]) => {
+                    if &left_rel.get_name() == &tbl_b.value && &right_rel.get_name() == &tbl_a.value {
+                        Ok((vec![col(col_b.value.as_ref())], vec![col(col_a.value.as_ref())]))
+                    } else {
+                        Ok((vec![col(col_a.value.as_ref())], vec![col(col_b.value.as_ref())]))
+                    }
                 }
-            } else {
-                unsupported_sql_err!("collect_compound_identifiers: Expected left.len() == 2 && right.len() == 2, but found left.len() == {:?}, right.len() == {:?}", left.len(), right.len());
+                // only one is fully qualified: `join on a.x = y`
+                ([col_a], [tbl_b, col_b]) => {
+
+                    if &right_rel.get_name() == &tbl_b.value {
+                        Ok((vec![col(col_b.value.as_ref())], vec![col(col_a.value.as_ref())]))
+                    } else {
+                        Ok((vec![col(col_a.value.as_ref())], vec![col(col_b.value.as_ref())]))
+                    }
+                }
+                // only one is fully qualified: `join on a.x = y`
+                ([tbl_a, col_a], [col_b]) => {
+
+                    // find out which table each side belongs to
+                    if tbl_a.value == left_rel.get_name() {
+                        let left = col(col_a.value.as_ref());
+                        let right = col(col_b.value.as_ref());
+                        Ok((vec![left], vec![right]))
+                    } else if tbl_a.value == right_rel.get_name() {
+                        let left = col(col_b.value.as_ref());
+                        let right = col(col_a.value.as_ref());
+
+                        Ok((vec![left], vec![right]))
+                    } else {
+                        unsupported_sql_err!("Could not determine which table the identifiers belong to")
+                    }
+                }
+                // neither are fully qualified: `join on x = y`
+                ([left], [right]) => {
+                    let left = ident_to_str(left);
+                    let right = ident_to_str(right);
+
+                    // we don't know which table the identifiers belong to, so we need to check both
+                    let left_schema = left_rel.schema();
+                    let right_schema = right_rel.schema();
+
+                    // if the left side is in the left schema, then we assume the right side is in the right schema
+                    let (left_on, right_on) = if left_schema.get_field(&left).is_ok() {
+                        (col(left), col(right))
+                    // if the right side is in the left schema, then we assume the left side is in the right schema
+                    } else if right_schema.get_field(&left).is_ok() {
+                        (col(right), col(left))
+                    } else {
+                        unsupported_sql_err!("JOIN clauses must reference columns in the joined tables; found `{}`", left);
+                    };
+                    Ok((vec![left_on], vec![right_on]))
+
+                }
+                _ => unsupported_sql_err!(
+                    "collect_compound_identifiers: Expected left.len() == 2 && right.len() == 2, but found left.len() == {:?}, right.len() == {:?}",
+                    left.len(),
+                    right.len()
+                ),
             }
         }
 
@@ -645,41 +693,41 @@ impl SQLPlanner {
             if let sqlparser::ast::Expr::BinaryOp { left, op, right } = expression {
                 match *op {
                     BinaryOperator::Eq | BinaryOperator::Spaceship => {
-                        if let (
+                        let null_equals_null = *op == BinaryOperator::Spaceship;
+
+                        match (left.as_ref(), right.as_ref()) {
+                        (
                             sqlparser::ast::Expr::CompoundIdentifier(left),
                             sqlparser::ast::Expr::CompoundIdentifier(right),
-                        ) = (left.as_ref(), right.as_ref())
-                        {
+                        ) => {
                             let null_equals_null = *op == BinaryOperator::Spaceship;
-                            collect_compound_identifiers(left, right, left_rel, right_rel)
-                                .map(|(left, right)| (left, right, vec![null_equals_null]))
-                        } else if let (
+                            dbg!(collect_compound_identifiers(left, right, left_rel, right_rel)
+                                .map(|(left, right)| (left, right, vec![null_equals_null])))
+                        }
+                        (
                             sqlparser::ast::Expr::Identifier(left),
                             sqlparser::ast::Expr::Identifier(right),
-                        ) = (left.as_ref(), right.as_ref())
-                        {
-                            let left = ident_to_str(left);
-                            let right = ident_to_str(right);
+                        ) =>{
+                            collect_compound_identifiers(&[left.clone()], &[right.clone()], left_rel, right_rel)
+                                .map(|(left, right)| (left, right, vec![null_equals_null]))
 
-                            // we don't know which table the identifiers belong to, so we need to check both
-                            let left_schema = left_rel.schema();
-                            let right_schema = right_rel.schema();
+                        }
+                        (
+                            sqlparser::ast::Expr::CompoundIdentifier(left),
+                            sqlparser::ast::Expr::Identifier(right)
+                        ) => {
+                            collect_compound_identifiers(left, &[right.clone()], left_rel, right_rel)
+                                .map(|(left, right)| (left, right, vec![null_equals_null]))
 
-                            // if the left side is in the left schema, then we assume the right side is in the right schema
-                            let (left_on, right_on) = if left_schema.get_field(&left).is_ok() {
-                                (col(left), col(right))
-                            // if the right side is in the left schema, then we assume the left side is in the right schema
-                            } else if right_schema.get_field(&left).is_ok() {
-                                (col(right), col(left))
-                            } else {
-                                unsupported_sql_err!("JOIN clauses must reference columns in the joined tables; found `{}`", left);
-                            };
-
-                            let null_equals_null = *op == BinaryOperator::Spaceship;
-
-                            Ok((vec![left_on], vec![right_on], vec![null_equals_null]))
-                        } else {
-                            unsupported_sql_err!("JOIN clauses support '='/'<=>' constraints on identifiers; found `{left} {op} {right}`");
+                        }
+                        (
+                            sqlparser::ast::Expr::Identifier(left),
+                            sqlparser::ast::Expr::CompoundIdentifier(right)
+                        ) => {
+                            collect_compound_identifiers(&[left.clone()], right, left_rel, right_rel)
+                                .map(|(left, right)| (left, right, vec![null_equals_null]))
+                        }
+                        _ => unsupported_sql_err!("process_join_on: Expected CompoundIdentifier, but found left: {:?}, right: {:?}", left, right),
                         }
                     }
                     BinaryOperator::And => {
