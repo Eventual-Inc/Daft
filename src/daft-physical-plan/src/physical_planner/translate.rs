@@ -186,12 +186,15 @@ pub(super) fn translate_single_logical_node(
                 }
                 ClusteringSpec::Random(_) => PhysicalPlan::ShuffleExchange(
                     ShuffleExchangeFactory::new(input_physical)
-                        .get_random_partitioning(num_partitions),
+                        .get_random_partitioning(num_partitions, Some(cfg)),
                 ),
                 ClusteringSpec::Hash(HashClusteringConfig { by, .. }) => {
                     PhysicalPlan::ShuffleExchange(
-                        ShuffleExchangeFactory::new(input_physical)
-                            .get_hash_partitioning(by, num_partitions),
+                        ShuffleExchangeFactory::new(input_physical).get_hash_partitioning(
+                            by,
+                            num_partitions,
+                            Some(cfg),
+                        ),
                     )
                 }
                 ClusteringSpec::Range(_) => {
@@ -213,8 +216,11 @@ pub(super) fn translate_single_logical_node(
             let num_partitions = agg_op.clustering_spec().num_partitions();
             if num_partitions > 1 {
                 let shuffle_op = PhysicalPlan::ShuffleExchange(
-                    ShuffleExchangeFactory::new(agg_op.into())
-                        .get_hash_partitioning(col_exprs.clone(), num_partitions),
+                    ShuffleExchangeFactory::new(agg_op.into()).get_hash_partitioning(
+                        col_exprs.clone(),
+                        num_partitions,
+                        Some(cfg),
+                    ),
                 );
                 Ok(
                     PhysicalPlan::Aggregate(Aggregate::new(shuffle_op.into(), vec![], col_exprs))
@@ -286,6 +292,7 @@ pub(super) fn translate_single_logical_node(
                                     num_input_partitions,
                                     cfg.shuffle_aggregation_default_partitions,
                                 ),
+                                Some(cfg),
                             ),
                         )
                         .into()
@@ -355,6 +362,7 @@ pub(super) fn translate_single_logical_node(
                                     num_input_partitions,
                                     cfg.shuffle_aggregation_default_partitions,
                                 ),
+                                Some(cfg),
                             ),
                         )
                         .into()
@@ -627,8 +635,11 @@ pub(super) fn translate_single_logical_node(
                         || (num_partitions > 1 && !is_left_hash_partitioned)
                     {
                         left_physical = PhysicalPlan::ShuffleExchange(
-                            ShuffleExchangeFactory::new(left_physical)
-                                .get_hash_partitioning(left_on.clone(), num_partitions),
+                            ShuffleExchangeFactory::new(left_physical).get_hash_partitioning(
+                                left_on.clone(),
+                                num_partitions,
+                                Some(cfg),
+                            ),
                         )
                         .into();
                     }
@@ -636,8 +647,11 @@ pub(super) fn translate_single_logical_node(
                         || (num_partitions > 1 && !is_right_hash_partitioned)
                     {
                         right_physical = PhysicalPlan::ShuffleExchange(
-                            ShuffleExchangeFactory::new(right_physical)
-                                .get_hash_partitioning(right_on.clone(), num_partitions),
+                            ShuffleExchangeFactory::new(right_physical).get_hash_partitioning(
+                                right_on.clone(),
+                                num_partitions,
+                                Some(cfg),
+                            ),
                         )
                         .into();
                     }
