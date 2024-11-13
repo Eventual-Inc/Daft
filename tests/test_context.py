@@ -18,69 +18,72 @@ def with_null_env():
             os.environ["DAFT_RUNNER"] = old_daft_runner
 
 
-explicit_set_runner_script = """
+def test_explicit_set_runner_py():
+    """Test that a freshly imported context doesn't have a runner config set and can be set explicitly to Python"""
+
+    explicit_set_runner_script = """
 import daft
 print(daft.context.get_context()._runner)
 daft.context.set_runner_py()
 print(daft.context.get_context()._runner.name)
-"""
+    """
 
-
-def test_explicit_set_runner_py():
-    """Test that a freshly imported context doesn't have a runner config set and can be set explicitly to Python"""
     with with_null_env():
         result = subprocess.run([sys.executable, "-c", explicit_set_runner_script], capture_output=True)
         assert result.stdout.decode().strip() == "None\npy"
 
 
-implicit_set_runner_script = """
+def test_implicit_set_runner_py():
+    """Test that a freshly imported context doesn't have a runner config set and can be set implicitly to Python"""
+
+    implicit_set_runner_script = """
 import daft
 print(daft.context.get_context()._runner)
 df = daft.from_pydict({"foo": [1, 2, 3]})
 print(daft.context.get_context()._runner.name)
-"""
+    """
 
-
-def test_implicit_set_runner_py():
-    """Test that a freshly imported context doesn't have a runner config set and can be set implicitly to Python"""
     with with_null_env():
         result = subprocess.run([sys.executable, "-c", implicit_set_runner_script], capture_output=True)
         assert result.stdout.decode().strip() == "None\npy" or result.stdout.decode().strip() == "None\nnative"
 
 
-explicit_set_runner_script_ray = """
+def test_explicit_set_runner_ray():
+    """Test that a freshly imported context doesn't have a runner config set and can be set explicitly to Ray"""
+
+    explicit_set_runner_script_ray = """
 import daft
 print(daft.context.get_context()._runner)
 daft.context.set_runner_ray()
 print(daft.context.get_context()._runner.name)
-"""
+    """
 
-
-def test_explicit_set_runner_ray():
-    """Test that a freshly imported context doesn't have a runner config set and can be set explicitly to Ray"""
     with with_null_env():
         result = subprocess.run([sys.executable, "-c", explicit_set_runner_script_ray], capture_output=True)
         assert result.stdout.decode().strip() == "None\nray"
 
 
-implicit_set_runner_script_ray = """
+def test_implicit_set_runner_ray():
+    """Test that a freshly imported context doesn't have a runner config set and can be set implicitly to Ray"""
+
+    implicit_set_runner_script_ray = """
 import daft
 import ray
 ray.init()
 print(daft.context.get_context()._runner)
 df = daft.from_pydict({"foo": [1, 2, 3]})
 print(daft.context.get_context()._runner.name)
-"""
+    """
 
-
-def test_implicit_set_runner_ray():
-    """Test that a freshly imported context doesn't have a runner config set and can be set implicitly to Ray"""
     with with_null_env():
         result = subprocess.run([sys.executable, "-c", implicit_set_runner_script_ray], capture_output=True)
         assert result.stdout.decode().strip() == "None\nray"
 
 
-switch_local_runners_script = """
+def test_switch_local_runners():
+    """Test that a runner can be switched from Python to Native"""
+
+    switch_local_runners_script = """
 import daft
 print(daft.context.get_context()._runner)
 daft.context.set_runner_py()
@@ -89,11 +92,8 @@ daft.context.set_runner_native()
 print(daft.context.get_context()._runner.name)
 daft.context.set_runner_py()
 print(daft.context.get_context()._runner.name)
-"""
+    """
 
-
-def test_switch_local_runners():
-    """Test that a runner can be switched from Python to Native"""
     with with_null_env():
         result = subprocess.run([sys.executable, "-c", switch_local_runners_script], capture_output=True)
         assert result.stdout.decode().strip() == "None\npy\nnative\npy"
@@ -108,6 +108,7 @@ def test_switch_local_runners():
 )
 def test_cannot_switch_local_to_ray(set_local_command):
     """Test that a runner cannot be switched from local to Ray"""
+
     script = f"""
 import daft
 {set_local_command}
@@ -137,3 +138,103 @@ daft.context.set_runner_ray()
     with with_null_env():
         result = subprocess.run([sys.executable, "-c", script], capture_output=True)
         assert result.stderr.decode().strip().endswith("RuntimeError: Cannot set runner more than once")
+
+
+@pytest.mark.parametrize("daft_runner_envvar", ["py", "ray", "native"])
+def test_env_var(daft_runner_envvar):
+    """Test that environment variables are correctly picked up"""
+
+    autodetect_script = """
+import daft
+df = daft.from_pydict({"foo": [1, 2, 3]})
+print(daft.context.get_context()._runner.name)
+    """
+
+    with with_null_env():
+        result = subprocess.run(
+            [sys.executable, "-c", autodetect_script], capture_output=True, env={"DAFT_RUNNER": daft_runner_envvar}
+        )
+        assert result.stdout.decode().strip() == daft_runner_envvar
+
+
+def test_in_ray_job():
+    """Test that Ray job ID environment variable is being picked up"""
+
+    autodetect_script = """
+import daft
+df = daft.from_pydict({"foo": [1, 2, 3]})
+print(daft.context.get_context()._runner.name)
+    """
+
+    with with_null_env():
+        result = subprocess.run(
+            [sys.executable, "-c", autodetect_script], capture_output=True, env={"RAY_JOB_ID": "dummy"}
+        )
+        assert result.stdout.decode().strip() == "ray"
+
+
+def test_in_ray_worker():
+    """Test that running Daft in a Ray worker defaults to Python runner"""
+
+    autodetect_script = """
+import ray
+import os
+
+@ray.remote
+def init_and_return_daft_runner():
+    import daft
+
+    # Attempt to confuse our runner inference code
+    assert ray.is_initialized()
+    os.environ["RAY_JOB_ID"] = "dummy"
+
+    df = daft.from_pydict({"foo": [1, 2, 3]})
+    return daft.context.get_context()._runner.name
+
+ray.init()
+print(ray.get(init_and_return_daft_runner.remote()))
+    """
+
+    with with_null_env():
+        result = subprocess.run([sys.executable, "-c", autodetect_script], capture_output=True)
+        assert result.stdout.decode().strip() in {"py", "native"}
+
+
+def test_in_ray_worker_launch_query():
+    """Test that running Daft in a Ray worker defaults to Python runner"""
+
+    autodetect_script = """
+import ray
+import os
+
+@ray.remote
+def init_and_return_daft_runner():
+    import daft
+
+    assert ray.is_initialized()
+    daft.context.set_runner_ray()
+
+    df = daft.from_pydict({"foo": [1, 2, 3]})
+    return daft.context.get_context()._runner.name
+
+ray.init()
+print(ray.get(init_and_return_daft_runner.remote()))
+    """
+
+    with with_null_env():
+        result = subprocess.run([sys.executable, "-c", autodetect_script], capture_output=True)
+        assert result.stdout.decode().strip() == "ray"
+
+
+def test_cannot_set_runner_ray_after_py():
+    cannot_set_runner_ray_after_py_script = """
+import daft
+df = daft.from_pydict({"foo": [1, 2, 3]})
+print(daft.context.get_context()._runner.name)
+daft.context.set_runner_ray()
+    """
+
+    with with_null_env():
+        result = subprocess.run([sys.executable, "-c", cannot_set_runner_ray_after_py_script], capture_output=True)
+        assert result.stdout.decode().strip() in {"py", "native"}
+        assert "RuntimeError: Cannot set runner more than once" in result.stderr.decode().strip()
