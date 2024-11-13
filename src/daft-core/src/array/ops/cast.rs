@@ -1612,7 +1612,7 @@ fn cast_sparse_to_dense_for_inner_dtype(
     Ok(item)
 }
 
-pub fn minimal_uint_dtype(value: u64) -> DataType {
+fn minimal_uint_dtype(value: u64) -> DataType {
     if u8::try_from(value).is_ok() {
         DataType::UInt8
     } else if u16::try_from(value).is_ok() {
