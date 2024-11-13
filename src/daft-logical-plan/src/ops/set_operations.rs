@@ -128,8 +128,23 @@ impl Union {
     /// > select * from t0 union select * from t1;
     /// ```
     /// This is valid in Union, but not in Concat
-    pub(crate) fn new(lhs: Arc<LogicalPlan>, rhs: Arc<LogicalPlan>, is_all: bool) -> Self {
-        Self { lhs, rhs, is_all }
+    pub(crate) fn try_new(
+        lhs: Arc<LogicalPlan>,
+        rhs: Arc<LogicalPlan>,
+        is_all: bool,
+    ) -> logical_plan::Result<Self> {
+        if lhs.schema().len() != rhs.schema().len() {
+            return Err(DaftError::SchemaMismatch(format!(
+                "Both plans must have the same num of fields to union, \
+                but got[lhs: {} v.s rhs: {}], lhs schema: {}, rhs schema: {}",
+                lhs.schema().len(),
+                rhs.schema().len(),
+                lhs.schema(),
+                rhs.schema()
+            )))
+            .context(CreationSnafu);
+        }
+        Ok(Self { lhs, rhs, is_all })
     }
 
     /// union could be represented as a concat + distinct

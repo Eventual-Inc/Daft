@@ -417,6 +417,11 @@ impl PushDownProjection {
                 Ok(new_plan)
             }
             LogicalPlan::Union(union) => {
+                if !union.is_all {
+                    // can not push down past a DISTINCT
+                    return Ok(Transformed::no(plan));
+                }
+
                 // Get required columns from projection and upstream.
                 let combined_dependencies = plan
                     .required_columns()

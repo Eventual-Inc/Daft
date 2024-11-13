@@ -236,7 +236,7 @@ impl SQLPlanner {
                         return left.union(&right, true).map_err(|e| e.into());
                     }
 
-                    (Union, SetQuantifier::None) => {
+                    (Union, SetQuantifier::None | SetQuantifier::Distinct) => {
                         let left = self.plan_query(&make_query(left))?;
                         let right = self.plan_query(&make_query(right))?;
                         return left.union(&right, false).map_err(|e| e.into());
@@ -247,7 +247,7 @@ impl SQLPlanner {
                         let right = self.plan_query(&make_query(right))?;
                         return left.intersect(&right, true).map_err(|e| e.into());
                     }
-                    (Intersect, SetQuantifier::None) => {
+                    (Intersect, SetQuantifier::None | SetQuantifier::Distinct) => {
                         let left = self.plan_query(&make_query(left))?;
                         let right = self.plan_query(&make_query(right))?;
                         return left.intersect(&right, false).map_err(|e| e.into());

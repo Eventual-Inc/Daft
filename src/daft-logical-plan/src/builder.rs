@@ -464,7 +464,8 @@ impl LogicalPlanBuilder {
     }
     pub fn union(&self, other: &Self, is_all: bool) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
-            ops::Union::new(self.plan.clone(), other.plan.clone(), is_all).to_logical_plan()?;
+            ops::Union::try_new(self.plan.clone(), other.plan.clone(), is_all)?
+                .to_logical_plan()?;
         Ok(self.with_new_plan(logical_plan))
     }
 
