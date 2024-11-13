@@ -11,7 +11,7 @@ use crate::{
         create_channel, create_ordering_aware_receiver_channel, OrderingAwareReceiver, Receiver,
         Sender,
     },
-    dispatcher::Dispatcher,
+    dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
     pipeline::PipelineNode,
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
     ExecutionRuntimeHandle, OperatorOutput, NUM_CPUS,
@@ -53,19 +53,19 @@ pub trait IntermediateOperator: Send + Sync {
         *NUM_CPUS
     }
 
-    fn dispatcher(
+    fn dispatch_spawner(
         &self,
         runtime_handle: &ExecutionRuntimeHandle,
         maintain_order: bool,
-    ) -> Dispatcher {
+    ) -> Arc<dyn DispatchSpawner> {
         if maintain_order {
-            Dispatcher::RoundRobin {
-                morsel_size: Some(runtime_handle.default_morsel_size()),
-            }
+            Arc::new(RoundRobinDispatcher::new(Some(
+                runtime_handle.default_morsel_size(),
+            )))
         } else {
-            Dispatcher::Unordered {
-                morsel_size: Some(runtime_handle.default_morsel_size()),
-            }
+            Arc::new(UnorderedDispatcher::new(Some(
+                runtime_handle.default_morsel_size(),
+            )))
         }
     }
 }
@@ -212,14 +212,14 @@ impl PipelineNode for IntermediateNode {
         let (destination_sender, destination_receiver) = create_channel(1);
         let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
 
-        let dispatcher = self
+        let dispatch_spawner = self
             .intermediate_op
-            .dispatcher(runtime_handle, maintain_order);
-        let worker_receivers = dispatcher.spawn_dispatch_task(
+            .dispatch_spawner(runtime_handle, maintain_order);
+        let worker_receivers = dispatch_spawner.spawn_dispatch(
             child_result_receivers,
             num_workers,
             runtime_handle,
-            op.name(),
+            self,
         );
 
         let mut output_receiver =

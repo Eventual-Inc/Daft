@@ -12,7 +12,7 @@ use crate::{
         create_channel, create_ordering_aware_receiver_channel, OrderingAwareReceiver, Receiver,
         Sender,
     },
-    dispatcher::Dispatcher,
+    dispatcher::DispatchSpawner,
     pipeline::PipelineNode,
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
     ExecutionRuntimeHandle, JoinSnafu, OperatorOutput, TaskSet, NUM_CPUS,
@@ -63,11 +63,11 @@ pub trait StreamingSink: Send + Sync {
         *NUM_CPUS
     }
 
-    fn dispatcher(
+    fn dispatch_spawner(
         &self,
         runtime_handle: &ExecutionRuntimeHandle,
         maintain_order: bool,
-    ) -> Dispatcher;
+    ) -> Arc<dyn DispatchSpawner>;
 }
 
 pub struct StreamingSinkNode {
@@ -211,12 +211,12 @@ impl PipelineNode for StreamingSinkNode {
         let runtime_stats = self.runtime_stats.clone();
         let num_workers = op.max_concurrency();
 
-        let dispatcher = op.dispatcher(runtime_handle, maintain_order);
-        let worker_receivers = dispatcher.spawn_dispatch_task(
+        let dispatch_spawner = op.dispatch_spawner(runtime_handle, maintain_order);
+        let worker_receivers = dispatch_spawner.spawn_dispatch(
             child_result_receivers,
             num_workers,
             runtime_handle,
-            op.name(),
+            self,
         );
 
         runtime_handle.spawn(

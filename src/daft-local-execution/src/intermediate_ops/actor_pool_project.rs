@@ -16,7 +16,10 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::{dispatcher::Dispatcher, ExecutionRuntimeHandle};
+use crate::{
+    dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
+    ExecutionRuntimeHandle,
+};
 
 struct ActorHandle {
     #[cfg(feature = "python")]
@@ -179,25 +182,21 @@ impl IntermediateOperator for ActorPoolProjectOperator {
         self.concurrency
     }
 
-    fn dispatcher(
+    fn dispatch_spawner(
         &self,
         runtime_handle: &ExecutionRuntimeHandle,
         maintain_order: bool,
-    ) -> Dispatcher {
+    ) -> Arc<dyn DispatchSpawner> {
         if maintain_order {
-            Dispatcher::RoundRobin {
-                morsel_size: Some(
-                    self.batch_size
-                        .unwrap_or_else(|| runtime_handle.default_morsel_size()),
-                ),
-            }
+            Arc::new(RoundRobinDispatcher::new(Some(
+                self.batch_size
+                    .unwrap_or_else(|| runtime_handle.default_morsel_size()),
+            )))
         } else {
-            Dispatcher::Unordered {
-                morsel_size: Some(
-                    self.batch_size
-                        .unwrap_or_else(|| runtime_handle.default_morsel_size()),
-                ),
-            }
+            Arc::new(UnorderedDispatcher::new(Some(
+                self.batch_size
+                    .unwrap_or_else(|| runtime_handle.default_morsel_size()),
+            )))
         }
     }
 }

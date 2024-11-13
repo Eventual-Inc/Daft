@@ -13,7 +13,10 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
     BlockingSinkStatus,
 };
-use crate::{dispatcher::Dispatcher, NUM_CPUS};
+use crate::{
+    dispatcher::{DispatchSpawner, PartitionedDispatcher, UnorderedDispatcher},
+    ExecutionRuntimeHandle, NUM_CPUS,
+};
 
 pub enum WriteFormat {
     Parquet,
@@ -133,15 +136,16 @@ impl BlockingSink for WriteSink {
         Ok(Box::new(WriteState::new(writer)) as Box<dyn BlockingSinkState>)
     }
 
-    fn dispatcher(&self, runtime_handle: &crate::ExecutionRuntimeHandle) -> Dispatcher {
+    fn dispatch_spawner(
+        &self,
+        runtime_handle: &ExecutionRuntimeHandle,
+    ) -> Arc<dyn DispatchSpawner> {
         if let Some(partition_by) = &self.partition_by {
-            Dispatcher::Partitioned {
-                partition_by: partition_by.clone(),
-            }
+            Arc::new(PartitionedDispatcher::new(partition_by.clone()))
         } else {
-            Dispatcher::Unordered {
-                morsel_size: Some(runtime_handle.default_morsel_size()),
-            }
+            Arc::new(UnorderedDispatcher::new(Some(
+                runtime_handle.default_morsel_size(),
+            )))
         }
     }
 

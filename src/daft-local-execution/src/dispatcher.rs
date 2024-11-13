@@ -7,68 +7,43 @@ use daft_micropartition::MicroPartition;
 use crate::{
     buffer::RowBasedBuffer,
     channel::{create_channel, Receiver, Sender},
+    pipeline::PipelineNode,
     runtime_stats::CountingReceiver,
     ExecutionRuntimeHandle,
 };
 
-/// Dispatcher is responsible for dispatching morsels to workers.
-/// The dispatcher can be one of the following:
-/// - RoundRobin: Dispatch morsels in a round-robin fashion to workers. Used if the operator requires input to be ordered.
-/// - Unordered: Dispatch morsels to workers without any order. Used if the operator does not require input to be ordered.
-/// - Partitioned: Dispatch morsels to workers based on the partitioning key. Used if the operator requires input to be partitioned, e.g. for partitioned writes.
+/// The `DispatchSpawner` trait is implemented by types that can spawn a task that reads from
+/// input receivers and distributes morsels to worker receivers.
 ///
-/// The dispatcher has a `spawn_dispatch_task` method that spawns a task that receives from input receivers and dispatches morsels to workers.
-/// It returns a list of receivers, one for each worker, that the workers can use to receive morsels.
-pub(crate) enum Dispatcher {
-    RoundRobin { morsel_size: Option<usize> },
-    Unordered { morsel_size: Option<usize> },
-    Partitioned { partition_by: Vec<ExprRef> },
-}
-
-impl Dispatcher {
-    pub(crate) fn spawn_dispatch_task(
+/// The `spawn_dispatch` method is called with the input receivers, the number of workers, the
+/// runtime handle, and the pipeline node that the dispatcher is associated with.
+///
+/// It returns a vector of receivers (one per worker) that will receive the morsels.
+///
+/// Implementations must spawn a task on the runtime handle that reads from the
+/// input receivers and distributes morsels to the worker receivers.
+pub(crate) trait DispatchSpawner {
+    fn spawn_dispatch(
         &self,
         input_receivers: Vec<CountingReceiver>,
         num_workers: usize,
         runtime_handle: &mut ExecutionRuntimeHandle,
-        name: &'static str,
-    ) -> Vec<Receiver<Arc<MicroPartition>>> {
-        match self {
-            Self::RoundRobin { morsel_size } => {
-                let (worker_senders, worker_receivers): (Vec<_>, Vec<_>) =
-                    (0..num_workers).map(|_| create_channel(1)).unzip();
-                runtime_handle.spawn(
-                    Self::dispatch_round_robin(worker_senders, input_receivers, *morsel_size),
-                    name,
-                );
-                worker_receivers
-            }
-            Self::Unordered { morsel_size } => {
-                let (worker_sender, worker_receiver) = create_channel(num_workers);
-                let worker_receivers = vec![worker_receiver; num_workers];
-                runtime_handle.spawn(
-                    Self::dispatch_unordered(worker_sender, input_receivers, *morsel_size),
-                    name,
-                );
-                worker_receivers
-            }
-            Self::Partitioned { partition_by } => {
-                let (worker_senders, worker_receivers): (Vec<_>, Vec<_>) =
-                    (0..num_workers).map(|_| create_channel(1)).unzip();
-                runtime_handle.spawn(
-                    Self::dispatch_partitioned(
-                        worker_senders,
-                        input_receivers,
-                        partition_by.clone(),
-                    ),
-                    name,
-                );
-                worker_receivers
-            }
-        }
+        pipeline_node: &dyn PipelineNode,
+    ) -> Vec<Receiver<Arc<MicroPartition>>>;
+}
+
+/// A dispatcher that distributes morsels to workers in a round-robin fashion.
+/// Used if the operator requires maintaining the order of the input.
+pub(crate) struct RoundRobinDispatcher {
+    morsel_size: Option<usize>,
+}
+
+impl RoundRobinDispatcher {
+    pub(crate) fn new(morsel_size: Option<usize>) -> Self {
+        Self { morsel_size }
     }
 
-    async fn dispatch_round_robin(
+    async fn dispatch_inner(
         worker_senders: Vec<Sender<Arc<MicroPartition>>>,
         input_receivers: Vec<CountingReceiver>,
         morsel_size: Option<usize>,
@@ -107,8 +82,40 @@ impl Dispatcher {
         }
         Ok(())
     }
+}
 
-    async fn dispatch_unordered(
+impl DispatchSpawner for RoundRobinDispatcher {
+    fn spawn_dispatch(
+        &self,
+        input_receivers: Vec<CountingReceiver>,
+        num_workers: usize,
+        runtime_handle: &mut ExecutionRuntimeHandle,
+        pipeline_node: &dyn PipelineNode,
+    ) -> Vec<Receiver<Arc<MicroPartition>>> {
+        let (worker_senders, worker_receivers): (Vec<_>, Vec<_>) =
+            (0..num_workers).map(|_| create_channel(1)).unzip();
+        let morsel_size = self.morsel_size;
+        runtime_handle.spawn(
+            async move { Self::dispatch_inner(worker_senders, input_receivers, morsel_size).await },
+            pipeline_node.name(),
+        );
+
+        worker_receivers
+    }
+}
+
+/// A dispatcher that distributes morsels to workers in an unordered fashion.
+/// Used if the operator does not require maintaining the order of the input.
+pub(crate) struct UnorderedDispatcher {
+    morsel_size: Option<usize>,
+}
+
+impl UnorderedDispatcher {
+    pub(crate) fn new(morsel_size: Option<usize>) -> Self {
+        Self { morsel_size }
+    }
+
+    async fn dispatch_inner(
         worker_sender: Sender<Arc<MicroPartition>>,
         input_receivers: Vec<CountingReceiver>,
         morsel_size: Option<usize>,
@@ -140,8 +147,41 @@ impl Dispatcher {
         }
         Ok(())
     }
+}
 
-    async fn dispatch_partitioned(
+impl DispatchSpawner for UnorderedDispatcher {
+    fn spawn_dispatch(
+        &self,
+        receiver: Vec<CountingReceiver>,
+        num_workers: usize,
+        runtime_handle: &mut ExecutionRuntimeHandle,
+        pipeline_node: &dyn PipelineNode,
+    ) -> Vec<Receiver<Arc<MicroPartition>>> {
+        let (worker_sender, worker_receiver) = create_channel(num_workers);
+        let worker_receivers = vec![worker_receiver; num_workers];
+        let morsel_size = self.morsel_size;
+
+        runtime_handle.spawn(
+            async move { Self::dispatch_inner(worker_sender, receiver, morsel_size).await },
+            pipeline_node.name(),
+        );
+
+        worker_receivers
+    }
+}
+
+/// A dispatcher that distributes morsels to workers based on a partitioning expression.
+/// Used if the operator requires partitioning the input, i.e. partitioned writes.
+pub(crate) struct PartitionedDispatcher {
+    partition_by: Vec<ExprRef>,
+}
+
+impl PartitionedDispatcher {
+    pub(crate) fn new(partition_by: Vec<ExprRef>) -> Self {
+        Self { partition_by }
+    }
+
+    async fn dispatch_inner(
         worker_senders: Vec<Sender<Arc<MicroPartition>>>,
         input_receivers: Vec<CountingReceiver>,
         partition_by: Vec<ExprRef>,
@@ -158,5 +198,27 @@ impl Dispatcher {
             }
         }
         Ok(())
+    }
+}
+
+impl DispatchSpawner for PartitionedDispatcher {
+    fn spawn_dispatch(
+        &self,
+        input_receivers: Vec<CountingReceiver>,
+        num_workers: usize,
+        runtime_handle: &mut ExecutionRuntimeHandle,
+        pipeline_node: &dyn PipelineNode,
+    ) -> Vec<Receiver<Arc<MicroPartition>>> {
+        let (worker_senders, worker_receivers): (Vec<_>, Vec<_>) =
+            (0..num_workers).map(|_| create_channel(1)).unzip();
+        let partition_by = self.partition_by.clone();
+        runtime_handle.spawn(
+            async move {
+                Self::dispatch_inner(worker_senders, input_receivers, partition_by).await
+            },
+            pipeline_node.name(),
+        );
+
+        worker_receivers
     }
 }

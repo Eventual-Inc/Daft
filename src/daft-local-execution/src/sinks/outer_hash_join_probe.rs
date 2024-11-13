@@ -24,7 +24,10 @@ use super::{
         StreamingSinkOutput, StreamingSinkState,
     },
 };
-use crate::{dispatcher::Dispatcher, ExecutionRuntimeHandle};
+use crate::{
+    dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
+    ExecutionRuntimeHandle,
+};
 
 struct IndexBitmapBuilder {
     mutable_bitmaps: Vec<MutableBitmap>,
@@ -468,19 +471,19 @@ impl StreamingSink for OuterHashJoinProbeSink {
         }
     }
 
-    fn dispatcher(
+    fn dispatch_spawner(
         &self,
         runtime_handle: &ExecutionRuntimeHandle,
         maintain_order: bool,
-    ) -> Dispatcher {
+    ) -> Arc<dyn DispatchSpawner> {
         if maintain_order {
-            Dispatcher::RoundRobin {
-                morsel_size: Some(runtime_handle.default_morsel_size()),
-            }
+            Arc::new(RoundRobinDispatcher::new(Some(
+                runtime_handle.default_morsel_size(),
+            )))
         } else {
-            Dispatcher::Unordered {
-                morsel_size: Some(runtime_handle.default_morsel_size()),
-            }
+            Arc::new(UnorderedDispatcher::new(Some(
+                runtime_handle.default_morsel_size(),
+            )))
         }
     }
 }

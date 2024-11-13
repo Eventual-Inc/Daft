@@ -9,7 +9,7 @@ use tracing::{info_span, instrument};
 
 use crate::{
     channel::{create_channel, Receiver},
-    dispatcher::Dispatcher,
+    dispatcher::{DispatchSpawner, UnorderedDispatcher},
     pipeline::PipelineNode,
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
     ExecutionRuntimeHandle, JoinSnafu, OperatorOutput, TaskSet,
@@ -41,10 +41,13 @@ pub trait BlockingSink: Send + Sync {
     ) -> BlockingSinkFinalizeResult;
     fn name(&self) -> &'static str;
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>>;
-    fn dispatcher(&self, runtime_handle: &ExecutionRuntimeHandle) -> Dispatcher {
-        Dispatcher::Unordered {
-            morsel_size: Some(runtime_handle.default_morsel_size()),
-        }
+    fn dispatch_spawner(
+        &self,
+        runtime_handle: &ExecutionRuntimeHandle,
+    ) -> Arc<dyn DispatchSpawner> {
+        Arc::new(UnorderedDispatcher::new(Some(
+            runtime_handle.default_morsel_size(),
+        )))
     }
     fn max_concurrency(&self) -> usize;
 }
@@ -152,12 +155,12 @@ impl PipelineNode for BlockingSinkNode {
         let runtime_stats = self.runtime_stats.clone();
         let num_workers = op.max_concurrency();
 
-        let dispatcher = op.dispatcher(runtime_handle);
-        let worker_receivers = dispatcher.spawn_dispatch_task(
+        let dispatch_spawner = op.dispatch_spawner(runtime_handle);
+        let worker_receivers = dispatch_spawner.spawn_dispatch(
             vec![counting_receiver],
             num_workers,
             runtime_handle,
-            op.name(),
+            self,
         );
 
         runtime_handle.spawn(
