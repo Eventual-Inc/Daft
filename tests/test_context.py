@@ -179,10 +179,10 @@ def test_in_ray_worker():
     autodetect_script = """
 import ray
 import os
+import daft
 
 @ray.remote
 def init_and_return_daft_runner():
-    import daft
 
     # Attempt to confuse our runner inference code
     assert ray.is_initialized()
@@ -206,10 +206,10 @@ def test_in_ray_worker_launch_query():
     autodetect_script = """
 import ray
 import os
+import daft
 
 @ray.remote
 def init_and_return_daft_runner():
-    import daft
 
     assert ray.is_initialized()
     daft.context.set_runner_ray()
