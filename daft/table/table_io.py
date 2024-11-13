@@ -796,7 +796,8 @@ def write_empty_tabular(
                 filesystem=fs,
             )
         elif file_format == FileFormat.Csv:
-            pacsv.write_csv(table, file_path)
+            output_file = fs.open_output_stream(file_path)
+            pacsv.write_csv(table, output_file)
         else:
             raise ValueError(f"Unsupported file format {file_format}")
 

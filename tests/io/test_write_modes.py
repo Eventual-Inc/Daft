@@ -93,10 +93,10 @@ def test_write_modes_local(tmp_path, write_mode, format, num_partitions, partiti
 @pytest.mark.parametrize("format", ["csv", "parquet"])
 def test_write_modes_local_empty_data(tmp_path, write_mode, format):
     path = str(tmp_path)
-    existing_data = {"a": ["a", "a", "b", "b"], "b": [1, 2, 3, 4]}
+    existing_data = {"a": ["a", "a", "b", "b"], "b": ["1", "2", "3", "4"]}
     new_data = {
         "a": ["a", "a", "b", "b"],
-        "b": [5, 6, 7, 8],
+        "b": ["5", "6", "7", "8"],
     }
 
     read_back = arrange_write_mode_test(
@@ -113,7 +113,7 @@ def test_write_modes_local_empty_data(tmp_path, write_mode, format):
     if write_mode == "append":
         # The data should be the same as the existing data
         assert read_back["a"] == ["a", "a", "b", "b"]
-        assert read_back["b"] == [1, 2, 3, 4]
+        assert read_back["b"] == ["1", "2", "3", "4"]
     elif write_mode == "overwrite":
         # The data should be empty because we are overwriting the existing data
         assert read_back["a"] == []
@@ -187,10 +187,10 @@ def test_write_modes_s3_minio_empty_data(
     format,
 ):
     path = f"s3://{bucket}/{str(uuid.uuid4())}"
-    existing_data = {"a": ["a", "a", "b", "b"], "b": [1, 2, 3, 4]}
+    existing_data = {"a": ["a", "a", "b", "b"], "b": ["1", "2", "3", "4"]}
     new_data = {
         "a": ["a", "a", "b", "b"],
-        "b": [5, 6, 7, 8],
+        "b": ["5", "6", "7", "8"],
     }
 
     read_back = arrange_write_mode_test(
@@ -207,7 +207,7 @@ def test_write_modes_s3_minio_empty_data(
     if write_mode == "append":
         # The data should be the same as the existing data
         assert read_back["a"] == ["a", "a", "b", "b"]
-        assert read_back["b"] == [1, 2, 3, 4]
+        assert read_back["b"] == ["1", "2", "3", "4"]
     elif write_mode == "overwrite":
         # The data should be empty because we are overwriting the existing data
         assert read_back["a"] == []
