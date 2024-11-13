@@ -221,7 +221,7 @@ class DaftContext:
         if self._runner_config is None:
             return True
         # If the runner has been set to the ray runner, we can't set it again
-        elif self._runner_config.name == "ray" and self._runner is not None:
+        elif self._runner_config.name == "ray":
             return False
         # If the runner has been set to a local runner, we can set it to a new local runner
         else:
