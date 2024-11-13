@@ -23,6 +23,7 @@ def mock_analytics() -> tuple[AnalyticsClient, MagicMock]:
     client = AnalyticsClient(
         daft.get_version(),
         daft.get_build_type(),
+        True,
         publish_payload_function=mock_publish,
         buffer_capacity=1,
     )
@@ -79,6 +80,7 @@ def test_analytics_client_timeout(
     analytics_client = AnalyticsClient(
         daft.get_version(),
         daft.get_build_type(),
+        True,
         buffer_capacity=1,
     )
 
@@ -96,10 +98,27 @@ def test_analytics_client_timeout_2(
     analytics_client = AnalyticsClient(
         daft.get_version(),
         daft.get_build_type(),
+        True,
         buffer_capacity=1,
     )
     analytics_client.track_import()
     mock_urlopen.assert_called_once()
+
+
+@patch("urllib.request.urlopen")
+def test_analytics_client_disabled(
+    mock_urlopen: MagicMock,
+):
+    mock_urlopen.side_effect = urllib.error.URLError(socket.timeout("Timeout"))
+    analytics_client = AnalyticsClient(
+        daft.get_version(),
+        daft.get_build_type(),
+        False,
+        buffer_capacity=1,
+    )
+
+    analytics_client.track_import()
+    mock_urlopen.assert_not_called()
 
 
 @patch("daft.analytics.datetime")
