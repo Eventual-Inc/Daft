@@ -60,7 +60,7 @@ def test_pyactor_pool():
     assert result_data.partition().to_pydict() == {"x": [4, 4, 4]}
 
 
-@pytest.mark.skipif(get_context().runner_config.name != "py", reason="Test can only be run on PyRunner")
+@pytest.mark.skipif(get_context().get_runner_config_name() != "py", reason="Test can only be run on PyRunner")
 def test_pyactor_pool_not_enough_resources():
     from copy import deepcopy
 

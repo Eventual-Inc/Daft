@@ -22,7 +22,7 @@ TPCH_QUESTIONS = list(range(1, 11))
 
 
 @pytest.mark.skipif(
-    daft.context.get_context().runner_config.name not in {"py", "native"},
+    daft.context.get_context().get_runner_config_name() not in {"py", "native"},
     reason="requires PyRunner to be in use",
 )
 @pytest.mark.benchmark(group="tpch")

@@ -11,7 +11,7 @@ from tests.utils import sort_arrow_table
 
 
 def skip_invalid_join_strategies(join_strategy, join_type):
-    if context.get_context().runner_config.name == "native":
+    if context.get_context().get_runner_config_name() == "native":
         if join_strategy not in [None, "hash"]:
             pytest.skip("Native executor fails for these tests")
     else:

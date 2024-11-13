@@ -180,7 +180,7 @@ if pyarrow_supports_fixed_shape_tensor():
 
 
 def _with_uuid_ext_type(uuid_ext_type) -> tuple[dict, dict]:
-    if get_context().runner_config.name == "ray":
+    if get_context().get_runner_config_name() == "ray":
         # pyarrow extension types aren't supported in Ray clusters yet.
         return ARROW_ROUNDTRIP_TYPES, ARROW_TYPE_ARRAYS
     arrow_roundtrip_types = ARROW_ROUNDTRIP_TYPES.copy()
@@ -319,7 +319,7 @@ def test_from_pydict_arrow_struct_array() -> None:
 
 
 @pytest.mark.skipif(
-    get_context().runner_config.name == "ray",
+    get_context().get_runner_config_name() == "ray",
     reason="pyarrow extension types aren't supported on Ray clusters.",
 )
 def test_from_pydict_arrow_extension_array(uuid_ext_type) -> None:
@@ -528,7 +528,7 @@ def test_from_arrow_map_array() -> None:
 
 
 @pytest.mark.skipif(
-    get_context().runner_config.name == "ray",
+    get_context().get_runner_config_name() == "ray",
     reason="pyarrow extension types aren't supported on Ray clusters.",
 )
 def test_from_arrow_extension_array(uuid_ext_type) -> None:

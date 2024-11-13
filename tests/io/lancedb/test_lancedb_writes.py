@@ -7,7 +7,7 @@ import daft
 from daft import context
 
 native_executor_skip = pytest.mark.skipif(
-    context.get_context().runner_config.name == "native",
+    context.get_context().get_runner_config_name() == "native",
     reason="Native executor fails for these tests",
 )
 

@@ -2762,7 +2762,7 @@ class DataFrame:
         from ray.exceptions import RayTaskError
 
         context = get_context()
-        if context.runner_config and context.runner_config.name != "ray":
+        if context.runner_config and context.get_runner_config_name() != "ray":
             raise ValueError("Daft needs to be running on the Ray Runner for this operation")
 
         from daft.runners.ray_runner import RayRunnerIO
@@ -2864,7 +2864,7 @@ class DataFrame:
         # TODO(Clark): Support Dask DataFrame conversion for the local runner if
         # Dask is using a non-distributed scheduler.
         context = get_context()
-        if context.runner_config and context.runner_config.name != "ray":
+        if context.runner_config and context.get_runner_config_name() != "ray":
             raise ValueError("Daft needs to be running on the Ray Runner for this operation")
 
         from daft.runners.ray_runner import RayRunnerIO

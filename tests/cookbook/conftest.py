@@ -44,7 +44,7 @@ def service_requests_csv_pd_df():
 
 @pytest.fixture(
     scope="module",
-    params=[1, 2] if daft.context.get_context().runner_config.name != "native" else [1],
+    params=[1, 2] if daft.context.get_context().get_runner_config_name() != "native" else [1],
 )
 def repartition_nparts(request):
     """Adds a `n_repartitions` parameter to test cases which provides the number of

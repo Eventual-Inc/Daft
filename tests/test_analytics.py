@@ -54,7 +54,7 @@ def test_analytics_client_track_import(mock_datetime: MagicMock, mock_analytics:
                     "anonymousId": analytics_client._session_key,
                     "event": "Imported Daft",
                     "properties": {
-                        "runner": context.get_context().runner_config.name,
+                        "runner": context.get_context().get_runner_config_name(),
                         "platform": platform.platform(),
                         "python_version": platform.python_version(),
                         "DAFT_ANALYTICS_ENABLED": os.getenv("DAFT_ANALYTICS_ENABLED"),

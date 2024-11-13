@@ -5,7 +5,7 @@ import dataclasses
 import logging
 import os
 import warnings
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, ClassVar, Literal
 
 from daft import get_build_type
 from daft.daft import IOConfig, PyDaftExecutionConfig, PyDaftPlanningConfig
@@ -19,7 +19,7 @@ import threading
 
 
 class _RunnerConfig:
-    name: ClassVar[str]
+    name: ClassVar[Literal["ray"] | Literal["py"] | Literal["native"]]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -169,6 +169,13 @@ class DaftContext:
         """Retrieve the currently active runner config, or None if it has not yet been set"""
         with self._lock:
             return self._runner_config
+
+    def get_runner_config_name(self) -> Literal["ray"] | Literal["py"] | Literal["native"] | None:
+        with self._lock:
+            if self._runner_config is None:
+                return None
+            else:
+                return self._runner_config.name
 
     def _get_or_create_runner_config(self) -> _RunnerConfig:
         """Gets the runner config.

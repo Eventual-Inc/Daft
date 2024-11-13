@@ -221,7 +221,7 @@ def test_series_struct_size_bytes(size, with_nulls) -> None:
 
 
 @pytest.mark.skipif(
-    get_context().runner_config.name == "ray",
+    get_context().get_runner_config_name() == "ray",
     reason="pyarrow extension types aren't supported on Ray clusters.",
 )
 @pytest.mark.parametrize("size", [1, 2, 8, 9, 16])

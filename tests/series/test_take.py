@@ -139,7 +139,7 @@ def test_series_struct_take() -> None:
 
 
 @pytest.mark.skipif(
-    get_context().runner_config.name == "ray",
+    get_context().get_runner_config_name() == "ray",
     reason="pyarrow extension types aren't supported on Ray clusters.",
 )
 def test_series_extension_type_take(uuid_ext_type) -> None:

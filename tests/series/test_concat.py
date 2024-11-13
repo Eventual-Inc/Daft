@@ -168,7 +168,7 @@ def test_series_concat_tensor_array_canonical(chunks) -> None:
 
 
 @pytest.mark.skipif(
-    get_context().runner_config.name == "ray",
+    get_context().get_runner_config_name() == "ray",
     reason="pyarrow extension types aren't supported on Ray clusters.",
 )
 @pytest.mark.parametrize("chunks", [1, 2, 3, 10])
