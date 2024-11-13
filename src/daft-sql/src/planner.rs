@@ -615,43 +615,40 @@ impl SQLPlanner {
         }
 
         let from = from.iter().next().unwrap();
-        fn collect_compound_identifiers(
+
+        fn collect_idents(
             left: &[Ident],
             right: &[Ident],
             left_rel: &Relation,
             right_rel: &Relation,
         ) -> SQLPlannerResult<(Vec<ExprRef>, Vec<ExprRef>)> {
-            match (left, right) {
+            let (left, right) = match (left, right) {
                 // both are fully qualified: `join on a.x = b.y`
-                ([tbl_a, col_a], [tbl_b, col_b]) => {
-                    if &left_rel.get_name() == &tbl_b.value && &right_rel.get_name() == &tbl_a.value {
-                        Ok((vec![col(col_b.value.as_ref())], vec![col(col_a.value.as_ref())]))
+                ([tbl_a, Ident{value: col_a, ..}], [tbl_b, Ident{value: col_b, ..}]) => {
+                    if left_rel.get_name() == tbl_b.value && right_rel.get_name() == tbl_a.value {
+                        (col_b.clone(), col_a.clone())
                     } else {
-                        Ok((vec![col(col_a.value.as_ref())], vec![col(col_b.value.as_ref())]))
+                        (col_a.clone(), col_b.clone())
+                    }
+                }
+                // only one is fully qualified: `join on x = b.y`
+                ([Ident{value: col_a, ..}], [tbl_b, Ident{value: col_b, ..}]) => {
+                    if tbl_b.value == right_rel.get_name() {
+                        (col_a.clone(), col_b.clone())
+                    } else if tbl_b.value == left_rel.get_name() {
+                        (col_b.clone(), col_a.clone())
+                    } else {
+                        unsupported_sql_err!("Could not determine which table the identifiers belong to")
                     }
                 }
                 // only one is fully qualified: `join on a.x = y`
-                ([col_a], [tbl_b, col_b]) => {
-
-                    if &right_rel.get_name() == &tbl_b.value {
-                        Ok((vec![col(col_b.value.as_ref())], vec![col(col_a.value.as_ref())]))
-                    } else {
-                        Ok((vec![col(col_a.value.as_ref())], vec![col(col_b.value.as_ref())]))
-                    }
-                }
-                // only one is fully qualified: `join on a.x = y`
-                ([tbl_a, col_a], [col_b]) => {
-
-                    // find out which table each side belongs to
+                ([tbl_a, Ident{value: col_a, ..}], [Ident{value: col_b, ..}]) => {
+                    // find out which one the qualified identifier belongs to
+                    // we assume the other identifier belongs to the other table
                     if tbl_a.value == left_rel.get_name() {
-                        let left = col(col_a.value.as_ref());
-                        let right = col(col_b.value.as_ref());
-                        Ok((vec![left], vec![right]))
+                        (col_a.clone(), col_b.clone())
                     } else if tbl_a.value == right_rel.get_name() {
-                        let left = col(col_b.value.as_ref());
-                        let right = col(col_a.value.as_ref());
-
-                        Ok((vec![left], vec![right]))
+                        (col_b.clone(), col_a.clone())
                     } else {
                         unsupported_sql_err!("Could not determine which table the identifiers belong to")
                     }
@@ -666,15 +663,14 @@ impl SQLPlanner {
                     let right_schema = right_rel.schema();
 
                     // if the left side is in the left schema, then we assume the right side is in the right schema
-                    let (left_on, right_on) = if left_schema.get_field(&left).is_ok() {
-                        (col(left), col(right))
+                    if left_schema.get_field(&left).is_ok() {
+                        (left, right)
                     // if the right side is in the left schema, then we assume the left side is in the right schema
                     } else if right_schema.get_field(&left).is_ok() {
-                        (col(right), col(left))
+                        (right, left)
                     } else {
                         unsupported_sql_err!("JOIN clauses must reference columns in the joined tables; found `{}`", left);
-                    };
-                    Ok((vec![left_on], vec![right_on]))
+                    }
 
                 }
                 _ => unsupported_sql_err!(
@@ -682,7 +678,8 @@ impl SQLPlanner {
                     left.len(),
                     right.len()
                 ),
-            }
+            };
+            Ok((vec![col(left)], vec![col(right)]))
         }
 
         fn process_join_on(
@@ -700,15 +697,14 @@ impl SQLPlanner {
                             sqlparser::ast::Expr::CompoundIdentifier(left),
                             sqlparser::ast::Expr::CompoundIdentifier(right),
                         ) => {
-                            let null_equals_null = *op == BinaryOperator::Spaceship;
-                            dbg!(collect_compound_identifiers(left, right, left_rel, right_rel)
-                                .map(|(left, right)| (left, right, vec![null_equals_null])))
+                            collect_idents(left, right, left_rel, right_rel)
+                                .map(|(left, right)| (left, right, vec![null_equals_null]))
                         }
                         (
                             sqlparser::ast::Expr::Identifier(left),
                             sqlparser::ast::Expr::Identifier(right),
                         ) =>{
-                            collect_compound_identifiers(&[left.clone()], &[right.clone()], left_rel, right_rel)
+                            collect_idents(&[left.clone()], &[right.clone()], left_rel, right_rel)
                                 .map(|(left, right)| (left, right, vec![null_equals_null]))
 
                         }
@@ -716,7 +712,7 @@ impl SQLPlanner {
                             sqlparser::ast::Expr::CompoundIdentifier(left),
                             sqlparser::ast::Expr::Identifier(right)
                         ) => {
-                            collect_compound_identifiers(left, &[right.clone()], left_rel, right_rel)
+                            collect_idents(left, &[right.clone()], left_rel, right_rel)
                                 .map(|(left, right)| (left, right, vec![null_equals_null]))
 
                         }
@@ -724,7 +720,7 @@ impl SQLPlanner {
                             sqlparser::ast::Expr::Identifier(left),
                             sqlparser::ast::Expr::CompoundIdentifier(right)
                         ) => {
-                            collect_compound_identifiers(&[left.clone()], right, left_rel, right_rel)
+                            collect_idents(&[left.clone()], right, left_rel, right_rel)
                                 .map(|(left, right)| (left, right, vec![null_equals_null]))
                         }
                         _ => unsupported_sql_err!("process_join_on: Expected CompoundIdentifier, but found left: {:?}, right: {:?}", left, right),
