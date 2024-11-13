@@ -1189,6 +1189,9 @@ class RayRunner(Runner[ray.ObjectRef]):
         force_client_mode: bool = False,
     ) -> None:
         super().__init__()
+
+        self.ray_address = address
+
         if ray.is_initialized():
             if address is not None:
                 logger.warning(

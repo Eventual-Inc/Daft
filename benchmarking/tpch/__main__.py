@@ -216,7 +216,7 @@ def warmup_environment(requirements: str | None, parquet_folder: str):
         runtime_env = get_ray_runtime_env(requirements)
 
         ray.init(
-            address=ctx._runner_config.address,
+            address=ctx._runner.ray_address,
             runtime_env=runtime_env,
         )
 
