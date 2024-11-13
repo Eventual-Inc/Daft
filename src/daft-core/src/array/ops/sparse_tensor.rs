@@ -117,7 +117,7 @@ mod tests {
     #[test]
     fn test_fixed_shape_sparse_datatype() -> DaftResult<()> {
         const INDICES_IDX: usize = 1;
-        let element_counts = [2u64.pow(8), 2u64.pow(16), 2u64.pow(32), 2u64.pow(64)];
+        let element_counts = [2u64.pow(8) - 1, 2u64.pow(16) - 1, 2u64.pow(32) - 1, 2u64.pow(64) - 1];
         let indices_minimal_dtype = [
             DataType::UInt8,
             DataType::UInt16,
