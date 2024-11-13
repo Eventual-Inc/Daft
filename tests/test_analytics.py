@@ -12,7 +12,6 @@ import pytest
 
 import daft
 from daft.analytics import AnalyticsClient
-from tests.conftest import get_tests_daft_runner_name
 
 PUBLISHER_THREAD_SLEEP_INTERVAL_SECONDS = 0.1
 MOCK_DATETIME = datetime.datetime(2021, 1, 1, 0, 0, 0)
@@ -54,7 +53,6 @@ def test_analytics_client_track_import(mock_datetime: MagicMock, mock_analytics:
                     "anonymousId": analytics_client._session_key,
                     "event": "Imported Daft",
                     "properties": {
-                        "runner": get_tests_daft_runner_name(),
                         "platform": platform.platform(),
                         "python_version": platform.python_version(),
                         "DAFT_ANALYTICS_ENABLED": os.getenv("DAFT_ANALYTICS_ENABLED"),

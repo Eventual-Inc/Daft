@@ -15,8 +15,6 @@ import urllib.error
 import urllib.request
 from typing import Any, Callable
 
-from daft import context
-
 _ANALYTICS_CLIENT = None
 _WRITE_KEY = "ZU2LLq6HFW0kMEY6TiGZoGnRzogXBUwa"
 _SEGMENT_BATCH_ENDPOINT = "https://api.segment.io/v1/batch"
@@ -139,7 +137,6 @@ class AnalyticsClient:
         self._append_to_log(
             "Imported Daft",
             {
-                "runner": context.get_context().get_runner_config_name(),
                 "platform": platform.platform(),
                 "python_version": platform.python_version(),
                 "DAFT_ANALYTICS_ENABLED": os.getenv("DAFT_ANALYTICS_ENABLED"),
