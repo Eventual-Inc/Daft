@@ -47,7 +47,7 @@ impl StreamingSink for LimitSink {
     #[instrument(skip_all, name = "LimitSink::sink")]
     fn execute(
         &self,
-        input: &Arc<MicroPartition>,
+        input: Arc<MicroPartition>,
         mut state: Box<dyn StreamingSinkState>,
         runtime_ref: &RuntimeRef,
     ) -> StreamingSinkExecuteResult {
@@ -62,18 +62,13 @@ impl StreamingSink for LimitSink {
         match input_num_rows.cmp(remaining) {
             Less => {
                 *remaining -= input_num_rows;
-                Ok((
-                    state,
-                    StreamingSinkOutput::NeedMoreInput(Some(input.clone())),
-                ))
-                .into()
+                Ok((state, StreamingSinkOutput::NeedMoreInput(Some(input)))).into()
             }
             Equal => {
                 *remaining = 0;
-                Ok((state, StreamingSinkOutput::Finished(Some(input.clone())))).into()
+                Ok((state, StreamingSinkOutput::Finished(Some(input)))).into()
             }
             Greater => {
-                let input = input.clone();
                 let to_head = *remaining;
                 *remaining = 0;
                 runtime_ref

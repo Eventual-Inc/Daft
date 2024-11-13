@@ -30,7 +30,7 @@ pub(crate) type BlockingSinkFinalizeResult =
 pub trait BlockingSink: Send + Sync {
     fn sink(
         &self,
-        input: &Arc<MicroPartition>,
+        input: Arc<MicroPartition>,
         state: Box<dyn BlockingSinkState>,
         runtime: &RuntimeRef,
     ) -> BlockingSinkSinkResult;
@@ -81,8 +81,7 @@ impl BlockingSinkNode {
         let mut state = op.make_state()?;
         while let Some(morsel) = input_receiver.recv().await {
             let result = rt_context
-                .in_span(&span, || op.sink(&morsel, state, &compute_runtime))
-                .await_output()
+                .in_span(&span, || op.sink(morsel, state, &compute_runtime))
                 .await??;
             match result {
                 BlockingSinkStatus::NeedMoreInput(new_state) => {
@@ -181,7 +180,6 @@ impl PipelineNode for BlockingSinkNode {
                     .in_span(&info_span!("BlockingSinkNode::finalize"), || {
                         op.finalize(finished_states, &compute_runtime)
                     })
-                    .await_output()
                     .await??;
                 if let Some(res) = finalized_result {
                     let _ = counting_sender.send(res).await;

@@ -170,7 +170,7 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
     #[instrument(skip_all, name = "InnerHashJoinOperator::execute")]
     fn execute(
         &self,
-        input: &Arc<MicroPartition>,
+        input: Arc<MicroPartition>,
         mut state: Box<dyn IntermediateOpState>,
         runtime_ref: &RuntimeRef,
     ) -> IntermediateOpExecuteResult {
@@ -183,7 +183,6 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
             .into();
         }
 
-        let input = input.clone();
         let params = self.params.clone();
         runtime_ref
             .spawn(async move {

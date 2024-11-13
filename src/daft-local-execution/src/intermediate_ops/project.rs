@@ -26,11 +26,10 @@ impl IntermediateOperator for ProjectOperator {
     #[instrument(skip_all, name = "ProjectOperator::execute")]
     fn execute(
         &self,
-        input: &Arc<MicroPartition>,
+        input: Arc<MicroPartition>,
         state: Box<dyn IntermediateOpState>,
         runtime: &RuntimeRef,
     ) -> IntermediateOpExecuteResult {
-        let input = input.clone();
         let projection = self.projection.clone();
         runtime
             .spawn(async move {

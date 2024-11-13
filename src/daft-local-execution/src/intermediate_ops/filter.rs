@@ -24,11 +24,10 @@ impl IntermediateOperator for FilterOperator {
     #[instrument(skip_all, name = "FilterOperator::execute")]
     fn execute(
         &self,
-        input: &Arc<MicroPartition>,
+        input: Arc<MicroPartition>,
         state: Box<dyn IntermediateOpState>,
         runtime: &RuntimeRef,
     ) -> IntermediateOpExecuteResult {
-        let input = input.clone();
         let predicate = self.predicate.clone();
         runtime
             .spawn(async move {

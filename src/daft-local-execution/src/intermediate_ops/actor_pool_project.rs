@@ -146,11 +146,10 @@ impl IntermediateOperator for ActorPoolProjectOperator {
     #[instrument(skip_all, name = "ActorPoolProjectOperator::execute")]
     fn execute(
         &self,
-        input: &Arc<MicroPartition>,
+        input: Arc<MicroPartition>,
         mut state: Box<dyn IntermediateOpState>,
         runtime: &RuntimeRef,
     ) -> IntermediateOpExecuteResult {
-        let input = input.clone();
         let fut = runtime.spawn(async move {
             let actor_pool_project_state = state
                 .as_any_mut()

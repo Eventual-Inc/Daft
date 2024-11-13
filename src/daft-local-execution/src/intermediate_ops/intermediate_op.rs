@@ -39,7 +39,7 @@ pub(crate) type IntermediateOpExecuteResult =
 pub trait IntermediateOperator: Send + Sync {
     fn execute(
         &self,
-        input: &Arc<MicroPartition>,
+        input: Arc<MicroPartition>,
         state: Box<dyn IntermediateOpState>,
         runtime: &RuntimeRef,
     ) -> IntermediateOpExecuteResult;
@@ -114,8 +114,9 @@ impl IntermediateNode {
         while let Some(morsel) = receiver.recv().await {
             loop {
                 let result = rt_context
-                    .in_span(&span, || op.execute(&morsel, state, &compute_runtime))
-                    .await_output()
+                    .in_span(&span, || {
+                        op.execute(morsel.clone(), state, &compute_runtime)
+                    })
                     .await??;
                 state = result.0;
                 match result.1 {

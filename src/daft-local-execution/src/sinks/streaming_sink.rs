@@ -39,7 +39,7 @@ pub trait StreamingSink: Send + Sync {
     /// with the given state.
     fn execute(
         &self,
-        input: &Arc<MicroPartition>,
+        input: Arc<MicroPartition>,
         state: Box<dyn StreamingSinkState>,
         runtime: &RuntimeRef,
     ) -> StreamingSinkExecuteResult;
@@ -104,9 +104,10 @@ impl StreamingSinkNode {
         let mut state = op.make_state();
         while let Some(morsel) = input_receiver.recv().await {
             loop {
-                let output =
-                    rt_context.in_span(&span, || op.execute(&morsel, state, &compute_runtime));
-                let result = output.await_output().await??;
+                let output = rt_context.in_span(&span, || {
+                    op.execute(morsel.clone(), state, &compute_runtime)
+                });
+                let result = output.await??;
                 state = result.0;
                 match result.1 {
                     StreamingSinkOutput::NeedMoreInput(mp) => {
@@ -244,7 +245,6 @@ impl PipelineNode for StreamingSinkNode {
                     .in_span(&info_span!("StreamingSinkNode::finalize"), || {
                         op.finalize(finished_states, &compute_runtime)
                     })
-                    .await_output()
                     .await??;
                 if let Some(res) = finalized_result {
                     let _ = counting_sender.send(res).await;

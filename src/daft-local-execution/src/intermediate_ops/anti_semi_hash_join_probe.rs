@@ -116,7 +116,7 @@ impl IntermediateOperator for AntiSemiProbeOperator {
     #[instrument(skip_all, name = "AntiSemiOperator::execute")]
     fn execute(
         &self,
-        input: &Arc<MicroPartition>,
+        input: Arc<MicroPartition>,
         mut state: Box<dyn IntermediateOpState>,
         runtime: &RuntimeRef,
     ) -> IntermediateOpExecuteResult {
@@ -129,7 +129,6 @@ impl IntermediateOperator for AntiSemiProbeOperator {
             .into();
         }
 
-        let input = input.clone();
         let params = self.params.clone();
         runtime
             .spawn(async move {

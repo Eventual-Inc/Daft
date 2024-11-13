@@ -27,11 +27,10 @@ impl IntermediateOperator for ExplodeOperator {
     #[instrument(skip_all, name = "ExplodeOperator::execute")]
     fn execute(
         &self,
-        input: &Arc<MicroPartition>,
+        input: Arc<MicroPartition>,
         state: Box<dyn IntermediateOpState>,
         runtime: &RuntimeRef,
     ) -> IntermediateOpExecuteResult {
-        let input = input.clone();
         let to_explode = self.to_explode.clone();
         runtime
             .spawn(async move {

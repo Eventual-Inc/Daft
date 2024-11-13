@@ -35,11 +35,10 @@ impl IntermediateOperator for SampleOperator {
     #[instrument(skip_all, name = "SampleOperator::execute")]
     fn execute(
         &self,
-        input: &Arc<MicroPartition>,
+        input: Arc<MicroPartition>,
         state: Box<dyn IntermediateOpState>,
         runtime: &RuntimeRef,
     ) -> IntermediateOpExecuteResult {
-        let input = input.clone();
         let params = self.params.clone();
         runtime
             .spawn(async move {

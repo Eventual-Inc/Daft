@@ -79,7 +79,7 @@ impl BlockingSink for PivotSink {
     #[instrument(skip_all, name = "PivotSink::sink")]
     fn sink(
         &self,
-        input: &Arc<MicroPartition>,
+        input: Arc<MicroPartition>,
         mut state: Box<dyn BlockingSinkState>,
         _runtime: &RuntimeRef,
     ) -> BlockingSinkSinkResult {
@@ -87,7 +87,7 @@ impl BlockingSink for PivotSink {
             .as_any_mut()
             .downcast_mut::<PivotState>()
             .expect("PivotSink should have PivotState")
-            .push(input.clone());
+            .push(input);
         Ok(BlockingSinkStatus::NeedMoreInput(state)).into()
     }
 

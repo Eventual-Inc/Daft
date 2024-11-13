@@ -67,7 +67,7 @@ impl BlockingSink for AggregateSink {
     #[instrument(skip_all, name = "AggregateSink::sink")]
     fn sink(
         &self,
-        input: &Arc<MicroPartition>,
+        input: Arc<MicroPartition>,
         mut state: Box<dyn BlockingSinkState>,
         _runtime: &RuntimeRef,
     ) -> BlockingSinkSinkResult {
@@ -75,7 +75,7 @@ impl BlockingSink for AggregateSink {
             .as_any_mut()
             .downcast_mut::<AggregateState>()
             .expect("AggregateSink should have AggregateState")
-            .push(input.clone());
+            .push(input);
         Ok(BlockingSinkStatus::NeedMoreInput(state)).into()
     }
 

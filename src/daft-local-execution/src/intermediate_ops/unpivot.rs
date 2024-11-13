@@ -42,11 +42,10 @@ impl IntermediateOperator for UnpivotOperator {
     #[instrument(skip_all, name = "UnpivotOperator::execute")]
     fn execute(
         &self,
-        input: &Arc<MicroPartition>,
+        input: Arc<MicroPartition>,
         state: Box<dyn IntermediateOpState>,
         runtime: &RuntimeRef,
     ) -> IntermediateOpExecuteResult {
-        let input = input.clone();
         let params = self.params.clone();
         runtime
             .spawn(async move {

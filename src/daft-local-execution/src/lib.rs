@@ -9,6 +9,12 @@ mod runtime_stats;
 mod sinks;
 mod sources;
 
+use std::{
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll},
+};
+
 use common_error::{DaftError, DaftResult};
 use common_runtime::RuntimeTask;
 use lazy_static::lazy_static;
@@ -24,22 +30,29 @@ lazy_static! {
 /// If the output is `Ready`, the value is immediately available.
 /// If the output is `Pending`, the value is not yet available and a `RuntimeTask` is returned.
 pub(crate) enum OperatorOutput<T> {
-    Ready(T),
+    Ready(Option<T>),
     Pending(RuntimeTask<T>),
 }
 
-impl<T: Send + Sync + 'static> OperatorOutput<T> {
-    async fn await_output(self) -> DaftResult<T> {
-        match self {
-            Self::Ready(v) => Ok(v),
-            Self::Pending(task) => task.await,
+impl<T: Send + Sync + Unpin + 'static> Future for OperatorOutput<T> {
+    type Output = DaftResult<T>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.get_mut();
+
+        match this {
+            Self::Ready(value) => {
+                let value = value.take().unwrap();
+                Poll::Ready(Ok(value))
+            }
+            Self::Pending(task) => Pin::new(task).poll(cx),
         }
     }
 }
 
 impl<T: Send + Sync + 'static> From<T> for OperatorOutput<T> {
     fn from(value: T) -> Self {
-        Self::Ready(value)
+        Self::Ready(Some(value))
     }
 }
 

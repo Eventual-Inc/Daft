@@ -29,15 +29,11 @@ impl StreamingSink for ConcatSink {
     #[instrument(skip_all, name = "ConcatSink::sink")]
     fn execute(
         &self,
-        input: &Arc<MicroPartition>,
+        input: Arc<MicroPartition>,
         state: Box<dyn StreamingSinkState>,
         _runtime_ref: &RuntimeRef,
     ) -> StreamingSinkExecuteResult {
-        Ok((
-            state,
-            StreamingSinkOutput::NeedMoreInput(Some(input.clone())),
-        ))
-        .into()
+        Ok((state, StreamingSinkOutput::NeedMoreInput(Some(input)))).into()
     }
 
     fn name(&self) -> &'static str {

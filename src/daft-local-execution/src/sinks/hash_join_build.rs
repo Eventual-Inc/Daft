@@ -154,11 +154,10 @@ impl BlockingSink for HashJoinBuildSink {
 
     fn sink(
         &self,
-        input: &Arc<MicroPartition>,
+        input: Arc<MicroPartition>,
         mut state: Box<dyn BlockingSinkState>,
         runtime: &RuntimeRef,
     ) -> BlockingSinkSinkResult {
-        let input = input.clone();
         runtime
             .spawn(async move {
                 let probe_table_state: &mut ProbeTableState = state

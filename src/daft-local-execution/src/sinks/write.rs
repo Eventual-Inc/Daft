@@ -74,11 +74,10 @@ impl BlockingSink for WriteSink {
     #[instrument(skip_all, name = "WriteSink::sink")]
     fn sink(
         &self,
-        input: &Arc<MicroPartition>,
+        input: Arc<MicroPartition>,
         mut state: Box<dyn BlockingSinkState>,
         runtime_ref: &RuntimeRef,
     ) -> BlockingSinkSinkResult {
-        let input = input.clone();
         runtime_ref
             .spawn(async move {
                 state

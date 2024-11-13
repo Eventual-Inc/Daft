@@ -385,7 +385,7 @@ impl StreamingSink for OuterHashJoinProbeSink {
     #[instrument(skip_all, name = "OuterHashJoinProbeSink::execute")]
     fn execute(
         &self,
-        input: &Arc<MicroPartition>,
+        input: Arc<MicroPartition>,
         mut state: Box<dyn StreamingSinkState>,
         runtime_ref: &RuntimeRef,
     ) -> StreamingSinkExecuteResult {
@@ -395,7 +395,6 @@ impl StreamingSink for OuterHashJoinProbeSink {
         }
 
         let params = self.params.clone();
-        let input = input.clone();
         runtime_ref
             .spawn(async move {
                 let outer_join_state = state

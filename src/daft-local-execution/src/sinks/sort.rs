@@ -66,7 +66,7 @@ impl BlockingSink for SortSink {
     #[instrument(skip_all, name = "SortSink::sink")]
     fn sink(
         &self,
-        input: &Arc<MicroPartition>,
+        input: Arc<MicroPartition>,
         mut state: Box<dyn BlockingSinkState>,
         _runtime_ref: &RuntimeRef,
     ) -> BlockingSinkSinkResult {
@@ -74,7 +74,7 @@ impl BlockingSink for SortSink {
             .as_any_mut()
             .downcast_mut::<SortState>()
             .expect("SortSink should have sort state")
-            .push(input.clone());
+            .push(input);
         Ok(BlockingSinkStatus::NeedMoreInput(state)).into()
     }
 

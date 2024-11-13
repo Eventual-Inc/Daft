@@ -34,11 +34,10 @@ impl IntermediateOperator for AggregateOperator {
     #[instrument(skip_all, name = "AggregateOperator::execute")]
     fn execute(
         &self,
-        input: &Arc<MicroPartition>,
+        input: Arc<MicroPartition>,
         state: Box<dyn IntermediateOpState>,
         runtime: &RuntimeRef,
     ) -> IntermediateOpExecuteResult {
-        let input = input.clone();
         let params = self.params.clone();
         runtime
             .spawn(async move {
