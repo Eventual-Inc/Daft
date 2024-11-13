@@ -27,12 +27,6 @@ pub enum SourceInfo {
 pub struct InMemoryInfo {
     pub source_schema: SchemaRef,
     pub cache_key: String,
-    #[cfg(feature = "python")]
-    #[serde(
-        serialize_with = "serialize_py_object",
-        deserialize_with = "deserialize_py_object"
-    )]
-    pub cache_entry: PyObject,
     pub num_partitions: usize,
     pub size_bytes: usize,
     pub num_rows: usize,
@@ -44,7 +38,7 @@ impl InMemoryInfo {
     pub fn new(
         source_schema: SchemaRef,
         cache_key: String,
-        cache_entry: PyObject,
+        _cache_entry: PyObject,
         num_partitions: usize,
         size_bytes: usize,
         num_rows: usize,
@@ -53,7 +47,6 @@ impl InMemoryInfo {
         Self {
             source_schema,
             cache_key,
-            cache_entry,
             num_partitions,
             size_bytes,
             num_rows,

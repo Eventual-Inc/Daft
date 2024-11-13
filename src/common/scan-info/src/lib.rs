@@ -21,6 +21,7 @@ pub use python::register_modules;
 pub use scan_operator::{ScanOperator, ScanOperatorRef};
 pub use scan_task::{BoxScanTaskLikeIter, ScanTaskLike, ScanTaskLikeRef};
 
+/// Reading from a file
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PhysicalScanInfo {
     pub scan_op: ScanOperatorRef,
