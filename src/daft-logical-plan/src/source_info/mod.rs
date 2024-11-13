@@ -24,9 +24,20 @@ pub enum SourceInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SerdePyObject {
+    #[cfg(feature = "python")]
+    #[serde(
+        serialize_with = "serialize_py_object",
+        deserialize_with = "deserialize_py_object"
+    )]
+    elem: PyObject,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InMemoryInfo {
     pub source_schema: SchemaRef,
     pub cache_key: String,
+    pub cache_entry: Option<SerdePyObject>,
     pub num_partitions: usize,
     pub size_bytes: usize,
     pub num_rows: usize,
@@ -38,7 +49,7 @@ impl InMemoryInfo {
     pub fn new(
         source_schema: SchemaRef,
         cache_key: String,
-        _cache_entry: PyObject,
+        cache_entry: PyObject,
         num_partitions: usize,
         size_bytes: usize,
         num_rows: usize,
@@ -47,6 +58,7 @@ impl InMemoryInfo {
         Self {
             source_schema,
             cache_key,
+            cache_entry: Some(SerdePyObject { elem: cache_entry }),
             num_partitions,
             size_bytes,
             num_rows,
