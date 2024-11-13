@@ -174,7 +174,7 @@ def init_analytics(daft_version: str, daft_build_type: str, user_opted_out: bool
     Returns:
         AnalyticsClient: initialized singleton AnalyticsClient
     """
-    enabled = not user_opted_out and not daft_build_type == "dev"
+    enabled = (not user_opted_out) and daft_build_type != "dev"
 
     global _ANALYTICS_CLIENT
 
