@@ -205,9 +205,57 @@ impl SQLPlanner {
             SetExpr::Select(selection) => selection,
             SetExpr::Query(_) => unsupported_sql_err!("Subqueries are not supported"),
             SetExpr::SetOperation {
-                op, set_quantifier, ..
+                op,
+                set_quantifier,
+                left,
+                right,
             } => {
-                unsupported_sql_err!("{op} {set_quantifier} is not supported.",)
+                use sqlparser::ast::{
+                    SetOperator::{Intersect, Union},
+                    SetQuantifier,
+                };
+                fn make_query(expr: &SetExpr) -> Query {
+                    Query {
+                        with: None,
+                        body: Box::new(expr.clone()),
+                        order_by: None,
+                        limit: None,
+                        limit_by: vec![],
+                        offset: None,
+                        fetch: None,
+                        locks: vec![],
+                        for_clause: None,
+                        settings: None,
+                        format_clause: None,
+                    }
+                }
+                match (op, set_quantifier) {
+                    (Union, SetQuantifier::All) => {
+                        let left = self.plan_query(&make_query(left))?;
+                        let right = self.plan_query(&make_query(right))?;
+                        return left.union(&right, true).map_err(|e| e.into());
+                    }
+
+                    (Union, SetQuantifier::None) => {
+                        let left = self.plan_query(&make_query(left))?;
+                        let right = self.plan_query(&make_query(right))?;
+                        return left.union(&right, false).map_err(|e| e.into());
+                    }
+
+                    (Intersect, SetQuantifier::All) => {
+                        let left = self.plan_query(&make_query(left))?;
+                        let right = self.plan_query(&make_query(right))?;
+                        return left.intersect(&right, true).map_err(|e| e.into());
+                    }
+                    (Intersect, SetQuantifier::None) => {
+                        let left = self.plan_query(&make_query(left))?;
+                        let right = self.plan_query(&make_query(right))?;
+                        return left.intersect(&right, false).map_err(|e| e.into());
+                    }
+                    (op, set_quantifier) => {
+                        unsupported_sql_err!("{op} {set_quantifier} is not supported.")
+                    }
+                }
             }
             SetExpr::Values(..) => unsupported_sql_err!("VALUES are not supported"),
             SetExpr::Insert(..) => unsupported_sql_err!("INSERT is not supported"),
