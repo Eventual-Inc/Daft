@@ -38,7 +38,7 @@ def pre_shuffle_merge_ctx():
     """
 
     def _ctx(threshold: int | None = None):
-        return daft.execution_config_ctx(enable_pre_shuffle_merge=True, pre_shuffle_merge_threshold=threshold)
+        return daft.execution_config_ctx(shuffle_algorithm="pre_shuffle_merge", pre_shuffle_merge_threshold=threshold)
 
     return _ctx
 
