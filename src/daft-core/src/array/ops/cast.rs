@@ -2009,7 +2009,7 @@ impl FixedShapeTensorArray {
                     validity.cloned(),
                 );
 
-                let largest_index = tensor_shape.iter().product::<u64>() - 1;
+                let largest_index = std::cmp::max(tensor_shape.iter().product::<u64>(), 1) - 1;
                 let indices_minimal_inner_dtype = minimal_uint_dtype(largest_index);
                 let casted_indices = indices_list_arr
                     .cast(&DataType::List(Box::new(indices_minimal_inner_dtype)))?;
