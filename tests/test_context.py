@@ -87,6 +87,8 @@ daft.context.set_runner_py()
 print(daft.context.get_context()._runner.name)
 daft.context.set_runner_native()
 print(daft.context.get_context()._runner.name)
+daft.context.set_runner_py()
+print(daft.context.get_context()._runner.name)
 """
 
 
@@ -94,7 +96,7 @@ def test_switch_local_runners():
     """Test that a runner can be switched from Python to Native"""
     with with_null_env():
         result = subprocess.run([sys.executable, "-c", switch_local_runners_script], capture_output=True)
-        assert result.stdout.decode().strip() == "None\npy\nnative"
+        assert result.stdout.decode().strip() == "None\npy\nnative\npy"
 
 
 @pytest.mark.parametrize(
