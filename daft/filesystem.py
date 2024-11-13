@@ -367,7 +367,12 @@ def overwrite_files(
 ) -> None:
     [resolved_path], fs = _resolve_paths_and_filesystem(root_dir, io_config=io_config)
     file_selector = pafs.FileSelector(resolved_path, recursive=True)
-    paths = [info.path for info in fs.get_file_info(file_selector) if info.type == pafs.FileType.File]
+    try:
+        paths = [info.path for info in fs.get_file_info(file_selector) if info.type == pafs.FileType.File]
+    except FileNotFoundError:
+        # The root directory does not exist, so there are no files to delete.
+        return
+
     all_file_paths_df = from_pydict({"path": paths})
 
     assert manifest._result is not None
