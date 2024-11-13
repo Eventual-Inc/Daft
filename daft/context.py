@@ -164,12 +164,6 @@ class DaftContext:
         with self._lock:
             return self._daft_planning_config
 
-    @property
-    def runner_config(self) -> _RunnerConfig | None:
-        """Retrieve the currently active runner config, or None if it has not yet been set"""
-        with self._lock:
-            return self._runner_config
-
     def _get_or_create_runner_config(self) -> _RunnerConfig:
         """Gets the runner config."""
         if self._runner_config is not None:
