@@ -10,7 +10,7 @@ from daft.dataframe import DataFrame
 from daft.datatype import DataType
 from daft.logical.builder import LogicalPlanBuilder
 from daft.sql.sql_connection import SQLConnection
-from daft.sql.sql_scan import SQLScanOperator
+from daft.sql.sql_scan import PartitionBoundStrategy, SQLScanOperator
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Connection
@@ -22,6 +22,7 @@ def read_sql(
     conn: Union[Callable[[], "Connection"], str],
     partition_col: Optional[str] = None,
     num_partitions: Optional[int] = None,
+    partition_bound_strategy: str = "min-max",
     disable_pushdowns_to_sql: bool = False,
     infer_schema: bool = True,
     infer_schema_length: int = 10,
@@ -35,6 +36,8 @@ def read_sql(
         partition_col (Optional[str]): Column to partition the data by, defaults to None
         num_partitions (Optional[int]): Number of partitions to read the data into,
             defaults to None, which will lets Daft determine the number of partitions.
+            If specified, `partition_col` must also be specified.
+        partition_bound_strategy (str): Strategy to determine partition bounds, either "min-max" or "percentile", defaults to "min-max"
         disable_pushdowns_to_sql (bool): Whether to disable pushdowns to the SQL query, defaults to False
         infer_schema (bool): Whether to turn on schema inference, defaults to True. If set to False, the schema parameter must be provided.
         infer_schema_length (int): The number of rows to scan when inferring the schema, defaults to 10. If infer_schema is False, this parameter is ignored. Note that if Daft is able to use ConnectorX to infer the schema, this parameter is ignored as ConnectorX is an Arrow backed driver.
@@ -51,8 +54,9 @@ def read_sql(
         #. Partitioning:
             When `partition_col` is specified, the function partitions the query based on that column.
             You can define `num_partitions` or leave it to Daft to decide.
-            Daft calculates the specified column's percentiles to determine partitions (e.g., for `num_partitions=3`, it uses the 33rd and 66th percentiles).
-            If the database or column type lacks percentile calculation support, Daft partitions the query using equal ranges between the column's minimum and maximum values.
+            Daft uses the `partition_bound_strategy` parameter to determine the partitioning strategy:
+            - `min_max`: Daft calculates the minimum and maximum values of the specified column, then partitions the query using equal ranges between the minimum and maximum values.
+            - `percentile`: Daft calculates the specified column's percentiles via a `PERCENTILE_DISC` function to determine partitions (e.g., for `num_partitions=3`, it uses the 33rd and 66th percentiles).
 
         #. Execution:
             Daft executes SQL queries using using `ConnectorX <https://sfu-db.github.io/connector-x/intro.html>`_ or `SQLAlchemy <https://docs.sqlalchemy.org/en/20/orm/quickstart.html#create-an-engine>`_,
@@ -113,6 +117,7 @@ def read_sql(
         schema,
         partition_col=partition_col,
         num_partitions=num_partitions,
+        partition_bound_strategy=PartitionBoundStrategy.from_str(partition_bound_strategy),
     )
     handle = ScanOperatorHandle.from_python_scan_operator(sql_operator)
     builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
