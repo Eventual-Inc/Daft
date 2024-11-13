@@ -25,7 +25,7 @@ use super::{
     },
 };
 use crate::{
-    dispatcher::{Dispatcher, RoundRobinDispatcher, UnorderedDispatcher},
+    dispatcher::{DispatcherSpawner, RoundRobinDispatcher, UnorderedDispatcher},
     ExecutionRuntimeHandle,
 };
 
@@ -471,11 +471,11 @@ impl StreamingSink for OuterHashJoinProbeSink {
         }
     }
 
-    fn make_dispatcher(
+    fn dispatcher_spawner(
         &self,
         runtime_handle: &ExecutionRuntimeHandle,
         maintain_order: bool,
-    ) -> Arc<dyn Dispatcher> {
+    ) -> Arc<dyn DispatcherSpawner> {
         if maintain_order {
             Arc::new(RoundRobinDispatcher::new(Some(
                 runtime_handle.default_morsel_size(),

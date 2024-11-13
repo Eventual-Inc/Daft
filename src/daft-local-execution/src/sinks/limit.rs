@@ -9,7 +9,7 @@ use super::streaming_sink::{
     StreamingSinkState,
 };
 use crate::{
-    dispatcher::{Dispatcher, UnorderedDispatcher},
+    dispatcher::{DispatcherSpawner, UnorderedDispatcher},
     ExecutionRuntimeHandle,
 };
 
@@ -101,11 +101,11 @@ impl StreamingSink for LimitSink {
         1
     }
 
-    fn make_dispatcher(
+    fn dispatcher_spawner(
         &self,
         _runtime_handle: &ExecutionRuntimeHandle,
         _maintain_order: bool,
-    ) -> Arc<dyn Dispatcher> {
+    ) -> Arc<dyn DispatcherSpawner> {
         // LimitSink should be greedy, and accept all input as soon as possible.
         // It is also not concurrent, so we don't need to worry about ordering.
         Arc::new(UnorderedDispatcher::new(None))

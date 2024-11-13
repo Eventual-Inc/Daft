@@ -14,7 +14,7 @@ use super::blocking_sink::{
     BlockingSinkStatus,
 };
 use crate::{
-    dispatcher::{Dispatcher, PartitionedDispatcher, UnorderedDispatcher},
+    dispatcher::{DispatcherSpawner, PartitionedDispatcher, UnorderedDispatcher},
     NUM_CPUS,
 };
 
@@ -136,10 +136,10 @@ impl BlockingSink for WriteSink {
         Ok(Box::new(WriteState::new(writer)) as Box<dyn BlockingSinkState>)
     }
 
-    fn make_dispatcher(
+    fn dispatcher_spawner(
         &self,
         runtime_handle: &crate::ExecutionRuntimeHandle,
-    ) -> Arc<dyn Dispatcher> {
+    ) -> Arc<dyn DispatcherSpawner> {
         if let Some(partition_by) = &self.partition_by {
             Arc::new(PartitionedDispatcher::new(partition_by.clone()))
         } else {

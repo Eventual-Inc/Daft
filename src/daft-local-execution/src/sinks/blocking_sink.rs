@@ -4,12 +4,13 @@ use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_runtime::{get_compute_runtime, RuntimeRef};
 use daft_micropartition::MicroPartition;
+use futures::FutureExt;
 use snafu::ResultExt;
 use tracing::{info_span, instrument};
 
 use crate::{
     channel::{create_channel, Receiver},
-    dispatcher::{Dispatcher, UnorderedDispatcher},
+    dispatcher::{DispatcherSpawner, UnorderedDispatcher},
     pipeline::PipelineNode,
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
     ExecutionRuntimeHandle, JoinSnafu, OperatorOutput, TaskSet,
@@ -41,7 +42,10 @@ pub trait BlockingSink: Send + Sync {
     ) -> BlockingSinkFinalizeResult;
     fn name(&self) -> &'static str;
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>>;
-    fn make_dispatcher(&self, runtime_handle: &ExecutionRuntimeHandle) -> Arc<dyn Dispatcher> {
+    fn dispatcher_spawner(
+        &self,
+        runtime_handle: &ExecutionRuntimeHandle,
+    ) -> Arc<dyn DispatcherSpawner> {
         Arc::new(UnorderedDispatcher::new(Some(
             runtime_handle.default_morsel_size(),
         )))
@@ -151,20 +155,18 @@ impl PipelineNode for BlockingSinkNode {
         let op = self.op.clone();
         let runtime_stats = self.runtime_stats.clone();
         let num_workers = op.max_concurrency();
-        let dispatcher = op.make_dispatcher(runtime_handle);
-        let input_receivers = dispatcher.dispatch(
-            vec![counting_receiver],
-            num_workers,
-            runtime_handle,
-            self.name(),
-        );
+
+        let dispatcher_result = op
+            .dispatcher_spawner(runtime_handle)
+            .spawn_dispatcher(vec![counting_receiver], num_workers);
+        runtime_handle.spawn(dispatcher_result.dispatch_handle.map(|r| r?), self.name);
 
         runtime_handle.spawn(
             async move {
                 let mut task_set = TaskSet::new();
                 Self::spawn_workers(
                     op.clone(),
-                    input_receivers,
+                    dispatcher_result.receivers,
                     &mut task_set,
                     runtime_stats.clone(),
                 );

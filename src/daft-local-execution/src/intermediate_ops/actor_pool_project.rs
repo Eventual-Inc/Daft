@@ -179,11 +179,11 @@ impl IntermediateOperator for ActorPoolProjectOperator {
         self.concurrency
     }
 
-    fn make_dispatcher(
+    fn dispatcher_spawner(
         &self,
         runtime_handle: &crate::ExecutionRuntimeHandle,
         maintain_order: bool,
-    ) -> Arc<dyn crate::dispatcher::Dispatcher> {
+    ) -> Arc<dyn crate::dispatcher::DispatcherSpawner> {
         if maintain_order {
             Arc::new(RoundRobinDispatcher::new(Some(
                 self.batch_size

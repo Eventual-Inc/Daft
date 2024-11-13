@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use common_runtime::RuntimeTask;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 
@@ -8,7 +9,6 @@ use crate::{
     buffer::RowBasedBuffer,
     channel::{create_channel, Receiver, Sender},
     runtime_stats::CountingReceiver,
-    ExecutionRuntimeHandle,
 };
 
 /// The `Dispatcher` trait defines the interface for dispatching morsels to workers.
@@ -23,14 +23,17 @@ use crate::{
 ///
 /// Implementations must spawn a task on the runtime handle that reads from the
 /// input receivers and distributes morsels to the worker receivers.
-pub(crate) trait Dispatcher {
-    fn dispatch(
+pub(crate) trait DispatcherSpawner {
+    fn spawn_dispatcher(
         &self,
         input_receivers: Vec<CountingReceiver>,
         num_workers: usize,
-        runtime_handle: &mut ExecutionRuntimeHandle,
-        name: &'static str,
-    ) -> Vec<Receiver<Arc<MicroPartition>>>;
+    ) -> SpawnedDispatcherResult;
+}
+
+pub(crate) struct SpawnedDispatcherResult {
+    pub receivers: Vec<Receiver<Arc<MicroPartition>>>,
+    pub dispatch_handle: RuntimeTask<DaftResult<()>>,
 }
 
 /// A dispatcher that distributes morsels to workers in a round-robin fashion.
@@ -85,22 +88,23 @@ impl RoundRobinDispatcher {
     }
 }
 
-impl Dispatcher for RoundRobinDispatcher {
-    fn dispatch(
+impl DispatcherSpawner for RoundRobinDispatcher {
+    fn spawn_dispatcher(
         &self,
         input_receivers: Vec<CountingReceiver>,
         num_workers: usize,
-        runtime_handle: &mut ExecutionRuntimeHandle,
-        name: &'static str,
-    ) -> Vec<Receiver<Arc<MicroPartition>>> {
+    ) -> SpawnedDispatcherResult {
         let (worker_senders, worker_receivers): (Vec<_>, Vec<_>) =
             (0..num_workers).map(|_| create_channel(1)).unzip();
         let morsel_size = self.morsel_size;
-        runtime_handle.spawn(
-            Self::dispatch_inner(worker_senders, input_receivers, morsel_size),
-            name,
-        );
-        worker_receivers
+        let current_handle = tokio::runtime::Handle::current();
+        let dispatcher_task = RuntimeTask::new(&current_handle, async move {
+            Self::dispatch_inner(worker_senders, input_receivers, morsel_size).await
+        });
+        SpawnedDispatcherResult {
+            receivers: worker_receivers,
+            dispatch_handle: dispatcher_task,
+        }
     }
 }
 
@@ -149,22 +153,25 @@ impl UnorderedDispatcher {
     }
 }
 
-impl Dispatcher for UnorderedDispatcher {
-    fn dispatch(
+impl DispatcherSpawner for UnorderedDispatcher {
+    fn spawn_dispatcher(
         &self,
         receiver: Vec<CountingReceiver>,
         num_workers: usize,
-        runtime_handle: &mut ExecutionRuntimeHandle,
-        name: &'static str,
-    ) -> Vec<Receiver<Arc<MicroPartition>>> {
+    ) -> SpawnedDispatcherResult {
         let (worker_sender, worker_receiver) = create_channel(num_workers);
         let worker_receivers = vec![worker_receiver; num_workers];
         let morsel_size = self.morsel_size;
-        runtime_handle.spawn(
-            Self::dispatch_inner(worker_sender, receiver, morsel_size),
-            name,
-        );
-        worker_receivers
+
+        let current_handle = tokio::runtime::Handle::current();
+        let dispatcher_task = RuntimeTask::new(&current_handle, async move {
+            Self::dispatch_inner(worker_sender, receiver, morsel_size).await
+        });
+
+        SpawnedDispatcherResult {
+            receivers: worker_receivers,
+            dispatch_handle: dispatcher_task,
+        }
     }
 }
 
@@ -199,21 +206,22 @@ impl PartitionedDispatcher {
     }
 }
 
-impl Dispatcher for PartitionedDispatcher {
-    fn dispatch(
+impl DispatcherSpawner for PartitionedDispatcher {
+    fn spawn_dispatcher(
         &self,
         input_receivers: Vec<CountingReceiver>,
         num_workers: usize,
-        runtime_handle: &mut ExecutionRuntimeHandle,
-        name: &'static str,
-    ) -> Vec<Receiver<Arc<MicroPartition>>> {
+    ) -> SpawnedDispatcherResult {
         let (worker_senders, worker_receivers): (Vec<_>, Vec<_>) =
             (0..num_workers).map(|_| create_channel(1)).unzip();
         let partition_by = self.partition_by.clone();
-        runtime_handle.spawn(
-            Self::dispatch_inner(worker_senders, input_receivers, partition_by),
-            name,
-        );
-        worker_receivers
+        let current_handle = tokio::runtime::Handle::current();
+        let dispatcher_task = RuntimeTask::new(&current_handle, async move {
+            Self::dispatch_inner(worker_senders, input_receivers, partition_by).await
+        });
+        SpawnedDispatcherResult {
+            receivers: worker_receivers,
+            dispatch_handle: dispatcher_task,
+        }
     }
 }
