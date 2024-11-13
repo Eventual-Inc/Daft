@@ -744,6 +744,9 @@ pub(super) fn translate_single_logical_node(
         LogicalPlan::Intersect(_) => Err(DaftError::InternalError(
             "Intersect should already be optimized away".to_string(),
         )),
+        LogicalPlan::Union(_) => Err(DaftError::InternalError(
+            "Union should already be optimized away".to_string(),
+        )),
     }
 }
 
