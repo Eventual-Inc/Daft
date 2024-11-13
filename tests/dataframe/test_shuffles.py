@@ -7,9 +7,9 @@ import numpy as np
 import pytest
 
 import daft
-from daft.context import get_context
 from daft.io._generator import read_generator
 from daft.table.table import Table
+from tests.conftest import get_tests_daft_runner_name
 
 
 def generate(num_rows: int, bytes_per_row: int):
@@ -44,7 +44,7 @@ def pre_shuffle_merge_ctx():
 
 
 @pytest.mark.skipif(
-    get_context().runner_config.name != "ray",
+    get_tests_daft_runner_name() != "ray",
     reason="shuffle tests are meant for the ray runner",
 )
 @pytest.mark.parametrize(
@@ -82,7 +82,7 @@ def test_pre_shuffle_merge_small_partitions(pre_shuffle_merge_ctx, input_partiti
 
 
 @pytest.mark.skipif(
-    get_context().runner_config.name != "ray",
+    get_tests_daft_runner_name() != "ray",
     reason="shuffle tests are meant for the ray runner",
 )
 @pytest.mark.parametrize(
@@ -120,7 +120,7 @@ def test_pre_shuffle_merge_big_partitions(pre_shuffle_merge_ctx, input_partition
 
 
 @pytest.mark.skipif(
-    get_context().runner_config.name != "ray",
+    get_tests_daft_runner_name() != "ray",
     reason="shuffle tests are meant for the ray runner",
 )
 @pytest.mark.parametrize(
