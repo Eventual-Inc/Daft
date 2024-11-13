@@ -1,0 +1,27 @@
+[dependencies]
+dashmap = "6.1.0"
+eyre = "0.6.12"
+futures = "0.3.31"
+pyo3 = {workspace = true, optional = true}
+tokio = {version = "1.40.0", features = ["full"]}
+tonic = "0.12.3"
+tracing-subscriber = {version = "0.3.18", features = ["env-filter"]}
+tracing-tracy = "0.11.3"
+uuid = {version = "1.10.0", features = ["v4"]}
+arrow2.workspace = true
+daft-core.workspace = true
+daft-schema.workspace = true
+daft-table.workspace = true
+spark-connect.workspace = true
+tracing.workspace = true
+
+[features]
+python = ["dep:pyo3"]
+
+[lints]
+workspace = true
+
+[package]
+edition = {workspace = true}
+name = "daft-connect"
+version = {workspace = true}

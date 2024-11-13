@@ -1,14 +1,7 @@
-use arrow2::array::Array;
-use common_error::DaftResult;
 use common_py_serde::impl_bincode_py_state_serialization;
-use daft_core::prelude::*;
-use daft_table::Table;
-use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
-use {
-    daft_table::python::PyTable,
-    pyo3::{exceptions::PyKeyError, pyclass, pymethods, PyObject, PyResult, Python},
-};
+use pyo3::{exceptions::PyKeyError, pyclass, pymethods, PyObject, PyResult, Python};
+use serde::{Deserialize, Serialize};
 
 /// Metadata for a single file.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -64,12 +57,6 @@ impl FileInfos {
         Self::new_internal(file_paths, file_sizes, num_rows)
     }
 
-    /// Create from a Daft table with "path", "size", and "num_rows" columns.
-    #[staticmethod]
-    pub fn from_table(table: PyTable) -> PyResult<Self> {
-        Ok(Self::from_table_internal(table.table)?)
-    }
-
     /// Concatenate two FileInfos together.
     pub fn extend(&mut self, new_infos: Self) {
         self.file_paths.extend(new_infos.file_paths);
@@ -86,11 +73,6 @@ impl FileInfos {
             self.file_sizes[0],
             self.num_rows[0],
         ))
-    }
-
-    /// Convert to a Daft table with "path", "size", and "num_rows" columns.
-    pub fn to_table(&self) -> PyResult<PyTable> {
-        Ok(self.to_table_internal()?.into())
     }
 
     pub fn __len__(&self) -> PyResult<usize> {
@@ -113,65 +95,12 @@ impl FileInfos {
         }
     }
 
-    pub fn from_table_internal(table: Table) -> DaftResult<Self> {
-        let file_paths = table
-            .get_column("path")?
-            .utf8()?
-            .data()
-            .as_any()
-            .downcast_ref::<arrow2::array::Utf8Array<i64>>()
-            .unwrap()
-            .iter()
-            .map(|s| s.unwrap().to_string())
-            .collect::<Vec<_>>();
-        let file_sizes = table
-            .get_column("size")?
-            .i64()?
-            .data()
-            .as_any()
-            .downcast_ref::<arrow2::array::Int64Array>()
-            .unwrap()
-            .iter()
-            .map(|n| n.copied())
-            .collect::<Vec<_>>();
-        let num_rows = table
-            .get_column("num_rows")?
-            .i64()?
-            .data()
-            .as_any()
-            .downcast_ref::<arrow2::array::Int64Array>()
-            .unwrap()
-            .iter()
-            .map(|n| n.copied())
-            .collect::<Vec<_>>();
-        Ok(Self::new_internal(file_paths, file_sizes, num_rows))
-    }
-
     pub fn len(&self) -> usize {
         self.file_paths.len()
     }
 
     pub fn is_empty(&self) -> bool {
         self.file_paths.is_empty()
-    }
-
-    pub fn to_table_internal(&self) -> DaftResult<Table> {
-        let columns = vec![
-            Series::try_from((
-                "path",
-                arrow2::array::Utf8Array::<i64>::from_iter_values(self.file_paths.iter())
-                    .to_boxed(),
-            ))?,
-            Series::try_from((
-                "size",
-                arrow2::array::PrimitiveArray::<i64>::from(&self.file_sizes).to_boxed(),
-            ))?,
-            Series::try_from((
-                "num_rows",
-                arrow2::array::PrimitiveArray::<i64>::from(&self.num_rows).to_boxed(),
-            ))?,
-        ];
-        Table::from_nonempty_columns(columns)
     }
 }
 

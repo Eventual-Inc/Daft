@@ -12,6 +12,7 @@ from daft.daft import (
     JoinType,
     PyDaftExecutionConfig,
     ScanOperatorHandle,
+    logical_plan_table_scan,
 )
 from daft.daft import LogicalPlanBuilder as _LogicalPlanBuilder
 from daft.expressions import Expression, col
@@ -142,7 +143,7 @@ class LogicalPlanBuilder:
         *,
         scan_operator: ScanOperatorHandle,
     ) -> LogicalPlanBuilder:
-        builder = _LogicalPlanBuilder.table_scan(scan_operator)
+        builder = logical_plan_table_scan(scan_operator)
         return cls(builder)
 
     def select(
@@ -271,6 +272,10 @@ class LogicalPlanBuilder:
 
     def concat(self, other: LogicalPlanBuilder) -> LogicalPlanBuilder:  # type: ignore[override]
         builder = self._builder.concat(other._builder)
+        return LogicalPlanBuilder(builder)
+
+    def intersect(self, other: LogicalPlanBuilder) -> LogicalPlanBuilder:
+        builder = self._builder.intersect(other._builder, False)
         return LogicalPlanBuilder(builder)
 
     def add_monotonically_increasing_id(self, column_name: str | None) -> LogicalPlanBuilder:

@@ -408,7 +408,7 @@ def test_row_groups_selection_into_pyarrow_bulk(public_storage_io_config, multit
     "multithreaded_io",
     [False, True],
 )
-def test_connect_timeout(multithreaded_io):
+def test_connect_timeout_s3(multithreaded_io):
     url = "s3://daft-public-data/test_fixtures/parquet-dev/mvp.parquet"
     connect_timeout_config = daft.io.IOConfig(
         s3=daft.io.S3Config(
@@ -429,7 +429,7 @@ def test_connect_timeout(multithreaded_io):
     "multithreaded_io",
     [False, True],
 )
-def test_read_timeout(multithreaded_io):
+def test_read_timeout_s3(multithreaded_io):
     url = "s3://daft-public-data/test_fixtures/parquet-dev/mvp.parquet"
     read_timeout_config = daft.io.IOConfig(
         s3=daft.io.S3Config(
@@ -459,3 +459,43 @@ def test_read_file_level_timeout():
 
     with pytest.raises((ReadTimeoutError), match=f"Parquet reader timed out while trying to read: {url}"):
         daft.table.read_parquet_into_pyarrow(url, io_config=read_timeout_config, file_timeout_ms=2)
+
+
+@pytest.mark.integration()
+@pytest.mark.parametrize(
+    "multithreaded_io",
+    [False, True],
+)
+def test_connect_timeout_gcs(multithreaded_io):
+    url = "gs://daft-public-data-gs/mvp.parquet"
+    connect_timeout_config = daft.io.IOConfig(
+        gcs=daft.io.GCSConfig(
+            anonymous=True,
+            connect_timeout_ms=1,
+            retry_initial_backoff_ms=10,
+            num_tries=3,
+        )
+    )
+
+    with pytest.raises((ReadTimeoutError, ConnectTimeoutError), match=f"timed out when trying to connect to {url}"):
+        MicroPartition.read_parquet(url, io_config=connect_timeout_config, multithreaded_io=multithreaded_io).to_arrow()
+
+
+@pytest.mark.integration()
+@pytest.mark.parametrize(
+    "multithreaded_io",
+    [False, True],
+)
+def test_read_timeout_gcs(multithreaded_io):
+    url = "gs://daft-public-data-gs/mvp.parquet"
+    read_timeout_config = daft.io.IOConfig(
+        gcs=daft.io.GCSConfig(
+            anonymous=True,
+            read_timeout_ms=1,
+            retry_initial_backoff_ms=10,
+            num_tries=3,
+        )
+    )
+
+    with pytest.raises((ReadTimeoutError, ConnectTimeoutError), match=f"Read timed out when trying to read {url}"):
+        MicroPartition.read_parquet(url, io_config=read_timeout_config, multithreaded_io=multithreaded_io).to_arrow()

@@ -271,7 +271,8 @@ mod tests {
                 JoinType::Inner,
                 None,
                 None,
-                None,
+                Some("tbl3."),
+                true,
             )?
             .select(vec![col("*")])?
             .build();

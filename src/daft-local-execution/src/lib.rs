@@ -12,7 +12,7 @@ mod sources;
 use common_error::{DaftError, DaftResult};
 use common_runtime::RuntimeTask;
 use lazy_static::lazy_static;
-pub use run::NativeExecutor;
+pub use run::{run_local, NativeExecutor};
 use snafu::{futures::TryFutureExt, Snafu};
 
 lazy_static! {

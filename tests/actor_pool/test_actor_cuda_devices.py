@@ -7,10 +7,10 @@ import pytest
 import ray
 
 import daft
+from daft import udf
 from daft.context import get_context, set_planning_config
 from daft.datatype import DataType
 from daft.internal.gpu import cuda_visible_devices
-from daft.udf import udf
 
 pytestmark = pytest.mark.skipif(
     get_context().runner_config.name == "native", reason="Native runner does not support GPU tests yet"
