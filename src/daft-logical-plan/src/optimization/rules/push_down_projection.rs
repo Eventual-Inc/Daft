@@ -416,6 +416,7 @@ impl PushDownProjection {
                     .or(Transformed::yes(new_plan));
                 Ok(new_plan)
             }
+            LogicalPlan::Union(_) => unreachable!("Union should have been optimized away"),
             LogicalPlan::Join(join) => {
                 // Get required columns from projection and both upstreams.
                 let [projection_dependencies] = &plan.required_columns()[..] else {
