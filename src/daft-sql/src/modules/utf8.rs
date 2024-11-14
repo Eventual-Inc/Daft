@@ -410,7 +410,7 @@ impl SQLFunction for SQLNormalize {
         }
     }
     fn docstrings(&self, _: &str) -> String {
-        "Normalizes a string for more useful deduplication and data cleaning".to_string()
+        "Normalizes a string for more useful deduplication and data cleaning.".to_string()
     }
 
     fn arg_names(&self) -> &'static [&'static str] {
@@ -495,6 +495,21 @@ impl SQLFunction for SQLTokenizeEncode {
             _ => invalid_operation_err!("Invalid arguments for tokenize_encode"),
         }
     }
+
+    fn docstrings(&self, _: &str) -> String {
+        "Decodes each list of integer tokens into a string using a tokenizer.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &[
+            "input",
+            "token_path",
+            "io_config",
+            "pattern",
+            "special_tokens",
+            "use_special_tokens",
+        ]
+    }
 }
 
 pub struct SQLTokenizeDecode;
@@ -558,6 +573,21 @@ impl SQLFunction for SQLTokenizeDecode {
             }
             _ => invalid_operation_err!("Invalid arguments for tokenize_decode"),
         }
+    }
+
+    fn docstrings(&self, _: &str) -> String {
+        "Encodes each string as a list of integer tokens using a tokenizer.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &[
+            "input",
+            "token_path",
+            "io_config",
+            "pattern",
+            "special_tokens",
+            "use_special_tokens",
+        ]
     }
 }
 
