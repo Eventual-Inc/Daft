@@ -48,7 +48,7 @@ json-deserializer = {version = "0.4.4", optional = true, features = [
 # To efficiently cast numbers to strings
 lexical-core = {version = "0.8", optional = true}
 # for IPC compression
-lz4 = {version = "1.24", optional = true}
+lz4 = {version = "1.28", optional = true}
 # For `LIKE` matching "contains" fast-path
 memchr = {version = "2.6", optional = true}
 # For instruction multiversioning
