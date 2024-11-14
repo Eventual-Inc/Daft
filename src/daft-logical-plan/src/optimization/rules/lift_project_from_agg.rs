@@ -14,6 +14,18 @@ use crate::{
 /// Optimization rule for lifting expressions that can be done in a project out of an aggregation.
 ///
 /// After a pass of this rule, the top level expressions in each aggregate should all be aliases or agg exprs.
+///
+/// # Examples
+///
+/// ### Global Agg
+/// Input: `Agg [sum("x") + sum("y")] <- Scan`
+///
+/// Output: `Project [col("sum(x)") + col("sum(y)")] <- Agg [sum("x"), sum("y")] <- Scan`
+///
+/// ### Groupby Agg
+/// Input: `Agg [groupby="key", sum("x") + sum("y")] <- Scan`
+///
+/// Output: `Project ["key", col("sum(x)") + col("sum(y)")] <- Agg [sum("x"), sum("y")] <- Scan`
 #[derive(Default, Debug)]
 pub struct LiftProjectFromAgg {}
 
