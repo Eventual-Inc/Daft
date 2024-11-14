@@ -199,6 +199,7 @@ mod tests {
                 vec![col("groupby_key")],
             )?
             .select(vec![
+                col("groupby_key"),
                 col(a_sum_id.clone()).alias("a"),
                 col(a_sum_id).add(col(b_sum_id)).alias("a_plus_b"),
                 col(b_mean_id.clone()).alias("b"),
