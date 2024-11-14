@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use daft_dsl::{resolve_exprs, ExprRef};
+use daft_dsl::{ExprRef, ExprResolver};
 use daft_schema::schema::{Schema, SchemaRef};
 use itertools::Itertools;
 use snafu::ResultExt;
@@ -35,10 +35,16 @@ impl Aggregate {
         groupby: Vec<ExprRef>,
     ) -> logical_plan::Result<Self> {
         let upstream_schema = input.schema();
-        let (groupby, groupby_fields) =
-            resolve_exprs(groupby, &upstream_schema, false, false).context(CreationSnafu)?;
-        let (aggregations, aggregation_fields) =
-            resolve_exprs(aggregations, &upstream_schema, false, true).context(CreationSnafu)?;
+
+        let groupby_resolver = ExprResolver::default();
+        let agg_resolver = ExprResolver::builder().in_agg_context(true).build();
+
+        let (groupby, groupby_fields) = groupby_resolver
+            .resolve(groupby, &upstream_schema)
+            .context(CreationSnafu)?;
+        let (aggregations, aggregation_fields) = agg_resolver
+            .resolve(aggregations, &upstream_schema)
+            .context(CreationSnafu)?;
 
         let fields = [groupby_fields, aggregation_fields].concat();
 

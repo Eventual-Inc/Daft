@@ -8,7 +8,7 @@ use daft_dsl::{
         python::{get_concurrency, get_resource_request, PythonUDF, StatefulPythonUDF},
         FunctionExpr,
     },
-    resolve_exprs, Expr, ExprRef,
+    Expr, ExprRef, ExprResolver,
 };
 use daft_schema::schema::{Schema, SchemaRef};
 use itertools::Itertools;
@@ -29,7 +29,9 @@ pub struct ActorPoolProject {
 
 impl ActorPoolProject {
     pub(crate) fn try_new(input: Arc<LogicalPlan>, projection: Vec<ExprRef>) -> Result<Self> {
-        let (projection, fields) = resolve_exprs(projection, input.schema().as_ref(), true, false)
+        let expr_resolver = ExprResolver::builder().allow_stateful_udf(true).build();
+        let (projection, fields) = expr_resolver
+            .resolve(projection, input.schema().as_ref())
             .context(CreationSnafu)?;
 
         let num_stateful_udf_exprs: usize = projection

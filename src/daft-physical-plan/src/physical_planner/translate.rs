@@ -254,7 +254,6 @@ pub(super) fn translate_single_logical_node(
 
             let num_input_partitions = input_physical.clustering_spec().num_partitions();
 
-            // let aggregations = extract_agg_exprs(aggregations)?;
             let aggregations = aggregations
                 .iter()
                 .map(extract_agg_expr)

@@ -10,6 +10,7 @@ use std::{
 use common_error::{DaftError, DaftResult};
 use common_treenode::{Transformed, TransformedResult, TreeNode};
 use daft_core::prelude::*;
+use typed_builder::TypedBuilder;
 
 use crate::{
     col, expr::has_agg, functions::FunctionExpr, has_stateful_udf, AggExpr, Expr, ExprRef,
@@ -246,85 +247,89 @@ fn convert_udfs_to_map_groups(expr: &ExprRef) -> ExprRef {
         .data
 }
 
-/// Resolves and validates the expression with a schema, returning the new expression and its field.
-/// Specifically, makes sure the expression does not contain aggregations or stateful UDFs where they are not allowed,
-/// and resolves struct accessors and wildcards.
-/// May return multiple expressions if the expr contains a wildcard.
-///
-/// TODO: Use a builder pattern for this functionality
-fn resolve_expr(
-    expr: ExprRef,
-    schema: &Schema,
-    allow_stateful_udf: bool,
-    is_agg: bool,
-) -> DaftResult<Vec<ExprRef>> {
-    let expr = if is_agg {
-        let converted_expr = convert_udfs_to_map_groups(&expr);
-
-        if !has_single_agg_layer(&converted_expr) {
-            return Err(DaftError::ValueError(format!(
-                "Expressions in aggregations must be composed of non-nested aggregation expressions, got {expr}"
-            )));
-        }
-
-        converted_expr
-    } else {
-        // TODO(Kevin): Support aggregation expressions everywhere
-        if has_agg(&expr) {
-            return Err(DaftError::ValueError(format!(
-                "Aggregation expressions are currently only allowed in agg and pivot: {expr}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383",
-            )));
-        }
-
-        expr
-    };
-
-    if !allow_stateful_udf && has_stateful_udf(&expr) {
+fn validate_expr(expr: ExprRef) -> DaftResult<ExprRef> {
+    if has_agg(&expr) {
         return Err(DaftError::ValueError(format!(
-            "Stateful UDFs are only allowed in projections: {expr}"
+            "Aggregation expressions are currently only allowed in agg and pivot: {expr}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383",
         )));
     }
 
-    let struct_expr_map = calculate_struct_expr_map(schema);
-    expand_wildcards(expr, schema, &struct_expr_map)?
-        .into_iter()
-        .map(|e| transform_struct_gets(e, &struct_expr_map))
-        .collect()
+    Ok(expr)
 }
 
-// Resolve a single expression, erroring if any kind of expansion happens.
-pub fn resolve_single_expr(
-    expr: ExprRef,
-    schema: &Schema,
-    allow_stateful_udf: bool,
-    is_agg: bool,
-) -> DaftResult<(ExprRef, Field)> {
-    let resolved_exprs = resolve_expr(expr.clone(), schema, allow_stateful_udf, is_agg)?;
-    match resolved_exprs.as_slice() {
-        [resolved_expr] => Ok((resolved_expr.clone(), resolved_expr.to_field(schema)?)),
-        _ => Err(DaftError::ValueError(format!(
-            "Error resolving expression {}: expanded into {} expressions when 1 was expected",
-            expr,
-            resolved_exprs.len()
-        ))),
+fn validate_expr_in_agg(expr: ExprRef) -> DaftResult<ExprRef> {
+    let converted_expr = convert_udfs_to_map_groups(&expr);
+
+    if !has_single_agg_layer(&converted_expr) {
+        return Err(DaftError::ValueError(format!(
+            "Expressions in aggregations must be composed of non-nested aggregation expressions, got {expr}"
+        )));
     }
+
+    Ok(converted_expr)
 }
 
-pub fn resolve_exprs(
-    exprs: Vec<ExprRef>,
-    schema: &Schema,
+/// Used for resolving and validating expressions.
+/// Specifically, makes sure the expression does not contain aggregations or stateful UDFs
+/// where they are not allowed, and resolves struct accessors and wildcards.
+#[derive(Default, TypedBuilder)]
+pub struct ExprResolver {
+    #[builder(default)]
     allow_stateful_udf: bool,
-    is_agg: bool,
-) -> DaftResult<(Vec<ExprRef>, Vec<Field>)> {
-    // can't flat map because we need to deal with errors
-    let resolved_exprs: DaftResult<Vec<Vec<ExprRef>>> = exprs
-        .into_iter()
-        .map(|e| resolve_expr(e, schema, allow_stateful_udf, is_agg))
-        .collect();
-    let resolved_exprs: Vec<ExprRef> = resolved_exprs?.into_iter().flatten().collect();
-    let resolved_fields: DaftResult<Vec<Field>> =
-        resolved_exprs.iter().map(|e| e.to_field(schema)).collect();
-    Ok((resolved_exprs, resolved_fields?))
+    #[builder(default)]
+    in_agg_context: bool,
+}
+
+impl ExprResolver {
+    fn resolve_helper(&self, expr: ExprRef, schema: &Schema) -> DaftResult<Vec<ExprRef>> {
+        if !self.allow_stateful_udf && has_stateful_udf(&expr) {
+            return Err(DaftError::ValueError(format!(
+                "Stateful UDFs are only allowed in projections: {expr}"
+            )));
+        }
+
+        let validated_expr = if self.in_agg_context {
+            validate_expr(expr)
+        } else {
+            validate_expr_in_agg(expr)
+        }?;
+
+        let struct_expr_map = calculate_struct_expr_map(schema);
+        expand_wildcards(validated_expr, schema, &struct_expr_map)?
+            .into_iter()
+            .map(|e| transform_struct_gets(e, &struct_expr_map))
+            .collect()
+    }
+
+    /// Resolve multiple expressions. Due to wildcards, output vec may contain more expressions than input.
+    pub fn resolve(
+        &self,
+        exprs: Vec<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<(Vec<ExprRef>, Vec<Field>)> {
+        // can't flat map because we need to deal with errors
+        let resolved_exprs: DaftResult<Vec<Vec<ExprRef>>> = exprs
+            .into_iter()
+            .map(|e| self.resolve_helper(e, schema))
+            .collect();
+        let resolved_exprs: Vec<ExprRef> = resolved_exprs?.into_iter().flatten().collect();
+        let resolved_fields: DaftResult<Vec<Field>> =
+            resolved_exprs.iter().map(|e| e.to_field(schema)).collect();
+        Ok((resolved_exprs, resolved_fields?))
+    }
+
+    /// Resolve a single expression, ensuring that the output is also a single expression.
+    pub fn resolve_single(&self, expr: ExprRef, schema: &Schema) -> DaftResult<(ExprRef, Field)> {
+        let resolved_exprs = self.resolve_helper(expr.clone(), schema)?;
+        match resolved_exprs.as_slice() {
+            [resolved_expr] => Ok((resolved_expr.clone(), resolved_expr.to_field(schema)?)),
+            _ => Err(DaftError::ValueError(format!(
+                "Error resolving expression {}: expanded into {} expressions when 1 was expected",
+                expr,
+                resolved_exprs.len()
+            ))),
+        }
+    }
 }
 
 pub fn check_column_name_validity(name: &str, schema: &Schema) -> DaftResult<()> {
