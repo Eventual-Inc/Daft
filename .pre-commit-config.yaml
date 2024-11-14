@@ -19,7 +19,8 @@ repos:
     exclude: |
       (?x)^(
           docs/source/api_docs/|
-          docs/source/user_guide/fotw/data/
+          docs/source/user_guide/fotw/data/|
+          tests/assets/mvp.csv
       )$
   - id: check-yaml
     exclude: kubernetes-ops
