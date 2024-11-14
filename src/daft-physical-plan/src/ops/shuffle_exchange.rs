@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common_daft_config::DaftExecutionConfig;
 use daft_dsl::ExprRef;
 use daft_logical_plan::partitioning::{
     ClusteringSpec, HashClusteringConfig, RandomClusteringConfig, RangeClusteringConfig,
@@ -27,6 +28,9 @@ impl ShuffleExchange {
             } => Arc::new(ClusteringSpec::Unknown(UnknownClusteringConfig::new(
                 *target_num_partitions,
             ))),
+            ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge { target_spec, .. } => {
+                target_spec.clone()
+            }
         }
     }
 }
@@ -38,6 +42,11 @@ pub enum ShuffleExchangeStrategy {
 
     /// Sequentially splits/coalesce partitions in order to meet a target number of partitions
     SplitOrCoalesceToTargetNum { target_num_partitions: usize },
+
+    MapReduceWithPreShuffleMerge {
+        pre_shuffle_merge_threshold: usize,
+        target_spec: Arc<ClusteringSpec>,
+    },
 }
 
 impl ShuffleExchange {
@@ -46,10 +55,10 @@ impl ShuffleExchange {
         res.push("ShuffleExchange:".to_string());
         match &self.strategy {
             ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce { target_spec } => {
-                res.push("  Strategy: NaiveFullyMaterializingMapReduce".to_string());
-                res.push(format!("  Target Spec: {:?}", target_spec));
+                res.push("Strategy: NaiveFullyMaterializingMapReduce".to_string());
+                res.push(format!("Target Spec: {:?}", target_spec));
                 res.push(format!(
-                    "  Number of Partitions: {} → {}",
+                    "Number of Partitions: {} → {}",
                     self.input.clustering_spec().num_partitions(),
                     target_spec.num_partitions(),
                 ));
@@ -58,9 +67,9 @@ impl ShuffleExchange {
                 target_num_partitions,
             } => {
                 let input_num_partitions = self.input.clustering_spec().num_partitions();
-                res.push("  Strategy: SplitOrCoalesceToTargetNum".to_string());
+                res.push("Strategy: SplitOrCoalesceToTargetNum".to_string());
                 res.push(format!(
-                    "  {} Partitions: {} → {}",
+                    "{} Partitions: {} → {}",
                     if input_num_partitions >= *target_num_partitions {
                         "Coalescing"
                     } else {
@@ -68,6 +77,15 @@ impl ShuffleExchange {
                     },
                     input_num_partitions,
                     target_num_partitions,
+                ));
+            }
+            ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge { target_spec, .. } => {
+                res.push("Strategy: MapReduceWithPreShuffleMerge".to_string());
+                res.push(format!("Target Spec: {:?}", target_spec));
+                res.push(format!(
+                    "Number of Partitions: {} → {}",
+                    self.input.clustering_spec().num_partitions(),
+                    target_spec.num_partitions(),
                 ));
             }
         }
@@ -94,13 +112,25 @@ impl ShuffleExchangeFactory {
         &self,
         by: Vec<ExprRef>,
         num_partitions: usize,
+        cfg: Option<&DaftExecutionConfig>,
     ) -> ShuffleExchange {
-        let strategy = ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce {
-            target_spec: Arc::new(ClusteringSpec::Hash(HashClusteringConfig::new(
-                num_partitions,
-                by,
-            ))),
+        let clustering_spec = Arc::new(ClusteringSpec::Hash(HashClusteringConfig::new(
+            num_partitions,
+            by,
+        )));
+
+        let strategy = match cfg {
+            Some(cfg) if cfg.shuffle_algorithm == "pre_shuffle_merge" => {
+                ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge {
+                    target_spec: clustering_spec,
+                    pre_shuffle_merge_threshold: cfg.pre_shuffle_merge_threshold,
+                }
+            }
+            _ => ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce {
+                target_spec: clustering_spec,
+            },
         };
+
         ShuffleExchange {
             input: self.input.clone(),
             strategy,
@@ -112,26 +142,53 @@ impl ShuffleExchangeFactory {
         by: Vec<ExprRef>,
         descending: Vec<bool>,
         num_partitions: usize,
+        cfg: Option<&DaftExecutionConfig>,
     ) -> ShuffleExchange {
-        let strategy = ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce {
-            target_spec: Arc::new(ClusteringSpec::Range(RangeClusteringConfig::new(
-                num_partitions,
-                by,
-                descending,
-            ))),
+        let clustering_spec = Arc::new(ClusteringSpec::Range(RangeClusteringConfig::new(
+            num_partitions,
+            by,
+            descending,
+        )));
+
+        let strategy = match cfg {
+            Some(cfg) if cfg.shuffle_algorithm == "pre_shuffle_merge" => {
+                ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge {
+                    target_spec: clustering_spec,
+                    pre_shuffle_merge_threshold: cfg.pre_shuffle_merge_threshold,
+                }
+            }
+            _ => ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce {
+                target_spec: clustering_spec,
+            },
         };
+
         ShuffleExchange {
             input: self.input.clone(),
             strategy,
         }
     }
 
-    pub fn get_random_partitioning(&self, num_partitions: usize) -> ShuffleExchange {
-        let strategy = ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce {
-            target_spec: Arc::new(ClusteringSpec::Random(RandomClusteringConfig::new(
-                num_partitions,
-            ))),
+    pub fn get_random_partitioning(
+        &self,
+        num_partitions: usize,
+        cfg: Option<&DaftExecutionConfig>,
+    ) -> ShuffleExchange {
+        let clustering_spec = Arc::new(ClusteringSpec::Random(RandomClusteringConfig::new(
+            num_partitions,
+        )));
+
+        let strategy = match cfg {
+            Some(cfg) if cfg.shuffle_algorithm == "pre_shuffle_merge" => {
+                ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge {
+                    target_spec: clustering_spec,
+                    pre_shuffle_merge_threshold: cfg.pre_shuffle_merge_threshold,
+                }
+            }
+            _ => ShuffleExchangeStrategy::NaiveFullyMaterializingMapReduce {
+                target_spec: clustering_spec,
+            },
         };
+
         ShuffleExchange {
             input: self.input.clone(),
             strategy,

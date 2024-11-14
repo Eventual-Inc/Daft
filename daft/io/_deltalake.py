@@ -55,7 +55,9 @@ def read_deltalake(
 
     # If running on Ray, we want to limit the amount of concurrency and requests being made.
     # This is because each Ray worker process receives its own pool of thread workers and connections
-    multithreaded_io = not context.get_context().is_ray_runner if _multithreaded_io is None else _multithreaded_io
+    multithreaded_io = (
+        (context.get_context().get_or_create_runner().name != "ray") if _multithreaded_io is None else _multithreaded_io
+    )
 
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
     storage_config = StorageConfig.native(NativeStorageConfig(multithreaded_io, io_config))

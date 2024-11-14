@@ -4,14 +4,15 @@ import pyarrow as pa
 import pytest
 
 import daft
-from daft import col, context
+from daft import col
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
+from tests.conftest import get_tests_daft_runner_name
 from tests.utils import sort_arrow_table
 
 
 def skip_invalid_join_strategies(join_strategy, join_type):
-    if context.get_context().runner_config.name == "native":
+    if get_tests_daft_runner_name() == "native":
         if join_strategy not in [None, "hash"]:
             pytest.skip("Native executor fails for these tests")
     else:

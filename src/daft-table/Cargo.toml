@@ -16,7 +16,7 @@ rand = {workspace = true}
 serde = {workspace = true}
 
 [features]
-python = ["dep:pyo3", "common-error/python", "daft-core/python", "daft-dsl/python", "common-arrow-ffi/python", "common-display/python", "daft-image/python"]
+python = ["dep:pyo3", "common-error/python", "daft-core/python", "daft-dsl/python", "common-arrow-ffi/python", "common-display/python", "daft-image/python", "daft-logical-plan/python"]
 
 [lints]
 workspace = true

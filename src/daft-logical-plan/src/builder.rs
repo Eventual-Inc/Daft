@@ -462,6 +462,12 @@ impl LogicalPlanBuilder {
                 .to_optimized_join()?;
         Ok(self.with_new_plan(logical_plan))
     }
+    pub fn union(&self, other: &Self, is_all: bool) -> DaftResult<Self> {
+        let logical_plan: LogicalPlan =
+            ops::Union::try_new(self.plan.clone(), other.plan.clone(), is_all)?
+                .to_logical_plan()?;
+        Ok(self.with_new_plan(logical_plan))
+    }
 
     pub fn add_monotonically_increasing_id(&self, column_name: Option<&str>) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =

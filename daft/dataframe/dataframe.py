@@ -274,7 +274,9 @@ class DataFrame:
         else:
             # Execute the dataframe in a streaming fashion.
             context = get_context()
-            partitions_iter = context.runner().run_iter_tables(self._builder, results_buffer_size=results_buffer_size)
+            partitions_iter = context.get_or_create_runner().run_iter_tables(
+                self._builder, results_buffer_size=results_buffer_size
+            )
 
             # Iterate through partitions.
             for partition in partitions_iter:
@@ -311,7 +313,9 @@ class DataFrame:
         else:
             # Execute the dataframe in a streaming fashion.
             context = get_context()
-            partitions_iter = context.runner().run_iter_tables(self._builder, results_buffer_size=results_buffer_size)
+            partitions_iter = context.get_or_create_runner().run_iter_tables(
+                self._builder, results_buffer_size=results_buffer_size
+            )
 
             # Iterate through partitions.
             for partition in partitions_iter:
@@ -390,7 +394,9 @@ class DataFrame:
         else:
             # Execute the dataframe in a streaming fashion.
             context = get_context()
-            results_iter = context.runner().run_iter(self._builder, results_buffer_size=results_buffer_size)
+            results_iter = context.get_or_create_runner().run_iter(
+                self._builder, results_buffer_size=results_buffer_size
+            )
             for result in results_iter:
                 yield result.partition()
 
@@ -489,7 +495,7 @@ class DataFrame:
             result_pset.set_partition_from_table(i, part)
 
         context = get_context()
-        cache_entry = context.runner().put_partition_set_into_cache(result_pset)
+        cache_entry = context.get_or_create_runner().put_partition_set_into_cache(result_pset)
         size_bytes = result_pset.size_bytes()
         num_rows = len(result_pset)
 
@@ -2508,7 +2514,7 @@ class DataFrame:
         """Materializes the results of for this DataFrame and hold a pointer to the results."""
         context = get_context()
         if self._result is None:
-            self._result_cache = context.runner().run(self._builder)
+            self._result_cache = context.get_or_create_runner().run(self._builder)
             result = self._result
             assert result is not None
             result.wait()
@@ -2554,7 +2560,7 @@ class DataFrame:
             # Iteratively retrieve partitions until enough data has been materialized
             tables = []
             seen = 0
-            for table in get_context().runner().run_iter_tables(builder, results_buffer_size=1):
+            for table in get_context().get_or_create_runner().run_iter_tables(builder, results_buffer_size=1):
                 tables.append(table)
                 seen += len(table)
                 if seen >= n:
@@ -2792,16 +2798,16 @@ class DataFrame:
         from ray.exceptions import RayTaskError
 
         context = get_context()
-        if context.runner_config.name != "ray":
+        if context.get_or_create_runner().name != "ray":
             raise ValueError("Daft needs to be running on the Ray Runner for this operation")
 
         from daft.runners.ray_runner import RayRunnerIO
 
-        ray_runner_io = context.runner().runner_io()
+        ray_runner_io = context.get_or_create_runner().runner_io()
         assert isinstance(ray_runner_io, RayRunnerIO)
 
         partition_set, schema = ray_runner_io.partition_set_from_ray_dataset(ds)
-        cache_entry = context.runner().put_partition_set_into_cache(partition_set)
+        cache_entry = context.get_or_create_runner().put_partition_set_into_cache(partition_set)
         try:
             size_bytes = partition_set.size_bytes()
         except RayTaskError as e:
@@ -2894,16 +2900,16 @@ class DataFrame:
         # TODO(Clark): Support Dask DataFrame conversion for the local runner if
         # Dask is using a non-distributed scheduler.
         context = get_context()
-        if context.runner_config.name != "ray":
+        if context.get_or_create_runner().name != "ray":
             raise ValueError("Daft needs to be running on the Ray Runner for this operation")
 
         from daft.runners.ray_runner import RayRunnerIO
 
-        ray_runner_io = context.runner().runner_io()
+        ray_runner_io = context.get_or_create_runner().runner_io()
         assert isinstance(ray_runner_io, RayRunnerIO)
 
         partition_set, schema = ray_runner_io.partition_set_from_dask_dataframe(ddf)
-        cache_entry = context.runner().put_partition_set_into_cache(partition_set)
+        cache_entry = context.get_or_create_runner().put_partition_set_into_cache(partition_set)
         size_bytes = partition_set.size_bytes()
         num_rows = len(partition_set)
         assert size_bytes is not None, "In-memory data should always have non-None size in bytes"

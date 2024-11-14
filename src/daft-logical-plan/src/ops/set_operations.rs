@@ -1,10 +1,12 @@
 use std::sync::Arc;
 
 use common_error::DaftError;
-use daft_core::join::JoinType;
+use daft_core::{join::JoinType, utils::supertype::get_supertype};
 use daft_dsl::col;
+use daft_schema::field::Field;
 use snafu::ResultExt;
 
+use super::{Concat, Distinct, Project};
 use crate::{logical_plan, logical_plan::CreationSnafu, LogicalPlan};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -104,6 +106,99 @@ impl Intersect {
             res.push("Intersect All:".to_string());
         } else {
             res.push("Intersect:".to_string());
+        }
+        res
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Union {
+    // Upstream nodes.
+    pub lhs: Arc<LogicalPlan>,
+    pub rhs: Arc<LogicalPlan>,
+    pub is_all: bool,
+}
+
+impl Union {
+    /// Union is more flexible than concat as it allows the two tables to have different schemas as long as they have a shared supertype
+    /// ex:
+    /// ```sql
+    /// > create table t0 as select 'hello' as c0;
+    /// > create table t1 as select 1 as c0;
+    /// > select * from t0 union select * from t1;
+    /// ```
+    /// This is valid in Union, but not in Concat
+    pub(crate) fn try_new(
+        lhs: Arc<LogicalPlan>,
+        rhs: Arc<LogicalPlan>,
+        is_all: bool,
+    ) -> logical_plan::Result<Self> {
+        if lhs.schema().len() != rhs.schema().len() {
+            return Err(DaftError::SchemaMismatch(format!(
+                "Both plans must have the same num of fields to union, \
+                but got[lhs: {} v.s rhs: {}], lhs schema: {}, rhs schema: {}",
+                lhs.schema().len(),
+                rhs.schema().len(),
+                lhs.schema(),
+                rhs.schema()
+            )))
+            .context(CreationSnafu);
+        }
+        Ok(Self { lhs, rhs, is_all })
+    }
+
+    /// union could be represented as a concat + distinct
+    /// while union all could be represented as a concat
+    pub(crate) fn to_logical_plan(&self) -> logical_plan::Result<LogicalPlan> {
+        let lhs_schema = self.lhs.schema();
+        let rhs_schema = self.rhs.schema();
+        let (lhs, rhs) = if lhs_schema != rhs_schema {
+            // we need to try to do a type coercion
+            let coerced_fields = lhs_schema
+                .fields
+                .values()
+                .zip(rhs_schema.fields.values())
+                .map(|(l, r)| {
+                    let new_dtype = get_supertype(&l.dtype, &r.dtype).ok_or_else(|| {
+                        logical_plan::Error::CreationError {
+                            source: DaftError::ComputeError(
+                                format!("
+                                    unable to find a common supertype for union. {} and {} have no common supertype",
+                                l.dtype, r.dtype
+                                ),
+                            ),
+                        }
+                    })?;
+                    Ok::<_, logical_plan::Error>(Field::new(l.name.clone(), new_dtype))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let projection_fields = coerced_fields
+                .into_iter()
+                .map(|f| col(f.name.clone()).cast(&f.dtype))
+                .collect::<Vec<_>>();
+            let lhs = Project::try_new(self.lhs.clone(), projection_fields.clone())?.into();
+            let rhs = Project::try_new(self.rhs.clone(), projection_fields)?.into();
+            (lhs, rhs)
+        } else {
+            (self.lhs.clone(), self.rhs.clone())
+        };
+        // we don't want to use `try_new` as we have already checked the schema
+        let concat = LogicalPlan::Concat(Concat {
+            input: lhs,
+            other: rhs,
+        });
+        if self.is_all {
+            Ok(concat)
+        } else {
+            Ok(Distinct::new(concat.arced()).into())
+        }
+    }
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        if self.is_all {
+            res.push("Union All:".to_string());
+        } else {
+            res.push("Union:".to_string());
         }
         res
     }

@@ -107,6 +107,8 @@ impl PyDaftExecutionConfig {
         enable_aqe: Option<bool>,
         enable_native_executor: Option<bool>,
         default_morsel_size: Option<usize>,
+        shuffle_algorithm: Option<&str>,
+        pre_shuffle_merge_threshold: Option<usize>,
         enable_ray_tracing: Option<bool>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
@@ -169,6 +171,17 @@ impl PyDaftExecutionConfig {
         }
         if let Some(default_morsel_size) = default_morsel_size {
             config.default_morsel_size = default_morsel_size;
+        }
+        if let Some(shuffle_algorithm) = shuffle_algorithm {
+            if !matches!(shuffle_algorithm, "map_reduce" | "pre_shuffle_merge") {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                    "shuffle_algorithm must be 'map_reduce' or 'pre_shuffle_merge'",
+                ));
+            }
+            config.shuffle_algorithm = shuffle_algorithm.to_string();
+        }
+        if let Some(pre_shuffle_merge_threshold) = pre_shuffle_merge_threshold {
+            config.pre_shuffle_merge_threshold = pre_shuffle_merge_threshold;
         }
 
         if let Some(enable_ray_tracing) = enable_ray_tracing {
@@ -260,6 +273,14 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn default_morsel_size(&self) -> PyResult<usize> {
         Ok(self.config.default_morsel_size)
+    }
+    #[getter]
+    fn shuffle_algorithm(&self) -> PyResult<&str> {
+        Ok(self.config.shuffle_algorithm.as_str())
+    }
+    #[getter]
+    fn pre_shuffle_merge_threshold(&self) -> PyResult<usize> {
+        Ok(self.config.pre_shuffle_merge_threshold)
     }
 
     #[getter]

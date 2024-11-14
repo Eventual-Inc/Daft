@@ -1281,7 +1281,7 @@ class ExpressionUrlNamespace(ExpressionNamespace):
         For local execution, we run in a single process which means that it all shares the same tokio I/O runtime and connection pool.
         Thus we just have `(multithreaded=N_CPU * max_connections)` number of open connections, which is usually reasonable as well.
         """
-        using_ray_runner = context.get_context().is_ray_runner
+        using_ray_runner = context.get_context().get_or_create_runner().name == "ray"
         return not using_ray_runner
 
     @staticmethod

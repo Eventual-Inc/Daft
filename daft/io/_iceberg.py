@@ -122,7 +122,7 @@ def read_iceberg(
     )
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
-    multithreaded_io = not context.get_context().is_ray_runner
+    multithreaded_io = context.get_context().get_or_create_runner().name != "ray"
     storage_config = StorageConfig.native(NativeStorageConfig(multithreaded_io, io_config))
 
     iceberg_operator = IcebergScanOperator(pyiceberg_table, snapshot_id=snapshot_id, storage_config=storage_config)

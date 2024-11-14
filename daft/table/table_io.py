@@ -779,6 +779,10 @@ def write_empty_tabular(
     table = pa.Table.from_pylist([], schema=schema.to_pyarrow_schema())
 
     [resolved_path], fs = _resolve_paths_and_filesystem(path, io_config=io_config)
+    is_local_fs = canonicalize_protocol(get_protocol_from_path(path if isinstance(path, str) else str(path))) == "file"
+    if is_local_fs:
+        fs.create_dir(resolved_path, recursive=True)
+
     basename_template = _generate_basename_template(file_format.ext())
     file_path = f"{resolved_path}/{basename_template.format(i=0)}"
 
@@ -792,7 +796,8 @@ def write_empty_tabular(
                 filesystem=fs,
             )
         elif file_format == FileFormat.Csv:
-            pacsv.write_csv(table, file_path)
+            output_file = fs.open_output_stream(file_path)
+            pacsv.write_csv(table, output_file)
         else:
             raise ValueError(f"Unsupported file format {file_format}")
 
