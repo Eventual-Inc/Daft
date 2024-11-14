@@ -461,6 +461,7 @@ impl ScanOperator for GlobScanOperator {
                     storage_config.clone(),
                     pushdowns.clone(),
                     generated_fields,
+                    None, // TODO: Add estimations of size in bytes (GlobScanOperator)
                 )))
             })();
             match scan_task_result {

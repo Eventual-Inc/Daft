@@ -254,6 +254,7 @@ pub(crate) fn split_by_row_groups(
 
                             if curr_size_bytes >= min_size_bytes || i == num_row_groups - 1 {
                                 let mut new_source = source.clone();
+                                let new_estimated_size_bytes_in_memory;
 
                                 if let DataSource::File {
                                     chunk_spec,
@@ -269,6 +270,9 @@ pub(crate) fn split_by_row_groups(
 
                                     *chunk_spec = Some(ChunkSpec::Parquet(curr_row_group_indices));
                                     *size_bytes = Some(curr_size_bytes as u64);
+
+                                    // Re-estimate the size bytes in memory
+                                    new_estimated_size_bytes_in_memory = t.estimated_materialized_size_bytes.map(|est| (est as f64 * (curr_num_rows as f64 / file.num_rows as f64)) as usize);
                                 } else {
                                     unreachable!("Parquet file format should only be used with DataSource::File");
                                 }
@@ -294,6 +298,7 @@ pub(crate) fn split_by_row_groups(
                                     t.storage_config.clone(),
                                     t.pushdowns.clone(),
                                     t.generated_fields.clone(),
+                                    new_estimated_size_bytes_in_memory,
                                 )
                                 .into()));
                             }

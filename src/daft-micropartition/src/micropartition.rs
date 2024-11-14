@@ -1216,6 +1216,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
                 num_rows,
             ),
             generated_fields,
+            None, // TODO: Add estimations of size in bytes (Parquet metadata)
         );
 
         let fill_map = scan_task.partition_spec().map(|pspec| pspec.to_fill_map());

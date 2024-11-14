@@ -378,6 +378,7 @@ pub mod pylib {
                 storage_config.into(),
                 pushdowns.map(|p| p.0.as_ref().clone()).unwrap_or_default(),
                 None,
+                None, // TODO: Add estimations of size in bytes (Catalog)
             );
             Ok(Some(Self(scan_task.into())))
         }
@@ -411,6 +412,7 @@ pub mod pylib {
                 storage_config.into(),
                 pushdowns.map(|p| p.0.as_ref().clone()).unwrap_or_default(),
                 None,
+                None, // TODO: Add estimations of size in bytes (SQL)
             );
             Ok(Self(scan_task.into()))
         }
@@ -456,6 +458,7 @@ pub mod pylib {
                 ))),
                 pushdowns.map(|p| p.0.as_ref().clone()).unwrap_or_default(),
                 None,
+                None, // TODO: Add estimations of size in bytes (Python)
             );
             Ok(Self(scan_task.into()))
         }

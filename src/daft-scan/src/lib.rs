@@ -369,6 +369,9 @@ pub struct ScanTask {
     pub metadata: Option<TableMetadata>,
     pub statistics: Option<TableStatistics>,
     pub generated_fields: Option<SchemaRef>,
+
+    /// The estimated amount of bytes this ScanTask will take up in memory once materialized
+    estimated_materialized_size_bytes: Option<usize>,
 }
 
 #[typetag::serde]
@@ -442,6 +445,7 @@ impl ScanTask {
         storage_config: Arc<StorageConfig>,
         pushdowns: Pushdowns,
         generated_fields: Option<SchemaRef>,
+        estimated_size_bytes_in_memory: Option<usize>,
     ) -> Self {
         assert!(!sources.is_empty());
         debug_assert!(
@@ -483,6 +487,7 @@ impl ScanTask {
             metadata,
             statistics,
             generated_fields,
+            estimated_materialized_size_bytes: estimated_size_bytes_in_memory,
         }
     }
 
@@ -534,6 +539,10 @@ impl ScanTask {
             sc1.storage_config.clone(),
             sc1.pushdowns.clone(),
             sc1.generated_fields.clone(),
+            sc1.estimated_materialized_size_bytes.and_then(|est1| {
+                sc2.estimated_materialized_size_bytes
+                    .map(|est2| est1 + est2)
+            }),
         ))
     }
 
@@ -809,6 +818,7 @@ mod test {
                 NativeStorageConfig::new_internal(false, None),
             ))),
             Pushdowns::default(),
+            None,
             None,
         )
     }

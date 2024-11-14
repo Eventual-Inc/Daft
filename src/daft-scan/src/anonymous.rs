@@ -114,6 +114,7 @@ impl ScanOperator for AnonymousScanOperator {
                     storage_config.clone(),
                     pushdowns.clone(),
                     None,
+                    None,
                 )
                 .into())
             }));
