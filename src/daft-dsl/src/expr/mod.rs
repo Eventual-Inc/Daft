@@ -25,7 +25,7 @@ use super::functions::FunctionExpr;
 use crate::{
     functions::{
         binary_op_display_without_formatter, function_display_without_formatter,
-        function_semantic_id,
+        function_semantic_id, is_in_display_without_formatter,
         python::PythonUDF,
         scalar_function_semantic_id,
         sketch::{HashableVecPercentiles, SketchExpr},
@@ -130,7 +130,7 @@ pub enum Expr {
     #[display("fill_null({_0}, {_1})")]
     FillNull(ExprRef, ExprRef),
 
-    #[display("{_0} in [..todo]")]
+    #[display("{}", is_in_display_without_formatter(_0, _1)?)]
     IsIn(ExprRef, Vec<ExprRef>),
 
     #[display("{_0} in [{_1},{_2}]")]

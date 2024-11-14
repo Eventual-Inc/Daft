@@ -21,7 +21,7 @@ impl Series {
                 let first_dtype = first.data_type();
                 for s in rest {
                     if s.data_type() == &DataType::Null {
-                        let s = Series::full_null("name", first_dtype, s.len());
+                        let s = Self::full_null("name", first_dtype, s.len());
                         series.push(s);
                     } else if first_dtype != s.data_type() {
                         return Err(DaftError::TypeError(format!(

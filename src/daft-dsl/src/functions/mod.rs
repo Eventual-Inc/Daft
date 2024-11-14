@@ -112,6 +112,22 @@ pub fn function_display_without_formatter(
     Ok(f)
 }
 
+pub fn is_in_display_without_formatter(
+    expr: &ExprRef,
+    inputs: &[ExprRef],
+) -> std::result::Result<String, std::fmt::Error> {
+    let mut f = String::default();
+    write!(&mut f, "{expr} IN (")?;
+    for (i, input) in inputs.iter().enumerate() {
+        if i != 0 {
+            write!(&mut f, ", ")?;
+        }
+        write!(&mut f, "{input}")?;
+    }
+    write!(&mut f, ")")?;
+    Ok(f)
+}
+
 pub fn binary_op_display_without_formatter(
     op: &Operator,
     left: &ExprRef,
