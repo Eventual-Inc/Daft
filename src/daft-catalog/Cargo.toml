@@ -1,11 +1,8 @@
 [dependencies]
 common-error = {path = "../common/error", default-features = false}
-common-io-config = {path = "../common/io-config", default-features = false}
 daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
 lazy_static = {workspace = true}
-once_cell = {workspace = true}
 pyo3 = {workspace = true, optional = true}
-serde = {workspace = true}
 snafu.workspace = true
 
 [features]
