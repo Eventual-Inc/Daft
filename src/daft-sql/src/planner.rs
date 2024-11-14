@@ -779,7 +779,7 @@ impl SQLPlanner {
                         let (mut left_i, mut right_i, mut null_equals_nulls_i) =
                             process_join_on(left, left_rel, right_rel)?;
                         let (mut left_j, mut right_j, mut null_equals_nulls_j) =
-                            process_join_on(left, left_rel, right_rel)?;
+                            process_join_on(right, left_rel, right_rel)?;
                         left_i.append(&mut left_j);
                         right_i.append(&mut right_j);
                         null_equals_nulls_i.append(&mut null_equals_nulls_j);
