@@ -108,7 +108,7 @@ impl SQLFunction for Utf8Expr {
             Self::ToDate(_) => "Parses the string as a date using the specified format.".to_string(),
             Self::ToDatetime(_, _) => "Parses the string as a datetime using the specified format.".to_string(),
             Self::LengthBytes => "Returns the length of the string in bytes".to_string(),
-            Self::Normalize(_) => unimplemented!("Normalize not implemented"),
+            Self::Normalize(_) => "Normalizes a string for more useful deduplication and data cleaning".to_string(),
         }
     }
 
@@ -141,7 +141,13 @@ impl SQLFunction for Utf8Expr {
             Self::ToDate(_) => &["string_input", "format"],
             Self::ToDatetime(_, _) => &["string_input", "format"],
             Self::LengthBytes => &["string_input"],
-            Self::Normalize(_) => unimplemented!("Normalize not implemented"),
+            Self::Normalize(_) => &[
+                "input",
+                "remove_punct",
+                "lowercase",
+                "nfd_unicode",
+                "white_space",
+            ],
         }
     }
 }
@@ -402,6 +408,19 @@ impl SQLFunction for SQLNormalize {
             }
             _ => invalid_operation_err!("Invalid arguments for normalize"),
         }
+    }
+    fn docstrings(&self, _: &str) -> String {
+        "Normalizes a string for more useful deduplication and data cleaning".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &[
+            "input",
+            "remove_punct",
+            "lowercase",
+            "nfd_unicode",
+            "white_space",
+        ]
     }
 }
 
