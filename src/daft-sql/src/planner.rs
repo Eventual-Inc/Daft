@@ -1285,11 +1285,7 @@ impl SQLPlanner {
                 )
             }
             SQLExpr::Exists { .. } => unsupported_sql_err!("EXISTS"),
-            SQLExpr::Subquery(subquery) => {
-                let mut this = Self::new(self.catalog.clone());
-                let subquery = this.plan_query(subquery)?.build();
-                Ok(Expr::Subquery(Subquery { plan: subquery }).arced())
-            }
+            SQLExpr::Subquery(_) => unsupported_sql_err!("SUBQUERY"),
             SQLExpr::GroupingSets(_) => unsupported_sql_err!("GROUPING SETS"),
             SQLExpr::Cube(_) => unsupported_sql_err!("CUBE"),
             SQLExpr::Rollup(_) => unsupported_sql_err!("ROLLUP"),
