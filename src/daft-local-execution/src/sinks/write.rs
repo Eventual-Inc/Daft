@@ -24,6 +24,7 @@ pub enum WriteFormat {
     PartitionedIceberg,
     Deltalake,
     PartitionedDeltalake,
+    Lance,
 }
 
 struct WriteState {
@@ -114,6 +115,7 @@ impl BlockingSink for WriteSink {
             WriteFormat::PartitionedIceberg => "PartitionedIcebergSink",
             WriteFormat::Deltalake => "DeltalakeSink",
             WriteFormat::PartitionedDeltalake => "PartitionedDeltalakeSink",
+            WriteFormat::Lance => "LanceSink",
         }
     }
 

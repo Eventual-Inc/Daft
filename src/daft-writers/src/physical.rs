@@ -59,7 +59,7 @@ pub fn create_pyarrow_file_writer(
 ) -> DaftResult<Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Option<Table>>>> {
     match format {
         #[cfg(feature = "python")]
-        FileFormat::Parquet => Ok(Box::new(crate::python::PyArrowWriter::new_parquet_writer(
+        FileFormat::Parquet => Ok(Box::new(crate::pyarrow::PyArrowWriter::new_parquet_writer(
             root_dir,
             file_idx,
             compression,
@@ -67,7 +67,7 @@ pub fn create_pyarrow_file_writer(
             partition,
         )?)),
         #[cfg(feature = "python")]
-        FileFormat::Csv => Ok(Box::new(crate::python::PyArrowWriter::new_csv_writer(
+        FileFormat::Csv => Ok(Box::new(crate::pyarrow::PyArrowWriter::new_csv_writer(
             root_dir, file_idx, io_config, partition,
         )?)),
         _ => Err(DaftError::ComputeError(

@@ -4,6 +4,8 @@ mod translate;
 
 #[cfg(feature = "python")]
 pub use plan::CatalogWrite;
+#[cfg(feature = "python")]
+pub use plan::LanceWrite;
 pub use plan::{
     ActorPoolProject, Concat, EmptyScan, Explode, Filter, HashAggregate, HashJoin, InMemoryScan,
     Limit, LocalPhysicalPlan, LocalPhysicalPlanRef, PhysicalScan, PhysicalWrite, Pivot, Project,
