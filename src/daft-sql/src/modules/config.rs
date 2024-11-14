@@ -125,6 +125,34 @@ impl SQLFunction for S3ConfigFunction {
 
         Ok(Expr::Literal(LiteralValue::Struct(entries)).arced())
     }
+    fn docstrings(&self, _: &str) -> String {
+        "Create configurations to be used when accessing an S3-compatible system.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &[
+            "region_name",
+            "endpoint_url",
+            "key_id",
+            "session_token",
+            "access_key",
+            "credentials_provider",
+            "buffer_time",
+            "max_connections_per_io_thread",
+            "retry_initial_backoff_ms",
+            "connect_timeout_ms",
+            "read_timeout_ms",
+            "num_tries",
+            "retry_mode",
+            "anonymous",
+            "use_ssl",
+            "verify_ssl",
+            "check_hostname_ssl",
+            "requester_pays",
+            "force_virtual_addressing",
+            "profile_name",
+        ]
+    }
 }
 
 pub struct HTTPConfigFunction;
@@ -150,6 +178,14 @@ impl SQLFunction for HTTPConfigFunction {
         .collect::<_>();
 
         Ok(Expr::Literal(LiteralValue::Struct(entries)).arced())
+    }
+
+    fn docstrings(&self, _: &str) -> String {
+        "Create configurations for sending web requests.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["user_agent", "bearer_token"]
     }
 }
 pub struct AzureConfigFunction;
@@ -211,6 +247,26 @@ impl SQLFunction for AzureConfigFunction {
 
         Ok(Expr::Literal(LiteralValue::Struct(entries)).arced())
     }
+
+    fn docstrings(&self, _: &str) -> String {
+        "Create configurations to be used when accessing Azure Blob Storage.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &[
+            "storage_account",
+            "access_key",
+            "sas_token",
+            "bearer_token",
+            "tenant_id",
+            "client_id",
+            "client_secret",
+            "use_fabric_endpoint",
+            "anonymous",
+            "endpoint_url",
+            "use_ssl",
+        ]
+    }
 }
 
 pub struct GCSConfigFunction;
@@ -243,6 +299,13 @@ impl SQLFunction for GCSConfigFunction {
         .collect::<_>();
 
         Ok(Expr::Literal(LiteralValue::Struct(entries)).arced())
+    }
+    fn docstrings(&self, _: &str) -> String {
+        "Create configurations to be used when accessing Google Cloud Storage.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["project_id", "credentials", "token", "anonymous"]
     }
 }
 

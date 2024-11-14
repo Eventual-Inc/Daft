@@ -51,6 +51,14 @@ impl SQLFunction for SQLHash {
             _ => unsupported_sql_err!("Invalid arguments for hash: '{inputs:?}'"),
         }
     }
+
+    fn docstrings(&self, _: &str) -> String {
+        "Hashes the values in the input expression.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input", "seed"]
+    }
 }
 
 pub struct SQLMinhash;
@@ -131,5 +139,14 @@ impl SQLFunction for SQLMinhash {
             }
             _ => unsupported_sql_err!("Invalid arguments for minhash: '{inputs:?}'"),
         }
+    }
+
+    fn docstrings(&self, _: &str) -> String {
+        "Calculates the minimum hash over the inputs ngrams, repeating with num_hashes permutations."
+            .to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input", "num_hashes", "ngram_size", "seed", "hash_function"]
     }
 }

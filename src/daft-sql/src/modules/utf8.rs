@@ -108,7 +108,7 @@ impl SQLFunction for Utf8Expr {
             Self::ToDate(_) => "Parses the string as a date using the specified format.".to_string(),
             Self::ToDatetime(_, _) => "Parses the string as a datetime using the specified format.".to_string(),
             Self::LengthBytes => "Returns the length of the string in bytes".to_string(),
-            Self::Normalize(_) => unimplemented!("Normalize not implemented"),
+            Self::Normalize(_) => "Normalizes a string for more useful deduplication and data cleaning".to_string(),
         }
     }
 
@@ -141,7 +141,13 @@ impl SQLFunction for Utf8Expr {
             Self::ToDate(_) => &["string_input", "format"],
             Self::ToDatetime(_, _) => &["string_input", "format"],
             Self::LengthBytes => &["string_input"],
-            Self::Normalize(_) => unimplemented!("Normalize not implemented"),
+            Self::Normalize(_) => &[
+                "input",
+                "remove_punct",
+                "lowercase",
+                "nfd_unicode",
+                "white_space",
+            ],
         }
     }
 }
@@ -358,6 +364,15 @@ impl SQLFunction for SQLCountMatches {
             )),
         }
     }
+
+    fn docstrings(&self, _: &str) -> String {
+        "Counts the number of times a pattern, or multiple patterns, appears in the input."
+            .to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input", "pattern", "whole_words", "case_sensitive"]
+    }
 }
 
 pub struct SQLNormalize;
@@ -402,6 +417,19 @@ impl SQLFunction for SQLNormalize {
             }
             _ => invalid_operation_err!("Invalid arguments for normalize"),
         }
+    }
+    fn docstrings(&self, _: &str) -> String {
+        "Normalizes a string for more useful deduplication and data cleaning.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &[
+            "input",
+            "remove_punct",
+            "lowercase",
+            "nfd_unicode",
+            "white_space",
+        ]
     }
 }
 
@@ -476,6 +504,21 @@ impl SQLFunction for SQLTokenizeEncode {
             _ => invalid_operation_err!("Invalid arguments for tokenize_encode"),
         }
     }
+
+    fn docstrings(&self, _: &str) -> String {
+        "Decodes each list of integer tokens into a string using a tokenizer.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &[
+            "input",
+            "token_path",
+            "io_config",
+            "pattern",
+            "special_tokens",
+            "use_special_tokens",
+        ]
+    }
 }
 
 pub struct SQLTokenizeDecode;
@@ -539,6 +582,21 @@ impl SQLFunction for SQLTokenizeDecode {
             }
             _ => invalid_operation_err!("Invalid arguments for tokenize_decode"),
         }
+    }
+
+    fn docstrings(&self, _: &str) -> String {
+        "Encodes each string as a list of integer tokens using a tokenizer.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &[
+            "input",
+            "token_path",
+            "io_config",
+            "pattern",
+            "special_tokens",
+            "use_special_tokens",
+        ]
     }
 }
 
