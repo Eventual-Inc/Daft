@@ -69,7 +69,7 @@ __all__ = [
 ]
 
 # Forward imports from the native catalog which don't require Python wrappers
-from daft.daft.catalog import unregister_catalog
+unregister_catalog = native_catalog.unregister_catalog
 
 
 def read_table(name: str, catalog_name: str | None = None) -> DataFrame:
