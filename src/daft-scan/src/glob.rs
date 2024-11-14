@@ -1,4 +1,4 @@
-use std::{sync::Arc, vec};
+use std::{pin::Pin, sync::Arc, vec};
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
@@ -16,7 +16,7 @@ use daft_schema::{
 };
 use daft_stats::PartitionSpec;
 use daft_table::Table;
-use futures::{stream::BoxStream, StreamExt, TryStreamExt};
+use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
 use snafu::Snafu;
 
 use crate::{
@@ -25,6 +25,8 @@ use crate::{
     storage_config::StorageConfig,
     ChunkSpec, DataSource, ScanTask,
 };
+use crate::scan_task_iters::BoxScanTaskStream;
+
 #[derive(Debug)]
 pub struct GlobScanOperator {
     glob_paths: Vec<String>,
@@ -74,31 +76,28 @@ impl From<Error> for DaftError {
 }
 
 type FileInfoIterator = Box<dyn Iterator<Item = DaftResult<FileMetadata>>>;
+type FileInfoStream = Pin<Box<dyn Stream<Item = DaftResult<FileMetadata>>>>;
 
-fn run_glob(
+async fn run_glob(
     glob_path: &str,
     limit: Option<usize>,
     io_client: Arc<IOClient>,
-    runtime: RuntimeRef,
     io_stats: Option<IOStatsRef>,
     file_format: FileFormat,
-) -> DaftResult<FileInfoIterator> {
+) -> DaftResult<impl Stream<Item = DaftResult<FileMetadata>> + Unpin> {
     let (_, parsed_glob_path) = parse_url(glob_path)?;
     // Construct a static-lifetime BoxStream returning the FileMetadata
     let glob_input = parsed_glob_path.as_ref().to_string();
-    let boxstream = runtime.block_on_current_thread(async move {
+    let boxstream = async move {
         io_client
             .glob(glob_input, None, None, limit, io_stats, Some(file_format))
             .await
-    })?;
+    }
+    .await?;
 
-    // Construct a static-lifetime BoxStreamIterator
-    let iterator = BoxStreamIterator {
-        boxstream,
-        runtime_handle: runtime.clone(),
-    };
-    let iterator = iterator.map(|fm| Ok(fm?));
-    Ok(Box::new(iterator))
+    let stream = boxstream.map(|fm| Ok(fm?));
+
+    Ok(stream)
 }
 
 fn run_glob_parallel(
@@ -139,7 +138,7 @@ fn run_glob_parallel(
 }
 
 impl GlobScanOperator {
-    pub fn try_new(
+    pub async fn try_new(
         glob_paths: Vec<String>,
         file_format_config: Arc<FileFormatConfig>,
         storage_config: Arc<StorageConfig>,
@@ -165,14 +164,14 @@ impl GlobScanOperator {
             first_glob_path,
             Some(1),
             io_client.clone(),
-            io_runtime,
             Some(io_stats.clone()),
             file_format,
-        )?;
+        )
+        .await?;
         let FileMetadata {
             filepath: first_filepath,
             ..
-        } = match paths.next() {
+        } = match paths.next().await {
             Some(file_metadata) => file_metadata,
             None => Err(Error::GlobNoMatch {
                 glob_path: first_glob_path.to_string(),
@@ -228,7 +227,8 @@ impl GlobScanOperator {
                                 ..Default::default()
                             },
                             field_id_mapping.clone(),
-                        )?;
+                        )
+                        .await?;
 
                         schema
                     }
@@ -400,7 +400,8 @@ impl ScanOperator for GlobScanOperator {
             .collect();
         let partition_schema = Schema::new(partition_fields)?;
         // Create one ScanTask per file.
-        let mut scan_tasks: BoxScanTaskIter = Box::new(files.enumerate().filter_map(|(idx, f)| {
+
+        let scan_tasks_iter = files.enumerate().filter_map(|(idx, f)| {
             let scan_task_result = (|| {
                 let FileMetadata {
                     filepath: path,
@@ -468,7 +469,9 @@ impl ScanOperator for GlobScanOperator {
                 Ok(None) => None,
                 Err(e) => Some(Err(e)),
             }
-        }));
+        });
+
+        let mut scan_tasks: BoxScanTaskStream = Box::pin(futures::stream::iter(scan_tasks_iter));
 
         if let Some(cfg) = cfg {
             scan_tasks = split_by_row_groups(

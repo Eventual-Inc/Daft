@@ -2,6 +2,7 @@ use std::{
     collections::HashMap,
     fs::File,
     io::Write,
+    pin::Pin,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -11,6 +12,8 @@ use common_error::DaftResult;
 use common_tracing::refresh_chrome_trace;
 use daft_local_plan::{translate, LocalPhysicalPlan};
 use daft_micropartition::MicroPartition;
+use futures::{Stream, StreamExt};
+use tokio_stream::wrappers::ReceiverStream;
 #[cfg(feature = "python")]
 use {
     common_daft_config::PyDaftExecutionConfig,
@@ -116,7 +119,7 @@ pub fn run_local(
     psets: HashMap<String, Vec<Arc<MicroPartition>>>,
     cfg: Arc<DaftExecutionConfig>,
     results_buffer_size: Option<usize>,
-) -> DaftResult<Box<dyn Iterator<Item = DaftResult<Arc<MicroPartition>>> + Send>> {
+) -> DaftResult<impl Stream<Item = Arc<MicroPartition>> + Unpin + Send> {
     refresh_chrome_trace();
     let mut pipeline = physical_plan_to_pipeline(physical_plan, &psets, &cfg)?;
     let (tx, rx) = create_channel(results_buffer_size.unwrap_or(1));
@@ -173,38 +176,8 @@ pub fn run_local(
         })
     });
 
-    struct ReceiverIterator {
-        receiver: Receiver<Arc<MicroPartition>>,
-        handle: Option<std::thread::JoinHandle<DaftResult<()>>>,
-    }
+    use futures::StreamExt;
+    let stream = ReceiverStream::new(rx);
 
-    impl Iterator for ReceiverIterator {
-        type Item = DaftResult<Arc<MicroPartition>>;
-
-        fn next(&mut self) -> Option<Self::Item> {
-            match self.receiver.blocking_recv() {
-                Some(part) => Some(Ok(part)),
-                None => {
-                    if self.handle.is_some() {
-                        let join_result = self
-                            .handle
-                            .take()
-                            .unwrap()
-                            .join()
-                            .expect("Execution engine thread panicked");
-                        match join_result {
-                            Ok(()) => None,
-                            Err(e) => Some(Err(e)),
-                        }
-                    } else {
-                        None
-                    }
-                }
-            }
-        }
-    }
-    Ok(Box::new(ReceiverIterator {
-        receiver: rx,
-        handle: Some(handle),
-    }))
+    Ok(stream)
 }

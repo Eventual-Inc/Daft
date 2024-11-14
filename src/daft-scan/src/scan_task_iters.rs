@@ -1,10 +1,15 @@
-use std::sync::Arc;
+use std::{
+    pin::{pin, Pin},
+    sync::Arc,
+    task::{ready, Context, Poll},
+};
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use daft_io::IOStatsContext;
 use daft_parquet::read::read_parquet_metadata;
+use futures::{Stream, StreamExt};
 use parquet2::metadata::RowGroupList;
 
 use crate::{
@@ -12,6 +17,7 @@ use crate::{
 };
 
 pub(crate) type BoxScanTaskIter<'a> = Box<dyn Iterator<Item = DaftResult<ScanTaskRef>> + 'a>;
+pub(crate) type BoxScanTaskStream<'a> = Pin<Box<dyn Stream<Item = DaftResult<ScanTaskRef>> + 'a>>;
 
 /// Coalesces ScanTasks by their [`ScanTask::estimate_in_memory_size_bytes()`]
 ///
@@ -26,17 +32,22 @@ pub(crate) type BoxScanTaskIter<'a> = Box<dyn Iterator<Item = DaftResult<ScanTas
 /// * `min_size_bytes`: Minimum size in bytes of a ScanTask, after which no more merging will be performed
 /// * `max_size_bytes`: Maximum size in bytes of a ScanTask, capping the maximum size of a merged ScanTask
 #[must_use]
-pub(crate) fn merge_by_sizes<'a>(
-    scan_tasks: BoxScanTaskIter<'a>,
+pub(crate) async fn merge_by_sizes<'a>(
+    scan_tasks: BoxScanTaskStream<'a>,
     pushdowns: &Pushdowns,
     cfg: &'a DaftExecutionConfig,
-) -> BoxScanTaskIter<'a> {
+) -> BoxScanTaskStream<'a> {
     if let Some(limit) = pushdowns.limit {
         // If LIMIT pushdown is present, perform a more conservative merge using the estimated size of the LIMIT
-        let mut scan_tasks = scan_tasks.peekable();
+        let scan_tasks = scan_tasks.peekable();
+        let mut scan_tasks = Box::pin(scan_tasks);
+
         let first_scantask = scan_tasks
+            .as_mut()
             .peek()
+            .await
             .and_then(|x| x.as_ref().map(std::clone::Clone::clone).ok());
+
         if let Some(first_scantask) = first_scantask {
             let estimated_bytes_for_reading_limit_rows = first_scantask
                 .as_ref()
@@ -50,30 +61,30 @@ pub(crate) fn merge_by_sizes<'a>(
                         })
                 });
             if let Some(limit_bytes) = estimated_bytes_for_reading_limit_rows {
-                return Box::new(MergeByFileSize {
-                    iter: Box::new(scan_tasks),
+                return Box::pin(MergeByFileSize {
+                    stream: scan_tasks,
                     cfg,
                     target_upper_bound_size_bytes: (limit_bytes * 1.5) as usize,
                     target_lower_bound_size_bytes: (limit_bytes / 2.) as usize,
                     accumulator: None,
-                }) as BoxScanTaskIter;
+                }) as BoxScanTaskStream;
             }
         }
         // If we are unable to determine an estimation on the LIMIT size, so we don't perform a merge
-        Box::new(scan_tasks)
+        scan_tasks
     } else {
-        Box::new(MergeByFileSize {
-            iter: scan_tasks,
+        Box::pin(MergeByFileSize {
+            stream: scan_tasks,
             cfg,
             target_upper_bound_size_bytes: cfg.scan_tasks_max_size_bytes,
             target_lower_bound_size_bytes: cfg.scan_tasks_min_size_bytes,
             accumulator: None,
-        }) as BoxScanTaskIter
+        }) as BoxScanTaskStream
     }
 }
 
 struct MergeByFileSize<'a> {
-    iter: BoxScanTaskIter<'a>,
+    stream: BoxScanTaskStream<'a>,
     cfg: &'a DaftExecutionConfig,
 
     // The target upper/lower bound for in-memory size_bytes of a merged ScanTask
@@ -128,29 +139,29 @@ impl<'a> MergeByFileSize<'a> {
     }
 }
 
-impl<'a> Iterator for MergeByFileSize<'a> {
+impl<'a> Stream for MergeByFileSize<'a> {
     type Item = DaftResult<ScanTaskRef>;
 
-    fn next(&mut self) -> Option<Self::Item> {
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         loop {
             // Create accumulator if not already present
             if self.accumulator.is_none() {
-                self.accumulator = match self.iter.next() {
+                self.accumulator = match ready!(self.stream.as_mut().poll_next(cx)) {
                     Some(Ok(item)) => Some(item),
-                    e @ Some(Err(_)) => return e,
-                    None => return None,
+                    e @ Some(Err(_)) => return Poll::Ready(e),
+                    None => return Poll::Ready(None),
                 };
             }
 
             // Emit accumulator if ready
             if self.accumulator_ready() {
-                return self.accumulator.take().map(Ok);
+                return Poll::Ready(self.accumulator.take().map(Ok));
             }
 
-            let next_item = match self.iter.next() {
+            let next_item = match ready!(self.stream.as_mut().poll_next(cx)) {
                 Some(Ok(item)) => item,
-                e @ Some(Err(_)) => return e,
-                None => return self.accumulator.take().map(Ok),
+                e @ Some(Err(_)) => return Poll::Ready(e),
+                None => return Poll::Ready(self.accumulator.take().map(Ok)),
             };
 
             // Emit accumulator if `next_item` cannot be merged
@@ -159,7 +170,7 @@ impl<'a> Iterator for MergeByFileSize<'a> {
                 .is_none()
                 || !self.can_merge(&next_item)
             {
-                return self.accumulator.replace(next_item).map(Ok);
+                return Poll::Ready(self.accumulator.replace(next_item).map(Ok));
             }
 
             // Merge into a new accumulator
@@ -177,13 +188,15 @@ impl<'a> Iterator for MergeByFileSize<'a> {
 }
 
 #[must_use]
-pub(crate) fn split_by_row_groups(
-    scan_tasks: BoxScanTaskIter,
+pub(crate) async fn split_by_row_groups<'a>(
+    scan_tasks: BoxScanTaskStream<'a>,
     max_tasks: usize,
     min_size_bytes: usize,
     max_size_bytes: usize,
-) -> BoxScanTaskIter {
-    let mut scan_tasks = itertools::peek_nth(scan_tasks);
+) -> BoxScanTaskStream<'a> {
+    let mut scan_tasks = scan_tasks.peekable();
+
+    scan_tasks.peek_n
 
     // only split if we have a small amount of files
     if scan_tasks.peek_nth(max_tasks).is_some() {
@@ -220,7 +233,7 @@ pub(crate) fn split_by_row_groups(
                         .map_or(true, |s| s > max_size_bytes as u64)
                       && source
                         .get_iceberg_delete_files()
-                        .map_or(true, std::vec::Vec::is_empty)
+                        .map_or(true, Vec::is_empty)
                     {
                         let (io_runtime, io_client) =
                             t.storage_config.get_io_client_and_runtime()?;
