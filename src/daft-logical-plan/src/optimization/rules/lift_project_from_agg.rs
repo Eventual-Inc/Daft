@@ -11,9 +11,11 @@ use crate::{
     LogicalPlan,
 };
 
-/// Optimization rule for lifting expressions that can be done in a project out of an aggregation.
-///
+/// Rewrite rule for lifting expressions that can be done in a project out of an aggregation.
 /// After a pass of this rule, the top level expressions in each aggregate should all be aliases or agg exprs.
+///
+///The logical to physical plan translation currently assumes that expressions are lifted out of aggregations,
+/// so this rule must be run to rewrite the plan into a valid state.
 ///
 /// # Examples
 ///
@@ -25,7 +27,7 @@ use crate::{
 /// ### Groupby Agg
 /// Input: `Agg [groupby="key", sum("x") + sum("y")] <- Scan`
 ///
-/// Output: `Project ["key", col("sum(x)") + col("sum(y)")] <- Agg [sum("x"), sum("y")] <- Scan`
+/// Output: `Project ["key", col("sum(x)") + col("sum(y)")] <- Agg [groupby="key", sum("x"), sum("y")] <- Scan`
 #[derive(Default, Debug)]
 pub struct LiftProjectFromAgg {}
 

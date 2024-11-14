@@ -106,6 +106,7 @@ impl Optimizer {
             ));
         }
 
+        // --- Rewrite rules ---
         rule_batches.push(RuleBatch::new(
             vec![Box::new(LiftProjectFromAgg::new())],
             RuleExecutionStrategy::Once,
