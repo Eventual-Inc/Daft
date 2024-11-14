@@ -14,13 +14,16 @@ repos:
   hooks:
   - id: detect-private-key
   - id: trailing-whitespace
-    exclude: docs/source/api_docs/
+    exclude:
+          (?x)^(
+          docs/source/api_docs/|
+          tests/assets/mvp.csv
+      )$ 
   - id: end-of-file-fixer
     exclude: |
       (?x)^(
           docs/source/api_docs/|
-          docs/source/user_guide/fotw/data/|
-          tests/assets/mvp.csv
+          docs/source/user_guide/fotw/data/
       )$
   - id: check-yaml
     exclude: kubernetes-ops
