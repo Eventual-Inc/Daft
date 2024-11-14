@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use common_error::DaftResult;
-use common_file_formats::{FileFormatConfig, ParquetSourceConfig, CsvSourceConfig};
+use common_file_formats::{CsvSourceConfig, FileFormatConfig, ParquetSourceConfig};
 use common_io_config::IOConfig;
 use common_scan_info::ScanOperatorRef;
 use daft_core::prelude::TimeUnit;
@@ -126,7 +126,7 @@ pub fn parquet_scan<T: IntoGlobPath>(glob_path: T) -> ParquetScanBuilder {
 }
 
 pub struct CsvScanBuilder {
-    pub glob_paths:  Vec<String>,
+    pub glob_paths: Vec<String>,
     pub infer_schema: bool,
     pub io_config: Option<IOConfig>,
     pub schema: Option<SchemaRef>,
@@ -142,7 +142,7 @@ pub struct CsvScanBuilder {
     pub buffer_size: Option<usize>,
     pub chunk_size: Option<usize>,
     pub use_native_downloader: bool,
-    pub schema_hints: Option<SchemaRef>
+    pub schema_hints: Option<SchemaRef>,
 }
 
 impl CsvScanBuilder {
@@ -238,7 +238,6 @@ impl CsvScanBuilder {
         self
     }
 
-
     pub fn finish(self) -> DaftResult<LogicalPlanBuilder> {
         let cfg = CsvSourceConfig {
             delimiter: self.delimiter,
@@ -248,7 +247,7 @@ impl CsvScanBuilder {
             escape_char: self.escape_char,
             comment: self.comment,
             allow_variable_columns: self.allow_variable_columns,
-            buffer_size: self.buffer_size, 
+            buffer_size: self.buffer_size,
             chunk_size: self.chunk_size,
         };
 
@@ -267,7 +266,6 @@ impl CsvScanBuilder {
         LogicalPlanBuilder::table_scan(ScanOperatorRef(operator), None)
     }
 }
-
 
 #[cfg(feature = "python")]
 pub fn delta_scan<T: AsRef<str>>(

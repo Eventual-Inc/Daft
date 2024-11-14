@@ -165,7 +165,7 @@ mod tests {
 
     #[rstest]
     fn test_compile_from_read_parquet(mut planner: SQLPlanner) -> SQLPlannerResult<()> {
-        let query = "select * from read_parquet('../../tests/assets/parquet-data/mvp.parquet', infer_schema => false)";
+        let query = "select * from read_parquet('../../tests/assets/parquet-data/mvp.parquet')";
         let plan = planner.plan_sql(query);
         assert!(&plan.is_ok(), "query: {query}\nerror: {plan:?}");
 
@@ -174,7 +174,8 @@ mod tests {
 
     #[rstest]
     fn test_compile_from_read_csv(mut planner: SQLPlanner) -> SQLPlannerResult<()> {
-        let query = "select * from read_csv('../../tests/assets/sampled-tpch.csv', delimiter => ',')";
+        let query =
+            "select * from read_csv('../../tests/assets/sampled-tpch.csv', delimiter => ',')";
         let plan = planner.plan_sql(query);
         assert!(&plan.is_ok(), "query: {query}\nerror: {plan:?}");
 

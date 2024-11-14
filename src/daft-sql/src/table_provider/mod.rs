@@ -1,11 +1,11 @@
-pub mod read_parquet;
 pub mod read_csv;
+pub mod read_parquet;
 use std::{collections::HashMap, sync::Arc};
 
 use daft_logical_plan::LogicalPlanBuilder;
 use once_cell::sync::Lazy;
-use read_parquet::ReadParquetFunction;
 use read_csv::ReadCsvFunction;
+use read_parquet::ReadParquetFunction;
 use sqlparser::ast::TableFunctionArgs;
 
 use crate::{

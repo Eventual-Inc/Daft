@@ -22,7 +22,9 @@ impl TryFrom<SQLFunctionArguments> for CsvScanBuilder {
         let quote = args.try_get_named("quote")?;
         let escape_char = args.try_get_named("escape_char")?;
         let comment = args.try_get_named("comment")?;
-        let allow_variable_columns = args.try_get_named("allow_variable_columns")?.unwrap_or(false);
+        let allow_variable_columns = args
+            .try_get_named("allow_variable_columns")?
+            .unwrap_or(false);
         let glob_paths: String = match args.try_get_positional(0) {
             Ok(Some(path)) => path,
             Ok(None) => {
@@ -30,7 +32,9 @@ impl TryFrom<SQLFunctionArguments> for CsvScanBuilder {
                 match args.try_get_named("path") {
                     Ok(Some(path)) => path,
                     Ok(None) => {
-                        return Err(PlannerError::invalid_operation("path is required for `read_csv`"));
+                        return Err(PlannerError::invalid_operation(
+                            "path is required for `read_csv`",
+                        ));
                     }
                     Err(err) => return Err(err),
                 }
