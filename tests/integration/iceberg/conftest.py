@@ -67,7 +67,7 @@ def local_iceberg_catalog() -> Iterator[tuple[str, Catalog]]:
     catalog_name = "_local_iceberg_catalog"
     daft.catalog.register_python_catalog(cat, name=catalog_name)
     yield catalog_name, cat
-    daft.catalog.unregister_catalog(name=catalog_name)
+    daft.catalog.unregister_catalog(catalog_name=catalog_name)
 
 
 @pytest.fixture(scope="session")
@@ -83,7 +83,7 @@ def azure_iceberg_catalog() -> Iterator[tuple[str, Catalog]]:
     catalog_name = "_azure_iceberg_catalog"
     daft.catalog.register_python_catalog(cat, name=catalog_name)
     yield catalog_name, cat
-    daft.catalog.unregister_catalog(name=catalog_name)
+    daft.catalog.unregister_catalog(catalog_name=catalog_name)
 
 
 @tenacity.retry(
