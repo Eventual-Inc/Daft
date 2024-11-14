@@ -1,4 +1,5 @@
 use common_error::{DaftError, DaftResult};
+use daft_schema::dtype::DataType;
 
 use crate::{
     series::{IntoSeries, Series},
@@ -15,18 +16,25 @@ impl Series {
             )),
             [single_series] => Ok((*single_series).clone()),
             [first, rest @ ..] => {
+                let mut series = vec![(*first).clone()];
+
                 let first_dtype = first.data_type();
                 for s in rest {
-                    if first_dtype != s.data_type() {
+                    if s.data_type() == &DataType::Null {
+                        let s = Series::full_null("name", first_dtype, dbg!(s.len()));
+                        series.push(s);
+                    } else if first_dtype != s.data_type() {
                         return Err(DaftError::TypeError(format!(
                             "Series concat requires all data types to match. Found mismatched types. All types: {:?}",
                             all_types
                         )));
+                    } else {
+                        series.push((*s).clone());
                     }
                 }
 
                 with_match_daft_types!(first_dtype, |$T| {
-                    let downcasted = series.into_iter().map(|s| s.downcast::<<$T as DaftDataType>::ArrayType>()).collect::<DaftResult<Vec<_>>>()?;
+                    let downcasted = series.iter().map(|s| s.downcast::<<$T as DaftDataType>::ArrayType>()).collect::<DaftResult<Vec<_>>>()?;
                     Ok(<$T as DaftDataType>::ArrayType::concat(downcasted.as_slice())?.into_series())
                 })
             }

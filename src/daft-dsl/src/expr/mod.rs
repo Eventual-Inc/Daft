@@ -130,8 +130,8 @@ pub enum Expr {
     #[display("fill_null({_0}, {_1})")]
     FillNull(ExprRef, ExprRef),
 
-    #[display("{_0} in {_1}")]
-    IsIn(ExprRef, ExprRef),
+    #[display("{_0} in [..todo]")]
+    IsIn(ExprRef, Vec<ExprRef>),
 
     #[display("{_0} in [{_1},{_2}]")]
     Between(ExprRef, ExprRef, ExprRef),
@@ -601,7 +601,7 @@ impl Expr {
         Self::FillNull(self, fill_value).into()
     }
 
-    pub fn is_in(self: ExprRef, items: ExprRef) -> ExprRef {
+    pub fn is_in(self: ExprRef, items: Vec<ExprRef>) -> ExprRef {
         Self::IsIn(self, items).into()
     }
 
@@ -677,7 +677,10 @@ impl Expr {
             }
             Self::IsIn(expr, items) => {
                 let child_id = expr.semantic_id(schema);
-                let items_id = items.semantic_id(schema);
+                let items_id = items.iter().fold(String::new(), |acc, item| {
+                    format!("{},{}", acc, item.semantic_id(schema))
+                });
+
                 FieldID::new(format!("{child_id}.is_in({items_id})"))
             }
             Self::Between(expr, lower, upper) => {
@@ -736,7 +739,9 @@ impl Expr {
             Self::BinaryOp { left, right, .. } => {
                 vec![left.clone(), right.clone()]
             }
-            Self::IsIn(expr, items) => vec![expr.clone(), items.clone()],
+            Self::IsIn(expr, items) => std::iter::once(expr.clone())
+                .chain(items.iter().cloned())
+                .collect::<Vec<_>>(),
             Self::Between(expr, lower, upper) => vec![expr.clone(), lower.clone(), upper.clone()],
             Self::IfElse {
                 if_true,
@@ -783,10 +788,18 @@ impl Expr {
                 left: children.first().expect("Should have 1 child").clone(),
                 right: children.get(1).expect("Should have 2 child").clone(),
             },
-            Self::IsIn(..) => Self::IsIn(
-                children.first().expect("Should have 1 child").clone(),
-                children.get(1).expect("Should have 2 child").clone(),
-            ),
+            Self::IsIn(_, old_children) => {
+                assert_eq!(
+                    children.len(),
+                    old_children.len() + 1,
+                    "Should have same number of children"
+                );
+                let mut children_iter = children.into_iter();
+                let expr = children_iter.next().expect("Should have 1 child");
+                let items = children_iter.collect();
+
+                Self::IsIn(expr, items)
+            }
             Self::Between(..) => Self::Between(
                 children.first().expect("Should have 1 child").clone(),
                 children.get(1).expect("Should have 2 child").clone(),
@@ -860,10 +873,28 @@ impl Expr {
             }
             Self::IsIn(left, right) => {
                 let left_field = left.to_field(schema)?;
-                let right_field = right.to_field(schema)?;
+
+                let first_right_field = right
+                    .first()
+                    .expect("Should have at least 1 child")
+                    .to_field(schema)?;
+                let all_same_type = right.iter().all(|expr| {
+                    let field = expr.to_field(schema).unwrap();
+                    // allow nulls to be compared with anything
+                    if field.dtype == DataType::Null || first_right_field.dtype == DataType::Null {
+                        return true;
+                    }
+                    field.dtype == first_right_field.dtype
+                });
+                if !all_same_type {
+                    return Err(DaftError::TypeError(format!(
+                        "Expected all arguments to be of the same type, but received {first_right_field} and others",
+                    )));
+                }
+
                 let (result_type, _intermediate, _comp_type) =
                     InferDataType::from(&left_field.dtype)
-                        .membership_op(&InferDataType::from(&right_field.dtype))?;
+                        .membership_op(&InferDataType::from(&first_right_field.dtype))?;
                 Ok(Field::new(left_field.name.as_str(), result_type))
             }
             Self::Between(value, lower, upper) => {

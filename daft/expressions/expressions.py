@@ -1137,7 +1137,7 @@ class Expression:
             series = item_to_series("items", other)
             other = Expression._to_expression(series)
 
-        expr = self._expr.is_in(other._expr)
+        expr = self._expr.is_in([other._expr])
         return Expression._from_pyexpr(expr)
 
     def between(self, lower: Any, upper: Any) -> Expression:

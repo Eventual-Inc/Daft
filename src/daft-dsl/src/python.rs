@@ -453,8 +453,10 @@ impl PyExpr {
         Ok(self.expr.clone().fill_null(fill_value.expr.clone()).into())
     }
 
-    pub fn is_in(&self, other: &Self) -> PyResult<Self> {
-        Ok(self.expr.clone().is_in(other.expr.clone()).into())
+    pub fn is_in(&self, other: Vec<Self>) -> PyResult<Self> {
+        let other = other.into_iter().map(|e| e.into()).collect();
+
+        Ok(self.expr.clone().is_in(other).into())
     }
 
     pub fn between(&self, lower: &Self, upper: &Self) -> PyResult<Self> {

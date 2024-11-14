@@ -527,9 +527,17 @@ impl Table {
                 let fill_value = self.eval_expression(fill_value)?;
                 self.eval_expression(child)?.fill_null(&fill_value)
             }
-            IsIn(child, items) => self
+            IsIn(child, items) => {
+                let items = items.iter().map(|i| self.eval_expression(i)).collect::<DaftResult<Vec<_>>>()?;
+
+                dbg!(&items);
+                let items = items.iter().collect::<Vec<&Series>>();
+                let s = Series::concat(items.as_slice())?;
+                self
                 .eval_expression(child)?
-                .is_in(&self.eval_expression(items)?),
+                .is_in(dbg!(&s))
+            }
+
             Between(child, lower, upper) => self
                 .eval_expression(child)?
                 .between(&self.eval_expression(lower)?, &self.eval_expression(upper)?),

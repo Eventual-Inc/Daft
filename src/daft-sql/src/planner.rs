@@ -1115,14 +1115,14 @@ impl SQLPlanner {
                 let expr = self.plan_expr(expr)?;
                 let list = list
                     .iter()
-                    .map(|e| self.plan_lit(e))
+                    .map(|e| self.plan_expr(e))
                     .collect::<SQLPlannerResult<Vec<_>>>()?;
-                // We should really have a better way to use `is_in` instead of all of this extra wrapping of the values
-                let series = literals_to_series(&list)?;
-                let series_lit = LiteralValue::Series(series);
-                let series_expr = Expr::Literal(series_lit);
-                let series_expr_arc = Arc::new(series_expr);
-                let expr = expr.is_in(series_expr_arc);
+                // // We should really have a better way to use `is_in` instead of all of this extra wrapping of the values
+                // let series = literals_to_series(&list)?;
+                // let series_lit = LiteralValue::Series(series);
+                // let series_expr = Expr::Literal(series_lit);
+                // let series_expr_arc = Arc::new(series_expr);
+                let expr = expr.is_in(list);
                 if *negated {
                     Ok(expr.not())
                 } else {

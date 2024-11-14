@@ -111,6 +111,15 @@ def test_is_in():
     assert actual == expected
 
 
+def test_is_in_exprs():
+    df = daft.from_pydict({"x": [1, 2, 3, 5, 9]})
+    expected = {"x": [1, 2, 9]}
+    catalog = SQLCatalog({"df": df})
+    actual = daft.sql("select * from df where x in (0 + 1, 0 + 2, 0 + 9)", catalog).collect().to_pydict()
+
+    assert actual == expected
+
+
 def test_is_in_edge_cases():
     df = daft.from_pydict(
         {
