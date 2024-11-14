@@ -220,13 +220,10 @@ def get_ray_runtime_env(requirements: str | None) -> dict:
 
 def warmup_environment(requirements: str | None, parquet_folder: str):
     """Performs necessary setup of Daft on the current benchmarking environment"""
-    ctx = daft.context.get_context()
-
     if get_daft_benchmark_runner_name() == "ray":
         runtime_env = get_ray_runtime_env(requirements)
 
         ray.init(
-            address=ctx._runner.ray_address,
             runtime_env=runtime_env,
         )
 
