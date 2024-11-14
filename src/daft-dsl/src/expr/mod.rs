@@ -709,7 +709,7 @@ impl Expr {
             Self::Agg(agg_expr) => agg_expr.semantic_id(schema),
             Self::ScalarFunction(sf) => scalar_function_semantic_id(sf, schema),
 
-            Self::Subquery(..) | Self::InSubquery(..) => todo!("semantic_id for subquery"),
+            Self::Subquery(..) | Self::InSubquery(..) => FieldID::new("__subquery__"), // todo: better/unique id
         }
     }
 

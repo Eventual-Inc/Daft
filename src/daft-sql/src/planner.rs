@@ -64,6 +64,7 @@ impl Relation {
     }
 }
 
+#[derive(Clone)]
 pub struct SQLPlanner {
     catalog: SQLCatalog,
     current_relation: Option<Relation>,
@@ -1135,7 +1136,7 @@ impl SQLPlanner {
                 negated,
             } => {
                 let expr = self.plan_expr(expr)?;
-                let mut this = Self::new(self.catalog.clone());
+                let mut this = self.clone();
                 let subquery = this.plan_query(subquery)?.build();
                 let subquery = Subquery { plan: subquery };
 
@@ -1296,7 +1297,14 @@ impl SQLPlanner {
                 )
             }
             SQLExpr::Exists { .. } => unsupported_sql_err!("EXISTS"),
-            SQLExpr::Subquery(_) => unsupported_sql_err!("SUBQUERY"),
+            SQLExpr::Subquery(subquery) => {
+                let mut this = self.clone();
+                let subquery = this.plan_query(subquery)?;
+                let subquery = Subquery {
+                    plan: subquery.build(),
+                };
+                Ok(Expr::Subquery(subquery).arced())
+            }
             SQLExpr::GroupingSets(_) => unsupported_sql_err!("GROUPING SETS"),
             SQLExpr::Cube(_) => unsupported_sql_err!("CUBE"),
             SQLExpr::Rollup(_) => unsupported_sql_err!("ROLLUP"),
