@@ -2,7 +2,7 @@ use std::{num::NonZeroUsize, sync::Arc};
 
 use common_display::ascii::AsciiTreeDisplay;
 use common_error::DaftError;
-use daft_dsl::optimization::get_required_columns;
+use daft_dsl::{optimization::get_required_columns, SubqueryPlan};
 use daft_schema::schema::SchemaRef;
 use indexmap::IndexSet;
 use snafu::Snafu;
@@ -25,6 +25,8 @@ pub enum LogicalPlan {
     Aggregate(Aggregate),
     Pivot(Pivot),
     Concat(Concat),
+    Intersect(Intersect),
+    Union(Union),
     Join(Join),
     Sink(Sink),
     Sample(Sample),
@@ -58,6 +60,8 @@ impl LogicalPlan {
             Self::Aggregate(Aggregate { output_schema, .. }) => output_schema.clone(),
             Self::Pivot(Pivot { output_schema, .. }) => output_schema.clone(),
             Self::Concat(Concat { input, .. }) => input.schema(),
+            Self::Intersect(Intersect { lhs, .. }) => lhs.schema(),
+            Self::Union(Union { lhs, .. }) => lhs.schema(),
             Self::Join(Join { output_schema, .. }) => output_schema.clone(),
             Self::Sink(Sink { schema, .. }) => schema.clone(),
             Self::Sample(Sample { input, .. }) => input.schema(),
@@ -162,13 +166,15 @@ impl LogicalPlan {
                     .collect();
                 vec![left, right]
             }
+            Self::Intersect(_) => vec![IndexSet::new(), IndexSet::new()],
+            Self::Union(_) => vec![IndexSet::new(), IndexSet::new()],
             Self::Source(_) => todo!(),
             Self::Sink(_) => todo!(),
         }
     }
 
-    pub fn name(&self) -> String {
-        let name = match self {
+    pub fn name(&self) -> &'static str {
+        match self {
             Self::Source(..) => "Source",
             Self::Project(..) => "Project",
             Self::ActorPoolProject(..) => "ActorPoolProject",
@@ -183,11 +189,12 @@ impl LogicalPlan {
             Self::Pivot(..) => "Pivot",
             Self::Concat(..) => "Concat",
             Self::Join(..) => "Join",
+            Self::Intersect(..) => "Intersect",
+            Self::Union(..) => "Union",
             Self::Sink(..) => "Sink",
             Self::Sample(..) => "Sample",
             Self::MonotonicallyIncreasingId(..) => "MonotonicallyIncreasingId",
-        };
-        name.to_string()
+        }
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
@@ -205,6 +212,8 @@ impl LogicalPlan {
             Self::Aggregate(aggregate) => aggregate.multiline_display(),
             Self::Pivot(pivot) => pivot.multiline_display(),
             Self::Concat(_) => vec!["Concat".to_string()],
+            Self::Intersect(inner) => inner.multiline_display(),
+            Self::Union(inner) => inner.multiline_display(),
             Self::Join(join) => join.multiline_display(),
             Self::Sink(sink) => sink.multiline_display(),
             Self::Sample(sample) => {
@@ -231,6 +240,8 @@ impl LogicalPlan {
             Self::Concat(Concat { input, other }) => vec![input, other],
             Self::Join(Join { left, right, .. }) => vec![left, right],
             Self::Sink(Sink { input, .. }) => vec![input],
+            Self::Intersect(Intersect { lhs, rhs, .. }) => vec![lhs, rhs],
+            Self::Union(Union { lhs, rhs, .. }) => vec![lhs, rhs],
             Self::Sample(Sample { input, .. }) => vec![input],
             Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. }) => {
                 vec![input]
@@ -259,11 +270,15 @@ impl LogicalPlan {
                 Self::Unpivot(Unpivot {ids, values, variable_name, value_name, output_schema, ..}) => Self::Unpivot(Unpivot { input: input.clone(), ids: ids.clone(), values: values.clone(), variable_name: variable_name.clone(), value_name: value_name.clone(), output_schema: output_schema.clone() }),
                 Self::Sample(Sample {fraction, with_replacement, seed, ..}) => Self::Sample(Sample::new(input.clone(), *fraction, *with_replacement, *seed)),
                 Self::Concat(_) => panic!("Concat ops should never have only one input, but got one"),
+                Self::Intersect(_) => panic!("Intersect ops should never have only one input, but got one"),
+                Self::Union(_) => panic!("Union ops should never have only one input, but got one"),
                 Self::Join(_) => panic!("Join ops should never have only one input, but got one"),
             },
             [input1, input2] => match self {
                 Self::Source(_) => panic!("Source nodes don't have children, with_new_children() should never be called for Source ops"),
                 Self::Concat(_) => Self::Concat(Concat::try_new(input1.clone(), input2.clone()).unwrap()),
+                Self::Intersect(inner) => Self::Intersect(Intersect::try_new(input1.clone(), input2.clone(), inner.is_all).unwrap()),
+                Self::Union(inner) => Self::Union(Union::try_new(input1.clone(), input2.clone(), inner.is_all).unwrap()),
                 Self::Join(Join { left_on, right_on, null_equals_nulls, join_type, join_strategy, .. }) => Self::Join(Join::try_new(
                     input1.clone(),
                     input2.clone(),
@@ -311,6 +326,20 @@ impl LogicalPlan {
     }
 }
 
+impl SubqueryPlan for LogicalPlan {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn name(&self) -> &'static str {
+        Self::name(self)
+    }
+
+    fn schema(&self) -> SchemaRef {
+        Self::schema(self)
+    }
+}
+
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub(crate)))]
 pub(crate) enum Error {
@@ -322,6 +351,11 @@ pub(crate) type Result<T, E = Error> = std::result::Result<T, E>;
 impl From<Error> for DaftError {
     fn from(err: Error) -> Self {
         Self::External(err.into())
+    }
+}
+impl From<DaftError> for Error {
+    fn from(err: DaftError) -> Self {
+        Self::CreationError { source: err }
     }
 }
 
@@ -361,6 +395,8 @@ impl_from_data_struct_for_logical_plan!(Distinct);
 impl_from_data_struct_for_logical_plan!(Aggregate);
 impl_from_data_struct_for_logical_plan!(Pivot);
 impl_from_data_struct_for_logical_plan!(Concat);
+impl_from_data_struct_for_logical_plan!(Intersect);
+impl_from_data_struct_for_logical_plan!(Union);
 impl_from_data_struct_for_logical_plan!(Join);
 impl_from_data_struct_for_logical_plan!(Sink);
 impl_from_data_struct_for_logical_plan!(Sample);

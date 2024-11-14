@@ -9,9 +9,9 @@ import pyarrow as pa
 import pytest
 
 import daft
-from daft import context
 from daft.io.object_store_options import io_config_to_storage_options
 from daft.logical.schema import Schema
+from tests.conftest import get_tests_daft_runner_name
 
 PYARROW_LE_8_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (
     8,
@@ -111,7 +111,7 @@ def test_deltalake_write_overwrite_cloud(cloud_paths):
 
 
 @pytest.mark.skipif(
-    context.get_context().runner_config.name == "native",
+    get_tests_daft_runner_name() == "native",
     reason="Native executor does not support repartitioning",
 )
 def test_deltalake_write_overwrite_multi_partition(tmp_path):
@@ -184,7 +184,7 @@ def test_deltalake_write_ignore(tmp_path):
 
 
 @pytest.mark.skipif(
-    context.get_context().runner_config.name == "native",
+    get_tests_daft_runner_name() == "native",
     reason="Native executor does not support repartitioning",
 )
 def test_deltalake_write_with_empty_partition(tmp_path, base_table):

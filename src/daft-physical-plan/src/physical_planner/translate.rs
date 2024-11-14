@@ -7,6 +7,7 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
+use common_scan_info::PhysicalScanInfo;
 use daft_core::prelude::*;
 use daft_dsl::{
     col, functions::agg::merge_mean, is_partition_compatible, AggExpr, ApproxPercentileParams,
@@ -29,7 +30,6 @@ use daft_logical_plan::{
     sink_info::{OutputFileInfo, SinkInfo},
     source_info::{PlaceHolderInfo, SourceInfo},
 };
-use daft_scan::PhysicalScanInfo;
 
 use crate::{ops::*, PhysicalPlan, PhysicalPlanRef};
 
@@ -46,19 +46,8 @@ pub(super) fn translate_single_logical_node(
                 source_schema,
                 ..
             }) => {
-                let scan_tasks = scan_op.0.to_scan_tasks(pushdowns.clone())?;
+                let scan_tasks = scan_op.0.to_scan_tasks(pushdowns.clone(), Some(cfg))?;
 
-                let scan_tasks = daft_scan::scan_task_iters::split_by_row_groups(
-                    scan_tasks,
-                    cfg.parquet_split_row_groups_max_files,
-                    cfg.scan_tasks_min_size_bytes,
-                    cfg.scan_tasks_max_size_bytes,
-                );
-
-                // Apply transformations on the ScanTasks to optimize
-                let scan_tasks =
-                    daft_scan::scan_task_iters::merge_by_sizes(scan_tasks, pushdowns, cfg);
-                let scan_tasks = scan_tasks.collect::<DaftResult<Vec<_>>>()?;
                 if scan_tasks.is_empty() {
                     let clustering_spec =
                         Arc::new(ClusteringSpec::Unknown(UnknownClusteringConfig::new(1)));
@@ -197,12 +186,15 @@ pub(super) fn translate_single_logical_node(
                 }
                 ClusteringSpec::Random(_) => PhysicalPlan::ShuffleExchange(
                     ShuffleExchangeFactory::new(input_physical)
-                        .get_random_partitioning(num_partitions),
+                        .get_random_partitioning(num_partitions, Some(cfg)),
                 ),
                 ClusteringSpec::Hash(HashClusteringConfig { by, .. }) => {
                     PhysicalPlan::ShuffleExchange(
-                        ShuffleExchangeFactory::new(input_physical)
-                            .get_hash_partitioning(by, num_partitions),
+                        ShuffleExchangeFactory::new(input_physical).get_hash_partitioning(
+                            by,
+                            num_partitions,
+                            Some(cfg),
+                        ),
                     )
                 }
                 ClusteringSpec::Range(_) => {
@@ -224,8 +216,11 @@ pub(super) fn translate_single_logical_node(
             let num_partitions = agg_op.clustering_spec().num_partitions();
             if num_partitions > 1 {
                 let shuffle_op = PhysicalPlan::ShuffleExchange(
-                    ShuffleExchangeFactory::new(agg_op.into())
-                        .get_hash_partitioning(col_exprs.clone(), num_partitions),
+                    ShuffleExchangeFactory::new(agg_op.into()).get_hash_partitioning(
+                        col_exprs.clone(),
+                        num_partitions,
+                        Some(cfg),
+                    ),
                 );
                 Ok(
                     PhysicalPlan::Aggregate(Aggregate::new(shuffle_op.into(), vec![], col_exprs))
@@ -297,6 +292,7 @@ pub(super) fn translate_single_logical_node(
                                     num_input_partitions,
                                     cfg.shuffle_aggregation_default_partitions,
                                 ),
+                                Some(cfg),
                             ),
                         )
                         .into()
@@ -366,6 +362,7 @@ pub(super) fn translate_single_logical_node(
                                     num_input_partitions,
                                     cfg.shuffle_aggregation_default_partitions,
                                 ),
+                                Some(cfg),
                             ),
                         )
                         .into()
@@ -638,8 +635,11 @@ pub(super) fn translate_single_logical_node(
                         || (num_partitions > 1 && !is_left_hash_partitioned)
                     {
                         left_physical = PhysicalPlan::ShuffleExchange(
-                            ShuffleExchangeFactory::new(left_physical)
-                                .get_hash_partitioning(left_on.clone(), num_partitions),
+                            ShuffleExchangeFactory::new(left_physical).get_hash_partitioning(
+                                left_on.clone(),
+                                num_partitions,
+                                Some(cfg),
+                            ),
                         )
                         .into();
                     }
@@ -647,8 +647,11 @@ pub(super) fn translate_single_logical_node(
                         || (num_partitions > 1 && !is_right_hash_partitioned)
                     {
                         right_physical = PhysicalPlan::ShuffleExchange(
-                            ShuffleExchangeFactory::new(right_physical)
-                                .get_hash_partitioning(right_on.clone(), num_partitions),
+                            ShuffleExchangeFactory::new(right_physical).get_hash_partitioning(
+                                right_on.clone(),
+                                num_partitions,
+                                Some(cfg),
+                            ),
                         )
                         .into();
                     }
@@ -738,6 +741,12 @@ pub(super) fn translate_single_logical_node(
                 .arced(),
             )
         }
+        LogicalPlan::Intersect(_) => Err(DaftError::InternalError(
+            "Intersect should already be optimized away".to_string(),
+        )),
+        LogicalPlan::Union(_) => Err(DaftError::InternalError(
+            "Union should already be optimized away".to_string(),
+        )),
     }
 }
 

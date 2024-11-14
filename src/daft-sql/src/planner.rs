@@ -9,6 +9,7 @@ use daft_dsl::{
     col,
     functions::utf8::{ilike, like, to_date, to_datetime},
     has_agg, lit, literals_to_series, null_lit, AggExpr, Expr, ExprRef, LiteralValue, Operator,
+    Subquery,
 };
 use daft_functions::numeric::{ceil::ceil, floor::floor};
 use daft_logical_plan::{LogicalPlanBuilder, LogicalPlanRef};
@@ -205,9 +206,57 @@ impl SQLPlanner {
             SetExpr::Select(selection) => selection,
             SetExpr::Query(_) => unsupported_sql_err!("Subqueries are not supported"),
             SetExpr::SetOperation {
-                op, set_quantifier, ..
+                op,
+                set_quantifier,
+                left,
+                right,
             } => {
-                unsupported_sql_err!("{op} {set_quantifier} is not supported.",)
+                use sqlparser::ast::{
+                    SetOperator::{Intersect, Union},
+                    SetQuantifier,
+                };
+                fn make_query(expr: &SetExpr) -> Query {
+                    Query {
+                        with: None,
+                        body: Box::new(expr.clone()),
+                        order_by: None,
+                        limit: None,
+                        limit_by: vec![],
+                        offset: None,
+                        fetch: None,
+                        locks: vec![],
+                        for_clause: None,
+                        settings: None,
+                        format_clause: None,
+                    }
+                }
+                match (op, set_quantifier) {
+                    (Union, SetQuantifier::All) => {
+                        let left = self.plan_query(&make_query(left))?;
+                        let right = self.plan_query(&make_query(right))?;
+                        return left.union(&right, true).map_err(|e| e.into());
+                    }
+
+                    (Union, SetQuantifier::None | SetQuantifier::Distinct) => {
+                        let left = self.plan_query(&make_query(left))?;
+                        let right = self.plan_query(&make_query(right))?;
+                        return left.union(&right, false).map_err(|e| e.into());
+                    }
+
+                    (Intersect, SetQuantifier::All) => {
+                        let left = self.plan_query(&make_query(left))?;
+                        let right = self.plan_query(&make_query(right))?;
+                        return left.intersect(&right, true).map_err(|e| e.into());
+                    }
+                    (Intersect, SetQuantifier::None | SetQuantifier::Distinct) => {
+                        let left = self.plan_query(&make_query(left))?;
+                        let right = self.plan_query(&make_query(right))?;
+                        return left.intersect(&right, false).map_err(|e| e.into());
+                    }
+                    (op, set_quantifier) => {
+                        unsupported_sql_err!("{op} {set_quantifier} is not supported.")
+                    }
+                }
             }
             SetExpr::Values(..) => unsupported_sql_err!("VALUES are not supported"),
             SetExpr::Insert(..) => unsupported_sql_err!("INSERT is not supported"),
@@ -1080,8 +1129,21 @@ impl SQLPlanner {
                     Ok(expr)
                 }
             }
-            SQLExpr::InSubquery { .. } => {
-                unsupported_sql_err!("IN subquery")
+            SQLExpr::InSubquery {
+                expr,
+                subquery,
+                negated,
+            } => {
+                let expr = self.plan_expr(expr)?;
+                let mut this = Self::new(self.catalog.clone());
+                let subquery = this.plan_query(subquery)?.build();
+                let subquery = Subquery { plan: subquery };
+
+                if *negated {
+                    Ok(expr.in_subquery(subquery).not())
+                } else {
+                    Ok(expr.in_subquery(subquery))
+                }
             }
             SQLExpr::InUnnest { .. } => unsupported_sql_err!("IN UNNEST"),
             SQLExpr::Between {

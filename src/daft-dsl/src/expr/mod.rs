@@ -36,6 +36,59 @@ use crate::{
     optimization::{get_required_columns, requires_computation},
 };
 
+pub trait SubqueryPlan: std::fmt::Debug + std::fmt::Display + Send + Sync {
+    fn as_any(&self) -> &dyn std::any::Any;
+    fn name(&self) -> &'static str;
+    fn schema(&self) -> SchemaRef;
+}
+
+#[derive(Display, Debug, Clone)]
+pub struct Subquery {
+    pub plan: Arc<dyn SubqueryPlan>,
+}
+
+impl Subquery {
+    pub fn new<T: SubqueryPlan + 'static>(plan: T) -> Self {
+        Self {
+            plan: Arc::new(plan),
+        }
+    }
+
+    pub fn schema(&self) -> SchemaRef {
+        self.plan.schema()
+    }
+    pub fn name(&self) -> &'static str {
+        self.plan.name()
+    }
+}
+
+impl Serialize for Subquery {
+    fn serialize<S: serde::Serializer>(&self, _: S) -> Result<S::Ok, S::Error> {
+        Err(serde::ser::Error::custom("Subquery cannot be serialized"))
+    }
+}
+
+impl<'de> Deserialize<'de> for Subquery {
+    fn deserialize<D: serde::Deserializer<'de>>(_: D) -> Result<Self, D::Error> {
+        Err(serde::de::Error::custom("Subquery cannot be deserialized"))
+    }
+}
+
+impl PartialEq for Subquery {
+    fn eq(&self, other: &Self) -> bool {
+        self.plan.name() == other.plan.name() && self.plan.schema() == other.plan.schema()
+    }
+}
+
+impl Eq for Subquery {}
+
+impl std::hash::Hash for Subquery {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.plan.name().hash(state);
+        self.plan.schema().hash(state);
+    }
+}
+
 pub type ExprRef = Arc<Expr>;
 
 #[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -95,6 +148,11 @@ pub enum Expr {
 
     #[display("{_0}")]
     ScalarFunction(ScalarFunction),
+
+    #[display("{_0}")]
+    Subquery(Subquery),
+    #[display("{_0}, {_1}")]
+    InSubquery(ExprRef, Subquery),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Hash, Eq)]
@@ -582,6 +640,9 @@ impl Expr {
     pub fn gt_eq(self: ExprRef, other: ExprRef) -> ExprRef {
         binary_op(Operator::GtEq, self, other)
     }
+    pub fn in_subquery(self: ExprRef, subquery: Subquery) -> ExprRef {
+        Self::InSubquery(self, subquery).into()
+    }
 
     pub fn semantic_id(&self, schema: &Schema) -> FieldID {
         match self {
@@ -647,6 +708,8 @@ impl Expr {
             // Agg: Separate path.
             Self::Agg(agg_expr) => agg_expr.semantic_id(schema),
             Self::ScalarFunction(sf) => scalar_function_semantic_id(sf, schema),
+
+            Self::Subquery(..) | Self::InSubquery(..) => todo!("semantic_id for subquery"),
         }
     }
 
@@ -655,13 +718,15 @@ impl Expr {
             // No children.
             Self::Column(..) => vec![],
             Self::Literal(..) => vec![],
+            Self::Subquery(..) => vec![],
 
             // One child.
             Self::Not(expr)
             | Self::IsNull(expr)
             | Self::NotNull(expr)
             | Self::Cast(expr, ..)
-            | Self::Alias(expr, ..) => {
+            | Self::Alias(expr, ..)
+            | Self::InSubquery(expr, _) => {
                 vec![expr.clone()]
             }
             Self::Agg(agg_expr) => agg_expr.children(),
@@ -688,7 +753,7 @@ impl Expr {
     pub fn with_new_children(&self, children: Vec<ExprRef>) -> Self {
         match self {
             // no children
-            Self::Column(..) | Self::Literal(..) => {
+            Self::Column(..) | Self::Literal(..) | Self::Subquery(..) => {
                 assert!(children.is_empty(), "Should have no children");
                 self.clone()
             }
@@ -707,6 +772,10 @@ impl Expr {
             Self::Cast(.., dtype) => Self::Cast(
                 children.first().expect("Should have 1 child").clone(),
                 dtype.clone(),
+            ),
+            Self::InSubquery(_, subquery) => Self::InSubquery(
+                children.first().expect("Should have 1 child").clone(),
+                subquery.clone(),
             ),
             // 2 children
             Self::BinaryOp { op, .. } => Self::BinaryOp {
@@ -909,6 +978,18 @@ impl Expr {
                     }
                 }
             }
+            Self::Subquery(subquery) => {
+                let subquery_schema = subquery.schema();
+                if subquery_schema.len() != 1 {
+                    return Err(DaftError::TypeError(format!(
+                        "Expected subquery to return a single column but received {subquery_schema}",
+                    )));
+                }
+                let (_, first_field) = subquery_schema.fields.first().unwrap();
+
+                Ok(first_field.clone())
+            }
+            Self::InSubquery(expr, _) => Ok(Field::new(expr.name(), DataType::Boolean)),
         }
     }
 
@@ -939,6 +1020,8 @@ impl Expr {
                 right: _,
             } => left.name(),
             Self::IfElse { if_true, .. } => if_true.name(),
+            Self::Subquery(subquery) => subquery.name(),
+            Self::InSubquery(expr, _) => expr.name(),
         }
     }
 
@@ -1011,7 +1094,9 @@ impl Expr {
                 | Expr::Between(..)
                 | Expr::Function { .. }
                 | Expr::FillNull(..)
-                | Expr::ScalarFunction { .. } => Err(io::Error::new(
+                | Expr::ScalarFunction { .. }
+                | Expr::Subquery(..)
+                | Expr::InSubquery(..) => Err(io::Error::new(
                     io::ErrorKind::Other,
                     "Unsupported expression for SQL translation",
                 )),

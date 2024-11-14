@@ -50,11 +50,9 @@ __version__ = get_version()
 
 from daft.analytics import init_analytics
 
-dev_build = get_build_type() == "dev"
 user_opted_out = os.getenv("DAFT_ANALYTICS_ENABLED") == "0"
-if not dev_build and not user_opted_out:
-    analytics_client = init_analytics(get_version(), get_build_type())
-    analytics_client.track_import()
+analytics_client = init_analytics(get_version(), get_build_type(), user_opted_out)
+analytics_client.track_import()
 
 ###
 # Daft top-level imports

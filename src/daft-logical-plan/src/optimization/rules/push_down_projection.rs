@@ -416,6 +416,7 @@ impl PushDownProjection {
                     .or(Transformed::yes(new_plan));
                 Ok(new_plan)
             }
+            LogicalPlan::Union(_) => unreachable!("Union should have been optimized away"),
             LogicalPlan::Join(join) => {
                 // Get required columns from projection and both upstreams.
                 let [projection_dependencies] = &plan.required_columns()[..] else {
@@ -487,6 +488,11 @@ impl PushDownProjection {
             LogicalPlan::Distinct(_) => {
                 // Cannot push down past a Distinct,
                 // since Distinct implicitly requires all parent columns.
+                Ok(Transformed::no(plan))
+            }
+            LogicalPlan::Intersect(_) => {
+                // Cannot push down past an Intersect,
+                // since Intersect implicitly requires all parent columns.
                 Ok(Transformed::no(plan))
             }
             LogicalPlan::Pivot(_) | LogicalPlan::MonotonicallyIncreasingId(_) => {
@@ -658,13 +664,13 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
+    use common_scan_info::Pushdowns;
     use daft_core::prelude::*;
     use daft_dsl::{
         col,
         functions::python::{RuntimePyObject, UDFRuntimeBinding},
         lit,
     };
-    use daft_scan::Pushdowns;
 
     use crate::{
         optimization::{rules::PushDownProjection, test::assert_optimized_plan_with_rules_eq},

@@ -132,6 +132,13 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
                     });
                     Ok(Transformed::yes(c.with_plan(new_plan.into()).propagate()))
                 }
+                PhysicalPlan::ShuffleExchange(ShuffleExchange{input, strategy: ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge { pre_shuffle_merge_threshold,.. }}) => {
+                    let new_plan = PhysicalPlan::ShuffleExchange(ShuffleExchange {
+                        input: input.clone(),
+                        strategy: ShuffleExchangeStrategy::MapReduceWithPreShuffleMerge { target_spec: new_spec.into(), pre_shuffle_merge_threshold: *pre_shuffle_merge_threshold }
+                    });
+                    Ok(Transformed::yes(c.with_plan(new_plan.into()).propagate()))
+                }
 
                 // these depend solely on their input
                 PhysicalPlan::Filter(..) |
@@ -193,9 +200,11 @@ mod tests {
         num_partitions: usize,
         partition_by: Vec<ExprRef>,
     ) -> PhysicalPlanRef {
-        PhysicalPlan::ShuffleExchange(
-            ShuffleExchangeFactory::new(plan).get_hash_partitioning(partition_by, num_partitions),
-        )
+        PhysicalPlan::ShuffleExchange(ShuffleExchangeFactory::new(plan).get_hash_partitioning(
+            partition_by,
+            num_partitions,
+            None,
+        ))
         .into()
     }
 

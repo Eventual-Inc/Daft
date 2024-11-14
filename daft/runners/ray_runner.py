@@ -126,7 +126,7 @@ def _glob_path_into_file_infos(
     paths: list[str],
     file_format_config: FileFormatConfig | None,
     io_config: IOConfig | None,
-) -> MicroPartition:
+) -> FileInfos:
     file_infos = FileInfos()
     file_format = file_format_config.file_format() if file_format_config is not None else None
     for path in paths:
@@ -135,7 +135,7 @@ def _glob_path_into_file_infos(
             raise FileNotFoundError(f"No files found at {path}")
         file_infos.extend(path_file_infos)
 
-    return MicroPartition._from_pytable(file_infos.to_table())
+    return file_infos
 
 
 @ray.remote
@@ -363,11 +363,7 @@ class RayRunnerIO(runner_io.RunnerIO):
         io_config: IOConfig | None = None,
     ) -> FileInfos:
         # Synchronously fetch the file infos, for now.
-        return FileInfos.from_table(
-            ray.get(_glob_path_into_file_infos.remote(source_paths, file_format_config, io_config=io_config))
-            .to_table()
-            ._table
-        )
+        return ray.get(_glob_path_into_file_infos.remote(source_paths, file_format_config, io_config=io_config))
 
     def partition_set_from_ray_dataset(
         self,
@@ -1184,6 +1180,8 @@ class RayRoundRobinActorPool:
 
 
 class RayRunner(Runner[ray.ObjectRef]):
+    name = "ray"
+
     def __init__(
         self,
         address: str | None,
@@ -1191,6 +1189,9 @@ class RayRunner(Runner[ray.ObjectRef]):
         force_client_mode: bool = False,
     ) -> None:
         super().__init__()
+
+        self.ray_address = address
+
         if ray.is_initialized():
             if address is not None:
                 logger.warning(

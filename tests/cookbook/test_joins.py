@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from daft import context
 from daft.expressions import col
-from tests.conftest import assert_df_equals
+from tests.conftest import assert_df_equals, get_tests_daft_runner_name
 
 
 def skip_invalid_join_strategies(join_strategy):
-    if context.get_context().runner_config.name == "native":
+    if get_tests_daft_runner_name() == "native":
         if join_strategy not in [None, "hash"]:
             pytest.skip("Native executor fails for these tests")
 

@@ -199,7 +199,7 @@ fn replace_column_with_semantic_id(
         Transformed::yes(new_expr.into())
     } else {
         match e.as_ref() {
-            Expr::Column(_) | Expr::Literal(_) => Transformed::no(e),
+            Expr::Column(_) | Expr::Literal(_) | Expr::Subquery(_) => Transformed::no(e),
             Expr::Agg(agg_expr) => replace_column_with_semantic_id_aggexpr(
                 agg_expr.clone(),
                 subexprs_to_replace,
@@ -357,6 +357,15 @@ fn replace_column_with_semantic_id(
                 } else {
                     func.inputs = transforms.iter().map(|t| t.data.clone()).collect();
                     Transformed::yes(Expr::ScalarFunction(func).into())
+                }
+            }
+            Expr::InSubquery(expr, subquery) => {
+                let expr =
+                    replace_column_with_semantic_id(expr.clone(), subexprs_to_replace, schema);
+                if !expr.transformed {
+                    Transformed::no(e)
+                } else {
+                    Transformed::yes(Expr::InSubquery(expr.data, subquery.clone()).into())
                 }
             }
         }

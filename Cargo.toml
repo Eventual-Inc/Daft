@@ -5,14 +5,16 @@ common-file-formats = {path = "src/common/file-formats", default-features = fals
 common-hashable-float-wrapper = {path = "src/common/hashable-float-wrapper", default-features = false}
 common-resource-request = {path = "src/common/resource-request", default-features = false}
 common-runtime = {path = "src/common/runtime", default-features = false}
+common-scan-info = {path = "src/common/scan-info", default-features = false}
 common-system-info = {path = "src/common/system-info", default-features = false}
 common-tracing = {path = "src/common/tracing", default-features = false}
 common-version = {path = "src/common/version", default-features = false}
 daft-compression = {path = "src/daft-compression", default-features = false}
+daft-connect = {path = "src/daft-connect", optional = true}
 daft-core = {path = "src/daft-core", default-features = false}
 daft-csv = {path = "src/daft-csv", default-features = false}
 daft-dsl = {path = "src/daft-dsl", default-features = false}
-daft-functions = {path = "src/daft-functions", default-features = false}
+daft-functions = {path = "src/daft-functions"}
 daft-functions-json = {path = "src/daft-functions-json", default-features = false}
 daft-hash = {path = "src/daft-hash", default-features = false}
 daft-image = {path = "src/daft-image", default-features = false}
@@ -45,7 +47,13 @@ python = [
   "common-daft-config/python",
   "common-display/python",
   "common-resource-request/python",
+  "common-scan-info/python",
   "common-system-info/python",
+  "common-daft-config/python",
+  "common-display/python",
+  "common-resource-request/python",
+  "common-system-info/python",
+  "daft-connect/python",
   "daft-core/python",
   "daft-csv/python",
   "daft-dsl/python",
@@ -64,14 +72,10 @@ python = [
   "daft-scheduler/python",
   "daft-sql/python",
   "daft-stats/python",
-  "daft-table/python",
-  "daft-functions/python",
-  "daft-functions-json/python",
+  "daft-stats/python",
   "daft-writers/python",
-  "common-daft-config/python",
-  "common-system-info/python",
-  "common-display/python",
-  "common-resource-request/python",
+  "daft-table/python",
+  "dep:daft-connect",
   "dep:pyo3",
   "dep:pyo3-log"
 ]
@@ -134,6 +138,7 @@ members = [
   "src/common/display",
   "src/common/error",
   "src/common/io-config",
+  "src/common/scan-info",
   "src/common/system-info",
   "src/common/treenode",
   "src/daft-core",
@@ -159,6 +164,7 @@ members = [
   "src/daft-table",
   "src/daft-writers",
   "src/hyperloglog",
+  "src/daft-connect",
   "src/parquet2",
   # "src/spark-connect-script",
   "src/generated/spark-connect"
@@ -166,6 +172,7 @@ members = [
 
 [workspace.dependencies]
 ahash = "0.8.11"
+anyhow = "1.0.89"
 approx = "0.5.1"
 async-compat = "0.2.3"
 async-compression = {version = "0.4.12", features = [
@@ -179,8 +186,22 @@ bytes = "1.6.0"
 chrono = "0.4.38"
 chrono-tz = "0.8.4"
 comfy-table = "7.1.1"
+common-daft-config = {path = "src/common/daft-config"}
+common-display = {path = "src/common/display"}
 common-error = {path = "src/common/error", default-features = false}
+common-file-formats = {path = "src/common/file-formats"}
+daft-connect = {path = "src/daft-connect", default-features = false}
+daft-core = {path = "src/daft-core"}
+daft-dsl = {path = "src/daft-dsl"}
 daft-hash = {path = "src/daft-hash"}
+daft-local-execution = {path = "src/daft-local-execution"}
+daft-local-plan = {path = "src/daft-local-plan"}
+daft-logical-plan = {path = "src/daft-logical-plan"}
+daft-micropartition = {path = "src/daft-micropartition"}
+daft-physical-plan = {path = "src/daft-physical-plan"}
+daft-schema = {path = "src/daft-schema"}
+daft-sql = {path = "src/daft-sql"}
+daft-table = {path = "src/daft-table"}
 derivative = "2.2.0"
 derive_builder = "0.20.2"
 divan = "0.1.14"
@@ -209,6 +230,7 @@ serde_json = "1.0.116"
 sha1 = "0.11.0-pre.4"
 sketches-ddsketch = {version = "0.2.2", features = ["use_serde"]}
 snafu = {version = "0.7.4", features = ["futures"]}
+spark-connect = {path = "src/generated/spark-connect", default-features = false}
 sqlparser = "0.51.0"
 sysinfo = "0.30.12"
 tango-bench = "0.6.0"
@@ -228,6 +250,7 @@ tokio = {version = "1.37.0", features = [
 tokio-stream = {version = "0.1.14", features = ["fs", "io-util", "time"]}
 tokio-util = "0.7.11"
 tracing = "0.1"
+typetag = "0.2.18"
 url = "2.4.0"
 xxhash-rust = "0.8.12"
 
@@ -238,7 +261,7 @@ path = "src/arrow2"
 version = "1.3.3"
 
 [workspace.dependencies.derive_more]
-features = ["display"]
+features = ["display", "from", "constructor"]
 version = "1.0.0"
 
 [workspace.dependencies.lazy_static]
@@ -326,7 +349,7 @@ uninlined_format_args = "allow"
 unnecessary_wraps = "allow"
 unnested_or_patterns = "allow"
 unreadable_literal = "allow"
-# todo: remove?
+# todo: remove this at some point
 unsafe_derive_deserialize = "allow"
 unused_async = "allow"
 # used_underscore_items = "allow" # REMOVE

@@ -104,6 +104,7 @@ pub mod pylib {
         common_system_info::register_modules(m)?;
         common_resource_request::register_modules(m)?;
         common_file_formats::python::register_modules(m)?;
+        common_scan_info::register_modules(m)?;
         daft_core::register_modules(m)?;
         daft_core::python::register_modules(m)?;
         daft_local_execution::register_modules(m)?;
@@ -120,6 +121,7 @@ pub mod pylib {
         daft_sql::register_modules(m)?;
         daft_functions::register_modules(m)?;
         daft_functions_json::register_modules(m)?;
+        daft_connect::register_modules(m)?;
 
         m.add_wrapped(wrap_pyfunction!(version))?;
         m.add_wrapped(wrap_pyfunction!(build_type))?;
