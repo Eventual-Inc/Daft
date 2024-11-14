@@ -3,6 +3,7 @@
 SHELL=/bin/bash
 VENV = .venv
 IS_M1 ?= 0
+PYTHON_VERSION ?= python3.11
 
 # Hypothesis
 HYPOTHESIS_MAX_EXAMPLES ?= 100
@@ -21,17 +22,21 @@ endif
 
 
 .venv:  ## Set up virtual environment
+ifeq (, $(shell which uv))
 	python3 -m venv $(VENV)
 	$(VENV_BIN)/python -m pip install --upgrade uv
-	## Hacks to deal with grpcio compile errors on m1 macs
+else
+	uv venv $(VENV) -p $(PYTHON_VERSION)
+endif
 ifeq ($(IS_M1), 1)
-	GRPC_PYTHON_BUILD_SYSTEM_OPENSSL=1	\
+	## Hacks to deal with grpcio compile errors on m1 macs
+	GRPC_PYTHON_BUILD_SYSTEM_OPENSSL=1 \
 	GRPC_PYTHON_BUILD_SYSTEM_ZLIB=1	\
 	CFLAGS="${CFLAGS} -I /opt/homebrew/opt/openssl/include"	\
 	LDFLAGS="${LDFLAGS} -L /opt/homebrew/opt/openssl/lib" \
-	$(VENV_BIN)/uv pip install -r requirements-dev.txt
+	. $(VENV_BIN)/activate; uv pip install -r requirements-dev.txt
 else
-	$(VENV_BIN)/uv pip install -r requirements-dev.txt
+	. $(VENV_BIN)/activate; uv pip install -r requirements-dev.txt
 endif
 
 .PHONY: check-toolchain
