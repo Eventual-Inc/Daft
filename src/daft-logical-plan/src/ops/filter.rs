@@ -21,7 +21,7 @@ pub struct Filter {
 impl Filter {
     pub(crate) fn try_new(input: Arc<LogicalPlan>, predicate: ExprRef) -> Result<Self> {
         let (predicate, field) =
-            resolve_single_expr(predicate, &input.schema(), false).context(CreationSnafu)?;
+            resolve_single_expr(predicate, &input.schema(), false, false).context(CreationSnafu)?;
 
         if !matches!(field.dtype, DataType::Boolean) {
             return Err(DaftError::ValueError(format!(

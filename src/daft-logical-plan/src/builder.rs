@@ -10,7 +10,7 @@ use common_file_formats::FileFormat;
 use common_io_config::IOConfig;
 use common_scan_info::{PhysicalScanInfo, Pushdowns, ScanOperatorRef};
 use daft_core::join::{JoinStrategy, JoinType};
-use daft_dsl::{col, ExprRef};
+use daft_dsl::{col, AggExpr, Expr, ExprRef};
 use daft_schema::schema::{Schema, SchemaRef};
 #[cfg(feature = "python")]
 use {
@@ -363,7 +363,7 @@ impl LogicalPlanBuilder {
         group_by: Vec<ExprRef>,
         pivot_column: ExprRef,
         value_column: ExprRef,
-        agg_expr: ExprRef,
+        agg_expr: AggExpr,
         names: Vec<String>,
     ) -> DaftResult<Self> {
         let pivot_logical_plan: LogicalPlan = ops::Pivot::try_new(
@@ -757,13 +757,18 @@ impl PyLogicalPlanBuilder {
         agg_expr: PyExpr,
         names: Vec<String>,
     ) -> PyResult<Self> {
+        let agg_expr: ExprRef = agg_expr.into();
+        let Expr::Agg(agg_expr) = agg_expr.as_ref() else {
+            unreachable!("Pivot only supports using top level aggregation expressions.")
+        };
+
         Ok(self
             .builder
             .pivot(
                 pyexprs_to_exprs(group_by),
                 pivot_column.into(),
                 value_column.into(),
-                agg_expr.into(),
+                agg_expr.clone(),
                 names,
             )?
             .into())

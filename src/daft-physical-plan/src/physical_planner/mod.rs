@@ -11,7 +11,7 @@ pub use planner::{AdaptivePlanner, MaterializedResults, QueryStageOutput};
 
 use crate::{optimization::optimizer::PhysicalOptimizer, PhysicalPlanRef};
 mod translate;
-pub use translate::populate_aggregation_stages;
+pub use translate::{extract_agg_expr, populate_aggregation_stages};
 
 /// Translate a logical plan to a physical plan.
 pub fn logical_to_physical(

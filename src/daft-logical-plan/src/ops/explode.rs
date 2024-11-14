@@ -27,7 +27,7 @@ impl Explode {
         let upstream_schema = input.schema();
 
         let (to_explode, _) =
-            resolve_exprs(to_explode, &upstream_schema, false).context(CreationSnafu)?;
+            resolve_exprs(to_explode, &upstream_schema, false, false).context(CreationSnafu)?;
 
         let explode_exprs = to_explode
             .iter()

@@ -22,7 +22,7 @@ impl Repartition {
     ) -> DaftResult<Self> {
         let repartition_spec = match repartition_spec {
             RepartitionSpec::Hash(HashRepartitionConfig { num_partitions, by }) => {
-                let (resolved_by, _) = resolve_exprs(by, &input.schema(), false)?;
+                let (resolved_by, _) = resolve_exprs(by, &input.schema(), false, false)?;
                 RepartitionSpec::Hash(HashRepartitionConfig {
                     num_partitions,
                     by: resolved_by,

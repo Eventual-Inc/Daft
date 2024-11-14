@@ -33,7 +33,8 @@ impl Sink {
                 let resolved_partition_cols = partition_cols
                     .clone()
                     .map(|cols| {
-                        resolve_exprs(cols, &schema, false).map(|(resolved_cols, _)| resolved_cols)
+                        resolve_exprs(cols, &schema, false, false)
+                            .map(|(resolved_cols, _)| resolved_cols)
                     })
                     .transpose()?;
 

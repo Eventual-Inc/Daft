@@ -38,7 +38,7 @@ impl Unpivot {
 
         let input_schema = input.schema();
         let (values, values_fields) =
-            resolve_exprs(values, &input_schema, false).context(CreationSnafu)?;
+            resolve_exprs(values, &input_schema, false, false).context(CreationSnafu)?;
 
         let value_dtype = values_fields
             .iter()
@@ -50,7 +50,8 @@ impl Unpivot {
         let variable_field = Field::new(variable_name, DataType::Utf8);
         let value_field = Field::new(value_name, value_dtype);
 
-        let (ids, ids_fields) = resolve_exprs(ids, &input_schema, false).context(CreationSnafu)?;
+        let (ids, ids_fields) =
+            resolve_exprs(ids, &input_schema, false, false).context(CreationSnafu)?;
 
         let output_fields = ids_fields
             .into_iter()

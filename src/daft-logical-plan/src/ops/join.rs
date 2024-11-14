@@ -66,9 +66,10 @@ impl Join {
         // In SQL the join column is always kept, while in dataframes it is not
         keep_join_keys: bool,
     ) -> logical_plan::Result<Self> {
-        let (left_on, _) = resolve_exprs(left_on, &left.schema(), false).context(CreationSnafu)?;
+        let (left_on, _) =
+            resolve_exprs(left_on, &left.schema(), false, false).context(CreationSnafu)?;
         let (right_on, _) =
-            resolve_exprs(right_on, &right.schema(), false).context(CreationSnafu)?;
+            resolve_exprs(right_on, &right.schema(), false, false).context(CreationSnafu)?;
 
         let (unique_left_on, unique_right_on) =
             Self::rename_join_keys(left_on.clone(), right_on.clone());

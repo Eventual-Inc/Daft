@@ -17,7 +17,7 @@ use daft_local_plan::{
 };
 use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;
-use daft_physical_plan::populate_aggregation_stages;
+use daft_physical_plan::{extract_agg_expr, populate_aggregation_stages};
 use daft_scan::ScanTaskRef;
 use daft_table::ProbeState;
 use daft_writers::make_physical_writer_factory;
@@ -203,8 +203,16 @@ pub fn physical_plan_to_pipeline(
             schema,
             ..
         }) => {
+            let aggregations = aggregations
+                .iter()
+                .map(extract_agg_expr)
+                .collect::<DaftResult<Vec<_>>>()
+                .with_context(|_| PipelineCreationSnafu {
+                    plan_name: physical_plan.name(),
+                })?;
+
             let (first_stage_aggs, second_stage_aggs, final_exprs) =
-                populate_aggregation_stages(aggregations, schema, &[]);
+                populate_aggregation_stages(&aggregations, schema, &[]);
             let first_stage_agg_op = AggregateOperator::new(
                 first_stage_aggs
                     .values()
@@ -239,8 +247,16 @@ pub fn physical_plan_to_pipeline(
             schema,
             ..
         }) => {
+            let aggregations = aggregations
+                .iter()
+                .map(extract_agg_expr)
+                .collect::<DaftResult<Vec<_>>>()
+                .with_context(|_| PipelineCreationSnafu {
+                    plan_name: physical_plan.name(),
+                })?;
+
             let (first_stage_aggs, second_stage_aggs, final_exprs) =
-                populate_aggregation_stages(aggregations, schema, group_by);
+                populate_aggregation_stages(&aggregations, schema, group_by);
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
             let (post_first_agg_node, group_by) = if !first_stage_aggs.is_empty() {
                 let agg_op = AggregateOperator::new(

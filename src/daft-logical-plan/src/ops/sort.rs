@@ -30,7 +30,7 @@ impl Sort {
         }
 
         let (sort_by, sort_by_fields) =
-            resolve_exprs(sort_by, &input.schema(), false).context(CreationSnafu)?;
+            resolve_exprs(sort_by, &input.schema(), false, false).context(CreationSnafu)?;
 
         let sort_by_resolved_schema = Schema::new(sort_by_fields).context(CreationSnafu)?;
 
