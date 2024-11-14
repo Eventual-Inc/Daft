@@ -1296,7 +1296,18 @@ impl SQLPlanner {
                     },
                 )
             }
-            SQLExpr::Exists { .. } => unsupported_sql_err!("EXISTS"),
+            SQLExpr::Exists { subquery, negated } => {
+                let mut this = self.clone();
+                let subquery = this.plan_query(subquery)?;
+                let subquery = Subquery {
+                    plan: subquery.build(),
+                };
+                if *negated {
+                    Ok(Expr::Exists(subquery).arced().not())
+                } else {
+                    Ok(Expr::Exists(subquery).arced())
+                }
+            }
             SQLExpr::Subquery(subquery) => {
                 let mut this = self.clone();
                 let subquery = this.plan_query(subquery)?;

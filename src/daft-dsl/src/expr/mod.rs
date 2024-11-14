@@ -153,6 +153,8 @@ pub enum Expr {
     Subquery(Subquery),
     #[display("{_0}, {_1}")]
     InSubquery(ExprRef, Subquery),
+    #[display("{_0}")]
+    Exists(Subquery),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Hash, Eq)]
@@ -709,7 +711,9 @@ impl Expr {
             Self::Agg(agg_expr) => agg_expr.semantic_id(schema),
             Self::ScalarFunction(sf) => scalar_function_semantic_id(sf, schema),
 
-            Self::Subquery(..) | Self::InSubquery(..) => FieldID::new("__subquery__"), // todo: better/unique id
+            Self::Subquery(..) | Self::InSubquery(..) | Self::Exists(..) => {
+                FieldID::new("__subquery__")
+            } // todo: better/unique id
         }
     }
 
@@ -719,6 +723,7 @@ impl Expr {
             Self::Column(..) => vec![],
             Self::Literal(..) => vec![],
             Self::Subquery(..) => vec![],
+            Self::Exists(..) => vec![],
 
             // One child.
             Self::Not(expr)
@@ -753,7 +758,7 @@ impl Expr {
     pub fn with_new_children(&self, children: Vec<ExprRef>) -> Self {
         match self {
             // no children
-            Self::Column(..) | Self::Literal(..) | Self::Subquery(..) => {
+            Self::Column(..) | Self::Literal(..) | Self::Subquery(..) | Self::Exists(..) => {
                 assert!(children.is_empty(), "Should have no children");
                 self.clone()
             }
@@ -990,6 +995,7 @@ impl Expr {
                 Ok(first_field.clone())
             }
             Self::InSubquery(expr, _) => Ok(Field::new(expr.name(), DataType::Boolean)),
+            Self::Exists(_) => Ok(Field::new("exists", DataType::Boolean)),
         }
     }
 
@@ -1022,6 +1028,7 @@ impl Expr {
             Self::IfElse { if_true, .. } => if_true.name(),
             Self::Subquery(subquery) => subquery.name(),
             Self::InSubquery(expr, _) => expr.name(),
+            Self::Exists(subquery) => subquery.name(),
         }
     }
 
@@ -1096,7 +1103,8 @@ impl Expr {
                 | Expr::FillNull(..)
                 | Expr::ScalarFunction { .. }
                 | Expr::Subquery(..)
-                | Expr::InSubquery(..) => Err(io::Error::new(
+                | Expr::InSubquery(..)
+                | Expr::Exists(..) => Err(io::Error::new(
                     io::ErrorKind::Other,
                     "Unsupported expression for SQL translation",
                 )),
