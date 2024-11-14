@@ -289,9 +289,9 @@ impl ExprResolver {
         }
 
         let validated_expr = if self.in_agg_context {
-            validate_expr(expr)
-        } else {
             validate_expr_in_agg(expr)
+        } else {
+            validate_expr(expr)
         }?;
 
         let struct_expr_map = calculate_struct_expr_map(schema);
