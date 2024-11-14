@@ -1055,13 +1055,6 @@ impl SQLPlanner {
         })
     }
 
-    fn plan_lit(&self, expr: &sqlparser::ast::Expr) -> SQLPlannerResult<LiteralValue> {
-        if let sqlparser::ast::Expr::Value(v) = expr {
-            self.value_to_lit(v)
-        } else {
-            invalid_operation_err!("Only string, number, boolean and null literals are supported. Instead found: `{expr}`");
-        }
-    }
     pub(crate) fn plan_expr(&self, expr: &sqlparser::ast::Expr) -> SQLPlannerResult<ExprRef> {
         use sqlparser::ast::Expr as SQLExpr;
         match expr {
@@ -1117,11 +1110,7 @@ impl SQLPlanner {
                     .iter()
                     .map(|e| self.plan_expr(e))
                     .collect::<SQLPlannerResult<Vec<_>>>()?;
-                // // We should really have a better way to use `is_in` instead of all of this extra wrapping of the values
-                // let series = literals_to_series(&list)?;
-                // let series_lit = LiteralValue::Series(series);
-                // let series_expr = Expr::Literal(series_lit);
-                // let series_expr_arc = Arc::new(series_expr);
+
                 let expr = expr.is_in(list);
                 if *negated {
                     Ok(expr.not())

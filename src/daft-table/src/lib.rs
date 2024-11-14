@@ -530,12 +530,11 @@ impl Table {
             IsIn(child, items) => {
                 let items = items.iter().map(|i| self.eval_expression(i)).collect::<DaftResult<Vec<_>>>()?;
 
-                dbg!(&items);
                 let items = items.iter().collect::<Vec<&Series>>();
                 let s = Series::concat(items.as_slice())?;
                 self
                 .eval_expression(child)?
-                .is_in(dbg!(&s))
+                .is_in(&s)
             }
 
             Between(child, lower, upper) => self

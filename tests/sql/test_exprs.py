@@ -147,7 +147,7 @@ def test_is_in_edge_cases():
     expected = df.filter(col("nums").is_in([1])).collect().to_pydict()
 
     # Test with mixed types in the IN list
-    with pytest.raises(Exception, match="All literals must have the same data type"):
+    with pytest.raises(Exception, match="arguments to be of the same type"):
         daft.sql("SELECT * FROM df WHERE nums IN (1, '2', 3.0)").collect().to_pydict()
 
 
