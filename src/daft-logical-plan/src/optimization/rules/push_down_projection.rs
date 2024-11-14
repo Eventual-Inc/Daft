@@ -489,6 +489,11 @@ impl PushDownProjection {
                 // since Distinct implicitly requires all parent columns.
                 Ok(Transformed::no(plan))
             }
+            LogicalPlan::Intersect(_) => {
+                // Cannot push down past an Intersect,
+                // since Intersect implicitly requires all parent columns.
+                Ok(Transformed::no(plan))
+            }
             LogicalPlan::Pivot(_) | LogicalPlan::MonotonicallyIncreasingId(_) => {
                 // Cannot push down past a Pivot/MonotonicallyIncreasingId because it changes the schema.
                 Ok(Transformed::no(plan))
@@ -658,13 +663,13 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
+    use common_scan_info::Pushdowns;
     use daft_core::prelude::*;
     use daft_dsl::{
         col,
         functions::python::{RuntimePyObject, UDFRuntimeBinding},
         lit,
     };
-    use daft_scan::Pushdowns;
 
     use crate::{
         optimization::{rules::PushDownProjection, test::assert_optimized_plan_with_rules_eq},

@@ -14,6 +14,7 @@ if sys.platform == "win32":
 import itertools
 
 import daft.context
+from tests.conftest import get_tests_daft_runner_name
 from tests.integration.conftest import check_answer  # noqa F401
 
 ENGINES = ["native"] if IS_CI else ["native", "python"]
@@ -22,7 +23,7 @@ TPCH_QUESTIONS = list(range(1, 11))
 
 
 @pytest.mark.skipif(
-    daft.context.get_context().runner_config.name not in {"py", "native"},
+    get_tests_daft_runner_name() not in {"py", "native"},
     reason="requires PyRunner to be in use",
 )
 @pytest.mark.benchmark(group="tpch")

@@ -1,4 +1,5 @@
-use daft_logical_plan::{LogicalPlanBuilder, CsvScanBuilder};
+use daft_logical_plan::LogicalPlanBuilder;
+use daft_scan::builder::CsvScanBuilder;
 use sqlparser::ast::TableFunctionArgs;
 
 use super::SQLTableFunction;

@@ -5,6 +5,7 @@ use daft_core::{
     python::{series::PySeries, PySchema},
 };
 use daft_dsl::python::PyExpr;
+use daft_logical_plan::FileInfos;
 use indexmap::IndexMap;
 use pyo3::{exceptions::PyValueError, prelude::*};
 
@@ -476,6 +477,17 @@ impl PyTable {
             None => None,
         })?
         .into())
+    }
+
+    pub fn to_file_infos(&self) -> PyResult<FileInfos> {
+        let file_infos: FileInfos = self.table.clone().try_into()?;
+        Ok(file_infos)
+    }
+
+    #[staticmethod]
+    pub fn from_file_infos(file_infos: &FileInfos) -> PyResult<Self> {
+        let table: Table = file_infos.try_into()?;
+        Ok(table.into())
     }
 }
 

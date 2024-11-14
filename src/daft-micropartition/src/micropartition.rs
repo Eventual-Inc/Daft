@@ -8,6 +8,7 @@ use arrow2::io::parquet::read::schema::infer_schema_with_options;
 use common_error::DaftResult;
 use common_file_formats::{CsvSourceConfig, FileFormatConfig, ParquetSourceConfig};
 use common_runtime::get_io_runtime;
+use common_scan_info::Pushdowns;
 use daft_core::prelude::*;
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::ExprRef;
@@ -18,7 +19,7 @@ use daft_parquet::read::{
 };
 use daft_scan::{
     storage_config::{NativeStorageConfig, StorageConfig},
-    ChunkSpec, DataSource, Pushdowns, ScanTask,
+    ChunkSpec, DataSource, ScanTask,
 };
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
 use daft_table::Table;

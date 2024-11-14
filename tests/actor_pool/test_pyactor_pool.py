@@ -11,6 +11,7 @@ from daft.expressions import ExpressionsProjection
 from daft.runners.partitioning import PartialPartitionMetadata
 from daft.runners.pyrunner import AcquiredResources, PyActorPool, PyRunner
 from daft.table import MicroPartition
+from tests.conftest import get_tests_daft_runner_name
 
 
 @daft.udf(return_dtype=DataType.int64())
@@ -60,14 +61,14 @@ def test_pyactor_pool():
     assert result_data.partition().to_pydict() == {"x": [4, 4, 4]}
 
 
-@pytest.mark.skipif(get_context().runner_config.name != "py", reason="Test can only be run on PyRunner")
+@pytest.mark.skipif(get_tests_daft_runner_name() != "py", reason="Test can only be run on PyRunner")
 def test_pyactor_pool_not_enough_resources():
     from copy import deepcopy
 
     cpu_count = multiprocessing.cpu_count()
     projection = ExpressionsProjection([MyStatefulUDF(daft.col("x"))])
 
-    runner = get_context().runner()
+    runner = get_context().get_or_create_runner()
     assert isinstance(runner, PyRunner)
 
     original_resources = deepcopy(runner._resources.available_resources)

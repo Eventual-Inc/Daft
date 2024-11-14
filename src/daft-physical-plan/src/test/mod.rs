@@ -1,33 +1,27 @@
 use std::sync::Arc;
 
-use common_file_formats::FileFormatConfig;
-use daft_logical_plan::builder::LogicalPlanBuilder;
-use daft_scan::{
-    storage_config::{NativeStorageConfig, StorageConfig},
-    AnonymousScanOperator, Pushdowns, ScanOperator,
-};
+use common_scan_info::{test::DummyScanOperator, Pushdowns, ScanOperatorRef};
+use daft_logical_plan::LogicalPlanBuilder;
 use daft_schema::{field::Field, schema::Schema};
 
 /// Create a dummy scan node containing the provided fields in its schema and the provided limit.
-pub fn dummy_scan_operator(fields: Vec<Field>) -> Arc<dyn ScanOperator> {
+pub fn dummy_scan_operator(fields: Vec<Field>) -> ScanOperatorRef {
     let schema = Arc::new(Schema::new(fields).unwrap());
-    Arc::new(AnonymousScanOperator::new(
-        vec!["/foo".to_string()],
+    ScanOperatorRef(Arc::new(DummyScanOperator {
         schema,
-        FileFormatConfig::Json(Default::default()).into(),
-        StorageConfig::Native(NativeStorageConfig::new_internal(true, None).into()).into(),
-    ))
+        num_scan_tasks: 1,
+    }))
 }
 
 /// Create a dummy scan node containing the provided fields in its schema.
-pub fn dummy_scan_node(scan_op: Arc<dyn ScanOperator>) -> LogicalPlanBuilder {
+pub fn dummy_scan_node(scan_op: ScanOperatorRef) -> LogicalPlanBuilder {
     dummy_scan_node_with_pushdowns(scan_op, Default::default())
 }
 
 /// Create a dummy scan node containing the provided fields in its schema and the provided limit.
 pub fn dummy_scan_node_with_pushdowns(
-    scan_op: Arc<dyn ScanOperator>,
+    scan_op: ScanOperatorRef,
     pushdowns: Pushdowns,
 ) -> LogicalPlanBuilder {
-    LogicalPlanBuilder::table_scan(daft_scan::ScanOperatorRef(scan_op), Some(pushdowns)).unwrap()
+    LogicalPlanBuilder::table_scan(scan_op, Some(pushdowns)).unwrap()
 }
