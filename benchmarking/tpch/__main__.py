@@ -19,7 +19,6 @@ import ray
 import daft
 from benchmarking.tpch import answers, data_generation
 from daft import DataFrame
-from daft.context import get_context
 from daft.runners.profiler import profiler
 
 logger = logging.getLogger(__name__)
@@ -130,8 +129,7 @@ def run_all_benchmarks(
 ):
     get_df = get_df_with_parquet_folder(parquet_folder)
 
-    daft_context = get_context()
-    metrics_builder = MetricsBuilder(daft_context.get_or_create_runner().name)
+    metrics_builder = MetricsBuilder(get_daft_benchmark_runner_name())
 
     for i in questions:
         # Run as a Ray Job if dashboard URL is provided
