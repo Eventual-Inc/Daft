@@ -14,11 +14,7 @@ repos:
   hooks:
   - id: detect-private-key
   - id: trailing-whitespace
-    exclude:
-      (?x)^(
-          docs/source/api_docs/|
-          tests/assets/mvp.csv
-      )$
+    exclude: (?x)^( docs/source/api_docs/| tests/assets/mvp.csv )$
   - id: end-of-file-fixer
     exclude: |
       (?x)^(
