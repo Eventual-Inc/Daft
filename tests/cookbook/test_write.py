@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import uuid
 from datetime import datetime
 
 import pyarrow as pa
@@ -40,24 +42,30 @@ def test_parquet_write_with_partitioning(tmp_path, with_morsel_size):
     assert len(pd_df._preview.preview_partition) == 5
 
 
-def test_empty_parquet_write_without_partitioning(tmp_path, with_morsel_size):
+@pytest.mark.parametrize("write_mode", ["append", "overwrite"])
+def test_empty_parquet_write_without_partitioning(tmp_path, write_mode, with_morsel_size):
     df = daft.read_csv(COOKBOOK_DATA_CSV)
     df = df.where(daft.lit(False))
 
-    pd_df = df.write_parquet(tmp_path)
-    read_back_pd_df = daft.read_parquet(tmp_path.as_posix() + "/*.parquet").to_pandas()
+    # Create a unique path to make sure that the writer is comfortable with nonexistent directories
+    path = os.path.join(tmp_path, str(uuid.uuid4()))
+    pd_df = df.write_parquet(path, write_mode=write_mode)
+    read_back_pd_df = daft.read_parquet(path).to_pandas()
     assert_df_equals(df.to_pandas(), read_back_pd_df)
 
     assert len(pd_df) == 1
     assert len(pd_df._preview.preview_partition) == 1
 
 
-def test_empty_parquet_write_with_partitioning(tmp_path, with_morsel_size):
+@pytest.mark.parametrize("write_mode", ["append", "overwrite"])
+def test_empty_parquet_write_with_partitioning(tmp_path, write_mode, with_morsel_size):
     df = daft.read_csv(COOKBOOK_DATA_CSV)
     df = df.where(daft.lit(False))
 
-    output_files = df.write_parquet(tmp_path, partition_cols=["Borough"])
-    read_back_pd_df = daft.read_parquet(tmp_path.as_posix() + "/**/*.parquet").to_pandas()
+    # Create a unique path to make sure that the writer is comfortable with nonexistent directories
+    path = os.path.join(tmp_path, str(uuid.uuid4()))
+    output_files = df.write_parquet(path, partition_cols=["Borough"], write_mode=write_mode)
+    read_back_pd_df = daft.read_parquet(os.path.join(path, "**/*.parquet")).to_pandas()
     assert_df_equals(df.to_pandas(), read_back_pd_df)
 
     assert len(output_files) == 1
