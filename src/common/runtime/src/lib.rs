@@ -58,7 +58,7 @@ impl<T: Send + 'static> Future for RuntimeTask<T> {
     type Output = DaftResult<T>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        match Pin::new(&mut self.joinset).poll_join_next(cx) {
+        match self.joinset.poll_join_next(cx) {
             Poll::Ready(Some(result)) => {
                 Poll::Ready(result.map_err(|e| DaftError::External(e.into())))
             }

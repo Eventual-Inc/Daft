@@ -29,23 +29,22 @@ lazy_static! {
 /// It can be either `Ready` or `Pending`.
 /// If the output is `Ready`, the value is immediately available.
 /// If the output is `Pending`, the value is not yet available and a `RuntimeTask` is returned.
+#[pin_project::pin_project(project = OperatorOutputProj)]
 pub(crate) enum OperatorOutput<T> {
     Ready(Option<T>),
-    Pending(RuntimeTask<T>),
+    Pending(#[pin] RuntimeTask<T>),
 }
 
 impl<T: Send + Sync + Unpin + 'static> Future for OperatorOutput<T> {
     type Output = DaftResult<T>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.get_mut();
-
-        match this {
-            Self::Ready(value) => {
+        match self.project() {
+            OperatorOutputProj::Ready(value) => {
                 let value = value.take().unwrap();
                 Poll::Ready(Ok(value))
             }
-            Self::Pending(task) => Pin::new(task).poll(cx),
+            OperatorOutputProj::Pending(task) => task.poll(cx),
         }
     }
 }
@@ -89,13 +88,13 @@ impl<T: 'static> TaskSet<T> {
     }
 }
 
-struct SpawnedTask<T>(tokio::task::JoinHandle<T>);
+#[pin_project::pin_project]
+struct SpawnedTask<T>(#[pin] tokio::task::JoinHandle<T>);
 impl<T> Future for SpawnedTask<T> {
     type Output = crate::Result<T>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.get_mut();
-        Pin::new(&mut this.0).poll(cx).map(|r| r.context(JoinSnafu))
+        self.project().0.poll(cx).map(|r| r.context(JoinSnafu))
     }
 }
 

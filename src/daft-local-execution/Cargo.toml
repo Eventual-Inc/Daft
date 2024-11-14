@@ -27,6 +27,7 @@ lazy_static = {workspace = true}
 log = {workspace = true}
 loole = "0.4.0"
 num-format = "0.4.4"
+pin-project = "1"
 pyo3 = {workspace = true, optional = true}
 snafu = {workspace = true}
 tokio = {workspace = true}

@@ -2214,6 +2214,7 @@ dependencies = [
  "log",
  "loole",
  "num-format",
+ "pin-project",
  "pyo3",
  "snafu",
  "tokio",
