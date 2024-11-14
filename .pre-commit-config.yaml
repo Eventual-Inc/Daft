@@ -15,10 +15,10 @@ repos:
   - id: detect-private-key
   - id: trailing-whitespace
     exclude:
-          (?x)^(
+      (?x)^(
           docs/source/api_docs/|
           tests/assets/mvp.csv
-      )$ 
+      )$
   - id: end-of-file-fixer
     exclude: |
       (?x)^(
