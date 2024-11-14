@@ -364,6 +364,15 @@ impl SQLFunction for SQLCountMatches {
             )),
         }
     }
+
+    fn docstrings(&self, _: &str) -> String {
+        "Counts the number of times a pattern, or multiple patterns, appears in the input."
+            .to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input", "pattern", "whole_words", "case_sensitive"]
+    }
 }
 
 pub struct SQLNormalize;
