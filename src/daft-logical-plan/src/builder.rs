@@ -295,9 +295,14 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(logical_plan))
     }
 
-    pub fn sort(&self, sort_by: Vec<ExprRef>, descending: Vec<bool>) -> DaftResult<Self> {
+    pub fn sort(
+        &self,
+        sort_by: Vec<ExprRef>,
+        descending: Vec<bool>,
+        nulls_first: Vec<bool>,
+    ) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
-            ops::Sort::try_new(self.plan.clone(), sort_by, descending)?.into();
+            ops::Sort::try_new(self.plan.clone(), sort_by, descending, nulls_first)?.into();
         Ok(self.with_new_plan(logical_plan))
     }
 
@@ -700,10 +705,10 @@ impl PyLogicalPlanBuilder {
             .into())
     }
 
-    pub fn sort(&self, sort_by: Vec<PyExpr>, descending: Vec<bool>) -> PyResult<Self> {
+    pub fn sort(&self, sort_by: Vec<PyExpr>, descending: Vec<bool>, nulls_first: Vec<bool>) -> PyResult<Self> {
         Ok(self
             .builder
-            .sort(pyexprs_to_exprs(sort_by), descending)?
+            .sort(pyexprs_to_exprs(sort_by), descending, nulls_first)?
             .into())
     }
 

@@ -230,12 +230,14 @@ fn list_sort_helper_fixed_size(
     flat_child: &Series,
     fixed_size: usize,
     desc_iter: impl Iterator<Item = bool>,
+    nulls_first_iter: impl Iterator<Item = bool>,
     validity: impl Iterator<Item = bool>,
 ) -> DaftResult<Vec<Series>> {
     desc_iter
+        .zip(nulls_first_iter)
         .zip(validity)
         .enumerate()
-        .map(|(i, (desc, valid))| {
+        .map(|(i, ((desc,, valid))| {
             let start = i * fixed_size;
             let end = (i + 1) * fixed_size;
             if valid {

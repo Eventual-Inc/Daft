@@ -393,7 +393,7 @@ impl SQLPlanner {
                 unsupported_sql_err!("ORDER BY [query] [INTERPOLATE]");
             };
 
-            let (orderby_exprs, orderby_desc) =
+            let (orderby_exprs, orderby_desc, orderby_nulls_first) =
                 self.plan_order_by_exprs(order_by.exprs.as_slice())?;
 
             for expr in &orderby_exprs {
@@ -420,7 +420,9 @@ impl SQLPlanner {
                 rel.inner = rel.inner.select(projections)?;
             }
 
-            rel.inner = rel.inner.sort(orderby_exprs, orderby_desc)?;
+            rel.inner = rel
+                .inner
+                .sort(orderby_exprs, orderby_desc, orderby_nulls_first)?;
 
             if needs_projection {
                 rel.inner = rel.inner.select(final_projection)?;
@@ -448,10 +450,12 @@ impl SQLPlanner {
         // these are orderbys that are part of the final projection
         let mut orderbys_after_projection = Vec::new();
         let mut orderbys_after_projection_desc = Vec::new();
+        let mut orderbys_after_projection_nulls_first = Vec::new();
 
         // these are orderbys that are not part of the final projection
         let mut orderbys_before_projection = Vec::new();
         let mut orderbys_before_projection_desc = Vec::new();
+        let mut orderbys_before_projection_nulls_first = Vec::new();
 
         for p in projections {
             let fld = p.to_field(schema)?;
@@ -489,7 +493,7 @@ impl SQLPlanner {
                 unsupported_sql_err!("ORDER BY [query] [INTERPOLATE]");
             };
 
-            let (exprs, desc) = self.plan_order_by_exprs(order_by.exprs.as_slice())?;
+            let (exprs, desc, nulls_first) = self.plan_order_by_exprs(order_by.exprs.as_slice())?;
 
             for (i, expr) in exprs.iter().enumerate() {
                 // the orderby is ordered by a column of the projection
@@ -524,12 +528,14 @@ impl SQLPlanner {
                                 // ex: SELECT count(*) as c FROM t ORDER BY count(*)
                                 orderbys_after_projection.push(col(alias.as_ref()));
                                 orderbys_after_projection_desc.push(desc[i]);
+                                orderbys_after_projection_nulls_first.push(nulls_first[i]);
                             } else {
                                 // its a count(*) that is not in the final projection
                                 // ex: SELECT sum(n) FROM t ORDER BY count(*);
                                 aggs.push(expr.clone());
                                 orderbys_before_projection.push(col(fld.name.as_ref()));
                                 orderbys_before_projection_desc.push(desc[i]);
+                                orderbys_before_projection_nulls_first.push(nulls_first[i]);
                             }
                         }
                     } else if has_agg(expr) {
@@ -537,9 +543,11 @@ impl SQLPlanner {
                         // so we just need to push the column name
                         orderbys_after_projection.push(col(fld.name.as_ref()));
                         orderbys_after_projection_desc.push(desc[i]);
+                        orderbys_after_projection_nulls_first.push(nulls_first[i]);
                     } else {
                         orderbys_after_projection.push(expr.clone());
                         orderbys_after_projection_desc.push(desc[i]);
+                        orderbys_after_projection_nulls_first.push(nulls_first[i]);
                     }
 
                 // the orderby is ordered by an expr from the original schema
@@ -565,6 +573,7 @@ impl SQLPlanner {
                         }) {
                             orderbys_after_projection.push(col(alias.as_ref()));
                             orderbys_after_projection_desc.push(desc[i]);
+                            orderbys_after_projection_nulls_first.push(nulls_first[i]);
                         } else {
                             // its an aggregate that is not part of the final projection
                             // ex: SELECT sum(a) FROM t ORDER BY sum(b)
@@ -574,6 +583,7 @@ impl SQLPlanner {
                             // then add it to the orderbys that are not part of the final projection
                             orderbys_before_projection.push(col(fld.name.as_ref()));
                             orderbys_before_projection_desc.push(desc[i]);
+                            orderbys_before_projection_nulls_first.push(nulls_first[i]);
                         }
                     } else {
                         // we know it's a column of the original schema
@@ -583,6 +593,7 @@ impl SQLPlanner {
 
                         orderbys_before_projection.push(col(fld.name.as_ref()));
                         orderbys_before_projection_desc.push(desc[i]);
+                        orderbys_before_projection_nulls_first.push(nulls_first[i]);
                     }
                 } else {
                     panic!("unexpected order by expr");
@@ -603,9 +614,11 @@ impl SQLPlanner {
 
         // order bys that are not in the final projection
         if has_orderby_before_projection {
-            rel.inner = rel
-                .inner
-                .sort(orderbys_before_projection, orderbys_before_projection_desc)?;
+            rel.inner = rel.inner.sort(
+                orderbys_before_projection,
+                orderbys_before_projection_desc,
+                orderbys_before_projection_nulls_first,
+            )?;
         }
 
         // apply the final projection
@@ -613,9 +626,11 @@ impl SQLPlanner {
 
         // order bys that are in the final projection
         if has_orderby_after_projection {
-            rel.inner = rel
-                .inner
-                .sort(orderbys_after_projection, orderbys_after_projection_desc)?;
+            rel.inner = rel.inner.sort(
+                orderbys_after_projection,
+                orderbys_after_projection_desc,
+                orderbys_after_projection_nulls_first,
+            )?;
         }
         Ok(())
     }
@@ -623,16 +638,56 @@ impl SQLPlanner {
     fn plan_order_by_exprs(
         &self,
         expr: &[sqlparser::ast::OrderByExpr],
-    ) -> SQLPlannerResult<(Vec<ExprRef>, Vec<bool>)> {
+    ) -> SQLPlannerResult<(Vec<ExprRef>, Vec<bool>, Vec<bool>)> {
         if expr.is_empty() {
             unsupported_sql_err!("ORDER BY []");
         }
         let mut exprs = Vec::with_capacity(expr.len());
         let mut desc = Vec::with_capacity(expr.len());
+        let mut nulls_first = Vec::with_capacity(expr.len());
         for order_by_expr in expr {
-            if order_by_expr.nulls_first.is_some() {
-                unsupported_sql_err!("NULLS FIRST");
-            }
+            match (order_by_expr.asc, order_by_expr.nulls_first) {
+                // ---------------------------
+                // all of these are equivalent
+                // ---------------------------
+                // ORDER BY expr
+                (None, None) |
+                // ORDER BY expr ASC
+                (Some(true), None) |
+                // ORDER BY expr NULLS LAST
+                (None, Some(false)) |
+                // ORDER BY expr ASC NULLS LAST
+                (Some(true), Some(false)) => {
+                   nulls_first.push(false);
+                   desc.push(false);
+               },
+                // ---------------------------
+
+
+                // ---------------------------
+                // ORDER BY expr NULLS FIRST
+                (None, Some(true)) |
+                // ORDER BY expr ASC NULLS FIRST
+                (Some(true), Some(true)) => {
+                    nulls_first.push(true);
+                    desc.push(false);
+                }
+                // ---------------------------
+
+                // ORDER BY expr DESC
+                (Some(false), None) |
+                // ORDER BY expr DESC NULLS FIRST
+                (Some(false), Some(true)) => {
+                    nulls_first.push(true);
+                    desc.push(true);
+                },
+                // ORDER BY expr DESC NULLS LAST
+                (Some(false), Some(false)) => {
+                    nulls_first.push(false);
+                    desc.push(true);
+                }
+
+            };
             if order_by_expr.with_fill.is_some() {
                 unsupported_sql_err!("WITH FILL");
             }
@@ -641,7 +696,7 @@ impl SQLPlanner {
 
             exprs.push(expr);
         }
-        Ok((exprs, desc))
+        Ok((exprs, desc, nulls_first))
     }
 
     fn plan_from(&mut self, from: &[TableWithJoins]) -> SQLPlannerResult<Relation> {

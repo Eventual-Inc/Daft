@@ -174,7 +174,7 @@ class MicroPartition:
         pyexprs = [e._expr for e in exprs]
         return MicroPartition._from_pymicropartition(self._micropartition.filter(pyexprs))
 
-    def sort(self, sort_keys: ExpressionsProjection, descending: bool | list[bool] | None = None) -> MicroPartition:
+    def sort(self, sort_keys: ExpressionsProjection, descending: bool | list[bool] | None = None, nulls_first: bool | list[bool] | None=None) -> MicroPartition:
         assert all(isinstance(e, Expression) for e in sort_keys)
         pyexprs = [e._expr for e in sort_keys]
         if descending is None:
@@ -187,9 +187,24 @@ class MicroPartition:
                     f"Expected length of `descending` to be the same length as `sort_keys` since a list was passed in,"
                     f"got {len(descending)} instead of {len(sort_keys)}"
                 )
+                
         else:
             raise TypeError(f"Expected a bool, list[bool] or None for `descending` but got {type(descending)}")
-        return MicroPartition._from_pymicropartition(self._micropartition.sort(pyexprs, descending))
+        if nulls_first is None:
+            nulls_first = descending
+        elif isinstance(nulls_first, bool):
+            nulls_first = [nulls_first for _ in pyexprs]
+        elif isinstance(nulls_first, list):
+            if len(nulls_first) != len(sort_keys):
+                raise ValueError(
+                    f"Expected length of `nulls_first` to be the same length as `sort_keys` since a list was passed in,"
+                    f"got {len(nulls_first)} instead of {len(sort_keys)}"
+                )
+            else:
+                nulls_first = [bool(x) for x in nulls_first]
+        else:
+            raise TypeError(f"Expected a bool, list[bool] or None for `nulls_first` but got {type(nulls_first)}")
+        return MicroPartition._from_pymicropartition(self._micropartition.sort(pyexprs, descending, nulls_first))
 
     def sample(
         self,

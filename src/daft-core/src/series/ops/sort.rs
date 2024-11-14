@@ -6,7 +6,12 @@ use crate::{
 };
 
 impl Series {
-    pub fn argsort(&self, descending: bool) -> DaftResult<Self> {
+    pub fn argsort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
+        if nulls_first != descending {
+            return Err(DaftError::NotImplemented(
+                "nulls_first is not implemented".to_string(),
+            ));
+        }
         let series = self.as_physical()?;
         with_match_comparable_daft_types!(series.data_type(), |$T| {
             let downcasted = series.downcast::<<$T as DaftDataType>::ArrayType>()?;
@@ -14,7 +19,20 @@ impl Series {
         })
     }
 
-    pub fn argsort_multikey(sort_keys: &[Self], descending: &[bool]) -> DaftResult<Self> {
+    pub fn argsort_multikey(
+        sort_keys: &[Self],
+        descending: &[bool],
+        nulls_first: &[bool],
+    ) -> DaftResult<Self> {
+        if nulls_first
+            .iter()
+            .zip(descending)
+            .any(|(nulls_first, descending)| nulls_first != descending)
+        {
+            return Err(DaftError::NotImplemented(
+                "nulls_first is not implemented".to_string(),
+            ));
+        }
         if sort_keys.len() != descending.len() {
             return Err(DaftError::ValueError(format!(
                 "sort_keys and descending length must match, got {} vs {}",
@@ -27,7 +45,7 @@ impl Series {
             return sort_keys
                 .first()
                 .unwrap()
-                .argsort(*descending.first().unwrap());
+                .argsort(*descending.first().unwrap(), *nulls_first.first().unwrap());
         }
 
         let first = sort_keys.first().unwrap().as_physical()?;
@@ -38,7 +56,7 @@ impl Series {
         })
     }
 
-    pub fn sort(&self, descending: bool) -> DaftResult<Self> {
-        self.inner.sort(descending)
+    pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
+        self.inner.sort(descending, nulls_first)
     }
 }

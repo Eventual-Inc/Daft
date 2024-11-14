@@ -29,7 +29,7 @@ pub trait SeriesLike: Send + Sync + Any + std::fmt::Debug {
     fn size_bytes(&self) -> DaftResult<usize>;
     fn is_null(&self) -> DaftResult<Series>;
     fn not_null(&self) -> DaftResult<Series>;
-    fn sort(&self, descending: bool) -> DaftResult<Series>;
+    fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Series>;
     fn head(&self, num: usize) -> DaftResult<Series>;
     fn slice(&self, start: usize, end: usize) -> DaftResult<Series>;
     fn take(&self, idx: &Series) -> DaftResult<Series>;

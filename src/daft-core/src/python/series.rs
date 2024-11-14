@@ -299,12 +299,12 @@ impl PySeries {
         Ok(self.series.filter(mask.series.downcast()?)?.into())
     }
 
-    pub fn sort(&self, descending: bool) -> PyResult<Self> {
-        Ok(self.series.sort(descending)?.into())
+    pub fn sort(&self, descending: bool, nulls_first: bool) -> PyResult<Self> {
+        Ok(self.series.sort(descending, nulls_first)?.into())
     }
 
-    pub fn argsort(&self, descending: bool) -> PyResult<Self> {
-        Ok(self.series.argsort(descending)?.into())
+    pub fn argsort(&self, descending: bool, nulls_first: bool) -> PyResult<Self> {
+        Ok(self.series.argsort(descending, nulls_first)?.into())
     }
 
     pub fn hash(&self, seed: Option<Self>) -> PyResult<Self> {

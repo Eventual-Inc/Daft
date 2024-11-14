@@ -141,6 +141,7 @@ pub(super) fn translate_single_logical_node(
         LogicalPlan::Sort(LogicalSort {
             sort_by,
             descending,
+            nulls_first,
             ..
         }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
@@ -149,6 +150,7 @@ pub(super) fn translate_single_logical_node(
                 input_physical,
                 sort_by.clone(),
                 descending.clone(),
+                nulls_first.clone(),
                 num_partitions,
             ))
             .arced())
@@ -578,6 +580,7 @@ pub(super) fn translate_single_logical_node(
                                 left_physical,
                                 left_on.clone(),
                                 std::iter::repeat(false).take(left_on.len()).collect(),
+                                std::iter::repeat(false).take(left_on.len()).collect(),
                                 num_partitions,
                             ))
                             .arced();
@@ -586,6 +589,7 @@ pub(super) fn translate_single_logical_node(
                             right_physical = PhysicalPlan::Sort(Sort::new(
                                 right_physical,
                                 right_on.clone(),
+                                std::iter::repeat(false).take(right_on.len()).collect(),
                                 std::iter::repeat(false).take(right_on.len()).collect(),
                                 num_partitions,
                             ))

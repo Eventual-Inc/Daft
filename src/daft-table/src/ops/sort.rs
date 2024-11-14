@@ -5,12 +5,22 @@ use daft_dsl::ExprRef;
 use crate::Table;
 
 impl Table {
-    pub fn sort(&self, sort_keys: &[ExprRef], descending: &[bool]) -> DaftResult<Self> {
-        let argsort = self.argsort(sort_keys, descending)?;
+    pub fn sort(
+        &self,
+        sort_keys: &[ExprRef],
+        descending: &[bool],
+        nulls_first: &[bool],
+    ) -> DaftResult<Self> {
+        let argsort = self.argsort(sort_keys, descending, nulls_first)?;
         self.take(&argsort)
     }
 
-    pub fn argsort(&self, sort_keys: &[ExprRef], descending: &[bool]) -> DaftResult<Series> {
+    pub fn argsort(
+        &self,
+        sort_keys: &[ExprRef],
+        descending: &[bool],
+        nulls_first: &[bool],
+    ) -> DaftResult<Series> {
         if sort_keys.len() != descending.len() {
             return Err(DaftError::ValueError(format!(
                 "sort_keys and descending length must match, got {} vs {}",
@@ -20,10 +30,10 @@ impl Table {
         }
         if sort_keys.len() == 1 {
             self.eval_expression(sort_keys.first().unwrap())?
-                .argsort(*descending.first().unwrap())
+                .argsort(*descending.first().unwrap(), nulls_first.first().copied()
         } else {
             let expr_result = self.eval_expression_list(sort_keys)?;
-            Series::argsort_multikey(expr_result.columns.as_slice(), descending)
+            Series::argsort_multikey(expr_result.columns.as_slice(), descending, nulls_first)
         }
     }
 }

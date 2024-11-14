@@ -466,6 +466,7 @@ fn physical_plan_to_partition_tasks(
             input,
             sort_by,
             descending,
+            nulls_first,
             num_partitions,
         }) => {
             let upstream_iter =
@@ -481,6 +482,7 @@ fn physical_plan_to_partition_tasks(
                     upstream_iter,
                     sort_by_pyexprs,
                     descending.clone(),
+                    nulls_first.clone(),
                     *num_partitions,
                 ))?;
             Ok(py_iter.into())

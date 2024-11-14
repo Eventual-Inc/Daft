@@ -226,11 +226,13 @@ impl LocalPhysicalPlan {
         input: LocalPhysicalPlanRef,
         sort_by: Vec<ExprRef>,
         descending: Vec<bool>,
+        nulls_first: Vec<bool>,
     ) -> LocalPhysicalPlanRef {
         let schema = input.schema().clone();
         Self::Sort(Sort {
             input,
             sort_by,
+            nulls_first,
             descending,
             schema,
             plan_stats: PlanStats {},
@@ -412,6 +414,7 @@ pub struct Sort {
     pub input: LocalPhysicalPlanRef,
     pub sort_by: Vec<ExprRef>,
     pub descending: Vec<bool>,
+    pub nulls_first: Vec<bool>,
     pub schema: SchemaRef,
     pub plan_stats: PlanStats,
 }

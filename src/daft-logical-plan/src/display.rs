@@ -99,7 +99,7 @@ mod test {
             .limit(1000, false)?
             .add_monotonically_increasing_id(None)?
             .distinct()?
-            .sort(vec![col("last_name")], vec![false])?
+            .sort(vec![col("last_name")], vec![false], vec![])?
             .build();
 
         let plan = LogicalPlanBuilder::new(subplan, None)
@@ -173,7 +173,7 @@ Project1 --> Limit0
             .limit(1000, false)?
             .add_monotonically_increasing_id(None)?
             .distinct()?
-            .sort(vec![col("last_name")], vec![false])?
+            .sort(vec![col("last_name")], vec![false], vec![false])?
             .build();
 
         let plan = LogicalPlanBuilder::new(subplan, None)
