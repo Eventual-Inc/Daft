@@ -531,6 +531,23 @@ pub fn physical_plan_to_pipeline(
             );
             BlockingSinkNode::new(Arc::new(write_sink), child_node).boxed()
         }
+        #[cfg(feature = "python")]
+        LocalPhysicalPlan::LanceWrite(daft_local_plan::LanceWrite {
+            input,
+            lance_info,
+            file_schema,
+            ..
+        }) => {
+            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            let writer_factory = daft_writers::make_lance_writer_factory(lance_info.clone());
+            let write_sink = WriteSink::new(
+                WriteFormat::Lance,
+                writer_factory,
+                None,
+                file_schema.clone(),
+            );
+            BlockingSinkNode::new(Arc::new(write_sink), child_node).boxed()
+        }
     };
 
     Ok(out)
