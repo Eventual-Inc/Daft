@@ -1901,6 +1901,7 @@ name = "daft-catalog"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
+ "daft-core",
  "daft-logical-plan",
  "lazy_static",
  "pyo3",

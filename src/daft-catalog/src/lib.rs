@@ -140,3 +140,62 @@ impl DaftMetaCatalog {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use daft_core::prelude::*;
+    use daft_logical_plan::{
+        ops::Source, source_info::PlaceHolderInfo, ClusteringSpec, LogicalPlan, LogicalPlanRef,
+        SourceInfo,
+    };
+
+    use super::*;
+
+    fn mock_plan() -> LogicalPlanRef {
+        let schema = Arc::new(
+            Schema::new(vec![
+                Field::new("text", DataType::Utf8),
+                Field::new("id", DataType::Int32),
+            ])
+            .unwrap(),
+        );
+        LogicalPlan::Source(Source {
+            output_schema: schema.clone(),
+            source_info: Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
+                source_schema: schema,
+                clustering_spec: Arc::new(ClusteringSpec::unknown()),
+                source_id: 0,
+            })),
+        })
+        .arced()
+    }
+
+    #[test]
+    fn test_register_and_unregister_named_table() {
+        let mut catalog = DaftMetaCatalog::new_from_env();
+        let plan = LogicalPlanBuilder::new(mock_plan(), None);
+
+        // Register a table
+        assert!(catalog
+            .register_named_table("test_table", plan.clone())
+            .is_ok());
+
+        // Try to register a table with invalid name
+        assert!(catalog
+            .register_named_table("invalid name", plan.clone())
+            .is_err());
+    }
+
+    #[test]
+    fn test_read_registered_table() {
+        let mut catalog = DaftMetaCatalog::new_from_env();
+        let plan = LogicalPlanBuilder::new(mock_plan(), None);
+
+        catalog.register_named_table("test_table", plan).unwrap();
+
+        assert!(catalog.read_table("test_table", None).is_ok());
+        assert!(catalog.read_table("non_existent_table", None).is_err());
+    }
+}
