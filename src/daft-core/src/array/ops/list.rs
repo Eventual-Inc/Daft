@@ -205,16 +205,18 @@ fn list_sort_helper(
     flat_child: &Series,
     offsets: &OffsetsBuffer<i64>,
     desc_iter: impl Iterator<Item = bool>,
+    nulls_first_iter: impl Iterator<Item = bool>,
     validity: impl Iterator<Item = bool>,
 ) -> DaftResult<Vec<Series>> {
     desc_iter
+        .zip(nulls_first_iter)
         .zip(validity)
         .enumerate()
-        .map(|(i, (desc, valid))| {
+        .map(|(i, ((desc, nulls_first), valid))| {
             let start = *offsets.get(i).unwrap() as usize;
             let end = *offsets.get(i + 1).unwrap() as usize;
             if valid {
-                flat_child.slice(start, end)?.sort(desc)
+                flat_child.slice(start, end)?.sort(desc, nulls_first)
             } else {
                 Ok(Series::full_null(
                     flat_child.name(),
@@ -237,11 +239,11 @@ fn list_sort_helper_fixed_size(
         .zip(nulls_first_iter)
         .zip(validity)
         .enumerate()
-        .map(|(i, ((desc,, valid))| {
+        .map(|(i, ((desc, nulls_first), valid))| {
             let start = i * fixed_size;
             let end = (i + 1) * fixed_size;
             if valid {
-                flat_child.slice(start, end)?.sort(desc)
+                flat_child.slice(start, end)?.sort(desc, nulls_first)
             } else {
                 Ok(Series::full_null(
                     flat_child.name(),
@@ -570,29 +572,45 @@ impl ListArray {
     }
 
     // Sorts the lists within a list column
-    pub fn list_sort(&self, desc: &BooleanArray) -> DaftResult<Self> {
+    pub fn list_sort(&self, desc: &BooleanArray, nulls_first: &BooleanArray) -> DaftResult<Self> {
         let offsets = self.offsets();
         let child_series = if desc.len() == 1 {
             let desc_iter = repeat(desc.get(0).unwrap()).take(self.len());
+            let nulls_first_iter = repeat(nulls_first.get(0).unwrap()).take(self.len());
             if let Some(validity) = self.validity() {
-                list_sort_helper(&self.flat_child, offsets, desc_iter, validity.iter())?
+                list_sort_helper(
+                    &self.flat_child,
+                    offsets,
+                    desc_iter,
+                    nulls_first_iter,
+                    validity.iter(),
+                )?
             } else {
                 list_sort_helper(
                     &self.flat_child,
                     offsets,
                     desc_iter,
+                    nulls_first_iter,
                     repeat(true).take(self.len()),
                 )?
             }
         } else {
             let desc_iter = desc.as_arrow().values_iter();
+            let nulls_first_iter = nulls_first.as_arrow().values_iter();
             if let Some(validity) = self.validity() {
-                list_sort_helper(&self.flat_child, offsets, desc_iter, validity.iter())?
+                list_sort_helper(
+                    &self.flat_child,
+                    offsets,
+                    desc_iter,
+                    nulls_first_iter,
+                    validity.iter(),
+                )?
             } else {
                 list_sort_helper(
                     &self.flat_child,
                     offsets,
                     desc_iter,
+                    nulls_first_iter,
                     repeat(true).take(self.len()),
                 )?
             }
@@ -791,16 +809,18 @@ impl FixedSizeListArray {
     }
 
     // Sorts the lists within a list column
-    pub fn list_sort(&self, desc: &BooleanArray) -> DaftResult<Self> {
+    pub fn list_sort(&self, desc: &BooleanArray, nulls_first: &BooleanArray) -> DaftResult<Self> {
         let fixed_size = self.fixed_element_len();
 
         let child_series = if desc.len() == 1 {
             let desc_iter = repeat(desc.get(0).unwrap()).take(self.len());
+            let nulls_first_iter = repeat(nulls_first.get(0).unwrap()).take(self.len());
             if let Some(validity) = self.validity() {
                 list_sort_helper_fixed_size(
                     &self.flat_child,
                     fixed_size,
                     desc_iter,
+                    nulls_first_iter,
                     validity.iter(),
                 )?
             } else {
@@ -808,16 +828,19 @@ impl FixedSizeListArray {
                     &self.flat_child,
                     fixed_size,
                     desc_iter,
+                    nulls_first_iter,
                     repeat(true).take(self.len()),
                 )?
             }
         } else {
             let desc_iter = desc.as_arrow().values_iter();
+            let nulls_first_iter = nulls_first.as_arrow().values_iter();
             if let Some(validity) = self.validity() {
                 list_sort_helper_fixed_size(
                     &self.flat_child,
                     fixed_size,
                     desc_iter,
+                    nulls_first_iter,
                     validity.iter(),
                 )?
             } else {
@@ -825,6 +848,7 @@ impl FixedSizeListArray {
                     &self.flat_child,
                     fixed_size,
                     desc_iter,
+                    nulls_first_iter,
                     repeat(true).take(self.len()),
                 )?
             }

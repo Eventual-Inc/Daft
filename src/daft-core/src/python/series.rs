@@ -696,8 +696,11 @@ impl PySeries {
         Ok(self.series.list_slice(&start.series, &end.series)?.into())
     }
 
-    pub fn list_sort(&self, desc: &Self) -> PyResult<Self> {
-        Ok(self.series.list_sort(&desc.series)?.into())
+    pub fn list_sort(&self, desc: &Self, nulls_first: &Self) -> PyResult<Self> {
+        Ok(self
+            .series
+            .list_sort(&desc.series, &nulls_first.series)?
+            .into())
     }
 
     pub fn map_get(&self, key: &Self) -> PyResult<Self> {

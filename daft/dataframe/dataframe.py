@@ -1525,6 +1525,7 @@ class DataFrame:
         self,
         by: Union[ColumnInputType, List[ColumnInputType]],
         desc: Union[bool, List[bool]] = False,
+        nulls_first: Union[bool, List[bool]] = False,
     ) -> "DataFrame":
         """Sorts DataFrame globally
 
@@ -1583,8 +1584,9 @@ class DataFrame:
             by = [
                 by,
             ]
+
         sort_by = self.__column_input_to_expression(by)
-        builder = self._builder.sort(sort_by=sort_by, descending=desc)
+        builder = self._builder.sort(sort_by=sort_by, descending=desc, nulls_first=nulls_first)
         return DataFrame(builder)
 
     @DataframePublicAPI

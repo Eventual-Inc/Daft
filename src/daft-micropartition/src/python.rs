@@ -207,6 +207,7 @@ impl PyMicroPartition {
         py: Python,
         sort_keys: Vec<PyExpr>,
         descending: Vec<bool>,
+        nulls_first: Vec<bool>,
     ) -> PyResult<PySeries> {
         let converted_exprs: Vec<daft_dsl::ExprRef> = sort_keys
             .into_iter()
@@ -215,7 +216,11 @@ impl PyMicroPartition {
         py.allow_threads(|| {
             Ok(self
                 .inner
-                .argsort(converted_exprs.as_slice(), descending.as_slice())?
+                .argsort(
+                    converted_exprs.as_slice(),
+                    descending.as_slice(),
+                    nulls_first.as_slice(),
+                )?
                 .into())
         })
     }

@@ -692,7 +692,6 @@ impl SQLPlanner {
                 unsupported_sql_err!("WITH FILL");
             }
             let expr = self.plan_expr(&order_by_expr.expr)?;
-            desc.push(!order_by_expr.asc.unwrap_or(true));
 
             exprs.push(expr);
         }

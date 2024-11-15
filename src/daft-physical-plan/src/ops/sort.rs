@@ -39,7 +39,15 @@ impl Sort {
             .sort_by
             .iter()
             .zip(self.descending.iter())
-            .map(|(sb, d)| format!("({}, {})", sb, if *d { "descending" } else { "ascending" },))
+            .zip(self.nulls_first.iter())
+            .map(|((sb, d), nf)| {
+                format!(
+                    "({}, {}, {})",
+                    sb,
+                    if *d { "descending" } else { "ascending" },
+                    if *nf { "nulls first" } else { "nulls last" }
+                )
+            })
             .join(", ");
         res.push(format!("Sort: Sort by = {}", pairs));
         res.push(format!("Num partitions = {}", self.num_partitions));

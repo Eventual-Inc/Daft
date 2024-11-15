@@ -203,11 +203,20 @@ class LogicalPlanBuilder:
         builder = self._builder.sample(fraction, with_replacement, seed)
         return LogicalPlanBuilder(builder)
 
-    def sort(self, sort_by: list[Expression], descending: list[bool] | bool = False) -> LogicalPlanBuilder:
+    def sort(
+        self,
+        sort_by: list[Expression],
+        descending: list[bool] | bool = False,
+        nulls_first: list[bool] | bool | None = None,
+    ) -> LogicalPlanBuilder:
         sort_by_pyexprs = [expr._expr for expr in sort_by]
         if not isinstance(descending, list):
             descending = [descending] * len(sort_by_pyexprs)
-        builder = self._builder.sort(sort_by_pyexprs, descending)
+        if nulls_first is None:
+            nulls_first = descending
+        elif isinstance(nulls_first, bool):
+            nulls_first = [nulls_first] * len(sort_by_pyexprs)
+        builder = self._builder.sort(sort_by_pyexprs, descending, nulls_first)
         return LogicalPlanBuilder(builder)
 
     def hash_repartition(self, num_partitions: int | None, partition_by: list[Expression]) -> LogicalPlanBuilder:

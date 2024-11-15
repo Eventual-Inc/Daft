@@ -567,7 +567,9 @@ mod tests {
         } else {
             scan_plan.filter(pred)?
         };
-        let expected = expected_filter_scan.sort(sort_by, descending, nulls_first)?.build();
+        let expected = expected_filter_scan
+            .sort(sort_by, descending, nulls_first)?
+            .build();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }

@@ -314,9 +314,10 @@ pub fn physical_plan_to_pipeline(
             input,
             sort_by,
             descending,
+            nulls_first,
             ..
         }) => {
-            let sort_sink = SortSink::new(sort_by.clone(), descending.clone());
+            let sort_sink = SortSink::new(sort_by.clone(), descending.clone(), nulls_first.clone());
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
             BlockingSinkNode::new(Arc::new(sort_sink), child_node).boxed()
         }

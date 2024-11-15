@@ -41,13 +41,15 @@ impl BlockingSinkState for SortState {
 pub struct SortSink {
     sort_by: Vec<ExprRef>,
     descending: Vec<bool>,
+    nulls_first: Vec<bool>,
 }
 
 impl SortSink {
-    pub fn new(sort_by: Vec<ExprRef>, descending: Vec<bool>) -> Self {
+    pub fn new(sort_by: Vec<ExprRef>, descending: Vec<bool>, nulls_first: Vec<bool>) -> Self {
         Self {
             sort_by,
             descending,
+            nulls_first,
         }
     }
 }
@@ -80,7 +82,7 @@ impl BlockingSink for SortSink {
             state.finalize()
         });
         let concated = MicroPartition::concat(parts)?;
-        let sorted = Arc::new(concated.sort(&self.sort_by, &self.descending)?);
+        let sorted = Arc::new(concated.sort(&self.sort_by, &self.descending, &self.nulls_first)?);
         Ok(Some(sorted.into()))
     }
 

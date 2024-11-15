@@ -705,7 +705,12 @@ impl PyLogicalPlanBuilder {
             .into())
     }
 
-    pub fn sort(&self, sort_by: Vec<PyExpr>, descending: Vec<bool>, nulls_first: Vec<bool>) -> PyResult<Self> {
+    pub fn sort(
+        &self,
+        sort_by: Vec<PyExpr>,
+        descending: Vec<bool>,
+        nulls_first: Vec<bool>,
+    ) -> PyResult<Self> {
         Ok(self
             .builder
             .sort(pyexprs_to_exprs(sort_by), descending, nulls_first)?

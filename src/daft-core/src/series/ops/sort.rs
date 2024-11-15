@@ -15,7 +15,7 @@ impl Series {
         let series = self.as_physical()?;
         with_match_comparable_daft_types!(series.data_type(), |$T| {
             let downcasted = series.downcast::<<$T as DaftDataType>::ArrayType>()?;
-            Ok(downcasted.argsort::<UInt64Type>(descending)?.into_series())
+            Ok(downcasted.argsort::<UInt64Type>(descending, nulls_first)?.into_series())
         })
     }
 
@@ -51,7 +51,7 @@ impl Series {
         let first = sort_keys.first().unwrap().as_physical()?;
         with_match_comparable_daft_types!(first.data_type(), |$T| {
             let downcasted = first.downcast::<<$T as DaftDataType>::ArrayType>()?;
-            let result = downcasted.argsort_multikey::<UInt64Type>(&sort_keys[1..], descending)?;
+            let result = downcasted.argsort_multikey::<UInt64Type>(&sort_keys[1..], descending, nulls_first)?;
             Ok(result.into_series())
         })
     }

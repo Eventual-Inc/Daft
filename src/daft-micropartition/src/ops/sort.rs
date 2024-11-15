@@ -32,16 +32,21 @@ impl MicroPartition {
         }
     }
 
-    pub fn argsort(&self, sort_keys: &[ExprRef], descending: &[bool]) -> DaftResult<Series> {
+    pub fn argsort(
+        &self,
+        sort_keys: &[ExprRef],
+        descending: &[bool],
+        nulls_first: &[bool],
+    ) -> DaftResult<Series> {
         let io_stats = IOStatsContext::new("MicroPartition::argsort");
 
         let tables = self.concat_or_get(io_stats)?;
         match tables.as_slice() {
             [] => {
                 let empty_table = Table::empty(Some(self.schema.clone()))?;
-                empty_table.argsort(sort_keys, descending)
+                empty_table.argsort(sort_keys, descending, nulls_first)
             }
-            [single] => single.argsort(sort_keys, descending),
+            [single] => single.argsort(sort_keys, descending, nulls_first),
             _ => unreachable!(),
         }
     }
