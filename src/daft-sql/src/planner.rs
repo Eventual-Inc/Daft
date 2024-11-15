@@ -7,9 +7,8 @@ use std::{
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 use daft_dsl::{
-    col,
-    has_agg, lit, literals_to_series, null_lit, AggExpr, Expr, ExprRef, LiteralValue, Operator,
-    Subquery
+    col, has_agg, lit, literals_to_series, null_lit, AggExpr, Expr, ExprRef, LiteralValue,
+    Operator, Subquery,
 };
 use daft_functions::{
     numeric::{ceil::ceil, floor::floor},
