@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use common_runtime::RuntimeRef;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
@@ -8,11 +9,13 @@ use daft_table::Table;
 use daft_writers::{FileWriter, WriterFactory};
 use tracing::instrument;
 
-use super::blocking_sink::{BlockingSink, BlockingSinkState, BlockingSinkStatus};
+use super::blocking_sink::{
+    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
+    BlockingSinkStatus,
+};
 use crate::{
-    dispatcher::{Dispatcher, PartitionedDispatcher, RoundRobinBufferedDispatcher},
-    pipeline::PipelineResultType,
-    NUM_CPUS,
+    dispatcher::{DispatchSpawner, PartitionedDispatcher, UnorderedDispatcher},
+    ExecutionRuntimeContext, NUM_CPUS,
 };
 
 pub enum WriteFormat {
@@ -24,6 +27,7 @@ pub enum WriteFormat {
     PartitionedIceberg,
     Deltalake,
     PartitionedDeltalake,
+    Lance,
 }
 
 struct WriteState {
@@ -71,37 +75,48 @@ impl BlockingSink for WriteSink {
     #[instrument(skip_all, name = "WriteSink::sink")]
     fn sink(
         &self,
-        input: &Arc<MicroPartition>,
+        input: Arc<MicroPartition>,
         mut state: Box<dyn BlockingSinkState>,
-    ) -> DaftResult<BlockingSinkStatus> {
-        state
-            .as_any_mut()
-            .downcast_mut::<WriteState>()
-            .expect("WriteSink should have WriteState")
-            .writer
-            .write(input)?;
-        Ok(BlockingSinkStatus::NeedMoreInput(state))
+        runtime_ref: &RuntimeRef,
+    ) -> BlockingSinkSinkResult {
+        runtime_ref
+            .spawn(async move {
+                state
+                    .as_any_mut()
+                    .downcast_mut::<WriteState>()
+                    .expect("WriteSink should have WriteState")
+                    .writer
+                    .write(&input)?;
+                Ok(BlockingSinkStatus::NeedMoreInput(state))
+            })
+            .into()
     }
 
     #[instrument(skip_all, name = "WriteSink::finalize")]
     fn finalize(
         &self,
         states: Vec<Box<dyn BlockingSinkState>>,
-    ) -> DaftResult<Option<PipelineResultType>> {
-        let mut results = vec![];
-        for mut state in states {
-            let state = state
-                .as_any_mut()
-                .downcast_mut::<WriteState>()
-                .expect("State type mismatch");
-            results.extend(state.writer.close()?);
-        }
-        let mp = Arc::new(MicroPartition::new_loaded(
-            self.file_schema.clone(),
-            results.into(),
-            None,
-        ));
-        Ok(Some(mp.into()))
+        runtime: &RuntimeRef,
+    ) -> BlockingSinkFinalizeResult {
+        let file_schema = self.file_schema.clone();
+        runtime
+            .spawn(async move {
+                let mut results = vec![];
+                for mut state in states {
+                    let state = state
+                        .as_any_mut()
+                        .downcast_mut::<WriteState>()
+                        .expect("State type mismatch");
+                    results.extend(state.writer.close()?);
+                }
+                let mp = Arc::new(MicroPartition::new_loaded(
+                    file_schema,
+                    results.into(),
+                    None,
+                ));
+                Ok(Some(mp))
+            })
+            .into()
     }
 
     fn name(&self) -> &'static str {
@@ -114,6 +129,7 @@ impl BlockingSink for WriteSink {
             WriteFormat::PartitionedIceberg => "PartitionedIcebergSink",
             WriteFormat::Deltalake => "DeltalakeSink",
             WriteFormat::PartitionedDeltalake => "PartitionedDeltalakeSink",
+            WriteFormat::Lance => "LanceSink",
         }
     }
 
@@ -122,16 +138,16 @@ impl BlockingSink for WriteSink {
         Ok(Box::new(WriteState::new(writer)) as Box<dyn BlockingSinkState>)
     }
 
-    fn make_dispatcher(
+    fn dispatch_spawner(
         &self,
-        runtime_handle: &crate::ExecutionRuntimeHandle,
-    ) -> Arc<dyn Dispatcher> {
+        runtime_handle: &ExecutionRuntimeContext,
+    ) -> Arc<dyn DispatchSpawner> {
         if let Some(partition_by) = &self.partition_by {
             Arc::new(PartitionedDispatcher::new(partition_by.clone()))
         } else {
-            Arc::new(RoundRobinBufferedDispatcher::new(
+            Arc::new(UnorderedDispatcher::new(Some(
                 runtime_handle.default_morsel_size(),
-            ))
+            )))
         }
     }
 

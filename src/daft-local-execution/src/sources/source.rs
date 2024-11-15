@@ -9,8 +9,10 @@ use daft_micropartition::MicroPartition;
 use futures::{stream::BoxStream, StreamExt};
 
 use crate::{
-    channel::PipelineChannel, pipeline::PipelineNode, runtime_stats::RuntimeStatsContext,
-    ExecutionRuntimeHandle,
+    channel::{create_channel, Receiver},
+    pipeline::PipelineNode,
+    runtime_stats::{CountingSender, RuntimeStatsContext},
+    ExecutionRuntimeContext,
 };
 
 pub type SourceStream<'a> = BoxStream<'a, DaftResult<Arc<MicroPartition>>>;
@@ -70,33 +72,33 @@ impl PipelineNode for SourceNode {
         vec![]
     }
     fn start(
-        &mut self,
+        &self,
         maintain_order: bool,
-        runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> crate::Result<PipelineChannel> {
+        runtime_handle: &mut ExecutionRuntimeContext,
+    ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
         let source = self.source.clone();
         let io_stats = self.io_stats.clone();
-        let mut channel = PipelineChannel::new(1, maintain_order);
-        let counting_sender = channel.get_next_sender_with_stats(&self.runtime_stats);
+        let (destination_sender, destination_receiver) = create_channel(1);
+        let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
         runtime_handle.spawn(
             async move {
                 let mut has_data = false;
                 let mut source_stream = source.get_data(maintain_order, io_stats).await?;
                 while let Some(part) = source_stream.next().await {
                     has_data = true;
-                    if counting_sender.send(part?.into()).await.is_err() {
+                    if counting_sender.send(part?).await.is_err() {
                         return Ok(());
                     }
                 }
                 if !has_data {
                     let empty = Arc::new(MicroPartition::empty(Some(source.schema().clone())));
-                    let _ = counting_sender.send(empty.into()).await;
+                    let _ = counting_sender.send(empty).await;
                 }
                 Ok(())
             },
             self.name(),
         );
-        Ok(channel)
+        Ok(destination_receiver)
     }
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self

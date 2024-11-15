@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
+use common_error::DaftError;
 use daft_core::prelude::*;
-use daft_dsl::{resolve_exprs, resolve_single_aggexpr, resolve_single_expr, AggExpr, ExprRef};
+use daft_dsl::{AggExpr, Expr, ExprRef, ExprResolver};
 use daft_schema::schema::{Schema, SchemaRef};
 use itertools::Itertools;
 use snafu::ResultExt;
@@ -32,14 +33,30 @@ impl Pivot {
         names: Vec<String>,
     ) -> logical_plan::Result<Self> {
         let upstream_schema = input.schema();
-        let (group_by, group_by_fields) =
-            resolve_exprs(group_by, &upstream_schema, false).context(CreationSnafu)?;
-        let (pivot_column, _) =
-            resolve_single_expr(pivot_column, &upstream_schema, false).context(CreationSnafu)?;
-        let (value_column, value_col_field) =
-            resolve_single_expr(value_column, &upstream_schema, false).context(CreationSnafu)?;
-        let (aggregation, _) =
-            resolve_single_aggexpr(aggregation, &upstream_schema).context(CreationSnafu)?;
+
+        let expr_resolver = ExprResolver::default();
+        let agg_resolver = ExprResolver::builder().in_agg_context(true).build();
+
+        let (group_by, group_by_fields) = expr_resolver
+            .resolve(group_by, &upstream_schema)
+            .context(CreationSnafu)?;
+        let (pivot_column, _) = expr_resolver
+            .resolve_single(pivot_column, &upstream_schema)
+            .context(CreationSnafu)?;
+        let (value_column, value_col_field) = expr_resolver
+            .resolve_single(value_column, &upstream_schema)
+            .context(CreationSnafu)?;
+
+        let (aggregation, _) = agg_resolver
+            .resolve_single(aggregation, &upstream_schema)
+            .context(CreationSnafu)?;
+
+        let Expr::Agg(agg_expr) = aggregation.as_ref() else {
+            return Err(DaftError::ValueError(format!(
+                "Pivot only supports using top level aggregation expressions, received {aggregation}",
+            ))
+            .into());
+        };
 
         let output_schema = {
             let value_col_dtype = value_col_field.dtype;
@@ -59,7 +76,7 @@ impl Pivot {
             group_by,
             pivot_column,
             value_column,
-            aggregation,
+            aggregation: agg_expr.clone(),
             names,
             output_schema,
         })

@@ -113,15 +113,27 @@ def test_joins_with_duplicate_columns():
     assert actual.to_pydict() == expected
 
 
-@pytest.mark.parametrize("join_condition", ["idx=idax", "idax=idx"])
-def test_joins_without_compound_ident(join_condition):
-    df1 = daft.from_pydict({"idx": [1, None], "val": [10, 20]})
-    df2 = daft.from_pydict({"idax": [1, None], "score": [0.1, 0.2]})
+@pytest.mark.parametrize(
+    "join_condition",
+    [
+        "x = y",
+        "x = b.y",
+        "y = x",
+        "y = a.x",
+        "a.x = y",
+        "a.x = b.y",
+        "b.y = x",
+        "b.y = a.x",
+    ],
+)
+def test_join_qualifiers(join_condition):
+    a = daft.from_pydict({"x": [1, None], "val": [10, 20]})
+    b = daft.from_pydict({"y": [1, None], "score": [0.1, 0.2]})
 
-    catalog = SQLCatalog({"df1": df1, "df2": df2})
+    catalog = SQLCatalog({"a": a, "b": b})
 
-    df_sql = daft.sql(f"select * from df1 join df2 on {join_condition}", catalog).to_pydict()
+    df_sql = daft.sql(f"select * from a join b on {join_condition}", catalog).to_pydict()
 
-    expected = {"idx": [1], "val": [10], "idax": [1], "score": [0.1]}
+    expected = {"x": [1], "val": [10], "y": [1], "score": [0.1]}
 
     assert df_sql == expected

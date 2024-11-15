@@ -464,3 +464,101 @@ def test_agg_any_value_ignore_nulls(make_df, repartition_nparts, with_morsel_siz
     res = daft_df.to_pydict()
     mapping = {res["group"][i]: res["any_value"][i] for i in range(len(res["group"]))}
     assert mapping == {1: 2, 2: 4, 3: None}
+
+
+@pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
+def test_agg_with_non_agg_expr_global(make_df, repartition_nparts, with_morsel_size):
+    daft_df = make_df(
+        {
+            "id": [1, 2, 3],
+            "values": [4, 5, 6],
+        },
+        repartition=repartition_nparts,
+    )
+
+    daft_df = daft_df.agg(
+        col("id").sum(),
+        col("values").mean().alias("values_mean"),
+        (col("id").mean() + col("values").mean()).alias("sum_of_means"),
+    )
+
+    res = daft_df.to_pydict()
+    assert res == {"id": [6], "values_mean": [5], "sum_of_means": [7]}
+
+
+@pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
+def test_agg_with_non_agg_expr_groupby(make_df, repartition_nparts, with_morsel_size):
+    daft_df = make_df(
+        {
+            "group": [1, 1, 1, 2, 2, 2, 3, 3, 3],
+            "id": [1, 2, 3, 2, 3, 4, 3, 4, 5],
+            "values": [4, 5, 6, 5, 6, 7, 6, 7, 8],
+        },
+        repartition=repartition_nparts,
+    )
+
+    daft_df = (
+        daft_df.groupby("group")
+        .agg(
+            col("id").sum(),
+            col("values").mean().alias("values_mean"),
+            (col("id").mean() + col("values").mean()).alias("sum_of_means"),
+        )
+        .sort("group")
+    )
+
+    res = daft_df.to_pydict()
+    assert res == {"group": [1, 2, 3], "id": [6, 9, 12], "values_mean": [5, 6, 7], "sum_of_means": [7, 9, 11]}
+
+
+@pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
+def test_agg_with_literal_global(make_df, repartition_nparts, with_morsel_size):
+    daft_df = make_df(
+        {
+            "id": [1, 2, 3],
+            "values": [4, 5, 6],
+        },
+        repartition=repartition_nparts,
+    )
+
+    daft_df = daft_df.agg(
+        col("id").sum(),
+        col("values").mean().alias("values_mean"),
+        (col("id").sum() + 1).alias("sum_plus_1"),
+        (col("id") + 1).sum().alias("1_plus_sum"),
+    )
+
+    res = daft_df.to_pydict()
+    assert res == {"id": [6], "values_mean": [5], "sum_plus_1": [7], "1_plus_sum": [9]}
+
+
+@pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
+def test_agg_with_literal_groupby(make_df, repartition_nparts, with_morsel_size):
+    daft_df = make_df(
+        {
+            "group": [1, 1, 1, 2, 2, 2, 3, 3, 3],
+            "id": [1, 2, 3, 2, 3, 4, 3, 4, 5],
+            "values": [4, 5, 6, 5, 6, 7, 6, 7, 8],
+        },
+        repartition=repartition_nparts,
+    )
+
+    daft_df = (
+        daft_df.groupby("group")
+        .agg(
+            col("id").sum(),
+            col("values").mean().alias("values_mean"),
+            (col("id").sum() + 1).alias("sum_plus_1"),
+            (col("id") + 1).sum().alias("1_plus_sum"),
+        )
+        .sort("group")
+    )
+
+    res = daft_df.to_pydict()
+    assert res == {
+        "group": [1, 2, 3],
+        "id": [6, 9, 12],
+        "values_mean": [5, 6, 7],
+        "sum_plus_1": [7, 10, 13],
+        "1_plus_sum": [9, 12, 15],
+    }

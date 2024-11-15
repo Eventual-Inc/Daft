@@ -11,7 +11,7 @@ use common_scan_info::PhysicalScanInfo;
 use daft_core::prelude::*;
 use daft_dsl::{
     col, functions::agg::merge_mean, is_partition_compatible, AggExpr, ApproxPercentileParams,
-    ExprRef, SketchType,
+    Expr, ExprRef, SketchType,
 };
 use daft_functions::numeric::sqrt;
 use daft_logical_plan::{
@@ -256,17 +256,22 @@ pub(super) fn translate_single_logical_node(
 
             let num_input_partitions = input_physical.clustering_spec().num_partitions();
 
+            let aggregations = aggregations
+                .iter()
+                .map(extract_agg_expr)
+                .collect::<DaftResult<Vec<_>>>()?;
+
             let result_plan = match num_input_partitions {
                 1 => PhysicalPlan::Aggregate(Aggregate::new(
                     input_physical,
-                    aggregations.clone(),
+                    aggregations,
                     groupby.clone(),
                 )),
                 _ => {
                     let schema = logical_plan.schema();
 
                     let (first_stage_aggs, second_stage_aggs, final_exprs) =
-                        populate_aggregation_stages(aggregations, &schema, groupby);
+                        populate_aggregation_stages(&aggregations, &schema, groupby);
 
                     let (first_stage_agg, groupby) = if first_stage_aggs.is_empty() {
                         (input_physical, groupby.clone())
@@ -751,6 +756,56 @@ pub(super) fn translate_single_logical_node(
         LogicalPlan::Union(_) => Err(DaftError::InternalError(
             "Union should already be optimized away".to_string(),
         )),
+    }
+}
+
+pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
+    match expr.as_ref() {
+        Expr::Agg(agg_expr) => Ok(agg_expr.clone()),
+        Expr::Alias(e, name) => extract_agg_expr(e).map(|agg_expr| {
+            // reorder expressions so that alias goes before agg
+            match agg_expr {
+                AggExpr::Count(e, count_mode) => {
+                    AggExpr::Count(Expr::Alias(e, name.clone()).into(), count_mode)
+                }
+                AggExpr::Sum(e) => AggExpr::Sum(Expr::Alias(e, name.clone()).into()),
+                AggExpr::ApproxPercentile(ApproxPercentileParams {
+                    child: e,
+                    percentiles,
+                    force_list_output,
+                }) => AggExpr::ApproxPercentile(ApproxPercentileParams {
+                    child: Expr::Alias(e, name.clone()).into(),
+                    percentiles,
+                    force_list_output,
+                }),
+                AggExpr::ApproxCountDistinct(e) => {
+                    AggExpr::ApproxCountDistinct(Expr::Alias(e, name.clone()).into())
+                }
+                AggExpr::ApproxSketch(e, sketch_type) => {
+                    AggExpr::ApproxSketch(Expr::Alias(e, name.clone()).into(), sketch_type)
+                }
+                AggExpr::MergeSketch(e, sketch_type) => {
+                    AggExpr::MergeSketch(Expr::Alias(e, name.clone()).into(), sketch_type)
+                }
+                AggExpr::Mean(e) => AggExpr::Mean(Expr::Alias(e, name.clone()).into()),
+                AggExpr::Stddev(e) => AggExpr::Stddev(Expr::Alias(e, name.clone()).into()),
+                AggExpr::Min(e) => AggExpr::Min(Expr::Alias(e, name.clone()).into()),
+                AggExpr::Max(e) => AggExpr::Max(Expr::Alias(e, name.clone()).into()),
+                AggExpr::AnyValue(e, ignore_nulls) => {
+                    AggExpr::AnyValue(Expr::Alias(e, name.clone()).into(), ignore_nulls)
+                }
+                AggExpr::List(e) => AggExpr::List(Expr::Alias(e, name.clone()).into()),
+                AggExpr::Concat(e) => AggExpr::Concat(Expr::Alias(e, name.clone()).into()),
+                AggExpr::MapGroups { func, inputs } => AggExpr::MapGroups {
+                    func,
+                    inputs: inputs
+                        .into_iter()
+                        .map(|input| input.alias(name.clone()))
+                        .collect(),
+                },
+            }
+        }),
+        _ => Err(DaftError::InternalError("Expected non-agg expressions in aggregation to be factored out before plan translation.".to_string())),
     }
 }
 

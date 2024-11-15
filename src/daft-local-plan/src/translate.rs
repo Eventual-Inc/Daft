@@ -173,12 +173,25 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                     info.clone(),
                 )),
                 #[cfg(feature = "python")]
-                SinkInfo::CatalogInfo(info) => Ok(LocalPhysicalPlan::catalog_write(
-                    input,
-                    info.catalog.clone(),
-                    data_schema,
-                    sink.schema.clone(),
-                )),
+                SinkInfo::CatalogInfo(info) => match &info.catalog {
+                    daft_logical_plan::CatalogType::DeltaLake(..)
+                    | daft_logical_plan::CatalogType::Iceberg(..) => {
+                        Ok(LocalPhysicalPlan::catalog_write(
+                            input,
+                            info.catalog.clone(),
+                            data_schema,
+                            sink.schema.clone(),
+                        ))
+                    }
+                    daft_logical_plan::CatalogType::Lance(info) => {
+                        Ok(LocalPhysicalPlan::lance_write(
+                            input,
+                            info.clone(),
+                            data_schema,
+                            sink.schema.clone(),
+                        ))
+                    }
+                },
             }
         }
         LogicalPlan::Explode(explode) => {

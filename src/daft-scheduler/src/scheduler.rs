@@ -28,7 +28,6 @@ use {
     daft_core::prelude::SchemaRef,
     daft_core::python::PySchema,
     daft_dsl::python::PyExpr,
-    daft_dsl::Expr,
     daft_logical_plan::{OutputFileInfo, PyLogicalPlanBuilder},
     daft_scan::python::pylib::PyScanTask,
     pyo3::{pyclass, pymethods, types::PyAnyMethods, PyObject, PyRef, PyRefMut, PyResult, Python},
@@ -264,6 +263,7 @@ fn physical_plan_to_partition_tasks(
     psets: &HashMap<String, Vec<PyObject>>,
     actor_pool_manager: &PyObject,
 ) -> PyResult<PyObject> {
+    use daft_dsl::Expr;
     use daft_physical_plan::ops::{ShuffleExchange, ShuffleExchangeStrategy};
 
     match physical_plan {

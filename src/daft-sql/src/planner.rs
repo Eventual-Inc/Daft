@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::{HashMap, HashSet},
     sync::Arc,
 };
@@ -6,12 +7,13 @@ use std::{
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 use daft_dsl::{
-    col,
-    functions::utf8::{ilike, like, to_date, to_datetime},
-    has_agg, lit, literals_to_series, null_lit, AggExpr, Expr, ExprRef, LiteralValue, Operator,
-    Subquery,
+    col, has_agg, lit, literals_to_series, null_lit, AggExpr, Expr, ExprRef, LiteralValue,
+    Operator, Subquery,
 };
-use daft_functions::numeric::{ceil::ceil, floor::floor};
+use daft_functions::{
+    numeric::{ceil::ceil, floor::floor},
+    utf8::{ilike, like, to_date, to_datetime},
+};
 use daft_logical_plan::{LogicalPlanBuilder, LogicalPlanRef};
 use sqlparser::{
     ast::{
@@ -64,6 +66,7 @@ impl Relation {
     }
 }
 
+#[derive(Clone)]
 pub struct SQLPlanner {
     catalog: SQLCatalog,
     current_relation: Option<Relation>,
@@ -719,25 +722,70 @@ impl SQLPlanner {
 
         let from = from.iter().next().unwrap();
 
-        fn collect_compound_identifiers(
+        fn collect_idents(
             left: &[Ident],
             right: &[Ident],
             left_rel: &Relation,
             right_rel: &Relation,
         ) -> SQLPlannerResult<(Vec<ExprRef>, Vec<ExprRef>)> {
-            if left.len() == 2 && right.len() == 2 {
-                let (tbl_a, col_a) = (&left[0].value, &left[1].value);
-                let (tbl_b, col_b) = (&right[0].value, &right[1].value);
-
-                // switch left/right operands if the caller has them in reverse
-                if &left_rel.get_name() == tbl_b || &right_rel.get_name() == tbl_a {
-                    Ok((vec![col(col_b.as_ref())], vec![col(col_a.as_ref())]))
-                } else {
-                    Ok((vec![col(col_a.as_ref())], vec![col(col_b.as_ref())]))
+            let (left, right) = match (left, right) {
+                // both are fully qualified: `join on a.x = b.y`
+                ([tbl_a, Ident{value: col_a, ..}], [tbl_b, Ident{value: col_b, ..}]) => {
+                    if left_rel.get_name() == tbl_b.value && right_rel.get_name() == tbl_a.value {
+                        (col_b.clone(), col_a.clone())
+                    } else {
+                        (col_a.clone(), col_b.clone())
+                    }
                 }
-            } else {
-                unsupported_sql_err!("collect_compound_identifiers: Expected left.len() == 2 && right.len() == 2, but found left.len() == {:?}, right.len() == {:?}", left.len(), right.len());
-            }
+                // only one is fully qualified: `join on x = b.y`
+                ([Ident{value: col_a, ..}], [tbl_b, Ident{value: col_b, ..}]) => {
+                    if tbl_b.value == right_rel.get_name() {
+                        (col_a.clone(), col_b.clone())
+                    } else if tbl_b.value == left_rel.get_name() {
+                        (col_b.clone(), col_a.clone())
+                    } else {
+                        unsupported_sql_err!("Could not determine which table the identifiers belong to")
+                    }
+                }
+                // only one is fully qualified: `join on a.x = y`
+                ([tbl_a, Ident{value: col_a, ..}], [Ident{value: col_b, ..}]) => {
+                    // find out which one the qualified identifier belongs to
+                    // we assume the other identifier belongs to the other table
+                    if tbl_a.value == left_rel.get_name() {
+                        (col_a.clone(), col_b.clone())
+                    } else if tbl_a.value == right_rel.get_name() {
+                        (col_b.clone(), col_a.clone())
+                    } else {
+                        unsupported_sql_err!("Could not determine which table the identifiers belong to")
+                    }
+                }
+                // neither are fully qualified: `join on x = y`
+                ([left], [right]) => {
+                    let left = ident_to_str(left);
+                    let right = ident_to_str(right);
+
+                    // we don't know which table the identifiers belong to, so we need to check both
+                    let left_schema = left_rel.schema();
+                    let right_schema = right_rel.schema();
+
+                    // if the left side is in the left schema, then we assume the right side is in the right schema
+                    if left_schema.get_field(&left).is_ok() {
+                        (left, right)
+                    // if the right side is in the left schema, then we assume the left side is in the right schema
+                    } else if right_schema.get_field(&left).is_ok() {
+                        (right, left)
+                    } else {
+                        unsupported_sql_err!("JOIN clauses must reference columns in the joined tables; found `{}`", left);
+                    }
+
+                }
+                _ => unsupported_sql_err!(
+                    "collect_compound_identifiers: Expected left.len() == 2 && right.len() == 2, but found left.len() == {:?}, right.len() == {:?}",
+                    left.len(),
+                    right.len()
+                ),
+            };
+            Ok((vec![col(left)], vec![col(right)]))
         }
 
         fn process_join_on(
@@ -748,48 +796,19 @@ impl SQLPlanner {
             if let sqlparser::ast::Expr::BinaryOp { left, op, right } = expression {
                 match *op {
                     BinaryOperator::Eq | BinaryOperator::Spaceship => {
-                        if let (
-                            sqlparser::ast::Expr::CompoundIdentifier(left),
-                            sqlparser::ast::Expr::CompoundIdentifier(right),
-                        ) = (left.as_ref(), right.as_ref())
-                        {
-                            let null_equals_null = *op == BinaryOperator::Spaceship;
-                            collect_compound_identifiers(left, right, left_rel, right_rel)
-                                .map(|(left, right)| (left, right, vec![null_equals_null]))
-                        } else if let (
-                            sqlparser::ast::Expr::Identifier(left),
-                            sqlparser::ast::Expr::Identifier(right),
-                        ) = (left.as_ref(), right.as_ref())
-                        {
-                            let left = ident_to_str(left);
-                            let right = ident_to_str(right);
+                        let null_equals_null = *op == BinaryOperator::Spaceship;
 
-                            // we don't know which table the identifiers belong to, so we need to check both
-                            let left_schema = left_rel.schema();
-                            let right_schema = right_rel.schema();
+                        let left = get_idents_vec(left)?;
+                        let right = get_idents_vec(right)?;
 
-                            // if the left side is in the left schema, then we assume the right side is in the right schema
-                            let (left_on, right_on) = if left_schema.get_field(&left).is_ok() {
-                                (col(left), col(right))
-                            // if the right side is in the left schema, then we assume the left side is in the right schema
-                            } else if right_schema.get_field(&left).is_ok() {
-                                (col(right), col(left))
-                            } else {
-                                unsupported_sql_err!("JOIN clauses must reference columns in the joined tables; found `{}`", left);
-                            };
-
-                            let null_equals_null = *op == BinaryOperator::Spaceship;
-
-                            Ok((vec![left_on], vec![right_on], vec![null_equals_null]))
-                        } else {
-                            unsupported_sql_err!("JOIN clauses support '='/'<=>' constraints on identifiers; found `{left} {op} {right}`");
-                        }
+                        collect_idents(&left, &right, left_rel, right_rel)
+                            .map(|(left, right)| (left, right, vec![null_equals_null]))
                     }
                     BinaryOperator::And => {
                         let (mut left_i, mut right_i, mut null_equals_nulls_i) =
                             process_join_on(left, left_rel, right_rel)?;
                         let (mut left_j, mut right_j, mut null_equals_nulls_j) =
-                            process_join_on(left, left_rel, right_rel)?;
+                            process_join_on(right, left_rel, right_rel)?;
                         left_i.append(&mut left_j);
                         right_i.append(&mut right_j);
                         null_equals_nulls_i.append(&mut null_equals_nulls_j);
@@ -1189,7 +1208,7 @@ impl SQLPlanner {
                 negated,
             } => {
                 let expr = self.plan_expr(expr)?;
-                let mut this = Self::new(self.catalog.clone());
+                let mut this = self.clone();
                 let subquery = this.plan_query(subquery)?.build();
                 let subquery = Subquery { plan: subquery };
 
@@ -1297,7 +1316,7 @@ impl SQLPlanner {
                 let start = self.plan_expr(substring_from)?;
                 let length = self.plan_expr(substring_for)?;
 
-                Ok(daft_dsl::functions::utf8::substr(expr, start, length))
+                Ok(daft_functions::utf8::substr(expr, start, length))
             }
             SQLExpr::Substring { special: false, .. } => {
                 unsupported_sql_err!("`SUBSTRING(expr [FROM start] [FOR len])` syntax")
@@ -1349,8 +1368,26 @@ impl SQLPlanner {
                     },
                 )
             }
-            SQLExpr::Exists { .. } => unsupported_sql_err!("EXISTS"),
-            SQLExpr::Subquery(_) => unsupported_sql_err!("SUBQUERY"),
+            SQLExpr::Exists { subquery, negated } => {
+                let mut this = self.clone();
+                let subquery = this.plan_query(subquery)?;
+                let subquery = Subquery {
+                    plan: subquery.build(),
+                };
+                if *negated {
+                    Ok(Expr::Exists(subquery).arced().not())
+                } else {
+                    Ok(Expr::Exists(subquery).arced())
+                }
+            }
+            SQLExpr::Subquery(subquery) => {
+                let mut this = self.clone();
+                let subquery = this.plan_query(subquery)?;
+                let subquery = Subquery {
+                    plan: subquery.build(),
+                };
+                Ok(Expr::Subquery(subquery).arced())
+            }
             SQLExpr::GroupingSets(_) => unsupported_sql_err!("GROUPING SETS"),
             SQLExpr::Cube(_) => unsupported_sql_err!("CUBE"),
             SQLExpr::Rollup(_) => unsupported_sql_err!("ROLLUP"),
@@ -1955,6 +1992,9 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> SQLPlannerResult<ExprRef> {
     Ok(exprs.into_iter().next().unwrap())
 }
 
+// ----------------
+// Helper functions
+// ----------------
 fn ident_to_str(ident: &Ident) -> String {
     if ident.quote_style == Some('"') {
         ident.value.to_string()
@@ -1962,12 +2002,21 @@ fn ident_to_str(ident: &Ident) -> String {
         ident.to_string()
     }
 }
+
 fn idents_to_str(idents: &[Ident]) -> String {
     idents
         .iter()
         .map(ident_to_str)
         .collect::<Vec<_>>()
         .join(".")
+}
+
+fn get_idents_vec(expr: &sqlparser::ast::Expr) -> SQLPlannerResult<Cow<Vec<Ident>>> {
+    match expr {
+        sqlparser::ast::Expr::Identifier(ident) => Ok(Cow::Owned(vec![ident.clone()])),
+        sqlparser::ast::Expr::CompoundIdentifier(idents) => Ok(Cow::Borrowed(idents)),
+        _ => invalid_operation_err!("expected an identifier"),
+    }
 }
 
 /// unresolves an alias in a projection

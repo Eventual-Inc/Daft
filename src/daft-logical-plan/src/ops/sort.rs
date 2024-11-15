@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftError;
 use daft_core::prelude::*;
-use daft_dsl::{resolve_exprs, ExprRef};
+use daft_dsl::{ExprRef, ExprResolver};
 use itertools::Itertools;
 use snafu::ResultExt;
 
@@ -31,8 +31,11 @@ impl Sort {
             .context(CreationSnafu);
         }
 
-        let (sort_by, sort_by_fields) =
-            resolve_exprs(sort_by, &input.schema(), false).context(CreationSnafu)?;
+        let expr_resolver = ExprResolver::default();
+
+        let (sort_by, sort_by_fields) = expr_resolver
+            .resolve(sort_by, &input.schema())
+            .context(CreationSnafu)?;
 
         let sort_by_resolved_schema = Schema::new(sort_by_fields).context(CreationSnafu)?;
 

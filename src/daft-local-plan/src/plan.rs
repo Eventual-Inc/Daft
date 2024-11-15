@@ -40,8 +40,8 @@ pub enum LocalPhysicalPlan {
     // TabularWriteCsv(TabularWriteCsv),
     #[cfg(feature = "python")]
     CatalogWrite(CatalogWrite),
-    // #[cfg(feature = "python")]
-    // LanceWrite(LanceWrite),
+    #[cfg(feature = "python")]
+    LanceWrite(LanceWrite),
 }
 
 impl LocalPhysicalPlan {
@@ -152,7 +152,7 @@ impl LocalPhysicalPlan {
 
     pub(crate) fn ungrouped_aggregate(
         input: LocalPhysicalPlanRef,
-        aggregations: Vec<AggExpr>,
+        aggregations: Vec<ExprRef>,
         schema: SchemaRef,
     ) -> LocalPhysicalPlanRef {
         Self::UnGroupedAggregate(UnGroupedAggregate {
@@ -166,7 +166,7 @@ impl LocalPhysicalPlan {
 
     pub(crate) fn hash_aggregate(
         input: LocalPhysicalPlanRef,
-        aggregations: Vec<AggExpr>,
+        aggregations: Vec<ExprRef>,
         group_by: Vec<ExprRef>,
         schema: SchemaRef,
     ) -> LocalPhysicalPlanRef {
@@ -326,6 +326,23 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    #[cfg(feature = "python")]
+    pub(crate) fn lance_write(
+        input: LocalPhysicalPlanRef,
+        lance_info: daft_logical_plan::LanceCatalogInfo,
+        data_schema: SchemaRef,
+        file_schema: SchemaRef,
+    ) -> LocalPhysicalPlanRef {
+        Self::LanceWrite(LanceWrite {
+            input,
+            lance_info,
+            data_schema,
+            file_schema,
+            plan_stats: PlanStats {},
+        })
+        .arced()
+    }
+
     pub fn schema(&self) -> &SchemaRef {
         match self {
             Self::PhysicalScan(PhysicalScan { schema, .. })
@@ -432,7 +449,7 @@ pub struct Sample {
 #[derive(Debug)]
 pub struct UnGroupedAggregate {
     pub input: LocalPhysicalPlanRef,
-    pub aggregations: Vec<AggExpr>,
+    pub aggregations: Vec<ExprRef>,
     pub schema: SchemaRef,
     pub plan_stats: PlanStats,
 }
@@ -440,7 +457,7 @@ pub struct UnGroupedAggregate {
 #[derive(Debug)]
 pub struct HashAggregate {
     pub input: LocalPhysicalPlanRef,
-    pub aggregations: Vec<AggExpr>,
+    pub aggregations: Vec<ExprRef>,
     pub group_by: Vec<ExprRef>,
     pub schema: SchemaRef,
     pub plan_stats: PlanStats,
@@ -502,6 +519,16 @@ pub struct PhysicalWrite {
 pub struct CatalogWrite {
     pub input: LocalPhysicalPlanRef,
     pub catalog_type: daft_logical_plan::CatalogType,
+    pub data_schema: SchemaRef,
+    pub file_schema: SchemaRef,
+    pub plan_stats: PlanStats,
+}
+
+#[cfg(feature = "python")]
+#[derive(Debug)]
+pub struct LanceWrite {
+    pub input: LocalPhysicalPlanRef,
+    pub lance_info: daft_logical_plan::LanceCatalogInfo,
     pub data_schema: SchemaRef,
     pub file_schema: SchemaRef,
     pub plan_stats: PlanStats,

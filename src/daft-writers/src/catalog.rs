@@ -5,7 +5,7 @@ use daft_logical_plan::{CatalogType, DeltaLakeCatalogInfo, IcebergCatalogInfo};
 use daft_micropartition::MicroPartition;
 use daft_table::Table;
 
-use crate::{python::PyArrowWriter, FileWriter, WriterFactory};
+use crate::{pyarrow::PyArrowWriter, FileWriter, WriterFactory};
 
 /// CatalogWriterFactory is a factory for creating Catalog writers, i.e. iceberg, delta writers.
 pub struct CatalogWriterFactory {

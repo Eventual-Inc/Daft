@@ -11,6 +11,7 @@ use common_error::DaftResult;
 use common_tracing::refresh_chrome_trace;
 use daft_local_plan::{translate, LocalPhysicalPlan};
 use daft_micropartition::MicroPartition;
+use tokio_util::sync::CancellationToken;
 #[cfg(feature = "python")]
 use {
     common_daft_config::PyDaftExecutionConfig,
@@ -22,7 +23,7 @@ use {
 use crate::{
     channel::{create_channel, Receiver},
     pipeline::{physical_plan_to_pipeline, viz_pipeline},
-    Error, ExecutionRuntimeHandle,
+    Error, ExecutionRuntimeContext,
 };
 
 #[cfg(feature = "python")]
@@ -46,6 +47,13 @@ impl LocalPartitionIterator {
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub struct NativeExecutor {
     local_physical_plan: Arc<LocalPhysicalPlan>,
+    cancel: CancellationToken,
+}
+
+impl Drop for NativeExecutor {
+    fn drop(&mut self) {
+        self.cancel.cancel();
+    }
 }
 
 #[cfg(feature = "python")]
@@ -61,6 +69,7 @@ impl NativeExecutor {
             let local_physical_plan = translate(&logical_plan)?;
             Ok(Self {
                 local_physical_plan,
+                cancel: CancellationToken::new(),
             })
         })
     }
@@ -90,6 +99,7 @@ impl NativeExecutor {
                 native_psets,
                 cfg.config,
                 results_buffer_size,
+                self.cancel.clone(),
             )
         })?;
         let iter = Box::new(out.map(|part| {
@@ -116,9 +126,10 @@ pub fn run_local(
     psets: HashMap<String, Vec<Arc<MicroPartition>>>,
     cfg: Arc<DaftExecutionConfig>,
     results_buffer_size: Option<usize>,
+    cancel: CancellationToken,
 ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<Arc<MicroPartition>>> + Send>> {
     refresh_chrome_trace();
-    let mut pipeline = physical_plan_to_pipeline(physical_plan, &psets, &cfg)?;
+    let pipeline = physical_plan_to_pipeline(physical_plan, &psets, &cfg)?;
     let (tx, rx) = create_channel(results_buffer_size.unwrap_or(1));
     let handle = std::thread::spawn(move || {
         let runtime = tokio::runtime::Builder::new_current_thread()
@@ -126,11 +137,11 @@ pub fn run_local(
             .build()
             .expect("Failed to create tokio runtime");
         let execution_task = async {
-            let mut runtime_handle = ExecutionRuntimeHandle::new(cfg.default_morsel_size);
-            let mut receiver = pipeline.start(true, &mut runtime_handle)?.get_receiver();
+            let mut runtime_handle = ExecutionRuntimeContext::new(cfg.default_morsel_size);
+            let receiver = pipeline.start(true, &mut runtime_handle)?;
 
             while let Some(val) = receiver.recv().await {
-                if tx.send(val.as_data().clone()).await.is_err() {
+                if tx.send(val).await.is_err() {
                     break;
                 }
             }
@@ -164,6 +175,10 @@ pub fn run_local(
         local_set.block_on(&runtime, async {
             tokio::select! {
                 biased;
+                () = cancel.cancelled() => {
+                    log::info!("Execution engine cancelled");
+                    Ok(())
+                }
                 _ = tokio::signal::ctrl_c() => {
                     log::info!("Received Ctrl-C, shutting down execution engine");
                     Ok(())

@@ -17,15 +17,14 @@ use daft_local_plan::{
 };
 use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;
-use daft_physical_plan::populate_aggregation_stages;
+use daft_physical_plan::{extract_agg_expr, populate_aggregation_stages};
 use daft_scan::ScanTaskRef;
-use daft_table::ProbeState;
 use daft_writers::make_physical_writer_factory;
 use indexmap::IndexSet;
 use snafu::ResultExt;
 
 use crate::{
-    channel::PipelineChannel,
+    channel::Receiver,
     intermediate_ops::{
         actor_pool_project::ActorPoolProjectOperator, aggregate::AggregateOperator,
         anti_semi_hash_join_probe::AntiSemiProbeOperator, explode::ExplodeOperator,
@@ -37,7 +36,7 @@ use crate::{
         aggregate::AggregateSink,
         blocking_sink::BlockingSinkNode,
         concat::ConcatSink,
-        hash_join_build::HashJoinBuildSink,
+        hash_join_build::{HashJoinBuildSink, ProbeStateBridge},
         limit::LimitSink,
         outer_hash_join_probe::OuterHashJoinProbeSink,
         pivot::PivotSink,
@@ -46,55 +45,17 @@ use crate::{
         write::{WriteFormat, WriteSink},
     },
     sources::{empty_scan::EmptyScanSource, in_memory::InMemorySource},
-    ExecutionRuntimeHandle, PipelineCreationSnafu,
+    ExecutionRuntimeContext, PipelineCreationSnafu,
 };
 
-#[derive(Clone)]
-pub enum PipelineResultType {
-    Data(Arc<MicroPartition>),
-    ProbeState(Arc<ProbeState>),
-}
-
-impl From<Arc<MicroPartition>> for PipelineResultType {
-    fn from(data: Arc<MicroPartition>) -> Self {
-        Self::Data(data)
-    }
-}
-
-impl From<Arc<ProbeState>> for PipelineResultType {
-    fn from(probe_state: Arc<ProbeState>) -> Self {
-        Self::ProbeState(probe_state)
-    }
-}
-
-impl PipelineResultType {
-    pub fn as_data(&self) -> &Arc<MicroPartition> {
-        match self {
-            Self::Data(data) => data,
-            _ => panic!("Expected data"),
-        }
-    }
-
-    pub fn as_probe_state(&self) -> &Arc<ProbeState> {
-        match self {
-            Self::ProbeState(probe_state) => probe_state,
-            _ => panic!("Expected probe table"),
-        }
-    }
-
-    pub fn should_broadcast(&self) -> bool {
-        matches!(self, Self::ProbeState(_))
-    }
-}
-
-pub trait PipelineNode: Sync + Send + TreeDisplay {
+pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
     fn children(&self) -> Vec<&dyn PipelineNode>;
     fn name(&self) -> &'static str;
     fn start(
-        &mut self,
+        &self,
         maintain_order: bool,
-        runtime_handle: &mut ExecutionRuntimeHandle,
-    ) -> crate::Result<PipelineChannel>;
+        runtime_handle: &mut ExecutionRuntimeContext,
+    ) -> crate::Result<Receiver<Arc<MicroPartition>>>;
 
     fn as_tree_display(&self) -> &dyn TreeDisplay;
 }
@@ -203,8 +164,16 @@ pub fn physical_plan_to_pipeline(
             schema,
             ..
         }) => {
+            let aggregations = aggregations
+                .iter()
+                .map(extract_agg_expr)
+                .collect::<DaftResult<Vec<_>>>()
+                .with_context(|_| PipelineCreationSnafu {
+                    plan_name: physical_plan.name(),
+                })?;
+
             let (first_stage_aggs, second_stage_aggs, final_exprs) =
-                populate_aggregation_stages(aggregations, schema, &[]);
+                populate_aggregation_stages(&aggregations, schema, &[]);
             let first_stage_agg_op = AggregateOperator::new(
                 first_stage_aggs
                     .values()
@@ -239,8 +208,16 @@ pub fn physical_plan_to_pipeline(
             schema,
             ..
         }) => {
+            let aggregations = aggregations
+                .iter()
+                .map(extract_agg_expr)
+                .collect::<DaftResult<Vec<_>>>()
+                .with_context(|_| PipelineCreationSnafu {
+                    plan_name: physical_plan.name(),
+                })?;
+
             let (first_stage_aggs, second_stage_aggs, final_exprs) =
-                populate_aggregation_stages(aggregations, schema, group_by);
+                populate_aggregation_stages(&aggregations, schema, group_by);
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
             let (post_first_agg_node, group_by) = if !first_stage_aggs.is_empty() {
                 let agg_op = AggregateOperator::new(
@@ -387,11 +364,13 @@ pub fn physical_plan_to_pipeline(
                     .map(|(e, f)| e.clone().cast(&f.dtype))
                     .collect::<Vec<_>>();
                 // we should move to a builder pattern
+                let probe_state_bridge = ProbeStateBridge::new();
                 let build_sink = HashJoinBuildSink::new(
                     key_schema,
                     casted_build_on,
                     null_equals_null.clone(),
                     join_type,
+                    probe_state_bridge.clone(),
                 )?;
                 let build_child_node = physical_plan_to_pipeline(build_child, psets, cfg)?;
                 let build_node =
@@ -405,6 +384,7 @@ pub fn physical_plan_to_pipeline(
                             casted_probe_on,
                             join_type,
                             schema,
+                            probe_state_bridge,
                         )),
                         vec![build_node, probe_child_node],
                     )
@@ -417,6 +397,7 @@ pub fn physical_plan_to_pipeline(
                             build_on_left,
                             common_join_keys,
                             schema,
+                            probe_state_bridge,
                         )),
                         vec![build_node, probe_child_node],
                     )
@@ -430,6 +411,7 @@ pub fn physical_plan_to_pipeline(
                                 *join_type,
                                 common_join_keys,
                                 schema,
+                                probe_state_bridge,
                             )),
                             vec![build_node, probe_child_node],
                         )
@@ -512,6 +494,23 @@ pub fn physical_plan_to_pipeline(
                 write_format,
                 writer_factory,
                 partition_by,
+                file_schema.clone(),
+            );
+            BlockingSinkNode::new(Arc::new(write_sink), child_node).boxed()
+        }
+        #[cfg(feature = "python")]
+        LocalPhysicalPlan::LanceWrite(daft_local_plan::LanceWrite {
+            input,
+            lance_info,
+            file_schema,
+            ..
+        }) => {
+            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            let writer_factory = daft_writers::make_lance_writer_factory(lance_info.clone());
+            let write_sink = WriteSink::new(
+                WriteFormat::Lance,
+                writer_factory,
+                None,
                 file_schema.clone(),
             );
             BlockingSinkNode::new(Arc::new(write_sink), child_node).boxed()

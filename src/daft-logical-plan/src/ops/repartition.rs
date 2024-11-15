@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_dsl::resolve_exprs;
+use daft_dsl::ExprResolver;
 
 use crate::{
     partitioning::{HashRepartitionConfig, RepartitionSpec},
@@ -22,7 +22,9 @@ impl Repartition {
     ) -> DaftResult<Self> {
         let repartition_spec = match repartition_spec {
             RepartitionSpec::Hash(HashRepartitionConfig { num_partitions, by }) => {
-                let (resolved_by, _) = resolve_exprs(by, &input.schema(), false)?;
+                let expr_resolver = ExprResolver::default();
+
+                let (resolved_by, _) = expr_resolver.resolve(by, &input.schema())?;
                 RepartitionSpec::Hash(HashRepartitionConfig {
                     num_partitions,
                     by: resolved_by,

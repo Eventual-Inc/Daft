@@ -596,6 +596,9 @@ impl Table {
             InSubquery(_expr, _subquery) => Err(DaftError::ComputeError(
                 "IN <SUBQUERY> should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),
             )),
+            Exists(_subquery) => Err(DaftError::ComputeError(
+                "EXISTS <SUBQUERY> should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),
+            )),
         }?;
 
         if expected_field.name != series.field().name {
