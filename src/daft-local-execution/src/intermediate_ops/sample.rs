@@ -1,25 +1,32 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
+use common_runtime::RuntimeRef;
+use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
 use super::intermediate_op::{
-    IntermediateOperator, IntermediateOperatorResult, IntermediateOperatorState,
+    IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
+    IntermediateOperatorResult,
 };
-use crate::pipeline::PipelineResultType;
 
-pub struct SampleOperator {
+struct SampleParams {
     fraction: f64,
     with_replacement: bool,
     seed: Option<u64>,
 }
 
+pub struct SampleOperator {
+    params: Arc<SampleParams>,
+}
+
 impl SampleOperator {
     pub fn new(fraction: f64, with_replacement: bool, seed: Option<u64>) -> Self {
         Self {
-            fraction,
-            with_replacement,
-            seed,
+            params: Arc::new(SampleParams {
+                fraction,
+                with_replacement,
+                seed,
+            }),
         }
     }
 }
@@ -28,17 +35,24 @@ impl IntermediateOperator for SampleOperator {
     #[instrument(skip_all, name = "SampleOperator::execute")]
     fn execute(
         &self,
-        _idx: usize,
-        input: &PipelineResultType,
-        _state: &IntermediateOperatorState,
-    ) -> DaftResult<IntermediateOperatorResult> {
-        let out =
-            input
-                .as_data()
-                .sample_by_fraction(self.fraction, self.with_replacement, self.seed)?;
-        Ok(IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(
-            out,
-        ))))
+        input: Arc<MicroPartition>,
+        state: Box<dyn IntermediateOpState>,
+        runtime: &RuntimeRef,
+    ) -> IntermediateOpExecuteResult {
+        let params = self.params.clone();
+        runtime
+            .spawn(async move {
+                let out = input.sample_by_fraction(
+                    params.fraction,
+                    params.with_replacement,
+                    params.seed,
+                )?;
+                Ok((
+                    state,
+                    IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(out))),
+                ))
+            })
+            .into()
     }
 
     fn name(&self) -> &'static str {

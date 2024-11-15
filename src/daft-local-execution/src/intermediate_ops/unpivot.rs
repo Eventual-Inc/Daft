@@ -1,19 +1,23 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
+use common_runtime::RuntimeRef;
 use daft_dsl::ExprRef;
+use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
 use super::intermediate_op::{
-    IntermediateOperator, IntermediateOperatorResult, IntermediateOperatorState,
+    IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
+    IntermediateOperatorResult,
 };
-use crate::pipeline::PipelineResultType;
 
-pub struct UnpivotOperator {
+struct UnpivotParams {
     ids: Vec<ExprRef>,
     values: Vec<ExprRef>,
     variable_name: String,
     value_name: String,
+}
+pub struct UnpivotOperator {
+    params: Arc<UnpivotParams>,
 }
 
 impl UnpivotOperator {
@@ -24,10 +28,12 @@ impl UnpivotOperator {
         value_name: String,
     ) -> Self {
         Self {
-            ids,
-            values,
-            variable_name,
-            value_name,
+            params: Arc::new(UnpivotParams {
+                ids,
+                values,
+                variable_name,
+                value_name,
+            }),
         }
     }
 }
@@ -36,19 +42,25 @@ impl IntermediateOperator for UnpivotOperator {
     #[instrument(skip_all, name = "UnpivotOperator::execute")]
     fn execute(
         &self,
-        _idx: usize,
-        input: &PipelineResultType,
-        _state: &IntermediateOperatorState,
-    ) -> DaftResult<IntermediateOperatorResult> {
-        let out = input.as_data().unpivot(
-            &self.ids,
-            &self.values,
-            &self.variable_name,
-            &self.value_name,
-        )?;
-        Ok(IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(
-            out,
-        ))))
+        input: Arc<MicroPartition>,
+        state: Box<dyn IntermediateOpState>,
+        runtime: &RuntimeRef,
+    ) -> IntermediateOpExecuteResult {
+        let params = self.params.clone();
+        runtime
+            .spawn(async move {
+                let out = input.unpivot(
+                    &params.ids,
+                    &params.values,
+                    &params.variable_name,
+                    &params.value_name,
+                )?;
+                Ok((
+                    state,
+                    IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(out))),
+                ))
+            })
+            .into()
     }
 
     fn name(&self) -> &'static str {
