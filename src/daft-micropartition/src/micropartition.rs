@@ -1160,8 +1160,8 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
         });
 
         let owned_urls = uris.iter().map(|s| (*s).to_string());
-        let size_bytes_per_file = metadata.iter().map(|m| -> usize {
-            std::iter::Sum::sum(m.row_groups.values().map(|m| m.total_byte_size()))
+        let size_bytes_per_file = metadata.iter().map(|m| -> u64 {
+            std::iter::Sum::sum(m.row_groups.values().map(|m| m.total_byte_size() as u64))
         });
 
         // Create the pushdowns to apply
@@ -1183,13 +1183,13 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
             scan_task_daft_schema.clone(),
             metadata.first().unwrap(),
         );
-        let sizes_on_disk: Vec<usize> = size_bytes_per_file.collect();
+        let sizes_on_disk: Vec<u64> = size_bytes_per_file.collect();
         let estimated_materialized_size_bytes = sizes_on_disk
             .iter()
             .map(|&size_on_disk| estimator.estimate_from_size_on_disk(size_on_disk, &pushdowns))
             .sum();
         // TODO(jay): This seems wrong, as this is the sum of the sizes of all the files rather than individual files
-        let size_bytes = sizes_on_disk.iter().map(|&x| x as u64).sum();
+        let size_bytes = sizes_on_disk.iter().sum();
 
         let scan_task = ScanTask::new(
             owned_urls

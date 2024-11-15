@@ -13,10 +13,10 @@ pub struct FileInferredEstimator {
     estimated_row_size: usize,
 
     /// Fraction of total size taken up by each column at rest (compressed)
-    column_size_fraction: HashMap<usize, f32>,
+    column_size_fraction: HashMap<usize, f64>,
 
     /// How much we expect each column to inflate when decompressed and decoded into memory
-    column_inflation: HashMap<usize, f32>,
+    column_inflation: HashMap<usize, f64>,
 }
 
 impl FileInferredEstimator {
@@ -91,7 +91,7 @@ impl FileInferredEstimator {
                 .map(|(&field_idx, &column_compressed_size)| {
                     (
                         field_idx,
-                        (column_compressed_size as f32) / (total_rg_compressed_size as f32),
+                        (column_compressed_size as f64) / (total_rg_compressed_size as f64),
                     )
                 })
                 .collect(),
@@ -100,8 +100,8 @@ impl FileInferredEstimator {
                 .map(|(&field_idx, &col_compressed_size)| {
                     (
                         field_idx,
-                        (*total_uncompressed_size_per_column.get(&field_idx).unwrap() as f32)
-                            / (col_compressed_size as f32),
+                        (*total_uncompressed_size_per_column.get(&field_idx).unwrap() as f64)
+                            / (col_compressed_size as f64),
                     )
                 })
                 .collect(),
@@ -113,7 +113,7 @@ impl FileInferredEstimator {
     /// Runs the estimator based on the size of a file on disk
     pub fn estimate_from_size_on_disk(
         &self,
-        size_bytes_on_disk: usize,
+        size_bytes_on_disk: u64,
         pushdowns: &Pushdowns,
     ) -> Option<usize> {
         // We can only estimate the in memory size if provided with size of the ScanTask on disk
@@ -131,20 +131,20 @@ impl FileInferredEstimator {
             };
 
         // Grab the uncompressed size of each column, and then inflate it to add to the total size
-        let total_uncompressed_size: f32 = columns_to_consider
+        let total_uncompressed_size: f64 = columns_to_consider
             .iter()
             .map(|col_idx| {
                 let fraction = self.column_size_fraction.get(col_idx).unwrap();
                 let inflation = self.column_inflation.get(col_idx).unwrap();
 
-                (size_on_disk as f32) * fraction * inflation
+                (size_on_disk as f64) * fraction * inflation
             })
             .sum();
 
         // Apply limit pushdown if present
         let total_uncompressed_size = if let Some(limit) = pushdowns.limit {
-            let estimated_num_rows = (size_on_disk as f32) / self.estimated_row_size as f32;
-            let limit_fraction = (limit as f32 / estimated_num_rows).min(1.0);
+            let estimated_num_rows = (size_on_disk as f64) / self.estimated_row_size as f64;
+            let limit_fraction = (limit as f64 / estimated_num_rows).min(1.0);
             total_uncompressed_size * limit_fraction
         } else {
             total_uncompressed_size

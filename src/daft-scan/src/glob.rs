@@ -36,7 +36,7 @@ pub struct GlobScanOperator {
     hive_partitioning: bool,
     partitioning_keys: Vec<PartitionField>,
     generated_fields: SchemaRef,
-    _size_estimator: Option<FileInferredEstimator>,
+    size_estimator: Option<FileInferredEstimator>,
 }
 
 /// Wrapper struct that implements a sync Iterator for a BoxStream
@@ -324,7 +324,7 @@ impl GlobScanOperator {
             hive_partitioning,
             partitioning_keys,
             generated_fields: Arc::new(generated_fields),
-            _size_estimator: size_estimator,
+            size_estimator,
         })
     }
 }
@@ -489,7 +489,11 @@ impl ScanOperator for GlobScanOperator {
                     storage_config.clone(),
                     pushdowns.clone(),
                     generated_fields,
-                    None, // TODO: Add estimations of size in bytes (GlobScanOperator)
+                    self.size_estimator.as_ref().and_then(|size_estimator| {
+                        size_bytes.and_then(|size_bytes| {
+                            size_estimator.estimate_from_size_on_disk(size_bytes, &pushdowns)
+                        })
+                    }),
                 )))
             })();
             match scan_task_result {
