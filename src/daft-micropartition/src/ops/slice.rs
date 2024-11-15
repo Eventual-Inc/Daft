@@ -1,5 +1,5 @@
 use common_error::{DaftError, DaftResult};
-use daft_io::IOStatsContext;
+use common_io_client::IOStatsContext;
 
 use crate::micropartition::MicroPartition;
 

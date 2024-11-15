@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 use daft_dsl::{functions::ScalarUDF, ExprRef};
-use daft_io::IOConfig;
+use common_io_client::IOConfig;
 use serde::{Deserialize, Serialize};
 
 use crate::tokenize::bpe::DaftBPE;

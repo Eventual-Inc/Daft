@@ -7,7 +7,7 @@ use common_runtime::RuntimeRef;
 use common_scan_info::{PartitionField, Pushdowns, ScanOperator, ScanTaskLike, ScanTaskLikeRef};
 use daft_core::{prelude::Utf8Array, series::IntoSeries};
 use daft_csv::CsvParseOptions;
-use daft_io::{parse_url, FileMetadata, IOClient, IOStatsContext, IOStatsRef};
+use common_io_client::{FileMetadata, IOClient, IOStatsContext, IOStatsRef};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use daft_schema::{
     dtype::DataType,
@@ -83,7 +83,7 @@ fn run_glob(
     io_stats: Option<IOStatsRef>,
     file_format: FileFormat,
 ) -> DaftResult<FileInfoIterator> {
-    let (_, parsed_glob_path) = parse_url(glob_path)?;
+    let (_, parsed_glob_path) = IOClient::parse_url(glob_path)?;
     // Construct a static-lifetime BoxStream returning the FileMetadata
     let glob_input = parsed_glob_path.as_ref().to_string();
     let boxstream = runtime.block_on_current_thread(async move {
@@ -112,7 +112,7 @@ fn run_glob_parallel(
 
     let owned_runtime = runtime.clone();
     let boxstream = futures::stream::iter(glob_paths.into_iter().map(move |path| {
-        let (_, parsed_glob_path) = parse_url(&path).unwrap();
+        let (_, parsed_glob_path) = IOClient::parse_url(&path).unwrap();
         let glob_input = parsed_glob_path.as_ref().to_string();
         let io_client = io_client.clone();
         let io_stats = io_stats.clone();

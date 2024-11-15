@@ -7,7 +7,7 @@ use arrow2::io::parquet::read::{column_iter_to_arrays, schema::infer_schema_with
 use common_error::DaftResult;
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
 use daft_dsl::ExprRef;
-use daft_io::{IOClient, IOStatsRef};
+use common_io_client::{IOClient, IOStatsRef};
 use daft_stats::TruthValue;
 use daft_table::Table;
 use futures::{future::try_join_all, stream::BoxStream, StreamExt};
@@ -194,7 +194,7 @@ pub fn build_row_ranges(
 impl ParquetReaderBuilder {
     pub async fn from_uri(
         uri: &str,
-        io_client: Arc<daft_io::IOClient>,
+        io_client: Arc<IOClient>,
         io_stats: Option<IOStatsRef>,
         field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     ) -> super::Result<Self> {

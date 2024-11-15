@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
-use daft_io::IOStatsContext;
+use common_io_client::IOStatsContext;
 use daft_parquet::read::read_parquet_metadata;
 use parquet2::metadata::RowGroupList;
 

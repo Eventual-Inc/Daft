@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, sync::Arc};
 use common_error::DaftResult;
 use daft_core::datatypes::Field;
 use daft_dsl::common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
-use daft_io::{IOClient, IOStatsRef};
+use common_io_client::{IOClient, IOStatsRef};
 pub use parquet2::metadata::{FileMetaData, RowGroupMetaData};
 use parquet2::{read::deserialize_metadata, schema::types::ParquetType};
 use snafu::ResultExt;
@@ -306,7 +306,7 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
-    use daft_io::{IOClient, IOConfig};
+    use common_io_client::{IOClient, IOConfig};
 
     use super::read_parquet_metadata;
 

@@ -4,7 +4,7 @@ use common_error::{DaftError, DaftResult};
 use common_runtime::get_io_runtime;
 use daft_core::prelude::*;
 use daft_dsl::{functions::ScalarUDF, ExprRef};
-use daft_io::{get_io_client, Error, IOConfig, IOStatsContext, IOStatsRef};
+use common_io_client::{get_io_client, Error, IOConfig, IOStatsContext, IOStatsRef};
 use futures::{StreamExt, TryStreamExt};
 use serde::Serialize;
 use snafu::prelude::*;

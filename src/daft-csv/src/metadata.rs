@@ -8,7 +8,7 @@ use csv_async::ByteRecord;
 use daft_compression::CompressionCodec;
 use daft_core::prelude::Schema;
 use daft_decoding::inference::infer;
-use daft_io::{GetResult, IOClient, IOStatsRef};
+use common_io_client::{GetResult, IOClient, IOStatsRef};
 use futures::{StreamExt, TryStreamExt};
 use snafu::ResultExt;
 use tokio::{
@@ -293,7 +293,7 @@ mod tests {
 
     use common_error::{DaftError, DaftResult};
     use daft_core::prelude::*;
-    use daft_io::{IOClient, IOConfig};
+    use common_io_client::{IOClient, IOConfig};
     use rstest::rstest;
 
     use super::read_csv_schema;

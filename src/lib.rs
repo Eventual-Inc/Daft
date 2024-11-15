@@ -110,7 +110,7 @@ pub mod pylib {
         daft_local_execution::register_modules(m)?;
         daft_dsl::register_modules(m)?;
         daft_table::register_modules(m)?;
-        daft_io::register_modules(m)?;
+        // daft_io::register_modules(m)?;
         daft_parquet::register_modules(m)?;
         daft_csv::register_modules(m)?;
         daft_json::register_modules(m)?;

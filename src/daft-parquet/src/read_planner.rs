@@ -2,7 +2,7 @@ use std::{fmt::Display, ops::Range, sync::Arc};
 
 use bytes::Bytes;
 use common_error::DaftResult;
-use daft_io::{IOClient, IOStatsRef};
+use common_io_client::{IOClient, IOStatsRef};
 use futures::{StreamExt, TryStreamExt};
 use tokio::task::JoinHandle;
 
@@ -85,9 +85,9 @@ impl ReadPlanPass for SplitLargeRequestPass {
 }
 
 enum RangeCacheState {
-    InFlight(JoinHandle<std::result::Result<Bytes, daft_io::Error>>),
+    InFlight(JoinHandle<std::result::Result<Bytes, common_io_client::Error>>),
     // Ready-state stores either the fetched bytes, or a shared error if the fetch failed.
-    Ready(std::result::Result<Bytes, Arc<daft_io::Error>>),
+    Ready(std::result::Result<Bytes, Arc<common_io_client::Error>>),
 }
 
 struct RangeCacheEntry {
@@ -97,7 +97,7 @@ struct RangeCacheEntry {
 }
 
 impl RangeCacheEntry {
-    async fn get_or_wait(&self, range: Range<usize>) -> std::result::Result<Bytes, daft_io::Error> {
+    async fn get_or_wait(&self, range: Range<usize>) -> std::result::Result<Bytes, common_io_client::Error> {
         {
             let mut guard = self.state.lock().await;
             match &mut *guard {
@@ -105,20 +105,20 @@ impl RangeCacheEntry {
                     // TODO(sammy): thread in url for join error
                     let v = f
                         .await
-                        .map_err(|e| daft_io::Error::JoinError { source: e })
+                        .map_err(|e| common_io_client::Error::JoinError { source: e })
                         .flatten()
                         .map_err(Arc::new);
                     let sliced = v
                         .as_ref()
                         .map(|b| b.slice(range))
-                        .map_err(|e| daft_io::Error::CachedError { source: e.clone() });
+                        .map_err(|e| common_io_client::Error::CachedError { source: e.clone() });
                     *guard = RangeCacheState::Ready(v);
                     sliced
                 }
                 RangeCacheState::Ready(v) => v
                     .as_ref()
                     .map(|b| b.slice(range))
-                    .map_err(|e| daft_io::Error::CachedError { source: e.clone() }),
+                    .map_err(|e| common_io_client::Error::CachedError { source: e.clone() }),
             }
         }
     }

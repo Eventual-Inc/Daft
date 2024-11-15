@@ -2,7 +2,7 @@ pub mod pylib {
     use std::sync::Arc;
 
     use daft_core::python::PySchema;
-    use daft_io::{get_io_client, python::IOConfig, IOStatsContext};
+    use common_io_client::{get_io_client, python::IOConfig, IOStatsContext};
     use daft_table::python::PyTable;
     use pyo3::{pyfunction, PyResult, Python};
 

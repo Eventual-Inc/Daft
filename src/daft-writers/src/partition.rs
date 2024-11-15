@@ -6,7 +6,7 @@ use std::{
 use common_error::DaftResult;
 use daft_core::{array::ops::as_arrow::AsArrow, utils::identity_hash_set::IndexHash};
 use daft_dsl::ExprRef;
-use daft_io::IOStatsContext;
+use common_io_client::IOStatsContext;
 use daft_micropartition::MicroPartition;
 use daft_table::Table;
 

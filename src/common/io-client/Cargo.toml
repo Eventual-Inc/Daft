@@ -1,0 +1,39 @@
+[dependencies]
+common-io-config = {path = "../io-config", default-features = false}
+common-error = {path = "../error", default-features = false}
+common-file-formats = {path = "../file-formats", default-features = false}
+
+async-trait = "0.1.79"
+bytes.workspace = true
+futures.workspace = true
+tokio.workspace = true
+snafu.workspace = true
+derive_more.workspace = true
+url.workspace = true
+rand = "0.8.5"
+log.workspace = true
+async-stream = "0.3.5"
+lazy_static.workspace = true
+globset = "0.4"
+itertools.workspace = true
+tokio-stream.workspace = true
+regex = {version = "1.10.4"}
+inventory = "*"
+home = "0.5.9"
+
+
+[dev-dependencies]
+md5 = "0.7.0"
+tempfile = "3.8.1"
+
+
+[features]
+python = ["common-error/python", "common-io-config/python"]
+
+[lints]
+workspace = true
+
+[package]
+edition = {workspace = true}
+name = "common-io-client"
+version = {workspace = true}

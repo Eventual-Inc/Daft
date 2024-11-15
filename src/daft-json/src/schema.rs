@@ -4,7 +4,7 @@ use common_error::DaftResult;
 use common_runtime::get_io_runtime;
 use daft_compression::CompressionCodec;
 use daft_core::prelude::Schema;
-use daft_io::{GetResult, IOClient, IOStatsRef};
+use common_io_client::{GetResult, IOClient, IOStatsRef};
 use futures::{StreamExt, TryStreamExt};
 use indexmap::IndexMap;
 use snafu::ResultExt;
@@ -199,7 +199,7 @@ mod tests {
 
     use common_error::DaftResult;
     use daft_core::prelude::*;
-    use daft_io::{IOClient, IOConfig};
+    use common_io_client::{IOClient, IOConfig};
     use rstest::rstest;
 
     use super::read_json_schema;

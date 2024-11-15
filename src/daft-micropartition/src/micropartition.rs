@@ -12,7 +12,7 @@ use common_scan_info::Pushdowns;
 use daft_core::prelude::*;
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::ExprRef;
-use daft_io::{IOClient, IOConfig, IOStatsContext, IOStatsRef};
+use common_io_client::{IOClient, IOConfig, IOStatsContext, IOStatsRef};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::{
     read_parquet_bulk, read_parquet_metadata_bulk, ParquetSchemaInferenceOptions,
@@ -115,7 +115,7 @@ fn materialize_scan_task(
         StorageConfig::Native(native_storage_config) => {
             let multithreaded_io = native_storage_config.multithreaded_io;
             let io_config = Arc::new(native_storage_config.io_config.clone().unwrap_or_default());
-            let io_client = daft_io::get_io_client(multithreaded_io, io_config).unwrap();
+            let io_client = common_io_client::get_io_client(multithreaded_io, io_config).unwrap();
 
             match scan_task.file_format_config.as_ref() {
                 // ********************
@@ -752,7 +752,7 @@ pub fn read_csv_into_micropartition(
     multithreaded_io: bool,
     io_stats: Option<IOStatsRef>,
 ) -> DaftResult<MicroPartition> {
-    let io_client = daft_io::get_io_client(multithreaded_io, io_config)?;
+    let io_client = common_io_client::get_io_client(multithreaded_io, io_config)?;
 
     match uris {
         [] => Ok(MicroPartition::empty(None)),
@@ -801,7 +801,7 @@ pub fn read_json_into_micropartition(
     multithreaded_io: bool,
     io_stats: Option<IOStatsRef>,
 ) -> DaftResult<MicroPartition> {
-    let io_client = daft_io::get_io_client(multithreaded_io, io_config)?;
+    let io_client = common_io_client::get_io_client(multithreaded_io, io_config)?;
 
     match uris {
         [] => Ok(MicroPartition::empty(None)),
@@ -1038,7 +1038,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
     }
 
     // Run the required I/O to retrieve all the Parquet FileMetaData
-    let io_client = daft_io::get_io_client(multithreaded_io, io_config.clone())?;
+    let io_client = common_io_client::get_io_client(multithreaded_io, io_config.clone())?;
 
     // If we have a predicate or deletion files then we no longer have an accurate accounting of required metadata
     // on the MicroPartition (e.g. its length). Hence we need to perform an eager read.

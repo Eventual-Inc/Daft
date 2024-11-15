@@ -18,7 +18,7 @@ use aws_sig_auth::signer::SigningRequirements;
 use aws_smithy_async::rt::sleep::TokioSleep;
 use common_io_config::S3Config;
 use common_runtime::get_io_pool_num_threads;
-use daft_io::{
+use common_io_client::{
     stream_utils::io_stats_on_bytestream, FileFormat, FileMetadata, FileType, GetResult,
     IOStatsRef, LSResult, ObjectSource, SourceType,
 };
@@ -135,7 +135,7 @@ const THROTTLING_ERRORS: &[&str] = &[
     "EC2ThrottledException",
 ];
 
-impl From<Error> for daft_io::Error {
+impl From<Error> for common_io_client::Error {
     fn from(error: Error) -> Self {
         use Error::{
             InvalidUrl, NotAFile, NotFound, UnableToHeadFile, UnableToListObjects,
@@ -147,17 +147,17 @@ impl From<Error> for daft_io::Error {
         >(
             path: String,
             err: E,
-        ) -> daft_io::Error {
+        ) -> common_io_client::Error {
             match err.code() {
-                Some("InternalError") => daft_io::Error::MiscTransient {
+                Some("InternalError") => common_io_client::Error::MiscTransient {
                     path,
                     source: err.into(),
                 },
-                Some(code) if THROTTLING_ERRORS.contains(&code) => daft_io::Error::Throttled {
+                Some(code) if THROTTLING_ERRORS.contains(&code) => common_io_client::Error::Throttled {
                     path,
                     source: err.into(),
                 },
-                _ => daft_io::Error::Unhandled {
+                _ => common_io_client::Error::Unhandled {
                     path,
                     msg: DisplayErrorContext(err).to_string(),
                 },
@@ -295,7 +295,7 @@ impl From<Error> for daft_io::Error {
 }
 
 /// Retrieves an S3Config from the environment by leveraging the AWS SDK's credentials chain
-pub async fn s3_config_from_env() -> daft_io::Result<S3Config> {
+pub async fn s3_config_from_env() -> common_io_client::Result<S3Config> {
     let default_s3_config = S3Config::default();
     let (anonymous, s3_conf) = build_s3_conf(&default_s3_config, None).await?;
     let creds = s3_conf
@@ -322,7 +322,7 @@ pub async fn s3_config_from_env() -> daft_io::Result<S3Config> {
 }
 
 /// Helper to parse S3 URLs, returning (scheme, bucket, key)
-fn parse_url(uri: &str) -> daft_io::Result<(String, String, String)> {
+fn parse_url(uri: &str) -> common_io_client::Result<(String, String, String)> {
     let parsed = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
     let bucket = match parsed.host_str() {
         Some(s) => Ok(s),
@@ -346,7 +346,7 @@ fn parse_url(uri: &str) -> daft_io::Result<(String, String, String)> {
 fn handle_https_client_settings(
     builder: aws_sdk_s3::config::Builder,
     config: &S3Config,
-) -> daft_io::Result<aws_sdk_s3::config::Builder> {
+) -> common_io_client::Result<aws_sdk_s3::config::Builder> {
     let tls_connector = hyper_tls::native_tls::TlsConnector::builder()
         .danger_accept_invalid_certs(!config.verify_ssl)
         .danger_accept_invalid_hostnames((!config.verify_ssl) || (!config.check_hostname_ssl))
@@ -374,7 +374,7 @@ fn handle_https_client_settings(
 async fn build_s3_conf(
     config: &S3Config,
     credentials_cache: Option<SharedCredentialsCache>,
-) -> daft_io::Result<(bool, s3::Config)> {
+) -> common_io_client::Result<(bool, s3::Config)> {
     const DEFAULT_REGION: Region = Region::from_static("us-east-1");
 
     let mut anonymous = config.anonymous;
@@ -405,7 +405,7 @@ async fn build_s3_conf(
         );
         Some(aws_credential_types::provider::SharedCredentialsProvider::new(creds))
     } else if config.access_key.is_some() || config.key_id.is_some() {
-        return Err(daft_io::Error::InvalidArgument {
+        return Err(common_io_client::Error::InvalidArgument {
             msg: "Must provide both access_key and key_id when building S3-Like Client".to_string(),
         });
     } else {
@@ -477,7 +477,7 @@ async fn build_s3_conf(
         } else if retry_mode.trim().eq_ignore_ascii_case("standard") {
             retry_config
         } else {
-            return Err(daft_io::Error::InvalidArgument { msg: format!("Invalid Retry Mode, Daft S3 client currently only supports standard and adaptive, got {retry_mode}") });
+            return Err(common_io_client::Error::InvalidArgument { msg: format!("Invalid Retry Mode, Daft S3 client currently only supports standard and adaptive, got {retry_mode}") });
         }
     } else {
         retry_config
@@ -501,7 +501,7 @@ async fn build_s3_conf(
     const JITTER_MS: u64 = 2_500;
     const MAX_BACKOFF_MS: u64 = 20_000;
     const MAX_WAITTIME_MS: u64 = 45_000;
-    let check_creds = async || -> daft_io::Result<bool> {
+    let check_creds = async || -> common_io_client::Result<bool> {
         use rand::Rng;
         use CredentialsError::{CredentialsNotLoaded, ProviderTimedOut};
         let mut attempt = 0;
@@ -550,12 +550,12 @@ async fn build_s3_conf(
 async fn build_s3_client(
     config: &S3Config,
     credentials_cache: Option<SharedCredentialsCache>,
-) -> daft_io::Result<(bool, s3::Client)> {
+) -> common_io_client::Result<(bool, s3::Client)> {
     let (anonymous, s3_conf) = build_s3_conf(config, credentials_cache).await?;
     Ok((anonymous, s3::Client::from_conf(s3_conf)))
 }
 
-async fn build_client(config: &S3Config) -> daft_io::Result<S3LikeSource> {
+async fn build_client(config: &S3Config) -> common_io_client::Result<S3LikeSource> {
     let (anonymous, client) = build_s3_client(config, None).await?;
     let mut client_map = HashMap::new();
     let default_region = client.conf().region().unwrap().clone();
@@ -574,11 +574,11 @@ async fn build_client(config: &S3Config) -> daft_io::Result<S3LikeSource> {
 const REGION_HEADER: &str = "x-amz-bucket-region";
 
 impl S3LikeSource {
-    pub async fn get_client(config: &S3Config) -> daft_io::Result<Arc<Self>> {
+    pub async fn get_client(config: &S3Config) -> common_io_client::Result<Arc<Self>> {
         Ok(build_client(config).await?.into())
     }
 
-    async fn get_s3_client(&self, region: &Region) -> daft_io::Result<Arc<s3::Client>> {
+    async fn get_s3_client(&self, region: &Region) -> common_io_client::Result<Arc<s3::Client>> {
         {
             if let Some(client) = self.region_to_client_map.read().await.get(region) {
                 return Ok(client.clone());
@@ -613,7 +613,7 @@ impl S3LikeSource {
         uri: &str,
         range: Option<Range<usize>>,
         region: &Region,
-    ) -> daft_io::Result<GetResult> {
+    ) -> common_io_client::Result<GetResult> {
         log::debug!("S3 get at {uri}, range: {range:?}, in region: {region}");
         let (_scheme, bucket, key) = parse_url(uri)?;
 
@@ -724,7 +724,7 @@ impl S3LikeSource {
         permit: SemaphorePermit<'async_recursion>,
         uri: &str,
         region: &Region,
-    ) -> daft_io::Result<usize> {
+    ) -> common_io_client::Result<usize> {
         log::debug!("S3 head at {uri} in region: {region}");
         let (_scheme, bucket, key) = parse_url(uri)?;
 
@@ -813,7 +813,7 @@ impl S3LikeSource {
         continuation_token: Option<String>,
         region: &Region,
         page_size: Option<i32>,
-    ) -> daft_io::Result<LSResult> {
+    ) -> common_io_client::Result<LSResult> {
         log::debug!("S3 list_objects: Bucket: {bucket}, Key: {key}, continuation_token: {continuation_token:?} in region: {region}");
         let request = self
             .get_s3_client(region)
@@ -960,7 +960,7 @@ impl S3LikeSource {
         uri: &str,
         data: bytes::Bytes,
         region: &Region,
-    ) -> daft_io::Result<()> {
+    ) -> common_io_client::Result<()> {
         log::debug!(
             "S3 put at {uri}, num_bytes: {}, in region: {region}",
             data.len()
@@ -1006,7 +1006,7 @@ impl ObjectSource for S3LikeSource {
         uri: &str,
         range: Option<Range<usize>>,
         io_stats: Option<IOStatsRef>,
-    ) -> daft_io::Result<GetResult> {
+    ) -> common_io_client::Result<GetResult> {
         let permit = self
             .connection_pool_sema
             .clone()
@@ -1041,7 +1041,7 @@ impl ObjectSource for S3LikeSource {
         uri: &str,
         data: bytes::Bytes,
         io_stats: Option<IOStatsRef>,
-    ) -> daft_io::Result<()> {
+    ) -> common_io_client::Result<()> {
         let data_len = data.len();
         let permit = self
             .connection_pool_sema
@@ -1060,7 +1060,7 @@ impl ObjectSource for S3LikeSource {
         Ok(())
     }
 
-    async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> daft_io::Result<usize> {
+    async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> common_io_client::Result<usize> {
         let permit = self
             .connection_pool_sema
             .acquire()
@@ -1081,8 +1081,8 @@ impl ObjectSource for S3LikeSource {
         limit: Option<usize>,
         io_stats: Option<IOStatsRef>,
         _file_format: Option<FileFormat>,
-    ) -> daft_io::Result<BoxStream<'static, daft_io::Result<FileMetadata>>> {
-        use daft_io::glob_util;
+    ) -> common_io_client::Result<BoxStream<'static, common_io_client::Result<FileMetadata>>> {
+        use common_io_client::glob_util;
 
         // Ensure fanout_limit is not None to prevent runaway concurrency
         let fanout_limit = fanout_limit.or(Some(DEFAULT_GLOB_FANOUT_LIMIT));
@@ -1105,7 +1105,7 @@ impl ObjectSource for S3LikeSource {
         continuation_token: Option<&str>,
         page_size: Option<i32>,
         io_stats: Option<IOStatsRef>,
-    ) -> daft_io::Result<LSResult> {
+    ) -> common_io_client::Result<LSResult> {
         let (scheme, bucket, key) = parse_url(path)?;
 
         if posix {
@@ -1206,7 +1206,7 @@ impl ObjectSource for S3LikeSource {
 #[cfg(test)]
 mod tests {
     use common_io_config::S3Config;
-    use daft_io::{ObjectSource, Result};
+    use common_io_client::{ObjectSource, Result};
 
     use super::S3LikeSource;
 

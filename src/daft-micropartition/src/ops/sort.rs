@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use daft_core::series::Series;
 use daft_dsl::ExprRef;
-use daft_io::IOStatsContext;
+use common_io_client::IOStatsContext;
 use daft_table::Table;
 
 use crate::micropartition::MicroPartition;

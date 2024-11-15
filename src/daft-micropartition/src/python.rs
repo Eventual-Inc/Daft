@@ -7,7 +7,7 @@ use daft_core::{
 };
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::python::PyExpr;
-use daft_io::{python::IOConfig, IOStatsContext};
+use common_io_client::{python::IOConfig, IOStatsContext};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use daft_scan::{

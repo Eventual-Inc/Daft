@@ -1,7 +1,7 @@
 use std::{borrow::Borrow, ops::Deref, sync::Mutex};
 
 use common_error::{DaftError, DaftResult};
-use daft_io::IOStatsContext;
+use common_io_client::IOStatsContext;
 use daft_stats::TableMetadata;
 
 use crate::micropartition::{MicroPartition, TableState};

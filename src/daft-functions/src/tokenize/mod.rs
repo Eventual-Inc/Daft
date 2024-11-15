@@ -1,5 +1,5 @@
 use daft_dsl::{functions::ScalarFunction, ExprRef};
-use daft_io::IOConfig;
+use common_io_client::IOConfig;
 pub use decode::TokenizeDecodeFunction;
 pub use encode::TokenizeEncodeFunction;
 
@@ -51,7 +51,7 @@ pub fn tokenize_decode(
 #[cfg(feature = "python")]
 pub mod python {
     use daft_dsl::python::PyExpr;
-    use daft_io::python::IOConfig as PyIOConfig;
+    use common_io_client::python::IOConfig as PyIOConfig;
     use pyo3::{pyfunction, PyResult};
 
     use super::{tokenize_decode as rust_decode, tokenize_encode as rust_encode};

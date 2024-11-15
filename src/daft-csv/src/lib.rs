@@ -25,7 +25,7 @@ pub use read::{read_csv, read_csv_bulk, stream_csv};
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[snafu(display("{source}"))]
-    IOError { source: daft_io::Error },
+    IOError { source: common_io_client::Error },
     #[snafu(display("{source}"))]
     CSVError { source: csv_async::Error },
     #[snafu(display("Invalid char: {}", val))]
@@ -55,8 +55,8 @@ impl From<Error> for DaftError {
     }
 }
 
-impl From<daft_io::Error> for Error {
-    fn from(err: daft_io::Error) -> Self {
+impl From<common_io_client::Error> for Error {
+    fn from(err: common_io_client::Error) -> Self {
         Self::IOError { source: err }
     }
 }

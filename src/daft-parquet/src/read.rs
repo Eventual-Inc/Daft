@@ -16,7 +16,7 @@ use daft_core::prelude::*;
 #[cfg(feature = "python")]
 use daft_core::python::PyTimeUnit;
 use daft_dsl::{optimization::get_required_columns, ExprRef};
-use daft_io::{parse_url, IOClient, IOStatsRef, SourceType};
+use common_io_client::{IOClient, IOStatsRef, SourceType};
 use daft_table::Table;
 use futures::{
     future::{join_all, try_join_all},
@@ -184,7 +184,7 @@ async fn read_parquet_single(
         num_rows_to_read = limit_with_delete_rows(delete_rows, start_offset, num_rows_to_read);
     }
 
-    let (source_type, fixed_uri) = parse_url(uri)?;
+    let (source_type, fixed_uri) = IOClient::parse_url(uri)?;
 
     let (metadata, mut table) = if matches!(source_type, SourceType::File) {
         crate::stream_reader::local_parquet_read_async(
@@ -401,7 +401,7 @@ async fn stream_parquet_single(
         num_rows_to_read = limit_with_delete_rows(delete_rows, None, num_rows_to_read);
     }
 
-    let (source_type, fixed_uri) = parse_url(uri.as_str())?;
+    let (source_type, fixed_uri) = IOClient::parse_url(uri.as_str())?;
 
     let (metadata, table_stream) = if matches!(source_type, SourceType::File) {
         crate::stream_reader::local_parquet_stream(
@@ -527,7 +527,7 @@ async fn read_parquet_single_into_arrow(
     metadata: Option<Arc<FileMetaData>>,
 ) -> DaftResult<ParquetPyarrowChunk> {
     let field_id_mapping_provided = field_id_mapping.is_some();
-    let (source_type, fixed_uri) = parse_url(uri)?;
+    let (source_type, fixed_uri) = IOClient::parse_url(uri)?;
     let (metadata, schema, all_arrays, num_rows_read) = if matches!(source_type, SourceType::File) {
         let (metadata, schema, all_arrays, num_rows_read) =
             crate::stream_reader::local_parquet_read_into_arrow_async(
@@ -1101,7 +1101,7 @@ mod tests {
 
     use arrow2::{datatypes::DataType, io::parquet::read::schema::StringEncoding};
     use common_error::DaftResult;
-    use daft_io::{IOClient, IOConfig};
+    use common_io_client::{IOClient, IOConfig};
     use futures::StreamExt;
     use parquet2::{
         metadata::FileMetaData,

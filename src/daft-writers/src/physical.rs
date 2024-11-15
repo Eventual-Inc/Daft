@@ -53,7 +53,7 @@ pub fn create_pyarrow_file_writer(
     root_dir: &str,
     file_idx: usize,
     compression: &Option<String>,
-    io_config: &Option<daft_io::IOConfig>,
+    io_config: &Option<common_io_client::IOConfig>,
     format: FileFormat,
     partition: Option<&Table>,
 ) -> DaftResult<Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Option<Table>>>> {

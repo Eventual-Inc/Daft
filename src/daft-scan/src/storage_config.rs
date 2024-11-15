@@ -4,7 +4,7 @@ use common_error::DaftResult;
 use common_io_config::IOConfig;
 use common_py_serde::impl_bincode_py_state_serialization;
 use common_runtime::{get_io_runtime, RuntimeRef};
-use daft_io::{get_io_client, IOClient};
+use common_io_client::{get_io_client, IOClient};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
 use {

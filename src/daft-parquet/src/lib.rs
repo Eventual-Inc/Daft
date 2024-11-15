@@ -23,7 +23,7 @@ pub enum Error {
     Arrow2Error { source: arrow2::error::Error },
 
     #[snafu(display("{source}"))]
-    DaftIOError { source: daft_io::Error },
+    DaftIOError { source: common_io_client::Error },
 
     #[snafu(display("Parquet reader timed out while trying to read: {path} with a time budget of {duration_ms} ms"))]
     FileReadTimeout { path: String, duration_ms: i64 },
@@ -215,8 +215,8 @@ impl From<Error> for DaftError {
     }
 }
 
-impl From<daft_io::Error> for Error {
-    fn from(err: daft_io::Error) -> Self {
+impl From<common_io_client::Error> for Error {
+    fn from(err: common_io_client::Error) -> Self {
         Self::DaftIOError { source: err }
     }
 }

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use daft_core::{array::ops::DaftCompare, join::JoinType};
 use daft_dsl::{join::infer_join_schema, ExprRef};
-use daft_io::IOStatsContext;
+use common_io_client::IOStatsContext;
 use daft_stats::TruthValue;
 use daft_table::Table;
 

@@ -4,7 +4,7 @@ use common_error::{DaftError, DaftResult};
 use common_runtime::get_io_runtime;
 use daft_core::prelude::*;
 use daft_dsl::{functions::ScalarUDF, ExprRef};
-use daft_io::{get_io_client, IOConfig, IOStatsRef, SourceType};
+use common_io_client::{get_io_client, IOClient, IOConfig, IOStatsRef, SourceType};
 use futures::{StreamExt, TryStreamExt};
 use serde::Serialize;
 
@@ -95,7 +95,7 @@ pub fn url_upload(
     ) -> DaftResult<Vec<Option<String>>> {
         // HACK: Creates folders if running locally. This is a bit of a hack to do it here because we'd rather delegate this to
         // the appropriate source. However, most sources such as the object stores don't have the concept of "folders".
-        let (source, folder_path) = daft_io::parse_url(folder_path)?;
+        let (source, folder_path) = IOClient::parse_url(folder_path)?;
         if matches!(source, SourceType::File) {
             let local_prefixless_folder_path = match folder_path.strip_prefix("file://") {
                 Some(p) => p,
@@ -103,7 +103,7 @@ pub fn url_upload(
             };
 
             std::fs::create_dir_all(local_prefixless_folder_path).map_err(|e| {
-                daft_io::Error::UnableToCreateDir {
+                common_io_client::Error::UnableToCreateDir {
                     path: folder_path.as_ref().to_string(),
                     source: e,
                 }
@@ -138,7 +138,7 @@ pub fn url_upload(
             .then(async move |r| match r {
                 Ok((i, Ok(v))) => Ok((i, v)),
                 Ok((_i, Err(error))) => Err(error),
-                Err(error) => Err(daft_io::Error::JoinError { source: error }),
+                Err(error) => Err(common_io_client::Error::JoinError { source: error }),
             })
             .try_collect::<Vec<_>>()
             .await

@@ -11,7 +11,7 @@ use common_runtime::get_io_runtime;
 use common_scan_info::Pushdowns;
 use daft_core::prelude::{AsArrow, Int64Array, SchemaRef, Utf8Array};
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
-use daft_io::IOStatsRef;
+use common_io_client::IOStatsRef;
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_micropartition::MicroPartition;
 use daft_parquet::read::{read_parquet_bulk_async, ParquetSchemaInferenceOptions};
@@ -253,7 +253,7 @@ async fn stream_scan_task(
         }
     };
     let io_config = Arc::new(io_config.cloned().unwrap_or_default());
-    let io_client = daft_io::get_io_client(multi_threaded_io, io_config)?;
+    let io_client = common_io_client::get_io_client(multi_threaded_io, io_config)?;
     let table_stream = match scan_task.file_format_config.as_ref() {
         FileFormatConfig::Parquet(ParquetSourceConfig {
             coerce_int96_timestamp_unit,

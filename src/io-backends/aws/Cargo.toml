@@ -10,7 +10,7 @@ aws-smithy-client = "0.55.3"
 bytes = {workspace = true}
 common-io-config = {path = "../../common/io-config", default-features = false}
 common-runtime = {path = "../../common/runtime", default-features = false}
-daft-io = {path = "../../daft-io", default-features = false}
+common-io-client = {path = "../../common/io-client", default-features = false}
 futures = {workspace = true}
 hyper = "0.14.27"
 hyper-tls = "0.5.0"

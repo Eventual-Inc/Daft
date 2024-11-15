@@ -15,7 +15,7 @@ use daft_core::{
 };
 use daft_decoding::deserialize::deserialize_column;
 use daft_dsl::{optimization::get_required_columns, Expr};
-use daft_io::{IOClient, IOStatsRef};
+use common_io_client::{IOClient, IOStatsRef};
 use daft_table::Table;
 use futures::{Stream, StreamExt, TryStreamExt};
 use rayon::{

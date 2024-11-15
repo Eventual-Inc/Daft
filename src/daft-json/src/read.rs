@@ -5,7 +5,7 @@ use common_runtime::get_io_runtime;
 use daft_compression::CompressionCodec;
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
 use daft_dsl::optimization::get_required_columns;
-use daft_io::{parse_url, GetResult, IOClient, IOStatsRef, SourceType};
+use common_io_client::{GetResult, IOClient, IOStatsRef, SourceType};
 use daft_table::Table;
 use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
@@ -178,7 +178,7 @@ async fn read_json_single_into_table(
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
 ) -> DaftResult<Table> {
-    let (source_type, fixed_uri) = parse_url(uri)?;
+    let (source_type, fixed_uri) = IOClient::parse_url(uri)?;
     let is_compressed = CompressionCodec::from_uri(uri).is_some();
     if matches!(source_type, SourceType::File) && !is_compressed {
         return read_json_local(
@@ -568,7 +568,7 @@ mod tests {
         prelude::*,
         utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
     };
-    use daft_io::{IOClient, IOConfig};
+    use common_io_client::{IOClient, IOConfig};
     use daft_table::Table;
     use indexmap::IndexMap;
     use rstest::rstest;

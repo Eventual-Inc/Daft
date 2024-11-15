@@ -9,7 +9,7 @@ use arrow2::{bitmap::Bitmap, io::parquet::read};
 use common_error::DaftResult;
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
 use daft_dsl::ExprRef;
-use daft_io::IOStatsRef;
+use common_io_client::IOStatsRef;
 use daft_table::Table;
 use futures::{stream::BoxStream, StreamExt};
 use itertools::Itertools;

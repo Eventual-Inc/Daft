@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use common_display::{tree::TreeDisplay, utils::bytes_to_human_readable};
 use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
-use daft_io::{IOStatsContext, IOStatsRef};
+use common_io_client::{IOStatsContext, IOStatsRef};
 use daft_micropartition::MicroPartition;
 use futures::{stream::BoxStream, StreamExt};
 

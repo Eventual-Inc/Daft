@@ -1,6 +1,6 @@
 use common_error::{DaftError, DaftResult};
 use daft_dsl::ExprRef;
-use daft_io::IOStatsContext;
+use common_io_client::IOStatsContext;
 use daft_table::Table;
 
 use crate::micropartition::MicroPartition;

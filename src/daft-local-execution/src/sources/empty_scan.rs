@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
-use daft_io::IOStatsRef;
+use common_io_client::IOStatsRef;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 

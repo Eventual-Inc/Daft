@@ -1,7 +1,7 @@
 mod download;
 mod upload;
 
-use common_io_config::IOConfig;
+use common_io_client::IOConfig;
 use daft_dsl::{functions::ScalarFunction, ExprRef};
 use download::DownloadFunction;
 use upload::UploadFunction;
@@ -49,7 +49,7 @@ pub fn upload(
 #[cfg(feature = "python")]
 pub mod python {
     use daft_dsl::python::PyExpr;
-    use daft_io::python::IOConfig as PyIOConfig;
+    use common_io_client::python::IOConfig as PyIOConfig;
     use pyo3::{exceptions::PyValueError, pyfunction, PyResult};
 
     #[pyfunction]
