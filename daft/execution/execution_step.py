@@ -927,11 +927,13 @@ class ReduceToQuantiles(ReduceInstruction):
 
     def _reduce_to_quantiles(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         merged = MicroPartition.concat(inputs)
-        
+
         nulls_first = self.nulls_first if self.nulls_first is not None else self.descending
 
         # Skip evaluation of expressions by converting to Column Expression, since evaluation was done in Sample
-        merged_sorted = merged.sort(self.sort_by.to_column_expressions(), descending=self.descending, nulls_first=nulls_first)
+        merged_sorted = merged.sort(
+            self.sort_by.to_column_expressions(), descending=self.descending, nulls_first=nulls_first
+        )
 
         result = merged_sorted.quantiles(self.num_quantiles)
         return [result]
