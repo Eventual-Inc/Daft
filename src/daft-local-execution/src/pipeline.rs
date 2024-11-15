@@ -12,8 +12,8 @@ use daft_core::{
 use daft_dsl::{col, join::get_common_join_keys, Expr};
 use daft_local_plan::{
     ActorPoolProject, Concat, EmptyScan, Explode, Filter, HashAggregate, HashJoin, InMemoryScan,
-    Limit, LocalPhysicalPlan, PhysicalWrite, Pivot, Project, Sample, Sort, UnGroupedAggregate,
-    Unpivot,
+    Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite, Pivot, Project, Sample,
+    Sort, UnGroupedAggregate, Unpivot,
 };
 use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;
@@ -38,6 +38,7 @@ use crate::{
         concat::ConcatSink,
         hash_join_build::{HashJoinBuildSink, ProbeStateBridge},
         limit::LimitSink,
+        monotonically_increasing_id::MonotonicallyIncreasingIdSink,
         outer_hash_join_probe::OuterHashJoinProbeSink,
         pivot::PivotSink,
         sort::SortSink,
@@ -297,7 +298,18 @@ pub fn physical_plan_to_pipeline(
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
             BlockingSinkNode::new(Arc::new(sort_sink), child_node).boxed()
         }
-
+        LocalPhysicalPlan::MonotonicallyIncreasingId(MonotonicallyIncreasingId {
+            input,
+            column_name,
+            schema,
+            ..
+        }) => {
+            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            let monotonically_increasing_id_sink =
+                MonotonicallyIncreasingIdSink::new(column_name.clone(), schema.clone());
+            StreamingSinkNode::new(Arc::new(monotonically_increasing_id_sink), vec![child_node])
+                .boxed()
+        }
         LocalPhysicalPlan::HashJoin(HashJoin {
             left,
             right,

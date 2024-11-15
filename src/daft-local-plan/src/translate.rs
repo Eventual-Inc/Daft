@@ -160,6 +160,14 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             log::warn!("Repartition Not supported for Local Executor!; This will be a No-Op");
             translate(&repartition.input)
         }
+        LogicalPlan::MonotonicallyIncreasingId(monotonically_increasing_id) => {
+            let input = translate(&monotonically_increasing_id.input)?;
+            Ok(LocalPhysicalPlan::monotonically_increasing_id(
+                input,
+                monotonically_increasing_id.column_name.clone(),
+                monotonically_increasing_id.schema.clone(),
+            ))
+        }
         LogicalPlan::Sink(sink) => {
             use daft_logical_plan::SinkInfo;
             let input = translate(&sink.input)?;

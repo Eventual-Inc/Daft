@@ -21,7 +21,7 @@ pub enum LocalPhysicalPlan {
     Sort(Sort),
     // Split(Split),
     Sample(Sample),
-    // MonotonicallyIncreasingId(MonotonicallyIncreasingId),
+    MonotonicallyIncreasingId(MonotonicallyIncreasingId),
     // Coalesce(Coalesce),
     // Flatten(Flatten),
     // FanoutRandom(FanoutRandom),
@@ -256,6 +256,20 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    pub(crate) fn monotonically_increasing_id(
+        input: LocalPhysicalPlanRef,
+        column_name: String,
+        schema: SchemaRef,
+    ) -> LocalPhysicalPlanRef {
+        Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId {
+            input,
+            column_name,
+            schema,
+            plan_stats: PlanStats {},
+        })
+        .arced()
+    }
+
     pub(crate) fn hash_join(
         left: LocalPhysicalPlanRef,
         right: LocalPhysicalPlanRef,
@@ -439,6 +453,14 @@ pub struct Sample {
     pub fraction: f64,
     pub with_replacement: bool,
     pub seed: Option<u64>,
+    pub schema: SchemaRef,
+    pub plan_stats: PlanStats,
+}
+
+#[derive(Debug)]
+pub struct MonotonicallyIncreasingId {
+    pub input: LocalPhysicalPlanRef,
+    pub column_name: String,
     pub schema: SchemaRef,
     pub plan_stats: PlanStats,
 }
