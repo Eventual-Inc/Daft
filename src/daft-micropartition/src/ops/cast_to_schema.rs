@@ -29,9 +29,9 @@ impl MicroPartition {
                         scan_task.storage_config.clone(),
                         scan_task.pushdowns.clone(),
                         scan_task.generated_fields.clone(),
-                        // Assume that the schema casting doesn't change the sizes too much
-                        // Also, it's really messy to pass the execution config this deep so we naively pass in None here. This could be very bug-prone.
-                        scan_task.estimate_in_memory_size_bytes(None),
+                        // NOTE: Skip propagating estimated size for lazily-materialized MicroPartitions
+                        // since this information is not actually leveraged beyond planning time
+                        None,
                     ))
                 };
                 Ok(Self::new_unloaded(

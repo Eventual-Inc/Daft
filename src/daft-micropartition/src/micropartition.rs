@@ -1160,36 +1160,12 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
         });
 
         let owned_urls = uris.iter().map(|s| (*s).to_string());
-        let size_bytes_per_file = metadata.iter().map(|m| -> u64 {
-            std::iter::Sum::sum(m.row_groups.values().map(|m| m.total_byte_size() as u64))
-        });
-
-        // Create the pushdowns to apply
-        let pushdowns = Pushdowns::new(
-            None,
-            None,
-            columns.map(|cols| {
-                Arc::new(
-                    cols.iter()
-                        .map(|v| v.as_ref().to_string())
-                        .collect::<Vec<_>>(),
-                )
-            }),
-            num_rows,
-        );
-
-        // Estimate the size of the materialized ScanTask on disk (TODO: extend to take in more than one FileMetadata)
-        let estimator = daft_scan::size_estimations::FileInferredEstimator::from_parquet_metadata(
-            scan_task_daft_schema.clone(),
-            metadata.first().unwrap(),
-        );
-        let sizes_on_disk: Vec<u64> = size_bytes_per_file.collect();
-        let estimated_materialized_size_bytes = sizes_on_disk
+        let size_bytes = metadata
             .iter()
-            .map(|&size_on_disk| estimator.estimate_from_size_on_disk(size_on_disk, &pushdowns))
+            .map(|m| -> u64 {
+                std::iter::Sum::sum(m.row_groups.values().map(|m| m.total_byte_size() as u64))
+            })
             .sum();
-        // TODO(jay): This seems wrong, as this is the sum of the sizes of all the files rather than individual files
-        let size_bytes = sizes_on_disk.iter().sum();
 
         let scan_task = ScanTask::new(
             owned_urls
@@ -1203,6 +1179,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
                 .map(|((url, metadata), rgs)| DataSource::File {
                     path: url,
                     chunk_spec: rgs.map(ChunkSpec::Parquet),
+                    // INVESTIGATE(jay): This seems wrong, as this is the sum of the sizes of all the files rather than individual files?
                     size_bytes: Some(size_bytes),
                     iceberg_delete_files: None,
                     metadata: None,
@@ -1227,9 +1204,22 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
                 .into(),
             )
             .into(),
-            pushdowns,
+            Pushdowns::new(
+                None,
+                None,
+                columns.map(|cols| {
+                    Arc::new(
+                        cols.iter()
+                            .map(|v| v.as_ref().to_string())
+                            .collect::<Vec<_>>(),
+                    )
+                }),
+                num_rows,
+            ),
             generated_fields,
-            estimated_materialized_size_bytes,
+            // NOTE: Skip propagating estimated size for lazily-materialized MicroPartitions
+            // since this information is not actually leveraged beyond planning time
+            None,
         );
 
         let fill_map = scan_task.partition_spec().map(|pspec| pspec.to_fill_map());
