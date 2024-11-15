@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::{HashMap, HashSet},
     sync::Arc,
 };
@@ -741,39 +742,11 @@ impl SQLPlanner {
                     BinaryOperator::Eq | BinaryOperator::Spaceship => {
                         let null_equals_null = *op == BinaryOperator::Spaceship;
 
-                        match (left.as_ref(), right.as_ref()) {
-                        (
-                            sqlparser::ast::Expr::CompoundIdentifier(left),
-                            sqlparser::ast::Expr::CompoundIdentifier(right),
-                        ) => {
-                            collect_idents(left, right, left_rel, right_rel)
-                                .map(|(left, right)| (left, right, vec![null_equals_null]))
-                        }
-                        (
-                            sqlparser::ast::Expr::Identifier(left),
-                            sqlparser::ast::Expr::Identifier(right),
-                        ) =>{
-                            collect_idents(&[left.clone()], &[right.clone()], left_rel, right_rel)
-                                .map(|(left, right)| (left, right, vec![null_equals_null]))
+                        let left = get_idents_vec(left)?;
+                        let right = get_idents_vec(right)?;
 
-                        }
-                        (
-                            sqlparser::ast::Expr::CompoundIdentifier(left),
-                            sqlparser::ast::Expr::Identifier(right)
-                        ) => {
-                            collect_idents(left, &[right.clone()], left_rel, right_rel)
-                                .map(|(left, right)| (left, right, vec![null_equals_null]))
-
-                        }
-                        (
-                            sqlparser::ast::Expr::Identifier(left),
-                            sqlparser::ast::Expr::CompoundIdentifier(right)
-                        ) => {
-                            collect_idents(&[left.clone()], right, left_rel, right_rel)
-                                .map(|(left, right)| (left, right, vec![null_equals_null]))
-                        }
-                        _ => unsupported_sql_err!("process_join_on: Expected CompoundIdentifier, but found left: {:?}, right: {:?}", left, right),
-                        }
+                        collect_idents(&left, &right, left_rel, right_rel)
+                            .map(|(left, right)| (left, right, vec![null_equals_null]))
                     }
                     BinaryOperator::And => {
                         let (mut left_i, mut right_i, mut null_equals_nulls_i) =
@@ -1945,6 +1918,9 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> SQLPlannerResult<ExprRef> {
     Ok(exprs.into_iter().next().unwrap())
 }
 
+// ----------------
+// Helper functions
+// ----------------
 fn ident_to_str(ident: &Ident) -> String {
     if ident.quote_style == Some('"') {
         ident.value.to_string()
@@ -1952,12 +1928,21 @@ fn ident_to_str(ident: &Ident) -> String {
         ident.to_string()
     }
 }
+
 fn idents_to_str(idents: &[Ident]) -> String {
     idents
         .iter()
         .map(ident_to_str)
         .collect::<Vec<_>>()
         .join(".")
+}
+
+fn get_idents_vec(expr: &sqlparser::ast::Expr) -> SQLPlannerResult<Cow<Vec<Ident>>> {
+    match expr {
+        sqlparser::ast::Expr::Identifier(ident) => Ok(Cow::Owned(vec![ident.clone()])),
+        sqlparser::ast::Expr::CompoundIdentifier(idents) => Ok(Cow::Borrowed(idents)),
+        _ => invalid_operation_err!("expected an identifier"),
+    }
 }
 
 /// unresolves an alias in a projection
