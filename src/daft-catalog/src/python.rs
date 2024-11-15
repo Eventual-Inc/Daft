@@ -34,7 +34,7 @@ fn py_read_table(
     catalog_name: Option<&str>,
 ) -> PyResult<PyLogicalPlanBuilder> {
     let logical_plan_builder = global_catalog::GLOBAL_DAFT_META_CATALOG
-        .lock()
+        .read()
         .unwrap()
         .read_table(table_identifier, catalog_name)?;
     Ok(PyLogicalPlanBuilder::new(logical_plan_builder))
@@ -60,7 +60,7 @@ fn py_read_table(
 #[pyo3(name = "register_table")]
 fn py_register_table(table_identifier: &str, logical_plan: &PyLogicalPlanBuilder) -> String {
     global_catalog::GLOBAL_DAFT_META_CATALOG
-        .lock()
+        .write()
         .unwrap()
         .register_named_table(table_identifier, logical_plan.builder.clone());
     table_identifier.to_string()

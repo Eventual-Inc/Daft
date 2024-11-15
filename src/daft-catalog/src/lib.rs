@@ -15,21 +15,21 @@ pub mod python;
 use errors::Error;
 
 pub mod global_catalog {
-    use std::sync::{Arc, Mutex};
+    use std::sync::{Arc, RwLock};
 
     use lazy_static::lazy_static;
 
     use crate::{DaftMetaCatalog, DataCatalog};
 
     lazy_static! {
-        pub(crate) static ref GLOBAL_DAFT_META_CATALOG: Mutex<DaftMetaCatalog> =
-            Mutex::new(DaftMetaCatalog::new_from_env());
+        pub(crate) static ref GLOBAL_DAFT_META_CATALOG: RwLock<DaftMetaCatalog> =
+            RwLock::new(DaftMetaCatalog::new_from_env());
     }
 
     /// Register a DataCatalog with the global DaftMetaCatalog
     pub fn register_catalog(catalog: Arc<dyn DataCatalog>, name: Option<&str>) {
         GLOBAL_DAFT_META_CATALOG
-            .lock()
+            .write()
             .unwrap()
             .register_catalog(catalog, name);
     }
@@ -37,7 +37,7 @@ pub mod global_catalog {
     /// Unregisters a catalog with the global DaftMetaCatalog
     pub fn unregister_catalog(name: Option<&str>) -> bool {
         GLOBAL_DAFT_META_CATALOG
-            .lock()
+            .write()
             .unwrap()
             .unregister_catalog(name)
     }
