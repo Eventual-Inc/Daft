@@ -22,6 +22,7 @@ use snafu::Snafu;
 use crate::{
     hive::{hive_partitions_to_fields, hive_partitions_to_series, parse_hive_partitioning},
     scan_task_iters::{merge_by_sizes, split_by_row_groups, BoxScanTaskIter},
+    size_estimations::FileInferredEstimator,
     storage_config::StorageConfig,
     ChunkSpec, DataSource, ScanTask,
 };
@@ -35,6 +36,7 @@ pub struct GlobScanOperator {
     hive_partitioning: bool,
     partitioning_keys: Vec<PartitionField>,
     generated_fields: SchemaRef,
+    _size_estimator: Option<FileInferredEstimator>,
 }
 
 /// Wrapper struct that implements a sync Iterator for a BoxStream
@@ -179,6 +181,7 @@ impl GlobScanOperator {
             }
             .into()),
         }?;
+
         // If hive partitioning is set, create partition fields from the hive partitions.
         let mut partition_fields = if hive_partitioning {
             let hive_partitions = parse_hive_partitioning(&first_filepath)?;
@@ -186,6 +189,7 @@ impl GlobScanOperator {
         } else {
             vec![]
         };
+
         // If file path column is set, extend the partition fields.
         if let Some(fp_col) = &file_path_column {
             let fp_field = Field::new(fp_col, DataType::Utf8);
@@ -207,87 +211,110 @@ impl GlobScanOperator {
             (partitioning_keys, generated_fields)
         };
 
-        let schema = match infer_schema {
-            true => {
-                let inferred_schema = match file_format_config.as_ref() {
-                    &FileFormatConfig::Parquet(ParquetSourceConfig {
-                        coerce_int96_timestamp_unit,
-                        ref field_id_mapping,
-                        ..
-                    }) => {
-                        let io_stats = IOStatsContext::new(format!(
-                            "GlobScanOperator constructor read_parquet_schema: for uri {first_filepath}"
-                        ));
-
-                        let (schema, _metadata) = daft_parquet::read::read_parquet_schema(
-                            first_filepath.as_str(),
-                            io_client,
-                            Some(io_stats),
-                            ParquetSchemaInferenceOptions {
-                                coerce_int96_timestamp_unit,
-                                ..Default::default()
-                            },
-                            field_id_mapping.clone(),
-                        )?;
-
-                        schema
-                    }
-                    FileFormatConfig::Csv(CsvSourceConfig {
-                        delimiter,
-                        has_headers,
-                        double_quote,
-                        quote,
-                        escape_char,
-                        comment,
-                        allow_variable_columns,
-                        ..
-                    }) => {
-                        let (schema, _) = daft_csv::metadata::read_csv_schema(
-                            first_filepath.as_str(),
-                            Some(CsvParseOptions::new_with_defaults(
-                                *has_headers,
-                                *delimiter,
-                                *double_quote,
-                                *quote,
-                                *allow_variable_columns,
-                                *escape_char,
-                                *comment,
-                            )?),
-                            None,
-                            io_client,
-                            Some(io_stats),
-                        )?;
-                        schema
-                    }
-                    FileFormatConfig::Json(_) => daft_json::schema::read_json_schema(
-                        first_filepath.as_str(),
-                        None,
-                        None,
-                        io_client,
-                        Some(io_stats),
-                    )?,
-                    #[cfg(feature = "python")]
-                    FileFormatConfig::Database(_) => {
-                        return Err(DaftError::ValueError(
-                            "Cannot glob a database source".to_string(),
-                        ))
-                    }
-                    #[cfg(feature = "python")]
-                    FileFormatConfig::PythonFunction => {
-                        return Err(DaftError::ValueError(
-                            "Cannot glob a PythonFunction source".to_string(),
-                        ))
-                    }
-                };
-                match user_provided_schema {
-                    Some(hint) => Arc::new(inferred_schema.apply_hints(&hint)?),
-                    None => Arc::new(inferred_schema),
-                }
-            }
-            false => {
-                user_provided_schema.expect("Schema must be provided if infer_schema is false")
+        // Helper to handle schemas that are inferred from files, and resolve them against any user-provided schemas
+        let apply_user_provided_schema = |schema_from_file| -> DaftResult<SchemaRef> {
+            let final_schema = if infer_schema {
+                Arc::new(schema_from_file)
+            } else {
+                user_provided_schema
+                    .clone()
+                    .expect("Schema must be provided if infer_schema is false")
+            };
+            match user_provided_schema {
+                Some(hint) => Ok(Arc::new(final_schema.apply_hints(&hint)?)),
+                None => Ok(final_schema),
             }
         };
+
+        let (schema, size_estimator) = match file_format_config.as_ref() {
+            &FileFormatConfig::Parquet(ParquetSourceConfig {
+                coerce_int96_timestamp_unit,
+                ref field_id_mapping,
+                ..
+            }) => {
+                let io_stats = IOStatsContext::new(format!(
+                    "GlobScanOperator constructor read_parquet_schema: for uri {first_filepath}"
+                ));
+
+                let (schema_from_file, metadata) = daft_parquet::read::read_parquet_schema(
+                    first_filepath.as_str(),
+                    io_client,
+                    Some(io_stats),
+                    ParquetSchemaInferenceOptions {
+                        coerce_int96_timestamp_unit,
+                        ..Default::default()
+                    },
+                    field_id_mapping.clone(),
+                )?;
+                let final_schema = apply_user_provided_schema(schema_from_file)?;
+                let size_estimator =
+                    FileInferredEstimator::from_parquet_metadata(final_schema.clone(), &metadata);
+                (final_schema, Some(size_estimator))
+            }
+
+            FileFormatConfig::Csv(CsvSourceConfig {
+                delimiter,
+                has_headers,
+                double_quote,
+                quote,
+                escape_char,
+                comment,
+                allow_variable_columns,
+                ..
+            }) => {
+                let (schema_from_file, _csv_read_stats) = daft_csv::metadata::read_csv_schema(
+                    first_filepath.as_str(),
+                    Some(CsvParseOptions::new_with_defaults(
+                        *has_headers,
+                        *delimiter,
+                        *double_quote,
+                        *quote,
+                        *allow_variable_columns,
+                        *escape_char,
+                        *comment,
+                    )?),
+                    None,
+                    io_client,
+                    Some(io_stats),
+                )?;
+
+                // TODO: Make use of read CSV stats to create a FileInferredEstimator
+                // let size_estimator = FileInferredEstimator::from_csv_metadata(final_schema.clone(), &metadata);
+                let final_schema = apply_user_provided_schema(schema_from_file)?;
+                let size_estimator = None;
+                (final_schema, size_estimator)
+            }
+
+            FileFormatConfig::Json(_) => {
+                let schema_from_file = daft_json::schema::read_json_schema(
+                    first_filepath.as_str(),
+                    None,
+                    None,
+                    io_client,
+                    Some(io_stats),
+                )?;
+
+                // TODO: Make use of read JSON stats to create a FileInferredEstimator
+                // let size_estimator = FileInferredEstimator::from_json_metadata(final_schema.clone(), &metadata);
+                let final_schema = apply_user_provided_schema(schema_from_file)?;
+                let size_estimator = None;
+                (final_schema, size_estimator)
+            }
+
+            #[cfg(feature = "python")]
+            FileFormatConfig::Database(_) => {
+                return Err(DaftError::ValueError(
+                    "Cannot glob a database source".to_string(),
+                ))
+            }
+            #[cfg(feature = "python")]
+            FileFormatConfig::PythonFunction => {
+                return Err(DaftError::ValueError(
+                    "Cannot glob a PythonFunction source".to_string(),
+                ))
+            }
+        };
+
         Ok(Self {
             glob_paths,
             file_format_config,
@@ -297,6 +324,7 @@ impl GlobScanOperator {
             hive_partitioning,
             partitioning_keys,
             generated_fields: Arc::new(generated_fields),
+            _size_estimator: size_estimator,
         })
     }
 }

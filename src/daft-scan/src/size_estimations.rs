@@ -4,6 +4,7 @@ use common_scan_info::Pushdowns;
 use daft_core::prelude::*;
 
 /// An estimator that can be derived/inferred from reading a file (e.g. CSV, JSON or Parquet)
+#[derive(Debug)]
 pub struct FileInferredEstimator {
     /// Schema of the data
     schema: SchemaRef,
