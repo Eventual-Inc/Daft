@@ -152,7 +152,7 @@ impl LocalPhysicalPlan {
 
     pub(crate) fn ungrouped_aggregate(
         input: LocalPhysicalPlanRef,
-        aggregations: Vec<AggExpr>,
+        aggregations: Vec<ExprRef>,
         schema: SchemaRef,
     ) -> LocalPhysicalPlanRef {
         Self::UnGroupedAggregate(UnGroupedAggregate {
@@ -166,7 +166,7 @@ impl LocalPhysicalPlan {
 
     pub(crate) fn hash_aggregate(
         input: LocalPhysicalPlanRef,
-        aggregations: Vec<AggExpr>,
+        aggregations: Vec<ExprRef>,
         group_by: Vec<ExprRef>,
         schema: SchemaRef,
     ) -> LocalPhysicalPlanRef {
@@ -429,7 +429,7 @@ pub struct Sample {
 #[derive(Debug)]
 pub struct UnGroupedAggregate {
     pub input: LocalPhysicalPlanRef,
-    pub aggregations: Vec<AggExpr>,
+    pub aggregations: Vec<ExprRef>,
     pub schema: SchemaRef,
     pub plan_stats: PlanStats,
 }
@@ -437,7 +437,7 @@ pub struct UnGroupedAggregate {
 #[derive(Debug)]
 pub struct HashAggregate {
     pub input: LocalPhysicalPlanRef,
-    pub aggregations: Vec<AggExpr>,
+    pub aggregations: Vec<ExprRef>,
     pub group_by: Vec<ExprRef>,
     pub schema: SchemaRef,
     pub plan_stats: PlanStats,

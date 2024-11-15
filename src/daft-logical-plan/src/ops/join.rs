@@ -9,7 +9,7 @@ use daft_dsl::{
     col,
     join::{get_common_join_keys, infer_join_schema},
     optimization::replace_columns_with_expressions,
-    resolve_exprs, Expr, ExprRef,
+    Expr, ExprRef, ExprResolver,
 };
 use itertools::Itertools;
 use snafu::ResultExt;
@@ -66,9 +66,14 @@ impl Join {
         // In SQL the join column is always kept, while in dataframes it is not
         keep_join_keys: bool,
     ) -> logical_plan::Result<Self> {
-        let (left_on, _) = resolve_exprs(left_on, &left.schema(), false).context(CreationSnafu)?;
-        let (right_on, _) =
-            resolve_exprs(right_on, &right.schema(), false).context(CreationSnafu)?;
+        let expr_resolver = ExprResolver::default();
+
+        let (left_on, _) = expr_resolver
+            .resolve(left_on, &left.schema())
+            .context(CreationSnafu)?;
+        let (right_on, _) = expr_resolver
+            .resolve(right_on, &right.schema())
+            .context(CreationSnafu)?;
 
         let (unique_left_on, unique_right_on) =
             Self::rename_join_keys(left_on.clone(), right_on.clone());

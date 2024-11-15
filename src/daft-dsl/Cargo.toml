@@ -13,6 +13,7 @@ itertools = {workspace = true}
 log = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
+typed-builder = {workspace = true}
 typetag = {workspace = true}
 
 [features]

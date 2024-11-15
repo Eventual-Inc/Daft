@@ -6,8 +6,8 @@ use common_treenode::Transformed;
 use super::{
     logical_plan_tracker::LogicalPlanTracker,
     rules::{
-        DropRepartition, EliminateCrossJoin, OptimizerRule, PushDownFilter, PushDownLimit,
-        PushDownProjection, SplitActorPoolProjects,
+        DropRepartition, EliminateCrossJoin, LiftProjectFromAgg, OptimizerRule, PushDownFilter,
+        PushDownLimit, PushDownProjection, SplitActorPoolProjects,
     },
 };
 use crate::LogicalPlan;
@@ -105,6 +105,12 @@ impl Optimizer {
                 RuleExecutionStrategy::Once,
             ));
         }
+
+        // --- Rewrite rules ---
+        rule_batches.push(RuleBatch::new(
+            vec![Box::new(LiftProjectFromAgg::new())],
+            RuleExecutionStrategy::Once,
+        ));
 
         // --- Bulk of our rules ---
         rule_batches.push(RuleBatch::new(

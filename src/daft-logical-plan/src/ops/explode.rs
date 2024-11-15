@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use daft_dsl::{resolve_exprs, ExprRef};
+use daft_dsl::{ExprRef, ExprResolver};
 use daft_schema::schema::{Schema, SchemaRef};
 use itertools::Itertools;
 use snafu::ResultExt;
@@ -26,8 +26,11 @@ impl Explode {
     ) -> logical_plan::Result<Self> {
         let upstream_schema = input.schema();
 
-        let (to_explode, _) =
-            resolve_exprs(to_explode, &upstream_schema, false).context(CreationSnafu)?;
+        let expr_resolver = ExprResolver::default();
+
+        let (to_explode, _) = expr_resolver
+            .resolve(to_explode, &upstream_schema)
+            .context(CreationSnafu)?;
 
         let explode_exprs = to_explode
             .iter()

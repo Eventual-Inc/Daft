@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftError;
 use daft_core::prelude::*;
-use daft_dsl::{resolve_single_expr, ExprRef};
+use daft_dsl::{ExprRef, ExprResolver};
 use snafu::ResultExt;
 
 use crate::{
@@ -20,8 +20,11 @@ pub struct Filter {
 
 impl Filter {
     pub(crate) fn try_new(input: Arc<LogicalPlan>, predicate: ExprRef) -> Result<Self> {
-        let (predicate, field) =
-            resolve_single_expr(predicate, &input.schema(), false).context(CreationSnafu)?;
+        let expr_resolver = ExprResolver::default();
+
+        let (predicate, field) = expr_resolver
+            .resolve_single(predicate, &input.schema())
+            .context(CreationSnafu)?;
 
         if !matches!(field.dtype, DataType::Boolean) {
             return Err(DaftError::ValueError(format!(

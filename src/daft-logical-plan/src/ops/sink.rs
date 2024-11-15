@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_core::prelude::*;
-use daft_dsl::resolve_exprs;
+use daft_dsl::ExprResolver;
 
 #[cfg(feature = "python")]
 use crate::sink_info::CatalogType;
@@ -30,10 +30,14 @@ impl Sink {
                 compression,
                 io_config,
             }) => {
+                let expr_resolver = ExprResolver::default();
+
                 let resolved_partition_cols = partition_cols
                     .clone()
                     .map(|cols| {
-                        resolve_exprs(cols, &schema, false).map(|(resolved_cols, _)| resolved_cols)
+                        expr_resolver
+                            .resolve(cols, &schema)
+                            .map(|(resolved_cols, _)| resolved_cols)
                     })
                     .transpose()?;
 
