@@ -109,35 +109,42 @@ impl DaftMetaCatalog {
     ///
     /// Resolves the provided table_identifier against the catalog:
     ///
-    /// 1. If there is an exact match for the provided `table_identifier` in the catalog's registered views, immediately return the exact match
+    /// 1. If there is an exact match for the provided `table_identifier` in the catalog's registered named tables, immediately return the exact match
     /// 2. If the [`DaftMetaCatalog`] has a default catalog, we will attempt to resolve the `table_identifier` against the default catalog
     /// 3. If the `table_identifier` is hierarchical (delimited by "."), use the first component as the Data Catalog name and resolve the rest of the components against
     ///     the selected Data Catalog
-    pub fn read_table(
-        &self,
-        table_identifier: &str,
-        catalog_name: Option<&str>,
-    ) -> errors::Result<LogicalPlanBuilder> {
+    pub fn read_table(&self, table_identifier: &str) -> errors::Result<LogicalPlanBuilder> {
         // If the name is an exact match with a registered view, return it.
         if let Some(view) = self.named_tables.get(table_identifier) {
             return Ok(view.clone());
         }
 
-        // Otherwise, check the catalogs for a match
-        let catalog_name = catalog_name.unwrap_or(DEFAULT_CATALOG_NAME);
-        if let Some(data_catalog) = self.data_catalogs.get(catalog_name) {
-            if let Some(tbl) = data_catalog.get_table(table_identifier)? {
-                tbl.as_ref().to_logical_plan_builder()
-            } else {
-                Err(Error::TableNotFound {
-                    table_id: table_identifier.to_string(),
-                })
+        let mut searched_catalog_name = "default";
+        let mut searched_table_name = table_identifier;
+
+        // Check the default catalog for a match
+        if let Some(default_data_catalog) = self.data_catalogs.get(DEFAULT_CATALOG_NAME) {
+            if let Some(tbl) = default_data_catalog.get_table(table_identifier)? {
+                return tbl.as_ref().to_logical_plan_builder();
             }
-        } else {
-            Err(Error::CatalogNotFound {
-                name: catalog_name.to_string(),
-            })
         }
+
+        // Try to parse the catalog name from the provided table identifier by taking the first segment, split by '.'
+        if let Some((catalog_name, table_name)) = table_identifier.split_once('.') {
+            if let Some(data_catalog) = self.data_catalogs.get(catalog_name) {
+                searched_catalog_name = catalog_name;
+                searched_table_name = table_name;
+                if let Some(tbl) = data_catalog.get_table(table_name)? {
+                    return tbl.as_ref().to_logical_plan_builder();
+                }
+            }
+        }
+
+        // Return the error containing the last catalog/table pairing that we attempted to search on
+        Err(Error::TableNotFound {
+            catalog_name: searched_catalog_name.to_string(),
+            table_id: searched_table_name.to_string(),
+        })
     }
 }
 
@@ -195,7 +202,7 @@ mod tests {
 
         catalog.register_named_table("test_table", plan).unwrap();
 
-        assert!(catalog.read_table("test_table", None).is_ok());
-        assert!(catalog.read_table("non_existent_table", None).is_err());
+        assert!(catalog.read_table("test_table").is_ok());
+        assert!(catalog.read_table("non_existent_table").is_err());
     }
 }

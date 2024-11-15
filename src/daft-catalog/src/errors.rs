@@ -2,8 +2,15 @@ use snafu::Snafu;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
-    #[snafu(display("Failed to find specified table identifier: {}", table_id))]
-    TableNotFound { table_id: String },
+    #[snafu(display(
+        "Failed to find specified table identifier {} in the requested catalog {}",
+        catalog_name,
+        table_id
+    ))]
+    TableNotFound {
+        catalog_name: String,
+        table_id: String,
+    },
 
     #[snafu(display("Catalog not found: {}", name))]
     CatalogNotFound { name: String },

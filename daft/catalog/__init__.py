@@ -72,22 +72,22 @@ __all__ = [
 unregister_catalog = native_catalog.unregister_catalog
 
 
-def read_table(name: str, catalog_name: str | None = None) -> DataFrame:
+def read_table(name: str) -> DataFrame:
     """Finds a table with the specified name and reads it as a DataFrame
 
-    The order of finding the table is:
+    The provided name can be any of the following, and Daft will return them with the following order of priority:
 
-    1. Any tables registered with `daft.register_named_table()`
-    2. Tables in the configured default Data Catalog
+    1. Name of a registered dataframe/SQL view (manually registered using `daft.register_table`): `"my_registered_table"`
+    2. Name of a table within the default catalog (without inputting the catalog name) for example: `"my.table.name"`
+    3. Name of a fully-qualified table path with the catalog name for example: `"my_catalog.my.table.name"`
 
     Args:
-        name: The name of the table to read. This can be a fully-qualified name (e.g. "catalog.database.table") or a simple name (e.g. "table").
-        catalog_name: The name of the catalog to find this table from. If not provided, this will first search the available registered named tables, then the default catalog (if configured).
+        name: The identifier for the table to read
 
     Returns:
         A DataFrame containing the data from the specified table.
     """
-    native_logical_plan_builder = native_catalog.read_table(name, catalog_name=catalog_name)
+    native_logical_plan_builder = native_catalog.read_table(name)
     return DataFrame(LogicalPlanBuilder(native_logical_plan_builder))
 
 

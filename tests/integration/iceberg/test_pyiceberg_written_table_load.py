@@ -52,7 +52,7 @@ def table_written_by_daft(local_pyiceberg_catalog):
 def test_pyiceberg_written_catalog(local_iceberg_catalog):
     catalog_name, local_pyiceberg_catalog = local_iceberg_catalog
     with table_written_by_pyiceberg(local_pyiceberg_catalog) as catalog_table_name:
-        df = daft.read_table(catalog_table_name, catalog_name=catalog_name)
+        df = daft.read_table(f"{catalog_name}.{catalog_table_name}")
         daft_pandas = df.to_pandas()
         iceberg_pandas = local_pyiceberg_catalog.load_table(catalog_table_name).scan().to_arrow().to_pandas()
         assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
@@ -63,7 +63,7 @@ def test_pyiceberg_written_catalog(local_iceberg_catalog):
 def test_daft_written_catalog(local_iceberg_catalog):
     catalog_name, local_pyiceberg_catalog = local_iceberg_catalog
     with table_written_by_daft(local_pyiceberg_catalog) as catalog_table_name:
-        df = daft.read_table(catalog_table_name, catalog_name=catalog_name)
+        df = daft.read_table(f"{catalog_name}.{catalog_table_name}")
         daft_pandas = df.to_pandas()
         iceberg_pandas = local_pyiceberg_catalog.load_table(catalog_table_name).scan().to_arrow().to_pandas()
         assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])

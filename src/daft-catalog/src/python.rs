@@ -11,12 +11,11 @@ use crate::global_catalog;
 /// The provided `table_identifier` can be:
 ///
 /// 1. Name of a registered dataframe/SQL view (manually registered using `DaftMetaCatalog.register_view`)
-/// 2. Name of a table within the default catalog (without inputting the catalog name)
-/// 3. Name of a fully-qualitied table path ("<catalog_name>.<table_name>")
+/// 2. Name of a table within the default catalog (without inputting the catalog name) for example: `"my.table.name"`
+/// 3. Name of a fully-qualified table path with the catalog name for example: `"my_catalog.my.table.name"`
 ///
 /// Args:
 ///     table_identifier (str): The identifier of the table to read.
-///     catalog_name (str): The name of the catalog to find this table in (optional, and will use the default catalog if not provided)
 ///
 /// Returns:
 ///     PyLogicalPlanBuilder: A PyLogicalPlanBuilder object representing the table's data.
@@ -29,14 +28,11 @@ use crate::global_catalog;
 ///     >>> df = daft.read_table("foo")
 #[pyfunction]
 #[pyo3(name = "read_table")]
-fn py_read_table(
-    table_identifier: &str,
-    catalog_name: Option<&str>,
-) -> PyResult<PyLogicalPlanBuilder> {
+fn py_read_table(table_identifier: &str) -> PyResult<PyLogicalPlanBuilder> {
     let logical_plan_builder = global_catalog::GLOBAL_DAFT_META_CATALOG
         .read()
         .unwrap()
-        .read_table(table_identifier, catalog_name)?;
+        .read_table(table_identifier)?;
     Ok(PyLogicalPlanBuilder::new(logical_plan_builder))
 }
 
