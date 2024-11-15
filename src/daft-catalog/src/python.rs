@@ -58,12 +58,15 @@ fn py_read_table(
 ///     >>> daft.register_table("my_table", df)
 #[pyfunction]
 #[pyo3(name = "register_table")]
-fn py_register_table(table_identifier: &str, logical_plan: &PyLogicalPlanBuilder) -> String {
+fn py_register_table(
+    table_identifier: &str,
+    logical_plan: &PyLogicalPlanBuilder,
+) -> PyResult<String> {
     global_catalog::GLOBAL_DAFT_META_CATALOG
         .write()
         .unwrap()
-        .register_named_table(table_identifier, logical_plan.builder.clone());
-    table_identifier.to_string()
+        .register_named_table(table_identifier, logical_plan.builder.clone())?;
+    Ok(table_identifier.to_string())
 }
 
 /// Unregisters a catalog from the Daft catalog system

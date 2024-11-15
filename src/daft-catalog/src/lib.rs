@@ -12,7 +12,7 @@ pub use data_catalog_table::DataCatalogTable;
 #[cfg(feature = "python")]
 pub mod python;
 
-use errors::Error;
+use errors::{Error, Result};
 
 pub mod global_catalog {
     use std::sync::{Arc, RwLock};
@@ -95,8 +95,14 @@ impl DaftMetaCatalog {
     }
 
     /// Registers a LogicalPlan with a name in the DaftMetaCatalog
-    pub fn register_named_table(&mut self, name: &str, view: LogicalPlanBuilder) {
+    pub fn register_named_table(&mut self, name: &str, view: LogicalPlanBuilder) -> Result<()> {
+        if !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+            return Err(Error::InvalidTableName {
+                name: name.to_string(),
+            });
+        }
         self.named_tables.insert(name.to_string(), view);
+        Ok(())
     }
 
     /// Provides high-level functionality for reading a table of data against a [`DaftMetaCatalog`]

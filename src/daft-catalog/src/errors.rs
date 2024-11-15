@@ -8,6 +8,12 @@ pub enum Error {
     #[snafu(display("Catalog not found: {}", name))]
     CatalogNotFound { name: String },
 
+    #[snafu(display(
+        "Invalid table name (expected only alphanumeric characters and '_'): {}",
+        name
+    ))]
+    InvalidTableName { name: String },
+
     #[cfg(feature = "python")]
     #[snafu(display("Python error during {}: {}", context, source))]
     PythonError {
@@ -21,7 +27,9 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 impl From<Error> for common_error::DaftError {
     fn from(err: Error) -> Self {
         match &err {
-            Error::TableNotFound { .. } | Error::CatalogNotFound { .. } => {
+            Error::TableNotFound { .. }
+            | Error::CatalogNotFound { .. }
+            | Error::InvalidTableName { .. } => {
                 common_error::DaftError::CatalogError(err.to_string())
             }
             #[cfg(feature = "python")]
