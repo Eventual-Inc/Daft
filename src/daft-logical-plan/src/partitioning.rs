@@ -237,6 +237,7 @@ fn translate_clustering_spec_expr(
         },
         Expr::Literal(_) => Ok(clustering_spec_expr.clone()),
         Expr::Subquery(_) => Ok(clustering_spec_expr.clone()),
+        Expr::Exists(_) => Ok(clustering_spec_expr.clone()),
         Expr::Alias(child, name) => {
             let newchild = translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
             Ok(newchild.alias(name.clone()))
