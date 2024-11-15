@@ -111,6 +111,15 @@ def test_is_in():
     assert actual == expected
 
 
+def test_is_in_exprs():
+    df = daft.from_pydict({"x": [1, 2, 3, 5, 9]})
+    expected = {"x": [1, 2, 9]}
+    catalog = SQLCatalog({"df": df})
+    actual = daft.sql("select * from df where x in (0 + 1, 0 + 2, 0 + 9)", catalog).collect().to_pydict()
+
+    assert actual == expected
+
+
 def test_is_in_edge_cases():
     df = daft.from_pydict(
         {
@@ -138,7 +147,7 @@ def test_is_in_edge_cases():
     expected = df.filter(col("nums").is_in([1])).collect().to_pydict()
 
     # Test with mixed types in the IN list
-    with pytest.raises(Exception, match="All literals must have the same data type"):
+    with pytest.raises(Exception, match="arguments to be of the same type"):
         daft.sql("SELECT * FROM df WHERE nums IN (1, '2', 3.0)").collect().to_pydict()
 
 

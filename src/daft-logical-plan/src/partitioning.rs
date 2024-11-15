@@ -291,7 +291,10 @@ fn translate_clustering_spec_expr(
         }
         Expr::IsIn(child, items) => {
             let newchild = translate_clustering_spec_expr(child, old_colname_to_new_colname)?;
-            let newitems = translate_clustering_spec_expr(items, old_colname_to_new_colname)?;
+            let newitems = items
+                .iter()
+                .map(|e| translate_clustering_spec_expr(e, old_colname_to_new_colname))
+                .collect::<Result<Vec<_>, _>>()?;
             Ok(newchild.is_in(newitems))
         }
         Expr::Between(child, lower, upper) => {
