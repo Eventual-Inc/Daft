@@ -266,12 +266,23 @@ fn replace_column_with_semantic_id(
             Expr::IsIn(child, items) => {
                 let child =
                     replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema);
-                let items =
-                    replace_column_with_semantic_id(items.clone(), subexprs_to_replace, schema);
-                if !child.transformed && !items.transformed {
+
+                let transforms = items
+                    .iter()
+                    .map(|e| {
+                        replace_column_with_semantic_id(e.clone(), subexprs_to_replace, schema)
+                    })
+                    .collect::<Vec<_>>();
+                if !child.transformed && transforms.iter().all(|e| !e.transformed) {
                     Transformed::no(e)
                 } else {
-                    Transformed::yes(Expr::IsIn(child.data, items.data).into())
+                    Transformed::yes(
+                        Expr::IsIn(
+                            child.data,
+                            transforms.iter().map(|t| t.data.clone()).collect(),
+                        )
+                        .into(),
+                    )
                 }
             }
             Expr::Between(child, lower, upper) => {

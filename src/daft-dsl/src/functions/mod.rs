@@ -5,7 +5,6 @@ pub mod python;
 pub mod scalar;
 pub mod sketch;
 pub mod struct_;
-pub mod utf8;
 
 use std::{
     fmt::{Display, Formatter, Result, Write},
@@ -18,15 +17,11 @@ use python::PythonUDF;
 pub use scalar::*;
 use serde::{Deserialize, Serialize};
 
-use self::{
-    map::MapExpr, partitioning::PartitioningExpr, sketch::SketchExpr, struct_::StructExpr,
-    utf8::Utf8Expr,
-};
+use self::{map::MapExpr, partitioning::PartitioningExpr, sketch::SketchExpr, struct_::StructExpr};
 use crate::{Expr, ExprRef, Operator};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum FunctionExpr {
-    Utf8(Utf8Expr),
     Map(MapExpr),
     Sketch(SketchExpr),
     Struct(StructExpr),
@@ -49,7 +44,6 @@ impl FunctionExpr {
     #[inline]
     fn get_evaluator(&self) -> &dyn FunctionEvaluator {
         match self {
-            Self::Utf8(expr) => expr.get_evaluator(),
             Self::Map(expr) => expr.get_evaluator(),
             Self::Sketch(expr) => expr.get_evaluator(),
             Self::Struct(expr) => expr.get_evaluator(),
@@ -102,6 +96,22 @@ pub fn function_display_without_formatter(
 ) -> std::result::Result<String, std::fmt::Error> {
     let mut f = String::default();
     write!(&mut f, "{}(", func)?;
+    for (i, input) in inputs.iter().enumerate() {
+        if i != 0 {
+            write!(&mut f, ", ")?;
+        }
+        write!(&mut f, "{input}")?;
+    }
+    write!(&mut f, ")")?;
+    Ok(f)
+}
+
+pub fn is_in_display_without_formatter(
+    expr: &ExprRef,
+    inputs: &[ExprRef],
+) -> std::result::Result<String, std::fmt::Error> {
+    let mut f = String::default();
+    write!(&mut f, "{expr} IN (")?;
     for (i, input) in inputs.iter().enumerate() {
         if i != 0 {
             write!(&mut f, ", ")?;

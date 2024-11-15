@@ -7,12 +7,13 @@ use std::{
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 use daft_dsl::{
-    col,
-    functions::utf8::{ilike, like, to_date, to_datetime},
-    has_agg, lit, literals_to_series, null_lit, AggExpr, Expr, ExprRef, LiteralValue, Operator,
-    Subquery,
+    col, has_agg, lit, literals_to_series, null_lit, AggExpr, Expr, ExprRef, LiteralValue,
+    Operator, Subquery,
 };
-use daft_functions::numeric::{ceil::ceil, floor::floor};
+use daft_functions::{
+    numeric::{ceil::ceil, floor::floor},
+    utf8::{ilike, like, to_date, to_datetime},
+};
 use daft_logical_plan::{LogicalPlanBuilder, LogicalPlanRef};
 use sqlparser::{
     ast::{
@@ -1073,13 +1074,6 @@ impl SQLPlanner {
         })
     }
 
-    fn plan_lit(&self, expr: &sqlparser::ast::Expr) -> SQLPlannerResult<LiteralValue> {
-        if let sqlparser::ast::Expr::Value(v) = expr {
-            self.value_to_lit(v)
-        } else {
-            invalid_operation_err!("Only string, number, boolean and null literals are supported. Instead found: `{expr}`");
-        }
-    }
     pub(crate) fn plan_expr(&self, expr: &sqlparser::ast::Expr) -> SQLPlannerResult<ExprRef> {
         use sqlparser::ast::Expr as SQLExpr;
         match expr {
@@ -1133,14 +1127,10 @@ impl SQLPlanner {
                 let expr = self.plan_expr(expr)?;
                 let list = list
                     .iter()
-                    .map(|e| self.plan_lit(e))
+                    .map(|e| self.plan_expr(e))
                     .collect::<SQLPlannerResult<Vec<_>>>()?;
-                // We should really have a better way to use `is_in` instead of all of this extra wrapping of the values
-                let series = literals_to_series(&list)?;
-                let series_lit = LiteralValue::Series(series);
-                let series_expr = Expr::Literal(series_lit);
-                let series_expr_arc = Arc::new(series_expr);
-                let expr = expr.is_in(series_expr_arc);
+
+                let expr = expr.is_in(list);
                 if *negated {
                     Ok(expr.not())
                 } else {
@@ -1261,7 +1251,7 @@ impl SQLPlanner {
                 let start = self.plan_expr(substring_from)?;
                 let length = self.plan_expr(substring_for)?;
 
-                Ok(daft_dsl::functions::utf8::substr(expr, start, length))
+                Ok(daft_functions::utf8::substr(expr, start, length))
             }
             SQLExpr::Substring { special: false, .. } => {
                 unsupported_sql_err!("`SUBSTRING(expr [FROM start] [FOR len])` syntax")
