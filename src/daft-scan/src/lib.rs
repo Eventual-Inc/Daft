@@ -19,6 +19,7 @@ mod hive;
 use common_daft_config::DaftExecutionConfig;
 pub mod builder;
 pub mod scan_task_iters;
+pub mod size_estimations;
 
 #[cfg(feature = "python")]
 pub mod python;
@@ -445,7 +446,7 @@ impl ScanTask {
         storage_config: Arc<StorageConfig>,
         pushdowns: Pushdowns,
         generated_fields: Option<SchemaRef>,
-        estimated_size_bytes_in_memory: Option<usize>,
+        estimated_materialized_size_bytes: Option<usize>,
     ) -> Self {
         assert!(!sources.is_empty());
         debug_assert!(
@@ -487,7 +488,7 @@ impl ScanTask {
             metadata,
             statistics,
             generated_fields,
-            estimated_materialized_size_bytes: estimated_size_bytes_in_memory,
+            estimated_materialized_size_bytes,
         }
     }
 

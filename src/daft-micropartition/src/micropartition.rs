@@ -1160,12 +1160,36 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
         });
 
         let owned_urls = uris.iter().map(|s| (*s).to_string());
-        let size_bytes = metadata
+        let size_bytes_per_file = metadata.iter().map(|m| -> usize {
+            std::iter::Sum::sum(m.row_groups.values().map(|m| m.total_byte_size()))
+        });
+
+        // Create the pushdowns to apply
+        let pushdowns = Pushdowns::new(
+            None,
+            None,
+            columns.map(|cols| {
+                Arc::new(
+                    cols.iter()
+                        .map(|v| v.as_ref().to_string())
+                        .collect::<Vec<_>>(),
+                )
+            }),
+            num_rows,
+        );
+
+        // Estimate the size of the materialized ScanTask on disk (TODO: extend to take in more than one FileMetadata)
+        let estimator = daft_scan::size_estimations::FileInferredEstimator::from_parquet_metadata(
+            scan_task_daft_schema.clone(),
+            metadata.first().unwrap(),
+        );
+        let sizes_on_disk: Vec<usize> = size_bytes_per_file.collect();
+        let estimated_materialized_size_bytes = sizes_on_disk
             .iter()
-            .map(|m| -> u64 {
-                std::iter::Sum::sum(m.row_groups.values().map(|m| m.total_byte_size() as u64))
-            })
+            .map(|&size_on_disk| estimator.estimate_from_size_on_disk(size_on_disk, &pushdowns))
             .sum();
+        // TODO(jay): This seems wrong, as this is the sum of the sizes of all the files rather than individual files
+        let size_bytes = sizes_on_disk.iter().map(|&x| x as u64).sum();
 
         let scan_task = ScanTask::new(
             owned_urls
@@ -1203,20 +1227,9 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
                 .into(),
             )
             .into(),
-            Pushdowns::new(
-                None,
-                None,
-                columns.map(|cols| {
-                    Arc::new(
-                        cols.iter()
-                            .map(|v| v.as_ref().to_string())
-                            .collect::<Vec<_>>(),
-                    )
-                }),
-                num_rows,
-            ),
+            pushdowns,
             generated_fields,
-            None, // TODO: Add estimations of size in bytes (Parquet metadata)
+            estimated_materialized_size_bytes,
         );
 
         let fill_map = scan_task.partition_spec().map(|pspec| pspec.to_fill_map());
