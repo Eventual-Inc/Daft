@@ -268,7 +268,7 @@ fn replace_column_with_semantic_id(
                         replace_column_with_semantic_id(e.clone(), subexprs_to_replace, schema)
                     })
                     .collect::<Vec<_>>();
-                if transforms.iter().all(|e| !e.transformed) {
+                if !child.transformed && transforms.iter().all(|e| !e.transformed) {
                     Transformed::no(e)
                 } else {
                     Transformed::yes(
