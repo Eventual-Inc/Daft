@@ -68,12 +68,13 @@ impl Relation {
     }
 }
 
-struct GlobalPlanInfo {
+/// Context that is shared across a query and its subqueries
+struct PlannerContext {
     catalog: SQLCatalog,
     cte_map: HashMap<String, Relation>,
 }
 
-impl Default for GlobalPlanInfo {
+impl Default for PlannerContext {
     fn default() -> Self {
         Self {
             catalog: SQLCatalog::new(),
@@ -87,25 +88,25 @@ pub struct SQLPlanner<'a> {
     current_relation: Option<Relation>,
     table_map: HashMap<String, Relation>,
     parent: Option<&'a SQLPlanner<'a>>,
-    global_info: Rc<RefCell<GlobalPlanInfo>>,
+    planner_context: Rc<RefCell<PlannerContext>>,
 }
 
 impl<'a> SQLPlanner<'a> {
-    pub fn new(context: SQLCatalog) -> Self {
-        let global_info = Rc::new(RefCell::new(GlobalPlanInfo {
-            catalog: context,
+    pub fn new(catalog: SQLCatalog) -> Self {
+        let planner_context = Rc::new(RefCell::new(PlannerContext {
+            catalog,
             ..Default::default()
         }));
 
         Self {
-            global_info,
+            planner_context,
             ..Default::default()
         }
     }
 
     fn new_child(&'a self) -> Self {
         Self {
-            global_info: self.global_info.clone(),
+            planner_context: self.planner_context.clone(),
             parent: Some(self),
             ..Default::default()
         }
@@ -122,23 +123,23 @@ impl<'a> SQLPlanner<'a> {
         self.current_relation.as_ref()
     }
 
-    fn global_info_mut(&self) -> RefMut<'_, GlobalPlanInfo> {
-        self.global_info.as_ref().borrow_mut()
+    fn planner_context_mut(&self) -> RefMut<'_, PlannerContext> {
+        self.planner_context.as_ref().borrow_mut()
     }
 
     fn cte_map(&self) -> Ref<'_, HashMap<String, Relation>> {
-        Ref::map(self.global_info.borrow(), |i| &i.cte_map)
+        Ref::map(self.planner_context.borrow(), |i| &i.cte_map)
     }
 
     fn catalog(&self) -> Ref<'_, SQLCatalog> {
-        Ref::map(self.global_info.borrow(), |i| &i.catalog)
+        Ref::map(self.planner_context.borrow(), |i| &i.catalog)
     }
 
     /// Clears the current context used for planning a SQL query
     fn clear_context(&mut self) {
         self.current_relation = None;
         self.table_map.clear();
-        self.global_info_mut().cte_map.clear();
+        self.planner_context_mut().cte_map.clear();
     }
 
     fn register_cte(&self, mut rel: Relation, column_aliases: &[Ident]) -> SQLPlannerResult<()> {
@@ -161,7 +162,9 @@ impl<'a> SQLPlanner<'a> {
 
             rel.inner = rel.inner.select(projection)?;
         }
-        self.global_info_mut().cte_map.insert(rel.get_name(), rel);
+        self.planner_context_mut()
+            .cte_map
+            .insert(rel.get_name(), rel);
         Ok(())
     }
 
@@ -983,12 +986,17 @@ impl<'a> SQLPlanner<'a> {
     }
 
     fn plan_identifier(&self, idents: &[Ident]) -> SQLPlannerResult<ExprRef> {
-        let outer_col = self.find_ident_in_queries(idents)?;
+        if self.current_relation.is_some() {
+            let outer_col = self.find_ident_in_queries(idents)?;
 
-        if outer_col.depth == 0 {
-            Ok(Arc::new(Expr::Column(outer_col.field.name.into())))
+            if outer_col.depth == 0 {
+                Ok(Arc::new(Expr::Column(outer_col.field.name.into())))
+            } else {
+                Ok(Arc::new(Expr::OuterReferenceColumn(outer_col)))
+            }
         } else {
-            Ok(Arc::new(Expr::OuterReferenceColumn(outer_col)))
+            // if the current relation is not resolved (e.g. in a `sql_expr` call, simply wrap identifier in a col)
+            Ok(col(idents_to_str(idents)))
         }
     }
 
