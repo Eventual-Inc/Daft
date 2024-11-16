@@ -1,3 +1,5 @@
+#![feature(let_chains)]
+
 pub mod catalog;
 pub mod error;
 pub mod functions;
@@ -106,7 +108,7 @@ mod tests {
     }
 
     #[fixture]
-    fn planner() -> SQLPlanner {
+    fn planner() -> SQLPlanner<'static> {
         let mut catalog = SQLCatalog::new();
 
         catalog.register_table("tbl1", tbl_1());

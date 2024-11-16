@@ -1,6 +1,8 @@
 use std::{
     borrow::Cow,
+    cell::{Ref, RefCell, RefMut},
     collections::{HashMap, HashSet},
+    rc::Rc,
     sync::Arc,
 };
 
@@ -8,7 +10,7 @@ use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 use daft_dsl::{
     col, has_agg, lit, literals_to_series, null_lit, AggExpr, Expr, ExprRef, LiteralValue,
-    Operator, Subquery,
+    Operator, OuterReferenceColumn, Subquery,
 };
 use daft_functions::{
     numeric::{ceil::ceil, floor::floor},
@@ -66,29 +68,45 @@ impl Relation {
     }
 }
 
-#[derive(Clone)]
-pub struct SQLPlanner {
+struct GlobalPlanInfo {
     catalog: SQLCatalog,
-    current_relation: Option<Relation>,
-    table_map: HashMap<String, Relation>,
     cte_map: HashMap<String, Relation>,
 }
 
-impl Default for SQLPlanner {
+impl Default for GlobalPlanInfo {
     fn default() -> Self {
         Self {
             catalog: SQLCatalog::new(),
-            current_relation: Default::default(),
-            table_map: Default::default(),
             cte_map: Default::default(),
         }
     }
 }
 
-impl SQLPlanner {
+#[derive(Default)]
+pub struct SQLPlanner<'a> {
+    current_relation: Option<Relation>,
+    table_map: HashMap<String, Relation>,
+    parent: Option<&'a SQLPlanner<'a>>,
+    global_info: Rc<RefCell<GlobalPlanInfo>>,
+}
+
+impl<'a> SQLPlanner<'a> {
     pub fn new(context: SQLCatalog) -> Self {
-        Self {
+        let global_info = Rc::new(RefCell::new(GlobalPlanInfo {
             catalog: context,
+            ..Default::default()
+        }));
+
+        Self {
+            global_info,
+            ..Default::default()
+        }
+    }
+
+    fn new_child(&'a self) -> Self {
+        Self {
+            global_info: self.global_info.clone(),
+            parent: Some(self),
             ..Default::default()
         }
     }
@@ -104,29 +122,26 @@ impl SQLPlanner {
         self.current_relation.as_ref()
     }
 
+    fn global_info_mut(&self) -> RefMut<'_, GlobalPlanInfo> {
+        self.global_info.as_ref().borrow_mut()
+    }
+
+    fn cte_map(&self) -> Ref<'_, HashMap<String, Relation>> {
+        Ref::map(self.global_info.borrow(), |i| &i.cte_map)
+    }
+
+    fn catalog(&self) -> Ref<'_, SQLCatalog> {
+        Ref::map(self.global_info.borrow(), |i| &i.catalog)
+    }
+
     /// Clears the current context used for planning a SQL query
     fn clear_context(&mut self) {
         self.current_relation = None;
         self.table_map.clear();
-        self.cte_map.clear();
+        self.global_info_mut().cte_map.clear();
     }
 
-    fn get_table_from_current_scope(&self, name: &str) -> Option<Relation> {
-        let table = self.table_map.get(name).cloned();
-        table
-            .or_else(|| self.cte_map.get(name).cloned())
-            .or_else(|| {
-                self.catalog
-                    .get_table(name)
-                    .map(|table| Relation::new(table.into(), name.to_string()))
-            })
-    }
-
-    fn register_cte(
-        &mut self,
-        mut rel: Relation,
-        column_aliases: &[Ident],
-    ) -> SQLPlannerResult<()> {
+    fn register_cte(&self, mut rel: Relation, column_aliases: &[Ident]) -> SQLPlannerResult<()> {
         if !column_aliases.is_empty() {
             let schema = rel.schema();
             let columns = schema.names();
@@ -146,7 +161,7 @@ impl SQLPlanner {
 
             rel.inner = rel.inner.select(projection)?;
         }
-        self.cte_map.insert(rel.get_name(), rel);
+        self.global_info_mut().cte_map.insert(rel.get_name(), rel);
         Ok(())
     }
 
@@ -848,9 +863,20 @@ impl SQLPlanner {
                 ..
             } => {
                 let table_name = name.to_string();
-                let Some(rel) = self.get_table_from_current_scope(&table_name) else {
+                let Some(rel) = self
+                    .table_map
+                    .get(&table_name)
+                    .cloned()
+                    .or_else(|| self.cte_map().get(&table_name).cloned())
+                    .or_else(|| {
+                        self.catalog()
+                            .get_table(&table_name)
+                            .map(|table| Relation::new(table.into(), table_name.clone()))
+                    })
+                else {
                     table_not_found_err!(table_name)
                 };
+
                 (rel, alias.clone())
             }
             sqlparser::ast::TableFactor::Derived {
@@ -900,56 +926,69 @@ impl SQLPlanner {
         }
     }
 
-    fn plan_compound_identifier(&self, idents: &[Ident]) -> SQLPlannerResult<Vec<ExprRef>> {
-        let ident_str = idents_to_str(idents);
-        let mut idents = idents.iter();
+    /// Find the ident information in the current query or parent query if in a subquery
+    fn find_ident_in_queries(&self, idents: &[Ident]) -> SQLPlannerResult<OuterReferenceColumn> {
+        let full_str = idents_to_str(idents);
+        let current_relation = self.relation_opt().unwrap();
 
-        let root = idents.next().unwrap();
-        let root = ident_to_str(root);
-        let current_relation = match self.get_table_from_current_scope(&root) {
-            Some(rel) => rel,
-            None => {
-                return Err(PlannerError::TableNotFound {
-                    message: "Expected table".to_string(),
-                })
-            }
+        // If the entire identifier is present in the schema, we are done.
+        // This also covers duplicate columns from joins, which are added to the table with a prefix (df.column_name)
+        if let Ok(field) = current_relation.schema().get_field(&full_str) {
+            return Ok(OuterReferenceColumn {
+                field: field.clone(),
+                depth: 0,
+            });
+        }
+
+        let [root, rest @ ..] = idents else {
+            return Err(PlannerError::ParseError {
+                message: "empty identifier".to_string(),
+            });
         };
 
-        if root == current_relation.get_name() {
-            // This happens when it's called from a qualified wildcard (tbl.*)
-            if idents.len() == 0 {
-                return Ok(current_relation
-                    .inner
-                    .schema()
-                    .fields
-                    .keys()
-                    .map(|f| col(f.clone()))
-                    .collect());
-            }
+        let root_str = ident_to_str(root);
+        let rest_str = idents_to_str(rest);
 
-            // If duplicate columns are present in the schema, it adds the table name as a prefix. (df.column_name)
-            // So we first check if the prefixed column name is present in the schema.
-            let current_schema = self.relation_opt().unwrap().inner.schema();
+        // try to find in current tables
+        if !rest.is_empty()
+            && let Some(relation) = self.table_map.get(&root_str)
+        {
+            let relation_schema = relation.schema();
 
-            let f = current_schema.get_field(&ident_str).ok();
-            if let Some(field) = f {
-                Ok(vec![col(field.name.clone())])
-            // If it's not, we also need to check if the column name is present in the current schema.
-            // This is to handle aliased tables. (df1 as a join df2 as b where b.column_name)
-            } else if let Some(next_ident) = idents.next() {
-                let column_name = ident_to_str(next_ident);
-
-                let f = current_schema.get_field(&column_name).ok();
-                if let Some(field) = f {
-                    Ok(vec![col(field.name.clone())])
-                } else {
-                    column_not_found_err!(&column_name, &current_relation.get_name());
-                }
+            if let Ok(field) = relation_schema.get_field(&rest_str) {
+                Ok(OuterReferenceColumn {
+                    field: field.clone(),
+                    depth: 0,
+                })
             } else {
-                column_not_found_err!(&ident_str, &current_relation.get_name());
+                column_not_found_err!(&full_str, &relation.get_name())
             }
+        // try to recursively find in parent tables
+        } else if let Some(parent) = self.parent {
+            match parent.find_ident_in_queries(idents) {
+                Ok(mut c) => {
+                    c.depth += 1;
+                    Ok(c)
+                }
+                Err(PlannerError::ColumnNotFound { .. }) => {
+                    column_not_found_err!(&full_str, current_relation.get_name())
+                }
+                Err(e) => Err(e),
+            }
+        } else if rest.is_empty() {
+            column_not_found_err!(&full_str, current_relation.get_name())
         } else {
-            table_not_found_err!(root);
+            table_not_found_err!(root_str)
+        }
+    }
+
+    fn plan_identifier(&self, idents: &[Ident]) -> SQLPlannerResult<ExprRef> {
+        let outer_col = self.find_ident_in_queries(idents)?;
+
+        if outer_col.depth == 0 {
+            Ok(Arc::new(Expr::Column(outer_col.field.name.into())))
+        } else {
+            Ok(Arc::new(Expr::OuterReferenceColumn(outer_col)))
         }
     }
 
@@ -1021,7 +1060,7 @@ impl SQLPlanner {
                 let Some(rel) = self.relation_opt() else {
                     table_not_found_err!(table_name);
                 };
-                let Some(table_rel) = self.get_table_from_current_scope(&table_name) else {
+                let Some(table_rel) = self.table_map.get(&table_name) else {
                     table_not_found_err!(table_name);
                 };
                 let right_schema = table_rel.inner.schema();
@@ -1077,7 +1116,7 @@ impl SQLPlanner {
     pub(crate) fn plan_expr(&self, expr: &sqlparser::ast::Expr) -> SQLPlannerResult<ExprRef> {
         use sqlparser::ast::Expr as SQLExpr;
         match expr {
-            SQLExpr::Identifier(ident) => Ok(col(ident_to_str(ident))),
+            SQLExpr::Identifier(ident) => self.plan_identifier(std::slice::from_ref(ident)),
             SQLExpr::Value(v) => self.value_to_lit(v).map(Expr::Literal).map(Arc::new),
             SQLExpr::BinaryOp { left, op, right } => {
                 let left = self.plan_expr(left)?;
@@ -1102,10 +1141,7 @@ impl SQLPlanner {
             SQLExpr::IsNull(expr) => Ok(self.plan_expr(expr)?.is_null()),
             SQLExpr::IsNotNull(expr) => Ok(self.plan_expr(expr)?.is_null().not()),
             SQLExpr::UnaryOp { op, expr } => self.plan_unary_op(op, expr),
-            SQLExpr::CompoundIdentifier(idents) => self
-                .plan_compound_identifier(idents.as_slice())
-                .map(|e| e[0].clone()),
-
+            SQLExpr::CompoundIdentifier(idents) => self.plan_identifier(idents),
             SQLExpr::CompositeAccess { .. } => {
                 unsupported_sql_err!("composite access")
             }
@@ -1143,8 +1179,8 @@ impl SQLPlanner {
                 negated,
             } => {
                 let expr = self.plan_expr(expr)?;
-                let mut this = self.clone();
-                let subquery = this.plan_query(subquery)?.build();
+                let mut child_planner = self.new_child();
+                let subquery = child_planner.plan_query(subquery)?.build();
                 let subquery = Subquery { plan: subquery };
 
                 if *negated {
@@ -1304,8 +1340,8 @@ impl SQLPlanner {
                 )
             }
             SQLExpr::Exists { subquery, negated } => {
-                let mut this = self.clone();
-                let subquery = this.plan_query(subquery)?;
+                let mut child_planner = self.new_child();
+                let subquery = child_planner.plan_query(subquery)?;
                 let subquery = Subquery {
                     plan: subquery.build(),
                 };
@@ -1316,8 +1352,8 @@ impl SQLPlanner {
                 }
             }
             SQLExpr::Subquery(subquery) => {
-                let mut this = self.clone();
-                let subquery = this.plan_query(subquery)?;
+                let mut child_planner = self.new_child();
+                let subquery = child_planner.plan_query(subquery)?;
                 let subquery = Subquery {
                     plan: subquery.build(),
                 };
