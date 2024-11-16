@@ -233,7 +233,7 @@ utf8_function!(
 utf8_function!(
     SQLUtf8RegexpReplace,
     "regexp_replace",
-    |input, pattern, replacement| daft_functions::utf8::replace(input, pattern, replacement, false),
+    |input, pattern, replacement| daft_functions::utf8::replace(input, pattern, replacement, true),
     "Replaces all occurrences of a substring with a new string",
     "string_input",
     "pattern",
