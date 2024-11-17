@@ -84,7 +84,7 @@ impl SQLTableFunction for ReadCsvFunction {
             &[
                 "path",
                 "infer_schema",
-                "schema",
+                // "schema",
                 "has_headers",
                 "delimiter",
                 "double_quote",
@@ -96,7 +96,7 @@ impl SQLTableFunction for ReadCsvFunction {
                 "file_path_column",
                 "hive_partitioning",
                 "use_native_downloader",
-                "schema_hints",
+                // "schema_hints",
                 "buffer_size",
                 "chunk_size",
             ],
