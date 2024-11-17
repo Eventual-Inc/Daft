@@ -9,6 +9,8 @@ common-scan-info = {path = "src/common/scan-info", default-features = false}
 common-system-info = {path = "src/common/system-info", default-features = false}
 common-tracing = {path = "src/common/tracing", default-features = false}
 common-version = {path = "src/common/version", default-features = false}
+daft-catalog = {path = "src/daft-catalog", default-features = false}
+daft-catalog-python-catalog = {path = "src/daft-catalog/python-catalog", optional = true}
 daft-compression = {path = "src/daft-compression", default-features = false}
 daft-connect = {path = "src/daft-connect", optional = true}
 daft-core = {path = "src/daft-core", default-features = false}
@@ -52,6 +54,8 @@ python = [
   "common-display/python",
   "common-resource-request/python",
   "common-system-info/python",
+  "daft-catalog/python",
+  "daft-catalog-python-catalog/python",
   "daft-connect/python",
   "daft-core/python",
   "daft-csv/python",
@@ -75,6 +79,11 @@ python = [
   "daft-writers/python",
   "daft-table/python",
   "dep:daft-connect",
+  "common-daft-config/python",
+  "common-system-info/python",
+  "common-display/python",
+  "common-resource-request/python",
+  "dep:daft-catalog-python-catalog",
   "dep:pyo3",
   "dep:pyo3-log"
 ]
@@ -140,6 +149,7 @@ members = [
   "src/common/scan-info",
   "src/common/system-info",
   "src/common/treenode",
+  "src/daft-catalog",
   "src/daft-core",
   "src/daft-csv",
   "src/daft-dsl",

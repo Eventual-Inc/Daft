@@ -1860,6 +1860,8 @@ dependencies = [
  "common-system-info",
  "common-tracing",
  "common-version",
+ "daft-catalog",
+ "daft-catalog-python-catalog",
  "daft-compression",
  "daft-connect",
  "daft-core",
@@ -1892,6 +1894,28 @@ dependencies = [
  "pyo3-log",
  "sysinfo",
  "tikv-jemallocator",
+]
+
+[[package]]
+name = "daft-catalog"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-error",
+ "daft-core",
+ "daft-logical-plan",
+ "lazy_static",
+ "pyo3",
+ "snafu",
+]
+
+[[package]]
+name = "daft-catalog-python-catalog"
+version = "0.3.0-dev0"
+dependencies = [
+ "daft-catalog",
+ "daft-logical-plan",
+ "pyo3",
+ "snafu",
 ]
 
 [[package]]
