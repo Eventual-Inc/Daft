@@ -654,6 +654,35 @@ class DataFrame:
             )
 
     @DataframePublicAPI
+    def write_table(
+        self,
+        name: str,
+        mode: Literal["append", "overwrite"] = "append",  # TODO: add dynamic-partition-overwrite
+        catalog_name: Optional[str] = None,
+        create_table: bool = True,
+        # TODO: Add table-specific options such as "iceberg.partition_columns". These should be properly and heavily documented.
+        # I think it is fair to assume that each catalog will dictate what table format to use, and we don't need to account for
+        # multi-table-format catalogs. If users want that, they can register multiple named catalogs (e.g. `"glue-iceberg"` and `"glue-delta"`).
+        # table_options: Optional[dict[str, Any]] = None,
+        # TODO: Add "upsert" into `mode`, and add UpsertOptions
+        # upsert_options: Optional["UpsertOptions"] = None,
+    ) -> "DataFrame":
+        """Finds a table with the specified name, in the specified catalog, and writes to it.
+
+        If the table does not exist, Daft will attempt to create it unless explicitly instructed not to do so via `create_table=False`.
+
+        .. NOTE::
+            This call is **blocking** and will execute the DataFrame when called
+
+        Args:
+            name: The name of the table to write to.
+            mode: Operation mode of the write. `append` will append new data, `overwrite` will replace table with new data. Defaults to "append".
+            catalog_name: Name of the catalog where this table should be found/created. Defaults to `None` which indicates to use the configured default catalog.
+            create_table: Whether or not to create the table if it does not yet exist.
+        """
+        return None  # type: ignore
+
+    @DataframePublicAPI
     def write_iceberg(self, table: "pyiceberg.table.Table", mode: str = "append") -> "DataFrame":
         """Writes the DataFrame to an `Iceberg <https://iceberg.apache.org/docs/nightly/>`__ table, returning a new DataFrame with the operations that occurred.
         Can be run in either `append` or `overwrite` mode which will either appends the rows in the DataFrame or will delete the existing rows and then append the DataFrame rows respectively.
