@@ -1,7 +1,6 @@
 name: Run tpch benchmarks
 
 on:
-  pull_request:
   workflow_dispatch:
     inputs:
       wheel:
