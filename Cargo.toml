@@ -187,7 +187,7 @@ async-compression = {version = "0.4.12", features = [
   "tokio",
   "all-algorithms"
 ]}
-async-stream = "0.3.5"
+async-stream = "0.3.6"
 async-trait = "0.1.79"
 base64 = "0.22.1"
 bytes = "1.6.0"
