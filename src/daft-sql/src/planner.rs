@@ -9,8 +9,10 @@ use std::{
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 use daft_dsl::{
-    col, has_agg, lit, literals_to_series, null_lit, AggExpr, Expr, ExprRef, LiteralValue,
-    Operator, OuterReferenceColumn, Subquery,
+    col,
+    common_treenode::{Transformed, TreeNode},
+    has_agg, lit, literals_to_series, null_lit, AggExpr, Expr, ExprRef, LiteralValue, Operator,
+    OuterReferenceColumn, Subquery,
 };
 use daft_functions::{
     numeric::{ceil::ceil, floor::floor},
@@ -87,26 +89,30 @@ impl Default for PlannerContext {
 pub struct SQLPlanner<'a> {
     current_relation: Option<Relation>,
     table_map: HashMap<String, Relation>,
+    /// Aliases from selection that can be used in other clauses
+    /// but may not yet be in the schema of `current_relation`.
+    alias_map: HashMap<String, ExprRef>,
+    /// outer query in a subquery
     parent: Option<&'a SQLPlanner<'a>>,
-    planner_context: Rc<RefCell<PlannerContext>>,
+    context: Rc<RefCell<PlannerContext>>,
 }
 
 impl<'a> SQLPlanner<'a> {
     pub fn new(catalog: SQLCatalog) -> Self {
-        let planner_context = Rc::new(RefCell::new(PlannerContext {
+        let context = Rc::new(RefCell::new(PlannerContext {
             catalog,
             ..Default::default()
         }));
 
         Self {
-            planner_context,
+            context,
             ..Default::default()
         }
     }
 
     fn new_child(&'a self) -> Self {
         Self {
-            planner_context: self.planner_context.clone(),
+            context: self.context.clone(),
             parent: Some(self),
             ..Default::default()
         }
@@ -123,23 +129,23 @@ impl<'a> SQLPlanner<'a> {
         self.current_relation.as_ref()
     }
 
-    fn planner_context_mut(&self) -> RefMut<'_, PlannerContext> {
-        self.planner_context.as_ref().borrow_mut()
+    fn context_mut(&self) -> RefMut<'_, PlannerContext> {
+        self.context.as_ref().borrow_mut()
     }
 
     fn cte_map(&self) -> Ref<'_, HashMap<String, Relation>> {
-        Ref::map(self.planner_context.borrow(), |i| &i.cte_map)
+        Ref::map(self.context.borrow(), |i| &i.cte_map)
     }
 
     fn catalog(&self) -> Ref<'_, SQLCatalog> {
-        Ref::map(self.planner_context.borrow(), |i| &i.catalog)
+        Ref::map(self.context.borrow(), |i| &i.catalog)
     }
 
     /// Clears the current context used for planning a SQL query
     fn clear_context(&mut self) {
         self.current_relation = None;
         self.table_map.clear();
-        self.planner_context_mut().cte_map.clear();
+        self.context_mut().cte_map.clear();
     }
 
     fn register_cte(&self, mut rel: Relation, column_aliases: &[Ident]) -> SQLPlannerResult<()> {
@@ -162,9 +168,7 @@ impl<'a> SQLPlanner<'a> {
 
             rel.inner = rel.inner.select(projection)?;
         }
-        self.planner_context_mut()
-            .cte_map
-            .insert(rel.get_name(), rel);
+        self.context_mut().cte_map.insert(rel.get_name(), rel);
         Ok(())
     }
 
@@ -296,6 +300,25 @@ impl<'a> SQLPlanner<'a> {
         let schema = rel.schema();
         self.current_relation = Some(rel);
 
+        // SELECT
+        let mut projections = Vec::with_capacity(selection.projection.len());
+        let mut projection_fields = Vec::with_capacity(selection.projection.len());
+        for expr in &selection.projection {
+            let exprs = self.select_item_to_expr(expr, &schema)?;
+
+            let fields = exprs
+                .iter()
+                .map(|expr| expr.to_field(&schema).map_err(PlannerError::from))
+                .collect::<SQLPlannerResult<Vec<_>>>()?;
+
+            projections.extend(exprs);
+
+            projection_fields.extend(fields);
+        }
+
+        let projection_schema = Schema::new(projection_fields)?;
+        let has_orderby = query.order_by.is_some();
+
         // WHERE
         if let Some(selection) = &selection.selection {
             let filter = self.plan_expr(selection)?;
@@ -319,24 +342,8 @@ impl<'a> SQLPlanner<'a> {
                     .collect::<SQLPlannerResult<Vec<_>>>()?;
             }
         }
-        let mut projections = Vec::with_capacity(selection.projection.len());
-        let mut projection_fields = Vec::with_capacity(selection.projection.len());
-        for expr in &selection.projection {
-            let exprs = self.select_item_to_expr(expr, &schema)?;
 
-            let fields = exprs
-                .iter()
-                .map(|expr| expr.to_field(&schema).map_err(PlannerError::from))
-                .collect::<SQLPlannerResult<Vec<_>>>()?;
-
-            projections.extend(exprs);
-
-            projection_fields.extend(fields);
-        }
-
-        let projection_schema = Schema::new(projection_fields)?;
-        let has_orderby = query.order_by.is_some();
-        let has_aggs = projections.iter().any(has_agg);
+        let has_aggs = projections.iter().any(has_agg) || !groupby_exprs.is_empty();
 
         if has_aggs {
             self.plan_aggregate_query(
@@ -929,19 +936,26 @@ impl<'a> SQLPlanner<'a> {
         }
     }
 
-    /// Find the ident information in the current query or parent query if in a subquery
-    fn find_ident_in_queries(&self, idents: &[Ident]) -> SQLPlannerResult<OuterReferenceColumn> {
-        let full_str = idents_to_str(idents);
-        let current_relation = self.relation_opt().unwrap();
-
-        // If the entire identifier is present in the schema, we are done.
-        // This also covers duplicate columns from joins, which are added to the table with a prefix (df.column_name)
-        if let Ok(field) = current_relation.schema().get_field(&full_str) {
-            return Ok(OuterReferenceColumn {
-                field: field.clone(),
-                depth: 0,
-            });
+    fn plan_identifier(&self, idents: &[Ident]) -> SQLPlannerResult<ExprRef> {
+        // if the current relation is not resolved (e.g. in a `sql_expr` call, simply wrap identifier in a col)
+        if self.current_relation.is_none() {
+            return Ok(col(idents_to_str(idents)));
         }
+
+        /// Helper function that produces either a column or outer reference column
+        /// depending on the depth
+        fn maybe_outer_col(field: Field, depth: u64) -> ExprRef {
+            if depth == 0 {
+                Arc::new(Expr::Column(field.name.into()))
+            } else {
+                Arc::new(Expr::OuterReferenceColumn(OuterReferenceColumn {
+                    field,
+                    depth,
+                }))
+            }
+        }
+
+        let full_str = idents_to_str(idents);
 
         let [root, rest @ ..] = idents else {
             return Err(PlannerError::ParseError {
@@ -949,59 +963,72 @@ impl<'a> SQLPlanner<'a> {
             });
         };
 
+        let current_relation_name = self.relation_opt().unwrap().get_name();
+
         let root_str = ident_to_str(root);
         let rest_str = idents_to_str(rest);
 
-        // try to find in current tables
-        if !rest.is_empty()
-            && let Some(relation) = self.table_map.get(&root_str)
-        {
-            let relation_schema = relation.schema();
+        let mut depth = 0;
 
-            if let Ok(field) = relation_schema.get_field(&rest_str) {
-                Ok(OuterReferenceColumn {
-                    field: field.clone(),
-                    depth: 0,
-                })
-            } else {
-                column_not_found_err!(&full_str, &relation.get_name())
+        let mut curr_planner = Some(self);
+
+        // loop through parent plans until we find the identifier in the schema
+        while let Some(planner) = curr_planner {
+            let plan_relation = planner.relation_opt().unwrap();
+
+            // Try to find in schema at current depth
+            // This also covers duplicate columns from joins, which are added to the table with a prefix (df.column_name)
+            if let Ok(field) = plan_relation.schema().get_field(&full_str) {
+                return Ok(maybe_outer_col(field.clone(), depth));
             }
-        // try to recursively find in parent tables
-        } else if let Some(parent) = self.parent {
-            match parent.find_ident_in_queries(idents) {
-                Ok(mut c) => {
-                    c.depth += 1;
-                    Ok(c)
-                }
-                Err(PlannerError::ColumnNotFound { .. }) => {
-                    column_not_found_err!(&full_str, current_relation.get_name())
-                }
-                Err(e) => Err(e),
+            // The identifier could also be in the alias map but not the schema
+            // for expressions in WHERE, GROUP BY, and HAVING, which are done before project
+            if let Some(expr) = planner.alias_map.get(&full_str) {
+                // transform expression alias map by incrementing thee depths of every column by `depth``
+                let transformed_expr = expr
+                    .clone()
+                    .transform(|e| match e.as_ref() {
+                        Expr::Column(name) => {
+                            let field = plan_relation.schema().get_field(name)?.clone();
+                            Ok(Transformed::yes(maybe_outer_col(field, depth)))
+                        }
+                        Expr::OuterReferenceColumn(c) => Ok(Transformed::yes(maybe_outer_col(
+                            c.field.clone(),
+                            c.depth + depth,
+                        ))),
+                        _ => Ok(Transformed::no(e)),
+                    })?
+                    .data;
+
+                return Ok(transformed_expr);
             }
-        } else if rest.is_empty() {
-            column_not_found_err!(&full_str, current_relation.get_name())
+
+            // If compound identifier, try to find in tables at current depth
+            if !rest.is_empty()
+                && let Some(relation) = planner.table_map.get(&root_str)
+            {
+                let relation_schema = relation.schema();
+
+                if let Ok(field) = relation_schema.get_field(&rest_str) {
+                    return Ok(maybe_outer_col(field.clone(), depth));
+                } else {
+                    column_not_found_err!(&full_str, current_relation_name)
+                }
+            }
+
+            curr_planner = planner.parent;
+            depth += 1;
+        }
+
+        if rest.is_empty() {
+            column_not_found_err!(&full_str, current_relation_name)
         } else {
             table_not_found_err!(root_str)
         }
     }
 
-    fn plan_identifier(&self, idents: &[Ident]) -> SQLPlannerResult<ExprRef> {
-        if self.current_relation.is_some() {
-            let outer_col = self.find_ident_in_queries(idents)?;
-
-            if outer_col.depth == 0 {
-                Ok(Arc::new(Expr::Column(outer_col.field.name.into())))
-            } else {
-                Ok(Arc::new(Expr::OuterReferenceColumn(outer_col)))
-            }
-        } else {
-            // if the current relation is not resolved (e.g. in a `sql_expr` call, simply wrap identifier in a col)
-            Ok(col(idents_to_str(idents)))
-        }
-    }
-
     fn select_item_to_expr(
-        &self,
+        &mut self,
         item: &SelectItem,
         schema: &Schema,
     ) -> SQLPlannerResult<Vec<ExprRef>> {
@@ -1026,6 +1053,7 @@ impl<'a> SQLPlanner<'a> {
             SelectItem::ExprWithAlias { expr, alias } => {
                 let expr = self.plan_expr(expr)?;
                 let alias = alias.value.to_string();
+                self.alias_map.insert(alias.clone(), expr.clone());
                 Ok(vec![expr.alias(alias)])
             }
             SelectItem::UnnamedExpr(expr) => self.plan_expr(expr).map(|e| vec![e]),
@@ -1951,7 +1979,7 @@ fn check_wildcard_options(
     Ok(())
 }
 pub fn sql_expr<S: AsRef<str>>(s: S) -> SQLPlannerResult<ExprRef> {
-    let planner = SQLPlanner::default();
+    let mut planner = SQLPlanner::default();
 
     let tokens = Tokenizer::new(&GenericDialect {}, s.as_ref()).tokenize()?;
 
