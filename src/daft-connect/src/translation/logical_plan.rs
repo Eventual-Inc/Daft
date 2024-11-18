@@ -43,8 +43,8 @@ fn range(range: Range) -> eyre::Result<LogicalPlanBuilder> {
         ensure!(step > 0, "step must be greater than 0");
 
         let plan = Python::with_gil(|py| {
-            let range_module = PyModule::import_bound(py, "daft.io.range")
-                .wrap_err("Failed to import daft.io.range")?;
+            let range_module = PyModule::import_bound(py, "daft.io._range")
+                .wrap_err("Failed to import range module")?;
 
             let range = range_module
                 .getattr(pyo3::intern!(py, "RangeScanOperator"))
