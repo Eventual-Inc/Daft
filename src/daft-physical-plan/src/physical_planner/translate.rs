@@ -38,7 +38,7 @@ pub(super) fn translate_single_logical_node(
     physical_children: &mut Vec<PhysicalPlanRef>,
     cfg: &DaftExecutionConfig,
 ) -> DaftResult<PhysicalPlanRef> {
-    match logical_plan {
+    let physical_plan = match logical_plan {
         LogicalPlan::Source(Source { source_info, .. }) => match source_info.as_ref() {
             SourceInfo::Physical(PhysicalScanInfo {
                 pushdowns,
@@ -205,7 +205,7 @@ pub(super) fn translate_single_logical_node(
             };
             Ok(repartitioned_plan.arced())
         }
-        LogicalPlan::Distinct(LogicalDistinct { input }) => {
+        LogicalPlan::Distinct(LogicalDistinct { input, .. }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
             let col_exprs = input
                 .schema()
@@ -756,7 +756,12 @@ pub(super) fn translate_single_logical_node(
         LogicalPlan::Union(_) => Err(DaftError::InternalError(
             "Union should already be optimized away".to_string(),
         )),
-    }
+    }?;
+    // TODO(desmond): We can't perform this check for now because ScanTasks currently provide
+    // different size estimations depending on when the approximation is computed. Once we fix
+    // this, we can add back in the assertion here.
+    // debug_assert!(logical_plan.get_stats().approx_stats == physical_plan.approximate_stats());
+    Ok(physical_plan)
 }
 
 pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {

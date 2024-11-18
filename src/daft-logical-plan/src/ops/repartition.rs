@@ -5,6 +5,7 @@ use daft_dsl::ExprResolver;
 
 use crate::{
     partitioning::{HashRepartitionConfig, RepartitionSpec},
+    stats::StatsState,
     LogicalPlan,
 };
 
@@ -13,6 +14,7 @@ pub struct Repartition {
     // Upstream node.
     pub input: Arc<LogicalPlan>,
     pub repartition_spec: RepartitionSpec,
+    pub stats_state: StatsState,
 }
 
 impl Repartition {
@@ -36,7 +38,19 @@ impl Repartition {
         Ok(Self {
             input,
             repartition_spec,
+            stats_state: StatsState::NotMaterialized,
         })
+    }
+
+    pub(crate) fn materialize_stats(&self) -> Self {
+        // Repartitioning does not affect cardinality.
+        let new_input = self.input.materialize_stats();
+        let stats_state = StatsState::Materialized(new_input.get_stats().clone());
+        Self {
+            input: Arc::new(new_input),
+            repartition_spec: self.repartition_spec.clone(),
+            stats_state,
+        }
     }
 
     pub fn multiline_display(&self) -> Vec<String> {

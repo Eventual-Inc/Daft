@@ -2,13 +2,14 @@ use std::sync::Arc;
 
 use daft_core::prelude::*;
 
-use crate::LogicalPlan;
+use crate::{stats::StatsState, LogicalPlan};
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone)]
 pub struct MonotonicallyIncreasingId {
     pub input: Arc<LogicalPlan>,
     pub schema: Arc<Schema>,
     pub column_name: String,
+    pub stats_state: StatsState,
 }
 
 impl MonotonicallyIncreasingId {
@@ -28,6 +29,19 @@ impl MonotonicallyIncreasingId {
             input,
             schema: Arc::new(schema_with_id),
             column_name: column_name.to_string(),
+            stats_state: StatsState::NotMaterialized,
+        }
+    }
+
+    pub(crate) fn materialize_stats(&self) -> Self {
+        // TODO(desmond): We can do better estimations with the projection schema. For now, reuse the old logic.
+        let new_input = self.input.materialize_stats();
+        let stats_state = StatsState::Materialized(new_input.get_stats().clone());
+        Self {
+            input: Arc::new(new_input),
+            schema: self.schema.clone(),
+            column_name: self.column_name.clone(),
+            stats_state,
         }
     }
 }

@@ -7,6 +7,7 @@ use snafu::ResultExt;
 
 use crate::{
     logical_plan::{CreationSnafu, Result},
+    stats::{ApproxStats, PlanStats, StatsState},
     LogicalPlan,
 };
 
@@ -16,6 +17,7 @@ pub struct Filter {
     pub input: Arc<LogicalPlan>,
     // The Boolean expression to filter on.
     pub predicate: ExprRef,
+    pub stats_state: StatsState,
 }
 
 impl Filter {
@@ -33,6 +35,30 @@ impl Filter {
             )))
             .context(CreationSnafu);
         }
-        Ok(Self { input, predicate })
+        Ok(Self {
+            input,
+            predicate,
+            stats_state: StatsState::NotMaterialized,
+        })
+    }
+
+    pub(crate) fn materialize_stats(&self) -> Self {
+        // Assume no row/column pruning in cardinality-affecting operations.
+        // TODO(desmond): We can do better estimations here. For now, reuse the old logic.
+        let new_input = self.input.materialize_stats();
+        let upper_bound_rows = new_input.get_stats().approx_stats.upper_bound_rows;
+        let upper_bound_bytes = new_input.get_stats().approx_stats.upper_bound_bytes;
+        let approx_stats = ApproxStats {
+            lower_bound_rows: 0,
+            upper_bound_rows,
+            lower_bound_bytes: 0,
+            upper_bound_bytes,
+        };
+        let stats_state = StatsState::Materialized(PlanStats::new(approx_stats));
+        Self {
+            input: Arc::new(new_input),
+            predicate: self.predicate.clone(),
+            stats_state,
+        }
     }
 }

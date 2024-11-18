@@ -15,7 +15,7 @@ use daft_local_plan::{
     Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite, Pivot, Project, Sample,
     Sort, UnGroupedAggregate, Unpivot,
 };
-use daft_logical_plan::JoinType;
+use daft_logical_plan::{stats::StatsState, JoinType};
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{extract_agg_expr, populate_aggregation_stages};
 use daft_scan::ScanTaskRef;
@@ -319,18 +319,32 @@ pub fn physical_plan_to_pipeline(
             null_equals_null,
             join_type,
             schema,
+            ..
         }) => {
             let left_schema = left.schema();
             let right_schema = right.schema();
 
-            // Determine the build and probe sides based on the join type
-            // Currently it is a naive determination, in the future we should leverage the cardinality of the tables
-            // to determine the build and probe sides
+            // TODO(desmond): Stats should always be materialized by this point. We should fix this on the Daft Connect side.
+            // If stats are materialized, use them to determine the build and probe sides.
+            let left_stats_state = left.get_stats_state();
+            let right_stats_state = right.get_stats_state();
+            let left_smaller_than_right = match (left_stats_state, right_stats_state) {
+                (StatsState::Materialized(left_stats), StatsState::Materialized(right_stats)) => {
+                    left_stats.approx_stats.upper_bound_bytes
+                        <= right_stats.approx_stats.upper_bound_bytes
+                }
+                _ => true,
+            };
+
             let build_on_left = match join_type {
-                JoinType::Inner => true,
-                JoinType::Right => true,
-                JoinType::Outer => true,
+                JoinType::Inner => left_smaller_than_right,
+                JoinType::Outer => left_smaller_than_right,
+                // TODO(desmond): We might potentially want to flip the probe table side for
+                // left/right outer joins if one side is significantly larger. Needs tuning.
+                // For left outer joins, we build on right so we can stream the left side.
                 JoinType::Left => false,
+                // For right outer joins, we build on left so we can stream the right side.
+                JoinType::Right => true,
                 JoinType::Anti | JoinType::Semi => false,
             };
             let (build_on, probe_on, build_child, probe_child) = match build_on_left {

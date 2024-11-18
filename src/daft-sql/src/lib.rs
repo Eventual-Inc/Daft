@@ -55,14 +55,14 @@ mod tests {
             ])
             .unwrap(),
         );
-        LogicalPlan::Source(Source {
-            output_schema: schema.clone(),
-            source_info: Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
+        LogicalPlan::Source(Source::new(
+            schema.clone(),
+            Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
                 source_schema: schema,
                 clustering_spec: Arc::new(ClusteringSpec::unknown()),
                 source_id: 0,
             })),
-        })
+        ))
         .arced()
     }
 
@@ -75,14 +75,14 @@ mod tests {
             ])
             .unwrap(),
         );
-        LogicalPlan::Source(Source {
-            output_schema: schema.clone(),
-            source_info: Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
+        LogicalPlan::Source(Source::new(
+            schema.clone(),
+            Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
                 source_schema: schema,
                 clustering_spec: Arc::new(ClusteringSpec::unknown()),
                 source_id: 0,
             })),
-        })
+        ))
         .arced()
     }
 
@@ -96,14 +96,14 @@ mod tests {
             ])
             .unwrap(),
         );
-        LogicalPlan::Source(Source {
-            output_schema: schema.clone(),
-            source_info: Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
+        LogicalPlan::Source(Source::new(
+            schema.clone(),
+            Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
                 source_schema: schema,
                 clustering_spec: Arc::new(ClusteringSpec::unknown()),
                 source_id: 0,
             })),
-        })
+        ))
         .arced()
     }
 

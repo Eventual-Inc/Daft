@@ -3,7 +3,10 @@ use std::sync::Arc;
 use common_scan_info::PhysicalScanInfo;
 use daft_schema::schema::SchemaRef;
 
-use crate::source_info::{InMemoryInfo, PlaceHolderInfo, SourceInfo};
+use crate::{
+    source_info::{InMemoryInfo, PlaceHolderInfo, SourceInfo},
+    stats::{ApproxStats, PlanStats, StatsState},
+};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Source {
@@ -13,6 +16,7 @@ pub struct Source {
 
     /// Information about the source data location.
     pub source_info: Arc<SourceInfo>,
+    pub stats_state: StatsState,
 }
 
 impl Source {
@@ -20,6 +24,57 @@ impl Source {
         Self {
             output_schema,
             source_info,
+            stats_state: StatsState::NotMaterialized,
+        }
+    }
+
+    pub(crate) fn materialize_stats(&self) -> Self {
+        let approx_stats = match &*self.source_info {
+            SourceInfo::InMemory(InMemoryInfo {
+                size_bytes,
+                num_rows,
+                ..
+            }) => ApproxStats {
+                lower_bound_rows: *num_rows,
+                upper_bound_rows: Some(*num_rows),
+                lower_bound_bytes: *size_bytes,
+                upper_bound_bytes: Some(*size_bytes),
+            },
+            SourceInfo::Physical(PhysicalScanInfo {
+                scan_op, pushdowns, ..
+            }) => {
+                let scan_tasks = scan_op
+                    .0
+                    .to_scan_tasks(pushdowns.clone(), None)
+                    .expect("Failed to get scan tasks from scan operator");
+                let mut approx_stats = ApproxStats::empty();
+                for st in scan_tasks {
+                    approx_stats.lower_bound_rows += st.num_rows().unwrap_or(0);
+                    let in_memory_size = st.estimate_in_memory_size_bytes(None);
+                    approx_stats.lower_bound_bytes += in_memory_size.unwrap_or(0);
+                    if let Some(st_ub) = st.upper_bound_rows() {
+                        if let Some(ub) = approx_stats.upper_bound_rows {
+                            approx_stats.upper_bound_rows = Some(ub + st_ub);
+                        } else {
+                            approx_stats.upper_bound_rows = st.upper_bound_rows();
+                        }
+                    }
+                    if let Some(st_ub) = in_memory_size {
+                        if let Some(ub) = approx_stats.upper_bound_bytes {
+                            approx_stats.upper_bound_bytes = Some(ub + st_ub);
+                        } else {
+                            approx_stats.upper_bound_bytes = in_memory_size;
+                        }
+                    }
+                }
+                approx_stats
+            }
+            SourceInfo::PlaceHolder(_) => ApproxStats::empty(),
+        };
+        Self {
+            output_schema: self.output_schema.clone(),
+            source_info: self.source_info.clone(),
+            stats_state: StatsState::Materialized(PlanStats::new(approx_stats)),
         }
     }
 

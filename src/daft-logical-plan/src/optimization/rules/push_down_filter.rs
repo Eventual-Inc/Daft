@@ -239,7 +239,7 @@ impl PushDownFilter {
                     .into();
                 child_plan.with_new_children(&[new_filter]).into()
             }
-            LogicalPlan::Concat(Concat { input, other }) => {
+            LogicalPlan::Concat(Concat { input, other, .. }) => {
                 // Push filter into each side of the concat.
                 let new_input: LogicalPlan =
                     Filter::try_new(input.clone(), filter.predicate.clone())?.into();

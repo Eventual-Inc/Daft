@@ -6,7 +6,7 @@ use daft_dsl::{ExprRef, ExprResolver};
 use itertools::Itertools;
 use snafu::ResultExt;
 
-use crate::{logical_plan, logical_plan::CreationSnafu, LogicalPlan};
+use crate::{logical_plan, logical_plan::CreationSnafu, stats::StatsState, LogicalPlan};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Sort {
@@ -15,6 +15,7 @@ pub struct Sort {
     pub sort_by: Vec<ExprRef>,
     pub descending: Vec<bool>,
     pub nulls_first: Vec<bool>,
+    pub stats_state: StatsState,
 }
 
 impl Sort {
@@ -54,7 +55,21 @@ impl Sort {
             sort_by,
             descending,
             nulls_first,
+            stats_state: StatsState::NotMaterialized,
         })
+    }
+
+    pub(crate) fn materialize_stats(&self) -> Self {
+        // Sorting does not affect cardinality.
+        let new_input = self.input.materialize_stats();
+        let stats_state = StatsState::Materialized(new_input.get_stats().clone());
+        Self {
+            input: Arc::new(new_input),
+            sort_by: self.sort_by.clone(),
+            descending: self.descending.clone(),
+            nulls_first: self.nulls_first.clone(),
+            stats_state,
+        }
     }
 
     pub fn multiline_display(&self) -> Vec<String> {

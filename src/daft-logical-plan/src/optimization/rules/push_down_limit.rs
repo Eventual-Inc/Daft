@@ -37,6 +37,7 @@ impl PushDownLimit {
                 input,
                 limit,
                 eager,
+                ..
             }) => {
                 let limit = *limit as usize;
                 match input.as_ref() {
@@ -93,6 +94,7 @@ impl PushDownLimit {
                         input,
                         limit: child_limit,
                         eager: child_eagar,
+                        ..
                     }) => {
                         let new_limit = limit.min(*child_limit as usize);
                         let new_eager = eager | child_eagar;

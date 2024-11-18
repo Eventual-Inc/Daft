@@ -8,6 +8,7 @@ use snafu::ResultExt;
 
 use crate::{
     logical_plan::{self, CreationSnafu},
+    stats::{ApproxStats, PlanStats, StatsState},
     LogicalPlan,
 };
 
@@ -19,9 +20,30 @@ pub struct Unpivot {
     pub variable_name: String,
     pub value_name: String,
     pub output_schema: SchemaRef,
+    pub stats_state: StatsState,
 }
 
 impl Unpivot {
+    pub(crate) fn new(
+        input: Arc<LogicalPlan>,
+        ids: Vec<ExprRef>,
+        values: Vec<ExprRef>,
+        variable_name: String,
+        value_name: String,
+        output_schema: SchemaRef,
+    ) -> Self {
+        Self {
+            input,
+            ids,
+            values,
+            variable_name,
+            value_name,
+            output_schema,
+            stats_state: StatsState::NotMaterialized,
+        }
+    }
+
+    // Similar to new, except that `try_new` is not given the output schema and instead extracts it.
     pub(crate) fn try_new(
         input: Arc<LogicalPlan>,
         ids: Vec<ExprRef>,
@@ -71,7 +93,33 @@ impl Unpivot {
             variable_name: variable_name.to_string(),
             value_name: value_name.to_string(),
             output_schema,
+            stats_state: StatsState::NotMaterialized,
         })
+    }
+
+    pub(crate) fn materialize_stats(&self) -> Self {
+        let new_input = self.input.materialize_stats();
+        let input_stats = new_input.get_stats();
+        let num_values = self.values.len();
+        let approx_stats = ApproxStats {
+            lower_bound_rows: input_stats.approx_stats.lower_bound_rows * num_values,
+            upper_bound_rows: input_stats
+                .approx_stats
+                .upper_bound_rows
+                .map(|v| v * num_values),
+            lower_bound_bytes: input_stats.approx_stats.lower_bound_bytes,
+            upper_bound_bytes: input_stats.approx_stats.upper_bound_bytes,
+        };
+        let stats_state = StatsState::Materialized(PlanStats::new(approx_stats));
+        Self {
+            input: Arc::new(new_input),
+            ids: self.ids.clone(),
+            values: self.values.clone(),
+            variable_name: self.variable_name.clone(),
+            value_name: self.value_name.clone(),
+            output_schema: self.output_schema.clone(),
+            stats_state,
+        }
     }
 
     pub fn multiline_display(&self) -> Vec<String> {

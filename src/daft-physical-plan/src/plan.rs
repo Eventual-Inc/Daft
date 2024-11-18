@@ -1,8 +1,11 @@
-use std::{cmp::max, collections::HashSet, ops::Add, sync::Arc};
+use std::{cmp::max, collections::HashSet, sync::Arc};
 
 use common_display::ascii::AsciiTreeDisplay;
-use daft_logical_plan::partitioning::{
-    ClusteringSpec, HashClusteringConfig, RangeClusteringConfig, UnknownClusteringConfig,
+use daft_logical_plan::{
+    partitioning::{
+        ClusteringSpec, HashClusteringConfig, RangeClusteringConfig, UnknownClusteringConfig,
+    },
+    stats::ApproxStats,
 };
 use serde::{Deserialize, Serialize};
 
@@ -41,48 +44,6 @@ pub enum PhysicalPlan {
     DeltaLakeWrite(DeltaLakeWrite),
     #[cfg(feature = "python")]
     LanceWrite(LanceWrite),
-}
-
-pub struct ApproxStats {
-    pub lower_bound_rows: usize,
-    pub upper_bound_rows: Option<usize>,
-    pub lower_bound_bytes: usize,
-    pub upper_bound_bytes: Option<usize>,
-}
-
-impl ApproxStats {
-    fn empty() -> Self {
-        Self {
-            lower_bound_rows: 0,
-            upper_bound_rows: None,
-            lower_bound_bytes: 0,
-            upper_bound_bytes: None,
-        }
-    }
-    fn apply<F: Fn(usize) -> usize>(&self, f: F) -> Self {
-        Self {
-            lower_bound_rows: f(self.lower_bound_rows),
-            upper_bound_rows: self.upper_bound_rows.map(&f),
-            lower_bound_bytes: f(self.lower_bound_rows),
-            upper_bound_bytes: self.upper_bound_bytes.map(&f),
-        }
-    }
-}
-
-impl Add for &ApproxStats {
-    type Output = ApproxStats;
-    fn add(self, rhs: Self) -> Self::Output {
-        ApproxStats {
-            lower_bound_rows: self.lower_bound_rows + rhs.lower_bound_rows,
-            upper_bound_rows: self
-                .upper_bound_rows
-                .and_then(|l_ub| rhs.upper_bound_rows.map(|v| v + l_ub)),
-            lower_bound_bytes: self.lower_bound_bytes + rhs.lower_bound_bytes,
-            upper_bound_bytes: self
-                .upper_bound_bytes
-                .and_then(|l_ub| rhs.upper_bound_bytes.map(|v| v + l_ub)),
-        }
-    }
 }
 
 impl PhysicalPlan {
@@ -233,12 +194,20 @@ impl PhysicalPlan {
                     stats.lower_bound_rows += st.num_rows().unwrap_or(0);
                     let in_memory_size = st.estimate_in_memory_size_bytes(None);
                     stats.lower_bound_bytes += in_memory_size.unwrap_or(0);
-                    stats.upper_bound_rows = stats
-                        .upper_bound_rows
-                        .and_then(|st_ub| st.upper_bound_rows().map(|ub| st_ub + ub));
-                    stats.upper_bound_bytes = stats
-                        .upper_bound_bytes
-                        .and_then(|st_ub| in_memory_size.map(|ub| st_ub + ub));
+                    if let Some(st_ub) = st.upper_bound_rows() {
+                        if let Some(ub) = stats.upper_bound_rows {
+                            stats.upper_bound_rows = Some(ub + st_ub);
+                        } else {
+                            stats.upper_bound_rows = st.upper_bound_rows();
+                        }
+                    }
+                    if let Some(st_ub) = in_memory_size {
+                        if let Some(ub) = stats.upper_bound_bytes {
+                            stats.upper_bound_bytes = Some(ub + st_ub);
+                        } else {
+                            stats.upper_bound_bytes = in_memory_size;
+                        }
+                    }
                 }
                 stats
             }

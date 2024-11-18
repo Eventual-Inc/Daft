@@ -7,6 +7,7 @@ use snafu::ResultExt;
 
 use crate::{
     logical_plan::{self, CreationSnafu},
+    stats::{ApproxStats, PlanStats, StatsState},
     LogicalPlan,
 };
 
@@ -17,6 +18,7 @@ pub struct Explode {
     // Expressions to explode. e.g. col("a")
     pub to_explode: Vec<ExprRef>,
     pub exploded_schema: SchemaRef,
+    pub stats_state: StatsState,
 }
 
 impl Explode {
@@ -59,7 +61,26 @@ impl Explode {
             input,
             to_explode,
             exploded_schema,
+            stats_state: StatsState::NotMaterialized,
         })
+    }
+
+    pub(crate) fn materialize_stats(&self) -> Self {
+        let new_input = self.input.materialize_stats();
+        let input_stats = new_input.get_stats();
+        let approx_stats = ApproxStats {
+            lower_bound_rows: input_stats.approx_stats.lower_bound_rows,
+            upper_bound_rows: None,
+            lower_bound_bytes: input_stats.approx_stats.lower_bound_bytes,
+            upper_bound_bytes: None,
+        };
+        let stats_state = StatsState::Materialized(PlanStats::new(approx_stats));
+        Self {
+            input: Arc::new(new_input),
+            to_explode: self.to_explode.clone(),
+            exploded_schema: self.exploded_schema.clone(),
+            stats_state,
+        }
     }
 
     pub fn multiline_display(&self) -> Vec<String> {

@@ -7,6 +7,7 @@ use snafu::ResultExt;
 
 use crate::{
     logical_plan::{self, CreationSnafu},
+    stats::{ApproxStats, PlanStats, StatsState},
     LogicalPlan,
 };
 
@@ -26,6 +27,7 @@ pub struct Aggregate {
     pub groupby: Vec<ExprRef>,
 
     pub output_schema: SchemaRef,
+    pub stats_state: StatsState,
 }
 
 impl Aggregate {
@@ -55,7 +57,51 @@ impl Aggregate {
             aggregations,
             groupby,
             output_schema,
+            stats_state: StatsState::NotMaterialized,
         })
+    }
+
+    pub(crate) fn materialize_stats(&self) -> Self {
+        // TODO(desmond): We can use the schema here for better estimations. For now, use the old logic.
+        let new_input = self.input.materialize_stats();
+        let input_stats = new_input.get_stats();
+        let est_bytes_per_row_lower = input_stats.approx_stats.lower_bound_bytes
+            / (input_stats.approx_stats.lower_bound_rows.max(1));
+        let est_bytes_per_row_upper =
+            input_stats
+                .approx_stats
+                .upper_bound_bytes
+                .and_then(|bytes| {
+                    input_stats
+                        .approx_stats
+                        .upper_bound_rows
+                        .map(|rows| bytes / rows.max(1))
+                });
+        let approx_stats = if self.groupby.is_empty() {
+            ApproxStats {
+                lower_bound_rows: input_stats.approx_stats.lower_bound_rows.min(1),
+                upper_bound_rows: Some(1),
+                lower_bound_bytes: input_stats.approx_stats.lower_bound_bytes.min(1)
+                    * est_bytes_per_row_lower,
+                upper_bound_bytes: est_bytes_per_row_upper,
+            }
+        } else {
+            ApproxStats {
+                lower_bound_rows: input_stats.approx_stats.lower_bound_rows.min(1),
+                upper_bound_rows: input_stats.approx_stats.upper_bound_rows,
+                lower_bound_bytes: input_stats.approx_stats.lower_bound_bytes.min(1)
+                    * est_bytes_per_row_lower,
+                upper_bound_bytes: input_stats.approx_stats.upper_bound_bytes,
+            }
+        };
+        let stats_state = StatsState::Materialized(PlanStats::new(approx_stats));
+        Self {
+            input: Arc::new(new_input),
+            aggregations: self.aggregations.clone(),
+            groupby: self.groupby.clone(),
+            output_schema: self.output_schema.clone(),
+            stats_state,
+        }
     }
 
     pub fn multiline_display(&self) -> Vec<String> {

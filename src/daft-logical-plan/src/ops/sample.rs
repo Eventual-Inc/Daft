@@ -3,7 +3,10 @@ use std::{
     sync::Arc,
 };
 
-use crate::LogicalPlan;
+use crate::{
+    stats::{PlanStats, StatsState},
+    LogicalPlan,
+};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Sample {
@@ -12,6 +15,7 @@ pub struct Sample {
     pub fraction: f64,
     pub with_replacement: bool,
     pub seed: Option<u64>,
+    pub stats_state: StatsState,
 }
 
 impl Eq for Sample {}
@@ -44,6 +48,24 @@ impl Sample {
             fraction,
             with_replacement,
             seed,
+            stats_state: StatsState::NotMaterialized,
+        }
+    }
+
+    pub(crate) fn materialize_stats(&self) -> Self {
+        // TODO(desmond): We can do better estimations with the projection schema. For now, reuse the old logic.
+        let new_input = self.input.materialize_stats();
+        let approx_stats = new_input
+            .get_stats()
+            .approx_stats
+            .apply(|v| ((v as f64) * self.fraction) as usize);
+        let stats_state = StatsState::Materialized(PlanStats::new(approx_stats));
+        Self {
+            input: Arc::new(new_input),
+            fraction: self.fraction,
+            with_replacement: self.with_replacement,
+            seed: self.seed,
+            stats_state,
         }
     }
 

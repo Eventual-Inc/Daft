@@ -33,6 +33,7 @@ impl Session {
             let result = (|| -> eyre::Result<()> {
                 let plan = translation::to_logical_plan(command)?;
                 let logical_plan = plan.build();
+                // TODO(desmond): It looks like we don't currently do optimizer passes here before translation.
                 let physical_plan = daft_local_plan::translate(&logical_plan)?;
 
                 let cfg = DaftExecutionConfig::default();
