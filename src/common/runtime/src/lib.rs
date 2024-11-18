@@ -131,6 +131,14 @@ impl Runtime {
     {
         RuntimeTask::new(self.runtime.handle(), future)
     }
+
+    pub fn spawn_detached<F>(&self, future: F)
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
+        self.runtime.spawn(future);
+    }
 }
 
 fn init_compute_runtime() -> RuntimeRef {
