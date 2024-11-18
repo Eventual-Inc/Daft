@@ -29,7 +29,7 @@ on:
 jobs:
   build-commit:
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         compile_arch: [x86, arm]
     runs-on: buildjet-8vcpu-ubuntu-2004
@@ -41,9 +41,9 @@ jobs:
       wheel: ${{ steps.build_and_upload.outputs.wheel }}
     steps:
     - if: ${{ (matrix.compile_arch == 'x86') && (github.event.inputs.x86 == 'false') }}
-      run: exit 78
+      run: exit 0
     - if: ${{ (matrix.compile_arch == 'arm') && (github.event.inputs.arm == 'false') }}
-      run: exit 78
+      run: exit 0
     - uses: aws-actions/configure-aws-credentials@v4
       with:
         aws-region: us-west-2
