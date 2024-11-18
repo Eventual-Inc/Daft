@@ -1,0 +1,36 @@
+name: Build commit and run tpch benchmarks
+
+on:
+  workflow_dispatch:
+    inputs:
+      wheel:
+        description: The wheel artifact to use
+        required: false
+        default: getdaft-0.3.0.dev0-cp38-abi3-manylinux_2_31_x86_64.whl
+      skip_questions:
+        description: The TPC-H questions to skip
+        required: false
+        default: "2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22"
+      scale_factor:
+        description: Which scale factor to use
+        required: false
+        default: 2
+      partition_size:
+        description: Which partition size to use
+        required: false
+        default: 2
+
+jobs:
+  build:
+    uses: ./.github/workflows/build-commit.yaml
+    secrets:
+      ACTIONS_AWS_ROLE_ARN: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
+
+  run:
+    needs: build
+    uses: ./.github/workflows/run-tpch.yaml
+    with:
+      wheel: ${{ needs.build.outputs.wheel }}
+      skip_questions: ${{ inputs.skip_questions }}
+      scale_factor: ${{ inputs.scale_factor }}
+      partition_size: ${{ inputs.partition_size }}
