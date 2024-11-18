@@ -2,6 +2,15 @@ name: Build a Daft commit and store the outputted wheel in AWS S3
 
 on:
   workflow_dispatch:
+    inputs:
+      x86:
+        description: Build for x86
+        required: false
+        default: false
+      arm:
+        description: Build for ARM
+        required: false
+        default: false
   workflow_call:
     secrets:
       ACTIONS_AWS_ROLE_ARN:
@@ -19,6 +28,10 @@ on:
 
 jobs:
   build-commit:
+    strategy:
+      fail-fast: true
+      matrix:
+        compile_arch: [x86, arm]
     runs-on: buildjet-8vcpu-ubuntu-2004
     timeout-minutes: 15 # Remove for ssh debugging
     permissions:
@@ -27,6 +40,10 @@ jobs:
     outputs:
       wheel: ${{ steps.build_and_upload.outputs.wheel }}
     steps:
+    - if: ${{ (matrix.compile_arch == 'x86') && (github.event.inputs.x86 == 'false') }}
+      run: exit 78
+    - if: ${{ (matrix.compile_arch == 'arm') && (github.event.inputs.arm == 'false') }}
+      run: exit 78
     - uses: aws-actions/configure-aws-credentials@v4
       with:
         aws-region: us-west-2
