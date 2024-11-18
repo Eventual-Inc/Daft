@@ -56,7 +56,6 @@ python = [
   "common-system-info/python",
   "daft-catalog/python",
   "daft-catalog-python-catalog/python",
-  "daft-connect/python",
   "daft-core/python",
   "daft-csv/python",
   "daft-dsl/python",
@@ -207,6 +206,7 @@ daft-local-plan = {path = "src/daft-local-plan"}
 daft-logical-plan = {path = "src/daft-logical-plan"}
 daft-micropartition = {path = "src/daft-micropartition"}
 daft-physical-plan = {path = "src/daft-physical-plan"}
+daft-scan = {path = "src/daft-scan"}
 daft-schema = {path = "src/daft-schema"}
 daft-sql = {path = "src/daft-sql"}
 daft-table = {path = "src/daft-table"}

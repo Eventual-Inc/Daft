@@ -1,13 +1,15 @@
+use eyre::bail;
 use spark_connect::{
     data_type::{Kind, Long, Struct, StructField},
     relation::RelType,
     DataType, Relation,
 };
+use tracing::warn;
 
 #[tracing::instrument(skip_all)]
-pub fn connect_schema(input: Relation) -> Result<DataType, tonic::Status> {
+pub fn relation_to_schema(input: Relation) -> eyre::Result<DataType> {
     if input.common.is_some() {
-        tracing::warn!("We do not currently look at common fields");
+        warn!("We do not currently look at common fields");
     }
 
     let result = match input
@@ -16,9 +18,7 @@ pub fn connect_schema(input: Relation) -> Result<DataType, tonic::Status> {
     {
         RelType::Range(spark_connect::Range { num_partitions, .. }) => {
             if num_partitions.is_some() {
-                return Err(tonic::Status::unimplemented(
-                    "num_partitions is not supported",
-                ));
+                warn!("We do not currently support num_partitions");
             }
 
             let long = Long {
@@ -46,9 +46,7 @@ pub fn connect_schema(input: Relation) -> Result<DataType, tonic::Status> {
             }
         }
         other => {
-            return Err(tonic::Status::unimplemented(format!(
-                "Unsupported relation type: {other:?}"
-            )))
+            bail!("Unsupported relation type: {other:?}");
         }
     };
 
