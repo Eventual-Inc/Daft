@@ -17,7 +17,7 @@ use crate::field::Field;
 
 pub type SchemaRef = Arc<Schema>;
 
-#[derive(Debug, Display, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Display, PartialEq, Eq, Serialize, Deserialize, Clone)]
 #[serde(transparent)]
 #[display("{}\n", make_schema_vertical_table(
     fields.iter().map(|(name, field)| (name.clone(), field.dtype.to_string()))

@@ -1,22 +1,24 @@
 [dependencies]
+arrow2 = {workspace = true}
+common-daft-config = {workspace = true, features = ["python"]}
+daft-core = {workspace = true, features = ["python"]}
+daft-local-execution = {workspace = true, features = ["python"]}
+daft-local-plan = {workspace = true, features = ["python"]}
+daft-logical-plan = {workspace = true, features = ["python"]}
+daft-micropartition = {workspace = true, features = ["python"]}
+daft-scan = {workspace = true, features = ["python"]}
+daft-schema = {workspace = true, features = ["python"]}
+daft-table = {workspace = true, features = ["python"]}
 dashmap = "6.1.0"
 eyre = "0.6.12"
 futures = "0.3.31"
-pyo3 = {workspace = true, optional = true}
+pyo3 = {workspace = true}
+spark-connect = {workspace = true}
 tokio = {version = "1.40.0", features = ["full"]}
+tokio-util = {workspace = true}
 tonic = "0.12.3"
-tracing-subscriber = {version = "0.3.18", features = ["env-filter"]}
-tracing-tracy = "0.11.3"
+tracing = {workspace = true}
 uuid = {version = "1.10.0", features = ["v4"]}
-arrow2.workspace = true
-daft-core.workspace = true
-daft-schema.workspace = true
-daft-table.workspace = true
-spark-connect.workspace = true
-tracing.workspace = true
-
-[features]
-python = ["dep:pyo3"]
 
 [lints]
 workspace = true
