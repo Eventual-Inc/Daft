@@ -54,8 +54,16 @@ jobs:
           maturin build --release
         fi
 
+        count=$(ls ~/target/wheels/*.whl 2> /dev/null | wc -l)
+        if [ "$count" -gt 1 ]; then
+          echo "Found more than 1 wheel"
+          exit 1
+        elif [ "$count" -eq 0 ]; then
+          echo "Found no wheel files"
+          exit 1
+        fi
+
         # Upload wheel
-        # (there should only be one output wheel in this directory)
         for file in ~/target/wheels/*.whl; do
           aws s3 cp $file s3://github-actions-artifacts-bucket/builds/${{ inputs.commit || github.sha }}/ --acl public-read --no-progress;
           file_basename=$(basename $file)
