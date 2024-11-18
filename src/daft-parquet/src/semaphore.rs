@@ -8,6 +8,9 @@ use std::{
 
 use tokio::sync::Semaphore;
 
+/// A semaphore that dynamically adjusts the number of permits based on the
+/// observed compute and IO times.
+/// Used to control the number of concurrent parquet deserialization tasks.
 pub(crate) struct DynamicParquetReadingSemaphore {
     semaphore: Arc<Semaphore>,
     timings: Mutex<RunningTimings>,
@@ -45,7 +48,9 @@ impl RunningAverage {
 }
 
 impl DynamicParquetReadingSemaphore {
+    /// The ratio of compute time to IO time that allows for permit increase. This is a minimum value.
     const COMPUTE_THRESHOLD: f64 = 1.2;
+    /// The ratio of waiting time to compute time that allows for permit increase. This is a maximum value.
     const WAIT_THRESHOLD: f64 = 0.5;
 
     pub(crate) fn new(max_permits: usize) -> Arc<Self> {
@@ -108,6 +113,8 @@ impl DynamicParquetReadingSemaphore {
             let wait_ratio =
                 wait_avg.average.as_millis() as f64 / compute_avg.average.as_millis() as f64;
 
+            // Only increase permits if compute time is significantly higher than IO time,
+            // and waiting time is not too high.
             if compute_ratio > Self::COMPUTE_THRESHOLD && wait_ratio < Self::WAIT_THRESHOLD {
                 let current_permits = self.current_permits.load(Ordering::Relaxed);
                 let optimal_permits = (compute_ratio.ceil() as usize).min(self.max_permits);
