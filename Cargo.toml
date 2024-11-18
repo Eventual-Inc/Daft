@@ -135,7 +135,7 @@ debug = true
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 libc = {version = "^0.2.150", default-features = false}
-tikv-jemallocator = {version = "0.5.4", features = [
+tikv-jemallocator = {version = "0.6.0", features = [
   "disable_initial_exec_tls"
 ]}
 
