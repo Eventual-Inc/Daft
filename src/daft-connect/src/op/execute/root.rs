@@ -20,6 +20,8 @@ impl Session {
     ) -> Result<ExecuteStream, Status> {
         use futures::{StreamExt, TryStreamExt};
 
+        println!("ROOT command:\n{command:#?}");
+
         let context = PlanIds {
             session: self.client_side_session_id().to_string(),
             server_side_session: self.server_side_session_id().to_string(),

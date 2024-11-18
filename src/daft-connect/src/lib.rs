@@ -291,14 +291,14 @@ impl SparkConnectService for DaftSparkConnectService {
                     }
                 };
 
-                let schema = analyze_plan_response::DdlParse {
-                    parsed: Some(result),
+                let schema = analyze_plan_response::Schema {
+                    schema: Some(result),
                 };
 
                 let response = AnalyzePlanResponse {
                     session_id,
                     server_side_session_id: String::new(),
-                    result: Some(analyze_plan_response::Result::DdlParse(schema)),
+                    result: Some(analyze_plan_response::Result::Schema(schema)),
                 };
 
                 println!("response: {response:#?}");

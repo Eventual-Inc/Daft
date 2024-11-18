@@ -1,6 +1,6 @@
 use daft_logical_plan::LogicalPlanBuilder;
 use eyre::{bail, ensure, Context};
-use spark_connect::{relation::RelType, Range, Relation};
+use spark_connect::{relation::RelType, Range, Relation, Tail};
 use tracing::warn;
 
 pub fn to_logical_plan(relation: Relation) -> eyre::Result<LogicalPlanBuilder> {
@@ -13,9 +13,20 @@ pub fn to_logical_plan(relation: Relation) -> eyre::Result<LogicalPlanBuilder> {
     };
 
     match rel_type {
-        RelType::Range(r) => range(r).wrap_err("Failed to apply range to logical plan"),
+        RelType::Range(x) => range(x).wrap_err("Failed to apply range to logical plan"),
+        RelType::Tail(x) => tail(*x).wrap_err("Failed to apply tail to logical plan"),
         plan => bail!("Unsupported relation type: {plan:?}"),
     }
+}
+
+fn tail(tail: Tail) -> eyre::Result<LogicalPlanBuilder> {
+    let Tail { input, limit } = tail;
+
+    let Some(input) = input else {
+        bail!("Input is required");
+    };
+
+    to_logical_plan(*input)?.li
 }
 
 fn range(range: Range) -> eyre::Result<LogicalPlanBuilder> {
