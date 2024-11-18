@@ -58,7 +58,7 @@ jobs:
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v1.27.0
+      uses: slackapi/slack-github-action@v2.0.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
@@ -137,7 +137,7 @@ jobs:
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v1.27.0
+      uses: slackapi/slack-github-action@v2.0.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
