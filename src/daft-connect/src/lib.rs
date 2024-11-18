@@ -8,6 +8,7 @@
 
 use dashmap::DashMap;
 use eyre::Context;
+#[cfg(feature = "python")]
 use pyo3::types::PyModuleMethods;
 use spark_connect::{
     analyze_plan_response,
@@ -33,12 +34,12 @@ mod session;
 mod translation;
 pub mod util;
 
-#[pyo3::pyclass]
+#[cfg_attr(feature = "python", pyo3::pyclass)]
 pub struct ConnectionHandle {
     shutdown_signal: Option<tokio::sync::oneshot::Sender<()>>,
 }
 
-#[pyo3::pymethods]
+#[cfg_attr(feature = "python", pyo3::pymethods)]
 impl ConnectionHandle {
     pub fn shutdown(&mut self) {
         let Some(shutdown_signal) = self.shutdown_signal.take() else {
@@ -360,12 +361,14 @@ impl SparkConnectService for DaftSparkConnectService {
     }
 }
 
+#[cfg(feature = "python")]
 #[pyo3::pyfunction]
 #[pyo3(name = "connect_start")]
 pub fn py_connect_start(addr: &str) -> pyo3::PyResult<ConnectionHandle> {
     start(addr).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:?}")))
 }
 
+#[cfg(feature = "python")]
 pub fn register_modules(parent: &pyo3::Bound<pyo3::types::PyModule>) -> pyo3::PyResult<()> {
     parent.add_function(pyo3::wrap_pyfunction_bound!(py_connect_start, parent)?)?;
     parent.add_class::<ConnectionHandle>()?;
