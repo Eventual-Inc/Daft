@@ -194,7 +194,7 @@ fn arrow_chunk_to_table(
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_column_iters_to_table_task(
     arr_iters: ArrowChunkIters,
-    row_range_start: usize,
+    rg_range: RowGroupRange,
     schema_ref: SchemaRef,
     uri: String,
     predicate: Option<ExprRef>,
@@ -231,7 +231,7 @@ pub fn spawn_column_iters_to_table_task(
 
     compute_runtime.spawn_detached(async move {
         if deserializer_handles.is_empty() {
-            let empty = Table::empty(Some(schema_ref.clone()));
+            let empty = Table::new_with_size(schema_ref.clone(), vec![], rg_range.num_rows);
             let _ = output_sender.send(empty).await;
             return;
         }
@@ -262,7 +262,7 @@ pub fn spawn_column_iters_to_table_task(
                     chunk,
                     &schema_ref,
                     &uri,
-                    row_range_start,
+                    rg_range.start,
                     &mut index_so_far,
                     delete_rows.as_deref(),
                     &mut curr_delete_row_idx,
@@ -711,7 +711,7 @@ pub async fn local_parquet_stream(
             let permit = semaphore.acquire().await;
             spawn_column_iters_to_table_task(
                 column_iters.unwrap(),
-                rg_range.start,
+                rg_range,
                 schema_ref.clone(),
                 owned_uri.clone(),
                 predicate.clone(),
