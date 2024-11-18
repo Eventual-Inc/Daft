@@ -11,6 +11,7 @@ requirements.txt
 build
 .cython_build
 .hypothesis
+.ropeproject
 
 **/.ipynb_checkpoints/
 

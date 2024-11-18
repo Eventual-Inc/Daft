@@ -126,6 +126,7 @@ def run_all_benchmarks(
     csv_output_location: str | None,
     ray_job_dashboard_url: str | None = None,
     requirements: str | None = None,
+    pickle_daft_module: bool = True,
 ):
     get_df = get_df_with_parquet_folder(parquet_folder)
 
@@ -143,7 +144,7 @@ def run_all_benchmarks(
                 tpch_qnum=i,
                 working_dir=working_dir,
                 entrypoint=entrypoint,
-                runtime_env=get_ray_runtime_env(requirements),
+                runtime_env=get_ray_runtime_env(requirements, pickle_daft_module=pickle_daft_module),
             )
 
             # Run once as a warmup step
@@ -202,11 +203,13 @@ def get_daft_benchmark_runner_name() -> Literal["ray"] | Literal["py"] | Literal
     return name
 
 
-def get_ray_runtime_env(requirements: str | None) -> dict:
+def get_ray_runtime_env(requirements: str | None, pickle_daft_module: bool = True) -> dict:
+    daft_env_variables = dict(filter(lambda key_value: key_value[0].startswith("DAFT"), os.environ.items()))
     runtime_env = {
-        "py_modules": [daft],
+        "py_modules": [daft] if pickle_daft_module else None,
         "eager_install": True,
         "env_vars": {
+            **daft_env_variables,
             "DAFT_PROGRESS_BAR": "0",
             "DAFT_RUNNER": "ray",
         },
@@ -293,6 +296,12 @@ if __name__ == "__main__":
         default=None,
         help="Ray Dashboard URL to submit jobs instead of using Ray client, most useful when running on a remote cluster",
     )
+    parser.add_argument(
+        "--pickle_daft_module",
+        type=lambda arg: arg.lower() == "true",
+        default=True,
+        help="Avoid pickling the daft module in the ray-environment before initializing the Ray cluster; useful to turn *off* in CI when wheels are being used instead",
+    )
 
     args = parser.parse_args()
     if args.output_csv_headers:
@@ -331,4 +340,5 @@ if __name__ == "__main__":
         csv_output_location=args.output_csv,
         ray_job_dashboard_url=args.ray_job_dashboard_url,
         requirements=args.requirements,
+        pickle_daft_module=args.pickle_daft_module,
     )

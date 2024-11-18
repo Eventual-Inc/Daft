@@ -1,0 +1,164 @@
+name: Run tpch benchmarks
+
+on:
+  workflow_dispatch:
+    inputs:
+      wheel:
+        type: string
+        description: The wheel artifact to use
+        required: false
+        default: getdaft-0.3.0.dev0-cp38-abi3-manylinux_2_31_x86_64.whl
+      skip_questions:
+        type: string
+        description: The TPC-H questions to skip
+        required: false
+        default: ""
+      scale_factor:
+        type: choice
+        options:
+        - '2'
+        - '10'
+        - '100'
+        - '1000'
+        description: Which scale factor to use
+        required: false
+        default: '2'
+      partition_size:
+        type: choice
+        options:
+        - '2'
+        - '32'
+        - '32'
+        - '100'
+        - '300'
+        - '320'
+        - '512'
+        description: Which partition size to use
+        required: false
+        default: '2'
+      python_version:
+        type: string
+        description: The version of python to use
+        required: false
+        default: "3.9"
+  workflow_call:
+    inputs:
+      wheel:
+        type: string
+        description: The wheel artifact to use
+        required: false
+        default: getdaft-0.3.0.dev0-cp38-abi3-manylinux_2_31_x86_64.whl
+      skip_questions:
+        type: string
+        description: The TPC-H questions to skip
+        required: false
+        default: ""
+      scale_factor:
+        type: string
+        description: Which scale factor to use
+        required: false
+        default: '2'
+      partition_size:
+        type: string
+        description: Which partition size to use
+        required: false
+        default: '2'
+      python_version:
+        type: string
+        description: The version of python to use
+        required: false
+        default: "3.9"
+
+jobs:
+  run-tpch:
+    runs-on: [self-hosted, linux, x64, ci-dev]
+    timeout-minutes: 15 # Remove for ssh debugging
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+    - uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-region: us-west-2
+        role-session-name: run-tpch-workflow
+    - uses: ./.github/actions/install
+    - run: |
+        scale_factor_str="${{ inputs.scale_factor }}_0"
+
+        # Dynamically update ray config file
+        sed -i 's|<<SHA>>|${{ github.sha }}|g' .github/assets/benchmarking_ray_config.yaml
+        sed -i 's|<<WHEEL>>|${{ inputs.wheel }}|g' .github/assets/benchmarking_ray_config.yaml
+        sed -i "s|<<SCALE_FACTOR>>|$scale_factor_str|g" .github/assets/benchmarking_ray_config.yaml
+        sed -i 's|<<PARTITION_SIZE>>|${{ inputs.partition_size }}|g' .github/assets/benchmarking_ray_config.yaml
+        sed -i 's|<<PYTHON_VERSION>>|${{ inputs.python_version }}|g' .github/assets/benchmarking_ray_config.yaml
+
+        # Download private ssh key
+        KEY=$(aws secretsmanager get-secret-value --secret-id ci-github-actions-ray-cluster-key-3 --query SecretString --output text)
+        echo "$KEY" >> ~/.ssh/ci-github-actions-ray-cluster-key.pem
+        chmod 600 ~/.ssh/ci-github-actions-ray-cluster-key.pem
+
+        # Install dependencies
+        uv v
+        source .venv/bin/activate
+        rm -rf daft
+        uv pip install ray[default] boto3 https://github-actions-artifacts-bucket.s3.us-west-2.amazonaws.com/builds/${{ github.sha }}/${{ inputs.wheel }}
+
+        # Boot up ray cluster and submit tpch benchmarking job
+        ray up .github/assets/benchmarking_ray_config.yaml -y
+        HEAD_NODE_IP=$(ray get-head-ip .github/assets/benchmarking_ray_config.yaml | tail -n 1)
+        ssh -o StrictHostKeyChecking=no -fN -L 8265:localhost:8265 -i ~/.ssh/ci-github-actions-ray-cluster-key.pem ubuntu@$HEAD_NODE_IP
+        export DAFT_ENABLE_RAY_TRACING=1
+        export DAFT_RUNNER=ray
+        if [[ -n "${{ inputs.skip_questions }}" ]]; then
+          python -m benchmarking.tpch \
+            --scale_factor ${{ inputs.scale_factor }} \
+            --num_parts ${{ inputs.partition_size }} \
+            --parquet_file_cache /tmp/data \
+            --output_csv output.csv \
+            --ray_job_dashboard_url http://localhost:8265 \
+            --skip_warmup \
+            --pickle_daft_module='false' \
+            --skip_questions="${{ inputs.skip_questions }}"
+        else
+          python -m benchmarking.tpch \
+            --scale_factor ${{ inputs.scale_factor }} \
+            --num_parts ${{ inputs.partition_size }} \
+            --parquet_file_cache /tmp/data \
+            --output_csv output.csv \
+            --ray_job_dashboard_url http://localhost:8265 \
+            --skip_warmup \
+            --pickle_daft_module='false'
+        fi
+
+        # Download all logs
+        #
+        # We also need to convert all files containing ':' to '_'.
+        # GHA `actions/upload-artifact@v4` does *not* allow semicolons!
+        ray rsync-down .github/assets/benchmarking_ray_config.yaml /tmp/ray/session_*/logs/daft ray-daft-logs
+        find ray-daft-logs -depth -name '*:*' -exec bash -c '
+        for filepath; do
+          dir=$(dirname "$filepath")
+          base=$(basename "$filepath")
+          new_base=${base//:/_}
+          mv "$filepath" "$dir/$new_base"
+        done
+        ' _ {} +
+
+        # Tear down ray cluster
+        ray down .github/assets/benchmarking_ray_config.yaml -y
+
+        # Convert csv to markdown and print to GHA Summary Page
+        python .github/scripts/csv_to_md.py output.csv output.md
+        echo "# Results" >> $GITHUB_STEP_SUMMARY
+        cat output.md >> $GITHUB_STEP_SUMMARY
+    - uses: actions/upload-artifact@v4
+      with:
+        name: output.csv
+        path: output.csv
+    - uses: actions/upload-artifact@v4
+      with:
+        name: ray-daft-logs
+        path: ray-daft-logs
