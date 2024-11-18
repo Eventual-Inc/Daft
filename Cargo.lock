@@ -1933,13 +1933,10 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow2",
  "common-daft-config",
- "daft-core",
  "daft-local-execution",
  "daft-local-plan",
  "daft-logical-plan",
- "daft-micropartition",
  "daft-scan",
- "daft-schema",
  "daft-table",
  "dashmap",
  "eyre",
