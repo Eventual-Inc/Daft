@@ -660,6 +660,13 @@ impl ScanTask {
         &self,
         config: Option<&DaftExecutionConfig>,
     ) -> Option<usize> {
+        // If the ScanTask is populated with an estimation (this is provided by the ScanOperator), then
+        // we can just return that
+        if let Some(est) = self.estimated_materialized_size_bytes {
+            return Some(est);
+        }
+
+        // Otherwise, we fall-back to trying to estimate using some (very) naive logic based on the schema/stats
         let mat_schema = self.materialized_schema();
         self.statistics
             .as_ref()
