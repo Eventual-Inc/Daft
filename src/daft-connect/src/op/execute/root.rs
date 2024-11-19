@@ -4,7 +4,7 @@ use common_daft_config::DaftExecutionConfig;
 use futures::stream;
 use spark_connect::{ExecutePlanResponse, Relation};
 use tokio_util::sync::CancellationToken;
-use tonic::{codegen::tokio_stream::wrappers::UnboundedReceiverStream, Status};
+use tonic::{codegen::tokio_stream::wrappers::ReceiverStream, Status};
 
 use crate::{
     op::execute::{ExecuteStream, PlanIds},
@@ -61,7 +61,7 @@ impl Session {
             }
         });
 
-        let stream = UnboundedReceiverStream::new(rx);
+        let stream = ReceiverStream::new(rx);
 
         let stream = stream
             .map_err(|e| Status::internal(format!("Error in Daft server: {e:?}")))
