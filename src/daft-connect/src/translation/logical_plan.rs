@@ -33,9 +33,9 @@ fn range(range: Range) -> eyre::Result<LogicalPlanBuilder> {
             num_partitions,
         } = range;
 
-        if let Some(partitions) = num_partitions {
-            warn!("{partitions} ignored");
-        }
+        let partitions = num_partitions.unwrap_or(1);
+
+        ensure!(partitions > 0, "num_partitions must be greater than 0");
 
         let start = start.unwrap_or(0);
 
@@ -51,7 +51,7 @@ fn range(range: Range) -> eyre::Result<LogicalPlanBuilder> {
                 .wrap_err("Failed to get range function")?;
 
             let range = range
-                .call1((start, end, step))
+                .call1((start, end, step, partitions))
                 .wrap_err("Failed to create range scan operator")?
                 .to_object(py);
 

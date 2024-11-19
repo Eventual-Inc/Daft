@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-# import time
 import pytest
 from pyspark.sql import SparkSession
 
