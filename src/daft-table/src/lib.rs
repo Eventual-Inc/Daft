@@ -512,22 +512,20 @@ impl Table {
     }
 
     fn eval_expression(&self, expr: &Expr) -> DaftResult<Series> {
-        use crate::Expr::*;
-
         let expected_field = expr.to_field(self.schema.as_ref())?;
         let series = match expr {
-            Alias(child, name) => Ok(self.eval_expression(child)?.rename(name)),
-            Agg(agg_expr) => self.eval_agg_expression(agg_expr, None),
-            Cast(child, dtype) => self.eval_expression(child)?.cast(dtype),
-            Column(name) => self.get_column(name).cloned(),
-            Not(child) => !(self.eval_expression(child)?),
-            IsNull(child) => self.eval_expression(child)?.is_null(),
-            NotNull(child) => self.eval_expression(child)?.not_null(),
-            FillNull(child, fill_value) => {
+            Expr::Alias(child, name) => Ok(self.eval_expression(child)?.rename(name)),
+            Expr::Agg(agg_expr) => self.eval_agg_expression(agg_expr, None),
+            Expr::Cast(child, dtype) => self.eval_expression(child)?.cast(dtype),
+            Expr::Column(name) => self.get_column(name).cloned(),
+            Expr::Not(child) => !(self.eval_expression(child)?),
+            Expr::IsNull(child) => self.eval_expression(child)?.is_null(),
+            Expr::NotNull(child) => self.eval_expression(child)?.not_null(),
+            Expr::FillNull(child, fill_value) => {
                 let fill_value = self.eval_expression(fill_value)?;
                 self.eval_expression(child)?.fill_null(&fill_value)
             }
-            IsIn(child, items) => {
+            Expr::IsIn(child, items) => {
                 let items = items.iter().map(|i| self.eval_expression(i)).collect::<DaftResult<Vec<_>>>()?;
 
                 let items = items.iter().collect::<Vec<&Series>>();
@@ -537,10 +535,10 @@ impl Table {
                 .is_in(&s)
             }
 
-            Between(child, lower, upper) => self
+            Expr::Between(child, lower, upper) => self
                 .eval_expression(child)?
                 .between(&self.eval_expression(lower)?, &self.eval_expression(upper)?),
-            BinaryOp { op, left, right } => {
+            Expr::BinaryOp { op, left, right } => {
                 let lhs = self.eval_expression(left)?;
                 let rhs = self.eval_expression(right)?;
                 use daft_core::array::ops::{DaftCompare, DaftLogical};
@@ -565,14 +563,14 @@ impl Table {
                     ShiftRight => lhs.shift_right(&rhs),
                 }
             }
-            Function { func, inputs } => {
+            Expr::Function { func, inputs } => {
                 let evaluated_inputs = inputs
                     .iter()
                     .map(|e| self.eval_expression(e))
                     .collect::<DaftResult<Vec<_>>>()?;
                 func.evaluate(evaluated_inputs.as_slice(), func)
             }
-            ScalarFunction(func) => {
+            Expr::ScalarFunction(func) => {
                 let evaluated_inputs = func
                     .inputs
                     .iter()
@@ -580,8 +578,8 @@ impl Table {
                     .collect::<DaftResult<Vec<_>>>()?;
                 func.udf.evaluate(evaluated_inputs.as_slice())
             }
-            Literal(lit_value) => Ok(lit_value.to_series()),
-            IfElse {
+            Expr::Literal(lit_value) => Ok(lit_value.to_series()),
+            Expr::IfElse {
                 if_true,
                 if_false,
                 predicate,
@@ -597,14 +595,17 @@ impl Table {
                     Ok(if_true_series.if_else(&if_false_series, &predicate_series)?)
                 }
             },
-            Subquery(_subquery) => Err(DaftError::ComputeError(
+            Expr::Subquery(_subquery) => Err(DaftError::ComputeError(
                 "Subquery should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),
             )),
-            InSubquery(_expr, _subquery) => Err(DaftError::ComputeError(
+            Expr::InSubquery(_expr, _subquery) => Err(DaftError::ComputeError(
                 "IN <SUBQUERY> should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),
             )),
-            Exists(_subquery) => Err(DaftError::ComputeError(
+            Expr::Exists(_subquery) => Err(DaftError::ComputeError(
                 "EXISTS <SUBQUERY> should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),
+            )),
+            Expr::OuterReferenceColumn { .. } => Err(DaftError::ComputeError(
+                "Outer reference columns should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),
             )),
         }?;
 

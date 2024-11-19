@@ -21,7 +21,7 @@ pub fn requires_computation(e: &Expr) -> bool {
     // Returns whether or not this expression runs any computation on the underlying data
     match e {
         Expr::Alias(child, _) => requires_computation(child),
-        Expr::Column(..) | Expr::Literal(_) => false,
+        Expr::Column(..) | Expr::Literal(_) | Expr::OuterReferenceColumn { .. } => false,
         Expr::Agg(..)
         | Expr::BinaryOp { .. }
         | Expr::Cast(..)

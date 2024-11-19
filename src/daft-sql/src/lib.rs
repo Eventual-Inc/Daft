@@ -1,3 +1,5 @@
+#![feature(let_chains)]
+
 pub mod catalog;
 pub mod error;
 pub mod functions;
@@ -25,7 +27,7 @@ mod tests {
 
     use catalog::SQLCatalog;
     use daft_core::prelude::*;
-    use daft_dsl::{col, lit};
+    use daft_dsl::{col, lit, Expr, OuterReferenceColumn, Subquery};
     use daft_logical_plan::{
         logical_plan::Source, source_info::PlaceHolderInfo, ClusteringSpec, LogicalPlan,
         LogicalPlanBuilder, LogicalPlanRef, SourceInfo,
@@ -106,7 +108,7 @@ mod tests {
     }
 
     #[fixture]
-    fn planner() -> SQLPlanner {
+    fn planner() -> SQLPlanner<'static> {
         let mut catalog = SQLCatalog::new();
 
         catalog.register_table("tbl1", tbl_1());
@@ -392,6 +394,65 @@ mod tests {
             panic!("query: {query}\nerror: {e:?}");
         }
         assert!(plan.is_ok(), "query: {query}\nerror: {plan:?}");
+
+        Ok(())
+    }
+
+    #[rstest]
+    #[case::with_second_select("select i32 as a from tbl1 where i32 > 0")]
+    #[case::with_where("select i32 as a from tbl1 where i32 > 0")]
+    #[case::with_where_aliased("select i32 as a from tbl1 where a > 0")]
+    #[case::with_groupby("select i32 as a from tbl1 group by i32")]
+    #[case::with_groupby_aliased("select i32 as a from tbl1 group by a")]
+    #[case::with_orderby("select i32 as a from tbl1 order by i32")]
+    #[case::with_orderby_aliased("select i32 as a from tbl1 order by a")]
+    #[case::with_many("select i32 as a from tbl1 where i32 > 0 group by i32 order by i32")]
+    #[case::with_many_aliased("select i32 as a from tbl1 where a > 0 group by a order by a")]
+    #[case::second_select("select i32 as a, a + 1 from tbl1")]
+    fn test_compiles_select_alias(
+        mut planner: SQLPlanner,
+        #[case] query: &str,
+    ) -> SQLPlannerResult<()> {
+        let plan = planner.plan_sql(query);
+        if let Err(e) = plan {
+            panic!("query: {query}\nerror: {e:?}");
+        }
+        assert!(plan.is_ok(), "query: {query}\nerror: {plan:?}");
+
+        Ok(())
+    }
+
+    #[rstest]
+    #[case::basic("select utf8 from tbl1 where i64 > (select max(id) from tbl2 where id = i32)")]
+    #[case::compound(
+        "select utf8 from tbl1 where i64 > (select max(id) from tbl2 where id = tbl1.i32)"
+    )]
+    fn test_correlated_subquery(
+        mut planner: SQLPlanner,
+        #[case] query: &str,
+        tbl_1: LogicalPlanRef,
+        tbl_2: LogicalPlanRef,
+    ) -> SQLPlannerResult<()> {
+        let plan = planner.plan_sql(query)?;
+
+        let outer_col = Arc::new(Expr::OuterReferenceColumn(OuterReferenceColumn {
+            field: Field::new("i32", DataType::Int32),
+            depth: 1,
+        }));
+        let subquery = LogicalPlanBuilder::new(tbl_2, None)
+            .filter(col("id").eq(outer_col))?
+            .aggregate(vec![col("id").max()], vec![])?
+            .select(vec![col("id")])?
+            .build();
+
+        let subquery = Arc::new(Expr::Subquery(Subquery { plan: subquery }));
+
+        let expected = LogicalPlanBuilder::new(tbl_1, None)
+            .filter(col("i64").gt(subquery))?
+            .select(vec![col("utf8")])?
+            .build();
+
+        assert_eq!(plan, expected);
 
         Ok(())
     }
