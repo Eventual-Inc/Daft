@@ -45,8 +45,6 @@ jobs:
         sed -i "s|<<SCALE_FACTOR>>|$scale_factor_str|g" .github/assets/ray.yaml
         sed -i 's|<<PARTITION_SIZE>>|${{ inputs.partition_size }}|g' .github/assets/ray.yaml
 
-        cat .github/assets/ray.yaml
-
         # Download private ssh key
         KEY=$(aws secretsmanager get-secret-value --secret-id ci-github-actions-ray-cluster-key-3 --query SecretString --output text)
         echo "$KEY" >> ~/.ssh/ci-github-actions-ray-cluster-key.pem
