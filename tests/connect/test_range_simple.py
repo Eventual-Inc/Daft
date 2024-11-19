@@ -21,7 +21,6 @@ def spark_session():
     # Cleanup
     server.shutdown()
     session.stop()
-    # time.sleep(2)  # Allow time for session cleanup
 
 
 def test_range_operation(spark_session):
