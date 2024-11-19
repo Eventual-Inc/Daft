@@ -2,7 +2,7 @@ use arrow2::{
     array::ord::{self, DynComparator},
     types::Index,
 };
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 
 use super::{arrow2::sort::primitive::common::multi_column_idx_sort, as_arrow::AsArrow};
 #[cfg(feature = "python")]
@@ -21,6 +21,7 @@ use crate::{
     },
     kernels::search_sorted::{build_compare_with_nulls, cmp_float},
     series::Series,
+    utils::{ensure_nulls_first, ensure_nulls_first_arr},
 };
 
 pub fn build_multi_array_compare(
@@ -67,11 +68,8 @@ where
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        if nulls_first != descending {
-            return Err(DaftError::NotImplemented(
-                "nulls_first is not implemented".to_string(),
-            ));
-        }
+        ensure_nulls_first(descending, nulls_first)?;
+
         let arrow_array = self.as_arrow();
 
         let result =
@@ -94,11 +92,7 @@ where
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        if nulls_first.iter().zip(descending).any(|(a, b)| *a != *b) {
-            return Err(DaftError::not_implemented(
-                "nulls first is not yet implemented",
-            ));
-        }
+        ensure_nulls_first_arr(descending, nulls_first)?;
         let arrow_array = self.as_arrow();
         let first_desc = *descending.first().unwrap();
 
@@ -170,11 +164,7 @@ impl Float32Array {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        if nulls_first != descending {
-            return Err(DaftError::NotImplemented(
-                "nulls_first is not implemented".to_string(),
-            ));
-        }
+        ensure_nulls_first(descending, nulls_first)?;
         let arrow_array = self.as_arrow();
 
         let result =
@@ -197,11 +187,8 @@ impl Float32Array {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        if nulls_first.iter().zip(descending).any(|(a, b)| a != b) {
-            return Err(DaftError::NotImplemented(
-                "nulls_first is not implemented".to_string(),
-            ));
-        }
+        ensure_nulls_first_arr(descending, nulls_first)?;
+
         let arrow_array = self.as_arrow();
         let first_desc = *descending.first().unwrap();
 
@@ -273,11 +260,7 @@ impl Float64Array {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        if nulls_first != descending {
-            return Err(DaftError::not_implemented(
-                "nulls first is not yet implemented",
-            ));
-        }
+        ensure_nulls_first(descending, nulls_first)?;
         let arrow_array = self.as_arrow();
 
         let result =
@@ -300,11 +283,7 @@ impl Float64Array {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        if nulls_first.iter().zip(descending).any(|(a, b)| *a != *b) {
-            return Err(DaftError::not_implemented(
-                "nulls first is not yet implemented",
-            ));
-        }
+        ensure_nulls_first_arr(descending, nulls_first)?;
 
         let arrow_array = self.as_arrow();
         let first_desc = *descending.first().unwrap();
@@ -377,11 +356,7 @@ impl Decimal128Array {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        if nulls_first != descending {
-            return Err(DaftError::not_implemented(
-                "nulls first is not yet implemented",
-            ));
-        }
+        ensure_nulls_first(descending, nulls_first)?;
         let arrow_array = self.as_arrow();
 
         let result =
@@ -404,11 +379,7 @@ impl Decimal128Array {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        if nulls_first.iter().zip(descending).any(|(a, b)| *a != *b) {
-            return Err(DaftError::not_implemented(
-                "nulls first is not yet implemented",
-            ));
-        }
+        ensure_nulls_first_arr(descending, nulls_first)?;
         let arrow_array = self.as_arrow();
         let first_desc = *descending.first().unwrap();
 
@@ -493,11 +464,7 @@ impl NullArray {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        if nulls_first.iter().zip(descending).any(|(a, b)| *a != *b) {
-            return Err(DaftError::not_implemented(
-                "nulls first is not yet implemented",
-            ));
-        }
+        ensure_nulls_first_arr(descending, nulls_first)?;
         let first_desc = *descending.first().unwrap();
 
         let others_cmp = build_multi_array_compare(others, &descending[1..])?;
@@ -549,11 +516,7 @@ impl BooleanArray {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        if nulls_first.iter().zip(descending).any(|(a, b)| *a != *b) {
-            return Err(DaftError::not_implemented(
-                "nulls first is not yet implemented",
-            ));
-        }
+        ensure_nulls_first_arr(descending, nulls_first)?;
         let first_desc = *descending.first().unwrap();
 
         let others_cmp = build_multi_array_compare(others, &descending[1..])?;
@@ -652,11 +615,7 @@ macro_rules! impl_binary_like_sort {
                 I: DaftIntegerType,
                 <I as DaftNumericType>::Native: arrow2::types::Index,
             {
-                if nulls_first.iter().zip(descending).any(|(a, b)| *a != *b) {
-                    return Err(DaftError::not_implemented(
-                        "nulls first is not yet implemented",
-                    ));
-                }
+                ensure_nulls_first_arr(descending, nulls_first)?;
                 let first_desc = *descending.first().unwrap();
 
                 let others_cmp = build_multi_array_compare(others, &descending[1..])?;
