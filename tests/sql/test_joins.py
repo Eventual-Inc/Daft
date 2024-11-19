@@ -154,7 +154,7 @@ def test_join_qualifiers(join_condition, selection):
     ],
 )
 @pytest.mark.parametrize(
-    "selection", ["*", "a1.*, b1.y, b.score", "a1.x, a1.val, b1.*", "a1.x, a1.val, b1.y, b1.score"]
+    "selection", ["*", "a1.*, b1.y, b1.score", "a1.x, a1.val, b1.*", "a1.x, a1.val, b1.y, b1.score"]
 )
 def test_join_qualifiers_with_alias(join_condition, selection):
     a = daft.from_pydict({"x": [1, None], "val": [10, 20]})
