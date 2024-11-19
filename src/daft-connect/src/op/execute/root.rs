@@ -28,7 +28,7 @@ impl Session {
 
         let finished = context.finished();
 
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<eyre::Result<ExecutePlanResponse>>();
+        let (tx, rx) = tokio::sync::mpsc::channel::<eyre::Result<ExecutePlanResponse>>(16);
         std::thread::spawn(move || {
             let result = (|| -> eyre::Result<()> {
                 let plan = translation::to_logical_plan(command)?;
@@ -50,14 +50,14 @@ impl Session {
 
                     for table in tables.as_slice() {
                         let response = context.gen_response(table)?;
-                        tx.send(Ok(response)).unwrap();
+                        tx.blocking_send(Ok(response)).unwrap();
                     }
                 }
                 Ok(())
             })();
 
             if let Err(e) = result {
-                tx.send(Err(e)).unwrap();
+                tx.blocking_send(Err(e)).unwrap();
             }
         });
 
