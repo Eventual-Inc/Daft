@@ -88,3 +88,11 @@ def test_extract():
     """).collect()
 
     assert actual.to_pydict() == expected.to_pydict()
+
+
+def test_date_comparison():
+    date_df = daft.from_pydict({"date_str": ["2020-01-01", "2020-01-02", "2020-01-03"]})
+    date_df = date_df.with_column("date", daft.col("date_str").str.to_date("%Y-%m-%d"))
+    expected = date_df.filter(daft.col("date") == "2020-01-01").select("date").to_pydict()
+    actual = daft.sql("select date from date_df where date == '2020-01-01'").to_pydict()
+    assert actual == expected
