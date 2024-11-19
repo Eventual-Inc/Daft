@@ -82,8 +82,10 @@ jobs:
         ray up .github/assets/ray.yaml -y
         HEAD_NODE_IP=$(ray get-head-ip .github/assets/ray.yaml | tail -n 1)
         ssh -o StrictHostKeyChecking=no -fN -L 8265:localhost:8265 -i ~/.ssh/ci-github-actions-ray-cluster-key.pem ubuntu@$HEAD_NODE_IP
+        export DAFT_ENABLE_RAY_TRACING=1
+        export DAFT_RUNNER=ray
         if [[ -n "${{ inputs.skip_questions }}" ]]; then
-          DAFT_RUNNER=ray python -m benchmarking.tpch \
+          python -m benchmarking.tpch \
             --scale_factor ${{ inputs.scale_factor }} \
             --num_parts ${{ inputs.partition_size }} \
             --parquet_file_cache /tmp/data \
@@ -93,7 +95,7 @@ jobs:
             --no_pymodules \
             --skip_questions="${{ inputs.skip_questions }}"
         else
-          DAFT_RUNNER=ray python -m benchmarking.tpch \
+          python -m benchmarking.tpch \
             --scale_factor ${{ inputs.scale_factor }} \
             --num_parts ${{ inputs.partition_size }} \
             --parquet_file_cache /tmp/data \
@@ -106,6 +108,7 @@ jobs:
     - uses: lhotari/action-upterm@v1
 
     - run: |
+        source .venv/bin/activate
         ray down .github/assets/ray.yaml -y
         python .github/scripts/csv_to_md.py output.csv output.md
         echo "# Results" >> $GITHUB_STEP_SUMMARY
