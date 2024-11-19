@@ -30,7 +30,7 @@ on:
         type: string
         description: The TPC-H questions to skip
         required: false
-        default: "2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22"
+        default: ""
       scale_factor:
         type: string
         description: Which scale factor to use
@@ -82,16 +82,28 @@ jobs:
         ray up .github/assets/ray.yaml -y
         HEAD_NODE_IP=$(ray get-head-ip .github/assets/ray.yaml | tail -n 1)
         ssh -o StrictHostKeyChecking=no -fN -L 8265:localhost:8265 -i ~/.ssh/ci-github-actions-ray-cluster-key.pem ubuntu@$HEAD_NODE_IP
-        DAFT_RUNNER=ray python -m benchmarking.tpch \
-          --skip_questions="${{ inputs.skip_questions }}" \
-          --scale_factor ${{ inputs.scale_factor }} \
-          --num_parts ${{ inputs.partition_size }} \
-          --parquet_file_cache /tmp/data \
-          --output_csv output.csv \
-          --ray_job_dashboard_url http://localhost:8265 \
-          --skip_warmup \
-          --no_pymodules
-        ray down .github/assets/ray.yaml -y
+        if [[ -n "${{ inputs.skip_questions }}" ]]; then
+          DAFT_RUNNER=ray python -m benchmarking.tpch \
+            --skip_questions="${{ inputs.skip_questions }}" \
+            --scale_factor ${{ inputs.scale_factor }} \
+            --num_parts ${{ inputs.partition_size }} \
+            --parquet_file_cache /tmp/data \
+            --output_csv output.csv \
+            --ray_job_dashboard_url http://localhost:8265 \
+            --skip_warmup \
+            --no_pymodules
+          ray down .github/assets/ray.yaml -y
+        else
+          DAFT_RUNNER=ray python -m benchmarking.tpch \
+            --scale_factor ${{ inputs.scale_factor }} \
+            --num_parts ${{ inputs.partition_size }} \
+            --parquet_file_cache /tmp/data \
+            --output_csv output.csv \
+            --ray_job_dashboard_url http://localhost:8265 \
+            --skip_warmup \
+            --no_pymodules
+          ray down .github/assets/ray.yaml -y
+        fi
 
         python .github/scripts/csv_to_md.py output.csv output.md
         echo "# Results" >> $GITHUB_STEP_SUMMARY
