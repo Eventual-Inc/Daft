@@ -164,6 +164,25 @@ mod tests {
     }
 
     #[rstest]
+    fn test_compile_from_read_parquet(mut planner: SQLPlanner) -> SQLPlannerResult<()> {
+        let query = "select * from read_parquet('../../tests/assets/parquet-data/mvp.parquet')";
+        let plan = planner.plan_sql(query);
+        assert!(&plan.is_ok(), "query: {query}\nerror: {plan:?}");
+
+        Ok(())
+    }
+
+    #[rstest]
+    fn test_compile_from_read_csv(mut planner: SQLPlanner) -> SQLPlannerResult<()> {
+        let query =
+            "select * from read_csv('../../tests/assets/sampled-tpch.csv', delimiter => ',')";
+        let plan = planner.plan_sql(query);
+        assert!(&plan.is_ok(), "query: {query}\nerror: {plan:?}");
+
+        Ok(())
+    }
+
+    #[rstest]
     fn test_parse_sql(mut planner: SQLPlanner, tbl_1: LogicalPlanRef) {
         let sql = "select test as a from tbl1";
         let plan = planner.plan_sql(sql).unwrap();

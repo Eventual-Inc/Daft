@@ -1,8 +1,10 @@
+pub mod read_csv;
 pub mod read_parquet;
 use std::{collections::HashMap, sync::Arc};
 
 use daft_logical_plan::LogicalPlanBuilder;
 use once_cell::sync::Lazy;
+use read_csv::ReadCsvFunction;
 use read_parquet::ReadParquetFunction;
 use sqlparser::ast::TableFunctionArgs;
 
@@ -16,6 +18,7 @@ use crate::{
 pub(crate) static SQL_TABLE_FUNCTIONS: Lazy<SQLTableFunctions> = Lazy::new(|| {
     let mut functions = SQLTableFunctions::new();
     functions.add_fn("read_parquet", ReadParquetFunction);
+    functions.add_fn("read_csv", ReadCsvFunction);
     #[cfg(feature = "python")]
     functions.add_fn("read_deltalake", ReadDeltalakeFunction);
 

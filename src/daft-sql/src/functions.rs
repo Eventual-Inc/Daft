@@ -155,6 +155,18 @@ impl SQLLiteral for String {
     }
 }
 
+impl SQLLiteral for char {
+    fn from_expr(expr: &ExprRef) -> Result<Self, PlannerError>
+    where
+        Self: Sized,
+    {
+        expr.as_literal()
+            .and_then(|lit| lit.as_str())
+            .and_then(|s| s.chars().next())
+            .ok_or_else(|| PlannerError::invalid_operation("Expected a single char literal"))
+    }
+}
+
 impl SQLLiteral for i64 {
     fn from_expr(expr: &ExprRef) -> Result<Self, PlannerError>
     where
@@ -296,10 +308,12 @@ impl SQLPlanner {
         let mut named_args = HashMap::new();
         for (idx, arg) in args.iter().enumerate() {
             match arg {
+                // Supporting right arrow or assignment (for backward compatibility) operator for named notation
+                // https://www.postgresql.org/docs/current/sql-syntax-calling-funcs.html#SQL-SYNTAX-CALLING-FUNCS-NAMED
                 FunctionArg::Named {
                     name,
                     arg,
-                    operator: FunctionArgOperator::Assignment,
+                    operator: FunctionArgOperator::RightArrow | FunctionArgOperator::Assignment,
                 } => {
                     if !expected_named.contains(&name.value.as_str()) {
                         unsupported_sql_err!("unexpected named argument: {}", name);
