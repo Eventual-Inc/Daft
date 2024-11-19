@@ -1025,7 +1025,6 @@ impl SQLPlanner {
                     table_not_found_err!(table_name);
                 };
                 let right_schema = table_rel.inner.schema();
-                let schema = rel.inner.schema();
                 let keys = schema.fields.keys();
 
                 let right_schema = if let Some(exclude) = &wildcard_opts.opt_exclude {
@@ -1033,6 +1032,7 @@ impl SQLPlanner {
                 } else {
                     right_schema
                 };
+
                 let columns = right_schema
                     .fields
                     .keys()
@@ -1041,12 +1041,17 @@ impl SQLPlanner {
                             .clone()
                             .any(|s| s.starts_with(&table_name) && s.ends_with(field))
                         {
-                            col(format!("{}.{}", table_name, field)).alias(field.as_ref())
+                            if table_name == rel.get_name() {
+                                col(field.clone())
+                            } else {
+                                col(format!("{}.{}", &table_name, field)).alias(field.as_ref())
+                            }
                         } else {
                             col(field.clone())
                         }
                     })
                     .collect::<Vec<_>>();
+
                 Ok(columns)
             }
         }
