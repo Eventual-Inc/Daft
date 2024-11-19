@@ -984,7 +984,7 @@ impl<'a> SQLPlanner<'a> {
             // The identifier could also be in the alias map but not the schema
             // for expressions in WHERE, GROUP BY, and HAVING, which are done before project
             if let Some(expr) = planner.alias_map.get(&full_str) {
-                // transform expression alias map by incrementing thee depths of every column by `depth``
+                // transform expression alias map by incrementing thee depths of every column by `depth`
                 let transformed_expr = expr
                     .clone()
                     .transform(|e| match e.as_ref() {
