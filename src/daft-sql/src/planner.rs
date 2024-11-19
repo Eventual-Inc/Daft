@@ -745,9 +745,7 @@ impl SQLPlanner {
                         let null_equals_null = *op == BinaryOperator::Spaceship;
 
                         let left = get_idents_vec(left)?;
-                        dbg!(&left);
                         let right = get_idents_vec(right)?;
-                        dbg!(&right);
 
                         collect_idents(&left, &right, left_rel, right_rel)
                             .map(|(left, right)| (left, right, vec![null_equals_null]))
@@ -818,8 +816,8 @@ impl SQLPlanner {
 
             left_rel.inner = left_rel.inner.join_with_null_safe_equal(
                 right_rel.inner,
-                dbg!(left_on),
-                dbg!(right_on),
+                left_on,
+                right_on,
                 null_eq_null,
                 join_type,
                 None,
@@ -917,7 +915,7 @@ impl SQLPlanner {
             }
         };
 
-        if root == dbg!(current_relation.get_name()) {
+        if root == current_relation.get_name() {
             // This happens when it's called from a qualified wildcard (tbl.*)
             if idents.len() == 0 {
                 return Ok(current_relation
@@ -1046,8 +1044,7 @@ impl SQLPlanner {
                             if table_name == rel.get_name() {
                                 col(field.clone())
                             } else {
-                                col(format!("{}.{}", dbg!(&table_name), dbg!(field)))
-                                    .alias(field.as_ref())
+                                col(format!("{}.{}", &table_name, field)).alias(field.as_ref())
                             }
                         } else {
                             col(field.clone())
