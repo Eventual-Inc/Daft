@@ -96,7 +96,7 @@ mod test {
             .limit(1000, false)?
             .add_monotonically_increasing_id(None)?
             .distinct()?
-            .sort(vec![col("last_name")], vec![false], vec![])?
+            .sort(vec![col("last_name")], vec![false], vec![false])?
             .build();
 
         let plan = LogicalPlanBuilder::new(subplan, None)
@@ -132,7 +132,7 @@ Num partitions = 0
 Output schema = text#Utf8, id#Int32"]
 Source5 --> Filter4
 Filter4 --> Join3
-Sort6["Sort: Sort by = (col(last_name), ascending)"]
+Sort6["Sort: Sort by = (col(last_name), ascending, nulls last)"]
 Distinct7["Distinct"]
 MonotonicallyIncreasingId8["MonotonicallyIncreasingId"]
 Limit9["Limit: 1000"]
