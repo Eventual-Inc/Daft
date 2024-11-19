@@ -84,15 +84,14 @@ jobs:
         ssh -o StrictHostKeyChecking=no -fN -L 8265:localhost:8265 -i ~/.ssh/ci-github-actions-ray-cluster-key.pem ubuntu@$HEAD_NODE_IP
         if [[ -n "${{ inputs.skip_questions }}" ]]; then
           DAFT_RUNNER=ray python -m benchmarking.tpch \
-            --skip_questions="${{ inputs.skip_questions }}" \
             --scale_factor ${{ inputs.scale_factor }} \
             --num_parts ${{ inputs.partition_size }} \
             --parquet_file_cache /tmp/data \
             --output_csv output.csv \
             --ray_job_dashboard_url http://localhost:8265 \
             --skip_warmup \
-            --no_pymodules
-          ray down .github/assets/ray.yaml -y
+            --no_pymodules \
+            --skip_questions="${{ inputs.skip_questions }}"
         else
           DAFT_RUNNER=ray python -m benchmarking.tpch \
             --scale_factor ${{ inputs.scale_factor }} \
@@ -102,9 +101,12 @@ jobs:
             --ray_job_dashboard_url http://localhost:8265 \
             --skip_warmup \
             --no_pymodules
-          ray down .github/assets/ray.yaml -y
         fi
 
+    - uses: lhotari/action-upterm@v1
+
+    - run: |
+        ray down .github/assets/ray.yaml -y
         python .github/scripts/csv_to_md.py output.csv output.md
         echo "# Results" >> $GITHUB_STEP_SUMMARY
         cat output.md >> $GITHUB_STEP_SUMMARY
