@@ -1,0 +1,114 @@
+name: Run tpch benchmarks
+
+on:
+  workflow_dispatch:
+    inputs:
+      wheel:
+        description: The wheel artifact to use
+        required: false
+        default: getdaft-0.3.0.dev0-cp38-abi3-manylinux_2_31_x86_64.whl
+      skip_questions:
+        description: The TPC-H questions to skip
+        required: false
+        default: ""
+      scale_factor:
+        description: Which scale factor to use
+        required: false
+        default: 2
+      partition_size:
+        description: Which partition size to use
+        required: false
+        default: 2
+  workflow_call:
+    inputs:
+      wheel:
+        type: string
+        description: The wheel artifact to use
+        required: false
+        default: getdaft-0.3.0.dev0-cp38-abi3-manylinux_2_31_x86_64.whl
+      skip_questions:
+        type: string
+        description: The TPC-H questions to skip
+        required: false
+        default: ""
+      scale_factor:
+        type: string
+        description: Which scale factor to use
+        required: false
+        default: 2
+      partition_size:
+        type: string
+        description: Which partition size to use
+        required: false
+        default: 2
+
+jobs:
+  run-tpch:
+    runs-on: [self-hosted, linux, x64, ci-dev]
+    timeout-minutes: 15 # Remove for ssh debugging
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+    - uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-region: us-west-2
+        role-session-name: run-tpch-workflow
+    - uses: ./.github/actions/install
+    - run: |
+        scale_factor_str="${{ inputs.scale_factor }}_0"
+
+        # Dynamically update ray config file
+        sed -i 's|<<SHA>>|${{ github.sha }}|g' .github/assets/ray.yaml
+        sed -i 's|<<WHEEL>>|${{ inputs.wheel }}|g' .github/assets/ray.yaml
+        sed -i "s|<<SCALE_FACTOR>>|$scale_factor_str|g" .github/assets/ray.yaml
+        sed -i 's|<<PARTITION_SIZE>>|${{ inputs.partition_size }}|g' .github/assets/ray.yaml
+
+        # Download private ssh key
+        KEY=$(aws secretsmanager get-secret-value --secret-id ci-github-actions-ray-cluster-key-3 --query SecretString --output text)
+        echo "$KEY" >> ~/.ssh/ci-github-actions-ray-cluster-key.pem
+        chmod 600 ~/.ssh/ci-github-actions-ray-cluster-key.pem
+
+        # Install dependencies
+        uv v
+        source .venv/bin/activate
+        rm -rf daft
+        uv pip install ray[default] boto3 https://github-actions-artifacts-bucket.s3.us-west-2.amazonaws.com/builds/${{ github.sha }}/${{ inputs.wheel }}
+
+        # Boot up ray cluster
+        ray up .github/assets/ray.yaml -y
+        HEAD_NODE_IP=$(ray get-head-ip .github/assets/ray.yaml | tail -n 1)
+        ssh -o StrictHostKeyChecking=no -fN -L 8265:localhost:8265 -i ~/.ssh/ci-github-actions-ray-cluster-key.pem ubuntu@$HEAD_NODE_IP
+        if [[ -n "${{ inputs.skip_questions }}" ]]; then
+          DAFT_RUNNER=ray python -m benchmarking.tpch \
+            --skip_questions="${{ inputs.skip_questions }}" \
+            --scale_factor ${{ inputs.scale_factor }} \
+            --num_parts ${{ inputs.partition_size }} \
+            --parquet_file_cache /tmp/data \
+            --output_csv output.csv \
+            --ray_job_dashboard_url http://localhost:8265 \
+            --skip_warmup \
+            --no_pymodules
+          ray down .github/assets/ray.yaml -y
+        else
+          DAFT_RUNNER=ray python -m benchmarking.tpch \
+            --scale_factor ${{ inputs.scale_factor }} \
+            --num_parts ${{ inputs.partition_size }} \
+            --parquet_file_cache /tmp/data \
+            --output_csv output.csv \
+            --ray_job_dashboard_url http://localhost:8265 \
+            --skip_warmup \
+            --no_pymodules
+          ray down .github/assets/ray.yaml -y
+        fi
+
+        python .github/scripts/csv_to_md.py output.csv output.md
+        echo "# Results" >> $GITHUB_STEP_SUMMARY
+        cat output.md >> $GITHUB_STEP_SUMMARY
+    - uses: actions/upload-artifact@v4
+      with:
+        name: output.csv
+        path: output.csv
