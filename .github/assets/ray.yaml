@@ -35,9 +35,14 @@ available_node_types:
 
 setup_commands:
 # Mount drive
-- sudo mkfs.ext4 /dev/nvme0n1
-- sudo mount -t ext4 /dev/nvme0n1 /tmp
-- sudo chmod 777 /tmp
+- |
+  findmnt /tmp 1> /dev/null
+  code=$?
+  if [ $code -ne 0 ]; then
+    sudo mkfs.ext4 /dev/nvme0n1
+    sudo mount -t ext4 /dev/nvme0n1 /tmp
+    sudo chmod 777 /tmp
+  fi
 # Install dependencies
 - sudo snap install aws-cli --classic
 - curl -LsSf https://astral.sh/uv/install.sh | sh
