@@ -14,11 +14,11 @@ on:
       scale_factor:
         description: Which scale factor to use
         required: false
-        default: 2_0
+        default: 2
       partition_size:
         description: Which partition size to use
         required: false
-        default: '2'
+        default: 2
 
 jobs:
   run-tpch:
@@ -37,10 +37,12 @@ jobs:
         role-session-name: run-tpch-workflow
     - uses: ./.github/actions/install
     - run: |
+        scale_factor_str="${{ toString(inputs.scale_factor) }}_0"
+
         # Dynamically update ray config file
         sed -i 's|<<SHA>>|${{ github.sha }}|g' .github/assets/ray.yaml
         sed -i 's|<<WHEEL>>|${{ inputs.wheel }}|g' .github/assets/ray.yaml
-        sed -i 's|<<SCALE_FACTOR>>|${{ inputs.scale_factor }}|g' .github/assets/ray.yaml
+        sed -i 's|<<SCALE_FACTOR>>|$scale_factor_str|g' .github/assets/ray.yaml
         sed -i 's|<<PARTITION_SIZE>>|${{ inputs.partition_size }}|g' .github/assets/ray.yaml
 
         # Download private ssh key
