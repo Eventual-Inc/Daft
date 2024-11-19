@@ -27,7 +27,7 @@ impl FileInferredEstimator {
     pub fn from_parquet_metadata(
         daft_schema: SchemaRef,
         parquet_meta: &parquet2::metadata::FileMetaData,
-    ) -> Self {
+    ) -> Option<Self> {
         let total_rg_compressed_size: i64 = parquet_meta
             .row_groups
             .iter()
@@ -38,6 +38,12 @@ impl FileInferredEstimator {
             .iter()
             .map(|(_, rg)| rg.num_rows())
             .sum();
+
+        // If this is an empty Parquet file, we can't do any estimations
+        // NOTE: Not handling this case here will cause divide-by-zero panics further down in the code!
+        if (total_num_rows == 0) || (total_rg_compressed_size == 0) {
+            return None;
+        }
 
         // Accumulate statistics per-column
         // We only consider columns with names that match the field names in the provided `daft_schema`
@@ -83,7 +89,7 @@ impl FileInferredEstimator {
             }
         }
 
-        Self {
+        Some(Self {
             schema: daft_schema,
             estimated_row_size: (total_rg_compressed_size as usize) / total_num_rows,
             column_size_fraction: total_compressed_size_per_column
@@ -97,15 +103,19 @@ impl FileInferredEstimator {
                 .collect(),
             column_inflation: total_compressed_size_per_column
                 .iter()
-                .map(|(&field_idx, &col_compressed_size)| {
-                    (
-                        field_idx,
-                        (*total_uncompressed_size_per_column.get(&field_idx).unwrap() as f64)
-                            / (col_compressed_size as f64),
-                    )
+                .filter_map(|(&field_idx, &col_compressed_size)| {
+                    if col_compressed_size == 0 {
+                        None
+                    } else {
+                        Some((
+                            field_idx,
+                            (*total_uncompressed_size_per_column.get(&field_idx).unwrap() as f64)
+                                / (col_compressed_size as f64),
+                        ))
+                    }
                 })
                 .collect(),
-        }
+        })
     }
 }
 
@@ -133,11 +143,11 @@ impl FileInferredEstimator {
         // Grab the uncompressed size of each column, and then inflate it to add to the total size
         let total_uncompressed_size: f64 = columns_to_consider
             .iter()
-            .map(|col_idx| {
-                let fraction = self.column_size_fraction.get(col_idx).unwrap();
-                let inflation = self.column_inflation.get(col_idx).unwrap();
+            .filter_map(|col_idx| {
+                let fraction = self.column_size_fraction.get(col_idx)?;
+                let inflation = self.column_inflation.get(col_idx)?;
 
-                (size_on_disk as f64) * fraction * inflation
+                Some((size_on_disk as f64) * fraction * inflation)
             })
             .sum();
 

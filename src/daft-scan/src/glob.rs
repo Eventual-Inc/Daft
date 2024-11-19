@@ -249,7 +249,7 @@ impl GlobScanOperator {
                 let final_schema = apply_user_provided_schema(schema_from_file)?;
                 let size_estimator =
                     FileInferredEstimator::from_parquet_metadata(final_schema.clone(), &metadata);
-                (final_schema, Some(size_estimator))
+                (final_schema, size_estimator)
             }
 
             FileFormatConfig::Csv(CsvSourceConfig {
