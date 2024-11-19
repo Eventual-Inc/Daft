@@ -11,6 +11,14 @@ on:
         description: The TPC-H questions to skip
         required: false
         default: 2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22
+      scale_factor:
+        description: Which scale factor to use
+        required: false
+        default: 2_0
+      partition_size:
+        description: Which partition size to use
+        required: false
+        default: '2'
 
 jobs:
   run-tpch:
@@ -32,6 +40,8 @@ jobs:
         # Dynamically update ray config file
         sed -i 's|<<SHA>>|${{ github.sha }}|g' .github/assets/ray.yaml
         sed -i 's|<<WHEEL>>|${{ inputs.wheel }}|g' .github/assets/ray.yaml
+        sed -i 's|<<SCALE_FACTOR>>|${{ inputs.scale_factor }}|g' .github/assets/ray.yaml
+        sed -i 's|<<PARTITION_SIZE>>|${{ inputs.partition_size }}|g' .github/assets/ray.yaml
 
         # Download private ssh key
         KEY=$(aws secretsmanager get-secret-value --secret-id ci-github-actions-ray-cluster-key-3 --query SecretString --output text)
@@ -50,8 +60,8 @@ jobs:
         ssh -o StrictHostKeyChecking=no -fN -L 8265:localhost:8265 -i ~/.ssh/ci-github-actions-ray-cluster-key.pem ubuntu@$HEAD_NODE_IP
         DAFT_RUNNER=ray python -m benchmarking.tpch \
           --skip_questions=${{ inputs.skip_questions }} \
-          --num_parts 2 \
-          --scale_factor 2 \
+          --scale_factor ${{ inputs.scale_factor }} \
+          --num_parts ${{ inputs.partition_size }} \
           --parquet_file_cache /tmp/data \
           --output_csv output.csv \
           --ray_job_dashboard_url http://localhost:8265 \

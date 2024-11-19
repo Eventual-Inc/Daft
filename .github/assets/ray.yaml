@@ -55,6 +55,6 @@ setup_commands:
 # Download benchmarking fixtures
 - |
   aws s3 sync \
-  s3://eventual-dev-benchmarking-fixtures/uncompressed/tpch-dbgen/2_0/2/parquet/ \
-  /tmp/data/2_0/2/parquet/ \
+  s3://eventual-dev-benchmarking-fixtures/uncompressed/tpch-dbgen/<<SCALE_FACTOR>>/<<PARTITION_SIZE>>/parquet/ \
+  /tmp/data/<<SCALE_FACTOR>>/<<PARTITION_SIZE>>/parquet/ \
   --quiet
