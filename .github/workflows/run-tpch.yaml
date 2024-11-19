@@ -42,7 +42,7 @@ jobs:
         # Dynamically update ray config file
         sed -i 's|<<SHA>>|${{ github.sha }}|g' .github/assets/ray.yaml
         sed -i 's|<<WHEEL>>|${{ inputs.wheel }}|g' .github/assets/ray.yaml
-        sed -i 's|<<SCALE_FACTOR>>|$scale_factor_str|g' .github/assets/ray.yaml
+        sed -i "s|<<SCALE_FACTOR>>|$scale_factor_str|g" .github/assets/ray.yaml
         sed -i 's|<<PARTITION_SIZE>>|${{ inputs.partition_size }}|g' .github/assets/ray.yaml
 
         cat .github/assets/ray.yaml
