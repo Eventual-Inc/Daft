@@ -37,7 +37,7 @@ jobs:
         role-session-name: run-tpch-workflow
     - uses: ./.github/actions/install
     - run: |
-        scale_factor_str="${{ toString(inputs.scale_factor) }}_0"
+        scale_factor_str="${{ inputs.scale_factor }}_0"
 
         # Dynamically update ray config file
         sed -i 's|<<SHA>>|${{ github.sha }}|g' .github/assets/ray.yaml
