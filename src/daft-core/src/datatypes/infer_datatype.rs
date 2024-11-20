@@ -128,6 +128,11 @@ impl<'a> InferDataType<'a> {
 
                 Ok((DataType::Boolean, Some(d_type.clone()), d_type))
             }
+
+            (DataType::Utf8, DataType::Date) | (DataType::Date, DataType::Utf8) => {
+                // Date is logical, so we cast to intermediate type (date), then compare on the physical type (i32)
+                Ok((DataType::Boolean, Some(DataType::Date), DataType::Int32))
+            }
             (s, o) if s.is_physical() && o.is_physical() => {
                 Ok((DataType::Boolean, None, try_physical_supertype(s, o)?))
             }
