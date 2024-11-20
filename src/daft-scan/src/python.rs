@@ -268,9 +268,9 @@ pub mod pylib {
             if let Some(cfg) = cfg {
                 scan_tasks = split_by_row_groups(
                     scan_tasks,
-                    cfg.parquet_split_row_groups_max_files,
                     cfg.scan_tasks_min_size_bytes,
                     cfg.scan_tasks_max_size_bytes,
+                    cfg,
                 );
 
                 scan_tasks = merge_by_sizes(scan_tasks, &pushdowns, cfg);
