@@ -74,6 +74,9 @@ impl Sample {
         res.push(format!("Sample: {}", self.fraction));
         res.push(format!("With replacement = {}", self.with_replacement));
         res.push(format!("Seed = {:?}", self.seed));
+        if let StatsState::Materialized(stats) = &self.stats_state {
+            res.push(format!("Stats = {}", stats));
+        }
         res
     }
 }

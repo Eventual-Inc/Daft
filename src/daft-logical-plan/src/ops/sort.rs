@@ -91,6 +91,9 @@ impl Sort {
             })
             .join(", ");
         res.push(format!("Sort: Sort by = {}", pairs));
+        if let StatsState::Materialized(stats) = &self.stats_state {
+            res.push(format!("Stats = {}", stats));
+        }
         res
     }
 }

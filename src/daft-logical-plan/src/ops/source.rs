@@ -116,6 +116,9 @@ impl Source {
             "Output schema = {}",
             self.output_schema.short_string()
         ));
+        if let StatsState::Materialized(stats) = &self.stats_state {
+            res.push(format!("Stats = {}", stats));
+        }
         res
     }
 }

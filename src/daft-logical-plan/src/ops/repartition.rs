@@ -60,6 +60,9 @@ impl Repartition {
             self.repartition_spec.var_name(),
         ));
         res.extend(self.repartition_spec.multiline_display());
+        if let StatsState::Materialized(stats) = &self.stats_state {
+            res.push(format!("Stats = {}", stats));
+        }
         res
     }
 }

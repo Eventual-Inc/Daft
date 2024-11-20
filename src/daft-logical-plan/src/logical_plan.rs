@@ -266,24 +266,24 @@ impl LogicalPlan {
             Self::Source(source) => source.multiline_display(),
             Self::Project(projection) => projection.multiline_display(),
             Self::ActorPoolProject(projection) => projection.multiline_display(),
-            Self::Filter(Filter { predicate, .. }) => vec![format!("Filter: {predicate}")],
-            Self::Limit(Limit { limit, .. }) => vec![format!("Limit: {limit}")],
+            Self::Filter(filter) => filter.multiline_display(),
+            Self::Limit(limit) => limit.multiline_display(),
             Self::Explode(explode) => explode.multiline_display(),
             Self::Unpivot(unpivot) => unpivot.multiline_display(),
             Self::Sort(sort) => sort.multiline_display(),
             Self::Repartition(repartition) => repartition.multiline_display(),
-            Self::Distinct(_) => vec!["Distinct".to_string()],
+            Self::Distinct(distinct) => distinct.multiline_display(),
             Self::Aggregate(aggregate) => aggregate.multiline_display(),
             Self::Pivot(pivot) => pivot.multiline_display(),
-            Self::Concat(_) => vec!["Concat".to_string()],
+            Self::Concat(concat) => concat.multiline_display(),
             Self::Intersect(inner) => inner.multiline_display(),
             Self::Union(inner) => inner.multiline_display(),
             Self::Join(join) => join.multiline_display(),
             Self::Sink(sink) => sink.multiline_display(),
-            Self::Sample(sample) => {
-                vec![format!("Sample: {fraction}", fraction = sample.fraction)]
+            Self::Sample(sample) => sample.multiline_display(),
+            Self::MonotonicallyIncreasingId(monotonically_increasing_id) => {
+                monotonically_increasing_id.multiline_display()
             }
-            Self::MonotonicallyIncreasingId(_) => vec!["MonotonicallyIncreasingId".to_string()],
         }
     }
 

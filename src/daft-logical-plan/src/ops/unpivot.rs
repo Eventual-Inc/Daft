@@ -133,6 +133,9 @@ impl Unpivot {
             self.ids.iter().map(|e| e.to_string()).join(", ")
         ));
         res.push(format!("Schema = {}", self.output_schema.short_string()));
+        if let StatsState::Materialized(stats) = &self.stats_state {
+            res.push(format!("Stats = {}", stats));
+        }
         res
     }
 }

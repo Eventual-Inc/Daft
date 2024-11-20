@@ -67,10 +67,14 @@ impl Project {
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
-        vec![format!(
+        let mut res = vec![format!(
             "Project: {}",
             self.projection.iter().map(|e| e.to_string()).join(", ")
-        )]
+        )];
+        if let StatsState::Materialized(stats) = &self.stats_state {
+            res.push(format!("Stats = {}", stats));
+        }
+        res
     }
 
     fn try_factor_subexpressions(

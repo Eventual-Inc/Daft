@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
@@ -39,6 +41,19 @@ impl PlanStats {
         Self {
             approx_stats: ApproxStats::empty(),
         }
+    }
+}
+
+impl Display for PlanStats {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{{ Lower bound rows = {}, Upper bound rows = {}, Lower bound bytes = {}, Upper bound bytes = {} }}",
+            self.approx_stats.lower_bound_rows,
+            self.approx_stats.upper_bound_rows.map_or("None".to_string(), |v| v.to_string()),
+            self.approx_stats.lower_bound_bytes,
+            self.approx_stats.upper_bound_bytes.map_or("None".to_string(), |v| v.to_string()),
+        )
     }
 }
 

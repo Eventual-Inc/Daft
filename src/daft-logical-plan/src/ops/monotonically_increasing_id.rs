@@ -44,4 +44,12 @@ impl MonotonicallyIncreasingId {
             stats_state,
         }
     }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![format!("MonotonicallyIncreasingId")];
+        if let StatsState::Materialized(stats) = &self.stats_state {
+            res.push(format!("Stats = {}", stats));
+        }
+        res
+    }
 }
