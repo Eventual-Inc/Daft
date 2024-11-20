@@ -107,6 +107,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 input,
                 sort.sort_by.clone(),
                 sort.descending.clone(),
+                sort.nulls_first.clone(),
             ))
         }
         LogicalPlan::Join(join) => {

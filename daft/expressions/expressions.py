@@ -3116,7 +3116,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(native.list_max(self._expr))
 
-    def sort(self, desc: bool | Expression = False) -> Expression:
+    def sort(self, desc: bool | Expression = False, nulls_first: bool | Expression | None = None) -> Expression:
         """Sorts the inner lists of a list column.
 
         Example:
@@ -3145,7 +3145,11 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         if isinstance(desc, bool):
             desc = Expression._to_expression(desc)
-        return Expression._from_pyexpr(_list_sort(self._expr, desc._expr))
+        if nulls_first is None:
+            nulls_first = desc
+        elif isinstance(nulls_first, bool):
+            nulls_first = Expression._to_expression(nulls_first)
+        return Expression._from_pyexpr(_list_sort(self._expr, desc._expr, nulls_first._expr))
 
 
 class ExpressionStructNamespace(ExpressionNamespace):

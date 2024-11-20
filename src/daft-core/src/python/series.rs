@@ -299,12 +299,12 @@ impl PySeries {
         Ok(self.series.filter(mask.series.downcast()?)?.into())
     }
 
-    pub fn sort(&self, descending: bool) -> PyResult<Self> {
-        Ok(self.series.sort(descending)?.into())
+    pub fn sort(&self, descending: bool, nulls_first: bool) -> PyResult<Self> {
+        Ok(self.series.sort(descending, nulls_first)?.into())
     }
 
-    pub fn argsort(&self, descending: bool) -> PyResult<Self> {
-        Ok(self.series.argsort(descending)?.into())
+    pub fn argsort(&self, descending: bool, nulls_first: bool) -> PyResult<Self> {
+        Ok(self.series.argsort(descending, nulls_first)?.into())
     }
 
     pub fn hash(&self, seed: Option<Self>) -> PyResult<Self> {
@@ -696,8 +696,11 @@ impl PySeries {
         Ok(self.series.list_slice(&start.series, &end.series)?.into())
     }
 
-    pub fn list_sort(&self, desc: &Self) -> PyResult<Self> {
-        Ok(self.series.list_sort(&desc.series)?.into())
+    pub fn list_sort(&self, desc: &Self, nulls_first: &Self) -> PyResult<Self> {
+        Ok(self
+            .series
+            .list_sort(&desc.series, &nulls_first.series)?
+            .into())
     }
 
     pub fn map_get(&self, key: &Self) -> PyResult<Self> {

@@ -1583,8 +1583,10 @@ class DataFrame:
             by = [
                 by,
             ]
+
         sort_by = self.__column_input_to_expression(by)
-        builder = self._builder.sort(sort_by=sort_by, descending=desc)
+
+        builder = self._builder.sort(sort_by=sort_by, descending=desc, nulls_first=desc)
         return DataFrame(builder)
 
     @DataframePublicAPI

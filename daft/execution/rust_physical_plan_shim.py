@@ -202,6 +202,7 @@ def sort(
     input: physical_plan.InProgressPhysicalPlan[PartitionT],
     sort_by: list[PyExpr],
     descending: list[bool],
+    nulls_first: list[bool],
     num_partitions: int,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in sort_by])
@@ -209,6 +210,7 @@ def sort(
         child_plan=input,
         sort_by=expr_projection,
         descending=descending,
+        nulls_first=nulls_first,
         num_partitions=num_partitions,
     )
 

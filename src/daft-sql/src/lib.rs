@@ -230,7 +230,7 @@ mod tests {
 
         let expected = LogicalPlanBuilder::new(tbl_1, None)
             .select(vec![col("utf8")])?
-            .sort(vec![col("utf8")], vec![true])?
+            .sort(vec![col("utf8")], vec![true], vec![true])?
             .build();
 
         assert_eq!(plan, expected);

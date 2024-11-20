@@ -557,8 +557,9 @@ mod tests {
         let pred = col("a").lt(lit(2));
         let sort_by = vec![col("a")];
         let descending = vec![true];
+        let nulls_first = vec![false];
         let plan = scan_plan
-            .sort(sort_by.clone(), descending.clone())?
+            .sort(sort_by.clone(), descending.clone(), nulls_first.clone())?
             .filter(pred.clone())?
             .build();
         let expected_filter_scan = if push_into_scan {
@@ -566,7 +567,9 @@ mod tests {
         } else {
             scan_plan.filter(pred)?
         };
-        let expected = expected_filter_scan.sort(sort_by, descending)?.build();
+        let expected = expected_filter_scan
+            .sort(sort_by, descending, nulls_first)?
+            .build();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }

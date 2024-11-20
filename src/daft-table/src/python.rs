@@ -54,6 +54,7 @@ impl PyTable {
         py: Python,
         sort_keys: Vec<PyExpr>,
         descending: Vec<bool>,
+        nulls_first: Vec<bool>,
     ) -> PyResult<Self> {
         let converted_exprs: Vec<daft_dsl::ExprRef> = sort_keys
             .into_iter()
@@ -62,7 +63,11 @@ impl PyTable {
         py.allow_threads(|| {
             Ok(self
                 .table
-                .sort(converted_exprs.as_slice(), descending.as_slice())?
+                .sort(
+                    converted_exprs.as_slice(),
+                    descending.as_slice(),
+                    nulls_first.as_slice(),
+                )?
                 .into())
         })
     }
@@ -72,6 +77,7 @@ impl PyTable {
         py: Python,
         sort_keys: Vec<PyExpr>,
         descending: Vec<bool>,
+        nulls_first: Vec<bool>,
     ) -> PyResult<PySeries> {
         let converted_exprs: Vec<daft_dsl::ExprRef> = sort_keys
             .into_iter()
@@ -80,7 +86,11 @@ impl PyTable {
         py.allow_threads(|| {
             Ok(self
                 .table
-                .argsort(converted_exprs.as_slice(), descending.as_slice())?
+                .argsort(
+                    converted_exprs.as_slice(),
+                    descending.as_slice(),
+                    nulls_first.as_slice(),
+                )?
                 .into())
         })
     }
