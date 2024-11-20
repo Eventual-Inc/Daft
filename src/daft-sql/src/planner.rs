@@ -347,6 +347,12 @@ impl<'a> SQLPlanner<'a> {
         let has_aggs = projections.iter().any(has_agg) || !groupby_exprs.is_empty();
 
         if has_aggs {
+            let having = selection
+                .having
+                .as_ref()
+                .map(|h| self.plan_expr(h))
+                .transpose()?;
+
             self.plan_aggregate_query(
                 &projections,
                 &schema,
@@ -354,6 +360,7 @@ impl<'a> SQLPlanner<'a> {
                 groupby_exprs,
                 query,
                 &projection_schema,
+                having,
             )?;
         } else {
             self.plan_non_agg_query(projections, schema, has_orderby, query, projection_schema)?;
@@ -464,6 +471,7 @@ impl<'a> SQLPlanner<'a> {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn plan_aggregate_query(
         &mut self,
         projections: &Vec<Arc<Expr>>,
@@ -472,6 +480,7 @@ impl<'a> SQLPlanner<'a> {
         groupby_exprs: Vec<Arc<Expr>>,
         query: &Query,
         projection_schema: &Schema,
+        having: Option<Arc<Expr>>,
     ) -> Result<(), PlannerError> {
         let mut final_projection = Vec::with_capacity(projections.len());
         let mut aggs = Vec::with_capacity(projections.len());
@@ -500,6 +509,15 @@ impl<'a> SQLPlanner<'a> {
                 final_projection.push(p.clone());
             }
         }
+
+        if let Some(having) = &having {
+            if has_agg(having) {
+                let having = having.alias(having.semantic_id(schema).id);
+
+                aggs.push(having);
+            }
+        }
+
         let groupby_exprs = groupby_exprs
             .into_iter()
             .map(|e| {
@@ -631,7 +649,7 @@ impl<'a> SQLPlanner<'a> {
         }
 
         let rel = self.relation_mut();
-        rel.inner = rel.inner.aggregate(aggs, groupby_exprs)?;
+        rel.inner = rel.inner.aggregate(aggs.clone(), groupby_exprs)?;
 
         let has_orderby_before_projection = !orderbys_before_projection.is_empty();
         let has_orderby_after_projection = !orderbys_after_projection.is_empty();
@@ -650,6 +668,16 @@ impl<'a> SQLPlanner<'a> {
             )?;
         }
 
+        if let Some(having) = having {
+            // if it's an agg, it's already resolved during .agg, so we just reference the column name
+            let having = if has_agg(&having) {
+                col(having.semantic_id(schema).id)
+            } else {
+                having
+            };
+            rel.inner = rel.inner.filter(having)?;
+        }
+
         // apply the final projection
         rel.inner = rel.inner.select(final_projection)?;
 
@@ -661,6 +689,7 @@ impl<'a> SQLPlanner<'a> {
                 orderbys_after_projection_nulls_first,
             )?;
         }
+
         Ok(())
     }
 
@@ -1999,9 +2028,7 @@ fn check_select_features(selection: &sqlparser::ast::Select) -> SQLPlannerResult
     if !selection.sort_by.is_empty() {
         unsupported_sql_err!("SORT BY");
     }
-    if selection.having.is_some() {
-        unsupported_sql_err!("HAVING");
-    }
+
     if !selection.named_window.is_empty() {
         unsupported_sql_err!("WINDOW");
     }
