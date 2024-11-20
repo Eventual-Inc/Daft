@@ -7,14 +7,14 @@ use tracing::warn;
 use crate::translation::{to_logical_plan, to_spark_datatype};
 
 #[tracing::instrument(skip_all)]
-pub fn relation_to_schema(input: Relation) -> eyre::Result<DataType> {
+pub async fn relation_to_schema(input: Relation) -> eyre::Result<DataType> {
     if let Some(common) = &input.common {
         if common.origin.is_some() {
             warn!("Ignoring common metadata for relation: {common:?}; not yet implemented");
         }
     }
 
-    let plan = to_logical_plan(input)?;
+    let plan = Box::pin(to_logical_plan(input)).await?;
 
     let result = plan.builder.schema();
 
