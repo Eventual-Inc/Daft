@@ -10,6 +10,7 @@ Daft User Guide
     expressions
     datatypes
     dataframe-operations
+    distributed-computing
     sql
     aggregations
     udf
