@@ -126,9 +126,6 @@ impl FileInferredEstimator {
         size_bytes_on_disk: u64,
         pushdowns: &Pushdowns,
     ) -> Option<usize> {
-        // We can only estimate the in memory size if provided with size of the ScanTask on disk
-        let size_on_disk = size_bytes_on_disk;
-
         // If we have column pushdowns, only consider those columns
         let columns_to_consider: Vec<usize> =
             if let Some(column_pushdowns) = pushdowns.columns.as_ref() {
@@ -147,13 +144,13 @@ impl FileInferredEstimator {
                 let fraction = self.column_size_fraction.get(col_idx)?;
                 let inflation = self.column_inflation.get(col_idx)?;
 
-                Some((size_on_disk as f64) * fraction * inflation)
+                Some((size_bytes_on_disk as f64) * fraction * inflation)
             })
             .sum();
 
         // Apply limit pushdown if present
         let total_uncompressed_size = if let Some(limit) = pushdowns.limit {
-            let estimated_num_rows = (size_on_disk as f64) / self.estimated_row_size as f64;
+            let estimated_num_rows = (size_bytes_on_disk as f64) / self.estimated_row_size as f64;
             let limit_fraction = (limit as f64 / estimated_num_rows).min(1.0);
             total_uncompressed_size * limit_fraction
         } else {
