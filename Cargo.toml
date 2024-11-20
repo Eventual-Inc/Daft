@@ -194,11 +194,14 @@ chrono-tz = "0.8.4"
 comfy-table = "7.1.1"
 common-daft-config = {path = "src/common/daft-config"}
 common-error = {path = "src/common/error", default-features = false}
+daft-core = {path = "src/daft-core"}
+daft-dsl = {path = "src/daft-dsl"}
 daft-hash = {path = "src/daft-hash"}
 daft-local-execution = {path = "src/daft-local-execution"}
 daft-local-plan = {path = "src/daft-local-plan"}
 daft-logical-plan = {path = "src/daft-logical-plan"}
 daft-scan = {path = "src/daft-scan"}
+daft-schema = {path = "src/daft-schema"}
 daft-table = {path = "src/daft-table"}
 derivative = "2.2.0"
 derive_builder = "0.20.2"
