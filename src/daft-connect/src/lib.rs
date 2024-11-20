@@ -158,7 +158,6 @@ impl SparkConnectService for DaftSparkConnectService {
         request: Request<ExecutePlanRequest>,
     ) -> Result<Response<Self::ExecutePlanStream>, Status> {
         let request = request.into_inner();
-
         let session = self.get_session(&request.session_id)?;
 
         let Some(operation) = request.operation_id else {

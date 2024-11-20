@@ -6,6 +6,26 @@ use tracing::warn;
 mod codec;
 pub use codec::deser as deser_spark_datatype;
 
+// todo: still a WIP; by no means complete
+pub fn to_spark_compatible_datatype(datatype: &DataType) -> DataType {
+    // TL;DR unsigned integers are not supported by Spark
+    match datatype {
+        DataType::UInt8 => DataType::Int8,
+        DataType::UInt16 => DataType::Int16,
+        DataType::UInt32 => DataType::Int32,
+        DataType::UInt64 => DataType::Int64,
+        DataType::Struct(fields) => {
+            let fields = fields
+                .iter()
+                .map(|f| Field::new(f.name.clone(), to_spark_compatible_datatype(&f.dtype)))
+                .collect();
+
+            DataType::Struct(fields)
+        }
+        _ => datatype.clone(),
+    }
+}
+
 pub fn to_spark_datatype(datatype: &DataType) -> spark_connect::DataType {
     match datatype {
         DataType::Null => spark_connect::DataType {
