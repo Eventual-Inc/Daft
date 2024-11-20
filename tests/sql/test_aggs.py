@@ -56,7 +56,7 @@ def test_aggs_sql():
         ("count(*) as cnt", "cnt > 2", {"cnt": [3, 5]}),
         ("count(*) as cnt", "count(*) > 2", {"cnt": [3, 5]}),
         ("count(*)", "count(*) > 2", {"count": [3, 5]}),
-        ("count(*) as cnt", "sum(values) > 10", {"count": [3, 5]}),
+        ("count(*) as cnt", "sum(values) > 10", {"cnt": [3, 5]}),
         ("sum(values), count(*)", "id > 1", {"values": [10.0, 29.5], "count": [2, 5]}),
     ],
 )
