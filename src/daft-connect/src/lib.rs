@@ -5,7 +5,6 @@
 #![feature(iter_from_coroutine)]
 #![feature(stmt_expr_attributes)]
 #![feature(try_trait_v2_residual)]
-#![deny(unused)]
 
 use dashmap::DashMap;
 use eyre::Context;
@@ -28,11 +27,11 @@ use uuid::Uuid;
 
 use crate::session::Session;
 
-mod command;
 mod config;
-mod convert;
 mod err;
+mod op;
 mod session;
+mod translation;
 pub mod util;
 
 #[cfg_attr(feature = "python", pyo3::pyclass)]
@@ -283,7 +282,14 @@ impl SparkConnectService for DaftSparkConnectService {
                     return Err(Status::invalid_argument("op_type is required to be root"));
                 };
 
-                let result = convert::connect_schema(relation)?;
+                let result = match translation::relation_to_schema(relation) {
+                    Ok(schema) => schema,
+                    Err(e) => {
+                        return invalid_argument_err!(
+                            "Failed to translate relation to schema: {e}"
+                        );
+                    }
+                };
 
                 let schema = analyze_plan_response::DdlParse {
                     parsed: Some(result),
@@ -354,6 +360,7 @@ impl SparkConnectService for DaftSparkConnectService {
         unimplemented_err!("fetch_error_details operation is not yet implemented")
     }
 }
+
 #[cfg(feature = "python")]
 #[pyo3::pyfunction]
 #[pyo3(name = "connect_start")]
