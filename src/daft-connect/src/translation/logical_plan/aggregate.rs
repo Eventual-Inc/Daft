@@ -3,7 +3,7 @@ use spark_connect::aggregate::GroupType;
 
 use crate::translation::{logical_plan::Plan, to_daft_expr, to_logical_plan};
 
-pub fn aggregate(aggregate: spark_connect::Aggregate) -> eyre::Result<Plan> {
+pub async fn aggregate(aggregate: spark_connect::Aggregate) -> eyre::Result<Plan> {
     let spark_connect::Aggregate {
         input,
         group_type,
@@ -17,7 +17,7 @@ pub fn aggregate(aggregate: spark_connect::Aggregate) -> eyre::Result<Plan> {
         bail!("input is required");
     };
 
-    let mut plan = to_logical_plan(*input)?;
+    let mut plan = Box::pin(to_logical_plan(*input)).await?;
 
     let group_type = GroupType::try_from(group_type)
         .wrap_err_with(|| format!("Invalid group type: {group_type:?}"))?;
