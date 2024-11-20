@@ -24,10 +24,34 @@ pub fn unresolved_to_daft_expr(f: &UnresolvedFunction) -> eyre::Result<daft_dsl:
 
     match function_name.as_str() {
         "count" => handle_count(arguments).wrap_err("Failed to handle count function"),
+        "<" => handle_binary_op(arguments, daft_dsl::Operator::Lt)
+            .wrap_err("Failed to handle < function"),
+        ">" => handle_binary_op(arguments, daft_dsl::Operator::Gt)
+            .wrap_err("Failed to handle > function"),
+        "<=" => handle_binary_op(arguments, daft_dsl::Operator::LtEq)
+            .wrap_err("Failed to handle <= function"),
+        ">=" => handle_binary_op(arguments, daft_dsl::Operator::GtEq)
+            .wrap_err("Failed to handle >= function"),
         "isnotnull" => handle_isnotnull(arguments).wrap_err("Failed to handle isnotnull function"),
         "isnull" => handle_isnull(arguments).wrap_err("Failed to handle isnull function"),
         n => bail!("Unresolved function {n} not yet supported"),
     }
+}
+
+pub fn handle_binary_op(
+    arguments: Vec<daft_dsl::ExprRef>,
+    op: daft_dsl::Operator,
+) -> eyre::Result<daft_dsl::ExprRef> {
+    let arguments: [daft_dsl::ExprRef; 2] = match arguments.try_into() {
+        Ok(arguments) => arguments,
+        Err(arguments) => {
+            bail!("requires exactly two arguments; got {arguments:?}");
+        }
+    };
+
+    let [left, right] = arguments;
+
+    Ok(daft_dsl::binary_op(op, left, right))
 }
 
 pub fn handle_count(arguments: Vec<daft_dsl::ExprRef>) -> eyre::Result<daft_dsl::ExprRef> {
