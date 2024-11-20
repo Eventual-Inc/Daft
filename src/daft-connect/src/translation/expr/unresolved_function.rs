@@ -24,6 +24,8 @@ pub fn unresolved_to_daft_expr(f: &UnresolvedFunction) -> eyre::Result<daft_dsl:
 
     match function_name.as_str() {
         "count" => handle_count(arguments).wrap_err("Failed to handle count function"),
+        "isnotnull" => handle_isnotnull(arguments).wrap_err("Failed to handle isnotnull function"),
+        "isnull" => handle_isnull(arguments).wrap_err("Failed to handle isnull function"),
         n => bail!("Unresolved function {n} not yet supported"),
     }
 }
@@ -41,4 +43,30 @@ pub fn handle_count(arguments: Vec<daft_dsl::ExprRef>) -> eyre::Result<daft_dsl:
     let count = arg.count(CountMode::All);
 
     Ok(count)
+}
+
+pub fn handle_isnull(arguments: Vec<daft_dsl::ExprRef>) -> eyre::Result<daft_dsl::ExprRef> {
+    let arguments: [daft_dsl::ExprRef; 1] = match arguments.try_into() {
+        Ok(arguments) => arguments,
+        Err(arguments) => {
+            bail!("requires exactly one argument; got {arguments:?}");
+        }
+    };
+
+    let [arg] = arguments;
+
+    Ok(arg.is_null())
+}
+
+pub fn handle_isnotnull(arguments: Vec<daft_dsl::ExprRef>) -> eyre::Result<daft_dsl::ExprRef> {
+    let arguments: [daft_dsl::ExprRef; 1] = match arguments.try_into() {
+        Ok(arguments) => arguments,
+        Err(arguments) => {
+            bail!("requires exactly one argument; got {arguments:?}");
+        }
+    };
+
+    let [arg] = arguments;
+
+    Ok(arg.not_null())
 }
