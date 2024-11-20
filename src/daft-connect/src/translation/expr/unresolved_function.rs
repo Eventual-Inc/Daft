@@ -4,7 +4,7 @@ use spark_connect::expression::UnresolvedFunction;
 
 use crate::translation::to_daft_expr;
 
-pub fn unresolved_to_daft_expr(f: UnresolvedFunction) -> eyre::Result<daft_dsl::ExprRef> {
+pub fn unresolved_to_daft_expr(f: &UnresolvedFunction) -> eyre::Result<daft_dsl::ExprRef> {
     let UnresolvedFunction {
         function_name,
         arguments,
@@ -12,13 +12,13 @@ pub fn unresolved_to_daft_expr(f: UnresolvedFunction) -> eyre::Result<daft_dsl::
         is_user_defined_function,
     } = f;
 
-    let arguments: Vec<_> = arguments.into_iter().map(to_daft_expr).try_collect()?;
+    let arguments: Vec<_> = arguments.iter().map(to_daft_expr).try_collect()?;
 
-    if is_distinct {
+    if *is_distinct {
         bail!("Distinct not yet supported");
     }
 
-    if is_user_defined_function {
+    if *is_user_defined_function {
         bail!("User-defined functions not yet supported");
     }
 
