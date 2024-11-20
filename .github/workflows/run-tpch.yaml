@@ -106,15 +106,16 @@ jobs:
         fi
 
         # Download all logs
-        # (We also need to convert all files containing ':' to '_'.
-        # GHA `actions/upload-artifact@v4` does *not* allow semicolons!)
-        ray rsync-down .github/assets/ray.yaml /tmp/ray ray-logs
-        find ray-logs/ray/session_*/logs/daft -depth -name '*:*' -exec bash -c '
+        #
+        # We also need to convert all files containing ':' to '_'.
+        # GHA `actions/upload-artifact@v4` does *not* allow semicolons!
+        ray rsync-down .github/assets/ray.yaml /tmp/ray/session_*/logs/daft ray-daft-logs
+        find ray-daft-logs -depth -name '*:*' -exec bash -c '
         for filepath; do
-            dir=$(dirname "$filepath")
-            base=$(basename "$filepath")
-            new_base=${base//:/_}
-            mv "$filepath" "$dir/$new_base"
+          dir=$(dirname "$filepath")
+          base=$(basename "$filepath")
+          new_base=${base//:/_}
+          mv "$filepath" "$dir/$new_base"
         done
         ' _ {} +
 
@@ -131,5 +132,5 @@ jobs:
         path: output.csv
     - uses: actions/upload-artifact@v4
       with:
-        name: ray-logs
-        path: ray-logs
+        name: ray-daft-logs
+        path: ray-daft-logs
