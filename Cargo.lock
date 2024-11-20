@@ -1932,6 +1932,7 @@ name = "daft-connect"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow2",
+ "async-stream",
  "common-daft-config",
  "daft-local-execution",
  "daft-local-plan",
