@@ -347,6 +347,12 @@ impl<'a> SQLPlanner<'a> {
         let has_aggs = projections.iter().any(has_agg) || !groupby_exprs.is_empty();
 
         if has_aggs {
+            let having = selection
+                .having
+                .as_ref()
+                .map(|h| self.plan_expr(h))
+                .transpose()?;
+
             self.plan_aggregate_query(
                 &projections,
                 &schema,
@@ -354,6 +360,7 @@ impl<'a> SQLPlanner<'a> {
                 groupby_exprs,
                 query,
                 &projection_schema,
+                having,
             )?;
         } else {
             self.plan_non_agg_query(projections, schema, has_orderby, query, projection_schema)?;
@@ -464,6 +471,7 @@ impl<'a> SQLPlanner<'a> {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn plan_aggregate_query(
         &mut self,
         projections: &Vec<Arc<Expr>>,
@@ -472,6 +480,7 @@ impl<'a> SQLPlanner<'a> {
         groupby_exprs: Vec<Arc<Expr>>,
         query: &Query,
         projection_schema: &Schema,
+        having: Option<Arc<Expr>>,
     ) -> Result<(), PlannerError> {
         let mut final_projection = Vec::with_capacity(projections.len());
         let mut aggs = Vec::with_capacity(projections.len());
@@ -631,7 +640,7 @@ impl<'a> SQLPlanner<'a> {
         }
 
         let rel = self.relation_mut();
-        rel.inner = rel.inner.aggregate(aggs, groupby_exprs)?;
+        rel.inner = rel.inner.aggregate(aggs.clone(), groupby_exprs)?;
 
         let has_orderby_before_projection = !orderbys_before_projection.is_empty();
         let has_orderby_after_projection = !orderbys_after_projection.is_empty();
@@ -660,6 +669,72 @@ impl<'a> SQLPlanner<'a> {
                 orderbys_after_projection_desc,
                 orderbys_after_projection_nulls_first,
             )?;
+        }
+        if let Some(having) = having {
+            // rewrite the having clause to use the non aggregated columns
+            //
+            // examples:
+            // a query of `select count(*) from b group by a having count(*) > 1`
+            // it rewrites the having to count > 1 because count(*)'s column name is 'count'
+            // ---
+            // another example:
+            // assuming a query of `select sum(v) as sum_v from b group by a having sum(v) = 1`
+            // it will rewrite the having to sum_v = 1
+            // ---
+            // You can also use the aggregate directly even if there's an alias
+            // ex: `select sum(v) as sum_v from b group by a having sum(v) > 1`
+            //
+            // if the having clause is not an aggregate, it will be left as is
+            // ex: `select sum(v) as sum_v from b group by a having sum_v > 1`
+            let rewritten_expr = having.transform_down(|e| {
+                let expr = match Arc::unwrap_or_clone(e) {
+                    // count(*)
+                    ref expr @ Expr::Alias(ref e1, ref alias)
+                        if alias.as_ref() == "count"
+                            && matches!(
+                                e1.as_ref(),
+                                Expr::Agg(AggExpr::Count(_, CountMode::All))
+                            ) =>
+                    {
+                        expr.clone()
+                    }
+
+                    expr @ Expr::Agg(_) => expr,
+
+                    other => return Ok(Transformed::no(other.into())),
+                };
+                // check if the agg is part of the aggs
+                // if so, we can use that column instead
+                let expr = aggs.iter().find_map(|agg2| {
+                    if agg2.exists(|e| e.as_ref() == &expr) {
+                        Some(agg2.clone())
+                    } else {
+                        None
+                    }
+                });
+
+                match expr.as_deref() {
+                    Some(col @ Expr::Column(_)) => Ok(Transformed::yes(col.clone().into())),
+                    // select id, sum(v) as sum from t group by id having sum > 1
+                    Some(Expr::Alias(_, alias)) => Ok(Transformed::yes(col(alias.as_ref()))),
+                    // special handling for count(*) as it doesn't work with .to_field
+                    // select count(*) from t having count(*) > 1
+                    Some(Expr::Agg(AggExpr::Count(_, CountMode::All))) => {
+                        //
+                        Ok(Transformed::yes(col("count")))
+                    }
+                    // select id, sum(v) from t group by id having sum(v) > 1
+                    Some(agg_expr @ Expr::Agg(_)) => {
+                        let fld = agg_expr.to_field(schema)?;
+                        Ok(Transformed::yes(col(fld.name.as_ref())))
+                    }
+                    _ => Err(PlannerError::unsupported_sql(
+                        "having clause for an expr that's not part of the aggs".into(),
+                    )
+                    .into()),
+                }
+            })?;
+            rel.inner = rel.inner.filter(rewritten_expr.data)?;
         }
         Ok(())
     }
@@ -1999,9 +2074,7 @@ fn check_select_features(selection: &sqlparser::ast::Select) -> SQLPlannerResult
     if !selection.sort_by.is_empty() {
         unsupported_sql_err!("SORT BY");
     }
-    if selection.having.is_some() {
-        unsupported_sql_err!("HAVING");
-    }
+
     if !selection.named_window.is_empty() {
         unsupported_sql_err!("WINDOW");
     }
