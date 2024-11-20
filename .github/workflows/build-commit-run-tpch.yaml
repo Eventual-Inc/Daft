@@ -19,6 +19,10 @@ on:
         description: Which partition size to use
         required: false
         default: 2
+      python_version:
+        description: The version of python to use
+        required: false
+        default: '3.9'
 
 jobs:
   build:
@@ -34,3 +38,4 @@ jobs:
       skip_questions: ${{ inputs.skip_questions }}
       scale_factor: ${{ inputs.scale_factor }}
       partition_size: ${{ inputs.partition_size }}
+      python_version: ${{ inputs.python_version }}

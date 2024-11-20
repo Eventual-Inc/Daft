@@ -19,6 +19,10 @@ on:
         description: Which partition size to use
         required: false
         default: 2
+      python_version:
+        description: The version of python to use
+        required: false
+        default: '3.9'
   workflow_call:
     inputs:
       wheel:
@@ -41,11 +45,16 @@ on:
         description: Which partition size to use
         required: false
         default: 2
+      python_version:
+        type: string
+        description: The version of python to use
+        required: false
+        default: '3.9'
 
 jobs:
   run-tpch:
     runs-on: [self-hosted, linux, x64, ci-dev]
-    # timeout-minutes: 15 # Remove for ssh debugging
+    timeout-minutes: 15 # Remove for ssh debugging
     permissions:
       id-token: write
       contents: read
@@ -66,6 +75,7 @@ jobs:
         sed -i 's|<<WHEEL>>|${{ inputs.wheel }}|g' .github/assets/ray.yaml
         sed -i "s|<<SCALE_FACTOR>>|$scale_factor_str|g" .github/assets/ray.yaml
         sed -i 's|<<PARTITION_SIZE>>|${{ inputs.partition_size }}|g' .github/assets/ray.yaml
+        sed -i 's|<<PYTHON_VERSION>>|${{ inputs.python_version }}|g' .github/assets/ray.yaml
 
         # Download private ssh key
         KEY=$(aws secretsmanager get-secret-value --secret-id ci-github-actions-ray-cluster-key-3 --query SecretString --output text)

@@ -48,8 +48,8 @@ setup_commands:
 - curl -LsSf https://astral.sh/uv/install.sh | sh
 - echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
 - source ~/.bashrc
-- uv python install 3.9
-- uv python pin 3.9
+- uv python install <<PYTHON_VERSION>>
+- uv python pin <<PYTHON_VERSION>>
 - uv v
 - echo "source $HOME/.venv/bin/activate" >> $HOME/.bashrc
 - source .venv/bin/activate
