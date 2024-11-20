@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 import pytest
 from pyspark.sql import SparkSession
 
@@ -27,3 +29,8 @@ def spark_session():
     # Cleanup
     server.shutdown()
     session.stop()
+
+    # Add cooldown period to allow socket to be fully released
+    # This prevents "Address already in use" errors when quickly restarting tests
+    # as the OS needs a moment to cleanup the TCP connection
+    time.sleep(2)
