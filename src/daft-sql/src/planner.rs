@@ -509,6 +509,15 @@ impl<'a> SQLPlanner<'a> {
                 final_projection.push(p.clone());
             }
         }
+
+        if let Some(having) = &having {
+            if has_agg(having) {
+                let having = having.alias(having.semantic_id(schema).id);
+
+                aggs.push(having);
+            }
+        }
+
         let groupby_exprs = groupby_exprs
             .into_iter()
             .map(|e| {
@@ -659,6 +668,16 @@ impl<'a> SQLPlanner<'a> {
             )?;
         }
 
+        if let Some(having) = having {
+            // if it's an agg, it's already resolved during .agg, so we just reference the column name
+            let having = if has_agg(&having) {
+                col(having.semantic_id(schema).id)
+            } else {
+                having
+            };
+            rel.inner = rel.inner.filter(having)?;
+        }
+
         // apply the final projection
         rel.inner = rel.inner.select(final_projection)?;
 
@@ -670,72 +689,7 @@ impl<'a> SQLPlanner<'a> {
                 orderbys_after_projection_nulls_first,
             )?;
         }
-        if let Some(having) = having {
-            // rewrite the having clause to use the non aggregated columns
-            //
-            // examples:
-            // a query of `select count(*) from b group by a having count(*) > 1`
-            // it rewrites the having to count > 1 because count(*)'s column name is 'count'
-            // ---
-            // another example:
-            // assuming a query of `select sum(v) as sum_v from b group by a having sum(v) = 1`
-            // it will rewrite the having to sum_v = 1
-            // ---
-            // You can also use the aggregate directly even if there's an alias
-            // ex: `select sum(v) as sum_v from b group by a having sum(v) > 1`
-            //
-            // if the having clause is not an aggregate, it will be left as is
-            // ex: `select sum(v) as sum_v from b group by a having sum_v > 1`
-            let rewritten_expr = having.transform_down(|e| {
-                let expr = match Arc::unwrap_or_clone(e) {
-                    // count(*)
-                    ref expr @ Expr::Alias(ref e1, ref alias)
-                        if alias.as_ref() == "count"
-                            && matches!(
-                                e1.as_ref(),
-                                Expr::Agg(AggExpr::Count(_, CountMode::All))
-                            ) =>
-                    {
-                        expr.clone()
-                    }
 
-                    expr @ Expr::Agg(_) => expr,
-
-                    other => return Ok(Transformed::no(other.into())),
-                };
-                // check if the agg is part of the aggs
-                // if so, we can use that column instead
-                let expr = aggs.iter().find_map(|agg2| {
-                    if agg2.exists(|e| e.as_ref() == &expr) {
-                        Some(agg2.clone())
-                    } else {
-                        None
-                    }
-                });
-
-                match expr.as_deref() {
-                    Some(col @ Expr::Column(_)) => Ok(Transformed::yes(col.clone().into())),
-                    // select id, sum(v) as sum from t group by id having sum > 1
-                    Some(Expr::Alias(_, alias)) => Ok(Transformed::yes(col(alias.as_ref()))),
-                    // special handling for count(*) as it doesn't work with .to_field
-                    // select count(*) from t having count(*) > 1
-                    Some(Expr::Agg(AggExpr::Count(_, CountMode::All))) => {
-                        //
-                        Ok(Transformed::yes(col("count")))
-                    }
-                    // select id, sum(v) from t group by id having sum(v) > 1
-                    Some(agg_expr @ Expr::Agg(_)) => {
-                        let fld = agg_expr.to_field(schema)?;
-                        Ok(Transformed::yes(col(fld.name.as_ref())))
-                    }
-                    _ => Err(PlannerError::unsupported_sql(
-                        "having clause for an expr that's not part of the aggs".into(),
-                    )
-                    .into()),
-                }
-            })?;
-            rel.inner = rel.inner.filter(rewritten_expr.data)?;
-        }
         Ok(())
     }
 
