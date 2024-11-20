@@ -204,10 +204,12 @@ def get_daft_benchmark_runner_name() -> Literal["ray"] | Literal["py"] | Literal
 
 
 def get_ray_runtime_env(requirements: str | None, no_pymodules: bool = False) -> dict:
+    daft_env_variables = dict(filter(lambda key_value: key_value[0].startswith("DAFT"), os.environ.items()))
     runtime_env = {
         "py_modules": None if no_pymodules else [daft],
         "eager_install": True,
         "env_vars": {
+            **daft_env_variables,
             "DAFT_PROGRESS_BAR": "0",
             "DAFT_RUNNER": "ray",
         },
