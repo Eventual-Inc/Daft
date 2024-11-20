@@ -8,7 +8,7 @@ pub use plan::CatalogWrite;
 pub use plan::LanceWrite;
 pub use plan::{
     ActorPoolProject, Concat, EmptyScan, Explode, Filter, HashAggregate, HashJoin, InMemoryScan,
-    Limit, LocalPhysicalPlan, LocalPhysicalPlanRef, PhysicalScan, PhysicalWrite, Pivot, Project,
-    Sample, Sort, UnGroupedAggregate, Unpivot,
+    Limit, LocalPhysicalPlan, LocalPhysicalPlanRef, MonotonicallyIncreasingId, PhysicalScan,
+    PhysicalWrite, Pivot, Project, Sample, Sort, UnGroupedAggregate, Unpivot,
 };
 pub use translate::translate;

@@ -950,21 +950,23 @@ pub fn read_pyfunc_into_table_iter(
     let scan_task_filters = scan_task.pushdowns.filters.clone();
     let res = table_iterators
         .into_iter()
-        .filter_map(|iter| {
-            Python::with_gil(|py| {
-                iter.downcast_bound::<pyo3::types::PyIterator>(py)
-                    .expect("Function must return an iterator of tables")
-                    .clone()
-                    .next()
-                    .map(|result| {
-                        result
-                            .map(|tbl| {
-                                tbl.extract::<daft_table::python::PyTable>()
-                                    .expect("Must be a PyTable")
-                                    .table
-                            })
-                            .with_context(|_| PyIOSnafu)
-                    })
+        .flat_map(move |iter| {
+            std::iter::from_fn(move || {
+                Python::with_gil(|py| {
+                    iter.downcast_bound::<pyo3::types::PyIterator>(py)
+                        .expect("Function must return an iterator of tables")
+                        .clone()
+                        .next()
+                        .map(|result| {
+                            result
+                                .map(|tbl| {
+                                    tbl.extract::<daft_table::python::PyTable>()
+                                        .expect("Must be a PyTable")
+                                        .table
+                                })
+                                .with_context(|_| PyIOSnafu)
+                        })
+                })
             })
         })
         .scan(0, move |rows_seen_so_far, table| {
