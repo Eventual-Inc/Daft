@@ -12,6 +12,7 @@ def test_alias(spark_session):
 
     # Verify the alias was set correctly
     assert df_renamed.schema != df.schema, "Schema should be changed after alias"
+    assert df_renamed.count() == df.count(), "Row count should be unchanged after alias"
 
     # Verify the data is unchanged but column name is different
     df_rows = df.collect()

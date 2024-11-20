@@ -284,6 +284,8 @@ impl SparkConnectService for DaftSparkConnectService {
     ) -> Result<Response<AnalyzePlanResponse>, Status> {
         use spark_connect::analyze_plan_request::*;
         let request = request.into_inner();
+        
+        println!("got analyze plan request: {request:#?}");
 
         let AnalyzePlanRequest {
             session_id,
