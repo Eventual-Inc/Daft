@@ -1,0 +1,65 @@
+cluster_name: performance-comparisons
+
+provider:
+  type: aws
+  region: us-west-2
+  cache_stopped_nodes: true
+  security_group:
+    GroupName: ray-autoscaler-c1
+
+auth:
+  ssh_user: ubuntu
+  ssh_private_key: ~/.ssh/ci-github-actions-ray-cluster-key.pem
+
+max_workers: 2
+available_node_types:
+  ray.head.default:
+    resources: {"CPU": 0}
+    node_config:
+      KeyName: ci-github-actions-ray-cluster-key
+      InstanceType: i3.2xlarge
+      ImageId: ami-04dd23e62ed049936
+      IamInstanceProfile:
+        Name: ray-autoscaler-v1
+
+  ray.worker.default:
+    min_workers: 2
+    max_workers: 2
+    resources: {}
+    node_config:
+      KeyName: ci-github-actions-ray-cluster-key
+      InstanceType: i3.2xlarge
+      ImageId: ami-04dd23e62ed049936
+      IamInstanceProfile:
+        Name: ray-autoscaler-v1
+
+setup_commands:
+# Mount drive
+- |
+  findmnt /tmp 1> /dev/null
+  code=$?
+  if [ $code -ne 0 ]; then
+    sudo mkfs.ext4 /dev/nvme0n1
+    sudo mount -t ext4 /dev/nvme0n1 /tmp
+    sudo chmod 777 /tmp
+  fi
+# Install dependencies
+- sudo snap install aws-cli --classic
+- curl -LsSf https://astral.sh/uv/install.sh | sh
+- echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+- source ~/.bashrc
+- uv python install <<PYTHON_VERSION>>
+- uv python pin <<PYTHON_VERSION>>
+- uv v
+- echo "source $HOME/.venv/bin/activate" >> $HOME/.bashrc
+- source .venv/bin/activate
+- uv pip install pip ray[default] py-spy
+# GitHub Actions workflow will replace all parameters between `<<...>>` with the
+# actual values as determined dynamically during runtime of the actual workflow.
+- uv pip install https://github-actions-artifacts-bucket.s3.us-west-2.amazonaws.com/builds/<<SHA>>/<<WHEEL>>
+# Download benchmarking fixtures
+- |
+  aws s3 sync \
+  s3://eventual-dev-benchmarking-fixtures/uncompressed/tpch-dbgen/<<SCALE_FACTOR>>/<<PARTITION_SIZE>>/parquet/ \
+  /tmp/data/<<SCALE_FACTOR>>/<<PARTITION_SIZE>>/parquet/ \
+  --quiet

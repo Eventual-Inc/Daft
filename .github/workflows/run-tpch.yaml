@@ -19,6 +19,10 @@ on:
         description: Which partition size to use
         required: false
         default: 2
+      python_version:
+        description: The version of python to use
+        required: false
+        default: '3.9'
   workflow_call:
     inputs:
       wheel:
@@ -41,6 +45,11 @@ on:
         description: Which partition size to use
         required: false
         default: 2
+      python_version:
+        type: string
+        description: The version of python to use
+        required: false
+        default: '3.9'
 
 jobs:
   run-tpch:
@@ -66,6 +75,7 @@ jobs:
         sed -i 's|<<WHEEL>>|${{ inputs.wheel }}|g' .github/assets/ray.yaml
         sed -i "s|<<SCALE_FACTOR>>|$scale_factor_str|g" .github/assets/ray.yaml
         sed -i 's|<<PARTITION_SIZE>>|${{ inputs.partition_size }}|g' .github/assets/ray.yaml
+        sed -i 's|<<PYTHON_VERSION>>|${{ inputs.python_version }}|g' .github/assets/ray.yaml
 
         # Download private ssh key
         KEY=$(aws secretsmanager get-secret-value --secret-id ci-github-actions-ray-cluster-key-3 --query SecretString --output text)
@@ -78,23 +88,24 @@ jobs:
         rm -rf daft
         uv pip install ray[default] boto3 https://github-actions-artifacts-bucket.s3.us-west-2.amazonaws.com/builds/${{ github.sha }}/${{ inputs.wheel }}
 
-        # Boot up ray cluster
+        # Boot up ray cluster and submit tpch benchmarking job
         ray up .github/assets/ray.yaml -y
         HEAD_NODE_IP=$(ray get-head-ip .github/assets/ray.yaml | tail -n 1)
         ssh -o StrictHostKeyChecking=no -fN -L 8265:localhost:8265 -i ~/.ssh/ci-github-actions-ray-cluster-key.pem ubuntu@$HEAD_NODE_IP
+        export DAFT_ENABLE_RAY_TRACING=1
+        export DAFT_RUNNER=ray
         if [[ -n "${{ inputs.skip_questions }}" ]]; then
-          DAFT_RUNNER=ray python -m benchmarking.tpch \
-            --skip_questions="${{ inputs.skip_questions }}" \
+          python -m benchmarking.tpch \
             --scale_factor ${{ inputs.scale_factor }} \
             --num_parts ${{ inputs.partition_size }} \
             --parquet_file_cache /tmp/data \
             --output_csv output.csv \
             --ray_job_dashboard_url http://localhost:8265 \
             --skip_warmup \
-            --no_pymodules
-          ray down .github/assets/ray.yaml -y
+            --no_pymodules \
+            --skip_questions="${{ inputs.skip_questions }}"
         else
-          DAFT_RUNNER=ray python -m benchmarking.tpch \
+          python -m benchmarking.tpch \
             --scale_factor ${{ inputs.scale_factor }} \
             --num_parts ${{ inputs.partition_size }} \
             --parquet_file_cache /tmp/data \
@@ -102,9 +113,26 @@ jobs:
             --ray_job_dashboard_url http://localhost:8265 \
             --skip_warmup \
             --no_pymodules
-          ray down .github/assets/ray.yaml -y
         fi
 
+        # Download all logs
+        #
+        # We also need to convert all files containing ':' to '_'.
+        # GHA `actions/upload-artifact@v4` does *not* allow semicolons!
+        ray rsync-down .github/assets/ray.yaml /tmp/ray/session_*/logs/daft ray-daft-logs
+        find ray-daft-logs -depth -name '*:*' -exec bash -c '
+        for filepath; do
+          dir=$(dirname "$filepath")
+          base=$(basename "$filepath")
+          new_base=${base//:/_}
+          mv "$filepath" "$dir/$new_base"
+        done
+        ' _ {} +
+
+        # Tear down ray cluster
+        ray down .github/assets/ray.yaml -y
+
+        # Convert csv to markdown and print to GHA Summary Page
         python .github/scripts/csv_to_md.py output.csv output.md
         echo "# Results" >> $GITHUB_STEP_SUMMARY
         cat output.md >> $GITHUB_STEP_SUMMARY
@@ -112,3 +140,7 @@ jobs:
       with:
         name: output.csv
         path: output.csv
+    - uses: actions/upload-artifact@v4
+      with:
+        name: ray-daft-logs
+        path: ray-daft-logs
