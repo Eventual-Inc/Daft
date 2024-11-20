@@ -1,26 +1,5 @@
 from __future__ import annotations
 
-import pytest
-from pyspark.sql import SparkSession
-
-
-@pytest.fixture
-def spark_session():
-    """Fixture to create and clean up a Spark session."""
-    from daft.daft import connect_start
-
-    # Start Daft Connect server
-    server = connect_start("sc://localhost:50051")
-
-    # Initialize Spark Connect session
-    session = SparkSession.builder.appName("DaftConfigTest").remote("sc://localhost:50051").getOrCreate()
-
-    yield session
-
-    # Cleanup
-    server.shutdown()
-    session.stop()
-
 
 def test_range_operation(spark_session):
     # Create a range using Spark
