@@ -107,6 +107,19 @@ jobs:
 
         ray rsync-down .github/assets/ray.yaml /tmp/ray ray-logs
 
+# find /path/to/directory -depth -name '*:*' -exec bash -c '
+# for filepath; do
+#     dir=$(dirname "$filepath")
+#     base=$(basename "$filepath")
+#     new_base=${base//:/_}
+#     mv "$filepath" "$dir/$new_base"
+# done
+# ' _ {} +
+
+    - uses: lhotari/action-upterm@v1
+
+    - run: |
+        source .venv/bin/activate
         ray down .github/assets/ray.yaml -y
         python .github/scripts/csv_to_md.py output.csv output.md
         echo "# Results" >> $GITHUB_STEP_SUMMARY
