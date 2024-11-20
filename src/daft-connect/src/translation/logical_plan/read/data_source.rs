@@ -1,5 +1,5 @@
 use daft_logical_plan::LogicalPlanBuilder;
-use daft_scan::builder::ParquetScanBuilder;
+use daft_scan::builder::{CsvScanBuilder, ParquetScanBuilder};
 use eyre::{bail, ensure, WrapErr};
 use tracing::warn;
 
@@ -18,10 +18,6 @@ pub async fn data_source(
         bail!("Format is required");
     };
 
-    if format != "parquet" {
-        bail!("Unsupported format: {format}; only parquet is supported");
-    }
-
     ensure!(!paths.is_empty(), "Paths are required");
 
     if let Some(schema) = schema {
@@ -36,10 +32,23 @@ pub async fn data_source(
         warn!("Ignoring predicates: {predicates:?}; not yet implemented");
     }
 
-    let builder = ParquetScanBuilder::new(paths)
-        .finish()
-        .await
-        .wrap_err("Failed to create parquet scan builder")?;
+    let plan = match &*format {
+        "parquet" => ParquetScanBuilder::new(paths)
+            .finish()
+            .await
+            .wrap_err("Failed to create parquet scan builder")?,
+        "csv" => CsvScanBuilder::new(paths)
+            .finish()
+            .await
+            .wrap_err("Failed to create csv scan builder")?,
+        "json" => {
+            // todo(completeness): implement json reading
+            bail!("json reading is not yet implemented");
+        }
+        other => {
+            bail!("Unsupported format: {other}; only parquet and csv are supported");
+        }
+    };
 
-    Ok(builder)
+    Ok(plan)
 }
