@@ -10,7 +10,7 @@ use daft_schema::dtype::DataType;
 use super::OptimizerRule;
 use crate::LogicalPlan;
 
-/// Optimizationr rule for simplifying expressions
+/// Optimization rule for simplifying expressions
 #[derive(Default, Debug)]
 pub struct SimplifyExpressionsRule {}
 
