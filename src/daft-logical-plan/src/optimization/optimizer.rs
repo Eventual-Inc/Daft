@@ -7,7 +7,7 @@ use super::{
     logical_plan_tracker::LogicalPlanTracker,
     rules::{
         DropRepartition, EliminateCrossJoin, LiftProjectFromAgg, OptimizerRule, PushDownFilter,
-        PushDownLimit, PushDownProjection, SimplifyExpressionsRule, SplitActorPoolProjects,
+        PushDownLimit, PushDownProjection, SplitActorPoolProjects,
     },
 };
 use crate::LogicalPlan;
@@ -94,10 +94,11 @@ impl Optimizer {
         let mut rule_batches = Vec::new();
 
         // we want to simplify expressions first to make the rest of the rules easier
-        rule_batches.push(RuleBatch::new(
-            vec![Box::new(SimplifyExpressionsRule::new())],
-            RuleExecutionStrategy::FixedPoint(Some(3)),
-        ));
+        // dbg
+        // rule_batches.push(RuleBatch::new(
+        //     vec![Box::new(SimplifyExpressionsRule::new())],
+        //     RuleExecutionStrategy::FixedPoint(Some(3)),
+        // ));
 
         // --- Split ActorPoolProjection nodes from Project nodes ---
         // This is feature-flagged behind DAFT_ENABLE_ACTOR_POOL_PROJECTIONS=1
