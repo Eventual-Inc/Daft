@@ -1,6 +1,6 @@
 use std::{
     cell::{Ref, RefCell, RefMut},
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     rc::Rc,
     sync::Arc,
 };
@@ -424,6 +424,8 @@ impl<'a> SQLPlanner<'a> {
                     .map(|e| e.alias(e.semantic_id(schema).id)),
             )
             .chain(having.iter().map(|e| e.alias(e.semantic_id(schema).id)))
+            .collect::<HashSet<_>>()
+            .into_iter()
             .collect();
 
         let rel = self.relation_mut();
