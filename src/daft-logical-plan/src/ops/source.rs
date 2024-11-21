@@ -43,31 +43,37 @@ impl Source {
             SourceInfo::Physical(PhysicalScanInfo {
                 scan_op, pushdowns, ..
             }) => {
-                let scan_tasks = scan_op
-                    .0
-                    .to_scan_tasks(pushdowns.clone(), None)
-                    .expect("Failed to get scan tasks from scan operator");
-                let mut approx_stats = ApproxStats::empty();
-                for st in scan_tasks {
-                    approx_stats.lower_bound_rows += st.num_rows().unwrap_or(0);
-                    let in_memory_size = st.estimate_in_memory_size_bytes(None);
-                    approx_stats.lower_bound_bytes += in_memory_size.unwrap_or(0);
-                    if let Some(st_ub) = st.upper_bound_rows() {
-                        if let Some(ub) = approx_stats.upper_bound_rows {
-                            approx_stats.upper_bound_rows = Some(ub + st_ub);
-                        } else {
-                            approx_stats.upper_bound_rows = st.upper_bound_rows();
+                // Python scans are potentially scans over generators. Materializing stats for
+                // these would consume the generator, leading to empty generators after planning.
+                if scan_op.0.is_python_scan() {
+                    ApproxStats::empty()
+                } else {
+                    let scan_tasks = scan_op
+                        .0
+                        .to_scan_tasks(pushdowns.clone(), None)
+                        .expect("Failed to get scan tasks from scan operator");
+                    let mut approx_stats = ApproxStats::empty();
+                    for st in scan_tasks {
+                        approx_stats.lower_bound_rows += st.num_rows().unwrap_or(0);
+                        let in_memory_size = st.estimate_in_memory_size_bytes(None);
+                        approx_stats.lower_bound_bytes += in_memory_size.unwrap_or(0);
+                        if let Some(st_ub) = st.upper_bound_rows() {
+                            if let Some(ub) = approx_stats.upper_bound_rows {
+                                approx_stats.upper_bound_rows = Some(ub + st_ub);
+                            } else {
+                                approx_stats.upper_bound_rows = st.upper_bound_rows();
+                            }
+                        }
+                        if let Some(st_ub) = in_memory_size {
+                            if let Some(ub) = approx_stats.upper_bound_bytes {
+                                approx_stats.upper_bound_bytes = Some(ub + st_ub);
+                            } else {
+                                approx_stats.upper_bound_bytes = in_memory_size;
+                            }
                         }
                     }
-                    if let Some(st_ub) = in_memory_size {
-                        if let Some(ub) = approx_stats.upper_bound_bytes {
-                            approx_stats.upper_bound_bytes = Some(ub + st_ub);
-                        } else {
-                            approx_stats.upper_bound_bytes = in_memory_size;
-                        }
-                    }
+                    approx_stats
                 }
-                approx_stats
             }
             SourceInfo::PlaceHolder(_) => ApproxStats::empty(),
         };

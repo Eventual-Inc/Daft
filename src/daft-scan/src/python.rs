@@ -215,6 +215,10 @@ pub mod pylib {
     }
 
     impl ScanOperator for PythonScanOperatorBridge {
+        fn is_python_scan(&self) -> bool {
+            true
+        }
+
         fn partitioning_keys(&self) -> &[PartitionField] {
             &self.partitioning_keys
         }
