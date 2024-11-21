@@ -3014,7 +3014,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         """Returns all lists which contain the given value.
 
         Args:
-            value (DataType): the value to search for in the list
+            value (Expression): the value to search for in the list
 
         Returns:
             Expression: a List expression which are the lists which all contain at least one instance of the given value.
