@@ -143,6 +143,7 @@ pub mod pylib {
     #[pyclass(module = "daft.daft")]
     #[derive(Debug)]
     struct PythonScanOperatorBridge {
+        name: String,
         operator: PyObject,
         schema: SchemaRef,
         partitioning_keys: Vec<PartitionField>,
@@ -153,6 +154,10 @@ pub mod pylib {
     }
 
     impl PythonScanOperatorBridge {
+        fn _name(abc: &PyObject, py: Python) -> PyResult<String> {
+            let result = abc.call_method0(py, pyo3::intern!(py, "name"))?;
+            result.extract::<String>(py)
+        }
         fn _partitioning_keys(abc: &PyObject, py: Python) -> PyResult<Vec<PartitionField>> {
             let result = abc.call_method0(py, pyo3::intern!(py, "partitioning_keys"))?;
             let result = result.extract::<&PyList>(py)?;
@@ -195,6 +200,7 @@ pub mod pylib {
     impl PythonScanOperatorBridge {
         #[staticmethod]
         pub fn from_python_abc(abc: PyObject, py: Python) -> PyResult<Self> {
+            let name = Self::_name(&abc, py)?;
             let partitioning_keys = Self::_partitioning_keys(&abc, py)?;
             let schema = Self::_schema(&abc, py)?;
             let can_absorb_filter = Self::_can_absorb_filter(&abc, py)?;
@@ -203,6 +209,7 @@ pub mod pylib {
             let display_name = Self::_display_name(&abc, py)?;
 
             Ok(Self {
+                name,
                 operator: abc,
                 schema,
                 partitioning_keys,
@@ -215,6 +222,9 @@ pub mod pylib {
     }
 
     impl ScanOperator for PythonScanOperatorBridge {
+        fn name(&self) -> &str {
+            &self.name
+        }
         fn partitioning_keys(&self) -> &[PartitionField] {
             &self.partitioning_keys
         }

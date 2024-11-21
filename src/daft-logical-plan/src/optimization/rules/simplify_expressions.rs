@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_treenode::Transformed;
+use common_scan_info::PhysicalScanInfo;
+use common_treenode::{Transformed, TreeNode};
 use daft_core::prelude::SchemaRef;
 use daft_dsl::{lit, null_lit, Expr, ExprRef, LiteralValue, Operator};
 use daft_schema::dtype::DataType;
@@ -21,6 +22,20 @@ impl SimplifyExpressionsRule {
 
 impl OptimizerRule for SimplifyExpressionsRule {
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
+        if plan.exists(|p| match p.as_ref() {
+            LogicalPlan::Source(source) => match source.source_info.as_ref() {
+                crate::SourceInfo::Physical(PhysicalScanInfo { scan_op, .. })
+                    // TODO: support simplify expressions for SQLScanOperator
+                    if scan_op.0.name() == "SQLScanOperator" =>
+                {
+                    true
+                }
+                _ => false,
+            },
+            _ => false,
+        }) {
+            return Ok(Transformed::no(plan));
+        }
         let schema = plan.schema();
         Ok(Arc::unwrap_or_clone(plan)
             .map_expressions(|expr| simplify_expr(Arc::unwrap_or_clone(expr), &schema))?

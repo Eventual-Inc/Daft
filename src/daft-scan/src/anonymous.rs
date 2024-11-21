@@ -37,6 +37,9 @@ impl AnonymousScanOperator {
 }
 
 impl ScanOperator for AnonymousScanOperator {
+    fn name(&self) -> &str {
+        "AnonymousScanOperator"
+    }
     fn schema(&self) -> SchemaRef {
         self.schema.clone()
     }

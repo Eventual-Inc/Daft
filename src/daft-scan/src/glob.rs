@@ -302,6 +302,10 @@ impl GlobScanOperator {
 }
 
 impl ScanOperator for GlobScanOperator {
+    fn name(&self) -> &'static str {
+        "GlobScanOperator"
+    }
+
     fn schema(&self) -> SchemaRef {
         self.schema.clone()
     }

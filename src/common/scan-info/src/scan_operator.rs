@@ -11,6 +11,8 @@ use daft_schema::schema::SchemaRef;
 use crate::{PartitionField, Pushdowns, ScanTaskLikeRef};
 
 pub trait ScanOperator: Send + Sync + Debug {
+    fn name(&self) -> &str;
+
     fn schema(&self) -> SchemaRef;
     fn partitioning_keys(&self) -> &[PartitionField];
     fn file_path_column(&self) -> Option<&str>;
