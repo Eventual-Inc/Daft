@@ -54,6 +54,9 @@ class PartitionTask(Generic[PartitionT]):
     # Indicates if the PartitionTask is "done" or not
     is_done: bool = False
 
+    # Desired node_id to schedule this task
+    node_id: str | None = None
+
     _id: int = field(default_factory=lambda: next(ID_GEN))
 
     def id(self) -> str:
@@ -108,6 +111,7 @@ class PartitionTaskBuilder(Generic[PartitionT]):
         partial_metadatas: list[PartialPartitionMetadata] | None,
         resource_request: ResourceRequest = ResourceRequest(),
         actor_pool_id: str | None = None,
+        node_id: str | None = None,
     ) -> None:
         self.inputs = inputs
         if partial_metadatas is not None:
@@ -118,6 +122,7 @@ class PartitionTaskBuilder(Generic[PartitionT]):
         self.instructions: list[Instruction] = list()
         self.num_results = len(inputs)
         self.actor_pool_id = actor_pool_id
+        self.node_id = node_id
 
     def add_instruction(
         self,
@@ -156,6 +161,7 @@ class PartitionTaskBuilder(Generic[PartitionT]):
             resource_request=resource_request_final_cpu,
             partial_metadatas=self.partial_metadatas,
             actor_pool_id=self.actor_pool_id,
+            node_id=self.node_id,
         )
 
     def finalize_partition_task_multi_output(self, stage_id: int) -> MultiOutputPartitionTask[PartitionT]:
@@ -177,6 +183,7 @@ class PartitionTaskBuilder(Generic[PartitionT]):
             resource_request=resource_request_final_cpu,
             partial_metadatas=self.partial_metadatas,
             actor_pool_id=self.actor_pool_id,
+            node_id=self.node_id,
         )
 
     def __str__(self) -> str:
