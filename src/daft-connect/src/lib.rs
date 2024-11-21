@@ -22,7 +22,7 @@ use spark_connect::{
     ReleaseExecuteResponse, ReleaseSessionRequest, ReleaseSessionResponse,
 };
 use tonic::{transport::Server, Request, Response, Status};
-use tracing::info;
+use tracing::{debug, info};
 use uuid::Uuid;
 
 use crate::session::Session;
@@ -309,22 +309,22 @@ impl SparkConnectService for DaftSparkConnectService {
                     Ok(schema) => schema,
                     Err(e) => {
                         return invalid_argument_err!(
-                            "Failed to translate relation to schema: {e}"
+                            "Failed to translate relation to schema: {e:?}"
                         );
                     }
                 };
 
-                let schema = analyze_plan_response::DdlParse {
-                    parsed: Some(result),
+                let schema = analyze_plan_response::Schema {
+                    schema: Some(result),
                 };
 
                 let response = AnalyzePlanResponse {
                     session_id,
                     server_side_session_id: String::new(),
-                    result: Some(analyze_plan_response::Result::DdlParse(schema)),
+                    result: Some(analyze_plan_response::Result::Schema(schema)),
                 };
 
-                println!("response: {response:#?}");
+                debug!("response: {response:#?}");
 
                 Ok(Response::new(response))
             }
