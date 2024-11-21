@@ -18,7 +18,7 @@ use std::{
 use common_error::{DaftError, DaftResult};
 use common_runtime::RuntimeTask;
 use lazy_static::lazy_static;
-pub use run::{run_local, NativeExecutor};
+pub use run::{run_local, ExecutionEngineResult, NativeExecutor};
 use snafu::{futures::TryFutureExt, ResultExt, Snafu};
 
 lazy_static! {
@@ -200,6 +200,8 @@ type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
-    parent.add_class::<NativeExecutor>()?;
+    use run::PyNativeExecutor;
+
+    parent.add_class::<PyNativeExecutor>()?;
     Ok(())
 }
