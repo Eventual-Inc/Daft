@@ -628,7 +628,7 @@ impl ListArray {
     }
 
     pub fn list_contains(&self, values: Series) -> DaftResult<BooleanArray> {
-        assert_eq!(self.len(), values.len(), "Expected two lists with the same length, instead got self.len() = {} and values.len() = {}", self.len(), values.len());
+        assert_eq!(self.len(), values.len(), "Expected two series with the same length, instead got self.len() = {} and values.len() = {}", self.len(), values.len());
         assert_eq!(self.child_data_type(), values.data_type(), "Expected values to be a column of type <T> and self to be column of type List<T>, but instead got values: {} and self: {}", values.data_type(), self.child_data_type());
         let founds = with_match_iterable_daft_types!(values.data_type(), |$T| {
             let mut founds = vec![];
