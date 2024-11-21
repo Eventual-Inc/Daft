@@ -429,6 +429,11 @@ pub fn physical_plan_to_pipeline(
                     )
                     .boxed()),
                     JoinType::Left | JoinType::Right | JoinType::Outer => {
+                        // For outer joins, we need to swap the left and right schemas if we are building on the right.
+                        let (left_schema, right_schema) = match (join_type, build_on_left) {
+                            (JoinType::Outer, false) => (right_schema, left_schema),
+                            _ => (left_schema, right_schema),
+                        };
                         Ok(StreamingSinkNode::new(
                             Arc::new(OuterHashJoinProbeSink::new(
                                 casted_probe_on,
