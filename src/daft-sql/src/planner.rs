@@ -925,24 +925,25 @@ impl<'a> SQLPlanner<'a> {
 
             let mut left_on = Vec::new();
             let mut right_on = Vec::new();
-            let mut null_eq_null = Vec::new();
             let mut left_filters = Vec::new();
             let mut right_filters = Vec::new();
 
-            let keep_join_keys = match &constraint {
+            let (keep_join_keys, null_eq_nulls) = match &constraint {
                 JoinConstraint::On(expr) => {
+                    let mut null_eq_nulls = Vec::new();
+
                     process_join_on(
                         expr,
                         self,
                         &right_planner,
                         &mut left_on,
                         &mut right_on,
-                        &mut null_eq_null,
+                        &mut null_eq_nulls,
                         &mut left_filters,
                         &mut right_filters,
                     )?;
 
-                    true
+                    (true, Some(null_eq_nulls))
                 }
                 JoinConstraint::Using(idents) => {
                     left_on = idents
@@ -951,7 +952,7 @@ impl<'a> SQLPlanner<'a> {
                         .collect::<Vec<_>>();
                     right_on.clone_from(&left_on);
 
-                    false
+                    (false, None)
                 }
                 JoinConstraint::Natural => unsupported_sql_err!("NATURAL JOIN not supported"),
                 JoinConstraint::None => unsupported_sql_err!("JOIN without ON/USING not supported"),
@@ -971,7 +972,7 @@ impl<'a> SQLPlanner<'a> {
                 right_plan,
                 left_on,
                 right_on,
-                Some(null_eq_null),
+                null_eq_nulls,
                 join_type,
                 None,
                 None,
