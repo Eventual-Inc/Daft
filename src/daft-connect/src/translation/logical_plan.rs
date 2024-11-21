@@ -8,11 +8,12 @@ use spark_connect::{relation::RelType, Limit, Relation};
 use tracing::warn;
 
 use crate::translation::logical_plan::{
-    aggregate::aggregate, local_relation::local_relation, project::project, range::range,
-    set_op::set_op, to_df::to_df, with_columns::with_columns,
+    aggregate::aggregate, deduplicate::deduplicate, local_relation::local_relation,
+    project::project, range::range, set_op::set_op, to_df::to_df, with_columns::with_columns,
 };
 
 mod aggregate;
+mod deduplicate;
 mod local_relation;
 mod project;
 mod range;
@@ -61,6 +62,9 @@ pub fn to_logical_plan(relation: Relation) -> eyre::Result<Plan> {
             local_relation(l).wrap_err("Failed to apply local_relation to logical plan")
         }
         RelType::SetOp(s) => set_op(*s).wrap_err("Failed to apply set_op to logical plan"),
+        RelType::Deduplicate(d) => {
+            deduplicate(*d).wrap_err("Failed to apply deduplicate to logical plan")
+        }
         plan => bail!("Unsupported relation type: {plan:?}"),
     }
 }
