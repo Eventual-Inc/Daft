@@ -9,7 +9,7 @@ use daft_schema::dtype::DataType;
 use super::OptimizerRule;
 use crate::LogicalPlan;
 
-/// Optimization rules for pushing Limits further into the logical plan.
+/// Optimizationr rule for simplifying expressions
 #[derive(Default, Debug)]
 pub struct SimplifyExpressionsRule {}
 
