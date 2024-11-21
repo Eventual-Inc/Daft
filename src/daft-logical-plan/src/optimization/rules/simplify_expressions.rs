@@ -215,6 +215,17 @@ fn simplify_expr(expr: Expr, schema: &SchemaRef) -> DaftResult<Transformed<ExprR
         } if is_zero(&right) => Transformed::yes(left),
 
         // A - null --> null
+        Expr::BinaryOp {
+            op: Operator::Minus,
+            left: _,
+            right,
+        } if is_null(&right) => Transformed::yes(right),
+        // null - A --> null
+        Expr::BinaryOp {
+            op: Operator::Minus,
+            left,
+            right: _,
+        } if is_null(&left) => Transformed::yes(left),
 
         // ----------------
         // Modulus
@@ -226,6 +237,7 @@ fn simplify_expr(expr: Expr, schema: &SchemaRef) -> DaftResult<Transformed<ExprR
             left: _,
             right,
         } if is_null(&right) => Transformed::yes(right),
+
         // null % A --> null
         Expr::BinaryOp {
             op: Operator::Modulus,
