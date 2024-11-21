@@ -18,6 +18,8 @@ use futures::TryStreamExt;
 use spark_connect::{relation::RelType, Limit, Relation, ShowString};
 use tracing::warn;
 
+use crate::translation::logical_plan::repartition::repartition;
+
 mod aggregate;
 mod drop;
 mod filter;
@@ -25,6 +27,7 @@ mod local_relation;
 mod project;
 mod range;
 mod read;
+mod repartition;
 mod to_df;
 mod with_columns;
 
@@ -99,6 +102,9 @@ impl SparkAnalyzer<'_> {
                 .with_columns(*w)
                 .await
                 .wrap_err("Failed to apply with_columns to logical plan"),
+            RelType::Repartition(r) => repartition(*r)
+                .await
+                .wrap_err("Failed to apply repartition to logical plan"),
             RelType::ToDf(t) => self
                 .to_df(*t)
                 .await
