@@ -7,7 +7,7 @@ use super::{
     logical_plan_tracker::LogicalPlanTracker,
     rules::{
         DropRepartition, EliminateCrossJoin, LiftProjectFromAgg, OptimizerRule, PushDownFilter,
-        PushDownLimit, PushDownProjection, SplitActorPoolProjects,
+        PushDownLimit, PushDownProjection, SimplifyExpressionsRule, SplitActorPoolProjects,
     },
 };
 use crate::LogicalPlan;
@@ -94,11 +94,10 @@ impl Optimizer {
         let mut rule_batches = Vec::new();
 
         // we want to simplify expressions first to make the rest of the rules easier
-        // dbg
-        // rule_batches.push(RuleBatch::new(
-        //     vec![Box::new(SimplifyExpressionsRule::new())],
-        //     RuleExecutionStrategy::FixedPoint(Some(3)),
-        // ));
+        rule_batches.push(RuleBatch::new(
+            vec![Box::new(SimplifyExpressionsRule::new())],
+            RuleExecutionStrategy::FixedPoint(Some(3)),
+        ));
 
         // --- Split ActorPoolProjection nodes from Project nodes ---
         // This is feature-flagged behind DAFT_ENABLE_ACTOR_POOL_PROJECTIONS=1
@@ -140,6 +139,11 @@ impl Optimizer {
         // (see https://github.com/Eventual-Inc/Daft/issues/2616)
         rule_batches.push(RuleBatch::new(
             vec![Box::new(PushDownLimit::new())],
+            RuleExecutionStrategy::FixedPoint(Some(3)),
+        ));
+        // make a second pass at simplifying expressions. This is necessary because other rules can introduce new expressions
+        rule_batches.push(RuleBatch::new(
+            vec![Box::new(SimplifyExpressionsRule::new())],
             RuleExecutionStrategy::FixedPoint(Some(3)),
         ));
 
