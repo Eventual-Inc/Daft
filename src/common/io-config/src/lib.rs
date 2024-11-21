@@ -16,14 +16,18 @@ use secrecy::{ExposeSecret, Secret};
 use serde::{Deserialize, Deserializer, Serialize};
 
 pub use crate::{
-    azure::AzureConfig, config::IOConfig, gcs::GCSConfig, http::HTTPConfig, s3::S3Config,
-    s3::S3Credentials,
+    azure::AzureConfig,
+    config::IOConfig,
+    gcs::GCSConfig,
+    http::HTTPConfig,
+    s3::{S3Config, S3Credentials},
 };
 
 #[derive(Clone)]
 pub struct ObfuscatedString(Secret<String>);
 
 impl ObfuscatedString {
+    #[must_use]
     pub fn as_string(&self) -> &String {
         self.0.expose_secret()
     }
@@ -39,7 +43,7 @@ impl Eq for ObfuscatedString {}
 
 impl Hash for ObfuscatedString {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.0.expose_secret().hash(state)
+        self.0.expose_secret().hash(state);
     }
 }
 
@@ -70,12 +74,12 @@ impl<'de> Deserialize<'de> for ObfuscatedString {
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        Ok(ObfuscatedString(s.into()))
+        Ok(Self(s.into()))
     }
 }
 
 impl From<String> for ObfuscatedString {
     fn from(value: String) -> Self {
-        ObfuscatedString(value.into())
+        Self(value.into())
     }
 }

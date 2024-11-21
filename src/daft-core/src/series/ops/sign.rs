@@ -1,11 +1,12 @@
-use crate::datatypes::DataType;
-use crate::series::array_impl::IntoSeries;
-use crate::series::Series;
-use common_error::DaftError;
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
+
+use crate::{
+    datatypes::DataType,
+    series::{array_impl::IntoSeries, Series},
+};
 
 impl Series {
-    pub fn sign(&self) -> DaftResult<Series> {
+    pub fn sign(&self) -> DaftResult<Self> {
         match self.data_type() {
             DataType::UInt8 => Ok(self.u8().unwrap().sign_unsigned()?.into_series()),
             DataType::UInt16 => Ok(self.u16().unwrap().sign_unsigned()?.into_series()),

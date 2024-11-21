@@ -1,6 +1,5 @@
-use daft_core::prelude::*;
-
 use common_error::{DaftError, DaftResult};
+use daft_core::prelude::*;
 use daft_dsl::{
     functions::{ScalarFunction, ScalarUDF},
     ExprRef,
@@ -35,8 +34,7 @@ impl ScalarUDF for ImageEncode {
                         Ok(Field::new(field.name, DataType::Binary))
                     }
                     _ => Err(DaftError::TypeError(format!(
-                        "ImageEncode can only encode ImageArrays and FixedShapeImageArrays, got {}",
-                        field
+                        "ImageEncode can only encode ImageArrays and FixedShapeImageArrays, got {field}"
                     ))),
                 }
             }
@@ -49,7 +47,7 @@ impl ScalarUDF for ImageEncode {
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
-            [input] => input.image_encode(self.image_format),
+            [input] => daft_image::series::encode(input, self.image_format),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()
@@ -58,6 +56,7 @@ impl ScalarUDF for ImageEncode {
     }
 }
 
+#[must_use]
 pub fn encode(input: ExprRef, image_encode: ImageEncode) -> ExprRef {
     ScalarFunction::new(image_encode, vec![input]).into()
 }

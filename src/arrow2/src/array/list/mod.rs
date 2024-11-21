@@ -209,12 +209,18 @@ impl<O: Offset> ListArray<O> {
         if O::IS_LARGE {
             match data_type.to_logical_type() {
                 DataType::LargeList(child) => Ok(child.as_ref()),
-                _ => Err(Error::oos("ListArray<i64> expects DataType::LargeList")),
+                got  => {
+                    let msg = format!("ListArray<i64> expects DataType::LargeList, but got {got:?}");
+                    Err(Error::oos(msg))
+                },
             }
         } else {
             match data_type.to_logical_type() {
                 DataType::List(child) => Ok(child.as_ref()),
-                _ => Err(Error::oos("ListArray<i32> expects DataType::List")),
+                got => {
+                    let msg = format!("ListArray<i32> expects DataType::List, but got {got:?}");
+                    Err(Error::oos(msg))
+                },
             }
         }
     }

@@ -8,12 +8,7 @@ import pytest
 
 import daft
 from daft import DataFrame
-from daft.context import _RayRunnerConfig, get_context
-
-
-def is_using_remote_runner() -> bool:
-    runner_config = get_context().runner_config
-    return isinstance(runner_config, _RayRunnerConfig) and runner_config.address is not None
+from tests.conftest import get_tests_daft_runner_name
 
 
 @pytest.fixture(scope="module", params=[(1, 64), (8, 8), (64, 1)], ids=["1x64mib", "8x8mib", "64x1mib"])
@@ -43,7 +38,7 @@ def gen_simple_csvs(request) -> str:
         yield tmpdirname, num_files * mibs_per_file * 1024 * 128
 
 
-@pytest.mark.skipif(is_using_remote_runner(), reason="requires local runner")
+@pytest.mark.skipif(get_tests_daft_runner_name(), reason="requires local runner")
 @pytest.mark.benchmark(group="file_read")
 def test_csv_read(gen_simple_csvs, benchmark):
     csv_dir, num_rows = gen_simple_csvs

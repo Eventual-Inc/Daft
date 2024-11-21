@@ -3,9 +3,9 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use common_io_config::IOConfig;
 use common_py_serde::impl_bincode_py_state_serialization;
-use daft_io::{get_io_client, get_runtime, IOClient, RuntimeRef};
+use common_runtime::{get_io_runtime, RuntimeRef};
+use daft_io::{get_io_client, IOClient};
 use serde::{Deserialize, Serialize};
-
 #[cfg(feature = "python")]
 use {
     common_io_config::python,
@@ -27,10 +27,10 @@ impl StorageConfig {
         // Grab an IOClient and Runtime
         // TODO: This should be cleaned up and hidden behind a better API from daft-io
         match self {
-            StorageConfig::Native(cfg) => {
+            Self::Native(cfg) => {
                 let multithreaded_io = cfg.multithreaded_io;
                 Ok((
-                    get_runtime(multithreaded_io)?,
+                    get_io_runtime(multithreaded_io),
                     get_io_client(
                         multithreaded_io,
                         Arc::new(cfg.io_config.clone().unwrap_or_default()),
@@ -38,10 +38,10 @@ impl StorageConfig {
                 ))
             }
             #[cfg(feature = "python")]
-            StorageConfig::Python(cfg) => {
+            Self::Python(cfg) => {
                 let multithreaded_io = true; // Hardcode to use multithreaded IO if Python storage config is used for data fetches
                 Ok((
-                    get_runtime(multithreaded_io)?,
+                    get_io_runtime(multithreaded_io),
                     get_io_client(
                         multithreaded_io,
                         Arc::new(cfg.io_config.clone().unwrap_or_default()),
@@ -51,6 +51,7 @@ impl StorageConfig {
         }
     }
 
+    #[must_use]
     pub fn var_name(&self) -> &'static str {
         match self {
             Self::Native(_) => "Native",
@@ -59,6 +60,7 @@ impl StorageConfig {
         }
     }
 
+    #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
         match self {
             Self::Native(source) => source.multiline_display(),
@@ -77,6 +79,7 @@ pub struct NativeStorageConfig {
 }
 
 impl NativeStorageConfig {
+    #[must_use]
     pub fn new_internal(multithreaded_io: bool, io_config: Option<IOConfig>) -> Self {
         Self {
             io_config,
@@ -84,6 +87,7 @@ impl NativeStorageConfig {
         }
     }
 
+    #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         if let Some(io_config) = &self.io_config {
@@ -107,16 +111,19 @@ impl Default for NativeStorageConfig {
 #[pymethods]
 impl NativeStorageConfig {
     #[new]
+    #[must_use]
     pub fn new(multithreaded_io: bool, io_config: Option<python::IOConfig>) -> Self {
         Self::new_internal(multithreaded_io, io_config.map(|c| c.config))
     }
 
     #[getter]
+    #[must_use]
     pub fn io_config(&self) -> Option<python::IOConfig> {
-        self.io_config.clone().map(|c| c.into())
+        self.io_config.clone().map(std::convert::Into::into)
     }
 
     #[getter]
+    #[must_use]
     pub fn multithreaded_io(&self) -> bool {
         self.multithreaded_io
     }
@@ -134,6 +141,7 @@ pub struct PythonStorageConfig {
 
 #[cfg(feature = "python")]
 impl PythonStorageConfig {
+    #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         if let Some(io_config) = &self.io_config {
@@ -150,6 +158,7 @@ impl PythonStorageConfig {
 #[pymethods]
 impl PythonStorageConfig {
     #[new]
+    #[must_use]
     pub fn new(io_config: Option<python::IOConfig>) -> Self {
         Self {
             io_config: io_config.map(|c| c.config),
@@ -157,6 +166,7 @@ impl PythonStorageConfig {
     }
 
     #[getter]
+    #[must_use]
     pub fn io_config(&self) -> Option<python::IOConfig> {
         self.io_config
             .as_ref()
@@ -177,7 +187,7 @@ impl Eq for PythonStorageConfig {}
 #[cfg(feature = "python")]
 impl Hash for PythonStorageConfig {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.io_config.hash(state)
+        self.io_config.hash(state);
     }
 }
 
@@ -208,7 +218,7 @@ impl PyStorageConfig {
     /// Get the underlying storage config.
     #[getter]
     fn get_config(&self, py: Python) -> PyObject {
-        use StorageConfig::*;
+        use StorageConfig::{Native, Python};
 
         match self.0.as_ref() {
             Native(config) => config.as_ref().clone().into_py(py),

@@ -1,7 +1,9 @@
 use crate::functions::SQLFunctions;
 
 pub mod aggs;
+pub mod config;
 pub mod float;
+pub mod hashing;
 pub mod image;
 pub mod json;
 pub mod list;
@@ -15,6 +17,7 @@ pub mod temporal;
 pub mod utf8;
 
 pub use aggs::SQLModuleAggs;
+pub use config::SQLModuleConfig;
 pub use float::SQLModuleFloat;
 pub use image::SQLModuleImage;
 pub use json::SQLModuleJson;

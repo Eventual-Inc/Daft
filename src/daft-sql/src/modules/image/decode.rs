@@ -1,4 +1,5 @@
 use daft_dsl::{Expr, ExprRef, LiteralValue};
+use daft_functions::image::decode::{decode, ImageDecode};
 use sqlparser::ast::FunctionArg;
 
 use crate::{
@@ -6,7 +7,6 @@ use crate::{
     functions::{SQLFunction, SQLFunctionArguments},
     unsupported_sql_err,
 };
-use daft_functions::image::decode::{decode, ImageDecode};
 
 pub struct SQLImageDecode;
 
@@ -60,5 +60,13 @@ impl SQLFunction for SQLImageDecode {
             }
             _ => unsupported_sql_err!("Invalid arguments for image_decode: '{inputs:?}'"),
         }
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Decodes an image from binary data. Optionally, you can specify the image mode and error handling behavior.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input", "mode", "on_error"]
     }
 }

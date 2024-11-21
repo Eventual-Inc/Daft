@@ -1,28 +1,40 @@
 [dependencies]
 common-daft-config = {path = "src/common/daft-config", default-features = false}
 common-display = {path = "src/common/display", default-features = false}
+common-file-formats = {path = "src/common/file-formats", default-features = false}
 common-hashable-float-wrapper = {path = "src/common/hashable-float-wrapper", default-features = false}
 common-resource-request = {path = "src/common/resource-request", default-features = false}
+common-runtime = {path = "src/common/runtime", default-features = false}
+common-scan-info = {path = "src/common/scan-info", default-features = false}
 common-system-info = {path = "src/common/system-info", default-features = false}
 common-tracing = {path = "src/common/tracing", default-features = false}
 common-version = {path = "src/common/version", default-features = false}
+daft-catalog = {path = "src/daft-catalog", default-features = false}
+daft-catalog-python-catalog = {path = "src/daft-catalog/python-catalog", optional = true}
 daft-compression = {path = "src/daft-compression", default-features = false}
+daft-connect = {path = "src/daft-connect", optional = true}
 daft-core = {path = "src/daft-core", default-features = false}
 daft-csv = {path = "src/daft-csv", default-features = false}
 daft-dsl = {path = "src/daft-dsl", default-features = false}
-daft-functions = {path = "src/daft-functions", default-features = false}
+daft-functions = {path = "src/daft-functions"}
+daft-functions-json = {path = "src/daft-functions-json", default-features = false}
+daft-hash = {path = "src/daft-hash", default-features = false}
+daft-image = {path = "src/daft-image", default-features = false}
 daft-io = {path = "src/daft-io", default-features = false}
 daft-json = {path = "src/daft-json", default-features = false}
 daft-local-execution = {path = "src/daft-local-execution", default-features = false}
+daft-local-plan = {path = "src/daft-local-plan", default-features = false}
+daft-logical-plan = {path = "src/daft-logical-plan", default-features = false}
 daft-micropartition = {path = "src/daft-micropartition", default-features = false}
 daft-minhash = {path = "src/daft-minhash", default-features = false}
 daft-parquet = {path = "src/daft-parquet", default-features = false}
-daft-plan = {path = "src/daft-plan", default-features = false}
+daft-physical-plan = {path = "src/daft-physical-plan", default-features = false}
 daft-scan = {path = "src/daft-scan", default-features = false}
 daft-scheduler = {path = "src/daft-scheduler", default-features = false}
 daft-sql = {path = "src/daft-sql", default-features = false}
 daft-stats = {path = "src/daft-stats", default-features = false}
 daft-table = {path = "src/daft-table", default-features = false}
+daft-writers = {path = "src/daft-writers", default-features = false}
 lazy_static = {workspace = true}
 log = {workspace = true}
 lzma-sys = {version = "*", features = ["static"]}
@@ -33,27 +45,47 @@ sysinfo = {workspace = true}
 [features]
 # maturin will turn this on
 python = [
-  "dep:pyo3",
-  "dep:pyo3-log",
+  "common-daft-config/python",
+  "common-daft-config/python",
+  "common-daft-config/python",
+  "common-display/python",
+  "common-display/python",
+  "common-display/python",
+  "common-resource-request/python",
+  "common-resource-request/python",
+  "common-resource-request/python",
+  "common-scan-info/python",
+  "common-system-info/python",
+  "common-system-info/python",
+  "common-system-info/python",
+  "daft-catalog-python-catalog/python",
+  "daft-catalog/python",
+  "daft-connect/python",
   "daft-core/python",
   "daft-csv/python",
   "daft-dsl/python",
-  "daft-local-execution/python",
+  "daft-functions-json/python",
+  "daft-functions/python",
+  "daft-image/python",
   "daft-io/python",
   "daft-json/python",
+  "daft-local-execution/python",
+  "daft-local-plan/python",
+  "daft-logical-plan/python",
   "daft-micropartition/python",
   "daft-parquet/python",
-  "daft-plan/python",
+  "daft-physical-plan/python",
   "daft-scan/python",
   "daft-scheduler/python",
-  "daft-stats/python",
   "daft-sql/python",
+  "daft-stats/python",
+  "daft-stats/python",
   "daft-table/python",
-  "daft-functions/python",
-  "common-daft-config/python",
-  "common-system-info/python",
-  "common-display/python",
-  "common-resource-request/python"
+  "daft-writers/python",
+  "dep:daft-catalog-python-catalog",
+  "dep:daft-connect",
+  "dep:pyo3",
+  "dep:pyo3-log"
 ]
 
 [lib]
@@ -67,7 +99,7 @@ publish = false
 version = "0.3.0-dev0"
 
 [package.metadata.cargo-machete]
-ignored = ["lzma_sys"]
+ignored = ["lzma-sys"]
 
 [patch.crates-io]
 arrow2 = {path = "src/arrow2"}
@@ -77,7 +109,11 @@ parquet2 = {path = "src/parquet2"}
 debug = true
 
 [profile.dev]
+debug = "line-tables-only"
 overflow-checks = false
+
+[profile.dev.build-override]
+opt-level = 3
 
 [profile.dev-bench]
 codegen-units = 16
@@ -94,55 +130,78 @@ lto = 'fat'
 [profile.rust-analyzer]
 inherits = "dev"
 
+[profile.test]
+debug = true
+
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 libc = {version = "^0.2.150", default-features = false}
-tikv-jemallocator = {version = "0.5.4", features = [
+tikv-jemallocator = {version = "0.6.0", features = [
   "disable_initial_exec_tls"
 ]}
 
 [workspace]
 members = [
   "src/arrow2",
-  "src/parquet2",
+  "src/common/daft-config",
   "src/common/display",
   "src/common/error",
   "src/common/io-config",
-  "src/common/treenode",
-  "src/common/daft-config",
+  "src/common/scan-info",
   "src/common/system-info",
+  "src/common/treenode",
+  "src/daft-catalog",
   "src/daft-core",
-  "src/daft-local-execution",
-  "src/daft-io",
-  "src/daft-parquet",
   "src/daft-csv",
-  "src/daft-json",
   "src/daft-dsl",
-  "src/daft-table",
-  "src/daft-plan",
-  "src/daft-physical-plan",
+  "src/daft-functions",
+  "src/daft-functions-json",
+  "src/daft-hash",
+  "src/daft-image",
+  "src/daft-io",
+  "src/daft-json",
+  "src/daft-local-execution",
+  "src/daft-local-plan",
+  "src/daft-logical-plan",
   "src/daft-micropartition",
+  "src/daft-parquet",
+  "src/daft-physical-plan",
   "src/daft-scan",
   "src/daft-scheduler",
   "src/daft-sketch",
-  "src/daft-functions",
   "src/daft-sql",
-  "src/hyperloglog"
+  "src/daft-table",
+  "src/daft-writers",
+  "src/hyperloglog",
+  "src/daft-connect",
+  "src/parquet2",
+  # "src/spark-connect-script",
+  "src/generated/spark-connect"
 ]
 
 [workspace.dependencies]
+approx = "0.5.1"
 async-compat = "0.2.3"
 async-compression = {version = "0.4.12", features = [
   "tokio",
   "all-algorithms"
 ]}
-async-stream = "0.3.5"
+async-stream = "0.3.6"
 async-trait = "0.1.79"
 base64 = "0.22.1"
 bytes = "1.6.0"
 chrono = "0.4.38"
 chrono-tz = "0.8.4"
 comfy-table = "7.1.1"
-dyn-clone = "1"
+common-daft-config = {path = "src/common/daft-config"}
+common-error = {path = "src/common/error", default-features = false}
+daft-hash = {path = "src/daft-hash"}
+daft-local-execution = {path = "src/daft-local-execution"}
+daft-local-plan = {path = "src/daft-local-plan"}
+daft-logical-plan = {path = "src/daft-logical-plan"}
+daft-scan = {path = "src/daft-scan"}
+daft-table = {path = "src/daft-table"}
+derivative = "2.2.0"
+derive_builder = "0.20.2"
 futures = "0.3.30"
 html-escape = "0.2.13"
 indexmap = "2.1.0"
@@ -151,19 +210,25 @@ jaq-core = "1.2.0"
 jaq-interpret = "1.2.0"
 jaq-parse = "1.0.0"
 jaq-std = "1.2.0"
+mur3 = "0.1.0"
 num-derive = "0.3.3"
 num-traits = "0.2"
 once_cell = "1.19.0"
-pretty_assertions = "1.4.0"
+path_macro = "1.0.0"
+pretty_assertions = "1.4.1"
+proptest = "1.5.0"
 rand = "^0.8"
 rayon = "1.10.0"
 regex = "1.10.4"
 rstest = "0.18.2"
 serde_json = "1.0.116"
+sha1 = "0.11.0-pre.4"
 sketches-ddsketch = {version = "0.2.2", features = ["use_serde"]}
 snafu = {version = "0.7.4", features = ["futures"]}
-sqlparser = "0.49.0"
-sysinfo = "0.30.12"
+spark-connect = {path = "src/generated/spark-connect", default-features = false}
+sqlparser = "0.51.0"
+sysinfo = "0.32.0"
+tango-bench = "0.6.0"
 test-log = "0.2.16"
 thiserror = "1.0.63"
 tiktoken-rs = "0.5.9"
@@ -180,7 +245,10 @@ tokio = {version = "1.37.0", features = [
 tokio-stream = {version = "0.1.14", features = ["fs", "io-util", "time"]}
 tokio-util = "0.7.11"
 tracing = "0.1"
+typed-builder = "0.20.0"
+typetag = "0.2.18"
 url = "2.4.0"
+xxhash-rust = "0.8.12"
 
 [workspace.dependencies.arrow2]
 path = "src/arrow2"
@@ -189,7 +257,7 @@ path = "src/arrow2"
 version = "1.3.3"
 
 [workspace.dependencies.derive_more]
-features = ["display"]
+features = ["display", "from", "constructor"]
 version = "1.0.0"
 
 [workspace.dependencies.lazy_static]
@@ -205,15 +273,87 @@ features = ['async']
 path = "src/parquet2"
 
 [workspace.dependencies.pyo3]
-features = ["extension-module", "multiple-pymethods", "abi3-py38"]
-version = "0.19.2"
+features = ["extension-module", "multiple-pymethods", "abi3-py38", "indexmap"]
+version = "0.21.0"
 
 [workspace.dependencies.pyo3-log]
-version = "0.8.3"
+version = "0.11.0"
 
 [workspace.dependencies.serde]
 features = ["derive", "rc"]
 version = "1.0.200"
+
+[workspace.lints.clippy]
+as_conversions = "allow"
+cast-sign-loss = "allow"
+cast_lossless = "allow"
+cast_possible_truncation = "allow"
+cast_possible_wrap = "allow"
+cast_precision_loss = "allow"
+cognitive_complexity = "allow"
+default_trait_access = "allow"
+doc-markdown = "allow"
+doc_link_with_quotes = "allow"
+enum_glob_use = "allow"
+float_cmp = "allow"
+fn_params_excessive_bools = "allow"
+from_iter_instead_of_collect = "allow"
+future_not_send = "allow"
+if_not_else = "allow"
+implicit_hasher = "allow"
+inline_always = "allow"
+into_iter_without_iter = "allow"
+items_after_statements = "allow"
+iter_with_drain = "allow"  # REMOVE
+iter_without_into_iter = "allow"
+manual_let_else = "allow"
+many_single_char_names = "allow"
+map_unwrap_or = "allow"
+match_bool = "allow"
+match_same_arms = "allow"
+match_wildcard_for_single_variants = "allow"
+missing-panics-doc = "allow"
+missing_const_for_fn = "allow"
+missing_errors_doc = "allow"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+needless_pass_by_value = "allow"
+needless_return = "allow"
+nonminimal_bool = "allow"
+nursery = {level = "deny", priority = -1}
+only_used_in_recursion = "allow"
+option_if_let_else = "allow"
+pedantic = {level = "deny", priority = -1}
+perf = {level = "deny", priority = -1}
+redundant_closure = "allow"
+redundant_closure_for_method_calls = "allow"
+redundant_else = "allow"
+redundant_pub_crate = "allow"
+return_self_not_must_use = "allow"
+significant_drop_in_scrutinee = "allow"  # REMOVE
+significant_drop_tightening = "allow"  # REMOVE
+similar_names = "allow"
+single_match = "allow"
+single_match_else = "allow"
+struct_excessive_bools = "allow"
+style = {level = "deny", priority = 1}
+suspicious_operation_groupings = "allow"
+too_many_lines = "allow"
+trivially_copy_pass_by_ref = "allow"
+type_repetition_in_bounds = "allow"
+uninlined_format_args = "allow"
+unnecessary_wraps = "allow"
+unnested_or_patterns = "allow"
+unreadable_literal = "allow"
+# todo: remove this at some point
+unsafe_derive_deserialize = "allow"
+unused_async = "allow"
+# used_underscore_items = "allow" # REMOVE
+unused_self = "allow"
+use-self = "deny"
+used_underscore_binding = "allow"  # REMOVE REMOVE
+wildcard_imports = "allow"
+zero_sized_map_values = "allow"
 
 [workspace.package]
 edition = "2021"

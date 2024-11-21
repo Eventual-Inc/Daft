@@ -50,16 +50,15 @@ __version__ = get_version()
 
 from daft.analytics import init_analytics
 
-dev_build = get_build_type() == "dev"
 user_opted_out = os.getenv("DAFT_ANALYTICS_ENABLED") == "0"
-if not dev_build and not user_opted_out:
-    analytics_client = init_analytics(get_version(), get_build_type())
-    analytics_client.track_import()
+analytics_client = init_analytics(get_version(), get_build_type(), user_opted_out)
+analytics_client.track_import()
 
 ###
 # Daft top-level imports
 ###
 
+from daft.catalog import read_table, register_table
 from daft.context import set_execution_config, set_planning_config, execution_config_ctx, planning_config_ctx
 from daft.convert import (
     from_arrow,
@@ -73,7 +72,7 @@ from daft.daft import ImageFormat, ImageMode, ResourceRequest
 from daft.dataframe import DataFrame
 from daft.logical.schema import Schema
 from daft.datatype import DataType, TimeUnit
-from daft.expressions import Expression, col, lit
+from daft.expressions import Expression, col, lit, interval
 from daft.io import (
     DataCatalogTable,
     DataCatalogType,
@@ -88,7 +87,7 @@ from daft.io import (
     read_lance,
 )
 from daft.series import Series
-from daft.sql.sql import sql, sql_expr
+from daft.sql import sql, sql_expr
 from daft.udf import udf
 from daft.viz import register_viz_hook
 
@@ -115,6 +114,7 @@ __all__ = [
     "DataFrame",
     "Expression",
     "col",
+    "interval",
     "DataType",
     "ImageMode",
     "ImageFormat",
@@ -130,6 +130,8 @@ __all__ = [
     "set_execution_config",
     "planning_config_ctx",
     "execution_config_ctx",
+    "read_table",
+    "register_table",
     "sql",
     "sql_expr",
     "to_struct",

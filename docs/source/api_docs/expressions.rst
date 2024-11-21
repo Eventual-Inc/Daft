@@ -31,6 +31,7 @@ Generic
    Expression.is_null
    Expression.not_null
    Expression.fill_null
+   Expression.hash
    Expression.apply
 
 .. _api-numeric-expression-operations:
@@ -112,6 +113,7 @@ The following can be used with DataFrame.agg or GroupedDataFrame.agg
    Expression.count
    Expression.sum
    Expression.mean
+   Expression.stddev
    Expression.min
    Expression.max
    Expression.any_value
@@ -213,11 +215,12 @@ List
    :template: autosummary/accessor_method.rst
 
    Expression.list.join
-   Expression.list.lengths
+   Expression.list.length
    Expression.list.get
    Expression.list.slice
    Expression.list.chunk
    Expression.list.sort
+   Expression.list.value_counts
 
 Struct
 ######

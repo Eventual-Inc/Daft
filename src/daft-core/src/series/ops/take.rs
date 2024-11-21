@@ -1,31 +1,27 @@
+use arrow2::types::IndexRange;
+use common_display::table_display::StrValue;
+use common_error::DaftResult;
+
 use crate::{
     datatypes::Utf8Array,
     series::{IntoSeries, Series},
 };
 
-use arrow2::types::IndexRange;
-use common_display::table_display::StrValue;
-use common_error::DaftResult;
-
 impl Series {
-    pub fn head(&self, num: usize) -> DaftResult<Series> {
+    pub fn head(&self, num: usize) -> DaftResult<Self> {
         if num >= self.len() {
             return Ok(self.clone());
         }
         self.inner.head(num)
     }
 
-    pub fn slice(&self, start: usize, end: usize) -> DaftResult<Series> {
+    pub fn slice(&self, start: usize, end: usize) -> DaftResult<Self> {
         let l = self.len();
         self.inner.slice(start.min(l), end.min(l))
     }
 
-    pub fn take(&self, idx: &Series) -> DaftResult<Series> {
+    pub fn take(&self, idx: &Self) -> DaftResult<Self> {
         self.inner.take(idx)
-    }
-
-    pub fn html_value(&self, idx: usize) -> String {
-        self.inner.html_value(idx)
     }
 
     pub fn to_str_values(&self) -> DaftResult<Self> {

@@ -5,6 +5,7 @@ import datetime
 import os
 import pathlib
 import tempfile
+from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.parquet as papq
@@ -13,6 +14,7 @@ import pytest
 import daft
 from daft.daft import NativeStorageConfig, PythonStorageConfig, StorageConfig
 from daft.datatype import DataType, TimeUnit
+from daft.exceptions import DaftCoreException
 from daft.logical.schema import Schema
 from daft.runners.partitioning import TableParseParquetOptions, TableReadOptions
 from daft.table import (
@@ -397,3 +399,22 @@ def test_read_parquet_file_missing_column_partial_read_with_pyarrow_bulk(tmpdir)
     read_back = read_parquet_into_pyarrow_bulk([file_path.as_posix()], columns=["x", "MISSING"])
     assert len(read_back) == 1
     assert tab.drop("y") == read_back[0]  # only read "x"
+
+
+@pytest.mark.parametrize(
+    "parquet_path", [Path(__file__).parents[2] / "assets" / "parquet-data" / "invalid_utf8.parquet"]
+)
+def test_parquet_read_string_utf8_into_binary(parquet_path: Path):
+    import pyarrow as pa
+
+    assert parquet_path.exists()
+
+    with pytest.raises(DaftCoreException, match="invalid utf-8 sequence"):
+        read_parquet_into_pyarrow(path=parquet_path.as_posix())
+
+    read_back = read_parquet_into_pyarrow(path=parquet_path.as_posix(), string_encoding="raw")
+    schema = read_back.schema
+    assert len(schema) == 1
+    assert schema[0].name == "invalid_string"
+    assert schema[0].type == pa.binary()
+    assert read_back["invalid_string"][0].as_py() == b"\x80\x80\x80"

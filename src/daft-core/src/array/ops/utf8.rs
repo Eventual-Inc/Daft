@@ -1,9 +1,9 @@
 use std::{
     borrow::Cow,
     iter::{self, Repeat, Take},
+    sync::Arc,
 };
 
-use crate::{array::prelude::*, datatypes::prelude::*, series::Series};
 use aho_corasick::{AhoCorasickBuilder, MatchKind};
 use arrow2::{array::Array, temporal_conversions};
 use chrono::Datelike;
@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use unicode_normalization::{is_nfd_quick, IsNormalized, UnicodeNormalization};
 
 use super::{as_arrow::AsArrow, full::FullNull};
+use crate::{array::prelude::*, datatypes::prelude::*, series::Series};
 
 enum BroadcastedStrIter<'a> {
     Repeat(std::iter::Take<std::iter::Repeat<Option<&'a str>>>),
@@ -275,9 +276,9 @@ fn substring(s: &str, start: usize, len: Option<usize>) -> Option<&str> {
             Some(len) => {
                 if len == 0 {
                     return None;
-                } else {
-                    len
                 }
+
+                len
             }
             None => {
                 return Some(&s[start_pos..]);
@@ -342,7 +343,7 @@ pub enum PadPlacement {
     Right,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, Default)]
 pub struct Utf8NormalizeOptions {
     pub remove_punct: bool,
     pub lowercase: bool,
@@ -351,7 +352,7 @@ pub struct Utf8NormalizeOptions {
 }
 
 impl Utf8Array {
-    pub fn endswith(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
+    pub fn endswith(&self, pattern: &Self) -> DaftResult<BooleanArray> {
         self.binary_broadcasted_compare(
             pattern,
             |data: &str, pat: &str| Ok(data.ends_with(pat)),
@@ -359,7 +360,7 @@ impl Utf8Array {
         )
     }
 
-    pub fn startswith(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
+    pub fn startswith(&self, pattern: &Self) -> DaftResult<BooleanArray> {
         self.binary_broadcasted_compare(
             pattern,
             |data: &str, pat: &str| Ok(data.starts_with(pat)),
@@ -367,7 +368,7 @@ impl Utf8Array {
         )
     }
 
-    pub fn contains(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
+    pub fn contains(&self, pattern: &Self) -> DaftResult<BooleanArray> {
         self.binary_broadcasted_compare(
             pattern,
             |data: &str, pat: &str| Ok(data.contains(pat)),
@@ -375,7 +376,7 @@ impl Utf8Array {
         )
     }
 
-    pub fn match_(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
+    pub fn match_(&self, pattern: &Self) -> DaftResult<BooleanArray> {
         if pattern.len() == 1 {
             let pattern_scalar_value = pattern.get(0);
             return match pattern_scalar_value {
@@ -403,7 +404,7 @@ impl Utf8Array {
         )
     }
 
-    pub fn split(&self, pattern: &Utf8Array, regex: bool) -> DaftResult<ListArray> {
+    pub fn split(&self, pattern: &Self, regex: bool) -> DaftResult<ListArray> {
         let (is_full_null, expected_size) = parse_inputs(self, &[pattern])
             .map_err(|e| DaftError::ValueError(format!("Error in split: {e}")))?;
         if is_full_null {
@@ -438,7 +439,7 @@ impl Utf8Array {
                     &mut splits,
                     &mut offsets,
                     &mut validity,
-                )?
+                )?;
             }
             (true, _) => {
                 let regex_iter = pattern
@@ -451,7 +452,7 @@ impl Utf8Array {
                     &mut splits,
                     &mut offsets,
                     &mut validity,
-                )?
+                )?;
             }
             (false, _) => {
                 let pattern_iter = create_broadcasted_str_iter(pattern, expected_size);
@@ -461,7 +462,7 @@ impl Utf8Array {
                     &mut splits,
                     &mut offsets,
                     &mut validity,
-                )?
+                )?;
             }
         }
         // Shrink splits capacity to current length, since we will have overallocated if any of the patterns actually occurred in the strings.
@@ -483,18 +484,14 @@ impl Utf8Array {
         Ok(result)
     }
 
-    pub fn extract(&self, pattern: &Utf8Array, index: usize) -> DaftResult<Utf8Array> {
+    pub fn extract(&self, pattern: &Self, index: usize) -> DaftResult<Self> {
         let (is_full_null, expected_size) = parse_inputs(self, &[pattern])
             .map_err(|e| DaftError::ValueError(format!("Error in extract: {e}")))?;
         if is_full_null {
-            return Ok(Utf8Array::full_null(
-                self.name(),
-                &DataType::Utf8,
-                expected_size,
-            ));
+            return Ok(Self::full_null(self.name(), &DataType::Utf8, expected_size));
         }
         if expected_size == 0 {
-            return Ok(Utf8Array::empty(self.name(), &DataType::Utf8));
+            return Ok(Self::empty(self.name(), &DataType::Utf8));
         }
 
         let self_iter = create_broadcasted_str_iter(self, expected_size);
@@ -516,7 +513,7 @@ impl Utf8Array {
         Ok(result)
     }
 
-    pub fn extract_all(&self, pattern: &Utf8Array, index: usize) -> DaftResult<ListArray> {
+    pub fn extract_all(&self, pattern: &Self, index: usize) -> DaftResult<ListArray> {
         let (is_full_null, expected_size) = parse_inputs(self, &[pattern])
             .map_err(|e| DaftError::ValueError(format!("Error in extract_all: {e}")))?;
         if is_full_null {
@@ -552,23 +549,14 @@ impl Utf8Array {
         Ok(result)
     }
 
-    pub fn replace(
-        &self,
-        pattern: &Utf8Array,
-        replacement: &Utf8Array,
-        regex: bool,
-    ) -> DaftResult<Utf8Array> {
+    pub fn replace(&self, pattern: &Self, replacement: &Self, regex: bool) -> DaftResult<Self> {
         let (is_full_null, expected_size) = parse_inputs(self, &[pattern, replacement])
             .map_err(|e| DaftError::ValueError(format!("Error in replace: {e}")))?;
         if is_full_null {
-            return Ok(Utf8Array::full_null(
-                self.name(),
-                &DataType::Utf8,
-                expected_size,
-            ));
+            return Ok(Self::full_null(self.name(), &DataType::Utf8, expected_size));
         }
         if expected_size == 0 {
-            return Ok(Utf8Array::empty(self.name(), &DataType::Utf8));
+            return Ok(Self::empty(self.name(), &DataType::Utf8));
         }
 
         let self_iter = create_broadcasted_str_iter(self, expected_size);
@@ -622,27 +610,27 @@ impl Utf8Array {
         Ok(UInt64Array::from((self.name(), Box::new(arrow_result))))
     }
 
-    pub fn lower(&self) -> DaftResult<Utf8Array> {
+    pub fn lower(&self) -> DaftResult<Self> {
         self.unary_broadcasted_op(|val| val.to_lowercase().into())
     }
 
-    pub fn upper(&self) -> DaftResult<Utf8Array> {
+    pub fn upper(&self) -> DaftResult<Self> {
         self.unary_broadcasted_op(|val| val.to_uppercase().into())
     }
 
-    pub fn lstrip(&self) -> DaftResult<Utf8Array> {
+    pub fn lstrip(&self) -> DaftResult<Self> {
         self.unary_broadcasted_op(|val| val.trim_start().into())
     }
 
-    pub fn rstrip(&self) -> DaftResult<Utf8Array> {
+    pub fn rstrip(&self) -> DaftResult<Self> {
         self.unary_broadcasted_op(|val| val.trim_end().into())
     }
 
-    pub fn reverse(&self) -> DaftResult<Utf8Array> {
+    pub fn reverse(&self) -> DaftResult<Self> {
         self.unary_broadcasted_op(|val| val.chars().rev().collect::<String>().into())
     }
 
-    pub fn capitalize(&self) -> DaftResult<Utf8Array> {
+    pub fn capitalize(&self) -> DaftResult<Self> {
         self.unary_broadcasted_op(|val| {
             let mut chars = val.chars();
             match chars.next() {
@@ -658,7 +646,7 @@ impl Utf8Array {
         })
     }
 
-    pub fn find(&self, substr: &Utf8Array) -> DaftResult<Int64Array> {
+    pub fn find(&self, substr: &Self) -> DaftResult<Int64Array> {
         let (is_full_null, expected_size) = parse_inputs(self, &[substr])
             .map_err(|e| DaftError::ValueError(format!("Error in find: {e}")))?;
         if is_full_null {
@@ -689,7 +677,7 @@ impl Utf8Array {
         Ok(result)
     }
 
-    pub fn like(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
+    pub fn like(&self, pattern: &Self) -> DaftResult<BooleanArray> {
         let (is_full_null, expected_size) = parse_inputs(self, &[pattern])
             .map_err(|e| DaftError::ValueError(format!("Error in like: {e}")))?;
         if is_full_null {
@@ -734,7 +722,7 @@ impl Utf8Array {
         Ok(result)
     }
 
-    pub fn ilike(&self, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
+    pub fn ilike(&self, pattern: &Self) -> DaftResult<BooleanArray> {
         let (is_full_null, expected_size) = parse_inputs(self, &[pattern])
             .map_err(|e| DaftError::ValueError(format!("Error in ilike: {e}")))?;
         if is_full_null {
@@ -781,7 +769,7 @@ impl Utf8Array {
         Ok(result)
     }
 
-    pub fn left<I>(&self, nchars: &DataArray<I>) -> DaftResult<Utf8Array>
+    pub fn left<I>(&self, nchars: &DataArray<I>) -> DaftResult<Self>
     where
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: Ord,
@@ -789,14 +777,10 @@ impl Utf8Array {
         let (is_full_null, expected_size) = parse_inputs(self, &[nchars])
             .map_err(|e| DaftError::ValueError(format!("Error in left: {e}")))?;
         if is_full_null {
-            return Ok(Utf8Array::full_null(
-                self.name(),
-                &DataType::Utf8,
-                expected_size,
-            ));
+            return Ok(Self::full_null(self.name(), &DataType::Utf8, expected_size));
         }
         if expected_size == 0 {
-            return Ok(Utf8Array::empty(self.name(), &DataType::Utf8));
+            return Ok(Self::empty(self.name(), &DataType::Utf8));
         }
 
         fn left_most_chars(val: &str, n: usize) -> &str {
@@ -808,7 +792,7 @@ impl Utf8Array {
         }
 
         let self_iter = create_broadcasted_str_iter(self, expected_size);
-        let result: Utf8Array = match nchars.len() {
+        let result: Self = match nchars.len() {
             1 => {
                 let n = nchars.get(0).unwrap();
                 let n: usize = NumCast::from(n).ok_or_else(|| {
@@ -819,7 +803,7 @@ impl Utf8Array {
                 let arrow_result = self_iter
                     .map(|val| Some(left_most_chars(val?, n)))
                     .collect::<arrow2::array::Utf8Array<i64>>();
-                Utf8Array::from((self.name(), Box::new(arrow_result)))
+                Self::from((self.name(), Box::new(arrow_result)))
             }
             _ => {
                 let arrow_result = self_iter
@@ -837,14 +821,14 @@ impl Utf8Array {
                     })
                     .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>()?;
 
-                Utf8Array::from((self.name(), Box::new(arrow_result)))
+                Self::from((self.name(), Box::new(arrow_result)))
             }
         };
         assert_eq!(result.len(), expected_size);
         Ok(result)
     }
 
-    pub fn right<I>(&self, nchars: &DataArray<I>) -> DaftResult<Utf8Array>
+    pub fn right<I>(&self, nchars: &DataArray<I>) -> DaftResult<Self>
     where
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: Ord,
@@ -852,14 +836,10 @@ impl Utf8Array {
         let (is_full_null, expected_size) = parse_inputs(self, &[nchars])
             .map_err(|e| DaftError::ValueError(format!("Error in right: {e}")))?;
         if is_full_null {
-            return Ok(Utf8Array::full_null(
-                self.name(),
-                &DataType::Utf8,
-                expected_size,
-            ));
+            return Ok(Self::full_null(self.name(), &DataType::Utf8, expected_size));
         }
         if expected_size == 0 {
-            return Ok(Utf8Array::empty(self.name(), &DataType::Utf8));
+            return Ok(Self::empty(self.name(), &DataType::Utf8));
         }
 
         fn right_most_chars(val: &str, nchar: usize) -> &str {
@@ -872,7 +852,7 @@ impl Utf8Array {
         }
 
         let self_iter = create_broadcasted_str_iter(self, expected_size);
-        let result: Utf8Array = match nchars.len() {
+        let result: Self = match nchars.len() {
             1 => {
                 let n = nchars.get(0).unwrap();
                 let n: usize = NumCast::from(n).ok_or_else(|| {
@@ -883,7 +863,7 @@ impl Utf8Array {
                 let arrow_result = self_iter
                     .map(|val| Some(right_most_chars(val?, n)))
                     .collect::<arrow2::array::Utf8Array<i64>>();
-                Utf8Array::from((self.name(), Box::new(arrow_result)))
+                Self::from((self.name(), Box::new(arrow_result)))
             }
             _ => {
                 let arrow_result = self_iter
@@ -901,7 +881,7 @@ impl Utf8Array {
                     })
                     .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>()?;
 
-                Utf8Array::from((self.name(), Box::new(arrow_result)))
+                Self::from((self.name(), Box::new(arrow_result)))
             }
         };
         assert_eq!(result.len(), expected_size);
@@ -993,7 +973,7 @@ impl Utf8Array {
         Ok(result)
     }
 
-    pub fn repeat<I>(&self, n: &DataArray<I>) -> DaftResult<Utf8Array>
+    pub fn repeat<I>(&self, n: &DataArray<I>) -> DaftResult<Self>
     where
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: Ord,
@@ -1001,19 +981,15 @@ impl Utf8Array {
         let (is_full_null, expected_size) = parse_inputs(self, &[n])
             .map_err(|e| DaftError::ValueError(format!("Error in repeat: {e}")))?;
         if is_full_null {
-            return Ok(Utf8Array::full_null(
-                self.name(),
-                &DataType::Utf8,
-                expected_size,
-            ));
+            return Ok(Self::full_null(self.name(), &DataType::Utf8, expected_size));
         }
 
         if expected_size == 0 {
-            return Ok(Utf8Array::empty(self.name(), &DataType::Utf8));
+            return Ok(Self::empty(self.name(), &DataType::Utf8));
         }
 
         let self_iter = create_broadcasted_str_iter(self, expected_size);
-        let result: Utf8Array = match n.len() {
+        let result: Self = match n.len() {
             1 => {
                 let n = n.get(0).unwrap();
                 let n: usize = NumCast::from(n).ok_or_else(|| {
@@ -1024,7 +1000,7 @@ impl Utf8Array {
                 let arrow_result = self_iter
                     .map(|val| Some(val?.repeat(n)))
                     .collect::<arrow2::array::Utf8Array<i64>>();
-                Utf8Array::from((self.name(), Box::new(arrow_result)))
+                Self::from((self.name(), Box::new(arrow_result)))
             }
             _ => {
                 let arrow_result = self_iter
@@ -1042,7 +1018,7 @@ impl Utf8Array {
                     })
                     .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>()?;
 
-                Utf8Array::from((self.name(), Box::new(arrow_result)))
+                Self::from((self.name(), Box::new(arrow_result)))
             }
         };
 
@@ -1054,7 +1030,7 @@ impl Utf8Array {
         &self,
         start: &DataArray<I>,
         length: Option<&DataArray<J>>,
-    ) -> DaftResult<Utf8Array>
+    ) -> DaftResult<Self>
     where
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: Ord,
@@ -1066,7 +1042,7 @@ impl Utf8Array {
             .map_err(|e| DaftError::ValueError(format!("Error in substr: {e}")))?;
 
         if is_full_null {
-            return Ok(Utf8Array::full_null(name, &DataType::Utf8, expected_size));
+            return Ok(Self::full_null(name, &DataType::Utf8, expected_size));
         }
 
         let self_iter = create_broadcasted_str_iter(self, expected_size);
@@ -1172,9 +1148,9 @@ impl Utf8Array {
     pub fn pad<I>(
         &self,
         length: &DataArray<I>,
-        padchar: &Utf8Array,
+        padchar: &Self,
         placement: PadPlacement,
-    ) -> DaftResult<Utf8Array>
+    ) -> DaftResult<Self>
     where
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: Ord,
@@ -1216,11 +1192,7 @@ impl Utf8Array {
             || length.null_count() == length.len()
             || padchar.null_count() == padchar.len()
         {
-            return Ok(Utf8Array::full_null(
-                self.name(),
-                &DataType::Utf8,
-                expected_size,
-            ));
+            return Ok(Self::full_null(self.name(), &DataType::Utf8, expected_size));
         }
 
         fn pad_str(
@@ -1260,7 +1232,7 @@ impl Utf8Array {
 
         let self_iter = create_broadcasted_str_iter(self, expected_size);
         let padchar_iter = create_broadcasted_str_iter(padchar, expected_size);
-        let result: Utf8Array = match length.len() {
+        let result: Self = match length.len() {
             1 => {
                 let len = length.get(0).unwrap();
                 let len: usize = NumCast::from(len).ok_or_else(|| {
@@ -1278,7 +1250,7 @@ impl Utf8Array {
                     })
                     .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>()?;
 
-                Utf8Array::from((self.name(), Box::new(arrow_result)))
+                Self::from((self.name(), Box::new(arrow_result)))
             }
             _ => {
                 let length_iter = length.as_arrow().iter();
@@ -1298,7 +1270,7 @@ impl Utf8Array {
                     })
                     .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>()?;
 
-                Utf8Array::from((self.name(), Box::new(arrow_result)))
+                Self::from((self.name(), Box::new(arrow_result)))
             }
         };
 
@@ -1343,8 +1315,8 @@ impl Utf8Array {
         Ok(result)
     }
 
-    pub fn normalize(&self, opts: Utf8NormalizeOptions) -> DaftResult<Utf8Array> {
-        Ok(Utf8Array::from_iter(
+    pub fn normalize(&self, opts: Utf8NormalizeOptions) -> DaftResult<Self> {
+        Ok(Self::from_iter(
             self.name(),
             self.as_arrow().iter().map(|maybe_s| {
                 if let Some(s) = maybe_s {
@@ -1397,8 +1369,11 @@ impl Utf8Array {
     ) -> DaftResult<UInt64Array> {
         if patterns.null_count() == patterns.len() {
             // no matches
-            return UInt64Array::from_iter(self.name(), iter::repeat(Some(0)).take(self.len()))
-                .with_validity(self.validity().cloned());
+            return UInt64Array::from_iter(
+                Arc::new(Field::new(self.name(), DataType::UInt64)),
+                iter::repeat(Some(0)).take(self.len()),
+            )
+            .with_validity(self.validity().cloned());
         }
 
         let patterns = patterns.as_arrow().iter().flatten();
@@ -1418,7 +1393,7 @@ impl Utf8Array {
                             // ensure this match is a whole word (or set of words)
                             // don't want to filter out things like "brass"
                             let prev_char = s.get(m.start() - 1..m.start());
-                            let next_char = s.get(m.end()..m.end() + 1);
+                            let next_char = s.get(m.end()..=m.end());
                             !(prev_char.is_some_and(|s| s.chars().next().unwrap().is_alphabetic())
                                 || next_char
                                     .is_some_and(|s| s.chars().next().unwrap().is_alphabetic()))
@@ -1429,10 +1404,13 @@ impl Utf8Array {
                 }
             })
         });
-        Ok(UInt64Array::from_iter(self.name(), iter))
+        Ok(UInt64Array::from_iter(
+            Arc::new(Field::new(self.name(), DataType::UInt64)),
+            iter,
+        ))
     }
 
-    fn unary_broadcasted_op<ScalarKernel>(&self, operation: ScalarKernel) -> DaftResult<Utf8Array>
+    fn unary_broadcasted_op<ScalarKernel>(&self, operation: ScalarKernel) -> DaftResult<Self>
     where
         ScalarKernel: Fn(&str) -> Cow<'_, str>,
     {
@@ -1442,7 +1420,7 @@ impl Utf8Array {
             .map(|val| Some(operation(val?)))
             .collect::<arrow2::array::Utf8Array<i64>>()
             .with_validity(self_arrow.validity().cloned());
-        Ok(Utf8Array::from((self.name(), Box::new(arrow_result))))
+        Ok(Self::from((self.name(), Box::new(arrow_result))))
     }
 }
 

@@ -6,22 +6,23 @@ import os
 import pathlib
 import sys
 import urllib.parse
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
-import fsspec
-from fsspec.registry import get_filesystem_class
-from pyarrow.fs import FileSystem, LocalFileSystem, S3FileSystem
-from pyarrow.fs import _resolve_filesystem_and_path as pafs_resolve_filesystem_and_path
-
+from daft.convert import from_pydict
 from daft.daft import FileFormat, FileInfos, IOConfig, io_glob
+from daft.dependencies import fsspec, pafs
+from daft.expressions.expressions import col, lit
 from daft.table import MicroPartition
+
+if TYPE_CHECKING:
+    from daft import DataFrame
 
 logger = logging.getLogger(__name__)
 
-_CACHED_FSES: dict[tuple[str, IOConfig | None], FileSystem] = {}
+_CACHED_FSES: dict[tuple[str, IOConfig | None], pafs.FileSystem] = {}
 
 
-def _get_fs_from_cache(protocol: str, io_config: IOConfig | None) -> FileSystem | None:
+def _get_fs_from_cache(protocol: str, io_config: IOConfig | None) -> pafs.FileSystem | None:
     """
     Get an instantiated pyarrow filesystem from the cache based on the URI protocol.
 
@@ -32,7 +33,7 @@ def _get_fs_from_cache(protocol: str, io_config: IOConfig | None) -> FileSystem 
     return _CACHED_FSES.get((protocol, io_config))
 
 
-def _put_fs_in_cache(protocol: str, fs: FileSystem, io_config: IOConfig | None) -> None:
+def _put_fs_in_cache(protocol: str, fs: pafs.FileSystem, io_config: IOConfig | None) -> None:
     """Put pyarrow filesystem in cache under provided protocol."""
     global _CACHED_FSES
 
@@ -115,7 +116,7 @@ def canonicalize_protocol(protocol: str) -> str:
 def _resolve_paths_and_filesystem(
     paths: str | pathlib.Path | list[str],
     io_config: IOConfig | None = None,
-) -> tuple[list[str], FileSystem]:
+) -> tuple[list[str], pafs.FileSystem]:
     """
     Resolves and normalizes all provided paths, infers a filesystem from the
     paths, and ensures that all paths use the same filesystem.
@@ -166,7 +167,7 @@ def _resolve_paths_and_filesystem(
 
     # filesystem should be a non-None pyarrow FileSystem at this point, either
     # user-provided, taken from the cache, or inferred from the first path.
-    assert resolved_filesystem is not None and isinstance(resolved_filesystem, FileSystem)
+    assert resolved_filesystem is not None and isinstance(resolved_filesystem, pafs.FileSystem)
 
     # Resolve all other paths and validate with the user-provided/cached/inferred filesystem.
     resolved_paths = [resolved_path]
@@ -177,7 +178,7 @@ def _resolve_paths_and_filesystem(
     return resolved_paths, resolved_filesystem
 
 
-def _validate_filesystem(path: str, fs: FileSystem, io_config: IOConfig | None) -> str:
+def _validate_filesystem(path: str, fs: pafs.FileSystem, io_config: IOConfig | None) -> str:
     resolved_path, inferred_fs = _infer_filesystem(path, io_config)
     if not isinstance(fs, type(inferred_fs)):
         raise RuntimeError(
@@ -189,7 +190,7 @@ def _validate_filesystem(path: str, fs: FileSystem, io_config: IOConfig | None) 
 def _infer_filesystem(
     path: str,
     io_config: IOConfig | None,
-) -> tuple[str, FileSystem]:
+) -> tuple[str, pafs.FileSystem]:
     """
     Resolves and normalizes the provided path, infers a filesystem from the
     path, and ensures that the inferred filesystem is compatible with the passed
@@ -229,7 +230,7 @@ def _infer_filesystem(
                 except ImportError:
                     pass  # Config does not exist in pyarrow 7.0.0
 
-        resolved_filesystem = S3FileSystem(**translated_kwargs)
+        resolved_filesystem = pafs.S3FileSystem(**translated_kwargs)
         resolved_path = resolved_filesystem.normalize_path(_unwrap_protocol(path))
         return resolved_path, resolved_filesystem
 
@@ -237,7 +238,7 @@ def _infer_filesystem(
     # Local
     ###
     elif protocol == "file":
-        resolved_filesystem = LocalFileSystem()
+        resolved_filesystem = pafs.LocalFileSystem()
         resolved_path = resolved_filesystem.normalize_path(_unwrap_protocol(path))
         return resolved_path, resolved_filesystem
 
@@ -267,9 +268,9 @@ def _infer_filesystem(
     # HTTP: Use FSSpec as a fallback
     ###
     elif protocol in {"http", "https"}:
-        fsspec_fs_cls = get_filesystem_class(protocol)
+        fsspec_fs_cls = fsspec.get_filesystem_class(protocol)
         fsspec_fs = fsspec_fs_cls()
-        resolved_filesystem, resolved_path = pafs_resolve_filesystem_and_path(path, fsspec_fs)
+        resolved_filesystem, resolved_path = pafs._resolve_filesystem_and_path(path, fsspec_fs)
         resolved_path = resolved_filesystem.normalize_path(resolved_path)
         return resolved_path, resolved_filesystem
 
@@ -277,7 +278,7 @@ def _infer_filesystem(
     # Azure: Use FSSpec as a fallback
     ###
     elif protocol in {"az", "abfs", "abfss"}:
-        fsspec_fs_cls = get_filesystem_class(protocol)
+        fsspec_fs_cls = fsspec.get_filesystem_class(protocol)
 
         if io_config is not None:
             # TODO: look into support for other AzureConfig parameters
@@ -292,7 +293,7 @@ def _infer_filesystem(
             )
         else:
             fsspec_fs = fsspec_fs_cls()
-        resolved_filesystem, resolved_path = pafs_resolve_filesystem_and_path(path, fsspec_fs)
+        resolved_filesystem, resolved_path = pafs._resolve_filesystem_and_path(path, fsspec_fs)
         resolved_path = resolved_filesystem.normalize_path(_unwrap_protocol(resolved_path))
         return resolved_path, resolved_filesystem
 
@@ -348,12 +349,36 @@ def glob_path_with_stats(
 ###
 
 
-def join_path(fs: FileSystem, base_path: str, *sub_paths: str) -> str:
+def join_path(fs: pafs.FileSystem, base_path: str, *sub_paths: str) -> str:
     """
     Join a base path with sub-paths using the appropriate path separator
     for the given filesystem.
     """
-    if isinstance(fs, LocalFileSystem):
+    if isinstance(fs, pafs.LocalFileSystem):
         return os.path.join(base_path, *sub_paths)
     else:
         return f"{base_path.rstrip('/')}/{'/'.join(sub_paths)}"
+
+
+def overwrite_files(
+    manifest: DataFrame,
+    root_dir: str | pathlib.Path,
+    io_config: IOConfig | None,
+) -> None:
+    [resolved_path], fs = _resolve_paths_and_filesystem(root_dir, io_config=io_config)
+    file_selector = pafs.FileSelector(resolved_path, recursive=True)
+    try:
+        paths = [info.path for info in fs.get_file_info(file_selector) if info.type == pafs.FileType.File]
+    except FileNotFoundError:
+        # The root directory does not exist, so there are no files to delete.
+        return
+
+    all_file_paths_df = from_pydict({"path": paths})
+
+    assert manifest._result is not None
+    written_file_paths = manifest._result._get_merged_micropartition().get_column("path")
+    to_delete = all_file_paths_df.where(~(col("path").is_in(lit(written_file_paths))))
+
+    # TODO: Look into parallelizing this
+    for entry in to_delete:
+        fs.delete_file(entry["path"])

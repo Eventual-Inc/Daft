@@ -1,31 +1,26 @@
-use std::ops::Range;
-use std::sync::Arc;
-
-use futures::stream::BoxStream;
-use futures::TryStreamExt;
-use google_cloud_storage::client::google_cloud_auth::credentials::CredentialsFile;
-use google_cloud_storage::client::ClientConfig;
-use google_cloud_token::{TokenSource, TokenSourceProvider};
+use std::{ops::Range, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
-use google_cloud_storage::client::Client;
-use google_cloud_storage::http::objects::get::GetObjectRequest;
-
-use google_cloud_storage::http::objects::list::ListObjectsRequest;
-use google_cloud_storage::http::Error as GError;
-use snafu::IntoError;
-use snafu::ResultExt;
-use snafu::Snafu;
-
-use crate::object_io::FileMetadata;
-use crate::object_io::FileType;
-use crate::object_io::LSResult;
-use crate::object_io::ObjectSource;
-use crate::stats::IOStatsRef;
-use crate::stream_utils::io_stats_on_bytestream;
-use crate::FileFormat;
-use crate::GetResult;
 use common_io_config::GCSConfig;
+use common_runtime::get_io_pool_num_threads;
+use futures::{stream::BoxStream, TryStreamExt};
+use google_cloud_storage::{
+    client::{google_cloud_auth::credentials::CredentialsFile, Client, ClientConfig},
+    http::{
+        objects::{get::GetObjectRequest, list::ListObjectsRequest},
+        Error as GError,
+    },
+};
+use google_cloud_token::{TokenSource, TokenSourceProvider};
+use snafu::{IntoError, ResultExt, Snafu};
+use tokio::sync::Semaphore;
+
+use crate::{
+    object_io::{FileMetadata, FileType, LSResult, ObjectSource},
+    stats::IOStatsRef,
+    stream_utils::io_stats_on_bytestream,
+    FileFormat, GetResult,
+};
 
 const GCS_DELIMITER: &str = "/";
 const GCS_SCHEME: &str = "gs";
@@ -55,65 +50,109 @@ enum Error {
     NotAFile { path: String },
     #[snafu(display("Not a File: \"{}\"", path))]
     NotFound { path: String },
+    #[snafu(display("Unable to grab semaphore. {}", source))]
+    UnableToGrabSemaphore { source: tokio::sync::AcquireError },
+
+    #[snafu(display("Unable to create Http Client {}", source))]
+    UnableToCreateClient {
+        source: reqwest_middleware::reqwest::Error,
+    },
 }
 
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
-        use Error::*;
+        use Error::{
+            InvalidUrl, NotAFile, NotFound, UnableToCreateClient, UnableToGrabSemaphore,
+            UnableToListObjects, UnableToLoadCredentials, UnableToOpenFile, UnableToReadBytes,
+        };
         match error {
             UnableToReadBytes { path, source }
             | UnableToOpenFile { path, source }
             | UnableToListObjects { path, source } => match source {
                 GError::HttpClient(err) => match err.status().map(|s| s.as_u16()) {
-                    Some(404) | Some(410) => super::Error::NotFound {
+                    Some(404 | 410) => Self::NotFound {
                         path,
                         source: err.into(),
                     },
-                    Some(401) => super::Error::Unauthorized {
+                    Some(401) => Self::Unauthorized {
                         store: super::SourceType::GCS,
                         path,
                         source: err.into(),
                     },
-                    _ => super::Error::UnableToOpenFile {
-                        path,
-                        source: err.into(),
-                    },
+                    _ => {
+                        if err.is_connect() {
+                            Self::ConnectTimeout {
+                                path,
+                                source: err.into(),
+                            }
+                        } else if err.is_timeout() {
+                            Self::ReadTimeout {
+                                path,
+                                source: err.into(),
+                            }
+                        } else {
+                            Self::UnableToOpenFile {
+                                path,
+                                source: err.into(),
+                            }
+                        }
+                    }
                 },
                 GError::Response(err) => match err.code {
-                    404 | 410 => super::Error::NotFound {
+                    404 | 410 => Self::NotFound {
                         path,
                         source: err.into(),
                     },
-                    401 => super::Error::Unauthorized {
+                    401 => Self::Unauthorized {
                         store: super::SourceType::GCS,
                         path,
                         source: err.into(),
                     },
-                    _ => super::Error::UnableToOpenFile {
+                    _ => Self::UnableToOpenFile {
                         path,
                         source: err.into(),
                     },
                 },
-                GError::TokenSource(err) => super::Error::UnableToLoadCredentials {
+                GError::TokenSource(err) => Self::UnableToLoadCredentials {
                     store: super::SourceType::GCS,
                     source: err,
                 },
+                err @ GError::HttpMiddleware(_) | err @ GError::InvalidRangeHeader(_) => {
+                    Self::UnableToOpenFile {
+                        path,
+                        source: err.into(),
+                    }
+                }
             },
-            NotFound { ref path } => super::Error::NotFound {
+            NotFound { ref path } => Self::NotFound {
                 path: path.into(),
                 source: error.into(),
             },
-            InvalidUrl { path, source } => super::Error::InvalidUrl { path, source },
-            UnableToLoadCredentials { source } => super::Error::UnableToLoadCredentials {
+            InvalidUrl { path, source } => Self::InvalidUrl { path, source },
+            UnableToLoadCredentials { source } => Self::UnableToLoadCredentials {
                 store: super::SourceType::GCS,
                 source: source.into(),
             },
-            NotAFile { path } => super::Error::NotAFile { path },
+            NotAFile { path } => Self::NotAFile { path },
+            UnableToGrabSemaphore { .. } => Self::Generic {
+                store: crate::SourceType::GCS,
+                source: error.into(),
+            },
+            UnableToCreateClient { .. } => Self::UnableToCreateClient {
+                store: crate::SourceType::GCS,
+                source: error.into(),
+            },
         }
     }
 }
 
-struct GCSClientWrapper(Client);
+struct GCSClientWrapper {
+    client: Client,
+    /// Used to limit the concurrent connections to GCS at any given time.
+    /// Acquired when we initiate a connection to GCS
+    /// Released when the stream for that connection is exhausted
+    connection_pool_sema: Arc<Semaphore>,
+}
 
 fn parse_uri(uri: &url::Url) -> super::Result<(&str, &str)> {
     let bucket = match uri.host_str() {
@@ -140,8 +179,13 @@ impl GCSClientWrapper {
         if key.is_empty() {
             return Err(Error::NotAFile { path: uri.into() }.into());
         }
-
-        let client = &self.0;
+        let permit = self
+            .connection_pool_sema
+            .clone()
+            .acquire_owned()
+            .await
+            .context(UnableToGrabSemaphoreSnafu)?;
+        let client = &self.client;
         let req = GetObjectRequest {
             bucket: bucket.into(),
             object: key.into(),
@@ -171,12 +215,12 @@ impl GCSClientWrapper {
             .into()
         });
         if let Some(is) = io_stats.as_ref() {
-            is.mark_get_requests(1)
+            is.mark_get_requests(1);
         }
         Ok(GetResult::Stream(
             io_stats_on_bytestream(response, io_stats),
             size,
-            None,
+            Some(permit),
             None,
         ))
     }
@@ -187,7 +231,14 @@ impl GCSClientWrapper {
         if key.is_empty() {
             return Err(Error::NotAFile { path: uri.into() }.into());
         }
-        let client = &self.0;
+
+        let _permit = self
+            .connection_pool_sema
+            .acquire()
+            .await
+            .context(UnableToGrabSemaphoreSnafu)?;
+
+        let client = &self.client;
         let req = GetObjectRequest {
             bucket: bucket.into(),
             object: key.into(),
@@ -201,7 +252,7 @@ impl GCSClientWrapper {
                 path: uri.to_string(),
             })?;
         if let Some(is) = io_stats.as_ref() {
-            is.mark_head_requests(1)
+            is.mark_head_requests(1);
         }
         Ok(response.size as usize)
     }
@@ -221,8 +272,8 @@ impl GCSClientWrapper {
             prefix: Some(key.to_string()),
             end_offset: None,
             start_offset: None,
-            page_token: continuation_token.map(|s| s.to_string()),
-            delimiter: delimiter.map(|d| d.to_string()), // returns results in "directory mode" if delimiter is provided
+            page_token: continuation_token.map(std::string::ToString::to_string),
+            delimiter: delimiter.map(std::string::ToString::to_string), // returns results in "directory mode" if delimiter is provided
             max_results: page_size,
             include_trailing_delimiter: Some(false), // This will not populate "directories" in the response's .item[]
             projection: None,
@@ -232,10 +283,10 @@ impl GCSClientWrapper {
             .list_objects(&req)
             .await
             .context(UnableToListObjectsSnafu {
-                path: format!("{GCS_SCHEME}://{}/{}", bucket, key),
+                path: format!("{GCS_SCHEME}://{bucket}/{key}"),
             })?;
         if let Some(is) = io_stats.as_ref() {
-            is.mark_list_requests(1)
+            is.mark_list_requests(1);
         }
 
         let response_items = ls_response.items.unwrap_or_default();
@@ -246,7 +297,7 @@ impl GCSClientWrapper {
             filetype: FileType::File,
         });
         let dirs = response_prefixes.iter().map(|pref| FileMetadata {
-            filepath: format!("{GCS_SCHEME}://{}/{}", bucket, pref),
+            filepath: format!("{GCS_SCHEME}://{bucket}/{pref}"),
             size: None,
             filetype: FileType::Directory,
         });
@@ -266,12 +317,19 @@ impl GCSClientWrapper {
     ) -> super::Result<LSResult> {
         let uri = url::Url::parse(path).with_context(|_| InvalidUrlSnafu { path })?;
         let (bucket, key) = parse_uri(&uri)?;
-        let client = &self.0;
+
+        let _permit = self
+            .connection_pool_sema
+            .acquire()
+            .await
+            .context(UnableToGrabSemaphoreSnafu)?;
+
+        let client = &self.client;
 
         if posix {
             // Attempt to forcefully ls the key as a directory (by ensuring a "/" suffix)
             let forced_directory_key = if key.is_empty() {
-                "".to_string()
+                String::new()
             } else {
                 format!("{}{GCS_DELIMITER}", key.trim_end_matches(GCS_DELIMITER))
             };
@@ -333,7 +391,7 @@ impl GCSClientWrapper {
     }
 }
 
-pub(crate) struct GCSSource {
+pub struct GCSSource {
     client: GCSClientWrapper,
 }
 
@@ -397,10 +455,48 @@ impl GCSSource {
         if config.project_id.is_some() {
             client_config.project_id.clone_from(&config.project_id);
         }
+        client_config.http = Some({
+            use reqwest_middleware::ClientBuilder;
+            use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
+            use retry_policies::Jitter;
+            let retry_policy = ExponentialBackoff::builder()
+                .base(2)
+                .jitter(Jitter::Bounded)
+                .retry_bounds(
+                    Duration::from_millis(config.retry_initial_backoff_ms),
+                    Duration::from_secs(60),
+                )
+                .build_with_max_retries(config.num_tries);
+
+            let base_client = reqwest_middleware::reqwest::ClientBuilder::default()
+                .connect_timeout(Duration::from_millis(config.connect_timeout_ms))
+                .read_timeout(Duration::from_millis(config.read_timeout_ms))
+                .pool_idle_timeout(Duration::from_secs(60))
+                .pool_max_idle_per_host(70)
+                .build()
+                .context(UnableToCreateClientSnafu)?;
+
+            ClientBuilder::new(base_client)
+                // reqwest-retry already comes with a default retry strategy that matches http standards
+                // override it only if you need a custom one due to non standard behavior
+                .with(
+                    RetryTransientMiddleware::new_with_policy(retry_policy)
+                        .with_retry_log_level(tracing::Level::DEBUG),
+                )
+                .build()
+        });
 
         let client = Client::new(client_config);
-        Ok(GCSSource {
-            client: GCSClientWrapper(client),
+
+        let connection_pool_sema = Arc::new(tokio::sync::Semaphore::new(
+            (config.max_connections_per_io_thread as usize)
+                * get_io_pool_num_threads().expect("Should be running in tokio pool"),
+        ));
+        Ok(Self {
+            client: GCSClientWrapper {
+                client,
+                connection_pool_sema,
+            },
         }
         .into())
     }

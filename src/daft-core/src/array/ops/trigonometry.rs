@@ -1,12 +1,12 @@
+use common_error::DaftResult;
 use num_traits::Float;
 use serde::{Deserialize, Serialize};
 
-use common_error::DaftResult;
-
-use crate::array::DataArray;
-use crate::datatypes::{DaftFloatType, Float32Array, Float64Array};
-
 use super::DaftAtan2;
+use crate::{
+    array::DataArray,
+    datatypes::{DaftFloatType, Float32Array, Float64Array},
+};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum TrigonometricFunction {
@@ -27,18 +27,18 @@ pub enum TrigonometricFunction {
 impl TrigonometricFunction {
     pub fn fn_name(&self) -> &'static str {
         match self {
-            TrigonometricFunction::Sin => "sin",
-            TrigonometricFunction::Cos => "cos",
-            TrigonometricFunction::Tan => "tan",
-            TrigonometricFunction::Cot => "cot",
-            TrigonometricFunction::ArcSin => "arcsin",
-            TrigonometricFunction::ArcCos => "arccos",
-            TrigonometricFunction::ArcTan => "arctan",
-            TrigonometricFunction::Radians => "radians",
-            TrigonometricFunction::Degrees => "degrees",
-            TrigonometricFunction::ArcTanh => "arctanh",
-            TrigonometricFunction::ArcCosh => "arccosh",
-            TrigonometricFunction::ArcSinh => "arcsinh",
+            Self::Sin => "sin",
+            Self::Cos => "cos",
+            Self::Tan => "tan",
+            Self::Cot => "cot",
+            Self::ArcSin => "arcsin",
+            Self::ArcCos => "arccos",
+            Self::ArcTan => "arctan",
+            Self::Radians => "radians",
+            Self::Degrees => "degrees",
+            Self::ArcTanh => "arctanh",
+            Self::ArcCosh => "arccosh",
+            Self::ArcSinh => "arcsinh",
         }
     }
 }

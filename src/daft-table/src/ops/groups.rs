@@ -32,7 +32,7 @@ impl Table {
         let mut key_indices: Vec<u64> = Vec::with_capacity(probe_table.len());
         let mut values_indices: Vec<Vec<u64>> = Vec::with_capacity(probe_table.len());
 
-        for (idx_hash, val_idx) in probe_table.into_iter() {
+        for (idx_hash, val_idx) in probe_table {
             key_indices.push(idx_hash.idx);
             values_indices.push(val_idx);
         }
@@ -54,8 +54,11 @@ impl Table {
         // )
 
         // Begin by doing the argsort.
-        let argsort_series =
-            Series::argsort_multikey(self.columns.as_slice(), &vec![false; self.columns.len()])?;
+        let argsort_series = Series::argsort_multikey(
+            self.columns.as_slice(),
+            &vec![false; self.columns.len()],
+            &vec![false; self.columns.len()],
+        )?;
         let argsort_array = argsort_series.downcast::<UInt64Array>()?;
 
         // The result indices.
@@ -65,8 +68,8 @@ impl Table {
         let comparator = build_multi_array_is_equal(
             self.columns.as_slice(),
             self.columns.as_slice(),
-            true,
-            true,
+            vec![true; self.columns.len()].as_slice(),
+            vec![true; self.columns.len()].as_slice(),
         )?;
 
         // To group the argsort values together, we will traverse the table in argsort order,

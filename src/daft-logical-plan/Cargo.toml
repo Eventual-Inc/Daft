@@ -1,0 +1,52 @@
+[dependencies]
+common-daft-config = {path = "../common/daft-config", default-features = false}
+common-display = {path = "../common/display", default-features = false}
+common-error = {path = "../common/error", default-features = false}
+common-file-formats = {path = "../common/file-formats", default-features = false}
+common-io-config = {path = "../common/io-config", default-features = false}
+common-py-serde = {path = "../common/py-serde", default-features = false}
+common-resource-request = {path = "../common/resource-request", default-features = false}
+common-scan-info = {path = "../common/scan-info", default-features = false}
+common-treenode = {path = "../common/treenode", default-features = false}
+daft-core = {path = "../daft-core", default-features = false}
+daft-dsl = {path = "../daft-dsl", default-features = false}
+daft-functions = {path = "../daft-functions", default-features = false}
+daft-schema = {path = "../daft-schema", default-features = false}
+derivative = {workspace = true}
+indexmap = {workspace = true}
+itertools = {workspace = true}
+log = {workspace = true}
+pyo3 = {workspace = true, optional = true}
+serde = {workspace = true, features = ["rc"]}
+snafu = {workspace = true}
+uuid = {version = "1", features = ["v4"]}
+
+[dev-dependencies]
+daft-dsl = {path = "../daft-dsl", features = ["test-utils"]}
+pretty_assertions = {workspace = true}
+rstest = {workspace = true}
+test-log = {workspace = true}
+
+[features]
+python = [
+  "dep:pyo3",
+  "common-display/python",
+  "common-error/python",
+  "common-file-formats/python",
+  "common-io-config/python",
+  "common-daft-config/python",
+  "common-resource-request/python",
+  "common-scan-info/python",
+  "daft-core/python",
+  "daft-dsl/python",
+  "daft-functions/python",
+  "daft-schema/python"
+]
+
+[lints]
+workspace = true
+
+[package]
+edition = {workspace = true}
+name = "daft-logical-plan"
+version = {workspace = true}

@@ -11,7 +11,7 @@ arrow-data = {version = "=51.0.0", optional = true}
 arrow-format = {version = "0.8", optional = true, features = ["ipc"]}
 arrow-schema = {version = "=51.0.0", optional = true}
 # to read IPC as a stream
-async-stream = {version = "0.3.2", optional = true}
+async-stream = {version = "0.3.6", optional = true}
 # avro support
 avro-schema = {version = "0.3", optional = true}
 base64 = {version = "0.21.0", optional = true}
@@ -48,7 +48,7 @@ json-deserializer = {version = "0.4.4", optional = true, features = [
 # To efficiently cast numbers to strings
 lexical-core = {version = "0.8", optional = true}
 # for IPC compression
-lz4 = {version = "1.24", optional = true}
+lz4 = {version = "1.28", optional = true}
 # For `LIKE` matching "contains" fast-path
 memchr = {version = "2.6", optional = true}
 # For instruction multiversioning
@@ -251,7 +251,7 @@ version = "0.17.4"
 allowlist = ["compute", "compute_sort", "compute_hash", "compute_nullif"]
 
 [package.metadata.cargo-machete]
-ignored = ["arrow_array", "arrow_buffer", "avro_rs", "criterion", "crossbeam_channel", "flate2", "getrandom", "rustc_version", "sample_arrow2", "sample_std", "sample_test", "tokio", "tokio_util"]
+ignored = ["arrow-array", "arrow-buffer", "avro-rs", "criterion", "crossbeam-channel", "flate2", "getrandom", "rustc_version", "sample-arrow2", "sample-std", "sample-test", "tokio", "tokio-util"]
 
 [target.wasm32-unknown-unknown.dependencies]
 getrandom = {version = "0.2", features = ["js"]}

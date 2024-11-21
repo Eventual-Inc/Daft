@@ -2,17 +2,20 @@ use common_error::{DaftError, DaftResult};
 use daft_core::prelude::{DataType, Field, Schema, Series};
 use daft_dsl::{
     functions::{ScalarFunction, ScalarUDF},
-    python::PyExpr,
     ExprRef,
 };
-use pyo3::{pyfunction, PyResult};
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "python")]
+use {
+    daft_dsl::python::PyExpr,
+    pyo3::{pyfunction, PyResult},
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-struct ListContainsFunction;
+pub struct ListContains;
 
 #[typetag::serde]
-impl ScalarUDF for ListContainsFunction {
+impl ScalarUDF for ListContains {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -62,10 +65,15 @@ impl ScalarUDF for ListContainsFunction {
     }
 }
 
+pub fn list_contains(expr: ExprRef, value: ExprRef) -> ExprRef {
+    let args = vec![expr, value];
+    let scalar_function = ScalarFunction::new(ListContains, args);
+    scalar_function.into()
+}
+
+#[cfg(feature = "python")]
 #[pyfunction]
-pub fn list_contains(expr: PyExpr, value: PyExpr) -> PyResult<PyExpr> {
-    let args = vec![expr.into(), value.into()];
-    let scalar_function = ScalarFunction::new(ListContainsFunction, args);
-    let expr = ExprRef::from(scalar_function);
-    Ok(expr.into())
+#[pyo3(name = "list_contains")]
+pub fn py_list_contains(expr: PyExpr, value: PyExpr) -> PyResult<PyExpr> {
+    Ok(list_contains(expr.into(), value.into()).into())
 }

@@ -1,0 +1,20 @@
+[dependencies]
+common-error = {path = "../common/error", default-features = false}
+common-resource-request = {path = "../common/resource-request", default-features = false}
+common-scan-info = {path = "../common/scan-info", default-features = false}
+daft-core = {path = "../daft-core", default-features = false}
+daft-dsl = {path = "../daft-dsl", default-features = false}
+daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
+log = {workspace = true}
+strum = {version = "0.26", features = ["derive"]}
+
+[features]
+python = ["common-error/python", "common-resource-request/python", "common-scan-info/python", "daft-core/python", "daft-dsl/python", "daft-logical-plan/python"]
+
+[lints]
+workspace = true
+
+[package]
+edition = {workspace = true}
+name = "daft-local-plan"
+version = {workspace = true}

@@ -1,31 +1,29 @@
-use common_daft_config::DaftExecutionConfig;
-use common_error::DaftResult;
-use common_tracing::refresh_chrome_trace;
-use daft_micropartition::MicroPartition;
-use daft_physical_plan::{translate, LocalPhysicalPlan};
 use std::{
     collections::HashMap,
     fs::File,
     io::Write,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
+    sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use common_daft_config::DaftExecutionConfig;
+use common_error::DaftResult;
+use common_tracing::refresh_chrome_trace;
+use daft_local_plan::{translate, LocalPhysicalPlan};
+use daft_micropartition::MicroPartition;
+use tokio_util::sync::CancellationToken;
 #[cfg(feature = "python")]
 use {
     common_daft_config::PyDaftExecutionConfig,
+    daft_logical_plan::PyLogicalPlanBuilder,
     daft_micropartition::python::PyMicroPartition,
-    daft_plan::PyLogicalPlanBuilder,
     pyo3::{pyclass, pymethods, IntoPy, PyObject, PyRef, PyRefMut, PyResult, Python},
 };
 
 use crate::{
     channel::{create_channel, Receiver},
     pipeline::{physical_plan_to_pipeline, viz_pipeline},
-    Error, ExecutionRuntimeHandle,
+    Error, ExecutionRuntimeContext,
 };
 
 #[cfg(feature = "python")]
@@ -40,7 +38,7 @@ impl LocalPartitionIterator {
     fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
     }
-    fn __next__(mut slf: PyRefMut<'_, Self>, py: Python<'_>) -> PyResult<Option<PyObject>> {
+    fn __next__(mut slf: PyRefMut<'_, Self>, py: Python) -> PyResult<Option<PyObject>> {
         let iter = &mut slf.iter;
         Ok(py.allow_threads(|| iter.next().transpose())?)
     }
@@ -49,6 +47,13 @@ impl LocalPartitionIterator {
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
 pub struct NativeExecutor {
     local_physical_plan: Arc<LocalPhysicalPlan>,
+    cancel: CancellationToken,
+}
+
+impl Drop for NativeExecutor {
+    fn drop(&mut self) {
+        self.cancel.cancel();
+    }
 }
 
 #[cfg(feature = "python")]
@@ -57,13 +62,14 @@ impl NativeExecutor {
     #[staticmethod]
     pub fn from_logical_plan_builder(
         logical_plan_builder: &PyLogicalPlanBuilder,
-        py: Python<'_>,
+        py: Python,
     ) -> PyResult<Self> {
         py.allow_threads(|| {
             let logical_plan = logical_plan_builder.builder.build();
             let local_physical_plan = translate(&logical_plan)?;
             Ok(Self {
                 local_physical_plan,
+                cancel: CancellationToken::new(),
             })
         })
     }
@@ -82,7 +88,7 @@ impl NativeExecutor {
                     part_id,
                     parts
                         .into_iter()
-                        .map(|part| part.into())
+                        .map(std::convert::Into::into)
                         .collect::<Vec<Arc<MicroPartition>>>(),
                 )
             })
@@ -93,6 +99,7 @@ impl NativeExecutor {
                 native_psets,
                 cfg.config,
                 results_buffer_size,
+                self.cancel.clone(),
             )
         })?;
         let iter = Box::new(out.map(|part| {
@@ -119,26 +126,24 @@ pub fn run_local(
     psets: HashMap<String, Vec<Arc<MicroPartition>>>,
     cfg: Arc<DaftExecutionConfig>,
     results_buffer_size: Option<usize>,
+    cancel: CancellationToken,
 ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<Arc<MicroPartition>>> + Send>> {
     refresh_chrome_trace();
-    let mut pipeline = physical_plan_to_pipeline(physical_plan, &psets)?;
+    let pipeline = physical_plan_to_pipeline(physical_plan, &psets, &cfg)?;
     let (tx, rx) = create_channel(results_buffer_size.unwrap_or(1));
     let handle = std::thread::spawn(move || {
-        let runtime = tokio::runtime::Builder::new_multi_thread()
+        let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
-            .max_blocking_threads(10)
-            .thread_name_fn(|| {
-                static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
-                let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
-                format!("Executor-Worker-{}", id)
-            })
             .build()
             .expect("Failed to create tokio runtime");
-        runtime.block_on(async {
-            let mut runtime_handle = ExecutionRuntimeHandle::new(cfg.default_morsel_size);
-            let mut receiver = pipeline.start(true, &mut runtime_handle)?.get_receiver();
+        let execution_task = async {
+            let mut runtime_handle = ExecutionRuntimeContext::new(cfg.default_morsel_size);
+            let receiver = pipeline.start(true, &mut runtime_handle)?;
+
             while let Some(val) = receiver.recv().await {
-                let _ = tx.send(val.as_data().clone()).await;
+                if tx.send(val).await.is_err() {
+                    break;
+                }
             }
 
             while let Some(result) = runtime_handle.join_next().await {
@@ -159,11 +164,27 @@ pub fn run_local(
                     .duration_since(UNIX_EPOCH)
                     .expect("Time went backwards")
                     .as_millis();
-                let file_name = format!("explain-analyze-{}-mermaid.md", curr_ms);
+                let file_name = format!("explain-analyze-{curr_ms}-mermaid.md");
                 let mut file = File::create(file_name)?;
                 writeln!(file, "```mermaid\n{}\n```", viz_pipeline(pipeline.as_ref()))?;
             }
             Ok(())
+        };
+
+        let local_set = tokio::task::LocalSet::new();
+        local_set.block_on(&runtime, async {
+            tokio::select! {
+                biased;
+                () = cancel.cancelled() => {
+                    log::info!("Execution engine cancelled");
+                    Ok(())
+                }
+                _ = tokio::signal::ctrl_c() => {
+                    log::info!("Received Ctrl-C, shutting down execution engine");
+                    Ok(())
+                }
+                result = execution_task => result,
+            }
         })
     });
 
@@ -187,7 +208,7 @@ pub fn run_local(
                             .join()
                             .expect("Execution engine thread panicked");
                         match join_result {
-                            Ok(_) => None,
+                            Ok(()) => None,
                             Err(e) => Some(Err(e)),
                         }
                     } else {

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import itertools
 import tempfile
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pyarrow as pa
 import pytest
@@ -147,6 +147,33 @@ def test_python_duration() -> None:
     assert res == duration
 
 
+def test_temporal_arithmetic_with_duration_lit() -> None:
+    df = daft.from_pydict(
+        {
+            "duration": [timedelta(days=1)],
+            "date": [datetime(2021, 1, 1)],
+            "timestamp": [datetime(2021, 1, 1)],
+        }
+    )
+
+    df = df.select(
+        (df["date"] + timedelta(days=1)).alias("add_date"),
+        (df["date"] - timedelta(days=1)).alias("sub_date"),
+        (df["timestamp"] + timedelta(days=1)).alias("add_timestamp"),
+        (df["timestamp"] - timedelta(days=1)).alias("sub_timestamp"),
+        (df["duration"] + timedelta(days=1)).alias("add_dur"),
+        (df["duration"] - timedelta(days=1)).alias("sub_dur"),
+    )
+
+    result = df.to_pydict()
+    assert result["add_date"] == [datetime(2021, 1, 2)]
+    assert result["sub_date"] == [datetime(2020, 12, 31)]
+    assert result["add_timestamp"] == [datetime(2021, 1, 2)]
+    assert result["sub_timestamp"] == [datetime(2020, 12, 31)]
+    assert result["add_dur"] == [timedelta(days=2)]
+    assert result["sub_dur"] == [timedelta(0)]
+
+
 @pytest.mark.parametrize(
     "timeunit",
     ["s", "ms", "us", "ns"],
@@ -283,3 +310,175 @@ def test_join_timestamp_same_timezone(tu1, tu2, tz_repr):
         "x": [1],
         "y": [4],
     }
+
+
+@pytest.mark.parametrize(
+    "op,expected",
+    [
+        (
+            (col("datetimes") + daft.interval(years=1)),
+            [
+                datetime(2022, 1, 1, 0, 0),
+                datetime(2022, 1, 2, 0, 0),
+                datetime(2021, 3, 1, 0, 0),
+                datetime(2021, 2, 28, 0, 0),
+            ],
+        ),
+        (
+            (col("datetimes") + daft.interval(months=1)),
+            [
+                datetime(2021, 2, 1, 0, 0),
+                datetime(2021, 2, 2, 0, 0),
+                datetime(2020, 3, 29, 0, 0),
+                datetime(2020, 3, 28, 0, 0),
+            ],
+        ),
+        (
+            (col("datetimes") + daft.interval(days=1)),
+            [
+                datetime(2021, 1, 2, 0, 0),
+                datetime(2021, 1, 3, 0, 0),
+                datetime(2020, 3, 1, 0, 0),
+                datetime(2020, 2, 29, 0, 0),
+            ],
+        ),
+        (
+            (col("datetimes") + daft.interval(hours=1)),
+            [
+                datetime(2021, 1, 1, 1, 0),
+                datetime(2021, 1, 2, 1, 0),
+                datetime(2020, 2, 29, 1, 0),
+                datetime(2020, 2, 28, 1, 0),
+            ],
+        ),
+        (
+            (col("datetimes") + daft.interval(minutes=1)),
+            [
+                datetime(2021, 1, 1, 0, 1),
+                datetime(2021, 1, 2, 0, 1),
+                datetime(2020, 2, 29, 0, 1),
+                datetime(2020, 2, 28, 0, 1),
+            ],
+        ),
+        (
+            (col("datetimes") + daft.interval(seconds=1)),
+            [
+                datetime(2021, 1, 1, 0, 0, 1),
+                datetime(2021, 1, 2, 0, 0, 1),
+                datetime(2020, 2, 29, 0, 0, 1),
+                datetime(2020, 2, 28, 0, 0, 1),
+            ],
+        ),
+        (
+            (col("datetimes") + daft.interval(millis=1)),
+            [
+                datetime(2021, 1, 1, 0, 0, 0, 1000),
+                datetime(2021, 1, 2, 0, 0, 0, 1000),
+                datetime(2020, 2, 29, 0, 0, 0, 1000),
+                datetime(2020, 2, 28, 0, 0, 0, 1000),
+            ],
+        ),
+        (
+            (col("datetimes") - daft.interval(years=1)),
+            [
+                datetime(2020, 1, 2, 0, 0),
+                datetime(2020, 1, 3, 0, 0),
+                datetime(2019, 2, 28, 0, 0),
+                datetime(2019, 2, 27, 0, 0),
+            ],
+        ),
+        (
+            (col("datetimes") - daft.interval(months=1)),
+            [
+                datetime(2020, 12, 1, 0, 0),
+                datetime(2020, 12, 2, 0, 0),
+                datetime(2020, 1, 31, 0, 0),
+                datetime(2020, 1, 30, 0, 0),
+            ],
+        ),
+        (
+            (col("datetimes") - daft.interval(days=1)),
+            [
+                datetime(2021, 1, 2, 0, 0),
+                datetime(2021, 1, 3, 0, 0),
+                datetime(2020, 3, 1, 0, 0),
+                datetime(2020, 2, 29, 0, 0),
+            ],
+        ),
+        (
+            (col("datetimes") - daft.interval(hours=1)),
+            [
+                datetime(2020, 12, 31, 23, 0),
+                datetime(2021, 1, 1, 23, 0),
+                datetime(2020, 2, 28, 23, 0),
+                datetime(2020, 2, 27, 23, 0),
+            ],
+        ),
+        (
+            col("datetimes") - daft.interval(minutes=1),
+            [
+                datetime(2020, 12, 31, 23, 59),
+                datetime(2021, 1, 1, 23, 59),
+                datetime(2020, 2, 28, 23, 59),
+                datetime(2020, 2, 27, 23, 59),
+            ],
+        ),
+        (
+            (col("datetimes") - daft.interval(seconds=1)),
+            [
+                datetime(2020, 12, 31, 23, 59, 59),
+                datetime(2021, 1, 1, 23, 59, 59),
+                datetime(2020, 2, 28, 23, 59, 59),
+                datetime(2020, 2, 27, 23, 59, 59),
+            ],
+        ),
+        (
+            (col("datetimes") - daft.interval(millis=1)),
+            [
+                datetime(2020, 12, 31, 23, 59, 59, 999000),
+                datetime(2021, 1, 1, 23, 59, 59, 999000),
+                datetime(2020, 2, 28, 23, 59, 59, 999000),
+                datetime(2020, 2, 27, 23, 59, 59, 999000),
+            ],
+        ),
+    ],
+)
+def test_intervals(op, expected):
+    datetimes = [
+        datetime(2021, 1, 1, 0, 0, 0),
+        datetime(2021, 1, 2, 0, 0, 0),
+        # add a datetime with a leap event
+        datetime(2020, 2, 29, 0, 0, 0),
+        # and another one that should land on a leap event
+        datetime(2020, 2, 28, 0, 0, 0),
+    ]
+    actual = (
+        daft.from_pydict(
+            {
+                "datetimes": datetimes,
+            }
+        )
+        .select(op)
+        .collect()
+        .to_pydict()
+    )
+    expected = {"datetimes": expected}
+
+    assert actual == expected
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        date(2020, 1, 1),  # explicit date
+        "2020-01-01",  # implicit coercion
+    ],
+)
+def test_date_comparison(value):
+    date_df = daft.from_pydict({"date_str": ["2020-01-01", "2020-01-02", "2020-01-03"]})
+    date_df = date_df.with_column("date", col("date_str").str.to_date("%Y-%m-%d"))
+    actual = date_df.filter(col("date") == value).select("date").to_pydict()
+
+    expected = {"date": [date(2020, 1, 1)]}
+
+    assert actual == expected

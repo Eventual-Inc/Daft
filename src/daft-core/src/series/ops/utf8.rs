@@ -1,14 +1,14 @@
-use crate::array::ops::{PadPlacement, Utf8NormalizeOptions};
-use crate::series::array_impl::IntoSeries;
-use crate::series::Series;
-use crate::{datatypes::*, with_match_integer_daft_types};
 use common_error::{DaftError, DaftResult};
 
+use crate::{
+    array::ops::{PadPlacement, Utf8NormalizeOptions},
+    datatypes::*,
+    series::{array_impl::IntoSeries, Series},
+    with_match_integer_daft_types,
+};
+
 impl Series {
-    pub fn with_utf8_array(
-        &self,
-        f: impl Fn(&Utf8Array) -> DaftResult<Series>,
-    ) -> DaftResult<Series> {
+    pub fn with_utf8_array(&self, f: impl Fn(&Utf8Array) -> DaftResult<Self>) -> DaftResult<Self> {
         match self.data_type() {
             DataType::Utf8 => f(self.utf8()?),
             DataType::Null => Ok(self.clone()),
@@ -18,44 +18,44 @@ impl Series {
         }
     }
 
-    pub fn utf8_endswith(&self, pattern: &Series) -> DaftResult<Series> {
+    pub fn utf8_endswith(&self, pattern: &Self) -> DaftResult<Self> {
         self.with_utf8_array(|arr| {
             pattern.with_utf8_array(|pattern_arr| Ok(arr.endswith(pattern_arr)?.into_series()))
         })
     }
 
-    pub fn utf8_startswith(&self, pattern: &Series) -> DaftResult<Series> {
+    pub fn utf8_startswith(&self, pattern: &Self) -> DaftResult<Self> {
         self.with_utf8_array(|arr| {
             pattern.with_utf8_array(|pattern_arr| Ok(arr.startswith(pattern_arr)?.into_series()))
         })
     }
 
-    pub fn utf8_contains(&self, pattern: &Series) -> DaftResult<Series> {
+    pub fn utf8_contains(&self, pattern: &Self) -> DaftResult<Self> {
         self.with_utf8_array(|arr| {
             pattern.with_utf8_array(|pattern_arr| Ok(arr.contains(pattern_arr)?.into_series()))
         })
     }
 
-    pub fn utf8_match(&self, pattern: &Series) -> DaftResult<Series> {
+    pub fn utf8_match(&self, pattern: &Self) -> DaftResult<Self> {
         self.with_utf8_array(|arr| {
             pattern.with_utf8_array(|pattern_arr| Ok(arr.match_(pattern_arr)?.into_series()))
         })
     }
 
-    pub fn utf8_split(&self, pattern: &Series, regex: bool) -> DaftResult<Series> {
+    pub fn utf8_split(&self, pattern: &Self, regex: bool) -> DaftResult<Self> {
         self.with_utf8_array(|arr| {
             pattern.with_utf8_array(|pattern_arr| Ok(arr.split(pattern_arr, regex)?.into_series()))
         })
     }
 
-    pub fn utf8_extract(&self, pattern: &Series, index: usize) -> DaftResult<Series> {
+    pub fn utf8_extract(&self, pattern: &Self, index: usize) -> DaftResult<Self> {
         self.with_utf8_array(|arr| {
             pattern
                 .with_utf8_array(|pattern_arr| Ok(arr.extract(pattern_arr, index)?.into_series()))
         })
     }
 
-    pub fn utf8_extract_all(&self, pattern: &Series, index: usize) -> DaftResult<Series> {
+    pub fn utf8_extract_all(&self, pattern: &Self, index: usize) -> DaftResult<Self> {
         self.with_utf8_array(|arr| {
             pattern.with_utf8_array(|pattern_arr| {
                 Ok(arr.extract_all(pattern_arr, index)?.into_series())
@@ -65,10 +65,10 @@ impl Series {
 
     pub fn utf8_replace(
         &self,
-        pattern: &Series,
-        replacement: &Series,
+        pattern: &Self,
+        replacement: &Self,
         regex: bool,
-    ) -> DaftResult<Series> {
+    ) -> DaftResult<Self> {
         self.with_utf8_array(|arr| {
             pattern.with_utf8_array(|pattern_arr| {
                 replacement.with_utf8_array(|replacement_arr| {
@@ -80,39 +80,39 @@ impl Series {
         })
     }
 
-    pub fn utf8_length(&self) -> DaftResult<Series> {
+    pub fn utf8_length(&self) -> DaftResult<Self> {
         self.with_utf8_array(|arr| Ok(arr.length()?.into_series()))
     }
 
-    pub fn utf8_length_bytes(&self) -> DaftResult<Series> {
+    pub fn utf8_length_bytes(&self) -> DaftResult<Self> {
         self.with_utf8_array(|arr| Ok(arr.length_bytes()?.into_series()))
     }
 
-    pub fn utf8_lower(&self) -> DaftResult<Series> {
+    pub fn utf8_lower(&self) -> DaftResult<Self> {
         self.with_utf8_array(|arr| Ok(arr.lower()?.into_series()))
     }
 
-    pub fn utf8_upper(&self) -> DaftResult<Series> {
+    pub fn utf8_upper(&self) -> DaftResult<Self> {
         self.with_utf8_array(|arr| Ok(arr.upper()?.into_series()))
     }
 
-    pub fn utf8_lstrip(&self) -> DaftResult<Series> {
+    pub fn utf8_lstrip(&self) -> DaftResult<Self> {
         self.with_utf8_array(|arr| Ok(arr.lstrip()?.into_series()))
     }
 
-    pub fn utf8_rstrip(&self) -> DaftResult<Series> {
+    pub fn utf8_rstrip(&self) -> DaftResult<Self> {
         self.with_utf8_array(|arr| Ok(arr.rstrip()?.into_series()))
     }
 
-    pub fn utf8_reverse(&self) -> DaftResult<Series> {
+    pub fn utf8_reverse(&self) -> DaftResult<Self> {
         self.with_utf8_array(|arr| Ok(arr.reverse()?.into_series()))
     }
 
-    pub fn utf8_capitalize(&self) -> DaftResult<Series> {
+    pub fn utf8_capitalize(&self) -> DaftResult<Self> {
         self.with_utf8_array(|arr| Ok(arr.capitalize()?.into_series()))
     }
 
-    pub fn utf8_left(&self, nchars: &Series) -> DaftResult<Series> {
+    pub fn utf8_left(&self, nchars: &Self) -> DaftResult<Self> {
         self.with_utf8_array(|arr| {
             if nchars.data_type().is_integer() {
                 with_match_integer_daft_types!(nchars.data_type(), |$T| {
@@ -129,7 +129,7 @@ impl Series {
         })
     }
 
-    pub fn utf8_right(&self, nchars: &Series) -> DaftResult<Series> {
+    pub fn utf8_right(&self, nchars: &Self) -> DaftResult<Self> {
         self.with_utf8_array(|arr| {
             if nchars.data_type().is_integer() {
                 with_match_integer_daft_types!(nchars.data_type(), |$T| {
@@ -146,13 +146,13 @@ impl Series {
         })
     }
 
-    pub fn utf8_find(&self, substr: &Series) -> DaftResult<Series> {
+    pub fn utf8_find(&self, substr: &Self) -> DaftResult<Self> {
         self.with_utf8_array(|arr| {
             substr.with_utf8_array(|substr_arr| Ok(arr.find(substr_arr)?.into_series()))
         })
     }
 
-    pub fn utf8_lpad(&self, length: &Series, pad: &Series) -> DaftResult<Series> {
+    pub fn utf8_lpad(&self, length: &Self, pad: &Self) -> DaftResult<Self> {
         self.with_utf8_array(|arr| {
             pad.with_utf8_array(|pad_arr| {
                 if length.data_type().is_integer() {
@@ -171,7 +171,7 @@ impl Series {
         })
     }
 
-    pub fn utf8_rpad(&self, length: &Series, pad: &Series) -> DaftResult<Series> {
+    pub fn utf8_rpad(&self, length: &Self, pad: &Self) -> DaftResult<Self> {
         self.with_utf8_array(|arr| {
             pad.with_utf8_array(|pad_arr| {
                 if length.data_type().is_integer() {
@@ -190,7 +190,7 @@ impl Series {
         })
     }
 
-    pub fn utf8_repeat(&self, n: &Series) -> DaftResult<Series> {
+    pub fn utf8_repeat(&self, n: &Self) -> DaftResult<Self> {
         self.with_utf8_array(|arr| {
             if n.data_type().is_integer() {
                 with_match_integer_daft_types!(n.data_type(), |$T| {
@@ -207,19 +207,19 @@ impl Series {
         })
     }
 
-    pub fn utf8_like(&self, pattern: &Series) -> DaftResult<Series> {
+    pub fn utf8_like(&self, pattern: &Self) -> DaftResult<Self> {
         self.with_utf8_array(|arr| {
             pattern.with_utf8_array(|pattern_arr| Ok(arr.like(pattern_arr)?.into_series()))
         })
     }
 
-    pub fn utf8_ilike(&self, pattern: &Series) -> DaftResult<Series> {
+    pub fn utf8_ilike(&self, pattern: &Self) -> DaftResult<Self> {
         self.with_utf8_array(|arr| {
             pattern.with_utf8_array(|pattern_arr| Ok(arr.ilike(pattern_arr)?.into_series()))
         })
     }
 
-    pub fn utf8_substr(&self, start: &Series, length: &Series) -> DaftResult<Series> {
+    pub fn utf8_substr(&self, start: &Self, length: &Self) -> DaftResult<Self> {
         self.with_utf8_array(|arr| {
             if start.data_type().is_integer() {
                 with_match_integer_daft_types!(start.data_type(), |$T| {
@@ -247,24 +247,24 @@ impl Series {
         })
     }
 
-    pub fn utf8_to_date(&self, format: &str) -> DaftResult<Series> {
+    pub fn utf8_to_date(&self, format: &str) -> DaftResult<Self> {
         self.with_utf8_array(|arr| Ok(arr.to_date(format)?.into_series()))
     }
 
-    pub fn utf8_to_datetime(&self, format: &str, timezone: Option<&str>) -> DaftResult<Series> {
+    pub fn utf8_to_datetime(&self, format: &str, timezone: Option<&str>) -> DaftResult<Self> {
         self.with_utf8_array(|arr| Ok(arr.to_datetime(format, timezone)?.into_series()))
     }
 
-    pub fn utf8_normalize(&self, opts: Utf8NormalizeOptions) -> DaftResult<Series> {
+    pub fn utf8_normalize(&self, opts: Utf8NormalizeOptions) -> DaftResult<Self> {
         self.with_utf8_array(|arr| Ok(arr.normalize(opts)?.into_series()))
     }
 
     pub fn utf8_count_matches(
         &self,
-        patterns: &Series,
+        patterns: &Self,
         whole_word: bool,
         case_sensitive: bool,
-    ) -> DaftResult<Series> {
+    ) -> DaftResult<Self> {
         self.with_utf8_array(|arr| {
             patterns.with_utf8_array(|pattern_arr| {
                 Ok(arr

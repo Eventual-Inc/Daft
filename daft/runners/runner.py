@@ -1,12 +1,8 @@
 from __future__ import annotations
 
-import contextlib
 from abc import abstractmethod
-from typing import Generic, Iterator
+from typing import TYPE_CHECKING, ClassVar, Generic, Iterator, Literal
 
-from daft.daft import ResourceRequest
-from daft.expressions import ExpressionsProjection
-from daft.logical.builder import LogicalPlanBuilder
 from daft.runners.partitioning import (
     MaterializedResult,
     PartitionCacheEntry,
@@ -14,19 +10,29 @@ from daft.runners.partitioning import (
     PartitionSetCache,
     PartitionT,
 )
-from daft.runners.runner_io import RunnerIO
-from daft.table import MicroPartition
+
+if TYPE_CHECKING:
+    from daft.logical.builder import LogicalPlanBuilder
+    from daft.runners.runner_io import RunnerIO
+    from daft.table import MicroPartition
+
+LOCAL_PARTITION_SET_CACHE = PartitionSetCache()
 
 
 class Runner(Generic[PartitionT]):
+    name: ClassVar[Literal["ray"] | Literal["py"] | Literal["native"]]
+
     def __init__(self) -> None:
-        self._part_set_cache = PartitionSetCache()
+        self._part_set_cache = self.initialize_partition_set_cache()
 
     def get_partition_set_from_cache(self, pset_id: str) -> PartitionCacheEntry:
         return self._part_set_cache.get_partition_set(pset_id=pset_id)
 
     def put_partition_set_into_cache(self, pset: PartitionSet) -> PartitionCacheEntry:
         return self._part_set_cache.put_partition_set(pset=pset)
+
+    @abstractmethod
+    def initialize_partition_set_cache(self) -> PartitionSetCache: ...
 
     @abstractmethod
     def runner_io(self) -> RunnerIO: ...
@@ -57,28 +63,5 @@ class Runner(Generic[PartitionT]):
             builder: the builder for the LogicalPlan that is to be executed
             results_buffer_size: if the plan is executed asynchronously, this is the maximum size of the number of results
                 that can be buffered before execution should pause and wait.
-        """
-        ...
-
-    @abstractmethod
-    @contextlib.contextmanager
-    def actor_pool_context(
-        self,
-        name: str,
-        resource_request: ResourceRequest,
-        num_actors: int,
-        projection: ExpressionsProjection,
-    ) -> Iterator[str]:
-        """Creates a pool of actors which can execute work, and yield a context in which the pool can be used.
-
-        Also yields a `str` ID which clients can use to refer to the actor pool when submitting tasks.
-
-        Note that attempting to do work outside this context will result in errors!
-
-        Args:
-            name: Name of the actor pool for debugging/observability
-            resource_request: Requested amount of resources for each actor
-            num_actors: Number of actors to spin up
-            projection: Projection to be run on the incoming data (contains Stateful UDFs as well as other stateless expressions such as aliases)
         """
         ...

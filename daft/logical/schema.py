@@ -8,7 +8,7 @@ from daft.daft import PySchema as _PySchema
 from daft.daft import read_csv_schema as _read_csv_schema
 from daft.daft import read_json_schema as _read_json_schema
 from daft.daft import read_parquet_schema as _read_parquet_schema
-from daft.datatype import DataType, TimeUnit
+from daft.datatype import DataType, TimeUnit, _ensure_registered_super_ext_type
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -82,6 +82,7 @@ class Schema:
         Returns:
             pa.Schema: PyArrow schema that corresponds to the provided Daft schema
         """
+        _ensure_registered_super_ext_type()
         return self._schema.to_pyarrow_schema()
 
     @classmethod
@@ -145,13 +146,10 @@ class Schema:
     def apply_hints(self, hints: Schema) -> Schema:
         return Schema._from_pyschema(self._schema.apply_hints(hints._schema))
 
+    # Takes the unions between two schemas. Throws an error if the schemas contain overlapping keys.
     def union(self, other: Schema) -> Schema:
         if not isinstance(other, Schema):
             raise ValueError(f"Expected Schema, got other: {type(other)}")
-
-        intersecting_names = self.to_name_set().intersection(other.to_name_set())
-        if intersecting_names:
-            raise ValueError(f"Cannot union schemas with overlapping names: {intersecting_names}")
 
         return Schema._from_pyschema(self._schema.union(other._schema))
 

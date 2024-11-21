@@ -8,7 +8,7 @@ docker
 requests<2.32.0
 
 # Tracing
-orjson==3.9.5  # orjson recommended for viztracer
+orjson==3.10.11  # orjson recommended for viztracer
 py-spy==0.3.14
 viztracer==0.15.6
 
@@ -22,7 +22,7 @@ memray==1.13.4; platform_system != "Windows"
 pytest-codspeed==2.2.1
 
 # Testing dependencies
-lxml==5.1.0
+lxml==5.3.0
 dask==2023.5.0; python_version == '3.8'
 dask[dataframe]==2024.4.1; python_version >= '3.9'
 numpy; python_version < '3.9'
@@ -33,9 +33,11 @@ xxhash>=3.0.0
 Pillow==10.4.0
 opencv-python==4.8.1.78
 tiktoken==0.7.0
+duckdb==1.1.2
 
 # Pyarrow
-pyarrow==15.0.0
+pyarrow==16.0.0; python_version >= '3.9'
+pyarrow==15.0.0; python_version < '3.9'
 # Ray
 ray[data, client]==2.10.0; python_version == '3.8'
 ray[data, client]==2.34.0; python_version >= '3.9'
@@ -49,7 +51,8 @@ tenacity==8.2.3; python_version >= '3.8'
 
 # Delta Lake
 deltalake==0.5.8; platform_system == "Windows"
-deltalake==0.18.2; platform_system != "Windows" and python_version >= '3.8'
+deltalake==0.18.2; platform_system != "Windows" and python_version < '3.9'
+deltalake==0.19.2; platform_system != "Windows" and python_version >= '3.9'
 
 # Databricks
 databricks-sdk==0.12.0
@@ -62,18 +65,19 @@ connectorx==0.3.2; (platform_system != "Linux" or platform_machine != "aarch64")
 connectorx==0.3.3; (platform_system != "Linux" or platform_machine != "aarch64") and python_version > '3.8'
 trino[sqlalchemy]==0.328.0; python_version >= '3.8'
 PyMySQL==1.1.0; python_version >= '3.8'
-psycopg2-binary==2.9.9; python_version >= '3.8'
+psycopg2-binary==2.9.10; python_version >= '3.8'
 sqlglot==23.3.0; python_version >= '3.8'
+pyodbc==5.1.0; python_version >= '3.8'
 
 # AWS
 s3fs==2023.12.0; python_version >= '3.8'
 # on old versions of s3fs's pinned botocore, they neglected to pin urllib3<2 which leads to:
 # "ImportError: cannot import name 'DEFAULT_CIPHERS' from 'urllib3.util.ssl_'"
 boto3==1.34.51; python_version >= '3.8'
-moto[s3,server]==5.0.2; python_version >= '3.8'
+moto[s3,server]==5.0.21; python_version >= '3.8'
 
 # Azure
-adlfs==2023.10.0; python_version >= '3.8'
+adlfs==2024.7.0; python_version >= '3.8'
 azure-storage-blob==12.17.0
 
 # GCS
@@ -86,3 +90,9 @@ sphinx-book-theme==1.1.0; python_version >= "3.9"
 sphinx-reredirects>=0.1.1
 sphinx-copybutton>=0.5.2
 sphinx-autosummary-accessors==2023.4.0; python_version >= "3.9"
+sphinx-tabs==3.4.5
+
+# Daft connect testing
+pyspark==3.5.3
+grpcio==1.67.0
+grpcio-status==1.67.0

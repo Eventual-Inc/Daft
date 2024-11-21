@@ -36,9 +36,11 @@ log/
 # Added by pyenv
 .python-version
 
-
 # Zed editor
 .zed/
+
+# vscode editor
+.vscode
 
 # helix editor
 .helix

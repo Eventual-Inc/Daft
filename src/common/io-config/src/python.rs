@@ -25,12 +25,12 @@ use crate::{config, s3::S3CredentialsProvider};
 ///     access_key (str, optional): AWS Secret Access Key, defaults to auto-detection from the current environment
 ///     credentials_provider (Callable[[], S3Credentials], optional): Custom credentials provider function, should return a `S3Credentials` object
 ///     buffer_time (int, optional): Amount of time in seconds before the actual credential expiration time where credentials given by `credentials_provider` are considered expired, defaults to 10s
-///     max_connections (int, optional): Maximum number of connections to S3 at any time, defaults to 64
+///     max_connections (int, optional): Maximum number of connections to S3 at any time per io thread, defaults to 8
 ///     session_token (str, optional): AWS Session Token, required only if `key_id` and `access_key` are temporary credentials
 ///     retry_initial_backoff_ms (int, optional): Initial backoff duration in milliseconds for an S3 retry, defaults to 1000ms
-///     connect_timeout_ms (int, optional): Timeout duration to wait to make a connection to S3 in milliseconds, defaults to 10 seconds
-///     read_timeout_ms (int, optional): Timeout duration to wait to read the first byte from S3 in milliseconds, defaults to 10 seconds
-///     num_tries (int, optional): Number of attempts to make a connection, defaults to 5
+///     connect_timeout_ms (int, optional): Timeout duration to wait to make a connection to S3 in milliseconds, defaults to 30 seconds
+///     read_timeout_ms (int, optional): Timeout duration to wait to read the first byte from S3 in milliseconds, defaults to 30 seconds
+///     num_tries (int, optional): Number of attempts to make a connection, defaults to 25
 ///     retry_mode (str, optional): Retry Mode when a request fails, current supported values are `standard` and `adaptive`, defaults to `adaptive`
 ///     anonymous (bool, optional): Whether or not to use "anonymous mode", which will access S3 without any credentials
 ///     use_ssl (bool, optional): Whether or not to use SSL, which require accessing S3 over HTTPS rather than HTTP, defaults to True
@@ -72,6 +72,7 @@ pub struct S3Credentials {
 }
 
 /// Create configurations to be used when accessing Azure Blob Storage.
+///
 /// To authenticate with Microsoft Entra ID, `tenant_id`, `client_id`, and `client_secret` must be provided.
 /// If no credentials are provided, Daft will attempt to fetch credentials from the environment.
 ///
@@ -98,6 +99,7 @@ pub struct AzureConfig {
 }
 
 /// Create configurations to be used when accessing Google Cloud Storage.
+///
 /// Credentials may be provided directly with the `credentials` parameter, or set with the `GOOGLE_APPLICATION_CREDENTIALS_JSON` or `GOOGLE_APPLICATION_CREDENTIALS` environment variables.
 ///
 /// Args:
@@ -105,6 +107,11 @@ pub struct AzureConfig {
 ///     credentials (str, optional): Path to credentials file or JSON string with credentials
 ///     token (str, optional): OAuth2 token to use for authentication. You likely want to use `credentials` instead, since it can be used to refresh the token. This value is used when vended by a data catalog.
 ///     anonymous (bool, optional): Whether or not to use "anonymous mode", which will access Google Storage without any credentials. Defaults to false
+///     max_connections (int, optional): Maximum number of connections to GCS at any time per io thread, defaults to 8
+///     retry_initial_backoff_ms (int, optional): Initial backoff duration in milliseconds for an GCS retry, defaults to 1000ms
+///     connect_timeout_ms (int, optional): Timeout duration to wait to make a connection to GCS in milliseconds, defaults to 30 seconds
+///     read_timeout_ms (int, optional): Timeout duration to wait to read the first byte from GCS in milliseconds, defaults to 30 seconds
+///     num_tries (int, optional): Number of attempts to make a connection, defaults to 5
 ///
 /// Example:
 ///     >>> io_config = IOConfig(gcs=GCSConfig(anonymous=True))
@@ -148,13 +155,14 @@ pub struct HTTPConfig {
 #[pymethods]
 impl IOConfig {
     #[new]
+    #[must_use]
     pub fn new(
         s3: Option<S3Config>,
         azure: Option<AzureConfig>,
         gcs: Option<GCSConfig>,
         http: Option<HTTPConfig>,
     ) -> Self {
-        IOConfig {
+        Self {
             config: config::IOConfig {
                 s3: s3.unwrap_or_default().config,
                 azure: azure.unwrap_or_default().config,
@@ -164,6 +172,7 @@ impl IOConfig {
         }
     }
 
+    #[must_use]
     pub fn replace(
         &self,
         s3: Option<S3Config>,
@@ -171,16 +180,20 @@ impl IOConfig {
         gcs: Option<GCSConfig>,
         http: Option<HTTPConfig>,
     ) -> Self {
-        IOConfig {
+        Self {
             config: config::IOConfig {
-                s3: s3.map(|s3| s3.config).unwrap_or(self.config.s3.clone()),
+                s3: s3
+                    .map(|s3| s3.config)
+                    .unwrap_or_else(|| self.config.s3.clone()),
                 azure: azure
                     .map(|azure| azure.config)
-                    .unwrap_or(self.config.azure.clone()),
-                gcs: gcs.map(|gcs| gcs.config).unwrap_or(self.config.gcs.clone()),
+                    .unwrap_or_else(|| self.config.azure.clone()),
+                gcs: gcs
+                    .map(|gcs| gcs.config)
+                    .unwrap_or_else(|| self.config.gcs.clone()),
                 http: http
                     .map(|http| http.config)
-                    .unwrap_or(self.config.http.clone()),
+                    .unwrap_or_else(|| self.config.http.clone()),
             },
         }
     }
@@ -228,19 +241,18 @@ impl IOConfig {
     }
 
     pub fn __reduce__(&self, py: Python) -> PyResult<(PyObject, (String,))> {
-        let io_config_module = py.import("daft.io.config")?;
+        let io_config_module = py.import_bound(pyo3::intern!(py, "daft.io.config"))?;
         let json_string = serde_json::to_string(&self.config).map_err(DaftError::from)?;
         Ok((
             io_config_module
-                .getattr("_io_config_from_json")?
-                .to_object(py),
+                .getattr(pyo3::intern!(py, "_io_config_from_json"))?
+                .into(),
             (json_string,),
         ))
     }
 
     pub fn __hash__(&self) -> PyResult<u64> {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::Hash;
+        use std::{collections::hash_map::DefaultHasher, hash::Hash};
 
         let mut hasher = DefaultHasher::new();
         self.config.hash(&mut hasher);
@@ -253,13 +265,12 @@ impl S3Config {
     #[allow(clippy::too_many_arguments)]
     #[new]
     pub fn new(
-        py: Python,
         region_name: Option<String>,
         endpoint_url: Option<String>,
         key_id: Option<String>,
         session_token: Option<String>,
         access_key: Option<String>,
-        credentials_provider: Option<&PyAny>,
+        credentials_provider: Option<Bound<PyAny>>,
         buffer_time: Option<u64>,
         max_connections: Option<u32>,
         retry_initial_backoff_ms: Option<u64>,
@@ -276,16 +287,18 @@ impl S3Config {
         profile_name: Option<String>,
     ) -> PyResult<Self> {
         let def = crate::S3Config::default();
-        Ok(S3Config {
+        Ok(Self {
             config: crate::S3Config {
                 region_name: region_name.or(def.region_name),
                 endpoint_url: endpoint_url.or(def.endpoint_url),
                 key_id: key_id.or(def.key_id),
-                session_token: session_token.map(|v| v.into()).or(def.session_token),
-                access_key: access_key.map(|v| v.into()).or(def.access_key),
+                session_token: session_token
+                    .map(std::convert::Into::into)
+                    .or(def.session_token),
+                access_key: access_key.map(std::convert::Into::into).or(def.access_key),
                 credentials_provider: credentials_provider
                     .map(|p| {
-                        Ok::<_, PyErr>(Box::new(PyS3CredentialsProvider::new(py, p)?)
+                        Ok::<_, PyErr>(Box::new(PyS3CredentialsProvider::new(p)?)
                             as Box<dyn S3CredentialsProvider>)
                     })
                     .transpose()?
@@ -314,13 +327,12 @@ impl S3Config {
     #[allow(clippy::too_many_arguments)]
     pub fn replace(
         &self,
-        py: Python,
         region_name: Option<String>,
         endpoint_url: Option<String>,
         key_id: Option<String>,
         session_token: Option<String>,
         access_key: Option<String>,
-        credentials_provider: Option<&PyAny>,
+        credentials_provider: Option<Bound<PyAny>>,
         buffer_time: Option<u64>,
         max_connections: Option<u32>,
         retry_initial_backoff_ms: Option<u64>,
@@ -336,20 +348,20 @@ impl S3Config {
         force_virtual_addressing: Option<bool>,
         profile_name: Option<String>,
     ) -> PyResult<Self> {
-        Ok(S3Config {
+        Ok(Self {
             config: crate::S3Config {
                 region_name: region_name.or_else(|| self.config.region_name.clone()),
                 endpoint_url: endpoint_url.or_else(|| self.config.endpoint_url.clone()),
                 key_id: key_id.or_else(|| self.config.key_id.clone()),
                 session_token: session_token
-                    .map(|v| v.into())
+                    .map(std::convert::Into::into)
                     .or_else(|| self.config.session_token.clone()),
                 access_key: access_key
-                    .map(|v| v.into())
+                    .map(std::convert::Into::into)
                     .or_else(|| self.config.access_key.clone()),
                 credentials_provider: credentials_provider
                     .map(|p| {
-                        Ok::<_, PyErr>(Box::new(PyS3CredentialsProvider::new(py, p)?)
+                        Ok::<_, PyErr>(Box::new(PyS3CredentialsProvider::new(p)?)
                             as Box<dyn S3CredentialsProvider>)
                     })
                     .transpose()?
@@ -380,7 +392,7 @@ impl S3Config {
     #[staticmethod]
     pub fn from_env(py: Python) -> PyResult<Self> {
         let io_config_from_env_func = py
-            .import(pyo3::intern!(py, "daft"))?
+            .import_bound(pyo3::intern!(py, "daft"))?
             .getattr(pyo3::intern!(py, "daft"))?
             .getattr(pyo3::intern!(py, "s3_config_from_env"))?;
         io_config_from_env_func.call0().map(|pyany| {
@@ -419,7 +431,7 @@ impl S3Config {
             .config
             .session_token
             .as_ref()
-            .map(|v| v.as_string())
+            .map(super::ObfuscatedString::as_string)
             .cloned())
     }
 
@@ -430,7 +442,7 @@ impl S3Config {
             .config
             .access_key
             .as_ref()
-            .map(|v| v.as_string())
+            .map(super::ObfuscatedString::as_string)
             .cloned())
     }
 
@@ -446,7 +458,7 @@ impl S3Config {
         Ok(self.config.credentials_provider.as_ref().and_then(|p| {
             p.as_any()
                 .downcast_ref::<PyS3CredentialsProvider>()
-                .map(|p| p.provider.as_ref(py).into())
+                .map(|p| p.provider.clone_ref(py))
         }))
     }
 
@@ -533,21 +545,22 @@ impl S3Config {
 impl S3Credentials {
     #[new]
     pub fn new(
+        py: Python,
         key_id: String,
         access_key: String,
         session_token: Option<String>,
-        expiry: Option<&PyAny>,
+        expiry: Option<Bound<PyAny>>,
     ) -> PyResult<Self> {
         // TODO(Kevin): Refactor when upgrading to PyO3 0.21 (https://github.com/Eventual-Inc/Daft/issues/2288)
         let expiry = expiry
             .map(|e| {
-                let ts = e.call_method0("timestamp")?.extract()?;
+                let ts = e.call_method0(pyo3::intern!(py, "timestamp"))?.extract()?;
 
                 Ok::<_, PyErr>(SystemTime::UNIX_EPOCH + Duration::from_secs_f64(ts))
             })
             .transpose()?;
 
-        Ok(S3Credentials {
+        Ok(Self {
             credentials: crate::S3Credentials {
                 key_id,
                 access_key,
@@ -575,19 +588,21 @@ impl S3Credentials {
 
     /// AWS Session Token
     #[getter]
-    pub fn expiry<'a>(&self, py: Python<'a>) -> PyResult<Option<&'a PyAny>> {
+    pub fn expiry<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyAny>>> {
         // TODO(Kevin): Refactor when upgrading to PyO3 0.21 (https://github.com/Eventual-Inc/Daft/issues/2288)
         self.credentials
             .expiry
             .map(|e| {
-                let datetime = py.import("datetime")?;
+                let datetime = py.import_bound(pyo3::intern!(py, "datetime"))?;
 
-                datetime.getattr("datetime")?.call_method1(
-                    "fromtimestamp",
-                    (e.duration_since(SystemTime::UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs_f64(),),
-                )
+                datetime
+                    .getattr(pyo3::intern!(py, "datetime"))?
+                    .call_method1(
+                        pyo3::intern!(py, "fromtimestamp"),
+                        (e.duration_since(SystemTime::UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs_f64(),),
+                    )
             })
             .transpose()
     }
@@ -604,10 +619,11 @@ pub struct PyS3CredentialsProvider {
 }
 
 impl PyS3CredentialsProvider {
-    pub fn new(py: Python, provider: &PyAny) -> PyResult<Self> {
-        Ok(PyS3CredentialsProvider {
-            provider: provider.to_object(py),
-            hash: provider.hash()?,
+    pub fn new(provider: Bound<PyAny>) -> PyResult<Self> {
+        let hash = provider.hash()?;
+        Ok(Self {
+            provider: provider.into(),
+            hash,
         })
     }
 }
@@ -670,7 +686,7 @@ impl S3CredentialsProvider for PyS3CredentialsProvider {
     }
 
     fn dyn_hash(&self, mut state: &mut dyn Hasher) {
-        self.hash(&mut state)
+        self.hash(&mut state);
     }
 }
 
@@ -678,6 +694,7 @@ impl S3CredentialsProvider for PyS3CredentialsProvider {
 impl AzureConfig {
     #[allow(clippy::too_many_arguments)]
     #[new]
+    #[must_use]
     pub fn new(
         storage_account: Option<String>,
         access_key: Option<String>,
@@ -692,15 +709,17 @@ impl AzureConfig {
         use_ssl: Option<bool>,
     ) -> Self {
         let def = crate::AzureConfig::default();
-        AzureConfig {
+        Self {
             config: crate::AzureConfig {
                 storage_account: storage_account.or(def.storage_account),
-                access_key: access_key.map(|v| v.into()).or(def.access_key),
+                access_key: access_key.map(std::convert::Into::into).or(def.access_key),
                 sas_token: sas_token.or(def.sas_token),
                 bearer_token: bearer_token.or(def.bearer_token),
                 tenant_id: tenant_id.or(def.tenant_id),
                 client_id: client_id.or(def.client_id),
-                client_secret: client_secret.map(|v| v.into()).or(def.client_secret),
+                client_secret: client_secret
+                    .map(std::convert::Into::into)
+                    .or(def.client_secret),
                 use_fabric_endpoint: use_fabric_endpoint.unwrap_or(def.use_fabric_endpoint),
                 anonymous: anonymous.unwrap_or(def.anonymous),
                 endpoint_url: endpoint_url.or(def.endpoint_url),
@@ -710,6 +729,7 @@ impl AzureConfig {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[must_use]
     pub fn replace(
         &self,
         storage_account: Option<String>,
@@ -724,18 +744,18 @@ impl AzureConfig {
         endpoint_url: Option<String>,
         use_ssl: Option<bool>,
     ) -> Self {
-        AzureConfig {
+        Self {
             config: crate::AzureConfig {
                 storage_account: storage_account.or_else(|| self.config.storage_account.clone()),
                 access_key: access_key
-                    .map(|v| v.into())
+                    .map(std::convert::Into::into)
                     .or_else(|| self.config.access_key.clone()),
                 sas_token: sas_token.or_else(|| self.config.sas_token.clone()),
                 bearer_token: bearer_token.or_else(|| self.config.bearer_token.clone()),
                 tenant_id: tenant_id.or_else(|| self.config.tenant_id.clone()),
                 client_id: client_id.or_else(|| self.config.client_id.clone()),
                 client_secret: client_secret
-                    .map(|v| v.into())
+                    .map(std::convert::Into::into)
                     .or_else(|| self.config.client_secret.clone()),
                 use_fabric_endpoint: use_fabric_endpoint.unwrap_or(self.config.use_fabric_endpoint),
                 anonymous: anonymous.unwrap_or(self.config.anonymous),
@@ -762,7 +782,7 @@ impl AzureConfig {
             .config
             .access_key
             .as_ref()
-            .map(|v| v.as_string())
+            .map(super::ObfuscatedString::as_string)
             .cloned())
     }
 
@@ -794,7 +814,7 @@ impl AzureConfig {
             .config
             .client_secret
             .as_ref()
-            .map(|v| v.as_string())
+            .map(super::ObfuscatedString::as_string)
             .cloned())
     }
 
@@ -827,38 +847,66 @@ impl AzureConfig {
 impl GCSConfig {
     #[allow(clippy::too_many_arguments)]
     #[new]
+    #[must_use]
     pub fn new(
         project_id: Option<String>,
         credentials: Option<String>,
         token: Option<String>,
         anonymous: Option<bool>,
+        max_connections: Option<u32>,
+        retry_initial_backoff_ms: Option<u64>,
+        connect_timeout_ms: Option<u64>,
+        read_timeout_ms: Option<u64>,
+        num_tries: Option<u32>,
     ) -> Self {
         let def = crate::GCSConfig::default();
-        GCSConfig {
+        Self {
             config: crate::GCSConfig {
                 project_id: project_id.or(def.project_id),
-                credentials: credentials.map(|v| v.into()).or(def.credentials),
+                credentials: credentials
+                    .map(std::convert::Into::into)
+                    .or(def.credentials),
                 token: token.or(def.token),
                 anonymous: anonymous.unwrap_or(def.anonymous),
+                max_connections_per_io_thread: max_connections
+                    .unwrap_or(def.max_connections_per_io_thread),
+                retry_initial_backoff_ms: retry_initial_backoff_ms
+                    .unwrap_or(def.retry_initial_backoff_ms),
+                connect_timeout_ms: connect_timeout_ms.unwrap_or(def.connect_timeout_ms),
+                read_timeout_ms: read_timeout_ms.unwrap_or(def.read_timeout_ms),
+                num_tries: num_tries.unwrap_or(def.num_tries),
             },
         }
     }
-
+    #[allow(clippy::too_many_arguments)]
+    #[must_use]
     pub fn replace(
         &self,
         project_id: Option<String>,
         credentials: Option<String>,
         token: Option<String>,
         anonymous: Option<bool>,
+        max_connections: Option<u32>,
+        retry_initial_backoff_ms: Option<u64>,
+        connect_timeout_ms: Option<u64>,
+        read_timeout_ms: Option<u64>,
+        num_tries: Option<u32>,
     ) -> Self {
-        GCSConfig {
+        Self {
             config: crate::GCSConfig {
                 project_id: project_id.or_else(|| self.config.project_id.clone()),
                 credentials: credentials
-                    .map(|v| v.into())
+                    .map(std::convert::Into::into)
                     .or_else(|| self.config.credentials.clone()),
                 token: token.or_else(|| self.config.token.clone()),
                 anonymous: anonymous.unwrap_or(self.config.anonymous),
+                max_connections_per_io_thread: max_connections
+                    .unwrap_or(self.config.max_connections_per_io_thread),
+                retry_initial_backoff_ms: retry_initial_backoff_ms
+                    .unwrap_or(self.config.retry_initial_backoff_ms),
+                connect_timeout_ms: connect_timeout_ms.unwrap_or(self.config.connect_timeout_ms),
+                read_timeout_ms: read_timeout_ms.unwrap_or(self.config.read_timeout_ms),
+                num_tries: num_tries.unwrap_or(self.config.num_tries),
             },
         }
     }
@@ -894,6 +942,31 @@ impl GCSConfig {
     pub fn anonymous(&self) -> PyResult<bool> {
         Ok(self.config.anonymous)
     }
+
+    #[getter]
+    pub fn max_connections(&self) -> PyResult<u32> {
+        Ok(self.config.max_connections_per_io_thread)
+    }
+
+    #[getter]
+    pub fn retry_initial_backoff_ms(&self) -> PyResult<u64> {
+        Ok(self.config.retry_initial_backoff_ms)
+    }
+
+    #[getter]
+    pub fn connect_timeout_ms(&self) -> PyResult<u64> {
+        Ok(self.config.connect_timeout_ms)
+    }
+
+    #[getter]
+    pub fn read_timeout_ms(&self) -> PyResult<u64> {
+        Ok(self.config.read_timeout_ms)
+    }
+
+    #[getter]
+    pub fn num_tries(&self) -> PyResult<u32> {
+        Ok(self.config.num_tries)
+    }
 }
 
 impl From<config::IOConfig> for IOConfig {
@@ -905,8 +978,9 @@ impl From<config::IOConfig> for IOConfig {
 #[pymethods]
 impl HTTPConfig {
     #[new]
+    #[must_use]
     pub fn new(bearer_token: Option<String>) -> Self {
-        HTTPConfig {
+        Self {
             config: crate::HTTPConfig::new(bearer_token),
         }
     }
@@ -916,7 +990,7 @@ impl HTTPConfig {
     }
 }
 
-pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<AzureConfig>()?;
     parent.add_class::<GCSConfig>()?;
     parent.add_class::<S3Config>()?;

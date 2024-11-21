@@ -1,3 +1,5 @@
+#![allow(clippy::all, reason = "todo: remove; getting a rustc error")]
+
 use serde::{Deserialize, Serialize};
 
 /// A wrapper around PyObject that is safe to use even when the Python feature flag isn't turned on

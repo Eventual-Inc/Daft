@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from daft.daft import (
     AdaptivePhysicalPlanScheduler as _AdaptivePhysicalPlanScheduler,
 )
@@ -8,11 +10,13 @@ from daft.daft import (
     PyDaftExecutionConfig,
 )
 from daft.execution import physical_plan
-from daft.logical.builder import LogicalPlanBuilder
-from daft.runners.partitioning import (
-    PartitionCacheEntry,
-    PartitionT,
-)
+
+if TYPE_CHECKING:
+    from daft.logical.builder import LogicalPlanBuilder
+    from daft.runners.partitioning import (
+        PartitionCacheEntry,
+        PartitionT,
+    )
 
 
 class PhysicalPlanScheduler:
@@ -49,10 +53,20 @@ class PhysicalPlanScheduler:
     def __repr__(self) -> str:
         return self._scheduler.repr_ascii(simple=False)
 
+    def to_json_string(self) -> str:
+        return self._scheduler.to_json_string()
+
     def to_partition_tasks(
-        self, psets: dict[str, list[PartitionT]], results_buffer_size: int | None
+        self,
+        psets: dict[str, list[PartitionT]],
+        actor_pool_manager: physical_plan.ActorPoolManager,
+        results_buffer_size: int | None,
     ) -> physical_plan.MaterializedPhysicalPlan:
-        return iter(physical_plan.Materialize(self._scheduler.to_partition_tasks(psets), results_buffer_size))
+        return iter(
+            physical_plan.Materialize(
+                self._scheduler.to_partition_tasks(psets, actor_pool_manager), results_buffer_size
+            )
+        )
 
 
 class AdaptivePhysicalPlanScheduler:

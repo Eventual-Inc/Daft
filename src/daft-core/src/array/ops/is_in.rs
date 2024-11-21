@@ -1,10 +1,13 @@
-use crate::{array::prelude::*, array::DataArray, datatypes::prelude::*};
+use std::collections::{BTreeSet, HashSet};
 
-use super::as_arrow::AsArrow;
-use super::{full::FullNull, DaftIsIn};
 use common_error::DaftResult;
 use common_hashable_float_wrapper::FloatWrapper;
-use std::collections::{BTreeSet, HashSet};
+
+use super::{as_arrow::AsArrow, full::FullNull, DaftIsIn};
+use crate::{
+    array::{prelude::*, DataArray},
+    datatypes::prelude::*,
+};
 
 macro_rules! collect_to_set_and_check_membership {
     ($self:expr, $rhs:expr) => {{
@@ -21,7 +24,7 @@ macro_rules! collect_to_set_and_check_membership {
     }};
 }
 
-impl<T> DaftIsIn<&DataArray<T>> for DataArray<T>
+impl<T> DaftIsIn<&Self> for DataArray<T>
 where
     T: DaftIntegerType,
     <T as DaftNumericType>::Native: Ord,
@@ -30,7 +33,7 @@ where
 {
     type Output = DaftResult<BooleanArray>;
 
-    fn is_in(&self, rhs: &DataArray<T>) -> Self::Output {
+    fn is_in(&self, rhs: &Self) -> Self::Output {
         collect_to_set_and_check_membership!(self, rhs)
     }
 }
@@ -68,15 +71,17 @@ macro_rules! impl_is_in_non_numeric_array {
         }
     };
 }
+
+impl_is_in_non_numeric_array!(Decimal128Array);
 impl_is_in_non_numeric_array!(BooleanArray);
 impl_is_in_non_numeric_array!(Utf8Array);
 impl_is_in_non_numeric_array!(BinaryArray);
 impl_is_in_non_numeric_array!(FixedSizeBinaryArray);
 
-impl DaftIsIn<&NullArray> for NullArray {
+impl DaftIsIn<&Self> for NullArray {
     type Output = DaftResult<BooleanArray>;
 
-    fn is_in(&self, _rhs: &NullArray) -> Self::Output {
+    fn is_in(&self, _rhs: &Self) -> Self::Output {
         // If self and rhs are null array then return a full null array
         Ok(BooleanArray::full_null(
             self.name(),

@@ -262,7 +262,7 @@ def test_cast_binary_to_fixed_size_binary():
     assert casted.to_pylist() == [b"abc", b"def", None, b"bcd", None]
 
 
-def test_cast_binary_to_fixed_size_binary_fails_with_variable_lengths():
+def test_cast_binary_to_fixed_size_binary_fails_with_variable_length():
     data = [b"abc", b"def", None, b"bcd", None, b"long"]
 
     input = Series.from_pylist(data)
@@ -368,7 +368,7 @@ def test_series_cast_python_to_list(dtype) -> None:
     assert t.datatype() == target_dtype
     assert len(t) == len(data)
 
-    assert t.list.lengths().to_pylist() == [3, 3, 3, 3, 2, 2, None]
+    assert t.list.length().to_pylist() == [3, 3, 3, 3, 2, 2, None]
 
     pydata = t.to_pylist()
     assert pydata[-1] is None
@@ -397,7 +397,7 @@ def test_series_cast_python_to_fixed_size_list(dtype) -> None:
     assert t.datatype() == target_dtype
     assert len(t) == len(data)
 
-    assert t.list.lengths().to_pylist() == [3, 3, 3, 3, 3, 3, None]
+    assert t.list.length().to_pylist() == [3, 3, 3, 3, 3, 3, None]
 
     pydata = t.to_pylist()
     assert pydata[-1] is None
@@ -426,7 +426,7 @@ def test_series_cast_python_to_embedding(dtype) -> None:
     assert t.datatype() == target_dtype
     assert len(t) == len(data)
 
-    assert t.list.lengths().to_pylist() == [3, 3, 3, 3, 3, 3, None]
+    assert t.list.length().to_pylist() == [3, 3, 3, 3, 3, 3, None]
 
     pydata = t.to_pylist()
     assert pydata[-1] is None
@@ -448,7 +448,7 @@ def test_series_cast_list_to_embedding(dtype) -> None:
     assert t.datatype() == target_dtype
     assert len(t) == len(data)
 
-    assert t.list.lengths().to_pylist() == [3, 3, 3, None]
+    assert t.list.length().to_pylist() == [3, 3, 3, None]
 
     pydata = t.to_pylist()
     assert pydata[-1] is None
@@ -473,7 +473,7 @@ def test_series_cast_numpy_to_image() -> None:
     assert t.datatype() == target_dtype
     assert len(t) == len(data)
 
-    assert t.list.lengths().to_pylist() == [12, 27, None]
+    assert t.list.length().to_pylist() == [12, 27, None]
 
     pydata = t.to_pylist()
     assert pydata[-1] is None
@@ -495,7 +495,7 @@ def test_series_cast_numpy_to_image_infer_mode() -> None:
     assert t.datatype() == target_dtype
     assert len(t) == len(data)
 
-    assert t.list.lengths().to_pylist() == [4, 27, None]
+    assert t.list.length().to_pylist() == [4, 27, None]
 
     pydata = t.to_arrow().to_pylist()
     assert pydata[0] == {
@@ -536,7 +536,7 @@ def test_series_cast_python_to_fixed_shape_image() -> None:
     assert t.datatype() == target_dtype
     assert len(t) == len(data)
 
-    assert t.list.lengths().to_pylist() == [12, 12, None]
+    assert t.list.length().to_pylist() == [12, 12, None]
 
     pydata = t.to_pylist()
     assert pydata[-1] is None
@@ -872,6 +872,29 @@ def test_series_cast_timestamp(input_t, input, output_t, output) -> None:
 
 
 @pytest.mark.parametrize(
+    ["input_t", "input", "output_t", "output"],
+    [
+        (
+            DataType.time("ns"),
+            1000,
+            DataType.time("us"),
+            time(0, 0, 0, 1),
+        ),
+        (
+            DataType.time("us"),
+            1,
+            DataType.time("ns"),
+            time(0, 0, 0, 1),
+        ),
+    ],
+)
+def test_series_cast_time(input_t, input, output_t, output) -> None:
+    series = Series.from_pylist([input]).cast(input_t)
+    res = series.cast(output_t).to_pylist()[0]
+    assert res == output
+
+
+@pytest.mark.parametrize(
     ["timeunit", "sec_str"],
     [
         (TimeUnit.s(), ":01"),
@@ -981,6 +1004,24 @@ def test_series_cast_numeric_temporal(dtype, result_n1, result_0, result_p1) -> 
             datetime(1970, 1, 1, 0, 0, 0, 0),
             datetime(1970, 1, 1, 0, 0, 0, 1),
         ),
+    ],
+)
+def test_series_cast_timestamp_numeric(dtype, result_n1, result_0, result_p1) -> None:
+    # Timestamp -> numeric.
+    series = Series.from_pylist([result_n1, result_0, result_p1]).cast(dtype)
+    casted = series.cast(DataType.int64())
+    assert casted.to_pylist() == [-1, 0, 1]
+
+
+@pytest.mark.parametrize(
+    ["dtype", "result_n1", "result_0", "result_p1"],
+    [
+        (
+            DataType.duration(TimeUnit.us()),
+            timedelta(microseconds=-1),
+            timedelta(microseconds=0),
+            timedelta(microseconds=1),
+        ),
         # Casting between duration types is currently not supported in Arrow2.
         # (
         #     DataType.duration(TimeUnit.s()),
@@ -994,16 +1035,28 @@ def test_series_cast_numeric_temporal(dtype, result_n1, result_0, result_p1) -> 
         #     timedelta(milliseconds=0),
         #     timedelta(milliseconds=1),
         # ),
+    ],
+)
+def test_series_cast_duration_numeric(dtype, result_n1, result_0, result_p1) -> None:
+    # Duration -> numeric.
+    series = Series.from_pylist([result_n1, result_0, result_p1]).cast(dtype)
+    casted = series.cast(DataType.int64())
+    assert casted.to_pylist() == [-1, 0, 1]
+
+
+@pytest.mark.parametrize(
+    ["dtype", "result_n1", "result_0", "result_p1"],
+    [
         (
-            DataType.duration(TimeUnit.us()),
-            timedelta(microseconds=-1),
-            timedelta(microseconds=0),
-            timedelta(microseconds=1),
+            DataType.date(),
+            date(1969, 12, 31),
+            date(1970, 1, 1),
+            date(1970, 1, 2),
         ),
     ],
 )
-def test_series_cast_temporal_numeric(dtype, result_n1, result_0, result_p1) -> None:
-    # Temporal -> numeric.
+def test_series_cast_date_numeric(dtype, result_n1, result_0, result_p1) -> None:
+    # Date -> numeric.
     series = Series.from_pylist([result_n1, result_0, result_p1]).cast(dtype)
     casted = series.cast(DataType.int64())
     assert casted.to_pylist() == [-1, 0, 1]
@@ -1108,3 +1161,47 @@ def test_series_cast_fixed_size_list_to_list() -> None:
     assert data.datatype() == DataType.fixed_size_list(DataType.int64(), 2)
     casted = data.cast(DataType.list(DataType.int64()))
     assert casted.to_pylist() == [[1, 2], [3, 4], [5, 6]]
+
+
+### Sparse ###
+
+
+def minimal_indices_dtype(shape: tuple[int]) -> np.dtype:
+    largest_index_possible = np.prod(shape) - 1
+    minimal_dtype = np.min_scalar_type(largest_index_possible)
+    return minimal_dtype
+
+
+def to_coo_sparse_dict(ndarray: np.ndarray) -> dict[str, np.ndarray]:
+    flat_array = ndarray.ravel()
+    indices = np.flatnonzero(flat_array)
+    values = flat_array[indices]
+    shape = list(ndarray.shape)
+
+    indices_dtype = minimal_indices_dtype(shape)
+    indices = indices.astype(indices_dtype)
+    return {"values": values, "indices": indices, "shape": shape}
+
+
+def test_series_cast_sparse_to_python() -> None:
+    data = [np.zeros(shape=(1, 2), dtype=np.uint8), None, np.ones(shape=(2, 2), dtype=np.uint8)]
+    series = Series.from_pylist(data).cast(DataType.sparse_tensor(DataType.uint8()))
+    assert series.datatype() == DataType.sparse_tensor(DataType.uint8())
+
+    given = series.to_pylist()
+    expected = [to_coo_sparse_dict(ndarray) if ndarray is not None else None for ndarray in data]
+    np.testing.assert_equal(given, expected)
+
+
+def test_series_cast_fixed_shape_sparse_to_python() -> None:
+    data = [np.zeros(shape=(2, 2), dtype=np.uint8), None, np.ones(shape=(2, 2), dtype=np.uint8)]
+    series = (
+        Series.from_pylist(data)
+        .cast(DataType.tensor(DataType.uint8(), shape=(2, 2)))  # TODO: direct cast to fixed shape sparse
+        .cast(DataType.sparse_tensor(DataType.uint8(), shape=(2, 2)))
+    )
+    assert series.datatype() == DataType.sparse_tensor(DataType.uint8(), shape=(2, 2))
+
+    given = series.to_pylist()
+    expected = [to_coo_sparse_dict(ndarray) if ndarray is not None else None for ndarray in data]
+    np.testing.assert_equal(given, expected)

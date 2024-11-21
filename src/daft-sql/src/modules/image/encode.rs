@@ -1,12 +1,12 @@
 use common_error::DaftError;
 use daft_dsl::{Expr, ExprRef, LiteralValue};
+use daft_functions::image::encode::{encode, ImageEncode};
 
 use crate::{
     error::{PlannerError, SQLPlannerResult},
     functions::{SQLFunction, SQLFunctionArguments},
     unsupported_sql_err,
 };
-use daft_functions::image::encode::{encode, ImageEncode};
 
 pub struct SQLImageEncode;
 
@@ -45,5 +45,13 @@ impl SQLFunction for SQLImageEncode {
             }
             _ => unsupported_sql_err!("Invalid arguments for image_encode: '{inputs:?}'"),
         }
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Encodes an image into the specified image file format, returning a binary column of encoded bytes.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input_image", "image_format"]
     }
 }

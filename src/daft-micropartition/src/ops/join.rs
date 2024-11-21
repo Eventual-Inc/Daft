@@ -4,11 +4,10 @@ use common_error::DaftResult;
 use daft_core::{array::ops::DaftCompare, join::JoinType};
 use daft_dsl::{join::infer_join_schema, ExprRef};
 use daft_io::IOStatsContext;
+use daft_stats::TruthValue;
 use daft_table::Table;
 
 use crate::micropartition::MicroPartition;
-
-use daft_stats::TruthValue;
 
 impl MicroPartition {
     fn join<F>(
@@ -25,12 +24,9 @@ impl MicroPartition {
     {
         let join_schema = infer_join_schema(&self.schema, &right.schema, left_on, right_on, how)?;
         match (how, self.len(), right.len()) {
-            (JoinType::Inner, 0, _)
-            | (JoinType::Inner, _, 0)
-            | (JoinType::Left, 0, _)
-            | (JoinType::Right, _, 0)
-            | (JoinType::Outer, 0, 0)
-            | (JoinType::Semi, 0, _) => {
+            (JoinType::Inner | JoinType::Left | JoinType::Semi, 0, _)
+            | (JoinType::Inner | JoinType::Right, _, 0)
+            | (JoinType::Outer, 0, 0) => {
                 return Ok(Self::empty(Some(join_schema)));
             }
             _ => {}
@@ -50,7 +46,7 @@ impl MicroPartition {
                         .values()
                         .zip(r_eval_stats.columns.values())
                     {
-                        if let TruthValue::False = lc.equal(rc)?.to_truth_value() {
+                        if lc.equal(rc)?.to_truth_value() == TruthValue::False {
                             curr_tv = TruthValue::False;
                             break;
                         }
@@ -58,7 +54,7 @@ impl MicroPartition {
                     curr_tv
                 }
             };
-            if let TruthValue::False = tv {
+            if tv == TruthValue::False {
                 return Ok(Self::empty(Some(join_schema)));
             }
         }
@@ -71,7 +67,7 @@ impl MicroPartition {
             ([], _) | (_, []) => Ok(Self::empty(Some(join_schema))),
             ([lt], [rt]) => {
                 let joined_table = table_join(lt, rt, left_on, right_on, how)?;
-                Ok(MicroPartition::new_loaded(
+                Ok(Self::new_loaded(
                     join_schema,
                     vec![joined_table].into(),
                     None,
@@ -86,11 +82,17 @@ impl MicroPartition {
         right: &Self,
         left_on: &[ExprRef],
         right_on: &[ExprRef],
+        null_equals_nulls: Option<Vec<bool>>,
         how: JoinType,
     ) -> DaftResult<Self> {
         let io_stats = IOStatsContext::new("MicroPartition::hash_join");
+        let null_equals_nulls = null_equals_nulls.unwrap_or_else(|| vec![false; left_on.len()]);
+        let table_join =
+            |lt: &Table, rt: &Table, lo: &[ExprRef], ro: &[ExprRef], _how: JoinType| {
+                Table::hash_join(lt, rt, lo, ro, null_equals_nulls.as_slice(), _how)
+            };
 
-        self.join(right, io_stats, left_on, right_on, how, Table::hash_join)
+        self.join(right, io_stats, left_on, right_on, how, table_join)
     }
 
     pub fn sort_merge_join(

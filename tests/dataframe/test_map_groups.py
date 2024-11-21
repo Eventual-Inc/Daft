@@ -6,7 +6,7 @@ import daft
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
-def test_map_groups(make_df, repartition_nparts):
+def test_map_groups(make_df, repartition_nparts, with_morsel_size):
     daft_df = make_df(
         {
             "group": [1, 1, 2],
@@ -38,7 +38,7 @@ def test_map_groups(make_df, repartition_nparts):
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 3])
 @pytest.mark.parametrize("output_when_empty", [[], [1], [1, 2]])
-def test_map_groups_more_than_one_output_row(make_df, repartition_nparts, output_when_empty):
+def test_map_groups_more_than_one_output_row(make_df, repartition_nparts, output_when_empty, with_morsel_size):
     daft_df = make_df(
         {
             "group": [1, 2],
@@ -63,7 +63,7 @@ def test_map_groups_more_than_one_output_row(make_df, repartition_nparts, output
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
-def test_map_groups_single_group(make_df, repartition_nparts):
+def test_map_groups_single_group(make_df, repartition_nparts, with_morsel_size):
     daft_df = make_df(
         {
             "group": [1, 1, 1],
@@ -88,7 +88,7 @@ def test_map_groups_single_group(make_df, repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 5, 11])
-def test_map_groups_double_group_by(make_df, repartition_nparts):
+def test_map_groups_double_group_by(make_df, repartition_nparts, with_morsel_size):
     daft_df = make_df(
         {
             "group_1": [1, 1, 1, 1, 1, 2, 2, 2, 2, 2],
@@ -118,7 +118,7 @@ def test_map_groups_double_group_by(make_df, repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 5])
-def test_map_groups_compound_input(make_df, repartition_nparts):
+def test_map_groups_compound_input(make_df, repartition_nparts, with_morsel_size):
     daft_df = make_df(
         {
             "group": [1, 1, 2, 2],
@@ -143,7 +143,7 @@ def test_map_groups_compound_input(make_df, repartition_nparts):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
-def test_map_groups_with_alias(make_df, repartition_nparts):
+def test_map_groups_with_alias(make_df, repartition_nparts, with_morsel_size):
     daft_df = make_df(
         {
             "group": [1, 1, 2],

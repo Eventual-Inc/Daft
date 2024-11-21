@@ -1,0 +1,30 @@
+[dependencies]
+common-error = {path = "../common/error", default-features = false}
+daft-core = {path = "../daft-core", default-features = false}
+daft-dsl = {path = "../daft-dsl", default-features = false}
+jaq-core = {workspace = true}
+jaq-interpret = {workspace = true}
+jaq-parse = {workspace = true}
+jaq-std = {workspace = true}
+lazy_static = {workspace = true}
+pyo3 = {workspace = true, optional = true}
+serde = {workspace = true}
+serde_json = {workspace = true}
+typetag = {workspace = true}
+itertools.workspace = true
+
+[features]
+python = [
+  "dep:pyo3",
+  "common-error/python",
+  "daft-core/python",
+  "daft-dsl/python"
+]
+
+[lints]
+workspace = true
+
+[package]
+name = "daft-functions-json"
+edition.workspace = true
+version.workspace = true

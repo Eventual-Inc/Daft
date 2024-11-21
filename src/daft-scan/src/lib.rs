@@ -1,30 +1,23 @@
 #![feature(if_let_guard)]
 #![feature(let_chains)]
-use std::{
-    borrow::Cow,
-    fmt::{Debug, Display},
-    hash::{Hash, Hasher},
-    sync::Arc,
-};
+use std::{any::Any, borrow::Cow, fmt::Debug, sync::Arc};
 
 use common_display::DisplayAs;
-use common_error::{DaftError, DaftResult};
-use daft_dsl::ExprRef;
-use daft_schema::{
-    field::Field,
-    schema::{Schema, SchemaRef},
-};
+use common_error::DaftError;
+use common_file_formats::FileFormatConfig;
+use common_scan_info::{Pushdowns, ScanTaskLike, ScanTaskLikeRef};
+use daft_schema::schema::{Schema, SchemaRef};
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
-use file_format::FileFormatConfig;
 use itertools::Itertools;
 use parquet2::metadata::FileMetaData;
 use serde::{Deserialize, Serialize};
 
 mod anonymous;
 pub use anonymous::AnonymousScanOperator;
-pub mod file_format;
-mod glob;
+pub mod glob;
+mod hive;
 use common_daft_config::DaftExecutionConfig;
+pub mod builder;
 pub mod scan_task_iters;
 
 #[cfg(feature = "python")]
@@ -36,8 +29,6 @@ use pyo3::PyErr;
 pub use python::register_modules;
 use snafu::Snafu;
 use storage_config::StorageConfig;
-mod expr_rewriter;
-pub use expr_rewriter::{rewrite_predicate_for_partitioning, PredicateGroups};
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[cfg(feature = "python")]
@@ -67,6 +58,16 @@ pub enum Error {
     },
 
     #[snafu(display(
+        "FilePathColumns were different during ScanTask::merge: {:?} vs {:?}",
+        fpc1,
+        fpc2
+    ))]
+    DifferingGeneratedFieldsInScanTaskMerge {
+        fpc1: Option<SchemaRef>,
+        fpc2: Option<SchemaRef>,
+    },
+
+    #[snafu(display(
         "StorageConfigs were different during ScanTask::merge: {:?} vs {:?}",
         sc1,
         sc2
@@ -86,7 +87,7 @@ pub enum Error {
 
 impl From<Error> for DaftError {
     fn from(value: Error) -> Self {
-        DaftError::External(value.into())
+        Self::External(value.into())
     }
 }
 
@@ -99,18 +100,19 @@ impl From<Error> for pyo3::PyErr {
 }
 
 /// Specification of a subset of a file to be read.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ChunkSpec {
     /// Selection of Parquet row groups.
     Parquet(Vec<i64>),
 }
 
 impl ChunkSpec {
+    #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         match self {
             Self::Parquet(chunks) => {
-                res.push(format!("Chunks = {:?}", chunks));
+                res.push(format!("Chunks = {chunks:?}"));
             }
         }
         res
@@ -148,6 +150,7 @@ pub enum DataSource {
 }
 
 impl DataSource {
+    #[must_use]
     pub fn get_path(&self) -> &str {
         match self {
             Self::File { path, .. } | Self::Database { path, .. } => path,
@@ -156,6 +159,7 @@ impl DataSource {
         }
     }
 
+    #[must_use]
     pub fn get_parquet_metadata(&self) -> Option<&Arc<FileMetaData>> {
         match self {
             Self::File {
@@ -165,6 +169,7 @@ impl DataSource {
         }
     }
 
+    #[must_use]
     pub fn get_chunk_spec(&self) -> Option<&ChunkSpec> {
         match self {
             Self::File { chunk_spec, .. } => chunk_spec.as_ref(),
@@ -174,6 +179,7 @@ impl DataSource {
         }
     }
 
+    #[must_use]
     pub fn get_size_bytes(&self) -> Option<u64> {
         match self {
             Self::File { size_bytes, .. } | Self::Database { size_bytes, .. } => *size_bytes,
@@ -182,6 +188,7 @@ impl DataSource {
         }
     }
 
+    #[must_use]
     pub fn get_metadata(&self) -> Option<&TableMetadata> {
         match self {
             Self::File { metadata, .. } | Self::Database { metadata, .. } => metadata.as_ref(),
@@ -190,6 +197,7 @@ impl DataSource {
         }
     }
 
+    #[must_use]
     pub fn get_statistics(&self) -> Option<&TableStatistics> {
         match self {
             Self::File { statistics, .. } | Self::Database { statistics, .. } => {
@@ -200,6 +208,7 @@ impl DataSource {
         }
     }
 
+    #[must_use]
     pub fn get_partition_spec(&self) -> Option<&PartitionSpec> {
         match self {
             Self::File { partition_spec, .. } => partition_spec.as_ref(),
@@ -209,6 +218,7 @@ impl DataSource {
         }
     }
 
+    #[must_use]
     pub fn get_iceberg_delete_files(&self) -> Option<&Vec<String>> {
         match self {
             Self::File {
@@ -219,6 +229,7 @@ impl DataSource {
         }
     }
 
+    #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         match self {
@@ -232,7 +243,7 @@ impl DataSource {
                 statistics,
                 parquet_metadata: _,
             } => {
-                res.push(format!("Path = {}", path));
+                res.push(format!("Path = {path}"));
                 if let Some(chunk_spec) = chunk_spec {
                     res.push(format!(
                         "Chunk spec = {{ {} }}",
@@ -240,10 +251,10 @@ impl DataSource {
                     ));
                 }
                 if let Some(size_bytes) = size_bytes {
-                    res.push(format!("Size bytes = {}", size_bytes));
+                    res.push(format!("Size bytes = {size_bytes}"));
                 }
                 if let Some(iceberg_delete_files) = iceberg_delete_files {
-                    res.push(format!("Iceberg delete files = {:?}", iceberg_delete_files));
+                    res.push(format!("Iceberg delete files = {iceberg_delete_files:?}"));
                 }
                 if let Some(metadata) = metadata {
                     res.push(format!(
@@ -258,7 +269,7 @@ impl DataSource {
                     ));
                 }
                 if let Some(statistics) = statistics {
-                    res.push(format!("Statistics = {}", statistics));
+                    res.push(format!("Statistics = {statistics}"));
                 }
             }
             Self::Database {
@@ -267,9 +278,9 @@ impl DataSource {
                 metadata,
                 statistics,
             } => {
-                res.push(format!("Path = {}", path));
+                res.push(format!("Path = {path}"));
                 if let Some(size_bytes) = size_bytes {
-                    res.push(format!("Size bytes = {}", size_bytes));
+                    res.push(format!("Size bytes = {size_bytes}"));
                 }
                 if let Some(metadata) = metadata {
                     res.push(format!(
@@ -278,7 +289,7 @@ impl DataSource {
                     ));
                 }
                 if let Some(statistics) = statistics {
-                    res.push(format!("Statistics = {}", statistics));
+                    res.push(format!("Statistics = {statistics}"));
                 }
             }
             #[cfg(feature = "python")]
@@ -293,7 +304,7 @@ impl DataSource {
             } => {
                 res.push(format!("Function = {module}.{func_name}"));
                 if let Some(size_bytes) = size_bytes {
-                    res.push(format!("Size bytes = {}", size_bytes));
+                    res.push(format!("Size bytes = {size_bytes}"));
                 }
                 if let Some(metadata) = metadata {
                     res.push(format!(
@@ -308,7 +319,7 @@ impl DataSource {
                     ));
                 }
                 if let Some(statistics) = statistics {
-                    res.push(format!("Statistics = {}", statistics));
+                    res.push(format!("Statistics = {statistics}"));
                 }
             }
         }
@@ -329,7 +340,7 @@ impl DisplayAs for DataSource {
                     Self::PythonFactoryFunction {
                         module, func_name, ..
                     } => {
-                        format!("{}:{}", module, func_name)
+                        format!("{module}:{func_name}")
                     }
                 }
             }
@@ -357,16 +368,80 @@ pub struct ScanTask {
     pub size_bytes_on_disk: Option<u64>,
     pub metadata: Option<TableMetadata>,
     pub statistics: Option<TableStatistics>,
+    pub generated_fields: Option<SchemaRef>,
 }
+
+#[typetag::serde]
+impl ScanTaskLike for ScanTask {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self
+    }
+
+    fn dyn_eq(&self, other: &dyn ScanTaskLike) -> bool {
+        other
+            .as_any()
+            .downcast_ref::<Self>()
+            .map_or(false, |a| a == self)
+    }
+
+    fn materialized_schema(&self) -> SchemaRef {
+        self.materialized_schema()
+    }
+
+    fn num_rows(&self) -> Option<usize> {
+        self.num_rows()
+    }
+
+    fn approx_num_rows(&self, config: Option<&DaftExecutionConfig>) -> Option<f64> {
+        self.approx_num_rows(config)
+    }
+
+    fn upper_bound_rows(&self) -> Option<usize> {
+        self.upper_bound_rows()
+    }
+
+    fn size_bytes_on_disk(&self) -> Option<usize> {
+        self.size_bytes_on_disk()
+    }
+
+    fn estimate_in_memory_size_bytes(&self, config: Option<&DaftExecutionConfig>) -> Option<usize> {
+        self.estimate_in_memory_size_bytes(config)
+    }
+
+    fn file_format_config(&self) -> Arc<FileFormatConfig> {
+        self.file_format_config.clone()
+    }
+
+    fn pushdowns(&self) -> &Pushdowns {
+        &self.pushdowns
+    }
+
+    fn schema(&self) -> SchemaRef {
+        self.schema.clone()
+    }
+}
+
+impl From<ScanTask> for ScanTaskLikeRef {
+    fn from(task: ScanTask) -> Self {
+        Arc::new(task)
+    }
+}
+
 pub type ScanTaskRef = Arc<ScanTask>;
 
 impl ScanTask {
+    #[must_use]
     pub fn new(
         sources: Vec<DataSource>,
         file_format_config: Arc<FileFormatConfig>,
         schema: SchemaRef,
         storage_config: Arc<StorageConfig>,
         pushdowns: Pushdowns,
+        generated_fields: Option<SchemaRef>,
     ) -> Self {
         assert!(!sources.is_empty());
         debug_assert!(
@@ -400,17 +475,18 @@ impl ScanTask {
         let metadata = length.map(|l| TableMetadata { length: l });
         Self {
             sources,
-            file_format_config,
             schema,
+            file_format_config,
             storage_config,
             pushdowns,
             size_bytes_on_disk,
             metadata,
             statistics,
+            generated_fields,
         }
     }
 
-    pub fn merge(sc1: &ScanTask, sc2: &ScanTask) -> Result<ScanTask, Error> {
+    pub fn merge(sc1: &Self, sc2: &Self) -> Result<Self, Error> {
         if sc1.partition_spec() != sc2.partition_spec() {
             return Err(Error::DifferingPartitionSpecsInScanTaskMerge {
                 ps1: sc1.partition_spec().cloned(),
@@ -441,7 +517,13 @@ impl ScanTask {
                 p2: sc2.pushdowns.clone(),
             });
         }
-        Ok(ScanTask::new(
+        if sc1.generated_fields != sc2.generated_fields {
+            return Err(Error::DifferingGeneratedFieldsInScanTaskMerge {
+                fpc1: sc1.generated_fields.clone(),
+                fpc2: sc2.generated_fields.clone(),
+            });
+        }
+        Ok(Self::new(
             sc1.sources
                 .clone()
                 .into_iter()
@@ -451,25 +533,39 @@ impl ScanTask {
             sc1.schema.clone(),
             sc1.storage_config.clone(),
             sc1.pushdowns.clone(),
+            sc1.generated_fields.clone(),
         ))
     }
 
+    #[must_use]
     pub fn materialized_schema(&self) -> SchemaRef {
-        match &self.pushdowns.columns {
-            None => self.schema.clone(),
-            Some(columns) => Arc::new(Schema {
-                fields: self
-                    .schema
-                    .fields
-                    .clone()
-                    .into_iter()
-                    .filter(|(name, _)| columns.contains(name))
-                    .collect(),
-            }),
+        match (&self.generated_fields, &self.pushdowns.columns) {
+            (None, None) => self.schema.clone(),
+            _ => {
+                let mut fields = self.schema.fields.clone();
+                // Extend the schema with generated fields.
+                if let Some(generated_fields) = &self.generated_fields {
+                    fields.extend(
+                        generated_fields
+                            .fields
+                            .iter()
+                            .map(|(name, field)| (name.clone(), field.clone())),
+                    );
+                }
+                // Filter the schema based on the pushdown column filters.
+                if let Some(columns) = &self.pushdowns.columns {
+                    fields = fields
+                        .into_iter()
+                        .filter(|(name, _)| columns.contains(name))
+                        .collect();
+                }
+                Arc::new(Schema { fields })
+            }
         }
     }
 
     /// Obtain an accurate, exact num_rows from the ScanTask, or `None` if this is not possible
+    #[must_use]
     pub fn num_rows(&self) -> Option<usize> {
         if self.pushdowns.filters.is_some() {
             // Cannot obtain an accurate num_rows if there are filters
@@ -488,6 +584,7 @@ impl ScanTask {
     }
 
     /// Obtain an approximate num_rows from the ScanTask, or `None` if this is not possible
+    #[must_use]
     pub fn approx_num_rows(&self, config: Option<&DaftExecutionConfig>) -> Option<f64> {
         let approx_total_num_rows_before_pushdowns = self
             .metadata
@@ -532,6 +629,7 @@ impl ScanTask {
     }
 
     /// Obtain the absolute maximum number of rows this ScanTask can give, or None if not possible to derive
+    #[must_use]
     pub fn upper_bound_rows(&self) -> Option<usize> {
         self.metadata.as_ref().map(|m| {
             if let Some(limit) = self.pushdowns.limit {
@@ -542,10 +640,12 @@ impl ScanTask {
         })
     }
 
+    #[must_use]
     pub fn size_bytes_on_disk(&self) -> Option<usize> {
         self.size_bytes_on_disk.map(|s| s as usize)
     }
 
+    #[must_use]
     pub fn estimate_in_memory_size_bytes(
         &self,
         config: Option<&DaftExecutionConfig>,
@@ -571,6 +671,7 @@ impl ScanTask {
             })
     }
 
+    #[must_use]
     pub fn partition_spec(&self) -> Option<&PartitionSpec> {
         match self.sources.first() {
             None => None,
@@ -578,6 +679,7 @@ impl ScanTask {
         }
     }
 
+    #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         // TODO(Clark): Use above methods to display some of the more derived fields.
@@ -607,7 +709,7 @@ impl ScanTask {
         }
         res.extend(self.pushdowns.multiline_display());
         if let Some(size_bytes) = self.size_bytes_on_disk {
-            res.push(format!("Size bytes on disk = {}", size_bytes));
+            res.push(format!("Size bytes on disk = {size_bytes}"));
         }
         if let Some(metadata) = &self.metadata {
             res.push(format!(
@@ -616,7 +718,7 @@ impl ScanTask {
             ));
         }
         if let Some(statistics) = &self.statistics {
-            res.push(format!("Statistics = {}", statistics));
+            res.push(format!("Statistics = {statistics}"));
         }
         res
     }
@@ -661,321 +763,27 @@ Pushdowns = {pushdowns}
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct PartitionField {
-    field: Field,
-    source_field: Option<Field>,
-    transform: Option<PartitionTransform>,
-}
-
-impl PartitionField {
-    pub fn new(
-        field: Field,
-        source_field: Option<Field>,
-        transform: Option<PartitionTransform>,
-    ) -> DaftResult<Self> {
-        match (&source_field, &transform) {
-            (Some(_), Some(_)) => {
-                // TODO ADD VALIDATION OF TRANSFORM based on types
-                Ok(PartitionField {
-                    field,
-                    source_field,
-                    transform,
-                })
-            }
-            (None, Some(tfm)) => Err(DaftError::ValueError(format!(
-                "transform set in PartitionField: {} but source_field not set",
-                tfm
-            ))),
-            _ => Ok(PartitionField {
-                field,
-                source_field,
-                transform,
-            }),
-        }
-    }
-}
-
-impl Display for PartitionField {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(tfm) = &self.transform {
-            write!(
-                f,
-                "PartitionField({}, src={}, tfm={})",
-                self.field,
-                self.source_field.as_ref().unwrap(),
-                tfm
-            )
-        } else {
-            write!(f, "PartitionField({})", self.field)
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub enum PartitionTransform {
-    /// https://iceberg.apache.org/spec/#partitioning
-    /// For Delta, Hudi and Hive, it should always be `Identity`.
-    Identity,
-    IcebergBucket(u64),
-    IcebergTruncate(u64),
-    Year,
-    Month,
-    Day,
-    Hour,
-    Void,
-}
-
-impl PartitionTransform {
-    pub fn supports_equals(&self) -> bool {
-        true
-    }
-
-    pub fn supports_not_equals(&self) -> bool {
-        matches!(self, Self::Identity)
-    }
-
-    pub fn supports_comparison(&self) -> bool {
-        use PartitionTransform::*;
-        matches!(
-            self,
-            Identity | IcebergTruncate(_) | Year | Month | Day | Hour
-        )
-    }
-}
-
-impl Display for PartitionTransform {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{self:?}")
-    }
-}
-
-pub trait ScanOperator: Send + Sync + Debug {
-    fn schema(&self) -> SchemaRef;
-    fn partitioning_keys(&self) -> &[PartitionField];
-
-    fn can_absorb_filter(&self) -> bool;
-    fn can_absorb_select(&self) -> bool;
-    fn can_absorb_limit(&self) -> bool;
-    fn multiline_display(&self) -> Vec<String>;
-    fn to_scan_tasks(
-        &self,
-        pushdowns: Pushdowns,
-    ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<ScanTaskRef>>>>;
-}
-
-impl Display for dyn ScanOperator {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.multiline_display().join("\n"))
-    }
-}
-
-/// Light transparent wrapper around an Arc<dyn ScanOperator> that implements Eq/PartialEq/Hash
-/// functionality to be performed on the **pointer** instead of on the value in the pointer.
-///
-/// This lets us get around having to implement full hashing/equality on [`ScanOperator`]`, which
-/// is difficult because we sometimes have weird Python implementations that can be hard to check.
-///
-/// [`ScanOperatorRef`] should be thus held by structs that need to check the "sameness" of the
-/// underlying ScanOperator instance, for example in the Scan nodes in a logical plan which need
-/// to check for sameness of Scan nodes during plan optimization.
-#[derive(Debug, Clone)]
-pub struct ScanOperatorRef(pub Arc<dyn ScanOperator>);
-
-impl Hash for ScanOperatorRef {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        Arc::as_ptr(&self.0).hash(state)
-    }
-}
-
-impl PartialEq<ScanOperatorRef> for ScanOperatorRef {
-    fn eq(&self, other: &ScanOperatorRef) -> bool {
-        Arc::ptr_eq(&self.0, &other.0)
-    }
-}
-
-impl std::cmp::Eq for ScanOperatorRef {}
-
-impl Display for ScanOperatorRef {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Display::fmt(&self.0, f)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct PhysicalScanInfo {
-    pub scan_op: ScanOperatorRef,
-    pub source_schema: SchemaRef,
-    pub partitioning_keys: Vec<PartitionField>,
-    pub pushdowns: Pushdowns,
-}
-
-impl PhysicalScanInfo {
-    pub fn new(
-        scan_op: ScanOperatorRef,
-        source_schema: SchemaRef,
-        partitioning_keys: Vec<PartitionField>,
-        pushdowns: Pushdowns,
-    ) -> Self {
-        Self {
-            scan_op,
-            source_schema,
-            partitioning_keys,
-            pushdowns,
-        }
-    }
-
-    pub fn with_pushdowns(&self, pushdowns: Pushdowns) -> Self {
-        Self {
-            scan_op: self.scan_op.clone(),
-            source_schema: self.source_schema.clone(),
-            partitioning_keys: self.partitioning_keys.clone(),
-            pushdowns,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct Pushdowns {
-    /// Optional filters to apply to the source data.
-    pub filters: Option<ExprRef>,
-    /// Optional filters to apply on partitioning keys.
-    pub partition_filters: Option<ExprRef>,
-    /// Optional columns to select from the source data.
-    pub columns: Option<Arc<Vec<String>>>,
-    /// Optional number of rows to read.
-    pub limit: Option<usize>,
-}
-
-impl Default for Pushdowns {
-    fn default() -> Self {
-        Self::new(None, None, None, None)
-    }
-}
-
-impl Pushdowns {
-    pub fn new(
-        filters: Option<ExprRef>,
-        partition_filters: Option<ExprRef>,
-        columns: Option<Arc<Vec<String>>>,
-        limit: Option<usize>,
-    ) -> Self {
-        Self {
-            filters,
-            partition_filters,
-            columns,
-            limit,
-        }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.filters.is_none()
-            && self.partition_filters.is_none()
-            && self.columns.is_none()
-            && self.limit.is_none()
-    }
-
-    pub fn with_limit(&self, limit: Option<usize>) -> Self {
-        Self {
-            filters: self.filters.clone(),
-            partition_filters: self.partition_filters.clone(),
-            columns: self.columns.clone(),
-            limit,
-        }
-    }
-
-    pub fn with_filters(&self, filters: Option<ExprRef>) -> Self {
-        Self {
-            filters,
-            partition_filters: self.partition_filters.clone(),
-            columns: self.columns.clone(),
-            limit: self.limit,
-        }
-    }
-
-    pub fn with_partition_filters(&self, partition_filters: Option<ExprRef>) -> Self {
-        Self {
-            filters: self.filters.clone(),
-            partition_filters,
-            columns: self.columns.clone(),
-            limit: self.limit,
-        }
-    }
-
-    pub fn with_columns(&self, columns: Option<Arc<Vec<String>>>) -> Self {
-        Self {
-            filters: self.filters.clone(),
-            partition_filters: self.partition_filters.clone(),
-            columns,
-            limit: self.limit,
-        }
-    }
-
-    pub fn multiline_display(&self) -> Vec<String> {
-        let mut res = vec![];
-        if let Some(columns) = &self.columns {
-            res.push(format!("Projection pushdown = [{}]", columns.join(", ")));
-        }
-        if let Some(filters) = &self.filters {
-            res.push(format!("Filter pushdown = {}", filters));
-        }
-        if let Some(pfilters) = &self.partition_filters {
-            res.push(format!("Partition Filter = {}", pfilters));
-        }
-        if let Some(limit) = self.limit {
-            res.push(format!("Limit pushdown = {}", limit));
-        }
-        res
-    }
-}
-impl DisplayAs for Pushdowns {
-    fn display_as(&self, level: common_display::DisplayLevel) -> String {
-        match level {
-            common_display::DisplayLevel::Compact => {
-                let mut s = String::new();
-                s.push_str("Pushdowns: {");
-                let mut sub_items = vec![];
-                if let Some(columns) = &self.columns {
-                    sub_items.push(format!("projection: [{}]", columns.join(", ")));
-                }
-                if let Some(filters) = &self.filters {
-                    sub_items.push(format!("filter: {}", filters));
-                }
-                if let Some(pfilters) = &self.partition_filters {
-                    sub_items.push(format!("partition_filter: {}", pfilters));
-                }
-                if let Some(limit) = self.limit {
-                    sub_items.push(format!("limit: {}", limit));
-                }
-                s.push_str(&sub_items.join(", "));
-                s.push('}');
-                s
-            }
-            _ => self.multiline_display().join("\n"),
-        }
-    }
-}
-
 #[cfg(test)]
 mod test {
     use std::sync::Arc;
 
     use common_display::{DisplayAs, DisplayLevel};
     use common_error::DaftResult;
+    use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
+    use common_scan_info::{Pushdowns, ScanOperator};
     use daft_schema::{schema::Schema, time_unit::TimeUnit};
     use itertools::Itertools;
 
     use crate::{
-        file_format::{FileFormatConfig, ParquetSourceConfig},
         glob::GlobScanOperator,
         storage_config::{NativeStorageConfig, StorageConfig},
-        DataSource, Pushdowns, ScanOperator, ScanTask,
+        DataSource, ScanTask,
     };
 
     fn make_scan_task(num_sources: usize) -> ScanTask {
         let sources = (0..num_sources)
             .map(|i| DataSource::File {
-                path: format!("test{}", i),
+                path: format!("test{i}"),
                 chunk_spec: None,
                 size_bytes: None,
                 iceberg_delete_files: None,
@@ -1001,6 +809,7 @@ mod test {
                 NativeStorageConfig::new_internal(false, None),
             ))),
             Pushdowns::default(),
+            None,
         )
     }
 
@@ -1015,19 +824,19 @@ mod test {
         let mut sources: Vec<String> = Vec::new();
 
         for _ in 0..num_sources {
-            sources.push(format!("../../tests/assets/parquet-data/mvp.parquet"));
+            sources.push("../../tests/assets/parquet-data/mvp.parquet".to_string());
         }
 
-        let glob_paths: Vec<&str> = sources.iter().map(|s| s.as_str()).collect();
-
         let glob_scan_operator: GlobScanOperator = GlobScanOperator::try_new(
-            &glob_paths,
+            sources,
             Arc::new(file_format_config),
             Arc::new(StorageConfig::Native(Arc::new(
                 NativeStorageConfig::new_internal(false, None),
             ))),
             false,
             Some(Arc::new(Schema::empty())),
+            None,
+            false,
         )
         .unwrap();
 

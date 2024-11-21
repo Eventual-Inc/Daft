@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 import itertools
-import pathlib
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Generic, Protocol
 
 from daft.context import get_context
-from daft.daft import FileFormat, IOConfig, JoinType, ResourceRequest, ScanTask
+from daft.daft import ResourceRequest
 from daft.expressions import Expression, ExpressionsProjection, col
-from daft.logical.map_partition_ops import MapPartitionOp
-from daft.logical.schema import Schema
 from daft.runners.partitioning import (
     Boundaries,
     MaterializedResult,
@@ -20,8 +17,14 @@ from daft.runners.partitioning import (
 from daft.table import MicroPartition, table_io
 
 if TYPE_CHECKING:
+    import pathlib
+
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
+
+    from daft.daft import FileFormat, IOConfig, JoinType, ScanTask
+    from daft.logical.map_partition_ops import MapPartitionOp
+    from daft.logical.schema import Schema
 
 
 ID_GEN = itertools.count()
@@ -48,6 +51,9 @@ class PartitionTask(Generic[PartitionT]):
     # This is used when a specific executor (e.g. an Actor pool) must be provisioned and used for the task
     actor_pool_id: str | None
 
+    # Indicates if the PartitionTask is "done" or not
+    is_done: bool = False
+
     _id: int = field(default_factory=lambda: next(ID_GEN))
 
     def id(self) -> str:
@@ -55,14 +61,23 @@ class PartitionTask(Generic[PartitionT]):
 
     def done(self) -> bool:
         """Whether the PartitionT result of this task is available."""
-        raise NotImplementedError()
+        return self.is_done
+
+    def set_done(self):
+        """Sets the PartitionTask as done."""
+        assert not self.is_done, "Cannot set PartitionTask as done more than once"
+        self.is_done = True
 
     def cancel(self) -> None:
         """If possible, cancel the execution of this PartitionTask."""
         raise NotImplementedError()
 
     def set_result(self, result: list[MaterializedResult[PartitionT]]) -> None:
-        """Set the result of this Task. For use by the Task executor."""
+        """Set the result of this Task. For use by the Task executor.
+
+        NOTE: A PartitionTask may contain a `result` without being `.done()`. This is because
+        results can potentially contain futures which are yet to be completed.
+        """
         raise NotImplementedError
 
     def is_empty(self) -> bool:
@@ -185,9 +200,6 @@ class SingleOutputPartitionTask(PartitionTask[PartitionT]):
         [partition] = result
         self._result = partition
 
-    def done(self) -> bool:
-        return self._result is not None
-
     def result(self) -> MaterializedResult[PartitionT]:
         assert self._result is not None, "Cannot call .result() on a PartitionTask that is not done"
         return self._result
@@ -232,9 +244,6 @@ class MultiOutputPartitionTask(PartitionTask[PartitionT]):
     def set_result(self, result: list[MaterializedResult[PartitionT]]) -> None:
         assert self._results is None, f"Cannot set result twice. Result is already {self._results}"
         self._results = result
-
-    def done(self) -> bool:
-        return self._results is not None
 
     def cancel(self) -> None:
         if self._results is not None:
@@ -387,7 +396,8 @@ class WriteIceberg(SingleOutputInstruction):
     base_path: str
     iceberg_schema: IcebergSchema
     iceberg_properties: IcebergTableProperties
-    spec_id: int
+    partition_spec_id: int
+    partition_cols: ExpressionsProjection
     io_config: IOConfig | None
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
@@ -415,7 +425,8 @@ class WriteIceberg(SingleOutputInstruction):
             base_path=self.base_path,
             schema=self.iceberg_schema,
             properties=self.iceberg_properties,
-            spec_id=self.spec_id,
+            partition_spec_id=self.partition_spec_id,
+            partition_cols=self.partition_cols,
             io_config=self.io_config,
         )
 
@@ -425,6 +436,7 @@ class WriteDeltaLake(SingleOutputInstruction):
     base_path: str
     large_dtypes: bool
     version: int
+    partition_cols: list[str] | None
     io_config: IOConfig | None
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
@@ -452,6 +464,7 @@ class WriteDeltaLake(SingleOutputInstruction):
             large_dtypes=self.large_dtypes,
             base_path=self.base_path,
             version=self.version,
+            partition_cols=self.partition_cols,
             io_config=self.io_config,
         )
 
@@ -776,6 +789,7 @@ class Unpivot(SingleOutputInstruction):
 class HashJoin(SingleOutputInstruction):
     left_on: ExpressionsProjection
     right_on: ExpressionsProjection
+    null_equals_nulls: list[bool] | None
     how: JoinType
     is_swapped: bool
 
@@ -798,6 +812,7 @@ class HashJoin(SingleOutputInstruction):
             right,
             left_on=self.left_on,
             right_on=self.right_on,
+            null_equals_nulls=self.null_equals_nulls,
             how=self.how,
         )
         return [result]
@@ -905,6 +920,7 @@ class ReduceToQuantiles(ReduceInstruction):
     num_quantiles: int
     sort_by: ExpressionsProjection
     descending: list[bool]
+    nulls_first: list[bool] | None = None
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return self._reduce_to_quantiles(inputs)
@@ -912,8 +928,12 @@ class ReduceToQuantiles(ReduceInstruction):
     def _reduce_to_quantiles(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         merged = MicroPartition.concat(inputs)
 
+        nulls_first = self.nulls_first if self.nulls_first is not None else self.descending
+
         # Skip evaluation of expressions by converting to Column Expression, since evaluation was done in Sample
-        merged_sorted = merged.sort(self.sort_by.to_column_expressions(), descending=self.descending)
+        merged_sorted = merged.sort(
+            self.sort_by.to_column_expressions(), descending=self.descending, nulls_first=nulls_first
+        )
 
         result = merged_sorted.quantiles(self.num_quantiles)
         return [result]
@@ -1038,3 +1058,33 @@ class FanoutSlices(FanoutInstruction):
             )
 
         return results
+
+
+@dataclass(frozen=True)
+class FanoutEvenSlices(FanoutInstruction):
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        [input] = inputs
+        results = []
+
+        input_length = len(input)
+        num_outputs = self.num_outputs()
+
+        chunk_size, remainder = divmod(input_length, num_outputs)
+        ptr = 0
+        for output_idx in range(self.num_outputs()):
+            end = ptr + chunk_size + 1 if output_idx < remainder else ptr + chunk_size
+            results.append(input.slice(ptr, end))
+            ptr = end
+        assert ptr == input_length
+
+        return results
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        # TODO: Derive this based on the ratios of num rows
+        return [
+            PartialPartitionMetadata(
+                num_rows=None,
+                size_bytes=None,
+            )
+            for _ in range(self._num_outputs)
+        ]

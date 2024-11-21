@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Iterator
+from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 from deltalake.table import DeltaTable
 
@@ -16,15 +17,22 @@ from daft.daft import (
     ScanTask,
     StorageConfig,
 )
+from daft.io.aws_config import boto3_client_from_s3_config
 from daft.io.object_store_options import io_config_to_storage_options
 from daft.io.scan import PartitionField, ScanOperator
 from daft.logical.schema import Schema
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
 
 class DeltaLakeScanOperator(ScanOperator):
-    def __init__(self, table_uri: str, storage_config: StorageConfig) -> None:
+    def __init__(
+        self, table_uri: str, storage_config: StorageConfig, version: int | str | datetime | None = None
+    ) -> None:
         super().__init__()
 
         # Unfortunately delta-rs doesn't do very good inference of credentials for S3. Thus the current Daft behavior of passing
@@ -34,35 +42,64 @@ class DeltaLakeScanOperator(ScanOperator):
         #
         # See: https://github.com/delta-io/delta-rs/issues/2117
         deltalake_sdk_io_config = storage_config.config.io_config
-        if any([deltalake_sdk_io_config.s3.key_id is None, deltalake_sdk_io_config.s3.region_name is None]):
-            try:
-                s3_config_from_env = S3Config.from_env()
-            # Sometimes S3Config.from_env throws an error, for example on CI machines with weird metadata servers.
-            except daft.exceptions.DaftCoreException:
-                pass
-            else:
-                if (
-                    deltalake_sdk_io_config.s3.key_id is None
-                    and deltalake_sdk_io_config.s3.access_key is None
-                    and deltalake_sdk_io_config.s3.session_token is None
-                ):
-                    deltalake_sdk_io_config = deltalake_sdk_io_config.replace(
-                        s3=deltalake_sdk_io_config.s3.replace(
-                            key_id=s3_config_from_env.key_id,
-                            access_key=s3_config_from_env.access_key,
-                            session_token=s3_config_from_env.session_token,
-                        )
+        scheme = urlparse(table_uri).scheme
+        if scheme == "s3" or scheme == "s3a":
+            # Try to get region from boto3
+            if deltalake_sdk_io_config.s3.region_name is None:
+                from botocore.exceptions import BotoCoreError
+
+                try:
+                    client = boto3_client_from_s3_config("s3", deltalake_sdk_io_config.s3)
+                    response = client.get_bucket_location(Bucket=urlparse(table_uri).netloc)
+                except BotoCoreError as e:
+                    logger.warning(
+                        "Failed to get the S3 bucket region using existing storage config, will attempt to get it from the environment instead. Error from boto3: %s",
+                        e,
                     )
-                if deltalake_sdk_io_config.s3.region_name is None:
+                else:
                     deltalake_sdk_io_config = deltalake_sdk_io_config.replace(
-                        s3=deltalake_sdk_io_config.s3.replace(
-                            region_name=s3_config_from_env.region_name,
-                        )
+                        s3=deltalake_sdk_io_config.s3.replace(region_name=response["LocationConstraint"])
                     )
+
+            # Try to get config from the environment
+            if any([deltalake_sdk_io_config.s3.key_id is None, deltalake_sdk_io_config.s3.region_name is None]):
+                try:
+                    s3_config_from_env = S3Config.from_env()
+                # Sometimes S3Config.from_env throws an error, for example on CI machines with weird metadata servers.
+                except daft.exceptions.DaftCoreException:
+                    pass
+                else:
+                    if (
+                        deltalake_sdk_io_config.s3.key_id is None
+                        and deltalake_sdk_io_config.s3.access_key is None
+                        and deltalake_sdk_io_config.s3.session_token is None
+                    ):
+                        deltalake_sdk_io_config = deltalake_sdk_io_config.replace(
+                            s3=deltalake_sdk_io_config.s3.replace(
+                                key_id=s3_config_from_env.key_id,
+                                access_key=s3_config_from_env.access_key,
+                                session_token=s3_config_from_env.session_token,
+                            )
+                        )
+                    if deltalake_sdk_io_config.s3.region_name is None:
+                        deltalake_sdk_io_config = deltalake_sdk_io_config.replace(
+                            s3=deltalake_sdk_io_config.s3.replace(
+                                region_name=s3_config_from_env.region_name,
+                            )
+                        )
+        elif scheme == "gcs" or scheme == "gs":
+            # TO-DO: Handle any key-value replacements in `io_config` if there are missing elements
+            pass
+        elif scheme == "az" or scheme == "abfs" or scheme == "abfss":
+            # TO-DO: Handle any key-value replacements in `io_config` if there are missing elements
+            pass
 
         self._table = DeltaTable(
             table_uri, storage_options=io_config_to_storage_options(deltalake_sdk_io_config, table_uri)
         )
+
+        if version is not None:
+            self._table.load_as_version(version)
 
         self._storage_config = storage_config
         self._schema = Schema.from_pyarrow_schema(self._table.schema().to_pyarrow())

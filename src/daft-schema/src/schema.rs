@@ -8,21 +8,19 @@ use common_display::{
     table_display::{make_comfy_table, make_schema_vertical_table},
     DisplayAs,
 };
+use common_error::{DaftError, DaftResult};
 use derive_more::Display;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 use crate::field::Field;
 
-use common_error::{DaftError, DaftResult};
-
 pub type SchemaRef = Arc<Schema>;
 
 #[derive(Debug, Display, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 #[display("{}\n", make_schema_vertical_table(
-    fields.keys().collect::<Vec<_>>().as_slice(),
-    fields.values().map(|field| field.dtype.to_string()).collect::<Vec<_>>().as_slice(),
+    fields.iter().map(|(name, field)| (name.clone(), field.dtype.to_string()))
 ))]
 pub struct Schema {
     #[serde(with = "indexmap::map::serde_seq")]
@@ -31,35 +29,39 @@ pub struct Schema {
 
 impl Schema {
     pub fn new(fields: Vec<Field>) -> DaftResult<Self> {
-        let mut map: IndexMap<String, Field> = indexmap::IndexMap::new();
+        let mut map = IndexMap::new();
 
-        for f in fields.into_iter() {
-            let old = map.insert(f.name.clone(), f);
-            if let Some(item) = old {
-                return Err(DaftError::ValueError(format!(
-                    "Attempting to make a Schema with duplicate field names: {}",
-                    item.name
-                )));
+        for f in fields {
+            match map.entry(f.name.clone()) {
+                indexmap::map::Entry::Vacant(entry) => {
+                    entry.insert(f);
+                }
+                indexmap::map::Entry::Occupied(entry) => {
+                    return Err(DaftError::ValueError(format!(
+                        "Attempting to make a Schema with duplicate field names: {}",
+                        entry.key()
+                    )));
+                }
             }
         }
 
-        Ok(Schema { fields: map })
+        Ok(Self { fields: map })
     }
 
-    pub fn exclude<S: AsRef<str>>(&self, names: &[S]) -> DaftResult<Schema> {
+    pub fn exclude<S: AsRef<str>>(&self, names: &[S]) -> DaftResult<Self> {
         let mut fields = IndexMap::new();
         let names = names.iter().map(|s| s.as_ref()).collect::<HashSet<&str>>();
-        for (name, field) in self.fields.iter() {
+        for (name, field) in &self.fields {
             if !names.contains(&name.as_str()) {
                 fields.insert(name.clone(), field.clone());
             }
         }
 
-        Ok(Schema { fields })
+        Ok(Self { fields })
     }
 
     pub fn empty() -> Self {
-        Schema {
+        Self {
             fields: indexmap::IndexMap::new(),
         }
     }
@@ -73,6 +75,10 @@ impl Schema {
             ))),
             Some(val) => Ok(val),
         }
+    }
+
+    pub fn has_field(&self, name: &str) -> bool {
+        self.fields.contains_key(name)
     }
 
     pub fn get_index(&self, name: &str) -> DaftResult<usize> {
@@ -98,24 +104,39 @@ impl Schema {
         self.fields.is_empty()
     }
 
-    pub fn union(&self, other: &Schema) -> DaftResult<Schema> {
+    /// Takes the disjoint union over the `self` and `other` schemas, throwing an error if the
+    /// schemas contain overlapping keys.
+    pub fn union(&self, other: &Self) -> DaftResult<Self> {
         let self_keys: HashSet<&String> = HashSet::from_iter(self.fields.keys());
-        let other_keys: HashSet<&String> = HashSet::from_iter(self.fields.keys());
-        match self_keys.difference(&other_keys).count() {
-            0 => {
-                let mut fields = IndexMap::new();
-                for (k, v) in self.fields.iter().chain(other.fields.iter()) {
-                    fields.insert(k.clone(), v.clone());
-                }
-                Ok(Schema { fields })
-            }
-            _ => Err(DaftError::ValueError(
-                "Cannot union two schemas with overlapping keys".to_string(),
-            )),
+        let other_keys: HashSet<&String> = HashSet::from_iter(other.fields.keys());
+        if self_keys.is_disjoint(&other_keys) {
+            let fields = self
+                .fields
+                .iter()
+                .chain(other.fields.iter())
+                .map(|(k, v)| (k.clone(), v.clone())) // Convert references to owned values
+                .collect();
+            Ok(Self { fields })
+        } else {
+            Err(DaftError::ValueError(
+                "Cannot disjoint union two schemas with overlapping keys".to_string(),
+            ))
         }
     }
 
-    pub fn apply_hints(&self, hints: &Schema) -> DaftResult<Schema> {
+    /// Takes the non-distinct union of two schemas. If there are overlapping keys, then we take the
+    /// corresponding field from one of the two schemas.
+    pub fn non_distinct_union(&self, other: &Self) -> Self {
+        let fields = self
+            .fields
+            .iter()
+            .chain(other.fields.iter())
+            .map(|(k, v)| (k.clone(), v.clone())) // Convert references to owned values
+            .collect();
+        Self { fields }
+    }
+
+    pub fn apply_hints(&self, hints: &Self) -> DaftResult<Self> {
         let applied_fields = self
             .fields
             .iter()
@@ -125,7 +146,7 @@ impl Schema {
             })
             .collect::<IndexMap<String, Field>>();
 
-        Ok(Schema {
+        Ok(Self {
             fields: applied_fields,
         })
     }
@@ -240,7 +261,7 @@ impl Schema {
     }
 
     /// Returns a new schema with only the specified columns in the new schema
-    pub fn project<S: AsRef<str>>(self: Arc<Self>, columns: &[S]) -> DaftResult<Schema> {
+    pub fn project<S: AsRef<str>>(self: Arc<Self>, columns: &[S]) -> DaftResult<Self> {
         let new_fields = columns
             .iter()
             .map(|i| {
@@ -259,7 +280,7 @@ impl Schema {
 
 impl Hash for Schema {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        state.write_u64(hash_index_map(&self.fields))
+        state.write_u64(hash_index_map(&self.fields));
     }
 }
 

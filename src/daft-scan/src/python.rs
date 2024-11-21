@@ -1,7 +1,8 @@
-use pyo3::{prelude::*, types::PyTuple, AsPyPointer};
+use common_py_serde::{deserialize_py_object, serialize_py_object};
+use pyo3::{prelude::*, types::PyTuple};
 use serde::{Deserialize, Serialize};
 
-use common_py_serde::{deserialize_py_object, serialize_py_object};
+use crate::storage_config::{NativeStorageConfig, PyStorageConfig, PythonStorageConfig};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PyObjectSerializableWrapper(
@@ -21,8 +22,9 @@ impl PythonTablesFactoryArgs {
         Self(args.into_iter().map(PyObjectSerializableWrapper).collect())
     }
 
-    pub fn to_pytuple<'a>(&self, py: Python<'a>) -> &'a PyTuple {
-        pyo3::types::PyTuple::new(py, self.0.iter().map(|x| x.0.as_ref(py)))
+    #[must_use]
+    pub fn to_pytuple<'a>(&self, py: Python<'a>) -> Bound<'a, PyTuple> {
+        pyo3::types::PyTuple::new_bound(py, self.0.iter().map(|x| x.0.bind(py)))
     }
 }
 
@@ -39,44 +41,35 @@ impl PartialEq for PythonTablesFactoryArgs {
 }
 
 pub mod pylib {
-    use common_error::DaftResult;
-    use common_py_serde::impl_bincode_py_state_serialization;
-    use daft_dsl::python::PyExpr;
-    use daft_schema::python::field::PyField;
-    use daft_schema::schema::SchemaRef;
-
-    use daft_stats::PartitionSpec;
-    use daft_stats::TableMetadata;
-    use daft_stats::TableStatistics;
-    use daft_table::python::PyTable;
-    use daft_table::Table;
-    use pyo3::prelude::*;
-
-    use pyo3::types::PyIterator;
-    use pyo3::types::PyList;
     use std::sync::Arc;
 
-    use daft_schema::python::schema::PySchema;
-
-    use pyo3::pyclass;
+    use common_daft_config::{DaftExecutionConfig, PyDaftExecutionConfig};
+    use common_error::DaftResult;
+    use common_file_formats::{python::PyFileFormatConfig, FileFormatConfig};
+    use common_py_serde::impl_bincode_py_state_serialization;
+    use common_scan_info::{
+        python::pylib::{PyPartitionField, PyPushdowns},
+        PartitionField, Pushdowns, ScanOperator, ScanOperatorRef, ScanTaskLike, ScanTaskLikeRef,
+    };
+    use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
+    use daft_schema::{python::schema::PySchema, schema::SchemaRef};
+    use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
+    use daft_table::{python::PyTable, Table};
+    use pyo3::{
+        prelude::*,
+        pyclass,
+        types::{PyIterator, PyList},
+    };
     use serde::{Deserialize, Serialize};
 
-    use crate::anonymous::AnonymousScanOperator;
-    use crate::file_format::FileFormatConfig;
-    use crate::storage_config::PythonStorageConfig;
-    use crate::DataSource;
-    use crate::PartitionField;
-    use crate::Pushdowns;
-    use crate::ScanOperator;
-    use crate::ScanOperatorRef;
-    use crate::ScanTask;
-
-    use crate::file_format::PyFileFormatConfig;
-    use crate::glob::GlobScanOperator;
-    use crate::storage_config::PyStorageConfig;
-    use common_daft_config::PyDaftExecutionConfig;
-
     use super::PythonTablesFactoryArgs;
+    use crate::{
+        anonymous::AnonymousScanOperator,
+        glob::GlobScanOperator,
+        scan_task_iters::{merge_by_sizes, split_by_row_groups, BoxScanTaskIter},
+        storage_config::{PyStorageConfig, PythonStorageConfig},
+        DataSource, ScanTask,
+    };
     #[pyclass(module = "daft.daft", frozen)]
     #[derive(Debug, Clone)]
     pub struct ScanOperatorHandle {
@@ -105,30 +98,35 @@ pub mod pylib {
                     file_format_config.into(),
                     storage_config.into(),
                 ));
-                Ok(ScanOperatorHandle {
+                Ok(Self {
                     scan_op: ScanOperatorRef(operator),
                 })
             })
         }
 
         #[staticmethod]
+        #[allow(clippy::too_many_arguments)]
         pub fn glob_scan(
             py: Python,
-            glob_path: Vec<&str>,
+            glob_path: Vec<String>,
             file_format_config: PyFileFormatConfig,
             storage_config: PyStorageConfig,
+            hive_partitioning: bool,
             infer_schema: bool,
             schema: Option<PySchema>,
+            file_path_column: Option<String>,
         ) -> PyResult<Self> {
             py.allow_threads(|| {
                 let operator = Arc::new(GlobScanOperator::try_new(
-                    glob_path.as_slice(),
+                    glob_path,
                     file_format_config.into(),
                     storage_config.into(),
                     infer_schema,
                     schema.map(|s| s.schema),
+                    file_path_column,
+                    hive_partitioning,
                 )?);
-                Ok(ScanOperatorHandle {
+                Ok(Self {
                     scan_op: ScanOperatorRef(operator),
                 })
             })
@@ -139,7 +137,7 @@ pub mod pylib {
             let scan_op = ScanOperatorRef(Arc::new(PythonScanOperatorBridge::from_python_abc(
                 py_scan, py,
             )?));
-            Ok(ScanOperatorHandle { scan_op })
+            Ok(Self { scan_op })
         }
     }
     #[pyclass(module = "daft.daft")]
@@ -217,11 +215,17 @@ pub mod pylib {
     }
 
     impl ScanOperator for PythonScanOperatorBridge {
-        fn partitioning_keys(&self) -> &[crate::PartitionField] {
+        fn partitioning_keys(&self) -> &[PartitionField] {
             &self.partitioning_keys
         }
         fn schema(&self) -> daft_schema::schema::SchemaRef {
             self.schema.clone()
+        }
+        fn file_path_column(&self) -> Option<&str> {
+            None
+        }
+        fn generated_fields(&self) -> Option<SchemaRef> {
+            None
         }
         fn can_absorb_filter(&self) -> bool {
             self.can_absorb_filter
@@ -241,15 +245,14 @@ pub mod pylib {
         fn to_scan_tasks(
             &self,
             pushdowns: Pushdowns,
-        ) -> common_error::DaftResult<
-            Box<dyn Iterator<Item = common_error::DaftResult<crate::ScanTaskRef>>>,
-        > {
+            cfg: Option<&DaftExecutionConfig>,
+        ) -> DaftResult<Vec<ScanTaskLikeRef>> {
             let scan_tasks = Python::with_gil(|py| {
-                let pypd = PyPushdowns(pushdowns.into()).into_py(py);
+                let pypd = PyPushdowns(pushdowns.clone().into()).into_py(py);
                 let pyiter =
                     self.operator
                         .call_method1(py, pyo3::intern!(py, "to_scan_tasks"), (pypd,))?;
-                let pyiter = PyIterator::from_object(py, &pyiter)?;
+                let pyiter = PyIterator::from_bound_object(pyiter.bind(py))?;
                 DaftResult::Ok(
                     pyiter
                         .map(|v| {
@@ -259,7 +262,23 @@ pub mod pylib {
                         .collect::<Vec<_>>(),
                 )
             })?;
-            Ok(Box::new(scan_tasks.into_iter()))
+
+            let mut scan_tasks: BoxScanTaskIter = Box::new(scan_tasks.into_iter());
+
+            if let Some(cfg) = cfg {
+                scan_tasks = split_by_row_groups(
+                    scan_tasks,
+                    cfg.parquet_split_row_groups_max_files,
+                    cfg.scan_tasks_min_size_bytes,
+                    cfg.scan_tasks_max_size_bytes,
+                );
+
+                scan_tasks = merge_by_sizes(scan_tasks, &pushdowns, cfg);
+            }
+
+            scan_tasks
+                .map(|st| st.map(|task| task as Arc<dyn ScanTaskLike>))
+                .collect()
         }
     }
 
@@ -333,9 +352,7 @@ pub mod pylib {
             // TODO(Clark): Filter out scan tasks with pushed down filters + table stats?
 
             let pspec = PartitionSpec {
-                keys: partition_values
-                    .map(|p| p.table)
-                    .unwrap_or_else(|| Table::empty(None).unwrap()),
+                keys: partition_values.map_or_else(|| Table::empty(None).unwrap(), |p| p.table),
             };
             let statistics = stats
                 .map(|s| TableStatistics::from_stats_table(&s.table))
@@ -360,8 +377,9 @@ pub mod pylib {
                 schema.schema,
                 storage_config.into(),
                 pushdowns.map(|p| p.0.as_ref().clone()).unwrap_or_default(),
+                None,
             );
-            Ok(Some(PyScanTask(scan_task.into())))
+            Ok(Some(Self(scan_task.into())))
         }
 
         #[allow(clippy::too_many_arguments)]
@@ -392,8 +410,9 @@ pub mod pylib {
                 schema.schema,
                 storage_config.into(),
                 pushdowns.map(|p| p.0.as_ref().clone()).unwrap_or_default(),
+                None,
             );
-            Ok(PyScanTask(scan_task.into()))
+            Ok(Self(scan_task.into()))
         }
 
         #[allow(clippy::too_many_arguments)]
@@ -402,7 +421,7 @@ pub mod pylib {
             py: Python,
             module: String,
             func_name: String,
-            func_args: Vec<&PyAny>,
+            func_args: Vec<Bound<PyAny>>,
             schema: PySchema,
             num_rows: Option<i64>,
             size_bytes: Option<u64>,
@@ -436,8 +455,9 @@ pub mod pylib {
                     PythonStorageConfig { io_config: None },
                 ))),
                 pushdowns.map(|p| p.0.as_ref().clone()).unwrap_or_default(),
+                None,
             );
-            Ok(PyScanTask(scan_task.into()))
+            Ok(Self(scan_task.into()))
         }
 
         pub fn __repr__(&self) -> PyResult<String> {
@@ -459,132 +479,25 @@ pub mod pylib {
 
     impl_bincode_py_state_serialization!(PyScanTask);
 
-    #[pyclass(module = "daft.daft", name = "PartitionField", frozen)]
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct PyPartitionField(Arc<PartitionField>);
-
-    #[pymethods]
-    impl PyPartitionField {
-        #[new]
-        fn new(
-            field: PyField,
-            source_field: Option<PyField>,
-            transform: Option<PyPartitionTransform>,
-        ) -> PyResult<Self> {
-            let p_field = PartitionField::new(
-                field.field,
-                source_field.map(|f| f.into()),
-                transform.map(|e| e.0),
-            )?;
-            Ok(PyPartitionField(Arc::new(p_field)))
-        }
-
-        pub fn __repr__(&self) -> PyResult<String> {
-            Ok(format!("{}", self.0))
-        }
-
-        #[getter]
-        pub fn field(&self) -> PyResult<PyField> {
-            Ok(self.0.field.clone().into())
-        }
-    }
-
-    #[pyclass(module = "daft.daft", name = "PartitionTransform", frozen)]
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct PyPartitionTransform(crate::PartitionTransform);
-
-    #[pymethods]
-    impl PyPartitionTransform {
-        #[staticmethod]
-        pub fn identity() -> PyResult<Self> {
-            Ok(Self(crate::PartitionTransform::Identity))
-        }
-
-        #[staticmethod]
-        pub fn year() -> PyResult<Self> {
-            Ok(Self(crate::PartitionTransform::Year))
-        }
-
-        #[staticmethod]
-        pub fn month() -> PyResult<Self> {
-            Ok(Self(crate::PartitionTransform::Month))
-        }
-
-        #[staticmethod]
-        pub fn day() -> PyResult<Self> {
-            Ok(Self(crate::PartitionTransform::Day))
-        }
-
-        #[staticmethod]
-        pub fn hour() -> PyResult<Self> {
-            Ok(Self(crate::PartitionTransform::Hour))
-        }
-
-        #[staticmethod]
-        pub fn void() -> PyResult<Self> {
-            Ok(Self(crate::PartitionTransform::Void))
-        }
-
-        #[staticmethod]
-        pub fn iceberg_bucket(n: u64) -> PyResult<Self> {
-            Ok(Self(crate::PartitionTransform::IcebergBucket(n)))
-        }
-
-        #[staticmethod]
-        pub fn iceberg_truncate(n: u64) -> PyResult<Self> {
-            Ok(Self(crate::PartitionTransform::IcebergTruncate(n)))
-        }
-
-        pub fn __repr__(&self) -> PyResult<String> {
-            Ok(format!("{}", self.0))
-        }
-    }
-
-    #[pyclass(module = "daft.daft", name = "Pushdowns", frozen)]
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct PyPushdowns(Arc<Pushdowns>);
-    #[pymethods]
-    impl PyPushdowns {
-        pub fn __repr__(&self) -> PyResult<String> {
-            Ok(format!("{:#?}", self.0))
-        }
-        #[getter]
-        pub fn limit(&self) -> Option<usize> {
-            self.0.limit
-        }
-
-        #[getter]
-        pub fn filters(&self) -> Option<PyExpr> {
-            self.0.filters.as_ref().map(|e| PyExpr { expr: e.clone() })
-        }
-
-        #[getter]
-        pub fn partition_filters(&self) -> Option<PyExpr> {
-            self.0
-                .partition_filters
-                .as_ref()
-                .map(|e| PyExpr { expr: e.clone() })
-        }
-
-        #[getter]
-        pub fn columns(&self) -> Option<Vec<String>> {
-            self.0.columns.as_deref().cloned()
-        }
-
-        pub fn filter_required_column_names(&self) -> Option<Vec<String>> {
-            self.0
-                .filters
-                .as_ref()
-                .map(daft_dsl::optimization::get_required_columns)
-        }
+    #[pyfunction]
+    pub fn logical_plan_table_scan(
+        scan_operator: ScanOperatorHandle,
+    ) -> PyResult<PyLogicalPlanBuilder> {
+        Ok(LogicalPlanBuilder::table_scan(scan_operator.into(), None)?.into())
     }
 }
 
-pub fn register_modules(_py: Python, parent: &PyModule) -> PyResult<()> {
+pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
+    parent.add_class::<PyStorageConfig>()?;
+    parent.add_class::<NativeStorageConfig>()?;
+    parent.add_class::<PythonStorageConfig>()?;
+
     parent.add_class::<pylib::ScanOperatorHandle>()?;
     parent.add_class::<pylib::PyScanTask>()?;
-    parent.add_class::<pylib::PyPartitionField>()?;
-    parent.add_class::<pylib::PyPartitionTransform>()?;
-    parent.add_class::<pylib::PyPushdowns>()?;
+    parent.add_function(wrap_pyfunction_bound!(
+        pylib::logical_plan_table_scan,
+        parent
+    )?)?;
+
     Ok(())
 }

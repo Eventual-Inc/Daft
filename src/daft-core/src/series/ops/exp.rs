@@ -1,12 +1,12 @@
-use common_error::DaftError;
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 
-use crate::datatypes::DataType;
-use crate::series::array_impl::IntoSeries;
-use crate::series::Series;
+use crate::{
+    datatypes::DataType,
+    series::{array_impl::IntoSeries, Series},
+};
 
 impl Series {
-    pub fn exp(&self) -> DaftResult<Series> {
+    pub fn exp(&self) -> DaftResult<Self> {
         match self.data_type() {
             DataType::Float32 => Ok(self.f32().unwrap().exp()?.into_series()),
             DataType::Float64 => Ok(self.f64().unwrap().exp()?.into_series()),

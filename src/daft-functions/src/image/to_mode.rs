@@ -1,6 +1,5 @@
-use daft_core::prelude::*;
-
 use common_error::{DaftError, DaftResult};
+use daft_core::prelude::*;
 use daft_dsl::{
     functions::{ScalarFunction, ScalarUDF},
     ExprRef,
@@ -33,8 +32,7 @@ impl ScalarUDF for ImageToMode {
                     }
                     _ => {
                         return Err(DaftError::TypeError(format!(
-                        "ToMode can only operate on ImageArrays and FixedShapeImageArrays, got {}",
-                        field
+                        "ToMode can only operate on ImageArrays and FixedShapeImageArrays, got {field}"
                     )))
                     }
                 };
@@ -49,7 +47,7 @@ impl ScalarUDF for ImageToMode {
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
-            [input] => input.image_to_mode(self.mode),
+            [input] => daft_image::series::to_mode(input, self.mode),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()
@@ -58,6 +56,7 @@ impl ScalarUDF for ImageToMode {
     }
 }
 
+#[must_use]
 pub fn image_to_mode(expr: ExprRef, mode: ImageMode) -> ExprRef {
     ScalarFunction::new(ImageToMode { mode }, vec![expr]).into()
 }

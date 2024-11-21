@@ -2,6 +2,14 @@ pub use comfy_table;
 
 const BOLD_TABLE_HEADERS_IN_DISPLAY: &str = "DAFT_BOLD_TABLE_HEADERS";
 
+pub trait StrValue {
+    fn str_value(&self, idx: usize) -> String;
+}
+
+pub trait HTMLValue {
+    fn html_value(&self, idx: usize) -> String;
+}
+
 // this should be factored out to a common crate
 fn create_table_cell(value: &str) -> comfy_table::Cell {
     let mut attributes = vec![];
@@ -20,9 +28,8 @@ fn create_table_cell(value: &str) -> comfy_table::Cell {
     cell
 }
 
-pub fn make_schema_vertical_table<S1: ToString, S2: ToString>(
-    names: &[S1],
-    dtypes: &[S2],
+pub fn make_schema_vertical_table(
+    fields: impl Iterator<Item = (String, String)>,
 ) -> comfy_table::Table {
     let mut table = comfy_table::Table::new();
 
@@ -38,15 +45,10 @@ pub fn make_schema_vertical_table<S1: ToString, S2: ToString>(
 
     let header = vec![create_table_cell("Column Name"), create_table_cell("Type")];
     table.set_header(header);
-    assert_eq!(names.len(), dtypes.len());
-    for (name, dtype) in names.iter().zip(dtypes.iter()) {
-        table.add_row(vec![name.to_string(), dtype.to_string()]);
+    for (name, dtype) in fields {
+        table.add_row(vec![name.clone(), dtype]);
     }
     table
-}
-
-pub trait StrValue {
-    fn str_value(&self, idx: usize) -> String;
 }
 
 pub fn make_comfy_table<S: AsRef<str>>(
@@ -55,6 +57,9 @@ pub fn make_comfy_table<S: AsRef<str>>(
     num_rows: Option<usize>,
     max_col_width: Option<usize>,
 ) -> comfy_table::Table {
+    const DOTS: &str = "…";
+    const TOTAL_ROWS: usize = 10;
+
     let mut table = comfy_table::Table::new();
 
     let default_width_if_no_tty = 120usize;
@@ -72,22 +77,17 @@ pub fn make_comfy_table<S: AsRef<str>>(
 
     let expected_col_width = 18usize;
 
-    let max_cols = (((terminal_width + expected_col_width - 1) / expected_col_width) - 1).max(1);
-    const DOTS: &str = "…";
+    let max_cols = (terminal_width.div_ceil(expected_col_width) - 1).max(1);
     let num_columns = fields.len();
 
-    let head_cols;
-    let tail_cols;
-    let total_cols;
-    if num_columns > max_cols {
-        head_cols = (max_cols + 1) / 2;
-        tail_cols = max_cols / 2;
-        total_cols = head_cols + tail_cols + 1;
+    let (head_cols, tail_cols, total_cols) = if num_columns > max_cols {
+        let head_cols = (max_cols + 1) / 2;
+        let tail_cols = max_cols / 2;
+        (head_cols, tail_cols, head_cols + tail_cols + 1)
     } else {
-        head_cols = num_columns;
-        tail_cols = 0;
-        total_cols = head_cols;
-    }
+        (num_columns, 0, num_columns)
+    };
+
     let mut header = fields
         .iter()
         .take(head_cols)
@@ -96,12 +96,8 @@ pub fn make_comfy_table<S: AsRef<str>>(
     if tail_cols > 0 {
         let unseen_cols = num_columns - (head_cols + tail_cols);
         header.push(
-            create_table_cell(&format!(
-                "{DOTS}\n\n({unseen_cols} hidden)",
-                DOTS = DOTS,
-                unseen_cols = unseen_cols
-            ))
-            .set_alignment(comfy_table::CellAlignment::Center),
+            create_table_cell(&format!("{DOTS}\n\n({unseen_cols} hidden)"))
+                .set_alignment(comfy_table::CellAlignment::Center),
         );
         header.extend(
             fields
@@ -116,17 +112,11 @@ pub fn make_comfy_table<S: AsRef<str>>(
     {
         table.set_header(header);
         let len = num_rows.expect("if columns are set, so should `num_rows`");
-        const TOTAL_ROWS: usize = 10;
-        let head_rows;
-        let tail_rows;
-
-        if len > TOTAL_ROWS {
-            head_rows = TOTAL_ROWS / 2;
-            tail_rows = TOTAL_ROWS / 2;
+        let (head_rows, tail_rows) = if len > TOTAL_ROWS {
+            (TOTAL_ROWS / 2, TOTAL_ROWS / 2)
         } else {
-            head_rows = len;
-            tail_rows = 0;
-        }
+            (len, 0)
+        };
 
         for i in 0..head_rows {
             let all_cols = columns

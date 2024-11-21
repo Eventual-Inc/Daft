@@ -1,8 +1,9 @@
 [dependencies]
-arrow2 = {workspace = true, features = ["io_json"]}
+arrow2 = {workspace = true}
 chrono = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 common-py-serde = {path = "../common/py-serde", default-features = false}
+common-runtime = {path = "../common/runtime", default-features = false}
 daft-compression = {path = "../daft-compression", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-decoding = {path = "../daft-decoding"}
@@ -37,6 +38,9 @@ python = [
   "daft-table/python",
   "daft-dsl/python"
 ]
+
+[lints]
+workspace = true
 
 [package]
 edition = {workspace = true}

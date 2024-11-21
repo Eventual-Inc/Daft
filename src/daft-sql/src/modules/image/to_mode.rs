@@ -1,11 +1,11 @@
 use daft_dsl::{Expr, ExprRef, LiteralValue};
+use daft_functions::image::to_mode::{image_to_mode, ImageToMode};
 
 use crate::{
     error::{PlannerError, SQLPlannerResult},
     functions::{SQLFunction, SQLFunctionArguments},
     unsupported_sql_err,
 };
-use daft_functions::image::to_mode::{image_to_mode, ImageToMode};
 
 pub struct SQLImageToMode;
 
@@ -40,5 +40,13 @@ impl SQLFunction for SQLImageToMode {
             }
             _ => unsupported_sql_err!("Invalid arguments for image_encode: '{inputs:?}'"),
         }
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Converts an image to the specified mode (e.g. RGB, RGBA, Grayscale).".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input_image", "mode"]
     }
 }

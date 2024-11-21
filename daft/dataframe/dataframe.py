@@ -28,7 +28,6 @@ from typing import (
     TypeVar,
     Union,
 )
-from urllib.parse import urlparse
 
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
@@ -38,9 +37,9 @@ from daft.dataframe.preview import DataFramePreview
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.expressions import Expression, ExpressionsProjection, col, lit
+from daft.filesystem import overwrite_files
 from daft.logical.builder import LogicalPlanBuilder
-from daft.runners.partitioning import PartitionCacheEntry, PartitionSet
-from daft.runners.pyrunner import LocalPartitionSet
+from daft.runners.partitioning import LocalPartitionSet, PartitionCacheEntry, PartitionSet
 from daft.table import MicroPartition
 from daft.viz import DataFrameDisplay
 
@@ -275,7 +274,9 @@ class DataFrame:
         else:
             # Execute the dataframe in a streaming fashion.
             context = get_context()
-            partitions_iter = context.runner().run_iter_tables(self._builder, results_buffer_size=results_buffer_size)
+            partitions_iter = context.get_or_create_runner().run_iter_tables(
+                self._builder, results_buffer_size=results_buffer_size
+            )
 
             # Iterate through partitions.
             for partition in partitions_iter:
@@ -312,7 +313,9 @@ class DataFrame:
         else:
             # Execute the dataframe in a streaming fashion.
             context = get_context()
-            partitions_iter = context.runner().run_iter_tables(self._builder, results_buffer_size=results_buffer_size)
+            partitions_iter = context.get_or_create_runner().run_iter_tables(
+                self._builder, results_buffer_size=results_buffer_size
+            )
 
             # Iterate through partitions.
             for partition in partitions_iter:
@@ -391,7 +394,9 @@ class DataFrame:
         else:
             # Execute the dataframe in a streaming fashion.
             context = get_context()
-            results_iter = context.runner().run_iter(self._builder, results_buffer_size=results_buffer_size)
+            results_iter = context.get_or_create_runner().run_iter(
+                self._builder, results_buffer_size=results_buffer_size
+            )
             for result in results_iter:
                 yield result.partition()
 
@@ -490,7 +495,7 @@ class DataFrame:
             result_pset.set_partition_from_table(i, part)
 
         context = get_context()
-        cache_entry = context.runner().put_partition_set_into_cache(result_pset)
+        cache_entry = context.get_or_create_runner().put_partition_set_into_cache(result_pset)
         size_bytes = result_pset.size_bytes()
         num_rows = len(result_pset)
 
@@ -515,6 +520,7 @@ class DataFrame:
         self,
         root_dir: Union[str, pathlib.Path],
         compression: str = "snappy",
+        write_mode: Union[Literal["append"], Literal["overwrite"]] = "append",
         partition_cols: Optional[List[ColumnInputType]] = None,
         io_config: Optional[IOConfig] = None,
     ) -> "DataFrame":
@@ -528,6 +534,7 @@ class DataFrame:
         Args:
             root_dir (str): root file path to write parquet files to.
             compression (str, optional): compression algorithm. Defaults to "snappy".
+            write_mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace table with new data. Defaults to "append".
             partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
             io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
 
@@ -537,6 +544,9 @@ class DataFrame:
             .. NOTE::
                 This call is **blocking** and will execute the DataFrame when called
         """
+        if write_mode not in ["append", "overwrite"]:
+            raise ValueError(f"Only support `append` or `overwrite` mode. {write_mode} is unsupported")
+
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
         cols: Optional[List[Expression]] = None
@@ -554,6 +564,9 @@ class DataFrame:
         write_df = DataFrame(builder)
         write_df.collect()
         assert write_df._result is not None
+
+        if write_mode == "overwrite":
+            overwrite_files(write_df, root_dir, io_config)
 
         if len(write_df) > 0:
             # Populate and return a new disconnected DataFrame
@@ -579,6 +592,7 @@ class DataFrame:
     def write_csv(
         self,
         root_dir: Union[str, pathlib.Path],
+        write_mode: Union[Literal["append"], Literal["overwrite"]] = "append",
         partition_cols: Optional[List[ColumnInputType]] = None,
         io_config: Optional[IOConfig] = None,
     ) -> "DataFrame":
@@ -591,12 +605,16 @@ class DataFrame:
 
         Args:
             root_dir (str): root file path to write parquet files to.
+            write_mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace table with new data. Defaults to "append".
             partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
             io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
 
         Returns:
             DataFrame: The filenames that were written out as strings.
         """
+        if write_mode not in ["append", "overwrite"]:
+            raise ValueError(f"Only support `append` or `overwrite` mode. {write_mode} is unsupported")
+
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
         cols: Optional[List[Expression]] = None
@@ -613,6 +631,9 @@ class DataFrame:
         write_df = DataFrame(builder)
         write_df.collect()
         assert write_df._result is not None
+
+        if write_mode == "overwrite":
+            overwrite_files(write_df, root_dir, io_config)
 
         if len(write_df) > 0:
             # Populate and return a new disconnected DataFrame
@@ -648,12 +669,12 @@ class DataFrame:
             DataFrame: The operations that occurred with this write.
         """
 
-        if len(table.spec().fields) > 0:
-            raise ValueError("Cannot write to partitioned Iceberg tables")
-
         import pyarrow as pa
         import pyiceberg
         from packaging.version import parse
+
+        if len(table.spec().fields) > 0 and parse(pyiceberg.__version__) < parse("0.7.0"):
+            raise ValueError("pyiceberg>=0.7.0 is required to write to a partitioned table")
 
         if parse(pyiceberg.__version__) < parse("0.6.0"):
             raise ValueError(f"Write Iceberg is only supported on pyiceberg>=0.6.0, found {pyiceberg.__version__}")
@@ -684,11 +705,17 @@ class DataFrame:
         else:
             deleted_files = []
 
+        schema = table.schema()
+        partitioning: Dict[str, list] = {schema.find_field(field.source_id).name: [] for field in table.spec().fields}
+
         for data_file in data_files:
             operations.append("ADD")
             path.append(data_file.file_path)
             rows.append(data_file.record_count)
             size.append(data_file.file_size_in_bytes)
+
+            for field in partitioning.keys():
+                partitioning[field].append(getattr(data_file.partition, field, None))
 
         for pf in deleted_files:
             data_file = pf.file
@@ -696,6 +723,9 @@ class DataFrame:
             path.append(data_file.file_path)
             rows.append(data_file.record_count)
             size.append(data_file.file_size_in_bytes)
+
+            for field in partitioning.keys():
+                partitioning[field].append(getattr(data_file.partition, field, None))
 
         if parse(pyiceberg.__version__) >= parse("0.7.0"):
             from pyiceberg.table import ALWAYS_TRUE, PropertyUtil, TableProperties
@@ -736,24 +766,29 @@ class DataFrame:
 
             merge.commit()
 
+        with_operations = {
+            "operation": pa.array(operations, type=pa.string()),
+            "rows": pa.array(rows, type=pa.int64()),
+            "file_size": pa.array(size, type=pa.int64()),
+            "file_name": pa.array([fp for fp in path], type=pa.string()),
+        }
+
+        if partitioning:
+            with_operations["partitioning"] = pa.StructArray.from_arrays(
+                partitioning.values(), names=partitioning.keys()
+            )
+
         from daft import from_pydict
 
-        with_operations = from_pydict(
-            {
-                "operation": pa.array(operations, type=pa.string()),
-                "rows": pa.array(rows, type=pa.int64()),
-                "file_size": pa.array(size, type=pa.int64()),
-                "file_name": pa.array([os.path.basename(fp) for fp in path], type=pa.string()),
-            }
-        )
         # NOTE: We are losing the history of the plan here.
         # This is due to the fact that the logical plan of the write_iceberg returns datafiles but we want to return the above data
-        return with_operations
+        return from_pydict(with_operations)
 
     @DataframePublicAPI
     def write_deltalake(
         self,
         table: Union[str, pathlib.Path, "DataCatalogTable", "deltalake.DeltaTable"],
+        partition_cols: Optional[List[str]] = None,
         mode: Literal["append", "overwrite", "error", "ignore"] = "append",
         schema_mode: Optional[Literal["merge", "overwrite"]] = None,
         name: Optional[str] = None,
@@ -761,6 +796,7 @@ class DataFrame:
         configuration: Optional[Mapping[str, Optional[str]]] = None,
         custom_metadata: Optional[Dict[str, str]] = None,
         dynamo_table_name: Optional[str] = None,
+        allow_unsafe_rename: bool = False,
         io_config: Optional[IOConfig] = None,
     ) -> "DataFrame":
         """Writes the DataFrame to a `Delta Lake <https://docs.delta.io/latest/index.html>`__ table, returning a new DataFrame with the operations that occurred.
@@ -770,6 +806,7 @@ class DataFrame:
 
         Args:
             table (Union[str, pathlib.Path, DataCatalogTable, deltalake.DeltaTable]): Destination `Delta Lake Table <https://delta-io.github.io/delta-rs/api/delta_table/>`__ or table URI to write dataframe to.
+            partition_cols (List[str], optional): How to subpartition each partition further. If table exists, expected to match table's existing partitioning scheme, otherwise creates the table with specified partition columns. Defaults to None.
             mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace table with new data, `error` will raise an error if table already exists, and `ignore` will not write anything if table already exists. Defaults to "append".
             schema_mode (str, optional): Schema mode of the write. If set to `overwrite`, allows replacing the schema of the table when doing `mode=overwrite`. Schema mode `merge` is currently not supported.
             name (str, optional): User-provided identifier for this table.
@@ -777,6 +814,7 @@ class DataFrame:
             configuration (Mapping[str, Optional[str]], optional): A map containing configuration options for the metadata action.
             custom_metadata (Dict[str, str], optional): Custom metadata to add to the commit info.
             dynamo_table_name (str, optional): Name of the DynamoDB table to be used as the locking provider if writing to S3.
+            allow_unsafe_rename (bool, optional): Whether to allow unsafe rename when writing to S3 or local disk. Defaults to False.
             io_config (IOConfig, optional): configurations to use when interacting with remote storage.
 
         Returns:
@@ -788,14 +826,13 @@ class DataFrame:
         import deltalake
         import pyarrow as pa
         from deltalake.schema import _convert_pa_schema_to_delta
-        from deltalake.writer import (
-            try_get_deltatable,
-            write_deltalake_pyarrow,
-        )
+        from deltalake.writer import AddAction, try_get_deltatable, write_deltalake_pyarrow
         from packaging.version import parse
 
         from daft import from_pydict
+        from daft.filesystem import get_protocol_from_path
         from daft.io import DataCatalogTable
+        from daft.io._deltalake import large_dtypes_kwargs
         from daft.io.object_store_options import io_config_to_storage_options
 
         if schema_mode == "merge":
@@ -825,22 +862,36 @@ class DataFrame:
             raise ValueError(f"Expected table to be a path or a DeltaTable, received: {type(table)}")
 
         # see: https://delta-io.github.io/delta-rs/usage/writing/writing-to-s3-with-locking-provider/
-        scheme = urlparse(table_uri).scheme
+        scheme = get_protocol_from_path(table_uri)
         if scheme == "s3" or scheme == "s3a":
             if dynamo_table_name is not None:
                 storage_options["AWS_S3_LOCKING_PROVIDER"] = "dynamodb"
                 storage_options["DELTA_DYNAMO_TABLE_NAME"] = dynamo_table_name
             else:
                 storage_options["AWS_S3_ALLOW_UNSAFE_RENAME"] = "true"
-                warnings.warn("No DynamoDB table specified for Delta Lake locking. Defaulting to unsafe writes.")
+
+                if not allow_unsafe_rename:
+                    warnings.warn("No DynamoDB table specified for Delta Lake locking. Defaulting to unsafe writes.")
+        elif scheme == "file":
+            if allow_unsafe_rename:
+                storage_options["MOUNT_ALLOW_UNSAFE_RENAME"] = "true"
 
         pyarrow_schema = pa.schema((f.name, f.dtype.to_arrow_dtype()) for f in self.schema())
-        delta_schema = _convert_pa_schema_to_delta(pyarrow_schema, large_dtypes=True)
+
+        large_dtypes = True
+        delta_schema = _convert_pa_schema_to_delta(pyarrow_schema, **large_dtypes_kwargs(large_dtypes))
 
         if table:
+            if partition_cols and partition_cols != table.metadata().partition_columns:
+                raise ValueError(
+                    f"Expected partition columns to match that of the existing table ({table.metadata().partition_columns}), but received: {partition_cols}"
+                )
+            else:
+                partition_cols = table.metadata().partition_columns
+
             table.update_incremental()
 
-            table_schema = table.schema().to_pyarrow(as_large_types=True)
+            table_schema = table.schema().to_pyarrow(as_large_types=large_dtypes)
             if delta_schema != table_schema and not (mode == "overwrite" and schema_mode == "overwrite"):
                 raise ValueError(
                     "Schema of data does not match table schema\n"
@@ -861,42 +912,45 @@ class DataFrame:
         else:
             version = 0
 
+        if partition_cols is not None:
+            for c in partition_cols:
+                if self.schema()[c].dtype == DataType.binary():
+                    raise NotImplementedError("Binary partition columns are not yet supported for Delta Lake writes")
+
         builder = self._builder.write_deltalake(
             table_uri,
             mode,
             version,
-            large_dtypes=True,
+            large_dtypes,
             io_config=io_config,
+            partition_cols=partition_cols,
         )
         write_df = DataFrame(builder)
         write_df.collect()
 
         write_result = write_df.to_pydict()
-        assert "data_file" in write_result
-        data_files = write_result["data_file"]
-        add_action = []
+        assert "add_action" in write_result
+        add_actions: List[AddAction] = write_result["add_action"]
 
         operations = []
         paths = []
         rows = []
         sizes = []
 
-        for data_file in data_files:
-            stats = json.loads(data_file.stats)
+        for add_action in add_actions:
+            stats = json.loads(add_action.stats)
             operations.append("ADD")
-            paths.append(data_file.path)
+            paths.append(add_action.path)
             rows.append(stats["numRecords"])
-            sizes.append(data_file.size)
-
-            add_action.append(data_file)
+            sizes.append(add_action.size)
 
         if table is None:
             write_deltalake_pyarrow(
                 table_uri,
                 delta_schema,
-                add_action,
+                add_actions,
                 mode,
-                [],
+                partition_cols or [],
                 name,
                 description,
                 configuration,
@@ -913,7 +967,9 @@ class DataFrame:
                     rows.append(old_actions_dict["num_records"][i])
                     sizes.append(old_actions_dict["size_bytes"][i])
 
-            table._table.create_write_transaction(add_action, mode, [], delta_schema, None, custom_metadata)
+            table._table.create_write_transaction(
+                add_actions, mode, partition_cols or [], delta_schema, None, custom_metadata
+            )
             table.update_incremental()
 
         with_operations = from_pydict(
@@ -1301,6 +1357,23 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
+    def filter(self, predicate: Union[Expression, str]) -> "DataFrame":
+        """Filters rows via a predicate expression, similar to SQL ``WHERE``.
+
+        Alias for daft.DataFrame.where.
+
+        .. seealso::
+            :meth:`.where(predicate) <DataFrame.where>`
+
+        Args:
+            predicate (Expression): expression that keeps row if evaluates to True.
+
+        Returns:
+            DataFrame: Filtered DataFrame.
+        """
+        return self.where(predicate)
+
+    @DataframePublicAPI
     def where(self, predicate: Union[Expression, str]) -> "DataFrame":
         """Filters rows via a predicate expression, similar to SQL ``WHERE``.
 
@@ -1510,8 +1583,10 @@ class DataFrame:
             by = [
                 by,
             ]
+
         sort_by = self.__column_input_to_expression(by)
-        builder = self._builder.sort(sort_by=sort_by, descending=desc)
+
+        builder = self._builder.sort(sort_by=sort_by, descending=desc, nulls_first=desc)
         return DataFrame(builder)
 
     @DataframePublicAPI
@@ -1609,8 +1684,8 @@ class DataFrame:
     def into_partitions(self, num: int) -> "DataFrame":
         """Splits or coalesces DataFrame to ``num`` partitions. Order is preserved.
 
-        No rebalancing is done; the minimum number of splits or merges are applied.
-        (i.e. if there are 2 partitions, and change it into 3, this function will just split the bigger one)
+        This will naively greedily split partitions in a round-robin fashion to hit the targeted number of partitions.
+        The number of rows/size in a given partition is not taken into account during the splitting.
 
         Example:
             >>> import daft
@@ -1637,10 +1712,13 @@ class DataFrame:
         right_on: Optional[Union[List[ColumnInputType], ColumnInputType]] = None,
         how: str = "inner",
         strategy: Optional[str] = None,
+        prefix: Optional[str] = None,
+        suffix: Optional[str] = None,
     ) -> "DataFrame":
         """Column-wise join of the current DataFrame with an ``other`` DataFrame, similar to a SQL ``JOIN``
 
-        If the two DataFrames have duplicate non-join key column names, "right." will be prepended to the conflicting right columns.
+        If the two DataFrames have duplicate non-join key column names, "right." will be prepended to the conflicting right columns. You can change the behavior by passing either (or both) `prefix` or `suffix` to the function.
+        If `prefix` is passed, it will be prepended to the conflicting right columns. If `suffix` is passed, it will be appended to the conflicting right columns.
 
         .. NOTE::
             Although self joins are supported, we currently duplicate the logical plan for the right side
@@ -1665,6 +1743,42 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 2 of 2 rows)
 
+            >>> import daft
+            >>> from daft import col
+            >>> df1 = daft.from_pydict({ "a": ["w", "x", "y"], "b": [1, 2, 3] })
+            >>> df2 = daft.from_pydict({ "a": ["x", "y", "z"], "b": [20, 30, 40] })
+            >>> joined_df = df1.join(df2, left_on=[col("a"), col("b")], right_on=[col("a"), col("b")/10], prefix="right_")
+            >>> joined_df.show()
+            ╭──────┬───────┬─────────╮
+            │ a    ┆ b     ┆ right_b │
+            │ ---  ┆ ---   ┆ ---     │
+            │ Utf8 ┆ Int64 ┆ Int64   │
+            ╞══════╪═══════╪═════════╡
+            │ x    ┆ 2     ┆ 20      │
+            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ y    ┆ 3     ┆ 30      │
+            ╰──────┴───────┴─────────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+
+            >>> import daft
+            >>> from daft import col
+            >>> df1 = daft.from_pydict({ "a": ["w", "x", "y"], "b": [1, 2, 3] })
+            >>> df2 = daft.from_pydict({ "a": ["x", "y", "z"], "b": [20, 30, 40] })
+            >>> joined_df = df1.join(df2, left_on=[col("a"), col("b")], right_on=[col("a"), col("b")/10], suffix="_right")
+            >>> joined_df.show()
+            ╭──────┬───────┬─────────╮
+            │ a    ┆ b     ┆ b_right │
+            │ ---  ┆ ---   ┆ ---     │
+            │ Utf8 ┆ Int64 ┆ Int64   │
+            ╞══════╪═══════╪═════════╡
+            │ x    ┆ 2     ┆ 20      │
+            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ y    ┆ 3     ┆ 30      │
+            ╰──────┴───────┴─────────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+
         Args:
             other (DataFrame): the right DataFrame to join on.
             on (Optional[Union[List[ColumnInputType], ColumnInputType]], optional): key or keys to join on [use if the keys on the left and right side match.]. Defaults to None.
@@ -1673,6 +1787,8 @@ class DataFrame:
             how (str, optional): what type of join to perform; currently "inner", "left", "right", "outer", "anti", and "semi" are supported. Defaults to "inner".
             strategy (Optional[str]): The join strategy (algorithm) to use; currently "hash", "sort_merge", "broadcast", and None are supported, where None
                 chooses the join strategy automatically during query optimization. The default is None.
+            suffix (Optional[str], optional): Suffix to add to the column names in case of a name collision. Defaults to "".
+            prefix (Optional[str], optional): Prefix to add to the column names in case of a name collision. Defaults to "right.".
 
         Raises:
             ValueError: if `on` is passed in and `left_on` or `right_on` is not None.
@@ -1705,6 +1821,8 @@ class DataFrame:
             right_on=right_exprs,
             how=join_type,
             strategy=join_strategy,
+            join_prefix=prefix,
+            join_suffix=suffix,
         )
         return DataFrame(builder)
 
@@ -2068,6 +2186,33 @@ class DataFrame:
         return self._apply_agg_fn(Expression.mean, cols)
 
     @DataframePublicAPI
+    def stddev(self, *cols: ColumnInputType) -> "DataFrame":
+        """Performs a global standard deviation on the DataFrame
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"col_a":[0,1,2]})
+            >>> df = df.stddev("col_a")
+            >>> df.show()
+            ╭───────────────────╮
+            │ col_a             │
+            │ ---               │
+            │ Float64           │
+            ╞═══════════════════╡
+            │ 0.816496580927726 │
+            ╰───────────────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+
+
+        Args:
+            *cols (Union[str, Expression]): columns to stddev
+        Returns:
+            DataFrame: Globally aggregated standard deviation. Should be a single row.
+        """
+        return self._apply_agg_fn(Expression.stddev, cols)
+
+    @DataframePublicAPI
     def min(self, *cols: ColumnInputType) -> "DataFrame":
         """Performs a global min on the DataFrame
 
@@ -2337,11 +2482,41 @@ class DataFrame:
         builder = self._builder.pivot(group_by_expr, pivot_col_expr, value_col_expr, agg_expr, names)
         return DataFrame(builder)
 
+    @DataframePublicAPI
+    def intersect(self, other: "DataFrame") -> "DataFrame":
+        """Returns the intersection of two DataFrames.
+
+        Example:
+            >>> import daft
+            >>> df1 = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
+            >>> df2 = daft.from_pydict({"a": [1, 2, 3], "b": [4, 8, 6]})
+            >>> df1.intersect(df2).collect()
+            ╭───────┬───────╮
+            │ a     ┆ b     │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╞═══════╪═══════╡
+            │ 1     ┆ 4     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3     ┆ 6     │
+            ╰───────┴───────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+
+        Args:
+            other (DataFrame): DataFrame to intersect with
+
+        Returns:
+            DataFrame: DataFrame with the intersection of the two DataFrames
+        """
+        builder = self._builder.intersect(other._builder)
+        return DataFrame(builder)
+
     def _materialize_results(self) -> None:
         """Materializes the results of for this DataFrame and hold a pointer to the results."""
         context = get_context()
         if self._result is None:
-            self._result_cache = context.runner().run(self._builder)
+            self._result_cache = context.get_or_create_runner().run(self._builder)
             result = self._result
             assert result is not None
             result.wait()
@@ -2387,7 +2562,7 @@ class DataFrame:
             # Iteratively retrieve partitions until enough data has been materialized
             tables = []
             seen = 0
-            for table in get_context().runner().run_iter_tables(builder, results_buffer_size=1):
+            for table in get_context().get_or_create_runner().run_iter_tables(builder, results_buffer_size=1):
                 tables.append(table)
                 seen += len(table)
                 if seen >= n:
@@ -2533,6 +2708,27 @@ class DataFrame:
         return result.to_pydict()
 
     @DataframePublicAPI
+    def to_pylist(self) -> List[Any]:
+        """Converts the current Dataframe into a python list.
+        .. WARNING::
+
+            This is a convenience method over :meth:`DataFrame.iter_rows() <daft.DataFrame.iter_rows>`. Users should prefer using `.iter_rows()` directly instead for lower memory utilization if they are streaming rows out of a DataFrame and don't require full materialization of the Python list.
+
+        .. seealso::
+            :meth:`df.iter_rows() <daft.DataFrame.iter_rows>`: streaming iterator over individual rows in a DataFrame
+        Example:
+            >>> import daft
+            >>> from daft import col
+            >>> df = daft.from_pydict({"a": [1, 2, 3, 4], "b": [2, 4, 3, 1]})
+            >>> print(df.to_pylist())
+            [{'a': 1, 'b': 2}, {'a': 2, 'b': 4}, {'a': 3, 'b': 3}, {'a': 4, 'b': 1}]
+
+        Returns:
+            List[dict[str, Any]]: List of python dict objects.
+        """
+        return list(self.iter_rows())
+
+    @DataframePublicAPI
     def to_torch_map_dataset(self) -> "torch.utils.data.Dataset":
         """Convert the current DataFrame into a map-style
         `Torch Dataset <https://pytorch.org/docs/stable/data.html#map-style-datasets>`__
@@ -2604,16 +2800,16 @@ class DataFrame:
         from ray.exceptions import RayTaskError
 
         context = get_context()
-        if context.runner_config.name != "ray":
+        if context.get_or_create_runner().name != "ray":
             raise ValueError("Daft needs to be running on the Ray Runner for this operation")
 
         from daft.runners.ray_runner import RayRunnerIO
 
-        ray_runner_io = context.runner().runner_io()
+        ray_runner_io = context.get_or_create_runner().runner_io()
         assert isinstance(ray_runner_io, RayRunnerIO)
 
         partition_set, schema = ray_runner_io.partition_set_from_ray_dataset(ds)
-        cache_entry = context.runner().put_partition_set_into_cache(partition_set)
+        cache_entry = context.get_or_create_runner().put_partition_set_into_cache(partition_set)
         try:
             size_bytes = partition_set.size_bytes()
         except RayTaskError as e:
@@ -2706,16 +2902,16 @@ class DataFrame:
         # TODO(Clark): Support Dask DataFrame conversion for the local runner if
         # Dask is using a non-distributed scheduler.
         context = get_context()
-        if context.runner_config.name != "ray":
+        if context.get_or_create_runner().name != "ray":
             raise ValueError("Daft needs to be running on the Ray Runner for this operation")
 
         from daft.runners.ray_runner import RayRunnerIO
 
-        ray_runner_io = context.runner().runner_io()
+        ray_runner_io = context.get_or_create_runner().runner_io()
         assert isinstance(ray_runner_io, RayRunnerIO)
 
         partition_set, schema = ray_runner_io.partition_set_from_dask_dataframe(ddf)
-        cache_entry = context.runner().put_partition_set_into_cache(partition_set)
+        cache_entry = context.get_or_create_runner().put_partition_set_into_cache(partition_set)
         size_bytes = partition_set.size_bytes()
         num_rows = len(partition_set)
         assert size_bytes is not None, "In-memory data should always have non-None size in bytes"
@@ -2783,6 +2979,34 @@ class GroupedDataFrame:
             DataFrame: DataFrame with grouped mean.
         """
         return self.df._apply_agg_fn(Expression.mean, cols, self.group_by)
+
+    def stddev(self, *cols: ColumnInputType) -> "DataFrame":
+        """Performs grouped standard deviation on this GroupedDataFrame.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"keys": ["a", "a", "a", "b"], "col_a": [0,1,2,100]})
+            >>> df = df.groupby("keys").stddev()
+            >>> df.show()
+            ╭──────┬───────────────────╮
+            │ keys ┆ col_a             │
+            │ ---  ┆ ---               │
+            │ Utf8 ┆ Float64           │
+            ╞══════╪═══════════════════╡
+            │ a    ┆ 0.816496580927726 │
+            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ b    ┆ 0                 │
+            ╰──────┴───────────────────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+
+        Args:
+            *cols (Union[str, Expression]): columns to stddev
+
+        Returns:
+            DataFrame: DataFrame with grouped standard deviation.
+        """
+        return self.df._apply_agg_fn(Expression.stddev, cols, self.group_by)
 
     def min(self, *cols: ColumnInputType) -> "DataFrame":
         """Perform grouped min on this GroupedDataFrame.
@@ -2897,10 +3121,13 @@ class GroupedDataFrame:
 
         Example:
             >>> import daft, statistics
+            >>>
             >>> df = daft.from_pydict({"group": ["a", "a", "a", "b", "b", "b"], "data": [1, 20, 30, 4, 50, 600]})
+            >>>
             >>> @daft.udf(return_dtype=daft.DataType.float64())
             ... def std_dev(data):
             ...     return [statistics.stdev(data.to_pylist())]
+            >>>
             >>> df = df.groupby("group").map_groups(std_dev(df["data"]))
             >>> df.show()
             ╭───────┬────────────────────╮

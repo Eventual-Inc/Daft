@@ -1,9 +1,9 @@
-use common_error::DaftError;
+use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
-
-use common_error::DaftResult;
-use daft_dsl::functions::{ScalarFunction, ScalarUDF};
-use daft_dsl::ExprRef;
+use daft_dsl::{
+    functions::{ScalarFunction, ScalarUDF},
+    ExprRef,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -36,8 +36,7 @@ impl ScalarUDF for ImageResize {
                     },
                     DataType::FixedShapeImage(..) => Ok(field.clone()),
                     _ => Err(DaftError::TypeError(format!(
-                        "ImageResize can only resize ImageArrays and FixedShapeImageArrays, got {}",
-                        field
+                        "ImageResize can only resize ImageArrays and FixedShapeImageArrays, got {field}"
                     ))),
                 }
             }
@@ -50,7 +49,7 @@ impl ScalarUDF for ImageResize {
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
-            [input] => input.image_resize(self.width, self.height),
+            [input] => daft_image::series::resize(input, self.width, self.height),
             _ => Err(DaftError::ValueError(format!(
                 "Expected 1 input arg, got {}",
                 inputs.len()
@@ -59,6 +58,7 @@ impl ScalarUDF for ImageResize {
     }
 }
 
+#[must_use]
 pub fn resize(input: ExprRef, w: u32, h: u32) -> ExprRef {
     ScalarFunction::new(
         ImageResize {

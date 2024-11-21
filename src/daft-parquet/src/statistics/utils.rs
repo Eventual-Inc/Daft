@@ -15,8 +15,8 @@ fn int96_to_i64_us(value: [u32; 3]) -> i64 {
     const SECONDS_PER_DAY: i64 = 86_400;
     const MICROS_PER_SECOND: i64 = 1_000_000;
 
-    let day = value[2] as i64;
-    let microseconds = (((value[1] as i64) << 32) + value[0] as i64) / 1_000;
+    let day = i64::from(value[2]);
+    let microseconds = ((i64::from(value[1]) << 32) + i64::from(value[0])) / 1_000;
     let seconds = (day - JULIAN_DAY_OF_EPOCH) * SECONDS_PER_DAY;
 
     seconds * MICROS_PER_SECOND + microseconds
@@ -28,8 +28,8 @@ fn int96_to_i64_ms(value: [u32; 3]) -> i64 {
     const SECONDS_PER_DAY: i64 = 86_400;
     const MILLIS_PER_SECOND: i64 = 1_000;
 
-    let day = value[2] as i64;
-    let milliseconds = (((value[1] as i64) << 32) + value[0] as i64) / 1_000_000;
+    let day = i64::from(value[2]);
+    let milliseconds = ((i64::from(value[1]) << 32) + i64::from(value[0])) / 1_000_000;
     let seconds = (day - JULIAN_DAY_OF_EPOCH) * SECONDS_PER_DAY;
 
     seconds * MILLIS_PER_SECOND + milliseconds

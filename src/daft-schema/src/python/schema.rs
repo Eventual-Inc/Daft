@@ -1,14 +1,11 @@
 use std::sync::Arc;
 
+use common_py_serde::impl_bincode_py_state_serialization;
 use pyo3::prelude::*;
-
 use serde::{Deserialize, Serialize};
 
-use super::datatype::PyDataType;
-use super::field::PyField;
-use crate::field::Field;
-use crate::schema;
-use common_py_serde::impl_bincode_py_state_serialization;
+use super::{datatype::PyDataType, field::PyField};
+use crate::{field::Field, schema};
 
 #[pyclass(module = "daft.daft")]
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,8 +19,8 @@ impl PySchema {
         Ok(self.schema.get_field(name)?.clone().into())
     }
 
-    pub fn to_pyarrow_schema<'py>(&self, py: Python<'py>) -> PyResult<&'py PyAny> {
-        let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
+    pub fn to_pyarrow_schema<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let pyarrow = py.import_bound(pyo3::intern!(py, "pyarrow"))?;
         let pyarrow_fields = self
             .schema
             .fields
@@ -45,16 +42,17 @@ impl PySchema {
             .call1((pyarrow_fields,))
     }
 
+    #[must_use]
     pub fn names(&self) -> Vec<String> {
         self.schema.names()
     }
 
-    pub fn union(&self, other: &PySchema) -> PyResult<PySchema> {
+    pub fn union(&self, other: &Self) -> PyResult<Self> {
         let new_schema = Arc::new(self.schema.union(&other.schema)?);
         Ok(new_schema.into())
     }
 
-    pub fn eq(&self, other: &PySchema) -> PyResult<bool> {
+    pub fn eq(&self, other: &Self) -> PyResult<bool> {
         Ok(self.schema.fields.eq(&other.schema.fields))
     }
 
@@ -63,22 +61,20 @@ impl PySchema {
     }
 
     #[staticmethod]
-    pub fn from_field_name_and_types(
-        names_and_types: Vec<(String, PyDataType)>,
-    ) -> PyResult<PySchema> {
+    pub fn from_field_name_and_types(names_and_types: Vec<(String, PyDataType)>) -> PyResult<Self> {
         let fields = names_and_types
             .iter()
             .map(|(name, pydtype)| Field::new(name, pydtype.clone().into()))
             .collect();
         let schema = schema::Schema::new(fields)?;
-        Ok(PySchema {
+        Ok(Self {
             schema: schema.into(),
         })
     }
 
     #[staticmethod]
-    pub fn from_fields(fields: Vec<PyField>) -> PyResult<PySchema> {
-        Ok(PySchema {
+    pub fn from_fields(fields: Vec<PyField>) -> PyResult<Self> {
+        Ok(Self {
             schema: schema::Schema::new(fields.iter().map(|f| f.field.clone()).collect())?.into(),
         })
     }
@@ -99,7 +95,7 @@ impl PySchema {
         Ok(self.schema.truncated_table_string())
     }
 
-    pub fn apply_hints(&self, hints: &PySchema) -> PyResult<PySchema> {
+    pub fn apply_hints(&self, hints: &Self) -> PyResult<Self> {
         let new_schema = Arc::new(self.schema.apply_hints(&hints.schema)?);
         Ok(new_schema.into())
     }
@@ -109,7 +105,7 @@ impl_bincode_py_state_serialization!(PySchema);
 
 impl From<schema::SchemaRef> for PySchema {
     fn from(schema: schema::SchemaRef) -> Self {
-        PySchema { schema }
+        Self { schema }
     }
 }
 

@@ -1,19 +1,15 @@
 use std::collections::HashSet;
 
-use daft_core::{prelude::*, utils::supertype::try_get_supertype};
-
 use common_error::{DaftError, DaftResult};
+use daft_core::{array::growable::make_growable, prelude::*, utils::supertype::try_get_supertype};
 use daft_dsl::{
     join::{get_common_join_keys, infer_join_schema},
     ExprRef,
 };
 use hash_join::hash_semi_anti_join;
 
-use crate::Table;
-
 use self::hash_join::{hash_inner_join, hash_left_right_join, hash_outer_join};
-
-use daft_core::array::growable::make_growable;
+use crate::Table;
 mod hash_join;
 mod merge_join;
 
@@ -56,9 +52,8 @@ fn add_non_join_key_columns(
     for field in left.schema.fields.values() {
         if join_keys.contains(&field.name) {
             continue;
-        } else {
-            join_series.push(left.get_column(&field.name)?.take(&lidx)?);
         }
+        join_series.push(left.get_column(&field.name)?.take(&lidx)?);
     }
 
     drop(lidx);
@@ -66,9 +61,9 @@ fn add_non_join_key_columns(
     for field in right.schema.fields.values() {
         if join_keys.contains(&field.name) {
             continue;
-        } else {
-            join_series.push(right.get_column(&field.name)?.take(&ridx)?);
         }
+
+        join_series.push(right.get_column(&field.name)?.take(&ridx)?);
     }
 
     Ok(join_series)
@@ -80,6 +75,7 @@ impl Table {
         right: &Self,
         left_on: &[ExprRef],
         right_on: &[ExprRef],
+        null_equals_nulls: &[bool],
         how: JoinType,
     ) -> DaftResult<Self> {
         if left_on.len() != right_on.len() {
@@ -97,12 +93,20 @@ impl Table {
         }
 
         match how {
-            JoinType::Inner => hash_inner_join(self, right, left_on, right_on),
-            JoinType::Left => hash_left_right_join(self, right, left_on, right_on, true),
-            JoinType::Right => hash_left_right_join(self, right, left_on, right_on, false),
-            JoinType::Outer => hash_outer_join(self, right, left_on, right_on),
-            JoinType::Semi => hash_semi_anti_join(self, right, left_on, right_on, false),
-            JoinType::Anti => hash_semi_anti_join(self, right, left_on, right_on, true),
+            JoinType::Inner => hash_inner_join(self, right, left_on, right_on, null_equals_nulls),
+            JoinType::Left => {
+                hash_left_right_join(self, right, left_on, right_on, null_equals_nulls, true)
+            }
+            JoinType::Right => {
+                hash_left_right_join(self, right, left_on, right_on, null_equals_nulls, false)
+            }
+            JoinType::Outer => hash_outer_join(self, right, left_on, right_on, null_equals_nulls),
+            JoinType::Semi => {
+                hash_semi_anti_join(self, right, left_on, right_on, null_equals_nulls, false)
+            }
+            JoinType::Anti => {
+                hash_semi_anti_join(self, right, left_on, right_on, null_equals_nulls, true)
+            }
         }
     }
 
@@ -126,6 +130,10 @@ impl Table {
                     .take(left_on.len())
                     .collect::<Vec<_>>()
                     .as_slice(),
+                std::iter::repeat(false)
+                    .take(left_on.len())
+                    .collect::<Vec<_>>()
+                    .as_slice(),
             )?;
             if right_on.is_empty() {
                 return Err(DaftError::ValueError(
@@ -134,6 +142,10 @@ impl Table {
             }
             let right = right.sort(
                 right_on,
+                std::iter::repeat(false)
+                    .take(right_on.len())
+                    .collect::<Vec<_>>()
+                    .as_slice(),
                 std::iter::repeat(false)
                     .take(right_on.len())
                     .collect::<Vec<_>>()
@@ -182,6 +194,6 @@ impl Table {
         let num_rows = lidx.len();
         join_series = add_non_join_key_columns(self, right, lidx, ridx, join_series)?;
 
-        Table::new_with_size(join_schema, join_series, num_rows)
+        Self::new_with_size(join_schema, join_series, num_rows)
     }
 }

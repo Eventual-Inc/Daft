@@ -1,22 +1,18 @@
+use std::ops::Not;
+
+use arrow2::{compute::comparison, scalar::PrimitiveScalar};
+use common_error::{DaftError, DaftResult};
 use num_traits::{NumCast, ToPrimitive};
 
+use super::{as_arrow::AsArrow, from_arrow::FromArrow, full::FullNull, DaftCompare, DaftLogical};
 use crate::{
     array::DataArray,
     datatypes::{
-        BinaryArray, BooleanArray, DaftArrowBackedType, DaftNumericType, DataType, Field,
+        BinaryArray, BooleanArray, DaftArrowBackedType, DaftPrimitiveType, DataType, Field,
         FixedSizeBinaryArray, NullArray, Utf8Array,
     },
     utils::arrow::arrow_bitmap_and_helper,
 };
-
-use common_error::{DaftError, DaftResult};
-
-use std::ops::Not;
-
-use super::{from_arrow::FromArrow, full::FullNull, DaftCompare, DaftLogical};
-
-use super::as_arrow::AsArrow;
-use arrow2::{compute::comparison, scalar::PrimitiveScalar};
 
 impl<T> PartialEq for DataArray<T>
 where
@@ -27,13 +23,13 @@ where
     }
 }
 
-impl<T> DaftCompare<&DataArray<T>> for DataArray<T>
+impl<T> DaftCompare<&Self> for DataArray<T>
 where
-    T: DaftNumericType,
+    T: DaftPrimitiveType,
 {
     type Output = DaftResult<BooleanArray>;
 
-    fn equal(&self, rhs: &DataArray<T>) -> Self::Output {
+    fn equal(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
@@ -73,7 +69,7 @@ where
         }
     }
 
-    fn not_equal(&self, rhs: &DataArray<T>) -> Self::Output {
+    fn not_equal(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
@@ -113,7 +109,7 @@ where
         }
     }
 
-    fn lt(&self, rhs: &DataArray<T>) -> Self::Output {
+    fn lt(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
@@ -153,7 +149,7 @@ where
         }
     }
 
-    fn lte(&self, rhs: &DataArray<T>) -> Self::Output {
+    fn lte(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
@@ -193,7 +189,7 @@ where
         }
     }
 
-    fn gt(&self, rhs: &DataArray<T>) -> Self::Output {
+    fn gt(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
@@ -233,7 +229,7 @@ where
         }
     }
 
-    fn gte(&self, rhs: &DataArray<T>) -> Self::Output {
+    fn gte(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
@@ -276,7 +272,7 @@ where
 
 impl<T> DataArray<T>
 where
-    T: DaftNumericType,
+    T: DaftPrimitiveType,
 {
     fn compare_to_scalar(
         &self,
@@ -299,7 +295,7 @@ where
 
 impl<T, Scalar> DaftCompare<Scalar> for DataArray<T>
 where
-    T: DaftNumericType,
+    T: DaftPrimitiveType,
     Scalar: ToPrimitive,
 {
     type Output = BooleanArray;
@@ -341,15 +337,15 @@ where
     }
 }
 
-impl DaftCompare<&BooleanArray> for BooleanArray {
-    type Output = DaftResult<BooleanArray>;
+impl DaftCompare<&Self> for BooleanArray {
+    type Output = DaftResult<Self>;
 
-    fn equal(&self, rhs: &BooleanArray) -> Self::Output {
+    fn equal(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
                     arrow_bitmap_and_helper(self.as_arrow().validity(), rhs.as_arrow().validity());
-                Ok(BooleanArray::from((
+                Ok(Self::from((
                     self.name(),
                     comparison::eq(self.as_arrow(), rhs.as_arrow()).with_validity(validity),
                 )))
@@ -358,22 +354,14 @@ impl DaftCompare<&BooleanArray> for BooleanArray {
                 if let Some(value) = rhs.get(0) {
                     self.equal(value)
                 } else {
-                    Ok(BooleanArray::full_null(
-                        self.name(),
-                        &DataType::Boolean,
-                        l_size,
-                    ))
+                    Ok(Self::full_null(self.name(), &DataType::Boolean, l_size))
                 }
             }
             (1, r_size) => {
                 if let Some(value) = self.get(0) {
                     rhs.equal(value)
                 } else {
-                    Ok(BooleanArray::full_null(
-                        self.name(),
-                        &DataType::Boolean,
-                        r_size,
-                    ))
+                    Ok(Self::full_null(self.name(), &DataType::Boolean, r_size))
                 }
             }
             (l, r) => Err(DaftError::ValueError(format!(
@@ -384,12 +372,12 @@ impl DaftCompare<&BooleanArray> for BooleanArray {
         }
     }
 
-    fn not_equal(&self, rhs: &BooleanArray) -> Self::Output {
+    fn not_equal(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
                     arrow_bitmap_and_helper(self.as_arrow().validity(), rhs.as_arrow().validity());
-                Ok(BooleanArray::from((
+                Ok(Self::from((
                     self.name(),
                     comparison::neq(self.as_arrow(), rhs.as_arrow()).with_validity(validity),
                 )))
@@ -398,22 +386,14 @@ impl DaftCompare<&BooleanArray> for BooleanArray {
                 if let Some(value) = rhs.get(0) {
                     self.not_equal(value)
                 } else {
-                    Ok(BooleanArray::full_null(
-                        self.name(),
-                        &DataType::Boolean,
-                        l_size,
-                    ))
+                    Ok(Self::full_null(self.name(), &DataType::Boolean, l_size))
                 }
             }
             (1, r_size) => {
                 if let Some(value) = self.get(0) {
                     rhs.not_equal(value)
                 } else {
-                    Ok(BooleanArray::full_null(
-                        self.name(),
-                        &DataType::Boolean,
-                        r_size,
-                    ))
+                    Ok(Self::full_null(self.name(), &DataType::Boolean, r_size))
                 }
             }
             (l, r) => Err(DaftError::ValueError(format!(
@@ -424,12 +404,12 @@ impl DaftCompare<&BooleanArray> for BooleanArray {
         }
     }
 
-    fn lt(&self, rhs: &BooleanArray) -> Self::Output {
+    fn lt(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
                     arrow_bitmap_and_helper(self.as_arrow().validity(), rhs.as_arrow().validity());
-                Ok(BooleanArray::from((
+                Ok(Self::from((
                     self.name(),
                     comparison::lt(self.as_arrow(), rhs.as_arrow()).with_validity(validity),
                 )))
@@ -438,22 +418,14 @@ impl DaftCompare<&BooleanArray> for BooleanArray {
                 if let Some(value) = rhs.get(0) {
                     self.lt(value)
                 } else {
-                    Ok(BooleanArray::full_null(
-                        self.name(),
-                        &DataType::Boolean,
-                        l_size,
-                    ))
+                    Ok(Self::full_null(self.name(), &DataType::Boolean, l_size))
                 }
             }
             (1, r_size) => {
                 if let Some(value) = self.get(0) {
                     rhs.gt(value)
                 } else {
-                    Ok(BooleanArray::full_null(
-                        self.name(),
-                        &DataType::Boolean,
-                        r_size,
-                    ))
+                    Ok(Self::full_null(self.name(), &DataType::Boolean, r_size))
                 }
             }
             (l, r) => Err(DaftError::ValueError(format!(
@@ -464,12 +436,12 @@ impl DaftCompare<&BooleanArray> for BooleanArray {
         }
     }
 
-    fn lte(&self, rhs: &BooleanArray) -> Self::Output {
+    fn lte(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
                     arrow_bitmap_and_helper(self.as_arrow().validity(), rhs.as_arrow().validity());
-                Ok(BooleanArray::from((
+                Ok(Self::from((
                     self.name(),
                     comparison::lt_eq(self.as_arrow(), rhs.as_arrow()).with_validity(validity),
                 )))
@@ -478,22 +450,14 @@ impl DaftCompare<&BooleanArray> for BooleanArray {
                 if let Some(value) = rhs.get(0) {
                     self.lte(value)
                 } else {
-                    Ok(BooleanArray::full_null(
-                        self.name(),
-                        &DataType::Boolean,
-                        l_size,
-                    ))
+                    Ok(Self::full_null(self.name(), &DataType::Boolean, l_size))
                 }
             }
             (1, r_size) => {
                 if let Some(value) = self.get(0) {
                     rhs.gte(value)
                 } else {
-                    Ok(BooleanArray::full_null(
-                        self.name(),
-                        &DataType::Boolean,
-                        r_size,
-                    ))
+                    Ok(Self::full_null(self.name(), &DataType::Boolean, r_size))
                 }
             }
             (l, r) => Err(DaftError::ValueError(format!(
@@ -504,12 +468,12 @@ impl DaftCompare<&BooleanArray> for BooleanArray {
         }
     }
 
-    fn gt(&self, rhs: &BooleanArray) -> Self::Output {
+    fn gt(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
                     arrow_bitmap_and_helper(self.as_arrow().validity(), rhs.as_arrow().validity());
-                Ok(BooleanArray::from((
+                Ok(Self::from((
                     self.name(),
                     comparison::gt(self.as_arrow(), rhs.as_arrow()).with_validity(validity),
                 )))
@@ -518,22 +482,14 @@ impl DaftCompare<&BooleanArray> for BooleanArray {
                 if let Some(value) = rhs.get(0) {
                     self.gt(value)
                 } else {
-                    Ok(BooleanArray::full_null(
-                        self.name(),
-                        &DataType::Boolean,
-                        l_size,
-                    ))
+                    Ok(Self::full_null(self.name(), &DataType::Boolean, l_size))
                 }
             }
             (1, r_size) => {
                 if let Some(value) = self.get(0) {
                     rhs.lt(value)
                 } else {
-                    Ok(BooleanArray::full_null(
-                        self.name(),
-                        &DataType::Boolean,
-                        r_size,
-                    ))
+                    Ok(Self::full_null(self.name(), &DataType::Boolean, r_size))
                 }
             }
             (l, r) => Err(DaftError::ValueError(format!(
@@ -544,12 +500,12 @@ impl DaftCompare<&BooleanArray> for BooleanArray {
         }
     }
 
-    fn gte(&self, rhs: &BooleanArray) -> Self::Output {
+    fn gte(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
                     arrow_bitmap_and_helper(self.as_arrow().validity(), rhs.as_arrow().validity());
-                Ok(BooleanArray::from((
+                Ok(Self::from((
                     self.name(),
                     comparison::gt_eq(self.as_arrow(), rhs.as_arrow()).with_validity(validity),
                 )))
@@ -558,22 +514,14 @@ impl DaftCompare<&BooleanArray> for BooleanArray {
                 if let Some(value) = rhs.get(0) {
                     self.gte(value)
                 } else {
-                    Ok(BooleanArray::full_null(
-                        self.name(),
-                        &DataType::Boolean,
-                        l_size,
-                    ))
+                    Ok(Self::full_null(self.name(), &DataType::Boolean, l_size))
                 }
             }
             (1, r_size) => {
                 if let Some(value) = self.get(0) {
                     rhs.lte(value)
                 } else {
-                    Ok(BooleanArray::full_null(
-                        self.name(),
-                        &DataType::Boolean,
-                        r_size,
-                    ))
+                    Ok(Self::full_null(self.name(), &DataType::Boolean, r_size))
                 }
             }
             (l, r) => Err(DaftError::ValueError(format!(
@@ -586,14 +534,14 @@ impl DaftCompare<&BooleanArray> for BooleanArray {
 }
 
 impl DaftCompare<bool> for BooleanArray {
-    type Output = DaftResult<BooleanArray>;
+    type Output = DaftResult<Self>;
 
     fn equal(&self, rhs: bool) -> Self::Output {
         let validity = self.as_arrow().validity().cloned();
         let arrow_result =
             comparison::boolean::eq_scalar(self.as_arrow(), rhs).with_validity(validity);
 
-        Ok(BooleanArray::from((self.name(), arrow_result)))
+        Ok(Self::from((self.name(), arrow_result)))
     }
 
     fn not_equal(&self, rhs: bool) -> Self::Output {
@@ -601,7 +549,7 @@ impl DaftCompare<bool> for BooleanArray {
         let arrow_result =
             comparison::boolean::neq_scalar(self.as_arrow(), rhs).with_validity(validity);
 
-        Ok(BooleanArray::from((self.name(), arrow_result)))
+        Ok(Self::from((self.name(), arrow_result)))
     }
 
     fn lt(&self, rhs: bool) -> Self::Output {
@@ -609,7 +557,7 @@ impl DaftCompare<bool> for BooleanArray {
         let arrow_result =
             comparison::boolean::lt_scalar(self.as_arrow(), rhs).with_validity(validity);
 
-        Ok(BooleanArray::from((self.name(), arrow_result)))
+        Ok(Self::from((self.name(), arrow_result)))
     }
 
     fn lte(&self, rhs: bool) -> Self::Output {
@@ -617,7 +565,7 @@ impl DaftCompare<bool> for BooleanArray {
         let arrow_result =
             comparison::boolean::lt_eq_scalar(self.as_arrow(), rhs).with_validity(validity);
 
-        Ok(BooleanArray::from((self.name(), arrow_result)))
+        Ok(Self::from((self.name(), arrow_result)))
     }
 
     fn gt(&self, rhs: bool) -> Self::Output {
@@ -625,7 +573,7 @@ impl DaftCompare<bool> for BooleanArray {
         let arrow_result =
             comparison::boolean::gt_scalar(self.as_arrow(), rhs).with_validity(validity);
 
-        Ok(BooleanArray::from((self.name(), arrow_result)))
+        Ok(Self::from((self.name(), arrow_result)))
     }
 
     fn gte(&self, rhs: bool) -> Self::Output {
@@ -633,7 +581,7 @@ impl DaftCompare<bool> for BooleanArray {
         let arrow_result =
             comparison::boolean::gt_eq_scalar(self.as_arrow(), rhs).with_validity(validity);
 
-        Ok(BooleanArray::from((self.name(), arrow_result)))
+        Ok(Self::from((self.name(), arrow_result)))
     }
 }
 
@@ -650,9 +598,9 @@ impl Not for &BooleanArray {
     }
 }
 
-impl DaftLogical<&BooleanArray> for BooleanArray {
-    type Output = DaftResult<BooleanArray>;
-    fn and(&self, rhs: &BooleanArray) -> Self::Output {
+impl DaftLogical<&Self> for BooleanArray {
+    type Output = DaftResult<Self>;
+    fn and(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
@@ -660,7 +608,7 @@ impl DaftLogical<&BooleanArray> for BooleanArray {
 
                 let result_bitmap =
                     arrow2::bitmap::and(self.as_arrow().values(), rhs.as_arrow().values());
-                Ok(BooleanArray::from((
+                Ok(Self::from((
                     self.name(),
                     arrow2::array::BooleanArray::new(
                         arrow2::datatypes::DataType::Boolean,
@@ -673,22 +621,14 @@ impl DaftLogical<&BooleanArray> for BooleanArray {
                 if let Some(value) = rhs.get(0) {
                     self.and(value)
                 } else {
-                    Ok(BooleanArray::full_null(
-                        self.name(),
-                        &DataType::Boolean,
-                        l_size,
-                    ))
+                    Ok(Self::full_null(self.name(), &DataType::Boolean, l_size))
                 }
             }
             (1, r_size) => {
                 if let Some(value) = self.get(0) {
                     rhs.and(value)
                 } else {
-                    Ok(BooleanArray::full_null(
-                        self.name(),
-                        &DataType::Boolean,
-                        r_size,
-                    ))
+                    Ok(Self::full_null(self.name(), &DataType::Boolean, r_size))
                 }
             }
             (l, r) => Err(DaftError::ValueError(format!(
@@ -699,7 +639,7 @@ impl DaftLogical<&BooleanArray> for BooleanArray {
         }
     }
 
-    fn or(&self, rhs: &BooleanArray) -> Self::Output {
+    fn or(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
@@ -707,7 +647,7 @@ impl DaftLogical<&BooleanArray> for BooleanArray {
 
                 let result_bitmap =
                     arrow2::bitmap::or(self.as_arrow().values(), rhs.as_arrow().values());
-                Ok(BooleanArray::from((
+                Ok(Self::from((
                     self.name(),
                     arrow2::array::BooleanArray::new(
                         arrow2::datatypes::DataType::Boolean,
@@ -720,22 +660,14 @@ impl DaftLogical<&BooleanArray> for BooleanArray {
                 if let Some(value) = rhs.get(0) {
                     self.or(value)
                 } else {
-                    Ok(BooleanArray::full_null(
-                        self.name(),
-                        &DataType::Boolean,
-                        l_size,
-                    ))
+                    Ok(Self::full_null(self.name(), &DataType::Boolean, l_size))
                 }
             }
             (1, r_size) => {
                 if let Some(value) = self.get(0) {
                     rhs.or(value)
                 } else {
-                    Ok(BooleanArray::full_null(
-                        self.name(),
-                        &DataType::Boolean,
-                        r_size,
-                    ))
+                    Ok(Self::full_null(self.name(), &DataType::Boolean, r_size))
                 }
             }
             (l, r) => Err(DaftError::ValueError(format!(
@@ -746,7 +678,7 @@ impl DaftLogical<&BooleanArray> for BooleanArray {
         }
     }
 
-    fn xor(&self, rhs: &BooleanArray) -> Self::Output {
+    fn xor(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
@@ -754,7 +686,7 @@ impl DaftLogical<&BooleanArray> for BooleanArray {
 
                 let result_bitmap =
                     arrow2::bitmap::xor(self.as_arrow().values(), rhs.as_arrow().values());
-                Ok(BooleanArray::from((
+                Ok(Self::from((
                     self.name(),
                     arrow2::array::BooleanArray::new(
                         arrow2::datatypes::DataType::Boolean,
@@ -767,22 +699,14 @@ impl DaftLogical<&BooleanArray> for BooleanArray {
                 if let Some(value) = rhs.get(0) {
                     self.xor(value)
                 } else {
-                    Ok(BooleanArray::full_null(
-                        self.name(),
-                        &DataType::Boolean,
-                        l_size,
-                    ))
+                    Ok(Self::full_null(self.name(), &DataType::Boolean, l_size))
                 }
             }
             (1, r_size) => {
                 if let Some(value) = self.get(0) {
                     rhs.xor(value)
                 } else {
-                    Ok(BooleanArray::full_null(
-                        self.name(),
-                        &DataType::Boolean,
-                        r_size,
-                    ))
+                    Ok(Self::full_null(self.name(), &DataType::Boolean, r_size))
                 }
             }
             (l, r) => Err(DaftError::ValueError(format!(
@@ -819,7 +743,7 @@ macro_rules! null_array_comparison_method {
     };
 }
 
-impl DaftCompare<&NullArray> for NullArray {
+impl DaftCompare<&Self> for NullArray {
     type Output = DaftResult<BooleanArray>;
     null_array_comparison_method!(equal);
     null_array_comparison_method!(not_equal);
@@ -830,7 +754,7 @@ impl DaftCompare<&NullArray> for NullArray {
 }
 
 impl DaftLogical<bool> for BooleanArray {
-    type Output = DaftResult<BooleanArray>;
+    type Output = DaftResult<Self>;
     fn and(&self, rhs: bool) -> Self::Output {
         let validity = self.as_arrow().validity();
         if rhs {
@@ -842,7 +766,7 @@ impl DaftLogical<bool> for BooleanArray {
                 Bitmap::new_zeroed(self.len()),
                 validity.cloned(),
             );
-            return Ok(BooleanArray::from((self.name(), arrow_array)));
+            Ok(Self::from((self.name(), arrow_array)))
         }
     }
 
@@ -855,10 +779,10 @@ impl DaftLogical<bool> for BooleanArray {
                 Bitmap::new_zeroed(self.len()).not(),
                 validity.cloned(),
             );
-            return Ok(BooleanArray::from((self.name(), arrow_array)));
-        } else {
-            Ok(self.clone())
+            return Ok(Self::from((self.name(), arrow_array)));
         }
+
+        Ok(self.clone())
     }
 
     fn xor(&self, rhs: bool) -> Self::Output {
@@ -870,10 +794,10 @@ impl DaftLogical<bool> for BooleanArray {
     }
 }
 
-impl DaftCompare<&Utf8Array> for Utf8Array {
+impl DaftCompare<&Self> for Utf8Array {
     type Output = DaftResult<BooleanArray>;
 
-    fn equal(&self, rhs: &Utf8Array) -> Self::Output {
+    fn equal(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
@@ -913,7 +837,7 @@ impl DaftCompare<&Utf8Array> for Utf8Array {
         }
     }
 
-    fn not_equal(&self, rhs: &Utf8Array) -> Self::Output {
+    fn not_equal(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
@@ -953,7 +877,7 @@ impl DaftCompare<&Utf8Array> for Utf8Array {
         }
     }
 
-    fn lt(&self, rhs: &Utf8Array) -> Self::Output {
+    fn lt(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
@@ -993,7 +917,7 @@ impl DaftCompare<&Utf8Array> for Utf8Array {
         }
     }
 
-    fn lte(&self, rhs: &Utf8Array) -> Self::Output {
+    fn lte(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
@@ -1033,7 +957,7 @@ impl DaftCompare<&Utf8Array> for Utf8Array {
         }
     }
 
-    fn gt(&self, rhs: &Utf8Array) -> Self::Output {
+    fn gt(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
@@ -1073,7 +997,7 @@ impl DaftCompare<&Utf8Array> for Utf8Array {
         }
     }
 
-    fn gte(&self, rhs: &Utf8Array) -> Self::Output {
+    fn gte(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
@@ -1166,10 +1090,10 @@ impl DaftCompare<&str> for Utf8Array {
     }
 }
 
-impl DaftCompare<&BinaryArray> for BinaryArray {
+impl DaftCompare<&Self> for BinaryArray {
     type Output = DaftResult<BooleanArray>;
 
-    fn equal(&self, rhs: &BinaryArray) -> Self::Output {
+    fn equal(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
@@ -1209,7 +1133,7 @@ impl DaftCompare<&BinaryArray> for BinaryArray {
         }
     }
 
-    fn not_equal(&self, rhs: &BinaryArray) -> Self::Output {
+    fn not_equal(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
@@ -1249,7 +1173,7 @@ impl DaftCompare<&BinaryArray> for BinaryArray {
         }
     }
 
-    fn lt(&self, rhs: &BinaryArray) -> Self::Output {
+    fn lt(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
@@ -1289,7 +1213,7 @@ impl DaftCompare<&BinaryArray> for BinaryArray {
         }
     }
 
-    fn lte(&self, rhs: &BinaryArray) -> Self::Output {
+    fn lte(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
@@ -1329,7 +1253,7 @@ impl DaftCompare<&BinaryArray> for BinaryArray {
         }
     }
 
-    fn gt(&self, rhs: &BinaryArray) -> Self::Output {
+    fn gt(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
@@ -1369,7 +1293,7 @@ impl DaftCompare<&BinaryArray> for BinaryArray {
         }
     }
 
-    fn gte(&self, rhs: &BinaryArray) -> Self::Output {
+    fn gte(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
                 let validity =
@@ -1519,10 +1443,10 @@ where
     )
 }
 
-impl DaftCompare<&FixedSizeBinaryArray> for FixedSizeBinaryArray {
+impl DaftCompare<&Self> for FixedSizeBinaryArray {
     type Output = DaftResult<BooleanArray>;
 
-    fn equal(&self, rhs: &FixedSizeBinaryArray) -> Self::Output {
+    fn equal(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => compare_fixed_size_binary(self, rhs, |lhs, rhs| lhs == rhs),
             (l_size, 1) => {
@@ -1555,7 +1479,7 @@ impl DaftCompare<&FixedSizeBinaryArray> for FixedSizeBinaryArray {
         }
     }
 
-    fn not_equal(&self, rhs: &FixedSizeBinaryArray) -> Self::Output {
+    fn not_equal(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => compare_fixed_size_binary(self, rhs, |lhs, rhs| lhs != rhs),
             (l_size, 1) => {
@@ -1588,7 +1512,7 @@ impl DaftCompare<&FixedSizeBinaryArray> for FixedSizeBinaryArray {
         }
     }
 
-    fn lt(&self, rhs: &FixedSizeBinaryArray) -> Self::Output {
+    fn lt(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => compare_fixed_size_binary(self, rhs, |lhs, rhs| lhs < rhs),
             (l_size, 1) => {
@@ -1621,7 +1545,7 @@ impl DaftCompare<&FixedSizeBinaryArray> for FixedSizeBinaryArray {
         }
     }
 
-    fn lte(&self, rhs: &FixedSizeBinaryArray) -> Self::Output {
+    fn lte(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => compare_fixed_size_binary(self, rhs, |lhs, rhs| lhs <= rhs),
             (l_size, 1) => {
@@ -1654,7 +1578,7 @@ impl DaftCompare<&FixedSizeBinaryArray> for FixedSizeBinaryArray {
         }
     }
 
-    fn gt(&self, rhs: &FixedSizeBinaryArray) -> Self::Output {
+    fn gt(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => compare_fixed_size_binary(self, rhs, |lhs, rhs| lhs > rhs),
             (l_size, 1) => {
@@ -1687,7 +1611,7 @@ impl DaftCompare<&FixedSizeBinaryArray> for FixedSizeBinaryArray {
         }
     }
 
-    fn gte(&self, rhs: &FixedSizeBinaryArray) -> Self::Output {
+    fn gte(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => compare_fixed_size_binary(self, rhs, |lhs, rhs| lhs >= rhs),
             (l_size, 1) => {
@@ -1751,8 +1675,9 @@ impl DaftCompare<&[u8]> for FixedSizeBinaryArray {
 
 #[cfg(test)]
 mod tests {
-    use crate::{array::ops::DaftCompare, datatypes::Int64Array};
     use common_error::DaftResult;
+
+    use crate::{array::ops::DaftCompare, datatypes::Int64Array};
 
     #[test]
     fn equal_int64_array_with_scalar() -> DaftResult<()> {
