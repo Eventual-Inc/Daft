@@ -14,7 +14,7 @@ mod root;
 
 pub type ExecuteStream = <DaftSparkConnectService as SparkConnectService>::ExecutePlanStream;
 
-pub struct PlanIds {
+struct PlanIds {
     session: String,
     server_side_session: String,
     operation: String,
