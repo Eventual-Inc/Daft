@@ -34,12 +34,12 @@ pub fn aggregate(aggregate: spark_connect::Aggregate) -> eyre::Result<LogicalPla
     }
 
     let grouping_expressions: Vec<_> = grouping_expressions
-        .into_iter()
+        .iter()
         .map(to_daft_expr)
         .try_collect()?;
 
     let aggregate_expressions: Vec<_> = aggregate_expressions
-        .into_iter()
+        .iter()
         .map(to_daft_expr)
         .try_collect()?;
 

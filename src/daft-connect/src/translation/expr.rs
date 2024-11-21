@@ -9,12 +9,12 @@ use crate::translation::to_daft_literal;
 
 mod unresolved_function;
 
-pub fn to_daft_expr(expression: Expression) -> eyre::Result<daft_dsl::ExprRef> {
-    if let Some(common) = expression.common {
+pub fn to_daft_expr(expression: &Expression) -> eyre::Result<daft_dsl::ExprRef> {
+    if let Some(common) = &expression.common {
         warn!("Ignoring common metadata for relation: {common:?}; not yet implemented");
     };
 
-    let Some(expr) = expression.expr_type else {
+    let Some(expr) = &expression.expr_type else {
         bail!("Expression is required");
     };
 
@@ -35,7 +35,7 @@ pub fn to_daft_expr(expression: Expression) -> eyre::Result<daft_dsl::ExprRef> {
                 warn!("Ignoring is_metadata_column {is_metadata_column} for attribute expressions; not yet implemented");
             }
 
-            Ok(daft_dsl::col(unparsed_identifier))
+            Ok(daft_dsl::col(unparsed_identifier.as_str()))
         }
         spark_expr::ExprType::UnresolvedFunction(f) => {
             unresolved_to_daft_expr(f).wrap_err("Failed to handle unresolved function")
@@ -49,7 +49,7 @@ pub fn to_daft_expr(expression: Expression) -> eyre::Result<daft_dsl::ExprRef> {
                 expr,
                 name,
                 metadata,
-            } = *alias;
+            } = &**alias;
 
             let Some(expr) = expr else {
                 bail!("Alias expr is required");
@@ -63,7 +63,7 @@ pub fn to_daft_expr(expression: Expression) -> eyre::Result<daft_dsl::ExprRef> {
                 bail!("Alias metadata is not yet supported; got {metadata:?}");
             }
 
-            let child = to_daft_expr(*expr)?;
+            let child = to_daft_expr(expr)?;
 
             let name = Arc::from(name.as_str());
 

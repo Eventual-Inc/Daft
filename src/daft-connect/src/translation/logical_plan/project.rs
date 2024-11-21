@@ -18,7 +18,7 @@ pub fn project(project: Project) -> eyre::Result<LogicalPlanBuilder> {
 
     let plan = to_logical_plan(*input)?;
 
-    let daft_exprs: Vec<_> = expressions.into_iter().map(to_daft_expr).try_collect()?;
+    let daft_exprs: Vec<_> = expressions.iter().map(to_daft_expr).try_collect()?;
 
     let plan = plan.select(daft_exprs)?;
 
