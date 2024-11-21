@@ -72,6 +72,7 @@ mod tests {
             Schema::new(vec![
                 Field::new("text", DataType::Utf8),
                 Field::new("id", DataType::Int32),
+                Field::new("val", DataType::Int32),
             ])
             .unwrap(),
         );
@@ -138,6 +139,7 @@ mod tests {
     #[case::slice("select list_utf8[0:2] from tbl1")]
     #[case::join("select * from tbl2 join tbl3 on tbl2.id = tbl3.id")]
     #[case::null_safe_join("select * from tbl2 left join tbl3 on tbl2.id <=> tbl3.id")]
+    #[case::join_with_filter("select * from tbl2 join tbl3 on tbl2.id = tbl3.id and tbl2.val > 0")]
     #[case::from("select tbl2.text from tbl2")]
     #[case::using("select tbl2.text from tbl2 join tbl3 using (id)")]
     #[case(
@@ -289,6 +291,34 @@ mod tests {
                 vec![col("id")],
                 vec![col("id")],
                 Some(vec![null_equals_null]),
+                JoinType::Inner,
+                None,
+                None,
+                Some("tbl3."),
+                true,
+            )?
+            .select(vec![col("*")])?
+            .build();
+        assert_eq!(plan, expected);
+        Ok(())
+    }
+
+    #[rstest]
+    fn test_join_with_filter(
+        mut planner: SQLPlanner,
+        tbl_2: LogicalPlanRef,
+        tbl_3: LogicalPlanRef,
+    ) -> SQLPlannerResult<()> {
+        let sql = "select * from tbl2 join tbl3 on tbl2.id = tbl3.id and tbl2.val > 0";
+        let plan = planner.plan_sql(&sql)?;
+
+        let expected = LogicalPlanBuilder::new(tbl_2, None)
+            .filter(col("val").gt(lit(0 as i64)))?
+            .join_with_null_safe_equal(
+                tbl_3,
+                vec![col("id")],
+                vec![col("id")],
+                Some(vec![false]),
                 JoinType::Inner,
                 None,
                 None,

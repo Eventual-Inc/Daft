@@ -1,9 +1,9 @@
 use std::{collections::HashMap, future::ready};
 
 use common_daft_config::DaftExecutionConfig;
+use daft_local_execution::NativeExecutor;
 use futures::stream;
 use spark_connect::{ExecutePlanResponse, Relation};
-use tokio_util::sync::CancellationToken;
 use tonic::{codegen::tokio_stream::wrappers::ReceiverStream, Status};
 
 use crate::{
@@ -28,37 +28,32 @@ impl Session {
 
         let finished = context.finished();
 
-        let (tx, rx) = tokio::sync::mpsc::channel::<eyre::Result<ExecutePlanResponse>>(16);
-        std::thread::spawn(move || {
-            let result = (|| -> eyre::Result<()> {
+        let (tx, rx) = tokio::sync::mpsc::channel::<eyre::Result<ExecutePlanResponse>>(1);
+        tokio::spawn(async move {
+            let execution_fut = async {
                 let plan = translation::to_logical_plan(command)?;
-                let logical_plan = plan.build();
-                // TODO(desmond): It looks like we don't currently do optimizer passes here before translation.
-                let physical_plan = daft_local_plan::translate(&logical_plan)?;
-
+                let optimized_plan = plan.optimize()?;
                 let cfg = DaftExecutionConfig::default();
-                let results = daft_local_execution::run_local(
-                    &physical_plan,
-                    HashMap::new(),
-                    cfg.into(),
-                    None,
-                    CancellationToken::new(), // todo: maybe implement cancelling
-                )?;
+                let native_executor = NativeExecutor::from_logical_plan_builder(&optimized_plan)?;
+                let mut result_stream = native_executor
+                    .run(HashMap::new(), cfg.into(), None)?
+                    .into_stream();
 
-                for result in results {
+                while let Some(result) = result_stream.next().await {
                     let result = result?;
                     let tables = result.get_tables()?;
-
                     for table in tables.as_slice() {
                         let response = context.gen_response(table)?;
-                        tx.blocking_send(Ok(response)).unwrap();
+                        if tx.send(Ok(response)).await.is_err() {
+                            return Ok(());
+                        }
                     }
                 }
                 Ok(())
-            })();
+            };
 
-            if let Err(e) = result {
-                tx.blocking_send(Err(e)).unwrap();
+            if let Err(e) = execution_fut.await {
+                let _ = tx.send(Err(e)).await;
             }
         });
 

@@ -10,7 +10,10 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_tracing::refresh_chrome_trace;
 use daft_local_plan::{translate, LocalPhysicalPlan};
+use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
+use futures::{FutureExt, Stream};
+use loole::RecvFuture;
 use tokio_util::sync::CancellationToken;
 #[cfg(feature = "python")]
 use {
@@ -44,32 +47,25 @@ impl LocalPartitionIterator {
     }
 }
 
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
-pub struct NativeExecutor {
-    local_physical_plan: Arc<LocalPhysicalPlan>,
-    cancel: CancellationToken,
-}
-
-impl Drop for NativeExecutor {
-    fn drop(&mut self) {
-        self.cancel.cancel();
-    }
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "daft.daft", name = "NativeExecutor")
+)]
+pub struct PyNativeExecutor {
+    executor: NativeExecutor,
 }
 
 #[cfg(feature = "python")]
 #[pymethods]
-impl NativeExecutor {
+impl PyNativeExecutor {
     #[staticmethod]
     pub fn from_logical_plan_builder(
         logical_plan_builder: &PyLogicalPlanBuilder,
         py: Python,
     ) -> PyResult<Self> {
         py.allow_threads(|| {
-            let logical_plan = logical_plan_builder.builder.build();
-            let local_physical_plan = translate(&logical_plan)?;
             Ok(Self {
-                local_physical_plan,
-                cancel: CancellationToken::new(),
+                executor: NativeExecutor::from_logical_plan_builder(&logical_plan_builder.builder)?,
             })
         })
     }
@@ -94,19 +90,54 @@ impl NativeExecutor {
             })
             .collect();
         let out = py.allow_threads(|| {
-            run_local(
-                &self.local_physical_plan,
-                native_psets,
-                cfg.config,
-                results_buffer_size,
-                self.cancel.clone(),
-            )
+            self.executor
+                .run(native_psets, cfg.config, results_buffer_size)
+                .map(|res| res.into_iter())
         })?;
         let iter = Box::new(out.map(|part| {
             part.map(|p| pyo3::Python::with_gil(|py| PyMicroPartition::from(p).into_py(py)))
         }));
         let part_iter = LocalPartitionIterator { iter };
         Ok(part_iter.into_py(py))
+    }
+}
+
+pub struct NativeExecutor {
+    local_physical_plan: Arc<LocalPhysicalPlan>,
+    cancel: CancellationToken,
+}
+
+impl NativeExecutor {
+    pub fn from_logical_plan_builder(
+        logical_plan_builder: &LogicalPlanBuilder,
+    ) -> DaftResult<Self> {
+        let logical_plan = logical_plan_builder.build();
+        let local_physical_plan = translate(&logical_plan)?;
+        Ok(Self {
+            local_physical_plan,
+            cancel: CancellationToken::new(),
+        })
+    }
+
+    pub fn run(
+        &self,
+        psets: HashMap<String, Vec<Arc<MicroPartition>>>,
+        cfg: Arc<DaftExecutionConfig>,
+        results_buffer_size: Option<usize>,
+    ) -> DaftResult<ExecutionEngineResult> {
+        run_local(
+            &self.local_physical_plan,
+            psets,
+            cfg,
+            results_buffer_size,
+            self.cancel.clone(),
+        )
+    }
+}
+
+impl Drop for NativeExecutor {
+    fn drop(&mut self) {
+        self.cancel.cancel();
     }
 }
 
@@ -121,13 +152,105 @@ fn should_enable_explain_analyze() -> bool {
     }
 }
 
+pub struct ExecutionEngineReceiverIterator {
+    receiver: Receiver<Arc<MicroPartition>>,
+    handle: Option<std::thread::JoinHandle<DaftResult<()>>>,
+}
+
+impl Iterator for ExecutionEngineReceiverIterator {
+    type Item = DaftResult<Arc<MicroPartition>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.receiver.blocking_recv() {
+            Some(part) => Some(Ok(part)),
+            None => {
+                if self.handle.is_some() {
+                    let join_result = self
+                        .handle
+                        .take()
+                        .unwrap()
+                        .join()
+                        .expect("Execution engine thread panicked");
+                    match join_result {
+                        Ok(()) => None,
+                        Err(e) => Some(Err(e)),
+                    }
+                } else {
+                    None
+                }
+            }
+        }
+    }
+}
+
+pub struct ExecutionEngineReceiverStream {
+    receive_fut: RecvFuture<Arc<MicroPartition>>,
+    handle: Option<std::thread::JoinHandle<DaftResult<()>>>,
+}
+
+impl Stream for ExecutionEngineReceiverStream {
+    type Item = DaftResult<Arc<MicroPartition>>;
+
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        match self.receive_fut.poll_unpin(cx) {
+            std::task::Poll::Ready(Ok(part)) => std::task::Poll::Ready(Some(Ok(part))),
+            std::task::Poll::Ready(Err(_)) => {
+                if self.handle.is_some() {
+                    let join_result = self
+                        .handle
+                        .take()
+                        .unwrap()
+                        .join()
+                        .expect("Execution engine thread panicked");
+                    match join_result {
+                        Ok(()) => std::task::Poll::Ready(None),
+                        Err(e) => std::task::Poll::Ready(Some(Err(e))),
+                    }
+                } else {
+                    std::task::Poll::Ready(None)
+                }
+            }
+            std::task::Poll::Pending => std::task::Poll::Pending,
+        }
+    }
+}
+
+pub struct ExecutionEngineResult {
+    handle: std::thread::JoinHandle<DaftResult<()>>,
+    receiver: Receiver<Arc<MicroPartition>>,
+}
+
+impl ExecutionEngineResult {
+    pub fn into_stream(self) -> impl Stream<Item = DaftResult<Arc<MicroPartition>>> {
+        ExecutionEngineReceiverStream {
+            receive_fut: self.receiver.into_inner().recv_async(),
+            handle: Some(self.handle),
+        }
+    }
+}
+
+impl IntoIterator for ExecutionEngineResult {
+    type Item = DaftResult<Arc<MicroPartition>>;
+    type IntoIter = ExecutionEngineReceiverIterator;
+
+    fn into_iter(self) -> Self::IntoIter {
+        ExecutionEngineReceiverIterator {
+            receiver: self.receiver,
+            handle: Some(self.handle),
+        }
+    }
+}
+
 pub fn run_local(
     physical_plan: &LocalPhysicalPlan,
     psets: HashMap<String, Vec<Arc<MicroPartition>>>,
     cfg: Arc<DaftExecutionConfig>,
     results_buffer_size: Option<usize>,
     cancel: CancellationToken,
-) -> DaftResult<Box<dyn Iterator<Item = DaftResult<Arc<MicroPartition>>> + Send>> {
+) -> DaftResult<ExecutionEngineResult> {
     refresh_chrome_trace();
     let pipeline = physical_plan_to_pipeline(physical_plan, &psets, &cfg)?;
     let (tx, rx) = create_channel(results_buffer_size.unwrap_or(1));
@@ -188,38 +311,8 @@ pub fn run_local(
         })
     });
 
-    struct ReceiverIterator {
-        receiver: Receiver<Arc<MicroPartition>>,
-        handle: Option<std::thread::JoinHandle<DaftResult<()>>>,
-    }
-
-    impl Iterator for ReceiverIterator {
-        type Item = DaftResult<Arc<MicroPartition>>;
-
-        fn next(&mut self) -> Option<Self::Item> {
-            match self.receiver.blocking_recv() {
-                Some(part) => Some(Ok(part)),
-                None => {
-                    if self.handle.is_some() {
-                        let join_result = self
-                            .handle
-                            .take()
-                            .unwrap()
-                            .join()
-                            .expect("Execution engine thread panicked");
-                        match join_result {
-                            Ok(()) => None,
-                            Err(e) => Some(Err(e)),
-                        }
-                    } else {
-                        None
-                    }
-                }
-            }
-        }
-    }
-    Ok(Box::new(ReceiverIterator {
+    Ok(ExecutionEngineResult {
+        handle,
         receiver: rx,
-        handle: Some(handle),
-    }))
+    })
 }

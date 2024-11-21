@@ -22,7 +22,7 @@ use spark_connect::{
     ReleaseExecuteResponse, ReleaseSessionRequest, ReleaseSessionResponse,
 };
 use tonic::{transport::Server, Request, Response, Status};
-use tracing::info;
+use tracing::{debug, info};
 use uuid::Uuid;
 
 use crate::session::Session;
@@ -37,6 +37,7 @@ pub mod util;
 #[cfg_attr(feature = "python", pyo3::pyclass)]
 pub struct ConnectionHandle {
     shutdown_signal: Option<tokio::sync::oneshot::Sender<()>>,
+    port: u16,
 }
 
 #[cfg_attr(feature = "python", pyo3::pymethods)]
@@ -47,11 +48,18 @@ impl ConnectionHandle {
         };
         shutdown_signal.send(()).unwrap();
     }
+
+    pub fn port(&self) -> u16 {
+        self.port
+    }
 }
 
 pub fn start(addr: &str) -> eyre::Result<ConnectionHandle> {
     info!("Daft-Connect server listening on {addr}");
     let addr = util::parse_spark_connect_address(addr)?;
+
+    let listener = std::net::TcpListener::bind(addr)?;
+    let port = listener.local_addr()?.port();
 
     let service = DaftSparkConnectService::default();
 
@@ -61,25 +69,40 @@ pub fn start(addr: &str) -> eyre::Result<ConnectionHandle> {
 
     let handle = ConnectionHandle {
         shutdown_signal: Some(shutdown_signal),
+        port,
     };
 
     std::thread::spawn(move || {
         let runtime = tokio::runtime::Runtime::new().unwrap();
-        let result = runtime
-            .block_on(async {
-                tokio::select! {
-                    result = Server::builder()
-                        .add_service(SparkConnectServiceServer::new(service))
-                        .serve(addr) => {
-                        result
-                    }
-                    _ = shutdown_receiver => {
-                        info!("Received shutdown signal");
-                        Ok(())
+        let result = runtime.block_on(async {
+            let incoming = {
+                let listener = tokio::net::TcpListener::from_std(listener)
+                    .wrap_err("Failed to create TcpListener from std::net::TcpListener")?;
+
+                async_stream::stream! {
+                    loop {
+                        match listener.accept().await {
+                            Ok((stream, _)) => yield Ok(stream),
+                            Err(e) => yield Err(e),
+                        }
                     }
                 }
-            })
-            .wrap_err_with(|| format!("Failed to start server on {addr}"));
+            };
+
+            let result = tokio::select! {
+                result = Server::builder()
+                    .add_service(SparkConnectServiceServer::new(service))
+                    .serve_with_incoming(incoming)=> {
+                    result
+                }
+                _ = shutdown_receiver => {
+                    info!("Received shutdown signal");
+                    Ok(())
+                }
+            };
+
+            result.wrap_err_with(|| format!("Failed to start server on {addr}"))
+        });
 
         if let Err(e) = result {
             eprintln!("Daft-Connect server error: {e:?}");
@@ -286,22 +309,22 @@ impl SparkConnectService for DaftSparkConnectService {
                     Ok(schema) => schema,
                     Err(e) => {
                         return invalid_argument_err!(
-                            "Failed to translate relation to schema: {e}"
+                            "Failed to translate relation to schema: {e:?}"
                         );
                     }
                 };
 
-                let schema = analyze_plan_response::DdlParse {
-                    parsed: Some(result),
+                let schema = analyze_plan_response::Schema {
+                    schema: Some(result),
                 };
 
                 let response = AnalyzePlanResponse {
                     session_id,
                     server_side_session_id: String::new(),
-                    result: Some(analyze_plan_response::Result::DdlParse(schema)),
+                    result: Some(analyze_plan_response::Result::Schema(schema)),
                 };
 
-                println!("response: {response:#?}");
+                debug!("response: {response:#?}");
 
                 Ok(Response::new(response))
             }
@@ -363,7 +386,7 @@ impl SparkConnectService for DaftSparkConnectService {
 
 #[cfg(feature = "python")]
 #[pyo3::pyfunction]
-#[pyo3(name = "connect_start")]
+#[pyo3(name = "connect_start", signature = (addr = "sc://0.0.0.0:0"))]
 pub fn py_connect_start(addr: &str) -> pyo3::PyResult<ConnectionHandle> {
     start(addr).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e:?}")))
 }

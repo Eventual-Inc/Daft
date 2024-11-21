@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import itertools
 import tempfile
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pyarrow as pa
 import pytest
@@ -463,5 +463,22 @@ def test_intervals(op, expected):
         .to_pydict()
     )
     expected = {"datetimes": expected}
+
+    assert actual == expected
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        date(2020, 1, 1),  # explicit date
+        "2020-01-01",  # implicit coercion
+    ],
+)
+def test_date_comparison(value):
+    date_df = daft.from_pydict({"date_str": ["2020-01-01", "2020-01-02", "2020-01-03"]})
+    date_df = date_df.with_column("date", col("date_str").str.to_date("%Y-%m-%d"))
+    actual = date_df.filter(col("date") == value).select("date").to_pydict()
+
+    expected = {"date": [date(2020, 1, 1)]}
 
     assert actual == expected
