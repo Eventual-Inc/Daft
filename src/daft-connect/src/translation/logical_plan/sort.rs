@@ -47,30 +47,23 @@ pub async fn sort(sort: spark_connect::Sort) -> eyre::Result<Plan> {
         let null_ordering = NullOrdering::try_from(*null_ordering)
             .wrap_err_with(|| format!("Invalid null ordering: {null_ordering:?}"))?;
 
-        // todo(correctness): is this correct?
         let is_descending = match direction {
             SortDirection::Unspecified => {
-                bail!("Unspecified sort direction is not yet supported")
+                // default to ascending order
+                false
             }
             SortDirection::Ascending => false,
             SortDirection::Descending => true,
         };
 
-        // todo(correctness): is this correct?
-        let tentative_sort_nulls_first = match null_ordering {
+        let sort_nulls_first = match null_ordering {
             NullOrdering::SortNullsUnspecified => {
-                bail!("Unspecified null ordering is not yet supported")
+                // default: match is_descending
+                is_descending
             }
             NullOrdering::SortNullsFirst => true,
             NullOrdering::SortNullsLast => false,
         };
-
-        // https://github.com/Eventual-Inc/Daft/blob/7922d2d810ff92b00008d877aa9a6553bc0dedab/src/daft-core/src/utils/mod.rs#L10-L19
-        let sort_nulls_first = is_descending;
-
-        if sort_nulls_first != tentative_sort_nulls_first {
-            warn!("Ignoring nulls_first {sort_nulls_first}; not yet implemented");
-        }
 
         sort_by.push(child);
         descending.push(is_descending);
