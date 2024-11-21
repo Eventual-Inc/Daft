@@ -2488,6 +2488,7 @@ dependencies = [
  "daft-functions-json",
  "daft-logical-plan",
  "daft-scan",
+ "itertools 0.11.0",
  "once_cell",
  "pyo3",
  "regex",
