@@ -589,6 +589,46 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(logical_plan))
     }
 
+    pub fn optimize(&self) -> DaftResult<Self> {
+        let default_optimizer_config: OptimizerConfig = Default::default();
+        let optimizer_config = OptimizerConfig {
+            enable_actor_pool_projections: self
+                .config
+                .as_ref()
+                .map(|planning_cfg| planning_cfg.enable_actor_pool_projections)
+                .unwrap_or(default_optimizer_config.enable_actor_pool_projections),
+            ..default_optimizer_config
+        };
+        let optimizer = Optimizer::new(optimizer_config);
+
+        // Run LogicalPlan optimizations
+        let unoptimized_plan = self.build();
+        let optimized_plan = optimizer.optimize(
+            unoptimized_plan,
+            |new_plan, rule_batch, pass, transformed, seen| {
+                if transformed {
+                    log::debug!(
+                        "Rule batch {:?} transformed plan on pass {}, and produced {} plan:\n{}",
+                        rule_batch,
+                        pass,
+                        if seen { "an already seen" } else { "a new" },
+                        new_plan.repr_ascii(true),
+                    );
+                } else {
+                    log::debug!(
+                        "Rule batch {:?} did NOT transform plan on pass {} for plan:\n{}",
+                        rule_batch,
+                        pass,
+                        new_plan.repr_ascii(true),
+                    );
+                }
+            },
+        )?;
+
+        let builder = Self::new(optimized_plan, self.config.clone());
+        Ok(builder)
+    }
+
     pub fn build(&self) -> Arc<LogicalPlan> {
         self.plan.clone()
     }
@@ -918,39 +958,7 @@ impl PyLogicalPlanBuilder {
 
     /// Optimize the underlying logical plan, returning a new plan builder containing the optimized plan.
     pub fn optimize(&self, py: Python) -> PyResult<Self> {
-        py.allow_threads(|| {
-            // Create optimizer
-            let default_optimizer_config: OptimizerConfig = Default::default();
-            let optimizer_config = OptimizerConfig { enable_actor_pool_projections: self.builder.config.as_ref().map(|planning_cfg| planning_cfg.enable_actor_pool_projections).unwrap_or(default_optimizer_config.enable_actor_pool_projections), ..default_optimizer_config };
-            let optimizer = Optimizer::new(optimizer_config);
-
-            // Run LogicalPlan optimizations
-            let unoptimized_plan = self.builder.build();
-            let optimized_plan = optimizer.optimize(
-                unoptimized_plan,
-                |new_plan, rule_batch, pass, transformed, seen| {
-                    if transformed {
-                        log::debug!(
-                            "Rule batch {:?} transformed plan on pass {}, and produced {} plan:\n{}",
-                            rule_batch,
-                            pass,
-                            if seen { "an already seen" } else { "a new" },
-                            new_plan.repr_ascii(true),
-                        );
-                    } else {
-                        log::debug!(
-                            "Rule batch {:?} did NOT transform plan on pass {} for plan:\n{}",
-                            rule_batch,
-                            pass,
-                            new_plan.repr_ascii(true),
-                        );
-                    }
-                },
-            )?;
-
-            let builder = LogicalPlanBuilder::new(optimized_plan, self.builder.config.clone());
-            Ok(builder.into())
-        })
+        py.allow_threads(|| Ok(self.builder.optimize()?.into()))
     }
 
     pub fn repr_ascii(&self, simple: bool) -> PyResult<String> {

@@ -16,6 +16,10 @@ impl<T> Receiver<T> {
     pub(crate) fn blocking_recv(&self) -> Option<T> {
         self.0.recv().ok()
     }
+
+    pub(crate) fn into_inner(self) -> loole::Receiver<T> {
+        self.0
+    }
 }
 
 pub(crate) fn create_channel<T: Clone>(buffer_size: usize) -> (Sender<T>, Receiver<T>) {
