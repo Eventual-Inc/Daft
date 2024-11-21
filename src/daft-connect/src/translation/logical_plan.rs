@@ -18,7 +18,10 @@ use futures::TryStreamExt;
 use spark_connect::{relation::RelType, Limit, Relation, ShowString};
 use tracing::warn;
 
+use crate::translation::logical_plan::{deduplicate::deduplicate, set_op::set_op};
+
 mod aggregate;
+mod deduplicate;
 mod drop;
 mod filter;
 mod local_relation;
@@ -133,6 +136,9 @@ impl SparkAnalyzer<'_> {
             RelType::SetOp(s) => set_op(*s)
                 .await
                 .wrap_err("Failed to apply set_op to logical plan"),
+            RelType::Deduplicate(d) => deduplicate(*d)
+                .await
+                .wrap_err("Failed to apply deduplicate to logical plan"),
             plan => bail!("Unsupported relation type: {plan:?}"),
         }
     }
