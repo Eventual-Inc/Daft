@@ -37,8 +37,25 @@ jobs:
         path: ~/target
         key: ${{ runner.os }}-cargo-deps-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: ${{ runner.os }}-cargo-deps-
+    - name: Check if build already exists in AWS S3
+      run: |
+        RESULT=$(aws s3 ls s3://github-actions-artifacts-bucket/builds/${{ github.sha }}/ | wc -l)
+        if [ "$RESULT" -gt 1 ]; then
+            echo "Error: More than one artifact found. Failing the job."
+            exit 1
+        elif [ "$RESULT" -eq 0 ]; then
+            echo "COMMIT_BUILT=0" >> $GITHUB_ENV
+            echo "No artifacts found; will proceed with building a new wheel"
+        elif [ "$RESULT" -eq 1 ]; then
+            echo "COMMIT_BUILT=1" >> $GITHUB_ENV
+            echo "Commit already built; reusing existing wheel"
+        fi
     - name: Build release wheel
       run: |
+        if [ "$COMMIT_BUILT" -eq 1 ]; then
+          echo "Commit already built"
+          exit 0
+        fi
         export CARGO_TARGET_DIR=~/target
         uv v
         source .venv/bin/activate
@@ -47,6 +64,10 @@ jobs:
     - name: Upload wheel to AWS S3
       id: upload
       run: |
+        if [ "$COMMIT_BUILT" -eq 1 ]; then
+          echo "Commit already built"
+          exit 0
+        fi
         count=$(ls ~/target/wheels/*.whl 2> /dev/null | wc -l)
         if [ "$count" -gt 1 ]; then
           echo "Found more than 1 wheel"
