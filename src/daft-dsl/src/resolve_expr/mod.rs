@@ -3,7 +3,7 @@ mod tests;
 
 use std::{
     cmp::Ordering,
-    collections::{BinaryHeap, HashMap},
+    collections::{BinaryHeap, HashMap, HashSet},
     sync::Arc,
 };
 
@@ -208,7 +208,7 @@ fn expand_wildcards(
 }
 
 /// Checks if an expression used in an aggregation is well formed.
-/// Expressions for aggregations must be in the form (optional) non-agg expr <- agg exprs or literals <- non-agg exprs
+/// Expressions for aggregations must be in the form (optional) non-agg expr <- [(agg exprs <- non-agg exprs) or literals or group by keys]
 ///
 /// # Examples
 ///
@@ -217,18 +217,26 @@ fn expand_wildcards(
 /// - sum(col("a"))
 /// - sum(col("a")) > 0
 /// - sum(col("a")) - sum(col("b")) > sum(col("c"))
+/// - sum(col("a")) + col("b") when "b" is a group by key
 ///
 /// Not allowed:
 /// - col("a")
 ///     - not an aggregation
-/// - sum(col("a")) + col("b")
+/// - sum(col("a")) + col("b") when "b" is not a group by key
 ///     - not all branches are aggregations
-fn has_single_agg_layer(expr: &ExprRef) -> bool {
-    match expr.as_ref() {
-        Expr::Agg(agg_expr) => !agg_expr.children().iter().any(has_agg),
-        Expr::Column(_) => false,
-        Expr::Literal(_) => true,
-        _ => expr.children().iter().all(has_single_agg_layer),
+fn has_single_agg_layer(expr: &ExprRef, groupby: &HashSet<ExprRef>) -> bool {
+    if groupby.contains(expr) {
+        true
+    } else {
+        match expr.as_ref() {
+            Expr::Agg(agg_expr) => !agg_expr.children().iter().any(has_agg),
+            Expr::Column(_) => false,
+            Expr::Literal(_) => true,
+            _ => expr
+                .children()
+                .iter()
+                .all(|e| has_single_agg_layer(e, groupby)),
+        }
     }
 }
 
@@ -257,10 +265,10 @@ fn validate_expr(expr: ExprRef) -> DaftResult<ExprRef> {
     Ok(expr)
 }
 
-fn validate_expr_in_agg(expr: ExprRef) -> DaftResult<ExprRef> {
+fn validate_expr_in_agg(expr: ExprRef, groupby: &HashSet<ExprRef>) -> DaftResult<ExprRef> {
     let converted_expr = convert_udfs_to_map_groups(&expr);
 
-    if !has_single_agg_layer(&converted_expr) {
+    if !has_single_agg_layer(&converted_expr, groupby) {
         return Err(DaftError::ValueError(format!(
             "Expressions in aggregations must be composed of non-nested aggregation expressions, got {expr}"
         )));
@@ -278,6 +286,8 @@ pub struct ExprResolver {
     allow_stateful_udf: bool,
     #[builder(default)]
     in_agg_context: bool,
+    #[builder(default)]
+    groupby: HashSet<ExprRef>,
 }
 
 impl ExprResolver {
@@ -289,7 +299,7 @@ impl ExprResolver {
         }
 
         let validated_expr = if self.in_agg_context {
-            validate_expr_in_agg(expr)
+            validate_expr_in_agg(expr, &self.groupby)
         } else {
             validate_expr(expr)
         }?;

@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use common_error::DaftError;
 use daft_core::prelude::*;
@@ -35,7 +35,10 @@ impl Pivot {
         let upstream_schema = input.schema();
 
         let expr_resolver = ExprResolver::default();
-        let agg_resolver = ExprResolver::builder().in_agg_context(true).build();
+        let agg_resolver = ExprResolver::builder()
+            .in_agg_context(true)
+            .groupby(HashSet::from_iter(group_by.clone()))
+            .build();
 
         let (group_by, group_by_fields) = expr_resolver
             .resolve(group_by, &upstream_schema)
