@@ -133,7 +133,7 @@ pub struct GCSConfig {
 ///     >>> io_config = IOConfig(s3=S3Config(key_id="xxx", access_key="xxx", num_tries=10), azure=AzureConfig(anonymous=True), gcs=GCSConfig(...))
 ///     >>> daft.read_parquet(["s3://some-path", "az://some-other-path", "gs://path3"], io_config=io_config)
 #[derive(Clone, Default, Serialize, Deserialize)]
-#[pyclass]
+#[pyclass(module = "daft.daft")]
 pub struct IOConfig {
     pub config: config::IOConfig,
 }
