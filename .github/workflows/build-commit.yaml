@@ -1,0 +1,65 @@
+name: Build a Daft commit and store the outputted wheel in AWS S3
+
+on:
+  workflow_dispatch:
+  workflow_call:
+    secrets:
+      ACTIONS_AWS_ROLE_ARN:
+        description: The ARN of the AWS role to assume
+        required: true
+    outputs:
+      wheel:
+        description: The wheel file that was built
+        value: ${{ jobs.build-commit.outputs.wheel }}
+
+jobs:
+  build-commit:
+    runs-on: buildjet-8vcpu-ubuntu-2004
+    timeout-minutes: 15 # Remove for ssh debugging
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      wheel: ${{ steps.build_and_upload.outputs.wheel }}
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+    - uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-region: us-west-2
+        role-session-name: build-commit-workflow
+        role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
+    - uses: ./.github/actions/install
+    - uses: buildjet/cache@v4
+      with:
+        path: ~/target
+        key: ${{ runner.os }}-cargo-deps-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: ${{ runner.os }}-cargo-deps-
+    - id: build_and_upload
+      run: |
+        # Build wheel
+        export CARGO_TARGET_DIR=~/target
+        uv v
+        source .venv/bin/activate
+        uv pip install pip maturin boto3
+        maturin build --release
+
+        count=$(ls ~/target/wheels/*.whl 2> /dev/null | wc -l)
+        if [ "$count" -gt 1 ]; then
+          echo "Found more than 1 wheel"
+          exit 1
+        elif [ "$count" -eq 0 ]; then
+          echo "Found no wheel files"
+          exit 1
+        fi
+
+        # Upload wheel
+        for file in ~/target/wheels/*.whl; do
+          aws s3 cp $file s3://github-actions-artifacts-bucket/builds/${{ github.sha }}/ --acl public-read --no-progress;
+          file_basename=$(basename $file)
+          echo "wheel=$file_basename" >> $GITHUB_OUTPUT
+          echo "Output wheel has been built and stored in S3 at the following location:" >> $GITHUB_STEP_SUMMARY
+          echo "https://us-west-2.console.aws.amazon.com/s3/buckets/github-actions-artifacts-bucket?prefix=builds/${{ github.sha }}/" >> $GITHUB_STEP_SUMMARY
+        done
+        python tools/generate_whl_html_manifest.py
