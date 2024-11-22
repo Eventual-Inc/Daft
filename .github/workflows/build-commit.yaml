@@ -21,7 +21,7 @@ jobs:
       id-token: write
       contents: read
     outputs:
-      wheel: ${{ steps.build_and_upload.outputs.wheel }}
+      wheel: ${{ steps.upload.outputs.wheel }}
     steps:
     - uses: actions/checkout@v4
       with:
@@ -37,7 +37,7 @@ jobs:
         path: ~/target
         key: ${{ runner.os }}-cargo-deps-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: ${{ runner.os }}-cargo-deps-
-    - id: build_and_upload
+    - name: Build wheel
       run: |
         # Build wheel
         export CARGO_TARGET_DIR=~/target
@@ -45,17 +45,17 @@ jobs:
         source .venv/bin/activate
         uv pip install pip maturin boto3
         maturin build --release
-
+    - name: Upload wheel to AWS S3
+      id: upload
+      run: |
         count=$(ls ~/target/wheels/*.whl 2> /dev/null | wc -l)
         if [ "$count" -gt 1 ]; then
           echo "Found more than 1 wheel"
           exit 1
         elif [ "$count" -eq 0 ]; then
-          echo "Found no wheel files"
+          echo "Found no wheels"
           exit 1
         fi
-
-        # Upload wheel
         for file in ~/target/wheels/*.whl; do
           aws s3 cp $file s3://github-actions-artifacts-bucket/builds/${{ github.sha }}/ --acl public-read --no-progress;
           file_basename=$(basename $file)
@@ -63,4 +63,3 @@ jobs:
           echo "Output wheel has been built and stored in S3 at the following location:" >> $GITHUB_STEP_SUMMARY
           echo "https://us-west-2.console.aws.amazon.com/s3/buckets/github-actions-artifacts-bucket?prefix=builds/${{ github.sha }}/" >> $GITHUB_STEP_SUMMARY
         done
-        python tools/generate_whl_html_manifest.py
