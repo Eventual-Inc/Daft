@@ -22,16 +22,20 @@ jobs:
     outputs:
       wheel: ${{ steps.upload.outputs.wheel }}
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout repo
+      uses: actions/checkout@v4
       with:
         fetch-depth: 1
-    - uses: aws-actions/configure-aws-credentials@v4
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
       with:
         aws-region: us-west-2
         role-session-name: build-commit-workflow
         role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
-    - uses: ./.github/actions/install
-    - uses: buildjet/cache@v4
+    - name: Install rust + uv + python
+      uses: ./.github/actions/install
+    - name: Restore cached build artifacts
+      uses: buildjet/cache@v4
       with:
         path: ~/target
         key: ${{ runner.os }}-cargo-deps-${{ hashFiles('**/Cargo.lock') }}
