@@ -220,10 +220,10 @@ fn expand_wildcards(
 /// - sum(col("a")) + col("b") when "b" is a group by key
 ///
 /// Not allowed:
-/// - col("a")
+/// - col("a") when "a" is not a group by key
 ///     - not an aggregation
 /// - sum(col("a")) + col("b") when "b" is not a group by key
-///     - not all branches are aggregations
+///     - not all branches are aggregations, literals, or group by keys
 fn has_single_agg_layer(expr: &ExprRef, groupby: &HashSet<ExprRef>) -> bool {
     groupby.contains(expr)
         || match expr.as_ref() {
