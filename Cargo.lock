@@ -2413,6 +2413,7 @@ dependencies = [
  "futures",
  "indexmap 2.5.0",
  "itertools 0.11.0",
+ "log",
  "parquet2",
  "pyo3",
  "serde",

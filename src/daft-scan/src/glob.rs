@@ -490,7 +490,7 @@ impl ScanOperator for GlobScanOperator {
                     pushdowns.clone(),
                     generated_fields,
                     self.size_estimator.as_ref().and_then(|size_estimator| {
-                        size_bytes.and_then(|size_bytes| {
+                        size_bytes.map(|size_bytes| {
                             size_estimator.estimate_from_size_on_disk(size_bytes, &pushdowns)
                         })
                     }),
