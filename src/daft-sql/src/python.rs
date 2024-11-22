@@ -38,7 +38,7 @@ pub fn sql(
 ) -> PyResult<PyLogicalPlanBuilder> {
     let mut planner = SQLPlanner::new(catalog.catalog);
     let plan = planner.plan_sql(sql)?;
-    Ok(LogicalPlanBuilder::new(plan, Some(daft_planning_config.config)).into())
+    Ok(LogicalPlanBuilder::new(plan, Some(daft_planning_config.config), None).into())
 }
 
 #[pyfunction]

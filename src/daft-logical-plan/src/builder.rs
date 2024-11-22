@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use common_daft_config::DaftPlanningConfig;
+use common_daft_config::{DaftExecutionConfig, DaftPlanningConfig};
 use common_display::mermaid::MermaidDisplayOptions;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
@@ -45,11 +45,20 @@ pub struct LogicalPlanBuilder {
     // The current root of the logical plan in this builder.
     pub plan: Arc<LogicalPlan>,
     config: Option<Arc<DaftPlanningConfig>>,
+    execution_config: Option<Arc<DaftExecutionConfig>>,
 }
 
 impl LogicalPlanBuilder {
-    pub fn new(plan: Arc<LogicalPlan>, config: Option<Arc<DaftPlanningConfig>>) -> Self {
-        Self { plan, config }
+    pub fn new(
+        plan: Arc<LogicalPlan>,
+        config: Option<Arc<DaftPlanningConfig>>,
+        execution_config: Option<Arc<DaftExecutionConfig>>,
+    ) -> Self {
+        Self {
+            plan,
+            config,
+            execution_config,
+        }
     }
 }
 
@@ -58,6 +67,7 @@ impl From<&Self> for LogicalPlanBuilder {
         Self {
             plan: builder.plan.clone(),
             config: builder.config.clone(),
+            execution_config: builder.execution_config.clone(),
         }
     }
 }
@@ -76,7 +86,7 @@ impl From<&LogicalPlanBuilder> for LogicalPlanRef {
 
 impl From<LogicalPlanRef> for LogicalPlanBuilder {
     fn from(plan: LogicalPlanRef) -> Self {
-        Self::new(plan, None)
+        Self::new(plan, None, None)
     }
 }
 
@@ -106,12 +116,20 @@ impl IntoGlobPath for Vec<&str> {
 impl LogicalPlanBuilder {
     /// Replace the LogicalPlanBuilder's plan with the provided plan
     pub fn with_new_plan<LP: Into<Arc<LogicalPlan>>>(&self, plan: LP) -> Self {
-        Self::new(plan.into(), self.config.clone())
+        Self::new(
+            plan.into(),
+            self.config.clone(),
+            self.execution_config.clone(),
+        )
     }
 
     /// Parametrize the LogicalPlanBuilder with a DaftPlanningConfig
     pub fn with_config(&self, config: Arc<DaftPlanningConfig>) -> Self {
-        Self::new(self.plan.clone(), Some(config))
+        Self::new(
+            self.plan.clone(),
+            Some(config),
+            self.execution_config.clone(),
+        )
     }
 
     #[cfg(feature = "python")]
@@ -134,7 +152,7 @@ impl LogicalPlanBuilder {
         ));
         let logical_plan: LogicalPlan = ops::Source::new(schema, source_info.into()).into();
 
-        Ok(Self::new(logical_plan.into(), None))
+        Ok(Self::new(logical_plan.into(), None, None))
     }
 
     pub fn table_scan(
@@ -186,7 +204,7 @@ impl LogicalPlanBuilder {
             schema_with_generated_fields
         };
         let logical_plan: LogicalPlan = ops::Source::new(output_schema, source_info.into()).into();
-        Ok(Self::new(logical_plan.into(), None))
+        Ok(Self::new(logical_plan.into(), None, None))
     }
 
     pub fn select(&self, to_select: Vec<ExprRef>) -> DaftResult<Self> {
@@ -599,7 +617,7 @@ impl LogicalPlanBuilder {
                 .unwrap_or(default_optimizer_config.enable_actor_pool_projections),
             ..default_optimizer_config
         };
-        let optimizer = Optimizer::new(optimizer_config);
+        let optimizer = Optimizer::new(optimizer_config, self.execution_config.clone());
 
         // Run LogicalPlan optimizations
         let unoptimized_plan = self.build();
@@ -625,7 +643,11 @@ impl LogicalPlanBuilder {
             },
         )?;
 
-        let builder = Self::new(optimized_plan, self.config.clone());
+        let builder = Self::new(
+            optimized_plan,
+            self.config.clone(),
+            self.execution_config.clone(),
+        );
         Ok(builder)
     }
 

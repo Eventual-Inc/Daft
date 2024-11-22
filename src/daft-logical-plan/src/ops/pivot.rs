@@ -85,20 +85,12 @@ impl Pivot {
         })
     }
 
-    pub(crate) fn materialize_stats(&self) -> Self {
+    pub(crate) fn with_materialized_stats(mut self) -> Self {
         // TODO(desmond): Pivoting does affect cardinality, but for now we keep the old logic.
-        let new_input = self.input.materialize_stats();
-        let stats_state = StatsState::Materialized(new_input.get_stats().clone());
-        Self {
-            input: Arc::new(new_input),
-            group_by: self.group_by.clone(),
-            pivot_column: self.pivot_column.clone(),
-            value_column: self.value_column.clone(),
-            aggregation: self.aggregation.clone(),
-            names: self.names.clone(),
-            output_schema: self.output_schema.clone(),
-            stats_state,
-        }
+        let input_stats = self.input.get_stats();
+        assert!(matches!(input_stats, StatsState::Materialized(..)));
+        self.stats_state = input_stats.clone();
+        self
     }
 
     pub fn multiline_display(&self) -> Vec<String> {

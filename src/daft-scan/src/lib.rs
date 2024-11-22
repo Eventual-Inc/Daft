@@ -381,6 +381,10 @@ impl ScanTaskLike for ScanTask {
         self
     }
 
+    fn as_ptr(&self) -> *const () {
+        std::ptr::from_ref::<Self>(self).cast()
+    }
+
     fn dyn_eq(&self, other: &dyn ScanTaskLike) -> bool {
         other
             .as_any()

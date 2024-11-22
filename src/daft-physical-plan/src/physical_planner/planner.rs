@@ -357,7 +357,7 @@ impl AdaptivePlanner {
 
         self.logical_plan = result.data;
 
-        let optimizer = Optimizer::new(Default::default());
+        let optimizer = Optimizer::new(Default::default(), Some(self.cfg.clone()));
 
         self.logical_plan = optimizer.optimize(
             self.logical_plan.clone(),

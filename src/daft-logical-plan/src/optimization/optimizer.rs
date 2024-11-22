@@ -1,13 +1,14 @@
 use std::{ops::ControlFlow, sync::Arc};
 
+use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_treenode::Transformed;
 
 use super::{
     logical_plan_tracker::LogicalPlanTracker,
     rules::{
-        DropRepartition, EliminateCrossJoin, EnrichWithStats, LiftProjectFromAgg, OptimizerRule,
-        PushDownFilter, PushDownLimit, PushDownProjection, SplitActorPoolProjects,
+        DropRepartition, EliminateCrossJoin, EnrichWithStats, LiftProjectFromAgg, MaterializeScans,
+        OptimizerRule, PushDownFilter, PushDownLimit, PushDownProjection, SplitActorPoolProjects,
     },
 };
 use crate::LogicalPlan;
@@ -90,7 +91,10 @@ pub struct Optimizer {
 }
 
 impl Optimizer {
-    pub fn new(config: OptimizerConfig) -> Self {
+    pub fn new(
+        config: OptimizerConfig,
+        execution_config: Option<Arc<DaftExecutionConfig>>,
+    ) -> Self {
         let mut rule_batches = Vec::new();
 
         // --- Split ActorPoolProjection nodes from Project nodes ---
@@ -134,6 +138,12 @@ impl Optimizer {
         rule_batches.push(RuleBatch::new(
             vec![Box::new(PushDownLimit::new())],
             RuleExecutionStrategy::FixedPoint(Some(3)),
+        ));
+
+        // --- Materialize scan nodes ---
+        rule_batches.push(RuleBatch::new(
+            vec![Box::new(MaterializeScans::new(execution_config))],
+            RuleExecutionStrategy::Once,
         ));
 
         // --- Enrich logical plan with stats ---

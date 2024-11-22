@@ -191,7 +191,7 @@ mod tests {
         let sql = "select test as a from tbl1";
         let plan = planner.plan_sql(sql).unwrap();
 
-        let expected = LogicalPlanBuilder::new(tbl_1, None)
+        let expected = LogicalPlanBuilder::new(tbl_1, None, None)
             .select(vec![col("test").alias("a")])
             .unwrap()
             .build();
@@ -203,7 +203,7 @@ mod tests {
         let sql = "select test as a from tbl1 where test = 'a'";
         let plan = planner.plan_sql(sql)?;
 
-        let expected = LogicalPlanBuilder::new(tbl_1, None)
+        let expected = LogicalPlanBuilder::new(tbl_1, None, None)
             .filter(col("test").eq(lit("a")))?
             .select(vec![col("test").alias("a")])?
             .build();
@@ -216,7 +216,7 @@ mod tests {
         let sql = "select test as a from tbl1 limit 10";
         let plan = planner.plan_sql(sql)?;
 
-        let expected = LogicalPlanBuilder::new(tbl_1, None)
+        let expected = LogicalPlanBuilder::new(tbl_1, None, None)
             .select(vec![col("test").alias("a")])?
             .limit(10, true)?
             .build();
@@ -230,7 +230,7 @@ mod tests {
         let sql = "select utf8 from tbl1 order by utf8 desc";
         let plan = planner.plan_sql(sql)?;
 
-        let expected = LogicalPlanBuilder::new(tbl_1, None)
+        let expected = LogicalPlanBuilder::new(tbl_1, None, None)
             .select(vec![col("utf8")])?
             .sort(vec![col("utf8")], vec![true], vec![true])?
             .build();
@@ -241,7 +241,7 @@ mod tests {
 
     #[rstest]
     fn test_cast(mut planner: SQLPlanner, tbl_1: LogicalPlanRef) -> SQLPlannerResult<()> {
-        let builder = LogicalPlanBuilder::new(tbl_1, None);
+        let builder = LogicalPlanBuilder::new(tbl_1, None, None);
         let cases = vec![
             (
                 "select bool::text from tbl1",
@@ -285,7 +285,7 @@ mod tests {
             if null_equals_null { "<=>" } else { "=" }
         );
         let plan = planner.plan_sql(&sql)?;
-        let expected = LogicalPlanBuilder::new(tbl_2, None)
+        let expected = LogicalPlanBuilder::new(tbl_2, None, None)
             .join_with_null_safe_equal(
                 tbl_3,
                 vec![col("id")],
@@ -312,7 +312,7 @@ mod tests {
         let sql = "select * from tbl2 join tbl3 on tbl2.id = tbl3.id and tbl2.val > 0";
         let plan = planner.plan_sql(&sql)?;
 
-        let expected = LogicalPlanBuilder::new(tbl_2, None)
+        let expected = LogicalPlanBuilder::new(tbl_2, None, None)
             .filter(col("val").gt(lit(0 as i64)))?
             .join_with_null_safe_equal(
                 tbl_3,
@@ -394,7 +394,7 @@ mod tests {
         let sql = "select max(i32) from tbl1";
         let plan = planner.plan_sql(sql)?;
 
-        let expected = LogicalPlanBuilder::new(tbl_1, None)
+        let expected = LogicalPlanBuilder::new(tbl_1, None, None)
             .aggregate(vec![col("i32").max()], vec![])?
             .select(vec![col("i32")])?
             .build();
@@ -469,7 +469,7 @@ mod tests {
             field: Field::new("i32", DataType::Int32),
             depth: 1,
         }));
-        let subquery = LogicalPlanBuilder::new(tbl_2, None)
+        let subquery = LogicalPlanBuilder::new(tbl_2, None, None)
             .filter(col("id").eq(outer_col))?
             .aggregate(vec![col("id").max()], vec![])?
             .select(vec![col("id")])?
@@ -477,7 +477,7 @@ mod tests {
 
         let subquery = Arc::new(Expr::Subquery(Subquery { plan: subquery }));
 
-        let expected = LogicalPlanBuilder::new(tbl_1, None)
+        let expected = LogicalPlanBuilder::new(tbl_1, None, None)
             .filter(col("i64").gt(subquery))?
             .select(vec![col("utf8")])?
             .build();

@@ -61,10 +61,11 @@ impl Aggregate {
         })
     }
 
-    pub(crate) fn materialize_stats(&self) -> Self {
+    pub(crate) fn with_materialized_stats(mut self) -> Self {
         // TODO(desmond): We can use the schema here for better estimations. For now, use the old logic.
-        let new_input = self.input.materialize_stats();
-        let input_stats = new_input.get_stats();
+        let input_stats = self.input.get_stats();
+        assert!(matches!(input_stats, StatsState::Materialized(..)));
+        let input_stats = input_stats.unwrap_or_default();
         let est_bytes_per_row_lower = input_stats.approx_stats.lower_bound_bytes
             / (input_stats.approx_stats.lower_bound_rows.max(1));
         let est_bytes_per_row_upper =
@@ -94,14 +95,8 @@ impl Aggregate {
                 upper_bound_bytes: input_stats.approx_stats.upper_bound_bytes,
             }
         };
-        let stats_state = StatsState::Materialized(PlanStats::new(approx_stats));
-        Self {
-            input: Arc::new(new_input),
-            aggregations: self.aggregations.clone(),
-            groupby: self.groupby.clone(),
-            output_schema: self.output_schema.clone(),
-            stats_state,
-        }
+        self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats));
+        self
     }
 
     pub fn multiline_display(&self) -> Vec<String> {

@@ -42,15 +42,12 @@ impl Repartition {
         })
     }
 
-    pub(crate) fn materialize_stats(&self) -> Self {
+    pub(crate) fn with_materialized_stats(mut self) -> Self {
         // Repartitioning does not affect cardinality.
-        let new_input = self.input.materialize_stats();
-        let stats_state = StatsState::Materialized(new_input.get_stats().clone());
-        Self {
-            input: Arc::new(new_input),
-            repartition_spec: self.repartition_spec.clone(),
-            stats_state,
-        }
+        let input_stats = self.input.get_stats();
+        assert!(matches!(input_stats, StatsState::Materialized(..)));
+        self.stats_state = input_stats.clone();
+        self
     }
 
     pub fn multiline_display(&self) -> Vec<String> {

@@ -17,9 +17,9 @@ import daft.context
 from tests.conftest import get_tests_daft_runner_name
 from tests.integration.conftest import check_answer  # noqa F401
 
-ENGINES = ["native"] if IS_CI else ["native", "python"]
+ENGINES = ["native"] if IS_CI else ["native"]
 
-TPCH_QUESTIONS = list(range(1, 11))
+TPCH_QUESTIONS = list(range(1, 23))
 
 
 @pytest.mark.skipif(

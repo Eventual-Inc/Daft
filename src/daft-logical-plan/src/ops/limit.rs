@@ -27,10 +27,11 @@ impl Limit {
         }
     }
 
-    pub(crate) fn materialize_stats(&self) -> Self {
-        let new_input = self.input.materialize_stats();
+    pub(crate) fn with_materialized_stats(mut self) -> Self {
+        let input_stats = self.input.get_stats();
+        assert!(matches!(input_stats, StatsState::Materialized(..)));
+        let input_stats = input_stats.unwrap_or_default();
         let limit = self.limit as usize;
-        let input_stats = new_input.get_stats();
         let est_bytes_per_row_lower = input_stats.approx_stats.lower_bound_bytes
             / input_stats.approx_stats.lower_bound_rows.max(1);
         let est_bytes_per_row_upper =
@@ -55,13 +56,8 @@ impl Limit {
             lower_bound_bytes: new_lower_rows * est_bytes_per_row_lower,
             upper_bound_bytes: est_bytes_per_row_upper.map(|x| x * new_upper_rows),
         };
-        let stats_state = StatsState::Materialized(PlanStats::new(approx_stats));
-        Self {
-            input: Arc::new(new_input),
-            limit: self.limit,
-            eager: self.eager,
-            stats_state,
-        }
+        self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats));
+        self
     }
 
     pub fn multiline_display(&self) -> Vec<String> {

@@ -65,22 +65,18 @@ impl Explode {
         })
     }
 
-    pub(crate) fn materialize_stats(&self) -> Self {
-        let new_input = self.input.materialize_stats();
-        let input_stats = new_input.get_stats();
+    pub(crate) fn with_materialized_stats(mut self) -> Self {
+        let input_stats = self.input.get_stats();
+        assert!(matches!(input_stats, StatsState::Materialized(..)));
+        let input_stats = input_stats.unwrap_or_default();
         let approx_stats = ApproxStats {
             lower_bound_rows: input_stats.approx_stats.lower_bound_rows,
             upper_bound_rows: None,
             lower_bound_bytes: input_stats.approx_stats.lower_bound_bytes,
             upper_bound_bytes: None,
         };
-        let stats_state = StatsState::Materialized(PlanStats::new(approx_stats));
-        Self {
-            input: Arc::new(new_input),
-            to_explode: self.to_explode.clone(),
-            exploded_schema: self.exploded_schema.clone(),
-            stats_state,
-        }
+        self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats));
+        self
     }
 
     pub fn multiline_display(&self) -> Vec<String> {

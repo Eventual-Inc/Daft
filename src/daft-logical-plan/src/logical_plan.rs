@@ -8,12 +8,13 @@ use indexmap::IndexSet;
 use snafu::Snafu;
 
 pub use crate::ops::*;
-use crate::stats::PlanStats;
+use crate::stats::StatsState;
 
 /// Logical plan for a Daft query.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum LogicalPlan {
     Source(Source),
+    MaterializedScanSource(MaterializedScanSource),
     Project(Project),
     ActorPoolProject(ActorPoolProject),
     Filter(Filter),
@@ -44,6 +45,7 @@ impl LogicalPlan {
     pub fn schema(&self) -> SchemaRef {
         match self {
             Self::Source(Source { output_schema, .. }) => output_schema.clone(),
+            Self::MaterializedScanSource(MaterializedScanSource { schema, .. }) => schema.clone(),
             Self::Project(Project {
                 projected_schema, ..
             }) => projected_schema.clone(),
@@ -171,6 +173,7 @@ impl LogicalPlan {
             Self::Intersect(_) => vec![IndexSet::new(), IndexSet::new()],
             Self::Union(_) => vec![IndexSet::new(), IndexSet::new()],
             Self::Source(_) => todo!(),
+            Self::MaterializedScanSource(_) => todo!(),
             Self::Sink(_) => todo!(),
         }
     }
@@ -178,6 +181,7 @@ impl LogicalPlan {
     pub fn name(&self) -> &'static str {
         match self {
             Self::Source(..) => "Source",
+            Self::MaterializedScanSource(..) => "MaterializedScanSource",
             Self::Project(..) => "Project",
             Self::ActorPoolProject(..) => "ActorPoolProject",
             Self::Filter(..) => "Filter",
@@ -199,64 +203,68 @@ impl LogicalPlan {
         }
     }
 
-    pub fn get_stats(&self) -> &PlanStats {
+    pub fn get_stats(&self) -> &StatsState {
         match self {
-            Self::Source(Source { stats_state, .. }) => stats_state.get_stats(),
-            Self::Project(Project { stats_state, .. }) => stats_state.get_stats(),
-            Self::ActorPoolProject(ActorPoolProject { stats_state, .. }) => stats_state.get_stats(),
-            Self::Filter(Filter { stats_state, .. }) => stats_state.get_stats(),
-            Self::Limit(Limit { stats_state, .. }) => stats_state.get_stats(),
-            Self::Explode(Explode { stats_state, .. }) => stats_state.get_stats(),
-            Self::Unpivot(Unpivot { stats_state, .. }) => stats_state.get_stats(),
-            Self::Sort(Sort { stats_state, .. }) => stats_state.get_stats(),
-            Self::Repartition(Repartition { stats_state, .. }) => stats_state.get_stats(),
-            Self::Distinct(Distinct { stats_state, .. }) => stats_state.get_stats(),
-            Self::Aggregate(Aggregate { stats_state, .. }) => stats_state.get_stats(),
-            Self::Pivot(Pivot { stats_state, .. }) => stats_state.get_stats(),
-            Self::Concat(Concat { stats_state, .. }) => stats_state.get_stats(),
+            Self::Source(Source { stats_state, .. })
+            | Self::MaterializedScanSource(MaterializedScanSource { stats_state, .. })
+            | Self::Project(Project { stats_state, .. })
+            | Self::ActorPoolProject(ActorPoolProject { stats_state, .. })
+            | Self::Filter(Filter { stats_state, .. })
+            | Self::Limit(Limit { stats_state, .. })
+            | Self::Explode(Explode { stats_state, .. })
+            | Self::Unpivot(Unpivot { stats_state, .. })
+            | Self::Sort(Sort { stats_state, .. })
+            | Self::Repartition(Repartition { stats_state, .. })
+            | Self::Distinct(Distinct { stats_state, .. })
+            | Self::Aggregate(Aggregate { stats_state, .. })
+            | Self::Pivot(Pivot { stats_state, .. })
+            | Self::Concat(Concat { stats_state, .. })
+            | Self::Join(Join { stats_state, .. })
+            | Self::Sink(Sink { stats_state, .. })
+            | Self::Sample(Sample { stats_state, .. })
+            | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { stats_state, .. }) => {
+                stats_state
+            }
             Self::Intersect(_) => {
                 panic!("Intersect nodes should be optimized away before stats are materialized")
             }
             Self::Union(_) => {
                 panic!("Union nodes should be optimized away before stats are materialized")
             }
-            Self::Join(Join { stats_state, .. }) => stats_state.get_stats(),
-            Self::Sink(Sink { stats_state, .. }) => stats_state.get_stats(),
-            Self::Sample(Sample { stats_state, .. }) => stats_state.get_stats(),
-            Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { stats_state, .. }) => {
-                stats_state.get_stats()
-            }
         }
     }
 
     // Materializes stats over logical plans. If stats are already materialized, this function recomputes stats, which might be
     // useful if stats become stale during query planning.
-    pub fn materialize_stats(&self) -> Self {
+    pub fn with_materialized_stats(self) -> Self {
         match self {
-            Self::Source(plan) => Self::Source(plan.materialize_stats()),
-            Self::Project(plan) => Self::Project(plan.materialize_stats()),
-            Self::ActorPoolProject(plan) => Self::ActorPoolProject(plan.materialize_stats()),
-            Self::Filter(plan) => Self::Filter(plan.materialize_stats()),
-            Self::Limit(plan) => Self::Limit(plan.materialize_stats()),
-            Self::Explode(plan) => Self::Explode(plan.materialize_stats()),
-            Self::Unpivot(plan) => Self::Unpivot(plan.materialize_stats()),
-            Self::Sort(plan) => Self::Sort(plan.materialize_stats()),
-            Self::Repartition(plan) => Self::Repartition(plan.materialize_stats()),
-            Self::Distinct(plan) => Self::Distinct(plan.materialize_stats()),
-            Self::Aggregate(plan) => Self::Aggregate(plan.materialize_stats()),
-            Self::Pivot(plan) => Self::Pivot(plan.materialize_stats()),
-            Self::Concat(plan) => Self::Concat(plan.materialize_stats()),
+            Self::Source(plan) => Self::Source(plan.with_materialized_stats()),
+            Self::MaterializedScanSource(plan) => {
+                Self::MaterializedScanSource(plan.with_materialized_stats())
+            }
+            Self::Project(plan) => Self::Project(plan.with_materialized_stats()),
+            Self::ActorPoolProject(plan) => Self::ActorPoolProject(plan.with_materialized_stats()),
+            Self::Filter(plan) => Self::Filter(plan.with_materialized_stats()),
+            Self::Limit(plan) => Self::Limit(plan.with_materialized_stats()),
+            Self::Explode(plan) => Self::Explode(plan.with_materialized_stats()),
+            Self::Unpivot(plan) => Self::Unpivot(plan.with_materialized_stats()),
+            Self::Sort(plan) => Self::Sort(plan.with_materialized_stats()),
+            Self::Repartition(plan) => Self::Repartition(plan.with_materialized_stats()),
+            Self::Distinct(plan) => Self::Distinct(plan.with_materialized_stats()),
+            Self::Aggregate(plan) => Self::Aggregate(plan.with_materialized_stats()),
+            Self::Pivot(plan) => Self::Pivot(plan.with_materialized_stats()),
+            Self::Concat(plan) => Self::Concat(plan.with_materialized_stats()),
             Self::Intersect(_) => {
                 panic!("Intersect should be optimized away before stats are derived")
             }
             Self::Union(_) => {
                 panic!("Union should be optimized away before stats are derived")
             }
-            Self::Join(plan) => Self::Join(plan.materialize_stats()),
-            Self::Sink(plan) => Self::Sink(plan.materialize_stats()),
-            Self::Sample(plan) => Self::Sample(plan.materialize_stats()),
+            Self::Join(plan) => Self::Join(plan.with_materialized_stats()),
+            Self::Sink(plan) => Self::Sink(plan.with_materialized_stats()),
+            Self::Sample(plan) => Self::Sample(plan.with_materialized_stats()),
             Self::MonotonicallyIncreasingId(plan) => {
-                Self::MonotonicallyIncreasingId(plan.materialize_stats())
+                Self::MonotonicallyIncreasingId(plan.with_materialized_stats())
             }
         }
     }
@@ -264,6 +272,7 @@ impl LogicalPlan {
     pub fn multiline_display(&self) -> Vec<String> {
         match self {
             Self::Source(source) => source.multiline_display(),
+            Self::MaterializedScanSource(plan) => plan.multiline_display(),
             Self::Project(projection) => projection.multiline_display(),
             Self::ActorPoolProject(projection) => projection.multiline_display(),
             Self::Filter(filter) => filter.multiline_display(),
@@ -290,6 +299,7 @@ impl LogicalPlan {
     pub fn children(&self) -> Vec<&Self> {
         match self {
             Self::Source(..) => vec![],
+            Self::MaterializedScanSource(..) => vec![],
             Self::Project(Project { input, .. }) => vec![input],
             Self::ActorPoolProject(ActorPoolProject { input, .. }) => vec![input],
             Self::Filter(Filter { input, .. }) => vec![input],
@@ -317,6 +327,7 @@ impl LogicalPlan {
         match children {
             [input] => match self {
                 Self::Source(_) => panic!("Source nodes don't have children, with_new_children() should never be called for Source ops"),
+                Self::MaterializedScanSource(_) => panic!("MaterializedScanSource nodes don't have children, with_new_children() should never be called for MaterializedScanSource ops"),
                 Self::Project(Project { projection, .. }) => Self::Project(Project::try_new(
                     input.clone(), projection.clone(),
                 ).unwrap()),
@@ -449,6 +460,7 @@ macro_rules! impl_from_data_struct_for_logical_plan {
 }
 
 impl_from_data_struct_for_logical_plan!(Source);
+impl_from_data_struct_for_logical_plan!(MaterializedScanSource);
 impl_from_data_struct_for_logical_plan!(Project);
 impl_from_data_struct_for_logical_plan!(Filter);
 impl_from_data_struct_for_logical_plan!(Limit);

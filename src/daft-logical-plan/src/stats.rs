@@ -4,23 +4,15 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
 pub enum StatsState {
-    NotMaterialized,
     Materialized(PlanStats),
-}
-
-impl Default for StatsState {
-    fn default() -> Self {
-        Self::NotMaterialized
-    }
+    NotMaterialized,
 }
 
 impl StatsState {
-    pub fn get_stats(&self) -> &PlanStats {
+    pub fn unwrap_or_default(&self) -> PlanStats {
         match self {
-            Self::Materialized(stats) => stats,
-            Self::NotMaterialized => {
-                panic!("Tried getting stats from a StatsState that is not materialized")
-            }
+            Self::Materialized(stats) => stats.clone(),
+            Self::NotMaterialized => PlanStats::default(),
         }
     }
 }
@@ -41,6 +33,12 @@ impl PlanStats {
         Self {
             approx_stats: ApproxStats::empty(),
         }
+    }
+}
+
+impl Default for PlanStats {
+    fn default() -> Self {
+        Self::empty()
     }
 }
 

@@ -1,9 +1,11 @@
 use std::sync::Arc;
 
+use common_daft_config::DaftExecutionConfig;
 use common_scan_info::PhysicalScanInfo;
 use daft_schema::schema::SchemaRef;
 
 use crate::{
+    ops::MaterializedScanSource,
     source_info::{InMemoryInfo, PlaceHolderInfo, SourceInfo},
     stats::{ApproxStats, PlanStats, StatsState},
 };
@@ -28,7 +30,29 @@ impl Source {
         }
     }
 
-    pub(crate) fn materialize_stats(&self) -> Self {
+    pub(crate) fn with_materialized_scan_source(
+        &self,
+        execution_config: Option<&DaftExecutionConfig>,
+    ) -> MaterializedScanSource {
+        match &*self.source_info {
+            SourceInfo::Physical(PhysicalScanInfo {
+                scan_op, pushdowns, ..
+            }) => {
+                let scan_tasks = scan_op
+                    .0
+                    .to_scan_tasks(pushdowns.clone(), execution_config)
+                    .expect("Failed to get scan tasks from scan operator");
+                MaterializedScanSource::new(
+                    scan_tasks,
+                    pushdowns.clone(),
+                    self.output_schema.clone(),
+                )
+            }
+            _ => panic!("Only physical scan nodes can be materialized"),
+        }
+    }
+
+    pub(crate) fn with_materialized_stats(mut self) -> Self {
         let approx_stats = match &*self.source_info {
             SourceInfo::InMemory(InMemoryInfo {
                 size_bytes,
@@ -40,48 +64,13 @@ impl Source {
                 lower_bound_bytes: *size_bytes,
                 upper_bound_bytes: Some(*size_bytes),
             },
-            SourceInfo::Physical(PhysicalScanInfo {
-                scan_op, pushdowns, ..
-            }) => {
-                // Python scans are potentially scans over generators. Materializing stats for
-                // these would consume the generator, leading to empty generators after planning.
-                if scan_op.0.is_python_scan() {
-                    ApproxStats::empty()
-                } else {
-                    let scan_tasks = scan_op
-                        .0
-                        .to_scan_tasks(pushdowns.clone(), None)
-                        .expect("Failed to get scan tasks from scan operator");
-                    let mut approx_stats = ApproxStats::empty();
-                    for st in scan_tasks {
-                        approx_stats.lower_bound_rows += st.num_rows().unwrap_or(0);
-                        let in_memory_size = st.estimate_in_memory_size_bytes(None);
-                        approx_stats.lower_bound_bytes += in_memory_size.unwrap_or(0);
-                        if let Some(st_ub) = st.upper_bound_rows() {
-                            if let Some(ub) = approx_stats.upper_bound_rows {
-                                approx_stats.upper_bound_rows = Some(ub + st_ub);
-                            } else {
-                                approx_stats.upper_bound_rows = st.upper_bound_rows();
-                            }
-                        }
-                        if let Some(st_ub) = in_memory_size {
-                            if let Some(ub) = approx_stats.upper_bound_bytes {
-                                approx_stats.upper_bound_bytes = Some(ub + st_ub);
-                            } else {
-                                approx_stats.upper_bound_bytes = in_memory_size;
-                            }
-                        }
-                    }
-                    approx_stats
-                }
+            SourceInfo::Physical(_) => {
+                panic!("Scan nodes should be materialized before stats are materialized")
             }
             SourceInfo::PlaceHolder(_) => ApproxStats::empty(),
         };
-        Self {
-            output_schema: self.output_schema.clone(),
-            source_info: self.source_info.clone(),
-            stats_state: StatsState::Materialized(PlanStats::new(approx_stats)),
-        }
+        self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats));
+        self
     }
 
     pub fn multiline_display(&self) -> Vec<String> {

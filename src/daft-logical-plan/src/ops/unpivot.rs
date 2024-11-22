@@ -97,9 +97,10 @@ impl Unpivot {
         })
     }
 
-    pub(crate) fn materialize_stats(&self) -> Self {
-        let new_input = self.input.materialize_stats();
-        let input_stats = new_input.get_stats();
+    pub(crate) fn with_materialized_stats(mut self) -> Self {
+        let input_stats = self.input.get_stats();
+        assert!(matches!(input_stats, StatsState::Materialized(..)));
+        let input_stats = input_stats.unwrap_or_default();
         let num_values = self.values.len();
         let approx_stats = ApproxStats {
             lower_bound_rows: input_stats.approx_stats.lower_bound_rows * num_values,
@@ -110,16 +111,8 @@ impl Unpivot {
             lower_bound_bytes: input_stats.approx_stats.lower_bound_bytes,
             upper_bound_bytes: input_stats.approx_stats.upper_bound_bytes,
         };
-        let stats_state = StatsState::Materialized(PlanStats::new(approx_stats));
-        Self {
-            input: Arc::new(new_input),
-            ids: self.ids.clone(),
-            values: self.values.clone(),
-            variable_name: self.variable_name.clone(),
-            value_name: self.value_name.clone(),
-            output_schema: self.output_schema.clone(),
-            stats_state,
-        }
+        self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats));
+        self
     }
 
     pub fn multiline_display(&self) -> Vec<String> {

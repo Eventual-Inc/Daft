@@ -37,7 +37,7 @@ impl DaftPlanningConfig {
 /// 3. Task generation from physical plan
 /// 4. Task scheduling
 /// 5. Task local execution
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DaftExecutionConfig {
     pub scan_tasks_min_size_bytes: usize,
     pub scan_tasks_max_size_bytes: usize,

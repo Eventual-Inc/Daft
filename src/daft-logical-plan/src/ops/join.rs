@@ -311,13 +311,15 @@ impl Join {
             .unzip()
     }
 
-    pub(crate) fn materialize_stats(&self) -> Self {
+    pub(crate) fn with_materialized_stats(mut self) -> Self {
         // Assume a Primary-key + Foreign-Key join which would yield the max of the two tables.
         // TODO(desmond): We can do better estimations here. For now, use the old logic.
-        let new_left = self.left.materialize_stats();
-        let new_right = self.right.materialize_stats();
-        let left_stats = new_left.get_stats();
-        let right_stats = new_right.get_stats();
+        let left_stats = self.left.get_stats();
+        let right_stats = self.right.get_stats();
+        assert!(matches!(left_stats, StatsState::Materialized(..)));
+        assert!(matches!(right_stats, StatsState::Materialized(..)));
+        let left_stats = left_stats.unwrap_or_default();
+        let right_stats = right_stats.unwrap_or_default();
         let approx_stats = ApproxStats {
             lower_bound_rows: 0,
             upper_bound_rows: left_stats
@@ -330,18 +332,8 @@ impl Join {
                 .upper_bound_bytes
                 .and_then(|l| right_stats.approx_stats.upper_bound_bytes.map(|r| l.max(r))),
         };
-        let stats_state = StatsState::Materialized(PlanStats::new(approx_stats));
-        Self {
-            left: Arc::new(new_left),
-            right: Arc::new(new_right),
-            left_on: self.left_on.clone(),
-            right_on: self.right_on.clone(),
-            null_equals_nulls: self.null_equals_nulls.clone(),
-            join_type: self.join_type,
-            join_strategy: self.join_strategy,
-            output_schema: self.output_schema.clone(),
-            stats_state,
-        }
+        self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats));
+        self
     }
 
     pub fn multiline_display(&self) -> Vec<String> {

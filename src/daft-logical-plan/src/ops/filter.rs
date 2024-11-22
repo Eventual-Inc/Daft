@@ -42,24 +42,22 @@ impl Filter {
         })
     }
 
-    pub(crate) fn materialize_stats(&self) -> Self {
+    pub(crate) fn with_materialized_stats(mut self) -> Self {
         // Assume no row/column pruning in cardinality-affecting operations.
         // TODO(desmond): We can do better estimations here. For now, reuse the old logic.
-        let new_input = self.input.materialize_stats();
-        let upper_bound_rows = new_input.get_stats().approx_stats.upper_bound_rows;
-        let upper_bound_bytes = new_input.get_stats().approx_stats.upper_bound_bytes;
+        let input_stats = self.input.get_stats();
+        assert!(matches!(input_stats, StatsState::Materialized(..)));
+        let input_stats = input_stats.unwrap_or_default();
+        let upper_bound_rows = input_stats.approx_stats.upper_bound_rows;
+        let upper_bound_bytes = input_stats.approx_stats.upper_bound_bytes;
         let approx_stats = ApproxStats {
             lower_bound_rows: 0,
             upper_bound_rows,
             lower_bound_bytes: 0,
             upper_bound_bytes,
         };
-        let stats_state = StatsState::Materialized(PlanStats::new(approx_stats));
-        Self {
-            input: Arc::new(new_input),
-            predicate: self.predicate.clone(),
-            stats_state,
-        }
+        self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats));
+        self
     }
 
     pub fn multiline_display(&self) -> Vec<String> {

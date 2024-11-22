@@ -176,6 +176,9 @@ impl PushDownProjection {
                     }
                 }
             }
+            LogicalPlan::MaterializedScanSource(..) => {
+                panic!("Scan nodes should not be materialized before push down projection");
+            }
             LogicalPlan::Project(upstream_projection) => {
                 // Prune columns from the child projection that are not used in this projection.
                 let required_columns = &plan.required_columns()[0];

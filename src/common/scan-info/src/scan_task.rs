@@ -1,4 +1,9 @@
-use std::{any::Any, fmt::Debug, sync::Arc};
+use std::{
+    any::Any,
+    fmt::Debug,
+    hash::{Hash, Hasher},
+    sync::Arc,
+};
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::DisplayAs;
@@ -12,6 +17,7 @@ use crate::Pushdowns;
 pub trait ScanTaskLike: Debug + DisplayAs + Send + Sync {
     fn as_any(&self) -> &dyn Any;
     fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
+    fn as_ptr(&self) -> *const ();
     fn dyn_eq(&self, other: &dyn ScanTaskLike) -> bool;
     #[must_use]
     fn materialized_schema(&self) -> SchemaRef;
@@ -34,6 +40,14 @@ pub trait ScanTaskLike: Debug + DisplayAs + Send + Sync {
 }
 
 pub type ScanTaskLikeRef = Arc<dyn ScanTaskLike>;
+
+impl Hash for dyn ScanTaskLike {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.as_ptr().hash(state);
+    }
+}
+
+impl Eq for dyn ScanTaskLike + '_ {}
 
 impl PartialEq for dyn ScanTaskLike + '_ {
     fn eq(&self, other: &Self) -> bool {

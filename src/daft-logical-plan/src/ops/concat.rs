@@ -46,18 +46,17 @@ impl Concat {
         })
     }
 
-    pub(crate) fn materialize_stats(&self) -> Self {
+    pub(crate) fn with_materialized_stats(mut self) -> Self {
         // TODO(desmond): We can do better estimations with the projection schema. For now, reuse the old logic.
-        let new_input = self.input.materialize_stats();
-        let new_other = self.other.materialize_stats();
-        let approx_stats =
-            &new_input.get_stats().approx_stats + &new_other.get_stats().approx_stats;
-        let stats_state = StatsState::Materialized(PlanStats::new(approx_stats));
-        Self {
-            input: Arc::new(new_input),
-            other: Arc::new(new_other),
-            stats_state,
-        }
+        let input_stats = self.input.get_stats();
+        assert!(matches!(input_stats, StatsState::Materialized(..)));
+        let other_stats = self.other.get_stats();
+        assert!(matches!(other_stats, StatsState::Materialized(..)));
+        let input_stats = input_stats.unwrap_or_default();
+        let other_stats = other_stats.unwrap_or_default();
+        let approx_stats = &input_stats.approx_stats + &other_stats.approx_stats;
+        self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats));
+        self
     }
 
     pub fn multiline_display(&self) -> Vec<String> {

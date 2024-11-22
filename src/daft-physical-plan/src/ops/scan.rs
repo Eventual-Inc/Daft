@@ -6,7 +6,7 @@ use common_scan_info::ScanTaskLikeRef;
 use daft_logical_plan::partitioning::ClusteringSpec;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TabularScan {
     pub scan_tasks: Vec<ScanTaskLikeRef>,
     pub clustering_spec: Arc<ClusteringSpec>,

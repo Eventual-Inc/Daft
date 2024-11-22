@@ -91,16 +91,11 @@ impl Sink {
         })
     }
 
-    pub(crate) fn materialize_stats(&self) -> Self {
+    pub(crate) fn with_materialized_stats(mut self) -> Self {
         // Post-write DataFrame will contain paths to files that were written.
         // TODO(desmond): Estimate output size via root directory and estimates for # of partitions given partitioning column.
-        let new_input = self.input.materialize_stats();
-        Self {
-            input: Arc::new(new_input),
-            schema: self.schema.clone(),
-            sink_info: self.sink_info.clone(),
-            stats_state: StatsState::Materialized(PlanStats::empty()),
-        }
+        self.stats_state = StatsState::Materialized(PlanStats::empty());
+        self
     }
 
     pub fn multiline_display(&self) -> Vec<String> {

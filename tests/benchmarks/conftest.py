@@ -15,7 +15,7 @@ from tests.assets import TPCH_DBGEN_DIR
 IS_CI = True if os.getenv("CI") else False
 
 SCALE_FACTOR = 0.2
-NUM_PARTS = [1] if IS_CI else [1, 2]
+NUM_PARTS = [1] if IS_CI else [1]
 SOURCE_TYPES = ["in-memory"] if IS_CI else ["parquet", "in-memory"]
 
 memray_stats = defaultdict(dict)
