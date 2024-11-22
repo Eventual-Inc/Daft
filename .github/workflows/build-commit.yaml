@@ -69,7 +69,7 @@ jobs:
       run: |
         if [ "$COMMIT_BUILT" -eq 1 ]; then
           echo "Commit already built"
-          wheel=$(aws s3 ls s3://github-actions-artifacts-bucket/builds/0319d66afe3cf99c8281b1e1dc9cb979cfd4fba6/ | awk '{print $4}')
+          wheel=$(aws s3 ls s3://github-actions-artifacts-bucket/builds/${{ github.sha }}/ | awk '{print $4}')
           echo "wheel=$wheel" >> $GITHUB_OUTPUT
           exit 0
         fi
