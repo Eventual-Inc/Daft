@@ -37,7 +37,7 @@ jobs:
         path: ~/target
         key: ${{ runner.os }}-cargo-deps-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: ${{ runner.os }}-cargo-deps-
-    - name: Build wheel
+    - name: Build release wheel
       run: |
         export CARGO_TARGET_DIR=~/target
         uv v
