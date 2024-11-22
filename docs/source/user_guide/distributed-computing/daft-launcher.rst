@@ -1,3 +1,5 @@
+.. _daft_launcher:
+
 Daft Launcher
 =====================
 
