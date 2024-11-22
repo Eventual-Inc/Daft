@@ -372,7 +372,7 @@ pub struct ScanTask {
     pub generated_fields: Option<SchemaRef>,
 
     /// The estimated amount of bytes this ScanTask will take up in memory once materialized
-    estimated_materialized_size_bytes: Option<usize>,
+    calculated_estimated_materialized_size_bytes: Option<usize>,
 }
 
 #[typetag::serde]
@@ -488,7 +488,7 @@ impl ScanTask {
             metadata,
             statistics,
             generated_fields,
-            estimated_materialized_size_bytes,
+            calculated_estimated_materialized_size_bytes: estimated_materialized_size_bytes,
         }
     }
 
@@ -540,10 +540,11 @@ impl ScanTask {
             sc1.storage_config.clone(),
             sc1.pushdowns.clone(),
             sc1.generated_fields.clone(),
-            sc1.estimated_materialized_size_bytes.and_then(|est1| {
-                sc2.estimated_materialized_size_bytes
-                    .map(|est2| est1 + est2)
-            }),
+            sc1.calculated_estimated_materialized_size_bytes
+                .and_then(|est1| {
+                    sc2.calculated_estimated_materialized_size_bytes
+                        .map(|est2| est1 + est2)
+                }),
         ))
     }
 
@@ -662,7 +663,7 @@ impl ScanTask {
     ) -> Option<usize> {
         // If the ScanTask is populated with an estimation (this is provided by the ScanOperator), then
         // we can just return that
-        if let Some(est) = self.estimated_materialized_size_bytes {
+        if let Some(est) = self.calculated_estimated_materialized_size_bytes {
             return Some(est);
         }
 

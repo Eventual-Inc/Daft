@@ -272,7 +272,7 @@ pub(crate) fn split_by_row_groups(
                                     *size_bytes = Some(curr_size_bytes as u64);
 
                                     // Re-estimate the size bytes in memory
-                                    new_estimated_size_bytes_in_memory = t.estimated_materialized_size_bytes.map(|est| (est as f64 * (curr_num_rows as f64 / file.num_rows as f64)) as usize);
+                                    new_estimated_size_bytes_in_memory = t.calculated_estimated_materialized_size_bytes.map(|est| (est as f64 * (curr_num_rows as f64 / file.num_rows as f64)) as usize);
                                 } else {
                                     unreachable!("Parquet file format should only be used with DataSource::File");
                                 }
