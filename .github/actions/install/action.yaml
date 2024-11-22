@@ -22,10 +22,6 @@ runs:
       UV_BIN="$HOME/.local/bin"
       echo 'export PATH="$UV_BIN:$PATH"' >> $HOME/.bashrc
       echo "$UV_BIN" >> $GITHUB_PATH
-  - name: Source changes to add new installs to path
-    shell: bash
-    run: |
-      source $HOME/.bashrc
   - name: Install (and pin) python version ${{ inputs.python_version }}
     shell: bash
     run: |
