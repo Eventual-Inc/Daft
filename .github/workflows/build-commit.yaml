@@ -39,7 +39,6 @@ jobs:
         restore-keys: ${{ runner.os }}-cargo-deps-
     - name: Build wheel
       run: |
-        # Build wheel
         export CARGO_TARGET_DIR=~/target
         uv v
         source .venv/bin/activate
