@@ -71,20 +71,20 @@ jobs:
           echo "Commit already built"
           wheel=$(aws s3 ls s3://github-actions-artifacts-bucket/builds/${{ github.sha }}/ | awk '{print $4}')
           echo "wheel=$wheel" >> $GITHUB_OUTPUT
-          exit 0
+        else
+          count=$(ls ~/target/wheels/*.whl 2> /dev/null | wc -l)
+          if [ "$count" -gt 1 ]; then
+            echo "Found more than 1 wheel"
+            exit 1
+          elif [ "$count" -eq 0 ]; then
+            echo "Found no wheels"
+            exit 1
+          fi
+          for file in ~/target/wheels/*.whl; do
+            aws s3 cp $file s3://github-actions-artifacts-bucket/builds/${{ github.sha }}/ --acl public-read --no-progress;
+            file_basename=$(basename $file)
+            echo "wheel=$file_basename" >> $GITHUB_OUTPUT
+          done
         fi
-        count=$(ls ~/target/wheels/*.whl 2> /dev/null | wc -l)
-        if [ "$count" -gt 1 ]; then
-          echo "Found more than 1 wheel"
-          exit 1
-        elif [ "$count" -eq 0 ]; then
-          echo "Found no wheels"
-          exit 1
-        fi
-        for file in ~/target/wheels/*.whl; do
-          aws s3 cp $file s3://github-actions-artifacts-bucket/builds/${{ github.sha }}/ --acl public-read --no-progress;
-          file_basename=$(basename $file)
-          echo "wheel=$file_basename" >> $GITHUB_OUTPUT
-          echo "Output wheel has been built and stored in S3 at the following location:" >> $GITHUB_STEP_SUMMARY
-          echo "https://us-west-2.console.aws.amazon.com/s3/buckets/github-actions-artifacts-bucket?prefix=builds/${{ github.sha }}/" >> $GITHUB_STEP_SUMMARY
-        done
+        echo "Output python-release-wheel location:" >> $GITHUB_STEP_SUMMARY
+        echo "https://us-west-2.console.aws.amazon.com/s3/buckets/github-actions-artifacts-bucket?prefix=builds/${{ github.sha }}/" >> $GITHUB_STEP_SUMMARY
