@@ -225,10 +225,8 @@ fn expand_wildcards(
 /// - sum(col("a")) + col("b") when "b" is not a group by key
 ///     - not all branches are aggregations
 fn has_single_agg_layer(expr: &ExprRef, groupby: &HashSet<ExprRef>) -> bool {
-    if groupby.contains(expr) {
-        true
-    } else {
-        match expr.as_ref() {
+    groupby.contains(expr)
+        || match expr.as_ref() {
             Expr::Agg(agg_expr) => !agg_expr.children().iter().any(has_agg),
             Expr::Column(_) => false,
             Expr::Literal(_) => true,
@@ -237,7 +235,6 @@ fn has_single_agg_layer(expr: &ExprRef, groupby: &HashSet<ExprRef>) -> bool {
                 .iter()
                 .all(|e| has_single_agg_layer(e, groupby)),
         }
-    }
 }
 
 fn convert_udfs_to_map_groups(expr: &ExprRef) -> ExprRef {
