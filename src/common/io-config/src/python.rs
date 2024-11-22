@@ -8,8 +8,9 @@ use aws_credential_types::{
     provider::{error::CredentialsError, ProvideCredentials},
     Credentials,
 };
-use common_error::DaftError;
-use common_py_serde::{deserialize_py_object, serialize_py_object};
+use common_py_serde::{
+    deserialize_py_object, impl_bincode_py_state_serialization, serialize_py_object,
+};
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -131,7 +132,7 @@ pub struct GCSConfig {
 /// Example:
 ///     >>> io_config = IOConfig(s3=S3Config(key_id="xxx", access_key="xxx", num_tries=10), azure=AzureConfig(anonymous=True), gcs=GCSConfig(...))
 ///     >>> daft.read_parquet(["s3://some-path", "az://some-other-path", "gs://path3"], io_config=io_config)
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[pyclass]
 pub struct IOConfig {
     pub config: config::IOConfig,
@@ -234,23 +235,6 @@ impl IOConfig {
         })
     }
 
-    #[staticmethod]
-    pub fn from_json(input: &str) -> PyResult<Self> {
-        let config: config::IOConfig = serde_json::from_str(input).map_err(DaftError::from)?;
-        Ok(config.into())
-    }
-
-    pub fn __reduce__(&self, py: Python) -> PyResult<(PyObject, (String,))> {
-        let io_config_module = py.import_bound(pyo3::intern!(py, "daft.io.config"))?;
-        let json_string = serde_json::to_string(&self.config).map_err(DaftError::from)?;
-        Ok((
-            io_config_module
-                .getattr(pyo3::intern!(py, "_io_config_from_json"))?
-                .into(),
-            (json_string,),
-        ))
-    }
-
     pub fn __hash__(&self) -> PyResult<u64> {
         use std::{collections::hash_map::DefaultHasher, hash::Hash};
 
@@ -259,6 +243,8 @@ impl IOConfig {
         Ok(hasher.finish())
     }
 }
+
+impl_bincode_py_state_serialization!(IOConfig);
 
 #[pymethods]
 impl S3Config {
