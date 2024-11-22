@@ -36,11 +36,10 @@ impl Aggregate {
     ) -> logical_plan::Result<Self> {
         let upstream_schema = input.schema();
 
+        let groupby_set = HashSet::from_iter(groupby.clone());
+
         let groupby_resolver = ExprResolver::default();
-        let agg_resolver = ExprResolver::builder()
-            .in_agg_context(true)
-            .groupby(HashSet::from_iter(groupby.clone()))
-            .build();
+        let agg_resolver = ExprResolver::builder().groupby(&groupby_set).build();
 
         let (groupby, groupby_fields) = groupby_resolver
             .resolve(groupby, &upstream_schema)

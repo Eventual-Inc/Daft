@@ -34,11 +34,10 @@ impl Pivot {
     ) -> logical_plan::Result<Self> {
         let upstream_schema = input.schema();
 
+        let groupby_set = HashSet::from_iter(group_by.clone());
+
         let expr_resolver = ExprResolver::default();
-        let agg_resolver = ExprResolver::builder()
-            .in_agg_context(true)
-            .groupby(HashSet::from_iter(group_by.clone()))
-            .build();
+        let agg_resolver = ExprResolver::builder().groupby(&groupby_set).build();
 
         let (group_by, group_by_fields) = expr_resolver
             .resolve(group_by, &upstream_schema)
