@@ -38,15 +38,12 @@ jobs:
         restore-keys: ${{ runner.os }}-cargo-deps-
     - id: build_and_upload
       run: |
+        # Build wheel
         export CARGO_TARGET_DIR=~/target
         uv v
         source .venv/bin/activate
         uv pip install pip maturin boto3
-
-        if ! ls ~/target/wheels/*.whl 1> /dev/null 2>&1; then
-          # Build wheel
-          maturin build --release
-        fi
+        maturin build --release
 
         count=$(ls ~/target/wheels/*.whl 2> /dev/null | wc -l)
         if [ "$count" -gt 1 ]; then
