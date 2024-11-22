@@ -1,4 +1,4 @@
-use std::{collections::HashSet, sync::Arc};
+use std::sync::Arc;
 
 use common_error::DaftError;
 use daft_core::prelude::*;
@@ -34,11 +34,12 @@ impl Pivot {
     ) -> logical_plan::Result<Self> {
         let upstream_schema = input.schema();
 
-        let groupby_set = HashSet::from_iter(group_by.clone());
+        let agg_resolver = ExprResolver::builder().groupby(&group_by).build();
+        let (aggregation, _) = agg_resolver
+            .resolve_single(aggregation, &upstream_schema)
+            .context(CreationSnafu)?;
 
         let expr_resolver = ExprResolver::default();
-        let agg_resolver = ExprResolver::builder().groupby(&groupby_set).build();
-
         let (group_by, group_by_fields) = expr_resolver
             .resolve(group_by, &upstream_schema)
             .context(CreationSnafu)?;
@@ -47,10 +48,6 @@ impl Pivot {
             .context(CreationSnafu)?;
         let (value_column, value_col_field) = expr_resolver
             .resolve_single(value_column, &upstream_schema)
-            .context(CreationSnafu)?;
-
-        let (aggregation, _) = agg_resolver
-            .resolve_single(aggregation, &upstream_schema)
             .context(CreationSnafu)?;
 
         let Expr::Agg(agg_expr) = aggregation.as_ref() else {
