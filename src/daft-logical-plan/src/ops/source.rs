@@ -33,28 +33,23 @@ impl Source {
         mut self,
         execution_config: Option<&DaftExecutionConfig>,
     ) -> Self {
-        if let Some(scan_info) = Arc::get_mut(&mut self.source_info) {
-            match scan_info {
-                SourceInfo::Physical(physical_scan_info) => {
-                    match &mut physical_scan_info.scan_state {
-                        ScanState::Operator(scan_op) => {
-                            let scan_tasks = scan_op
-                                .0
-                                .to_scan_tasks(
-                                    physical_scan_info.pushdowns.clone(),
-                                    execution_config,
-                                )
-                                .expect("Failed to get scan tasks from scan operator");
-                            physical_scan_info.scan_state = ScanState::Tasks(scan_tasks);
-                        }
-                        ScanState::Tasks(_) => {
-                            panic!("Physical scan nodes are being materialized more than once");
-                        }
+        let new_physical_scan_info = match Arc::unwrap_or_clone(self.source_info) {
+            SourceInfo::Physical(mut physical_scan_info) => {
+                let scan_tasks = match &physical_scan_info.scan_state {
+                    ScanState::Operator(scan_op) => scan_op
+                        .0
+                        .to_scan_tasks(physical_scan_info.pushdowns.clone(), execution_config)
+                        .expect("Failed to get scan tasks from scan operator"),
+                    ScanState::Tasks(_) => {
+                        panic!("Physical scan nodes are being materialized more than once");
                     }
-                }
-                _ => panic!("Only unmaterialized physical scan nodes can be materialized"),
+                };
+                physical_scan_info.scan_state = ScanState::Tasks(scan_tasks);
+                physical_scan_info
             }
-        }
+            _ => panic!("Only unmaterialized physical scan nodes can be materialized"),
+        };
+        self.source_info = Arc::new(SourceInfo::Physical(new_physical_scan_info));
         self
     }
 
@@ -70,9 +65,34 @@ impl Source {
                 lower_bound_bytes: *size_bytes,
                 upper_bound_bytes: Some(*size_bytes),
             },
-            SourceInfo::Physical(_) => {
-                panic!("Scan nodes should be materialized before stats are materialized")
-            }
+            SourceInfo::Physical(physical_scan_info) => match &physical_scan_info.scan_state {
+                ScanState::Operator(_) => {
+                    panic!("Scan nodes should be materialized before stats are materialized")
+                }
+                ScanState::Tasks(scan_tasks) => {
+                    let mut approx_stats = ApproxStats::empty();
+                    for st in scan_tasks {
+                        approx_stats.lower_bound_rows += st.num_rows().unwrap_or(0);
+                        let in_memory_size = st.estimate_in_memory_size_bytes(None);
+                        approx_stats.lower_bound_bytes += in_memory_size.unwrap_or(0);
+                        if let Some(st_ub) = st.upper_bound_rows() {
+                            if let Some(ub) = approx_stats.upper_bound_rows {
+                                approx_stats.upper_bound_rows = Some(ub + st_ub);
+                            } else {
+                                approx_stats.upper_bound_rows = st.upper_bound_rows();
+                            }
+                        }
+                        if let Some(st_ub) = in_memory_size {
+                            if let Some(ub) = approx_stats.upper_bound_bytes {
+                                approx_stats.upper_bound_bytes = Some(ub + st_ub);
+                            } else {
+                                approx_stats.upper_bound_bytes = in_memory_size;
+                            }
+                        }
+                    }
+                    approx_stats
+                }
+            },
             SourceInfo::PlaceHolder(_) => ApproxStats::empty(),
         };
         self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats));
