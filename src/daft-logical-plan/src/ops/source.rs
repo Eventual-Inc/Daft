@@ -29,7 +29,10 @@ impl Source {
         }
     }
 
-    // Helper function that converts ScanOperatorRef inside a the Source node's PhysicalScanInfo into scan tasks.
+    // Helper method that converts the ScanOperatorRef inside a Source node's PhysicalScanInfo into scan tasks.
+    // Should only be called if a Source node's source info contains PhysicalScanInfo. The PhysicalScanInfo
+    // should also hold a ScanState::Operator and not a ScanState::Tasks (which would indicate that we're
+    // materializing this physical scan node multiple times).
     pub(crate) fn build_materialized_scan_source(
         mut self,
         execution_config: Option<&DaftExecutionConfig>,
