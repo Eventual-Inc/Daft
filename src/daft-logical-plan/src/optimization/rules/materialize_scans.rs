@@ -5,7 +5,6 @@ pub struct MaterializeScans {
 
 impl MaterializeScans {
     pub fn new(execution_config: Option<Arc<DaftExecutionConfig>>) -> Self {
-        println!("MaterializeScans execution_config: {:?}", execution_config);
         Self { execution_config }
     }
 }
