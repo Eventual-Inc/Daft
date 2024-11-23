@@ -1,4 +1,4 @@
-name: Run command on a Ray Cluster
+name: run-cluster
 
 on:
   workflow_dispatch:
