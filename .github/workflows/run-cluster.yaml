@@ -41,7 +41,6 @@ jobs:
         uv pip install ray[default] boto3
     - name: Dynamically update ray config file
       run: |
-        source .venv/bin/activate
         id="ray-ci-run-${{ github.run_id }}_${{ github.run_attempt }}"
         sed -i "s|{{RAY_CLUSTER_NAME}}|$id|g" .github/assets/benchmarking_ray_config.yaml
         sed -i 's|{{PYTHON_VERSION}}|${{ inputs.python_version }}|g' .github/assets/benchmarking_ray_config.yaml
@@ -53,6 +52,7 @@ jobs:
         chmod 600 ~/.ssh/ci-github-actions-ray-cluster-key.pem
     - name: Spin up ray cluster
       run: |
+        source .venv/bin/activate
         ray up .github/assets/benchmarking_ray_config.yaml -y
     - name: Setup connection to ray cluster
       run: |
