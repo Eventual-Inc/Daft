@@ -67,6 +67,7 @@ jobs:
         source .venv/bin/activate
         ray job submit --address http://localhost:8265 -- python -c "print('Hello, world!')"
     - name: Spin down ray cluster
+      if: always()
       run: |
         source .venv/bin/activate
         ray down .github/assets/benchmarking_ray_config.yaml -y
