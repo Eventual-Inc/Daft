@@ -16,7 +16,7 @@ on:
 jobs:
   run-tpch:
     runs-on: [self-hosted, linux, x64, ci-dev]
-    timeout-minutes: 15 # Remove for ssh debugging
+    # timeout-minutes: 15 # Remove for ssh debugging
     permissions:
       id-token: write
       contents: read
@@ -39,6 +39,11 @@ jobs:
         uv v
         source .venv/bin/activate
         uv pip install ray[default]
+
+    # SSH breakpoint
+    # remove later!
+    - uses: lhotari/action-upterm@v1
+
     - name: Spin up ray cluster
       run: |
         source .venv/bin/activate
