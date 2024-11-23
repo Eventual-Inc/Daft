@@ -74,7 +74,7 @@ jobs:
     - name: Submit job to ray cluster
       run: |
         source .venv/bin/activate
-        if [[ '${{ inputs.command }}' -eq '' ]]; then
+        if [[ -z '${{ inputs.command }}' ]]; then
           echo 'Invalid command submitted; command cannot be empty'
           exit 1
         fi
