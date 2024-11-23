@@ -1,0 +1,73 @@
+name: run-cluster
+
+on:
+  workflow_dispatch:
+    inputs:
+      daft_version:
+        type: string
+        description: The wheel artifact to use
+        required: false
+      python_version:
+        type: string
+        description: The version of python to use
+        required: false
+        default: "3.9"
+
+jobs:
+  run-command:
+    runs-on: [self-hosted, linux, x64, ci-dev]
+    timeout-minutes: 15 # Remove for ssh debugging
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+    - name: Checkout repo
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-region: us-west-2
+        role-session-name: run-command-workflow
+    - name: Install uv, rust, python
+      uses: ./.github/actions/install
+      with:
+        python_version: ${{ inputs.python_version }}
+    - name: Setup uv environment
+      run: |
+        uv v
+        source .venv/bin/activate
+        uv pip install ray[default] boto3
+    - name: Dynamically update ray config file
+      run: |
+        id="ray-ci-run-${{ github.run_id }}_${{ github.run_attempt }}"
+        sed -i "s|{{RAY_CLUSTER_NAME}}|$id|g" .github/assets/benchmarking_ray_config.yaml
+        sed -i 's|{{PYTHON_VERSION}}|${{ inputs.python_version }}|g' .github/assets/benchmarking_ray_config.yaml
+        if [[ '${{ inputs.daft_version }}' ]]; then
+          sed -i 's|{{DAFT_VERSION}}|==${{ inputs.daft_version }}|g' .github/assets/benchmarking_ray_config.yaml
+        else
+          sed -i 's|{{DAFT_VERSION}}||g' .github/assets/benchmarking_ray_config.yaml
+        fi
+    - name: Download private ssh key
+      run: |
+        KEY=$(aws secretsmanager get-secret-value --secret-id ci-github-actions-ray-cluster-key-3 --query SecretString --output text)
+        echo "$KEY" >> ~/.ssh/ci-github-actions-ray-cluster-key.pem
+        chmod 600 ~/.ssh/ci-github-actions-ray-cluster-key.pem
+    - name: Spin up ray cluster
+      run: |
+        source .venv/bin/activate
+        ray up .github/assets/benchmarking_ray_config.yaml -y
+    - name: Setup connection to ray cluster
+      run: |
+        source .venv/bin/activate
+        ray dashboard .github/assets/benchmarking_ray_config.yaml &
+    - name: Submit job to ray cluster
+      run: |
+        source .venv/bin/activate
+        ray job submit --address http://localhost:8265 -- python -c "print('Hello, world!')"
+    - name: Spin down ray cluster
+      if: always()
+      run: |
+        source .venv/bin/activate
+        ray down .github/assets/benchmarking_ray_config.yaml -y

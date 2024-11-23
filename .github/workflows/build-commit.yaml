@@ -1,4 +1,4 @@
-name: Build a Daft commit and store the outputted wheel in AWS S3
+name: build-commit
 
 on:
   workflow_dispatch:
