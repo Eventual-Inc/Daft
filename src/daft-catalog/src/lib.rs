@@ -182,7 +182,7 @@ mod tests {
     #[test]
     fn test_register_and_unregister_named_table() {
         let mut catalog = DaftMetaCatalog::new_from_env();
-        let plan = LogicalPlanBuilder::new(mock_plan(), None, None);
+        let plan = LogicalPlanBuilder::from(mock_plan());
 
         // Register a table
         assert!(catalog
@@ -198,7 +198,7 @@ mod tests {
     #[test]
     fn test_read_registered_table() {
         let mut catalog = DaftMetaCatalog::new_from_env();
-        let plan = LogicalPlanBuilder::new(mock_plan(), None, None);
+        let plan = LogicalPlanBuilder::from(mock_plan());
 
         catalog.register_named_table("test_table", plan).unwrap();
 

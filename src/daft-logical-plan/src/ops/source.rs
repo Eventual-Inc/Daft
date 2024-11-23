@@ -29,6 +29,7 @@ impl Source {
         }
     }
 
+    // Helper function that converts ScanOperatorRef inside a the Source node's PhysicalScanInfo into scan tasks.
     pub(crate) fn build_materialized_scan_source(
         mut self,
         execution_config: Option<&DaftExecutionConfig>,

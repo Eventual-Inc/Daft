@@ -333,6 +333,7 @@ pub fn physical_plan_to_pipeline(
                     left_stats.approx_stats.upper_bound_bytes
                         <= right_stats.approx_stats.upper_bound_bytes
                 }
+                // If stats are not available, we fall back and build on the left.
                 _ => true,
             };
 

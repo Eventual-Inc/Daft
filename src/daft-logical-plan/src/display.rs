@@ -85,11 +85,11 @@ mod test {
     #[test]
     // create a random, complex plan and check if it can be displayed as expected
     fn test_mermaid_display() -> DaftResult<()> {
-        let subplan = LogicalPlanBuilder::new(plan_1(), None, None)
+        let subplan = LogicalPlanBuilder::from(plan_1())
             .filter(col("id").eq(lit(1)))?
             .build();
 
-        let subplan2 = LogicalPlanBuilder::new(plan_2(), None, None)
+        let subplan2 = LogicalPlanBuilder::from(plan_2())
             .filter(
                 startswith(col("last_name"), lit("S")).and(endswith(col("last_name"), lit("n"))),
             )?
@@ -159,11 +159,11 @@ Project1 --> Limit0
     #[test]
     // create a random, complex plan and check if it can be displayed as expected
     fn test_mermaid_display_simple() -> DaftResult<()> {
-        let subplan = LogicalPlanBuilder::new(plan_1(), None, None)
+        let subplan = LogicalPlanBuilder::from(plan_1())
             .filter(col("id").eq(lit(1)))?
             .build();
 
-        let subplan2 = LogicalPlanBuilder::new(plan_2(), None, None)
+        let subplan2 = LogicalPlanBuilder::from(plan_2())
             .filter(
                 startswith(col("last_name"), lit("S")).and(endswith(col("last_name"), lit("n"))),
             )?
@@ -173,7 +173,7 @@ Project1 --> Limit0
             .sort(vec![col("last_name")], vec![false], vec![false])?
             .build();
 
-        let plan = LogicalPlanBuilder::new(subplan, None, None)
+        let plan = LogicalPlanBuilder::from(subplan)
             .join_with_null_safe_equal(
                 subplan2,
                 vec![col("id")],
