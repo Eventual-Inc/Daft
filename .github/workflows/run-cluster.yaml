@@ -83,6 +83,18 @@ jobs:
           --address http://localhost:8265 \
           --runtime-env-json '{"DAFT_ENABLE_RAY_TRACING": "1"}' \
           -- ${{ inputs.command }}
+    - name: Kill connection to ray cluster
+      run: |
+        PID=$(lsof -t -i:8265)
+        if [[ -n "$PID" ]]; then
+            echo "Process $PID is listening on port 8265; killing it..."
+            kill -9 "$PID"
+            if [[ $? -eq 0 ]]; then
+                echo "Process $PID killed successfully"
+            else
+                echo "Failed to kill process $PID"
+            fi
+        fi
     - name: Download log files from ray cluster
       run: |
         source .venv/bin/activate
