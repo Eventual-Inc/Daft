@@ -8,7 +8,7 @@ use indexmap::IndexSet;
 use snafu::Snafu;
 
 pub use crate::ops::*;
-use crate::stats::StatsState;
+use crate::stats::PlanStats;
 
 /// Logical plan for a Daft query.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -199,7 +199,7 @@ impl LogicalPlan {
         }
     }
 
-    pub fn get_stats(&self) -> &StatsState {
+    pub fn materialized_stats(&self) -> &PlanStats {
         match self {
             Self::Source(Source { stats_state, .. })
             | Self::Project(Project { stats_state, .. })
@@ -218,7 +218,7 @@ impl LogicalPlan {
             | Self::Sink(Sink { stats_state, .. })
             | Self::Sample(Sample { stats_state, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { stats_state, .. }) => {
-                stats_state
+                stats_state.materialized_stats()
             }
             Self::Intersect(_) => {
                 panic!("Intersect nodes should be optimized away before stats are materialized")

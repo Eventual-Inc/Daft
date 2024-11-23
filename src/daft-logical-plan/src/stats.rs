@@ -9,10 +9,10 @@ pub enum StatsState {
 }
 
 impl StatsState {
-    pub fn unwrap_or_default(self) -> PlanStats {
+    pub fn materialized_stats(&self) -> &PlanStats {
         match self {
             Self::Materialized(stats) => stats,
-            Self::NotMaterialized => PlanStats::default(),
+            Self::NotMaterialized => panic!("Tried to get unmaterialized stats"),
         }
     }
 }

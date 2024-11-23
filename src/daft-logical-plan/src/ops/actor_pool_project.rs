@@ -72,9 +72,8 @@ impl ActorPoolProject {
 
     pub(crate) fn with_materialized_stats(mut self) -> Self {
         // TODO(desmond): We can do better estimations with the projection schema. For now, reuse the old logic.
-        let input_stats = self.input.get_stats();
-        assert!(matches!(input_stats, StatsState::Materialized(..)));
-        self.stats_state = input_stats.clone();
+        let input_stats = self.input.materialized_stats();
+        self.stats_state = StatsState::Materialized(input_stats.clone());
         self
     }
 

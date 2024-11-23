@@ -314,12 +314,8 @@ impl Join {
     pub(crate) fn with_materialized_stats(mut self) -> Self {
         // Assume a Primary-key + Foreign-Key join which would yield the max of the two tables.
         // TODO(desmond): We can do better estimations here. For now, use the old logic.
-        let left_stats = self.left.get_stats();
-        let right_stats = self.right.get_stats();
-        assert!(matches!(left_stats, StatsState::Materialized(..)));
-        assert!(matches!(right_stats, StatsState::Materialized(..)));
-        let left_stats = left_stats.clone().unwrap_or_default();
-        let right_stats = right_stats.clone().unwrap_or_default();
+        let left_stats = self.left.materialized_stats();
+        let right_stats = self.right.materialized_stats();
         let approx_stats = ApproxStats {
             lower_bound_rows: 0,
             upper_bound_rows: left_stats

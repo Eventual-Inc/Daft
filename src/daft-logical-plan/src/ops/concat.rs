@@ -48,12 +48,8 @@ impl Concat {
 
     pub(crate) fn with_materialized_stats(mut self) -> Self {
         // TODO(desmond): We can do better estimations with the projection schema. For now, reuse the old logic.
-        let input_stats = self.input.get_stats();
-        assert!(matches!(input_stats, StatsState::Materialized(..)));
-        let other_stats = self.other.get_stats();
-        assert!(matches!(other_stats, StatsState::Materialized(..)));
-        let input_stats = input_stats.clone().unwrap_or_default();
-        let other_stats = other_stats.clone().unwrap_or_default();
+        let input_stats = self.input.materialized_stats();
+        let other_stats = self.other.materialized_stats();
         let approx_stats = &input_stats.approx_stats + &other_stats.approx_stats;
         self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats));
         self
