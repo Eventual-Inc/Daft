@@ -83,10 +83,6 @@ jobs:
           --address http://localhost:8265 \
           --runtime-env-json '{"DAFT_RUNNER": "1", "DAFT_ENABLE_RAY_TRACING": "1"}' \
           -- ${{ inputs.command }}
-
-    # ssh breakpoint; remove later
-    - uses: lhotari/action-upterm@v1
-
     - name: Download log files from ray cluster
       run: |
         source .venv/bin/activate
