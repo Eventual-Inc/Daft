@@ -1,6 +1,7 @@
 name: run-cluster
 
 on:
+  push:
   workflow_dispatch:
     inputs:
       daft_version:
