@@ -81,7 +81,7 @@ jobs:
         ray job submit \
           --working-dir ${{ inputs.working_dir }} \
           --address http://localhost:8265 \
-          --runtime-env-json '{"DAFT_RUNNER": "1", "DAFT_ENABLE_RAY_TRACING": "1"}' \
+          --runtime-env-json '{"DAFT_RUNNER": "ray", "DAFT_ENABLE_RAY_TRACING": "1"}' \
           -- ${{ inputs.command }}
     - name: Download log files from ray cluster
       run: |
