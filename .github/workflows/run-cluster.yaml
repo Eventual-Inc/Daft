@@ -95,6 +95,10 @@ jobs:
                 echo "Failed to kill process $PID"
             fi
         fi
+
+    # ssh breakpoint; remove later
+    - uses: lhotari/action-upterm@v1
+
     - name: Download log files from ray cluster
       run: |
         source .venv/bin/activate
