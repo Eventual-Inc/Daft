@@ -81,7 +81,7 @@ jobs:
         ray job submit \
           --working-dir ${{ inputs.working_dir }} \
           --address http://localhost:8265 \
-          --runtime-env-json '{"DAFT_ENABLE_RAY_TRACING": "1"}' \
+          --runtime-env-json '{"DAFT_RUNNER": "1", "DAFT_ENABLE_RAY_TRACING": "1"}' \
           -- ${{ inputs.command }}
 
     # ssh breakpoint; remove later
@@ -90,7 +90,7 @@ jobs:
     - name: Download log files from ray cluster
       run: |
         source .venv/bin/activate
-        ray rsync-down .github/assets/benchmarking_ray_config.yaml /tmp/ray/session_*/logs/daft ray-daft-logs
+        ray rsync-down .github/assets/benchmarking_ray_config.yaml /tmp/ray/session_*/logs ray-daft-logs
     - name: Kill connection to ray cluster
       run: |
         PID=$(lsof -t -i:8265)
