@@ -1,11 +1,10 @@
 use std::sync::Arc;
 
 use common_daft_config::DaftExecutionConfig;
-use common_scan_info::PhysicalScanInfo;
+use common_scan_info::{PhysicalScanInfo, ScanState};
 use daft_schema::schema::SchemaRef;
 
 use crate::{
-    ops::MaterializedScanSource,
     source_info::{InMemoryInfo, PlaceHolderInfo, SourceInfo},
     stats::{ApproxStats, PlanStats, StatsState},
 };
@@ -30,26 +29,33 @@ impl Source {
         }
     }
 
-    pub(crate) fn with_materialized_scan_source(
-        &self,
+    pub(crate) fn build_materialized_scan_source(
+        mut self,
         execution_config: Option<&DaftExecutionConfig>,
-    ) -> MaterializedScanSource {
-        match &*self.source_info {
-            SourceInfo::Physical(PhysicalScanInfo {
-                scan_op, pushdowns, ..
-            }) => {
-                let scan_tasks = scan_op
-                    .0
-                    .to_scan_tasks(pushdowns.clone(), execution_config)
-                    .expect("Failed to get scan tasks from scan operator");
-                MaterializedScanSource::new(
-                    scan_tasks,
-                    pushdowns.clone(),
-                    self.output_schema.clone(),
-                )
+    ) -> Self {
+        if let Some(scan_info) = Arc::get_mut(&mut self.source_info) {
+            match scan_info {
+                SourceInfo::Physical(physical_scan_info) => {
+                    match &mut physical_scan_info.scan_state {
+                        ScanState::Operator(scan_op) => {
+                            let scan_tasks = scan_op
+                                .0
+                                .to_scan_tasks(
+                                    physical_scan_info.pushdowns.clone(),
+                                    execution_config,
+                                )
+                                .expect("Failed to get scan tasks from scan operator");
+                            physical_scan_info.scan_state = ScanState::Tasks(scan_tasks);
+                        }
+                        ScanState::Tasks(_) => {
+                            panic!("Physical scan nodes are being materialized more than once");
+                        }
+                    }
+                }
+                _ => panic!("Only unmaterialized physical scan nodes can be materialized"),
             }
-            _ => panic!("Only physical scan nodes can be materialized"),
         }
+        self
     }
 
     pub(crate) fn with_materialized_stats(mut self) -> Self {
@@ -79,12 +85,12 @@ impl Source {
         match self.source_info.as_ref() {
             SourceInfo::Physical(PhysicalScanInfo {
                 source_schema,
-                scan_op,
+                scan_state: scan_op,
                 partitioning_keys,
                 pushdowns,
             }) => {
                 use itertools::Itertools;
-                res.extend(scan_op.0.multiline_display());
+                res.extend(scan_op.multiline_display());
 
                 res.push(format!("File schema = {}", source_schema.short_string()));
                 res.push(format!(

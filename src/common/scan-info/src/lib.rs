@@ -22,8 +22,32 @@ pub use scan_operator::{ScanOperator, ScanOperatorRef};
 pub use scan_task::{BoxScanTaskLikeIter, ScanTaskLike, ScanTaskLikeRef};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ScanState {
+    Operator(ScanOperatorRef),
+    Tasks(Vec<ScanTaskLikeRef>),
+}
+
+impl ScanState {
+    pub fn multiline_display(&self) -> Vec<String> {
+        match self {
+            Self::Operator(scan_op) => scan_op.0.multiline_display(),
+            Self::Tasks(scan_tasks) => {
+                vec![format!("Num Scan Tasks = {}", scan_tasks.len())]
+            }
+        }
+    }
+
+    pub fn get_scan_op(&self) -> &ScanOperatorRef {
+        match self {
+            Self::Operator(scan_op) => scan_op,
+            Self::Tasks(_) => panic!("Tried to get scan op from materialized physical scan info"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PhysicalScanInfo {
-    pub scan_op: ScanOperatorRef,
+    pub scan_state: ScanState,
     pub source_schema: SchemaRef,
     pub partitioning_keys: Vec<PartitionField>,
     pub pushdowns: Pushdowns,
@@ -38,7 +62,7 @@ impl PhysicalScanInfo {
         pushdowns: Pushdowns,
     ) -> Self {
         Self {
-            scan_op,
+            scan_state: ScanState::Operator(scan_op),
             source_schema,
             partitioning_keys,
             pushdowns,
@@ -48,7 +72,7 @@ impl PhysicalScanInfo {
     #[must_use]
     pub fn with_pushdowns(&self, pushdowns: Pushdowns) -> Self {
         Self {
-            scan_op: self.scan_op.clone(),
+            scan_state: self.scan_state.clone(),
             source_schema: self.source_schema.clone(),
             partitioning_keys: self.partitioning_keys.clone(),
             pushdowns,

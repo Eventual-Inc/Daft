@@ -7,7 +7,7 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
-use common_scan_info::PhysicalScanInfo;
+use common_scan_info::{PhysicalScanInfo, ScanState};
 use daft_core::prelude::*;
 use daft_dsl::{
     col, functions::agg::merge_mean, is_partition_compatible, AggExpr, ApproxPercentileParams,
@@ -19,7 +19,7 @@ use daft_logical_plan::{
     ops::{
         ActorPoolProject as LogicalActorPoolProject, Aggregate as LogicalAggregate,
         Distinct as LogicalDistinct, Explode as LogicalExplode, Filter as LogicalFilter,
-        Join as LogicalJoin, Limit as LogicalLimit, MaterializedScanSource,
+        Join as LogicalJoin, Limit as LogicalLimit,
         MonotonicallyIncreasingId as LogicalMonotonicallyIncreasingId, Pivot as LogicalPivot,
         Project as LogicalProject, Repartition as LogicalRepartition, Sample as LogicalSample,
         Sink as LogicalSink, Sort as LogicalSort, Source, Unpivot as LogicalUnpivot,
@@ -42,11 +42,18 @@ pub(super) fn translate_single_logical_node(
         LogicalPlan::Source(Source { source_info, .. }) => match source_info.as_ref() {
             SourceInfo::Physical(PhysicalScanInfo {
                 pushdowns,
-                scan_op,
+                scan_state,
                 source_schema,
                 ..
             }) => {
-                let scan_tasks = scan_op.0.to_scan_tasks(pushdowns.clone(), Some(cfg))?;
+                let scan_tasks = {
+                    match scan_state {
+                        ScanState::Operator(scan_op) => {
+                            scan_op.0.to_scan_tasks(pushdowns.clone(), Some(cfg))?
+                        }
+                        ScanState::Tasks(scan_tasks) => scan_tasks.clone(),
+                    }
+                };
 
                 if scan_tasks.is_empty() {
                     let clustering_spec =
@@ -86,30 +93,6 @@ pub(super) fn translate_single_logical_node(
                 panic!("Placeholder {source_id} should not get to translation. This should have been optimized away");
             }
         },
-        LogicalPlan::MaterializedScanSource(MaterializedScanSource {
-            scan_tasks, schema, ..
-        }) => {
-            if scan_tasks.is_empty() {
-                let clustering_spec =
-                    Arc::new(ClusteringSpec::Unknown(UnknownClusteringConfig::new(1)));
-
-                Ok(
-                    PhysicalPlan::EmptyScan(EmptyScan::new(schema.clone(), clustering_spec))
-                        .arced(),
-                )
-            } else {
-                let clustering_spec = Arc::new(ClusteringSpec::Unknown(
-                    UnknownClusteringConfig::new(scan_tasks.len()),
-                ));
-                Ok(
-                    PhysicalPlan::TabularScan(TabularScan::new(
-                        scan_tasks.clone(),
-                        clustering_spec,
-                    ))
-                    .arced(),
-                )
-            }
-        }
         LogicalPlan::Project(LogicalProject { projection, .. }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
             Ok(

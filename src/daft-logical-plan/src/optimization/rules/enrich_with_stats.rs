@@ -15,6 +15,7 @@ use super::OptimizerRule;
 use crate::LogicalPlan;
 
 // Add stats to all logical plan nodes in a bottom up fashion.
+// All scan nodes MUST be materialized before stats are enriched.
 impl OptimizerRule for EnrichWithStats {
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         plan.transform_up(|c| {

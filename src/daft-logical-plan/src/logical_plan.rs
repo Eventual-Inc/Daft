@@ -14,7 +14,6 @@ use crate::stats::StatsState;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum LogicalPlan {
     Source(Source),
-    MaterializedScanSource(MaterializedScanSource),
     Project(Project),
     ActorPoolProject(ActorPoolProject),
     Filter(Filter),
@@ -45,7 +44,6 @@ impl LogicalPlan {
     pub fn schema(&self) -> SchemaRef {
         match self {
             Self::Source(Source { output_schema, .. }) => output_schema.clone(),
-            Self::MaterializedScanSource(MaterializedScanSource { schema, .. }) => schema.clone(),
             Self::Project(Project {
                 projected_schema, ..
             }) => projected_schema.clone(),
@@ -173,7 +171,6 @@ impl LogicalPlan {
             Self::Intersect(_) => vec![IndexSet::new(), IndexSet::new()],
             Self::Union(_) => vec![IndexSet::new(), IndexSet::new()],
             Self::Source(_) => todo!(),
-            Self::MaterializedScanSource(_) => todo!(),
             Self::Sink(_) => todo!(),
         }
     }
@@ -181,7 +178,6 @@ impl LogicalPlan {
     pub fn name(&self) -> &'static str {
         match self {
             Self::Source(..) => "Source",
-            Self::MaterializedScanSource(..) => "MaterializedScanSource",
             Self::Project(..) => "Project",
             Self::ActorPoolProject(..) => "ActorPoolProject",
             Self::Filter(..) => "Filter",
@@ -206,7 +202,6 @@ impl LogicalPlan {
     pub fn get_stats(&self) -> &StatsState {
         match self {
             Self::Source(Source { stats_state, .. })
-            | Self::MaterializedScanSource(MaterializedScanSource { stats_state, .. })
             | Self::Project(Project { stats_state, .. })
             | Self::ActorPoolProject(ActorPoolProject { stats_state, .. })
             | Self::Filter(Filter { stats_state, .. })
@@ -239,9 +234,6 @@ impl LogicalPlan {
     pub fn with_materialized_stats(self) -> Self {
         match self {
             Self::Source(plan) => Self::Source(plan.with_materialized_stats()),
-            Self::MaterializedScanSource(plan) => {
-                Self::MaterializedScanSource(plan.with_materialized_stats())
-            }
             Self::Project(plan) => Self::Project(plan.with_materialized_stats()),
             Self::ActorPoolProject(plan) => Self::ActorPoolProject(plan.with_materialized_stats()),
             Self::Filter(plan) => Self::Filter(plan.with_materialized_stats()),
@@ -272,7 +264,6 @@ impl LogicalPlan {
     pub fn multiline_display(&self) -> Vec<String> {
         match self {
             Self::Source(source) => source.multiline_display(),
-            Self::MaterializedScanSource(plan) => plan.multiline_display(),
             Self::Project(projection) => projection.multiline_display(),
             Self::ActorPoolProject(projection) => projection.multiline_display(),
             Self::Filter(filter) => filter.multiline_display(),
@@ -299,7 +290,6 @@ impl LogicalPlan {
     pub fn children(&self) -> Vec<&Self> {
         match self {
             Self::Source(..) => vec![],
-            Self::MaterializedScanSource(..) => vec![],
             Self::Project(Project { input, .. }) => vec![input],
             Self::ActorPoolProject(ActorPoolProject { input, .. }) => vec![input],
             Self::Filter(Filter { input, .. }) => vec![input],
@@ -327,7 +317,6 @@ impl LogicalPlan {
         match children {
             [input] => match self {
                 Self::Source(_) => panic!("Source nodes don't have children, with_new_children() should never be called for Source ops"),
-                Self::MaterializedScanSource(_) => panic!("MaterializedScanSource nodes don't have children, with_new_children() should never be called for MaterializedScanSource ops"),
                 Self::Project(Project { projection, .. }) => Self::Project(Project::try_new(
                     input.clone(), projection.clone(),
                 ).unwrap()),
@@ -460,7 +449,6 @@ macro_rules! impl_from_data_struct_for_logical_plan {
 }
 
 impl_from_data_struct_for_logical_plan!(Source);
-impl_from_data_struct_for_logical_plan!(MaterializedScanSource);
 impl_from_data_struct_for_logical_plan!(Project);
 impl_from_data_struct_for_logical_plan!(Filter);
 impl_from_data_struct_for_logical_plan!(Limit);

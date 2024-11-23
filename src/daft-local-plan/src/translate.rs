@@ -1,9 +1,8 @@
 use common_error::{DaftError, DaftResult};
+use common_scan_info::ScanState;
 use daft_core::join::JoinStrategy;
 use daft_dsl::ExprRef;
-use daft_logical_plan::{
-    ops::MaterializedScanSource, JoinType, LogicalPlan, LogicalPlanRef, SourceInfo,
-};
+use daft_logical_plan::{JoinType, LogicalPlan, LogicalPlanRef, SourceInfo};
 
 use super::plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
 
@@ -17,7 +16,12 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 )),
                 SourceInfo::Physical(info) => {
                     // We should be able to pass the ScanOperator into the physical plan directly but we need to figure out the serialization story
-                    let scan_tasks = info.scan_op.0.to_scan_tasks(info.pushdowns.clone(), None)?;
+                    let scan_tasks = match &info.scan_state {
+                        ScanState::Operator(scan_op) => {
+                            scan_op.0.to_scan_tasks(info.pushdowns.clone(), None)?
+                        }
+                        ScanState::Tasks(scan_tasks) => scan_tasks.clone(),
+                    };
                     if scan_tasks.is_empty() {
                         Ok(LocalPhysicalPlan::empty_scan(source.output_schema.clone()))
                     } else {
@@ -32,23 +36,6 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 SourceInfo::PlaceHolder(_) => {
                     panic!("We should not encounter a PlaceHolder during translation")
                 }
-            }
-        }
-        LogicalPlan::MaterializedScanSource(MaterializedScanSource {
-            scan_tasks,
-            pushdowns,
-            schema,
-            stats_state,
-        }) => {
-            if scan_tasks.is_empty() {
-                Ok(LocalPhysicalPlan::empty_scan(schema.clone()))
-            } else {
-                Ok(LocalPhysicalPlan::physical_scan(
-                    scan_tasks.clone(),
-                    pushdowns.clone(),
-                    schema.clone(),
-                    stats_state.clone(),
-                ))
             }
         }
         LogicalPlan::Filter(filter) => {

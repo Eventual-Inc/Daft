@@ -113,7 +113,7 @@ impl PushDownFilter {
                             needing_filter_op,
                         } = rewrite_predicate_for_partitioning(
                             &new_predicate,
-                            external_info.scan_op.0.partitioning_keys(),
+                            external_info.scan_state.get_scan_op().0.partitioning_keys(),
                         )?;
                         assert!(
                             partition_only_filter.len()

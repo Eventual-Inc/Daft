@@ -20,26 +20,23 @@ use crate::{LogicalPlan, SourceInfo};
 // Add stats to all logical plan nodes in a bottom up fashion.
 impl OptimizerRule for MaterializeScans {
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
-        plan.transform_up(|node| self.try_optimize_node(node))
+        plan.transform_up(|node| self.try_optimize_node(Arc::unwrap_or_clone(node)))
     }
 }
 
 impl MaterializeScans {
     #[allow(clippy::only_used_in_recursion)]
-    fn try_optimize_node(
-        &self,
-        plan: Arc<LogicalPlan>,
-    ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
-        match plan.as_ref() {
+    fn try_optimize_node(&self, plan: LogicalPlan) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
+        match plan {
             LogicalPlan::Source(source) => match &*source.source_info {
                 SourceInfo::Physical(_) => Ok(Transformed::yes(
                     source
-                        .with_materialized_scan_source(self.execution_config.as_deref())
+                        .build_materialized_scan_source(self.execution_config.as_deref())
                         .into(),
                 )),
-                _ => Ok(Transformed::no(plan)),
+                _ => Ok(Transformed::no(Arc::new(LogicalPlan::Source(source)))),
             },
-            _ => Ok(Transformed::no(plan)),
+            _ => Ok(Transformed::no(Arc::new(plan))),
         }
     }
 }
