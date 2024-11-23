@@ -47,8 +47,10 @@ jobs:
     - name: Spin up ray cluster
       run: |
         source .venv/bin/activate
+        id="ray-ci-run-${{ github.run_id }}_${{ github.run_attempt }}"
 
         # Dynamically update ray config file
+        sed -i 's|{{RAY_CLUSTER_NAME}}|$id|g' .github/assets/benchmarking_ray_config.yaml
         sed -i 's|{{PYTHON_VERSION}}|${{ inputs.python_version }}|g' .github/assets/benchmarking_ray_config.yaml
         sed -i 's|{{VERSION}}|${{ inputs.daft_version }}|g' .github/assets/benchmarking_ray_config.yaml
 
