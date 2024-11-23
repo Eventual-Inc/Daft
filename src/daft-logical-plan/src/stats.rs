@@ -65,6 +65,7 @@ pub struct AlwaysSame<T>(T);
 impl<T> Deref for AlwaysSame<T> {
     type Target = T;
 
+    #[inline]
     fn deref(&self) -> &Self::Target {
         &self.0
     }
@@ -87,12 +88,14 @@ impl<T> PartialEq for AlwaysSame<T> {
 }
 
 impl<T> From<T> for AlwaysSame<T> {
+    #[inline]
     fn from(value: T) -> Self {
         Self(value)
     }
 }
 
 impl<T: Display> Display for AlwaysSame<T> {
+    #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
     }
