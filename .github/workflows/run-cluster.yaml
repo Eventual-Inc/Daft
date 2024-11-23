@@ -78,9 +78,34 @@ jobs:
           echo 'Invalid command submitted; command cannot be empty'
           exit 1
         fi
-        ray job submit --working-dir ${{ inputs.working_dir }} --address http://localhost:8265 -- ${{ inputs.command }}
+        ray job submit \
+          --working-dir ${{ inputs.working_dir }} \
+          --address http://localhost:8265 \
+          --runtime-env-json '{"DAFT_RUNNER": "ray", "DAFT_ENABLE_RAY_TRACING": "1"}' \
+          -- ${{ inputs.command }}
+    - name: Download log files from ray cluster
+      run: |
+        source .venv/bin/activate
+        ray rsync-down .github/assets/benchmarking_ray_config.yaml /tmp/ray/session_*/logs ray-daft-logs
+    - name: Kill connection to ray cluster
+      run: |
+        PID=$(lsof -t -i:8265)
+        if [[ -n "$PID" ]]; then
+            echo "Process $PID is listening on port 8265; killing it..."
+            kill -9 "$PID"
+            if [[ $? -eq 0 ]]; then
+                echo "Process $PID killed successfully"
+            else
+                echo "Failed to kill process $PID"
+            fi
+        fi
     - name: Spin down ray cluster
       if: always()
       run: |
         source .venv/bin/activate
         ray down .github/assets/benchmarking_ray_config.yaml -y
+    - name: Upload log files
+      uses: actions/upload-artifact@v4
+      with:
+        name: ray-daft-logs
+        path: ray-daft-logs
