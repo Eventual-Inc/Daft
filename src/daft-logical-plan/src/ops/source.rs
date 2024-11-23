@@ -109,12 +109,12 @@ impl Source {
         match self.source_info.as_ref() {
             SourceInfo::Physical(PhysicalScanInfo {
                 source_schema,
-                scan_state: scan_op,
+                scan_state,
                 partitioning_keys,
                 pushdowns,
             }) => {
                 use itertools::Itertools;
-                res.extend(scan_op.multiline_display());
+                res.extend(scan_state.multiline_display());
 
                 res.push(format!("File schema = {}", source_schema.short_string()));
                 res.push(format!(
