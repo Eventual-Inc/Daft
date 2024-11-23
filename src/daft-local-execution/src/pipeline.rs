@@ -337,11 +337,25 @@ pub fn physical_plan_to_pipeline(
                 _ => true,
             };
 
+            // TODO(desmond): We might potentially want to flip the probe table side for
+            // left/right outer joins if one side is significantly larger. Needs to be tuned.
+            //
+            // In greater detail, consider a right outer join where the left side is several orders
+            // of magnitude larger than the right. An extreme example might have 1B rows on the left,
+            // and 10 rows on the right.
+            //
+            // Typically we would build the probe table on the left, then stream rows from the right
+            // to match against the probe table. But in this case we would have a giant intermediate
+            // probe table.
+            //
+            // An alternative 2-pass algorithm would be to:
+            // 1. Build the probe table on the right, but add a second data structure to keep track of
+            //    which rows on the right have been matched.
+            // 2. Stream rows on the left until all rows have been seen.
+            // 3. Finally, emit all unmatched rows from the right.
             let build_on_left = match join_type {
                 JoinType::Inner => left_smaller_than_right,
                 JoinType::Outer => left_smaller_than_right,
-                // TODO(desmond): We might potentially want to flip the probe table side for
-                // left/right outer joins if one side is significantly larger. Needs tuning.
                 // For left outer joins, we build on right so we can stream the left side.
                 JoinType::Left => false,
                 // For right outer joins, we build on left so we can stream the right side.
