@@ -44,7 +44,11 @@ jobs:
         id="ray-ci-run-${{ github.run_id }}_${{ github.run_attempt }}"
         sed -i "s|{{RAY_CLUSTER_NAME}}|$id|g" .github/assets/benchmarking_ray_config.yaml
         sed -i 's|{{PYTHON_VERSION}}|${{ inputs.python_version }}|g' .github/assets/benchmarking_ray_config.yaml
-        sed -i 's|{{DAFT_VERSION}}|==${{ inputs.daft_version }}|g' .github/assets/benchmarking_ray_config.yaml
+        if [[ ${{ inputs.daft_version }} ]]; then
+          sed -i 's|{{DAFT_VERSION}}|==${{ inputs.daft_version }}|g' .github/assets/benchmarking_ray_config.yaml
+        else
+          sed -i 's|{{DAFT_VERSION}}||g' .github/assets/benchmarking_ray_config.yaml
+        fi
     - name: Download private ssh key
       run: |
         KEY=$(aws secretsmanager get-secret-value --secret-id ci-github-actions-ray-cluster-key-3 --query SecretString --output text)
