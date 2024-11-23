@@ -20,7 +20,7 @@ on:
         type: string
         description: The working directory to submit to the cluster
         required: false
-        default: .github/assets
+        default: .github/working-dir
 
 jobs:
   run-command:
