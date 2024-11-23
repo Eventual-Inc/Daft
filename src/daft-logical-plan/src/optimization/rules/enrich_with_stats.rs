@@ -18,9 +18,9 @@ use crate::LogicalPlan;
 // All scan nodes MUST be materialized before stats are enriched.
 impl OptimizerRule for EnrichWithStats {
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
-        plan.transform_up(|c| {
+        plan.transform_up(|node: Arc<LogicalPlan>| {
             Ok(Transformed::yes(
-                Arc::unwrap_or_clone(c).with_materialized_stats().into(),
+                Arc::unwrap_or_clone(node).with_materialized_stats().into(),
             ))
         })
     }
