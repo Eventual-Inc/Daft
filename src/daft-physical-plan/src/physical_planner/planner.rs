@@ -230,9 +230,10 @@ impl TreeNodeRewriter for ReplacePlaceholdersWithMaterializedResult {
                     let new_source_node = LogicalPlan::Source(Source::new(
                         mat_results.in_memory_info.source_schema.clone(),
                         SourceInfo::InMemory(mat_results.in_memory_info).into(),
-                    ));
+                    ))
+                    .arced();
                     Ok(Transformed::new(
-                        new_source_node.arced(),
+                        new_source_node,
                         true,
                         TreeNodeRecursion::Stop,
                     ))

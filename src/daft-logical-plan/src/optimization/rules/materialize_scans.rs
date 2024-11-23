@@ -17,26 +17,36 @@ use common_treenode::{Transformed, TreeNode};
 use super::OptimizerRule;
 use crate::{LogicalPlan, SourceInfo};
 
-// Add stats to all logical plan nodes in a bottom up fashion.
+// Materialize scan tasks from scan operators for all physical scans.
 impl OptimizerRule for MaterializeScans {
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
-        plan.transform_up(|node| self.try_optimize_node(Arc::unwrap_or_clone(node)))
+        plan.transform_up(|node| self.try_optimize_node(node))
     }
 }
 
 impl MaterializeScans {
     #[allow(clippy::only_used_in_recursion)]
-    fn try_optimize_node(&self, plan: LogicalPlan) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
-        match plan {
+    fn try_optimize_node(
+        &self,
+        plan: Arc<LogicalPlan>,
+    ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
+        match &*plan {
             LogicalPlan::Source(source) => match &*source.source_info {
-                SourceInfo::Physical(_) => Ok(Transformed::yes(
-                    source
-                        .build_materialized_scan_source(self.execution_config.as_deref())
-                        .into(),
-                )),
-                _ => Ok(Transformed::no(Arc::new(LogicalPlan::Source(source)))),
+                SourceInfo::Physical(_) => {
+                    let source_plan = Arc::unwrap_or_clone(plan);
+                    if let LogicalPlan::Source(source) = source_plan {
+                        Ok(Transformed::yes(
+                            source
+                                .build_materialized_scan_source(self.execution_config.as_deref())
+                                .into(),
+                        ))
+                    } else {
+                        unreachable!("This logical plan was already matched as a Source node")
+                    }
+                }
+                _ => Ok(Transformed::no(plan)),
             },
-            _ => Ok(Transformed::no(Arc::new(plan))),
+            _ => Ok(Transformed::no(plan)),
         }
     }
 }
