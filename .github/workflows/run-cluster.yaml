@@ -1,4 +1,4 @@
-name: Run some given command on a Ray Cluster
+name: Run command on a Ray Cluster
 
 on:
   workflow_dispatch:
@@ -14,7 +14,7 @@ on:
         default: "3.9"
 
 jobs:
-  run-tpch:
+  run-command:
     runs-on: [self-hosted, linux, x64, ci-dev]
     timeout-minutes: 15 # Remove for ssh debugging
     permissions:
