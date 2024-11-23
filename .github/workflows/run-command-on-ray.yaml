@@ -21,13 +21,48 @@ jobs:
       id-token: write
       contents: read
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout repo
+      uses: actions/checkout@v4
       with:
         fetch-depth: 1
-    - uses: aws-actions/configure-aws-credentials@v4
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
       with:
         aws-region: us-west-2
         role-session-name: run-command-workflow
-    - uses: ./.github/actions/install
+    - name: Install uv, rust, python
+      uses: ./.github/actions/install
       with:
         python_version: ${{ inputs.python_version }}
+    - name: Setup uv environment
+      run: |
+        uv v
+        source .venv/bin/activate
+        uv pip install ray[default]
+    - name: Spin up ray cluster
+      run: |
+        source .venv/bin/activate
+
+        # Dynamically update ray config file
+        sed -i 's|{{PYTHON_VERSION}}|${{ inputs.python_version }}|g' .github/assets/benchmarking_ray_config.yaml
+        sed -i 's|{{VERSION}}|${{ inputs.daft_version }}|g' .github/assets/benchmarking_ray_config.yaml
+
+        # Download private ssh key
+        KEY=$(aws secretsmanager get-secret-value --secret-id ci-github-actions-ray-cluster-key-3 --query SecretString --output text)
+        echo "$KEY" >> ~/.ssh/ci-github-actions-ray-cluster-key.pem
+        chmod 600 ~/.ssh/ci-github-actions-ray-cluster-key.pem
+
+        # Spin up ray cluster
+        ray up .github/assets/benchmarking_ray_config.yaml -y
+    - name: Setup connection to ray cluster
+      run: |
+        source .venv/bin/activate
+        ray dashboard .github/assets/benchmarking_ray_config.yaml &
+    - name: Submit job to ray cluster
+      run: |
+        source .venv/bin/activate
+        ray job submit --address http://localhost:8265 -- python -c "print('Hello, world!')"
+    - name: Spin down ray cluster
+      run: |
+        source .venv/bin/activate
+        ray down .github/assets/benchmarking_ray_config.yaml -y
