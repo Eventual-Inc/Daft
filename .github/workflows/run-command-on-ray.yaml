@@ -38,28 +38,21 @@ jobs:
       run: |
         uv v
         source .venv/bin/activate
-        uv pip install ray[default]
-
-    # SSH breakpoint
-    # remove later!
-    - uses: lhotari/action-upterm@v1
-
-    - name: Spin up ray cluster
+        uv pip install ray[default] boto3
+    - name: Dynamically update ray config file
       run: |
         source .venv/bin/activate
         id="ray-ci-run-${{ github.run_id }}_${{ github.run_attempt }}"
-
-        # Dynamically update ray config file
-        sed -i 's|{{RAY_CLUSTER_NAME}}|$id|g' .github/assets/benchmarking_ray_config.yaml
+        sed -i "s|{{RAY_CLUSTER_NAME}}|$id|g" .github/assets/benchmarking_ray_config.yaml
         sed -i 's|{{PYTHON_VERSION}}|${{ inputs.python_version }}|g' .github/assets/benchmarking_ray_config.yaml
         sed -i 's|{{VERSION}}|${{ inputs.daft_version }}|g' .github/assets/benchmarking_ray_config.yaml
-
-        # Download private ssh key
+    - name: Download private ssh key
+      run: |
         KEY=$(aws secretsmanager get-secret-value --secret-id ci-github-actions-ray-cluster-key-3 --query SecretString --output text)
         echo "$KEY" >> ~/.ssh/ci-github-actions-ray-cluster-key.pem
         chmod 600 ~/.ssh/ci-github-actions-ray-cluster-key.pem
-
-        # Spin up ray cluster
+    - name: Spin up ray cluster
+      run: |
         ray up .github/assets/benchmarking_ray_config.yaml -y
     - name: Setup connection to ray cluster
       run: |
