@@ -41,7 +41,7 @@ impl PartialEq for PythonTablesFactoryArgs {
 }
 
 pub mod pylib {
-    use std::sync::Arc;
+    use std::{default, sync::Arc};
 
     use common_daft_config::{DaftExecutionConfig, PyDaftExecutionConfig};
     use common_error::DaftResult;
@@ -485,6 +485,68 @@ pub mod pylib {
     ) -> PyResult<PyLogicalPlanBuilder> {
         Ok(LogicalPlanBuilder::table_scan(scan_operator.into(), None)?.into())
     }
+
+    /// Estimates the in-memory size in bytes for a Parquet file.
+    ///
+    /// This function calculates an approximate size that the Parquet file would occupy
+    /// when loaded into memory, considering only the specified columns if provided.
+    ///
+    /// Used for testing only.
+    ///
+    /// # Arguments
+    ///
+    /// * `uri` - A string slice that holds the URI of the Parquet file.
+    /// * `file_size` - the size of the file on disk
+    /// * `columns` - An optional vector of strings representing the column names to consider.
+    ///               If None, all columns in the file will be considered.
+    /// * `has_metadata` - whether or not metadata is pre-populated in the ScanTask. Defaults to false.
+    ///
+    /// # Returns
+    ///
+    /// Returns an `i64` representing the estimated size in bytes.
+    ///
+    #[pyfunction]
+    pub fn estimate_in_memory_size_bytes(
+        uri: &str,
+        file_size: u64,
+        columns: Option<Vec<String>>,
+        has_metadata: Option<bool>,
+    ) -> PyResult<usize> {
+        let (schema, metadata) = daft_parquet::read::read_parquet_schema(
+            uri,
+            default::Default::default(),
+            None,
+            default::Default::default(),
+            None,
+        )?;
+        let data_source = DataSource::File {
+            path: uri.to_string(),
+            chunk_spec: None,
+            size_bytes: Some(file_size),
+            iceberg_delete_files: None,
+            metadata: if has_metadata.unwrap_or(false) {
+                Some(TableMetadata {
+                    length: metadata.num_rows,
+                })
+            } else {
+                None
+            },
+            partition_spec: None,
+            statistics: None,
+            parquet_metadata: None,
+        };
+        let st = ScanTask::new(
+            vec![data_source],
+            Arc::new(FileFormatConfig::Parquet(default::Default::default())),
+            Arc::new(schema),
+            Arc::new(crate::storage_config::StorageConfig::Native(Arc::new(
+                default::Default::default(),
+            ))),
+            Pushdowns::new(None, None, columns.map(Arc::new), None),
+            None,
+        );
+        Ok(st.estimate_in_memory_size_bytes(None).unwrap())
+    }
 }
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
@@ -496,6 +558,15 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<pylib::PyScanTask>()?;
     parent.add_function(wrap_pyfunction_bound!(
         pylib::logical_plan_table_scan,
+        parent
+    )?)?;
+
+    Ok(())
+}
+
+pub fn register_testing_modules(parent: &Bound<PyModule>) -> PyResult<()> {
+    parent.add_function(wrap_pyfunction_bound!(
+        pylib::estimate_in_memory_size_bytes,
         parent
     )?)?;
 

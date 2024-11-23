@@ -4,15 +4,13 @@ import pyarrow as pa
 import pyarrow.parquet as papq
 import pytest
 
+from daft.daft import testing as native_testing_utils
 from daft.table.micropartition import MicroPartition
 
 
 def get_scantask_estimated_size(pq_path: pathlib.Path, columns: list[str] | None = None) -> int:
     """Retrieve the estimated size for reading a given Parquet file"""
-    # HACK: use MicroPartition.read_parquet as a way to do this, but perhaps can expose
-    # a better API from Rust here. This should be an unloaded MicroPartition.
-    mp = MicroPartition.read_parquet(str(pq_path), columns=columns)
-    return mp.size_bytes()
+    return native_testing_utils.estimate_in_memory_size_bytes(str(pq_path), pq_path.stat().size, columns=columns)
 
 
 def get_actual_size(pq_path: pathlib.Path, columns: list[str] | None = None) -> int:
