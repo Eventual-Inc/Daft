@@ -54,7 +54,7 @@ impl Filter {
             lower_bound_bytes: 0,
             upper_bound_bytes,
         };
-        self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats));
+        self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
         self
     }
 

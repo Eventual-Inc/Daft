@@ -328,7 +328,7 @@ impl Join {
                 .upper_bound_bytes
                 .and_then(|l| right_stats.approx_stats.upper_bound_bytes.map(|r| l.max(r))),
         };
-        self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats));
+        self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
         self
     }
 

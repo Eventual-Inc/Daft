@@ -58,7 +58,7 @@ impl Sample {
         let approx_stats = input_stats
             .approx_stats
             .apply(|v| ((v as f64) * self.fraction) as usize);
-        self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats));
+        self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
         self
     }
 

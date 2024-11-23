@@ -1,10 +1,10 @@
-use std::fmt::Display;
+use std::{fmt::Display, hash::Hash, ops::Deref};
 
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
 pub enum StatsState {
-    Materialized(PlanStats),
+    Materialized(AlwaysSame<PlanStats>),
     NotMaterialized,
 }
 
@@ -55,24 +55,46 @@ impl Display for PlanStats {
     }
 }
 
-// We implement PartialEq, Eq, and Hash so that all PlanStats are considered equal. This allows
-// logical/physical plans that are enriched with stats to easily implement PartialEq, Eq, and Hash
-// in a way that ignores PlanStats when considering equality.
+// We implement PartialEq, Eq, and Hash for AlwaysSame, then add PlanStats to LogicalPlans via AlwaysSame.
+// This allows all PlanStats to be considered equal, so that logical/physical plans that are enriched with
+// stats can easily implement PartialEq, Eq, and Hash in a way that ignores PlanStats when considering equality.
 
-impl PartialEq for PlanStats {
-    #[inline]
-    fn eq(&self, _other: &Self) -> bool {
-        true // All PlanStats are considered equal.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct AlwaysSame<T>(T);
+
+impl<T> Deref for AlwaysSame<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
-impl Eq for PlanStats {}
-
-use std::hash::Hash;
-impl Hash for PlanStats {
+impl<T> Hash for AlwaysSame<T> {
     #[inline]
     fn hash<H: std::hash::Hasher>(&self, _state: &mut H) {
         // Add nothing to hash state since all PlanStats should hash the same.
+    }
+}
+
+impl<T> Eq for AlwaysSame<T> {}
+
+impl<T> PartialEq for AlwaysSame<T> {
+    #[inline]
+    fn eq(&self, _other: &Self) -> bool {
+        true
+    }
+}
+
+impl<T> From<T> for AlwaysSame<T> {
+    fn from(value: T) -> Self {
+        Self(value)
+    }
+}
+
+impl<T: Display> Display for AlwaysSame<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
     }
 }
 

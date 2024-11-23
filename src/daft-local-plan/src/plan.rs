@@ -114,7 +114,7 @@ impl LocalPhysicalPlan {
     pub(crate) fn empty_scan(schema: SchemaRef) -> LocalPhysicalPlanRef {
         Self::EmptyScan(EmptyScan {
             schema,
-            stats_state: StatsState::Materialized(PlanStats::empty()),
+            stats_state: StatsState::Materialized(PlanStats::empty().into()),
         })
         .arced()
     }

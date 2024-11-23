@@ -54,7 +54,7 @@ impl Limit {
             lower_bound_bytes: new_lower_rows * est_bytes_per_row_lower,
             upper_bound_bytes: est_bytes_per_row_upper.map(|x| x * new_upper_rows),
         };
-        self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats));
+        self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
         self
     }
 

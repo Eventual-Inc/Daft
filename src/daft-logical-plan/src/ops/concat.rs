@@ -51,7 +51,7 @@ impl Concat {
         let input_stats = self.input.materialized_stats();
         let other_stats = self.other.materialized_stats();
         let approx_stats = &input_stats.approx_stats + &other_stats.approx_stats;
-        self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats));
+        self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
         self
     }
 

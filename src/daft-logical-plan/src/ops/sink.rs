@@ -94,7 +94,7 @@ impl Sink {
     pub(crate) fn with_materialized_stats(mut self) -> Self {
         // Post-write DataFrame will contain paths to files that were written.
         // TODO(desmond): Estimate output size via root directory and estimates for # of partitions given partitioning column.
-        self.stats_state = StatsState::Materialized(PlanStats::empty());
+        self.stats_state = StatsState::Materialized(PlanStats::empty().into());
         self
     }
 

@@ -73,7 +73,7 @@ impl Explode {
             lower_bound_bytes: input_stats.approx_stats.lower_bound_bytes,
             upper_bound_bytes: None,
         };
-        self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats));
+        self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
         self
     }
 

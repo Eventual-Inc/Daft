@@ -93,7 +93,7 @@ impl Aggregate {
                 upper_bound_bytes: input_stats.approx_stats.upper_bound_bytes,
             }
         };
-        self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats));
+        self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
         self
     }
 
