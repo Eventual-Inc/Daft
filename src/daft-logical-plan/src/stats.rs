@@ -55,7 +55,7 @@ impl Display for PlanStats {
     }
 }
 
-// We implement PartialEq, Eq, and Hash for AlwaysSame, then add PlanStats to LogicalPlans via AlwaysSame.
+// We implement PartialEq, Eq, and Hash for AlwaysSame, then add PlanStats to LogicalPlans wrapped by AlwaysSame.
 // This allows all PlanStats to be considered equal, so that logical/physical plans that are enriched with
 // stats can easily implement PartialEq, Eq, and Hash in a way that ignores PlanStats when considering equality.
 
@@ -73,7 +73,7 @@ impl<T> Deref for AlwaysSame<T> {
 impl<T> Hash for AlwaysSame<T> {
     #[inline]
     fn hash<H: std::hash::Hasher>(&self, _state: &mut H) {
-        // Add nothing to hash state since all PlanStats should hash the same.
+        // Add nothing to hash state since all AlwaysSame should hash the same.
     }
 }
 
