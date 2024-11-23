@@ -19,5 +19,5 @@ Then submit the request to execute the workflow to run this file on a ray-cluste
 You can either do this via the GitHub Actions UI or by running the GitHub CLI:
 
 ```bash
-gh workflow run ray-cluster.yaml --ref $MY_BRANCH -f command="python my_script.py"
+gh workflow run run-cluster.yaml --ref $MY_BRANCH -f command="python my_script.py"
 ```
