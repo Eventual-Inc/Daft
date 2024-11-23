@@ -17,8 +17,8 @@ use crate::Pushdowns;
 pub trait ScanTaskLike: Debug + DisplayAs + Send + Sync {
     fn as_any(&self) -> &dyn Any;
     fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
-    fn as_ptr(&self) -> *const ();
     fn dyn_eq(&self, other: &dyn ScanTaskLike) -> bool;
+    fn dyn_hash(&self, state: &mut dyn Hasher);
     #[must_use]
     fn materialized_schema(&self) -> SchemaRef;
     #[must_use]
@@ -41,17 +41,17 @@ pub trait ScanTaskLike: Debug + DisplayAs + Send + Sync {
 
 pub type ScanTaskLikeRef = Arc<dyn ScanTaskLike>;
 
-impl Hash for dyn ScanTaskLike {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.as_ptr().hash(state);
-    }
-}
-
 impl Eq for dyn ScanTaskLike + '_ {}
 
 impl PartialEq for dyn ScanTaskLike + '_ {
     fn eq(&self, other: &Self) -> bool {
         self.dyn_eq(other)
+    }
+}
+
+impl Hash for dyn ScanTaskLike + '_ {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.dyn_hash(state);
     }
 }
 

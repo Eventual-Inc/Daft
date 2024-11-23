@@ -155,7 +155,7 @@ pub fn build_row_ranges(
     } else {
         let mut rows_to_add = limit.unwrap_or(metadata.num_rows as i64);
 
-        for (i, rg) in &metadata.row_groups {
+        for (i, rg) in metadata.row_groups.iter() {
             if (curr_row_index + rg.num_rows()) < row_start_offset {
                 curr_row_index += rg.num_rows();
                 continue;

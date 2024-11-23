@@ -38,10 +38,6 @@ pub trait ScanOperator: Send + Sync + Debug {
         pushdowns: Pushdowns,
         config: Option<&DaftExecutionConfig>,
     ) -> DaftResult<Vec<ScanTaskLikeRef>>;
-
-    fn is_python_scan(&self) -> bool {
-        false
-    }
 }
 
 impl Display for dyn ScanOperator {

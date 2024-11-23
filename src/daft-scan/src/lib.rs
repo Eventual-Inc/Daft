@@ -1,6 +1,12 @@
 #![feature(if_let_guard)]
 #![feature(let_chains)]
-use std::{any::Any, borrow::Cow, fmt::Debug, sync::Arc};
+use std::{
+    any::Any,
+    borrow::Cow,
+    fmt::Debug,
+    hash::{Hash, Hasher},
+    sync::Arc,
+};
 
 use common_display::DisplayAs;
 use common_error::DaftError;
@@ -100,7 +106,7 @@ impl From<Error> for pyo3::PyErr {
 }
 
 /// Specification of a subset of a file to be read.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum ChunkSpec {
     /// Selection of Parquet row groups.
     Parquet(Vec<i64>),
@@ -119,7 +125,7 @@ impl ChunkSpec {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Hash)]
 pub enum DataSource {
     File {
         path: String,
@@ -349,7 +355,7 @@ impl DisplayAs for DataSource {
     }
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize, Hash)]
 pub struct ScanTask {
     pub sources: Vec<DataSource>,
 
@@ -381,15 +387,15 @@ impl ScanTaskLike for ScanTask {
         self
     }
 
-    fn as_ptr(&self) -> *const () {
-        std::ptr::from_ref::<Self>(self).cast()
-    }
-
     fn dyn_eq(&self, other: &dyn ScanTaskLike) -> bool {
         other
             .as_any()
             .downcast_ref::<Self>()
             .map_or(false, |a| a == self)
+    }
+
+    fn dyn_hash(&self, mut state: &mut dyn Hasher) {
+        self.hash(&mut state);
     }
 
     fn materialized_schema(&self) -> SchemaRef {

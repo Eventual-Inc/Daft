@@ -6,6 +6,7 @@ use core::slice;
 use std::{
     collections::{HashMap, HashSet},
     fmt::{Display, Formatter, Result},
+    hash::{Hash, Hasher},
 };
 
 use arrow2::array::Array;
@@ -45,6 +46,17 @@ pub struct Table {
     pub schema: SchemaRef,
     columns: Vec<Series>,
     num_rows: usize,
+}
+
+impl Hash for Table {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.schema.hash(state);
+        for col in &self.columns {
+            let hashes = col.hash(None).expect("Failed to hash column");
+            hashes.into_iter().for_each(|h| h.hash(state));
+        }
+        self.num_rows.hash(state);
+    }
 }
 
 #[inline]

@@ -19,7 +19,7 @@ pub struct Descriptor {
 /// A descriptor for leaf-level primitive columns.
 /// This encapsulates information such as definition and repetition levels and is used to
 /// re-assemble nested data.
-#[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
+#[derive(Debug, PartialEq, Clone, Deserialize, Serialize, Hash)]
 pub struct ColumnDescriptor {
     /// The descriptor this columns' leaf.
     pub descriptor: Descriptor,

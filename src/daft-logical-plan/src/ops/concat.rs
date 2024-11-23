@@ -52,8 +52,8 @@ impl Concat {
         assert!(matches!(input_stats, StatsState::Materialized(..)));
         let other_stats = self.other.get_stats();
         assert!(matches!(other_stats, StatsState::Materialized(..)));
-        let input_stats = input_stats.unwrap_or_default();
-        let other_stats = other_stats.unwrap_or_default();
+        let input_stats = input_stats.clone().unwrap_or_default();
+        let other_stats = other_stats.clone().unwrap_or_default();
         let approx_stats = &input_stats.approx_stats + &other_stats.approx_stats;
         self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats));
         self

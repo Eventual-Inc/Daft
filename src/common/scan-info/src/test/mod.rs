@@ -1,4 +1,8 @@
-use std::{any::Any, sync::Arc};
+use std::{
+    any::Any,
+    hash::{Hash, Hasher},
+    sync::Arc,
+};
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::DisplayAs;
@@ -9,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{PartitionField, Pushdowns, ScanOperator, ScanTaskLike, ScanTaskLikeRef};
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Hash)]
 struct DummyScanTask {
     pub schema: SchemaRef,
     pub pushdowns: Pushdowns,
@@ -31,15 +35,15 @@ impl ScanTaskLike for DummyScanTask {
         self
     }
 
-    fn as_ptr(&self) -> *const () {
-        std::ptr::from_ref(self).cast::<()>()
-    }
-
     fn dyn_eq(&self, other: &dyn ScanTaskLike) -> bool {
         other
             .as_any()
             .downcast_ref::<Self>()
             .map_or(false, |a| a == self)
+    }
+
+    fn dyn_hash(&self, mut state: &mut dyn Hasher) {
+        self.hash(&mut state);
     }
 
     fn materialized_schema(&self) -> SchemaRef {

@@ -318,8 +318,8 @@ impl Join {
         let right_stats = self.right.get_stats();
         assert!(matches!(left_stats, StatsState::Materialized(..)));
         assert!(matches!(right_stats, StatsState::Materialized(..)));
-        let left_stats = left_stats.unwrap_or_default();
-        let right_stats = right_stats.unwrap_or_default();
+        let left_stats = left_stats.clone().unwrap_or_default();
+        let right_stats = right_stats.clone().unwrap_or_default();
         let approx_stats = ApproxStats {
             lower_bound_rows: 0,
             upper_bound_rows: left_stats

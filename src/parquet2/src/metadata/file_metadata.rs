@@ -1,3 +1,5 @@
+use std::{hash::{Hash, Hasher}, ops::{Deref, DerefMut}};
+
 use crate::{error::Error, metadata::get_sort_order};
 
 use super::{column_order::ColumnOrder, schema_descriptor::SchemaDescriptor, RowGroupMetaData};
@@ -70,12 +72,55 @@ mod key_value_metadata_serde {
     }
 }
 
-pub type RowGroupList = IndexMap<usize, RowGroupMetaData>;
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RowGroupList(pub IndexMap<usize, RowGroupMetaData>);
+
+impl Hash for RowGroupList {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        for (key, value) in self.iter() {
+            key.hash(state);
+            value.hash(state);
+        }
+    }
+}
+
+impl Deref for RowGroupList {
+    type Target = IndexMap<usize, RowGroupMetaData>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for RowGroupList {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl<T> FromIterator<T> for RowGroupList
+where
+    T: Into<(usize, RowGroupMetaData)>,
+{
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        let index_map = IndexMap::from_iter(iter.into_iter().map(Into::into));
+        RowGroupList(index_map)
+    }
+}
+
+impl IntoIterator for RowGroupList {
+    type Item = (usize, RowGroupMetaData);
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter().collect::<Vec<_>>().into_iter()
+    }
+}
 
 /// Metadata for a Parquet file.
 // This is almost equal to [`parquet_format_safe::FileMetaData`] but contains the descriptors,
 // which are crucial to deserialize pages.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Hash)]
 pub struct FileMetaData {
     /// version of this file.
     pub version: i32,
@@ -160,11 +205,7 @@ impl FileMetaData {
             version: self.version,
             schema: self.schema_descr.into_thrift(),
             num_rows: self.num_rows as i64,
-            row_groups: self
-                .row_groups
-                .into_values()
-                .map(|v| v.into_thrift())
-                .collect(),
+            row_groups: self.row_groups.iter().map(|(_, v)| v.clone().into_thrift()).collect(),
             key_value_metadata: self.key_value_metadata,
             created_by: self.created_by,
             column_orders: None, // todo

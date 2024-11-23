@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// See reference in
 /// <https://github.com/apache/parquet-cpp/blob/master/src/parquet/types.h>
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Hash)]
 pub enum SortOrder {
     /// Signed (either value or legacy byte-wise) comparison.
     Signed,

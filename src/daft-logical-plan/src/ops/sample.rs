@@ -56,7 +56,7 @@ impl Sample {
         // TODO(desmond): We can do better estimations with the projection schema. For now, reuse the old logic.
         let input_stats = self.input.get_stats();
         assert!(matches!(input_stats, StatsState::Materialized(..)));
-        let input_stats = input_stats.unwrap_or_default();
+        let input_stats = input_stats.clone().unwrap_or_default();
         let approx_stats = input_stats
             .approx_stats
             .apply(|v| ((v as f64) * self.fraction) as usize);

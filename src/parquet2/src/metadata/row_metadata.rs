@@ -8,7 +8,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 
 /// Metadata for a row group.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Hash)]
 pub struct RowGroupMetaData {
     columns: Vec<ColumnChunkMetaData>,
     num_rows: usize,

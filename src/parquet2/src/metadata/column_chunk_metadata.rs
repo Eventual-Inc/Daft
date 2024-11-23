@@ -16,7 +16,7 @@ pub use std::io::Cursor;
 /// Metadata for a column chunk.
 // This contains the `ColumnDescriptor` associated with the chunk so that deserializers have
 // access to the descriptor (e.g. physical, converted, logical).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Hash)]
 pub struct ColumnChunkMetaData {
     #[serde(serialize_with = "serialize_column_chunk")]
     #[serde(deserialize_with = "deserialize_column_chunk")]

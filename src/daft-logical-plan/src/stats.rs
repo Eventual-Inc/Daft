@@ -9,9 +9,9 @@ pub enum StatsState {
 }
 
 impl StatsState {
-    pub fn unwrap_or_default(&self) -> PlanStats {
+    pub fn unwrap_or_default(self) -> PlanStats {
         match self {
-            Self::Materialized(stats) => stats.clone(),
+            Self::Materialized(stats) => stats,
             Self::NotMaterialized => PlanStats::default(),
         }
     }

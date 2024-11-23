@@ -47,7 +47,7 @@ impl Filter {
         // TODO(desmond): We can do better estimations here. For now, reuse the old logic.
         let input_stats = self.input.get_stats();
         assert!(matches!(input_stats, StatsState::Materialized(..)));
-        let input_stats = input_stats.unwrap_or_default();
+        let input_stats = input_stats.clone().unwrap_or_default();
         let upper_bound_rows = input_stats.approx_stats.upper_bound_rows;
         let upper_bound_bytes = input_stats.approx_stats.upper_bound_bytes;
         let approx_stats = ApproxStats {

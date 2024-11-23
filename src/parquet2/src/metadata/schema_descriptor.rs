@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 /// A schema descriptor. This encapsulates the top-level schemas for all the columns,
 /// as well as all descriptors for all the primitive columns.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Hash)]
 pub struct SchemaDescriptor {
     name: String,
     // The top-level schema (the "message" type).

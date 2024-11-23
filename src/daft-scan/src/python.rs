@@ -1,3 +1,5 @@
+use std::hash::{Hash, Hasher};
+
 use common_py_serde::{deserialize_py_object, serialize_py_object};
 use pyo3::{prelude::*, types::PyTuple};
 use serde::{Deserialize, Serialize};
@@ -15,27 +17,48 @@ struct PyObjectSerializableWrapper(
 
 /// Python arguments to a Python function that produces Tables
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PythonTablesFactoryArgs(Vec<PyObjectSerializableWrapper>);
+pub struct PythonTablesFactoryArgs {
+    args: Vec<PyObjectSerializableWrapper>,
+    hash: u64,
+}
+
+impl Hash for PythonTablesFactoryArgs {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.hash.hash(state);
+    }
+}
 
 impl PythonTablesFactoryArgs {
     pub fn new(args: Vec<PyObject>) -> Self {
-        Self(args.into_iter().map(PyObjectSerializableWrapper).collect())
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        Python::with_gil(|py| {
+            for obj in &args {
+                obj.bind(py)
+                    .hash()
+                    .expect("Failed to hash PyObject")
+                    .hash(&mut hasher);
+            }
+        });
+        Self {
+            args: args.into_iter().map(PyObjectSerializableWrapper).collect(),
+            hash: hasher.finish(),
+        }
     }
 
     #[must_use]
     pub fn to_pytuple<'a>(&self, py: Python<'a>) -> Bound<'a, PyTuple> {
-        pyo3::types::PyTuple::new_bound(py, self.0.iter().map(|x| x.0.bind(py)))
+        pyo3::types::PyTuple::new_bound(py, self.args.iter().map(|x| x.0.bind(py)))
     }
 }
 
 impl PartialEq for PythonTablesFactoryArgs {
     fn eq(&self, other: &Self) -> bool {
-        if self.0.len() != other.0.len() {
+        if self.args.len() != other.args.len() {
             return false;
         }
-        self.0
+        self.args
             .iter()
-            .zip(other.0.iter())
+            .zip(other.args.iter())
             .all(|(s, o)| (s.0.as_ptr() as isize) == (o.0.as_ptr() as isize))
     }
 }
@@ -215,10 +238,6 @@ pub mod pylib {
     }
 
     impl ScanOperator for PythonScanOperatorBridge {
-        fn is_python_scan(&self) -> bool {
-            true
-        }
-
         fn partitioning_keys(&self) -> &[PartitionField] {
             &self.partitioning_keys
         }
