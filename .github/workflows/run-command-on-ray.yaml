@@ -1,0 +1,33 @@
+name: Run some given command on a Ray Cluster
+
+on:
+  workflow_dispatch:
+    inputs:
+      daft_version:
+        type: string
+        description: The wheel artifact to use
+        required: false
+      python_version:
+        type: string
+        description: The version of python to use
+        required: false
+        default: "3.9"
+
+jobs:
+  run-tpch:
+    runs-on: [self-hosted, linux, x64, ci-dev]
+    timeout-minutes: 15 # Remove for ssh debugging
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+    - uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-region: us-west-2
+        role-session-name: run-command-workflow
+    - uses: ./.github/actions/install
+      with:
+        python_version: ${{ inputs.python_version }}
