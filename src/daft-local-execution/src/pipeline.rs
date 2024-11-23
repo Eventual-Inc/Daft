@@ -49,6 +49,11 @@ use crate::{
     ExecutionRuntimeContext, PipelineCreationSnafu,
 };
 
+// Threshold for choosing to build the probe side on one side of a join if the
+// other side is missing statistics. We arbitrarily set this to 32 MiB, but this
+// can be tuned.
+const PROBE_SIDE_SIZE_THRESHOLD: usize = 32 * 1024 * 1024;
+
 pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
     fn children(&self) -> Vec<&dyn PipelineNode>;
     fn name(&self) -> &'static str;
@@ -333,7 +338,13 @@ pub fn physical_plan_to_pipeline(
                     left_stats.approx_stats.upper_bound_bytes
                         <= right_stats.approx_stats.upper_bound_bytes
                 }
-                // If stats are not available, we fall back and build on the left.
+                // If stats are only available on the right side of the join, and the upper bound bytes on the
+                // right are under PROBE_SIDE_SIZE_THRESHOLD, we build on the right instead of the left.
+                (StatsState::NotMaterialized, StatsState::Materialized(right_stats)) => right_stats
+                    .approx_stats
+                    .upper_bound_bytes
+                    .map_or(true, |size| size > PROBE_SIDE_SIZE_THRESHOLD),
+                // If stats are not available, we fall back and build on the left by default.
                 _ => true,
             };
 
