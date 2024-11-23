@@ -34,7 +34,7 @@ available_node_types:
         Name: ray-autoscaler-v1
 
 setup_commands:
-  # Mount drive
+# Mount drive
 - |
   findmnt /tmp 1> /dev/null
   code=$?
@@ -43,9 +43,9 @@ setup_commands:
     sudo mount -t ext4 /dev/nvme0n1 /tmp
     sudo chmod 777 /tmp
   fi
- # Install dependencies
-  # GitHub Actions workflow will replace all parameters between `{{...}}` with the
-  # actual values as determined dynamically during runtime of the actual workflow.
+# Install dependencies
+# GitHub Actions workflow will replace all parameters between `{{...}}` with the
+# actual values as determined dynamically during runtime of the actual workflow.
 - sudo snap install aws-cli --classic
 - curl -LsSf https://astral.sh/uv/install.sh | sh
 - echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
