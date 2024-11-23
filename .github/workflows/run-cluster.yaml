@@ -5,13 +5,22 @@ on:
     inputs:
       daft_version:
         type: string
-        description: The wheel artifact to use
+        description: The version of daft to install
         required: false
       python_version:
         type: string
         description: The version of python to use
         required: false
         default: "3.9"
+      command:
+        type: string
+        description: The command to run on the cluster
+        required: true
+      working_dir:
+        type: string
+        description: The working directory to submit to the cluster
+        required: false
+        default: .github/assets
 
 jobs:
   run-command:
@@ -65,7 +74,11 @@ jobs:
     - name: Submit job to ray cluster
       run: |
         source .venv/bin/activate
-        ray job submit --address http://localhost:8265 -- python -c "print('Hello, world!')"
+        if [[ '${{ inputs.command }}' -eq '' ]]; then
+          echo 'Invalid command submitted; command cannot be empty'
+          exit 1
+        fi
+        ray job submit --working-dir ${{ inputs.working_dir }} --address http://localhost:8265 -- ${{ inputs.command }}
     - name: Spin down ray cluster
       if: always()
       run: |
