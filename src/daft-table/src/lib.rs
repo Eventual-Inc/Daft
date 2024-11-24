@@ -476,13 +476,13 @@ impl Table {
             }
             AggExpr::ApproxDistinct(expr) => {
                 let hashed = self.eval_expression(expr)?.hash_with_validity(None)?;
-                let series = groups.map_or_else(
-                    || hashed.approx_distinct(),
-                    |groups| hashed.grouped_approx_distinct(groups),
-                )?;
-                let original = self.eval_expression(expr)?;
-                let indices = series.flat_child;
-                Ok(original.take(&indices)?)
+                let series = groups
+                    .map_or_else(
+                        || hashed.approx_distinct(),
+                        |groups| hashed.grouped_approx_distinct(groups),
+                    )?
+                    .into_series();
+                Ok(series)
             }
             &AggExpr::ApproxSketch(ref expr, sketch_type) => {
                 let evaled = self.eval_expression(expr)?;

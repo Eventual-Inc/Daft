@@ -17,13 +17,13 @@ impl DaftApproxDistinctAggable for UInt64Array {
 
     fn approx_distinct(&self) -> Self::Output {
         let mut set = HashSet::with_capacity_and_hasher(self.len(), IdentityBuildHasher::default());
-        let mut index_vec: Vec<u64> = Vec::new();
-        for (i, &value) in self.as_arrow().iter().flatten().enumerate() {
+        let mut values = Vec::with_capacity(self.len());
+        for &value in self.as_arrow().iter().flatten() {
             if set.insert(value) {
-                index_vec.push(i as u64);
+                values.push(value);
             }
         }
-        let child_series = Self::from((self.name(), index_vec)).into_series();
+        let child_series = Self::from((self.name(), values)).into_series();
         let offsets = arrow2::offset::OffsetsBuffer::try_from(vec![0, child_series.len() as i64])?;
         let list_field = self.field.to_list_field()?;
         Ok(ListArray::new(list_field, child_series, offsets, None))
@@ -31,8 +31,9 @@ impl DaftApproxDistinctAggable for UInt64Array {
 
     fn grouped_approx_distinct(&self, groups: &super::GroupIndices) -> Self::Output {
         let data = self.as_arrow();
-        let mut offsets = vec![0i64];
-        let mut all_indices = Vec::new();
+        let mut offsets = Vec::with_capacity(groups.len() + 1);
+        let mut values = Vec::new();
+        offsets.push(0i64);
 
         for group in groups {
             let mut set = HashSet::<_, IdentityBuildHasher>::with_capacity_and_hasher(
@@ -42,14 +43,14 @@ impl DaftApproxDistinctAggable for UInt64Array {
             for &index in group {
                 if let Some(value) = data.get(index as _) {
                     if set.insert(value) {
-                        all_indices.push(index);
+                        values.push(value);
                     }
                 }
             }
             offsets.push(offsets.last().unwrap() + set.len() as i64);
         }
 
-        let child_series = Self::from((self.name(), all_indices)).into_series();
+        let child_series = Self::from((self.name(), values)).into_series();
         let offsets = arrow2::offset::OffsetsBuffer::try_from(offsets)?;
         let list_field = self.field.to_list_field()?;
         Ok(ListArray::new(list_field, child_series, offsets, None))
