@@ -623,7 +623,7 @@ class Expression:
         expr = native.floor(self._expr)
         return Expression._from_pyexpr(expr)
 
-    def clip(self, min: Expression, max: Expression) -> Expression:
+    def clip(self, min: Expression | None = None, max: Expression | None = None) -> Expression:
         """Clips an expression to the given minimum and maximum values (``expr.clip(min, max)``).
 
         Args:
