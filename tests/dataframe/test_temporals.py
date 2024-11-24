@@ -2,19 +2,14 @@ from __future__ import annotations
 
 import itertools
 import tempfile
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pyarrow as pa
 import pytest
 import pytz
 
 import daft
-from daft import DataType, col, context
-
-pytestmark = pytest.mark.skipif(
-    context.get_context().daft_execution_config.enable_native_executor is True,
-    reason="Native executor fails for these tests",
-)
+from daft import DataType, col
 
 PYARROW_GE_7_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (7, 0, 0)
 
@@ -468,5 +463,22 @@ def test_intervals(op, expected):
         .to_pydict()
     )
     expected = {"datetimes": expected}
+
+    assert actual == expected
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        date(2020, 1, 1),  # explicit date
+        "2020-01-01",  # implicit coercion
+    ],
+)
+def test_date_comparison(value):
+    date_df = daft.from_pydict({"date_str": ["2020-01-01", "2020-01-02", "2020-01-03"]})
+    date_df = date_df.with_column("date", col("date_str").str.to_date("%Y-%m-%d"))
+    actual = date_df.filter(col("date") == value).select("date").to_pydict()
+
+    expected = {"date": [date(2020, 1, 1)]}
 
     assert actual == expected

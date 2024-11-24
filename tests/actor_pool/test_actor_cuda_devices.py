@@ -7,14 +7,14 @@ import pytest
 import ray
 
 import daft
+from daft import udf
 from daft.context import get_context, set_planning_config
 from daft.datatype import DataType
 from daft.internal.gpu import cuda_visible_devices
-from daft.udf import udf
+from tests.conftest import get_tests_daft_runner_name
 
 pytestmark = pytest.mark.skipif(
-    get_context().daft_execution_config.enable_native_executor is True,
-    reason="Native executor fails for these tests",
+    get_tests_daft_runner_name() == "native", reason="Native runner does not support GPU tests yet"
 )
 
 
@@ -35,7 +35,7 @@ def enable_actor_pool():
 def reset_runner_with_gpus(num_gpus, monkeypatch):
     """If current runner does not have enough GPUs, create a new runner with mocked GPU resources"""
     if len(cuda_visible_devices()) < num_gpus:
-        if get_context().runner_config.name == "ray":
+        if get_tests_daft_runner_name() == "ray":
             try:
                 ray.shutdown()
                 ray.init(num_gpus=num_gpus)
@@ -120,7 +120,7 @@ def test_stateful_udf_fractional_gpu(enable_actor_pool, monkeypatch):
         assert len(unique_visible_devices) == 1
 
 
-@pytest.mark.skipif(get_context().runner_config.name != "py", reason="Test can only be run on PyRunner")
+@pytest.mark.skipif(get_tests_daft_runner_name() != "py", reason="Test can only be run on PyRunner")
 def test_stateful_udf_no_cuda_devices(enable_actor_pool, monkeypatch):
     monkeypatch.setattr(daft.internal.gpu, "_raw_device_count_nvml", lambda: 0)
     monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
@@ -149,7 +149,7 @@ def test_stateful_udf_no_cuda_devices(enable_actor_pool, monkeypatch):
         daft.context.get_context()._runner = original_runner
 
 
-@pytest.mark.skipif(get_context().runner_config.name != "py", reason="Test can only be run on PyRunner")
+@pytest.mark.skipif(get_tests_daft_runner_name() != "py", reason="Test can only be run on PyRunner")
 def test_stateful_udf_no_cuda_visible_device_envvar(enable_actor_pool, monkeypatch):
     monkeypatch.setattr(daft.internal.gpu, "_raw_device_count_nvml", lambda: 1)
     monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)

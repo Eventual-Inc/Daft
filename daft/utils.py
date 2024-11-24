@@ -134,4 +134,6 @@ def pyarrow_supports_fixed_shape_tensor() -> bool:
     """Whether pyarrow supports the fixed_shape_tensor canonical extension type."""
     from daft.context import get_context
 
-    return hasattr(pa, "fixed_shape_tensor") and (not get_context().is_ray_runner or get_arrow_version() >= (13, 0, 0))
+    return hasattr(pa, "fixed_shape_tensor") and (
+        (get_context().get_or_create_runner().name != "ray") or get_arrow_version() >= (13, 0, 0)
+    )

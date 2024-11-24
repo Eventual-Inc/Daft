@@ -256,17 +256,20 @@ class Series:
 
         return Series._from_pyseries(self._series.slice(start, end))
 
-    def argsort(self, descending: bool = False) -> Series:
+    def argsort(self, descending: bool = False, nulls_first: bool | None = None) -> Series:
         if not isinstance(descending, bool):
             raise TypeError(f"expected `descending` to be bool, got {type(descending)}")
+        if nulls_first is None:
+            nulls_first = descending
 
-        return Series._from_pyseries(self._series.argsort(descending))
+        return Series._from_pyseries(self._series.argsort(descending, nulls_first))
 
-    def sort(self, descending: bool = False) -> Series:
+    def sort(self, descending: bool = False, nulls_first: bool | None = None) -> Series:
         if not isinstance(descending, bool):
             raise TypeError(f"expected `descending` to be bool, got {type(descending)}")
-
-        return Series._from_pyseries(self._series.sort(descending))
+        if nulls_first is None:
+            nulls_first = descending
+        return Series._from_pyseries(self._series.sort(descending, nulls_first))
 
     def hash(self, seed: Series | None = None) -> Series:
         if not isinstance(seed, Series) and seed is not None:
@@ -571,6 +574,7 @@ class Series:
         num_hashes: int,
         ngram_size: int,
         seed: int = 1,
+        hash_function: Literal["murmurhash3", "xxhash", "sha1"] = "murmurhash3",
     ) -> Series:
         """
         Runs the MinHash algorithm on the series.
@@ -585,6 +589,7 @@ class Series:
             num_hashes: The number of hash permutations to compute.
             ngram_size: The number of tokens in each shingle/ngram.
             seed (optional): Seed used for generating permutations and the initial string hashes. Defaults to 1.
+            hash_function (optional): Hash function to use for initial string hashing. One of "murmur3", "xxhash", or "sha1". Defaults to "murmur3".
         """
         if not isinstance(num_hashes, int):
             raise ValueError(f"expected an integer for num_hashes but got {type(num_hashes)}")
@@ -592,8 +597,15 @@ class Series:
             raise ValueError(f"expected an integer for ngram_size but got {type(ngram_size)}")
         if seed is not None and not isinstance(seed, int):
             raise ValueError(f"expected an integer or None for seed but got {type(seed)}")
+        if not isinstance(hash_function, str):
+            raise ValueError(f"expected str for hash_function but got {type(hash_function)}")
+        assert hash_function in [
+            "murmurhash3",
+            "xxhash",
+            "sha1",
+        ], f"hash_function must be one of 'murmurhash3', 'xxhash', 'sha1', got {hash_function}"
 
-        return Series._from_pyseries(self._series.minhash(num_hashes, ngram_size, seed))
+        return Series._from_pyseries(self._series.minhash(num_hashes, ngram_size, seed, hash_function))
 
     def _to_str_values(self) -> Series:
         return Series._from_pyseries(self._series.to_str_values())
@@ -956,10 +968,15 @@ class SeriesListNamespace(SeriesNamespace):
     def get(self, idx: Series, default: Series) -> Series:
         return Series._from_pyseries(self._series.list_get(idx._series, default._series))
 
-    def sort(self, desc: bool | Series = False) -> Series:
+    def sort(self, desc: bool | Series = False, nulls_first: bool | Series | None = None) -> Series:
         if isinstance(desc, bool):
             desc = Series.from_pylist([desc], name="desc")
-        return Series._from_pyseries(self._series.list_sort(desc._series))
+        if nulls_first is None:
+            nulls_first = desc
+        elif isinstance(nulls_first, bool):
+            nulls_first = Series.from_pylist([nulls_first], name="nulls_first")
+
+        return Series._from_pyseries(self._series.list_sort(desc._series, nulls_first._series))
 
 
 class SeriesMapNamespace(SeriesNamespace):

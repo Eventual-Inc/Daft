@@ -6,11 +6,16 @@ import os
 import pathlib
 import sys
 import urllib.parse
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
+from daft.convert import from_pydict
 from daft.daft import FileFormat, FileInfos, IOConfig, io_glob
 from daft.dependencies import fsspec, pafs
+from daft.expressions.expressions import col, lit
 from daft.table import MicroPartition
+
+if TYPE_CHECKING:
+    from daft import DataFrame
 
 logger = logging.getLogger(__name__)
 
@@ -353,3 +358,27 @@ def join_path(fs: pafs.FileSystem, base_path: str, *sub_paths: str) -> str:
         return os.path.join(base_path, *sub_paths)
     else:
         return f"{base_path.rstrip('/')}/{'/'.join(sub_paths)}"
+
+
+def overwrite_files(
+    manifest: DataFrame,
+    root_dir: str | pathlib.Path,
+    io_config: IOConfig | None,
+) -> None:
+    [resolved_path], fs = _resolve_paths_and_filesystem(root_dir, io_config=io_config)
+    file_selector = pafs.FileSelector(resolved_path, recursive=True)
+    try:
+        paths = [info.path for info in fs.get_file_info(file_selector) if info.type == pafs.FileType.File]
+    except FileNotFoundError:
+        # The root directory does not exist, so there are no files to delete.
+        return
+
+    all_file_paths_df = from_pydict({"path": paths})
+
+    assert manifest._result is not None
+    written_file_paths = manifest._result._get_merged_micropartition().get_column("path")
+    to_delete = all_file_paths_df.where(~(col("path").is_in(lit(written_file_paths))))
+
+    # TODO: Look into parallelizing this
+    for entry in to_delete:
+        fs.delete_file(entry["path"])

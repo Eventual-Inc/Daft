@@ -1,6 +1,5 @@
 use arrow2::array::PrimitiveArray;
 use common_error::{DaftError, DaftResult};
-use logical::Decimal128Array;
 
 use crate::{
     array::{
@@ -67,27 +66,21 @@ impl Series {
                 .into_series()),
                 None => Ok(DaftSumAggable::sum(&self.downcast::<Float64Array>()?)?.into_series()),
             },
-            DataType::Decimal128(_, _) => match groups {
-                Some(groups) => Ok(Decimal128Array::new(
-                    Field {
-                        dtype: try_sum_supertype(self.data_type())?,
-                        ..self.field().clone()
-                    },
-                    DaftSumAggable::grouped_sum(
-                        &self.as_physical()?.downcast::<Int128Array>()?,
+            DataType::Decimal128(_, _) => {
+                let casted = self.cast(&try_sum_supertype(self.data_type())?)?;
+
+                match groups {
+                    Some(groups) => Ok(DaftSumAggable::grouped_sum(
+                        &casted.downcast::<Decimal128Array>()?,
                         groups,
-                    )?,
-                )
-                .into_series()),
-                None => Ok(Decimal128Array::new(
-                    Field {
-                        dtype: try_sum_supertype(self.data_type())?,
-                        ..self.field().clone()
-                    },
-                    DaftSumAggable::sum(&self.as_physical()?.downcast::<Int128Array>()?)?,
-                )
-                .into_series()),
-            },
+                    )?
+                    .into_series()),
+                    None => {
+                        Ok(DaftSumAggable::sum(&casted.downcast::<Decimal128Array>()?)?
+                            .into_series())
+                    }
+                }
+            }
             other => Err(DaftError::TypeError(format!(
                 "Numeric sum is not implemented for type {}",
                 other
@@ -148,25 +141,48 @@ impl Series {
     }
 
     pub fn mean(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
-        // Upcast all numeric types to float64 and use f64 mean kernel.
-        self.data_type().assert_is_numeric()?;
-        let casted = self.cast(&DataType::Float64)?;
-        let casted = casted.f64()?;
-        let series = groups
-            .map_or_else(|| casted.mean(), |groups| casted.grouped_mean(groups))?
-            .into_series();
-        Ok(series)
+        let target_type = try_mean_aggregation_supertype(self.data_type())?;
+        match target_type {
+            DataType::Float64 => {
+                let casted = self.cast(&DataType::Float64)?;
+                let casted = casted.f64()?;
+                let series = groups
+                    .map_or_else(|| casted.mean(), |groups| casted.grouped_mean(groups))?
+                    .into_series();
+                Ok(series)
+            }
+            DataType::Decimal128(..) => {
+                let casted = self.cast(&target_type)?;
+                let casted = casted.decimal128()?;
+                let series = groups
+                    .map_or_else(|| casted.mean(), |groups| casted.grouped_mean(groups))?
+                    .into_series();
+                Ok(series)
+            }
+
+            _ => Err(DaftError::not_implemented(format!(
+                "Mean not implemented for {target_type}, source type: {}",
+                self.data_type()
+            ))),
+        }
     }
 
     pub fn stddev(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
-        // Upcast all numeric types to float64 and use f64 stddev kernel.
-        self.data_type().assert_is_numeric()?;
-        let casted = self.cast(&DataType::Float64)?;
-        let casted = casted.f64()?;
-        let series = groups
-            .map_or_else(|| casted.stddev(), |groups| casted.grouped_stddev(groups))?
-            .into_series();
-        Ok(series)
+        let target_type = try_stddev_aggregation_supertype(self.data_type())?;
+        match target_type {
+            DataType::Float64 => {
+                let casted = self.cast(&DataType::Float64)?;
+                let casted = casted.f64()?;
+                let series = groups
+                    .map_or_else(|| casted.stddev(), |groups| casted.grouped_stddev(groups))?
+                    .into_series();
+                Ok(series)
+            }
+            _ => Err(DaftError::not_implemented(format!(
+                "StdDev not implemented for {target_type}, source type: {}",
+                self.data_type()
+            ))),
+        }
     }
 
     pub fn min(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {

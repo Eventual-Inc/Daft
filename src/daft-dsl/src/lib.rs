@@ -16,15 +16,13 @@ mod treenode;
 pub use common_treenode;
 pub use expr::{
     binary_op, col, has_agg, has_stateful_udf, is_partition_compatible, AggExpr,
-    ApproxPercentileParams, Expr, ExprRef, Operator, SketchType,
+    ApproxPercentileParams, Expr, ExprRef, Operator, OuterReferenceColumn, SketchType, Subquery,
+    SubqueryPlan,
 };
 pub use lit::{lit, literal_value, literals_to_series, null_lit, Literal, LiteralValue};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
-pub use resolve_expr::{
-    check_column_name_validity, resolve_aggexprs, resolve_exprs, resolve_single_aggexpr,
-    resolve_single_expr,
-};
+pub use resolve_expr::{check_column_name_validity, ExprResolver};
 
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {

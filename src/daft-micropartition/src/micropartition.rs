@@ -8,6 +8,7 @@ use arrow2::io::parquet::read::schema::infer_schema_with_options;
 use common_error::DaftResult;
 use common_file_formats::{CsvSourceConfig, FileFormatConfig, ParquetSourceConfig};
 use common_runtime::get_io_runtime;
+use common_scan_info::Pushdowns;
 use daft_core::prelude::*;
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::ExprRef;
@@ -18,7 +19,7 @@ use daft_parquet::read::{
 };
 use daft_scan::{
     storage_config::{NativeStorageConfig, StorageConfig},
-    ChunkSpec, DataSource, Pushdowns, ScanTask,
+    ChunkSpec, DataSource, ScanTask,
 };
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
 use daft_table::Table;
@@ -548,7 +549,7 @@ impl MicroPartition {
                     field_id_mapping.clone(),
                     parquet_metadata,
                     chunk_size,
-                    scan_task.file_path_column.as_deref(),
+                    scan_task.generated_fields.clone(),
                 )
                 .context(DaftCoreComputeSnafu)
             }
@@ -1026,7 +1027,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     parquet_metadata: Option<Vec<Arc<FileMetaData>>>,
     chunk_size: Option<usize>,
-    file_path_column: Option<&str>,
+    generated_fields: Option<SchemaRef>,
 ) -> DaftResult<MicroPartition> {
     if let Some(so) = start_offset
         && so > 0
@@ -1214,7 +1215,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
                 }),
                 num_rows,
             ),
-            file_path_column.map(|s| s.to_string()),
+            generated_fields,
         );
 
         let fill_map = scan_task.partition_spec().map(|pspec| pspec.to_fill_map());

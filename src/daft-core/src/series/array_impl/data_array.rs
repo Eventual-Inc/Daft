@@ -118,8 +118,8 @@ macro_rules! impl_series_like_for_data_array {
             fn slice(&self, start: usize, end: usize) -> DaftResult<Series> {
                 Ok(self.0.slice(start, end)?.into_series())
             }
-            fn sort(&self, descending: bool) -> DaftResult<Series> {
-                Ok(self.0.sort(descending)?.into_series())
+            fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Series> {
+                Ok(self.0.sort(descending, nulls_first)?.into_series())
             }
             fn str_value(&self, idx: usize) -> DaftResult<String> {
                 self.0.str_value(idx)
@@ -171,7 +171,6 @@ impl_series_like_for_data_array!(Int8Array);
 impl_series_like_for_data_array!(Int16Array);
 impl_series_like_for_data_array!(Int32Array);
 impl_series_like_for_data_array!(Int64Array);
-impl_series_like_for_data_array!(Int128Array);
 impl_series_like_for_data_array!(UInt8Array);
 impl_series_like_for_data_array!(UInt16Array);
 impl_series_like_for_data_array!(UInt32Array);
@@ -181,5 +180,6 @@ impl_series_like_for_data_array!(Float64Array);
 impl_series_like_for_data_array!(Utf8Array);
 impl_series_like_for_data_array!(ExtensionArray);
 impl_series_like_for_data_array!(IntervalArray);
+impl_series_like_for_data_array!(Decimal128Array);
 #[cfg(feature = "python")]
 impl_series_like_for_data_array!(PythonArray);

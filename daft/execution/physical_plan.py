@@ -55,7 +55,6 @@ T = TypeVar("T")
 if TYPE_CHECKING:
     import pathlib
 
-    from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
@@ -123,7 +122,8 @@ def iceberg_write(
     base_path: str,
     iceberg_schema: IcebergSchema,
     iceberg_properties: IcebergTableProperties,
-    partition_spec: IcebergPartitionSpec,
+    partition_spec_id: int,
+    partition_cols: ExpressionsProjection,
     io_config: IOConfig | None,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Write the results of `child_plan` into pyiceberg data files described by `write_info`."""
@@ -134,7 +134,8 @@ def iceberg_write(
                 base_path=base_path,
                 iceberg_schema=iceberg_schema,
                 iceberg_properties=iceberg_properties,
-                partition_spec=partition_spec,
+                partition_spec_id=partition_spec_id,
+                partition_cols=partition_cols,
                 io_config=io_config,
             ),
         )
@@ -346,6 +347,7 @@ def hash_join(
     right_plan: InProgressPhysicalPlan[PartitionT],
     left_on: ExpressionsProjection,
     right_on: ExpressionsProjection,
+    null_equals_nulls: None | list[bool],
     how: JoinType,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Hash-based pairwise join the partitions from `left_child_plan` and `right_child_plan` together."""
@@ -387,6 +389,7 @@ def hash_join(
                 instruction=execution_step.HashJoin(
                     left_on=left_on,
                     right_on=right_on,
+                    null_equals_nulls=null_equals_nulls,
                     how=how,
                     is_swapped=False,
                 )
@@ -432,6 +435,7 @@ def _create_broadcast_join_step(
     receiver_part: SingleOutputPartitionTask[PartitionT],
     left_on: ExpressionsProjection,
     right_on: ExpressionsProjection,
+    null_equals_nulls: None | list[bool],
     how: JoinType,
     is_swapped: bool,
 ) -> PartitionTaskBuilder[PartitionT]:
@@ -477,6 +481,7 @@ def _create_broadcast_join_step(
         instruction=execution_step.BroadcastJoin(
             left_on=left_on,
             right_on=right_on,
+            null_equals_nulls=null_equals_nulls,
             how=how,
             is_swapped=is_swapped,
         )
@@ -488,6 +493,7 @@ def broadcast_join(
     receiver_plan: InProgressPhysicalPlan[PartitionT],
     left_on: ExpressionsProjection,
     right_on: ExpressionsProjection,
+    null_equals_nulls: None | list[bool],
     how: JoinType,
     is_swapped: bool,
 ) -> InProgressPhysicalPlan[PartitionT]:
@@ -530,7 +536,15 @@ def broadcast_join(
         # Broadcast all broadcaster partitions to each new receiver partition that was materialized on this dispatch loop.
         while receiver_requests and receiver_requests[0].done():
             receiver_part = receiver_requests.popleft()
-            yield _create_broadcast_join_step(broadcaster_parts, receiver_part, left_on, right_on, how, is_swapped)
+            yield _create_broadcast_join_step(
+                broadcaster_parts,
+                receiver_part,
+                left_on,
+                right_on,
+                null_equals_nulls,
+                how,
+                is_swapped,
+            )
 
         # Execute single child step to pull in more input partitions.
         try:
@@ -1496,6 +1510,7 @@ def sort(
     child_plan: InProgressPhysicalPlan[PartitionT],
     sort_by: ExpressionsProjection,
     descending: list[bool],
+    nulls_first: list[bool],
     num_partitions: int,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Sort the result of `child_plan` according to `sort_info`."""
@@ -1551,6 +1566,7 @@ def sort(
                 num_quantiles=num_partitions,
                 sort_by=sort_by,
                 descending=descending,
+                nulls_first=nulls_first,
             ),
         )
         .finalize_partition_task_single_output(stage_id=stage_id_reduce)

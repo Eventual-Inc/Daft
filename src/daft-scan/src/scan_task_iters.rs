@@ -11,7 +11,7 @@ use crate::{
     storage_config::StorageConfig, ChunkSpec, DataSource, Pushdowns, ScanTask, ScanTaskRef,
 };
 
-type BoxScanTaskIter<'a> = Box<dyn Iterator<Item = DaftResult<ScanTaskRef>> + 'a>;
+pub(crate) type BoxScanTaskIter<'a> = Box<dyn Iterator<Item = DaftResult<ScanTaskRef>> + 'a>;
 
 /// Coalesces ScanTasks by their [`ScanTask::estimate_in_memory_size_bytes()`]
 ///
@@ -26,7 +26,7 @@ type BoxScanTaskIter<'a> = Box<dyn Iterator<Item = DaftResult<ScanTaskRef>> + 'a
 /// * `min_size_bytes`: Minimum size in bytes of a ScanTask, after which no more merging will be performed
 /// * `max_size_bytes`: Maximum size in bytes of a ScanTask, capping the maximum size of a merged ScanTask
 #[must_use]
-pub fn merge_by_sizes<'a>(
+pub(crate) fn merge_by_sizes<'a>(
     scan_tasks: BoxScanTaskIter<'a>,
     pushdowns: &Pushdowns,
     cfg: &'a DaftExecutionConfig,
@@ -177,7 +177,7 @@ impl<'a> Iterator for MergeByFileSize<'a> {
 }
 
 #[must_use]
-pub fn split_by_row_groups(
+pub(crate) fn split_by_row_groups(
     scan_tasks: BoxScanTaskIter,
     max_tasks: usize,
     min_size_bytes: usize,
@@ -293,7 +293,7 @@ pub fn split_by_row_groups(
                                     t.schema.clone(),
                                     t.storage_config.clone(),
                                     t.pushdowns.clone(),
-                                    t.file_path_column.clone(),
+                                    t.generated_fields.clone(),
                                 )
                                 .into()));
                             }

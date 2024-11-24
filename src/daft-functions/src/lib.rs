@@ -11,6 +11,7 @@ pub mod temporal;
 pub mod to_struct;
 pub mod tokenize;
 pub mod uri;
+pub mod utf8;
 
 use common_error::DaftError;
 #[cfg(feature = "python")]
@@ -50,6 +51,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     float::register_modules(parent)?;
     temporal::register_modules(parent)?;
     list::register_modules(parent)?;
+    utf8::register_modules(parent)?;
     Ok(())
 }
 

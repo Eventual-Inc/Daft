@@ -57,6 +57,9 @@ pub struct DaftExecutionConfig {
     pub enable_aqe: bool,
     pub enable_native_executor: bool,
     pub default_morsel_size: usize,
+    pub shuffle_algorithm: String,
+    pub pre_shuffle_merge_threshold: usize,
+    pub enable_ray_tracing: bool,
 }
 
 impl Default for DaftExecutionConfig {
@@ -80,6 +83,9 @@ impl Default for DaftExecutionConfig {
             enable_aqe: false,
             enable_native_executor: false,
             default_morsel_size: 128 * 1024,
+            shuffle_algorithm: "map_reduce".to_string(),
+            pre_shuffle_merge_threshold: 1024 * 1024 * 1024, // 1GB
+            enable_ray_tracing: false,
         }
     }
 }
@@ -98,7 +104,14 @@ impl DaftExecutionConfig {
         if let Ok(val) = std::env::var(exec_env_var_name)
             && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
         {
+            log::warn!("DAFT_ENABLE_NATIVE_EXECUTOR will be deprecated and removed in the future. Please switch to using DAFT_RUNNER=NATIVE instead.");
             cfg.enable_native_executor = true;
+        }
+        let ray_tracing_env_var_name = "DAFT_ENABLE_RAY_TRACING";
+        if let Ok(val) = std::env::var(ray_tracing_env_var_name)
+            && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
+        {
+            cfg.enable_ray_tracing = true;
         }
         cfg
     }

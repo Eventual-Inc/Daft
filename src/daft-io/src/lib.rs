@@ -12,6 +12,7 @@ mod object_store_glob;
 mod s3_like;
 mod stats;
 mod stream_utils;
+
 use azure_blob::AzureBlobSource;
 use common_file_formats::FileFormat;
 use google_cloud::GCSSource;
@@ -192,15 +193,17 @@ impl IOClient {
         })
     }
 
-    async fn get_source(&self, source_type: &SourceType) -> Result<Arc<dyn ObjectSource>> {
+    async fn get_source(&self, input: &str) -> Result<Arc<dyn ObjectSource>> {
+        let (source_type, path) = parse_url(input)?;
+
         {
-            if let Some(client) = self.source_type_to_store.read().await.get(source_type) {
+            if let Some(client) = self.source_type_to_store.read().await.get(&source_type) {
                 return Ok(client.clone());
             }
         }
         let mut w_handle = self.source_type_to_store.write().await;
 
-        if let Some(client) = w_handle.get(source_type) {
+        if let Some(client) = w_handle.get(&source_type) {
             return Ok(client.clone());
         }
 
@@ -213,7 +216,8 @@ impl IOClient {
                 S3LikeSource::get_client(&self.config.s3).await? as Arc<dyn ObjectSource>
             }
             SourceType::AzureBlob => {
-                AzureBlobSource::get_client(&self.config.azure).await? as Arc<dyn ObjectSource>
+                AzureBlobSource::get_client(&self.config.azure, &path).await?
+                    as Arc<dyn ObjectSource>
             }
 
             SourceType::GCS => {
@@ -224,8 +228,8 @@ impl IOClient {
             }
         };
 
-        if w_handle.get(source_type).is_none() {
-            w_handle.insert(*source_type, new_source.clone());
+        if w_handle.get(&source_type).is_none() {
+            w_handle.insert(source_type, new_source.clone());
         }
         Ok(new_source)
     }
@@ -239,8 +243,7 @@ impl IOClient {
         io_stats: Option<Arc<IOStatsContext>>,
         file_format: Option<FileFormat>,
     ) -> Result<BoxStream<'static, Result<FileMetadata>>> {
-        let (scheme, _) = parse_url(input.as_str())?;
-        let source = self.get_source(&scheme).await?;
+        let source = self.get_source(&input).await?;
         let files = source
             .glob(
                 input.as_str(),
@@ -260,8 +263,8 @@ impl IOClient {
         range: Option<Range<usize>>,
         io_stats: Option<IOStatsRef>,
     ) -> Result<GetResult> {
-        let (scheme, path) = parse_url(&input)?;
-        let source = self.get_source(&scheme).await?;
+        let (_, path) = parse_url(&input)?;
+        let source = self.get_source(&input).await?;
         let get_result = source
             .get(path.as_ref(), range.clone(), io_stats.clone())
             .await?;
@@ -274,9 +277,9 @@ impl IOClient {
         data: bytes::Bytes,
         io_stats: Option<IOStatsRef>,
     ) -> Result<()> {
-        let (scheme, dest) = parse_url(dest)?;
-        let source = self.get_source(&scheme).await?;
-        source.put(dest.as_ref(), data, io_stats.clone()).await
+        let (_, path) = parse_url(dest)?;
+        let source = self.get_source(dest).await?;
+        source.put(path.as_ref(), data, io_stats.clone()).await
     }
 
     pub async fn single_url_get_size(
@@ -284,8 +287,8 @@ impl IOClient {
         input: String,
         io_stats: Option<IOStatsRef>,
     ) -> Result<usize> {
-        let (scheme, path) = parse_url(&input)?;
-        let source = self.get_source(&scheme).await?;
+        let (_, path) = parse_url(&input)?;
+        let source = self.get_source(&input).await?;
         source.get_size(path.as_ref(), io_stats).await
     }
 

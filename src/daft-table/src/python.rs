@@ -5,6 +5,7 @@ use daft_core::{
     python::{series::PySeries, PySchema},
 };
 use daft_dsl::python::PyExpr;
+use daft_logical_plan::FileInfos;
 use indexmap::IndexMap;
 use pyo3::{exceptions::PyValueError, prelude::*};
 
@@ -53,6 +54,7 @@ impl PyTable {
         py: Python,
         sort_keys: Vec<PyExpr>,
         descending: Vec<bool>,
+        nulls_first: Vec<bool>,
     ) -> PyResult<Self> {
         let converted_exprs: Vec<daft_dsl::ExprRef> = sort_keys
             .into_iter()
@@ -61,7 +63,11 @@ impl PyTable {
         py.allow_threads(|| {
             Ok(self
                 .table
-                .sort(converted_exprs.as_slice(), descending.as_slice())?
+                .sort(
+                    converted_exprs.as_slice(),
+                    descending.as_slice(),
+                    nulls_first.as_slice(),
+                )?
                 .into())
         })
     }
@@ -71,6 +77,7 @@ impl PyTable {
         py: Python,
         sort_keys: Vec<PyExpr>,
         descending: Vec<bool>,
+        nulls_first: Vec<bool>,
     ) -> PyResult<PySeries> {
         let converted_exprs: Vec<daft_dsl::ExprRef> = sort_keys
             .into_iter()
@@ -79,7 +86,11 @@ impl PyTable {
         py.allow_threads(|| {
             Ok(self
                 .table
-                .argsort(converted_exprs.as_slice(), descending.as_slice())?
+                .argsort(
+                    converted_exprs.as_slice(),
+                    descending.as_slice(),
+                    nulls_first.as_slice(),
+                )?
                 .into())
         })
     }
@@ -134,6 +145,7 @@ impl PyTable {
             left_on.into_iter().map(std::convert::Into::into).collect();
         let right_exprs: Vec<daft_dsl::ExprRef> =
             right_on.into_iter().map(std::convert::Into::into).collect();
+        let null_equals_nulls = vec![false; left_exprs.len()];
         py.allow_threads(|| {
             Ok(self
                 .table
@@ -141,6 +153,7 @@ impl PyTable {
                     &right.table,
                     left_exprs.as_slice(),
                     right_exprs.as_slice(),
+                    null_equals_nulls.as_slice(),
                     how,
                 )?
                 .into())
@@ -474,6 +487,17 @@ impl PyTable {
             None => None,
         })?
         .into())
+    }
+
+    pub fn to_file_infos(&self) -> PyResult<FileInfos> {
+        let file_infos: FileInfos = self.table.clone().try_into()?;
+        Ok(file_infos)
+    }
+
+    #[staticmethod]
+    pub fn from_file_infos(file_infos: &FileInfos) -> PyResult<Self> {
+        let table: Table = file_infos.try_into()?;
+        Ok(table.into())
     }
 }
 

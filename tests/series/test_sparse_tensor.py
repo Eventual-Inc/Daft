@@ -58,3 +58,19 @@ def test_sparse_tensor_repr():
 ╰─────────────────────────────╯
 """
     )
+
+
+@pytest.mark.parametrize("indices_dtype", [np.uint8, np.uint16])
+def test_minimal_indices_dtype_for_fixed_shape_sparse(indices_dtype: np.dtype):
+    largest_index_possible = np.iinfo(indices_dtype).max
+    tensor_shape = (largest_index_possible + 1, 1)
+
+    series = Series.from_pylist([np.zeros(shape=tensor_shape)]).cast(
+        DataType.tensor(DataType.float32(), shape=tensor_shape)
+    )
+    sparse_series = series.cast(DataType.sparse_tensor(DataType.float32(), shape=tensor_shape))
+
+    received_tensor = sparse_series.to_pylist().pop()
+    assert received_tensor["values"].dtype == np.float32
+    assert received_tensor["indices"].dtype == indices_dtype
+    assert received_tensor["shape"] == list(tensor_shape)

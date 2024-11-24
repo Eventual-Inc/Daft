@@ -10,13 +10,7 @@ import boto3
 import pytest
 
 import daft
-from daft import context
 from tests.io.mock_aws_server import start_service, stop_process
-
-pytestmark = pytest.mark.skipif(
-    context.get_context().daft_execution_config.enable_native_executor is True,
-    reason="Native executor fails for these tests",
-)
 
 
 @pytest.fixture(scope="session")
@@ -40,9 +34,8 @@ def test_s3_credentials_refresh(aws_log_file: io.IOBase):
     server_url = f"http://{host}:{port}"
 
     bucket_name = "mybucket"
-    file_name = "test.parquet"
-
-    s3_file_path = f"s3://{bucket_name}/{file_name}"
+    input_file_path = f"s3://{bucket_name}/input.parquet"
+    output_file_path = f"s3://{bucket_name}/output.parquet"
 
     old_env = os.environ.copy()
     # Set required AWS environment variables before starting server.
@@ -104,20 +97,27 @@ def test_s3_credentials_refresh(aws_log_file: io.IOBase):
     )
 
     df = daft.from_pydict({"a": [1, 2, 3]})
-    df.write_parquet(s3_file_path, io_config=static_config)
+    df.write_parquet(input_file_path, io_config=static_config)
 
-    df = daft.read_parquet(s3_file_path, io_config=dynamic_config)
+    df = daft.read_parquet(input_file_path, io_config=dynamic_config)
     assert count_get_credentials == 1
 
     df.collect()
     assert count_get_credentials == 1
 
-    df = daft.read_parquet(s3_file_path, io_config=dynamic_config)
+    df = daft.read_parquet(input_file_path, io_config=dynamic_config)
     assert count_get_credentials == 1
 
     time.sleep(1)
     df.collect()
     assert count_get_credentials == 2
+
+    df.write_parquet(output_file_path, io_config=dynamic_config)
+    assert count_get_credentials == 2
+
+    df2 = daft.read_parquet(output_file_path, io_config=static_config)
+
+    assert df.to_arrow() == df2.to_arrow()
 
     # Shutdown moto server.
     stop_process(process)

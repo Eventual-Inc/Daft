@@ -5,8 +5,9 @@ import dataclasses
 import logging
 import os
 import warnings
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, ClassVar, Literal
 
+from daft import get_build_type
 from daft.daft import IOConfig, PyDaftExecutionConfig, PyDaftPlanningConfig
 
 if TYPE_CHECKING:
@@ -18,13 +19,18 @@ import threading
 
 
 class _RunnerConfig:
-    name: ClassVar[str]
+    name: ClassVar[Literal["ray"] | Literal["py"] | Literal["native"]]
 
 
 @dataclasses.dataclass(frozen=True)
 class _PyRunnerConfig(_RunnerConfig):
     name = "py"
     use_thread_pool: bool | None
+
+
+@dataclasses.dataclass(frozen=True)
+class _NativeRunnerConfig(_RunnerConfig):
+    name = "native"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -42,6 +48,7 @@ def _get_runner_config_from_env() -> _RunnerConfig:
 
     1. PyRunner: set DAFT_RUNNER=py
     2. RayRunner: set DAFT_RUNNER=ray and optionally RAY_ADDRESS=ray://...
+    3. NativeRunner: set DAFT_RUNNER=native
     """
     runner_from_envvar = os.getenv("DAFT_RUNNER")
 
@@ -57,6 +64,7 @@ def _get_runner_config_from_env() -> _RunnerConfig:
     )
 
     ray_is_initialized = False
+    ray_is_in_job = False
     in_ray_worker = False
     try:
         import ray
@@ -66,6 +74,10 @@ def _get_runner_config_from_env() -> _RunnerConfig:
             # Check if running inside a Ray worker
             if ray._private.worker.global_worker.mode == ray.WORKER_MODE:
                 in_ray_worker = True
+        # In a Ray job, Ray might not be initialized yet but we can pick up an environment variable as a heuristic here
+        elif os.getenv("RAY_JOB_ID") is not None:
+            ray_is_in_job = True
+
     except ImportError:
         pass
 
@@ -85,16 +97,22 @@ def _get_runner_config_from_env() -> _RunnerConfig:
         )
     elif runner_from_envvar and runner_from_envvar.upper() == "PY":
         return _PyRunnerConfig(use_thread_pool=use_thread_pool)
+    elif runner_from_envvar and runner_from_envvar.upper() == "NATIVE":
+        return _NativeRunnerConfig()
     elif runner_from_envvar is not None:
         raise ValueError(f"Unsupported DAFT_RUNNER variable: {runner_from_envvar}")
 
     # Retrieve the runner from current initialized Ray environment, only if not running in a Ray worker
-    elif ray_is_initialized and not in_ray_worker:
+    elif not in_ray_worker and (ray_is_initialized or ray_is_in_job):
         return _RayRunnerConfig(
             address=None,  # No address supplied, use the existing connection
             max_task_backlog=task_backlog,
             force_client_mode=ray_force_client_mode,
         )
+
+    # Use native runner if in dev mode
+    elif get_build_type() == "dev":
+        return _NativeRunnerConfig()
 
     # Fall back on PyRunner
     else:
@@ -112,8 +130,6 @@ class DaftContext:
     # Non-execution calls (e.g. creation of a dataframe, logical plan building etc) directly reference values in this config
     _daft_planning_config: PyDaftPlanningConfig = PyDaftPlanningConfig.from_env()
 
-    _runner_config: _RunnerConfig | None = None
-    _disallow_set_runner: bool = False
     _runner: Runner | None = None
 
     _instance: ClassVar[DaftContext | None] = None
@@ -129,9 +145,40 @@ class DaftContext:
                     cls._instance = super().__new__(cls)
         return cls._instance
 
-    def runner(self) -> Runner:
+    def get_or_create_runner(self) -> Runner:
+        """Retrieves the runner.
+
+        WARNING: This will set the runner if it has not yet been set.
+        """
         with self._lock:
-            return self._get_runner()
+            if self._runner is not None:
+                return self._runner
+
+            runner_config = _get_runner_config_from_env()
+            if runner_config.name == "ray":
+                from daft.runners.ray_runner import RayRunner
+
+                assert isinstance(runner_config, _RayRunnerConfig)
+                self._runner = RayRunner(
+                    address=runner_config.address,
+                    max_task_backlog=runner_config.max_task_backlog,
+                    force_client_mode=runner_config.force_client_mode,
+                )
+            elif runner_config.name == "py":
+                from daft.runners.pyrunner import PyRunner
+
+                assert isinstance(runner_config, _PyRunnerConfig)
+                self._runner = PyRunner(use_thread_pool=runner_config.use_thread_pool)
+            elif runner_config.name == "native":
+                from daft.runners.native_runner import NativeRunner
+
+                assert isinstance(runner_config, _NativeRunnerConfig)
+                self._runner = NativeRunner()
+
+            else:
+                raise NotImplementedError(f"Runner config not implemented: {runner_config.name}")
+
+            return self._runner
 
     @property
     def daft_execution_config(self) -> PyDaftExecutionConfig:
@@ -142,52 +189,6 @@ class DaftContext:
     def daft_planning_config(self) -> PyDaftPlanningConfig:
         with self._lock:
             return self._daft_planning_config
-
-    @property
-    def runner_config(self) -> _RunnerConfig:
-        with self._lock:
-            return self._get_runner_config()
-
-    def _get_runner_config(self) -> _RunnerConfig:
-        if self._runner_config is not None:
-            return self._runner_config
-        self._runner_config = _get_runner_config_from_env()
-        return self._runner_config
-
-    def _get_runner(self) -> Runner:
-        if self._runner is not None:
-            return self._runner
-
-        runner_config = self._get_runner_config()
-        if runner_config.name == "ray":
-            from daft.runners.ray_runner import RayRunner
-
-            assert isinstance(runner_config, _RayRunnerConfig)
-            self._runner = RayRunner(
-                address=runner_config.address,
-                max_task_backlog=runner_config.max_task_backlog,
-                force_client_mode=runner_config.force_client_mode,
-            )
-        elif runner_config.name == "py":
-            from daft.runners.pyrunner import PyRunner
-
-            assert isinstance(runner_config, _PyRunnerConfig)
-            self._runner = PyRunner(use_thread_pool=runner_config.use_thread_pool)
-
-        else:
-            raise NotImplementedError(f"Runner config not implemented: {runner_config.name}")
-
-        # Mark DaftContext as having the runner set, which prevents any subsequent setting of the config
-        # after the runner has been initialized once
-        self._disallow_set_runner = True
-
-        return self._runner
-
-    @property
-    def is_ray_runner(self) -> bool:
-        with self._lock:
-            runner_config = self._get_runner_config()
-            return isinstance(runner_config, _RayRunnerConfig)
 
 
 _DaftContext = DaftContext()
@@ -224,7 +225,7 @@ def set_runner_ray(
 
     ctx = get_context()
     with ctx._lock:
-        if ctx._disallow_set_runner:
+        if ctx._runner is not None:
             if noop_if_initialized:
                 warnings.warn(
                     "Calling daft.context.set_runner_ray(noop_if_initialized=True) multiple times has no effect beyond the first call."
@@ -232,12 +233,13 @@ def set_runner_ray(
                 return ctx
             raise RuntimeError("Cannot set runner more than once")
 
-        ctx._runner_config = _RayRunnerConfig(
+        from daft.runners.ray_runner import RayRunner
+
+        ctx._runner = RayRunner(
             address=address,
             max_task_backlog=max_task_backlog,
             force_client_mode=force_client_mode,
         )
-        ctx._disallow_set_runner = True
         return ctx
 
 
@@ -251,11 +253,31 @@ def set_runner_py(use_thread_pool: bool | None = None) -> DaftContext:
     """
     ctx = get_context()
     with ctx._lock:
-        if ctx._disallow_set_runner:
+        if ctx._runner is not None and ctx._runner.name not in {"py", "native"}:
             raise RuntimeError("Cannot set runner more than once")
 
-        ctx._runner_config = _PyRunnerConfig(use_thread_pool=use_thread_pool)
-        ctx._disallow_set_runner = True
+        from daft.runners.pyrunner import PyRunner
+
+        ctx._runner = PyRunner(use_thread_pool=use_thread_pool)
+        return ctx
+
+
+def set_runner_native() -> DaftContext:
+    """Set the runner for executing Daft dataframes to the native runner.
+
+    Alternatively, users can set this behavior via an environment variable: DAFT_RUNNER=native
+
+    Returns:
+        DaftContext: Daft context after setting the native runner
+    """
+    ctx = get_context()
+    with ctx._lock:
+        if ctx._runner is not None and ctx._runner.name not in {"py", "native"}:
+            raise RuntimeError("Cannot set runner more than once")
+
+        from daft.runners.native_runner import NativeRunner
+
+        ctx._runner = NativeRunner()
         return ctx
 
 
@@ -326,6 +348,8 @@ def set_execution_config(
     enable_aqe: bool | None = None,
     enable_native_executor: bool | None = None,
     default_morsel_size: int | None = None,
+    shuffle_algorithm: str | None = None,
+    pre_shuffle_merge_threshold: int | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution. These configuration values
     are used when a Dataframe is executed (e.g. calls to `.write_*`, `.collect()` or `.show()`)
@@ -360,8 +384,10 @@ def set_execution_config(
         shuffle_aggregation_default_partitions: Maximum number of partitions to create when performing aggregations. Defaults to 200, unless the number of input partitions is less than 200.
         read_sql_partition_size_bytes: Target size of partition when reading from SQL databases. Defaults to 512MB
         enable_aqe: Enables Adaptive Query Execution, Defaults to False
-        enable_native_executor: Enables new local executor. Defaults to False
+        enable_native_executor: Enables the native executor, Defaults to False
         default_morsel_size: Default size of morsels used for the new local executor. Defaults to 131072 rows.
+        shuffle_algorithm: The shuffle algorithm to use. Defaults to "map_reduce". Other options are "pre_shuffle_merge".
+        pre_shuffle_merge_threshold: Memory threshold in bytes for pre-shuffle merge. Defaults to 1GB
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
@@ -387,6 +413,8 @@ def set_execution_config(
             enable_aqe=enable_aqe,
             enable_native_executor=enable_native_executor,
             default_morsel_size=default_morsel_size,
+            shuffle_algorithm=shuffle_algorithm,
+            pre_shuffle_merge_threshold=pre_shuffle_merge_threshold,
         )
 
         ctx._daft_execution_config = new_daft_execution_config

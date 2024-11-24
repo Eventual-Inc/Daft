@@ -159,14 +159,16 @@ impl Series {
         }
     }
 
-    pub fn list_sort(&self, desc: &Self) -> DaftResult<Self> {
+    pub fn list_sort(&self, desc: &Self, nulls_first: &Self) -> DaftResult<Self> {
         let desc_arr = desc.bool()?;
+        let nulls_first = nulls_first.bool()?;
 
         match self.data_type() {
-            DataType::List(_) => Ok(self.list()?.list_sort(desc_arr)?.into_series()),
-            DataType::FixedSizeList(..) => {
-                Ok(self.fixed_size_list()?.list_sort(desc_arr)?.into_series())
-            }
+            DataType::List(_) => Ok(self.list()?.list_sort(desc_arr, nulls_first)?.into_series()),
+            DataType::FixedSizeList(..) => Ok(self
+                .fixed_size_list()?
+                .list_sort(desc_arr, nulls_first)?
+                .into_series()),
             dt => Err(DaftError::TypeError(format!(
                 "List sort not implemented for {}",
                 dt

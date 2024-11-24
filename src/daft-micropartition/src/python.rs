@@ -146,8 +146,8 @@ impl PyMicroPartition {
 
     #[staticmethod]
     pub fn concat(py: Python, to_concat: Vec<Self>) -> PyResult<Self> {
-        let mps: Vec<_> = to_concat.iter().map(|t| t.inner.as_ref()).collect();
-        py.allow_threads(|| Ok(MicroPartition::concat(mps.as_slice())?.into()))
+        let mps_iter = to_concat.iter().map(|t| t.inner.as_ref());
+        py.allow_threads(|| Ok(MicroPartition::concat(mps_iter)?.into()))
     }
 
     pub fn slice(&self, py: Python, start: i64, end: i64) -> PyResult<Self> {
@@ -184,6 +184,7 @@ impl PyMicroPartition {
         py: Python,
         sort_keys: Vec<PyExpr>,
         descending: Vec<bool>,
+        nulls_first: Vec<bool>,
     ) -> PyResult<Self> {
         let converted_exprs: Vec<daft_dsl::ExprRef> = sort_keys
             .into_iter()
@@ -192,7 +193,11 @@ impl PyMicroPartition {
         py.allow_threads(|| {
             Ok(self
                 .inner
-                .sort(converted_exprs.as_slice(), descending.as_slice())?
+                .sort(
+                    converted_exprs.as_slice(),
+                    descending.as_slice(),
+                    nulls_first.as_slice(),
+                )?
                 .into())
         })
     }
@@ -202,6 +207,7 @@ impl PyMicroPartition {
         py: Python,
         sort_keys: Vec<PyExpr>,
         descending: Vec<bool>,
+        nulls_first: Vec<bool>,
     ) -> PyResult<PySeries> {
         let converted_exprs: Vec<daft_dsl::ExprRef> = sort_keys
             .into_iter()
@@ -210,7 +216,11 @@ impl PyMicroPartition {
         py.allow_threads(|| {
             Ok(self
                 .inner
-                .argsort(converted_exprs.as_slice(), descending.as_slice())?
+                .argsort(
+                    converted_exprs.as_slice(),
+                    descending.as_slice(),
+                    nulls_first.as_slice(),
+                )?
                 .into())
         })
     }
@@ -260,6 +270,7 @@ impl PyMicroPartition {
         left_on: Vec<PyExpr>,
         right_on: Vec<PyExpr>,
         how: JoinType,
+        null_equals_nulls: Option<Vec<bool>>,
     ) -> PyResult<Self> {
         let left_exprs: Vec<daft_dsl::ExprRef> =
             left_on.into_iter().map(std::convert::Into::into).collect();
@@ -272,6 +283,7 @@ impl PyMicroPartition {
                     &right.inner,
                     left_exprs.as_slice(),
                     right_exprs.as_slice(),
+                    null_equals_nulls,
                     how,
                 )?
                 .into())
@@ -938,21 +950,23 @@ pub fn read_pyfunc_into_table_iter(
     let scan_task_filters = scan_task.pushdowns.filters.clone();
     let res = table_iterators
         .into_iter()
-        .filter_map(|iter| {
-            Python::with_gil(|py| {
-                iter.downcast_bound::<pyo3::types::PyIterator>(py)
-                    .expect("Function must return an iterator of tables")
-                    .clone()
-                    .next()
-                    .map(|result| {
-                        result
-                            .map(|tbl| {
-                                tbl.extract::<daft_table::python::PyTable>()
-                                    .expect("Must be a PyTable")
-                                    .table
-                            })
-                            .with_context(|_| PyIOSnafu)
-                    })
+        .flat_map(move |iter| {
+            std::iter::from_fn(move || {
+                Python::with_gil(|py| {
+                    iter.downcast_bound::<pyo3::types::PyIterator>(py)
+                        .expect("Function must return an iterator of tables")
+                        .clone()
+                        .next()
+                        .map(|result| {
+                            result
+                                .map(|tbl| {
+                                    tbl.extract::<daft_table::python::PyTable>()
+                                        .expect("Must be a PyTable")
+                                        .table
+                                })
+                                .with_context(|_| PyIOSnafu)
+                        })
+                })
             })
         })
         .scan(0, move |rows_seen_so_far, table| {

@@ -1,0 +1,31 @@
+[dependencies]
+arrow2 = {workspace = true}
+async-stream = "0.3.6"
+common-daft-config = {workspace = true}
+daft-core = {workspace = true}
+daft-dsl = {workspace = true}
+daft-local-execution = {workspace = true}
+daft-logical-plan = {workspace = true}
+daft-scan = {workspace = true}
+daft-schema = {workspace = true}
+daft-table = {workspace = true}
+dashmap = "6.1.0"
+eyre = "0.6.12"
+futures = "0.3.31"
+pyo3 = {workspace = true, optional = true}
+spark-connect = {workspace = true}
+tokio = {version = "1.40.0", features = ["full"]}
+tonic = "0.12.3"
+tracing = {workspace = true}
+uuid = {version = "1.10.0", features = ["v4"]}
+
+[features]
+python = ["dep:pyo3", "common-daft-config/python", "daft-local-execution/python", "daft-logical-plan/python", "daft-scan/python", "daft-table/python", "daft-dsl/python", "daft-schema/python", "daft-core/python"]
+
+[lints]
+workspace = true
+
+[package]
+edition = {workspace = true}
+name = "daft-connect"
+version = {workspace = true}

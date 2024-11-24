@@ -1,3 +1,5 @@
+#![feature(let_chains)]
+
 pub mod catalog;
 pub mod error;
 pub mod functions;
@@ -25,8 +27,8 @@ mod tests {
 
     use catalog::SQLCatalog;
     use daft_core::prelude::*;
-    use daft_dsl::{col, lit};
-    use daft_plan::{
+    use daft_dsl::{col, lit, Expr, OuterReferenceColumn, Subquery};
+    use daft_logical_plan::{
         logical_plan::Source, source_info::PlaceHolderInfo, ClusteringSpec, LogicalPlan,
         LogicalPlanBuilder, LogicalPlanRef, SourceInfo,
     };
@@ -70,6 +72,7 @@ mod tests {
             Schema::new(vec![
                 Field::new("text", DataType::Utf8),
                 Field::new("id", DataType::Int32),
+                Field::new("val", DataType::Int32),
             ])
             .unwrap(),
         );
@@ -106,7 +109,7 @@ mod tests {
     }
 
     #[fixture]
-    fn planner() -> SQLPlanner {
+    fn planner() -> SQLPlanner<'static> {
         let mut catalog = SQLCatalog::new();
 
         catalog.register_table("tbl1", tbl_1());
@@ -135,6 +138,8 @@ mod tests {
     #[case("select list_utf8[0] from tbl1")]
     #[case::slice("select list_utf8[0:2] from tbl1")]
     #[case::join("select * from tbl2 join tbl3 on tbl2.id = tbl3.id")]
+    #[case::null_safe_join("select * from tbl2 left join tbl3 on tbl2.id <=> tbl3.id")]
+    #[case::join_with_filter("select * from tbl2 join tbl3 on tbl2.id = tbl3.id and tbl2.val > 0")]
     #[case::from("select tbl2.text from tbl2")]
     #[case::using("select tbl2.text from tbl2 join tbl3 using (id)")]
     #[case(
@@ -164,9 +169,29 @@ mod tests {
     #[case::orderby_multi("select * from tbl1 order by i32 desc, f32 asc")]
     #[case::whenthen("select case when i32 = 1 then 'a' else 'b' end from tbl1")]
     #[case::globalagg("select max(i32) from tbl1")]
+    #[case::cte("with cte as (select * from tbl1) select * from cte")]
     fn test_compiles(mut planner: SQLPlanner, #[case] query: &str) -> SQLPlannerResult<()> {
         let plan = planner.plan_sql(query);
-        assert!(plan.is_ok(), "query: {query}\nerror: {plan:?}");
+        assert!(&plan.is_ok(), "query: {query}\nerror: {plan:?}");
+
+        Ok(())
+    }
+
+    #[rstest]
+    fn test_compile_from_read_parquet(mut planner: SQLPlanner) -> SQLPlannerResult<()> {
+        let query = "select * from read_parquet('../../tests/assets/parquet-data/mvp.parquet')";
+        let plan = planner.plan_sql(query);
+        assert!(&plan.is_ok(), "query: {query}\nerror: {plan:?}");
+
+        Ok(())
+    }
+
+    #[rstest]
+    fn test_compile_from_read_csv(mut planner: SQLPlanner) -> SQLPlannerResult<()> {
+        let query =
+            "select * from read_csv('../../tests/assets/sampled-tpch.csv', delimiter => ',')";
+        let plan = planner.plan_sql(query);
+        assert!(&plan.is_ok(), "query: {query}\nerror: {plan:?}");
 
         Ok(())
     }
@@ -217,7 +242,7 @@ mod tests {
 
         let expected = LogicalPlanBuilder::new(tbl_1, None)
             .select(vec![col("utf8")])?
-            .sort(vec![col("utf8")], vec![true])?
+            .sort(vec![col("utf8")], vec![true], vec![true])?
             .build();
 
         assert_eq!(plan, expected);
@@ -256,23 +281,59 @@ mod tests {
         Ok(())
     }
 
-    #[rstest]
+    #[rstest(
+        null_equals_null => [false, true]
+    )]
     fn test_join(
         mut planner: SQLPlanner,
         tbl_2: LogicalPlanRef,
         tbl_3: LogicalPlanRef,
+        null_equals_null: bool,
     ) -> SQLPlannerResult<()> {
-        let sql = "select * from tbl2 join tbl3 on tbl2.id = tbl3.id";
-        let plan = planner.plan_sql(sql)?;
+        let sql = format!(
+            "select * from tbl2 join tbl3 on tbl2.id {} tbl3.id",
+            if null_equals_null { "<=>" } else { "=" }
+        );
+        let plan = planner.plan_sql(&sql)?;
         let expected = LogicalPlanBuilder::new(tbl_2, None)
-            .join(
+            .join_with_null_safe_equal(
                 tbl_3,
                 vec![col("id")],
                 vec![col("id")],
+                Some(vec![null_equals_null]),
                 JoinType::Inner,
                 None,
                 None,
+                Some("tbl3."),
+                true,
+            )?
+            .select(vec![col("*")])?
+            .build();
+        assert_eq!(plan, expected);
+        Ok(())
+    }
+
+    #[rstest]
+    fn test_join_with_filter(
+        mut planner: SQLPlanner,
+        tbl_2: LogicalPlanRef,
+        tbl_3: LogicalPlanRef,
+    ) -> SQLPlannerResult<()> {
+        let sql = "select * from tbl2 join tbl3 on tbl2.id = tbl3.id and tbl2.val > 0";
+        let plan = planner.plan_sql(&sql)?;
+
+        let expected = LogicalPlanBuilder::new(tbl_2, None)
+            .filter(col("val").gt(lit(0 as i64)))?
+            .join_with_null_safe_equal(
+                tbl_3,
+                vec![col("id")],
+                vec![col("id")],
+                Some(vec![false]),
+                JoinType::Inner,
                 None,
+                None,
+                Some("tbl3."),
+                true,
             )?
             .select(vec![col("*")])?
             .build();
@@ -345,9 +406,94 @@ mod tests {
 
         let expected = LogicalPlanBuilder::new(tbl_1, None)
             .aggregate(vec![col("i32").max()], vec![])?
+            .select(vec![col("i32")])?
             .build();
 
         assert_eq!(plan, expected);
+        Ok(())
+    }
+
+    #[rstest]
+    #[case::basic("select utf8 from tbl1 order by utf8")]
+    #[case::asc("select utf8 from tbl1 order by utf8 asc")]
+    #[case::desc("select utf8 from tbl1 order by utf8 desc")]
+    #[case::with_alias("select utf8 as a from tbl1 order by a")]
+    #[case::with_alias_in_projection_only("select utf8 as a from tbl1 order by utf8")]
+    #[case::with_groupby("select utf8, sum(i32) from tbl1 group by utf8 order by utf8")]
+    #[case::with_groupby_and_alias(
+        "select utf8 as a, sum(i32) from tbl1 group by utf8 order by utf8"
+    )]
+    #[case::with_groupby_and_alias_mixed("select utf8 as a from tbl1 group by a order by utf8")]
+    #[case::with_groupby_and_alias_mixed_2("select utf8 as a from tbl1 group by utf8 order by a")]
+    #[case::with_groupby_and_alias_mixed_asc(
+        "select utf8 as a from tbl1 group by utf8 order by a asc"
+    )]
+    fn test_compiles_orderby(mut planner: SQLPlanner, #[case] query: &str) -> SQLPlannerResult<()> {
+        let plan = planner.plan_sql(query);
+        if let Err(e) = plan {
+            panic!("query: {query}\nerror: {e:?}");
+        }
+        assert!(plan.is_ok(), "query: {query}\nerror: {plan:?}");
+
+        Ok(())
+    }
+
+    #[rstest]
+    #[case::with_second_select("select i32 as a from tbl1 where i32 > 0")]
+    #[case::with_where("select i32 as a from tbl1 where i32 > 0")]
+    #[case::with_where_aliased("select i32 as a from tbl1 where a > 0")]
+    #[case::with_groupby("select i32 as a from tbl1 group by i32")]
+    #[case::with_groupby_aliased("select i32 as a from tbl1 group by a")]
+    #[case::with_orderby("select i32 as a from tbl1 order by i32")]
+    #[case::with_orderby_aliased("select i32 as a from tbl1 order by a")]
+    #[case::with_many("select i32 as a from tbl1 where i32 > 0 group by i32 order by i32")]
+    #[case::with_many_aliased("select i32 as a from tbl1 where a > 0 group by a order by a")]
+    #[case::second_select("select i32 as a, a + 1 from tbl1")]
+    fn test_compiles_select_alias(
+        mut planner: SQLPlanner,
+        #[case] query: &str,
+    ) -> SQLPlannerResult<()> {
+        let plan = planner.plan_sql(query);
+        if let Err(e) = plan {
+            panic!("query: {query}\nerror: {e:?}");
+        }
+        assert!(plan.is_ok(), "query: {query}\nerror: {plan:?}");
+
+        Ok(())
+    }
+
+    #[rstest]
+    #[case::basic("select utf8 from tbl1 where i64 > (select max(id) from tbl2 where id = i32)")]
+    #[case::compound(
+        "select utf8 from tbl1 where i64 > (select max(id) from tbl2 where id = tbl1.i32)"
+    )]
+    fn test_correlated_subquery(
+        mut planner: SQLPlanner,
+        #[case] query: &str,
+        tbl_1: LogicalPlanRef,
+        tbl_2: LogicalPlanRef,
+    ) -> SQLPlannerResult<()> {
+        let plan = planner.plan_sql(query)?;
+
+        let outer_col = Arc::new(Expr::OuterReferenceColumn(OuterReferenceColumn {
+            field: Field::new("i32", DataType::Int32),
+            depth: 1,
+        }));
+        let subquery = LogicalPlanBuilder::new(tbl_2, None)
+            .filter(col("id").eq(outer_col))?
+            .aggregate(vec![col("id").max()], vec![])?
+            .select(vec![col("id")])?
+            .build();
+
+        let subquery = Arc::new(Expr::Subquery(Subquery { plan: subquery }));
+
+        let expected = LogicalPlanBuilder::new(tbl_1, None)
+            .filter(col("i64").gt(subquery))?
+            .select(vec![col("utf8")])?
+            .build();
+
+        assert_eq!(plan, expected);
+
         Ok(())
     }
 }

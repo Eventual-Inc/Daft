@@ -1,0 +1,15 @@
+[dependencies]
+common-error = {path = "../common/error", default-features = false}
+daft-core = {path = "../daft-core", default-features = false}
+daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
+lazy_static = {workspace = true}
+pyo3 = {workspace = true, optional = true}
+snafu.workspace = true
+
+[features]
+python = ["dep:pyo3", "common-error/python", "daft-logical-plan/python", "daft-core/python"]
+
+[package]
+name = "daft-catalog"
+edition.workspace = true
+version.workspace = true

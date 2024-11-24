@@ -1,0 +1,14 @@
+[dependencies]
+daft-catalog = {path = "..", default-features = false}
+daft-logical-plan = {path = "../../daft-logical-plan", default-features = false}
+pyo3 = {workspace = true, optional = true}
+snafu = {workspace = true}
+
+[features]
+python = ["daft-catalog/python", "daft-logical-plan/python", "dep:pyo3"]
+
+[package]
+description = "Python implementations of Daft DataCatalogTable (backed by a PythonCatalog abstract class)"
+name = "daft-catalog-python-catalog"
+edition.workspace = true
+version.workspace = true

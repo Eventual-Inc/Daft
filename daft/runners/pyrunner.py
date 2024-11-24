@@ -13,7 +13,6 @@ from daft.context import get_context
 from daft.daft import FileFormatConfig, FileInfos, IOConfig, ResourceRequest, SystemInfo
 from daft.execution.native_executor import NativeExecutor
 from daft.execution.physical_plan import ActorPoolManager
-from daft.expressions import ExpressionsProjection
 from daft.filesystem import glob_path_with_stats
 from daft.internal.gpu import cuda_visible_devices
 from daft.runners import runner_io
@@ -24,17 +23,18 @@ from daft.runners.partitioning import (
     PartialPartitionMetadata,
     PartitionCacheEntry,
     PartitionMetadata,
+    PartitionSetCache,
 )
 from daft.runners.profiler import profiler
 from daft.runners.progress_bar import ProgressBar
-from daft.runners.runner import Runner
+from daft.runners.runner import LOCAL_PARTITION_SET_CACHE, Runner
 from daft.table import MicroPartition
 
 if TYPE_CHECKING:
     from daft.execution import physical_plan
     from daft.execution.execution_step import Instruction, PartitionTask
+    from daft.expressions import ExpressionsProjection
     from daft.logical.builder import LogicalPlanBuilder
-    from daft.udf import UserProvidedPythonFunction
 
 logger = logging.getLogger(__name__)
 
@@ -166,60 +166,42 @@ class PyRunnerResources:
 
 class PyStatefulActorSingleton:
     """
-    This class stores the singleton `initialized_udfs` that is isolated to each Python process. It stores the stateful UDF objects of a single actor.
+    This class stores the singleton `initialized_projection` that is isolated to each Python process. It stores the projection with initialized stateful UDF objects of a single actor.
 
     Currently, only one stateful UDF per actor is supported, but we allow multiple here in case we want to support multiple stateful UDFs in the future.
 
     Note: The class methods should only be called inside of actor processes.
     """
 
-    initialized_udfs: dict[str, UserProvidedPythonFunction] | None = None
+    initialized_projection: ExpressionsProjection | None = None
 
     @staticmethod
     def initialize_actor_global_state(
         uninitialized_projection: ExpressionsProjection,
         cuda_device_queue: mp.Queue[str],
     ):
+        if PyStatefulActorSingleton.initialized_projection is not None:
+            raise RuntimeError("Cannot initialize Python process actor twice.")
+
         import os
 
-        from daft.daft import extract_partial_stateful_udf_py
+        from daft.execution.stateful_actor import initialize_actor_pool_projection
 
         os.environ["CUDA_VISIBLE_DEVICES"] = cuda_device_queue.get(timeout=1)
 
-        if PyStatefulActorSingleton.initialized_udfs is not None:
-            raise RuntimeError("Cannot initialize Python process actor twice.")
-        else:
-            partial_stateful_udfs = {
-                name: psu
-                for expr in uninitialized_projection
-                for name, psu in extract_partial_stateful_udf_py(expr._expr).items()
-            }
-
-            logger.info("Initializing stateful UDFs: %s", ", ".join(partial_stateful_udfs.keys()))
-
-            PyStatefulActorSingleton.initialized_udfs = {}
-            for name, (partial_udf, init_args) in partial_stateful_udfs.items():
-                if init_args is None:
-                    PyStatefulActorSingleton.initialized_udfs[name] = partial_udf.func_cls()
-                else:
-                    args, kwargs = init_args
-                    PyStatefulActorSingleton.initialized_udfs[name] = partial_udf.func_cls(*args, **kwargs)
+        PyStatefulActorSingleton.initialized_projection = initialize_actor_pool_projection(uninitialized_projection)
 
     @staticmethod
     def build_partitions_with_stateful_project(
-        uninitialized_projection: ExpressionsProjection,
         partition: MicroPartition,
         partial_metadata: PartialPartitionMetadata,
     ) -> list[MaterializedResult[MicroPartition]]:
         # Bind the expressions to the initialized stateful UDFs, which should already have been initialized at process start-up
-        initialized_stateful_udfs = PyStatefulActorSingleton.initialized_udfs
         assert (
-            initialized_stateful_udfs is not None
+            PyStatefulActorSingleton.initialized_projection is not None
         ), "PyActor process must be initialized with stateful UDFs before execution"
-        initialized_projection = ExpressionsProjection(
-            [e._bind_stateful_udfs(initialized_stateful_udfs) for e in uninitialized_projection]
-        )
-        new_part = partition.eval_expression_list(initialized_projection)
+
+        new_part = partition.eval_expression_list(PyStatefulActorSingleton.initialized_projection)
         return [
             LocalMaterializedResult(
                 new_part, PartitionMetadata.from_table(new_part).merge_with_partial(partial_metadata)
@@ -258,13 +240,11 @@ class PyActorPool:
         assert len(instruction_stack) == 1
         instruction = instruction_stack[0]
         assert isinstance(instruction, execution_step.StatefulUDFProject)
-        projection = instruction.projection
         partition = partitions[0]
         partial_metadata = final_metadata[0]
 
         return self._executor.submit(
             PyStatefulActorSingleton.build_partitions_with_stateful_project,
-            projection,
             partition,
             partial_metadata,
         )
@@ -309,6 +289,8 @@ class PyRunnerIO(runner_io.RunnerIO):
 
 
 class PyRunner(Runner[MicroPartition], ActorPoolManager):
+    name = "py"
+
     def __init__(self, use_thread_pool: bool | None) -> None:
         super().__init__()
 
@@ -336,6 +318,9 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
             gpus,
             memory_bytes,
         )
+
+    def initialize_partition_set_cache(self) -> PartitionSetCache:
+        return LOCAL_PARTITION_SET_CACHE
 
     def runner_io(self) -> PyRunnerIO:
         return PyRunnerIO()
@@ -390,6 +375,7 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
             # physical plan to executable tasks.
             if daft_execution_config.enable_native_executor:
                 logger.info("Using native executor")
+
                 executor = NativeExecutor.from_logical_plan_builder(builder)
                 results_gen = executor.run(
                     {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()},
@@ -531,6 +517,7 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
                             self._resources.release(resources)
 
                             next_step.set_result(materialized_results)
+                            next_step.set_done()
 
                         else:
                             # Submit the task for execution.
@@ -593,6 +580,7 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
                     )
 
                     done_task.set_result(materialized_results)
+                    done_task.set_done()
 
                 if next_step is None:
                     next_step = next(plan)

@@ -60,6 +60,8 @@ pub mod trigonometry;
 mod truncate;
 mod utf8;
 
+use std::hash::BuildHasher;
+
 use common_error::DaftResult;
 pub use hll_sketch::HLL_SKETCH_DTYPE;
 pub use sort::{build_multi_array_bicompare, build_multi_array_compare};
@@ -144,7 +146,13 @@ pub trait DaftNotNan {
 
 pub trait DaftMinHash {
     type Output;
-    fn minhash(&self, num_hashes: usize, ngram_size: usize, seed: u32) -> Self::Output;
+    fn minhash(
+        &self,
+        num_hashes: usize,
+        ngram_size: usize,
+        seed: u32,
+        hasher: &impl BuildHasher,
+    ) -> Self::Output;
 }
 
 pub type VecIndices = Vec<u64>;

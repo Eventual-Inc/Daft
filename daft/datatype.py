@@ -431,7 +431,7 @@ class DataType:
         elif isinstance(arrow_type, pa.BaseExtensionType):
             name = arrow_type.extension_name
 
-            if (get_context().runner_config.name == "ray") and (
+            if (get_context().get_or_create_runner().name == "ray") and (
                 type(arrow_type).__reduce__ == pa.BaseExtensionType.__reduce__
             ):
                 raise ValueError(
@@ -500,6 +500,9 @@ class DataType:
 
     def _is_numeric_type(self) -> builtins.bool:
         return self._dtype.is_numeric()
+
+    def _is_integer(self) -> builtins.bool:
+        return self._dtype.is_integer()
 
     def _is_list(self) -> builtins.bool:
         return self._dtype.is_list()

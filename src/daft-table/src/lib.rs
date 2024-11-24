@@ -8,6 +8,7 @@ use std::{
     fmt::{Display, Formatter, Result},
 };
 
+use arrow2::array::Array;
 use common_display::table_display::{make_comfy_table, StrValue};
 use common_error::{DaftError, DaftResult};
 use daft_core::{
@@ -20,6 +21,7 @@ use daft_dsl::{
     col, functions::FunctionEvaluator, null_lit, AggExpr, ApproxPercentileParams, Expr, ExprRef,
     LiteralValue, SketchType,
 };
+use daft_logical_plan::FileInfos;
 use num_traits::ToPrimitive;
 #[cfg(feature = "python")]
 pub mod ffi;
@@ -97,6 +99,12 @@ impl Table {
             .collect();
 
         Ok(Self::new_unchecked(schema, columns?, num_rows))
+    }
+
+    pub fn get_inner_arrow_arrays(
+        &self,
+    ) -> impl Iterator<Item = Box<dyn arrow2::array::Array>> + '_ {
+        self.columns.iter().map(|s| s.to_arrow())
     }
 
     /// Create a new [`Table`] and validate against `num_rows`
@@ -191,6 +199,10 @@ impl Table {
     }
 
     pub fn len(&self) -> usize {
+        self.num_rows
+    }
+
+    pub fn num_rows(&self) -> usize {
         self.num_rows
     }
 
@@ -500,28 +512,33 @@ impl Table {
     }
 
     fn eval_expression(&self, expr: &Expr) -> DaftResult<Series> {
-        use crate::Expr::*;
-
         let expected_field = expr.to_field(self.schema.as_ref())?;
         let series = match expr {
-            Alias(child, name) => Ok(self.eval_expression(child)?.rename(name)),
-            Agg(agg_expr) => self.eval_agg_expression(agg_expr, None),
-            Cast(child, dtype) => self.eval_expression(child)?.cast(dtype),
-            Column(name) => self.get_column(name).cloned(),
-            Not(child) => !(self.eval_expression(child)?),
-            IsNull(child) => self.eval_expression(child)?.is_null(),
-            NotNull(child) => self.eval_expression(child)?.not_null(),
-            FillNull(child, fill_value) => {
+            Expr::Alias(child, name) => Ok(self.eval_expression(child)?.rename(name)),
+            Expr::Agg(agg_expr) => self.eval_agg_expression(agg_expr, None),
+            Expr::Cast(child, dtype) => self.eval_expression(child)?.cast(dtype),
+            Expr::Column(name) => self.get_column(name).cloned(),
+            Expr::Not(child) => !(self.eval_expression(child)?),
+            Expr::IsNull(child) => self.eval_expression(child)?.is_null(),
+            Expr::NotNull(child) => self.eval_expression(child)?.not_null(),
+            Expr::FillNull(child, fill_value) => {
                 let fill_value = self.eval_expression(fill_value)?;
                 self.eval_expression(child)?.fill_null(&fill_value)
             }
-            IsIn(child, items) => self
+            Expr::IsIn(child, items) => {
+                let items = items.iter().map(|i| self.eval_expression(i)).collect::<DaftResult<Vec<_>>>()?;
+
+                let items = items.iter().collect::<Vec<&Series>>();
+                let s = Series::concat(items.as_slice())?;
+                self
                 .eval_expression(child)?
-                .is_in(&self.eval_expression(items)?),
-            Between(child, lower, upper) => self
+                .is_in(&s)
+            }
+
+            Expr::Between(child, lower, upper) => self
                 .eval_expression(child)?
                 .between(&self.eval_expression(lower)?, &self.eval_expression(upper)?),
-            BinaryOp { op, left, right } => {
+            Expr::BinaryOp { op, left, right } => {
                 let lhs = self.eval_expression(left)?;
                 let rhs = self.eval_expression(right)?;
                 use daft_core::array::ops::{DaftCompare, DaftLogical};
@@ -546,14 +563,14 @@ impl Table {
                     ShiftRight => lhs.shift_right(&rhs),
                 }
             }
-            Function { func, inputs } => {
+            Expr::Function { func, inputs } => {
                 let evaluated_inputs = inputs
                     .iter()
                     .map(|e| self.eval_expression(e))
                     .collect::<DaftResult<Vec<_>>>()?;
                 func.evaluate(evaluated_inputs.as_slice(), func)
             }
-            ScalarFunction(func) => {
+            Expr::ScalarFunction(func) => {
                 let evaluated_inputs = func
                     .inputs
                     .iter()
@@ -561,8 +578,8 @@ impl Table {
                     .collect::<DaftResult<Vec<_>>>()?;
                 func.udf.evaluate(evaluated_inputs.as_slice())
             }
-            Literal(lit_value) => Ok(lit_value.to_series()),
-            IfElse {
+            Expr::Literal(lit_value) => Ok(lit_value.to_series()),
+            Expr::IfElse {
                 if_true,
                 if_false,
                 predicate,
@@ -578,6 +595,18 @@ impl Table {
                     Ok(if_true_series.if_else(&if_false_series, &predicate_series)?)
                 }
             },
+            Expr::Subquery(_subquery) => Err(DaftError::ComputeError(
+                "Subquery should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),
+            )),
+            Expr::InSubquery(_expr, _subquery) => Err(DaftError::ComputeError(
+                "IN <SUBQUERY> should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),
+            )),
+            Expr::Exists(_subquery) => Err(DaftError::ComputeError(
+                "EXISTS <SUBQUERY> should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),
+            )),
+            Expr::OuterReferenceColumn { .. } => Err(DaftError::ComputeError(
+                "Outer reference columns should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),
+            )),
         }?;
 
         if expected_field.name != series.field().name {
@@ -782,6 +811,83 @@ impl Table {
             Some(self.len()),
             max_col_width,
         )
+    }
+}
+impl TryFrom<Table> for FileInfos {
+    type Error = DaftError;
+
+    fn try_from(table: Table) -> DaftResult<Self> {
+        let file_paths = table
+            .get_column("path")?
+            .utf8()?
+            .data()
+            .as_any()
+            .downcast_ref::<arrow2::array::Utf8Array<i64>>()
+            .unwrap()
+            .iter()
+            .map(|s| s.unwrap().to_string())
+            .collect::<Vec<_>>();
+        let file_sizes = table
+            .get_column("size")?
+            .i64()?
+            .data()
+            .as_any()
+            .downcast_ref::<arrow2::array::Int64Array>()
+            .unwrap()
+            .iter()
+            .map(|n| n.copied())
+            .collect::<Vec<_>>();
+        let num_rows = table
+            .get_column("num_rows")?
+            .i64()?
+            .data()
+            .as_any()
+            .downcast_ref::<arrow2::array::Int64Array>()
+            .unwrap()
+            .iter()
+            .map(|n| n.copied())
+            .collect::<Vec<_>>();
+        Ok(Self::new_internal(file_paths, file_sizes, num_rows))
+    }
+}
+
+impl TryFrom<&FileInfos> for Table {
+    type Error = DaftError;
+
+    fn try_from(file_info: &FileInfos) -> DaftResult<Self> {
+        let columns = vec![
+            Series::try_from((
+                "path",
+                arrow2::array::Utf8Array::<i64>::from_iter_values(file_info.file_paths.iter())
+                    .to_boxed(),
+            ))?,
+            Series::try_from((
+                "size",
+                arrow2::array::PrimitiveArray::<i64>::from(&file_info.file_sizes).to_boxed(),
+            ))?,
+            Series::try_from((
+                "num_rows",
+                arrow2::array::PrimitiveArray::<i64>::from(&file_info.num_rows).to_boxed(),
+            ))?,
+        ];
+        Self::from_nonempty_columns(columns)
+    }
+}
+
+impl PartialEq for Table {
+    fn eq(&self, other: &Self) -> bool {
+        if self.len() != other.len() {
+            return false;
+        }
+        if self.schema != other.schema {
+            return false;
+        }
+        for (lhs, rhs) in self.columns.iter().zip(other.columns.iter()) {
+            if lhs != rhs {
+                return false;
+            }
+        }
+        true
     }
 }
 

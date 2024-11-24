@@ -10,7 +10,10 @@ use common_error::{DaftError, DaftResult};
 use common_hashable_float_wrapper::FloatWrapper;
 use common_treenode::TreeNode;
 use daft_core::{
-    datatypes::{try_mean_stddev_aggregation_supertype, try_sum_supertype, InferDataType},
+    datatypes::{
+        try_mean_aggregation_supertype, try_stddev_aggregation_supertype, try_sum_supertype,
+        InferDataType,
+    },
     prelude::*,
     utils::supertype::try_get_supertype,
 };
@@ -22,7 +25,7 @@ use super::functions::FunctionExpr;
 use crate::{
     functions::{
         binary_op_display_without_formatter, function_display_without_formatter,
-        function_semantic_id,
+        function_semantic_id, is_in_display_without_formatter,
         python::PythonUDF,
         scalar_function_semantic_id,
         sketch::{HashableVecPercentiles, SketchExpr},
@@ -32,6 +35,59 @@ use crate::{
     lit,
     optimization::{get_required_columns, requires_computation},
 };
+
+pub trait SubqueryPlan: std::fmt::Debug + std::fmt::Display + Send + Sync {
+    fn as_any(&self) -> &dyn std::any::Any;
+    fn name(&self) -> &'static str;
+    fn schema(&self) -> SchemaRef;
+}
+
+#[derive(Display, Debug, Clone)]
+pub struct Subquery {
+    pub plan: Arc<dyn SubqueryPlan>,
+}
+
+impl Subquery {
+    pub fn new<T: SubqueryPlan + 'static>(plan: T) -> Self {
+        Self {
+            plan: Arc::new(plan),
+        }
+    }
+
+    pub fn schema(&self) -> SchemaRef {
+        self.plan.schema()
+    }
+    pub fn name(&self) -> &'static str {
+        self.plan.name()
+    }
+}
+
+impl Serialize for Subquery {
+    fn serialize<S: serde::Serializer>(&self, _: S) -> Result<S::Ok, S::Error> {
+        Err(serde::ser::Error::custom("Subquery cannot be serialized"))
+    }
+}
+
+impl<'de> Deserialize<'de> for Subquery {
+    fn deserialize<D: serde::Deserializer<'de>>(_: D) -> Result<Self, D::Error> {
+        Err(serde::de::Error::custom("Subquery cannot be deserialized"))
+    }
+}
+
+impl PartialEq for Subquery {
+    fn eq(&self, other: &Self) -> bool {
+        self.plan.name() == other.plan.name() && self.plan.schema() == other.plan.schema()
+    }
+}
+
+impl Eq for Subquery {}
+
+impl std::hash::Hash for Subquery {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.plan.name().hash(state);
+        self.plan.schema().hash(state);
+    }
+}
 
 pub type ExprRef = Arc<Expr>;
 
@@ -74,8 +130,8 @@ pub enum Expr {
     #[display("fill_null({_0}, {_1})")]
     FillNull(ExprRef, ExprRef),
 
-    #[display("{_0} in {_1}")]
-    IsIn(ExprRef, ExprRef),
+    #[display("{}", is_in_display_without_formatter(_0, _1)?)]
+    IsIn(ExprRef, Vec<ExprRef>),
 
     #[display("{_0} in [{_1},{_2}]")]
     Between(ExprRef, ExprRef, ExprRef),
@@ -92,6 +148,16 @@ pub enum Expr {
 
     #[display("{_0}")]
     ScalarFunction(ScalarFunction),
+
+    #[display("subquery {_0}")]
+    Subquery(Subquery),
+    #[display("{_0} in {_1}")]
+    InSubquery(ExprRef, Subquery),
+    #[display("exists {_0}")]
+    Exists(Subquery),
+
+    #[display("{_0}")]
+    OuterReferenceColumn(OuterReferenceColumn),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Hash, Eq)]
@@ -99,6 +165,20 @@ pub struct ApproxPercentileParams {
     pub child: ExprRef,
     pub percentiles: Vec<FloatWrapper<f64>>,
     pub force_list_output: bool,
+}
+
+/// Reference to a qualified field in a parent query, used for correlated subqueries.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Hash, Eq)]
+pub struct OuterReferenceColumn {
+    pub field: Field,
+    /// The parent query that the column refers to, with depth=1 denoting the direct parent.
+    pub depth: u64,
+}
+
+impl Display for OuterReferenceColumn {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "outer_col({}, {})", self.field.name, self.depth)
+    }
 }
 
 #[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -383,13 +463,21 @@ impl AggExpr {
                 };
                 Ok(Field::new(field.name, dtype))
             }
-            Self::Mean(expr) | Self::Stddev(expr) => {
+            Self::Mean(expr) => {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(
                     field.name.as_str(),
-                    try_mean_stddev_aggregation_supertype(&field.dtype)?,
+                    try_mean_aggregation_supertype(&field.dtype)?,
                 ))
             }
+            Self::Stddev(expr) => {
+                let field = expr.to_field(schema)?;
+                Ok(Field::new(
+                    field.name.as_str(),
+                    try_stddev_aggregation_supertype(&field.dtype)?,
+                ))
+            }
+
             Self::Min(expr) | Self::Max(expr) | Self::AnyValue(expr, _) => {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(field.name.as_str(), field.dtype))
@@ -532,7 +620,7 @@ impl Expr {
         Self::FillNull(self, fill_value).into()
     }
 
-    pub fn is_in(self: ExprRef, items: ExprRef) -> ExprRef {
+    pub fn is_in(self: ExprRef, items: Vec<ExprRef>) -> ExprRef {
         Self::IsIn(self, items).into()
     }
 
@@ -571,6 +659,9 @@ impl Expr {
     pub fn gt_eq(self: ExprRef, other: ExprRef) -> ExprRef {
         binary_op(Operator::GtEq, self, other)
     }
+    pub fn in_subquery(self: ExprRef, subquery: Subquery) -> ExprRef {
+        Self::InSubquery(self, subquery).into()
+    }
 
     pub fn semantic_id(&self, schema: &Schema) -> FieldID {
         match self {
@@ -605,7 +696,10 @@ impl Expr {
             }
             Self::IsIn(expr, items) => {
                 let child_id = expr.semantic_id(schema);
-                let items_id = items.semantic_id(schema);
+                let items_id = items.iter().fold(String::new(), |acc, item| {
+                    format!("{},{}", acc, item.semantic_id(schema))
+                });
+
                 FieldID::new(format!("{child_id}.is_in({items_id})"))
             }
             Self::Between(expr, lower, upper) => {
@@ -636,6 +730,15 @@ impl Expr {
             // Agg: Separate path.
             Self::Agg(agg_expr) => agg_expr.semantic_id(schema),
             Self::ScalarFunction(sf) => scalar_function_semantic_id(sf, schema),
+
+            Self::Subquery(..) | Self::InSubquery(..) | Self::Exists(..) => {
+                FieldID::new("__subquery__")
+            } // todo: better/unique id
+            Self::OuterReferenceColumn(c) => {
+                let name = &c.field.name;
+                let depth = c.depth;
+                FieldID::new(format!("outer_col({name}, {depth})"))
+            }
         }
     }
 
@@ -644,13 +747,17 @@ impl Expr {
             // No children.
             Self::Column(..) => vec![],
             Self::Literal(..) => vec![],
+            Self::Subquery(..) => vec![],
+            Self::Exists(..) => vec![],
+            Self::OuterReferenceColumn(..) => vec![],
 
             // One child.
             Self::Not(expr)
             | Self::IsNull(expr)
             | Self::NotNull(expr)
             | Self::Cast(expr, ..)
-            | Self::Alias(expr, ..) => {
+            | Self::Alias(expr, ..)
+            | Self::InSubquery(expr, _) => {
                 vec![expr.clone()]
             }
             Self::Agg(agg_expr) => agg_expr.children(),
@@ -660,7 +767,9 @@ impl Expr {
             Self::BinaryOp { left, right, .. } => {
                 vec![left.clone(), right.clone()]
             }
-            Self::IsIn(expr, items) => vec![expr.clone(), items.clone()],
+            Self::IsIn(expr, items) => std::iter::once(expr.clone())
+                .chain(items.iter().cloned())
+                .collect::<Vec<_>>(),
             Self::Between(expr, lower, upper) => vec![expr.clone(), lower.clone(), upper.clone()],
             Self::IfElse {
                 if_true,
@@ -677,7 +786,11 @@ impl Expr {
     pub fn with_new_children(&self, children: Vec<ExprRef>) -> Self {
         match self {
             // no children
-            Self::Column(..) | Self::Literal(..) => {
+            Self::Column(..)
+            | Self::Literal(..)
+            | Self::Subquery(..)
+            | Self::Exists(..)
+            | Self::OuterReferenceColumn(..) => {
                 assert!(children.is_empty(), "Should have no children");
                 self.clone()
             }
@@ -697,16 +810,28 @@ impl Expr {
                 children.first().expect("Should have 1 child").clone(),
                 dtype.clone(),
             ),
+            Self::InSubquery(_, subquery) => Self::InSubquery(
+                children.first().expect("Should have 1 child").clone(),
+                subquery.clone(),
+            ),
             // 2 children
             Self::BinaryOp { op, .. } => Self::BinaryOp {
                 op: *op,
                 left: children.first().expect("Should have 1 child").clone(),
                 right: children.get(1).expect("Should have 2 child").clone(),
             },
-            Self::IsIn(..) => Self::IsIn(
-                children.first().expect("Should have 1 child").clone(),
-                children.get(1).expect("Should have 2 child").clone(),
-            ),
+            Self::IsIn(_, old_children) => {
+                assert_eq!(
+                    children.len(),
+                    old_children.len() + 1,
+                    "Should have same number of children"
+                );
+                let mut children_iter = children.into_iter();
+                let expr = children_iter.next().expect("Should have 1 child");
+                let items = children_iter.collect();
+
+                Self::IsIn(expr, items)
+            }
             Self::Between(..) => Self::Between(
                 children.first().expect("Should have 1 child").clone(),
                 children.get(1).expect("Should have 2 child").clone(),
@@ -780,10 +905,28 @@ impl Expr {
             }
             Self::IsIn(left, right) => {
                 let left_field = left.to_field(schema)?;
-                let right_field = right.to_field(schema)?;
+
+                let first_right_field = right
+                    .first()
+                    .expect("Should have at least 1 child")
+                    .to_field(schema)?;
+                let all_same_type = right.iter().all(|expr| {
+                    let field = expr.to_field(schema).unwrap();
+                    // allow nulls to be compared with anything
+                    if field.dtype == DataType::Null || first_right_field.dtype == DataType::Null {
+                        return true;
+                    }
+                    field.dtype == first_right_field.dtype
+                });
+                if !all_same_type {
+                    return Err(DaftError::TypeError(format!(
+                        "Expected all arguments to be of the same type, but received {first_right_field} and others",
+                    )));
+                }
+
                 let (result_type, _intermediate, _comp_type) =
                     InferDataType::from(&left_field.dtype)
-                        .membership_op(&InferDataType::from(&right_field.dtype))?;
+                        .membership_op(&InferDataType::from(&first_right_field.dtype))?;
                 Ok(Field::new(left_field.name.as_str(), result_type))
             }
             Self::Between(value, lower, upper) => {
@@ -898,6 +1041,20 @@ impl Expr {
                     }
                 }
             }
+            Self::Subquery(subquery) => {
+                let subquery_schema = subquery.schema();
+                if subquery_schema.len() != 1 {
+                    return Err(DaftError::TypeError(format!(
+                        "Expected subquery to return a single column but received {subquery_schema}",
+                    )));
+                }
+                let (_, first_field) = subquery_schema.fields.first().unwrap();
+
+                Ok(first_field.clone())
+            }
+            Self::InSubquery(expr, _) => Ok(Field::new(expr.name(), DataType::Boolean)),
+            Self::Exists(_) => Ok(Field::new("exists", DataType::Boolean)),
+            Self::OuterReferenceColumn(c) => Ok(c.field.clone()),
         }
     }
 
@@ -928,6 +1085,10 @@ impl Expr {
                 right: _,
             } => left.name(),
             Self::IfElse { if_true, .. } => if_true.name(),
+            Self::Subquery(subquery) => subquery.name(),
+            Self::InSubquery(expr, _) => expr.name(),
+            Self::Exists(subquery) => subquery.name(),
+            Self::OuterReferenceColumn(c) => &c.field.name,
         }
     }
 
@@ -1000,7 +1161,11 @@ impl Expr {
                 | Expr::Between(..)
                 | Expr::Function { .. }
                 | Expr::FillNull(..)
-                | Expr::ScalarFunction { .. } => Err(io::Error::new(
+                | Expr::ScalarFunction { .. }
+                | Expr::Subquery(..)
+                | Expr::InSubquery(..)
+                | Expr::Exists(..)
+                | Expr::OuterReferenceColumn(..) => Err(io::Error::new(
                     io::ErrorKind::Other,
                     "Unsupported expression for SQL translation",
                 )),

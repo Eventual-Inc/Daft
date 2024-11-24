@@ -1,11 +1,10 @@
+pub mod actor_pool_project;
 pub mod aggregate;
 pub mod anti_semi_hash_join_probe;
-pub mod buffer;
 pub mod explode;
 pub mod filter;
 pub mod inner_hash_join_probe;
 pub mod intermediate_op;
-pub mod pivot;
 pub mod project;
 pub mod sample;
 pub mod unpivot;

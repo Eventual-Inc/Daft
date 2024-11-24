@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use common_runtime::RuntimeRef;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
@@ -9,47 +10,47 @@ use indexmap::IndexSet;
 use tracing::{info_span, instrument};
 
 use super::intermediate_op::{
-    DynIntermediateOpState, IntermediateOperator, IntermediateOperatorResult,
-    IntermediateOperatorState,
+    IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
+    IntermediateOperatorResult,
 };
-use crate::pipeline::PipelineResultType;
+use crate::sinks::hash_join_build::ProbeStateBridgeRef;
 
 enum InnerHashJoinProbeState {
-    Building,
-    ReadyToProbe(Arc<ProbeState>),
+    Building(ProbeStateBridgeRef),
+    Probing(Arc<ProbeState>),
 }
 
 impl InnerHashJoinProbeState {
-    fn set_probe_state(&mut self, probe_state: Arc<ProbeState>) {
-        if matches!(self, Self::Building) {
-            *self = Self::ReadyToProbe(probe_state);
-        } else {
-            panic!("InnerHashJoinProbeState should only be in Building state when setting table")
-        }
-    }
-
-    fn get_probe_state(&self) -> &Arc<ProbeState> {
-        if let Self::ReadyToProbe(probe_state) = self {
-            probe_state
-        } else {
-            panic!("get_probeable_and_table can only be used during the ReadyToProbe Phase")
+    async fn get_or_await_probe_state(&mut self) -> Arc<ProbeState> {
+        match self {
+            Self::Building(bridge) => {
+                let probe_state = bridge.get_probe_state().await;
+                *self = Self::Probing(probe_state.clone());
+                probe_state
+            }
+            Self::Probing(probeable) => probeable.clone(),
         }
     }
 }
 
-impl DynIntermediateOpState for InnerHashJoinProbeState {
+impl IntermediateOpState for InnerHashJoinProbeState {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
 }
 
-pub struct InnerHashJoinProbeOperator {
+struct InnerHashJoinParams {
     probe_on: Vec<ExprRef>,
     common_join_keys: Vec<String>,
     left_non_join_columns: Vec<String>,
     right_non_join_columns: Vec<String>,
     build_on_left: bool,
+}
+
+pub struct InnerHashJoinProbeOperator {
+    params: Arc<InnerHashJoinParams>,
     output_schema: SchemaRef,
+    probe_state_bridge: ProbeStateBridgeRef,
 }
 
 impl InnerHashJoinProbeOperator {
@@ -62,6 +63,7 @@ impl InnerHashJoinProbeOperator {
         build_on_left: bool,
         common_join_keys: IndexSet<String>,
         output_schema: &SchemaRef,
+        probe_state_bridge: ProbeStateBridgeRef,
     ) -> Self {
         let left_non_join_columns = left_schema
             .fields
@@ -77,24 +79,29 @@ impl InnerHashJoinProbeOperator {
             .collect();
         let common_join_keys = common_join_keys.into_iter().collect();
         Self {
-            probe_on,
-            common_join_keys,
-            left_non_join_columns,
-            right_non_join_columns,
-            build_on_left,
+            params: Arc::new(InnerHashJoinParams {
+                probe_on,
+                common_join_keys,
+                left_non_join_columns,
+                right_non_join_columns,
+                build_on_left,
+            }),
             output_schema: output_schema.clone(),
+            probe_state_bridge,
         }
     }
 
     fn probe_inner(
-        &self,
         input: &Arc<MicroPartition>,
-        state: &InnerHashJoinProbeState,
+        probe_state: &Arc<ProbeState>,
+        probe_on: &[ExprRef],
+        common_join_keys: &[String],
+        left_non_join_columns: &[String],
+        right_non_join_columns: &[String],
+        build_on_left: bool,
     ) -> DaftResult<Arc<MicroPartition>> {
-        let (probe_table, tables) = {
-            let probe_state = state.get_probe_state();
-            (probe_state.get_probeable(), probe_state.get_tables())
-        };
+        let probe_table = probe_state.get_probeable();
+        let tables = probe_state.get_tables();
 
         let _growables = info_span!("InnerHashJoinOperator::build_growables").entered();
 
@@ -117,7 +124,7 @@ impl InnerHashJoinProbeOperator {
             let _loop = info_span!("InnerHashJoinOperator::eval_and_probe").entered();
             for (probe_side_table_idx, table) in input_tables.iter().enumerate() {
                 // we should emit one table at a time when this is streaming
-                let join_keys = table.eval_expression_list(&self.probe_on)?;
+                let join_keys = table.eval_expression_list(probe_on)?;
                 let idx_mapper = probe_table.probe_indices(&join_keys)?;
 
                 for (probe_row_idx, inner_iter) in idx_mapper.make_iter().enumerate() {
@@ -138,15 +145,15 @@ impl InnerHashJoinProbeOperator {
         let build_side_table = build_side_growable.build()?;
         let probe_side_table = probe_side_growable.build()?;
 
-        let (left_table, right_table) = if self.build_on_left {
+        let (left_table, right_table) = if build_on_left {
             (build_side_table, probe_side_table)
         } else {
             (probe_side_table, build_side_table)
         };
 
-        let join_keys_table = left_table.get_columns(&self.common_join_keys)?;
-        let left_non_join_columns = left_table.get_columns(&self.left_non_join_columns)?;
-        let right_non_join_columns = right_table.get_columns(&self.right_non_join_columns)?;
+        let join_keys_table = left_table.get_columns(common_join_keys)?;
+        let left_non_join_columns = left_table.get_columns(left_non_join_columns)?;
+        let right_non_join_columns = right_table.get_columns(right_non_join_columns)?;
         let final_table = join_keys_table
             .union(&left_non_join_columns)?
             .union(&right_non_join_columns)?;
@@ -163,33 +170,50 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
     #[instrument(skip_all, name = "InnerHashJoinOperator::execute")]
     fn execute(
         &self,
-        idx: usize,
-        input: &PipelineResultType,
-        state: &IntermediateOperatorState,
-    ) -> DaftResult<IntermediateOperatorResult> {
-        state.with_state_mut::<InnerHashJoinProbeState, _, _>(|state| match idx {
-            0 => {
-                let probe_state = input.as_probe_state();
-                state.set_probe_state(probe_state.clone());
-                Ok(IntermediateOperatorResult::NeedMoreInput(None))
-            }
-            _ => {
-                let input = input.as_data();
-                if input.is_empty() {
-                    let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));
-                    return Ok(IntermediateOperatorResult::NeedMoreInput(Some(empty)));
-                }
-                let out = self.probe_inner(input, state)?;
-                Ok(IntermediateOperatorResult::NeedMoreInput(Some(out)))
-            }
-        })
+        input: Arc<MicroPartition>,
+        mut state: Box<dyn IntermediateOpState>,
+        runtime_ref: &RuntimeRef,
+    ) -> IntermediateOpExecuteResult {
+        if input.is_empty() {
+            let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));
+            return Ok((
+                state,
+                IntermediateOperatorResult::NeedMoreInput(Some(empty)),
+            ))
+            .into();
+        }
+
+        let params = self.params.clone();
+        runtime_ref
+            .spawn(async move {
+                let inner_join_state = state
+                    .as_any_mut()
+                    .downcast_mut::<InnerHashJoinProbeState>()
+                    .expect(
+                        "InnerHashJoinProbeState should be used with InnerHashJoinProbeOperator",
+                    );
+                let probe_state = inner_join_state.get_or_await_probe_state().await;
+                let res = Self::probe_inner(
+                    &input,
+                    &probe_state,
+                    &params.probe_on,
+                    &params.common_join_keys,
+                    &params.left_non_join_columns,
+                    &params.right_non_join_columns,
+                    params.build_on_left,
+                );
+                Ok((state, IntermediateOperatorResult::NeedMoreInput(Some(res?))))
+            })
+            .into()
     }
 
     fn name(&self) -> &'static str {
         "InnerHashJoinProbeOperator"
     }
 
-    fn make_state(&self) -> Box<dyn DynIntermediateOpState> {
-        Box::new(InnerHashJoinProbeState::Building)
+    fn make_state(&self) -> DaftResult<Box<dyn IntermediateOpState>> {
+        Ok(Box::new(InnerHashJoinProbeState::Building(
+            self.probe_state_bridge.clone(),
+        )))
     }
 }

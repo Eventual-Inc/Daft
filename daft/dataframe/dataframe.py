@@ -37,6 +37,7 @@ from daft.dataframe.preview import DataFramePreview
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.expressions import Expression, ExpressionsProjection, col, lit
+from daft.filesystem import overwrite_files
 from daft.logical.builder import LogicalPlanBuilder
 from daft.runners.partitioning import LocalPartitionSet, PartitionCacheEntry, PartitionSet
 from daft.table import MicroPartition
@@ -273,7 +274,9 @@ class DataFrame:
         else:
             # Execute the dataframe in a streaming fashion.
             context = get_context()
-            partitions_iter = context.runner().run_iter_tables(self._builder, results_buffer_size=results_buffer_size)
+            partitions_iter = context.get_or_create_runner().run_iter_tables(
+                self._builder, results_buffer_size=results_buffer_size
+            )
 
             # Iterate through partitions.
             for partition in partitions_iter:
@@ -310,7 +313,9 @@ class DataFrame:
         else:
             # Execute the dataframe in a streaming fashion.
             context = get_context()
-            partitions_iter = context.runner().run_iter_tables(self._builder, results_buffer_size=results_buffer_size)
+            partitions_iter = context.get_or_create_runner().run_iter_tables(
+                self._builder, results_buffer_size=results_buffer_size
+            )
 
             # Iterate through partitions.
             for partition in partitions_iter:
@@ -389,7 +394,9 @@ class DataFrame:
         else:
             # Execute the dataframe in a streaming fashion.
             context = get_context()
-            results_iter = context.runner().run_iter(self._builder, results_buffer_size=results_buffer_size)
+            results_iter = context.get_or_create_runner().run_iter(
+                self._builder, results_buffer_size=results_buffer_size
+            )
             for result in results_iter:
                 yield result.partition()
 
@@ -488,7 +495,7 @@ class DataFrame:
             result_pset.set_partition_from_table(i, part)
 
         context = get_context()
-        cache_entry = context.runner().put_partition_set_into_cache(result_pset)
+        cache_entry = context.get_or_create_runner().put_partition_set_into_cache(result_pset)
         size_bytes = result_pset.size_bytes()
         num_rows = len(result_pset)
 
@@ -513,6 +520,7 @@ class DataFrame:
         self,
         root_dir: Union[str, pathlib.Path],
         compression: str = "snappy",
+        write_mode: Union[Literal["append"], Literal["overwrite"]] = "append",
         partition_cols: Optional[List[ColumnInputType]] = None,
         io_config: Optional[IOConfig] = None,
     ) -> "DataFrame":
@@ -526,6 +534,7 @@ class DataFrame:
         Args:
             root_dir (str): root file path to write parquet files to.
             compression (str, optional): compression algorithm. Defaults to "snappy".
+            write_mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace table with new data. Defaults to "append".
             partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
             io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
 
@@ -535,6 +544,9 @@ class DataFrame:
             .. NOTE::
                 This call is **blocking** and will execute the DataFrame when called
         """
+        if write_mode not in ["append", "overwrite"]:
+            raise ValueError(f"Only support `append` or `overwrite` mode. {write_mode} is unsupported")
+
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
         cols: Optional[List[Expression]] = None
@@ -552,6 +564,9 @@ class DataFrame:
         write_df = DataFrame(builder)
         write_df.collect()
         assert write_df._result is not None
+
+        if write_mode == "overwrite":
+            overwrite_files(write_df, root_dir, io_config)
 
         if len(write_df) > 0:
             # Populate and return a new disconnected DataFrame
@@ -577,6 +592,7 @@ class DataFrame:
     def write_csv(
         self,
         root_dir: Union[str, pathlib.Path],
+        write_mode: Union[Literal["append"], Literal["overwrite"]] = "append",
         partition_cols: Optional[List[ColumnInputType]] = None,
         io_config: Optional[IOConfig] = None,
     ) -> "DataFrame":
@@ -589,12 +605,16 @@ class DataFrame:
 
         Args:
             root_dir (str): root file path to write parquet files to.
+            write_mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace table with new data. Defaults to "append".
             partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
             io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
 
         Returns:
             DataFrame: The filenames that were written out as strings.
         """
+        if write_mode not in ["append", "overwrite"]:
+            raise ValueError(f"Only support `append` or `overwrite` mode. {write_mode} is unsupported")
+
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
         cols: Optional[List[Expression]] = None
@@ -611,6 +631,9 @@ class DataFrame:
         write_df = DataFrame(builder)
         write_df.collect()
         assert write_df._result is not None
+
+        if write_mode == "overwrite":
+            overwrite_files(write_df, root_dir, io_config)
 
         if len(write_df) > 0:
             # Populate and return a new disconnected DataFrame
@@ -1560,8 +1583,10 @@ class DataFrame:
             by = [
                 by,
             ]
+
         sort_by = self.__column_input_to_expression(by)
-        builder = self._builder.sort(sort_by=sort_by, descending=desc)
+
+        builder = self._builder.sort(sort_by=sort_by, descending=desc, nulls_first=desc)
         return DataFrame(builder)
 
     @DataframePublicAPI
@@ -2457,11 +2482,41 @@ class DataFrame:
         builder = self._builder.pivot(group_by_expr, pivot_col_expr, value_col_expr, agg_expr, names)
         return DataFrame(builder)
 
+    @DataframePublicAPI
+    def intersect(self, other: "DataFrame") -> "DataFrame":
+        """Returns the intersection of two DataFrames.
+
+        Example:
+            >>> import daft
+            >>> df1 = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
+            >>> df2 = daft.from_pydict({"a": [1, 2, 3], "b": [4, 8, 6]})
+            >>> df1.intersect(df2).collect()
+            ╭───────┬───────╮
+            │ a     ┆ b     │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╞═══════╪═══════╡
+            │ 1     ┆ 4     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3     ┆ 6     │
+            ╰───────┴───────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+
+        Args:
+            other (DataFrame): DataFrame to intersect with
+
+        Returns:
+            DataFrame: DataFrame with the intersection of the two DataFrames
+        """
+        builder = self._builder.intersect(other._builder)
+        return DataFrame(builder)
+
     def _materialize_results(self) -> None:
         """Materializes the results of for this DataFrame and hold a pointer to the results."""
         context = get_context()
         if self._result is None:
-            self._result_cache = context.runner().run(self._builder)
+            self._result_cache = context.get_or_create_runner().run(self._builder)
             result = self._result
             assert result is not None
             result.wait()
@@ -2507,7 +2562,7 @@ class DataFrame:
             # Iteratively retrieve partitions until enough data has been materialized
             tables = []
             seen = 0
-            for table in get_context().runner().run_iter_tables(builder, results_buffer_size=1):
+            for table in get_context().get_or_create_runner().run_iter_tables(builder, results_buffer_size=1):
                 tables.append(table)
                 seen += len(table)
                 if seen >= n:
@@ -2745,16 +2800,16 @@ class DataFrame:
         from ray.exceptions import RayTaskError
 
         context = get_context()
-        if context.runner_config.name != "ray":
+        if context.get_or_create_runner().name != "ray":
             raise ValueError("Daft needs to be running on the Ray Runner for this operation")
 
         from daft.runners.ray_runner import RayRunnerIO
 
-        ray_runner_io = context.runner().runner_io()
+        ray_runner_io = context.get_or_create_runner().runner_io()
         assert isinstance(ray_runner_io, RayRunnerIO)
 
         partition_set, schema = ray_runner_io.partition_set_from_ray_dataset(ds)
-        cache_entry = context.runner().put_partition_set_into_cache(partition_set)
+        cache_entry = context.get_or_create_runner().put_partition_set_into_cache(partition_set)
         try:
             size_bytes = partition_set.size_bytes()
         except RayTaskError as e:
@@ -2847,16 +2902,16 @@ class DataFrame:
         # TODO(Clark): Support Dask DataFrame conversion for the local runner if
         # Dask is using a non-distributed scheduler.
         context = get_context()
-        if context.runner_config.name != "ray":
+        if context.get_or_create_runner().name != "ray":
             raise ValueError("Daft needs to be running on the Ray Runner for this operation")
 
         from daft.runners.ray_runner import RayRunnerIO
 
-        ray_runner_io = context.runner().runner_io()
+        ray_runner_io = context.get_or_create_runner().runner_io()
         assert isinstance(ray_runner_io, RayRunnerIO)
 
         partition_set, schema = ray_runner_io.partition_set_from_dask_dataframe(ddf)
-        cache_entry = context.runner().put_partition_set_into_cache(partition_set)
+        cache_entry = context.get_or_create_runner().put_partition_set_into_cache(partition_set)
         size_bytes = partition_set.size_bytes()
         num_rows = len(partition_set)
         assert size_bytes is not None, "In-memory data should always have non-None size in bytes"
@@ -3066,10 +3121,13 @@ class GroupedDataFrame:
 
         Example:
             >>> import daft, statistics
+            >>>
             >>> df = daft.from_pydict({"group": ["a", "a", "a", "b", "b", "b"], "data": [1, 20, 30, 4, 50, 600]})
+            >>>
             >>> @daft.udf(return_dtype=daft.DataType.float64())
             ... def std_dev(data):
             ...     return [statistics.stdev(data.to_pylist())]
+            >>>
             >>> df = df.groupby("group").map_groups(std_dev(df["data"]))
             >>> df.show()
             ╭───────┬────────────────────╮

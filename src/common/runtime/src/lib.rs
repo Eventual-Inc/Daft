@@ -1,16 +1,21 @@
 use std::{
     future::Future,
     panic::AssertUnwindSafe,
+    pin::Pin,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc, OnceLock,
     },
+    task::{Context, Poll},
 };
 
 use common_error::{DaftError, DaftResult};
 use futures::FutureExt;
 use lazy_static::lazy_static;
-use tokio::{runtime::RuntimeFlavor, task::JoinHandle};
+use tokio::{
+    runtime::{Handle, RuntimeFlavor},
+    task::JoinSet,
+};
 
 lazy_static! {
     static ref NUM_CPUS: usize = std::thread::available_parallelism().unwrap().get();
@@ -31,6 +36,38 @@ enum PoolType {
     IO,
 }
 
+// A spawned task on a Runtime that can be awaited
+// This is a wrapper around a JoinSet that allows us to cancel the task by dropping it
+pub struct RuntimeTask<T> {
+    joinset: JoinSet<T>,
+}
+
+impl<T> RuntimeTask<T> {
+    pub fn new<F>(handle: &Handle, future: F) -> Self
+    where
+        F: Future<Output = T> + Send + 'static,
+        T: Send + 'static,
+    {
+        let mut joinset = JoinSet::new();
+        joinset.spawn_on(future, handle);
+        Self { joinset }
+    }
+}
+
+impl<T: Send + 'static> Future for RuntimeTask<T> {
+    type Output = DaftResult<T>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        match self.joinset.poll_join_next(cx) {
+            Poll::Ready(Some(result)) => {
+                Poll::Ready(result.map_err(|e| DaftError::External(e.into())))
+            }
+            Poll::Ready(None) => panic!("JoinSet unexpectedly empty"),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
 pub struct Runtime {
     runtime: tokio::runtime::Runtime,
     pool_type: PoolType,
@@ -41,7 +78,6 @@ impl Runtime {
         Arc::new(Self { runtime, pool_type })
     }
 
-    // TODO: figure out a way to cancel the Future if this output is dropped.
     async fn execute_task<F>(future: F, pool_type: PoolType) -> DaftResult<F::Output>
     where
         F: Future + Send + 'static,
@@ -81,36 +117,19 @@ impl Runtime {
         rx.recv().expect("Spawned task transmitter dropped")
     }
 
-    /// Spawn a task on the runtime and await on it.
-    /// You should use this when you are spawning compute or IO tasks from the Executor.
-    pub async fn await_on<F>(&self, future: F) -> DaftResult<F::Output>
-    where
-        F: Future + Send + 'static,
-        F::Output: Send + 'static,
-    {
-        let (tx, rx) = oneshot::channel();
-        let pool_type = self.pool_type;
-        let _join_handle = self.spawn(async move {
-            let task_output = Self::execute_task(future, pool_type).await;
-            if tx.send(task_output).is_err() {
-                log::warn!("Spawned task output ignored: receiver dropped");
-            }
-        });
-        rx.await.expect("Spawned task transmitter dropped")
-    }
-
     /// Blocks current thread to compute future. Can not be called in tokio runtime context
     ///
     pub fn block_on_current_thread<F: Future>(&self, future: F) -> F::Output {
         self.runtime.block_on(future)
     }
 
-    pub fn spawn<F>(&self, future: F) -> JoinHandle<F::Output>
+    // Spawn a task on the runtime
+    pub fn spawn<F>(&self, future: F) -> RuntimeTask<F::Output>
     where
         F: Future + Send + 'static,
         F::Output: Send + 'static,
     {
-        self.runtime.spawn(future)
+        RuntimeTask::new(self.runtime.handle(), future)
     }
 }
 
@@ -181,5 +200,36 @@ pub fn get_io_pool_num_threads() -> Option<usize> {
             }
         }
         Err(_) => None,
+    }
+}
+
+mod tests {
+
+    #[tokio::test]
+    async fn test_spawned_task_cancelled_when_dropped() {
+        use super::*;
+
+        let runtime = get_compute_runtime();
+        let ptr = Arc::new(AtomicUsize::new(0));
+        let ptr_clone = ptr.clone();
+
+        // Spawn a task that just does work in a loop
+        // The task should own a reference to the Arc, so the strong count should be 2
+        let task = async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                ptr_clone.fetch_add(1, Ordering::SeqCst);
+            }
+        };
+        let fut = runtime.spawn(task);
+        assert!(Arc::strong_count(&ptr) == 2);
+
+        // Drop the future, which should cancel the task
+        drop(fut);
+
+        // Wait for a while so that the task can be aborted
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        // The strong count should be 1 now
+        assert!(Arc::strong_count(&ptr) == 1);
     }
 }
