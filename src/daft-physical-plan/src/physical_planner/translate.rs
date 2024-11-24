@@ -781,6 +781,9 @@ pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
                 AggExpr::ApproxCountDistinct(e) => {
                     AggExpr::ApproxCountDistinct(Expr::Alias(e, name.clone()).into())
                 }
+                AggExpr::ApproxDistinct(e) => {
+                    AggExpr::ApproxDistinct(Expr::Alias(e, name.clone()).into())
+                }
                 AggExpr::ApproxSketch(e, sketch_type) => {
                     AggExpr::ApproxSketch(Expr::Alias(e, name.clone()).into(), sketch_type)
                 }
@@ -1080,6 +1083,26 @@ pub fn populate_aggregation_stages(
                 );
             }
             AggExpr::ApproxCountDistinct(e) => {
+                let first_stage_id = agg_expr.semantic_id(schema).id;
+                let second_stage_id =
+                    AggExpr::MergeSketch(col(first_stage_id.clone()), SketchType::HyperLogLog)
+                        .semantic_id(schema)
+                        .id;
+                first_stage_aggs
+                    .entry(first_stage_id.clone())
+                    .or_insert(AggExpr::ApproxSketch(
+                        e.alias(first_stage_id.clone()),
+                        SketchType::HyperLogLog,
+                    ));
+                second_stage_aggs
+                    .entry(second_stage_id.clone())
+                    .or_insert(AggExpr::MergeSketch(
+                        col(first_stage_id).alias(second_stage_id.clone()),
+                        SketchType::HyperLogLog,
+                    ));
+                final_exprs.push(col(second_stage_id).alias(output_name));
+            }
+            AggExpr::ApproxDistinct(e) => {
                 let first_stage_id = agg_expr.semantic_id(schema).id;
                 let second_stage_id =
                     AggExpr::MergeSketch(col(first_stage_id.clone()), SketchType::HyperLogLog)

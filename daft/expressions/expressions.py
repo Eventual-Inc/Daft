@@ -824,6 +824,34 @@ class Expression:
         expr = self._expr.approx_count_distinct()
         return Expression._from_pyexpr(expr)
 
+    def approx_distinct(self) -> Expression:
+        """
+        Calculates the approximate set of non-`NULL` unique values in the expression.
+
+        Approximation is performed using the `HyperLogLog <https://en.wikipedia.org/wiki/HyperLogLog>`_ algorithm.
+
+        Example:
+            A global enumeration of approximate distinct values in a non-NULL column:
+
+            >>> import daft
+            >>> df = daft.from_pydict({"values": [1, 2, 3, 3, None]})
+            >>> df = df.agg(
+            ...     df["values"].approx_distinct().alias("distinct_values"),
+            ... )
+            >>> df.show()
+            ╭─────────────────╮
+            │ distinct_values │
+            │ ---             │
+            │ List[UInt64]    │
+            ╞═════════════════╡
+            │ [1, 2, 3]       │
+            ╰─────────────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+        """
+        expr = self._expr.approx_distinct()
+        return Expression._from_pyexpr(expr)
+
     def approx_percentiles(self, percentiles: builtins.float | builtins.list[builtins.float]) -> Expression:
         """Calculates the approximate percentile(s) for a column of numeric values
 

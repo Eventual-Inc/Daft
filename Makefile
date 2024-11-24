@@ -62,6 +62,10 @@ build: check-toolchain .venv  ## Compile and install Daft for development
 build-release: check-toolchain .venv  ## Compile and install a faster Daft binary
 	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin develop --release
 
+.PHONY: build-wheel
+build-wheel: check-toolchain .venv  ## Build a wheel file for installation in other environments
+	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin build --release --strip
+
 .PHONY: test
 test: .venv build  ## Run tests
 	HYPOTHESIS_MAX_EXAMPLES=$(HYPOTHESIS_MAX_EXAMPLES) $(VENV_BIN)/pytest --hypothesis-seed=$(HYPOTHESIS_SEED)

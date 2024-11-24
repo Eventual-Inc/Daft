@@ -195,6 +195,9 @@ pub enum AggExpr {
     #[display("approx_count_distinct({_0})")]
     ApproxCountDistinct(ExprRef),
 
+    #[display("approx_distinct({_0})")]
+    ApproxDistinct(ExprRef),
+
     #[display("approx_sketch({_0}, sketch_type={_1:?})")]
     ApproxSketch(ExprRef, SketchType),
 
@@ -250,6 +253,7 @@ impl AggExpr {
             | Self::Sum(expr)
             | Self::ApproxPercentile(ApproxPercentileParams { child: expr, .. })
             | Self::ApproxCountDistinct(expr)
+            | Self::ApproxDistinct(expr)
             | Self::ApproxSketch(expr, _)
             | Self::MergeSketch(expr, _)
             | Self::Mean(expr)
@@ -287,6 +291,10 @@ impl AggExpr {
             Self::ApproxCountDistinct(expr) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_approx_count_distinct()"))
+            }
+            Self::ApproxDistinct(expr) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.local_approx_distinct()"))
             }
             Self::ApproxSketch(expr, sketch_type) => {
                 let child_id = expr.semantic_id(schema);
@@ -340,6 +348,7 @@ impl AggExpr {
             | Self::Sum(expr)
             | Self::ApproxPercentile(ApproxPercentileParams { child: expr, .. })
             | Self::ApproxCountDistinct(expr)
+            | Self::ApproxDistinct(expr)
             | Self::ApproxSketch(expr, _)
             | Self::MergeSketch(expr, _)
             | Self::Mean(expr)
@@ -384,6 +393,7 @@ impl AggExpr {
                 force_list_output: *force_list_output,
             }),
             Self::ApproxCountDistinct(_) => Self::ApproxCountDistinct(first_child()),
+            Self::ApproxDistinct(_) => Self::ApproxDistinct(first_child()),
             &Self::ApproxSketch(_, sketch_type) => Self::ApproxSketch(first_child(), sketch_type),
             &Self::MergeSketch(_, sketch_type) => Self::MergeSketch(first_child(), sketch_type),
         }
@@ -429,6 +439,10 @@ impl AggExpr {
             Self::ApproxCountDistinct(expr) => {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(field.name.as_str(), DataType::UInt64))
+            }
+            Self::ApproxDistinct(expr) => {
+                let field = expr.to_field(schema)?;
+                Ok(Field::new(field.name.as_str(), field.dtype))
             }
             Self::ApproxSketch(expr, sketch_type) => {
                 let field = expr.to_field(schema)?;
@@ -545,6 +559,10 @@ impl Expr {
 
     pub fn approx_count_distinct(self: ExprRef) -> ExprRef {
         Self::Agg(AggExpr::ApproxCountDistinct(self)).into()
+    }
+
+    pub fn approx_distinct(self: ExprRef) -> ExprRef {
+        Self::Agg(AggExpr::ApproxDistinct(self)).into()
     }
 
     pub fn approx_percentiles(

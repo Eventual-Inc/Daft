@@ -1,6 +1,7 @@
 mod abs;
 mod apply;
 mod approx_count_distinct;
+mod approx_distinct;
 mod approx_sketch;
 mod arange;
 mod arithmetic;
@@ -172,6 +173,12 @@ pub trait DaftApproxCountDistinctAggable {
     type Output;
     fn approx_count_distinct(&self) -> Self::Output;
     fn grouped_approx_count_distinct(&self, groups: &GroupIndices) -> Self::Output;
+}
+
+pub trait DaftApproxDistinctAggable {
+    type Output;
+    fn approx_distinct(&self) -> Self::Output;
+    fn grouped_approx_distinct(&self, groups: &GroupIndices) -> Self::Output;
 }
 
 pub trait DaftSumAggable {

@@ -430,6 +430,10 @@ fn replace_column_with_semantic_id_aggexpr(
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                 .map_yes_no(AggExpr::ApproxCountDistinct, |_| e.clone())
         }
+        AggExpr::ApproxDistinct(ref child) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                .map_yes_no(AggExpr::ApproxDistinct, |_| e.clone())
+        }
         AggExpr::ApproxSketch(ref child, sketch_type) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema).map_yes_no(
                 |transformed_child| AggExpr::ApproxSketch(transformed_child, sketch_type),

@@ -108,6 +108,7 @@ pub fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
             Ok(args[0].clone().sum())
         }
         AggExpr::ApproxCountDistinct(_) => unsupported_sql_err!("approx_percentile"),
+        AggExpr::ApproxDistinct(_) => unsupported_sql_err!("approx_percentile"),
         AggExpr::ApproxPercentile(_) => unsupported_sql_err!("approx_percentile"),
         AggExpr::ApproxSketch(_, _) => unsupported_sql_err!("approx_sketch"),
         AggExpr::MergeSketch(_, _) => unsupported_sql_err!("merge_sketch"),

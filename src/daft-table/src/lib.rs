@@ -13,7 +13,8 @@ use common_display::table_display::{make_comfy_table, StrValue};
 use common_error::{DaftError, DaftResult};
 use daft_core::{
     array::ops::{
-        full::FullNull, DaftApproxCountDistinctAggable, DaftHllSketchAggable, GroupIndices,
+        full::FullNull, DaftApproxCountDistinctAggable, DaftApproxDistinctAggable,
+        DaftHllSketchAggable, GroupIndices,
     },
     prelude::*,
 };
@@ -472,6 +473,16 @@ impl Table {
                     )?
                     .into_series();
                 Ok(series)
+            }
+            AggExpr::ApproxDistinct(expr) => {
+                let hashed = self.eval_expression(expr)?.hash_with_validity(None)?;
+                let series = groups.map_or_else(
+                    || hashed.approx_distinct(),
+                    |groups| hashed.grouped_approx_distinct(groups),
+                )?;
+                let original = self.eval_expression(expr)?;
+                let indices = series.flat_child;
+                Ok(original.take(&indices)?)
             }
             &AggExpr::ApproxSketch(ref expr, sketch_type) => {
                 let evaled = self.eval_expression(expr)?;
