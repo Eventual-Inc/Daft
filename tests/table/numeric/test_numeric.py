@@ -521,6 +521,50 @@ def test_clip_invalid_bounds():
         table.eval_expression_list([col("a").clip(col("b"), col("a"))])
 
 
+def test_clip_incompatible_lengths():
+    # Test with different length columns
+    table = MicroPartition.from_pydict(
+        {
+            "data": [1, 2, 3, 4, 5],
+            "lower": [0, 1, 2],  # Shorter array
+            "upper": [3, 4, 5, 6, 7, 8],  # Longer array
+        }
+    )
+
+    # Test shorter lower bound
+    with pytest.raises(ValueError):
+        table.eval_expression_list([col("data").clip(col("lower"), 5)])
+
+    # Test longer upper bound
+    with pytest.raises(ValueError):
+        table.eval_expression_list([col("data").clip(0, col("upper"))])
+
+    # Test both bounds with different lengths
+    with pytest.raises(ValueError):
+        table.eval_expression_list([col("data").clip(col("lower"), col("upper"))])
+
+
+def test_clip_unsupported_types():
+    # Test with string data
+    table = MicroPartition.from_pydict({"strings": ["a", "b", "c"], "numbers": [1, 2, 3]})
+
+    # Test string column as data
+    with pytest.raises(ValueError):
+        table.eval_expression_list([col("strings").clip(0, 5)])
+
+    # Test string column as lower bound
+    with pytest.raises(ValueError):
+        table.eval_expression_list([col("numbers").clip(col("strings"), 5)])
+
+    # Test string column as upper bound
+    with pytest.raises(ValueError):
+        table.eval_expression_list([col("numbers").clip(0, col("strings"))])
+
+    # Test string literals as bounds
+    with pytest.raises(ValueError):
+        table.eval_expression_list([col("numbers").clip("a", "z")])
+
+
 def test_table_numeric_log2() -> None:
     table = MicroPartition.from_pydict({"a": [0.1, 0.01, 1.5, None], "b": [1, 10, None, None]})
     log2_table = table.eval_expression_list([col("a").log2(), col("b").log2()])
