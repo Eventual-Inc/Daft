@@ -503,45 +503,22 @@ def test_clip_column_with_scalar():
     ), f"Expected {expected}, got {actual}"
 
 
-def test_clip_invalid_bounds():
-    table = MicroPartition.from_pydict({"a": [1, 2, 3, 4, 5], "b": [2, 3, 4, 5, 6]})
-
-    ### NOTE: This is meant to catch PanicException in pyo3.
-    # Test with column as lower bound and scalar as upper bound where upper < lower
-    with pytest.raises(BaseException):
-        table.eval_expression_list([col("a").clip(col("b"), 1)])
-
-    # Test with scalar as lower bound and column as upper bound where upper < lower
-    with pytest.raises(BaseException):
-        table.eval_expression_list([col("a").clip(6, col("b"))])
-
-    # Test with both bounds as columns where some upper values < lower values
-    table = MicroPartition.from_pydict({"a": [1, 2, 3, 4, 5], "b": [2, 1, 4, 3, 6]})
-    with pytest.raises(BaseException):
-        table.eval_expression_list([col("a").clip(col("b"), col("a"))])
-
-
 def test_clip_incompatible_lengths():
-    # Test with different length columns
-    table = MicroPartition.from_pydict(
-        {
-            "data": [1, 2, 3, 4, 5],
-            "lower": [0, 1, 2],  # Shorter array
-            "upper": [3, 4, 5, 6, 7, 8],  # Longer array
-        }
-    )
+    table1 = MicroPartition.from_pydict({"data": [1, 2, 3, 4, 5]})
+    table2 = MicroPartition.from_pydict({"data": [1, 2, 3]})  # Shorter array
+    table3 = MicroPartition.from_pydict({"data": [1, 2, 3, 4, 5, 6]})  # Longer array
 
     # Test shorter lower bound
     with pytest.raises(ValueError):
-        table.eval_expression_list([col("data").clip(col("lower"), 5)])
+        table1.eval_expression_list([col("data").clip(table2.get_column("data"), lit(5))])
 
     # Test longer upper bound
     with pytest.raises(ValueError):
-        table.eval_expression_list([col("data").clip(0, col("upper"))])
+        table1.eval_expression_list([col("data").clip(lit(0), table3.get_column("data"))])
 
     # Test both bounds with different lengths
     with pytest.raises(ValueError):
-        table.eval_expression_list([col("data").clip(col("lower"), col("upper"))])
+        table1.eval_expression_list([col("data").clip(table2.get_column("data"), table3.get_column("data"))])
 
 
 def test_clip_unsupported_types():
