@@ -107,8 +107,8 @@ pub fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
             ensure!(args.len() == 1, "sum takes exactly one argument");
             Ok(args[0].clone().sum())
         }
-        AggExpr::ApproxCountDistinct(_) => unsupported_sql_err!("approx_percentile"),
-        AggExpr::ApproxDistinct(_) => unsupported_sql_err!("approx_percentile"),
+        AggExpr::ApproxCountDistinct(_) => unsupported_sql_err!("approx_count_distinct"),
+        AggExpr::ApproxDistinct(_) => unsupported_sql_err!("approx_count"),
         AggExpr::ApproxPercentile(_) => unsupported_sql_err!("approx_percentile"),
         AggExpr::ApproxSketch(_, _) => unsupported_sql_err!("approx_sketch"),
         AggExpr::MergeSketch(_, _) => unsupported_sql_err!("merge_sketch"),
