@@ -65,8 +65,7 @@ jobs:
           --python-version '${{ inputs.python_version }}' \
           --cluster-profile '${{ inputs.cluster_profile }}'
         ) >> .github/assets/ray.yaml
-        echo "Ray configuration file:" >> $GITHUB_STEP_SUMMARY
-        cat .github/assets/ray.yaml >> $GITHUB_STEP_SUMMARY
+        cat .github/assets/ray.yaml
     - name: Download private ssh key
       run: |
         KEY=$(aws secretsmanager get-secret-value --secret-id ci-github-actions-ray-cluster-key-3 --query SecretString --output text)
