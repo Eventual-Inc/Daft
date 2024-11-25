@@ -48,7 +48,6 @@ fn simplify_expr(expr: Expr, schema: &SchemaRef) -> DaftResult<Transformed<ExprR
         // ----------------
         // Eq
         // ----------------
-
         // true = A  --> A
         // false = A --> !A
         Expr::BinaryOp {
@@ -86,7 +85,6 @@ fn simplify_expr(expr: Expr, schema: &SchemaRef) -> DaftResult<Transformed<ExprR
         // ----------------
         // Neq
         // ----------------
-
         // true != A  --> !A
         // false != A --> A
         Expr::BinaryOp {
@@ -415,14 +413,20 @@ mod test {
 
     use super::SimplifyExpressionsRule;
     use crate::{
-        ops::{Filter, Source},
+        ops::{Filter, Project, Source},
         optimization::rules::OptimizerRule,
         source_info::PlaceHolderInfo,
         ClusteringSpec, LogicalPlan, LogicalPlanBuilder, SourceInfo,
     };
 
     fn make_source() -> LogicalPlanBuilder {
-        let schema = Arc::new(Schema::new(vec![Field::new("bool", DataType::Boolean)]).unwrap());
+        let schema = Arc::new(
+            Schema::new(vec![
+                Field::new("bool", DataType::Boolean),
+                Field::new("int", DataType::Int32),
+            ])
+            .unwrap(),
+        );
         LogicalPlanBuilder::from(
             LogicalPlan::Source(Source {
                 output_schema: schema.clone(),
@@ -452,7 +456,14 @@ mod test {
     // false != A --> A
     #[case(lit(false).not_eq(col("bool")), col("bool"))]
     // true OR A  --> true
-    fn test_simplify_exprs(#[case] input: ExprRef, #[case] expected: ExprRef) {
+    #[case(lit(true).or(col("bool")), lit(true))]
+    // false OR A  --> A
+    #[case(lit(false).or(col("bool")), col("bool"))]
+    // A OR true  --> true
+    #[case(col("bool").or(lit(true)), lit(true))]
+    // A OR false --> A
+    #[case(col("bool").or(lit(false)), col("bool"))]
+    fn test_simplify_bool_exprs(#[case] input: ExprRef, #[case] expected: ExprRef) {
         let source = make_source().filter(input).unwrap().build();
         let optimizer = SimplifyExpressionsRule::new();
         let optimized = optimizer.try_optimize(source).unwrap();
@@ -469,5 +480,33 @@ mod test {
         assert!(optimized.transformed);
 
         assert_eq!(predicate, &expected);
+    }
+
+    #[rstest]
+    // A * 1 --> A
+    #[case(col("int").mul(lit(1)), col("int"))]
+    // 1 * A --> A
+    #[case(lit(1).mul(col("int")), col("int"))]
+    // A / 1 --> A
+    #[case(col("int").div(lit(1)), col("int"))]
+    // A + 0 --> A
+    #[case(col("int").add(lit(0)), col("int"))]
+    // A - 0 --> A
+    #[case(col("int").sub(lit(0)), col("int"))]
+    fn test_math_exprs(#[case] input: ExprRef, #[case] expected: ExprRef) {
+        let source = make_source().select(vec![input]).unwrap().build();
+        let optimizer = SimplifyExpressionsRule::new();
+        let optimized = optimizer.try_optimize(source).unwrap();
+
+        let LogicalPlan::Project(Project { projection, .. }) = optimized.data.as_ref() else {
+            panic!("Expected Filter, got {:?}", optimized.data)
+        };
+
+        let projection = projection.first().unwrap();
+
+        // make sure the expression is simplified
+        assert!(optimized.transformed);
+
+        assert_eq!(projection, &expected);
     }
 }
