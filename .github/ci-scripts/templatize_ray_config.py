@@ -1,0 +1,80 @@
+import sys
+from argparse import ArgumentParser
+from dataclasses import dataclass
+from typing import Optional
+
+CLUSTER_NAME_PLACEHOLDER = "{{CLUSTER_NAME}}"
+DAFT_VERSION_PLACEHOLDER = "{{DAFT_VERSION}}"
+PYTHON_VERSION_PLACEHOLDER = "{{PYTHON_VERSION}}"
+CLUSTER_PROFILE__NODE_COUNT = "'{{CLUSTER_PROFILE/node_count}}'"
+CLUSTER_PROFILE__INSTANCE_TYPE = "{{CLUSTER_PROFILE/instance_type}}"
+CLUSTER_PROFILE__IMAGE_ID = "{{CLUSTER_PROFILE/image_id}}"
+CLUSTER_PROFILE__VOLUME_MOUNT = "'{{CLUSTER_PROFILE/volume_mount}}'"
+
+
+@dataclass
+class Profile:
+    node_count: int
+    instance_type: int
+    image_id: int
+    volume_mount: Optional[int]
+
+
+profiles: dict[str, Optional[Profile]] = {
+    "debug_xs-x86": None,
+    "medium-x86": Profile(
+        instance_type="i3.2xlarge",
+        image_id="ami-04dd23e62ed049936",
+        node_count=4,
+        volume_mount=""" |
+    findmnt /tmp 1> /dev/null
+    code=$?
+    if [ $code -ne 0 ]; then
+        sudo mkfs.ext4 /dev/nvme0n1
+        sudo mount -t ext4 /dev/nvme0n1 /tmp
+        sudo chmod 777 /tmp
+    fi""",
+    ),
+}
+
+
+if __name__ == "__main__":
+    content = sys.stdin.read()
+
+    parser = ArgumentParser()
+    parser.add_argument("--cluster-name")
+    parser.add_argument("--daft-version")
+    parser.add_argument("--python-version")
+    parser.add_argument("--cluster-profile")
+    args = parser.parse_args()
+
+    if args.cluster_name:
+        content = content.replace(CLUSTER_NAME_PLACEHOLDER, args.cluster_name)
+
+    if args.daft_version:
+        content = content.replace(DAFT_VERSION_PLACEHOLDER, f"=={args.daft_version}")
+    else:
+        content = content.replace(DAFT_VERSION_PLACEHOLDER, "")
+
+    if args.python_version:
+        content = content.replace(PYTHON_VERSION_PLACEHOLDER, args.python_version)
+
+    if cluster_profile := args.cluster_profile:
+        cluster_profile: str
+        if cluster_profile not in profiles:
+            raise Exception(f'Cluster profile "{cluster_profile}" not found')
+
+        profile = profiles[cluster_profile]
+        if profile is None:
+            raise Exception(f'Cluster profile "{cluster_profile}" not yet implemented')
+
+        assert profile is not None
+        content = content.replace(CLUSTER_PROFILE__NODE_COUNT, str(profile.node_count))
+        content = content.replace(CLUSTER_PROFILE__INSTANCE_TYPE, profile.instance_type)
+        content = content.replace(CLUSTER_PROFILE__IMAGE_ID, profile.image_id)
+        if profile.volume_mount:
+            content = content.replace(CLUSTER_PROFILE__VOLUME_MOUNT, profile.volume_mount)
+        else:
+            content = content.replace(CLUSTER_PROFILE__VOLUME_MOUNT, "echo 'Nothing to mount; skipping'")
+
+    print(content)
