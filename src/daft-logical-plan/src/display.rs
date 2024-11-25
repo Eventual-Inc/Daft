@@ -99,7 +99,7 @@ mod test {
             .sort(vec![col("last_name")], vec![false], vec![false])?
             .build();
 
-        let plan = LogicalPlanBuilder::new(subplan, None, None)
+        let plan = LogicalPlanBuilder::from(subplan)
             .join(
                 subplan2,
                 vec![col("id")],

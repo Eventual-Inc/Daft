@@ -1286,7 +1286,7 @@ class RayRunner(Runner[ray.ObjectRef]):
         daft_execution_config = get_context().daft_execution_config
 
         # Optimize the logical plan.
-        builder = builder.optimize()
+        builder = builder.optimize(daft_execution_config)
 
         if daft_execution_config.enable_aqe:
             adaptive_planner = builder.to_adaptive_physical_plan_scheduler(daft_execution_config)

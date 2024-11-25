@@ -44,21 +44,12 @@ use crate::{
 pub struct LogicalPlanBuilder {
     // The current root of the logical plan in this builder.
     pub plan: Arc<LogicalPlan>,
-    planning_config: Option<Arc<DaftPlanningConfig>>,
-    execution_config: Option<Arc<DaftExecutionConfig>>,
+    config: Option<Arc<DaftPlanningConfig>>,
 }
 
 impl LogicalPlanBuilder {
-    pub fn new(
-        plan: Arc<LogicalPlan>,
-        planning_config: Option<Arc<DaftPlanningConfig>>,
-        execution_config: Option<Arc<DaftExecutionConfig>>,
-    ) -> Self {
-        Self {
-            plan,
-            planning_config,
-            execution_config,
-        }
+    pub fn new(plan: Arc<LogicalPlan>, config: Option<Arc<DaftPlanningConfig>>) -> Self {
+        Self { plan, config }
     }
 }
 
@@ -66,8 +57,7 @@ impl From<&Self> for LogicalPlanBuilder {
     fn from(builder: &Self) -> Self {
         Self {
             plan: builder.plan.clone(),
-            planning_config: builder.planning_config.clone(),
-            execution_config: builder.execution_config.clone(),
+            config: builder.config.clone(),
         }
     }
 }
@@ -86,7 +76,7 @@ impl From<&LogicalPlanBuilder> for LogicalPlanRef {
 
 impl From<LogicalPlanRef> for LogicalPlanBuilder {
     fn from(plan: LogicalPlanRef) -> Self {
-        Self::new(plan, None, None)
+        Self::new(plan, None)
     }
 }
 
@@ -116,29 +106,12 @@ impl IntoGlobPath for Vec<&str> {
 impl LogicalPlanBuilder {
     /// Replace the LogicalPlanBuilder's plan with the provided plan
     pub fn with_new_plan<LP: Into<Arc<LogicalPlan>>>(&self, plan: LP) -> Self {
-        Self::new(
-            plan.into(),
-            self.planning_config.clone(),
-            self.execution_config.clone(),
-        )
+        Self::new(plan.into(), self.config.clone())
     }
 
     /// Parametrize the LogicalPlanBuilder with a DaftPlanningConfig
-    pub fn with_planning_config(&self, planning_config: Arc<DaftPlanningConfig>) -> Self {
-        Self::new(
-            self.plan.clone(),
-            Some(planning_config),
-            self.execution_config.clone(),
-        )
-    }
-
-    /// Parametrize the LogicalPlanBuilder with a DaftExecutionConfig
-    pub fn with_execution_config(&self, execution_config: Arc<DaftExecutionConfig>) -> Self {
-        Self::new(
-            self.plan.clone(),
-            self.planning_config.clone(),
-            Some(execution_config),
-        )
+    pub fn with_config(&self, config: Arc<DaftPlanningConfig>) -> Self {
+        Self::new(self.plan.clone(), Some(config))
     }
 
     #[cfg(feature = "python")]
@@ -616,17 +589,17 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(logical_plan))
     }
 
-    pub fn optimize(&self) -> DaftResult<Self> {
+    pub fn optimize(&self, execution_config: Option<Arc<DaftExecutionConfig>>) -> DaftResult<Self> {
         let default_optimizer_config: OptimizerConfig = Default::default();
         let optimizer_config = OptimizerConfig {
             enable_actor_pool_projections: self
-                .planning_config
+                .config
                 .as_ref()
                 .map(|planning_cfg| planning_cfg.enable_actor_pool_projections)
                 .unwrap_or(default_optimizer_config.enable_actor_pool_projections),
             ..default_optimizer_config
         };
-        let optimizer = Optimizer::new(optimizer_config, self.execution_config.clone());
+        let optimizer = Optimizer::new(optimizer_config, execution_config);
 
         // Run LogicalPlan optimizations
         let unoptimized_plan = self.build();
@@ -652,11 +625,7 @@ impl LogicalPlanBuilder {
             },
         )?;
 
-        let builder = Self::new(
-            optimized_plan,
-            self.planning_config.clone(),
-            self.execution_config.clone(),
-        );
+        let builder = Self::new(optimized_plan, self.config.clone());
         Ok(builder)
     }
 
@@ -728,20 +697,7 @@ impl PyLogicalPlanBuilder {
         &self,
         daft_planning_config: PyDaftPlanningConfig,
     ) -> PyResult<Self> {
-        Ok(self
-            .builder
-            .with_planning_config(daft_planning_config.config)
-            .into())
-    }
-
-    pub fn with_execution_config(
-        &self,
-        daft_execution_config: PyDaftExecutionConfig,
-    ) -> PyResult<Self> {
-        Ok(self
-            .builder
-            .with_execution_config(daft_execution_config.config)
-            .into())
+        Ok(self.builder.with_config(daft_planning_config.config).into())
     }
 
     pub fn select(&self, to_select: Vec<PyExpr>) -> PyResult<Self> {
@@ -1001,8 +957,13 @@ impl PyLogicalPlanBuilder {
     }
 
     /// Optimize the underlying logical plan, returning a new plan builder containing the optimized plan.
-    pub fn optimize(&self, py: Python) -> PyResult<Self> {
-        py.allow_threads(|| Ok(self.builder.optimize()?.into()))
+    pub fn optimize(
+        &self,
+        py: Python,
+        execution_config: Option<PyDaftExecutionConfig>,
+    ) -> PyResult<Self> {
+        let execution_config = execution_config.map(|cfg| cfg.config);
+        py.allow_threads(|| Ok(self.builder.optimize(execution_config)?.into()))
     }
 
     pub fn repr_ascii(&self, simple: bool) -> PyResult<String> {

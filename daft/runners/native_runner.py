@@ -74,7 +74,9 @@ class NativeRunner(Runner[MicroPartition]):
         daft_execution_config = get_context().daft_execution_config
 
         # Optimize the logical plan.
-        builder = builder.optimize()
+        # TODO(desmond): Currently we don't provide the execution config because this triggers
+        # scan task merging, but the native executor expects one source per scan task.
+        builder = builder.optimize(None)
         executor = NativeExecutor.from_logical_plan_builder(builder)
         results_gen = executor.run(
             {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()},

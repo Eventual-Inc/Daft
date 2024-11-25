@@ -172,11 +172,12 @@ class DataFrame:
         print_to_file("== Unoptimized Logical Plan ==\n")
         print_to_file(builder.pretty_print(simple, format=format))
         if show_all:
+            execution_config = get_context().daft_execution_config
             print_to_file("\n== Optimized Logical Plan ==\n")
-            builder = builder.optimize()
+            builder = builder.optimize(execution_config)
             print_to_file(builder.pretty_print(simple))
             print_to_file("\n== Physical Plan ==\n")
-            physical_plan_scheduler = builder.to_physical_plan_scheduler(get_context().daft_execution_config)
+            physical_plan_scheduler = builder.to_physical_plan_scheduler(execution_config)
             print_to_file(physical_plan_scheduler.pretty_print(simple, format=format))
         else:
             print_to_file(
@@ -187,7 +188,11 @@ class DataFrame:
     def num_partitions(self) -> int:
         daft_execution_config = get_context().daft_execution_config
         # We need to run the optimizer since that could change the number of partitions
-        return self.__builder.optimize().to_physical_plan_scheduler(daft_execution_config).num_partitions()
+        return (
+            self.__builder.optimize(daft_execution_config)
+            .to_physical_plan_scheduler(daft_execution_config)
+            .num_partitions()
+        )
 
     @DataframePublicAPI
     def schema(self) -> Schema:

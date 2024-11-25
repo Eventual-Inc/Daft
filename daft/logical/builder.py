@@ -40,10 +40,9 @@ def _apply_daft_planning_config_to_initializer(classmethod_func: Callable[..., L
     def wrapper(cls: type[LogicalPlanBuilder], *args, **kwargs):
         instantiated_logical_plan_builder = classmethod_func(cls, *args, **kwargs)
 
-        # Parametrize the builder with the current DaftPlanningConfig and DaftExecutionConfig
+        # Parametrize the builder with the current DaftPlanningConfig
         inner = instantiated_logical_plan_builder._builder
         inner = inner.with_planning_config(get_context().daft_planning_config)
-        inner = inner.with_execution_config(get_context().daft_execution_config)
 
         return cls(inner)
 
@@ -110,11 +109,11 @@ class LogicalPlanBuilder:
     def __repr__(self) -> str:
         return self._builder.repr_ascii(simple=False)
 
-    def optimize(self) -> LogicalPlanBuilder:
+    def optimize(self, execution_config: PyDaftExecutionConfig | None) -> LogicalPlanBuilder:
         """
         Optimize the underlying logical plan.
         """
-        builder = self._builder.optimize()
+        builder = self._builder.optimize(execution_config)
         return LogicalPlanBuilder(builder)
 
     @classmethod

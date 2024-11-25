@@ -35,15 +35,9 @@ impl MaterializeScans {
                 SourceInfo::Physical(_) => {
                     let source_plan = Arc::unwrap_or_clone(plan);
                     if let LogicalPlan::Source(source) = source_plan {
-                        // TODO(desmond): The local executor assumes that no execution config is passed in. Doing so breaks assumptions
-                        // around scan task merging. Will need to dig deeper.
-                        let execution_config = self
-                            .execution_config
-                            .as_deref()
-                            .filter(|cfg| !cfg.enable_native_executor);
                         Ok(Transformed::yes(
                             source
-                                .build_materialized_scan_source(execution_config)
+                                .build_materialized_scan_source(self.execution_config.as_deref())
                                 .into(),
                         ))
                     } else {
