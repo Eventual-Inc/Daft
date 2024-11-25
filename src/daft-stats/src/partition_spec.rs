@@ -80,8 +80,7 @@ impl Hash for PartitionSpec {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.keys.schema.hash(state);
 
-        for field_name in self.keys.schema.as_ref().fields.keys() {
-            let column = self.keys.get_column(field_name).unwrap();
+        for column in &self.keys {
             let column_hashes = column.hash(None).expect("Failed to hash column");
             column_hashes.into_iter().for_each(|h| h.hash(state));
         }
