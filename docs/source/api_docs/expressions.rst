@@ -215,6 +215,7 @@ List
    :template: autosummary/accessor_method.rst
 
    Expression.list.chunk
+   Expression.list.count
    Expression.list.get
    Expression.list.join
    Expression.list.length
