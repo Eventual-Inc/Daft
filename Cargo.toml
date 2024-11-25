@@ -190,7 +190,7 @@ async-trait = "0.1.79"
 base64 = "0.22.1"
 bytes = "1.6.0"
 chrono = "0.4.38"
-chrono-tz = "0.8.4"
+chrono-tz = "0.10.0"
 comfy-table = "7.1.1"
 common-daft-config = {path = "src/common/daft-config"}
 common-error = {path = "src/common/error", default-features = false}
