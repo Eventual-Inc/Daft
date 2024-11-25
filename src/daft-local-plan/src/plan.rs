@@ -97,7 +97,7 @@ impl LocalPhysicalPlan {
     }
 
     pub(crate) fn physical_scan(
-        scan_tasks: Vec<ScanTaskLikeRef>,
+        scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
         pushdowns: Pushdowns,
         schema: SchemaRef,
         stats_state: StatsState,
@@ -447,7 +447,7 @@ pub struct InMemoryScan {
 
 #[derive(Debug)]
 pub struct PhysicalScan {
-    pub scan_tasks: Vec<ScanTaskLikeRef>,
+    pub scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
     pub pushdowns: Pushdowns,
     pub schema: SchemaRef,
     pub stats_state: StatsState,

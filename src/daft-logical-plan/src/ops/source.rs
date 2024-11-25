@@ -48,7 +48,7 @@ impl Source {
                         panic!("Physical scan nodes are being materialized more than once");
                     }
                 };
-                physical_scan_info.scan_state = ScanState::Tasks(scan_tasks);
+                physical_scan_info.scan_state = ScanState::Tasks(Arc::new(scan_tasks));
                 physical_scan_info
             }
             _ => panic!("Only unmaterialized physical scan nodes can be materialized"),
@@ -75,7 +75,7 @@ impl Source {
                 }
                 ScanState::Tasks(scan_tasks) => {
                     let mut approx_stats = ApproxStats::empty();
-                    for st in scan_tasks {
+                    for st in scan_tasks.iter() {
                         approx_stats.lower_bound_rows += st.num_rows().unwrap_or(0);
                         let in_memory_size = st.estimate_in_memory_size_bytes(None);
                         approx_stats.lower_bound_bytes += in_memory_size.unwrap_or(0);

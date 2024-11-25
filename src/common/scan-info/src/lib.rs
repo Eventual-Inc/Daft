@@ -10,7 +10,7 @@ mod scan_operator;
 mod scan_task;
 pub mod test;
 
-use std::{fmt::Debug, hash::Hash};
+use std::{fmt::Debug, hash::Hash, sync::Arc};
 
 use daft_schema::schema::SchemaRef;
 pub use expr_rewriter::{rewrite_predicate_for_partitioning, PredicateGroups};
@@ -24,7 +24,7 @@ pub use scan_task::{BoxScanTaskLikeIter, ScanTaskLike, ScanTaskLikeRef};
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ScanState {
     Operator(ScanOperatorRef),
-    Tasks(Vec<ScanTaskLikeRef>),
+    Tasks(Arc<Vec<ScanTaskLikeRef>>),
 }
 
 impl ScanState {

@@ -49,7 +49,7 @@ pub(super) fn translate_single_logical_node(
                 let scan_tasks = {
                     match scan_state {
                         ScanState::Operator(scan_op) => {
-                            scan_op.0.to_scan_tasks(pushdowns.clone(), Some(cfg))?
+                            Arc::new(scan_op.0.to_scan_tasks(pushdowns.clone(), Some(cfg))?)
                         }
                         ScanState::Tasks(scan_tasks) => scan_tasks.clone(),
                     }
