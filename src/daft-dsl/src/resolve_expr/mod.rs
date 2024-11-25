@@ -229,11 +229,20 @@ fn convert_udfs_to_map_groups(expr: &ExprRef) -> ExprRef {
 pub struct ExprResolver<'a> {
     #[builder(default)]
     allow_stateful_udf: bool,
-
-    /// Set to Some when in an aggregation context,
-    /// with groupby expressions when relevant
-    #[builder(default, setter(strip_option))]
-    groupby: Option<&'a HashSet<ExprRef>>,
+    #[builder(via_mutators, mutators(
+        pub fn in_agg_context(&mut self, in_agg_context: bool) {
+            // workaround since typed_builder can't have defaults for mutator requirements
+            self.in_agg_context = in_agg_context;
+        }
+    ))]
+    in_agg_context: bool,
+    #[builder(via_mutators, mutators(
+        pub fn groupby(&mut self, groupby: &'a Vec<ExprRef>) {
+            self.groupby = HashSet::from_iter(groupby);
+            self.in_agg_context = true;
+        }
+    ))]
+    groupby: HashSet<&'a ExprRef>,
 }
 
 impl<'a> ExprResolver<'a> {
@@ -244,7 +253,7 @@ impl<'a> ExprResolver<'a> {
             )));
         }
 
-        let validated_expr = if self.groupby.is_some() {
+        let validated_expr = if self.in_agg_context {
             self.validate_expr_in_agg(expr)
         } else {
             self.validate_expr(expr)
@@ -327,7 +336,7 @@ impl<'a> ExprResolver<'a> {
     /// - sum(col("a")) + col("b") when "b" is not a group by key
     ///     - not all branches are aggregations, literals, or group by keys
     fn is_valid_expr_in_agg(&self, expr: &ExprRef) -> bool {
-        self.groupby.unwrap().contains(expr)
+        self.groupby.contains(expr)
             || match expr.as_ref() {
                 Expr::Agg(agg_expr) => !agg_expr.children().iter().any(has_agg),
                 Expr::Column(_) => false,

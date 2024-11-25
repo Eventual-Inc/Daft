@@ -1,4 +1,4 @@
-use std::{collections::HashSet, sync::Arc};
+use std::sync::Arc;
 
 use daft_dsl::{ExprRef, ExprResolver};
 use daft_schema::schema::{Schema, SchemaRef};
@@ -36,16 +36,14 @@ impl Aggregate {
     ) -> logical_plan::Result<Self> {
         let upstream_schema = input.schema();
 
-        let groupby_set = HashSet::from_iter(groupby.clone());
-
-        let groupby_resolver = ExprResolver::default();
-        let agg_resolver = ExprResolver::builder().groupby(&groupby_set).build();
-
-        let (groupby, groupby_fields) = groupby_resolver
-            .resolve(groupby, &upstream_schema)
-            .context(CreationSnafu)?;
+        let agg_resolver = ExprResolver::builder().groupby(&groupby).build();
         let (aggregations, aggregation_fields) = agg_resolver
             .resolve(aggregations, &upstream_schema)
+            .context(CreationSnafu)?;
+
+        let groupby_resolver = ExprResolver::default();
+        let (groupby, groupby_fields) = groupby_resolver
+            .resolve(groupby, &upstream_schema)
             .context(CreationSnafu)?;
 
         let fields = [groupby_fields, aggregation_fields].concat();
