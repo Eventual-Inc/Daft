@@ -58,7 +58,7 @@ jobs:
     - name: Dynamically update ray config file
       run: |
         source .venv/bin/activate
-        (cat .github/assets/template.yaml \
+        (cat .github/assets/.template.yaml \
           | python .github/ci-scripts/templatize_ray_config.py \
           --cluster-name "ray-ci-run-${{ github.run_id }}_${{ github.run_attempt }}" \
           --daft-version '${{ inputs.daft_version }}' \

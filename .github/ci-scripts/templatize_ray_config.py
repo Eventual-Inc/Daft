@@ -3,21 +3,23 @@ from argparse import ArgumentParser
 from dataclasses import dataclass
 from typing import Optional
 
-CLUSTER_NAME_PLACEHOLDER = "{{CLUSTER_NAME}}"
-DAFT_VERSION_PLACEHOLDER = "{{DAFT_VERSION}}"
-PYTHON_VERSION_PLACEHOLDER = "{{PYTHON_VERSION}}"
-CLUSTER_PROFILE__NODE_COUNT = "'{{CLUSTER_PROFILE/node_count}}'"
-CLUSTER_PROFILE__INSTANCE_TYPE = "{{CLUSTER_PROFILE/instance_type}}"
-CLUSTER_PROFILE__IMAGE_ID = "{{CLUSTER_PROFILE/image_id}}"
-CLUSTER_PROFILE__VOLUME_MOUNT = "'{{CLUSTER_PROFILE/volume_mount}}'"
+CLUSTER_NAME_PLACEHOLDER = "\\{{CLUSTER_NAME}}"
+DAFT_VERSION_PLACEHOLDER = "\\{{DAFT_VERSION}}"
+PYTHON_VERSION_PLACEHOLDER = "\\{{PYTHON_VERSION}}"
+CLUSTER_PROFILE__NODE_COUNT = "\\{{CLUSTER_PROFILE/node_count}}"
+CLUSTER_PROFILE__INSTANCE_TYPE = "\\{{CLUSTER_PROFILE/instance_type}}"
+CLUSTER_PROFILE__IMAGE_ID = "\\{{CLUSTER_PROFILE/image_id}}"
+CLUSTER_PROFILE__SSH_USER = "\\{{CLUSTER_PROFILE/ssh_user}}"
+CLUSTER_PROFILE__VOLUME_MOUNT = "\\{{CLUSTER_PROFILE/volume_mount}}"
 
 
 @dataclass
 class Profile:
     node_count: int
-    instance_type: int
-    image_id: int
-    volume_mount: Optional[int]
+    instance_type: str
+    image_id: str
+    ssh_user: str
+    volume_mount: Optional[str]
 
 
 profiles: dict[str, Optional[Profile]] = {
@@ -26,6 +28,7 @@ profiles: dict[str, Optional[Profile]] = {
         instance_type="i3.2xlarge",
         image_id="ami-04dd23e62ed049936",
         node_count=4,
+        ssh_user="ubuntu",
         volume_mount=""" |
     findmnt /tmp 1> /dev/null
     code=$?
@@ -72,6 +75,7 @@ if __name__ == "__main__":
         content = content.replace(CLUSTER_PROFILE__NODE_COUNT, str(profile.node_count))
         content = content.replace(CLUSTER_PROFILE__INSTANCE_TYPE, profile.instance_type)
         content = content.replace(CLUSTER_PROFILE__IMAGE_ID, profile.image_id)
+        content = content.replace(CLUSTER_PROFILE__SSH_USER, profile.ssh_user)
         if profile.volume_mount:
             content = content.replace(CLUSTER_PROFILE__VOLUME_MOUNT, profile.volume_mount)
         else:
