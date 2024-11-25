@@ -51,65 +51,75 @@ fn simplify_expr(expr: Expr, schema: &SchemaRef) -> DaftResult<Transformed<ExprR
 
         // true = A  --> A
         // false = A --> !A
-        // null = A --> null
         Expr::BinaryOp {
             op: Operator::Eq,
             left,
             right,
+        }
+        // A = true --> A
+        // A = false --> !A
+        | Expr::BinaryOp {
+            op: Operator::Eq,
+            left: right,
+            right: left,
         } if is_bool_lit(&left) && is_bool_type(&right, schema) => {
             Transformed::yes(match as_bool_lit(&left) {
                 Some(true) => right,
                 Some(false) => right.not(),
-                None => null_lit(),
+                None => unreachable!(),
             })
         }
-        // A = true --> A
-        // A = false --> !A
+
+        // null = A --> null
         // A = null --> null
         Expr::BinaryOp {
             op: Operator::Eq,
-            left,
-            right,
-        } if is_bool_lit(&right) && is_bool_type(&left, schema) => {
-            Transformed::yes(match as_bool_lit(&right) {
-                Some(true) => left,
-                Some(false) => left.not(),
-                None => null_lit(),
-            })
+            left: a,
+            right: b,
         }
+        | Expr::BinaryOp {
+            op: Operator::Eq,
+            left: b,
+            right: a,
+        } if is_null(&a) && is_bool_type(&b, schema) => Transformed::yes(null_lit()),
+
         // ----------------
         // Neq
         // ----------------
 
         // true != A  --> !A
         // false != A --> A
-        // null != A --> null
         Expr::BinaryOp {
             op: Operator::NotEq,
             left,
             right,
+        }
+        // A != true --> !A
+        // A != false --> A
+        | Expr::BinaryOp {
+            op: Operator::NotEq,
+            left: right,
+            right: left,
         } if is_bool_lit(&left) && is_bool_type(&right, schema) => {
             Transformed::yes(match as_bool_lit(&left) {
                 Some(true) => right.not(),
                 Some(false) => right,
-                None => null_lit(),
+                None => unreachable!(),
             })
         }
 
-        // A != true --> !A
-        // A != false --> A
+        // null != A --> null
         // A != null --> null
         Expr::BinaryOp {
             op: Operator::NotEq,
-            left,
-            right,
-        } if is_bool_lit(&right) && is_bool_type(&left, schema) => {
-            Transformed::yes(match as_bool_lit(&right) {
-                Some(true) => left.not(),
-                Some(false) => left,
-                None => null_lit(),
-            })
+            left: a,
+            right: b,
         }
+        | Expr::BinaryOp {
+            op: Operator::NotEq,
+            left: b,
+            right: a,
+        } if is_null(&a) && is_bool_type(&b, schema) => Transformed::yes(null_lit()),
 
         // ----------------
         // OR
@@ -398,8 +408,8 @@ static POWS_OF_TEN: [i128; 38] = [
 mod test {
     use std::sync::Arc;
 
-    use daft_core::prelude::{Schema, TimeUnit};
-    use daft_dsl::{col, lit, ExprRef};
+    use daft_core::prelude::Schema;
+    use daft_dsl::{col, lit, null_lit, ExprRef};
     use daft_schema::{dtype::DataType, field::Field};
     use rstest::rstest;
 
@@ -412,21 +422,7 @@ mod test {
     };
 
     fn make_source() -> LogicalPlanBuilder {
-        let schema = Arc::new(
-            Schema::new(vec![
-                Field::new("test", DataType::Utf8),
-                Field::new("utf8", DataType::Utf8),
-                Field::new("i32", DataType::Int32),
-                Field::new("i64", DataType::Int64),
-                Field::new("f32", DataType::Float32),
-                Field::new("f64", DataType::Float64),
-                Field::new("bool", DataType::Boolean),
-                Field::new("date", DataType::Date),
-                Field::new("time", DataType::Time(TimeUnit::Microseconds)),
-                Field::new("list_utf8", DataType::new_list(DataType::Utf8)),
-            ])
-            .unwrap(),
-        );
+        let schema = Arc::new(Schema::new(vec![Field::new("bool", DataType::Boolean)]).unwrap());
         LogicalPlanBuilder::from(
             LogicalPlan::Source(Source {
                 output_schema: schema.clone(),
@@ -447,19 +443,20 @@ mod test {
     #[case(col("bool").eq(lit(false)), col("bool").not())]
     // A == true ---> A
     #[case(col("bool").eq(lit(true)), col("bool"))]
+    // null = A --> null
+    #[case(null_lit().eq(col("bool")), null_lit())]
     // A == false ---> !A
     #[case(col("bool").eq(lit(false)), col("bool").not())]
     // true != A  --> !A
     #[case(lit(true).not_eq(col("bool")), col("bool").not())]
     // false != A --> A
     #[case(lit(false).not_eq(col("bool")), col("bool"))]
-    fn test_simplify_bool_exprs(#[case] input: ExprRef, #[case] expected: ExprRef) {
+    // true OR A  --> true
+    fn test_simplify_exprs(#[case] input: ExprRef, #[case] expected: ExprRef) {
         let source = make_source().filter(input).unwrap().build();
         let optimizer = SimplifyExpressionsRule::new();
         let optimized = optimizer.try_optimize(source).unwrap();
 
-        // make sure the expression is simplified
-        assert!(optimized.transformed);
         let LogicalPlan::Filter(Filter {
             input: _,
             predicate,
@@ -467,6 +464,9 @@ mod test {
         else {
             panic!("Expected Filter, got {:?}", optimized.data)
         };
+
+        // make sure the expression is simplified
+        assert!(optimized.transformed);
 
         assert_eq!(predicate, &expected);
     }
