@@ -50,7 +50,7 @@ jobs:
         uv pip install ray[default] boto3
     - name: Dynamically update ray config file
       run: |
-        id="ray-ci-run-${{ github.run_id }}_${{ github.run_attempt }}"
+        id="github-ci-${{ github.run_id }}_${{ github.run_attempt }}"
         sed -i "s|{{RAY_CLUSTER_NAME}}|$id|g" .github/assets/benchmarking_ray_config.yaml
         sed -i 's|{{PYTHON_VERSION}}|${{ inputs.python_version }}|g' .github/assets/benchmarking_ray_config.yaml
         if [[ '${{ inputs.daft_version }}' ]]; then
