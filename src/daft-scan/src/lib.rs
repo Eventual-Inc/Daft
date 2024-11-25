@@ -125,7 +125,7 @@ impl ChunkSpec {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Hash)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum DataSource {
     File {
         path: String,
@@ -153,6 +153,63 @@ pub enum DataSource {
         statistics: Option<TableStatistics>,
         partition_spec: Option<PartitionSpec>,
     },
+}
+
+impl Hash for DataSource {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        // Hash everything except for cached parquet metadata.
+        match self {
+            Self::File {
+                path,
+                chunk_spec,
+                size_bytes,
+                iceberg_delete_files,
+                metadata,
+                partition_spec,
+                statistics,
+                ..
+            } => {
+                path.hash(state);
+                if let Some(chunk_spec) = chunk_spec {
+                    chunk_spec.hash(state);
+                }
+                size_bytes.hash(state);
+                iceberg_delete_files.hash(state);
+                metadata.hash(state);
+                partition_spec.hash(state);
+                statistics.hash(state);
+            }
+            Self::Database {
+                path,
+                size_bytes,
+                metadata,
+                statistics,
+            } => {
+                path.hash(state);
+                size_bytes.hash(state);
+                metadata.hash(state);
+                statistics.hash(state);
+            }
+            #[cfg(feature = "python")]
+            Self::PythonFactoryFunction {
+                module,
+                func_name,
+                func_args,
+                size_bytes,
+                metadata,
+                statistics,
+                partition_spec,
+            } => {
+                module.hash(state);
+                func_name.hash(state);
+                func_args.hash(state);
+                size_bytes.hash(state);
+                metadata.hash(state);
+                statistics.hash(state);
+                partition_spec.hash(state);
+            }
+        }
+    }
 }
 
 impl DataSource {

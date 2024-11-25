@@ -42,7 +42,7 @@ impl PrimitiveType {
 
 /// Representation of a Parquet type describing primitive and nested fields,
 /// including the top-level schema of the parquet file.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Hash)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub enum ParquetType {
     PrimitiveType(PrimitiveType),
     GroupType {
