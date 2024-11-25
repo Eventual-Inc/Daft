@@ -5,4 +5,4 @@ df.show()
 
 print("Job is running")
 print("Context:", daft.context.get_context())
-print("Ray tracing enabled:", daft.context.get_context().daft_execution_config)
+print("Ray tracing enabled:", daft.context.get_context().daft_execution_config.enable_ray_tracing)
