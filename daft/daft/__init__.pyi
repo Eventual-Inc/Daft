@@ -638,13 +638,6 @@ class IOConfig:
         gcs: GCSConfig | None = None,
         http: HTTPConfig | None = None,
     ): ...
-    @staticmethod
-    def from_json(input: str) -> IOConfig:
-        """
-        Recreate an IOConfig from a JSON string.
-        """
-        ...
-
     def replace(
         self,
         s3: S3Config | None = None,
