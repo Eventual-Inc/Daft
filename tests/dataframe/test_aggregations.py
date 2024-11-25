@@ -562,3 +562,33 @@ def test_agg_with_literal_groupby(make_df, repartition_nparts, with_morsel_size)
         "sum_plus_1": [7, 10, 13],
         "1_plus_sum": [9, 12, 15],
     }
+
+
+@pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
+def test_agg_with_groupby_key_in_agg(make_df, repartition_nparts, with_morsel_size):
+    daft_df = make_df(
+        {
+            "group": [1, 1, 1, 2, 2, 2, 3, 3, 3],
+            "id": [1, 2, 3, 2, 3, 4, 3, 4, 5],
+            "values": [4, 5, 6, 5, 6, 7, 6, 7, 8],
+        },
+        repartition=repartition_nparts,
+    )
+
+    daft_df = (
+        daft_df.groupby("group")
+        .agg(
+            col("group").alias("group_alias"),
+            (col("group") + 1).alias("group_plus_1"),
+            (col("id").sum() + col("group")).alias("id_plus_group"),
+        )
+        .sort("group")
+    )
+
+    res = daft_df.to_pydict()
+    assert res == {
+        "group": [1, 2, 3],
+        "group_alias": [1, 2, 3],
+        "group_plus_1": [2, 3, 4],
+        "id_plus_group": [7, 11, 15],
+    }
