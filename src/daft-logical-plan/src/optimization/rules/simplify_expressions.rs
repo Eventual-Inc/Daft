@@ -295,7 +295,7 @@ fn simplify_expr(expr: Expr, schema: &SchemaRef) -> DaftResult<Transformed<ExprR
     })
 }
 
-pub fn is_zero(s: &Expr) -> bool {
+fn is_zero(s: &Expr) -> bool {
     match s {
         Expr::Literal(LiteralValue::Int32(0))
         | Expr::Literal(LiteralValue::Int64(0))
@@ -307,7 +307,7 @@ pub fn is_zero(s: &Expr) -> bool {
     }
 }
 
-pub fn is_one(s: &Expr) -> bool {
+fn is_one(s: &Expr) -> bool {
     match s {
         Expr::Literal(LiteralValue::Int32(1))
         | Expr::Literal(LiteralValue::Int64(1))
@@ -322,13 +322,13 @@ pub fn is_one(s: &Expr) -> bool {
     }
 }
 
-pub fn is_true(expr: &Expr) -> bool {
+fn is_true(expr: &Expr) -> bool {
     match expr {
         Expr::Literal(LiteralValue::Boolean(v)) => *v,
         _ => false,
     }
 }
-pub fn is_false(expr: &Expr) -> bool {
+fn is_false(expr: &Expr) -> bool {
     match expr {
         Expr::Literal(LiteralValue::Boolean(v)) => !*v,
         _ => false,
@@ -337,11 +337,11 @@ pub fn is_false(expr: &Expr) -> bool {
 
 /// returns true if expr is a
 /// `Expr::Literal(LiteralValue::Boolean(v))` , false otherwise
-pub fn is_bool_lit(expr: &Expr) -> bool {
+fn is_bool_lit(expr: &Expr) -> bool {
     matches!(expr, Expr::Literal(LiteralValue::Boolean(_)))
 }
 
-pub fn is_bool_type(expr: &Expr, schema: &SchemaRef) -> bool {
+fn is_bool_type(expr: &Expr, schema: &SchemaRef) -> bool {
     matches!(expr.get_type(schema), Ok(DataType::Boolean))
 }
 
@@ -353,7 +353,7 @@ fn is_null(expr: &Expr) -> bool {
     matches!(expr, Expr::Literal(LiteralValue::Null))
 }
 
-pub static POWS_OF_TEN: [i128; 38] = [
+static POWS_OF_TEN: [i128; 38] = [
     1,
     10,
     100,
@@ -393,3 +393,81 @@ pub static POWS_OF_TEN: [i128; 38] = [
     1000000000000000000000000000000000000,
     10000000000000000000000000000000000000,
 ];
+
+#[cfg(test)]
+mod test {
+    use std::sync::Arc;
+
+    use daft_core::prelude::{Schema, TimeUnit};
+    use daft_dsl::{col, lit, ExprRef};
+    use daft_schema::{dtype::DataType, field::Field};
+    use rstest::rstest;
+
+    use super::SimplifyExpressionsRule;
+    use crate::{
+        ops::{Filter, Source},
+        optimization::rules::OptimizerRule,
+        source_info::PlaceHolderInfo,
+        ClusteringSpec, LogicalPlan, LogicalPlanBuilder, SourceInfo,
+    };
+
+    fn make_source() -> LogicalPlanBuilder {
+        let schema = Arc::new(
+            Schema::new(vec![
+                Field::new("test", DataType::Utf8),
+                Field::new("utf8", DataType::Utf8),
+                Field::new("i32", DataType::Int32),
+                Field::new("i64", DataType::Int64),
+                Field::new("f32", DataType::Float32),
+                Field::new("f64", DataType::Float64),
+                Field::new("bool", DataType::Boolean),
+                Field::new("date", DataType::Date),
+                Field::new("time", DataType::Time(TimeUnit::Microseconds)),
+                Field::new("list_utf8", DataType::new_list(DataType::Utf8)),
+            ])
+            .unwrap(),
+        );
+        LogicalPlanBuilder::from(
+            LogicalPlan::Source(Source {
+                output_schema: schema.clone(),
+                source_info: Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
+                    source_schema: schema,
+                    clustering_spec: Arc::new(ClusteringSpec::unknown()),
+                    source_id: 0,
+                })),
+            })
+            .arced(),
+        )
+    }
+
+    #[rstest]
+    // true = A  --> A
+    #[case(col("bool").eq(lit(true)), col("bool"))]
+    // false = A --> !A
+    #[case(col("bool").eq(lit(false)), col("bool").not())]
+    // A == true ---> A
+    #[case(col("bool").eq(lit(true)), col("bool"))]
+    // A == false ---> !A
+    #[case(col("bool").eq(lit(false)), col("bool").not())]
+    // true != A  --> !A
+    #[case(lit(true).not_eq(col("bool")), col("bool").not())]
+    // false != A --> A
+    #[case(lit(false).not_eq(col("bool")), col("bool"))]
+    fn test_simplify_bool_exprs(#[case] input: ExprRef, #[case] expected: ExprRef) {
+        let source = make_source().filter(input).unwrap().build();
+        let optimizer = SimplifyExpressionsRule::new();
+        let optimized = optimizer.try_optimize(source).unwrap();
+
+        // make sure the expression is simplified
+        assert!(optimized.transformed);
+        let LogicalPlan::Filter(Filter {
+            input: _,
+            predicate,
+        }) = optimized.data.as_ref()
+        else {
+            panic!("Expected Filter, got {:?}", optimized.data)
+        };
+
+        assert_eq!(predicate, &expected);
+    }
+}
