@@ -61,9 +61,9 @@ jobs:
         (cat .github/assets/template.yaml \
           | python .github/ci-scripts/templatize_ray_config.py \
           --cluster-name "ray-ci-run-${{ github.run_id }}_${{ github.run_attempt }}" \
-          --daft-version ${{ inputs.daft_version }} \
-          --python-version ${{ inputs.python_version }} \
-          --cluster-profile 'medium-x86'
+          --daft-version '${{ inputs.daft_version }}' \
+          --python-version '${{ inputs.python_version }}' \
+          --cluster-profile '${{ inputs.cluster_profile }}'
         ) >> .github/assets/ray.yaml
         echo "Ray configuration file:" >> $GITHUB_STEP_SUMMARY
         cat .github/assets/ray.yaml >> $GITHUB_STEP_SUMMARY
