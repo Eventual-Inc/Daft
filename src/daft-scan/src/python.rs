@@ -33,10 +33,10 @@ impl PythonTablesFactoryArgs {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         Python::with_gil(|py| {
             for obj in &args {
-                obj.bind(py)
-                    .hash()
-                    .expect("Failed to hash PyObject")
-                    .hash(&mut hasher);
+                // Only hash hashable PyObjects.
+                if let Ok(hash) = obj.bind(py).hash() {
+                    hash.hash(&mut hasher);
+                }
             }
         });
         Self {
