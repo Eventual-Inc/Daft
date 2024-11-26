@@ -37,7 +37,7 @@ impl MaterializeScans {
                     if let LogicalPlan::Source(source) = source_plan {
                         Ok(Transformed::yes(
                             source
-                                .build_materialized_scan_source(self.execution_config.as_deref())
+                                .build_materialized_scan_source(self.execution_config.as_deref())?
                                 .into(),
                         ))
                     } else {

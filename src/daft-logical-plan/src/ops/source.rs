@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_daft_config::DaftExecutionConfig;
+use common_error::DaftResult;
 use common_scan_info::{PhysicalScanInfo, ScanState};
 use daft_schema::schema::SchemaRef;
 
@@ -36,14 +37,13 @@ impl Source {
     pub(crate) fn build_materialized_scan_source(
         mut self,
         execution_config: Option<&DaftExecutionConfig>,
-    ) -> Self {
+    ) -> DaftResult<Self> {
         let new_physical_scan_info = match Arc::unwrap_or_clone(self.source_info) {
             SourceInfo::Physical(mut physical_scan_info) => {
                 let scan_tasks = match &physical_scan_info.scan_state {
                     ScanState::Operator(scan_op) => scan_op
                         .0
-                        .to_scan_tasks(physical_scan_info.pushdowns.clone(), execution_config)
-                        .expect("Failed to get scan tasks from scan operator"),
+                        .to_scan_tasks(physical_scan_info.pushdowns.clone(), execution_config)?,
                     ScanState::Tasks(_) => {
                         panic!("Physical scan nodes are being materialized more than once");
                     }
@@ -54,7 +54,7 @@ impl Source {
             _ => panic!("Only unmaterialized physical scan nodes can be materialized"),
         };
         self.source_info = Arc::new(SourceInfo::Physical(new_physical_scan_info));
-        self
+        Ok(self)
     }
 
     pub(crate) fn with_materialized_stats(mut self) -> Self {
