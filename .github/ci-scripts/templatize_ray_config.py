@@ -19,7 +19,7 @@ class Profile:
     instance_type: str
     image_id: str
     ssh_user: str
-    volume_mount: Optional[str]
+    volume_mount: Optional[str] = None
 
 
 profiles: dict[str, Optional[Profile]] = {
