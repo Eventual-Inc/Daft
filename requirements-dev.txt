@@ -78,7 +78,7 @@ moto[s3,server]==5.0.21; python_version >= '3.8'
 
 # Azure
 adlfs==2024.7.0; python_version >= '3.8'
-azure-storage-blob==12.17.0
+azure-storage-blob==12.24.0
 
 # GCS
 gcsfs==2023.12.0; python_version >= '3.8'
