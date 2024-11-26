@@ -792,6 +792,15 @@ class Expression:
         expr = self._expr.count(mode)
         return Expression._from_pyexpr(expr)
 
+    def count_distinct(self) -> Expression:
+        """Counts the number of *distinct* values in the expression.
+
+        Args:
+            mode: whether to count all distinct values, non-null (valid) values, or null values. Defaults to CountMode.Valid.
+        """
+        expr = self._expr.count_distinct()
+        return Expression._from_pyexpr(expr)
+
     def sum(self) -> Expression:
         """Calculates the sum of the values in the expression"""
         expr = self._expr.sum()

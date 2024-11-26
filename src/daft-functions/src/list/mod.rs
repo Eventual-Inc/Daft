@@ -9,6 +9,7 @@ mod min;
 mod slice;
 mod sort;
 mod sum;
+mod unique_count;
 mod value_counts;
 
 pub use chunk::{list_chunk as chunk, ListChunk};
@@ -24,6 +25,8 @@ use pyo3::prelude::*;
 pub use slice::{list_slice as slice, ListSlice};
 pub use sort::{list_sort as sort, ListSort};
 pub use sum::{list_sum as sum, ListSum};
+pub use unique_count::list_unique_count as unique_count;
+pub use value_counts::list_value_counts as value_counts;
 
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
@@ -44,6 +47,10 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction_bound!(slice::py_list_slice, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(sum::py_list_sum, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(sort::py_list_sort, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(
+        unique_count::py_list_unique_count,
+        parent
+    )?)?;
 
     Ok(())
 }

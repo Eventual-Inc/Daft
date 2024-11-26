@@ -4,7 +4,11 @@ mod ops;
 mod serdes;
 mod series_like;
 mod utils;
-use std::{ops::Sub, sync::Arc};
+use std::{
+    collections::{hash_map::RawEntryMut, HashMap},
+    ops::Sub,
+    sync::Arc,
+};
 
 pub use array_impl::IntoSeries;
 use common_display::table_display::{make_comfy_table, StrValue};
@@ -15,10 +19,14 @@ pub use ops::cast_series_to_supertype;
 pub(crate) use self::series_like::SeriesLike;
 use crate::{
     array::{
-        ops::{from_arrow::FromArrow, full::FullNull, DaftCompare},
+        ops::{
+            arrow2::comparison::build_is_equal, from_arrow::FromArrow, full::FullNull, DaftCompare,
+        },
         DataArray,
     },
     datatypes::{DaftDataType, DaftNumericType, DataType, Field, FieldRef, NumericNative},
+    prelude::AsArrow,
+    utils::identity_hash_set::{IdentityBuildHasher, IndexHash},
     with_match_daft_types,
 };
 
@@ -38,6 +46,49 @@ impl PartialEq for Series {
 }
 
 impl Series {
+    pub fn build_probe_table(&self) -> DaftResult<HashMap<IndexHash, (), IdentityBuildHasher>> {
+        // Building a comparator function over a series of type `NULL` will result in a failure.
+        // (I.e., `let comparator = build_is_equal(..)` will fail).
+        //
+        // Therefore, exit early with an empty hashmap.
+        if matches!(self.data_type(), DataType::Null) {
+            return Ok(HashMap::default());
+        };
+
+        const DEFAULT_SIZE: usize = 20;
+        let hashed_series = self.hash_with_validity(None)?;
+        let array = self.to_arrow();
+        let comparator = build_is_equal(&*array, &*array, true, false)?;
+
+        let mut probe_table =
+            HashMap::<IndexHash, (), IdentityBuildHasher>::with_capacity_and_hasher(
+                DEFAULT_SIZE,
+                Default::default(),
+            );
+
+        for (idx, hash) in hashed_series.as_arrow().iter().enumerate() {
+            let hash = match hash {
+                Some(&hash) => hash,
+                None => continue,
+            };
+            let entry = probe_table.raw_entry_mut().from_hash(hash, |other| {
+                (hash == other.hash) && comparator(idx, other.idx as _)
+            });
+            if let RawEntryMut::Vacant(entry) = entry {
+                entry.insert_hashed_nocheck(
+                    hash,
+                    IndexHash {
+                        idx: idx as u64,
+                        hash,
+                    },
+                    (),
+                );
+            };
+        }
+
+        Ok(probe_table)
+    }
+
     /// Exports this Series into an Arrow arrow that is corrected for the Arrow type system.
     /// For example, Daft's TimestampArray is a logical type that is backed by an Int64Array Physical array.
     /// If we were to call `.as_arrow()` or `.physical`on the TimestampArray, we would get an Int64Array that represented the time units.
