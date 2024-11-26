@@ -87,6 +87,14 @@ jobs:
       run: |
         source .venv/bin/activate
         ray rsync-down .github/assets/benchmarking_ray_config.yaml /tmp/ray/session_*/logs ray-daft-logs
+        find ray-daft-logs -depth -name '*:*' -exec bash -c '
+        for filepath; do
+          dir=$(dirname "$filepath")
+          base=$(basename "$filepath")
+          new_base=${base//:/_}
+          mv "$filepath" "$dir/$new_base"
+        done
+        ' _ {} +
     - name: Kill connection to ray cluster
       run: |
         PID=$(lsof -t -i:8265)
