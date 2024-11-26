@@ -22,7 +22,7 @@ def get_actual_size(pq_path: pathlib.Path, columns: list[str] | None = None) -> 
 def assert_close(filepath: pathlib.Path, estimated: int, actual: int, pct: float = 0.05):
     assert (
         abs(actual - estimated) / estimated < pct
-    ), f"Expected {filepath.stat().size / 1_000_000:.2f}MB file at {filepath} estimated vs actual to be within {pct * 100}%: {estimated / 1_000_000:.2f}MB vs {actual / 1000_000:.2f}MB ({((estimated - actual) / estimated) * 100:.2f}%)"
+    ), f"Expected {filepath.stat().size / 1_000_000:.2f}MB file estimated vs actual to be within {pct * 100}%: {estimated / 1_000_000:.2f}MB vs {actual / 1000_000:.2f}MB ({((estimated - actual) / estimated) * 100:.2f}%)"
 
 
 @pytest.mark.parametrize("compression", ["snappy", None])
