@@ -4,7 +4,7 @@ Miscellaneous
 .. currentmodule:: daft
 
 Images
-############
+######
 
 .. autosummary::
     :nosignatures:
@@ -14,7 +14,7 @@ Images
     ImageFormat
 
 Resource Request
-############
+################
 
 .. autosummary::
     :nosignatures:
@@ -23,10 +23,10 @@ Resource Request
     ResourceRequest
 
 Counting
-############
+########
 
 .. autosummary::
     :nosignatures:
     :toctree: doc_gen/misc
 
-    CountMode
+    daft.CountMode
