@@ -3,7 +3,7 @@ cluster_name: '{{RAY_CLUSTER_NAME}}'
 provider:
   type: aws
   region: us-west-2
-  cache_stopped_nodes: true
+  cache_stopped_nodes: false
   security_group:
     GroupName: ray-autoscaler-c1
 
