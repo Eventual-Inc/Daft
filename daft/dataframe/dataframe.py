@@ -1710,8 +1710,8 @@ class DataFrame:
         on: Optional[Union[List[ColumnInputType], ColumnInputType]] = None,
         left_on: Optional[Union[List[ColumnInputType], ColumnInputType]] = None,
         right_on: Optional[Union[List[ColumnInputType], ColumnInputType]] = None,
-        how: str = "inner",
-        strategy: Optional[str] = None,
+        how: Literal["inner", "inner", "left", "right", "outer", "anti", "semi", "cross"] = "inner",
+        strategy: Optional[Literal["hash", "sort_merge", "broadcast"]] = None,
         prefix: Optional[str] = None,
         suffix: Optional[str] = None,
     ) -> "DataFrame":

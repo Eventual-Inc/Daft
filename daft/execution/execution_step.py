@@ -955,7 +955,6 @@ class CrossJoin(SingleOutputInstruction):
         return self._cross_join(inputs)
 
     def _cross_join(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
-        # All inputs except for the last are the left side of the join, in order to support left-broadcasted joins.
         left, right = inputs
         result = left.cross_join(
             right,
