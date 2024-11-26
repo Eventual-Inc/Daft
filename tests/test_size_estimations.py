@@ -25,24 +25,43 @@ def assert_close(filepath: pathlib.Path, estimated: int, actual: int, pct: float
     ), f"Expected {filepath.stat().size / 1_000_000:.2f}MB file estimated vs actual to be within {pct * 100}%: {estimated / 1_000_000:.2f}MB vs {actual / 1000_000:.2f}MB ({((estimated - actual) / estimated) * 100:.2f}%)"
 
 
-@pytest.mark.parametrize("compression", ["snappy", None])
-@pytest.mark.parametrize("use_dictionary", [True, False])
-@pytest.mark.parametrize("unique", [True, False])
-def test_estimations_strings(tmpdir, use_dictionary, compression, unique):
-    pq_path = tmpdir / f"strings.use_dictionary={use_dictionary}.unique={unique}.compression={compression}.pq"
-    data = [f"{'a' * 100}{i}" for i in range(1000_000)] if unique else ["a" * 100 for _ in range(1000_000)]
+@pytest.mark.parametrize("compression", ["snappy", None], ids=["snappy", "no_compression"])
+@pytest.mark.parametrize("use_dictionary", [True, False], ids=["dict", "no_dict"])
+def test_estimations_unique_strings(tmpdir, use_dictionary, compression):
+    pq_path = tmpdir / f"unique_strings.use_dictionary={use_dictionary}.compression={compression}.pq"
+    data = [f"{'a' * 100}{i}" for i in range(1000_000)]
     tbl = pa.table({"foo": data})
     papq.write_table(tbl, pq_path, use_dictionary=use_dictionary, compression=compression)
     assert assert_close(pq_path, get_scantask_estimated_size(pq_path), get_actual_size(pq_path))
 
 
-@pytest.mark.parametrize("compression", ["snappy", None])
-@pytest.mark.parametrize("use_dictionary", [True, False])
-@pytest.mark.parametrize("unique", [True, False])
-def test_estimations_ints(tmpdir, use_dictionary, compression, unique):
-    pq_path = tmpdir / f"ints.use_dictionary={use_dictionary}.unique={unique}.compression={compression}.pq"
+@pytest.mark.parametrize("compression", ["snappy", None], ids=["snappy", "no_compression"])
+@pytest.mark.parametrize("use_dictionary", [True, False], ids=["dict", "no_dict"])
+def test_estimations_dup_strings(tmpdir, use_dictionary, compression):
+    pq_path = tmpdir / f"dup_strings.use_dictionary={use_dictionary}.compression={compression}.pq"
+    data = ["a" * 100 for _ in range(1000_000)]
+    tbl = pa.table({"foo": data})
+    papq.write_table(tbl, pq_path, use_dictionary=use_dictionary, compression=compression)
+    assert assert_close(pq_path, get_scantask_estimated_size(pq_path), get_actual_size(pq_path))
 
-    data = [i for i in range(1000_000)] if unique else [1 for _ in range(1000_000)]
+
+@pytest.mark.parametrize("compression", ["snappy", None], ids=["snappy", "no_compression"])
+@pytest.mark.parametrize("use_dictionary", [True, False], ids=["dict", "no_dict"])
+def test_estimations_unique_ints(tmpdir, use_dictionary, compression):
+    pq_path = tmpdir / f"unique_ints.use_dictionary={use_dictionary}.compression={compression}.pq"
+
+    data = [i for i in range(1000_000)]
+    tbl = pa.table({"foo": data})
+    papq.write_table(tbl, pq_path, use_dictionary=use_dictionary, compression=compression)
+    assert assert_close(pq_path, get_scantask_estimated_size(pq_path), get_actual_size(pq_path))
+
+
+@pytest.mark.parametrize("compression", ["snappy", None], ids=["snappy", "no_compression"])
+@pytest.mark.parametrize("use_dictionary", [True, False], ids=["dict", "no_dict"])
+def test_estimations_dup_ints(tmpdir, use_dictionary, compression):
+    pq_path = tmpdir / f"dup_ints.use_dictionary={use_dictionary}.compression={compression}.pq"
+
+    data = [1 for _ in range(1000_000)]
     tbl = pa.table({"foo": data})
     papq.write_table(tbl, pq_path, use_dictionary=use_dictionary, compression=compression)
     assert assert_close(pq_path, get_scantask_estimated_size(pq_path), get_actual_size(pq_path))
