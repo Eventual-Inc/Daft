@@ -1,3 +1,6 @@
+Miscellaneous
+==================
+
 .. currentmodule:: daft
 
 Types
