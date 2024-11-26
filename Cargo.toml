@@ -188,7 +188,7 @@ async-compression = {version = "0.4.12", features = [
 async-stream = "0.3.6"
 async-trait = "0.1.79"
 base64 = "0.22.1"
-bytes = "1.6.0"
+bytes = "1.8.0"
 chrono = "0.4.38"
 chrono-tz = "0.10.0"
 comfy-table = "7.1.1"
