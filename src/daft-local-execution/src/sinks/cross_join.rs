@@ -53,7 +53,7 @@ impl StreamingSink for CrossJoinSink {
 
                     Ok((state, StreamingSinkOutput::NeedMoreInput(None)))
                 } else {
-                    // cross join left side morsel with each right side morsel, emitting one cross join at a time.
+                    // cross join left side morsel with each right side morsel, emitting the join between one pair of morsels at a time.
 
                     let right = &join_state.right_side_buffer[join_state.loop_index];
                     let output = Arc::new(input.cross_join(right, true)?);
