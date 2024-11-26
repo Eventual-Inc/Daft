@@ -948,6 +948,40 @@ class ReduceToQuantiles(ReduceInstruction):
 
 
 @dataclass(frozen=True)
+class CrossJoin(SingleOutputInstruction):
+    left_in_outer_loop: bool
+
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        return self._cross_join(inputs)
+
+    def _cross_join(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        # All inputs except for the last are the left side of the join, in order to support left-broadcasted joins.
+        left, right = inputs
+        result = left.cross_join(
+            right,
+            left_in_outer_loop=self.left_in_outer_loop,
+        )
+        return [result]
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        left_meta, right_meta = input_metadatas
+
+        num_rows = (
+            (left_meta.num_rows * right_meta.num_rows)
+            if (left_meta.num_rows is not None and right_meta.num_rows is not None)
+            else None
+        )
+        size_bytes = (
+            (left_meta.size_bytes * right_meta.size_bytes)
+            if (left_meta.size_bytes is not None and right_meta.size_bytes is not None)
+            else None
+        )
+        boundaries = left_meta.boundaries if self.left_in_outer_loop else right_meta.boundaries
+
+        return [PartialPartitionMetadata(num_rows=num_rows, size_bytes=size_bytes, boundaries=boundaries)]
+
+
+@dataclass(frozen=True)
 class FanoutInstruction(Instruction):
     _num_outputs: int
 

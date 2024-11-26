@@ -409,11 +409,6 @@ pub(super) fn translate_single_logical_node(
             join_strategy,
             ..
         }) => {
-            if left_on.is_empty() && right_on.is_empty() && join_type == &JoinType::Inner {
-                return Err(DaftError::not_implemented(
-                    "Joins without join conditions (cross join) are not supported yet",
-                ));
-            }
             let mut right_physical = physical_children.pop().expect("requires 1 inputs");
             let mut left_physical = physical_children.pop().expect("requires 2 inputs");
 
@@ -483,6 +478,10 @@ pub(super) fn translate_single_logical_node(
                 .as_ref()
                 .map_or(false, |v| v.iter().any(|b| *b));
             let join_strategy = join_strategy.unwrap_or_else(|| {
+                if left_on.is_empty() && right_on.is_empty() && join_type == &JoinType::Inner {
+                    return JoinStrategy::Cross;
+                }
+
                 fn keys_are_primitive(on: &[ExprRef], schema: &SchemaRef) -> bool {
                     on.iter().all(|expr| {
                         let dtype = expr.get_type(schema).unwrap();
@@ -673,6 +672,23 @@ pub(super) fn translate_single_logical_node(
                         *join_type,
                     ))
                     .arced())
+                }
+                JoinStrategy::Cross => {
+                    if *join_type != JoinType::Inner {
+                        return Err(common_error::DaftError::ValueError(
+                            "Cross join is only applicable for inner joins".to_string(),
+                        ));
+                    }
+                    if !left_on.is_empty() || !right_on.is_empty() {
+                        return Err(common_error::DaftError::ValueError(
+                            "Cross join cannot have join keys".to_string(),
+                        ));
+                    }
+
+                    Ok(
+                        PhysicalPlan::CrossJoin(CrossJoin::new(left_physical, right_physical))
+                            .arced(),
+                    )
                 }
             }
         }

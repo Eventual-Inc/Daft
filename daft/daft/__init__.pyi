@@ -1578,6 +1578,11 @@ class PyMicroPartition:
         right_on: list[PyExpr],
         is_sorted: bool,
     ) -> PyMicroPartition: ...
+    def cross_join(
+        self,
+        right: PyMicroPartition,
+        left_in_outer_loop: bool,
+    ) -> PyMicroPartition: ...
     def explode(self, to_explode: list[PyExpr]) -> PyMicroPartition: ...
     def unpivot(
         self,

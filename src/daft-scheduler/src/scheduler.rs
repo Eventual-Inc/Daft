@@ -264,7 +264,7 @@ fn physical_plan_to_partition_tasks(
     actor_pool_manager: &PyObject,
 ) -> PyResult<PyObject> {
     use daft_dsl::Expr;
-    use daft_physical_plan::ops::{ShuffleExchange, ShuffleExchangeStrategy};
+    use daft_physical_plan::ops::{CrossJoin, ShuffleExchange, ShuffleExchangeStrategy};
 
     match physical_plan {
         PhysicalPlan::InMemoryScan(InMemoryScan {
@@ -786,6 +786,22 @@ fn physical_plan_to_partition_tasks(
                     *join_type,
                     *is_swapped,
                 ))?;
+            Ok(py_iter.into())
+        }
+        PhysicalPlan::CrossJoin(CrossJoin {
+            left,
+            right,
+            left_in_outer_loop,
+            ..
+        }) => {
+            let upstream_left_iter =
+                physical_plan_to_partition_tasks(left, py, psets, actor_pool_manager)?;
+            let upstream_right_iter =
+                physical_plan_to_partition_tasks(right, py, psets, actor_pool_manager)?;
+            let py_iter = py
+                .import_bound(pyo3::intern!(py, "daft.execution.physical_plan"))?
+                .getattr(pyo3::intern!(py, "cross_join"))?
+                .call1((upstream_left_iter, upstream_right_iter, *left_in_outer_loop))?;
             Ok(py_iter.into())
         }
         PhysicalPlan::TabularWriteParquet(TabularWriteParquet {

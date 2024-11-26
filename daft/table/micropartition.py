@@ -318,6 +318,15 @@ class MicroPartition:
             )
         )
 
+    def cross_join(
+        self,
+        right: MicroPartition,
+        left_in_outer_loop: bool,
+    ) -> MicroPartition:
+        return MicroPartition._from_pymicropartition(
+            self._micropartition.cross_join(right._micropartition, left_in_outer_loop=left_in_outer_loop)
+        )
+
     def partition_by_hash(self, exprs: ExpressionsProjection, num_partitions: int) -> list[MicroPartition]:
         if not isinstance(num_partitions, int):
             raise TypeError(f"Expected a num_partitions to be int, got {type(num_partitions)}")

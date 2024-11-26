@@ -564,6 +564,76 @@ def broadcast_join(
                 return
 
 
+def cross_join(
+    left_plan: InProgressPhysicalPlan[PartitionT],
+    right_plan: InProgressPhysicalPlan[PartitionT],
+    left_in_outer_loop: bool,
+):
+    stage_id = next(stage_id_counter)
+
+    outer_plan, inner_plan = (left_plan, right_plan) if left_in_outer_loop else (right_plan, left_plan)
+
+    inner_requests: deque[SingleOutputPartitionTask[PartitionT]] = deque()
+    for step in inner_plan:
+        if isinstance(step, PartitionTaskBuilder):
+            step = step.finalize_partition_task_single_output(stage_id=stage_id)
+            inner_requests.append(step)
+        yield step
+
+    outer_requests: deque[SingleOutputPartitionTask[PartitionT]] = deque()
+    while True:
+        while outer_requests and outer_requests[0].done():
+            next_outer = outer_requests.popleft()
+
+            for next_inner in inner_requests:
+                while not next_inner.done():
+                    logger.debug(
+                        "cross join blocked on completion of inner side of join.\n inner sources: %s",
+                        inner_requests,
+                    )
+                    yield None
+
+                next_left, next_right = (next_outer, next_inner) if left_in_outer_loop else (next_inner, next_outer)
+
+                # Calculate memory request for task.
+                left_size_bytes = next_left.partition_metadata().size_bytes
+                right_size_bytes = next_right.partition_metadata().size_bytes
+                if left_size_bytes is None and right_size_bytes is None:
+                    size_bytes = None
+                elif left_size_bytes is None and right_size_bytes is not None:
+                    # Assume that left and right side are ~ the same size.
+                    size_bytes = right_size_bytes**2
+                elif right_size_bytes is None and left_size_bytes is not None:
+                    # Assume that left and right side are ~ the same size.
+                    size_bytes = left_size_bytes**2
+                elif left_size_bytes is not None and right_size_bytes is not None:
+                    size_bytes = left_size_bytes * right_size_bytes
+
+                join_step = PartitionTaskBuilder[PartitionT](
+                    inputs=[next_left.partition(), next_right.partition()],
+                    partial_metadatas=[next_left.partition_metadata(), next_right.partition_metadata()],
+                    resource_request=ResourceRequest(memory_bytes=size_bytes),
+                ).add_instruction(instruction=execution_step.CrossJoin(left_in_outer_loop=left_in_outer_loop))
+
+                yield join_step
+
+        try:
+            step = next(outer_plan)
+            if isinstance(step, PartitionTaskBuilder):
+                step = step.finalize_partition_task_single_output(stage_id=stage_id)
+                outer_requests.append(step)
+            yield step
+        except StopIteration:
+            if outer_requests:
+                logger.debug(
+                    "cross join blocked on completion of outer side of join.\n outer sources: %s",
+                    outer_requests,
+                )
+                yield None
+            else:
+                return
+
+
 class MergeJoinTaskTracker(Generic[PartitionT]):
     """
     Tracks merge-join tasks for each larger-side partition.

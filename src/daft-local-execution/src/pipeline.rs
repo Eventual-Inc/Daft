@@ -11,9 +11,9 @@ use daft_core::{
 };
 use daft_dsl::{col, join::get_common_join_keys, Expr};
 use daft_local_plan::{
-    ActorPoolProject, Concat, EmptyScan, Explode, Filter, HashAggregate, HashJoin, InMemoryScan,
-    Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite, Pivot, Project, Sample,
-    Sort, UnGroupedAggregate, Unpivot,
+    ActorPoolProject, Concat, CrossJoin, EmptyScan, Explode, Filter, HashAggregate, HashJoin,
+    InMemoryScan, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite, Pivot,
+    Project, Sample, Sort, UnGroupedAggregate, Unpivot,
 };
 use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;
@@ -36,6 +36,7 @@ use crate::{
         aggregate::AggregateSink,
         blocking_sink::BlockingSinkNode,
         concat::ConcatSink,
+        cross_join::CrossJoinSink,
         hash_join_build::{HashJoinBuildSink, ProbeStateBridge},
         limit::LimitSink,
         monotonically_increasing_id::MonotonicallyIncreasingIdSink,
@@ -434,6 +435,12 @@ pub fn physical_plan_to_pipeline(
             .with_context(|_| PipelineCreationSnafu {
                 plan_name: physical_plan.name(),
             })?
+        }
+        LocalPhysicalPlan::CrossJoin(CrossJoin { left, right, .. }) => {
+            let left_node = physical_plan_to_pipeline(left, psets, cfg)?;
+            let right_node = physical_plan_to_pipeline(right, psets, cfg)?;
+
+            StreamingSinkNode::new(Arc::new(CrossJoinSink {}), vec![right_node, left_node]).boxed()
         }
         LocalPhysicalPlan::PhysicalWrite(PhysicalWrite {
             input,

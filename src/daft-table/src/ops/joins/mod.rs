@@ -196,4 +196,42 @@ impl Table {
 
         Self::new_with_size(join_schema, join_series, num_rows)
     }
+
+    pub fn cross_join(&self, right: &Self, left_in_outer_loop: bool) -> DaftResult<Self> {
+        /// Create a new table by repeating each column of the input table `inner_len` times in a row, thus preserving sort order.
+        fn create_outer_loop_table(input: &Table, inner_len: usize) -> DaftResult<Table> {
+            let idx = (0..input.len() as u64)
+                .flat_map(|i| std::iter::repeat(i).take(inner_len))
+                .collect::<Vec<_>>();
+
+            let idx_series = UInt64Array::from(("inner_indices", idx)).into_series();
+
+            input.take(&idx_series)
+        }
+
+        /// Create a enw table by repeating the entire table `outer_len` number of times
+        fn create_inner_loop_table(input: &Table, outer_len: usize) -> DaftResult<Table> {
+            Table::concat(&vec![input; outer_len])
+        }
+
+        let (left_table, mut right_table) = if left_in_outer_loop {
+            (
+                create_outer_loop_table(self, right.len())?,
+                create_inner_loop_table(right, self.len())?,
+            )
+        } else {
+            (
+                create_inner_loop_table(self, right.len())?,
+                create_outer_loop_table(right, self.len())?,
+            )
+        };
+
+        let num_rows = self.len() * right.len();
+
+        let join_schema = self.schema.union(&right.schema)?;
+        let mut join_columns = left_table.columns;
+        join_columns.append(&mut right_table.columns);
+
+        Self::new_with_size(join_schema, join_columns, num_rows)
+    }
 }

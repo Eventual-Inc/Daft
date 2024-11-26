@@ -33,6 +33,7 @@ pub enum LocalPhysicalPlan {
     Pivot(Pivot),
     Concat(Concat),
     HashJoin(HashJoin),
+    CrossJoin(CrossJoin),
     // SortMergeJoin(SortMergeJoin),
     // BroadcastJoin(BroadcastJoin),
     PhysicalWrite(PhysicalWrite),
@@ -293,6 +294,19 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    pub(crate) fn cross_join(
+        left: LocalPhysicalPlanRef,
+        right: LocalPhysicalPlanRef,
+        schema: SchemaRef,
+    ) -> LocalPhysicalPlanRef {
+        Self::CrossJoin(CrossJoin {
+            left,
+            right,
+            schema,
+        })
+        .arced()
+    }
+
     pub(crate) fn concat(
         input: LocalPhysicalPlanRef,
         other: LocalPhysicalPlanRef,
@@ -371,11 +385,15 @@ impl LocalPhysicalPlan {
             | Self::Sort(Sort { schema, .. })
             | Self::Sample(Sample { schema, .. })
             | Self::HashJoin(HashJoin { schema, .. })
+            | Self::CrossJoin(CrossJoin { schema, .. })
             | Self::Explode(Explode { schema, .. })
             | Self::Unpivot(Unpivot { schema, .. })
             | Self::Concat(Concat { schema, .. }) => schema,
             Self::InMemoryScan(InMemoryScan { info, .. }) => &info.source_schema,
-            _ => todo!("{:?}", self),
+
+            Self::MonotonicallyIncreasingId(_) | Self::PhysicalWrite(_) => todo!("{:?}", self),
+            #[cfg(feature = "python")]
+            Self::CatalogWrite(_) | Self::LanceWrite(_) => todo!("{:?}", self),
         }
     }
 }
@@ -516,6 +534,13 @@ pub struct HashJoin {
     pub right_on: Vec<ExprRef>,
     pub null_equals_null: Option<Vec<bool>>,
     pub join_type: JoinType,
+    pub schema: SchemaRef,
+}
+
+#[derive(Debug)]
+pub struct CrossJoin {
+    pub left: LocalPhysicalPlanRef,
+    pub right: LocalPhysicalPlanRef,
     pub schema: SchemaRef,
 }
 

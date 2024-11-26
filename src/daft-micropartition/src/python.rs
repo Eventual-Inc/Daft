@@ -315,6 +315,15 @@ impl PyMicroPartition {
         })
     }
 
+    pub fn cross_join(&self, py: Python, right: &Self, left_in_outer_loop: bool) -> PyResult<Self> {
+        py.allow_threads(|| {
+            Ok(self
+                .inner
+                .cross_join(&right.inner, left_in_outer_loop)?
+                .into())
+        })
+    }
+
     pub fn explode(&self, py: Python, to_explode: Vec<PyExpr>) -> PyResult<Self> {
         let converted_to_explode: Vec<daft_dsl::ExprRef> =
             to_explode.into_iter().map(|e| e.expr).collect();

@@ -57,6 +57,7 @@ impl FromStr for JoinType {
     fn from_str(join_type: &str) -> DaftResult<Self> {
         match join_type {
             "inner" => Ok(Self::Inner),
+            "cross" => Ok(Self::Inner), // cross join is just inner join with no join keys
             "left" => Ok(Self::Left),
             "right" => Ok(Self::Right),
             "outer" => Ok(Self::Outer),
@@ -77,6 +78,8 @@ pub enum JoinStrategy {
     Hash,
     SortMerge,
     Broadcast,
+    /// only used internally, do not let users to specify
+    Cross,
 }
 
 #[cfg(feature = "python")]

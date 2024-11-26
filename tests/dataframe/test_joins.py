@@ -1114,3 +1114,35 @@ def test_join_suffix_and_prefix(suffix, prefix, expected, make_df, with_morsel_s
 
     df = df1.join(df2, on="idx").join(df3, on="idx", suffix=suffix, prefix=prefix)
     assert df.column_names == ["idx", "val", "score", expected]
+
+
+@pytest.mark.parametrize("left_partitions", [1, 2, 4])
+@pytest.mark.parametrize("right_partitions", [1, 2, 4])
+def test_cross_join(left_partitions, right_partitions, make_df, with_morsel_size):
+    df1 = make_df(
+        {
+            "A": [1, 3, 5],
+            "B": ["a", "b", "c"],
+        },
+        repartition=left_partitions,
+        repartition_columns=["A"],
+    )
+
+    df2 = make_df(
+        {
+            "C": [2, 4, 6, 8],
+            "D": ["d", "e", "f", "g"],
+        },
+        repartition=right_partitions,
+        repartition_columns=["C"],
+    )
+
+    df = df1.join(df2, how="cross")
+    df = df.sort(["A", "C"])
+
+    assert df.to_pydict() == {
+        "A": [1, 1, 1, 1, 3, 3, 3, 3, 5, 5, 5, 5],
+        "B": ["a", "a", "a", "a", "b", "b", "b", "b", "c", "c", "c", "c"],
+        "C": [2, 4, 6, 8, 2, 4, 6, 8, 2, 4, 6, 8],
+        "D": ["d", "e", "f", "g", "d", "e", "f", "g", "d", "e", "f", "g"],
+    }

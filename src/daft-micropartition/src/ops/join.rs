@@ -117,4 +117,14 @@ impl MicroPartition {
             table_join,
         )
     }
+
+    pub fn cross_join(&self, right: &Self, left_in_outer_loop: bool) -> DaftResult<Self> {
+        let io_stats = IOStatsContext::new("MicroPartition::cross_join");
+
+        let table_join = |lt: &Table, rt: &Table, _: &[ExprRef], _: &[ExprRef], _: JoinType| {
+            Table::cross_join(lt, rt, left_in_outer_loop)
+        };
+
+        self.join(right, io_stats, &[], &[], JoinType::Inner, table_join)
+    }
 }
