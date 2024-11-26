@@ -23,7 +23,12 @@ class Profile:
 
 
 profiles: dict[str, Optional[Profile]] = {
-    "debug_xs-x86": None,
+    "debug_xs-x86": Profile(
+        instance_type="t3.large",
+        image_id="ami-04dd23e62ed049936",
+        node_count=1,
+        ssh_user="ubuntu",
+    ),
     "medium-x86": Profile(
         instance_type="i3.2xlarge",
         image_id="ami-04dd23e62ed049936",

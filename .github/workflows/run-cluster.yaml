@@ -16,6 +16,7 @@ on:
         type: choice
         options:
         - medium-x86
+        - debug_xs-x86
         description: The profile to use for the cluster
         required: false
         default: medium-x86
