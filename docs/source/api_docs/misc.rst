@@ -3,11 +3,8 @@ Miscellaneous
 
 .. currentmodule:: daft
 
-Types
---------------
-
-Image Types
-~~~~~~~~~~~~~~
+Images
+############
 
 .. autosummary::
     :nosignatures:
@@ -15,3 +12,21 @@ Image Types
 
     ImageMode
     ImageFormat
+
+Resource Request
+############
+
+.. autosummary::
+    :nosignatures:
+    :toctree: doc_gen/misc
+
+    ResourceRequest
+
+Counting
+############
+
+.. autosummary::
+    :nosignatures:
+    :toctree: doc_gen/misc
+
+    CountMode
