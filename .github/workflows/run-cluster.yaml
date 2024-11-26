@@ -95,7 +95,7 @@ jobs:
     - name: Download log files from ray cluster
       run: |
         source .venv/bin/activate
-        ray rsync-down .github/assets/benchmarking_ray_config.yaml /tmp/ray/session_*/logs ray-daft-logs
+        ray rsync-down .github/assets/ray.yaml /tmp/ray/session_*/logs ray-daft-logs
         find ray-daft-logs -depth -name '*:*' -exec bash -c '
         for filepath; do
           dir=$(dirname "$filepath")
