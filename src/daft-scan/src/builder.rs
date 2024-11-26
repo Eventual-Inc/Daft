@@ -97,7 +97,7 @@ impl ParquetScanBuilder {
         self
     }
 
-    pub fn finish(self) -> DaftResult<LogicalPlanBuilder> {
+    pub async fn finish(self) -> DaftResult<LogicalPlanBuilder> {
         let cfg = ParquetSourceConfig {
             coerce_int96_timestamp_unit: self.coerce_int96_timestamp_unit,
             field_id_mapping: self.field_id_mapping,
@@ -105,17 +105,20 @@ impl ParquetScanBuilder {
             chunk_size: self.chunk_size,
         };
 
-        let operator = Arc::new(GlobScanOperator::try_new(
-            self.glob_paths,
-            Arc::new(FileFormatConfig::Parquet(cfg)),
-            Arc::new(StorageConfig::Native(Arc::new(
-                NativeStorageConfig::new_internal(self.multithreaded, self.io_config),
-            ))),
-            self.infer_schema,
-            self.schema,
-            self.file_path_column,
-            self.hive_partitioning,
-        )?);
+        let operator = Arc::new(
+            GlobScanOperator::try_new(
+                self.glob_paths,
+                Arc::new(FileFormatConfig::Parquet(cfg)),
+                Arc::new(StorageConfig::Native(Arc::new(
+                    NativeStorageConfig::new_internal(self.multithreaded, self.io_config),
+                ))),
+                self.infer_schema,
+                self.schema,
+                self.file_path_column,
+                self.hive_partitioning,
+            )
+            .await?,
+        );
 
         LogicalPlanBuilder::table_scan(ScanOperatorRef(operator), None)
     }
@@ -238,7 +241,7 @@ impl CsvScanBuilder {
         self
     }
 
-    pub fn finish(self) -> DaftResult<LogicalPlanBuilder> {
+    pub async fn finish(self) -> DaftResult<LogicalPlanBuilder> {
         let cfg = CsvSourceConfig {
             delimiter: self.delimiter,
             has_headers: self.has_headers,
@@ -251,17 +254,20 @@ impl CsvScanBuilder {
             chunk_size: self.chunk_size,
         };
 
-        let operator = Arc::new(GlobScanOperator::try_new(
-            self.glob_paths,
-            Arc::new(FileFormatConfig::Csv(cfg)),
-            Arc::new(StorageConfig::Native(Arc::new(
-                NativeStorageConfig::new_internal(false, self.io_config),
-            ))),
-            self.infer_schema,
-            self.schema,
-            self.file_path_column,
-            self.hive_partitioning,
-        )?);
+        let operator = Arc::new(
+            GlobScanOperator::try_new(
+                self.glob_paths,
+                Arc::new(FileFormatConfig::Csv(cfg)),
+                Arc::new(StorageConfig::Native(Arc::new(
+                    NativeStorageConfig::new_internal(false, self.io_config),
+                ))),
+                self.infer_schema,
+                self.schema,
+                self.file_path_column,
+                self.hive_partitioning,
+            )
+            .await?,
+        );
 
         LogicalPlanBuilder::table_scan(ScanOperatorRef(operator), None)
     }

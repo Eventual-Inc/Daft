@@ -194,11 +194,11 @@ chrono-tz = "0.10.0"
 comfy-table = "7.1.1"
 common-daft-config = {path = "src/common/daft-config"}
 common-error = {path = "src/common/error", default-features = false}
+common-runtime = {path = "src/common/runtime", default-features = false}
 daft-core = {path = "src/daft-core"}
 daft-dsl = {path = "src/daft-dsl"}
 daft-hash = {path = "src/daft-hash"}
 daft-local-execution = {path = "src/daft-local-execution"}
-daft-local-plan = {path = "src/daft-local-plan"}
 daft-logical-plan = {path = "src/daft-logical-plan"}
 daft-scan = {path = "src/daft-scan"}
 daft-schema = {path = "src/daft-schema"}

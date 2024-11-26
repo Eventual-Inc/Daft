@@ -225,7 +225,7 @@ pub mod pylib {
     #[pyfunction]
     pub fn read_parquet_schema(
         py: Python,
-        uri: &str,
+        uri: String,
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
@@ -240,17 +240,23 @@ pub mod pylib {
                 multithreaded_io.unwrap_or(true),
                 io_config.unwrap_or_default().config.into(),
             )?;
-            Ok(Arc::new(
+
+            let runtime_handle = common_runtime::get_io_runtime(true);
+
+            let task = async move {
                 crate::read::read_parquet_schema(
-                    uri,
+                    &uri,
                     io_client,
                     Some(io_stats),
                     schema_infer_options,
                     None, // TODO: allow passing in of field_id_mapping through Python API?
-                )?
-                .0,
-            )
-            .into())
+                )
+                .await
+            };
+
+            let (schema, _) = runtime_handle.block_on(task)??;
+
+            Ok(Arc::new(schema).into())
         })
     }
 
