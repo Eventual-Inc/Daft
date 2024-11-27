@@ -121,6 +121,7 @@ impl Runtime {
     }
 
     /// Blocks current thread to compute future. Can not be called in tokio runtime context
+    ///
     pub fn block_on_current_thread<F: Future>(&self, future: F) -> F::Output {
         self.runtime.block_on(future)
     }
