@@ -34,7 +34,7 @@ def test_estimations_unique_strings(tmpdir, use_dictionary, compression):
     papq.write_table(tbl, pq_path, use_dictionary=use_dictionary, compression=compression)
 
     size_on_disk = pq_path.stat().size
-    assert assert_close(size_on_disk, get_scantask_estimated_size(pq_path, size_on_disk), get_actual_size(pq_path))
+    assert_close(size_on_disk, get_scantask_estimated_size(pq_path, size_on_disk), get_actual_size(pq_path))
 
 
 @pytest.mark.parametrize("compression", ["snappy", None], ids=["snappy", "no_compression"])
@@ -46,7 +46,7 @@ def test_estimations_dup_strings(tmpdir, use_dictionary, compression):
     papq.write_table(tbl, pq_path, use_dictionary=use_dictionary, compression=compression)
 
     size_on_disk = pq_path.stat().size
-    assert assert_close(size_on_disk, get_scantask_estimated_size(pq_path, size_on_disk), get_actual_size(pq_path))
+    assert_close(size_on_disk, get_scantask_estimated_size(pq_path, size_on_disk), get_actual_size(pq_path))
 
 
 @pytest.mark.parametrize("compression", ["snappy", None], ids=["snappy", "no_compression"])
@@ -59,7 +59,7 @@ def test_estimations_unique_ints(tmpdir, use_dictionary, compression):
     papq.write_table(tbl, pq_path, use_dictionary=use_dictionary, compression=compression)
 
     size_on_disk = pq_path.stat().size
-    assert assert_close(size_on_disk, get_scantask_estimated_size(pq_path, size_on_disk), get_actual_size(pq_path))
+    assert_close(size_on_disk, get_scantask_estimated_size(pq_path, size_on_disk), get_actual_size(pq_path))
 
 
 @pytest.mark.parametrize("compression", ["snappy", None], ids=["snappy", "no_compression"])
@@ -72,7 +72,7 @@ def test_estimations_dup_ints(tmpdir, use_dictionary, compression):
     papq.write_table(tbl, pq_path, use_dictionary=use_dictionary, compression=compression)
 
     size_on_disk = pq_path.stat().size
-    assert assert_close(size_on_disk, get_scantask_estimated_size(pq_path, size_on_disk), get_actual_size(pq_path))
+    assert_close(size_on_disk, get_scantask_estimated_size(pq_path, size_on_disk), get_actual_size(pq_path))
 
 
 @pytest.mark.parametrize(
@@ -100,4 +100,4 @@ def test_canonical_files_in_hf(path):
     response = requests.head(path, allow_redirects=True)
     size_on_disk = int(response.headers["Content-Length"])
 
-    assert assert_close(size_on_disk, get_scantask_estimated_size(path, size_on_disk), get_actual_size(path))
+    assert_close(size_on_disk, get_scantask_estimated_size(path, size_on_disk), get_actual_size(path))
