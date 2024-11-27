@@ -60,7 +60,7 @@ pub mod pylib {
 
             let (schema, _) = runtime.block_on_current_thread(async move {
                 crate::metadata::read_csv_schema(
-                    &uri,
+                    uri,
                     parse_options,
                     max_bytes,
                     io_client,

@@ -225,7 +225,7 @@ pub mod pylib {
     #[pyfunction]
     pub fn read_parquet_schema(
         py: Python,
-        uri: String,
+        uri: &str,
         io_config: Option<IOConfig>,
         multithreaded_io: Option<bool>,
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
@@ -245,7 +245,7 @@ pub mod pylib {
 
             let task = async move {
                 crate::read::read_parquet_schema(
-                    &uri,
+                    uri,
                     io_client,
                     Some(io_stats),
                     schema_infer_options,
@@ -254,7 +254,7 @@ pub mod pylib {
                 .await
             };
 
-            let (schema, _) = runtime_handle.block_on(task)??;
+            let (schema, _) = runtime_handle.block_on_current_thread(task)?;
 
             Ok(Arc::new(schema).into())
         })

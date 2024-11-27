@@ -87,9 +87,7 @@ async fn run_glob(
         .glob(glob_input, None, None, limit, io_stats, Some(file_format))
         .await?;
 
-    let stream = stream.map(|fm| Ok(fm?));
-
-    let stream = stream.boxed();
+    let stream = stream.map_err(|e| e.into());
 
     Ok(stream)
 }
