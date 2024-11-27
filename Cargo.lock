@@ -2379,7 +2379,6 @@ dependencies = [
  "daft-dsl",
  "daft-functions",
  "daft-logical-plan",
- "daft-scan",
  "daft-schema",
  "itertools 0.11.0",
  "log",

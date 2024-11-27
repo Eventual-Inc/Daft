@@ -46,14 +46,6 @@ impl ScanTaskLike for DummyScanTask {
         self.hash(&mut state);
     }
 
-    fn split_by_row_groups(
-        self: Arc<Self>,
-        _: usize,
-        _: usize,
-    ) -> DaftResult<Vec<Arc<dyn ScanTaskLike>>> {
-        Ok(vec![self])
-    }
-
     fn materialized_schema(&self) -> SchemaRef {
         self.schema.clone()
     }

@@ -1,16 +1,19 @@
 use std::sync::Arc;
 
 use common_daft_config::DaftExecutionConfig;
-use common_error::{DaftError, DaftResult};
-use common_scan_info::ScanTaskLike;
+use common_error::DaftResult;
+use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
+use daft_io::IOStatsContext;
+use daft_parquet::read::read_parquet_metadata;
+use parquet2::metadata::RowGroupList;
 
-use crate::{Pushdowns, ScanTask, ScanTaskRef};
+use crate::{
+    storage_config::StorageConfig, ChunkSpec, DataSource, Pushdowns, ScanTask, ScanTaskRef,
+};
 
 pub(crate) type BoxScanTaskIter<'a> = Box<dyn Iterator<Item = DaftResult<ScanTaskRef>> + 'a>;
 
 /// Coalesces ScanTasks by their [`ScanTask::estimate_in_memory_size_bytes()`]
-///
-/// This function should only be called on ScanTasks (i.e. DummyScanTasks are not valid).
 ///
 /// NOTE: `min_size_bytes` and `max_size_bytes` are only parameters for the algorithm used for merging ScanTasks,
 /// and do not provide any guarantees about the sizes of ScanTasks yielded by the resultant iterator.
@@ -22,15 +25,21 @@ pub(crate) type BoxScanTaskIter<'a> = Box<dyn Iterator<Item = DaftResult<ScanTas
 /// * `scan_tasks`: A Boxed Iterator of ScanTaskRefs to perform merging on
 /// * `min_size_bytes`: Minimum size in bytes of a ScanTask, after which no more merging will be performed
 /// * `max_size_bytes`: Maximum size in bytes of a ScanTask, capping the maximum size of a merged ScanTask
-pub fn merge_by_sizes(
-    scan_tasks: Arc<Vec<Arc<dyn ScanTaskLike>>>,
+#[must_use]
+pub(crate) fn merge_by_sizes<'a>(
+    scan_tasks: BoxScanTaskIter<'a>,
     pushdowns: &Pushdowns,
-    cfg: &DaftExecutionConfig,
-) -> DaftResult<Arc<Vec<Arc<dyn ScanTaskLike>>>> {
+    cfg: &'a DaftExecutionConfig,
+) -> BoxScanTaskIter<'a> {
     if let Some(limit) = pushdowns.limit {
-        // If LIMIT pushdown is present, perform a more conservative merge using the estimated size of the LIMIT.
-        if let Some(first_scantask) = scan_tasks.first() {
+        // If LIMIT pushdown is present, perform a more conservative merge using the estimated size of the LIMIT
+        let mut scan_tasks = scan_tasks.peekable();
+        let first_scantask = scan_tasks
+            .peek()
+            .and_then(|x| x.as_ref().map(std::clone::Clone::clone).ok());
+        if let Some(first_scantask) = first_scantask {
             let estimated_bytes_for_reading_limit_rows = first_scantask
+                .as_ref()
                 .estimate_in_memory_size_bytes(Some(cfg))
                 .and_then(|est_materialized_bytes| {
                     first_scantask
@@ -41,52 +50,26 @@ pub fn merge_by_sizes(
                         })
                 });
             if let Some(limit_bytes) = estimated_bytes_for_reading_limit_rows {
-                return merge_by_adjusted_sizes(
-                    scan_tasks,
-                    (limit_bytes * 1.5) as usize,
-                    (limit_bytes / 2.) as usize,
+                return Box::new(MergeByFileSize {
+                    iter: Box::new(scan_tasks),
                     cfg,
-                );
+                    target_upper_bound_size_bytes: (limit_bytes * 1.5) as usize,
+                    target_lower_bound_size_bytes: (limit_bytes / 2.) as usize,
+                    accumulator: None,
+                }) as BoxScanTaskIter;
             }
         }
-        // If we are unable to determine an estimation on the LIMIT size, so we don't perform a merge.
-        Ok(scan_tasks)
+        // If we are unable to determine an estimation on the LIMIT size, so we don't perform a merge
+        Box::new(scan_tasks)
     } else {
-        merge_by_adjusted_sizes(
-            scan_tasks,
-            cfg.scan_tasks_max_size_bytes,
-            cfg.scan_tasks_min_size_bytes,
+        Box::new(MergeByFileSize {
+            iter: scan_tasks,
             cfg,
-        )
+            target_upper_bound_size_bytes: cfg.scan_tasks_max_size_bytes,
+            target_lower_bound_size_bytes: cfg.scan_tasks_min_size_bytes,
+            accumulator: None,
+        }) as BoxScanTaskIter
     }
-}
-
-fn merge_by_adjusted_sizes(
-    scan_tasks: Arc<Vec<Arc<dyn ScanTaskLike>>>,
-    target_upper_bound_size_bytes: usize,
-    target_lower_bound_size_bytes: usize,
-    cfg: &DaftExecutionConfig,
-) -> DaftResult<Arc<Vec<Arc<dyn ScanTaskLike>>>> {
-    // TODO(desmond): Here we downcast Arc<dyn ScanTaskLike> to Arc<ScanTask>. ScanTask and DummyScanTask (test only) are
-    // the only non-test implementer of ScanTaskLike. It might be possible to avoid the downcast by implementing merging
-    // at the trait level, but today that requires shifting around a non-trivial amount of code to avoid circular dependencies.
-    let iter: BoxScanTaskIter = Box::new(scan_tasks.as_ref().iter().map(|st| {
-        st.clone()
-            .as_any_arc()
-            .downcast::<ScanTask>()
-            .map_err(|e| DaftError::TypeError(format!("Expected Arc<ScanTask>, found {:?}", e)))
-    }));
-    let merged_tasks = Box::new(MergeByFileSize {
-        iter,
-        cfg,
-        target_upper_bound_size_bytes,
-        target_lower_bound_size_bytes,
-        accumulator: None,
-    }) as BoxScanTaskIter;
-    let scan_tasks: Vec<Arc<dyn ScanTaskLike>> = merged_tasks
-        .map(|st| st.map(|task| task as Arc<dyn ScanTaskLike>))
-        .collect::<DaftResult<Vec<_>>>()?;
-    Ok(Arc::new(scan_tasks))
 }
 
 struct MergeByFileSize<'a> {
@@ -102,18 +85,20 @@ struct MergeByFileSize<'a> {
 }
 
 impl<'a> MergeByFileSize<'a> {
-    /// Returns whether or not the current accumulator is "ready" to be emitted as a finalized merged ScanTask.
+    /// Returns whether or not the current accumulator is "ready" to be emitted as a finalized merged ScanTask
     ///
     /// "Readiness" is determined by a combination of factors based on how large the accumulated ScanTask is
     /// in estimated bytes, as well as other factors including any limit pushdowns.
     fn accumulator_ready(&self) -> bool {
-        // Emit the accumulator as soon as it is bigger than the specified `target_lower_bound_size_bytes`.
-        self.accumulator
-            .as_ref()
-            .and_then(|acc| acc.estimate_in_memory_size_bytes(Some(self.cfg)))
-            .map_or(false, |acc_bytes| {
-                acc_bytes >= self.target_lower_bound_size_bytes
-            })
+        // Emit the accumulator as soon as it is bigger than the specified `target_lower_bound_size_bytes`
+        if let Some(acc) = &self.accumulator
+            && let Some(acc_bytes) = acc.estimate_in_memory_size_bytes(Some(self.cfg))
+            && acc_bytes >= self.target_lower_bound_size_bytes
+        {
+            true
+        } else {
+            false
+        }
     }
 
     /// Checks if the current accumulator can be merged with the provided ScanTask
@@ -191,25 +176,135 @@ impl<'a> Iterator for MergeByFileSize<'a> {
     }
 }
 
-pub fn split_by_row_groups(
-    scan_tasks: Arc<Vec<Arc<dyn ScanTaskLike>>>,
+#[must_use]
+pub(crate) fn split_by_row_groups(
+    scan_tasks: BoxScanTaskIter,
     max_tasks: usize,
     min_size_bytes: usize,
     max_size_bytes: usize,
-) -> DaftResult<Arc<Vec<Arc<dyn ScanTaskLike>>>> {
-    // Only split if we have a small amount of files.
-    if scan_tasks.len() >= max_tasks {
-        return Ok(scan_tasks);
+) -> BoxScanTaskIter {
+    let mut scan_tasks = itertools::peek_nth(scan_tasks);
+
+    // only split if we have a small amount of files
+    if scan_tasks.peek_nth(max_tasks).is_some() {
+        Box::new(scan_tasks)
+    } else {
+        Box::new(
+            scan_tasks
+                .map(move |t| -> DaftResult<BoxScanTaskIter> {
+                    let t = t?;
+
+                    /* Only split parquet tasks if they:
+                        - have one source
+                        - use native storage config
+                        - have no specified chunk spec or number of rows
+                        - have size past split threshold
+                        - no iceberg delete files
+                    */
+                    if let (
+                        FileFormatConfig::Parquet(ParquetSourceConfig {
+                            field_id_mapping, ..
+                        }),
+                        StorageConfig::Native(_),
+                        [source],
+                        Some(None),
+                        None,
+                    ) = (
+                        t.file_format_config.as_ref(),
+                        t.storage_config.as_ref(),
+                        &t.sources[..],
+                        t.sources.first().map(DataSource::get_chunk_spec),
+                        t.pushdowns.limit,
+                    ) && source
+                        .get_size_bytes()
+                        .map_or(true, |s| s > max_size_bytes as u64)
+                      && source
+                        .get_iceberg_delete_files()
+                        .map_or(true, std::vec::Vec::is_empty)
+                    {
+                        let (io_runtime, io_client) =
+                            t.storage_config.get_io_client_and_runtime()?;
+
+                        let path = source.get_path();
+
+                        let io_stats =
+                            IOStatsContext::new(format!("split_by_row_groups for {path:#?}"));
+
+                        let mut file = io_runtime.block_on_current_thread(read_parquet_metadata(
+                            path,
+                            io_client,
+                            Some(io_stats),
+                            field_id_mapping.clone(),
+                        ))?;
+
+                        let mut new_tasks: Vec<DaftResult<ScanTaskRef>> = Vec::new();
+                        let mut curr_row_group_indices = Vec::new();
+                        let mut curr_row_groups = Vec::new();
+                        let mut curr_size_bytes = 0;
+                        let mut curr_num_rows = 0;
+
+                        let row_groups = std::mem::take(&mut file.row_groups);
+                        let num_row_groups = row_groups.len();
+                        for (i, rg) in row_groups {
+                            curr_row_groups.push((i, rg));
+                            let rg = &curr_row_groups.last().unwrap().1;
+                            curr_row_group_indices.push(i as i64);
+                            curr_size_bytes += rg.compressed_size();
+                            curr_num_rows += rg.num_rows();
+
+                            if curr_size_bytes >= min_size_bytes || i == num_row_groups - 1 {
+                                let mut new_source = source.clone();
+
+                                if let DataSource::File {
+                                    chunk_spec,
+                                    size_bytes,
+                                    parquet_metadata,
+                                    ..
+                                } = &mut new_source
+                                {
+                                    // only keep relevant row groups in the metadata
+                                    let row_group_list = RowGroupList::from_iter(curr_row_groups.into_iter());
+                                    let new_metadata = file.clone_with_row_groups(curr_num_rows, row_group_list);
+                                    *parquet_metadata = Some(Arc::new(new_metadata));
+
+                                    *chunk_spec = Some(ChunkSpec::Parquet(curr_row_group_indices));
+                                    *size_bytes = Some(curr_size_bytes as u64);
+                                } else {
+                                    unreachable!("Parquet file format should only be used with DataSource::File");
+                                }
+
+                                if let DataSource::File {
+                                    metadata: Some(metadata),
+                                    ..
+                                } = &mut new_source
+                                {
+                                    metadata.length = curr_num_rows;
+                                }
+
+                                // Reset accumulators
+                                curr_row_groups = Vec::new();
+                                curr_row_group_indices = Vec::new();
+                                curr_size_bytes = 0;
+                                curr_num_rows = 0;
+
+                                new_tasks.push(Ok(ScanTask::new(
+                                    vec![new_source],
+                                    t.file_format_config.clone(),
+                                    t.schema.clone(),
+                                    t.storage_config.clone(),
+                                    t.pushdowns.clone(),
+                                    t.generated_fields.clone(),
+                                )
+                                .into()));
+                            }
+                        }
+
+                        Ok(Box::new(new_tasks.into_iter()))
+                    } else {
+                        Ok(Box::new(std::iter::once(Ok(t))))
+                    }
+                })
+                .flat_map(|t| t.unwrap_or_else(|e| Box::new(std::iter::once(Err(e))))),
+        )
     }
-    scan_tasks
-        .iter()
-        .try_fold(vec![], move |mut acc, taskref| {
-            acc.extend(
-                taskref
-                    .clone()
-                    .split_by_row_groups(min_size_bytes, max_size_bytes)?,
-            );
-            Ok(acc)
-        })
-        .map(Arc::new)
 }

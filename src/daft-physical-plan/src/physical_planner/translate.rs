@@ -30,7 +30,6 @@ use daft_logical_plan::{
     sink_info::{OutputFileInfo, SinkInfo},
     source_info::{PlaceHolderInfo, SourceInfo},
 };
-use daft_scan::scan_task_iters::{merge_by_sizes, split_by_row_groups};
 
 use crate::{ops::*, PhysicalPlan, PhysicalPlanRef};
 
@@ -67,17 +66,17 @@ pub(super) fn translate_single_logical_node(
                     .arced())
                 } else {
                     // Perform scan task splitting and merging if there are only ScanTasks (i.e. no DummyScanTasks).
-                    let scan_tasks = if scan_tasks.iter().all(|st| st.is_scan_task()) {
-                        let split_tasks = split_by_row_groups(
-                            scan_tasks,
-                            cfg.parquet_split_row_groups_max_files,
-                            cfg.scan_tasks_min_size_bytes,
-                            cfg.scan_tasks_max_size_bytes,
-                        )?;
-                        merge_by_sizes(split_tasks, pushdowns, cfg)?
-                    } else {
-                        scan_tasks
-                    };
+                    // let scan_tasks = if scan_tasks.iter().all(|st| st.is_scan_task()) {
+                    //     let split_tasks = split_by_row_groups(
+                    //         scan_tasks,
+                    //         cfg.parquet_split_row_groups_max_files,
+                    //         cfg.scan_tasks_min_size_bytes,
+                    //         cfg.scan_tasks_max_size_bytes,
+                    //     )?;
+                    //     merge_by_sizes(split_tasks, pushdowns, cfg)?
+                    // } else {
+                    //     scan_tasks
+                    // };
 
                     let clustering_spec = Arc::new(ClusteringSpec::Unknown(
                         UnknownClusteringConfig::new(scan_tasks.len()),

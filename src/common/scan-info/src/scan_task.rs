@@ -7,7 +7,6 @@ use std::{
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::DisplayAs;
-use common_error::DaftResult;
 use common_file_formats::FileFormatConfig;
 use daft_schema::schema::SchemaRef;
 
@@ -22,11 +21,6 @@ pub trait ScanTaskLike: Debug + DisplayAs + Send + Sync {
     fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
     fn dyn_eq(&self, other: &dyn ScanTaskLike) -> bool;
     fn dyn_hash(&self, state: &mut dyn Hasher);
-    fn split_by_row_groups(
-        self: Arc<Self>,
-        min_size_bytes: usize,
-        max_size_bytes: usize,
-    ) -> DaftResult<Vec<Arc<dyn ScanTaskLike>>>;
     #[must_use]
     fn materialized_schema(&self) -> SchemaRef;
     #[must_use]
@@ -63,4 +57,3 @@ impl Hash for dyn ScanTaskLike + '_ {
     }
 }
 
-pub type BoxScanTaskLikeIter = Box<dyn Iterator<Item = DaftResult<Arc<dyn ScanTaskLike>>>>;
