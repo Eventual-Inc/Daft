@@ -791,7 +791,7 @@ fn physical_plan_to_partition_tasks(
         PhysicalPlan::CrossJoin(CrossJoin {
             left,
             right,
-            left_in_outer_loop,
+            outer_loop_side,
             ..
         }) => {
             let upstream_left_iter =
@@ -801,7 +801,7 @@ fn physical_plan_to_partition_tasks(
             let py_iter = py
                 .import_bound(pyo3::intern!(py, "daft.execution.physical_plan"))?
                 .getattr(pyo3::intern!(py, "cross_join"))?
-                .call1((upstream_left_iter, upstream_right_iter, *left_in_outer_loop))?;
+                .call1((upstream_left_iter, upstream_right_iter, *outer_loop_side))?;
             Ok(py_iter.into())
         }
         PhysicalPlan::TabularWriteParquet(TabularWriteParquet {

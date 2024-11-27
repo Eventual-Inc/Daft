@@ -31,7 +31,7 @@ from typing import (
 )
 
 from daft.context import get_context
-from daft.daft import ResourceRequest
+from daft.daft import JoinSide, ResourceRequest
 from daft.execution import execution_step
 from daft.execution.execution_step import (
     Instruction,
@@ -567,11 +567,11 @@ def broadcast_join(
 def cross_join(
     left_plan: InProgressPhysicalPlan[PartitionT],
     right_plan: InProgressPhysicalPlan[PartitionT],
-    left_in_outer_loop: bool,
+    outer_loop_side: JoinSide,
 ):
     stage_id = next(stage_id_counter)
 
-    outer_plan, inner_plan = (left_plan, right_plan) if left_in_outer_loop else (right_plan, left_plan)
+    outer_plan, inner_plan = (left_plan, right_plan) if outer_loop_side == JoinSide.Left else (right_plan, left_plan)
 
     inner_requests: deque[SingleOutputPartitionTask[PartitionT]] = deque()
     for step in inner_plan:
@@ -593,7 +593,9 @@ def cross_join(
                     )
                     yield None
 
-                next_left, next_right = (next_outer, next_inner) if left_in_outer_loop else (next_inner, next_outer)
+                next_left, next_right = (
+                    (next_outer, next_inner) if outer_loop_side == JoinSide.Left else (next_inner, next_outer)
+                )
 
                 # Calculate memory request for task.
                 left_size_bytes = next_left.partition_metadata().size_bytes
@@ -613,7 +615,7 @@ def cross_join(
                     inputs=[next_left.partition(), next_right.partition()],
                     partial_metadatas=[next_left.partition_metadata(), next_right.partition_metadata()],
                     resource_request=ResourceRequest(memory_bytes=size_bytes),
-                ).add_instruction(instruction=execution_step.CrossJoin(left_in_outer_loop=left_in_outer_loop))
+                ).add_instruction(instruction=execution_step.CrossJoin(outer_loop_side=outer_loop_side))
 
                 yield join_step
 

@@ -127,3 +127,12 @@ impl FromStr for JoinStrategy {
         }
     }
 }
+
+#[derive(Clone, Copy, Debug, Display, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
+pub enum JoinSide {
+    Left,
+    Right,
+}
+
+impl_bincode_py_state_serialization!(JoinSide);

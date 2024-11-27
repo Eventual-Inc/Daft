@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_display::tree::TreeDisplay;
+use daft_core::join::JoinSide;
 use daft_logical_plan::{
     partitioning::{
         ClusteringSpecRef, HashClusteringConfig, RangeClusteringConfig, UnknownClusteringConfig,
@@ -17,7 +18,7 @@ pub struct CrossJoin {
     pub right: PhysicalPlanRef,
 
     /// the side that is used for the outer loop is relevant for maintaining the clustering spec
-    pub left_in_outer_loop: bool,
+    pub outer_loop_side: JoinSide,
     pub clustering_spec: ClusteringSpecRef,
 }
 
@@ -51,14 +52,14 @@ impl CrossJoin {
             }
         }
 
-        let (left_in_outer_loop, clustering_spec) =
+        let (outer_loop_side, clustering_spec) =
             if let Some(spec) = try_clustering_spec_from(&left_spec, num_partitions) {
-                (true, spec)
+                (JoinSide::Left, spec)
             } else if let Some(spec) = try_clustering_spec_from(&right_spec, num_partitions) {
-                (false, spec)
+                (JoinSide::Right, spec)
             } else {
                 (
-                    true,
+                    JoinSide::Left,
                     ClusteringSpec::Unknown(UnknownClusteringConfig::new(num_partitions)),
                 )
             };
@@ -66,7 +67,7 @@ impl CrossJoin {
         Self {
             left,
             right,
-            left_in_outer_loop,
+            outer_loop_side,
             clustering_spec: Arc::new(clustering_spec),
         }
     }

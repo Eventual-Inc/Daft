@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Generic, Protocol
 
 from daft.context import get_context
-from daft.daft import ResourceRequest
+from daft.daft import JoinSide, ResourceRequest
 from daft.expressions import Expression, ExpressionsProjection, col
 from daft.runners.partitioning import (
     Boundaries,
@@ -949,7 +949,7 @@ class ReduceToQuantiles(ReduceInstruction):
 
 @dataclass(frozen=True)
 class CrossJoin(SingleOutputInstruction):
-    left_in_outer_loop: bool
+    outer_loop_side: JoinSide
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
         return self._cross_join(inputs)
@@ -958,7 +958,7 @@ class CrossJoin(SingleOutputInstruction):
         left, right = inputs
         result = left.cross_join(
             right,
-            left_in_outer_loop=self.left_in_outer_loop,
+            self.outer_loop_side,
         )
         return [result]
 
@@ -975,7 +975,7 @@ class CrossJoin(SingleOutputInstruction):
             if (left_meta.size_bytes is not None and right_meta.size_bytes is not None)
             else None
         )
-        boundaries = left_meta.boundaries if self.left_in_outer_loop else right_meta.boundaries
+        boundaries = left_meta.boundaries if self.outer_loop_side == JoinSide.Left else right_meta.boundaries
 
         return [PartialPartitionMetadata(num_rows=num_rows, size_bytes=size_bytes, boundaries=boundaries)]
 

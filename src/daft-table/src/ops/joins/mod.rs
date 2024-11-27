@@ -1,7 +1,9 @@
 use std::collections::HashSet;
 
 use common_error::{DaftError, DaftResult};
-use daft_core::{array::growable::make_growable, prelude::*, utils::supertype::try_get_supertype};
+use daft_core::{
+    array::growable::make_growable, join::JoinSide, prelude::*, utils::supertype::try_get_supertype,
+};
 use daft_dsl::{
     join::{get_common_join_keys, infer_join_schema},
     ExprRef,
@@ -197,7 +199,7 @@ impl Table {
         Self::new_with_size(join_schema, join_series, num_rows)
     }
 
-    pub fn cross_join(&self, right: &Self, left_in_outer_loop: bool) -> DaftResult<Self> {
+    pub fn cross_join(&self, right: &Self, outer_loop_side: JoinSide) -> DaftResult<Self> {
         /// Create a new table by repeating each column of the input table `inner_len` times in a row, thus preserving sort order.
         fn create_outer_loop_table(input: &Table, inner_len: usize) -> DaftResult<Table> {
             let idx = (0..input.len() as u64)
@@ -214,16 +216,15 @@ impl Table {
             Table::concat(&vec![input; outer_len])
         }
 
-        let (left_table, mut right_table) = if left_in_outer_loop {
-            (
+        let (left_table, mut right_table) = match outer_loop_side {
+            JoinSide::Left => (
                 create_outer_loop_table(self, right.len())?,
                 create_inner_loop_table(right, self.len())?,
-            )
-        } else {
-            (
+            ),
+            JoinSide::Right => (
                 create_inner_loop_table(self, right.len())?,
                 create_outer_loop_table(right, self.len())?,
-            )
+            ),
         };
 
         let num_rows = self.len() * right.len();

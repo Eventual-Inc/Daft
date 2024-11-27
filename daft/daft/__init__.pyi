@@ -131,6 +131,10 @@ class JoinStrategy(Enum):
         """
         ...
 
+class JoinSide(Enum):
+    Left: int
+    Right: int
+
 class CountMode(Enum):
     """
     Supported count modes for Daft's count aggregation.
@@ -1581,7 +1585,7 @@ class PyMicroPartition:
     def cross_join(
         self,
         right: PyMicroPartition,
-        left_in_outer_loop: bool,
+        outer_loop_side: JoinSide,
     ) -> PyMicroPartition: ...
     def explode(self, to_explode: list[PyExpr]) -> PyMicroPartition: ...
     def unpivot(

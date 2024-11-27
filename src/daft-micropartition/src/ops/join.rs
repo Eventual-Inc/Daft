@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_core::{array::ops::DaftCompare, join::JoinType};
+use daft_core::{
+    array::ops::DaftCompare,
+    join::{JoinSide, JoinType},
+};
 use daft_dsl::{join::infer_join_schema, ExprRef};
 use daft_io::IOStatsContext;
 use daft_stats::TruthValue;
@@ -118,11 +121,11 @@ impl MicroPartition {
         )
     }
 
-    pub fn cross_join(&self, right: &Self, left_in_outer_loop: bool) -> DaftResult<Self> {
+    pub fn cross_join(&self, right: &Self, outer_loop_side: JoinSide) -> DaftResult<Self> {
         let io_stats = IOStatsContext::new("MicroPartition::cross_join");
 
         let table_join = |lt: &Table, rt: &Table, _: &[ExprRef], _: &[ExprRef], _: JoinType| {
-            Table::cross_join(lt, rt, left_in_outer_loop)
+            Table::cross_join(lt, rt, outer_loop_side)
         };
 
         self.join(right, io_stats, &[], &[], JoinType::Inner, table_join)

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_runtime::RuntimeRef;
+use daft_core::join::JoinSide;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
@@ -56,7 +57,7 @@ impl StreamingSink for CrossJoinSink {
                     // cross join left side morsel with each right side morsel, emitting the join between one pair of morsels at a time.
 
                     let right = &join_state.right_side_buffer[join_state.loop_index];
-                    let output = Arc::new(input.cross_join(right, true)?);
+                    let output = Arc::new(input.cross_join(right, JoinSide::Left)?);
 
                     join_state.loop_index =
                         (join_state.loop_index + 1) % join_state.right_side_buffer.len();
