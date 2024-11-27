@@ -32,8 +32,8 @@ impl Session {
         tokio::spawn(async move {
             let execution_fut = async {
                 let plan = translation::to_logical_plan(command)?;
+                let optimized_plan = plan.optimize()?;
                 let cfg = Arc::new(DaftExecutionConfig::default());
-                let optimized_plan = plan.optimize(Some(cfg.clone()))?;
                 let native_executor = NativeExecutor::from_logical_plan_builder(&optimized_plan)?;
                 let mut result_stream = native_executor
                     .run(HashMap::new(), cfg, None)?

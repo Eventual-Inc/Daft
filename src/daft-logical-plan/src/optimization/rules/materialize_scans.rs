@@ -1,16 +1,13 @@
 #[derive(Default, Debug)]
-pub struct MaterializeScans {
-    execution_config: Option<Arc<DaftExecutionConfig>>,
-}
+pub struct MaterializeScans {}
 
 impl MaterializeScans {
-    pub fn new(execution_config: Option<Arc<DaftExecutionConfig>>) -> Self {
-        Self { execution_config }
+    pub fn new() -> Self {
+        Self {}
     }
 }
 use std::sync::Arc;
 
-use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
 
@@ -36,9 +33,7 @@ impl MaterializeScans {
                     let source_plan = Arc::unwrap_or_clone(plan);
                     if let LogicalPlan::Source(source) = source_plan {
                         Ok(Transformed::yes(
-                            source
-                                .build_materialized_scan_source(self.execution_config.as_deref())?
-                                .into(),
+                            source.build_materialized_scan_source()?.into(),
                         ))
                     } else {
                         unreachable!("This logical plan was already matched as a Source node")

@@ -9,13 +9,15 @@ use std::{
 };
 
 use common_display::DisplayAs;
-use common_error::DaftError;
-use common_file_formats::FileFormatConfig;
+use common_error::{DaftError, DaftResult};
+use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use common_scan_info::{Pushdowns, ScanTaskLike, ScanTaskLikeRef};
+use daft_io::IOStatsContext;
+use daft_parquet::read::read_parquet_metadata;
 use daft_schema::schema::{Schema, SchemaRef};
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
 use itertools::Itertools;
-use parquet2::metadata::FileMetaData;
+use parquet2::metadata::{FileMetaData, RowGroupList};
 use serde::{Deserialize, Serialize};
 
 mod anonymous;
@@ -436,6 +438,10 @@ pub struct ScanTask {
 
 #[typetag::serde]
 impl ScanTaskLike for ScanTask {
+    fn is_scan_task(&self) -> bool {
+        true
+    }
+
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -453,6 +459,125 @@ impl ScanTaskLike for ScanTask {
 
     fn dyn_hash(&self, mut state: &mut dyn Hasher) {
         self.hash(&mut state);
+    }
+
+    fn split_by_row_groups(
+        self: Arc<Self>,
+        min_size_bytes: usize,
+        max_size_bytes: usize,
+    ) -> DaftResult<Vec<Arc<dyn ScanTaskLike>>> {
+        /* Only split parquet tasks if they:
+            - have one source
+            - use native storage config
+            - have no specified chunk spec or number of rows
+            - have size past split threshold
+            - no iceberg delete files
+        */
+        if let (
+            FileFormatConfig::Parquet(ParquetSourceConfig {
+                field_id_mapping, ..
+            }),
+            StorageConfig::Native(_),
+            [source],
+            Some(None),
+            None,
+        ) = (
+            self.file_format_config.as_ref(),
+            self.storage_config.as_ref(),
+            &self.sources[..],
+            self.sources.first().map(DataSource::get_chunk_spec),
+            self.pushdowns.limit,
+        ) && source
+            .get_size_bytes()
+            .map_or(true, |s| s > max_size_bytes as u64)
+            && source
+                .get_iceberg_delete_files()
+                .map_or(true, std::vec::Vec::is_empty)
+        {
+            let (io_runtime, io_client) = self.storage_config.get_io_client_and_runtime()?;
+
+            let path = source.get_path();
+
+            let io_stats = IOStatsContext::new(format!("split_by_row_groups for {path:#?}"));
+
+            let mut file = io_runtime.block_on_current_thread(read_parquet_metadata(
+                path,
+                io_client,
+                Some(io_stats),
+                field_id_mapping.clone(),
+            ))?;
+
+            let mut new_tasks: Vec<Arc<dyn ScanTaskLike>> = Vec::new();
+            let mut curr_row_group_indices = Vec::new();
+            let mut curr_row_groups = Vec::new();
+            let mut curr_size_bytes = 0;
+            let mut curr_num_rows = 0;
+
+            let row_groups = std::mem::take(&mut file.row_groups);
+            let num_row_groups = row_groups.len();
+            for (i, rg) in row_groups {
+                curr_row_groups.push((i, rg));
+                let rg = &curr_row_groups.last().unwrap().1;
+                curr_row_group_indices.push(i as i64);
+                curr_size_bytes += rg.compressed_size();
+                curr_num_rows += rg.num_rows();
+
+                if curr_size_bytes >= min_size_bytes || i == num_row_groups - 1 {
+                    let mut new_source = source.clone();
+
+                    if let DataSource::File {
+                        chunk_spec,
+                        size_bytes,
+                        parquet_metadata,
+                        ..
+                    } = &mut new_source
+                    {
+                        // Only keep relevant row groups in the metadata.
+                        let row_group_list = RowGroupList::from_iter(curr_row_groups.into_iter());
+                        let new_metadata =
+                            file.clone_with_row_groups(curr_num_rows, row_group_list);
+                        *parquet_metadata = Some(Arc::new(new_metadata));
+
+                        *chunk_spec = Some(ChunkSpec::Parquet(curr_row_group_indices));
+                        *size_bytes = Some(curr_size_bytes as u64);
+                    } else {
+                        unreachable!(
+                            "Parquet file format should only be used with DataSource::File"
+                        );
+                    }
+
+                    if let DataSource::File {
+                        metadata: Some(metadata),
+                        ..
+                    } = &mut new_source
+                    {
+                        metadata.length = curr_num_rows;
+                    }
+
+                    // Reset accumulators.
+                    curr_row_groups = Vec::new();
+                    curr_row_group_indices = Vec::new();
+                    curr_size_bytes = 0;
+                    curr_num_rows = 0;
+
+                    new_tasks.push(
+                        Self::new(
+                            vec![new_source],
+                            self.file_format_config.clone(),
+                            self.schema.clone(),
+                            self.storage_config.clone(),
+                            self.pushdowns.clone(),
+                            self.generated_fields.clone(),
+                        )
+                        .into(),
+                    );
+                }
+            }
+
+            Ok(new_tasks)
+        } else {
+            Ok(vec![self])
+        }
     }
 
     fn materialized_schema(&self) -> SchemaRef {

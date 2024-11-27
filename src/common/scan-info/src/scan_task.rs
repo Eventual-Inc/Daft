@@ -15,10 +15,18 @@ use crate::Pushdowns;
 
 #[typetag::serde(tag = "type")]
 pub trait ScanTaskLike: Debug + DisplayAs + Send + Sync {
+    fn is_scan_task(&self) -> bool {
+        false
+    }
     fn as_any(&self) -> &dyn Any;
     fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
     fn dyn_eq(&self, other: &dyn ScanTaskLike) -> bool;
     fn dyn_hash(&self, state: &mut dyn Hasher);
+    fn split_by_row_groups(
+        self: Arc<Self>,
+        min_size_bytes: usize,
+        max_size_bytes: usize,
+    ) -> DaftResult<Vec<Arc<dyn ScanTaskLike>>>;
     #[must_use]
     fn materialized_schema(&self) -> SchemaRef;
     #[must_use]

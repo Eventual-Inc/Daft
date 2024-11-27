@@ -66,7 +66,7 @@ impl PartialEq for PythonTablesFactoryArgs {
 pub mod pylib {
     use std::sync::Arc;
 
-    use common_daft_config::{DaftExecutionConfig, PyDaftExecutionConfig};
+    use common_daft_config::PyDaftExecutionConfig;
     use common_error::DaftResult;
     use common_file_formats::{python::PyFileFormatConfig, FileFormatConfig};
     use common_py_serde::impl_bincode_py_state_serialization;
@@ -89,7 +89,6 @@ pub mod pylib {
     use crate::{
         anonymous::AnonymousScanOperator,
         glob::GlobScanOperator,
-        scan_task_iters::{merge_by_sizes, split_by_row_groups, BoxScanTaskIter},
         storage_config::{PyStorageConfig, PythonStorageConfig},
         DataSource, ScanTask,
     };
@@ -265,11 +264,7 @@ pub mod pylib {
             lines
         }
 
-        fn to_scan_tasks(
-            &self,
-            pushdowns: Pushdowns,
-            cfg: Option<&DaftExecutionConfig>,
-        ) -> DaftResult<Vec<ScanTaskLikeRef>> {
+        fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<Vec<ScanTaskLikeRef>> {
             let scan_tasks = Python::with_gil(|py| {
                 let pypd = PyPushdowns(pushdowns.clone().into()).into_py(py);
                 let pyiter =
@@ -286,20 +281,8 @@ pub mod pylib {
                 )
             })?;
 
-            let mut scan_tasks: BoxScanTaskIter = Box::new(scan_tasks.into_iter());
-
-            if let Some(cfg) = cfg {
-                scan_tasks = split_by_row_groups(
-                    scan_tasks,
-                    cfg.parquet_split_row_groups_max_files,
-                    cfg.scan_tasks_min_size_bytes,
-                    cfg.scan_tasks_max_size_bytes,
-                );
-
-                scan_tasks = merge_by_sizes(scan_tasks, &pushdowns, cfg);
-            }
-
             scan_tasks
+                .into_iter()
                 .map(|st| st.map(|task| task as Arc<dyn ScanTaskLike>))
                 .collect()
         }

@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use common_daft_config::{DaftExecutionConfig, DaftPlanningConfig};
+use common_daft_config::DaftPlanningConfig;
 use common_display::mermaid::MermaidDisplayOptions;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
@@ -16,7 +16,7 @@ use daft_schema::schema::{Schema, SchemaRef};
 use {
     crate::sink_info::{CatalogInfo, IcebergCatalogInfo},
     crate::source_info::InMemoryInfo,
-    common_daft_config::{PyDaftExecutionConfig, PyDaftPlanningConfig},
+    common_daft_config::PyDaftPlanningConfig,
     daft_dsl::python::PyExpr,
     // daft_scan::python::pylib::ScanOperatorHandle,
     daft_schema::python::schema::PySchema,
@@ -589,7 +589,7 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(logical_plan))
     }
 
-    pub fn optimize(&self, execution_config: Option<Arc<DaftExecutionConfig>>) -> DaftResult<Self> {
+    pub fn optimize(&self) -> DaftResult<Self> {
         let default_optimizer_config: OptimizerConfig = Default::default();
         let optimizer_config = OptimizerConfig {
             enable_actor_pool_projections: self
@@ -599,7 +599,7 @@ impl LogicalPlanBuilder {
                 .unwrap_or(default_optimizer_config.enable_actor_pool_projections),
             ..default_optimizer_config
         };
-        let optimizer = Optimizer::new(optimizer_config, execution_config);
+        let optimizer = Optimizer::new(optimizer_config);
 
         // Run LogicalPlan optimizations
         let unoptimized_plan = self.build();
@@ -957,13 +957,8 @@ impl PyLogicalPlanBuilder {
     }
 
     /// Optimize the underlying logical plan, returning a new plan builder containing the optimized plan.
-    pub fn optimize(
-        &self,
-        py: Python,
-        execution_config: Option<PyDaftExecutionConfig>,
-    ) -> PyResult<Self> {
-        let execution_config = execution_config.map(|cfg| cfg.config);
-        py.allow_threads(|| Ok(self.builder.optimize(execution_config)?.into()))
+    pub fn optimize(&self, py: Python) -> PyResult<Self> {
+        py.allow_threads(|| Ok(self.builder.optimize()?.into()))
     }
 
     pub fn repr_ascii(&self, simple: bool) -> PyResult<String> {

@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_scan_info::{PhysicalScanInfo, ScanState};
 use daft_schema::schema::SchemaRef;
@@ -34,16 +33,13 @@ impl Source {
     // Should only be called if a Source node's source info contains PhysicalScanInfo. The PhysicalScanInfo
     // should also hold a ScanState::Operator and not a ScanState::Tasks (which would indicate that we're
     // materializing this physical scan node multiple times).
-    pub(crate) fn build_materialized_scan_source(
-        mut self,
-        execution_config: Option<&DaftExecutionConfig>,
-    ) -> DaftResult<Self> {
+    pub(crate) fn build_materialized_scan_source(mut self) -> DaftResult<Self> {
         let new_physical_scan_info = match Arc::unwrap_or_clone(self.source_info) {
             SourceInfo::Physical(mut physical_scan_info) => {
                 let scan_tasks = match &physical_scan_info.scan_state {
                     ScanState::Operator(scan_op) => scan_op
                         .0
-                        .to_scan_tasks(physical_scan_info.pushdowns.clone(), execution_config)?,
+                        .to_scan_tasks(physical_scan_info.pushdowns.clone())?,
                     ScanState::Tasks(_) => {
                         panic!("Physical scan nodes are being materialized more than once");
                     }

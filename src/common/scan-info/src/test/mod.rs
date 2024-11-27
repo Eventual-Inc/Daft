@@ -46,6 +46,14 @@ impl ScanTaskLike for DummyScanTask {
         self.hash(&mut state);
     }
 
+    fn split_by_row_groups(
+        self: Arc<Self>,
+        _: usize,
+        _: usize,
+    ) -> DaftResult<Vec<Arc<dyn ScanTaskLike>>> {
+        Ok(vec![self])
+    }
+
     fn materialized_schema(&self) -> SchemaRef {
         self.schema.clone()
     }
@@ -129,11 +137,7 @@ impl ScanOperator for DummyScanOperator {
         vec!["DummyScanOperator".to_string()]
     }
 
-    fn to_scan_tasks(
-        &self,
-        pushdowns: Pushdowns,
-        _: Option<&DaftExecutionConfig>,
-    ) -> DaftResult<Vec<ScanTaskLikeRef>> {
+    fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<Vec<ScanTaskLikeRef>> {
         let scan_task = Arc::new(DummyScanTask {
             schema: self.schema.clone(),
             pushdowns,

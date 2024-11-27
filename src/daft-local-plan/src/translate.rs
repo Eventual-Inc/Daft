@@ -20,7 +20,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                     // We should be able to pass the ScanOperator into the physical plan directly but we need to figure out the serialization story
                     let scan_tasks = match &info.scan_state {
                         ScanState::Operator(scan_op) => {
-                            Arc::new(scan_op.0.to_scan_tasks(info.pushdowns.clone(), None)?)
+                            Arc::new(scan_op.0.to_scan_tasks(info.pushdowns.clone())?)
                         }
                         ScanState::Tasks(scan_tasks) => scan_tasks.clone(),
                     };

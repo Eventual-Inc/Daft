@@ -345,7 +345,7 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
         execution_id = str(uuid.uuid4())
 
         # Optimize the logical plan.
-        builder = builder.optimize(daft_execution_config)
+        builder = builder.optimize()
 
         if daft_execution_config.enable_aqe:
             adaptive_planner = builder.to_adaptive_physical_plan_scheduler(daft_execution_config)

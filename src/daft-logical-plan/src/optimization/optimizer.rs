@@ -1,6 +1,5 @@
 use std::{ops::ControlFlow, sync::Arc};
 
-use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_treenode::Transformed;
 
@@ -91,10 +90,7 @@ pub struct Optimizer {
 }
 
 impl Optimizer {
-    pub fn new(
-        config: OptimizerConfig,
-        execution_config: Option<Arc<DaftExecutionConfig>>,
-    ) -> Self {
+    pub fn new(config: OptimizerConfig) -> Self {
         let mut rule_batches = Vec::new();
 
         // --- Split ActorPoolProjection nodes from Project nodes ---
@@ -142,7 +138,7 @@ impl Optimizer {
 
         // --- Materialize scan nodes ---
         rule_batches.push(RuleBatch::new(
-            vec![Box::new(MaterializeScans::new(execution_config))],
+            vec![Box::new(MaterializeScans::new())],
             RuleExecutionStrategy::Once,
         ));
 
