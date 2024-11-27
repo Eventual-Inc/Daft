@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_runtime::RuntimeRef;
-use daft_core::join::JoinSide;
+use daft_core::{join::JoinSide, prelude::SchemaRef};
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
@@ -14,8 +14,10 @@ use crate::{
     ExecutionRuntimeContext,
 };
 
+#[derive(Default)]
 struct CrossJoinSinkState {
     right_side_buffer: Vec<Arc<MicroPartition>>,
+    received_left_morsels: bool,
     loop_index: usize,
 }
 
@@ -25,7 +27,15 @@ impl StreamingSinkState for CrossJoinSinkState {
     }
 }
 
-pub struct CrossJoinSink {}
+pub struct CrossJoinSink {
+    right_schema: SchemaRef,
+}
+
+impl CrossJoinSink {
+    pub fn new(right_schema: SchemaRef) -> Self {
+        Self { right_schema }
+    }
+}
 
 impl StreamingSink for CrossJoinSink {
     /// Cross join execute expects all right side morsels to be passed in first and then all left side morsels
@@ -36,25 +46,29 @@ impl StreamingSink for CrossJoinSink {
         mut state: Box<dyn StreamingSinkState>,
         runtime_ref: &RuntimeRef,
     ) -> StreamingSinkExecuteResult {
-        runtime_ref
-            .spawn(async move {
-                let join_state = state
-                    .as_any_mut()
-                    .downcast_mut::<CrossJoinSinkState>()
-                    .expect("Cross join sink should have CrossJoinSinkState");
+        if input.schema() == self.right_schema {
+            // collect right side morsels
 
-                if join_state
-                    .right_side_buffer
-                    .first()
-                    .map_or(true, |mp| mp.schema() == input.schema())
-                {
-                    // collect right side morsels
+            let join_state = state
+                .as_any_mut()
+                .downcast_mut::<CrossJoinSinkState>()
+                .expect("Cross join sink should have CrossJoinSinkState");
 
-                    join_state.right_side_buffer.push(input);
+            assert!(!join_state.received_left_morsels, "cross join morsels received out of order, expected all right side and then all left side");
 
-                    Ok((state, StreamingSinkOutput::NeedMoreInput(None)))
-                } else {
+            join_state.right_side_buffer.push(input);
+            Ok((state, StreamingSinkOutput::NeedMoreInput(None))).into()
+        } else {
+            runtime_ref
+                .spawn(async move {
                     // cross join left side morsel with each right side morsel, emitting the join between one pair of morsels at a time.
+
+                    let join_state = state
+                        .as_any_mut()
+                        .downcast_mut::<CrossJoinSinkState>()
+                        .expect("Cross join sink should have CrossJoinSinkState");
+
+                    join_state.received_left_morsels = true;
 
                     let right = &join_state.right_side_buffer[join_state.loop_index];
                     let output = Arc::new(input.cross_join(right, JoinSide::Left)?);
@@ -67,9 +81,9 @@ impl StreamingSink for CrossJoinSink {
                     } else {
                         Ok((state, StreamingSinkOutput::HasMoreOutput(output)))
                     }
-                }
-            })
-            .into()
+                })
+                .into()
+        }
     }
 
     fn name(&self) -> &'static str {
@@ -85,10 +99,7 @@ impl StreamingSink for CrossJoinSink {
     }
 
     fn make_state(&self) -> Box<dyn StreamingSinkState> {
-        Box::new(CrossJoinSinkState {
-            right_side_buffer: Vec::new(),
-            loop_index: 0,
-        })
+        Box::<CrossJoinSinkState>::default()
     }
 
     fn max_concurrency(&self) -> usize {

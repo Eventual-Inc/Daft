@@ -31,9 +31,10 @@ impl CrossJoin {
 
         fn try_clustering_spec_from(
             spec: &ClusteringSpec,
+            other_spec: &ClusteringSpec,
             num_partitions: usize,
         ) -> Option<ClusteringSpec> {
-            if spec.num_partitions() == 1 {
+            if other_spec.num_partitions() == 1 {
                 match spec {
                     ClusteringSpec::Hash(HashClusteringConfig { by, .. }) => Some(
                         ClusteringSpec::Hash(HashClusteringConfig::new(num_partitions, by.clone())),
@@ -52,17 +53,19 @@ impl CrossJoin {
             }
         }
 
-        let (outer_loop_side, clustering_spec) =
-            if let Some(spec) = try_clustering_spec_from(&left_spec, num_partitions) {
-                (JoinSide::Left, spec)
-            } else if let Some(spec) = try_clustering_spec_from(&right_spec, num_partitions) {
-                (JoinSide::Right, spec)
-            } else {
-                (
-                    JoinSide::Left,
-                    ClusteringSpec::Unknown(UnknownClusteringConfig::new(num_partitions)),
-                )
-            };
+        let (outer_loop_side, clustering_spec) = if let Some(spec) =
+            try_clustering_spec_from(&left_spec, &right_spec, num_partitions)
+        {
+            (JoinSide::Left, spec)
+        } else if let Some(spec) = try_clustering_spec_from(&right_spec, &left_spec, num_partitions)
+        {
+            (JoinSide::Right, spec)
+        } else {
+            (
+                JoinSide::Left,
+                ClusteringSpec::Unknown(UnknownClusteringConfig::new(num_partitions)),
+            )
+        };
 
         Self {
             left,

@@ -440,7 +440,11 @@ pub fn physical_plan_to_pipeline(
             let left_node = physical_plan_to_pipeline(left, psets, cfg)?;
             let right_node = physical_plan_to_pipeline(right, psets, cfg)?;
 
-            StreamingSinkNode::new(Arc::new(CrossJoinSink {}), vec![right_node, left_node]).boxed()
+            StreamingSinkNode::new(
+                Arc::new(CrossJoinSink::new(right.schema().clone())),
+                vec![right_node, left_node],
+            )
+            .boxed()
         }
         LocalPhysicalPlan::PhysicalWrite(PhysicalWrite {
             input,

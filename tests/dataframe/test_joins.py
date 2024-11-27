@@ -1146,3 +1146,58 @@ def test_cross_join(left_partitions, right_partitions, make_df, with_morsel_size
         "C": [2, 4, 6, 8, 2, 4, 6, 8, 2, 4, 6, 8],
         "D": ["d", "e", "f", "g", "d", "e", "f", "g", "d", "e", "f", "g"],
     }
+
+
+# TODO: fix native executor and enable test
+@pytest.mark.skip(reason="native executor fails when left side has no rows")
+@pytest.mark.parametrize("join_type", ["inner", "cross"])
+@pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
+@pytest.mark.parametrize(
+    "left,right",
+    [
+        ({"a": [1, 2, 3, 4], "b": ["a", "b", "c", "d"]}, {"c": [], "d": []}),
+        ({"a": [], "b": []}, {"c": [5, 6, 7], "d": ["e", "f", "g"]}),
+        ({"a": [], "b": []}, {"c": [], "d": []}),
+    ],
+)
+def test_join_empty(join_type, repartition_nparts, left, right, make_df, with_morsel_size):
+    left = pa.Table.from_pydict(
+        left,
+        schema=pa.schema(
+            [
+                ("a", pa.int32()),
+                ("b", pa.string()),
+            ]
+        ),
+    )
+    left_df = make_df(
+        left,
+        repartition=repartition_nparts,
+        repartition_columns=["a"],
+    )
+
+    right = pa.Table.from_pydict(
+        right,
+        schema=pa.schema(
+            [
+                ("c", pa.int32()),
+                ("d", pa.string()),
+            ]
+        ),
+    )
+    right_df = make_df(
+        right,
+        repartition=repartition_nparts,
+        repartition_columns=["c"],
+    )
+
+    if join_type == "cross":
+        left_on = None
+        right_on = None
+    else:
+        left_on = ["a"]
+        right_on = ["c"]
+
+    result = left_df.join(right_df, left_on=left_on, right_on=right_on, how=join_type)
+
+    assert result.to_pydict() == {"a": [], "b": [], "c": [], "d": []}
