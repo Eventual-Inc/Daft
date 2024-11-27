@@ -103,6 +103,8 @@ impl SQLTableFunction for ReadCsvFunction {
             1, // 1 positional argument (path)
         )?;
 
-        builder.finish().map_err(From::from)
+        let runtime = common_runtime::get_io_runtime(true);
+        let result = runtime.block_on(builder.finish())??;
+        Ok(result)
     }
 }

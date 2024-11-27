@@ -813,7 +813,7 @@ mod test {
         )
     }
 
-    fn make_glob_scan_operator(num_sources: usize) -> GlobScanOperator {
+    async fn make_glob_scan_operator(num_sources: usize) -> GlobScanOperator {
         let file_format_config: FileFormatConfig = FileFormatConfig::Parquet(ParquetSourceConfig {
             coerce_int96_timestamp_unit: TimeUnit::Seconds,
             field_id_mapping: None,
@@ -838,14 +838,15 @@ mod test {
             None,
             false,
         )
+        .await
         .unwrap();
 
         glob_scan_operator
     }
 
-    #[test]
-    fn test_glob_display_condenses() -> DaftResult<()> {
-        let glob_scan_operator: GlobScanOperator = make_glob_scan_operator(8);
+    #[tokio::test]
+    async fn test_glob_display_condenses() -> DaftResult<()> {
+        let glob_scan_operator: GlobScanOperator = make_glob_scan_operator(8).await;
         let condensed_glob_paths: Vec<String> = glob_scan_operator.multiline_display();
         assert_eq!(condensed_glob_paths[1], "Glob paths = [../../tests/assets/parquet-data/mvp.parquet, ../../tests/assets/parquet-data/mvp.parquet, ../../tests/assets/parquet-data/mvp.parquet, ..., ../../tests/assets/parquet-data/mvp.parquet, ../../tests/assets/parquet-data/mvp.parquet, ../../tests/assets/parquet-data/mvp.parquet]");
         Ok(())
