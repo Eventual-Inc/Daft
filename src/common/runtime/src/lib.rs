@@ -104,6 +104,8 @@ impl Runtime {
     ///
     /// For example, URL download is an async function, but it is called from a synchronous function in a tokio runtime,
     /// i.e. calling the Expression Evaluator from the Native Executor.
+    ///
+    /// In the future, we should refactor the code to be fully async, but for now, this is a workaround.
     pub fn block_on<F>(&self, future: F) -> DaftResult<F::Output>
     where
         F: Future + Send + 'static,
