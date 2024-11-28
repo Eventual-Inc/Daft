@@ -1051,6 +1051,7 @@ class DataFrame:
         import sys
 
         from daft import from_pydict
+        from daft.io.object_store_options import io_config_to_storage_options
 
         if sys.version_info < (3, 9):
             raise ValueError("'write_lance' requires python 3.9 or higher")
@@ -1105,7 +1106,8 @@ class DataFrame:
         elif mode == "append":
             operation = lance.LanceOperation.Append(fragments)
 
-        dataset = lance.LanceDataset.commit(table_uri, operation, read_version=version)
+        storage_options = io_config_to_storage_options(io_config, table_uri)
+        dataset = lance.LanceDataset.commit(table_uri, operation, read_version=version, storage_options=storage_options)
         stats = dataset.stats.dataset_stats()
 
         tbl = from_pydict(
