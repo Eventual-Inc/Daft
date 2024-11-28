@@ -781,7 +781,9 @@ class Expression:
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr >> expr._expr)
 
-    def count(self, mode: builtins.str | CountMode = CountMode.Valid) -> Expression:
+    def count(
+        self, mode: Literal["all"] | Literal["valid"] | Literal["null"] | CountMode = CountMode.Valid
+    ) -> Expression:
         """Counts the number of values in the expression.
 
         Args:
@@ -3011,7 +3013,9 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(native.list_value_counts(self._expr))
 
-    def count(self, mode: str | CountMode = CountMode.Valid) -> Expression:
+    def count(
+        self, mode: Literal["all"] | Literal["valid"] | Literal["null"] | CountMode = CountMode.Valid
+    ) -> Expression:
         """Counts the number of elements in each list
 
         Args:
