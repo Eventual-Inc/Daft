@@ -117,7 +117,9 @@ pub mod pylib {
             file_path_column: Option<String>,
         ) -> PyResult<Self> {
             py.allow_threads(|| {
-                let operator = Arc::new(GlobScanOperator::try_new(
+                let executor = common_runtime::get_io_runtime(true);
+
+                let task = GlobScanOperator::try_new(
                     glob_path,
                     file_format_config.into(),
                     storage_config.into(),
@@ -125,7 +127,11 @@ pub mod pylib {
                     schema.map(|s| s.schema),
                     file_path_column,
                     hive_partitioning,
-                )?);
+                );
+
+                let operator = executor.block_on(task)??;
+                let operator = Arc::new(operator);
+
                 Ok(Self {
                     scan_op: ScanOperatorRef(operator),
                 })

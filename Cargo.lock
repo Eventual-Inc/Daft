@@ -2415,6 +2415,7 @@ dependencies = [
  "pyo3",
  "serde",
  "snafu",
+ "tokio",
  "typetag",
  "urlencoding",
 ]
@@ -2479,6 +2480,7 @@ dependencies = [
  "common-daft-config",
  "common-error",
  "common-io-config",
+ "common-runtime",
  "daft-core",
  "daft-dsl",
  "daft-functions",

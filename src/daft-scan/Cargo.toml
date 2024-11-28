@@ -28,6 +28,9 @@ snafu = {workspace = true}
 typetag = {workspace = true}
 urlencoding = "2.1.3"
 
+[dev-dependencies]
+tokio = {workspace = true, features = ["full"]}
+
 [features]
 python = ["dep:pyo3", "common-error/python", "daft-core/python", "daft-logical-plan/python", "daft-table/python", "daft-stats/python", "common-file-formats/python", "common-io-config/python", "common-daft-config/python", "common-scan-info/python", "daft-schema/python"]
 

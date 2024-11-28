@@ -16,7 +16,7 @@ use daft_schema::{
 };
 use daft_stats::PartitionSpec;
 use daft_table::Table;
-use futures::{stream::BoxStream, StreamExt, TryStreamExt};
+use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
 use snafu::Snafu;
 
 use crate::{
@@ -73,32 +73,23 @@ impl From<Error> for DaftError {
     }
 }
 
-type FileInfoIterator = Box<dyn Iterator<Item = DaftResult<FileMetadata>>>;
-
-fn run_glob(
+async fn run_glob(
     glob_path: &str,
     limit: Option<usize>,
     io_client: Arc<IOClient>,
-    runtime: RuntimeRef,
     io_stats: Option<IOStatsRef>,
     file_format: FileFormat,
-) -> DaftResult<FileInfoIterator> {
+) -> DaftResult<impl Stream<Item = DaftResult<FileMetadata>> + Send> {
     let (_, parsed_glob_path) = parse_url(glob_path)?;
     // Construct a static-lifetime BoxStream returning the FileMetadata
     let glob_input = parsed_glob_path.as_ref().to_string();
-    let boxstream = runtime.block_on_current_thread(async move {
-        io_client
-            .glob(glob_input, None, None, limit, io_stats, Some(file_format))
-            .await
-    })?;
+    let stream = io_client
+        .glob(glob_input, None, None, limit, io_stats, Some(file_format))
+        .await?;
 
-    // Construct a static-lifetime BoxStreamIterator
-    let iterator = BoxStreamIterator {
-        boxstream,
-        runtime_handle: runtime.clone(),
-    };
-    let iterator = iterator.map(|fm| Ok(fm?));
-    Ok(Box::new(iterator))
+    let stream = stream.map_err(|e| e.into());
+
+    Ok(stream)
 }
 
 fn run_glob_parallel(
@@ -139,7 +130,7 @@ fn run_glob_parallel(
 }
 
 impl GlobScanOperator {
-    pub fn try_new(
+    pub async fn try_new(
         glob_paths: Vec<String>,
         file_format_config: Arc<FileFormatConfig>,
         storage_config: Arc<StorageConfig>,
@@ -157,7 +148,7 @@ impl GlobScanOperator {
 
         let file_format = file_format_config.file_format();
 
-        let (io_runtime, io_client) = storage_config.get_io_client_and_runtime()?;
+        let (_, io_client) = storage_config.get_io_client_and_runtime()?;
         let io_stats = IOStatsContext::new(format!(
             "GlobScanOperator::try_new schema inference for {first_glob_path}"
         ));
@@ -165,14 +156,15 @@ impl GlobScanOperator {
             first_glob_path,
             Some(1),
             io_client.clone(),
-            io_runtime,
             Some(io_stats.clone()),
             file_format,
-        )?;
+        )
+        .await?;
+
         let FileMetadata {
             filepath: first_filepath,
             ..
-        } = match paths.next() {
+        } = match paths.next().await {
             Some(file_metadata) => file_metadata,
             None => Err(Error::GlobNoMatch {
                 glob_path: first_glob_path.to_string(),
@@ -228,7 +220,8 @@ impl GlobScanOperator {
                                 ..Default::default()
                             },
                             field_id_mapping.clone(),
-                        )?;
+                        )
+                        .await?;
 
                         schema
                     }
@@ -256,16 +249,20 @@ impl GlobScanOperator {
                             None,
                             io_client,
                             Some(io_stats),
-                        )?;
+                        )
+                        .await?;
                         schema
                     }
-                    FileFormatConfig::Json(_) => daft_json::schema::read_json_schema(
-                        first_filepath.as_str(),
-                        None,
-                        None,
-                        io_client,
-                        Some(io_stats),
-                    )?,
+                    FileFormatConfig::Json(_) => {
+                        daft_json::schema::read_json_schema(
+                            first_filepath.as_str(),
+                            None,
+                            None,
+                            io_client,
+                            Some(io_stats),
+                        )
+                        .await?
+                    }
                     #[cfg(feature = "python")]
                     FileFormatConfig::Database(_) => {
                         return Err(DaftError::ValueError(

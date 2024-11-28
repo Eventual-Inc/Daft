@@ -1148,19 +1148,66 @@ def test_cross_join(left_partitions, right_partitions, make_df, with_morsel_size
     }
 
 
-# TODO: fix native executor and enable test
-@pytest.mark.skip(reason="native executor fails when left side has no rows")
-@pytest.mark.parametrize("join_type", ["inner", "cross"])
+@pytest.mark.parametrize("join_type", ["inner", "left", "right", "outer", "anti", "semi", "cross"])
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
 @pytest.mark.parametrize(
-    "left,right",
+    "left,right,expected",
     [
-        ({"a": [1, 2, 3, 4], "b": ["a", "b", "c", "d"]}, {"c": [], "d": []}),
-        ({"a": [], "b": []}, {"c": [5, 6, 7], "d": ["e", "f", "g"]}),
-        ({"a": [], "b": []}, {"c": [], "d": []}),
+        # Case 1: Left has data, right is empty
+        (
+            {"a": [1, 2, 3, 4], "b": ["a", "b", "c", "d"]},
+            {"c": [], "d": []},
+            {
+                "inner": {"a": [], "b": [], "c": [], "d": []},
+                "left": {
+                    "a": [1, 2, 3, 4],
+                    "b": ["a", "b", "c", "d"],
+                    "c": [None, None, None, None],
+                    "d": [None, None, None, None],
+                },
+                "right": {"a": [], "b": [], "c": [], "d": []},
+                "outer": {
+                    "a": [1, 2, 3, 4],
+                    "b": ["a", "b", "c", "d"],
+                    "c": [None, None, None, None],
+                    "d": [None, None, None, None],
+                },
+                "anti": {"a": [1, 2, 3, 4], "b": ["a", "b", "c", "d"]},
+                "semi": {"a": [], "b": []},
+                "cross": {"a": [], "b": [], "c": [], "d": []},
+            },
+        ),
+        # Case 2: Left is empty, right has data
+        (
+            {"a": [], "b": []},
+            {"c": [5, 6, 7], "d": ["e", "f", "g"]},
+            {
+                "inner": {"a": [], "b": [], "c": [], "d": []},
+                "left": {"a": [], "b": [], "c": [], "d": []},
+                "right": {"a": [None, None, None], "b": [None, None, None], "c": [5, 6, 7], "d": ["e", "f", "g"]},
+                "outer": {"a": [None, None, None], "b": [None, None, None], "c": [5, 6, 7], "d": ["e", "f", "g"]},
+                "anti": {"a": [], "b": []},
+                "semi": {"a": [], "b": []},
+                "cross": {"a": [], "b": [], "c": [], "d": []},
+            },
+        ),
+        # Case 3: Both empty
+        (
+            {"a": [], "b": []},
+            {"c": [], "d": []},
+            {
+                "inner": {"a": [], "b": [], "c": [], "d": []},
+                "left": {"a": [], "b": [], "c": [], "d": []},
+                "right": {"a": [], "b": [], "c": [], "d": []},
+                "outer": {"a": [], "b": [], "c": [], "d": []},
+                "anti": {"a": [], "b": []},
+                "semi": {"a": [], "b": []},
+                "cross": {"a": [], "b": [], "c": [], "d": []},
+            },
+        ),
     ],
 )
-def test_join_empty(join_type, repartition_nparts, left, right, make_df, with_morsel_size):
+def test_join_empty(join_type, repartition_nparts, left, right, expected, make_df, with_morsel_size):
     left = pa.Table.from_pydict(
         left,
         schema=pa.schema(
@@ -1191,13 +1238,15 @@ def test_join_empty(join_type, repartition_nparts, left, right, make_df, with_mo
         repartition_columns=["c"],
     )
 
-    if join_type == "cross":
-        left_on = None
-        right_on = None
-    else:
-        left_on = ["a"]
-        right_on = ["c"]
+    left_on = ["a"]
+    right_on = ["c"]
 
     result = left_df.join(right_df, left_on=left_on, right_on=right_on, how=join_type)
+    if join_type in ["inner", "left", "right", "outer", "cross"]:
+        result = result.sort(["a", "b", "c", "d"])
+    else:
+        result = result.sort(["a", "b"])
 
-    assert result.to_pydict() == {"a": [], "b": [], "c": [], "d": []}
+    expected_result = expected[join_type]
+
+    assert result.to_pydict() == expected_result

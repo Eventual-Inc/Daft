@@ -57,13 +57,20 @@ pub mod pylib {
                 multithreaded_io.unwrap_or(true),
                 io_config.unwrap_or_default().config.into(),
             )?;
-            let schema = crate::schema::read_json_schema(
-                uri,
-                parse_options,
-                max_bytes,
-                io_client,
-                Some(io_stats),
-            )?;
+
+            let runtime_handle = common_runtime::get_io_runtime(true);
+
+            let schema = runtime_handle.block_on_current_thread(async {
+                crate::schema::read_json_schema(
+                    uri,
+                    parse_options,
+                    max_bytes,
+                    io_client,
+                    Some(io_stats),
+                )
+                .await
+            })?;
+
             Ok(Arc::new(schema).into())
         })
     }

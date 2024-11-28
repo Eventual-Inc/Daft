@@ -388,12 +388,14 @@ impl LocalPhysicalPlan {
             | Self::CrossJoin(CrossJoin { schema, .. })
             | Self::Explode(Explode { schema, .. })
             | Self::Unpivot(Unpivot { schema, .. })
-            | Self::Concat(Concat { schema, .. }) => schema,
+            | Self::Concat(Concat { schema, .. })
+            | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { schema, .. }) => schema,
+            Self::PhysicalWrite(PhysicalWrite { file_schema, .. }) => file_schema,
             Self::InMemoryScan(InMemoryScan { info, .. }) => &info.source_schema,
-
-            Self::MonotonicallyIncreasingId(_) | Self::PhysicalWrite(_) => todo!("{:?}", self),
             #[cfg(feature = "python")]
-            Self::CatalogWrite(_) | Self::LanceWrite(_) => todo!("{:?}", self),
+            Self::CatalogWrite(CatalogWrite { file_schema, .. }) => file_schema,
+            #[cfg(feature = "python")]
+            Self::LanceWrite(LanceWrite { file_schema, .. }) => file_schema,
         }
     }
 }

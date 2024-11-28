@@ -55,13 +55,20 @@ pub mod pylib {
                 multithreaded_io.unwrap_or(true),
                 io_config.unwrap_or_default().config.into(),
             )?;
-            let (schema, _) = crate::metadata::read_csv_schema(
-                uri,
-                parse_options,
-                max_bytes,
-                io_client,
-                Some(io_stats),
-            )?;
+
+            let runtime = common_runtime::get_io_runtime(multithreaded_io.unwrap_or(true));
+
+            let (schema, _) = runtime.block_on_current_thread(async move {
+                crate::metadata::read_csv_schema(
+                    uri,
+                    parse_options,
+                    max_bytes,
+                    io_client,
+                    Some(io_stats),
+                )
+                .await
+            })?;
+
             Ok(Arc::new(schema).into())
         })
     }
