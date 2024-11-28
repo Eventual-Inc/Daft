@@ -728,7 +728,13 @@ class DataFrame:
                 partitioning[field].append(getattr(data_file.partition, field, None))
 
         if parse(pyiceberg.__version__) >= parse("0.7.0"):
-            from pyiceberg.table import ALWAYS_TRUE, PropertyUtil, TableProperties
+            from pyiceberg.table import ALWAYS_TRUE, TableProperties
+            if parse(pyiceberg.__version__) >= parse("0.8.0"):
+                from pyiceberg.utils.properties import property_as_bool
+                property_as_bool = property_as_bool
+            if parse(pyiceberg.__version__) < parse("0.8.0"):
+                from pyiceberg.table import PropertyUtil
+                property_as_bool = PropertyUtil.property_as_bool
 
             tx = table.transaction()
 
@@ -737,7 +743,7 @@ class DataFrame:
 
             update_snapshot = tx.update_snapshot()
 
-            manifest_merge_enabled = mode == "append" and PropertyUtil.property_as_bool(
+            manifest_merge_enabled = mode == "append" and property_as_bool(
                 tx.table_metadata.properties,
                 TableProperties.MANIFEST_MERGE_ENABLED,
                 TableProperties.MANIFEST_MERGE_ENABLED_DEFAULT,
