@@ -15,9 +15,6 @@ use crate::Pushdowns;
 
 #[typetag::serde(tag = "type")]
 pub trait ScanTaskLike: Debug + DisplayAs + Send + Sync {
-    fn is_scan_task(&self) -> bool {
-        false
-    }
     fn as_any(&self) -> &dyn Any;
     fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
     fn dyn_eq(&self, other: &dyn ScanTaskLike) -> bool;

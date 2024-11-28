@@ -316,7 +316,10 @@ fn split_and_merge_pass(
     cfg: &DaftExecutionConfig,
 ) -> DaftResult<Arc<Vec<ScanTaskLikeRef>>> {
     // Perform scan task splitting and merging if there are only ScanTasks (i.e. no DummyScanTasks).
-    if scan_tasks.iter().all(|st| st.is_scan_task()) {
+    if scan_tasks
+        .iter()
+        .all(|st| st.as_any().downcast_ref::<ScanTask>().is_some())
+    {
         // TODO(desmond): Here we downcast Arc<dyn ScanTaskLike> to Arc<ScanTask>. ScanTask and DummyScanTask (test only) are
         // the only non-test implementer of ScanTaskLike. It might be possible to avoid the downcast by implementing merging
         // at the trait level, but today that requires shifting around a non-trivial amount of code to avoid circular dependencies.

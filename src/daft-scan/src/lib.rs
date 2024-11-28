@@ -436,10 +436,6 @@ pub struct ScanTask {
 
 #[typetag::serde]
 impl ScanTaskLike for ScanTask {
-    fn is_scan_task(&self) -> bool {
-        true
-    }
-
     fn as_any(&self) -> &dyn Any {
         self
     }
