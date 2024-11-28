@@ -7,7 +7,7 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
-use common_scan_info::{PhysicalScanInfo, ScanState};
+use common_scan_info::{PhysicalScanInfo, ScanState, SPLIT_AND_MERGE_PASS};
 use daft_core::prelude::*;
 use daft_dsl::{
     col, functions::agg::merge_mean, is_partition_compatible, AggExpr, ApproxPercentileParams,
@@ -65,18 +65,13 @@ pub(super) fn translate_single_logical_node(
                     ))
                     .arced())
                 } else {
-                    // Perform scan task splitting and merging if there are only ScanTasks (i.e. no DummyScanTasks).
-                    // let scan_tasks = if scan_tasks.iter().all(|st| st.is_scan_task()) {
-                    //     let split_tasks = split_by_row_groups(
-                    //         scan_tasks,
-                    //         cfg.parquet_split_row_groups_max_files,
-                    //         cfg.scan_tasks_min_size_bytes,
-                    //         cfg.scan_tasks_max_size_bytes,
-                    //     )?;
-                    //     merge_by_sizes(split_tasks, pushdowns, cfg)?
-                    // } else {
-                    //     scan_tasks
-                    // };
+                    // Perform scan task splitting and merging.
+                    let scan_tasks = if let Some(split_and_merge_pass) = SPLIT_AND_MERGE_PASS.get()
+                    {
+                        split_and_merge_pass(scan_tasks, pushdowns, cfg)?
+                    } else {
+                        scan_tasks
+                    };
 
                     let clustering_spec = Arc::new(ClusteringSpec::Unknown(
                         UnknownClusteringConfig::new(scan_tasks.len()),

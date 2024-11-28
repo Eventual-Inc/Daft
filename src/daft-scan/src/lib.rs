@@ -9,15 +9,13 @@ use std::{
 };
 
 use common_display::DisplayAs;
-use common_error::{DaftError, DaftResult};
-use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
+use common_error::DaftError;
+use common_file_formats::FileFormatConfig;
 use common_scan_info::{Pushdowns, ScanTaskLike, ScanTaskLikeRef};
-use daft_io::IOStatsContext;
-use daft_parquet::read::read_parquet_metadata;
 use daft_schema::schema::{Schema, SchemaRef};
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
 use itertools::Itertools;
-use parquet2::metadata::{FileMetaData, RowGroupList};
+use parquet2::metadata::FileMetaData;
 use serde::{Deserialize, Serialize};
 
 mod anonymous;

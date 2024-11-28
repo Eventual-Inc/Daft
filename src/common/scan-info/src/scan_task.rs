@@ -2,11 +2,12 @@ use std::{
     any::Any,
     fmt::Debug,
     hash::{Hash, Hasher},
-    sync::Arc,
+    sync::{Arc, OnceLock},
 };
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::DisplayAs;
+use common_error::DaftResult;
 use common_file_formats::FileFormatConfig;
 use daft_schema::schema::SchemaRef;
 
@@ -57,3 +58,13 @@ impl Hash for dyn ScanTaskLike + '_ {
     }
 }
 
+// Forward declare splitting and merging pass so that scan tasks can be split and merged
+// with common/scan-info without importing daft-scan.
+pub type SplitAndMergePass = dyn Fn(
+        Arc<Vec<ScanTaskLikeRef>>,
+        &Pushdowns,
+        &DaftExecutionConfig,
+    ) -> DaftResult<Arc<Vec<ScanTaskLikeRef>>>
+    + Sync
+    + Send;
+pub static SPLIT_AND_MERGE_PASS: OnceLock<&SplitAndMergePass> = OnceLock::new();
