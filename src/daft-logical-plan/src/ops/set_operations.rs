@@ -183,10 +183,7 @@ impl Union {
             (self.lhs.clone(), self.rhs.clone())
         };
         // we don't want to use `try_new` as we have already checked the schema
-        let concat = LogicalPlan::Concat(Concat {
-            input: lhs,
-            other: rhs,
-        });
+        let concat = LogicalPlan::Concat(Concat::new(lhs, rhs));
         if self.is_all {
             Ok(concat)
         } else {

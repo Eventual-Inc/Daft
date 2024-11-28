@@ -113,7 +113,7 @@ impl PushDownFilter {
                             needing_filter_op,
                         } = rewrite_predicate_for_partitioning(
                             &new_predicate,
-                            external_info.scan_op.0.partitioning_keys(),
+                            external_info.scan_state.get_scan_op().0.partitioning_keys(),
                         )?;
                         assert!(
                             partition_only_filter.len()
@@ -239,7 +239,7 @@ impl PushDownFilter {
                     .into();
                 child_plan.with_new_children(&[new_filter]).into()
             }
-            LogicalPlan::Concat(Concat { input, other }) => {
+            LogicalPlan::Concat(Concat { input, other, .. }) => {
                 // Push filter into each side of the concat.
                 let new_input: LogicalPlan =
                     Filter::try_new(input.clone(), filter.predicate.clone())?.into();

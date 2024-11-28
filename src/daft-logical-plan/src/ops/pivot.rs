@@ -9,6 +9,7 @@ use snafu::ResultExt;
 
 use crate::{
     logical_plan::{self, CreationSnafu},
+    stats::StatsState,
     LogicalPlan,
 };
 
@@ -21,6 +22,7 @@ pub struct Pivot {
     pub aggregation: AggExpr,
     pub names: Vec<String>,
     pub output_schema: SchemaRef,
+    pub stats_state: StatsState,
 }
 
 impl Pivot {
@@ -78,7 +80,15 @@ impl Pivot {
             aggregation: agg_expr.clone(),
             names,
             output_schema,
+            stats_state: StatsState::NotMaterialized,
         })
+    }
+
+    pub(crate) fn with_materialized_stats(mut self) -> Self {
+        // TODO(desmond): Pivoting does affect cardinality, but for now we keep the old logic.
+        let input_stats = self.input.materialized_stats();
+        self.stats_state = StatsState::Materialized(input_stats.clone().into());
+        self
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
@@ -95,6 +105,9 @@ impl Pivot {
             "Output schema = {}",
             self.output_schema.short_string()
         ));
+        if let StatsState::Materialized(stats) = &self.stats_state {
+            res.push(format!("Stats = {}", stats));
+        }
         res
     }
 }

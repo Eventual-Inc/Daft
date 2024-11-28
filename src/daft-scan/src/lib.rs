@@ -1,6 +1,12 @@
 #![feature(if_let_guard)]
 #![feature(let_chains)]
-use std::{any::Any, borrow::Cow, fmt::Debug, sync::Arc};
+use std::{
+    any::Any,
+    borrow::Cow,
+    fmt::Debug,
+    hash::{Hash, Hasher},
+    sync::Arc,
+};
 
 use common_display::DisplayAs;
 use common_error::DaftError;
@@ -100,7 +106,7 @@ impl From<Error> for pyo3::PyErr {
 }
 
 /// Specification of a subset of a file to be read.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum ChunkSpec {
     /// Selection of Parquet row groups.
     Parquet(Vec<i64>),
@@ -147,6 +153,63 @@ pub enum DataSource {
         statistics: Option<TableStatistics>,
         partition_spec: Option<PartitionSpec>,
     },
+}
+
+impl Hash for DataSource {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        // Hash everything except for cached parquet metadata.
+        match self {
+            Self::File {
+                path,
+                chunk_spec,
+                size_bytes,
+                iceberg_delete_files,
+                metadata,
+                partition_spec,
+                statistics,
+                ..
+            } => {
+                path.hash(state);
+                if let Some(chunk_spec) = chunk_spec {
+                    chunk_spec.hash(state);
+                }
+                size_bytes.hash(state);
+                iceberg_delete_files.hash(state);
+                metadata.hash(state);
+                partition_spec.hash(state);
+                statistics.hash(state);
+            }
+            Self::Database {
+                path,
+                size_bytes,
+                metadata,
+                statistics,
+            } => {
+                path.hash(state);
+                size_bytes.hash(state);
+                metadata.hash(state);
+                statistics.hash(state);
+            }
+            #[cfg(feature = "python")]
+            Self::PythonFactoryFunction {
+                module,
+                func_name,
+                func_args,
+                size_bytes,
+                metadata,
+                statistics,
+                partition_spec,
+            } => {
+                module.hash(state);
+                func_name.hash(state);
+                func_args.hash(state);
+                size_bytes.hash(state);
+                metadata.hash(state);
+                statistics.hash(state);
+                partition_spec.hash(state);
+            }
+        }
+    }
 }
 
 impl DataSource {
@@ -349,7 +412,7 @@ impl DisplayAs for DataSource {
     }
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize, Hash)]
 pub struct ScanTask {
     pub sources: Vec<DataSource>,
 
@@ -386,6 +449,10 @@ impl ScanTaskLike for ScanTask {
             .as_any()
             .downcast_ref::<Self>()
             .map_or(false, |a| a == self)
+    }
+
+    fn dyn_hash(&self, mut state: &mut dyn Hasher) {
+        self.hash(&mut state);
     }
 
     fn materialized_schema(&self) -> SchemaRef {

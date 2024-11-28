@@ -51,14 +51,14 @@ mod test {
             ])
             .unwrap(),
         );
-        LogicalPlan::Source(Source {
-            output_schema: schema.clone(),
-            source_info: Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
+        LogicalPlan::Source(Source::new(
+            schema.clone(),
+            Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
                 source_schema: schema,
                 clustering_spec: Arc::new(ClusteringSpec::unknown()),
                 source_id: 0,
             })),
-        })
+        ))
         .arced()
     }
 
@@ -71,25 +71,25 @@ mod test {
             ])
             .unwrap(),
         );
-        LogicalPlan::Source(Source {
-            output_schema: schema.clone(),
-            source_info: Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
+        LogicalPlan::Source(Source::new(
+            schema.clone(),
+            Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
                 source_schema: schema,
                 clustering_spec: Arc::new(ClusteringSpec::unknown()),
                 source_id: 0,
             })),
-        })
+        ))
         .arced()
     }
 
     #[test]
     // create a random, complex plan and check if it can be displayed as expected
     fn test_mermaid_display() -> DaftResult<()> {
-        let subplan = LogicalPlanBuilder::new(plan_1(), None)
+        let subplan = LogicalPlanBuilder::from(plan_1())
             .filter(col("id").eq(lit(1)))?
             .build();
 
-        let subplan2 = LogicalPlanBuilder::new(plan_2(), None)
+        let subplan2 = LogicalPlanBuilder::from(plan_2())
             .filter(
                 startswith(col("last_name"), lit("S")).and(endswith(col("last_name"), lit("n"))),
             )?
@@ -99,7 +99,7 @@ mod test {
             .sort(vec![col("last_name")], vec![false], vec![false])?
             .build();
 
-        let plan = LogicalPlanBuilder::new(subplan, None)
+        let plan = LogicalPlanBuilder::from(subplan)
             .join(
                 subplan2,
                 vec![col("id")],
@@ -159,11 +159,11 @@ Project1 --> Limit0
     #[test]
     // create a random, complex plan and check if it can be displayed as expected
     fn test_mermaid_display_simple() -> DaftResult<()> {
-        let subplan = LogicalPlanBuilder::new(plan_1(), None)
+        let subplan = LogicalPlanBuilder::from(plan_1())
             .filter(col("id").eq(lit(1)))?
             .build();
 
-        let subplan2 = LogicalPlanBuilder::new(plan_2(), None)
+        let subplan2 = LogicalPlanBuilder::from(plan_2())
             .filter(
                 startswith(col("last_name"), lit("S")).and(endswith(col("last_name"), lit("n"))),
             )?
@@ -173,7 +173,7 @@ Project1 --> Limit0
             .sort(vec![col("last_name")], vec![false], vec![false])?
             .build();
 
-        let plan = LogicalPlanBuilder::new(subplan, None)
+        let plan = LogicalPlanBuilder::from(subplan)
             .join_with_null_safe_equal(
                 subplan2,
                 vec![col("id")],

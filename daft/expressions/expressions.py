@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 import math
 import os
 import warnings
@@ -43,8 +44,6 @@ from daft.logical.schema import Field, Schema
 from daft.series import Series, item_to_series
 
 if TYPE_CHECKING:
-    import builtins
-
     from daft.io import IOConfig
     from daft.udf import PartialStatefulUDF, PartialStatelessUDF
 # This allows Sphinx to correctly work against our "namespaced" accessor functions by overriding @property to
@@ -782,12 +781,16 @@ class Expression:
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr >> expr._expr)
 
-    def count(self, mode: CountMode = CountMode.Valid) -> Expression:
+    def count(
+        self, mode: Literal["all"] | Literal["valid"] | Literal["null"] | CountMode = CountMode.Valid
+    ) -> Expression:
         """Counts the number of values in the expression.
 
         Args:
-            mode: whether to count all values, non-null (valid) values, or null values. Defaults to CountMode.Valid.
+            mode: A string ("all", "valid", or "null") that represents whether to count all values, non-null (valid) values, or null values. Defaults to "valid".
         """
+        if isinstance(mode, builtins.str):
+            mode = CountMode.from_count_mode_str(mode)
         expr = self._expr.count(mode)
         return Expression._from_pyexpr(expr)
 
@@ -3010,15 +3013,19 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(native.list_value_counts(self._expr))
 
-    def count(self, mode: CountMode = CountMode.Valid) -> Expression:
+    def count(
+        self, mode: Literal["all"] | Literal["valid"] | Literal["null"] | CountMode = CountMode.Valid
+    ) -> Expression:
         """Counts the number of elements in each list
 
         Args:
-            mode: The mode to use for counting. Defaults to CountMode.Valid
+            mode: A string ("all", "valid", or "null") that represents whether to count all values, non-null (valid) values, or null values. Defaults to "valid".
 
         Returns:
             Expression: a UInt64 expression which is the length of each list
         """
+        if isinstance(mode, str):
+            mode = CountMode.from_count_mode_str(mode)
         return Expression._from_pyexpr(native.list_count(self._expr, mode))
 
     def lengths(self) -> Expression:

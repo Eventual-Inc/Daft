@@ -7,7 +7,7 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
-use common_scan_info::PhysicalScanInfo;
+use common_scan_info::{PhysicalScanInfo, ScanState, SPLIT_AND_MERGE_PASS};
 use daft_core::prelude::*;
 use daft_dsl::{
     col, functions::agg::merge_mean, is_partition_compatible, AggExpr, ApproxPercentileParams,
@@ -38,15 +38,22 @@ pub(super) fn translate_single_logical_node(
     physical_children: &mut Vec<PhysicalPlanRef>,
     cfg: &DaftExecutionConfig,
 ) -> DaftResult<PhysicalPlanRef> {
-    match logical_plan {
+    let physical_plan = match logical_plan {
         LogicalPlan::Source(Source { source_info, .. }) => match source_info.as_ref() {
             SourceInfo::Physical(PhysicalScanInfo {
                 pushdowns,
-                scan_op,
+                scan_state,
                 source_schema,
                 ..
             }) => {
-                let scan_tasks = scan_op.0.to_scan_tasks(pushdowns.clone(), Some(cfg))?;
+                let scan_tasks = {
+                    match scan_state {
+                        ScanState::Operator(scan_op) => {
+                            Arc::new(scan_op.0.to_scan_tasks(pushdowns.clone())?)
+                        }
+                        ScanState::Tasks(scan_tasks) => scan_tasks.clone(),
+                    }
+                };
 
                 if scan_tasks.is_empty() {
                     let clustering_spec =
@@ -58,6 +65,14 @@ pub(super) fn translate_single_logical_node(
                     ))
                     .arced())
                 } else {
+                    // Perform scan task splitting and merging.
+                    let scan_tasks = if let Some(split_and_merge_pass) = SPLIT_AND_MERGE_PASS.get()
+                    {
+                        split_and_merge_pass(scan_tasks, pushdowns, cfg)?
+                    } else {
+                        scan_tasks
+                    };
+
                     let clustering_spec = Arc::new(ClusteringSpec::Unknown(
                         UnknownClusteringConfig::new(scan_tasks.len()),
                     ));
@@ -205,7 +220,7 @@ pub(super) fn translate_single_logical_node(
             };
             Ok(repartitioned_plan.arced())
         }
-        LogicalPlan::Distinct(LogicalDistinct { input }) => {
+        LogicalPlan::Distinct(LogicalDistinct { input, .. }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
             let col_exprs = input
                 .schema()
@@ -772,7 +787,12 @@ pub(super) fn translate_single_logical_node(
         LogicalPlan::Union(_) => Err(DaftError::InternalError(
             "Union should already be optimized away".to_string(),
         )),
-    }
+    }?;
+    // TODO(desmond): We can't perform this check for now because ScanTasks currently provide
+    // different size estimations depending on when the approximation is computed. Once we fix
+    // this, we can add back in the assertion here.
+    // debug_assert!(logical_plan.get_stats().approx_stats == physical_plan.approximate_stats());
+    Ok(physical_plan)
 }
 
 pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
