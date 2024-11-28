@@ -732,7 +732,7 @@ class DataFrame:
             if parse(pyiceberg.__version__) >= parse("0.8.0"):
                 from pyiceberg.utils.properties import property_as_bool
                 property_as_bool = property_as_bool
-            if parse(pyiceberg.__version__) < parse("0.8.0"):
+            else:
                 from pyiceberg.table import PropertyUtil
                 property_as_bool = PropertyUtil.property_as_bool
 
