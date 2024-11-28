@@ -52,7 +52,6 @@ if TYPE_CHECKING:
     import ray
     import torch
 
-    from daft.daft import ResourceRequest
     from daft.io import DataCatalogTable
 
 from daft.logical.schema import Schema
@@ -1430,7 +1429,6 @@ class DataFrame:
         self,
         column_name: str,
         expr: Expression,
-        resource_request: Optional["ResourceRequest"] = None,
     ) -> "DataFrame":
         """Adds a column to the current DataFrame with an Expression, equivalent to a ``select``
         with all current columns and the new one
@@ -1461,22 +1459,12 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame with new column.
         """
-        if resource_request is not None:
-            raise ValueError(
-                "Specifying resource_request through `with_column` is deprecated from Daft version >= 0.3.0! "
-                "Instead, please use the APIs on UDFs directly for controlling the resource requests of your UDFs. "
-                "You can define resource requests directly on the `@udf(num_gpus=N, num_cpus=M, ...)` decorator. "
-                "Alternatively, you can override resource requests on UDFs like so: `my_udf.override_options(num_gpus=N)`. "
-                "Check the Daft documentation for more details."
-            )
-
         return self.with_columns({column_name: expr})
 
     @DataframePublicAPI
     def with_columns(
         self,
         columns: Dict[str, Expression],
-        resource_request: Optional["ResourceRequest"] = None,
     ) -> "DataFrame":
         """Adds columns to the current DataFrame with Expressions, equivalent to a ``select``
         with all current columns and the new ones
@@ -1506,15 +1494,6 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame with new columns.
         """
-        if resource_request is not None:
-            raise ValueError(
-                "Specifying resource_request through `with_columns` is deprecated from Daft version >= 0.3.0! "
-                "Instead, please use the APIs on UDFs directly for controlling the resource requests of your UDFs. "
-                "You can define resource requests directly on the `@udf(num_gpus=N, num_cpus=M, ...)` decorator. "
-                "Alternatively, you can override resource requests on UDFs like so: `my_udf.override_options(num_gpus=N)`. "
-                "Check the Daft documentation for more details."
-            )
-
         new_columns = [col.alias(name) for name, col in columns.items()]
 
         builder = self._builder.with_columns(new_columns)
