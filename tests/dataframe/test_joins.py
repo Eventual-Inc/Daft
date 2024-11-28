@@ -1238,8 +1238,12 @@ def test_join_empty(join_type, repartition_nparts, left, right, expected, make_d
         repartition_columns=["c"],
     )
 
-    left_on = ["a"]
-    right_on = ["c"]
+    if join_type == "cross":
+        left_on = None
+        right_on = None
+    else:
+        left_on = ["a"]
+        right_on = ["c"]
 
     result = left_df.join(right_df, left_on=left_on, right_on=right_on, how=join_type)
     if join_type in ["inner", "left", "right", "outer", "cross"]:
