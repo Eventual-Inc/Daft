@@ -16,6 +16,7 @@ use snafu::ResultExt;
 
 use crate::{
     logical_plan::{CreationSnafu, Error, Result},
+    stats::StatsState,
     LogicalPlan,
 };
 
@@ -25,6 +26,7 @@ pub struct ActorPoolProject {
     pub input: Arc<LogicalPlan>,
     pub projection: Vec<ExprRef>,
     pub projected_schema: SchemaRef,
+    pub stats_state: StatsState,
 }
 
 impl ActorPoolProject {
@@ -64,7 +66,15 @@ impl ActorPoolProject {
             input,
             projection,
             projected_schema,
+            stats_state: StatsState::NotMaterialized,
         })
+    }
+
+    pub(crate) fn with_materialized_stats(mut self) -> Self {
+        // TODO(desmond): We can do better estimations with the projection schema. For now, reuse the old logic.
+        let input_stats = self.input.materialized_stats();
+        self.stats_state = StatsState::Materialized(input_stats.clone().into());
+        self
     }
 
     pub fn resource_request(&self) -> Option<ResourceRequest> {
@@ -114,6 +124,9 @@ impl ActorPoolProject {
                 "Resource request = {{ {} }}",
                 multiline_display.join(", ")
             ));
+        }
+        if let StatsState::Materialized(stats) = &self.stats_state {
+            res.push(format!("Stats = {}", stats));
         }
         res
     }

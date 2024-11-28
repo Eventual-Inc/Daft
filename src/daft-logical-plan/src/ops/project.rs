@@ -9,6 +9,7 @@ use snafu::ResultExt;
 
 use crate::{
     logical_plan::{CreationSnafu, Result},
+    stats::StatsState,
     LogicalPlan,
 };
 
@@ -18,6 +19,7 @@ pub struct Project {
     pub input: Arc<LogicalPlan>,
     pub projection: Vec<ExprRef>,
     pub projected_schema: SchemaRef,
+    pub stats_state: StatsState,
 }
 
 impl Project {
@@ -38,8 +40,10 @@ impl Project {
             input: factored_input,
             projection: factored_projection,
             projected_schema,
+            stats_state: StatsState::NotMaterialized,
         })
     }
+
     /// Create a new Projection using the specified output schema
     pub(crate) fn new_from_schema(input: Arc<LogicalPlan>, schema: SchemaRef) -> Result<Self> {
         let expr: Vec<ExprRef> = schema
@@ -50,11 +54,22 @@ impl Project {
         Self::try_new(input, expr)
     }
 
+    pub(crate) fn with_materialized_stats(mut self) -> Self {
+        // TODO(desmond): We can do better estimations with the projection schema. For now, reuse the old logic.
+        let input_stats = self.input.materialized_stats();
+        self.stats_state = StatsState::Materialized(input_stats.clone().into());
+        self
+    }
+
     pub fn multiline_display(&self) -> Vec<String> {
-        vec![format!(
+        let mut res = vec![format!(
             "Project: {}",
             self.projection.iter().map(|e| e.to_string()).join(", ")
-        )]
+        )];
+        if let StatsState::Materialized(stats) = &self.stats_state {
+            res.push(format!("Stats = {}", stats));
+        }
+        res
     }
 
     fn try_factor_subexpressions(

@@ -184,9 +184,10 @@ class DataFrame:
         return None
 
     def num_partitions(self) -> int:
-        daft_execution_config = get_context().daft_execution_config
         # We need to run the optimizer since that could change the number of partitions
-        return self.__builder.optimize().to_physical_plan_scheduler(daft_execution_config).num_partitions()
+        return (
+            self.__builder.optimize().to_physical_plan_scheduler(get_context().daft_execution_config).num_partitions()
+        )
 
     @DataframePublicAPI
     def schema(self) -> Schema:

@@ -168,21 +168,21 @@ mod tests {
             ])
             .unwrap(),
         );
-        LogicalPlan::Source(Source {
-            output_schema: schema.clone(),
-            source_info: Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
+        LogicalPlan::Source(Source::new(
+            schema.clone(),
+            Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
                 source_schema: schema,
                 clustering_spec: Arc::new(ClusteringSpec::unknown()),
                 source_id: 0,
             })),
-        })
+        ))
         .arced()
     }
 
     #[test]
     fn test_register_and_unregister_named_table() {
         let mut catalog = DaftMetaCatalog::new_from_env();
-        let plan = LogicalPlanBuilder::new(mock_plan(), None);
+        let plan = LogicalPlanBuilder::from(mock_plan());
 
         // Register a table
         assert!(catalog
@@ -198,7 +198,7 @@ mod tests {
     #[test]
     fn test_read_registered_table() {
         let mut catalog = DaftMetaCatalog::new_from_env();
-        let plan = LogicalPlanBuilder::new(mock_plan(), None);
+        let plan = LogicalPlanBuilder::from(mock_plan());
 
         catalog.register_named_table("test_table", plan).unwrap();
 

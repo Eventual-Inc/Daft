@@ -3,16 +3,29 @@ use std::sync::Arc;
 use common_error::DaftError;
 use snafu::ResultExt;
 
-use crate::{logical_plan, logical_plan::CreationSnafu, LogicalPlan};
+use crate::{
+    logical_plan::{self, CreationSnafu},
+    stats::{PlanStats, StatsState},
+    LogicalPlan,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Concat {
     // Upstream nodes.
     pub input: Arc<LogicalPlan>,
     pub other: Arc<LogicalPlan>,
+    pub stats_state: StatsState,
 }
 
 impl Concat {
+    pub(crate) fn new(input: Arc<LogicalPlan>, other: Arc<LogicalPlan>) -> Self {
+        Self {
+            input,
+            other,
+            stats_state: StatsState::NotMaterialized,
+        }
+    }
+
     pub(crate) fn try_new(
         input: Arc<LogicalPlan>,
         other: Arc<LogicalPlan>,
@@ -26,6 +39,27 @@ impl Concat {
             )))
             .context(CreationSnafu);
         }
-        Ok(Self { input, other })
+        Ok(Self {
+            input,
+            other,
+            stats_state: StatsState::NotMaterialized,
+        })
+    }
+
+    pub(crate) fn with_materialized_stats(mut self) -> Self {
+        // TODO(desmond): We can do better estimations with the projection schema. For now, reuse the old logic.
+        let input_stats = self.input.materialized_stats();
+        let other_stats = self.other.materialized_stats();
+        let approx_stats = &input_stats.approx_stats + &other_stats.approx_stats;
+        self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
+        self
+    }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![format!("Concat")];
+        if let StatsState::Materialized(stats) = &self.stats_state {
+            res.push(format!("Stats = {}", stats));
+        }
+        res
     }
 }

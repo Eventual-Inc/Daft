@@ -134,7 +134,7 @@ impl LogicalPlanBuilder {
         ));
         let logical_plan: LogicalPlan = ops::Source::new(schema, source_info.into()).into();
 
-        Ok(Self::new(logical_plan.into(), None))
+        Ok(Self::from(Arc::new(logical_plan)))
     }
 
     pub fn table_scan(
@@ -186,7 +186,7 @@ impl LogicalPlanBuilder {
             schema_with_generated_fields
         };
         let logical_plan: LogicalPlan = ops::Source::new(output_schema, source_info.into()).into();
-        Ok(Self::new(logical_plan.into(), None))
+        Ok(Self::from(Arc::new(logical_plan)))
     }
 
     pub fn select(&self, to_select: Vec<ExprRef>) -> DaftResult<Self> {

@@ -1,3 +1,5 @@
+use std::hash::{Hash, Hasher};
+
 use common_py_serde::{deserialize_py_object, serialize_py_object};
 use pyo3::{prelude::*, types::PyTuple};
 use serde::{Deserialize, Serialize};
@@ -15,27 +17,48 @@ struct PyObjectSerializableWrapper(
 
 /// Python arguments to a Python function that produces Tables
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PythonTablesFactoryArgs(Vec<PyObjectSerializableWrapper>);
+pub struct PythonTablesFactoryArgs {
+    args: Vec<PyObjectSerializableWrapper>,
+    hash: u64,
+}
+
+impl Hash for PythonTablesFactoryArgs {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.hash.hash(state);
+    }
+}
 
 impl PythonTablesFactoryArgs {
     pub fn new(args: Vec<PyObject>) -> Self {
-        Self(args.into_iter().map(PyObjectSerializableWrapper).collect())
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        Python::with_gil(|py| {
+            for obj in &args {
+                // Only hash hashable PyObjects.
+                if let Ok(hash) = obj.bind(py).hash() {
+                    hash.hash(&mut hasher);
+                }
+            }
+        });
+        Self {
+            args: args.into_iter().map(PyObjectSerializableWrapper).collect(),
+            hash: hasher.finish(),
+        }
     }
 
     #[must_use]
     pub fn to_pytuple<'a>(&self, py: Python<'a>) -> Bound<'a, PyTuple> {
-        pyo3::types::PyTuple::new_bound(py, self.0.iter().map(|x| x.0.bind(py)))
+        pyo3::types::PyTuple::new_bound(py, self.args.iter().map(|x| x.0.bind(py)))
     }
 }
 
 impl PartialEq for PythonTablesFactoryArgs {
     fn eq(&self, other: &Self) -> bool {
-        if self.0.len() != other.0.len() {
+        if self.args.len() != other.args.len() {
             return false;
         }
-        self.0
+        self.args
             .iter()
-            .zip(other.0.iter())
+            .zip(other.args.iter())
             .all(|(s, o)| (s.0.as_ptr() as isize) == (o.0.as_ptr() as isize))
     }
 }
@@ -43,7 +66,7 @@ impl PartialEq for PythonTablesFactoryArgs {
 pub mod pylib {
     use std::sync::Arc;
 
-    use common_daft_config::{DaftExecutionConfig, PyDaftExecutionConfig};
+    use common_daft_config::PyDaftExecutionConfig;
     use common_error::DaftResult;
     use common_file_formats::{python::PyFileFormatConfig, FileFormatConfig};
     use common_py_serde::impl_bincode_py_state_serialization;
@@ -66,7 +89,6 @@ pub mod pylib {
     use crate::{
         anonymous::AnonymousScanOperator,
         glob::GlobScanOperator,
-        scan_task_iters::{merge_by_sizes, split_by_row_groups, BoxScanTaskIter},
         storage_config::{PyStorageConfig, PythonStorageConfig},
         DataSource, ScanTask,
     };
@@ -248,11 +270,7 @@ pub mod pylib {
             lines
         }
 
-        fn to_scan_tasks(
-            &self,
-            pushdowns: Pushdowns,
-            cfg: Option<&DaftExecutionConfig>,
-        ) -> DaftResult<Vec<ScanTaskLikeRef>> {
+        fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<Vec<ScanTaskLikeRef>> {
             let scan_tasks = Python::with_gil(|py| {
                 let pypd = PyPushdowns(pushdowns.clone().into()).into_py(py);
                 let pyiter =
@@ -269,20 +287,8 @@ pub mod pylib {
                 )
             })?;
 
-            let mut scan_tasks: BoxScanTaskIter = Box::new(scan_tasks.into_iter());
-
-            if let Some(cfg) = cfg {
-                scan_tasks = split_by_row_groups(
-                    scan_tasks,
-                    cfg.parquet_split_row_groups_max_files,
-                    cfg.scan_tasks_min_size_bytes,
-                    cfg.scan_tasks_max_size_bytes,
-                );
-
-                scan_tasks = merge_by_sizes(scan_tasks, &pushdowns, cfg);
-            }
-
             scan_tasks
+                .into_iter()
                 .map(|st| st.map(|task| task as Arc<dyn ScanTaskLike>))
                 .collect()
         }
