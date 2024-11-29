@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import warnings
 from typing import Callable
 from urllib.parse import urlparse
 
@@ -114,12 +115,14 @@ class UnityCatalog:
             )
         elif scheme == "gcs" or scheme == "gs":
             # TO-DO: gather GCS credential vending assets from Unity and construct 'io_config``
+            warnings.warn("GCS credential vending from Unity Catalog is not yet supported.")
             io_config = None
         elif scheme == "az" or scheme == "abfs" or scheme == "abfss":
             io_config = IOConfig(
                 azure=AzureConfig(sas_token=temp_table_credentials.azure_user_delegation_sas.get("sas_token"))
             )
         else:
+            warnings.warn(f"Credentials for scheme {scheme} are not yet supported.")
             io_config = None
 
         return UnityCatalogTable(
