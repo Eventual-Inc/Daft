@@ -984,7 +984,7 @@ class SeriesMapNamespace(SeriesNamespace):
 class SeriesImageNamespace(SeriesNamespace):
     def decode(
         self,
-        on_error: Literal["raise"] | Literal["null"] = "raise",
+        on_error: Literal["raise", "null"] = "raise",
         mode: str | ImageMode | None = None,
     ) -> Series:
         raise_on_error = False

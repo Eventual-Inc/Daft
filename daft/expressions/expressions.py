@@ -781,9 +781,7 @@ class Expression:
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr >> expr._expr)
 
-    def count(
-        self, mode: Literal["all"] | Literal["valid"] | Literal["null"] | CountMode = CountMode.Valid
-    ) -> Expression:
+    def count(self, mode: Literal["all", "valid", "null"] | CountMode = CountMode.Valid) -> Expression:
         """Counts the number of values in the expression.
 
         Args:
@@ -1302,7 +1300,7 @@ class ExpressionUrlNamespace(ExpressionNamespace):
     def download(
         self,
         max_connections: int = 32,
-        on_error: Literal["raise"] | Literal["null"] = "raise",
+        on_error: Literal["raise", "null"] = "raise",
         io_config: IOConfig | None = None,
         use_native_downloader: bool = True,
     ) -> Expression:
@@ -3013,9 +3011,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(native.list_value_counts(self._expr))
 
-    def count(
-        self, mode: Literal["all"] | Literal["valid"] | Literal["null"] | CountMode = CountMode.Valid
-    ) -> Expression:
+    def count(self, mode: Literal["all", "valid", "null"] | CountMode = CountMode.Valid) -> Expression:
         """Counts the number of elements in each list
 
         Args:
@@ -3322,7 +3318,7 @@ class ExpressionImageNamespace(ExpressionNamespace):
 
     def decode(
         self,
-        on_error: Literal["raise"] | Literal["null"] = "raise",
+        on_error: Literal["raise", "null"] = "raise",
         mode: str | ImageMode | None = None,
     ) -> Expression:
         """

@@ -19,7 +19,7 @@ import threading
 
 
 class _RunnerConfig:
-    name: ClassVar[Literal["ray"] | Literal["py"] | Literal["native"]]
+    name: ClassVar[Literal["ray", "py", "native"]]
 
 
 @dataclasses.dataclass(frozen=True)

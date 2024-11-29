@@ -870,7 +870,7 @@ def read_parquet_into_pyarrow(
     io_config: IOConfig | None = None,
     multithreaded_io: bool | None = None,
     coerce_int96_timestamp_unit: PyTimeUnit | None = None,
-    string_encoding: Literal["utf-8"] | Literal["raw"] = "utf-8",
+    string_encoding: Literal["utf-8", "raw"] = "utf-8",
     file_timeout_ms: int | None = None,
 ): ...
 def read_parquet_into_pyarrow_bulk(
