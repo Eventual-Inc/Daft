@@ -128,7 +128,6 @@ class ParquetFileWriter(FileWriterBase):
         opts = {}
         if self.metadata_collector is not None:
             opts["metadata_collector"] = self.metadata_collector
-        print("self.full_path", self.full_path)
         return pq.ParquetWriter(
             self.full_path,
             schema,
