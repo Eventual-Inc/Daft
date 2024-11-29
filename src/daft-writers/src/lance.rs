@@ -28,14 +28,14 @@ impl FileWriter for LanceWriter {
     type Input = Arc<MicroPartition>;
     type Result = Vec<Table>;
 
-    fn write(&mut self, data: &Self::Input) -> DaftResult<()> {
+    fn write(&mut self, data: Self::Input) -> DaftResult<()> {
         assert!(!self.is_closed, "Cannot write to a closed LanceWriter");
         Python::with_gil(|py| {
             let py_micropartition = py
                 .import_bound(pyo3::intern!(py, "daft.table"))?
                 .getattr(pyo3::intern!(py, "MicroPartition"))?
                 .getattr(pyo3::intern!(py, "_from_pymicropartition"))?
-                .call1((PyMicroPartition::from(data.clone()),))?;
+                .call1((PyMicroPartition::from(data),))?;
             let written_fragments: PyTable = py
                 .import_bound(pyo3::intern!(py, "daft.table.table_io"))?
                 .getattr(pyo3::intern!(py, "write_lance"))?

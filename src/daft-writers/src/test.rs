@@ -42,7 +42,7 @@ impl FileWriter for DummyWriter {
     type Input = Arc<MicroPartition>;
     type Result = Option<Table>;
 
-    fn write(&mut self, _input: &Self::Input) -> DaftResult<()> {
+    fn write(&mut self, _input: Self::Input) -> DaftResult<()> {
         self.write_count += 1;
         Ok(())
     }

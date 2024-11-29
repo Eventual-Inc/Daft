@@ -40,7 +40,7 @@ impl PartitionedWriter {
 
     fn partition(
         partition_cols: &[ExprRef],
-        data: &Arc<MicroPartition>,
+        data: Arc<MicroPartition>,
     ) -> DaftResult<(Vec<Table>, Table)> {
         let data = data.concat_or_get(IOStatsContext::new("MicroPartition::partition_by_value"))?;
         let table = data.first().unwrap();
@@ -53,7 +53,7 @@ impl FileWriter for PartitionedWriter {
     type Input = Arc<MicroPartition>;
     type Result = Vec<Table>;
 
-    fn write(&mut self, input: &Arc<MicroPartition>) -> DaftResult<()> {
+    fn write(&mut self, input: Arc<MicroPartition>) -> DaftResult<()> {
         assert!(
             !self.is_closed,
             "Cannot write to a closed PartitionedWriter"
@@ -83,7 +83,7 @@ impl FileWriter for PartitionedWriter {
                     let mut writer = self
                         .writer_factory
                         .create_writer(0, Some(partition_value_row.as_ref()))?;
-                    writer.write(&Arc::new(MicroPartition::new_loaded(
+                    writer.write(Arc::new(MicroPartition::new_loaded(
                         table.schema.clone(),
                         vec![table].into(),
                         None,
@@ -100,7 +100,7 @@ impl FileWriter for PartitionedWriter {
                 }
                 RawEntryMut::Occupied(mut entry) => {
                     let writer = entry.get_mut();
-                    writer.write(&Arc::new(MicroPartition::new_loaded(
+                    writer.write(Arc::new(MicroPartition::new_loaded(
                         table.schema.clone(),
                         vec![table].into(),
                         None,

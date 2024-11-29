@@ -171,14 +171,14 @@ impl FileWriter for PyArrowWriter {
     type Input = Arc<MicroPartition>;
     type Result = Option<Table>;
 
-    fn write(&mut self, data: &Self::Input) -> DaftResult<()> {
+    fn write(&mut self, data: Self::Input) -> DaftResult<()> {
         assert!(!self.is_closed, "Cannot write to a closed PyArrowWriter");
         Python::with_gil(|py| {
             let py_micropartition = py
                 .import_bound(pyo3::intern!(py, "daft.table"))?
                 .getattr(pyo3::intern!(py, "MicroPartition"))?
                 .getattr(pyo3::intern!(py, "_from_pymicropartition"))?
-                .call1((PyMicroPartition::from(data.clone()),))?;
+                .call1((PyMicroPartition::from(data),))?;
             self.py_writer
                 .call_method1(py, pyo3::intern!(py, "write"), (py_micropartition,))?;
             Ok(())
