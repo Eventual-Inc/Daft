@@ -33,15 +33,15 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction_bound!(python::minhash, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(python::to_struct, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(
-        tokenize::python::tokenize_decode,
+        python::tokenize::tokenize_decode,
         parent
     )?)?;
     parent.add_function(wrap_pyfunction_bound!(
-        tokenize::python::tokenize_encode,
+        python::tokenize::tokenize_encode,
         parent
     )?)?;
-    parent.add_function(wrap_pyfunction_bound!(uri::python::url_download, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(uri::python::url_upload, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(python::uri::url_download, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(python::uri::url_upload, parent)?)?;
     numeric::register_modules(parent)?;
     image::register_modules(parent)?;
     float::register_modules(parent)?;

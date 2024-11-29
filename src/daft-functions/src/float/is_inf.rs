@@ -3,10 +3,7 @@ use daft_core::{
     prelude::{DataType, Field, Schema},
     series::Series,
 };
-use daft_dsl::{
-    functions::{ScalarFunction, ScalarUDF},
-    ExprRef,
-};
+use daft_dsl::{functions::ScalarUDF, ExprRef};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -51,21 +48,4 @@ impl ScalarUDF for IsInf {
             ))),
         }
     }
-}
-
-#[must_use]
-pub fn is_inf(input: ExprRef) -> ExprRef {
-    ScalarFunction::new(IsInf {}, vec![input]).into()
-}
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "is_inf")]
-pub fn py_is_inf(expr: PyExpr) -> PyResult<PyExpr> {
-    Ok(is_inf(expr.into()).into())
 }

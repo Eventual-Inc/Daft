@@ -66,3 +66,125 @@ pub fn utf8_count_matches(
     );
     Ok(expr.into())
 }
+
+pub mod float {
+    use daft_dsl::python::PyExpr;
+    use pyo3::{pyfunction, PyResult};
+
+    #[pyfunction]
+    pub fn not_nan(expr: PyExpr) -> PyResult<PyExpr> {
+        Ok(crate::float::not_nan(expr.into()).into())
+    }
+
+    #[pyfunction]
+    pub fn is_nan(expr: PyExpr) -> PyResult<PyExpr> {
+        Ok(crate::float::is_nan(expr.into()).into())
+    }
+
+    #[pyfunction]
+    pub fn fill_nan(expr: PyExpr, fill_value: PyExpr) -> PyResult<PyExpr> {
+        Ok(crate::float::fill_nan(expr.into(), fill_value.into()).into())
+    }
+
+    #[pyfunction]
+    pub fn is_inf(expr: PyExpr) -> PyResult<PyExpr> {
+        Ok(crate::float::is_inf(expr.into()).into())
+    }
+}
+
+pub mod uri {
+    use daft_dsl::python::PyExpr;
+    use daft_io::python::IOConfig as PyIOConfig;
+    use pyo3::{exceptions::PyValueError, pyfunction, PyResult};
+
+    #[pyfunction]
+    pub fn url_download(
+        expr: PyExpr,
+        max_connections: i64,
+        raise_error_on_failure: bool,
+        multi_thread: bool,
+        config: PyIOConfig,
+    ) -> PyResult<PyExpr> {
+        if max_connections <= 0 {
+            return Err(PyValueError::new_err(format!(
+                "max_connections must be positive and non_zero: {max_connections}"
+            )));
+        }
+
+        Ok(crate::uri::download(
+            expr.into(),
+            max_connections as usize,
+            raise_error_on_failure,
+            multi_thread,
+            Some(config.config),
+        )
+        .into())
+    }
+
+    #[pyfunction]
+    pub fn url_upload(
+        expr: PyExpr,
+        folder_location: &str,
+        max_connections: i64,
+        multi_thread: bool,
+        io_config: Option<PyIOConfig>,
+    ) -> PyResult<PyExpr> {
+        if max_connections <= 0 {
+            return Err(PyValueError::new_err(format!(
+                "max_connections must be positive and non_zero: {max_connections}"
+            )));
+        }
+        Ok(crate::uri::upload(
+            expr.into(),
+            folder_location,
+            max_connections as usize,
+            multi_thread,
+            io_config.map(|io_config| io_config.config),
+        )
+        .into())
+    }
+}
+
+pub mod tokenize {
+    use daft_dsl::python::PyExpr;
+    use daft_io::python::IOConfig as PyIOConfig;
+    use pyo3::{pyfunction, PyResult};
+
+    #[pyfunction]
+    pub fn tokenize_encode(
+        expr: PyExpr,
+        tokens_path: &str,
+        use_special_tokens: bool,
+        io_config: Option<PyIOConfig>,
+        pattern: Option<&str>,
+        special_tokens: Option<&str>,
+    ) -> PyResult<PyExpr> {
+        Ok(crate::tokenize::tokenize_encode(
+            expr.into(),
+            tokens_path,
+            io_config.map(|x| x.config),
+            pattern,
+            special_tokens,
+            use_special_tokens,
+        )
+        .into())
+    }
+
+    #[pyfunction]
+    pub fn tokenize_decode(
+        expr: PyExpr,
+        tokens_path: &str,
+        io_config: Option<PyIOConfig>,
+        pattern: Option<&str>,
+        special_tokens: Option<&str>,
+    ) -> PyResult<PyExpr> {
+        Ok(crate::tokenize::tokenize_decode(
+            expr.into(),
+            tokens_path,
+            io_config.map(|x| x.config),
+            pattern,
+            special_tokens,
+        )
+        .into())
+    }
+}

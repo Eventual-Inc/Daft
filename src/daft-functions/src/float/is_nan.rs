@@ -3,10 +3,7 @@ use daft_core::{
     prelude::{DataType, Field, Schema},
     series::Series,
 };
-use daft_dsl::{
-    functions::{ScalarFunction, ScalarUDF},
-    ExprRef,
-};
+use daft_dsl::{functions::ScalarUDF, ExprRef};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -51,21 +48,4 @@ impl ScalarUDF for IsNan {
             ))),
         }
     }
-}
-
-#[must_use]
-pub fn is_nan(input: ExprRef) -> ExprRef {
-    ScalarFunction::new(IsNan {}, vec![input]).into()
-}
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "is_nan")]
-pub fn py_is_nan(expr: PyExpr) -> PyResult<PyExpr> {
-    Ok(is_nan(expr.into()).into())
 }

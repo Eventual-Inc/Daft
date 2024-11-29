@@ -4,10 +4,7 @@ use daft_core::{
     series::Series,
     utils::supertype::try_get_supertype,
 };
-use daft_dsl::{
-    functions::{ScalarFunction, ScalarUDF},
-    ExprRef,
-};
+use daft_dsl::{functions::ScalarUDF, ExprRef};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -51,21 +48,4 @@ impl ScalarUDF for FillNan {
             ))),
         }
     }
-}
-
-#[must_use]
-pub fn fill_nan(input: ExprRef, fill_value: ExprRef) -> ExprRef {
-    ScalarFunction::new(FillNan {}, vec![input, fill_value]).into()
-}
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "fill_nan")]
-pub fn py_fill_nan(expr: PyExpr, fill_value: PyExpr) -> PyResult<PyExpr> {
-    Ok(fill_nan(expr.into(), fill_value.into()).into())
 }
