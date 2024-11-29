@@ -7,6 +7,8 @@ pub mod image;
 pub mod list;
 pub mod minhash;
 pub mod numeric;
+#[cfg(feature = "python")]
+pub mod python;
 pub mod temporal;
 pub mod to_struct;
 pub mod tokenize;
@@ -21,21 +23,15 @@ use snafu::Snafu;
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     // keep in sorted order
+    parent.add_function(wrap_pyfunction_bound!(python::utf8_count_matches, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(
-        count_matches::python::utf8_count_matches,
+        crate::python::cosine_distance,
         parent
     )?)?;
-    parent.add_function(wrap_pyfunction_bound!(
-        distance::cosine::python::cosine_distance,
-        parent
-    )?)?;
-    parent.add_function(wrap_pyfunction_bound!(hash::python::hash, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(python::hash, parent)?)?;
 
-    parent.add_function(wrap_pyfunction_bound!(minhash::python::minhash, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(
-        to_struct::python::to_struct,
-        parent
-    )?)?;
+    parent.add_function(wrap_pyfunction_bound!(python::minhash, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(python::to_struct, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(
         tokenize::python::tokenize_decode,
         parent

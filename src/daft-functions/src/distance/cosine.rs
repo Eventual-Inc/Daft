@@ -1,9 +1,6 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::{datatypes::NumericNative, prelude::*};
-use daft_dsl::{
-    functions::{ScalarFunction, ScalarUDF},
-    ExprRef,
-};
+use daft_dsl::{functions::ScalarUDF, ExprRef};
 use serde::{Deserialize, Serialize};
 
 trait SpatialSimilarity {
@@ -164,21 +161,5 @@ impl ScalarUDF for CosineDistanceFunction {
             }
             _ => Err(DaftError::ValueError("Expected 2 input arg".to_string())),
         }
-    }
-}
-
-#[must_use]
-pub fn cosine_distance(a: ExprRef, b: ExprRef) -> ExprRef {
-    ScalarFunction::new(CosineDistanceFunction {}, vec![a, b]).into()
-}
-
-#[cfg(feature = "python")]
-pub mod python {
-    use daft_dsl::python::PyExpr;
-    use pyo3::{pyfunction, PyResult};
-
-    #[pyfunction]
-    pub fn cosine_distance(a: PyExpr, b: PyExpr) -> PyResult<PyExpr> {
-        Ok(super::cosine_distance(a.into(), b.into()).into())
     }
 }
