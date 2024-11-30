@@ -119,7 +119,7 @@ pub enum DataType {
     },
 
     /// Extension type.
-    #[display("{_1}")]
+    #[display("Extension[{_0}; {_1}]")]
     Extension(String, Box<DataType>, Option<String>),
 
     // Non-ArrowTypes:
