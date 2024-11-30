@@ -58,15 +58,3 @@ impl ScalarUDF for Utf8Repeat {
 pub fn utf8_repeat(input: ExprRef, ntimes: ExprRef) -> ExprRef {
     ScalarFunction::new(Utf8Repeat {}, vec![input, ntimes]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "utf8_repeat")]
-pub fn py_utf8_repeat(expr: PyExpr, ntimes: PyExpr) -> PyResult<PyExpr> {
-    Ok(utf8_repeat(expr.into(), ntimes.into()).into())
-}

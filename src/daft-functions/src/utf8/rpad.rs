@@ -60,15 +60,3 @@ impl ScalarUDF for Utf8Rpad {
 pub fn utf8_rpad(input: ExprRef, length: ExprRef, pad: ExprRef) -> ExprRef {
     ScalarFunction::new(Utf8Rpad {}, vec![input, length, pad]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "utf8_rpad")]
-pub fn py_utf8_rpad(expr: PyExpr, length: PyExpr, pad: PyExpr) -> PyResult<PyExpr> {
-    Ok(utf8_rpad(expr.into(), length.into(), pad.into()).into())
-}

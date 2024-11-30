@@ -1,5 +1,6 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::{
+    array::ops::Utf8NormalizeOptions,
     prelude::{DataType, Field, Schema},
     series::Series,
 };
@@ -55,33 +56,4 @@ impl ScalarUDF for Utf8Normalize {
 #[must_use]
 pub fn utf8_normalize(input: ExprRef, opts: Utf8NormalizeOptions) -> ExprRef {
     ScalarFunction::new(Utf8Normalize { opts }, vec![input]).into()
-}
-
-use daft_core::array::ops::Utf8NormalizeOptions;
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "utf8_normalize")]
-pub fn py_utf8_normalize(
-    expr: PyExpr,
-    remove_punct: bool,
-    lowercase: bool,
-    nfd_unicode: bool,
-    white_space: bool,
-) -> PyResult<PyExpr> {
-    Ok(utf8_normalize(
-        expr.into(),
-        Utf8NormalizeOptions {
-            remove_punct,
-            lowercase,
-            nfd_unicode,
-            white_space,
-        },
-    )
-    .into())
 }

@@ -60,16 +60,3 @@ impl ScalarUDF for ImageEncode {
 pub fn encode(input: ExprRef, image_encode: ImageEncode) -> ExprRef {
     ScalarFunction::new(image_encode, vec![input]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "image_encode")]
-pub fn py_encode(expr: PyExpr, image_format: ImageFormat) -> PyResult<PyExpr> {
-    let image_encode = ImageEncode { image_format };
-    Ok(encode(expr.into(), image_encode).into())
-}

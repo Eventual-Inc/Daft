@@ -50,16 +50,3 @@ impl ScalarUDF for Explode {
 pub fn explode(expr: ExprRef) -> ExprRef {
     ScalarFunction::new(Explode {}, vec![expr]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "explode")]
-pub fn py_explode(expr: PyExpr) -> PyResult<PyExpr> {
-    Ok(explode(expr.into()).into())
-}
