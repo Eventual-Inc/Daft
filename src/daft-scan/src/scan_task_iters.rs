@@ -178,7 +178,7 @@ impl<'a> Iterator for MergeByFileSize<'a> {
     }
 }
 
-struct SplitParquetByRowGroupsAccumulator<'a> {
+struct ParquetScanTaskRowGroupSplitter<'a> {
     // Accumulators
     curr_row_group_indices: Vec<i64>,
     curr_row_groups: Vec<RowGroupMetaData>,
@@ -192,7 +192,7 @@ struct SplitParquetByRowGroupsAccumulator<'a> {
     scantask_estimated_size_bytes: Option<usize>,
 }
 
-impl<'a> SplitParquetByRowGroupsAccumulator<'a> {
+impl<'a> ParquetScanTaskRowGroupSplitter<'a> {
     pub fn new(
         scan_task_ref: ScanTaskRef,
         file_metadata: FileMetaData,
@@ -214,6 +214,7 @@ impl<'a> SplitParquetByRowGroupsAccumulator<'a> {
 
     pub fn split_by_row_groups(mut self) -> Vec<ScanTaskRef> {
         // Iterate through the rowgroups and accumulate results
+        // Safe to mem::take the row_groups here because these get replaced during self.flush with the new set of row_groups
         let row_groups = std::mem::take(&mut self.file_metadata.row_groups);
         let mut new_data_sources = Vec::new();
         for (i, rg) in row_groups {
@@ -262,7 +263,7 @@ impl<'a> SplitParquetByRowGroupsAccumulator<'a> {
         }
     }
 
-    pub fn accumulate(&mut self, rg_idx: i64, rg: RowGroupMetaData) -> Option<DataSource> {
+    fn accumulate(&mut self, rg_idx: i64, rg: RowGroupMetaData) -> Option<DataSource> {
         // Estimate the materialized size of this rowgroup and add it to curr_size_bytes
         self.curr_size_bytes +=
             self.scantask_estimated_size_bytes
@@ -286,7 +287,7 @@ impl<'a> SplitParquetByRowGroupsAccumulator<'a> {
         }
     }
 
-    pub fn flush(&mut self) -> Option<DataSource> {
+    fn flush(&mut self) -> Option<DataSource> {
         // If nothing to flush, return None early
         if self.curr_row_group_indices.is_empty() {
             return None;
@@ -373,14 +374,11 @@ pub(crate) fn split_by_row_groups<'a>(
                         .get_iceberg_delete_files()
                         .map_or(true, std::vec::Vec::is_empty)
                 {
+                    // Retrieve Parquet FileMetaData and construct a ParquetScanTaskRowGroupSplitter
                     let (io_runtime, io_client) = t.storage_config.get_io_client_and_runtime()?;
-
                     let path = source.get_path();
-
                     let io_stats =
                         IOStatsContext::new(format!("split_by_row_groups for {path:#?}"));
-
-                    // Retrieve Parquet FileMetaData and construct an accumulator
                     let file_metadata =
                         io_runtime.block_on_current_thread(read_parquet_metadata(
                             path,
@@ -389,7 +387,7 @@ pub(crate) fn split_by_row_groups<'a>(
                             field_id_mapping.clone(),
                         ))?;
                     let accumulator =
-                        SplitParquetByRowGroupsAccumulator::new(t, file_metadata, config);
+                        ParquetScanTaskRowGroupSplitter::new(t, file_metadata, config);
 
                     // Materialize and convert into new ScanTasks
                     let new_scan_tasks = accumulator.split_by_row_groups();
