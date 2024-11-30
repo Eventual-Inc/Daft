@@ -198,6 +198,11 @@ class DataType:
         return cls._from_pydatatype(PyDataType.duration(timeunit._timeunit))
 
     @classmethod
+    def interval(cls) -> DataType:
+        """Interval DataType."""
+        return cls._from_pydatatype(PyDataType.interval())
+
+    @classmethod
     def list(cls, dtype: DataType) -> DataType:
         """Create a List DataType: Variable-length list, where each element in the list has type ``dtype``
 
@@ -406,6 +411,8 @@ class DataType:
             assert isinstance(arrow_type, pa.StructType)
             fields = [arrow_type[i] for i in range(arrow_type.num_fields)]
             return cls.struct({field.name: cls.from_arrow_type(field.type) for field in fields})
+        elif pa.types.is_interval(arrow_type):
+            return cls.interval()
         elif pa.types.is_map(arrow_type):
             assert isinstance(arrow_type, pa.MapType)
             return cls.map(
@@ -424,7 +431,7 @@ class DataType:
         elif isinstance(arrow_type, pa.BaseExtensionType):
             name = arrow_type.extension_name
 
-            if (get_context().runner_config.name == "ray") and (
+            if (get_context().get_or_create_runner().name == "ray") and (
                 type(arrow_type).__reduce__ == pa.BaseExtensionType.__reduce__
             ):
                 raise ValueError(
@@ -493,6 +500,9 @@ class DataType:
 
     def _is_numeric_type(self) -> builtins.bool:
         return self._dtype.is_numeric()
+
+    def _is_integer(self) -> builtins.bool:
+        return self._dtype.is_integer()
 
     def _is_list(self) -> builtins.bool:
         return self._dtype.is_list()

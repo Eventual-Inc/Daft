@@ -12,7 +12,6 @@ import pyarrow.parquet as papq
 import pytest
 
 import daft
-from daft import context
 from daft.daft import NativeStorageConfig, PythonStorageConfig, StorageConfig
 from daft.datatype import DataType, TimeUnit
 from daft.expressions import col
@@ -21,10 +20,6 @@ from daft.table import MicroPartition
 
 from ..integration.io.conftest import minio_create_bucket
 
-pytestmark = pytest.mark.skipif(
-    context.get_context().daft_execution_config.enable_native_executor is True,
-    reason="Native executor fails for these tests",
-)
 PYARROW_GE_11_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (11, 0, 0)
 PYARROW_GE_13_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (13, 0, 0)
 

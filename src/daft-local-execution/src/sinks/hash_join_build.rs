@@ -1,14 +1,53 @@
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use common_error::DaftResult;
+use common_runtime::RuntimeRef;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
+use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;
-use daft_plan::JoinType;
-use daft_table::{make_probeable_builder, Probeable, ProbeableBuilder, Table};
+use daft_table::{make_probeable_builder, ProbeState, ProbeableBuilder, Table};
 
-use super::blocking_sink::{BlockingSink, BlockingSinkStatus};
-use crate::pipeline::PipelineResultType;
+use super::blocking_sink::{
+    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
+    BlockingSinkStatus,
+};
+
+/// ProbeStateBridge is a bridge between the build and probe phase of a hash join.
+/// It is used to pass the probe state from the build phase to the probe phase.
+/// The build phase sets the probe state once building is complete, and the probe phase
+/// waits for the probe state to be set via the `get_probe_state` method.
+pub(crate) type ProbeStateBridgeRef = Arc<ProbeStateBridge>;
+pub(crate) struct ProbeStateBridge {
+    inner: OnceLock<Arc<ProbeState>>,
+    notify: tokio::sync::Notify,
+}
+
+impl ProbeStateBridge {
+    pub(crate) fn new() -> Arc<Self> {
+        Arc::new(Self {
+            inner: OnceLock::new(),
+            notify: tokio::sync::Notify::new(),
+        })
+    }
+
+    pub(crate) fn set_probe_state(&self, state: Arc<ProbeState>) {
+        assert!(
+            !self.inner.set(state).is_err(),
+            "ProbeStateBridge should be set only once"
+        );
+        self.notify.notify_waiters();
+    }
+
+    pub(crate) async fn get_probe_state(&self) -> Arc<ProbeState> {
+        loop {
+            if let Some(state) = self.inner.get() {
+                return state.clone();
+            }
+            self.notify.notified().await;
+        }
+    }
+}
 
 enum ProbeTableState {
     Building {
@@ -16,21 +55,23 @@ enum ProbeTableState {
         projection: Vec<ExprRef>,
         tables: Vec<Table>,
     },
-    Done {
-        probe_table: Arc<dyn Probeable>,
-        tables: Arc<Vec<Table>>,
-    },
+    Done,
 }
 
 impl ProbeTableState {
     fn new(
         key_schema: &SchemaRef,
         projection: Vec<ExprRef>,
+        nulls_equal_aware: Option<&Vec<bool>>,
         join_type: &JoinType,
     ) -> DaftResult<Self> {
         let track_indices = !matches!(join_type, JoinType::Anti | JoinType::Semi);
         Ok(Self::Building {
-            probe_table_builder: Some(make_probeable_builder(key_schema.clone(), track_indices)?),
+            probe_table_builder: Some(make_probeable_builder(
+                key_schema.clone(),
+                nulls_equal_aware,
+                track_indices,
+            )?),
             projection,
             tables: Vec::new(),
         })
@@ -44,7 +85,12 @@ impl ProbeTableState {
         } = self
         {
             let probe_table_builder = probe_table_builder.as_mut().unwrap();
-            for table in input.get_tables()?.iter() {
+            let input_tables = input.get_tables()?;
+            if input_tables.is_empty() {
+                tables.push(Table::empty(Some(input.schema()))?);
+                return Ok(());
+            }
+            for table in input_tables.iter() {
                 tables.push(table.clone());
                 let join_keys = table.eval_expression_list(projection)?;
 
@@ -55,7 +101,7 @@ impl ProbeTableState {
             panic!("add_tables can only be used during the Building Phase")
         }
     }
-    fn finalize(&mut self) -> DaftResult<()> {
+    fn finalize(&mut self) -> ProbeState {
         if let Self::Building {
             probe_table_builder,
             tables,
@@ -65,34 +111,44 @@ impl ProbeTableState {
             let ptb = std::mem::take(probe_table_builder).expect("should be set in building mode");
             let pt = ptb.build();
 
-            *self = Self::Done {
-                probe_table: pt,
-                tables: Arc::new(tables.clone()),
-            };
-            Ok(())
+            let ps = ProbeState::new(pt, tables.clone().into());
+            *self = Self::Done;
+            ps
         } else {
             panic!("finalize can only be used during the Building Phase")
         }
     }
 }
 
-pub(crate) struct HashJoinBuildSink {
-    probe_table_state: ProbeTableState,
+impl BlockingSinkState for ProbeTableState {
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
+pub struct HashJoinBuildSink {
+    key_schema: SchemaRef,
+    projection: Vec<ExprRef>,
+    nulls_equal_aware: Option<Vec<bool>>,
+    join_type: JoinType,
+    probe_state_bridge: ProbeStateBridgeRef,
 }
 
 impl HashJoinBuildSink {
     pub(crate) fn new(
         key_schema: SchemaRef,
         projection: Vec<ExprRef>,
+        nulls_equal_aware: Option<Vec<bool>>,
         join_type: &JoinType,
+        probe_state_bridge: ProbeStateBridgeRef,
     ) -> DaftResult<Self> {
         Ok(Self {
-            probe_table_state: ProbeTableState::new(&key_schema, projection, join_type)?,
+            key_schema,
+            projection,
+            nulls_equal_aware,
+            join_type: *join_type,
+            probe_state_bridge,
         })
-    }
-
-    pub(crate) fn boxed(self) -> Box<dyn BlockingSink> {
-        Box::new(self)
     }
 }
 
@@ -101,21 +157,51 @@ impl BlockingSink for HashJoinBuildSink {
         "HashJoinBuildSink"
     }
 
-    fn sink(&mut self, input: &Arc<MicroPartition>) -> DaftResult<BlockingSinkStatus> {
-        self.probe_table_state.add_tables(input)?;
-        Ok(BlockingSinkStatus::NeedMoreInput)
+    fn sink(
+        &self,
+        input: Arc<MicroPartition>,
+        mut state: Box<dyn BlockingSinkState>,
+        runtime: &RuntimeRef,
+    ) -> BlockingSinkSinkResult {
+        runtime
+            .spawn(async move {
+                let probe_table_state: &mut ProbeTableState = state
+                    .as_any_mut()
+                    .downcast_mut::<ProbeTableState>()
+                    .expect("HashJoinBuildSink should have ProbeTableState");
+                probe_table_state.add_tables(&input)?;
+                Ok(BlockingSinkStatus::NeedMoreInput(state))
+            })
+            .into()
     }
 
-    fn finalize(&mut self) -> DaftResult<Option<PipelineResultType>> {
-        self.probe_table_state.finalize()?;
-        if let ProbeTableState::Done {
-            probe_table,
-            tables,
-        } = &self.probe_table_state
-        {
-            Ok(Some((probe_table.clone(), tables.clone()).into()))
-        } else {
-            panic!("finalize should only be called after the probe table is built")
-        }
+    fn finalize(
+        &self,
+        states: Vec<Box<dyn BlockingSinkState>>,
+        _runtime: &RuntimeRef,
+    ) -> BlockingSinkFinalizeResult {
+        assert_eq!(states.len(), 1);
+        let mut state = states.into_iter().next().unwrap();
+        let probe_table_state = state
+            .as_any_mut()
+            .downcast_mut::<ProbeTableState>()
+            .expect("State type mismatch");
+        let finalized_probe_state = probe_table_state.finalize();
+        self.probe_state_bridge
+            .set_probe_state(finalized_probe_state.into());
+        Ok(None).into()
+    }
+
+    fn max_concurrency(&self) -> usize {
+        1
+    }
+
+    fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
+        Ok(Box::new(ProbeTableState::new(
+            &self.key_schema,
+            self.projection.clone(),
+            self.nulls_equal_aware.as_ref(),
+            &self.join_type,
+        )?))
     }
 }

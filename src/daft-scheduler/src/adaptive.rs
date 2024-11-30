@@ -2,10 +2,12 @@ use std::sync::Arc;
 
 use common_daft_config::DaftExecutionConfig;
 use daft_core::prelude::Schema;
-use daft_plan::{AdaptivePlanner, InMemoryInfo, LogicalPlan, MaterializedResults};
+use daft_logical_plan::{InMemoryInfo, LogicalPlan};
+use daft_physical_plan::{AdaptivePlanner, MaterializedResults};
 #[cfg(feature = "python")]
 use {
-    common_daft_config::PyDaftExecutionConfig, daft_plan::PyLogicalPlanBuilder, pyo3::prelude::*,
+    common_daft_config::PyDaftExecutionConfig, daft_logical_plan::PyLogicalPlanBuilder,
+    pyo3::prelude::*,
 };
 
 use crate::PhysicalPlanScheduler;
@@ -16,8 +18,9 @@ pub struct AdaptivePhysicalPlanScheduler {
 }
 
 impl AdaptivePhysicalPlanScheduler {
+    #[must_use]
     pub fn new(logical_plan: Arc<LogicalPlan>, cfg: Arc<DaftExecutionConfig>) -> Self {
-        AdaptivePhysicalPlanScheduler {
+        Self {
             planner: AdaptivePlanner::new(logical_plan, cfg),
         }
     }
@@ -34,10 +37,7 @@ impl AdaptivePhysicalPlanScheduler {
     ) -> PyResult<Self> {
         py.allow_threads(|| {
             let logical_plan = logical_plan_builder.builder.build();
-            Ok(AdaptivePhysicalPlanScheduler::new(
-                logical_plan,
-                cfg.config.clone(),
-            ))
+            Ok(Self::new(logical_plan, cfg.config.clone()))
         })
     }
     pub fn next(&mut self, py: Python) -> PyResult<(Option<usize>, PhysicalPlanScheduler)> {
@@ -74,8 +74,8 @@ impl AdaptivePhysicalPlanScheduler {
             );
 
             self.planner.update(MaterializedResults {
-                in_memory_info,
                 source_id,
+                in_memory_info,
             })?;
             Ok(())
         })

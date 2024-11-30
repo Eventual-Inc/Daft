@@ -8,13 +8,7 @@ import pytest
 from PIL import Image
 
 import daft
-from daft import context
 from tests.utils import ANSI_ESCAPE, TD_STYLE, TH_STYLE
-
-pytestmark = pytest.mark.skipif(
-    context.get_context().daft_execution_config.enable_native_executor is True,
-    reason="Native executor fails for these tests",
-)
 
 ROW_DIVIDER_REGEX = re.compile(r"╭─+┬*─*╮|├╌+┼*╌+┤")
 SHOWING_N_ROWS_REGEX = re.compile(r".*\(Showing first (\d+) of (\d+) rows\).*")

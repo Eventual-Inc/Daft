@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     fmt::Display,
+    hash::{Hash, Hasher},
     ops::{BitAnd, BitOr, Not},
 };
 
@@ -17,6 +18,15 @@ pub struct TableStatistics {
     pub columns: IndexMap<String, ColumnRangeStatistics>,
 }
 
+impl Hash for TableStatistics {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        for (key, value) in &self.columns {
+            key.hash(state);
+            value.hash(state);
+        }
+    }
+}
+
 impl TableStatistics {
     pub fn from_stats_table(table: &Table) -> DaftResult<Self> {
         // Assumed format is each column having 2 rows:
@@ -31,9 +41,10 @@ impl TableStatistics {
             let stats = ColumnRangeStatistics::new(Some(col.slice(0, 1)?), Some(col.slice(1, 2)?))?;
             columns.insert(name, stats);
         }
-        Ok(TableStatistics { columns })
+        Ok(Self { columns })
     }
 
+    #[must_use]
     pub fn from_table(table: &Table) -> Self {
         let mut columns = IndexMap::with_capacity(table.num_columns());
         for name in table.column_names() {
@@ -41,7 +52,7 @@ impl TableStatistics {
             let stats = ColumnRangeStatistics::from_series(col);
             columns.insert(name, stats);
         }
-        TableStatistics { columns }
+        Self { columns }
     }
 
     pub fn union(&self, other: &Self) -> crate::Result<Self> {
@@ -61,7 +72,7 @@ impl TableStatistics {
             }?;
             columns.insert(col.clone(), res_col);
         }
-        Ok(TableStatistics { columns })
+        Ok(Self { columns })
     }
 
     pub fn eval_expression_list(
@@ -106,7 +117,11 @@ impl TableStatistics {
                 sum_so_far += elem_size;
             }
         } else {
-            for elem_size in self.columns.values().map(|c| c.element_size()) {
+            for elem_size in self
+                .columns
+                .values()
+                .map(super::column_stats::ColumnRangeStatistics::element_size)
+            {
                 sum_so_far += elem_size?.unwrap_or(0.);
             }
         }
@@ -119,20 +134,20 @@ impl TableStatistics {
             Expr::Alias(col, _) => self.eval_expression(col.as_ref()),
             Expr::Column(col_name) => {
                 let col = self.columns.get(col_name.as_ref());
-                if let Some(col) = col {
-                    Ok(col.clone())
-                } else {
-                    Err(crate::Error::DaftCoreCompute {
+                let Some(col) = col else {
+                    return Err(crate::Error::DaftCoreCompute {
                         source: DaftError::FieldNotFound(col_name.to_string()),
-                    })
-                }
+                    });
+                };
+
+                Ok(col.clone())
             }
             Expr::Literal(lit_value) => lit_value.try_into(),
             Expr::Not(col) => self.eval_expression(col)?.not(),
             Expr::BinaryOp { op, left, right } => {
                 let lhs = self.eval_expression(left)?;
                 let rhs = self.eval_expression(right)?;
-                use daft_dsl::Operator::*;
+                use daft_dsl::Operator::{And, Eq, Gt, GtEq, Lt, LtEq, Minus, NotEq, Or, Plus};
                 match op {
                     Lt => lhs.lt(&rhs),
                     LtEq => lhs.lte(&rhs),
@@ -151,7 +166,7 @@ impl TableStatistics {
         }
     }
 
-    pub fn cast_to_schema(&self, schema: SchemaRef) -> crate::Result<TableStatistics> {
+    pub fn cast_to_schema(&self, schema: SchemaRef) -> crate::Result<Self> {
         self.cast_to_schema_with_fill(schema, None)
     }
 
@@ -159,9 +174,9 @@ impl TableStatistics {
         &self,
         schema: SchemaRef,
         fill_map: Option<&HashMap<&str, ExprRef>>,
-    ) -> crate::Result<TableStatistics> {
+    ) -> crate::Result<Self> {
         let mut columns = IndexMap::new();
-        for (field_name, field) in schema.fields.iter() {
+        for (field_name, field) in &schema.fields {
             let crs = match self.columns.get(field_name) {
                 Some(column_stat) => column_stat
                     .cast(&field.dtype)
@@ -175,7 +190,7 @@ impl TableStatistics {
             };
             columns.insert(field_name.clone(), crs);
         }
-        Ok(TableStatistics { columns })
+        Ok(Self { columns })
     }
 }
 
@@ -194,7 +209,6 @@ impl Display for TableStatistics {
 
 #[cfg(test)]
 mod test {
-
     use daft_core::prelude::*;
     use daft_dsl::{col, lit};
     use daft_table::Table;

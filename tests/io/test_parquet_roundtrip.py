@@ -12,13 +12,6 @@ from daft import DataType, Series, TimeUnit
 
 PYARROW_GE_8_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (8, 0, 0)
 
-from daft import context
-
-pytestmark = pytest.mark.skipif(
-    context.get_context().daft_execution_config.enable_native_executor is True,
-    reason="Native executor fails for these tests",
-)
-
 
 @pytest.mark.skipif(
     not PYARROW_GE_8_0_0,
@@ -112,15 +105,31 @@ def test_roundtrip_temporal_arrow_types(tmp_path, data, pa_type, expected_dtype)
 
 
 def test_roundtrip_tensor_types(tmp_path):
-    expected_dtype = DataType.tensor(DataType.int64())
-    data = [np.array([[1, 2], [3, 4]]), None, None]
-    before = daft.from_pydict({"foo": Series.from_pylist(data)})
-    before = before.concat(before)
-    before.write_parquet(str(tmp_path))
-    after = daft.read_parquet(str(tmp_path))
-    assert before.schema()["foo"].dtype == expected_dtype
-    assert after.schema()["foo"].dtype == expected_dtype
-    assert before.to_arrow() == after.to_arrow()
+    # Define the expected data type for the tensor column
+    expected_tensor_dtype = DataType.tensor(DataType.int64())
+
+    # Create sample tensor data with some null values
+    tensor_data = [np.array([[1, 2], [3, 4]]), None, None]
+
+    # Create a Daft DataFrame with the tensor data
+    df_original = daft.from_pydict({"tensor_col": Series.from_pylist(tensor_data)})
+
+    # Double the size of the DataFrame to ensure we test with more data
+    df_original = df_original.concat(df_original)
+
+    assert df_original.schema()["tensor_col"].dtype == expected_tensor_dtype
+
+    # Write the DataFrame to a Parquet file
+    df_original.write_parquet(str(tmp_path))
+
+    # Read the Parquet file back into a new DataFrame
+    df_roundtrip = daft.read_parquet(str(tmp_path))
+
+    # Verify that the data type is preserved after the roundtrip
+    assert df_roundtrip.schema()["tensor_col"].dtype == expected_tensor_dtype
+
+    # Ensure the data content is identical after the roundtrip
+    assert df_original.to_arrow() == df_roundtrip.to_arrow()
 
 
 @pytest.mark.parametrize("fixed_shape", [True, False])

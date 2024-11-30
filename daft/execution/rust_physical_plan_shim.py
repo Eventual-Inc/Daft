@@ -19,7 +19,6 @@ from daft.logical.schema import Schema
 from daft.runners.partitioning import PartitionT
 
 if TYPE_CHECKING:
-    from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
@@ -83,6 +82,7 @@ def project(
 def actor_pool_project(
     input: physical_plan.InProgressPhysicalPlan[PartitionT],
     projection: list[PyExpr],
+    actor_pool_manager: physical_plan.ActorPoolManager,
     resource_request: ResourceRequest | None,
     num_actors: int,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
@@ -93,6 +93,7 @@ def actor_pool_project(
     return physical_plan.actor_pool_project(
         child_plan=input,
         projection=expr_projection,
+        actor_pool_manager=actor_pool_manager,
         resource_request=resource_request,
         num_actors=num_actors,
     )
@@ -201,6 +202,7 @@ def sort(
     input: physical_plan.InProgressPhysicalPlan[PartitionT],
     sort_by: list[PyExpr],
     descending: list[bool],
+    nulls_first: list[bool],
     num_partitions: int,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in sort_by])
@@ -208,11 +210,12 @@ def sort(
         child_plan=input,
         sort_by=expr_projection,
         descending=descending,
+        nulls_first=nulls_first,
         num_partitions=num_partitions,
     )
 
 
-def split_by_hash(
+def fanout_by_hash(
     input: physical_plan.InProgressPhysicalPlan[PartitionT],
     num_partitions: int,
     partition_by: list[PyExpr],
@@ -241,6 +244,7 @@ def hash_join(
     right: physical_plan.InProgressPhysicalPlan[PartitionT],
     left_on: list[PyExpr],
     right_on: list[PyExpr],
+    null_equals_nulls: list[bool] | None,
     join_type: JoinType,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     left_on_expr_proj = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in left_on])
@@ -251,6 +255,7 @@ def hash_join(
         left_on=left_on_expr_proj,
         right_on=right_on_expr_proj,
         how=join_type,
+        null_equals_nulls=null_equals_nulls,
     )
 
 
@@ -301,6 +306,7 @@ def broadcast_join(
     receiver: physical_plan.InProgressPhysicalPlan[PartitionT],
     left_on: list[PyExpr],
     right_on: list[PyExpr],
+    null_equals_nulls: list[bool] | None,
     join_type: JoinType,
     is_swapped: bool,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
@@ -313,6 +319,7 @@ def broadcast_join(
         right_on=right_on_expr_proj,
         how=join_type,
         is_swapped=is_swapped,
+        null_equals_nulls=null_equals_nulls,
     )
 
 
@@ -345,7 +352,8 @@ def write_iceberg(
     base_path: str,
     iceberg_schema: IcebergSchema,
     iceberg_properties: IcebergTableProperties,
-    partition_spec: IcebergPartitionSpec,
+    partition_spec_id: int,
+    partition_cols: list[PyExpr],
     io_config: IOConfig | None,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
     return physical_plan.iceberg_write(
@@ -353,7 +361,8 @@ def write_iceberg(
         base_path=base_path,
         iceberg_schema=iceberg_schema,
         iceberg_properties=iceberg_properties,
-        partition_spec=partition_spec,
+        partition_spec_id=partition_spec_id,
+        partition_cols=ExpressionsProjection([Expression._from_pyexpr(expr) for expr in partition_cols]),
         io_config=io_config,
     )
 

@@ -1,5 +1,6 @@
 #![feature(let_chains)]
 #![feature(iterator_try_reduce)]
+#![feature(iterator_try_collect)]
 
 use common_error::DaftError;
 use snafu::Snafu;
@@ -47,7 +48,7 @@ impl From<Error> for DaftError {
     fn from(value: Error) -> Self {
         match value {
             Error::DaftCoreCompute { source } => source,
-            _ => DaftError::External(value.into()),
+            _ => Self::External(value.into()),
         }
     }
 }

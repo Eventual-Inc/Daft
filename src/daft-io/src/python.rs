@@ -3,15 +3,16 @@ pub use py::register_modules;
 
 mod py {
     use common_error::DaftResult;
+    use common_runtime::get_io_runtime;
     use futures::TryStreamExt;
     use pyo3::{prelude::*, types::PyDict};
 
-    use crate::{get_io_client, get_runtime, parse_url, s3_like, stats::IOStatsContext};
+    use crate::{get_io_client, parse_url, s3_like, stats::IOStatsContext};
 
     #[pyfunction]
     fn io_glob(
         py: Python,
-        path: String,
+        input: String,
         multithreaded_io: Option<bool>,
         io_config: Option<common_io_config::python::IOConfig>,
         fanout_limit: Option<usize>,
@@ -19,19 +20,19 @@ mod py {
         limit: Option<usize>,
     ) -> PyResult<Vec<Bound<PyDict>>> {
         let multithreaded_io = multithreaded_io.unwrap_or(true);
-        let io_stats = IOStatsContext::new(format!("io_glob for {path}"));
-        let io_stats_handle = io_stats.clone();
+        let io_stats = IOStatsContext::new(format!("io_glob for {input}"));
+        let io_stats_handle = io_stats;
 
         let lsr: DaftResult<Vec<_>> = py.allow_threads(|| {
             let io_client = get_io_client(
                 multithreaded_io,
                 io_config.unwrap_or_default().config.into(),
             )?;
-            let (scheme, path) = parse_url(&path)?;
-            let runtime_handle = get_runtime(multithreaded_io)?;
+            let (_, path) = parse_url(&input)?;
+            let runtime_handle = get_io_runtime(multithreaded_io);
 
-            runtime_handle.block_on_current_thread(async move {
-                let source = io_client.get_source(&scheme).await?;
+            runtime_handle.block_on_current_thread(async {
+                let source = io_client.get_source(&input).await?;
                 let files = source
                     .glob(
                         path.as_ref(),
@@ -63,7 +64,7 @@ mod py {
     #[pyfunction]
     fn s3_config_from_env(py: Python) -> PyResult<common_io_config::python::S3Config> {
         let s3_config: DaftResult<common_io_config::S3Config> = py.allow_threads(|| {
-            let runtime = get_runtime(false)?;
+            let runtime = get_io_runtime(false);
             runtime.block_on_current_thread(async { Ok(s3_like::s3_config_from_env().await?) })
         });
         Ok(common_io_config::python::S3Config { config: s3_config? })

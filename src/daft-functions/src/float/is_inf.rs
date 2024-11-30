@@ -53,6 +53,7 @@ impl ScalarUDF for IsInf {
     }
 }
 
+#[must_use]
 pub fn is_inf(input: ExprRef) -> ExprRef {
     ScalarFunction::new(IsInf {}, vec![input]).into()
 }

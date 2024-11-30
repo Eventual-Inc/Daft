@@ -3,19 +3,19 @@ use std::{
     sync::Arc,
 };
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use daft_core::{
     array::ops::as_arrow::AsArrow,
     prelude::SchemaRef,
     utils::{
         dyn_compare::{build_dyn_multi_array_compare, MultiDynArrayComparator},
-        identity_hash_set::IdentityBuildHasher,
+        identity_hash_set::{IdentityBuildHasher, IndexHash},
     },
 };
 
 use super::{ArrowTableEntry, IndicesMapper, Probeable, ProbeableBuilder};
-use crate::{ops::hash::IndexHash, Table};
-pub(crate) struct ProbeSet {
+use crate::Table;
+pub struct ProbeSet {
     schema: SchemaRef,
     hash_table: HashMap<IndexHash, (), IdentityBuildHasher>,
     tables: Vec<ArrowTableEntry>,
@@ -31,12 +31,26 @@ impl ProbeSet {
 
     const DEFAULT_SIZE: usize = 20;
 
-    pub(crate) fn new(schema: SchemaRef) -> DaftResult<Self> {
+    pub(crate) fn new(
+        schema: SchemaRef,
+        nulls_equal_aware: Option<&Vec<bool>>,
+    ) -> DaftResult<Self> {
         let hash_table = HashMap::<IndexHash, (), IdentityBuildHasher>::with_capacity_and_hasher(
             Self::DEFAULT_SIZE,
             Default::default(),
         );
-        let compare_fn = build_dyn_multi_array_compare(&schema, false, false)?;
+        if let Some(null_equal_aware) = nulls_equal_aware {
+            if null_equal_aware.len() != schema.len() {
+                return Err(DaftError::InternalError(
+                    format!("null_equal_aware should have the same length as the schema. Expected: {}, Found: {}",
+                            schema.len(), null_equal_aware.len())));
+            }
+        }
+        let default_nulls_equal = vec![false; schema.len()];
+        let nulls_equal = nulls_equal_aware.unwrap_or_else(|| default_nulls_equal.as_ref());
+        let nans_equal = &vec![false; schema.len()];
+        let compare_fn =
+            build_dyn_multi_array_compare(&schema, nulls_equal.as_slice(), nans_equal.as_slice())?;
         Ok(Self {
             schema,
             hash_table,
@@ -156,7 +170,7 @@ impl Probeable for ProbeSet {
     }
 }
 
-pub(crate) struct ProbeSetBuilder(pub ProbeSet);
+pub struct ProbeSetBuilder(pub ProbeSet);
 
 impl ProbeableBuilder for ProbeSetBuilder {
     fn add_table(&mut self, table: &Table) -> DaftResult<()> {

@@ -70,6 +70,7 @@ impl ScalarUDF for ListJoin {
     }
 }
 
+#[must_use]
 pub fn list_join(expr: ExprRef, delim: ExprRef) -> ExprRef {
     ScalarFunction::new(ListJoin {}, vec![expr, delim]).into()
 }

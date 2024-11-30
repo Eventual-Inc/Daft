@@ -1,12 +1,15 @@
 #![feature(hash_raw_entry)]
 #![feature(let_chains)]
+#![feature(iterator_try_collect)]
 
 use core::slice;
 use std::{
     collections::{HashMap, HashSet},
     fmt::{Display, Formatter, Result},
+    hash::{Hash, Hasher},
 };
 
+use arrow2::array::Array;
 use common_display::table_display::{make_comfy_table, StrValue};
 use common_error::{DaftError, DaftResult};
 use daft_core::{
@@ -19,6 +22,7 @@ use daft_dsl::{
     col, functions::FunctionEvaluator, null_lit, AggExpr, ApproxPercentileParams, Expr, ExprRef,
     LiteralValue, SketchType,
 };
+use daft_logical_plan::FileInfos;
 use num_traits::ToPrimitive;
 #[cfg(feature = "python")]
 pub mod ffi;
@@ -28,12 +32,13 @@ mod probeable;
 mod repr_html;
 
 pub use growable::GrowableTable;
-pub use probeable::{make_probeable_builder, Probeable, ProbeableBuilder};
+pub use probeable::{make_probeable_builder, ProbeState, Probeable, ProbeableBuilder};
 
 #[cfg(feature = "python")]
 pub mod python;
 #[cfg(feature = "python")]
 pub use python::register_modules;
+use rand::seq::index::sample;
 use repr_html::html_value;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -41,6 +46,17 @@ pub struct Table {
     pub schema: SchemaRef,
     columns: Vec<Series>,
     num_rows: usize,
+}
+
+impl Hash for Table {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.schema.hash(state);
+        for col in &self.columns {
+            let hashes = col.hash(None).expect("Failed to hash column");
+            hashes.into_iter().for_each(|h| h.hash(state));
+        }
+        self.num_rows.hash(state);
+    }
 }
 
 #[inline]
@@ -94,7 +110,13 @@ impl Table {
             })
             .collect();
 
-        Ok(Table::new_unchecked(schema, columns?, num_rows))
+        Ok(Self::new_unchecked(schema, columns?, num_rows))
+    }
+
+    pub fn get_inner_arrow_arrays(
+        &self,
+    ) -> impl Iterator<Item = Box<dyn arrow2::array::Array>> + '_ {
+        self.columns.iter().map(|s| s.to_arrow())
     }
 
     /// Create a new [`Table`] and validate against `num_rows`
@@ -121,7 +143,7 @@ impl Table {
             }
         }
 
-        Ok(Table::new_unchecked(schema, columns, num_rows))
+        Ok(Self::new_unchecked(schema, columns, num_rows))
     }
 
     /// Create a new [`Table`] without any validations
@@ -135,7 +157,7 @@ impl Table {
         columns: Vec<Series>,
         num_rows: usize,
     ) -> Self {
-        Table {
+        Self {
             schema: schema.into(),
             columns,
             num_rows,
@@ -145,11 +167,11 @@ impl Table {
     pub fn empty(schema: Option<SchemaRef>) -> DaftResult<Self> {
         let schema = schema.unwrap_or_else(|| Schema::empty().into());
         let mut columns: Vec<Series> = Vec::with_capacity(schema.names().len());
-        for (field_name, field) in schema.fields.iter() {
+        for (field_name, field) in &schema.fields {
             let series = Series::empty(field_name, &field.dtype);
-            columns.push(series)
+            columns.push(series);
         }
-        Ok(Table::new_unchecked(schema, columns, 0))
+        Ok(Self::new_unchecked(schema, columns, 0))
     }
 
     /// Create a Table from a set of columns.
@@ -160,9 +182,7 @@ impl Table {
     ///
     /// * `columns` - Columns to crate a table from as [`Series`] objects
     pub fn from_nonempty_columns(columns: Vec<Series>) -> DaftResult<Self> {
-        if columns.is_empty() {
-            panic!("Cannot call Table::new() with empty columns. This indicates an internal error, please file an issue.");
-        }
+        assert!(!columns.is_empty(), "Cannot call Table::new() with empty columns. This indicates an internal error, please file an issue.");
 
         let schema = Schema::new(columns.iter().map(|s| s.field().clone()).collect())?;
         let schema: SchemaRef = schema.into();
@@ -179,7 +199,7 @@ impl Table {
             }
         }
 
-        Ok(Table::new_unchecked(schema, columns, num_rows))
+        Ok(Self::new_unchecked(schema, columns, num_rows))
     }
 
     pub fn num_columns(&self) -> usize {
@@ -194,6 +214,10 @@ impl Table {
         self.num_rows
     }
 
+    pub fn num_rows(&self) -> usize {
+        self.num_rows
+    }
+
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -202,12 +226,12 @@ impl Table {
         let new_series: DaftResult<Vec<_>> =
             self.columns.iter().map(|s| s.slice(start, end)).collect();
         let new_num_rows = self.len().min(end - start);
-        Table::new_with_size(self.schema.clone(), new_series?, new_num_rows)
+        Self::new_with_size(self.schema.clone(), new_series?, new_num_rows)
     }
 
     pub fn head(&self, num: usize) -> DaftResult<Self> {
         if num >= self.len() {
-            return Ok(Table::new_unchecked(
+            return Ok(Self::new_unchecked(
                 self.schema.clone(),
                 self.columns.clone(),
                 self.len(),
@@ -240,11 +264,16 @@ impl Table {
                 Some(seed) => StdRng::seed_from_u64(seed),
                 None => StdRng::from_rng(rand::thread_rng()).unwrap(),
             };
-            let range = Uniform::from(0..self.len() as u64);
             let values: Vec<u64> = if with_replacement {
-                (0..num).map(|_| rng.sample(range)).collect()
-            } else {
+                let range = Uniform::from(0..self.len() as u64);
                 rng.sample_iter(&range).take(num).collect()
+            } else {
+                // https://docs.rs/rand/latest/rand/seq/index/fn.sample.html
+                // Randomly sample exactly amount distinct indices from 0..length, and return them in random order (fully shuffled).
+                sample(&mut rng, self.len(), num)
+                    .into_iter()
+                    .map(|i| i as u64)
+                    .collect()
             };
             let indices: daft_core::array::DataArray<daft_core::datatypes::UInt64Type> =
                 UInt64Array::from(("idx", values));
@@ -342,19 +371,19 @@ impl Table {
             let num_filtered = mask
                 .validity()
                 .map(|validity| arrow2::bitmap::and(validity, mask.as_bitmap()).unset_bits())
-                .unwrap_or(mask.as_bitmap().unset_bits());
+                .unwrap_or_else(|| mask.as_bitmap().unset_bits());
             mask.len() - num_filtered
         };
 
-        Table::new_with_size(self.schema.clone(), new_series?, num_rows)
+        Self::new_with_size(self.schema.clone(), new_series?, num_rows)
     }
 
     pub fn take(&self, idx: &Series) -> DaftResult<Self> {
         let new_series: DaftResult<Vec<_>> = self.columns.iter().map(|s| s.take(idx)).collect();
-        Table::new_with_size(self.schema.clone(), new_series?, idx.len())
+        Self::new_with_size(self.schema.clone(), new_series?, idx.len())
     }
 
-    pub fn concat<T: AsRef<Table>>(tables: &[T]) -> DaftResult<Self> {
+    pub fn concat<T: AsRef<Self>>(tables: &[T]) -> DaftResult<Self> {
         if tables.is_empty() {
             return Err(DaftError::ValueError(
                 "Need at least 1 Table to perform concat".to_string(),
@@ -384,14 +413,14 @@ impl Table {
             new_series.push(Series::concat(series_to_cat.as_slice())?);
         }
 
-        Table::new_with_size(
+        Self::new_with_size(
             first_table.schema.clone(),
             new_series,
             tables.iter().map(|t| t.as_ref().len()).sum(),
         )
     }
 
-    pub fn union(&self, other: &Table) -> DaftResult<Self> {
+    pub fn union(&self, other: &Self) -> DaftResult<Self> {
         if self.num_rows != other.num_rows {
             return Err(DaftError::ValueError(format!(
                 "Cannot union tables of length {} and {}",
@@ -480,6 +509,7 @@ impl Table {
                 }
             }
             AggExpr::Mean(expr) => self.eval_expression(expr)?.mean(groups),
+            AggExpr::Stddev(expr) => self.eval_expression(expr)?.stddev(groups),
             AggExpr::Min(expr) => self.eval_expression(expr)?.min(groups),
             AggExpr::Max(expr) => self.eval_expression(expr)?.max(groups),
             &AggExpr::AnyValue(ref expr, ignore_nulls) => {
@@ -494,27 +524,33 @@ impl Table {
     }
 
     fn eval_expression(&self, expr: &Expr) -> DaftResult<Series> {
-        use crate::Expr::*;
         let expected_field = expr.to_field(self.schema.as_ref())?;
         let series = match expr {
-            Alias(child, name) => Ok(self.eval_expression(child)?.rename(name)),
-            Agg(agg_expr) => self.eval_agg_expression(agg_expr, None),
-            Cast(child, dtype) => self.eval_expression(child)?.cast(dtype),
-            Column(name) => self.get_column(name).cloned(),
-            Not(child) => !(self.eval_expression(child)?),
-            IsNull(child) => self.eval_expression(child)?.is_null(),
-            NotNull(child) => self.eval_expression(child)?.not_null(),
-            FillNull(child, fill_value) => {
+            Expr::Alias(child, name) => Ok(self.eval_expression(child)?.rename(name)),
+            Expr::Agg(agg_expr) => self.eval_agg_expression(agg_expr, None),
+            Expr::Cast(child, dtype) => self.eval_expression(child)?.cast(dtype),
+            Expr::Column(name) => self.get_column(name).cloned(),
+            Expr::Not(child) => !(self.eval_expression(child)?),
+            Expr::IsNull(child) => self.eval_expression(child)?.is_null(),
+            Expr::NotNull(child) => self.eval_expression(child)?.not_null(),
+            Expr::FillNull(child, fill_value) => {
                 let fill_value = self.eval_expression(fill_value)?;
                 self.eval_expression(child)?.fill_null(&fill_value)
             }
-            IsIn(child, items) => self
+            Expr::IsIn(child, items) => {
+                let items = items.iter().map(|i| self.eval_expression(i)).collect::<DaftResult<Vec<_>>>()?;
+
+                let items = items.iter().collect::<Vec<&Series>>();
+                let s = Series::concat(items.as_slice())?;
+                self
                 .eval_expression(child)?
-                .is_in(&self.eval_expression(items)?),
-            Between(child, lower, upper) => self
+                .is_in(&s)
+            }
+
+            Expr::Between(child, lower, upper) => self
                 .eval_expression(child)?
                 .between(&self.eval_expression(lower)?, &self.eval_expression(upper)?),
-            BinaryOp { op, left, right } => {
+            Expr::BinaryOp { op, left, right } => {
                 let lhs = self.eval_expression(left)?;
                 let rhs = self.eval_expression(right)?;
                 use daft_core::array::ops::{DaftCompare, DaftLogical};
@@ -523,6 +559,7 @@ impl Table {
                     Plus => lhs + rhs,
                     Minus => lhs - rhs,
                     TrueDivide => lhs / rhs,
+                    FloorDivide => lhs.floor_div(&rhs),
                     Multiply => lhs * rhs,
                     Modulus => lhs % rhs,
                     Lt => Ok(lhs.lt(&rhs)?.into_series()),
@@ -536,17 +573,16 @@ impl Table {
                     Xor => lhs.xor(&rhs),
                     ShiftLeft => lhs.shift_left(&rhs),
                     ShiftRight => lhs.shift_right(&rhs),
-                    _ => panic!("{op:?} not supported"),
                 }
             }
-            Function { func, inputs } => {
+            Expr::Function { func, inputs } => {
                 let evaluated_inputs = inputs
                     .iter()
                     .map(|e| self.eval_expression(e))
                     .collect::<DaftResult<Vec<_>>>()?;
                 func.evaluate(evaluated_inputs.as_slice(), func)
             }
-            ScalarFunction(func) => {
+            Expr::ScalarFunction(func) => {
                 let evaluated_inputs = func
                     .inputs
                     .iter()
@@ -554,8 +590,8 @@ impl Table {
                     .collect::<DaftResult<Vec<_>>>()?;
                 func.udf.evaluate(evaluated_inputs.as_slice())
             }
-            Literal(lit_value) => Ok(lit_value.to_series()),
-            IfElse {
+            Expr::Literal(lit_value) => Ok(lit_value.to_series()),
+            Expr::IfElse {
                 if_true,
                 if_false,
                 predicate,
@@ -571,7 +607,20 @@ impl Table {
                     Ok(if_true_series.if_else(&if_false_series, &predicate_series)?)
                 }
             },
+            Expr::Subquery(_subquery) => Err(DaftError::ComputeError(
+                "Subquery should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),
+            )),
+            Expr::InSubquery(_expr, _subquery) => Err(DaftError::ComputeError(
+                "IN <SUBQUERY> should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),
+            )),
+            Expr::Exists(_subquery) => Err(DaftError::ComputeError(
+                "EXISTS <SUBQUERY> should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),
+            )),
+            Expr::OuterReferenceColumn { .. } => Err(DaftError::ComputeError(
+                "Outer reference columns should be optimized away before evaluation. This indicates a bug in the query optimizer.".to_string(),
+            )),
         }?;
+
         if expected_field.name != series.field().name {
             return Err(DaftError::ComputeError(format!(
                 "Mismatch of expected expression name and name from computed series ({} vs {}) for expression: {expr}",
@@ -579,32 +628,41 @@ impl Table {
                 series.field().name
             )));
         }
-        if expected_field.dtype != series.field().dtype {
-            panic!("Mismatch of expected expression data type and data type from computed series, {} vs {}", expected_field.dtype, series.field().dtype);
-        }
+
+        assert!(
+            !(expected_field.dtype != series.field().dtype),
+            "Data type mismatch in expression evaluation:\n\
+                Expected type: {}\n\
+                Computed type: {}\n\
+                Expression: {}\n\
+                This likely indicates an internal error in type inference or computation.",
+            expected_field.dtype,
+            series.field().dtype,
+            expr
+        );
         Ok(series)
     }
 
     pub fn eval_expression_list(&self, exprs: &[ExprRef]) -> DaftResult<Self> {
-        let result_series = exprs
+        let result_series: Vec<_> = exprs
             .iter()
             .map(|e| self.eval_expression(e))
-            .collect::<DaftResult<Vec<Series>>>()?;
+            .try_collect()?;
 
-        let fields = result_series
-            .iter()
-            .map(|s| s.field().clone())
-            .collect::<Vec<Field>>();
-        let mut seen: HashSet<String> = HashSet::new();
-        for field in fields.iter() {
+        let fields: Vec<_> = result_series.iter().map(|s| s.field().clone()).collect();
+
+        let mut seen = HashSet::new();
+
+        for field in &fields {
             let name = &field.name;
             if seen.contains(name) {
                 return Err(DaftError::ValueError(format!(
                     "Duplicate name found when evaluating expressions: {name}"
                 )));
             }
-            seen.insert(name.clone());
+            seen.insert(name);
         }
+
         let new_schema = Schema::new(fields)?;
 
         let has_agg_expr = exprs.iter().any(|e| matches!(e.as_ref(), Expr::Agg(..)));
@@ -625,7 +683,7 @@ impl Table {
             (true, _) => result_series.iter().map(|s| s.len()).max().unwrap(),
         };
 
-        Table::new_with_broadcast(new_schema, result_series, num_rows)
+        Self::new_with_broadcast(new_schema, result_series, num_rows)
     }
 
     pub fn as_physical(&self) -> DaftResult<Self> {
@@ -635,7 +693,7 @@ impl Table {
             .map(|s| s.as_physical())
             .collect::<DaftResult<Vec<_>>>()?;
         let new_schema = Schema::new(new_series.iter().map(|s| s.field().clone()).collect())?;
-        Table::new_with_size(new_schema, new_series, self.len())
+        Self::new_with_size(new_schema, new_series, self.len())
     }
 
     pub fn cast_to_schema(&self, schema: &Schema) -> DaftResult<Self> {
@@ -696,16 +754,11 @@ impl Table {
         // Begin the body.
         res.push_str("<tbody>\n");
 
-        let head_rows;
-        let tail_rows;
-
-        if self.len() > 10 {
-            head_rows = 5;
-            tail_rows = 5;
+        let (head_rows, tail_rows) = if self.len() > 10 {
+            (5, 5)
         } else {
-            head_rows = self.len();
-            tail_rows = 0;
-        }
+            (self.len(), 0)
+        };
 
         let styled_td =
             "<td><div style=\"text-align:left; max-width:192px; max-height:64px; overflow:auto\">";
@@ -714,7 +767,7 @@ impl Table {
             // Begin row.
             res.push_str("<tr>");
 
-            for col in self.columns.iter() {
+            for col in &self.columns {
                 res.push_str(styled_td);
                 res.push_str(&html_value(col, i));
                 res.push_str("</div></td>");
@@ -726,7 +779,7 @@ impl Table {
 
         if tail_rows != 0 {
             res.push_str("<tr>");
-            for _ in self.columns.iter() {
+            for _ in &self.columns {
                 res.push_str("<td>...</td>");
             }
             res.push_str("</tr>\n");
@@ -736,7 +789,7 @@ impl Table {
             // Begin row.
             res.push_str("<tr>");
 
-            for col in self.columns.iter() {
+            for col in &self.columns {
                 res.push_str(styled_td);
                 res.push_str(&html_value(col, i));
                 res.push_str("</td>");
@@ -772,6 +825,83 @@ impl Table {
         )
     }
 }
+impl TryFrom<Table> for FileInfos {
+    type Error = DaftError;
+
+    fn try_from(table: Table) -> DaftResult<Self> {
+        let file_paths = table
+            .get_column("path")?
+            .utf8()?
+            .data()
+            .as_any()
+            .downcast_ref::<arrow2::array::Utf8Array<i64>>()
+            .unwrap()
+            .iter()
+            .map(|s| s.unwrap().to_string())
+            .collect::<Vec<_>>();
+        let file_sizes = table
+            .get_column("size")?
+            .i64()?
+            .data()
+            .as_any()
+            .downcast_ref::<arrow2::array::Int64Array>()
+            .unwrap()
+            .iter()
+            .map(|n| n.copied())
+            .collect::<Vec<_>>();
+        let num_rows = table
+            .get_column("num_rows")?
+            .i64()?
+            .data()
+            .as_any()
+            .downcast_ref::<arrow2::array::Int64Array>()
+            .unwrap()
+            .iter()
+            .map(|n| n.copied())
+            .collect::<Vec<_>>();
+        Ok(Self::new_internal(file_paths, file_sizes, num_rows))
+    }
+}
+
+impl TryFrom<&FileInfos> for Table {
+    type Error = DaftError;
+
+    fn try_from(file_info: &FileInfos) -> DaftResult<Self> {
+        let columns = vec![
+            Series::try_from((
+                "path",
+                arrow2::array::Utf8Array::<i64>::from_iter_values(file_info.file_paths.iter())
+                    .to_boxed(),
+            ))?,
+            Series::try_from((
+                "size",
+                arrow2::array::PrimitiveArray::<i64>::from(&file_info.file_sizes).to_boxed(),
+            ))?,
+            Series::try_from((
+                "num_rows",
+                arrow2::array::PrimitiveArray::<i64>::from(&file_info.num_rows).to_boxed(),
+            ))?,
+        ];
+        Self::from_nonempty_columns(columns)
+    }
+}
+
+impl PartialEq for Table {
+    fn eq(&self, other: &Self) -> bool {
+        if self.len() != other.len() {
+            return false;
+        }
+        if self.schema != other.schema {
+            return false;
+        }
+        for (lhs, rhs) in self.columns.iter().zip(other.columns.iter()) {
+            if lhs != rhs {
+                return false;
+            }
+        }
+        true
+    }
+}
 
 impl Display for Table {
     // `f` is a buffer, and this method must write the formatted string into it
@@ -781,8 +911,8 @@ impl Display for Table {
     }
 }
 
-impl AsRef<Table> for Table {
-    fn as_ref(&self) -> &Table {
+impl AsRef<Self> for Table {
+    fn as_ref(&self) -> &Self {
         self
     }
 }

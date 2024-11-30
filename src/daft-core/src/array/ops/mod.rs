@@ -49,6 +49,7 @@ mod sketch_percentile;
 mod sort;
 pub(crate) mod sparse_tensor;
 mod sqrt;
+mod stddev;
 mod struct_;
 mod sum;
 mod take;
@@ -57,6 +58,8 @@ mod time;
 pub mod trigonometry;
 mod truncate;
 mod utf8;
+
+use std::hash::BuildHasher;
 
 use common_error::DaftResult;
 pub use hll_sketch::HLL_SKETCH_DTYPE;
@@ -142,7 +145,13 @@ pub trait DaftNotNan {
 
 pub trait DaftMinHash {
     type Output;
-    fn minhash(&self, num_hashes: usize, ngram_size: usize, seed: u32) -> Self::Output;
+    fn minhash(
+        &self,
+        num_hashes: usize,
+        ngram_size: usize,
+        seed: u32,
+        hasher: &impl BuildHasher,
+    ) -> Self::Output;
 }
 
 pub type VecIndices = Vec<u64>;
@@ -187,6 +196,12 @@ pub trait DaftMeanAggable {
     type Output;
     fn mean(&self) -> Self::Output;
     fn grouped_mean(&self, groups: &GroupIndices) -> Self::Output;
+}
+
+pub trait DaftStddevAggable {
+    type Output;
+    fn stddev(&self) -> Self::Output;
+    fn grouped_stddev(&self, groups: &GroupIndices) -> Self::Output;
 }
 
 pub trait DaftCompareAggable {

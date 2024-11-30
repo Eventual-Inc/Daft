@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
+use common_runtime::get_io_runtime;
 use daft_core::prelude::*;
 use daft_dsl::{functions::ScalarUDF, ExprRef};
-use daft_io::{get_io_client, get_runtime, Error, IOConfig, IOStatsContext, IOStatsRef};
+use daft_io::{get_io_client, Error, IOConfig, IOStatsContext, IOStatsRef};
 use futures::{StreamExt, TryStreamExt};
 use serde::Serialize;
 use snafu::prelude::*;
@@ -29,7 +30,7 @@ impl ScalarUDF for DownloadFunction {
     }
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
-        let DownloadFunction {
+        let Self {
             max_connections,
             raise_error_on_failure,
             multi_thread,
@@ -52,8 +53,7 @@ impl ScalarUDF for DownloadFunction {
                     Ok(result.into_series())
                 }
                 _ => Err(DaftError::TypeError(format!(
-                    "Download can only download uris from Utf8Array, got {}",
-                    input
+                    "Download can only download uris from Utf8Array, got {input}"
                 ))),
             },
             _ => Err(DaftError::ValueError(format!(
@@ -71,8 +71,7 @@ impl ScalarUDF for DownloadFunction {
                 match &field.dtype {
                     DataType::Utf8 => Ok(Field::new(field.name, DataType::Binary)),
                     _ => Err(DaftError::TypeError(format!(
-                        "Download can only download uris from Utf8Array, got {}",
-                        field
+                        "Download can only download uris from Utf8Array, got {field}"
                     ))),
                 }
             }
@@ -100,7 +99,7 @@ fn url_download(
         }
     );
 
-    let runtime_handle = get_runtime(true)?;
+    let runtime_handle = get_io_runtime(true);
     let max_connections = match multi_thread {
         false => max_connections,
         true => max_connections * usize::from(std::thread::available_parallelism()?),
@@ -108,11 +107,16 @@ fn url_download(
     let io_client = get_io_client(multi_thread, config)?;
 
     let owned_array = array.clone();
+
+    #[expect(
+        clippy::needless_collect,
+        reason = "This actually might be needed, but need to double check TODO:(andrewgazelka)"
+    )]
     let fetches = async move {
         let urls = owned_array
             .as_arrow()
             .into_iter()
-            .map(|s| s.map(|s| s.to_string()))
+            .map(|s| s.map(std::string::ToString::to_string))
             .collect::<Vec<_>>();
 
         let stream = futures::stream::iter(urls.into_iter().enumerate().map(move |(i, url)| {
@@ -136,7 +140,7 @@ fn url_download(
         stream.try_collect::<Vec<_>>().await
     };
 
-    let mut results = runtime_handle.block_on_io_pool(fetches)??;
+    let mut results = runtime_handle.block_on(fetches)??;
 
     results.sort_by_key(|k| k.0);
     let mut offsets: Vec<i64> = Vec::with_capacity(results.len() + 1);
@@ -146,20 +150,17 @@ fn url_download(
 
     let cap_needed: usize = results
         .iter()
-        .filter_map(|f| f.1.as_ref().map(|f| f.len()))
+        .filter_map(|f| f.1.as_ref().map(bytes::Bytes::len))
         .sum();
     let mut data = Vec::with_capacity(cap_needed);
-    for (_, b) in results.into_iter() {
-        match b {
-            Some(b) => {
-                data.extend(b.as_ref());
-                offsets.push(b.len() as i64 + offsets.last().unwrap());
-                valid.push(true);
-            }
-            None => {
-                offsets.push(*offsets.last().unwrap());
-                valid.push(false);
-            }
+    for (_, b) in results {
+        if let Some(b) = b {
+            data.extend(b.as_ref());
+            offsets.push(b.len() as i64 + offsets.last().unwrap());
+            valid.push(true);
+        } else {
+            offsets.push(*offsets.last().unwrap());
+            valid.push(false);
         }
     }
     Ok(BinaryArray::try_from((name, data, offsets))?

@@ -14,9 +14,9 @@ trait SpatialSimilarity {
 
 impl SpatialSimilarity for f64 {
     fn cosine(a: &[Self], b: &[Self]) -> Option<f64> {
-        let xy = a.iter().zip(b).map(|(a, b)| a * b).sum::<f64>();
-        let x_sq = a.iter().map(|x| x.powi(2)).sum::<f64>().sqrt();
-        let y_sq = b.iter().map(|x| x.powi(2)).sum::<f64>().sqrt();
+        let xy = a.iter().zip(b).map(|(a, b)| a * b).sum::<Self>();
+        let x_sq = a.iter().map(|x| x.powi(2)).sum::<Self>().sqrt();
+        let y_sq = b.iter().map(|x| x.powi(2)).sum::<Self>().sqrt();
         Some(1.0 - xy / (x_sq * y_sq))
     }
 }
@@ -26,10 +26,10 @@ impl SpatialSimilarity for f32 {
         let xy = a
             .iter()
             .zip(b)
-            .map(|(a, b)| *a as f64 * *b as f64)
+            .map(|(a, b)| f64::from(*a) * f64::from(*b))
             .sum::<f64>();
-        let x_sq = a.iter().map(|x| (*x as f64).powi(2)).sum::<f64>().sqrt();
-        let y_sq = b.iter().map(|x| (*x as f64).powi(2)).sum::<f64>().sqrt();
+        let x_sq = a.iter().map(|x| f64::from(*x).powi(2)).sum::<f64>().sqrt();
+        let y_sq = b.iter().map(|x| f64::from(*x).powi(2)).sum::<f64>().sqrt();
         Some(1.0 - xy / (x_sq * y_sq))
     }
 }
@@ -39,10 +39,10 @@ impl SpatialSimilarity for i8 {
         let xy = a
             .iter()
             .zip(b)
-            .map(|(a, b)| *a as f64 * *b as f64)
+            .map(|(a, b)| f64::from(*a) * f64::from(*b))
             .sum::<f64>();
-        let x_sq = a.iter().map(|x| (*x as f64).powi(2)).sum::<f64>().sqrt();
-        let y_sq = b.iter().map(|x| (*x as f64).powi(2)).sum::<f64>().sqrt();
+        let x_sq = a.iter().map(|x| f64::from(*x).powi(2)).sum::<f64>().sqrt();
+        let y_sq = b.iter().map(|x| f64::from(*x).powi(2)).sum::<f64>().sqrt();
         Some(1.0 - xy / (x_sq * y_sq))
     }
 }
@@ -117,7 +117,10 @@ impl ScalarUDF for CosineDistanceFunction {
                     }
                 }?;
 
-                let output = Float64Array::from_iter(source_name, res.into_iter());
+                let output = Float64Array::from_iter(
+                    Field::new(source_name, DataType::Float64),
+                    res.into_iter(),
+                );
 
                 Ok(output.into_series())
             }
@@ -140,8 +143,7 @@ impl ScalarUDF for CosineDistanceFunction {
                 {
                     if source_size != query_size {
                         return Err(DaftError::ValueError(format!(
-                            "Expected source and query to have the same size, instead got {} and {}",
-                            source_size, query_size
+                            "Expected source and query to have the same size, instead got {source_size} and {query_size}"
                         )));
                     }
                 } else {
@@ -165,6 +167,7 @@ impl ScalarUDF for CosineDistanceFunction {
     }
 }
 
+#[must_use]
 pub fn cosine_distance(a: ExprRef, b: ExprRef) -> ExprRef {
     ScalarFunction::new(CosineDistanceFunction {}, vec![a, b]).into()
 }

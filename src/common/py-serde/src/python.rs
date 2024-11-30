@@ -7,8 +7,8 @@ use serde::{
     ser::Error as SerError,
     Deserializer, Serializer,
 };
-#[cfg(feature = "python")]
 
+#[cfg(feature = "python")]
 pub fn serialize_py_object<S>(obj: &PyObject, s: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
@@ -23,10 +23,9 @@ where
     s.serialize_bytes(bytes.as_slice())
 }
 #[cfg(feature = "python")]
-
 struct PyObjectVisitor;
-#[cfg(feature = "python")]
 
+#[cfg(feature = "python")]
 impl<'de> Visitor<'de> for PyObjectVisitor {
     type Value = PyObject;
 
@@ -50,12 +49,19 @@ impl<'de> Visitor<'de> for PyObjectVisitor {
     where
         E: DeError,
     {
-        Python::with_gil(|py| {
-            py.import_bound(pyo3::intern!(py, "daft.pickle"))
-                .and_then(|m| m.getattr(pyo3::intern!(py, "loads")))
-                .and_then(|f| Ok(f.call1((v,))?.into()))
-                .map_err(|e| DeError::custom(e.to_string()))
-        })
+        self.visit_bytes(&v)
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: serde::de::SeqAccess<'de>,
+    {
+        let mut v: Vec<u8> = Vec::with_capacity(seq.size_hint().unwrap_or_default());
+        while let Some(elem) = seq.next_element()? {
+            v.push(elem);
+        }
+
+        self.visit_bytes(&v)
     }
 }
 

@@ -6,7 +6,7 @@ use crate::{
 };
 
 impl Series {
-    pub fn abs(&self) -> DaftResult<Series> {
+    pub fn abs(&self) -> DaftResult<Self> {
         match self.data_type() {
             DataType::Int8 => Ok(self.i8().unwrap().abs()?.into_series()),
             DataType::Int16 => Ok(self.i16().unwrap().abs()?.into_series()),

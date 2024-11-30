@@ -11,6 +11,7 @@ pub mod temporal;
 pub mod to_struct;
 pub mod tokenize;
 pub mod uri;
+pub mod utf8;
 
 use common_error::DaftError;
 #[cfg(feature = "python")]
@@ -50,6 +51,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     float::register_modules(parent)?;
     temporal::register_modules(parent)?;
     list::register_modules(parent)?;
+    utf8::register_modules(parent)?;
     Ok(())
 }
 
@@ -60,13 +62,13 @@ pub enum Error {
 }
 
 impl From<Error> for std::io::Error {
-    fn from(err: Error) -> std::io::Error {
-        std::io::Error::new(std::io::ErrorKind::Other, err)
+    fn from(err: Error) -> Self {
+        Self::new(std::io::ErrorKind::Other, err)
     }
 }
 
 impl From<Error> for DaftError {
-    fn from(err: Error) -> DaftError {
-        DaftError::External(err.into())
+    fn from(err: Error) -> Self {
+        Self::External(err.into())
     }
 }

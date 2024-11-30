@@ -5,14 +5,11 @@ use chrono::{
     Datelike, Duration, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime,
 };
 
-use crate::error::Result;
 use crate::{
     array::{PrimitiveArray, Utf8Array},
-    error::Error,
-    offset::Offset,
-};
-use crate::{
     datatypes::{DataType, TimeUnit},
+    error::{Error, Result},
+    offset::Offset,
     types::months_days_ns,
 };
 
@@ -520,6 +517,34 @@ pub fn add_naive_interval(timestamp: i64, time_unit: TimeUnit, interval: months_
     }
 }
 
+/// Subtracts an `interval` from a `timestamp` in `time_unit` units without timezone.
+#[inline]
+pub fn sub_naive_interval(timestamp: i64, time_unit: TimeUnit, interval: months_days_ns) -> i64 {
+    // convert seconds to a DateTime of a given offset.
+    let datetime = match time_unit {
+        TimeUnit::Second => timestamp_s_to_datetime(timestamp),
+        TimeUnit::Millisecond => timestamp_ms_to_datetime(timestamp),
+        TimeUnit::Microsecond => timestamp_us_to_datetime(timestamp),
+        TimeUnit::Nanosecond => timestamp_ns_to_datetime(timestamp),
+    };
+
+    // compute the number of days in the interval, which depends on the particular year and month (leap days)
+    let delta_days = get_days_between_months(datetime.year(), datetime.month(), interval.months())
+        - interval.days() as i64;
+
+    // subtract; no leap hours are considered
+    let new_datetime_tz = datetime
+        - chrono::Duration::nanoseconds(delta_days * 24 * 60 * 60 * 1_000_000_000 + interval.ns());
+
+    // convert back to the target unit
+    match time_unit {
+        TimeUnit::Second => new_datetime_tz.and_utc().timestamp_millis() / 1000,
+        TimeUnit::Millisecond => new_datetime_tz.and_utc().timestamp_millis(),
+        TimeUnit::Microsecond => new_datetime_tz.and_utc().timestamp_nanos_opt().unwrap() / 1000,
+        TimeUnit::Nanosecond => new_datetime_tz.and_utc().timestamp_nanos_opt().unwrap(),
+    }
+}
+
 /// Adds an `interval` to a `timestamp` in `time_unit` units and timezone `timezone`.
 #[inline]
 pub fn add_interval<T: chrono::TimeZone>(
@@ -539,6 +564,35 @@ pub fn add_interval<T: chrono::TimeZone>(
     // add; tz will take care of leap hours
     let new_datetime_tz = datetime_tz
         + chrono::Duration::nanoseconds(delta_days * 24 * 60 * 60 * 1_000_000_000 + interval.ns());
+
+    // convert back to the target unit
+    match time_unit {
+        TimeUnit::Second => new_datetime_tz.timestamp_millis() / 1000,
+        TimeUnit::Millisecond => new_datetime_tz.timestamp_millis(),
+        TimeUnit::Microsecond => new_datetime_tz.timestamp_nanos_opt().unwrap() / 1000,
+        TimeUnit::Nanosecond => new_datetime_tz.timestamp_nanos_opt().unwrap(),
+    }
+}
+
+/// Subtracts an `interval` from a `timestamp` in `time_unit` units and timezone `timezone`.
+#[inline]
+pub fn sub_interval<T: chrono::TimeZone>(
+    timestamp: i64,
+    time_unit: TimeUnit,
+    interval: months_days_ns,
+    timezone: &T,
+) -> i64 {
+    // convert seconds to a DateTime of a given offset.
+    let datetime_tz = timestamp_to_datetime(timestamp, time_unit, timezone);
+
+    // compute the number of days in the interval, which depends on the particular year and month (leap days)
+    let delta_days =
+        get_days_between_months(datetime_tz.year(), datetime_tz.month(), interval.months())
+            - interval.days() as i64;
+
+    // subtract; tz will take care of leap hours
+    let new_datetime_tz = datetime_tz
+        - chrono::Duration::nanoseconds(delta_days * 24 * 60 * 60 * 1_000_000_000 + interval.ns());
 
     // convert back to the target unit
     match time_unit {

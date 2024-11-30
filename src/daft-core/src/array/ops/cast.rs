@@ -37,7 +37,7 @@ use crate::{
     },
     datatypes::{
         logical::{
-            DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
+            DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, LogicalArray, MapArray,
             SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
@@ -206,7 +206,7 @@ impl DateArray {
 /// Formats a naive timestamp to a string in the format "%Y-%m-%d %H:%M:%S%.f".
 /// Example: 2021-01-01 00:00:00
 /// See https://docs.rs/chrono/latest/chrono/format/strftime/index.html for format string options.
-pub(crate) fn timestamp_to_str_naive(val: i64, unit: &TimeUnit) -> String {
+pub fn timestamp_to_str_naive(val: i64, unit: &TimeUnit) -> String {
     let chrono_ts = arrow2::temporal_conversions::timestamp_to_naive_datetime(val, unit.to_arrow());
     let format_str = "%Y-%m-%d %H:%M:%S%.f";
     chrono_ts.format(format_str).to_string()
@@ -215,11 +215,7 @@ pub(crate) fn timestamp_to_str_naive(val: i64, unit: &TimeUnit) -> String {
 /// Formats a timestamp with an offset to a string in the format "%Y-%m-%d %H:%M:%S%.f %:z".
 /// Example: 2021-01-01 00:00:00 -07:00
 /// See https://docs.rs/chrono/latest/chrono/format/strftime/index.html for format string options.
-pub(crate) fn timestamp_to_str_offset(
-    val: i64,
-    unit: &TimeUnit,
-    offset: &chrono::FixedOffset,
-) -> String {
+pub fn timestamp_to_str_offset(val: i64, unit: &TimeUnit, offset: &chrono::FixedOffset) -> String {
     let chrono_ts =
         arrow2::temporal_conversions::timestamp_to_datetime(val, unit.to_arrow(), offset);
     let format_str = "%Y-%m-%d %H:%M:%S%.f %:z";
@@ -229,7 +225,7 @@ pub(crate) fn timestamp_to_str_offset(
 /// Formats a timestamp with a timezone to a string in the format "%Y-%m-%d %H:%M:%S%.f %Z".
 /// Example: 2021-01-01 00:00:00 PST
 /// See https://docs.rs/chrono/latest/chrono/format/strftime/index.html for format string options.
-pub(crate) fn timestamp_to_str_tz(val: i64, unit: &TimeUnit, tz: &chrono_tz::Tz) -> String {
+pub fn timestamp_to_str_tz(val: i64, unit: &TimeUnit, tz: &chrono_tz::Tz) -> String {
     let chrono_ts = arrow2::temporal_conversions::timestamp_to_datetime(val, unit.to_arrow(), tz);
     let format_str = "%Y-%m-%d %H:%M:%S%.f %Z";
     chrono_ts.format(format_str).to_string()
@@ -416,40 +412,40 @@ impl DurationArray {
     }
 }
 
-impl Decimal128Array {
-    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
-        match dtype {
-            #[cfg(feature = "python")]
-            DataType::Python => cast_logical_to_python_array(self, dtype),
-            DataType::Int128 => Ok(self.physical.clone().into_series()),
-            dtype if dtype.is_numeric() => self.physical.cast(dtype),
-            DataType::Decimal128(_, _) => {
-                // Use the arrow2 Decimal128 casting logic.
-                let target_arrow_type = dtype.to_arrow()?;
-                let arrow_decimal_array = self
-                    .as_arrow()
-                    .clone()
-                    .to(self.data_type().to_arrow()?)
-                    .to_boxed();
-                let casted_arrow_array = cast(
-                    arrow_decimal_array.as_ref(),
-                    &target_arrow_type,
-                    CastOptions {
-                        wrapped: true,
-                        partial: false,
-                    },
-                )?;
+// impl Decimal128Array {
+//     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+//         match dtype {
+//             #[cfg(feature = "python")]
+//             DataType::Python => cast_logical_to_python_array(self, dtype),
+//             DataType::Int128 => Ok(self.physical.clone().into_series()),
+//             dtype if dtype.is_numeric() => self.physical.cast(dtype),
+//             DataType::Decimal128(_, _) => {
+//                 // Use the arrow2 Decimal128 casting logic.
+//                 let target_arrow_type = dtype.to_arrow()?;
+//                 let arrow_decimal_array = self
+//                     .as_arrow()
+//                     .clone()
+//                     .to(self.data_type().to_arrow()?)
+//                     .to_boxed();
+//                 let casted_arrow_array = cast(
+//                     arrow_decimal_array.as_ref(),
+//                     &target_arrow_type,
+//                     CastOptions {
+//                         wrapped: true,
+//                         partial: false,
+//                     },
+//                 )?;
 
-                let new_field = Arc::new(Field::new(self.name(), dtype.clone()));
-                Series::from_arrow(new_field, casted_arrow_array)
-            }
-            _ => Err(DaftError::TypeError(format!(
-                "Cannot cast Decimal128 to {}",
-                dtype
-            ))),
-        }
-    }
-}
+//                 let new_field = Arc::new(Field::new(self.name(), dtype.clone()));
+//                 Series::from_arrow(new_field, casted_arrow_array)
+//             }
+//             _ => Err(DaftError::TypeError(format!(
+//                 "Cannot cast Decimal128 to {}",
+//                 dtype
+//             ))),
+//         }
+//     }
+// }
 
 #[cfg(feature = "python")]
 macro_rules! pycast_then_arrowcast {
@@ -647,9 +643,9 @@ fn extract_python_to_vec<
                 if let Some(list_size) = list_size {
                     if num_values != list_size {
                         return Err(DaftError::ValueError(format!(
-                                "Expected Array-like Object to have {list_size} elements but got {} at index {}",
-                                num_values, i
-                            )));
+                            "Expected Array-like Object to have {list_size} elements but got {} at index {}",
+                            num_values, i
+                        )));
                     }
                 } else {
                     offsets_vec.push(offsets_vec.last().unwrap() + num_values as i64);
@@ -700,7 +696,7 @@ fn extract_python_to_vec<
                     };
 
                     if collected.is_err() {
-                        log::warn!("Could not convert python object to list at index: {i} for input series: {}", python_objects.name())
+                        log::warn!("Could not convert python object to list at index: {i} for input series: {}", python_objects.name());
                     }
                     let collected: Vec<Tgt> = collected?;
                     if let Some(list_size) = list_size {
@@ -1351,7 +1347,7 @@ impl TensorArray {
                             .call_method1(pyo3::intern!(py, "reshape"), (shape,))?;
                         ndarrays.push(py_array.unbind());
                     } else {
-                        ndarrays.push(py.None())
+                        ndarrays.push(py.None());
                     }
                 }
                 let values_array =
@@ -1400,12 +1396,10 @@ impl TensorArray {
                 let zero_series = Int64Array::from(("item", [0].as_slice())).into_series();
                 let mut non_zero_values = Vec::new();
                 let mut non_zero_indices = Vec::new();
-                let mut offsets = Vec::<usize>::new();
                 for (i, (shape_series, data_series)) in shape_and_data_iter.enumerate() {
                     let is_valid = validity.map_or(true, |v| v.get_bit(i));
                     if !is_valid {
                         // Handle invalid row by populating dummy data.
-                        offsets.push(1);
                         non_zero_values.push(Series::empty("dummy", inner_dtype.as_ref()));
                         non_zero_indices.push(Series::empty("dummy", &DataType::UInt64));
                         continue;
@@ -1422,7 +1416,6 @@ impl TensorArray {
                     let indices = UInt64Array::arange("item", 0, data_series.len() as i64, 1)?
                         .into_series()
                         .filter(&non_zero_mask)?;
-                    offsets.push(data.len());
                     non_zero_values.push(data);
                     non_zero_indices.push(indices);
                 }
@@ -1603,7 +1596,7 @@ fn cast_sparse_to_dense_for_inner_dtype(
                 if !is_valid {
                     continue;
                 }
-                let index_series: Series = non_zero_indices_array.get(i).unwrap();
+                let index_series: Series = non_zero_indices_array.get(i).unwrap().cast(&DataType::UInt64)?;
                 let index_array = index_series.u64().unwrap().as_arrow();
                 let values_series: Series = non_zero_values_array.get(i).unwrap();
                 let values_array = values_series.downcast::<<$T as DaftDataType>::ArrayType>()
@@ -1617,6 +1610,18 @@ fn cast_sparse_to_dense_for_inner_dtype(
             Box::new(arrow2::array::PrimitiveArray::from_vec(values))
     });
     Ok(item)
+}
+
+fn minimal_uint_dtype(value: u64) -> DataType {
+    if u8::try_from(value).is_ok() {
+        DataType::UInt8
+    } else if u16::try_from(value).is_ok() {
+        DataType::UInt16
+    } else if u32::try_from(value).is_ok() {
+        DataType::UInt32
+    } else {
+        DataType::UInt64
+    }
 }
 
 impl SparseTensorArray {
@@ -1635,7 +1640,7 @@ impl SparseTensorArray {
                         })
                     })
                     .collect();
-                let offsets: Offsets<i64> = Offsets::try_from_iter(sizes_vec.iter().cloned())?;
+                let offsets: Offsets<i64> = Offsets::try_from_iter(sizes_vec.iter().copied())?;
                 let n_values = sizes_vec.iter().sum::<usize>();
                 let validity = non_zero_indices_array.validity();
                 let item = cast_sparse_to_dense_for_inner_dtype(
@@ -1685,11 +1690,16 @@ impl SparseTensorArray {
                         shape,
                     )));
                 };
+
+                let largest_index = std::cmp::max(shape.iter().product::<u64>(), 1) - 1;
+                let indices_minimal_inner_dtype = minimal_uint_dtype(largest_index);
                 let values_array =
                     va.cast(&DataType::List(Box::new(inner_dtype.as_ref().clone())))?;
+                let indices_array =
+                    ia.cast(&DataType::List(Box::new(indices_minimal_inner_dtype)))?;
                 let struct_array = StructArray::new(
                     Field::new(self.name(), dtype.to_physical()),
-                    vec![values_array, ia.clone().into_series()],
+                    vec![values_array, indices_array],
                     va.validity().cloned(),
                 );
                 let sparse_tensor_array = FixedShapeSparseTensorArray::new(
@@ -1698,6 +1708,44 @@ impl SparseTensorArray {
                 );
                 Ok(sparse_tensor_array.into_series())
             }
+            #[cfg(feature = "python")]
+            DataType::Python => Python::with_gil(|py| {
+                let mut pydicts: Vec<Py<PyAny>> = Vec::with_capacity(self.len());
+                let sa = self.shape_array();
+                let va = self.values_array();
+                let ia = self.indices_array();
+                let pyarrow = py.import_bound(pyo3::intern!(py, "pyarrow"))?;
+                for ((shape_array, values_array), indices_array) in
+                    sa.into_iter().zip(va.into_iter()).zip(ia.into_iter())
+                {
+                    if let (Some(shape_array), Some(values_array), Some(indices_array)) =
+                        (shape_array, values_array, indices_array)
+                    {
+                        let shape_array = shape_array.u64().unwrap().as_arrow();
+                        let shape = shape_array.values().to_vec();
+                        let py_values_array =
+                            ffi::to_py_array(py, values_array.to_arrow(), &pyarrow)?
+                                .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?;
+                        let py_indices_array =
+                            ffi::to_py_array(py, indices_array.to_arrow(), &pyarrow)?
+                                .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?;
+                        let pydict = pyo3::types::PyDict::new_bound(py);
+                        pydict.set_item("values", py_values_array)?;
+                        pydict.set_item("indices", py_indices_array)?;
+                        pydict.set_item("shape", shape)?;
+                        pydicts.push(pydict.unbind().into());
+                    } else {
+                        pydicts.push(py.None());
+                    }
+                }
+                let py_objects_array =
+                    PseudoArrowArray::new(pydicts.into(), self.physical.validity().cloned());
+                Ok(PythonArray::new(
+                    Field::new(self.name(), dtype.clone()).into(),
+                    py_objects_array.to_boxed(),
+                )?
+                .into_series())
+            }),
             _ => self.physical.cast(dtype),
         }
     }
@@ -1729,6 +1777,7 @@ impl FixedShapeSparseTensorArray {
 
                 let values_arr =
                     va.cast(&DataType::List(Box::new(inner_dtype.as_ref().clone())))?;
+                let indices_arr = ia.cast(&DataType::List(Box::new(DataType::UInt64)))?;
 
                 // List -> Struct
                 let shape_offsets = arrow2::offset::OffsetsBuffer::try_from(shape_offsets)?;
@@ -1745,11 +1794,7 @@ impl FixedShapeSparseTensorArray {
                 let physical_type = dtype.to_physical();
                 let struct_array = StructArray::new(
                     Field::new(self.name(), physical_type),
-                    vec![
-                        values_arr,
-                        ia.clone().into_series(),
-                        shapes_array.into_series(),
-                    ],
+                    vec![values_arr, indices_arr, shapes_array.into_series()],
                     validity.cloned(),
                 );
                 Ok(
@@ -1792,6 +1837,41 @@ impl FixedShapeSparseTensorArray {
                 let fixed_shape_tensor_array =
                     FixedShapeTensorArray::new(Field::new(self.name(), dtype.clone()), physical);
                 Ok(fixed_shape_tensor_array.into_series())
+            }
+            #[cfg(feature = "python")]
+            (DataType::Python, DataType::FixedShapeSparseTensor(_, tensor_shape)) => {
+                Python::with_gil(|py| {
+                    let mut pydicts: Vec<Py<PyAny>> = Vec::with_capacity(self.len());
+                    let va = self.values_array();
+                    let ia = self.indices_array();
+                    let pyarrow = py.import_bound(pyo3::intern!(py, "pyarrow"))?;
+                    for (values_array, indices_array) in va.into_iter().zip(ia.into_iter()) {
+                        if let (Some(values_array), Some(indices_array)) =
+                            (values_array, indices_array)
+                        {
+                            let py_values_array =
+                                ffi::to_py_array(py, values_array.to_arrow(), &pyarrow)?
+                                    .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?;
+                            let py_indices_array =
+                                ffi::to_py_array(py, indices_array.to_arrow(), &pyarrow)?
+                                    .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?;
+                            let pydict = pyo3::types::PyDict::new_bound(py);
+                            pydict.set_item("values", py_values_array)?;
+                            pydict.set_item("indices", py_indices_array)?;
+                            pydict.set_item("shape", tensor_shape)?;
+                            pydicts.push(pydict.unbind().into());
+                        } else {
+                            pydicts.push(py.None());
+                        }
+                    }
+                    let py_objects_array =
+                        PseudoArrowArray::new(pydicts.into(), self.physical.validity().cloned());
+                    Ok(PythonArray::new(
+                        Field::new(self.name(), dtype.clone()).into(),
+                        py_objects_array.to_boxed(),
+                    )?
+                    .into_series())
+                })
             }
             (_, _) => self.physical.cast(dtype),
         }
@@ -1882,24 +1962,24 @@ impl FixedShapeTensorArray {
                 let zero_series = Int64Array::from(("item", [0].as_slice())).into_series();
                 let mut non_zero_values = Vec::new();
                 let mut non_zero_indices = Vec::new();
-                let mut offsets = Vec::<usize>::new();
                 for (i, data_series) in physical_arr.into_iter().enumerate() {
                     let is_valid = validity.map_or(true, |v| v.get_bit(i));
                     if !is_valid {
                         // Handle invalid row by populating dummy data.
-                        offsets.push(1);
                         non_zero_values.push(Series::empty("dummy", inner_dtype.as_ref()));
                         non_zero_indices.push(Series::empty("dummy", &DataType::UInt64));
                         continue;
                     }
                     let data_series = data_series.unwrap();
-                    assert!(data_series.len() == tensor_shape.iter().product::<u64>() as usize);
+                    assert_eq!(
+                        data_series.len(),
+                        tensor_shape.iter().product::<u64>() as usize
+                    );
                     let non_zero_mask = data_series.not_equal(&zero_series)?;
                     let data = data_series.filter(&non_zero_mask)?;
                     let indices = UInt64Array::arange("item", 0, data_series.len() as i64, 1)?
                         .into_series()
                         .filter(&non_zero_mask)?;
-                    offsets.push(data.len());
                     non_zero_values.push(data);
                     non_zero_indices.push(indices);
                 }
@@ -1928,9 +2008,15 @@ impl FixedShapeTensorArray {
                     offsets_cloned.into(),
                     validity.cloned(),
                 );
+
+                let largest_index = std::cmp::max(tensor_shape.iter().product::<u64>(), 1) - 1;
+                let indices_minimal_inner_dtype = minimal_uint_dtype(largest_index);
+                let casted_indices = indices_list_arr
+                    .cast(&DataType::List(Box::new(indices_minimal_inner_dtype)))?;
+
                 let sparse_struct_array = StructArray::new(
                     Field::new(self.name(), dtype.to_physical()),
-                    vec![data_list_arr.into_series(), indices_list_arr.into_series()],
+                    vec![data_list_arr.into_series(), casted_indices],
                     validity.cloned(),
                 );
                 Ok(FixedShapeSparseTensorArray::new(
@@ -1956,7 +2042,7 @@ impl FixedSizeListArray {
                     )));
                 }
                 let casted_child = self.flat_child.cast(child_dtype.as_ref())?;
-                Ok(FixedSizeListArray::new(
+                Ok(Self::new(
                     Field::new(self.name().to_string(), dtype.clone()),
                     casted_child,
                     self.validity().cloned(),
@@ -2018,7 +2104,7 @@ impl FixedSizeListArray {
 impl ListArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         match dtype {
-            DataType::List(child_dtype) => Ok(ListArray::new(
+            DataType::List(child_dtype) => Ok(Self::new(
                 Field::new(self.name(), dtype.clone()),
                 self.flat_child.cast(child_dtype.as_ref())?,
                 self.offsets().clone(),
@@ -2057,7 +2143,7 @@ impl ListArray {
                         }
                         Ok(FixedSizeListArray::new(
                             Field::new(self.name(), dtype.clone()),
-                            casted_child.clone(),
+                            casted_child,
                             None,
                         )
                         .into_series())
@@ -2091,7 +2177,7 @@ impl ListArray {
                     }
                 }
             }
-            DataType::Map(..) => Ok(MapArray::new(
+            DataType::Map { .. } => Ok(MapArray::new(
                 Field::new(self.name(), dtype.clone()),
                 self.clone(),
             )
@@ -2138,7 +2224,7 @@ impl StructArray {
                         },
                     )
                     .collect::<DaftResult<Vec<Series>>>();
-                Ok(StructArray::new(
+                Ok(Self::new(
                     Field::new(self.name(), dtype.clone()),
                     casted_series?,
                     self.validity().cloned(),
@@ -2198,7 +2284,10 @@ where
 {
     Python::with_gil(|py| {
         let arrow_dtype = array.data_type().to_arrow()?;
-        let arrow_array = array.as_arrow().to_type(arrow_dtype).with_validity(None);
+        let arrow_array = array
+            .as_arrow()
+            .convert_logical_type(arrow_dtype)
+            .with_validity(None);
         let pyarrow = py.import_bound(pyo3::intern!(py, "pyarrow"))?;
         let py_array: Vec<PyObject> = ffi::to_py_array(py, arrow_array.to_boxed(), &pyarrow)?
             .call_method0(pyo3::intern!(py, "to_pylist"))?
@@ -2211,4 +2300,159 @@ where
         )?
         .into_series())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use arrow2::array::PrimitiveArray;
+    use rand::{thread_rng, Rng};
+
+    use super::*;
+    use crate::{
+        datatypes::DataArray,
+        prelude::{Decimal128Type, Float64Array},
+    };
+
+    fn create_test_decimal_array(
+        values: Vec<i128>,
+        precision: usize,
+        scale: usize,
+    ) -> DataArray<Decimal128Type> {
+        let arrow_array = PrimitiveArray::from_vec(values)
+            .to(arrow2::datatypes::DataType::Decimal(precision, scale));
+        let field = Arc::new(Field::new(
+            "test_decimal",
+            DataType::Decimal128(precision, scale),
+        ));
+        DataArray::<Decimal128Type>::from_arrow(field, Box::new(arrow_array))
+            .expect("Failed to create test decimal array")
+    }
+
+    fn create_test_f64_array(values: Vec<f64>) -> Float64Array {
+        let arrow_array = PrimitiveArray::from_vec(values).to(arrow2::datatypes::DataType::Float64);
+        let field = Arc::new(Field::new("test_float", DataType::Float64));
+        Float64Array::from_arrow(field, Box::new(arrow_array))
+            .expect("Failed to create test float array")
+    }
+
+    fn create_test_i64_array(values: Vec<i64>) -> Int64Array {
+        let arrow_array = PrimitiveArray::from_vec(values).to(arrow2::datatypes::DataType::Int64);
+        let field = Arc::new(Field::new("test_int", DataType::Int64));
+        Int64Array::from_arrow(field, Box::new(arrow_array))
+            .expect("Failed to create test int array")
+    }
+
+    // For a Decimal(p, s) to be valid, p, s, and max_val must satisfy:
+    //   p > ceil(log_9(max_val * 10^s)) - 1
+    // So with a max_val of 10^10, we get:
+    //   p > ceil(log_9(10^(10+s))) - 1
+    // Since p <= 32, for this inequality to hold, we need s <= 20.
+    const MAX_VAL: f64 = 1e10;
+    const MAX_SCALE: usize = 20;
+    const MIN_DIFF_FOR_PRECISION: usize = 12;
+    #[test]
+    fn test_decimal_to_decimal_cast() {
+        let mut rng = thread_rng();
+        let mut values: Vec<f64> = (0..100).map(|_| rng.gen_range(-MAX_VAL..MAX_VAL)).collect();
+        values.extend_from_slice(&[0.0, -0.0]);
+
+        let initial_scale: usize = rng.gen_range(0..=MAX_SCALE);
+        let initial_precision: usize = rng.gen_range(initial_scale + MIN_DIFF_FOR_PRECISION..=32);
+        let min_integral_comp = initial_precision - initial_scale;
+        let i128_values: Vec<i128> = values
+            .iter()
+            .map(|&x| (x * 10_f64.powi(initial_scale as i32) as f64) as i128)
+            .collect();
+        let original = create_test_decimal_array(i128_values, initial_precision, initial_scale);
+
+        // We always widen the Decimal, otherwise we lose information and can no longer compare with the original Decimal values.
+        let intermediate_scale: usize = rng.gen_range(initial_scale..=32 - min_integral_comp);
+        let intermediate_precision: usize =
+            rng.gen_range(intermediate_scale + min_integral_comp..=32);
+
+        let result = original
+            .cast(&DataType::Decimal128(
+                intermediate_precision,
+                intermediate_scale,
+            ))
+            .expect("Failed to cast to intermediate decimal")
+            .cast(&DataType::Decimal128(initial_precision, initial_scale))
+            .expect("Failed to cast back to original decimal");
+
+        assert!(
+            original.into_series() == result,
+            "Failed with intermediate decimal({}, {})",
+            intermediate_precision,
+            intermediate_scale,
+        );
+    }
+
+    // We do fuzzy equality when comparing floats converted to and from decimals. This test is
+    // primarily sanity checking that we don't repeat the mistake of shifting the scale and precision
+    // of floats during casting, while avoiding flakiness due small differences in floats.
+    #[test]
+    fn test_decimal_to_float() {
+        let mut rng = thread_rng();
+        let mut values: Vec<f64> = (0..100).map(|_| rng.gen_range(-MAX_VAL..MAX_VAL)).collect();
+        values.extend_from_slice(&[0.0, -0.0]);
+        let num_values = values.len();
+
+        let scale: usize = rng.gen_range(0..=MAX_SCALE);
+        let precision: usize = rng.gen_range(scale + MIN_DIFF_FOR_PRECISION..=32);
+        // when the scale is 0, the created decimal values are integers, the epsilon should be 1
+        let epsilon = if scale == 0 { 1f64 } else { 0.1f64 };
+
+        let i128_values: Vec<i128> = values
+            .iter()
+            .map(|&x| (x * 10_f64.powi(scale as i32) as f64) as i128)
+            .collect();
+        let original = create_test_decimal_array(i128_values, precision, scale);
+
+        let result = original
+            .cast(&DataType::Float64)
+            .expect("Failed to cast to float");
+        let original = create_test_f64_array(values);
+
+        let epsilon_series = create_test_f64_array(vec![epsilon; num_values]).into_series();
+
+        assert!(
+            result.fuzzy_eq(&original.into_series(), &epsilon_series),
+            "Failed with decimal({}, {})",
+            precision,
+            scale,
+        );
+    }
+
+    // 2^63 gives us 18 unrestricted digits. So precision - scale has to be <= 18.
+    const MAX_DIFF_FOR_PRECISION: usize = 18;
+    #[test]
+    fn test_decimal_to_int() {
+        let mut rng = thread_rng();
+        let mut values: Vec<f64> = (0..100).map(|_| rng.gen_range(-MAX_VAL..MAX_VAL)).collect();
+        values.extend_from_slice(&[0.0, -0.0]);
+
+        let scale: usize = rng.gen_range(0..=MAX_SCALE);
+        let precision: usize =
+            rng.gen_range(scale + MIN_DIFF_FOR_PRECISION..=scale + MAX_DIFF_FOR_PRECISION);
+        let i128_values: Vec<i128> = values
+            .iter()
+            .map(|&x| (x * 10_f64.powi(scale as i32) as f64) as i128)
+            .collect();
+        let original = create_test_decimal_array(i128_values, precision, scale);
+
+        let result = original
+            .cast(&DataType::Int64)
+            .expect("Failed to cast to int64");
+
+        // Convert the original floats directly to integers.
+        let values = values.into_iter().map(|f| f as i64).collect();
+        let original = create_test_i64_array(values);
+
+        assert!(
+            original.into_series() == result,
+            "Failed with decimal({}, {})",
+            precision,
+            scale,
+        );
+    }
 }

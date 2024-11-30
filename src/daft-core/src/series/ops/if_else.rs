@@ -4,7 +4,7 @@ use super::cast_series_to_supertype;
 use crate::series::Series;
 
 impl Series {
-    pub fn if_else(&self, other: &Series, predicate: &Series) -> DaftResult<Series> {
+    pub fn if_else(&self, other: &Self, predicate: &Self) -> DaftResult<Self> {
         let casted_series = cast_series_to_supertype(&[self, other])?;
         assert!(casted_series.len() == 2);
 

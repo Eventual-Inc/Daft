@@ -1,7 +1,7 @@
 use common_error::DaftResult;
 
 #[cfg(feature = "python")]
-use crate::series::ops::py_membership_op_utilfn;
+use crate::series::utils::python_fn::py_membership_op_utilfn;
 use crate::{
     array::ops::DaftIsIn,
     datatypes::{BooleanArray, DataType, InferDataType},
@@ -14,7 +14,7 @@ fn default(name: &str, size: usize) -> DaftResult<Series> {
 }
 
 impl Series {
-    pub fn is_in(&self, items: &Self) -> DaftResult<Series> {
+    pub fn is_in(&self, items: &Self) -> DaftResult<Self> {
         if items.is_empty() {
             return default(self.name(), self.len());
         }
@@ -28,7 +28,7 @@ impl Series {
             (self.clone(), items.clone())
         };
 
-        if let DataType::Boolean = output_type {
+        if output_type == DataType::Boolean {
             match comp_type {
                 #[cfg(feature = "python")]
                 DataType::Python => Ok(py_membership_op_utilfn(self, items)?

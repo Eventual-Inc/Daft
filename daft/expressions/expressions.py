@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import builtins
 import math
 import os
-from datetime import date, datetime, time
+import warnings
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import (
     TYPE_CHECKING,
@@ -22,6 +24,7 @@ from daft.daft import PyExpr as _PyExpr
 from daft.daft import col as _col
 from daft.daft import date_lit as _date_lit
 from daft.daft import decimal_lit as _decimal_lit
+from daft.daft import duration_lit as _duration_lit
 from daft.daft import list_sort as _list_sort
 from daft.daft import lit as _lit
 from daft.daft import series_lit as _series_lit
@@ -41,8 +44,6 @@ from daft.logical.schema import Field, Schema
 from daft.series import Series, item_to_series
 
 if TYPE_CHECKING:
-    import builtins
-
     from daft.io import IOConfig
     from daft.udf import PartialStatefulUDF, PartialStatelessUDF
 # This allows Sphinx to correctly work against our "namespaced" accessor functions by overriding @property to
@@ -114,6 +115,12 @@ def lit(value: object) -> Expression:
         i64_value = pa_time.cast(pa.int64()).as_py()
         time_unit = TimeUnit.from_str(pa.type_for_alias(str(pa_time.type)).unit)._timeunit
         lit_value = _time_lit(i64_value, time_unit)
+    elif isinstance(value, timedelta):
+        # pyo3 timedelta (PyDelta) is not available when running in abi3 mode, workaround
+        pa_duration = pa.scalar(value)
+        i64_value = pa_duration.cast(pa.int64()).as_py()
+        time_unit = TimeUnit.from_str(pa_duration.type.unit)._timeunit
+        lit_value = _duration_lit(i64_value, time_unit)
     elif isinstance(value, Decimal):
         sign, digits, exponent = value.as_tuple()
         assert isinstance(exponent, int)
@@ -156,6 +163,26 @@ def col(name: str) -> Expression:
         Expression: Expression representing the selected column
     """
     return Expression._from_pyexpr(_col(name))
+
+
+def interval(
+    years: int | None = None,
+    months: int | None = None,
+    days: int | None = None,
+    hours: int | None = None,
+    minutes: int | None = None,
+    seconds: int | None = None,
+    millis: int | None = None,
+    nanos: int | None = None,
+) -> Expression:
+    """
+    Creates an Expression representing an interval.
+
+    """
+    lit_value = native.interval_lit(
+        years=years, months=months, days=days, hours=hours, minutes=minutes, seconds=seconds, millis=millis, nanos=nanos
+    )
+    return Expression._from_pyexpr(lit_value)
 
 
 class Expression:
@@ -458,6 +485,16 @@ class Expression:
         expr = self._expr.__invert__()
         return Expression._from_pyexpr(expr)
 
+    def __floordiv__(self, other: Expression) -> Expression:
+        """Floor divides two numeric expressions (``e1 / e2``)"""
+        expr = Expression._to_expression(other)
+        return Expression._from_pyexpr(self._expr // expr._expr)
+
+    def __rfloordiv__(self, other: object) -> Expression:
+        """Reverse floor divides two numeric expressions (``e2 / e1``)"""
+        expr = Expression._to_expression(other)
+        return Expression._from_pyexpr(expr._expr // self._expr)
+
     def alias(self, name: builtins.str) -> Expression:
         """Gives the expression a new name, which is its column's name in the DataFrame schema and the name
         by which subsequent expressions can refer to the results of this expression.
@@ -744,12 +781,14 @@ class Expression:
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr >> expr._expr)
 
-    def count(self, mode: CountMode = CountMode.Valid) -> Expression:
+    def count(self, mode: Literal["all", "valid", "null"] | CountMode = CountMode.Valid) -> Expression:
         """Counts the number of values in the expression.
 
         Args:
-            mode: whether to count all values, non-null (valid) values, or null values. Defaults to CountMode.Valid.
+            mode: A string ("all", "valid", or "null") that represents whether to count all values, non-null (valid) values, or null values. Defaults to "valid".
         """
+        if isinstance(mode, builtins.str):
+            mode = CountMode.from_count_mode_str(mode)
         expr = self._expr.count(mode)
         return Expression._from_pyexpr(expr)
 
@@ -852,6 +891,11 @@ class Expression:
     def mean(self) -> Expression:
         """Calculates the mean of the values in the expression"""
         expr = self._expr.mean()
+        return Expression._from_pyexpr(expr)
+
+    def stddev(self) -> Expression:
+        """Calculates the standard deviation of the values in the expression"""
+        expr = self._expr.stddev()
         return Expression._from_pyexpr(expr)
 
     def min(self) -> Expression:
@@ -958,7 +1002,7 @@ class Expression:
         Returns:
             Expression: New expression after having run the function on the expression
         """
-        from daft.udf import StatelessUDF
+        from daft.udf import CommonUDFArgs, StatelessUDF
 
         def batch_func(self_series):
             return [func(x) for x in self_series.to_pylist()]
@@ -972,8 +1016,10 @@ class Expression:
             name=name,
             func=batch_func,
             return_dtype=return_dtype,
-            resource_request=None,
-            batch_size=None,
+            common_args=CommonUDFArgs(
+                resource_request=None,
+                batch_size=None,
+            ),
         )(self)
 
     def is_null(self) -> Expression:
@@ -1092,7 +1138,7 @@ class Expression:
             series = item_to_series("items", other)
             other = Expression._to_expression(series)
 
-        expr = self._expr.is_in(other._expr)
+        expr = self._expr.is_in([other._expr])
         return Expression._from_pyexpr(expr)
 
     def between(self, lower: Any, upper: Any) -> Expression:
@@ -1153,6 +1199,7 @@ class Expression:
         num_hashes: int,
         ngram_size: int,
         seed: int = 1,
+        hash_function: Literal["murmurhash3", "xxhash", "sha1"] = "murmurhash3",
     ) -> Expression:
         """
         Runs the MinHash algorithm on the series.
@@ -1161,7 +1208,6 @@ class Expression:
         repeating with `num_hashes` permutations. Returns as a list of 32-bit unsigned integers.
 
         Tokens for the ngrams are delimited by spaces.
-        MurmurHash is used for the initial hash.
         The strings are not normalized or pre-processed, so it is recommended
         to normalize the strings yourself.
 
@@ -1169,11 +1215,16 @@ class Expression:
             num_hashes: The number of hash permutations to compute.
             ngram_size: The number of tokens in each shingle/ngram.
             seed (optional): Seed used for generating permutations and the initial string hashes. Defaults to 1.
+            hash_function (optional): Hash function to use for initial string hashing. One of "murmurhash3", "xxhash", or "sha1". Defaults to "murmurhash3".
+
         """
         assert isinstance(num_hashes, int)
         assert isinstance(ngram_size, int)
         assert isinstance(seed, int)
-        return Expression._from_pyexpr(native.minhash(self._expr, num_hashes, ngram_size, seed))
+        assert isinstance(hash_function, str)
+        assert hash_function in ["murmurhash3", "xxhash", "sha1"], f"Hash function {hash_function} not found"
+
+        return Expression._from_pyexpr(native.minhash(self._expr, num_hashes, ngram_size, seed, hash_function))
 
     def name(self) -> builtins.str:
         return self._expr.name()
@@ -1231,7 +1282,7 @@ class ExpressionUrlNamespace(ExpressionNamespace):
         For local execution, we run in a single process which means that it all shares the same tokio I/O runtime and connection pool.
         Thus we just have `(multithreaded=N_CPU * max_connections)` number of open connections, which is usually reasonable as well.
         """
-        using_ray_runner = context.get_context().is_ray_runner
+        using_ray_runner = context.get_context().get_or_create_runner().name == "ray"
         return not using_ray_runner
 
     @staticmethod
@@ -1249,7 +1300,7 @@ class ExpressionUrlNamespace(ExpressionNamespace):
     def download(
         self,
         max_connections: int = 32,
-        on_error: Literal["raise"] | Literal["null"] = "raise",
+        on_error: Literal["raise", "null"] = "raise",
         io_config: IOConfig | None = None,
         use_native_downloader: bool = True,
     ) -> Expression:
@@ -1837,7 +1888,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             Expression: a Boolean expression indicating whether each value contains the provided pattern
         """
         substr_expr = Expression._to_expression(substr)
-        return Expression._from_pyexpr(self._expr.utf8_contains(substr_expr._expr))
+        return Expression._from_pyexpr(native.utf8_contains(self._expr, substr_expr._expr))
 
     def match(self, pattern: str | Expression) -> Expression:
         """Checks whether each string matches the given regular expression pattern in a string column
@@ -1867,7 +1918,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             Expression: a Boolean expression indicating whether each value matches the provided pattern
         """
         pattern_expr = Expression._to_expression(pattern)
-        return Expression._from_pyexpr(self._expr.utf8_match(pattern_expr._expr))
+        return Expression._from_pyexpr(native.utf8_match(self._expr, pattern_expr._expr))
 
     def endswith(self, suffix: str | Expression) -> Expression:
         """Checks whether each string ends with the given pattern in a string column
@@ -1897,7 +1948,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             Expression: a Boolean expression indicating whether each value ends with the provided pattern
         """
         suffix_expr = Expression._to_expression(suffix)
-        return Expression._from_pyexpr(self._expr.utf8_endswith(suffix_expr._expr))
+        return Expression._from_pyexpr(native.utf8_endswith(self._expr, suffix_expr._expr))
 
     def startswith(self, prefix: str | Expression) -> Expression:
         """Checks whether each string starts with the given pattern in a string column
@@ -1927,7 +1978,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             Expression: a Boolean expression indicating whether each value starts with the provided pattern
         """
         prefix_expr = Expression._to_expression(prefix)
-        return Expression._from_pyexpr(self._expr.utf8_startswith(prefix_expr._expr))
+        return Expression._from_pyexpr(native.utf8_startswith(self._expr, prefix_expr._expr))
 
     def split(self, pattern: str | Expression, regex: bool = False) -> Expression:
         r"""Splits each string on the given literal or regex pattern, into a list of strings.
@@ -1978,7 +2029,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             Expression: A List[Utf8] expression containing the string splits for each string in the column.
         """
         pattern_expr = Expression._to_expression(pattern)
-        return Expression._from_pyexpr(self._expr.utf8_split(pattern_expr._expr, regex))
+        return Expression._from_pyexpr(native.utf8_split(self._expr, pattern_expr._expr, regex))
 
     def concat(self, other: str | Expression) -> Expression:
         """Concatenates two string expressions together
@@ -2069,7 +2120,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             `extract_all`
         """
         pattern_expr = Expression._to_expression(pattern)
-        return Expression._from_pyexpr(self._expr.utf8_extract(pattern_expr._expr, index))
+        return Expression._from_pyexpr(native.utf8_extract(self._expr, pattern_expr._expr, index))
 
     def extract_all(self, pattern: str | Expression, index: int = 0) -> Expression:
         r"""Extracts the specified match group from all regex matches in each string in a string column.
@@ -2125,7 +2176,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             `extract`
         """
         pattern_expr = Expression._to_expression(pattern)
-        return Expression._from_pyexpr(self._expr.utf8_extract_all(pattern_expr._expr, index))
+        return Expression._from_pyexpr(native.utf8_extract_all(self._expr, pattern_expr._expr, index))
 
     def replace(
         self,
@@ -2182,7 +2233,9 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """
         pattern_expr = Expression._to_expression(pattern)
         replacement_expr = Expression._to_expression(replacement)
-        return Expression._from_pyexpr(self._expr.utf8_replace(pattern_expr._expr, replacement_expr._expr, regex))
+        return Expression._from_pyexpr(
+            native.utf8_replace(self._expr, pattern_expr._expr, replacement_expr._expr, regex)
+        )
 
     def length(self) -> Expression:
         """Retrieves the length for a UTF-8 string column
@@ -2209,7 +2262,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Returns:
             Expression: an UInt64 expression with the length of each string
         """
-        return Expression._from_pyexpr(self._expr.utf8_length())
+        return Expression._from_pyexpr(native.utf8_length(self._expr))
 
     def length_bytes(self) -> Expression:
         """Retrieves the length for a UTF-8 string column in bytes.
@@ -2236,7 +2289,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Returns:
             Expression: an UInt64 expression with the length of each string
         """
-        return Expression._from_pyexpr(self._expr.utf8_length_bytes())
+        return Expression._from_pyexpr(native.utf8_length_bytes(self._expr))
 
     def lower(self) -> Expression:
         """Convert UTF-8 string to all lowercase
@@ -2263,7 +2316,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Returns:
             Expression: a String expression which is `self` lowercased
         """
-        return Expression._from_pyexpr(self._expr.utf8_lower())
+        return Expression._from_pyexpr(native.utf8_lower(self._expr))
 
     def upper(self) -> Expression:
         """Convert UTF-8 string to all upper
@@ -2290,7 +2343,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Returns:
             Expression: a String expression which is `self` uppercased
         """
-        return Expression._from_pyexpr(self._expr.utf8_upper())
+        return Expression._from_pyexpr(native.utf8_upper(self._expr))
 
     def lstrip(self) -> Expression:
         """Strip whitespace from the left side of a UTF-8 string
@@ -2317,7 +2370,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Returns:
             Expression: a String expression which is `self` with leading whitespace stripped
         """
-        return Expression._from_pyexpr(self._expr.utf8_lstrip())
+        return Expression._from_pyexpr(native.utf8_lstrip(self._expr))
 
     def rstrip(self) -> Expression:
         """Strip whitespace from the right side of a UTF-8 string
@@ -2344,7 +2397,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Returns:
             Expression: a String expression which is `self` with trailing whitespace stripped
         """
-        return Expression._from_pyexpr(self._expr.utf8_rstrip())
+        return Expression._from_pyexpr(native.utf8_rstrip(self._expr))
 
     def reverse(self) -> Expression:
         """Reverse a UTF-8 string
@@ -2371,7 +2424,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Returns:
             Expression: a String expression which is `self` reversed
         """
-        return Expression._from_pyexpr(self._expr.utf8_reverse())
+        return Expression._from_pyexpr(native.utf8_reverse(self._expr))
 
     def capitalize(self) -> Expression:
         """Capitalize a UTF-8 string
@@ -2398,7 +2451,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Returns:
             Expression: a String expression which is `self` uppercased with the first character and lowercased the rest
         """
-        return Expression._from_pyexpr(self._expr.utf8_capitalize())
+        return Expression._from_pyexpr(native.utf8_capitalize(self._expr))
 
     def left(self, nchars: int | Expression) -> Expression:
         """Gets the n (from nchars) left-most characters of each string
@@ -2426,7 +2479,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             Expression: a String expression which is the `n` left-most characters of `self`
         """
         nchars_expr = Expression._to_expression(nchars)
-        return Expression._from_pyexpr(self._expr.utf8_left(nchars_expr._expr))
+        return Expression._from_pyexpr(native.utf8_left(self._expr, nchars_expr._expr))
 
     def right(self, nchars: int | Expression) -> Expression:
         """Gets the n (from nchars) right-most characters of each string
@@ -2454,7 +2507,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             Expression: a String expression which is the `n` right-most characters of `self`
         """
         nchars_expr = Expression._to_expression(nchars)
-        return Expression._from_pyexpr(self._expr.utf8_right(nchars_expr._expr))
+        return Expression._from_pyexpr(native.utf8_right(self._expr, nchars_expr._expr))
 
     def find(self, substr: str | Expression) -> Expression:
         """Returns the index of the first occurrence of the substring in each string
@@ -2486,7 +2539,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             Expression: an Int64 expression with the index of the first occurrence of the substring in each string
         """
         substr_expr = Expression._to_expression(substr)
-        return Expression._from_pyexpr(self._expr.utf8_find(substr_expr._expr))
+        return Expression._from_pyexpr(native.utf8_find(self._expr, substr_expr._expr))
 
     def rpad(self, length: int | Expression, pad: str | Expression) -> Expression:
         """Right-pads each string by truncating or padding with the character
@@ -2519,7 +2572,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """
         length_expr = Expression._to_expression(length)
         pad_expr = Expression._to_expression(pad)
-        return Expression._from_pyexpr(self._expr.utf8_rpad(length_expr._expr, pad_expr._expr))
+        return Expression._from_pyexpr(native.utf8_rpad(self._expr, length_expr._expr, pad_expr._expr))
 
     def lpad(self, length: int | Expression, pad: str | Expression) -> Expression:
         """Left-pads each string by truncating on the right or padding with the character
@@ -2552,7 +2605,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """
         length_expr = Expression._to_expression(length)
         pad_expr = Expression._to_expression(pad)
-        return Expression._from_pyexpr(self._expr.utf8_lpad(length_expr._expr, pad_expr._expr))
+        return Expression._from_pyexpr(native.utf8_lpad(self._expr, length_expr._expr, pad_expr._expr))
 
     def repeat(self, n: int | Expression) -> Expression:
         """Repeats each string n times
@@ -2580,7 +2633,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             Expression: a String expression which is `self` repeated `n` times
         """
         n_expr = Expression._to_expression(n)
-        return Expression._from_pyexpr(self._expr.utf8_repeat(n_expr._expr))
+        return Expression._from_pyexpr(native.utf8_repeat(self._expr, n_expr._expr))
 
     def like(self, pattern: str | Expression) -> Expression:
         """Checks whether each string matches the given SQL LIKE pattern, case sensitive
@@ -2611,7 +2664,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             Expression: a Boolean expression indicating whether each value matches the provided pattern
         """
         pattern_expr = Expression._to_expression(pattern)
-        return Expression._from_pyexpr(self._expr.utf8_like(pattern_expr._expr))
+        return Expression._from_pyexpr(native.utf8_like(self._expr, pattern_expr._expr))
 
     def ilike(self, pattern: str | Expression) -> Expression:
         """Checks whether each string matches the given SQL LIKE pattern, case insensitive
@@ -2642,7 +2695,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
             Expression: a Boolean expression indicating whether each value matches the provided pattern
         """
         pattern_expr = Expression._to_expression(pattern)
-        return Expression._from_pyexpr(self._expr.utf8_ilike(pattern_expr._expr))
+        return Expression._from_pyexpr(native.utf8_ilike(self._expr, pattern_expr._expr))
 
     def substr(self, start: int | Expression, length: int | Expression | None = None) -> Expression:
         """Extract a substring from a string, starting at a specified index and extending for a given length.
@@ -2674,7 +2727,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         """
         start_expr = Expression._to_expression(start)
         length_expr = Expression._to_expression(length)
-        return Expression._from_pyexpr(self._expr.utf8_substr(start_expr._expr, length_expr._expr))
+        return Expression._from_pyexpr(native.utf8_substr(self._expr, start_expr._expr, length_expr._expr))
 
     def to_date(self, format: str) -> Expression:
         """Converts a string to a date using the specified format
@@ -2705,7 +2758,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Returns:
             Expression: a Date expression which is parsed by given format
         """
-        return Expression._from_pyexpr(self._expr.utf8_to_date(format))
+        return Expression._from_pyexpr(native.utf8_to_date(self._expr, format))
 
     def to_datetime(self, format: str, timezone: str | None = None) -> Expression:
         """Converts a string to a datetime using the specified format and timezone
@@ -2755,7 +2808,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Returns:
             Expression: a DateTime expression which is parsed by given format and timezone
         """
-        return Expression._from_pyexpr(self._expr.utf8_to_datetime(format, timezone))
+        return Expression._from_pyexpr(native.utf8_to_datetime(self._expr, format, timezone))
 
     def normalize(
         self,
@@ -2799,7 +2852,9 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Returns:
             Expression: a String expression which is normalized.
         """
-        return Expression._from_pyexpr(self._expr.utf8_normalize(remove_punct, lowercase, nfd_unicode, white_space))
+        return Expression._from_pyexpr(
+            native.utf8_normalize(self._expr, remove_punct, lowercase, nfd_unicode, white_space)
+        )
 
     def tokenize_encode(
         self,
@@ -2922,18 +2977,69 @@ class ExpressionListNamespace(ExpressionNamespace):
         delimiter_expr = Expression._to_expression(delimiter)
         return Expression._from_pyexpr(native.list_join(self._expr, delimiter_expr._expr))
 
-    def count(self, mode: CountMode = CountMode.Valid) -> Expression:
+    def value_counts(self) -> Expression:
+        """Counts the occurrences of each unique value in the list.
+
+        Returns:
+            Expression: A Map<X, UInt64> expression where the keys are unique elements from the
+                        original list of type X, and the values are UInt64 counts representing
+                        the number of times each element appears in the list.
+
+        Note:
+            This function does not work for nested types. For example, it will not produce a map
+            with lists as keys.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"letters": [["a", "b", "a"], ["b", "c", "b", "c"]]})
+            >>> df.with_column("value_counts", df["letters"].list.value_counts()).collect()
+            ╭──────────────┬───────────────────╮
+            │ letters      ┆ value_counts      │
+            │ ---          ┆ ---               │
+            │ List[Utf8]   ┆ Map[Utf8: UInt64] │
+            ╞══════════════╪═══════════════════╡
+            │ [a, b, a]    ┆ [{key: a,         │
+            │              ┆ value: 2,         │
+            │              ┆ }, {key: …        │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ [b, c, b, c] ┆ [{key: b,         │
+            │              ┆ value: 2,         │
+            │              ┆ }, {key: …        │
+            ╰──────────────┴───────────────────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+        """
+        return Expression._from_pyexpr(native.list_value_counts(self._expr))
+
+    def count(self, mode: Literal["all", "valid", "null"] | CountMode = CountMode.Valid) -> Expression:
         """Counts the number of elements in each list
 
         Args:
-            mode: The mode to use for counting. Defaults to CountMode.Valid
+            mode: A string ("all", "valid", or "null") that represents whether to count all values, non-null (valid) values, or null values. Defaults to "valid".
 
         Returns:
             Expression: a UInt64 expression which is the length of each list
         """
+        if isinstance(mode, str):
+            mode = CountMode.from_count_mode_str(mode)
         return Expression._from_pyexpr(native.list_count(self._expr, mode))
 
     def lengths(self) -> Expression:
+        """Gets the length of each list
+
+        (DEPRECATED) Please use Expression.list.length instead
+
+        Returns:
+            Expression: a UInt64 expression which is the length of each list
+        """
+        warnings.warn(
+            "This function will be deprecated from Daft version >= 0.3.5!  Instead, please use 'Expression.list.length'",
+            category=DeprecationWarning,
+        )
+
+        return Expression._from_pyexpr(native.list_count(self._expr, CountMode.All))
+
+    def length(self) -> Expression:
         """Gets the length of each list
 
         Returns:
@@ -3013,7 +3119,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(native.list_max(self._expr))
 
-    def sort(self, desc: bool | Expression = False) -> Expression:
+    def sort(self, desc: bool | Expression = False, nulls_first: bool | Expression | None = None) -> Expression:
         """Sorts the inner lists of a list column.
 
         Example:
@@ -3042,7 +3148,11 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         if isinstance(desc, bool):
             desc = Expression._to_expression(desc)
-        return Expression._from_pyexpr(_list_sort(self._expr, desc._expr))
+        if nulls_first is None:
+            nulls_first = desc
+        elif isinstance(nulls_first, bool):
+            nulls_first = Expression._to_expression(nulls_first)
+        return Expression._from_pyexpr(_list_sort(self._expr, desc._expr, nulls_first._expr))
 
 
 class ExpressionStructNamespace(ExpressionNamespace):
@@ -3069,21 +3179,21 @@ class ExpressionMapNamespace(ExpressionNamespace):
             >>> df = daft.from_arrow(pa.table({"map_col": pa_array}))
             >>> df = df.with_column("a", df["map_col"].map.get("a"))
             >>> df.show()
-            ╭──────────────────────────────────────┬───────╮
-            │ map_col                              ┆ a     │
-            │ ---                                  ┆ ---   │
-            │ Map[Struct[key: Utf8, value: Int64]] ┆ Int64 │
-            ╞══════════════════════════════════════╪═══════╡
-            │ [{key: a,                            ┆ 1     │
-            │ value: 1,                            ┆       │
-            │ }]                                   ┆       │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ []                                   ┆ None  │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-            │ [{key: b,                            ┆ None  │
-            │ value: 2,                            ┆       │
-            │ }]                                   ┆       │
-            ╰──────────────────────────────────────┴───────╯
+            ╭──────────────────┬───────╮
+            │ map_col          ┆ a     │
+            │ ---              ┆ ---   │
+            │ Map[Utf8: Int64] ┆ Int64 │
+            ╞══════════════════╪═══════╡
+            │ [{key: a,        ┆ 1     │
+            │ value: 1,        ┆       │
+            │ }]               ┆       │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ []               ┆ None  │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ [{key: b,        ┆ None  │
+            │ value: 2,        ┆       │
+            │ }]               ┆       │
+            ╰──────────────────┴───────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
 
@@ -3208,7 +3318,7 @@ class ExpressionImageNamespace(ExpressionNamespace):
 
     def decode(
         self,
-        on_error: Literal["raise"] | Literal["null"] = "raise",
+        on_error: Literal["raise", "null"] = "raise",
         mode: str | ImageMode | None = None,
     ) -> Expression:
         """

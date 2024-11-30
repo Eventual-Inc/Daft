@@ -10,13 +10,16 @@ base64.workspace = true
 [dependencies.image]
 default-features = false
 features = ["gif", "jpeg", "ico", "png", "tiff", "webp", "bmp", "hdr"]
-version = "0.24.7"
+version = "0.25.4"
 
 [features]
 python = [
   "dep:pyo3",
   "common-error/python"
 ]
+
+[lints]
+workspace = true
 
 [package]
 name = "daft-image"

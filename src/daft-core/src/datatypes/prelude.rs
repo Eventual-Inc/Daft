@@ -14,8 +14,8 @@ pub use daft_schema::{
 pub use super::PythonArray;
 pub use super::{
     BinaryType, BooleanType, DaftArrayType, ExtensionType, FixedSizeBinaryType, FixedSizeListType,
-    Float32Type, Float64Type, Int128Type, Int16Type, Int32Type, Int64Type, Int8Type, NullType,
-    UInt16Type, UInt32Type, UInt64Type, UInt8Type, Utf8Type,
+    Float32Type, Float64Type, Int16Type, Int32Type, Int64Type, Int8Type, NullType, UInt16Type,
+    UInt32Type, UInt64Type, UInt8Type, Utf8Type,
 };
 // Import trait definitions
 pub use super::{
@@ -24,6 +24,6 @@ pub use super::{
 };
 pub use crate::datatypes::{
     logical::DaftImageryType, DateType, Decimal128Type, DurationType, EmbeddingType,
-    FixedShapeImageType, FixedShapeSparseTensorType, FixedShapeTensorType, ImageType, MapType,
-    SparseTensorType, TensorType, TimeType, TimestampType,
+    FixedShapeImageType, FixedShapeSparseTensorType, FixedShapeTensorType, ImageType, IntervalType,
+    MapType, SparseTensorType, TensorType, TimeType, TimestampType,
 };

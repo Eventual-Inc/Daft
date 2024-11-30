@@ -63,6 +63,7 @@ mod tests {
             Some(validity.clone()),
         )
         .into_series();
+
         let indices_array = ListArray::new(
             Field::new("indices", DataType::List(Box::new(DataType::UInt64))),
             UInt64Array::from((
@@ -90,11 +91,12 @@ mod tests {
             Some(validity.clone()),
         )
         .into_series();
+
         let dtype = DataType::SparseTensor(Box::new(DataType::Int64));
         let struct_array = StructArray::new(
             Field::new("tensor", dtype.to_physical()),
             vec![values_array, indices_array, shapes_array],
-            Some(validity.clone()),
+            Some(validity),
         );
         let sparse_tensor_array =
             SparseTensorArray::new(Field::new(struct_array.name(), dtype.clone()), struct_array);
@@ -103,9 +105,49 @@ mod tests {
         let fixed_shape_sparse_tensor_array =
             sparse_tensor_array.cast(&fixed_shape_sparse_tensor_dtype)?;
         let roundtrip_tensor = fixed_shape_sparse_tensor_array.cast(&dtype)?;
-        assert!(roundtrip_tensor
-            .to_arrow()
-            .eq(&sparse_tensor_array.to_arrow()));
+
+        let round_trip_tensor_arrow = roundtrip_tensor.to_arrow();
+        let sparse_tensor_array_arrow = sparse_tensor_array.to_arrow();
+
+        assert_eq!(round_trip_tensor_arrow, sparse_tensor_array_arrow);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_fixed_shape_sparse_datatype() -> DaftResult<()> {
+        const INDICES_IDX: usize = 1;
+        let element_counts = [
+            2u64.pow(8) - 1,
+            2u64.pow(16) - 1,
+            2u64.pow(32) - 1,
+            2u64.pow(64) - 1,
+        ];
+        let indices_minimal_dtype = [
+            DataType::UInt8,
+            DataType::UInt16,
+            DataType::UInt32,
+            DataType::UInt64,
+        ];
+
+        for (n_elements, minimal_dtype) in element_counts.iter().zip(indices_minimal_dtype.iter()) {
+            let dtype =
+                DataType::FixedShapeSparseTensor(Box::new(DataType::Float32), vec![*n_elements]);
+            let physical_dtype = dtype.to_physical();
+            if let DataType::Struct(fields) = physical_dtype {
+                assert_eq!(fields.len(), 2, "Expected exactly 2 fields in Struct");
+
+                let indices_field = &fields[INDICES_IDX];
+                assert_eq!(indices_field.name, "indices");
+                assert_eq!(
+                    indices_field.dtype,
+                    DataType::List(Box::new(minimal_dtype.clone()))
+                );
+            } else {
+                panic!("Expected Struct DataType, got {:?}", physical_dtype);
+            }
+        }
+
         Ok(())
     }
 }

@@ -23,6 +23,8 @@ def read_json(
     infer_schema: bool = True,
     schema: Optional[Dict[str, DataType]] = None,
     io_config: Optional["IOConfig"] = None,
+    file_path_column: Optional[str] = None,
+    hive_partitioning: bool = False,
     use_native_downloader: bool = True,
     schema_hints: Optional[Dict[str, DataType]] = None,
     _buffer_size: Optional[int] = None,
@@ -41,6 +43,8 @@ def read_json(
         infer_schema (bool): Whether to infer the schema of the JSON, defaults to True.
         schema (dict[str, DataType]): A schema that is used as the definitive schema for the JSON if infer_schema is False, otherwise it is used as a schema hint that is applied after the schema is inferred.
         io_config (IOConfig): Config to be used with the native downloader
+        file_path_column: Include the source path(s) as a column with this name. Defaults to None.
+        hive_partitioning: Whether to infer hive_style partitions from file paths and include them as columns in the Dataframe. Defaults to False.
         use_native_downloader: Whether to use the native downloader instead of PyArrow for reading Parquet. This
             is currently experimental.
 
@@ -74,5 +78,7 @@ def read_json(
         schema=schema,
         file_format_config=file_format_config,
         storage_config=storage_config,
+        file_path_column=file_path_column,
+        hive_partitioning=hive_partitioning,
     )
     return DataFrame(builder)

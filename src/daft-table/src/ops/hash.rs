@@ -1,27 +1,13 @@
-use std::{
-    collections::{hash_map::RawEntryMut, HashMap},
-    hash::{Hash, Hasher},
-};
+use std::collections::{hash_map::RawEntryMut, HashMap};
 
 use common_error::{DaftError, DaftResult};
 use daft_core::{
     array::ops::{arrow2::comparison::build_multi_array_is_equal, as_arrow::AsArrow},
     datatypes::UInt64Array,
-    utils::identity_hash_set::IdentityBuildHasher,
+    utils::identity_hash_set::{IdentityBuildHasher, IndexHash},
 };
 
 use crate::Table;
-
-pub struct IndexHash {
-    pub idx: u64,
-    pub hash: u64,
-}
-
-impl Hash for IndexHash {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        state.write_u64(self.hash)
-    }
-}
 
 impl Table {
     pub fn hash_rows(&self) -> DaftResult<UInt64Array> {
@@ -46,8 +32,8 @@ impl Table {
         let comparator = build_multi_array_is_equal(
             self.columns.as_slice(),
             self.columns.as_slice(),
-            true,
-            true,
+            vec![true; self.columns.len()].as_slice(),
+            vec![true; self.columns.len()].as_slice(),
         )?;
 
         let mut probe_table =
@@ -91,8 +77,8 @@ impl Table {
         let comparator = build_multi_array_is_equal(
             self.columns.as_slice(),
             self.columns.as_slice(),
-            true,
-            true,
+            vec![true; self.columns.len()].as_slice(),
+            vec![true; self.columns.len()].as_slice(),
         )?;
 
         let mut probe_table =

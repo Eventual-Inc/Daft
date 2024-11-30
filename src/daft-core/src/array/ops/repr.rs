@@ -5,15 +5,17 @@ use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{
         logical::{
-            DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
+            DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
             SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
-        BinaryArray, BooleanArray, DaftNumericType, DataType, ExtensionArray, FixedSizeBinaryArray,
-        NullArray, UInt64Array, Utf8Array,
+        BinaryArray, BooleanArray, DaftNumericType, DataType, Decimal128Array, ExtensionArray,
+        FixedSizeBinaryArray, IntervalArray, IntervalValue, NullArray, UInt64Array, Utf8Array,
     },
     series::Series,
-    utils::display::{display_date32, display_decimal128, display_time64, display_timestamp},
+    utils::display::{
+        display_date32, display_decimal128, display_duration, display_time64, display_timestamp,
+    },
     with_match_daft_types,
 };
 
@@ -34,7 +36,6 @@ macro_rules! impl_array_str_value {
 
 impl_array_str_value!(BooleanArray, "{}");
 impl_array_str_value!(ExtensionArray, "{:?}");
-impl_array_str_value!(DurationArray, "{}");
 
 fn pretty_print_bytes(bytes: &[u8], max_len: usize) -> DaftResult<String> {
     /// influenced by pythons bytes repr
@@ -105,9 +106,12 @@ impl Utf8Array {
 }
 impl NullArray {
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
-        if idx >= self.len() {
-            panic!("Out of bounds: {} vs len: {}", idx, self.len())
-        }
+        assert!(
+            idx < self.len(),
+            "Out of bounds: {} vs len: {}",
+            idx,
+            self.len()
+        );
         Ok("None".to_string())
     }
 }
@@ -186,6 +190,34 @@ impl TimestampArray {
                     panic!("Wrong dtype for TimestampArray: {}", self.field.dtype)
                 };
                 display_timestamp(val, unit, timezone)
+            },
+        );
+        Ok(res)
+    }
+}
+
+impl DurationArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        let res = self.get(idx).map_or_else(
+            || "None".to_string(),
+            |val| -> String {
+                let DataType::Duration(time_unit) = &self.field.dtype else {
+                    panic!("Wrong dtype for DurationArray: {}", self.field.dtype)
+                };
+                display_duration(val, time_unit)
+            },
+        );
+        Ok(res)
+    }
+}
+
+impl IntervalArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        let res = self.get(idx).map_or_else(
+            || "None".to_string(),
+            |v| -> String {
+                let value: IntervalValue = v.into();
+                format!("{value}")
             },
         );
         Ok(res)
@@ -410,6 +442,7 @@ impl_array_html_value!(Decimal128Array);
 impl_array_html_value!(DateArray);
 impl_array_html_value!(TimeArray);
 impl_array_html_value!(DurationArray);
+impl_array_html_value!(IntervalArray);
 impl_array_html_value!(TimestampArray);
 impl_array_html_value!(EmbeddingArray);
 

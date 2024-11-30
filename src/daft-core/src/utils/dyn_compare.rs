@@ -18,33 +18,32 @@ pub fn build_dyn_compare(
     nulls_equal: bool,
     nans_equal: bool,
 ) -> DaftResult<DynArrayComparator> {
-    if left != right {
-        Err(DaftError::TypeError(format!(
-            "Types do not match when creating comparator {} vs {}",
-            left, right
-        )))
-    } else {
+    if left == right {
         Ok(build_dyn_array_compare(
             &left.to_physical().to_arrow()?,
             &right.to_physical().to_arrow()?,
             nulls_equal,
             nans_equal,
         )?)
+    } else {
+        Err(DaftError::TypeError(format!(
+            "Types do not match when creating comparator {left} vs {right}",
+        )))
     }
 }
 
 pub fn build_dyn_multi_array_compare(
     schema: &Schema,
-    nulls_equal: bool,
-    nans_equal: bool,
+    nulls_equal: &[bool],
+    nans_equal: &[bool],
 ) -> DaftResult<MultiDynArrayComparator> {
     let mut fn_list = Vec::with_capacity(schema.len());
-    for field in schema.fields.values() {
+    for (idx, field) in schema.fields.values().enumerate() {
         fn_list.push(build_dyn_compare(
             &field.dtype,
             &field.dtype,
-            nulls_equal,
-            nans_equal,
+            nulls_equal[idx],
+            nans_equal[idx],
         )?);
     }
     let combined_fn = Box::new(

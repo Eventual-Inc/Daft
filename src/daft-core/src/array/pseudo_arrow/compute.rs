@@ -9,7 +9,7 @@ impl<T: Send + Sync + Clone + 'static> PseudoArrowArray<T> {
         // Concatenate the values and the validity separately.
 
         let mut concatenated_values: Vec<T> = Vec::new();
-        for array in arrays.iter() {
+        for array in &arrays {
             concatenated_values.extend_from_slice(array.values());
         }
 
@@ -26,6 +26,6 @@ impl<T: Send + Sync + Clone + 'static> PseudoArrowArray<T> {
         let concatenated_validity =
             Bitmap::from_iter(bitmaps.iter().flat_map(|bitmap| bitmap.iter()));
 
-        PseudoArrowArray::new(concatenated_values.into(), Some(concatenated_validity))
+        Self::new(concatenated_values.into(), Some(concatenated_validity))
     }
 }

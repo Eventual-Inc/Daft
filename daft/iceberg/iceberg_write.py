@@ -1,9 +1,12 @@
 import datetime
 import uuid
 import warnings
-from typing import TYPE_CHECKING, Any, Iterator, List, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Tuple
 
-from daft import Expression, col
+from daft import Expression, col, lit
+from daft.datatype import DataType
+from daft.expressions.expressions import ExpressionsProjection
+from daft.io.common import _get_schema_from_dict
 from daft.table import MicroPartition
 from daft.table.partitioning import PartitionedTable, partition_strings_to_path
 
@@ -16,21 +19,20 @@ if TYPE_CHECKING:
     from pyiceberg.typedef import Record as IcebergRecord
 
 
-def add_missing_columns(table: MicroPartition, schema: "pa.Schema") -> MicroPartition:
+def get_missing_columns(data_schema: "pa.Schema", iceberg_schema: "IcebergSchema") -> ExpressionsProjection:
     """Add null values for columns in the schema that are missing from the table."""
+    from pyiceberg.io.pyarrow import schema_to_pyarrow
 
-    import pyarrow as pa
+    iceberg_pyarrow_schema = schema_to_pyarrow(iceberg_schema)
 
-    existing_columns = set(table.column_names())
+    existing_columns = set(data_schema.names)
 
-    columns = {}
-    for name in schema.names:
-        if name in existing_columns:
-            columns[name] = table.get_column(name)
-        else:
-            columns[name] = pa.nulls(len(table), type=schema.field(name).type)
+    to_add = []
+    for name in iceberg_pyarrow_schema.names:
+        if name not in existing_columns:
+            to_add.append(lit(None).alias(name).cast(DataType.from_arrow_type(iceberg_pyarrow_schema.field(name).type)))
 
-    return MicroPartition.from_pydict(columns)
+    return ExpressionsProjection(to_add)
 
 
 def coerce_pyarrow_table_to_schema(pa_table: "pa.Table", schema: "pa.Schema") -> "pa.Table":
@@ -135,6 +137,62 @@ def to_partition_representation(value: Any):
         return value
 
 
+def make_iceberg_data_file(file_path, size, metadata, partition_record, spec_id, schema, properties):
+    import pyiceberg
+    from packaging.version import parse
+    from pyiceberg.io.pyarrow import (
+        compute_statistics_plan,
+        parquet_path_to_id_mapping,
+    )
+    from pyiceberg.manifest import DataFile, DataFileContent
+    from pyiceberg.manifest import FileFormat as IcebergFileFormat
+
+    kwargs = {
+        "content": DataFileContent.DATA,
+        "file_path": file_path,
+        "file_format": IcebergFileFormat.PARQUET,
+        "partition": partition_record,
+        "file_size_in_bytes": size,
+        # After this has been fixed:
+        # https://github.com/apache/iceberg-python/issues/271
+        # "sort_order_id": task.sort_order_id,
+        "sort_order_id": None,
+        # Just copy these from the table for now
+        "spec_id": spec_id,
+        "equality_ids": None,
+        "key_metadata": None,
+    }
+
+    if parse(pyiceberg.__version__) >= parse("0.7.0"):
+        from pyiceberg.io.pyarrow import data_file_statistics_from_parquet_metadata
+
+        statistics = data_file_statistics_from_parquet_metadata(
+            parquet_metadata=metadata,
+            stats_columns=compute_statistics_plan(schema, properties),
+            parquet_column_mapping=parquet_path_to_id_mapping(schema),
+        )
+
+        data_file = DataFile(
+            **{
+                **kwargs,
+                **statistics.to_serialized_dict(),
+            }
+        )
+    else:
+        from pyiceberg.io.pyarrow import fill_parquet_file_metadata
+
+        data_file = DataFile(**kwargs)
+
+        fill_parquet_file_metadata(
+            data_file=data_file,
+            parquet_metadata=metadata,
+            stats_columns=compute_statistics_plan(schema, properties),
+            parquet_column_mapping=parquet_path_to_id_mapping(schema),
+        )
+
+    return data_file
+
+
 class IcebergWriteVisitors:
     class FileVisitor:
         def __init__(self, parent: "IcebergWriteVisitors", partition_record: "IcebergRecord"):
@@ -142,65 +200,26 @@ class IcebergWriteVisitors:
             self.partition_record = partition_record
 
         def __call__(self, written_file):
-            import pyiceberg
-            from packaging.version import parse
-            from pyiceberg.io.pyarrow import (
-                compute_statistics_plan,
-                parquet_path_to_id_mapping,
-            )
-            from pyiceberg.manifest import DataFile, DataFileContent
-            from pyiceberg.manifest import FileFormat as IcebergFileFormat
-
             file_path = f"{self.parent.protocol}://{written_file.path}"
-            size = written_file.size
-            metadata = written_file.metadata
-
-            kwargs = {
-                "content": DataFileContent.DATA,
-                "file_path": file_path,
-                "file_format": IcebergFileFormat.PARQUET,
-                "partition": self.partition_record,
-                "file_size_in_bytes": size,
-                # After this has been fixed:
-                # https://github.com/apache/iceberg-python/issues/271
-                # "sort_order_id": task.sort_order_id,
-                "sort_order_id": None,
-                # Just copy these from the table for now
-                "spec_id": self.parent.spec_id,
-                "equality_ids": None,
-                "key_metadata": None,
-            }
-
-            if parse(pyiceberg.__version__) >= parse("0.7.0"):
-                from pyiceberg.io.pyarrow import data_file_statistics_from_parquet_metadata
-
-                statistics = data_file_statistics_from_parquet_metadata(
-                    parquet_metadata=metadata,
-                    stats_columns=compute_statistics_plan(self.parent.schema, self.parent.properties),
-                    parquet_column_mapping=parquet_path_to_id_mapping(self.parent.schema),
-                )
-
-                data_file = DataFile(
-                    **{
-                        **kwargs,
-                        **statistics.to_serialized_dict(),
-                    }
-                )
-            else:
-                from pyiceberg.io.pyarrow import fill_parquet_file_metadata
-
-                data_file = DataFile(**kwargs)
-
-                fill_parquet_file_metadata(
-                    data_file=data_file,
-                    parquet_metadata=metadata,
-                    stats_columns=compute_statistics_plan(self.parent.schema, self.parent.properties),
-                    parquet_column_mapping=parquet_path_to_id_mapping(self.parent.schema),
-                )
+            data_file = make_iceberg_data_file(
+                file_path,
+                written_file.size,
+                written_file.metadata,
+                self.partition_record,
+                self.parent.spec_id,
+                self.parent.schema,
+                self.parent.properties,
+            )
 
             self.parent.data_files.append(data_file)
 
-    def __init__(self, protocol: str, spec_id: int, schema: "IcebergSchema", properties: "IcebergTableProperties"):
+    def __init__(
+        self,
+        protocol: str,
+        spec_id: int,
+        schema: "IcebergSchema",
+        properties: "IcebergTableProperties",
+    ):
         self.data_files: List[DataFile] = []
         self.protocol = protocol
         self.spec_id = spec_id
@@ -211,14 +230,25 @@ class IcebergWriteVisitors:
         return self.FileVisitor(self, partition_record)
 
     def to_metadata(self) -> MicroPartition:
-        return MicroPartition.from_pydict({"data_file": self.data_files})
+        col_name = "data_file"
+        if len(self.data_files) == 0:
+            return MicroPartition.empty(_get_schema_from_dict({col_name: DataType.python()}))
+        return MicroPartition.from_pydict({col_name: self.data_files})
+
+
+def make_iceberg_record(partition_values: Optional[Dict[str, Any]]) -> "IcebergRecord":
+    from pyiceberg.typedef import Record as IcebergRecord
+
+    if partition_values:
+        iceberg_part_vals = {k: to_partition_representation(v) for k, v in partition_values.items()}
+        return IcebergRecord(**iceberg_part_vals)
+    else:
+        return IcebergRecord()
 
 
 def partitioned_table_to_iceberg_iter(
     partitioned: PartitionedTable, root_path: str, schema: "pa.Schema"
 ) -> Iterator[Tuple["pa.Table", str, "IcebergRecord"]]:
-    from pyiceberg.typedef import Record as IcebergRecord
-
     partition_values = partitioned.partition_values()
 
     if partition_values:
@@ -226,10 +256,11 @@ def partitioned_table_to_iceberg_iter(
         assert partition_strings is not None
 
         for table, part_vals, part_strs in zip(
-            partitioned.partitions(), partition_values.to_pylist(), partition_strings.to_pylist()
+            partitioned.partitions(),
+            partition_values.to_pylist(),
+            partition_strings.to_pylist(),
         ):
-            iceberg_part_vals = {k: to_partition_representation(v) for k, v in part_vals.items()}
-            part_record = IcebergRecord(**iceberg_part_vals)
+            part_record = make_iceberg_record(part_vals)
             part_path = partition_strings_to_path(root_path, part_strs, partition_null_fallback="null")
 
             arrow_table = coerce_pyarrow_table_to_schema(table.to_arrow(), schema)
@@ -238,4 +269,4 @@ def partitioned_table_to_iceberg_iter(
     else:
         arrow_table = coerce_pyarrow_table_to_schema(partitioned.table.to_arrow(), schema)
 
-        yield arrow_table, root_path, IcebergRecord()
+        yield arrow_table, root_path, make_iceberg_record(None)

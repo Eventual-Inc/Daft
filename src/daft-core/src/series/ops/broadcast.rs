@@ -2,7 +2,7 @@ use common_error::DaftResult;
 
 use crate::series::Series;
 impl Series {
-    pub fn broadcast(&self, num: usize) -> DaftResult<Series> {
+    pub fn broadcast(&self, num: usize) -> DaftResult<Self> {
         self.inner.broadcast(num)
     }
 }

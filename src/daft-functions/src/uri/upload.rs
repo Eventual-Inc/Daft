@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
+use common_runtime::get_io_runtime;
 use daft_core::prelude::*;
 use daft_dsl::{functions::ScalarUDF, ExprRef};
-use daft_io::{get_io_client, get_runtime, IOConfig, IOStatsRef, SourceType};
+use daft_io::{get_io_client, IOConfig, IOStatsRef, SourceType};
 use futures::{StreamExt, TryStreamExt};
 use serde::Serialize;
 
@@ -26,7 +27,7 @@ impl ScalarUDF for UploadFunction {
     }
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
-        let UploadFunction {
+        let Self {
             location,
             config,
             max_connections,
@@ -55,7 +56,7 @@ impl ScalarUDF for UploadFunction {
                 let data_field = data.to_field(schema)?;
                 match data_field.dtype {
                     DataType::Binary | DataType::FixedSizeBinary(..) | DataType::Utf8 => Ok(Field::new(data_field.name, DataType::Utf8)),
-                    _ => Err(DaftError::TypeError(format!("Expects input to url_upload to be Binary, FixedSizeBinary or String, but received {}", data_field))),
+                    _ => Err(DaftError::TypeError(format!("Expects input to url_upload to be Binary, FixedSizeBinary or String, but received {data_field}"))),
                 }
             }
             _ => Err(DaftError::SchemaMismatch(format!(
@@ -109,7 +110,7 @@ pub fn url_upload(
             })?;
         }
 
-        let runtime_handle = get_runtime(multi_thread)?;
+        let runtime_handle = get_io_runtime(multi_thread);
         let max_connections = match multi_thread {
             false => max_connections,
             true => max_connections * usize::from(std::thread::available_parallelism()?),
@@ -143,7 +144,7 @@ pub fn url_upload(
             .await
         };
 
-        let mut results = runtime_handle.block_on_io_pool(uploads)??;
+        let mut results = runtime_handle.block_on(uploads)??;
         results.sort_by_key(|k| k.0);
 
         Ok(results.into_iter().map(|(_, path)| path).collect())

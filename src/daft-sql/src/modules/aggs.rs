@@ -16,7 +16,7 @@ pub struct SQLModuleAggs;
 
 impl SQLModule for SQLModuleAggs {
     fn register(parent: &mut SQLFunctions) {
-        use AggExpr::*;
+        use AggExpr::{Count, Max, Mean, Min, Stddev, Sum};
         // HACK TO USE AggExpr as an enum rather than a
         let nil = Arc::new(Expr::Literal(LiteralValue::Null));
         parent.add_fn(
@@ -28,17 +28,43 @@ impl SQLModule for SQLModuleAggs {
         parent.add_fn("mean", Mean(nil.clone()));
         parent.add_fn("min", Min(nil.clone()));
         parent.add_fn("max", Max(nil.clone()));
+        parent.add_fn("stddev", Stddev(nil.clone()));
+        parent.add_fn("stddev_samp", Stddev(nil));
     }
 }
 
 impl SQLFunction for AggExpr {
     fn to_expr(&self, inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
         // COUNT(*) needs a bit of extra handling, so we process that outside of `to_expr`
-        if let AggExpr::Count(_, _) = self {
+        if let Self::Count(_, _) = self {
             handle_count(inputs, planner)
         } else {
             let inputs = self.args_to_expr_unnamed(inputs, planner)?;
             to_expr(self, inputs.as_slice())
+        }
+    }
+
+    fn docstrings(&self, alias: &str) -> String {
+        match self {
+            Self::Count(_, _) => static_docs::COUNT_DOCSTRING.to_string(),
+            Self::Sum(_) => static_docs::SUM_DOCSTRING.to_string(),
+            Self::Mean(_) => static_docs::AVG_DOCSTRING.replace("{}", alias),
+            Self::Min(_) => static_docs::MIN_DOCSTRING.to_string(),
+            Self::Max(_) => static_docs::MAX_DOCSTRING.to_string(),
+            Self::Stddev(_) => static_docs::STDDEV_DOCSTRING.to_string(),
+            e => unimplemented!("Need to implement docstrings for {e}"),
+        }
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        match self {
+            Self::Count(_, _)
+            | Self::Sum(_)
+            | Self::Mean(_)
+            | Self::Min(_)
+            | Self::Max(_)
+            | Self::Stddev(_) => &["input"],
+            e => unimplemented!("Need to implement arg names for {e}"),
         }
     }
 }
@@ -56,7 +82,7 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
         },
         [FunctionArg::Unnamed(FunctionArgExpr::QualifiedWildcard(name))] => {
             match planner.relation_opt() {
-                Some(rel) if name.to_string() == rel.name => {
+                Some(rel) if name.to_string() == rel.get_name() => {
                     let schema = rel.schema();
                     col(schema.fields[0].name.clone())
                         .count(daft_core::count_mode::CountMode::All)
@@ -74,7 +100,7 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
     })
 }
 
-pub(crate) fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
+pub fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
     match expr {
         AggExpr::Count(_, _) => unreachable!("count should be handled by by this point"),
         AggExpr::Sum(_) => {
@@ -89,6 +115,10 @@ pub(crate) fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<Expr
             ensure!(args.len() == 1, "mean takes exactly one argument");
             Ok(args[0].clone().mean())
         }
+        AggExpr::Stddev(_) => {
+            ensure!(args.len() == 1, "stddev takes exactly one argument");
+            Ok(args[0].clone().stddev())
+        }
         AggExpr::Min(_) => {
             ensure!(args.len() == 1, "min takes exactly one argument");
             Ok(args[0].clone().min())
@@ -102,4 +132,240 @@ pub(crate) fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<Expr
         AggExpr::Concat(_) => unsupported_sql_err!("concat"),
         AggExpr::MapGroups { .. } => unsupported_sql_err!("map_groups"),
     }
+}
+
+mod static_docs {
+    pub(crate) const COUNT_DOCSTRING: &str =
+        "Counts the number of non-null elements in the input expression.
+
+Example:
+
+.. code-block:: sql
+    :caption: SQL
+
+    SELECT count(x) FROM tbl
+
+.. code-block:: text
+    :caption: Input
+
+    ╭───────╮
+    │ x     │
+    │ ---   │
+    │ Int64 │
+    ╞═══════╡
+    │ 100   │
+    ├╌╌╌╌╌╌╌┤
+    │ 200   │
+    ├╌╌╌╌╌╌╌┤
+    │ null  │
+    ╰───────╯
+    (Showing first 3 of 3 rows)
+
+.. code-block:: text
+    :caption: Output
+
+    ╭───────╮
+    │ x     │
+    │ ---   │
+    │ Int64 │
+    ╞═══════╡
+    │ 1     │
+    ╰───────╯
+    (Showing first 1 of 1 rows)";
+
+    pub(crate) const SUM_DOCSTRING: &str =
+        "Calculates the sum of non-null elements in the input expression.
+
+Example:
+
+.. code-block:: sql
+    :caption: SQL
+
+    SELECT sum(x) FROM tbl
+
+.. code-block:: text
+    :caption: Input
+
+    ╭───────╮
+    │ x     │
+    │ ---   │
+    │ Int64 │
+    ╞═══════╡
+    │ 100   │
+    ├╌╌╌╌╌╌╌┤
+    │ 200   │
+    ├╌╌╌╌╌╌╌┤
+    │ null  │
+    ╰───────╯
+    (Showing first 3 of 3 rows)
+
+.. code-block:: text
+    :caption: Output
+
+    ╭───────╮
+    │ x     │
+    │ ---   │
+    │ Int64 │
+    ╞═══════╡
+    │ 300   │
+    ╰───────╯
+    (Showing first 1 of 1 rows)";
+
+    pub(crate) const AVG_DOCSTRING: &str =
+        "Calculates the average (mean) of non-null elements in the input expression.
+
+.. seealso::
+    This SQL Function has aliases.
+
+    * :func:`~daft.sql._sql_funcs.mean`
+    * :func:`~daft.sql._sql_funcs.avg`
+
+Example:
+
+.. code-block:: sql
+    :caption: SQL
+
+    SELECT {}(x) FROM tbl
+
+.. code-block:: text
+    :caption: Input
+
+    ╭───────╮
+    │ x     │
+    │ ---   │
+    │ Int64 │
+    ╞═══════╡
+    │ 100   │
+    ├╌╌╌╌╌╌╌┤
+    │ 200   │
+    ├╌╌╌╌╌╌╌┤
+    │ null  │
+    ╰───────╯
+    (Showing first 3 of 3 rows)
+
+.. code-block:: text
+    :caption: Output
+
+    ╭───────────╮
+    │ x         │
+    │ ---       │
+    │ Float64   │
+    ╞═══════════╡
+    │ 150.0     │
+    ╰───────────╯
+    (Showing first 1 of 1 rows)";
+
+    pub(crate) const MIN_DOCSTRING: &str =
+        "Finds the minimum value among non-null elements in the input expression.
+
+Example:
+
+.. code-block:: sql
+    :caption: SQL
+
+    SELECT min(x) FROM tbl
+
+.. code-block:: text
+    :caption: Input
+
+    ╭───────╮
+    │ x     │
+    │ ---   │
+    │ Int64 │
+    ╞═══════╡
+    │ 100   │
+    ├╌╌╌╌╌╌╌┤
+    │ 200   │
+    ├╌╌╌╌╌╌╌┤
+    │ null  │
+    ╰───────╯
+    (Showing first 3 of 3 rows)
+
+.. code-block:: text
+    :caption: Output
+
+    ╭───────╮
+    │ x     │
+    │ ---   │
+    │ Int64 │
+    ╞═══════╡
+    │ 100   │
+    ╰───────╯
+    (Showing first 1 of 1 rows)";
+
+    pub(crate) const MAX_DOCSTRING: &str =
+        "Finds the maximum value among non-null elements in the input expression.
+
+Example:
+
+.. code-block:: sql
+    :caption: SQL
+
+    SELECT max(x) FROM tbl
+
+.. code-block:: text
+    :caption: Input
+
+    ╭───────╮
+    │ x     │
+    │ ---   │
+    │ Int64 │
+    ╞═══════╡
+    │ 100   │
+    ├╌╌╌╌╌╌╌┤
+    │ 200   │
+    ├╌╌╌╌╌╌╌┤
+    │ null  │
+    ╰───────╯
+    (Showing first 3 of 3 rows)
+
+.. code-block:: text
+    :caption: Output
+
+    ╭───────╮
+    │ x     │
+    │ ---   │
+    │ Int64 │
+    ╞═══════╡
+    │ 200   │
+    ╰───────╯
+    (Showing first 1 of 1 rows)";
+
+    pub(crate) const STDDEV_DOCSTRING: &str =
+        "Calculates the standard deviation of non-null elements in the input expression.
+
+Example:
+
+.. code-block:: sql
+    :caption: SQL
+
+    SELECT stddev(x) FROM tbl
+
+.. code-block:: text
+    :caption: Input
+
+    ╭───────╮
+    │ x     │
+    │ ---   │
+    │ Int64 │
+    ╞═══════╡
+    │ 100   │
+    ├╌╌╌╌╌╌╌┤
+    │ 200   │
+    ├╌╌╌╌╌╌╌┤
+    │ null  │
+    ╰───────╯
+    (Showing first 3 of 3 rows)
+
+.. code-block:: text
+    :caption: Output
+
+    ╭──────────────╮
+    │ x            │
+    │ ---          │
+    │ Float64      │
+    ╞══════════════╡
+    │ 70.710678118 │
+    ╰──────────────╯
+    (Showing first 1 of 1 rows)";
 }

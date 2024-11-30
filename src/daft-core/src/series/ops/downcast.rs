@@ -8,7 +8,7 @@ use self::logical::{DurationArray, ImageArray, MapArray};
 use crate::{
     array::{ListArray, StructArray},
     datatypes::{
-        logical::{DateArray, Decimal128Array, FixedShapeImageArray, TimeArray, TimestampArray},
+        logical::{DateArray, FixedShapeImageArray, TimeArray, TimestampArray},
         *,
     },
     series::{array_impl::ArrayWrapper, Series},
@@ -133,6 +133,10 @@ impl Series {
     }
 
     pub fn duration(&self) -> DaftResult<&DurationArray> {
+        self.downcast()
+    }
+
+    pub fn interval(&self) -> DaftResult<&IntervalArray> {
         self.downcast()
     }
 

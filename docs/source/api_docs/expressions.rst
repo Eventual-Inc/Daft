@@ -113,6 +113,7 @@ The following can be used with DataFrame.agg or GroupedDataFrame.agg
    Expression.count
    Expression.sum
    Expression.mean
+   Expression.stddev
    Expression.min
    Expression.max
    Expression.any_value
@@ -213,12 +214,18 @@ List
    :toctree: doc_gen/expression_methods
    :template: autosummary/accessor_method.rst
 
-   Expression.list.join
-   Expression.list.lengths
-   Expression.list.get
-   Expression.list.slice
    Expression.list.chunk
+   Expression.list.count
+   Expression.list.get
+   Expression.list.join
+   Expression.list.length
+   Expression.list.max
+   Expression.list.mean
+   Expression.list.min
+   Expression.list.slice
    Expression.list.sort
+   Expression.list.sum
+   Expression.list.value_counts
 
 Struct
 ######

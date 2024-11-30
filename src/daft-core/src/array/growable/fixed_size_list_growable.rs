@@ -62,9 +62,8 @@ impl<'a> Growable for FixedSizeListGrowable<'a> {
             len * self.element_fixed_len,
         );
 
-        match &mut self.growable_validity {
-            Some(growable_validity) => growable_validity.extend(index, start, len),
-            None => (),
+        if let Some(growable_validity) = &mut self.growable_validity {
+            growable_validity.extend(index, start, len);
         }
     }
 
@@ -72,9 +71,8 @@ impl<'a> Growable for FixedSizeListGrowable<'a> {
         self.child_growable
             .add_nulls(additional * self.element_fixed_len);
 
-        match &mut self.growable_validity {
-            Some(growable_validity) => growable_validity.add_nulls(additional),
-            None => (),
+        if let Some(growable_validity) = &mut self.growable_validity {
+            growable_validity.add_nulls(additional);
         }
     }
 

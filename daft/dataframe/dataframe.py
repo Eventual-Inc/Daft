@@ -37,9 +37,9 @@ from daft.dataframe.preview import DataFramePreview
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.expressions import Expression, ExpressionsProjection, col, lit
+from daft.filesystem import overwrite_files
 from daft.logical.builder import LogicalPlanBuilder
-from daft.runners.partitioning import PartitionCacheEntry, PartitionSet
-from daft.runners.pyrunner import LocalPartitionSet
+from daft.runners.partitioning import LocalPartitionSet, PartitionCacheEntry, PartitionSet
 from daft.table import MicroPartition
 from daft.viz import DataFrameDisplay
 
@@ -52,7 +52,6 @@ if TYPE_CHECKING:
     import ray
     import torch
 
-    from daft.daft import ResourceRequest
     from daft.io import DataCatalogTable
 
 from daft.logical.schema import Schema
@@ -185,9 +184,10 @@ class DataFrame:
         return None
 
     def num_partitions(self) -> int:
-        daft_execution_config = get_context().daft_execution_config
         # We need to run the optimizer since that could change the number of partitions
-        return self.__builder.optimize().to_physical_plan_scheduler(daft_execution_config).num_partitions()
+        return (
+            self.__builder.optimize().to_physical_plan_scheduler(get_context().daft_execution_config).num_partitions()
+        )
 
     @DataframePublicAPI
     def schema(self) -> Schema:
@@ -274,7 +274,9 @@ class DataFrame:
         else:
             # Execute the dataframe in a streaming fashion.
             context = get_context()
-            partitions_iter = context.runner().run_iter_tables(self._builder, results_buffer_size=results_buffer_size)
+            partitions_iter = context.get_or_create_runner().run_iter_tables(
+                self._builder, results_buffer_size=results_buffer_size
+            )
 
             # Iterate through partitions.
             for partition in partitions_iter:
@@ -311,7 +313,9 @@ class DataFrame:
         else:
             # Execute the dataframe in a streaming fashion.
             context = get_context()
-            partitions_iter = context.runner().run_iter_tables(self._builder, results_buffer_size=results_buffer_size)
+            partitions_iter = context.get_or_create_runner().run_iter_tables(
+                self._builder, results_buffer_size=results_buffer_size
+            )
 
             # Iterate through partitions.
             for partition in partitions_iter:
@@ -390,7 +394,9 @@ class DataFrame:
         else:
             # Execute the dataframe in a streaming fashion.
             context = get_context()
-            results_iter = context.runner().run_iter(self._builder, results_buffer_size=results_buffer_size)
+            results_iter = context.get_or_create_runner().run_iter(
+                self._builder, results_buffer_size=results_buffer_size
+            )
             for result in results_iter:
                 yield result.partition()
 
@@ -489,7 +495,7 @@ class DataFrame:
             result_pset.set_partition_from_table(i, part)
 
         context = get_context()
-        cache_entry = context.runner().put_partition_set_into_cache(result_pset)
+        cache_entry = context.get_or_create_runner().put_partition_set_into_cache(result_pset)
         size_bytes = result_pset.size_bytes()
         num_rows = len(result_pset)
 
@@ -514,6 +520,7 @@ class DataFrame:
         self,
         root_dir: Union[str, pathlib.Path],
         compression: str = "snappy",
+        write_mode: Literal["append", "overwrite"] = "append",
         partition_cols: Optional[List[ColumnInputType]] = None,
         io_config: Optional[IOConfig] = None,
     ) -> "DataFrame":
@@ -527,6 +534,7 @@ class DataFrame:
         Args:
             root_dir (str): root file path to write parquet files to.
             compression (str, optional): compression algorithm. Defaults to "snappy".
+            write_mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace table with new data. Defaults to "append".
             partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
             io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
 
@@ -536,6 +544,9 @@ class DataFrame:
             .. NOTE::
                 This call is **blocking** and will execute the DataFrame when called
         """
+        if write_mode not in ["append", "overwrite"]:
+            raise ValueError(f"Only support `append` or `overwrite` mode. {write_mode} is unsupported")
+
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
         cols: Optional[List[Expression]] = None
@@ -553,6 +564,9 @@ class DataFrame:
         write_df = DataFrame(builder)
         write_df.collect()
         assert write_df._result is not None
+
+        if write_mode == "overwrite":
+            overwrite_files(write_df, root_dir, io_config)
 
         if len(write_df) > 0:
             # Populate and return a new disconnected DataFrame
@@ -578,6 +592,7 @@ class DataFrame:
     def write_csv(
         self,
         root_dir: Union[str, pathlib.Path],
+        write_mode: Literal["append", "overwrite"] = "append",
         partition_cols: Optional[List[ColumnInputType]] = None,
         io_config: Optional[IOConfig] = None,
     ) -> "DataFrame":
@@ -590,12 +605,16 @@ class DataFrame:
 
         Args:
             root_dir (str): root file path to write parquet files to.
+            write_mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace table with new data. Defaults to "append".
             partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
             io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
 
         Returns:
             DataFrame: The filenames that were written out as strings.
         """
+        if write_mode not in ["append", "overwrite"]:
+            raise ValueError(f"Only support `append` or `overwrite` mode. {write_mode} is unsupported")
+
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
         cols: Optional[List[Expression]] = None
@@ -612,6 +631,9 @@ class DataFrame:
         write_df = DataFrame(builder)
         write_df.collect()
         assert write_df._result is not None
+
+        if write_mode == "overwrite":
+            overwrite_files(write_df, root_dir, io_config)
 
         if len(write_df) > 0:
             # Populate and return a new disconnected DataFrame
@@ -706,7 +728,16 @@ class DataFrame:
                 partitioning[field].append(getattr(data_file.partition, field, None))
 
         if parse(pyiceberg.__version__) >= parse("0.7.0"):
-            from pyiceberg.table import ALWAYS_TRUE, PropertyUtil, TableProperties
+            from pyiceberg.table import ALWAYS_TRUE, TableProperties
+
+            if parse(pyiceberg.__version__) >= parse("0.8.0"):
+                from pyiceberg.utils.properties import property_as_bool
+
+                property_as_bool = property_as_bool
+            else:
+                from pyiceberg.table import PropertyUtil
+
+                property_as_bool = PropertyUtil.property_as_bool
 
             tx = table.transaction()
 
@@ -715,7 +746,7 @@ class DataFrame:
 
             update_snapshot = tx.update_snapshot()
 
-            manifest_merge_enabled = mode == "append" and PropertyUtil.property_as_bool(
+            manifest_merge_enabled = mode == "append" and property_as_bool(
                 tx.table_metadata.properties,
                 TableProperties.MANIFEST_MERGE_ENABLED,
                 TableProperties.MANIFEST_MERGE_ENABLED_DEFAULT,
@@ -1029,6 +1060,7 @@ class DataFrame:
         import sys
 
         from daft import from_pydict
+        from daft.io.object_store_options import io_config_to_storage_options
 
         if sys.version_info < (3, 9):
             raise ValueError("'write_lance' requires python 3.9 or higher")
@@ -1083,7 +1115,8 @@ class DataFrame:
         elif mode == "append":
             operation = lance.LanceOperation.Append(fragments)
 
-        dataset = lance.LanceDataset.commit(table_uri, operation, read_version=version)
+        storage_options = io_config_to_storage_options(io_config, table_uri)
+        dataset = lance.LanceDataset.commit(table_uri, operation, read_version=version, storage_options=storage_options)
         stats = dataset.stats.dataset_stats()
 
         tbl = from_pydict(
@@ -1408,7 +1441,6 @@ class DataFrame:
         self,
         column_name: str,
         expr: Expression,
-        resource_request: Optional["ResourceRequest"] = None,
     ) -> "DataFrame":
         """Adds a column to the current DataFrame with an Expression, equivalent to a ``select``
         with all current columns and the new one
@@ -1439,22 +1471,12 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame with new column.
         """
-        if resource_request is not None:
-            raise ValueError(
-                "Specifying resource_request through `with_column` is deprecated from Daft version >= 0.3.0! "
-                "Instead, please use the APIs on UDFs directly for controlling the resource requests of your UDFs. "
-                "You can define resource requests directly on the `@udf(num_gpus=N, num_cpus=M, ...)` decorator. "
-                "Alternatively, you can override resource requests on UDFs like so: `my_udf.override_options(num_gpus=N)`. "
-                "Check the Daft documentation for more details."
-            )
-
         return self.with_columns({column_name: expr})
 
     @DataframePublicAPI
     def with_columns(
         self,
         columns: Dict[str, Expression],
-        resource_request: Optional["ResourceRequest"] = None,
     ) -> "DataFrame":
         """Adds columns to the current DataFrame with Expressions, equivalent to a ``select``
         with all current columns and the new ones
@@ -1484,15 +1506,6 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame with new columns.
         """
-        if resource_request is not None:
-            raise ValueError(
-                "Specifying resource_request through `with_columns` is deprecated from Daft version >= 0.3.0! "
-                "Instead, please use the APIs on UDFs directly for controlling the resource requests of your UDFs. "
-                "You can define resource requests directly on the `@udf(num_gpus=N, num_cpus=M, ...)` decorator. "
-                "Alternatively, you can override resource requests on UDFs like so: `my_udf.override_options(num_gpus=N)`. "
-                "Check the Daft documentation for more details."
-            )
-
         new_columns = [col.alias(name) for name, col in columns.items()]
 
         builder = self._builder.with_columns(new_columns)
@@ -1561,8 +1574,10 @@ class DataFrame:
             by = [
                 by,
             ]
+
         sort_by = self.__column_input_to_expression(by)
-        builder = self._builder.sort(sort_by=sort_by, descending=desc)
+
+        builder = self._builder.sort(sort_by=sort_by, descending=desc, nulls_first=desc)
         return DataFrame(builder)
 
     @DataframePublicAPI
@@ -1660,8 +1675,8 @@ class DataFrame:
     def into_partitions(self, num: int) -> "DataFrame":
         """Splits or coalesces DataFrame to ``num`` partitions. Order is preserved.
 
-        No rebalancing is done; the minimum number of splits or merges are applied.
-        (i.e. if there are 2 partitions, and change it into 3, this function will just split the bigger one)
+        This will naively greedily split partitions in a round-robin fashion to hit the targeted number of partitions.
+        The number of rows/size in a given partition is not taken into account during the splitting.
 
         Example:
             >>> import daft
@@ -1688,10 +1703,13 @@ class DataFrame:
         right_on: Optional[Union[List[ColumnInputType], ColumnInputType]] = None,
         how: str = "inner",
         strategy: Optional[str] = None,
+        prefix: Optional[str] = None,
+        suffix: Optional[str] = None,
     ) -> "DataFrame":
         """Column-wise join of the current DataFrame with an ``other`` DataFrame, similar to a SQL ``JOIN``
 
-        If the two DataFrames have duplicate non-join key column names, "right." will be prepended to the conflicting right columns.
+        If the two DataFrames have duplicate non-join key column names, "right." will be prepended to the conflicting right columns. You can change the behavior by passing either (or both) `prefix` or `suffix` to the function.
+        If `prefix` is passed, it will be prepended to the conflicting right columns. If `suffix` is passed, it will be appended to the conflicting right columns.
 
         .. NOTE::
             Although self joins are supported, we currently duplicate the logical plan for the right side
@@ -1716,6 +1734,42 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 2 of 2 rows)
 
+            >>> import daft
+            >>> from daft import col
+            >>> df1 = daft.from_pydict({ "a": ["w", "x", "y"], "b": [1, 2, 3] })
+            >>> df2 = daft.from_pydict({ "a": ["x", "y", "z"], "b": [20, 30, 40] })
+            >>> joined_df = df1.join(df2, left_on=[col("a"), col("b")], right_on=[col("a"), col("b")/10], prefix="right_")
+            >>> joined_df.show()
+            ╭──────┬───────┬─────────╮
+            │ a    ┆ b     ┆ right_b │
+            │ ---  ┆ ---   ┆ ---     │
+            │ Utf8 ┆ Int64 ┆ Int64   │
+            ╞══════╪═══════╪═════════╡
+            │ x    ┆ 2     ┆ 20      │
+            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ y    ┆ 3     ┆ 30      │
+            ╰──────┴───────┴─────────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+
+            >>> import daft
+            >>> from daft import col
+            >>> df1 = daft.from_pydict({ "a": ["w", "x", "y"], "b": [1, 2, 3] })
+            >>> df2 = daft.from_pydict({ "a": ["x", "y", "z"], "b": [20, 30, 40] })
+            >>> joined_df = df1.join(df2, left_on=[col("a"), col("b")], right_on=[col("a"), col("b")/10], suffix="_right")
+            >>> joined_df.show()
+            ╭──────┬───────┬─────────╮
+            │ a    ┆ b     ┆ b_right │
+            │ ---  ┆ ---   ┆ ---     │
+            │ Utf8 ┆ Int64 ┆ Int64   │
+            ╞══════╪═══════╪═════════╡
+            │ x    ┆ 2     ┆ 20      │
+            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ y    ┆ 3     ┆ 30      │
+            ╰──────┴───────┴─────────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+
         Args:
             other (DataFrame): the right DataFrame to join on.
             on (Optional[Union[List[ColumnInputType], ColumnInputType]], optional): key or keys to join on [use if the keys on the left and right side match.]. Defaults to None.
@@ -1724,6 +1778,8 @@ class DataFrame:
             how (str, optional): what type of join to perform; currently "inner", "left", "right", "outer", "anti", and "semi" are supported. Defaults to "inner".
             strategy (Optional[str]): The join strategy (algorithm) to use; currently "hash", "sort_merge", "broadcast", and None are supported, where None
                 chooses the join strategy automatically during query optimization. The default is None.
+            suffix (Optional[str], optional): Suffix to add to the column names in case of a name collision. Defaults to "".
+            prefix (Optional[str], optional): Prefix to add to the column names in case of a name collision. Defaults to "right.".
 
         Raises:
             ValueError: if `on` is passed in and `left_on` or `right_on` is not None.
@@ -1756,6 +1812,8 @@ class DataFrame:
             right_on=right_exprs,
             how=join_type,
             strategy=join_strategy,
+            join_prefix=prefix,
+            join_suffix=suffix,
         )
         return DataFrame(builder)
 
@@ -2119,6 +2177,33 @@ class DataFrame:
         return self._apply_agg_fn(Expression.mean, cols)
 
     @DataframePublicAPI
+    def stddev(self, *cols: ColumnInputType) -> "DataFrame":
+        """Performs a global standard deviation on the DataFrame
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"col_a":[0,1,2]})
+            >>> df = df.stddev("col_a")
+            >>> df.show()
+            ╭───────────────────╮
+            │ col_a             │
+            │ ---               │
+            │ Float64           │
+            ╞═══════════════════╡
+            │ 0.816496580927726 │
+            ╰───────────────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+
+
+        Args:
+            *cols (Union[str, Expression]): columns to stddev
+        Returns:
+            DataFrame: Globally aggregated standard deviation. Should be a single row.
+        """
+        return self._apply_agg_fn(Expression.stddev, cols)
+
+    @DataframePublicAPI
     def min(self, *cols: ColumnInputType) -> "DataFrame":
         """Performs a global min on the DataFrame
 
@@ -2388,11 +2473,41 @@ class DataFrame:
         builder = self._builder.pivot(group_by_expr, pivot_col_expr, value_col_expr, agg_expr, names)
         return DataFrame(builder)
 
+    @DataframePublicAPI
+    def intersect(self, other: "DataFrame") -> "DataFrame":
+        """Returns the intersection of two DataFrames.
+
+        Example:
+            >>> import daft
+            >>> df1 = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
+            >>> df2 = daft.from_pydict({"a": [1, 2, 3], "b": [4, 8, 6]})
+            >>> df1.intersect(df2).collect()
+            ╭───────┬───────╮
+            │ a     ┆ b     │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╞═══════╪═══════╡
+            │ 1     ┆ 4     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3     ┆ 6     │
+            ╰───────┴───────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+
+        Args:
+            other (DataFrame): DataFrame to intersect with
+
+        Returns:
+            DataFrame: DataFrame with the intersection of the two DataFrames
+        """
+        builder = self._builder.intersect(other._builder)
+        return DataFrame(builder)
+
     def _materialize_results(self) -> None:
         """Materializes the results of for this DataFrame and hold a pointer to the results."""
         context = get_context()
         if self._result is None:
-            self._result_cache = context.runner().run(self._builder)
+            self._result_cache = context.get_or_create_runner().run(self._builder)
             result = self._result
             assert result is not None
             result.wait()
@@ -2438,7 +2553,7 @@ class DataFrame:
             # Iteratively retrieve partitions until enough data has been materialized
             tables = []
             seen = 0
-            for table in get_context().runner().run_iter_tables(builder, results_buffer_size=1):
+            for table in get_context().get_or_create_runner().run_iter_tables(builder, results_buffer_size=1):
                 tables.append(table)
                 seen += len(table)
                 if seen >= n:
@@ -2676,16 +2791,16 @@ class DataFrame:
         from ray.exceptions import RayTaskError
 
         context = get_context()
-        if context.runner_config.name != "ray":
+        if context.get_or_create_runner().name != "ray":
             raise ValueError("Daft needs to be running on the Ray Runner for this operation")
 
         from daft.runners.ray_runner import RayRunnerIO
 
-        ray_runner_io = context.runner().runner_io()
+        ray_runner_io = context.get_or_create_runner().runner_io()
         assert isinstance(ray_runner_io, RayRunnerIO)
 
         partition_set, schema = ray_runner_io.partition_set_from_ray_dataset(ds)
-        cache_entry = context.runner().put_partition_set_into_cache(partition_set)
+        cache_entry = context.get_or_create_runner().put_partition_set_into_cache(partition_set)
         try:
             size_bytes = partition_set.size_bytes()
         except RayTaskError as e:
@@ -2778,16 +2893,16 @@ class DataFrame:
         # TODO(Clark): Support Dask DataFrame conversion for the local runner if
         # Dask is using a non-distributed scheduler.
         context = get_context()
-        if context.runner_config.name != "ray":
+        if context.get_or_create_runner().name != "ray":
             raise ValueError("Daft needs to be running on the Ray Runner for this operation")
 
         from daft.runners.ray_runner import RayRunnerIO
 
-        ray_runner_io = context.runner().runner_io()
+        ray_runner_io = context.get_or_create_runner().runner_io()
         assert isinstance(ray_runner_io, RayRunnerIO)
 
         partition_set, schema = ray_runner_io.partition_set_from_dask_dataframe(ddf)
-        cache_entry = context.runner().put_partition_set_into_cache(partition_set)
+        cache_entry = context.get_or_create_runner().put_partition_set_into_cache(partition_set)
         size_bytes = partition_set.size_bytes()
         num_rows = len(partition_set)
         assert size_bytes is not None, "In-memory data should always have non-None size in bytes"
@@ -2855,6 +2970,34 @@ class GroupedDataFrame:
             DataFrame: DataFrame with grouped mean.
         """
         return self.df._apply_agg_fn(Expression.mean, cols, self.group_by)
+
+    def stddev(self, *cols: ColumnInputType) -> "DataFrame":
+        """Performs grouped standard deviation on this GroupedDataFrame.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"keys": ["a", "a", "a", "b"], "col_a": [0,1,2,100]})
+            >>> df = df.groupby("keys").stddev()
+            >>> df.show()
+            ╭──────┬───────────────────╮
+            │ keys ┆ col_a             │
+            │ ---  ┆ ---               │
+            │ Utf8 ┆ Float64           │
+            ╞══════╪═══════════════════╡
+            │ a    ┆ 0.816496580927726 │
+            ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ b    ┆ 0                 │
+            ╰──────┴───────────────────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+
+        Args:
+            *cols (Union[str, Expression]): columns to stddev
+
+        Returns:
+            DataFrame: DataFrame with grouped standard deviation.
+        """
+        return self.df._apply_agg_fn(Expression.stddev, cols, self.group_by)
 
     def min(self, *cols: ColumnInputType) -> "DataFrame":
         """Perform grouped min on this GroupedDataFrame.
@@ -2969,10 +3112,13 @@ class GroupedDataFrame:
 
         Example:
             >>> import daft, statistics
+            >>>
             >>> df = daft.from_pydict({"group": ["a", "a", "a", "b", "b", "b"], "data": [1, 20, 30, 4, 50, 600]})
+            >>>
             >>> @daft.udf(return_dtype=daft.DataType.float64())
             ... def std_dev(data):
             ...     return [statistics.stdev(data.to_pylist())]
+            >>>
             >>> df = df.groupby("group").map_groups(std_dev(df["data"]))
             >>> df.show()
             ╭───────┬────────────────────╮

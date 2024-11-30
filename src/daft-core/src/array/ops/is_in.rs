@@ -24,7 +24,7 @@ macro_rules! collect_to_set_and_check_membership {
     }};
 }
 
-impl<T> DaftIsIn<&DataArray<T>> for DataArray<T>
+impl<T> DaftIsIn<&Self> for DataArray<T>
 where
     T: DaftIntegerType,
     <T as DaftNumericType>::Native: Ord,
@@ -33,7 +33,7 @@ where
 {
     type Output = DaftResult<BooleanArray>;
 
-    fn is_in(&self, rhs: &DataArray<T>) -> Self::Output {
+    fn is_in(&self, rhs: &Self) -> Self::Output {
         collect_to_set_and_check_membership!(self, rhs)
     }
 }
@@ -71,15 +71,17 @@ macro_rules! impl_is_in_non_numeric_array {
         }
     };
 }
+
+impl_is_in_non_numeric_array!(Decimal128Array);
 impl_is_in_non_numeric_array!(BooleanArray);
 impl_is_in_non_numeric_array!(Utf8Array);
 impl_is_in_non_numeric_array!(BinaryArray);
 impl_is_in_non_numeric_array!(FixedSizeBinaryArray);
 
-impl DaftIsIn<&NullArray> for NullArray {
+impl DaftIsIn<&Self> for NullArray {
     type Output = DaftResult<BooleanArray>;
 
-    fn is_in(&self, _rhs: &NullArray) -> Self::Output {
+    fn is_in(&self, _rhs: &Self) -> Self::Output {
         // If self and rhs are null array then return a full null array
         Ok(BooleanArray::full_null(
             self.name(),

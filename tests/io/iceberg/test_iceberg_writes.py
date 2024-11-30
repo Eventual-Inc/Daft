@@ -6,18 +6,12 @@ import decimal
 import pyarrow as pa
 import pytest
 
-from daft import context
-
-native_excutor_skip = pytest.mark.skipif(
-    context.get_context().daft_execution_config.enable_native_executor is True,
-    reason="Native executor fails for these tests",
-)
+from tests.conftest import get_tests_daft_runner_name
 
 pyiceberg = pytest.importorskip("pyiceberg")
 
 PYARROW_LE_8_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (8, 0, 0)
-py_arrow_skip = pytest.mark.skipif(PYARROW_LE_8_0_0, reason="iceberg only supported if pyarrow >= 8.0.0")
-pytestmark = [native_excutor_skip, py_arrow_skip]
+pytestmark = pytest.mark.skipif(PYARROW_LE_8_0_0, reason="iceberg only supported if pyarrow >= 8.0.0")
 
 
 from pyiceberg.catalog.sql import SqlCatalog
@@ -205,6 +199,22 @@ def test_read_after_write_nested_fields(local_catalog):
     as_dict = result.to_pydict()
     assert as_dict["operation"] == ["ADD"]
     assert as_dict["rows"] == [2]
+    read_back = daft.read_iceberg(table)
+    assert as_arrow == read_back.to_arrow()
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() == "native",
+    reason="Native executor does not support into_partitions",
+)
+def test_read_after_write_with_empty_partition(local_catalog):
+    df = daft.from_pydict({"x": [1, 2, 3]}).into_partitions(4)
+    as_arrow = df.to_arrow()
+    table = local_catalog.create_table("default.test", as_arrow.schema)
+    result = df.write_iceberg(table)
+    as_dict = result.to_pydict()
+    assert as_dict["operation"] == ["ADD", "ADD", "ADD"]
+    assert as_dict["rows"] == [1, 1, 1]
     read_back = daft.read_iceberg(table)
     assert as_arrow == read_back.to_arrow()
 

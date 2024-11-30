@@ -23,7 +23,7 @@ fn map_name_to_pivot_key_idx<'a>(
         .collect::<std::collections::HashMap<_, _>>();
 
     let mut name_to_pivot_key_idx_mapping = std::collections::HashMap::new();
-    for name in names.iter() {
+    for name in names {
         if let Some(pivot_key_idx) = pivot_key_str_to_idx_mapping.get(name.as_str()) {
             name_to_pivot_key_idx_mapping.insert(name, *pivot_key_idx);
         }
@@ -46,7 +46,7 @@ fn map_pivot_key_idx_to_values_indices(
     for (p_key, p_indices) in pivot_keys_indices.iter().zip(pivot_vals_indices.iter()) {
         let p_indices_hashset = p_indices.iter().collect::<std::collections::HashSet<_>>();
         let mut values_indices = Vec::new();
-        for g_indices_hashset in group_vals_indices_hashsets.iter() {
+        for g_indices_hashset in &group_vals_indices_hashsets {
             let matches = g_indices_hashset
                 .intersection(&p_indices_hashset)
                 .collect::<Vec<_>>();
@@ -73,7 +73,7 @@ impl Table {
         pivot_col: ExprRef,
         values_col: ExprRef,
         names: Vec<String>,
-    ) -> DaftResult<Table> {
+    ) -> DaftResult<Self> {
         // This function pivots the table based on the given group_by, pivot, and values column.
         //
         // At a high level this function does two things:

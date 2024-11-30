@@ -3,10 +3,16 @@
 SHELL=/bin/bash
 VENV = .venv
 IS_M1 ?= 0
+PYTHON_VERSION ?= python3.11
 
 # Hypothesis
 HYPOTHESIS_MAX_EXAMPLES ?= 100
 HYPOTHESIS_SEED ?= 0
+
+# TPC-DS
+SCALE_FACTOR ?= 1
+OUTPUT_DIR ?= data/tpc-ds/
+
 
 ifeq ($(OS),Windows_NT)
 	VENV_BIN=$(VENV)/Scripts
@@ -16,17 +22,21 @@ endif
 
 
 .venv:  ## Set up virtual environment
+ifeq (, $(shell which uv))
 	python3 -m venv $(VENV)
 	$(VENV_BIN)/python -m pip install --upgrade uv
-	## Hacks to deal with grpcio compile errors on m1 macs
+else
+	uv venv $(VENV) -p $(PYTHON_VERSION)
+endif
 ifeq ($(IS_M1), 1)
-	GRPC_PYTHON_BUILD_SYSTEM_OPENSSL=1	\
+	## Hacks to deal with grpcio compile errors on m1 macs
+	GRPC_PYTHON_BUILD_SYSTEM_OPENSSL=1 \
 	GRPC_PYTHON_BUILD_SYSTEM_ZLIB=1	\
 	CFLAGS="${CFLAGS} -I /opt/homebrew/opt/openssl/include"	\
 	LDFLAGS="${LDFLAGS} -L /opt/homebrew/opt/openssl/lib" \
-	$(VENV_BIN)/uv pip install -r requirements-dev.txt
+	. $(VENV_BIN)/activate; uv pip install -r requirements-dev.txt
 else
-	$(VENV_BIN)/uv pip install -r requirements-dev.txt
+	. $(VENV_BIN)/activate; uv pip install -r requirements-dev.txt
 endif
 
 .PHONY: check-toolchain
@@ -56,6 +66,10 @@ build-release: check-toolchain .venv  ## Compile and install a faster Daft binar
 test: .venv build  ## Run tests
 	HYPOTHESIS_MAX_EXAMPLES=$(HYPOTHESIS_MAX_EXAMPLES) $(VENV_BIN)/pytest --hypothesis-seed=$(HYPOTHESIS_SEED)
 
+.PHONY: dsdgen
+dsdgen: .venv ## Generate TPC-DS data
+	$(VENV_BIN)/python benchmarking/tpcds/datagen.py --scale-factor=$(SCALE_FACTOR) --tpcds-gen-folder=$(OUTPUT_DIR)
+
 .PHONY: clean
 clean:
-	rm -rf .venv
+	rm -rf $(VENV)

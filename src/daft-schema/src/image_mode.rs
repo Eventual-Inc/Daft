@@ -1,3 +1,4 @@
+#![expect(non_local_definitions, reason = "we want to remove this...")]
 use std::str::FromStr;
 
 use common_error::{DaftError, DaftResult};
@@ -65,7 +66,7 @@ impl ImageMode {
 
 impl ImageMode {
     pub fn from_pil_mode_str(mode: &str) -> DaftResult<Self> {
-        use ImageMode::*;
+        use ImageMode::{L, LA, RGB, RGBA};
 
         match mode {
             "L" => Ok(L),
@@ -75,17 +76,17 @@ impl ImageMode {
             "1" | "P" | "CMYK" | "YCbCr" | "LAB" | "HSV" | "I" | "F" | "PA" | "RGBX" | "RGBa" | "La" | "I;16" | "I;16L" | "I;16B" | "I;16N" | "BGR;15" | "BGR;16" | "BGR;24" => Err(DaftError::TypeError(format!(
                 "PIL image mode {} is not supported; only the following modes are supported: {:?}",
                 mode,
-                ImageMode::iterator().as_slice()
+                Self::iterator().as_slice()
             ))),
             _ => Err(DaftError::TypeError(format!(
                 "Image mode {} is not a valid PIL image mode; see https://pillow.readthedocs.io/en/stable/handbook/concepts.html#modes for valid PIL image modes. Of these, only the following modes are supported by Daft: {:?}",
                 mode,
-                ImageMode::iterator().as_slice()
+                Self::iterator().as_slice()
             ))),
         }
     }
     pub fn try_from_num_channels(num_channels: u16, dtype: &DataType) -> DaftResult<Self> {
-        use ImageMode::*;
+        use ImageMode::{L, L16, LA, LA16, RGB, RGB16, RGB32F, RGBA, RGBA16, RGBA32F};
 
         match (num_channels, dtype) {
             (1, DataType::UInt8) => Ok(L),
@@ -99,13 +100,13 @@ impl ImageMode {
             (4, DataType::UInt16) => Ok(RGBA16),
             (4, DataType::Float32) => Ok(RGBA32F),
             (_, _) => Err(DaftError::ValueError(format!(
-                "Images with more than {} channels and dtype {} are not supported",
-                num_channels, dtype,
+                "Images with more than {num_channels} channels and dtype {dtype} are not supported",
             ))),
         }
     }
+    #[must_use]
     pub fn num_channels(&self) -> u16 {
-        use ImageMode::*;
+        use ImageMode::{L, L16, LA, LA16, RGB, RGB16, RGB32F, RGBA, RGBA16, RGBA32F};
 
         match self {
             L | L16 => 1,
@@ -114,13 +115,14 @@ impl ImageMode {
             RGBA | RGBA16 | RGBA32F => 4,
         }
     }
-    pub fn iterator() -> std::slice::Iter<'static, ImageMode> {
-        use ImageMode::*;
+    pub fn iterator() -> std::slice::Iter<'static, Self> {
+        use ImageMode::{L, L16, LA, LA16, RGB, RGB16, RGB32F, RGBA, RGBA16, RGBA32F};
 
         static MODES: [ImageMode; 10] =
             [L, LA, RGB, RGBA, L16, LA16, RGB16, RGBA16, RGB32F, RGBA32F];
         MODES.iter()
     }
+    #[must_use]
     pub fn get_dtype(&self) -> DataType {
         self.into()
     }
@@ -130,7 +132,7 @@ impl FromStr for ImageMode {
     type Err = DaftError;
 
     fn from_str(mode: &str) -> DaftResult<Self> {
-        use ImageMode::*;
+        use ImageMode::{L, L16, LA, LA16, RGB, RGB16, RGB32F, RGBA, RGBA16, RGBA32F};
 
         match mode {
             "L" => Ok(L),
@@ -146,7 +148,7 @@ impl FromStr for ImageMode {
             _ => Err(DaftError::TypeError(format!(
                 "Image mode {} is not supported; only the following modes are supported: {:?}",
                 mode,
-                ImageMode::iterator().as_slice()
+                Self::iterator().as_slice()
             ))),
         }
     }
