@@ -226,14 +226,13 @@ impl SplitParquetByRowGroupsAccumulator {
         let curr_size_bytes = std::mem::take(&mut self.size_bytes);
         let curr_num_rows = std::mem::take(&mut self.num_rows);
 
-        // Create a new DataSource by mutating the old one
+        // Create a new DataSource by mutating a clone of the old one
         let mut new_source = ctx.data_source().clone();
-
         if let DataSource::File {
             chunk_spec,
             size_bytes,
             parquet_metadata,
-            metadata: Some(metadata),
+            metadata: table_metadata,
             ..
         } = &mut new_source
         {
@@ -256,7 +255,9 @@ impl SplitParquetByRowGroupsAccumulator {
                     .collect(),
             ));
             *size_bytes = Some(curr_size_bytes as u64);
-            metadata.length = curr_num_rows;
+            if let Some(metadata) = table_metadata {
+                metadata.length = curr_num_rows;
+            }
         } else {
             unreachable!("Parquet file format should only be used with DataSource::File");
         }
