@@ -6,7 +6,8 @@ use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use common_scan_info::{ScanTaskLike, ScanTaskLikeRef, SPLIT_AND_MERGE_PASS};
 use daft_io::IOStatsContext;
 use daft_parquet::read::read_parquet_metadata;
-use parquet2::metadata::RowGroupList;
+use itertools::Itertools;
+use parquet2::metadata::{FileMetaData, RowGroupList, RowGroupMetaData};
 
 use crate::{
     storage_config::StorageConfig, ChunkSpec, DataSource, Pushdowns, ScanTask, ScanTaskRef,
@@ -177,6 +178,162 @@ impl<'a> Iterator for MergeByFileSize<'a> {
     }
 }
 
+struct SplitParquetByRowGroupsAccumulator<'a> {
+    // Accumulators
+    curr_row_group_indices: Vec<i64>,
+    curr_row_groups: Vec<RowGroupMetaData>,
+    curr_size_bytes: f64,
+    curr_num_rows: usize,
+
+    // Context variables
+    config: &'a DaftExecutionConfig,
+    file_metadata: FileMetaData,
+    scan_task_ref: ScanTaskRef,
+    scantask_estimated_size_bytes: Option<usize>,
+}
+
+impl<'a> SplitParquetByRowGroupsAccumulator<'a> {
+    pub fn new(
+        scan_task_ref: ScanTaskRef,
+        file_metadata: FileMetaData,
+        config: &'a DaftExecutionConfig,
+    ) -> Self {
+        let scantask_estimated_size_bytes =
+            scan_task_ref.estimate_in_memory_size_bytes(Some(config));
+        Self {
+            curr_row_group_indices: Vec::new(),
+            curr_row_groups: Vec::new(),
+            curr_size_bytes: 0.,
+            curr_num_rows: 0,
+            config,
+            scan_task_ref,
+            file_metadata,
+            scantask_estimated_size_bytes,
+        }
+    }
+
+    pub fn split_by_row_groups(mut self) -> Vec<ScanTaskRef> {
+        // Iterate through the rowgroups and accumulate results
+        let row_groups = std::mem::take(&mut self.file_metadata.row_groups);
+        let mut new_data_sources = Vec::new();
+        for (i, rg) in row_groups {
+            let maybe_accumulated = self.accumulate(i as i64, rg);
+            if let Some(accumulated) = maybe_accumulated {
+                new_data_sources.push(accumulated);
+            }
+        }
+        if let Some(accumulated) = self.flush() {
+            new_data_sources.push(accumulated);
+        }
+
+        // Construct ScanTasks with the new DataSources
+        new_data_sources
+            .into_iter()
+            .map(|data_source| {
+                ScanTask::new(
+                    vec![data_source],
+                    self.scan_task_ref.file_format_config.clone(),
+                    self.scan_task_ref.schema.clone(),
+                    self.scan_task_ref.storage_config.clone(),
+                    self.scan_task_ref.pushdowns.clone(),
+                    self.scan_task_ref.generated_fields.clone(),
+                )
+                .into()
+            })
+            .collect_vec()
+    }
+
+    #[inline]
+    fn total_rg_compressed_size(&self) -> usize {
+        self.file_metadata
+            .row_groups
+            .iter()
+            .map(|rg| rg.1.compressed_size())
+            .sum()
+    }
+
+    #[inline]
+    fn data_source(&self) -> &DataSource {
+        match self.scan_task_ref.sources.as_slice() {
+            [source] => source,
+            _ => unreachable!(
+                "SplitByRowGroupsAccumulator should only have one DataSource in its ScanTask"
+            ),
+        }
+    }
+
+    pub fn accumulate(&mut self, rg_idx: i64, rg: RowGroupMetaData) -> Option<DataSource> {
+        // Estimate the materialized size of this rowgroup and add it to curr_size_bytes
+        self.curr_size_bytes +=
+            self.scantask_estimated_size_bytes
+                .map_or(0., |est_materialized_size| {
+                    (rg.compressed_size() as f64 / self.total_rg_compressed_size() as f64)
+                        * est_materialized_size as f64
+                });
+        self.curr_num_rows += rg.num_rows();
+        self.curr_row_group_indices.push(rg_idx);
+        self.curr_row_groups.push(rg);
+
+        // Flush the accumulator if necessary
+        let reached_accumulator_limit =
+            self.curr_size_bytes >= self.config.scan_tasks_min_size_bytes as f64;
+        let materialized_size_estimation_not_available =
+            self.scantask_estimated_size_bytes.is_none();
+        if materialized_size_estimation_not_available || reached_accumulator_limit {
+            self.flush()
+        } else {
+            None
+        }
+    }
+
+    pub fn flush(&mut self) -> Option<DataSource> {
+        // If nothing to flush, return None early
+        if self.curr_row_group_indices.is_empty() {
+            return None;
+        }
+
+        // Grab accumulated values and reset accumulators
+        let curr_row_groups = std::mem::take(&mut self.curr_row_groups);
+        let curr_row_group_indices = std::mem::take(&mut self.curr_row_group_indices);
+        let curr_size_bytes = std::mem::take(&mut self.curr_size_bytes);
+        let curr_num_rows = std::mem::take(&mut self.curr_num_rows);
+
+        // Create a new DataSource by mutating the old one
+        let mut new_source = self.data_source().clone();
+
+        if let DataSource::File {
+            chunk_spec,
+            size_bytes,
+            parquet_metadata,
+            metadata: Some(metadata),
+            ..
+        } = &mut new_source
+        {
+            // Create a new Parquet FileMetaData, only keeping the relevant row groups
+            let row_group_list = RowGroupList::from_iter(
+                curr_row_group_indices
+                    .clone()
+                    .into_iter()
+                    .map(|idx| idx as usize)
+                    .zip(curr_row_groups),
+            );
+            let new_metadata = self
+                .file_metadata
+                .clone_with_row_groups(curr_num_rows, row_group_list);
+            *parquet_metadata = Some(Arc::new(new_metadata));
+
+            // Mutate other necessary metadata
+            *chunk_spec = Some(ChunkSpec::Parquet(curr_row_group_indices));
+            *size_bytes = Some(curr_size_bytes as u64);
+            metadata.length = curr_num_rows;
+        } else {
+            unreachable!("Parquet file format should only be used with DataSource::File");
+        }
+
+        Some(new_source)
+    }
+}
+
 #[must_use]
 pub(crate) fn split_by_row_groups<'a>(
     scan_tasks: BoxScanTaskIter<'a>,
@@ -223,95 +380,20 @@ pub(crate) fn split_by_row_groups<'a>(
                     let io_stats =
                         IOStatsContext::new(format!("split_by_row_groups for {path:#?}"));
 
-                    let mut file = io_runtime.block_on_current_thread(read_parquet_metadata(
-                        path,
-                        io_client,
-                        Some(io_stats),
-                        field_id_mapping.clone(),
-                    ))?;
+                    // Retrieve Parquet FileMetaData and construct an accumulator
+                    let file_metadata =
+                        io_runtime.block_on_current_thread(read_parquet_metadata(
+                            path,
+                            io_client,
+                            Some(io_stats),
+                            field_id_mapping.clone(),
+                        ))?;
+                    let accumulator =
+                        SplitParquetByRowGroupsAccumulator::new(t, file_metadata, config);
 
-                    let mut new_tasks: Vec<DaftResult<ScanTaskRef>> = Vec::new();
-                    let mut curr_row_group_indices = Vec::new();
-                    let mut curr_row_groups = Vec::new();
-                    let mut curr_size_bytes = 0;
-                    let mut curr_num_rows = 0;
-
-                    let row_groups = std::mem::take(&mut file.row_groups);
-                    let num_row_groups = row_groups.len();
-                    let total_compressed_size: usize =
-                        row_groups.iter().map(|(_, rg)| rg.compressed_size()).sum();
-                    for (i, rg) in row_groups {
-                        curr_row_groups.push((i, rg));
-                        let rg = &curr_row_groups.last().unwrap().1;
-                        curr_row_group_indices.push(i as i64);
-                        curr_num_rows += rg.num_rows();
-                        curr_size_bytes +=
-                            est_materialized_size.map_or(0, |est_materialized_size| {
-                                ((rg.compressed_size() as f64 / total_compressed_size as f64)
-                                    * est_materialized_size as f64)
-                                    as usize
-                            });
-
-                        let is_last_rg = i == num_row_groups - 1;
-                        let reached_accumulator_limit =
-                            curr_size_bytes >= config.scan_tasks_min_size_bytes;
-                        let materialized_size_estimation_not_available =
-                            est_materialized_size.is_none();
-                        if materialized_size_estimation_not_available
-                            || reached_accumulator_limit
-                            || is_last_rg
-                        {
-                            let mut new_source = source.clone();
-
-                            if let DataSource::File {
-                                chunk_spec,
-                                size_bytes,
-                                parquet_metadata,
-                                ..
-                            } = &mut new_source
-                            {
-                                // only keep relevant row groups in the metadata
-                                let row_group_list =
-                                    RowGroupList::from_iter(curr_row_groups.into_iter());
-                                let new_metadata =
-                                    file.clone_with_row_groups(curr_num_rows, row_group_list);
-                                *parquet_metadata = Some(Arc::new(new_metadata));
-
-                                *chunk_spec = Some(ChunkSpec::Parquet(curr_row_group_indices));
-                                *size_bytes = Some(curr_size_bytes as u64);
-                            } else {
-                                unreachable!(
-                                    "Parquet file format should only be used with DataSource::File"
-                                );
-                            }
-
-                            if let DataSource::File {
-                                metadata: Some(metadata),
-                                ..
-                            } = &mut new_source
-                            {
-                                metadata.length = curr_num_rows;
-                            }
-
-                            // Reset accumulators
-                            curr_row_groups = Vec::new();
-                            curr_row_group_indices = Vec::new();
-                            curr_size_bytes = 0;
-                            curr_num_rows = 0;
-
-                            new_tasks.push(Ok(ScanTask::new(
-                                vec![new_source],
-                                t.file_format_config.clone(),
-                                t.schema.clone(),
-                                t.storage_config.clone(),
-                                t.pushdowns.clone(),
-                                t.generated_fields.clone(),
-                            )
-                            .into()));
-                        }
-                    }
-
-                    Ok(Box::new(new_tasks.into_iter()))
+                    // Materialize and convert into new ScanTasks
+                    let new_scan_tasks = accumulator.split_by_row_groups();
+                    Ok(Box::new(new_scan_tasks.into_iter().map(Ok)))
                 } else {
                     Ok(Box::new(std::iter::once(Ok(t))))
                 }
