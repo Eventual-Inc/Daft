@@ -43,7 +43,7 @@ impl FileWriter for TargetBatchWriter {
         if input.is_empty() {
             return Ok(());
         }
-        
+
         let mut input_size_bytes = input
             .size_bytes()?
             .expect("Micropartitions in target batch writer must be loaded");
@@ -73,7 +73,7 @@ impl FileWriter for TargetBatchWriter {
                 // We have less rows than a chunk, store the remainder and return
                 Ordering::Less => {
                     let remainder = input.slice(local_offset, local_offset + remaining_rows)?;
-                    let remainder_size_bytes = remainder.len() * avg_row_size_bytes; 
+                    let remainder_size_bytes = remainder.len() * avg_row_size_bytes;
                     self.leftovers = Some(remainder.into());
                     self.leftover_size_bytes = remainder_size_bytes;
                     return Ok(());

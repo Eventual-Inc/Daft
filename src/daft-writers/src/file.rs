@@ -71,7 +71,9 @@ impl FileWriter for TargetFileSizeWriter {
         // Write the input, rotating the writer when the current file reaches the target size
         let mut local_offset = 0;
         loop {
-            let bytes_until_target = self.target_file_size_bytes.saturating_sub(self.current_file_size_bytes);
+            let bytes_until_target = self
+                .target_file_size_bytes
+                .saturating_sub(self.current_file_size_bytes);
             let rows_until_target = max(bytes_until_target / avg_row_size_bytes, 1);
             let remaining_input_rows = input.len() - local_offset;
             match remaining_input_rows.cmp(&rows_until_target) {
@@ -89,7 +91,7 @@ impl FileWriter for TargetFileSizeWriter {
                     let to_write =
                         input.slice(local_offset, local_offset + remaining_input_rows)?;
                     self.current_writer.write(to_write.into())?;
-                    self.current_file_size_bytes += remaining_input_rows * avg_row_size_bytes; 
+                    self.current_file_size_bytes += remaining_input_rows * avg_row_size_bytes;
                     return Ok(());
                 }
                 // We have more rows to write, write the target amount, rotate the writer and continue
