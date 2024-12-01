@@ -141,11 +141,13 @@ pub fn make_catalog_writer_factory(
 fn calculate_target_parquet_file_size_and_row_group_size(
     cfg: &DaftExecutionConfig,
 ) -> (usize, usize) {
-    let target_in_memory_row_group_size =
-        (cfg.parquet_target_row_group_size as f64 * cfg.parquet_inflation_factor) as usize;
     let target_in_memory_file_size = max(
         (cfg.parquet_target_filesize as f64 * cfg.parquet_inflation_factor) as usize,
-        target_in_memory_row_group_size,
+        1,
+    );
+    let target_in_memory_row_group_size = max(
+        (cfg.parquet_target_row_group_size as f64 * cfg.parquet_inflation_factor) as usize,
+        target_in_memory_file_size,
     );
 
     (target_in_memory_file_size, target_in_memory_row_group_size)
