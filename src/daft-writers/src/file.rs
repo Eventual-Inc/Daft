@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{cmp::max, sync::Arc};
 
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
@@ -6,21 +6,19 @@ use daft_table::Table;
 
 use crate::{FileWriter, WriterFactory};
 
-// TargetFileSizeWriter is a writer that writes in files of a target size.
+// TargetFileSizeWriter is a writer that writes files of a target size.
 // It rotates the writer when the current file reaches the target size.
 struct TargetFileSizeWriter {
     current_file_size_bytes: usize,
     current_writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Option<Table>>>,
     writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<Table>>>,
-    target_file_min_size_bytes: usize,
-    target_file_max_size_bytes: usize,
+    target_file_size_bytes: usize,
     results: Vec<Table>,
     partition_values: Option<Table>,
     is_closed: bool,
 }
 
 impl TargetFileSizeWriter {
-    const FILE_SIZE_LENIENCY: f64 = 0.2;
     fn new(
         target_in_memory_file_size_bytes: usize,
         writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<Table>>>,
@@ -32,12 +30,7 @@ impl TargetFileSizeWriter {
             current_file_size_bytes: 0,
             current_writer: writer,
             writer_factory,
-            target_file_min_size_bytes: (target_in_memory_file_size_bytes as f64
-                * (1.0 - Self::FILE_SIZE_LENIENCY))
-                as usize,
-            target_file_max_size_bytes: (target_in_memory_file_size_bytes as f64
-                * (1.0 + Self::FILE_SIZE_LENIENCY))
-                as usize,
+            target_file_size_bytes: target_in_memory_file_size_bytes,
             results: vec![],
             partition_values,
             is_closed: false,
@@ -65,42 +58,50 @@ impl FileWriter for TargetFileSizeWriter {
             !self.is_closed,
             "Cannot write to a closed TargetFileSizeWriter"
         );
-        let mut input = input;
+        use std::cmp::Ordering;
+        if input.is_empty() {
+            return Ok(());
+        }
+
+        let input_size_bytes = input.size_bytes()?.expect(
+            "Micropartitions should be loaded before writing, so they should have a size in bytes",
+        );
+        let avg_row_size_bytes = max(input_size_bytes / input.len(), 1);
+
+        // Write the input, rotating the writer when the current file reaches the target size
+        let mut local_offset = 0;
         loop {
-            let input_size_bytes = input.size_bytes()?.expect("Micropartitions should be loaded before writing, so they should have a size in bytes");
-            // If the current file size plus the input size is less than the target min size, write the input to the current file and return.
-            if self.current_file_size_bytes + input_size_bytes < self.target_file_min_size_bytes {
-                self.current_file_size_bytes += input_size_bytes;
-                self.current_writer.write(input)?;
-                break;
-            }
-            // If the current file size plus the input size is less than the target max size, write the input to the current file, rotate the writer, and return.
-            else if self.current_file_size_bytes + input_size_bytes
-                < self.target_file_max_size_bytes
-            {
-                self.current_file_size_bytes += input_size_bytes;
-                self.current_writer.write(input)?;
-                self.rotate_writer()?;
-                break;
-            }
-            // If the current file size plus the input size is greater than the target max size, get the remaining bytes that can be written to the current file.
-            // Write the remaining bytes to the current file, rotate the writer, and repeat the process with the remaining input.
-            else {
-                let remaining_bytes =
-                    self.target_file_max_size_bytes - self.current_file_size_bytes;
-                let avg_row_size = input_size_bytes as f64 / input.len() as f64;
-                let remaining_rows = (remaining_bytes as f64 / avg_row_size).floor() as usize;
-                let (to_write, remaining) = input.split_at(remaining_rows)?;
-                self.current_writer.write(to_write.into())?;
-                self.rotate_writer()?;
-                if remaining.is_empty() {
-                    break;
-                } else {
-                    input = remaining.into();
+            let bytes_until_target = self.target_file_size_bytes.saturating_sub(self.current_file_size_bytes);
+            let rows_until_target = max(bytes_until_target / avg_row_size_bytes, 1);
+            let remaining_input_rows = input.len() - local_offset;
+            match remaining_input_rows.cmp(&rows_until_target) {
+                // We have enough rows to finish the file, write it, rotate the writer and return
+                Ordering::Equal => {
+                    let to_write =
+                        input.slice(local_offset, local_offset + remaining_input_rows)?;
+                    self.current_writer.write(to_write.into())?;
+                    self.rotate_writer()?;
+                    self.current_file_size_bytes = 0;
+                    return Ok(());
+                }
+                // We have less rows than the target, write them and return
+                Ordering::Less => {
+                    let to_write =
+                        input.slice(local_offset, local_offset + remaining_input_rows)?;
+                    self.current_writer.write(to_write.into())?;
+                    self.current_file_size_bytes += remaining_input_rows * avg_row_size_bytes; 
+                    return Ok(());
+                }
+                // We have more rows to write, write the target amount, rotate the writer and continue
+                Ordering::Greater => {
+                    let to_write = input.slice(local_offset, local_offset + rows_until_target)?;
+                    self.current_writer.write(to_write.into())?;
+                    self.rotate_writer()?;
+                    self.current_file_size_bytes = 0;
+                    local_offset += rows_until_target;
                 }
             }
         }
-        Ok(())
     }
 
     fn close(&mut self) -> DaftResult<Self::Result> {

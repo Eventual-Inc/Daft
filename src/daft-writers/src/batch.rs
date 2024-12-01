@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{cmp::max, sync::Arc};
 
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
@@ -9,47 +9,25 @@ use crate::{FileWriter, WriterFactory};
 // TargetBatchWriter is a writer that writes in batches of size_bytes, i.e. for Parquet where we want to write
 // a row group at a time.
 pub struct TargetBatchWriter {
-    target_chunk_min_size_bytes: usize,
-    target_chunk_max_size_bytes: usize,
+    target_in_memory_chunk_size_bytes: usize,
     writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Option<Table>>>,
-    current_buffer: Vec<Table>,
-    current_buffer_size_bytes: usize,
+    leftovers: Option<Arc<MicroPartition>>,
+    leftover_size_bytes: usize,
     is_closed: bool,
 }
 
 impl TargetBatchWriter {
-    const CHUNK_SIZE_LENIENCY: f64 = 0.2;
-
     pub fn new(
         target_in_memory_chunk_size_bytes: usize,
         writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Option<Table>>>,
     ) -> Self {
         Self {
-            target_chunk_min_size_bytes: (target_in_memory_chunk_size_bytes as f64
-                * (1.0 - Self::CHUNK_SIZE_LENIENCY))
-                as usize,
-            target_chunk_max_size_bytes: (target_in_memory_chunk_size_bytes as f64
-                * (1.0 + Self::CHUNK_SIZE_LENIENCY))
-                as usize,
+            target_in_memory_chunk_size_bytes,
             writer,
-            current_buffer: vec![],
-            current_buffer_size_bytes: 0,
+            leftovers: None,
+            leftover_size_bytes: 0,
             is_closed: false,
         }
-    }
-
-    fn write_buffer(&mut self) -> DaftResult<()> {
-        if !self.current_buffer.is_empty() {
-            let to_write = std::mem::take(&mut self.current_buffer);
-            let mp = MicroPartition::new_loaded(
-                to_write.first().unwrap().schema.clone(),
-                to_write.into(),
-                None,
-            );
-            self.writer.write(Arc::new(mp))?;
-            self.current_buffer_size_bytes = 0;
-        }
-        Ok(())
     }
 }
 
@@ -57,46 +35,63 @@ impl FileWriter for TargetBatchWriter {
     type Input = Arc<MicroPartition>;
     type Result = Option<Table>;
 
-    fn write(&mut self, input: Arc<MicroPartition>) -> DaftResult<()> {
+    fn write(&mut self, mut input: Arc<MicroPartition>) -> DaftResult<()> {
         assert!(
             !self.is_closed,
             "Cannot write to a closed TargetBatchWriter"
         );
+        if input.is_empty() {
+            return Ok(());
+        }
+        
+        let mut input_size_bytes = input
+            .size_bytes()?
+            .expect("Micropartitions in target batch writer must be loaded");
 
-        let input_tables = input.get_tables()?;
-        let mut input_tables_iter = input_tables.iter();
-        let mut next_table = input_tables_iter.next().cloned();
+        if let Some(leftovers) = self.leftovers.take() {
+            input = MicroPartition::concat([leftovers, input])?.into();
+            input_size_bytes += self.leftover_size_bytes;
+            self.leftover_size_bytes = 0;
+        }
 
-        while let Some(table) = next_table {
-            let table_size_bytes = table.size_bytes()?;
-            if self.current_buffer_size_bytes + table_size_bytes < self.target_chunk_min_size_bytes
-            {
-                self.current_buffer.push(table);
-                self.current_buffer_size_bytes += table_size_bytes;
-                next_table = input_tables_iter.next().cloned();
-            } else if self.current_buffer_size_bytes + table_size_bytes
-                < self.target_chunk_max_size_bytes
-            {
-                self.current_buffer.push(table);
-                self.write_buffer()?;
-                next_table = input_tables_iter.next().cloned();
-            } else {
-                let avg_row_size = table_size_bytes as f64 / table.len() as f64;
-                let rows_needed_to_fill = ((self.target_chunk_max_size_bytes as f64
-                    - self.current_buffer_size_bytes as f64)
-                    / avg_row_size)
-                    .floor() as usize;
-                let to_write = table.slice(0, rows_needed_to_fill)?;
-                self.current_buffer.push(to_write.clone());
-                self.write_buffer()?;
-                next_table = Some(table.slice(rows_needed_to_fill, table.len())?);
+        // Calculate the average row size in bytes, and determine the target chunk size in rows
+        let avg_row_size_bytes = max(input_size_bytes / input.len(), 1);
+        let target_chunk_rows = self.target_in_memory_chunk_size_bytes / avg_row_size_bytes;
+
+        // Write chunks of target_chunk_rows until we have less than that
+        let mut local_offset = 0;
+        loop {
+            let remaining_rows = input.len() - local_offset;
+
+            use std::cmp::Ordering;
+            match remaining_rows.cmp(&target_chunk_rows) {
+                // We have enough rows to write a complete chunk, write it and return
+                Ordering::Equal => {
+                    let chunk = input.slice(local_offset, local_offset + remaining_rows)?;
+                    return self.writer.write(chunk.into());
+                }
+                // We have less rows than a chunk, store the remainder and return
+                Ordering::Less => {
+                    let remainder = input.slice(local_offset, local_offset + remaining_rows)?;
+                    let remainder_size_bytes = remainder.len() * avg_row_size_bytes; 
+                    self.leftovers = Some(remainder.into());
+                    self.leftover_size_bytes = remainder_size_bytes;
+                    return Ok(());
+                }
+                // We have more rows than a chunk, write the chunk, increment the offset and continue
+                Ordering::Greater => {
+                    let chunk = input.slice(local_offset, local_offset + target_chunk_rows)?;
+                    self.writer.write(chunk.into())?;
+                    local_offset += target_chunk_rows;
+                }
             }
         }
-        Ok(())
     }
 
     fn close(&mut self) -> DaftResult<Self::Result> {
-        self.write_buffer()?;
+        if let Some(leftovers) = self.leftovers.take() {
+            self.writer.write(leftovers)?;
+        }
         self.is_closed = true;
         self.writer.close()
     }

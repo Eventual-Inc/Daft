@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_core::{
-    prelude::{Int64Array, Schema, UInt64Array, Utf8Array},
+    prelude::{Schema, UInt64Array, UInt8Array, Utf8Array},
     series::IntoSeries,
 };
 use daft_micropartition::MicroPartition;
@@ -71,11 +71,11 @@ impl FileWriter for DummyWriter {
     }
 }
 
-pub(crate) fn make_dummy_mp(num_rows: usize) -> Arc<MicroPartition> {
+pub(crate) fn make_dummy_mp(size_bytes: usize) -> Arc<MicroPartition> {
     let series =
-        Int64Array::from_values("ints", std::iter::repeat(42).take(num_rows)).into_series();
+        UInt8Array::from_values("ints", std::iter::repeat(42).take(size_bytes)).into_series();
     let schema = Arc::new(Schema::new(vec![series.field().clone()]).unwrap());
-    let table = Table::new_unchecked(schema.clone(), vec![series.into()], num_rows);
+    let table = Table::new_unchecked(schema.clone(), vec![series.into()], size_bytes);
     Arc::new(MicroPartition::new_loaded(
         schema.into(),
         vec![table].into(),
