@@ -36,7 +36,7 @@ where
                 });
             reduced_val.unwrap_or_default()
         });
-        DataArray::<T>::from_iter(array.field.clone(), cmp_values_iter)
+        DataArray::<T>::from_iter_and_fld(array.field.clone(), cmp_values_iter)
     } else {
         DataArray::<T>::from_values_iter(
             array.field.clone(),
@@ -68,14 +68,20 @@ where
         let primitive_arr = self.as_arrow();
 
         let result = arrow2::compute::aggregate::min_primitive(primitive_arr);
-        Ok(Self::from_iter(self.field.clone(), std::iter::once(result)))
+        Ok(Self::from_iter_and_fld(
+            self.field.clone(),
+            std::iter::once(result),
+        ))
     }
 
     fn max(&self) -> Self::Output {
         let primitive_arr = self.as_arrow();
 
         let result = arrow2::compute::aggregate::max_primitive(primitive_arr);
-        Ok(Self::from_iter(self.field.clone(), std::iter::once(result)))
+        Ok(Self::from_iter_and_fld(
+            self.field.clone(),
+            std::iter::once(result),
+        ))
     }
     fn grouped_min(&self, groups: &GroupIndices) -> Self::Output {
         grouped_cmp_native(

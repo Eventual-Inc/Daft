@@ -11,7 +11,7 @@ macro_rules! impl_daft_numeric_agg {
             fn sum(&self) -> Self::Output {
                 let primitive_arr = self.as_arrow();
                 let sum_value = arrow2::compute::aggregate::sum_primitive(primitive_arr);
-                Ok(DataArray::<$T>::from_iter(
+                Ok(DataArray::<$T>::from_iter_and_fld(
                     self.field.clone(),
                     std::iter::once(sum_value),
                 ))
@@ -20,7 +20,7 @@ macro_rules! impl_daft_numeric_agg {
             fn grouped_sum(&self, groups: &GroupIndices) -> Self::Output {
                 let arrow_array = self.as_arrow();
                 let sum_per_group = if arrow_array.null_count() > 0 {
-                    DataArray::<$T>::from_iter(
+                    DataArray::<$T>::from_iter_and_fld(
                         self.field.clone(),
                         groups.iter().map(|g| {
                             g.iter().fold(None, |acc, index| {

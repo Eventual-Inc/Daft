@@ -84,52 +84,52 @@ impl<'d> serde::Deserialize<'d> for Series {
                         map.next_value::<Vec<Option<bool>>>()?.as_slice(),
                     ))
                     .into_series()),
-                    DataType::Int8 => Ok(Int8Array::from_iter(
+                    DataType::Int8 => Ok(Int8Array::from_iter_and_fld(
                         field,
                         map.next_value::<Vec<Option<i8>>>()?.into_iter(),
                     )
                     .into_series()),
-                    DataType::Int16 => Ok(Int16Array::from_iter(
+                    DataType::Int16 => Ok(Int16Array::from_iter_and_fld(
                         field,
                         map.next_value::<Vec<Option<i16>>>()?.into_iter(),
                     )
                     .into_series()),
-                    DataType::Int32 => Ok(Int32Array::from_iter(
+                    DataType::Int32 => Ok(Int32Array::from_iter_and_fld(
                         field,
                         map.next_value::<Vec<Option<i32>>>()?.into_iter(),
                     )
                     .into_series()),
-                    DataType::Int64 => Ok(Int64Array::from_iter(
+                    DataType::Int64 => Ok(Int64Array::from_iter_and_fld(
                         field,
                         map.next_value::<Vec<Option<i64>>>()?.into_iter(),
                     )
                     .into_series()),
-                    DataType::UInt8 => Ok(UInt8Array::from_iter(
+                    DataType::UInt8 => Ok(UInt8Array::from_iter_and_fld(
                         field,
                         map.next_value::<Vec<Option<u8>>>()?.into_iter(),
                     )
                     .into_series()),
-                    DataType::UInt16 => Ok(UInt16Array::from_iter(
+                    DataType::UInt16 => Ok(UInt16Array::from_iter_and_fld(
                         field,
                         map.next_value::<Vec<Option<u16>>>()?.into_iter(),
                     )
                     .into_series()),
-                    DataType::UInt32 => Ok(UInt32Array::from_iter(
+                    DataType::UInt32 => Ok(UInt32Array::from_iter_and_fld(
                         field,
                         map.next_value::<Vec<Option<u32>>>()?.into_iter(),
                     )
                     .into_series()),
-                    DataType::UInt64 => Ok(UInt64Array::from_iter(
+                    DataType::UInt64 => Ok(UInt64Array::from_iter_and_fld(
                         field,
                         map.next_value::<Vec<Option<u64>>>()?.into_iter(),
                     )
                     .into_series()),
-                    DataType::Float32 => Ok(Float32Array::from_iter(
+                    DataType::Float32 => Ok(Float32Array::from_iter_and_fld(
                         field,
                         map.next_value::<Vec<Option<f32>>>()?.into_iter(),
                     )
                     .into_series()),
-                    DataType::Float64 => Ok(Float64Array::from_iter(
+                    DataType::Float64 => Ok(Float64Array::from_iter_and_fld(
                         field,
                         map.next_value::<Vec<Option<f64>>>()?.into_iter(),
                     )
@@ -214,7 +214,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                         let validity = validity.map(|v| v.bool().unwrap().as_bitmap().clone());
                         Ok(FixedSizeListArray::new(field, flat_child, validity).into_series())
                     }
-                    DataType::Decimal128(..) => Ok(Decimal128Array::from_iter(
+                    DataType::Decimal128(..) => Ok(Decimal128Array::from_iter_and_fld(
                         Arc::new(field.clone()),
                         map.next_value::<Vec<Option<i128>>>()?.into_iter(),
                     )

@@ -170,3 +170,48 @@ impl Series {
         }
     }
 }
+
+pub trait NamedFrom<T, Phantom: ?Sized> {
+    /// Initialize by name and values.
+    fn new(name: &str, _: T) -> Self;
+}
+macro_rules! impl_named_from {
+    ($type:ty, $ty:ty) => {
+        impl NamedFrom<$type, $ty> for Series {
+            fn new(name: &str, v: $type) -> Self {
+                let data_array = DataArray::<$ty>::from_vec(name, v);
+                data_array.into_series().rename(name)
+            }
+        }
+    };
+}
+macro_rules! impl_named_from_opt {
+    ($type:ty, $ty:ty) => {
+        impl NamedFrom<$type, $ty> for Series {
+            fn new(name: &str, v: $type) -> Self {
+                let data_array = DataArray::<$ty>::from_iter(name, v.into_iter());
+                data_array.into_series().rename(name)
+            }
+        }
+    };
+}
+impl_named_from!(Vec<bool>, crate::prelude::BooleanType);
+impl_named_from!(Vec<i8>, crate::prelude::Int8Type);
+impl_named_from!(Vec<i16>, crate::prelude::Int16Type);
+impl_named_from!(Vec<i32>, crate::prelude::Int32Type);
+impl_named_from!(Vec<i64>, crate::prelude::Int64Type);
+impl_named_from!(Vec<f32>, crate::prelude::Float32Type);
+impl_named_from!(Vec<f64>, crate::prelude::Float64Type);
+impl_named_from!(Vec<String>, crate::prelude::Utf8Type);
+impl_named_from!(Vec<&str>, crate::prelude::Utf8Type);
+impl_named_from!(Vec<u8>, crate::prelude::UInt8Type);
+impl_named_from!(Vec<u16>, crate::prelude::UInt16Type);
+impl_named_from!(Vec<u32>, crate::prelude::UInt32Type);
+impl_named_from!(Vec<u64>, crate::prelude::UInt64Type);
+impl_named_from_opt!(Vec<Option<bool>>, crate::prelude::BooleanType);
+impl_named_from_opt!(Vec<Option<i8>>, crate::prelude::Int8Type);
+impl_named_from_opt!(Vec<Option<i16>>, crate::prelude::Int16Type);
+impl_named_from_opt!(Vec<Option<i32>>, crate::prelude::Int32Type);
+impl_named_from_opt!(Vec<Option<i64>>, crate::prelude::Int64Type);
+impl_named_from_opt!(Vec<Option<f32>>, crate::prelude::Float32Type);
+impl_named_from_opt!(Vec<Option<f64>>, crate::prelude::Float64Type);

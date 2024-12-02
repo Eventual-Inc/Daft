@@ -108,14 +108,14 @@ fn hash_list(
 
     if let Some(seed_arr) = seed {
         let combined_validity = arrow_bitmap_and_helper(validity, seed.unwrap().validity());
-        UInt64Array::from_iter(
+        UInt64Array::from_iter_and_fld(
             Arc::new(Field::new(name, DataType::UInt64)),
             u64::range(0, offsets.len() - 1).unwrap().map(|i| {
                 let start = offsets[i as usize] as usize;
                 let end = offsets[i as usize + 1] as usize;
                 // apply the current seed across this row
                 let cur_seed_opt = seed_arr.get(i as usize);
-                let flat_seed = UInt64Array::from_iter(
+                let flat_seed = UInt64Array::from_iter_and_fld(
                     Arc::new(Field::new("seed", DataType::UInt64)),
                     std::iter::repeat(cur_seed_opt).take(end - start),
                 );
@@ -148,7 +148,7 @@ fn hash_list(
             .collect();
         const OFFSET: usize = (u64::BITS as usize) / 8; // how many bytes per u64
         let combined_validity = validity.cloned();
-        UInt64Array::from_iter(
+        UInt64Array::from_iter_and_fld(
             Arc::new(Field::new(name, DataType::UInt64)),
             u64::range(0, offsets.len() - 1).unwrap().map(|i| {
                 let start = (offsets[i as usize] as usize) * OFFSET;

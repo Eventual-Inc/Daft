@@ -1369,7 +1369,7 @@ impl Utf8Array {
     ) -> DaftResult<UInt64Array> {
         if patterns.null_count() == patterns.len() {
             // no matches
-            return UInt64Array::from_iter(
+            return UInt64Array::from_iter_and_fld(
                 Arc::new(Field::new(self.name(), DataType::UInt64)),
                 iter::repeat(Some(0)).take(self.len()),
             )
@@ -1404,7 +1404,7 @@ impl Utf8Array {
                 }
             })
         });
-        Ok(UInt64Array::from_iter(
+        Ok(UInt64Array::from_iter_and_fld(
             Arc::new(Field::new(self.name(), DataType::UInt64)),
             iter,
         ))

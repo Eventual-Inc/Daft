@@ -310,7 +310,10 @@ impl Div for &Decimal128Array {
                             (_, None) => None,
                             (Some(l), Some(r)) => Some((l * scale) / r),
                         });
-                    Ok(Decimal128Array::from_iter(self.field.clone(), values))
+                    Ok(Decimal128Array::from_iter_and_fld(
+                        self.field.clone(),
+                        values,
+                    ))
                 }
                 // broadcast right path
                 (_, 1) => {
@@ -333,7 +336,7 @@ impl Div for &Decimal128Array {
                                 .as_arrow()
                                 .iter()
                                 .map(|v| v.map(|v| ((lhs * scale) / *v)));
-                            Decimal128Array::from_iter(self.field.clone(), values_iter)
+                            Decimal128Array::from_iter_and_fld(self.field.clone(), values_iter)
                         }
                     })
                 }

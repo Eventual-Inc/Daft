@@ -35,7 +35,7 @@ impl DataArray<Decimal128Type> {
             .into_iter()
             .zip(counts)
             .map(|(sum, count)| sum.zip(count).map(|(s, c)| s / (*c as i128)));
-        Ok(Self::from_iter(self.field.clone(), means))
+        Ok(Self::from_iter_and_fld(self.field.clone(), means))
     }
 }
 
@@ -48,7 +48,10 @@ impl DaftMeanAggable for DataArray<Decimal128Type> {
 
         let val = sum.zip(count).map(|(s, c)| s / (c as i128));
 
-        Ok(Self::from_iter(self.field.clone(), std::iter::once(val)))
+        Ok(Self::from_iter_and_fld(
+            self.field.clone(),
+            std::iter::once(val),
+        ))
     }
 
     fn grouped_mean(&self, groups: &GroupIndices) -> Self::Output {
