@@ -344,7 +344,7 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
         warnings.warn(
             "PyRunner will be deprecated in v0.4.0 and the new NativeRunner will become the default."
             "We recommend switching to the NativeRunner now via `daft.context.set_runner_native()` or by setting `DAFT_RUNNER=native`. "
-            "Report any issues at github.com/Eventual-Inc/Daft/issues",
+            "Please report any issues at github.com/Eventual-Inc/Daft/issues",
         )
         # NOTE: Freeze and use this same execution config for the entire execution
         daft_execution_config = get_context().daft_execution_config
