@@ -4,6 +4,7 @@ use crate::{
     datatypes::{DataType, UInt64Array, Utf8Array},
     prelude::CountMode,
     series::{IntoSeries, Series},
+    with_match_comparable_daft_types,
 };
 
 impl Series {
@@ -174,5 +175,50 @@ impl Series {
                 dt
             ))),
         }
+    }
+
+    pub fn list_contains(&self, contains: &Self) -> DaftResult<Self> {
+        let bool_array = match self.data_type() {
+            DataType::List(internal_data_type) => {
+                let list_dt = internal_data_type.as_ref();
+                let contains_dt = contains.data_type();
+                if list_dt != contains_dt {
+                    return Err(DaftError::TypeError(format!(
+                        "Cannot determine if a list of type {} contains a value of type {}",
+                        list_dt, contains_dt
+                    )));
+                }
+                let array = self.list()?;
+                with_match_comparable_daft_types!(contains_dt, |$T| {
+                    let contains_array = contains
+                        .downcast::<<$T as DaftDataType>::ArrayType>()?;
+                    array.list_contains(contains_array)
+                })
+            }
+            DataType::FixedSizeList(internal_data_type, _) => {
+                let list_dt = internal_data_type.as_ref();
+                let contains_dt = contains.data_type();
+                if list_dt != contains_dt {
+                    return Err(DaftError::TypeError(format!(
+                        "Cannot determine if a fixed list of type {} contains a value of type {}",
+                        list_dt, contains_dt
+                    )));
+                }
+                let array = self.fixed_size_list()?;
+                with_match_comparable_daft_types!(contains_dt, |$T| {
+                    let contains_array = contains
+                        .downcast::<<$T as DaftDataType>::ArrayType>()?;
+                    array.list_contains(contains_array)
+                })
+            }
+            dt => {
+                return Err(DaftError::TypeError(format!(
+                    "List contains not implemented for {}",
+                    dt
+                )))
+            }
+        }?;
+
+        Ok(bool_array.into_series())
     }
 }

@@ -12,12 +12,12 @@ use crate::{
     array::{
         growable::{make_growable, Growable},
         ops::arrow2::comparison::build_is_equal,
-        FixedSizeListArray, ListArray, StructArray,
+        DataArray, FixedSizeListArray, ListArray, StructArray,
     },
     count_mode::CountMode,
     datatypes::{BooleanArray, DataType, Field, Int64Array, UInt64Array, Utf8Array},
     kernels::search_sorted::build_is_valid,
-    prelude::MapArray,
+    prelude::{DaftPhysicalType, MapArray},
     series::{IntoSeries, Series},
     utils::identity_hash_set::IdentityBuildHasher,
 };
@@ -625,6 +625,10 @@ impl ListArray {
             self.validity().cloned(),
         ))
     }
+
+    pub fn list_contains<T: DaftPhysicalType>(&self, _: &DataArray<T>) -> DaftResult<BooleanArray> {
+        todo!("list contains")
+    }
 }
 
 impl FixedSizeListArray {
@@ -861,6 +865,10 @@ impl FixedSizeListArray {
             child,
             self.validity().cloned(),
         ))
+    }
+
+    pub fn list_contains<T: DaftPhysicalType>(&self, _: &DataArray<T>) -> DaftResult<BooleanArray> {
+        todo!("list contains")
     }
 }
 
