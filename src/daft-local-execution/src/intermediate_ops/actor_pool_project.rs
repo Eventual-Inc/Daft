@@ -178,8 +178,8 @@ impl IntermediateOperator for ActorPoolProjectOperator {
         }))
     }
 
-    fn max_concurrency(&self) -> usize {
-        self.concurrency
+    fn max_concurrency(&self) -> DaftResult<usize> {
+        Ok(self.concurrency)
     }
 
     fn dispatch_spawner(

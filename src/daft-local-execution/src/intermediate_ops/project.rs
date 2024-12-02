@@ -1,5 +1,6 @@
-use std::{cmp::max, sync::Arc};
+use std::sync::Arc;
 
+use common_error::{DaftError, DaftResult};
 use common_resource_request::ResourceRequest;
 use common_runtime::RuntimeRef;
 use daft_dsl::ExprRef;
@@ -54,15 +55,24 @@ impl IntermediateOperator for ProjectOperator {
         "ProjectOperator"
     }
 
-    fn max_concurrency(&self) -> usize {
-        self.resource_request
-            .as_ref()
-            .and_then(|r| r.num_cpus())
-            .map(|requested_cpus| {
-                let safe_cpu_count = max(requested_cpus as usize, 1);
-                max(*NUM_CPUS / safe_cpu_count, 1)
-            })
-            .unwrap_or(*NUM_CPUS)
+    fn max_concurrency(&self) -> DaftResult<usize> {
+        match &self.resource_request {
+            Some(resource_request) => {
+                if let Some(requested_num_cpus) = resource_request.num_cpus() {
+                    if requested_num_cpus > *NUM_CPUS as f64 {
+                        Err(DaftError::ValueError(format!(
+                            "Requested {} CPUs but found only {} available",
+                            requested_num_cpus, *NUM_CPUS
+                        )))
+                    } else {
+                        Ok((*NUM_CPUS as f64 / requested_num_cpus).ceil() as usize)
+                    }
+                } else {
+                    Ok(*NUM_CPUS)
+                }
+            }
+            None => Ok(*NUM_CPUS),
+        }
     }
 
     fn dispatch_spawner(
