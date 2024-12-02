@@ -61,7 +61,7 @@ if __name__ == "__main__":
         content = content.replace(CLUSTER_NAME_PLACEHOLDER, args.cluster_name)
 
     if args.daft_wheel_url and args.daft_version:
-        raise Exception(
+        raise ValueError(
             "Cannot specify both the `daft-wheel-name` and the `daft-version`; please choose one or the other"
         )
     elif args.daft_wheel_url:

@@ -5,11 +5,11 @@ on:
     inputs:
       daft_wheel_url:
         type: string
-        description: The url pointing to a daft python-wheel for which to install and run
+        description: A public https url pointing directly to a daft python-wheel to install
         required: false
       daft_version:
         type: string
-        description: The version of daft to install (errors if both this and `daft_wheel_url` are provided)
+        description: A released version of daft on PyPi to install (errors if both this and `daft_wheel_url` are provided)
         required: false
       python_version:
         type: string
