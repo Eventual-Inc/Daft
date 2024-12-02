@@ -5,6 +5,7 @@ import logging
 import multiprocessing as mp
 import threading
 import uuid
+import warnings
 from concurrent import futures
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, Iterator
@@ -340,6 +341,11 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
         builder: LogicalPlanBuilder,
         results_buffer_size: int | None = None,
     ) -> Iterator[LocalMaterializedResult]:
+        warnings.warn(
+            "PyRunner will be deprecated in v0.4.0 and the new NativeRunner will become the default."
+            "We recommend switching to the NativeRunner now via `daft.context.set_runner_native()` or by setting `DAFT_RUNNER=native`. "
+            "Report any issues at github.com/Eventual-Inc/Daft/issues",
+        )
         # NOTE: Freeze and use this same execution config for the entire execution
         daft_execution_config = get_context().daft_execution_config
         execution_id = str(uuid.uuid4())
