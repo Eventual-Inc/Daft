@@ -37,7 +37,10 @@ impl ScalarUDF for Coalesce {
                     dt if dt.is_list() | dt.is_nested() => {
                         Err(DaftError::not_implemented("coalesce for nested datatypes"))
                     }
-                    _ => todo!(),
+                    other => Err(DaftError::ComputeError(format!(
+                        "Unsupported data type for coalesce: {:?}",
+                        other
+                    ))),
                 }
             }
 
