@@ -111,6 +111,11 @@ impl FileWriter for PartitionedWriter {
         Ok(())
     }
 
+    fn tell(&self) -> DaftResult<Option<usize>> {
+        // PartitionedWriter does not have a concept of current position because it writes to multiple files.
+        Ok(None)
+    }
+
     fn close(&mut self) -> DaftResult<Self::Result> {
         let mut results = vec![];
         for (_, mut writer) in self.per_partition_writers.drain() {

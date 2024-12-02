@@ -15,7 +15,13 @@ mod lance;
 #[cfg(feature = "python")]
 mod pyarrow;
 
-use std::{cmp::max, sync::Arc};
+use std::{
+    cmp::max,
+    sync::{
+        atomic::{AtomicU64, AtomicUsize, Ordering},
+        Arc,
+    },
+};
 
 use batch::TargetBatchWriterFactory;
 use common_daft_config::DaftExecutionConfig;
@@ -42,6 +48,9 @@ pub trait FileWriter: Send + Sync {
 
     /// Close the file and return the result. The caller should NOT write to the file after calling this method.
     fn close(&mut self) -> DaftResult<Self::Result>;
+
+    /// Return the current position of the file, if applicable.
+    fn tell(&self) -> DaftResult<Option<usize>>;
 }
 
 /// This trait is used to abstract the creation of a `FileWriter`
@@ -65,17 +74,25 @@ pub fn make_physical_writer_factory(
     let base_writer_factory = PhysicalWriterFactory::new(file_info.clone());
     match file_info.file_format {
         FileFormat::Parquet => {
-            let (target_in_memory_file_size, target_in_memory_row_group_size) =
-                calculate_target_parquet_file_size_and_row_group_size(cfg);
-
+            let row_group_size_calculator = TargetInMemorySizeBytesCalculator::new(
+                cfg.parquet_target_row_group_size,
+                cfg.parquet_inflation_factor,
+            );
             let row_group_writer_factory = TargetBatchWriterFactory::new(
                 Arc::new(base_writer_factory),
-                target_in_memory_row_group_size,
+                Arc::new(row_group_size_calculator),
             );
 
+            let file_size_calculator = TargetInMemorySizeBytesCalculator::new(
+                max(
+                    cfg.parquet_target_filesize,
+                    cfg.parquet_target_row_group_size,
+                ),
+                cfg.parquet_inflation_factor,
+            );
             let file_writer_factory = TargetFileSizeWriterFactory::new(
                 Arc::new(row_group_writer_factory),
-                target_in_memory_file_size,
+                Arc::new(file_size_calculator),
             );
 
             if let Some(partition_cols) = &file_info.partition_cols {
@@ -89,11 +106,14 @@ pub fn make_physical_writer_factory(
             }
         }
         FileFormat::Csv => {
-            let target_in_memory_file_size = calculate_target_csv_file_size(cfg);
+            let file_size_calculator = TargetInMemorySizeBytesCalculator::new(
+                cfg.csv_target_filesize,
+                cfg.csv_inflation_factor,
+            );
 
             let file_writer_factory = TargetFileSizeWriterFactory::new(
                 Arc::new(base_writer_factory),
-                target_in_memory_file_size,
+                Arc::new(file_size_calculator),
             );
 
             if let Some(partition_cols) = &file_info.partition_cols {
@@ -120,14 +140,26 @@ pub fn make_catalog_writer_factory(
 
     let base_writer_factory = CatalogWriterFactory::new(catalog_info.clone());
 
-    let (target_file_size, target_row_group_size) =
-        calculate_target_parquet_file_size_and_row_group_size(cfg);
+    let row_group_size_calculator = TargetInMemorySizeBytesCalculator::new(
+        cfg.parquet_target_row_group_size,
+        cfg.parquet_inflation_factor,
+    );
+    let row_group_writer_factory = TargetBatchWriterFactory::new(
+        Arc::new(base_writer_factory),
+        Arc::new(row_group_size_calculator),
+    );
 
-    let row_group_writer_factory =
-        TargetBatchWriterFactory::new(Arc::new(base_writer_factory), target_row_group_size);
-
-    let file_writer_factory =
-        TargetFileSizeWriterFactory::new(Arc::new(row_group_writer_factory), target_file_size);
+    let file_size_calculator = TargetInMemorySizeBytesCalculator::new(
+        max(
+            cfg.parquet_target_filesize,
+            cfg.parquet_target_row_group_size,
+        ),
+        cfg.parquet_inflation_factor,
+    );
+    let file_writer_factory = TargetFileSizeWriterFactory::new(
+        Arc::new(row_group_writer_factory),
+        Arc::new(file_size_calculator),
+    );
 
     if let Some(partition_cols) = partition_cols {
         let partitioned_writer_factory =
@@ -138,24 +170,44 @@ pub fn make_catalog_writer_factory(
     }
 }
 
-fn calculate_target_parquet_file_size_and_row_group_size(
-    cfg: &DaftExecutionConfig,
-) -> (usize, usize) {
-    let target_in_memory_file_size = max(
-        (cfg.parquet_target_filesize as f64 * cfg.parquet_inflation_factor) as usize,
-        1,
-    );
-    let target_in_memory_row_group_size = max(
-        (cfg.parquet_target_row_group_size as f64 * cfg.parquet_inflation_factor) as usize,
-        target_in_memory_file_size,
-    );
-
-    (target_in_memory_file_size, target_in_memory_row_group_size)
+pub struct TargetInMemorySizeBytesCalculator {
+    estimated_inflation_factor: AtomicU64, // Using u64 to store f64 bits
+    target_size_bytes: usize,
+    num_samples: AtomicUsize,
 }
 
-fn calculate_target_csv_file_size(cfg: &DaftExecutionConfig) -> usize {
-    max(
-        (cfg.csv_target_filesize as f64 * cfg.csv_inflation_factor) as usize,
-        1,
-    )
+impl TargetInMemorySizeBytesCalculator {
+    fn new(target_size_bytes: usize, initial_inflation_factor: f64) -> Self {
+        Self {
+            estimated_inflation_factor: AtomicU64::new(initial_inflation_factor.to_bits()),
+            target_size_bytes,
+            num_samples: AtomicUsize::new(0),
+        }
+    }
+
+    fn calculate_target_in_memory_size_bytes(&self) -> usize {
+        let factor = f64::from_bits(self.estimated_inflation_factor.load(Ordering::Relaxed));
+        (self.target_size_bytes as f64 * factor) as usize
+    }
+
+    fn record_and_update_inflation_factor(&self, actual_size_bytes: usize) -> f64 {
+        let new_inflation_factor = actual_size_bytes as f64 / self.target_size_bytes as f64;
+        let new_num_samples = self.num_samples.fetch_add(1, Ordering::Relaxed) + 1;
+
+        let current_factor =
+            f64::from_bits(self.estimated_inflation_factor.load(Ordering::Relaxed));
+
+        let new_factor = if new_num_samples == 1 {
+            new_inflation_factor
+        } else {
+            current_factor.mul_add(
+                (new_num_samples - 1) as f64 / new_num_samples as f64,
+                new_inflation_factor * (1.0 / new_num_samples as f64),
+            )
+        };
+
+        self.estimated_inflation_factor
+            .store(new_factor.to_bits(), Ordering::Relaxed);
+        new_factor
+    }
 }

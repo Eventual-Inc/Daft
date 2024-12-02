@@ -89,6 +89,15 @@ class FileWriterBase(ABC):
         pass
 
     @abstractmethod
+    def tell(self) -> int:
+        """Return the current position in the file.
+
+        Returns:
+            int: The current position in the file.
+        """
+        pass
+
+    @abstractmethod
     def close(self) -> Table:
         """Close the writer and return metadata about the written file. Write should not be called after close.
 
@@ -143,6 +152,11 @@ class ParquetFileWriter(FileWriterBase):
             self.current_writer = self._create_writer(table.schema().to_pyarrow_schema())
         self.current_writer.write_table(table.to_arrow())
 
+    def tell(self) -> int:
+        if self.current_writer is not None and self.current_writer.file_handle is not None:
+            return self.current_writer.file_handle.tell()
+        return 0
+
     def close(self) -> Table:
         if self.current_writer is not None:
             self.current_writer.close()
@@ -170,13 +184,14 @@ class CSVFileWriter(FileWriterBase):
             partition_values=partition_values,
             io_config=io_config,
         )
+        self.file_handle = None
         self.current_writer: Optional[pacsv.CSVWriter] = None
         self.is_closed = False
 
     def _create_writer(self, schema: pa.Schema) -> pacsv.CSVWriter:
-        output_file = self.fs.open_output_stream(self.full_path)
+        self.file_handle = self.fs.open_output_stream(self.full_path)
         return pacsv.CSVWriter(
-            output_file,
+            self.file_handle,
             schema,
         )
 
@@ -185,6 +200,11 @@ class CSVFileWriter(FileWriterBase):
         if self.current_writer is None:
             self.current_writer = self._create_writer(table.schema().to_pyarrow_schema())
         self.current_writer.write_table(table.to_arrow())
+
+    def tell(self) -> int:
+        if self.file_handle is not None:
+            return self.file_handle.tell()
+        return 0
 
     def close(self) -> Table:
         if self.current_writer is not None:

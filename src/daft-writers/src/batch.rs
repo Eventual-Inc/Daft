@@ -1,33 +1,146 @@
-use std::{cmp::max, sync::Arc};
+use std::{collections::VecDeque, sync::Arc};
 
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 use daft_table::Table;
 
-use crate::{FileWriter, WriterFactory};
+use crate::{FileWriter, TargetInMemorySizeBytesCalculator, WriterFactory};
+
+struct Entry {
+    table: Table,
+    size_bytes: usize,
+}
+
+struct SizeBasedBuffer {
+    buffer: VecDeque<Entry>,
+    size_bytes: usize,
+    num_rows: usize,
+}
+
+impl SizeBasedBuffer {
+    fn new() -> Self {
+        Self {
+            buffer: VecDeque::new(),
+            size_bytes: 0,
+            num_rows: 0,
+        }
+    }
+
+    fn push(&mut self, mp: Arc<MicroPartition>) -> DaftResult<()> {
+        let tables = mp.get_tables()?;
+        for table in tables.iter() {
+            let size_bytes = table.size_bytes()?;
+            self.size_bytes += size_bytes;
+            self.num_rows += table.len();
+            self.buffer.push_back(Entry {
+                table: table.clone(),
+                size_bytes,
+            });
+        }
+        Ok(())
+    }
+
+    fn pop(
+        &mut self,
+        min_size_bytes: usize,
+        max_size_bytes: usize,
+    ) -> DaftResult<Option<Arc<MicroPartition>>> {
+        if self.size_bytes < min_size_bytes {
+            return Ok(None);
+        }
+        let mut tables = vec![];
+        let mut current_size_bytes = 0;
+        let mut current_num_rows = 0;
+        while let Some(entry) = self.buffer.pop_front() {
+            if current_size_bytes + entry.size_bytes < max_size_bytes {
+                current_size_bytes += entry.size_bytes;
+                current_num_rows += entry.table.len();
+                tables.push(entry.table);
+                if current_size_bytes >= min_size_bytes {
+                    break;
+                }
+            } else {
+                let entry_table_len = entry.table.len();
+                let avg_row_size_bytes = entry.size_bytes / entry_table_len;
+                let size_bytes_needed = min_size_bytes - current_size_bytes;
+                let num_rows_needed = size_bytes_needed / avg_row_size_bytes;
+
+                let sliced = entry.table.slice(0, num_rows_needed)?;
+                tables.push(sliced);
+
+                self.buffer.push_front(Entry {
+                    table: entry.table.slice(num_rows_needed, entry_table_len)?,
+                    size_bytes: avg_row_size_bytes * (entry_table_len - num_rows_needed),
+                });
+                current_size_bytes += size_bytes_needed;
+                current_num_rows += num_rows_needed;
+                break;
+            }
+        }
+        self.size_bytes -= current_size_bytes;
+        self.num_rows -= current_num_rows;
+        Ok(Some(Arc::new(MicroPartition::new_loaded(
+            tables[0].schema.clone(),
+            tables.into(),
+            None,
+        ))))
+    }
+
+    fn pop_all(&mut self) -> DaftResult<Option<Arc<MicroPartition>>> {
+        if self.buffer.is_empty() {
+            return Ok(None);
+        }
+        let tables = self
+            .buffer
+            .drain(..)
+            .map(|entry| entry.table)
+            .collect::<Vec<_>>();
+        self.size_bytes = 0;
+        self.num_rows = 0;
+        Ok(Some(Arc::new(MicroPartition::new_loaded(
+            tables[0].schema.clone(),
+            tables.into(),
+            None,
+        ))))
+    }
+}
 
 // TargetBatchWriter is a writer that writes in batches of size_bytes, i.e. for Parquet where we want to write
 // a row group at a time.
 pub struct TargetBatchWriter {
-    target_in_memory_chunk_size_bytes: usize,
+    size_calculator: Arc<TargetInMemorySizeBytesCalculator>,
+    previous_position: usize,
     writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Option<Table>>>,
-    leftovers: Option<Arc<MicroPartition>>,
-    leftover_size_bytes: usize,
+    buffer: SizeBasedBuffer,
     is_closed: bool,
 }
 
 impl TargetBatchWriter {
+    const SIZE_BYTE_LENIENCY: f64 = 0.2;
+
     pub fn new(
-        target_in_memory_chunk_size_bytes: usize,
+        size_calculator: Arc<TargetInMemorySizeBytesCalculator>,
         writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Option<Table>>>,
     ) -> Self {
         Self {
-            target_in_memory_chunk_size_bytes,
+            size_calculator,
+            previous_position: 0,
             writer,
-            leftovers: None,
-            leftover_size_bytes: 0,
+            buffer: SizeBasedBuffer::new(),
             is_closed: false,
         }
+    }
+
+    fn write_and_update_inflation_factor(&mut self, input: Arc<MicroPartition>) -> DaftResult<()> {
+        self.writer.write(input)?;
+        let current_position = self.writer.tell()?;
+        if let Some(current_position) = current_position {
+            let actual_size_bytes = current_position - self.previous_position;
+            self.previous_position = current_position;
+            self.size_calculator
+                .record_and_update_inflation_factor(actual_size_bytes);
+        }
+        Ok(())
     }
 }
 
@@ -35,7 +148,7 @@ impl FileWriter for TargetBatchWriter {
     type Input = Arc<MicroPartition>;
     type Result = Option<Table>;
 
-    fn write(&mut self, mut input: Arc<MicroPartition>) -> DaftResult<()> {
+    fn write(&mut self, input: Arc<MicroPartition>) -> DaftResult<()> {
         assert!(
             !self.is_closed,
             "Cannot write to a closed TargetBatchWriter"
@@ -44,52 +157,25 @@ impl FileWriter for TargetBatchWriter {
             return Ok(());
         }
 
-        let mut input_size_bytes = input
-            .size_bytes()?
-            .expect("Micropartitions in target batch writer must be loaded");
+        self.buffer.push(input)?;
 
-        if let Some(leftovers) = self.leftovers.take() {
-            input = MicroPartition::concat([leftovers, input])?.into();
-            input_size_bytes += self.leftover_size_bytes;
-            self.leftover_size_bytes = 0;
+        let target_size_bytes = self.size_calculator.calculate_target_in_memory_size_bytes();
+        let min_size_bytes = (target_size_bytes as f64 * (1.0 - Self::SIZE_BYTE_LENIENCY)) as usize;
+        let max_size_bytes = (target_size_bytes as f64 * (1.0 + Self::SIZE_BYTE_LENIENCY)) as usize;
+
+        while let Some(mp) = self.buffer.pop(min_size_bytes, max_size_bytes)? {
+            self.write_and_update_inflation_factor(mp)?;
         }
 
-        // Calculate the average row size in bytes, and determine the target chunk size in rows
-        let avg_row_size_bytes = max(input_size_bytes / input.len(), 1);
-        let target_chunk_rows = self.target_in_memory_chunk_size_bytes / avg_row_size_bytes;
+        Ok(())
+    }
 
-        // Write chunks of target_chunk_rows until we have less than that
-        let mut local_offset = 0;
-        loop {
-            let remaining_rows = input.len() - local_offset;
-
-            use std::cmp::Ordering;
-            match remaining_rows.cmp(&target_chunk_rows) {
-                // We have enough rows to write a complete chunk, write it and return
-                Ordering::Equal => {
-                    let chunk = input.slice(local_offset, local_offset + remaining_rows)?;
-                    return self.writer.write(chunk.into());
-                }
-                // We have less rows than a chunk, store the remainder and return
-                Ordering::Less => {
-                    let remainder = input.slice(local_offset, local_offset + remaining_rows)?;
-                    let remainder_size_bytes = remainder.len() * avg_row_size_bytes;
-                    self.leftovers = Some(remainder.into());
-                    self.leftover_size_bytes = remainder_size_bytes;
-                    return Ok(());
-                }
-                // We have more rows than a chunk, write the chunk, increment the offset and continue
-                Ordering::Greater => {
-                    let chunk = input.slice(local_offset, local_offset + target_chunk_rows)?;
-                    self.writer.write(chunk.into())?;
-                    local_offset += target_chunk_rows;
-                }
-            }
-        }
+    fn tell(&self) -> DaftResult<Option<usize>> {
+        self.writer.tell()
     }
 
     fn close(&mut self) -> DaftResult<Self::Result> {
-        if let Some(leftovers) = self.leftovers.take() {
+        if let Some(leftovers) = self.buffer.pop_all()? {
             self.writer.write(leftovers)?;
         }
         self.is_closed = true;
@@ -99,17 +185,17 @@ impl FileWriter for TargetBatchWriter {
 
 pub struct TargetBatchWriterFactory {
     writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<Table>>>,
-    target_batch_size_bytes: usize,
+    size_calculator: Arc<TargetInMemorySizeBytesCalculator>,
 }
 
 impl TargetBatchWriterFactory {
     pub fn new(
         writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<Table>>>,
-        target_batch_size_bytes: usize,
+        size_calculator: Arc<TargetInMemorySizeBytesCalculator>,
     ) -> Self {
         Self {
             writer_factory,
-            target_batch_size_bytes,
+            size_calculator,
         }
     }
 }
@@ -127,7 +213,7 @@ impl WriterFactory for TargetBatchWriterFactory {
             .writer_factory
             .create_writer(file_idx, partition_values)?;
         Ok(Box::new(TargetBatchWriter::new(
-            self.target_batch_size_bytes,
+            self.size_calculator.clone(),
             writer,
         )))
     }
@@ -142,8 +228,11 @@ mod tests {
     #[test]
     fn test_target_batch_writer_exact_batch() {
         let dummy_writer_factory = DummyWriterFactory;
-        let mut writer =
-            TargetBatchWriter::new(1, dummy_writer_factory.create_writer(0, None).unwrap());
+        let size_calculator = Arc::new(TargetInMemorySizeBytesCalculator::new(1, 1.0));
+        let mut writer = TargetBatchWriter::new(
+            size_calculator,
+            dummy_writer_factory.create_writer(0, None).unwrap(),
+        );
 
         let mp = make_dummy_mp(1);
         writer.write(mp).unwrap();
@@ -164,8 +253,11 @@ mod tests {
     #[test]
     fn test_target_batch_writer_small_batches() {
         let dummy_writer_factory = DummyWriterFactory;
-        let mut writer =
-            TargetBatchWriter::new(3, dummy_writer_factory.create_writer(0, None).unwrap());
+        let size_calculator = Arc::new(TargetInMemorySizeBytesCalculator::new(3, 1.0));
+        let mut writer = TargetBatchWriter::new(
+            size_calculator,
+            dummy_writer_factory.create_writer(0, None).unwrap(),
+        );
 
         for _ in 0..8 {
             let mp = make_dummy_mp(1);
@@ -188,8 +280,11 @@ mod tests {
     #[test]
     fn test_target_batch_writer_big_batch() {
         let dummy_writer_factory = DummyWriterFactory;
-        let mut writer =
-            TargetBatchWriter::new(3, dummy_writer_factory.create_writer(0, None).unwrap());
+        let size_calculator = Arc::new(TargetInMemorySizeBytesCalculator::new(3, 1.0));
+        let mut writer = TargetBatchWriter::new(
+            size_calculator,
+            dummy_writer_factory.create_writer(0, None).unwrap(),
+        );
 
         let mp = make_dummy_mp(10);
         writer.write(mp).unwrap();

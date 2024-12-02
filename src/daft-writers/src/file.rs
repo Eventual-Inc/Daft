@@ -4,7 +4,7 @@ use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 use daft_table::Table;
 
-use crate::{FileWriter, WriterFactory};
+use crate::{FileWriter, TargetInMemorySizeBytesCalculator, WriterFactory};
 
 // TargetFileSizeWriter is a writer that writes files of a target size.
 // It rotates the writer when the current file reaches the target size.
@@ -12,7 +12,7 @@ struct TargetFileSizeWriter {
     current_file_size_bytes: usize,
     current_writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Option<Table>>>,
     writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<Table>>>,
-    target_file_size_bytes: usize,
+    size_calculator: Arc<TargetInMemorySizeBytesCalculator>,
     results: Vec<Table>,
     partition_values: Option<Table>,
     is_closed: bool,
@@ -20,9 +20,9 @@ struct TargetFileSizeWriter {
 
 impl TargetFileSizeWriter {
     fn new(
-        target_in_memory_file_size_bytes: usize,
         writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<Table>>>,
         partition_values: Option<Table>,
+        size_calculator: Arc<TargetInMemorySizeBytesCalculator>,
     ) -> DaftResult<Self> {
         let writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Option<Table>>> =
             writer_factory.create_writer(0, partition_values.as_ref())?;
@@ -30,7 +30,7 @@ impl TargetFileSizeWriter {
             current_file_size_bytes: 0,
             current_writer: writer,
             writer_factory,
-            target_file_size_bytes: target_in_memory_file_size_bytes,
+            size_calculator,
             results: vec![],
             partition_values,
             is_closed: false,
@@ -38,6 +38,10 @@ impl TargetFileSizeWriter {
     }
 
     fn rotate_writer(&mut self) -> DaftResult<()> {
+        if let Some(bytes) = self.current_writer.tell()? {
+            self.size_calculator
+                .record_and_update_inflation_factor(bytes);
+        }
         if let Some(result) = self.current_writer.close()? {
             self.results.push(result);
         }
@@ -72,7 +76,8 @@ impl FileWriter for TargetFileSizeWriter {
         let mut local_offset = 0;
         loop {
             let bytes_until_target = self
-                .target_file_size_bytes
+                .size_calculator
+                .calculate_target_in_memory_size_bytes()
                 .saturating_sub(self.current_file_size_bytes);
             let rows_until_target = max(bytes_until_target / avg_row_size_bytes, 1);
             let remaining_input_rows = input.len() - local_offset;
@@ -106,6 +111,10 @@ impl FileWriter for TargetFileSizeWriter {
         }
     }
 
+    fn tell(&self) -> DaftResult<Option<usize>> {
+        self.current_writer.tell()
+    }
+
     fn close(&mut self) -> DaftResult<Self::Result> {
         if self.current_file_size_bytes > 0 {
             if let Some(result) = self.current_writer.close()? {
@@ -119,17 +128,17 @@ impl FileWriter for TargetFileSizeWriter {
 
 pub(crate) struct TargetFileSizeWriterFactory {
     writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<Table>>>,
-    target_in_memory_file_rows: usize,
+    size_calculator: Arc<TargetInMemorySizeBytesCalculator>,
 }
 
 impl TargetFileSizeWriterFactory {
     pub(crate) fn new(
         writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<Table>>>,
-        target_in_memory_file_rows: usize,
+        size_calculator: Arc<TargetInMemorySizeBytesCalculator>,
     ) -> Self {
         Self {
             writer_factory,
-            target_in_memory_file_rows,
+            size_calculator,
         }
     }
 }
@@ -144,9 +153,9 @@ impl WriterFactory for TargetFileSizeWriterFactory {
         partition_values: Option<&Table>,
     ) -> DaftResult<Box<dyn FileWriter<Input = Self::Input, Result = Self::Result>>> {
         Ok(Box::new(TargetFileSizeWriter::new(
-            self.target_in_memory_file_rows,
             self.writer_factory.clone(),
             partition_values.cloned(),
+            self.size_calculator.clone(),
         )?)
             as Box<
                 dyn FileWriter<Input = Self::Input, Result = Self::Result>,
@@ -163,8 +172,10 @@ mod tests {
     #[test]
     fn test_target_file_writer_exact_file() {
         let dummy_writer_factory = DummyWriterFactory;
+        let size_calculator = Arc::new(TargetInMemorySizeBytesCalculator::new(1, 1.0));
         let mut writer =
-            TargetFileSizeWriter::new(1, Arc::new(dummy_writer_factory), None).unwrap();
+            TargetFileSizeWriter::new(Arc::new(dummy_writer_factory), None, size_calculator)
+                .unwrap();
 
         let mp = make_dummy_mp(1);
         writer.write(mp).unwrap();
@@ -175,8 +186,10 @@ mod tests {
     #[test]
     fn test_target_file_writer_less_rows_for_one_file() {
         let dummy_writer_factory = DummyWriterFactory;
+        let size_calculator = Arc::new(TargetInMemorySizeBytesCalculator::new(3, 1.0));
         let mut writer =
-            TargetFileSizeWriter::new(3, Arc::new(dummy_writer_factory), None).unwrap();
+            TargetFileSizeWriter::new(Arc::new(dummy_writer_factory), None, size_calculator)
+                .unwrap();
 
         let mp = make_dummy_mp(2);
         writer.write(mp).unwrap();
@@ -187,8 +200,10 @@ mod tests {
     #[test]
     fn test_target_file_writer_more_rows_for_one_file() {
         let dummy_writer_factory = DummyWriterFactory;
+        let size_calculator = Arc::new(TargetInMemorySizeBytesCalculator::new(3, 1.0));
         let mut writer =
-            TargetFileSizeWriter::new(3, Arc::new(dummy_writer_factory), None).unwrap();
+            TargetFileSizeWriter::new(Arc::new(dummy_writer_factory), None, size_calculator)
+                .unwrap();
 
         let mp = make_dummy_mp(4);
         writer.write(mp).unwrap();
@@ -199,8 +214,10 @@ mod tests {
     #[test]
     fn test_target_file_writer_multiple_files() {
         let dummy_writer_factory = DummyWriterFactory;
+        let size_calculator = Arc::new(TargetInMemorySizeBytesCalculator::new(3, 1.0));
         let mut writer =
-            TargetFileSizeWriter::new(3, Arc::new(dummy_writer_factory), None).unwrap();
+            TargetFileSizeWriter::new(Arc::new(dummy_writer_factory), None, size_calculator)
+                .unwrap();
 
         let mp = make_dummy_mp(10);
         writer.write(mp).unwrap();
@@ -211,8 +228,10 @@ mod tests {
     #[test]
     fn test_target_file_writer_many_writes_many_files() {
         let dummy_writer_factory = DummyWriterFactory;
+        let size_calculator = Arc::new(TargetInMemorySizeBytesCalculator::new(3, 1.0));
         let mut writer =
-            TargetFileSizeWriter::new(3, Arc::new(dummy_writer_factory), None).unwrap();
+            TargetFileSizeWriter::new(Arc::new(dummy_writer_factory), None, size_calculator)
+                .unwrap();
 
         for _ in 0..10 {
             let mp = make_dummy_mp(1);

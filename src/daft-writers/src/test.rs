@@ -47,6 +47,10 @@ impl FileWriter for DummyWriter {
         Ok(())
     }
 
+    fn tell(&self) -> DaftResult<Option<usize>> {
+        Ok(Some(self.write_count))
+    }
+
     fn close(&mut self) -> DaftResult<Self::Result> {
         let path_series =
             Utf8Array::from_values("path", std::iter::once(self.file_idx.clone())).into_series();

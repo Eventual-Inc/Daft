@@ -60,6 +60,11 @@ impl FileWriter for LanceWriter {
         })
     }
 
+    fn tell(&self) -> DaftResult<Option<usize>> {
+        // LanceWriter does not have a concept of current position.
+        Ok(None)
+    }
+
     fn close(&mut self) -> DaftResult<Self::Result> {
         self.is_closed = true;
         Ok(std::mem::take(&mut self.results))

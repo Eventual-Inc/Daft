@@ -185,6 +185,16 @@ impl FileWriter for PyArrowWriter {
         })
     }
 
+    fn tell(&self) -> DaftResult<Option<usize>> {
+        Python::with_gil(|py| {
+            let result = self
+                .py_writer
+                .call_method0(py, pyo3::intern!(py, "tell"))?
+                .extract::<usize>(py)?;
+            Ok(Some(result))
+        })
+    }
+
     fn close(&mut self) -> DaftResult<Self::Result> {
         self.is_closed = true;
         Python::with_gil(|py| {
