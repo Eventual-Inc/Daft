@@ -61,9 +61,7 @@ def test_merge_scan_task_below_min(csv_files):
 
 
 def test_merge_scan_task_limit_override(csv_files):
-    # A LIMIT operation should override merging of scan tasks, making it only merge up-to the estimated size of the limit
-    #
-    # With a very small CSV inflation factor, the merger will think that these CSVs provide very few rows of data and will be more aggressive
+    # A LIMIT operation will turn off merging
     with daft.execution_config_ctx(
         scan_tasks_min_size_bytes=17,
         scan_tasks_max_size_bytes=20,
@@ -71,8 +69,8 @@ def test_merge_scan_task_limit_override(csv_files):
     ):
         df = daft.read_csv(str(csv_files)).limit(1)
         assert (
-            df.num_partitions() == 1
-        ), "Should have 1 partitions [(CSV1, CSV2, CSV3)] since we have a limit 1 but are underestimating the size of data of the CSVs"
+            df.num_partitions() == 3
+        ), "Should have 3 partitions, since we have a limit 1 which turns off merging of ScanTasks"
 
     # With a very large CSV inflation factor, the merger will think that these CSVs provide more rows of data and will be more conservative
     with daft.execution_config_ctx(
