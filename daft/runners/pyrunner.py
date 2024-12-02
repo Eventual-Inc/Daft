@@ -342,7 +342,7 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
         results_buffer_size: int | None = None,
     ) -> Iterator[LocalMaterializedResult]:
         warnings.warn(
-            "PyRunner will be deprecated in v0.4.0 and the new NativeRunner will become the default."
+            "PyRunner will be deprecated in v0.4.0 and the new NativeRunner will become the default for local execution."
             "We recommend switching to the NativeRunner now via `daft.context.set_runner_native()` or by setting `DAFT_RUNNER=native`. "
             "Please report any issues at github.com/Eventual-Inc/Daft/issues",
         )
