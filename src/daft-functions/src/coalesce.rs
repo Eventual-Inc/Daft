@@ -22,30 +22,34 @@ impl ScalarUDF for Coalesce {
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+        fn ensure_valid_dtype(Field { dtype, .. }: &Field) -> DaftResult<()> {
+            match dtype {
+                DataType::Boolean | DataType::Utf8 => Ok(()),
+                dt if dt.is_physical() || dt.is_primitive() => Ok(()),
+
+                dt if dt.is_list() | dt.is_nested() => {
+                    Err(DaftError::not_implemented("coalesce for nested datatypes"))
+                }
+                other => Err(DaftError::ComputeError(format!(
+                    "Unsupported data type for coalesce: {:?}",
+                    other
+                ))),
+            }
+        }
+
         match inputs {
             [] => Err(DaftError::SchemaMismatch(
                 "Expected at least 1 input args, got 0".to_string(),
             )),
             [input] => {
                 let input_field = input.to_field(schema)?;
-                let dtype: &DataType = &input_field.dtype;
-
-                match dtype {
-                    DataType::Boolean | DataType::Utf8 => Ok(input_field.clone()),
-                    dt if dt.is_physical() || dt.is_primitive() => Ok(input_field.clone()),
-
-                    dt if dt.is_list() | dt.is_nested() => {
-                        Err(DaftError::not_implemented("coalesce for nested datatypes"))
-                    }
-                    other => Err(DaftError::ComputeError(format!(
-                        "Unsupported data type for coalesce: {:?}",
-                        other
-                    ))),
-                }
+                ensure_valid_dtype(&input_field)?;
+                Ok(input_field)
             }
 
             _ => {
                 let first_field = inputs[0].to_field(schema)?;
+                ensure_valid_dtype(&first_field)?;
 
                 for input in inputs {
                     if input.to_field(schema)?.dtype != first_field.dtype {
