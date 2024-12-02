@@ -1,6 +1,7 @@
 pub mod abs;
 pub mod cbrt;
 pub mod ceil;
+pub mod clip;
 pub mod exp;
 pub mod floor;
 pub mod log;
@@ -24,6 +25,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction_bound!(cbrt::py_cbrt, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(ceil::py_ceil, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(exp::py_exp, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(clip::py_clip, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(floor::py_floor, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(log::py_log2, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(log::py_log10, parent)?)?;

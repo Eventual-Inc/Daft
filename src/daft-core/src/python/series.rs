@@ -149,6 +149,9 @@ impl PySeries {
         }
         Ok(self.series.round(decimal)?.into())
     }
+    pub fn clip(&self, min: &Self, max: &Self) -> PyResult<Self> {
+        Ok(self.series.clip(&min.series, &max.series)?.into())
+    }
 
     pub fn sqrt(&self) -> PyResult<Self> {
         Ok(self.series.sqrt()?.into())
