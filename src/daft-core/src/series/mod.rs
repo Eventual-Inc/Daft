@@ -46,6 +46,15 @@ impl PartialEq for Series {
 }
 
 impl Series {
+    /// Build a hashset of the [`IndexHash`]s of each element in this [`Series`].
+    ///
+    /// The returned hashset can be used to probe for the existence of a given element in this [`Series`].
+    /// Its length can also be used to determine the *exact* number of unique elements in this [`Series`].
+    ///
+    /// # Note
+    /// 1. This function returns a `HashMap<X, ()>` rather than a `HashSet<X>`. These two types are functionally equivalent.
+    ///
+    /// 2. `NULL`s are *not* inserted into the returned hashset. They won't be counted towards the final number of unique elements.
     pub fn build_probe_table(&self) -> DaftResult<HashMap<IndexHash, (), IdentityBuildHasher>> {
         // Building a comparator function over a series of type `NULL` will result in a failure.
         // (I.e., `let comparator = build_is_equal(..)` will fail).
