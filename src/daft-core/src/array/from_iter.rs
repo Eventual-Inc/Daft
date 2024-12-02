@@ -51,6 +51,7 @@ where
         Self::new(field, data_array.boxed()).unwrap()
     }
 }
+
 impl<T> DataArray<T>
 where
     T: DaftPrimitiveType,

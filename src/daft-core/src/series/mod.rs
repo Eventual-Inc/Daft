@@ -180,7 +180,7 @@ macro_rules! impl_named_from {
         impl NamedFrom<$type, $ty> for Series {
             fn new(name: &str, v: $type) -> Self {
                 let data_array = DataArray::<$ty>::from_vec(name, v);
-                data_array.into_series().rename(name)
+                data_array.into_series()
             }
         }
     };
@@ -190,7 +190,7 @@ macro_rules! impl_named_from_opt {
         impl NamedFrom<$type, $ty> for Series {
             fn new(name: &str, v: $type) -> Self {
                 let data_array = DataArray::<$ty>::from_iter(name, v.into_iter());
-                data_array.into_series().rename(name)
+                data_array.into_series()
             }
         }
     };
