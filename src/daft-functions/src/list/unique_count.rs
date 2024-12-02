@@ -21,14 +21,14 @@ impl ScalarUDF for ListUniqueCount {
     }
 
     fn name(&self) -> &'static str {
-        "unique_count"
+        "list_unique_count"
     }
 
-    fn to_field(&self, inputs: &[ExprRef], _: &Schema) -> DaftResult<Field> {
+    fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
             [input] => {
-                let name = input.name();
-                Ok(Field::new(name, DataType::UInt64))
+                let field = input.to_field(schema)?;
+                Ok(Field::new(field.name, DataType::UInt64))
             }
             _ => Err(DaftError::SchemaMismatch(format!(
                 "Expected 1 input arg, got {}",
