@@ -118,15 +118,9 @@ where
                 let left = left_bound.get(0);
                 let right = right_bound.get(0);
                 match (left, right) {
-                    (Some(l), Some(r)) => {
-                        self.apply(|value| clamp(value, l, r))
-                    }
-                    (Some(l), None) => {
-                        self.apply(|value| clamp_min(value, l))
-                    }
-                    (None, Some(r)) => {
-                        self.apply(|value| clamp_max(value, r))
-                    }
+                    (Some(l), Some(r)) => self.apply(|value| clamp(value, l, r)),
+                    (Some(l), None) => self.apply(|value| clamp_min(value, l)),
+                    (None, Some(r)) => self.apply(|value| clamp_max(value, r)),
                     (None, None) => {
                         // Not doing anything here, so we can just return self
                         Ok(self.clone())
