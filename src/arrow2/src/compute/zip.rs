@@ -1,7 +1,5 @@
 use crate::{
-    array::{
-        Array, BooleanArray, Int8Array, MutableArray, MutableBooleanArray, MutablePrimitiveArray,
-    },
+    array::{Array, BooleanArray, MutableArray, MutableBooleanArray, MutablePrimitiveArray},
     bitmap::Bitmap,
     datatypes::DataType,
 };
@@ -67,9 +65,7 @@ pub fn zip(
         crate::datatypes::DataType::Boolean => {
             zip!(BooleanArray, MutableBooleanArray)
         }
-        crate::datatypes::DataType::Int8 => {
-            zip_primitive!(Int8Array, i8)
-        }
+        crate::datatypes::DataType::Int8 => zip_primitive!(crate::array::Int8Array, i8),
         crate::datatypes::DataType::Int16 => zip_primitive!(crate::array::Int16Array, i16),
         crate::datatypes::DataType::Int32 => zip_primitive!(crate::array::Int32Array, i32),
         crate::datatypes::DataType::Int64 => zip_primitive!(crate::array::Int64Array, i64),
