@@ -29,48 +29,15 @@ pub(crate) type BoxScanTaskIter<'a> = Box<dyn Iterator<Item = DaftResult<ScanTas
 #[must_use]
 pub(crate) fn merge_by_sizes<'a>(
     scan_tasks: BoxScanTaskIter<'a>,
-    pushdowns: &Pushdowns,
     cfg: &'a DaftExecutionConfig,
 ) -> BoxScanTaskIter<'a> {
-    if let Some(limit) = pushdowns.limit {
-        // If LIMIT pushdown is present, perform a more conservative merge using the estimated size of the LIMIT
-        let mut scan_tasks = scan_tasks.peekable();
-        let first_scantask = scan_tasks
-            .peek()
-            .and_then(|x| x.as_ref().map(std::clone::Clone::clone).ok());
-        if let Some(first_scantask) = first_scantask {
-            let estimated_bytes_for_reading_limit_rows = first_scantask
-                .as_ref()
-                .estimate_in_memory_size_bytes(Some(cfg))
-                .and_then(|est_materialized_bytes| {
-                    first_scantask
-                        .as_ref()
-                        .approx_num_rows(Some(cfg))
-                        .map(|approx_num_rows| {
-                            (est_materialized_bytes as f64) / approx_num_rows * (limit as f64)
-                        })
-                });
-            if let Some(limit_bytes) = estimated_bytes_for_reading_limit_rows {
-                return Box::new(MergeByFileSize {
-                    iter: Box::new(scan_tasks),
-                    cfg,
-                    target_upper_bound_size_bytes: (limit_bytes * 1.5) as usize,
-                    target_lower_bound_size_bytes: (limit_bytes / 2.) as usize,
-                    accumulator: None,
-                }) as BoxScanTaskIter;
-            }
-        }
-        // If we are unable to determine an estimation on the LIMIT size, so we don't perform a merge
-        Box::new(scan_tasks)
-    } else {
-        Box::new(MergeByFileSize {
-            iter: scan_tasks,
-            cfg,
-            target_upper_bound_size_bytes: cfg.scan_tasks_max_size_bytes,
-            target_lower_bound_size_bytes: cfg.scan_tasks_min_size_bytes,
-            accumulator: None,
-        }) as BoxScanTaskIter
-    }
+    Box::new(MergeByFileSize {
+        iter: scan_tasks,
+        cfg,
+        target_upper_bound_size_bytes: cfg.scan_tasks_max_size_bytes,
+        target_lower_bound_size_bytes: cfg.scan_tasks_min_size_bytes,
+        accumulator: None,
+    }) as BoxScanTaskIter
 }
 
 struct MergeByFileSize<'a> {
@@ -343,7 +310,7 @@ fn split_and_merge_pass(
                 cfg.scan_tasks_min_size_bytes,
                 cfg.scan_tasks_max_size_bytes,
             );
-            let merged_tasks = merge_by_sizes(split_tasks, pushdowns, cfg);
+            let merged_tasks = merge_by_sizes(split_tasks, cfg);
             let scan_tasks: Vec<Arc<dyn ScanTaskLike>> = merged_tasks
                 .map(|st| st.map(|task| task as Arc<dyn ScanTaskLike>))
                 .collect::<DaftResult<Vec<_>>>()?;
