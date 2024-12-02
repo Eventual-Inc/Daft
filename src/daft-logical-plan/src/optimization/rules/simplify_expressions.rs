@@ -36,10 +36,13 @@ impl OptimizerRule for SimplifyExpressionsRule {
         }) {
             return Ok(Transformed::no(plan));
         }
+
         let schema = plan.schema();
-        Ok(Arc::unwrap_or_clone(plan)
-            .map_expressions(|expr| simplify_expr(Arc::unwrap_or_clone(expr), &schema))?
-            .update_data(Arc::new))
+        plan.transform(|plan| {
+            Ok(Arc::unwrap_or_clone(plan)
+                .map_expressions(|expr| simplify_expr(Arc::unwrap_or_clone(expr), &schema))?
+                .update_data(Arc::new))
+        })
     }
 }
 
@@ -73,14 +76,14 @@ fn simplify_expr(expr: Expr, schema: &SchemaRef) -> DaftResult<Transformed<ExprR
         // A = null --> null
         Expr::BinaryOp {
             op: Operator::Eq,
-            left: a,
-            right: b,
+            left,
+            right,
         }
         | Expr::BinaryOp {
             op: Operator::Eq,
-            left: b,
-            right: a,
-        } if is_null(&a) && is_bool_type(&b, schema) => Transformed::yes(null_lit()),
+            left: right,
+            right: left,
+        } if is_null(&left) && is_bool_type(&right, schema) => Transformed::yes(null_lit()),
 
         // ----------------
         // Neq
@@ -110,14 +113,14 @@ fn simplify_expr(expr: Expr, schema: &SchemaRef) -> DaftResult<Transformed<ExprR
         // A != null --> null
         Expr::BinaryOp {
             op: Operator::NotEq,
-            left: a,
-            right: b,
+            left,
+            right,
         }
         | Expr::BinaryOp {
             op: Operator::NotEq,
-            left: b,
-            right: a,
-        } if is_null(&a) && is_bool_type(&b, schema) => Transformed::yes(null_lit()),
+            left: right,
+            right: left,
+        } if is_null(&left) && is_bool_type(&right, schema) => Transformed::yes(null_lit()),
 
         // ----------------
         // OR
@@ -157,18 +160,16 @@ fn simplify_expr(expr: Expr, schema: &SchemaRef) -> DaftResult<Transformed<ExprR
         // ----------------
 
         // A * 1 --> A
-        Expr::BinaryOp {
-            op: Operator::Multiply,
-            left,
-            right,
-        } if is_one(&right) => Transformed::yes(left),
-
         // 1 * A --> A
         Expr::BinaryOp {
             op: Operator::Multiply,
             left,
             right,
-        } if is_one(&left) => Transformed::yes(right),
+        }| Expr::BinaryOp {
+            op: Operator::Multiply,
+            left: right,
+            right: left,
+        } if is_one(&right) => Transformed::yes(left),
 
         // A * null --> null
         Expr::BinaryOp {
@@ -270,18 +271,11 @@ fn simplify_expr(expr: Expr, schema: &SchemaRef) -> DaftResult<Transformed<ExprR
 
         // A BETWEEN low AND high --> A >= low AND A <= high
         Expr::Between(expr, low, high) => {
-            let expr = simplify_expr(Arc::unwrap_or_clone(expr), schema)?.data;
-            let low = simplify_expr(Arc::unwrap_or_clone(low), schema)?.data;
-            let high = simplify_expr(Arc::unwrap_or_clone(high), schema)?.data;
             Transformed::yes(expr.clone().lt_eq(high).and(expr.gt_eq(low)))
         }
         Expr::Not(expr) => match Arc::unwrap_or_clone(expr) {
             // NOT (BETWEEN A AND B) --> A < low OR A > high
             Expr::Between(expr, low, high) => {
-                let expr = simplify_expr(Arc::unwrap_or_clone(expr), schema)?.data;
-                let low = simplify_expr(Arc::unwrap_or_clone(low), schema)?.data;
-                let high = simplify_expr(Arc::unwrap_or_clone(high), schema)?.data;
-
                 Transformed::yes(expr.clone().lt(low).or(expr.gt(high)))
             }
             // expr NOT IN () --> true
@@ -508,5 +502,93 @@ mod test {
         assert!(optimized.transformed);
 
         assert_eq!(projection, &expected);
+    }
+
+    #[test]
+    fn test_not_between() {
+        let source = make_source()
+            .filter(col("int").between(lit(1), lit(10)).not())
+            .unwrap()
+            .build();
+        let optimizer = SimplifyExpressionsRule::new();
+        let optimized = optimizer.try_optimize(source).unwrap();
+
+        let LogicalPlan::Filter(Filter {
+            input: _,
+            predicate,
+        }) = optimized.data.as_ref()
+        else {
+            panic!("Expected Filter, got {:?}", optimized.data)
+        };
+
+        // make sure the expression is simplified
+        assert!(optimized.transformed);
+
+        assert_eq!(predicate, &col("int").lt(lit(1)).or(col("int").gt(lit(10))));
+    }
+
+    #[test]
+    fn test_between() {
+        let source = make_source()
+            .filter(col("int").between(lit(1), lit(10)))
+            .unwrap()
+            .build();
+        let optimizer = SimplifyExpressionsRule::new();
+        let optimized = optimizer.try_optimize(source).unwrap();
+
+        let LogicalPlan::Filter(Filter {
+            input: _,
+            predicate,
+        }) = optimized.data.as_ref()
+        else {
+            panic!("Expected Filter, got {:?}", optimized.data)
+        };
+
+        // make sure the expression is simplified
+        assert!(optimized.transformed);
+
+        assert_eq!(
+            predicate,
+            &col("int").lt_eq(lit(10)).and(col("int").gt_eq(lit(1)))
+        );
+    }
+    #[test]
+    fn test_nested_plan() {
+        let source = make_source()
+            .filter(col("int").between(lit(1), lit(10)))
+            .unwrap()
+            .select(vec![col("int").add(lit(0))])
+            .unwrap()
+            .build();
+        let optimizer = SimplifyExpressionsRule::new();
+        let optimized = optimizer.try_optimize(source).unwrap();
+
+        let LogicalPlan::Project(Project {
+            projection, input, ..
+        }) = optimized.data.as_ref()
+        else {
+            panic!("Expected Filter, got {:?}", optimized.data)
+        };
+
+        let LogicalPlan::Filter(Filter {
+            input: _,
+            predicate,
+        }) = input.as_ref()
+        else {
+            panic!("Expected Filter, got {:?}", optimized.data)
+        };
+
+        let projection = projection.first().unwrap();
+
+        // make sure the expression is simplified
+        assert!(optimized.transformed);
+
+        assert_eq!(projection, &col("int"));
+
+        // make sure the predicate is simplified
+        assert_eq!(
+            predicate,
+            &col("int").lt_eq(lit(10)).and(col("int").gt_eq(lit(1)))
+        );
     }
 }
