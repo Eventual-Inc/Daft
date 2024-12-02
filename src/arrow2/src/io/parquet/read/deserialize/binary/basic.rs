@@ -131,7 +131,7 @@ pub(super) type Dict = Vec<Vec<u8>>;
 
 #[derive(Debug)]
 pub(super) struct RequiredDictionary<'a> {
-    pub values: hybrid_rle::HybridRleDecoder<'a>,
+    pub values: hybrid_rle::HybridRleDecoder<'a, u32>,
     pub dict: &'a Dict,
 }
 
@@ -150,7 +150,7 @@ impl<'a> RequiredDictionary<'a> {
 
 #[derive(Debug)]
 pub(super) struct FilteredRequiredDictionary<'a> {
-    pub values: SliceFilteredIter<hybrid_rle::HybridRleDecoder<'a>>,
+    pub values: SliceFilteredIter<hybrid_rle::HybridRleDecoder<'a, u32>>,
     pub dict: &'a Dict,
 }
 
@@ -172,7 +172,7 @@ impl<'a> FilteredRequiredDictionary<'a> {
 
 #[derive(Debug)]
 pub(super) struct ValuesDictionary<'a> {
-    pub values: hybrid_rle::HybridRleDecoder<'a>,
+    pub values: hybrid_rle::HybridRleDecoder<'a, u32>,
     pub dict: &'a Dict,
 }
 

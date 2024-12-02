@@ -84,7 +84,7 @@ impl<'a> FilteredRequired<'a> {
 
 #[derive(Debug)]
 pub(super) struct RequiredDictionary<'a> {
-    pub values: hybrid_rle::HybridRleDecoder<'a>,
+    pub values: hybrid_rle::HybridRleDecoder<'a, u32>,
     pub dict: &'a Dict,
 }
 
@@ -103,7 +103,7 @@ impl<'a> RequiredDictionary<'a> {
 
 #[derive(Debug)]
 pub(super) struct OptionalDictionary<'a> {
-    pub(super) values: hybrid_rle::HybridRleDecoder<'a>,
+    pub(super) values: hybrid_rle::HybridRleDecoder<'a, u32>,
     pub(super) validity: OptionalPageValidity<'a>,
     pub(super) dict: &'a Dict,
 }

@@ -10,7 +10,7 @@ use crate::{
 
 use super::hybrid_rle::{HybridDecoderBitmapIter, HybridRleIter};
 
-pub(super) fn dict_indices_decoder(page: &DataPage) -> Result<hybrid_rle::HybridRleDecoder, Error> {
+pub(super) fn dict_indices_decoder(page: &DataPage) -> Result<hybrid_rle::HybridRleDecoder<u32>, Error> {
     let (_, _, indices_buffer) = split_buffer(page)?;
 
     // SPEC: Data page format: the bit width used to encode the entry ids stored as 1 byte (max bit width = 32),
@@ -34,7 +34,7 @@ pub enum DefLevelsDecoder<'a> {
     /// that decodes the runs, but not the individual values
     Bitmap(HybridDecoderBitmapIter<'a>),
     /// When the maximum definition level is larger than 1
-    Levels(HybridRleDecoder<'a>, u32),
+    Levels(HybridRleDecoder<'a, u32>, u32),
 }
 
 impl<'a> DefLevelsDecoder<'a> {

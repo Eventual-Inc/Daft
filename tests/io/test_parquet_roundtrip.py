@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import datetime
 import decimal
+import random
 
 import numpy as np
 import pyarrow as pa
+import pyarrow.parquet as papq
 import pytest
 
 import daft
@@ -148,6 +150,16 @@ def test_roundtrip_sparse_tensor_types(tmp_path, fixed_shape):
     assert before.schema()["foo"].dtype == expected_dtype
     assert after.schema()["foo"].dtype == expected_dtype
     assert before.to_arrow() == after.to_arrow()
+
+
+def test_roundtrip_boolean_rle(tmp_path):
+    file_path = f"{tmp_path}/test.parquet"
+    random_bools = [random.choice([True, False]) for _ in range(1000_000)]
+    pa_original = pa.table({"bools": pa.array(random_bools, type=pa.bool_())})
+    # Use data page version 2.0 which uses RLE encoding for booleans.
+    papq.write_table(pa_original, file_path, data_page_version="2.0")
+    df_roundtrip = daft.read_parquet(file_path)
+    assert pa_original == df_roundtrip.to_arrow()
 
 
 # TODO: reading/writing:

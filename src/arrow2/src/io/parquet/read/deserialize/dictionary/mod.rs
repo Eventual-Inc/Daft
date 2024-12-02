@@ -30,12 +30,12 @@ pub enum State<'a> {
     Optional(Optional<'a>),
     Required(Required<'a>),
     FilteredRequired(FilteredRequired<'a>),
-    FilteredOptional(FilteredOptionalPageValidity<'a>, HybridRleDecoder<'a>),
+    FilteredOptional(FilteredOptionalPageValidity<'a>, HybridRleDecoder<'a, u32>),
 }
 
 #[derive(Debug)]
 pub struct Required<'a> {
-    values: HybridRleDecoder<'a>,
+    values: HybridRleDecoder<'a, u32>,
 }
 
 impl<'a> Required<'a> {
@@ -47,7 +47,7 @@ impl<'a> Required<'a> {
 
 #[derive(Debug)]
 pub struct FilteredRequired<'a> {
-    values: SliceFilteredIter<HybridRleDecoder<'a>>,
+    values: SliceFilteredIter<HybridRleDecoder<'a, u32>>,
 }
 
 impl<'a> FilteredRequired<'a> {
@@ -63,7 +63,7 @@ impl<'a> FilteredRequired<'a> {
 
 #[derive(Debug)]
 pub struct Optional<'a> {
-    values: HybridRleDecoder<'a>,
+    values: HybridRleDecoder<'a, u32>,
     validity: OptionalPageValidity<'a>,
 }
 

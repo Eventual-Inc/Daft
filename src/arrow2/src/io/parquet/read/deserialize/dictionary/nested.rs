@@ -23,7 +23,7 @@ use super::{
 // The state of a required DataPage with a boolean physical type
 #[derive(Debug)]
 pub struct Required<'a> {
-    values: HybridRleDecoder<'a>,
+    values: HybridRleDecoder<'a, u32>,
     length: usize,
 }
 
@@ -39,7 +39,7 @@ impl<'a> Required<'a> {
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum State<'a> {
-    Optional(HybridRleDecoder<'a>),
+    Optional(HybridRleDecoder<'a, u32>),
     Required(Required<'a>),
 }
 
