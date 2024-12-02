@@ -19,7 +19,7 @@ pytest-benchmark==4.0.0
 pytest-cov==4.1.0
 pytest-lazy-fixture==0.6.3
 memray==1.13.4; platform_system != "Windows"
-pytest-codspeed==2.2.1
+pytest-codspeed==3.0.0
 
 # Testing dependencies
 lxml==5.3.0
