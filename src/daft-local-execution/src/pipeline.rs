@@ -108,9 +108,12 @@ pub fn physical_plan_to_pipeline(
                 .into()
         }
         LocalPhysicalPlan::Project(Project {
-            input, projection, ..
+            input,
+            projection,
+            resource_request,
+            ..
         }) => {
-            let proj_op = ProjectOperator::new(projection.clone());
+            let proj_op = ProjectOperator::new(projection.clone(), resource_request.clone());
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
             IntermediateNode::new(Arc::new(proj_op), vec![child_node]).boxed()
         }
@@ -198,7 +201,7 @@ pub fn physical_plan_to_pipeline(
             let second_stage_node =
                 BlockingSinkNode::new(Arc::new(second_stage_agg_sink), post_first_agg_node).boxed();
 
-            let final_stage_project = ProjectOperator::new(final_exprs);
+            let final_stage_project = ProjectOperator::new(final_exprs, None);
 
             IntermediateNode::new(Arc::new(final_stage_project), vec![second_stage_node]).boxed()
         }
@@ -248,7 +251,7 @@ pub fn physical_plan_to_pipeline(
             let second_stage_node =
                 BlockingSinkNode::new(Arc::new(second_stage_agg_sink), post_first_agg_node).boxed();
 
-            let final_stage_project = ProjectOperator::new(final_exprs);
+            let final_stage_project = ProjectOperator::new(final_exprs, None);
 
             IntermediateNode::new(Arc::new(final_stage_project), vec![second_stage_node]).boxed()
         }

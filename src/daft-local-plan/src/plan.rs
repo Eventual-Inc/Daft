@@ -167,12 +167,14 @@ impl LocalPhysicalPlan {
     pub(crate) fn project(
         input: LocalPhysicalPlanRef,
         projection: Vec<ExprRef>,
+        resource_request: Option<ResourceRequest>,
         schema: SchemaRef,
         stats_state: StatsState,
     ) -> LocalPhysicalPlanRef {
         Self::Project(Project {
             input,
             projection,
+            resource_request,
             schema,
             stats_state,
         })
@@ -468,6 +470,7 @@ pub struct EmptyScan {
 pub struct Project {
     pub input: LocalPhysicalPlanRef,
     pub projection: Vec<ExprRef>,
+    pub resource_request: Option<ResourceRequest>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }
