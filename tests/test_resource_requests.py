@@ -82,9 +82,8 @@ def test_resource_request_pickle_roundtrip():
 )
 def test_requesting_too_many_cpus():
     df = daft.from_pydict(DATA)
-    system_info = SystemInfo()
 
-    my_udf_parametrized = my_udf.override_options(num_cpus=system_info.cpu_count() + 1)
+    my_udf_parametrized = my_udf.override_options(num_cpus=1000)
     df = df.with_column(
         "foo",
         my_udf_parametrized(col("id")),
