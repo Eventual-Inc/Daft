@@ -31,16 +31,12 @@ where
                     .zip(left_bound.as_arrow().iter())
                     .zip(right_bound.as_arrow().iter())
                     .map(|((value, left), right)| match (left, right) {
-                        (Some(l), Some(r)) => {
-                            assert!(l <= r, "Left bound is greater than right bound");
-                            Some(clamp(*value, *l, *r))
-                        }
+                        (Some(l), Some(r)) => Some(clamp(*value, *l, *r)),
                         (Some(l), None) => Some(clamp_min(*value, *l)),
                         (None, Some(r)) => Some(clamp_max(*value, *r)),
                         (None, None) => Some(*value),
                     });
-                let result =
-                    unsafe { PrimitiveArray::<T::Native>::from_trusted_len_iter_unchecked(result) };
+                let result = PrimitiveArray::<T::Native>::from_trusted_len_iter(result);
                 let data_array = Self::from((self.name(), Box::new(result)))
                     .with_validity(self.validity().cloned())?;
                 Ok(data_array)
@@ -58,15 +54,10 @@ where
                             .values_iter()
                             .zip(left_bound.as_arrow().iter())
                             .map(move |(value, left)| match left {
-                                Some(l) => {
-                                    assert!(*l <= r, "Left bound is greater than right bound");
-                                    Some(clamp(*value, *l, r))
-                                }
+                                Some(l) => Some(clamp(*value, *l, r)),
                                 None => Some(clamp_max(*value, r)), // If left is null, we can just clamp_max
                             });
-                        let result = unsafe {
-                            PrimitiveArray::<T::Native>::from_trusted_len_iter_unchecked(result)
-                        };
+                        let result = PrimitiveArray::<T::Native>::from_trusted_len_iter(result);
                         let data_array = Self::from((self.name(), Box::new(result)))
                             .with_validity(self.validity().cloned())?;
                         Ok(data_array)
@@ -81,9 +72,7 @@ where
                                 Some(l) => Some(clamp_min(*value, *l)),
                                 None => Some(*value), // Left null, and right null, so we just don't do anything
                             });
-                        let result = unsafe {
-                            PrimitiveArray::<T::Native>::from_trusted_len_iter_unchecked(result)
-                        };
+                        let result = PrimitiveArray::<T::Native>::from_trusted_len_iter(result);
                         let data_array = Self::from((self.name(), Box::new(result)))
                             .with_validity(self.validity().cloned())?;
                         Ok(data_array)
@@ -103,9 +92,7 @@ where
                                 Some(r) => Some(clamp(*value, l, *r)),
                                 None => Some(clamp_min(*value, l)), // Right null, so we can just clamp_min
                             });
-                        let result = unsafe {
-                            PrimitiveArray::<T::Native>::from_trusted_len_iter_unchecked(result)
-                        };
+                        let result = PrimitiveArray::<T::Native>::from_trusted_len_iter(result);
                         let data_array = Self::from((self.name(), Box::new(result)))
                             .with_validity(self.validity().cloned())?;
                         Ok(data_array)
@@ -119,9 +106,7 @@ where
                                 Some(r) => Some(clamp_max(*value, *r)),
                                 None => Some(*value),
                             });
-                        let result = unsafe {
-                            PrimitiveArray::<T::Native>::from_trusted_len_iter_unchecked(result)
-                        };
+                        let result = PrimitiveArray::<T::Native>::from_trusted_len_iter(result);
                         let data_array = Self::from((self.name(), Box::new(result)))
                             .with_validity(self.validity().cloned())?;
                         Ok(data_array)
@@ -134,51 +119,23 @@ where
                 let right = right_bound.get(0);
                 match (left, right) {
                     (Some(l), Some(r)) => {
-                        assert!(l <= r, "Left bound is greater than right bound");
-                        let result = self
-                            .as_arrow()
-                            .values_iter()
-                            .map(move |value| Some(clamp(*value, l, r)));
-                        let result = unsafe {
-                            PrimitiveArray::<T::Native>::from_trusted_len_iter_unchecked(result)
-                        };
-                        let data_array = Self::from((self.name(), Box::new(result)))
-                            .with_validity(self.validity().cloned())?;
-                        Ok(data_array)
+                        self.apply(|value| clamp(value, l, r))
                     }
                     (Some(l), None) => {
-                        let result = self
-                            .as_arrow()
-                            .values_iter()
-                            .map(move |value| Some(clamp_min(*value, l)));
-                        let result = unsafe {
-                            PrimitiveArray::<T::Native>::from_trusted_len_iter_unchecked(result)
-                        };
-                        let data_array = Self::from((self.name(), Box::new(result)))
-                            .with_validity(self.validity().cloned())?;
-                        Ok(data_array)
+                        self.apply(|value| clamp_min(value, l))
                     }
                     (None, Some(r)) => {
-                        let result = self
-                            .as_arrow()
-                            .values_iter()
-                            .map(move |value| Some(clamp_max(*value, r)));
-                        let result = unsafe {
-                            PrimitiveArray::<T::Native>::from_trusted_len_iter_unchecked(result)
-                        };
-                        let data_array = Self::from((self.name(), Box::new(result)))
-                            .with_validity(self.validity().cloned())?;
-                        Ok(data_array)
+                        self.apply(|value| clamp_max(value, r))
                     }
                     (None, None) => {
-                        // You're not doing anything here, so we can just return self
+                        // Not doing anything here, so we can just return self
                         Ok(self.clone())
                     }
                 }
             }
             // Handle incompatible lengths
             _ => Err(DaftError::ValueError(format!(
-                "trying to operate on incompatible length arrays: {}: {}, {}: {}, {}: {}",
+                "Unable to clip incompatible length arrays: {}: {}, {}: {}, {}: {}",
                 self.name(),
                 self.len(),
                 left_bound.name(),

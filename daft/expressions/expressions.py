@@ -630,7 +630,6 @@ class Expression:
             min: Minimum value to clip to. If None (or column value is Null), no lower clipping is applied.
             max: Maximum value to clip to. If None (or column value is Null), no upper clipping is applied.
 
-        Panics if max < min.
         """
         min_expr = Expression._to_expression(min)
         max_expr = Expression._to_expression(max)

@@ -416,90 +416,59 @@ def test_clip_nan_handling():
     assert all((a == b or (np.isnan(a) and np.isnan(b))) for a, b in zip(actual, expected))
 
 
-def test_clip_column_with_scalar():
-    # Initialize the table with data, lower bounds, and upper bounds
-    table = MicroPartition.from_pydict(
-        {
-            "data": [1.0, 2.5, None, 4.7, 5.0, float("nan")],
-            "lower_bound": [0.5, 2.0, 1.0, None, 4.0, 0.0],
-            "upper_bound": [2.0, 3.0, 5.0, None, None, float("inf")],
-        }
-    )
-
-    # Clip with column lower bound and scalar upper bound (5)
-    clip_table = table.eval_expression_list([col("data").clip(col("lower_bound"), 5)])
-    expected = [
-        1.0,  # 1.0 clipped between 0.5 and 5 -> 1.0
-        2.5,  # 2.5 clipped between 2.0 and 5 -> 2.5
-        None,  # data is None
-        4.7,  # lower_bound is None, no lower bound applied
-        5.0,  # 5.0 clipped between 4.0 and 5 -> 5.0
-        float("nan"),  # data is NaN
-    ]
+@pytest.mark.parametrize("lower_bound, upper_bound, expected", [
+    # Test case 1: Column lower bound with scalar upper bound
+    (
+        "lower_bound", 5,
+        [1.0, 2.5, None, 4.7, 5.0, float("nan")]
+    ),
+    # Test case 2: Scalar lower bound with column upper bound
+    (
+        2.0, "upper_bound",
+        [2.0, 2.5, None, 4.7, 5.0, float("nan")]
+    ),
+    # Test case 3: Column lower and upper bounds
+    (
+        "lower_bound", "upper_bound",
+        [1.0, 2.5, None, 4.7, 5.0, float("nan")]
+    ),
+    # Test case 4: Infinite bounds
+    (
+        float("-inf"), float("inf"),
+        [1.0, 2.5, None, 4.7, 5.0, float("nan")]
+    ),
+    # Test case 5: None bounds
+    (
+        None, None,
+        [1.0, 2.5, None, 4.7, 5.0, float("nan")]
+    ),
+    # Test case 6: Scalar bounds
+    (
+        2.0, 5.0,
+        [2.0, 2.5, None, 4.7, 5.0, float("nan")]
+    ),
+])
+def test_clip(lower_bound, upper_bound, expected):
+    """Test clipping a column with various combinations of scalar and column bounds."""
+    # Initialize test data
+    table = MicroPartition.from_pydict({
+        "data": [1.0, 2.5, None, 4.7, 5.0, float("nan")],
+        "lower_bound": [0.5, 2.0, 1.0, None, 4.0, 0.0],
+        "upper_bound": [2.0, 3.0, 5.0, None, None, float("inf")],
+    })
+    
+    # Prepare the clip expression
+    lower = col(lower_bound) if isinstance(lower_bound, str) else lower_bound
+    upper = col(upper_bound) if isinstance(upper_bound, str) else upper_bound
+    
+    # Perform the clip operation
+    clip_table = table.eval_expression_list([col("data").clip(lower, upper)])
     actual = clip_table.get_column("data").to_pylist()
+    
+    # Verify results
     assert all(
-        (a == b) or (a is None and b is None) or (math.isnan(a) and math.isnan(b)) for a, b in zip(actual, expected)
-    ), f"Expected {expected}, got {actual}"
-
-    # Clip with scalar lower bound (2.0) and column upper bound
-    clip_table = table.eval_expression_list([col("data").clip(2.0, col("upper_bound"))])
-    expected = [
-        2.0,  # 1.0 clipped to 2.0 (upper_bound is 2.0)
-        2.5,  # 2.5 remains (between 2.0 and 3.0)
-        None,  # data is None
-        4.7,  # upper_bound is None, no upper bound applied
-        5.0,  # 5.0 remains (upper_bound is None)
-        float("nan"),  # data is NaN
-    ]
-    actual = clip_table.get_column("data").to_pylist()
-    assert all(
-        (a == b) or (a is None and b is None) or (math.isnan(a) and math.isnan(b)) for a, b in zip(actual, expected)
-    ), f"Expected {expected}, got {actual}"
-
-    # Clip with column lower bound and column upper bound
-    clip_table = table.eval_expression_list([col("data").clip(col("lower_bound"), col("upper_bound"))])
-    expected = [
-        1.0,  # Clipped between 0.5 and 2.0 -> 1.0
-        2.5,  # Clipped between 2.0 and 3.0 -> 2.5
-        None,  # data is None
-        4.7,  # lower and upper bounds are None, data remains unchanged
-        5.0,  # Clipped between 4.0 and 5.0 -> 5.0
-        float("nan"),  # data is NaN
-    ]
-    actual = clip_table.get_column("data").to_pylist()
-    assert all(
-        (a == b) or (a is None and b is None) or (math.isnan(a) and math.isnan(b)) for a, b in zip(actual, expected)
-    ), f"Expected {expected}, got {actual}"
-
-    # Clip with scalar lower bound (-inf) and upper bound (inf)
-    clip_table = table.eval_expression_list([col("data").clip(float("-inf"), float("inf"))])
-    expected = [1.0, 2.5, None, 4.7, 5.0, float("nan")]  # Data remains unchanged
-    actual = clip_table.get_column("data").to_pylist()
-    assert all(
-        (a == b) or (a is None and b is None) or (math.isnan(a) and math.isnan(b)) for a, b in zip(actual, expected)
-    ), f"Expected {expected}, got {actual}"
-
-    # Clip with None lower bound and None upper bound
-    clip_table = table.eval_expression_list([col("data").clip(None, None)])
-    expected = [1.0, 2.5, None, 4.7, 5.0, float("nan")]  # Data remains unchanged
-    actual = clip_table.get_column("data").to_pylist()
-    assert all(
-        (a == b) or (a is None and b is None) or (math.isnan(a) and math.isnan(b)) for a, b in zip(actual, expected)
-    ), f"Expected {expected}, got {actual}"
-
-    # Clip with scalar lower bound (2.0) and scalar upper bound (5.0)
-    clip_table = table.eval_expression_list([col("data").clip(2.0, 5.0)])
-    expected = [
-        2.0,  # 1.0 clipped to 2.0
-        2.5,  # 2.5 remains
-        None,  # data is None
-        4.7,  # 4.7 remains
-        5.0,  # 5.0 remains
-        float("nan"),  # data is NaN
-    ]
-    actual = clip_table.get_column("data").to_pylist()
-    assert all(
-        (a == b) or (a is None and b is None) or (math.isnan(a) and math.isnan(b)) for a, b in zip(actual, expected)
+        (a == b) or (a is None and b is None) or (math.isnan(a) and math.isnan(b))
+        for a, b in zip(actual, expected)
     ), f"Expected {expected}, got {actual}"
 
 
