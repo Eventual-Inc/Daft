@@ -77,15 +77,3 @@ pub fn hash(input: ExprRef, seed: Option<ExprRef>) -> ExprRef {
 
     ScalarFunction::new(HashFunction {}, inputs).into()
 }
-
-#[cfg(feature = "python")]
-pub mod python {
-    use daft_dsl::python::PyExpr;
-    use pyo3::{pyfunction, PyResult};
-
-    #[pyfunction]
-    pub fn hash(expr: PyExpr, seed: Option<PyExpr>) -> PyResult<PyExpr> {
-        use super::hash;
-        Ok(hash(expr.into(), seed.map(std::convert::Into::into)).into())
-    }
-}
