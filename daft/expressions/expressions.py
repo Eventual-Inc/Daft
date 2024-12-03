@@ -204,6 +204,8 @@ def coalesce(*args: Expression) -> Expression:
         ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 3     ┆ None  ┆ 3           │
         ╰───────┴───────┴─────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
 
     Args:
         *args: Two or more expressions to coalesce
