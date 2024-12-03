@@ -227,7 +227,7 @@ mod tests {
 
     #[test]
     fn test_bool_invalid_encoding() {
-        let bit_width = 8usize;
+        let bit_width = 1usize;
         let values = [
             2, 0, 0, 0, // Length indicator as u32.
             0b00000101, // Bitpacked indicator with 1 value (1 << 1 | 1).
