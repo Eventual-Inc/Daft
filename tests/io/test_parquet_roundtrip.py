@@ -152,9 +152,15 @@ def test_roundtrip_sparse_tensor_types(tmp_path, fixed_shape):
     assert before.to_arrow() == after.to_arrow()
 
 
-def test_roundtrip_boolean_rle(tmp_path):
+@pytest.mark.parametrize("has_none", [True, False])
+def test_roundtrip_boolean_rle(tmp_path, has_none):
     file_path = f"{tmp_path}/test.parquet"
-    random_bools = [random.choice([True, False]) for _ in range(1000_000)]
+    if has_none:
+        # Create an array of random True/False values that are None 10% of the time.
+        random_bools = random.choices([True, False, None], weights=[45, 45, 10], k=1000_000)
+    else:
+        # Create an array of random True/False values.
+        random_bools = random.choices([True, False], k=1000_000)
     pa_original = pa.table({"bools": pa.array(random_bools, type=pa.bool_())})
     # Use data page version 2.0 which uses RLE encoding for booleans.
     papq.write_table(pa_original, file_path, data_page_version="2.0")
