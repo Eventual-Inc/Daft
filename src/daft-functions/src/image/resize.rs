@@ -69,27 +69,3 @@ pub fn resize(input: ExprRef, w: u32, h: u32) -> ExprRef {
     )
     .into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::exceptions::PyValueError,
-    pyo3::{pyfunction, PyResult},
-};
-
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "image_resize")]
-pub fn py_resize(expr: PyExpr, w: i64, h: i64) -> PyResult<PyExpr> {
-    if w < 0 {
-        return Err(pyo3::exceptions::PyValueError::new_err(format!(
-            "width can not be negative: {w}"
-        )));
-    }
-    if h < 0 {
-        return Err(PyValueError::new_err(format!(
-            "height can not be negative: {h}"
-        )));
-    }
-    Ok(resize(expr.into(), w as u32, h as u32).into())
-}

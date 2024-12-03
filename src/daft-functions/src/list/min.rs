@@ -55,16 +55,3 @@ impl ScalarUDF for ListMin {
 pub fn list_min(expr: ExprRef) -> ExprRef {
     ScalarFunction::new(ListMin {}, vec![expr]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "list_min")]
-pub fn py_list_min(expr: PyExpr) -> PyResult<PyExpr> {
-    Ok(list_min(expr.into()).into())
-}

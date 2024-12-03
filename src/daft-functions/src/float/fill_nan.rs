@@ -57,15 +57,3 @@ impl ScalarUDF for FillNan {
 pub fn fill_nan(input: ExprRef, fill_value: ExprRef) -> ExprRef {
     ScalarFunction::new(FillNan {}, vec![input, fill_value]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "fill_nan")]
-pub fn py_fill_nan(expr: PyExpr, fill_value: PyExpr) -> PyResult<PyExpr> {
-    Ok(fill_nan(expr.into(), fill_value.into()).into())
-}

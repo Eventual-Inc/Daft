@@ -66,16 +66,3 @@ impl ScalarUDF for ListSlice {
 pub fn list_slice(expr: ExprRef, start: ExprRef, end: ExprRef) -> ExprRef {
     ScalarFunction::new(ListSlice {}, vec![expr, start, end]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "list_slice")]
-pub fn py_list_slice(expr: PyExpr, start: PyExpr, end: PyExpr) -> PyResult<PyExpr> {
-    Ok(list_slice(expr.into(), start.into(), end.into()).into())
-}

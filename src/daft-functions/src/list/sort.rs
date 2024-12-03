@@ -57,16 +57,3 @@ pub fn list_sort(input: ExprRef, desc: Option<ExprRef>, nulls_first: Option<Expr
     let nulls_first = nulls_first.unwrap_or_else(|| desc.clone());
     ScalarFunction::new(ListSort {}, vec![input, desc, nulls_first]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "list_sort")]
-pub fn py_list_sort(expr: PyExpr, desc: PyExpr, nulls_first: PyExpr) -> PyResult<PyExpr> {
-    Ok(list_sort(expr.into(), Some(desc.into()), Some(nulls_first.into())).into())
-}

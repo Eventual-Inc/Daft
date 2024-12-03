@@ -37,16 +37,3 @@ impl ScalarUDF for Sqrt {
 pub fn sqrt(input: ExprRef) -> ExprRef {
     ScalarFunction::new(Sqrt {}, vec![input]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "sqrt")]
-pub fn py_sqrt(expr: PyExpr) -> PyResult<PyExpr> {
-    Ok(sqrt(expr.into()).into())
-}

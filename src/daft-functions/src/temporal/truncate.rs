@@ -64,15 +64,3 @@ pub fn dt_truncate<S: Into<String>>(input: ExprRef, interval: S, relative_to: Ex
     )
     .into()
 }
-
-#[cfg(feature = "python")]
-use daft_dsl::python::PyExpr;
-#[cfg(feature = "python")]
-use pyo3::{pyfunction, PyResult};
-
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "dt_truncate")]
-pub fn py_dt_truncate(expr: PyExpr, interval: &str, relative_to: PyExpr) -> PyResult<PyExpr> {
-    Ok(dt_truncate(expr.into(), interval, relative_to.into()).into())
-}

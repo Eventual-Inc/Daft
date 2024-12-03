@@ -58,15 +58,3 @@ impl ScalarUDF for Utf8Contains {
 pub fn utf8_contains(input: ExprRef, pattern: ExprRef) -> ExprRef {
     ScalarFunction::new(Utf8Contains {}, vec![input, pattern]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "utf8_contains")]
-pub fn py_utf8_contains(expr: PyExpr, pattern: PyExpr) -> PyResult<PyExpr> {
-    Ok(utf8_contains(expr.into(), pattern.into()).into())
-}

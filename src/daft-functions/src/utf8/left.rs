@@ -58,15 +58,3 @@ impl ScalarUDF for Utf8Left {
 pub fn utf8_left(input: ExprRef, nchars: ExprRef) -> ExprRef {
     ScalarFunction::new(Utf8Left {}, vec![input, nchars]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "utf8_left")]
-pub fn py_utf8_left(expr: PyExpr, nchars: PyExpr) -> PyResult<PyExpr> {
-    Ok(utf8_left(expr.into(), nchars.into()).into())
-}

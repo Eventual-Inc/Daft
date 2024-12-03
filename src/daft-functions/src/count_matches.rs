@@ -69,21 +69,3 @@ pub fn utf8_count_matches(
     )
     .into()
 }
-
-#[cfg(feature = "python")]
-pub mod python {
-    use daft_dsl::python::PyExpr;
-    use pyo3::{pyfunction, PyResult};
-
-    #[pyfunction]
-    pub fn utf8_count_matches(
-        expr: PyExpr,
-        patterns: PyExpr,
-        whole_words: bool,
-        case_sensitive: bool,
-    ) -> PyResult<PyExpr> {
-        let expr =
-            super::utf8_count_matches(expr.into(), patterns.into(), whole_words, case_sensitive);
-        Ok(expr.into())
-    }
-}

@@ -58,16 +58,3 @@ impl ScalarUDF for ListMax {
 pub fn list_max(expr: ExprRef) -> ExprRef {
     ScalarFunction::new(ListMax {}, vec![expr]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "list_max")]
-pub fn py_list_max(expr: PyExpr) -> PyResult<PyExpr> {
-    Ok(list_max(expr.into()).into())
-}

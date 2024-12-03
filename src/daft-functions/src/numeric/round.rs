@@ -9,6 +9,8 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
+use super::{evaluate_single_numeric, to_field_single_numeric};
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Round {
     decimal: i32,
@@ -36,25 +38,4 @@ impl ScalarUDF for Round {
 #[must_use]
 pub fn round(input: ExprRef, decimal: i32) -> ExprRef {
     ScalarFunction::new(Round { decimal }, vec![input]).into()
-}
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-
-use super::{evaluate_single_numeric, to_field_single_numeric};
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "round")]
-pub fn py_round(expr: PyExpr, decimal: i32) -> PyResult<PyExpr> {
-    use pyo3::exceptions::PyValueError;
-
-    if decimal < 0 {
-        return Err(PyValueError::new_err(format!(
-            "decimal can not be negative: {decimal}"
-        )));
-    }
-    Ok(round(expr.into(), decimal).into())
 }

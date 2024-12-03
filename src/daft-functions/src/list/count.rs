@@ -61,16 +61,3 @@ impl ScalarUDF for ListCount {
 pub fn list_count(expr: ExprRef, mode: CountMode) -> ExprRef {
     ScalarFunction::new(ListCount { mode }, vec![expr]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "list_count")]
-pub fn py_list_count(expr: PyExpr, mode: CountMode) -> PyResult<PyExpr> {
-    Ok(list_count(expr.into(), mode).into())
-}

@@ -58,15 +58,3 @@ impl ScalarUDF for Utf8Ilike {
 pub fn utf8_ilike(input: ExprRef, pattern: ExprRef) -> ExprRef {
     ScalarFunction::new(Utf8Ilike {}, vec![input, pattern]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "utf8_ilike")]
-pub fn py_utf8_ilike(expr: PyExpr, pattern: PyExpr) -> PyResult<PyExpr> {
-    Ok(utf8_ilike(expr.into(), pattern.into()).into())
-}

@@ -58,15 +58,3 @@ impl ScalarUDF for Utf8Match {
 pub fn utf8_match(input: ExprRef, pattern: ExprRef) -> ExprRef {
     ScalarFunction::new(Utf8Match {}, vec![input, pattern]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "utf8_match")]
-pub fn py_utf8_match(expr: PyExpr, pattern: PyExpr) -> PyResult<PyExpr> {
-    Ok(utf8_match(expr.into(), pattern.into()).into())
-}

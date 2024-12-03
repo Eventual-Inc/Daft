@@ -57,15 +57,3 @@ impl ScalarUDF for NotNan {
 pub fn not_nan(input: ExprRef) -> ExprRef {
     ScalarFunction::new(NotNan {}, vec![input]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "not_nan")]
-pub fn py_not_nan(expr: PyExpr) -> PyResult<PyExpr> {
-    Ok(not_nan(expr.into()).into())
-}

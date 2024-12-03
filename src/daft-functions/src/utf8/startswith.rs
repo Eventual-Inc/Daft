@@ -58,15 +58,3 @@ impl ScalarUDF for Utf8Startswith {
 pub fn utf8_startswith(input: ExprRef, pattern: ExprRef) -> ExprRef {
     ScalarFunction::new(Utf8Startswith {}, vec![input, pattern]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "utf8_startswith")]
-pub fn py_utf8_startswith(expr: PyExpr, pattern: PyExpr) -> PyResult<PyExpr> {
-    Ok(utf8_startswith(expr.into(), pattern.into()).into())
-}

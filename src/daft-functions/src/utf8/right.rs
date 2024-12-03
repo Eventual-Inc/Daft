@@ -58,15 +58,3 @@ impl ScalarUDF for Utf8Right {
 pub fn utf8_right(input: ExprRef, nchars: ExprRef) -> ExprRef {
     ScalarFunction::new(Utf8Right {}, vec![input, nchars]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "utf8_right")]
-pub fn py_utf8_right(expr: PyExpr, nchars: PyExpr) -> PyResult<PyExpr> {
-    Ok(utf8_right(expr.into(), nchars.into()).into())
-}

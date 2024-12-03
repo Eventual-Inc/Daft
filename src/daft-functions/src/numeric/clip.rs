@@ -62,16 +62,3 @@ impl ScalarUDF for Clip {
 pub fn clip(array: ExprRef, min: ExprRef, max: ExprRef) -> ExprRef {
     ScalarFunction::new(Clip, vec![array, min, max]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "clip")]
-pub fn py_clip(array: PyExpr, min: PyExpr, max: PyExpr) -> PyResult<PyExpr> {
-    Ok(clip(array.into(), min.into(), max.into()).into())
-}

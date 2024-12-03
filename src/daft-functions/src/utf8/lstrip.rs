@@ -54,15 +54,3 @@ impl ScalarUDF for Utf8Lstrip {
 pub fn utf8_lstrip(input: ExprRef) -> ExprRef {
     ScalarFunction::new(Utf8Lstrip {}, vec![input]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "utf8_lstrip")]
-pub fn py_utf8_lstrip(expr: PyExpr) -> PyResult<PyExpr> {
-    Ok(utf8_lstrip(expr.into()).into())
-}

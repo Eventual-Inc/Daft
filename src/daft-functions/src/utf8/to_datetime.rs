@@ -75,16 +75,3 @@ pub fn utf8_to_datetime<S: Into<String>>(
     )
     .into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "utf8_to_datetime")]
-pub fn py_utf8_to_datetime(expr: PyExpr, format: &str, timezone: Option<&str>) -> PyResult<PyExpr> {
-    Ok(utf8_to_datetime::<&str>(expr.into(), format, timezone).into())
-}

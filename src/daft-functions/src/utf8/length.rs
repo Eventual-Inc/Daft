@@ -54,15 +54,3 @@ impl ScalarUDF for Utf8Length {
 pub fn utf8_length(input: ExprRef) -> ExprRef {
     ScalarFunction::new(Utf8Length {}, vec![input]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "utf8_length")]
-pub fn py_utf8_length(expr: PyExpr) -> PyResult<PyExpr> {
-    Ok(utf8_length(expr.into()).into())
-}

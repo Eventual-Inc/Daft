@@ -9,6 +9,8 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
+use super::{evaluate_single_numeric, to_field_single_numeric};
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Sign {}
 
@@ -34,18 +36,4 @@ impl ScalarUDF for Sign {
 #[must_use]
 pub fn sign(input: ExprRef) -> ExprRef {
     ScalarFunction::new(Sign {}, vec![input]).into()
-}
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-
-use super::{evaluate_single_numeric, to_field_single_numeric};
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "sign")]
-pub fn py_sign(expr: PyExpr) -> PyResult<PyExpr> {
-    Ok(sign(expr.into()).into())
 }

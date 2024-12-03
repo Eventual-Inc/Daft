@@ -74,16 +74,3 @@ impl ScalarUDF for ListJoin {
 pub fn list_join(expr: ExprRef, delim: ExprRef) -> ExprRef {
     ScalarFunction::new(ListJoin {}, vec![expr, delim]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "list_join")]
-pub fn py_list_join(expr: PyExpr, delim: PyExpr) -> PyResult<PyExpr> {
-    Ok(list_join(expr.into(), delim.into()).into())
-}

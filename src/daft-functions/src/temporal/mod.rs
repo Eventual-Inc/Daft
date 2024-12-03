@@ -1,33 +1,15 @@
 pub mod truncate;
+
 use common_error::{DaftError, DaftResult};
 use daft_core::{
     prelude::{DataType, Field, Schema, TimeUnit},
     series::Series,
 };
-#[cfg(feature = "python")]
-use daft_dsl::python::PyExpr;
 use daft_dsl::{
     functions::{ScalarFunction, ScalarUDF},
     ExprRef,
 };
-#[cfg(feature = "python")]
-use pyo3::{prelude::*, pyfunction, PyResult};
 use serde::{Deserialize, Serialize};
-
-#[cfg(feature = "python")]
-pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
-    parent.add_function(wrap_pyfunction_bound!(py_dt_date, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(py_dt_day, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(py_dt_day_of_week, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(py_dt_hour, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(py_dt_minute, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(py_dt_month, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(py_dt_second, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(py_dt_time, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(py_dt_year, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(truncate::py_dt_truncate, parent)?)?;
-    Ok(())
-}
 
 macro_rules! impl_temporal {
     // pyo3 macro can't handle any expressions other than a 'literal', so we have to redundantly pass it in via $py_name
@@ -79,13 +61,6 @@ macro_rules! impl_temporal {
 
             #[must_use] pub fn $dt(input: ExprRef) -> ExprRef {
                 ScalarFunction::new($name {}, vec![input]).into()
-            }
-
-            #[pyfunction]
-            #[pyo3(name =  $py_name)]
-            #[cfg(feature = "python")]
-            pub fn [<py_ $dt>](expr: PyExpr) -> PyResult<PyExpr> {
-                Ok($dt(expr.into()).into())
             }
         }
     };
@@ -153,13 +128,6 @@ impl ScalarUDF for Time {
 #[must_use]
 pub fn dt_time(input: ExprRef) -> ExprRef {
     ScalarFunction::new(Time {}, vec![input]).into()
-}
-
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "dt_time")]
-pub fn py_dt_time(expr: PyExpr) -> PyResult<PyExpr> {
-    Ok(dt_time(expr.into()).into())
 }
 
 #[cfg(test)]

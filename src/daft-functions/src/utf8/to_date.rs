@@ -62,16 +62,3 @@ pub fn utf8_to_date<S: Into<String>>(input: ExprRef, format: S) -> ExprRef {
     )
     .into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "utf8_to_date")]
-pub fn py_utf8_to_date(expr: PyExpr, format: &str) -> PyResult<PyExpr> {
-    Ok(utf8_to_date::<&str>(expr.into(), format).into())
-}
