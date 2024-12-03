@@ -19,10 +19,6 @@ impl SQLFunction for SQLCoalesce {
     fn docstrings(&self, _alias: &str) -> String {
         static_docs::DOCSTRING.to_string()
     }
-
-    fn arg_names(&self) -> &'static [&'static str] {
-        &["...inputs"]
-    }
 }
 
 mod static_docs {
