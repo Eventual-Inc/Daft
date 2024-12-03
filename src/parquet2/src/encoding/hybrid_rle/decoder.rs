@@ -230,7 +230,7 @@ mod tests {
         let bit_width = 1usize;
         let values = [
             2, 0, 0, 0, // Length indicator as u32.
-            0b00000101, // Bitpacked indicator with 1 value (1 << 1 | 1).
+            0b00000101, // Bitpacked indicator with 1 value (2 << 1 | 1).
             true as u8 // Incomplete encoding (should have another u8).
         ];
 
