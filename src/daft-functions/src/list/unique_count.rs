@@ -48,19 +48,7 @@ impl ScalarUDF for ListUniqueCount {
     }
 }
 
+#[must_use]
 pub fn list_unique_count(expr: ExprRef) -> ExprRef {
     ScalarFunction::new(ListUniqueCount, vec![expr]).into()
-}
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "list_unique_count")]
-pub fn py_list_unique_count(expr: PyExpr) -> PyResult<PyExpr> {
-    Ok(list_unique_count(expr.into()).into())
 }

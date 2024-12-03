@@ -69,20 +69,3 @@ pub fn utf8_replace(
 ) -> ExprRef {
     ScalarFunction::new(Utf8Replace { regex }, vec![input, pattern, replacement]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "utf8_replace")]
-pub fn py_utf8_replace(
-    expr: PyExpr,
-    pattern: PyExpr,
-    replacement: PyExpr,
-    regex: bool,
-) -> PyResult<PyExpr> {
-    Ok(utf8_replace(expr.into(), pattern.into(), replacement.into(), regex).into())
-}

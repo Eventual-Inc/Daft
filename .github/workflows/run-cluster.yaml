@@ -3,9 +3,13 @@ name: run-cluster
 on:
   workflow_dispatch:
     inputs:
+      daft_wheel_url:
+        type: string
+        description: A public https url pointing directly to a daft python-wheel to install
+        required: false
       daft_version:
         type: string
-        description: The version of daft to install
+        description: A released version of daft on PyPi to install (errors if both this and `daft_wheel_url` are provided)
         required: false
       python_version:
         type: string
@@ -62,6 +66,7 @@ jobs:
         (cat .github/assets/.template.yaml \
           | python .github/ci-scripts/templatize_ray_config.py \
           --cluster-name "ray-ci-run-${{ github.run_id }}_${{ github.run_attempt }}" \
+          --daft-wheel-url '${{ inputs.daft_wheel_url }}' \
           --daft-version '${{ inputs.daft_version }}' \
           --python-version '${{ inputs.python_version }}' \
           --cluster-profile '${{ inputs.cluster_profile }}'

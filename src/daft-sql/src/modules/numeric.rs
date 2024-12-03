@@ -2,6 +2,7 @@ use daft_dsl::{ExprRef, LiteralValue};
 use daft_functions::numeric::{
     abs::abs,
     ceil::ceil,
+    clip::clip,
     exp::exp,
     floor::floor,
     log::{ln, log, log10, log2},
@@ -31,6 +32,7 @@ impl SQLModule for SQLModuleNumeric {
         parent.add_fn("floor", SQLNumericExpr::Floor);
         parent.add_fn("sign", SQLNumericExpr::Sign);
         parent.add_fn("round", SQLNumericExpr::Round);
+        parent.add_fn("clip", SQLNumericExpr::Clip);
         parent.add_fn("sqrt", SQLNumericExpr::Sqrt);
         parent.add_fn("sin", SQLNumericExpr::Sin);
         parent.add_fn("cos", SQLNumericExpr::Cos);
@@ -58,6 +60,7 @@ enum SQLNumericExpr {
     Exp,
     Floor,
     Round,
+    Clip,
     Sign,
     Sqrt,
     Sin,
@@ -96,6 +99,7 @@ impl SQLFunction for SQLNumericExpr {
             Self::Exp => "Calculates the exponential of a number (e^x).",
             Self::Floor => "Rounds a number down to the nearest integer.",
             Self::Round => "Rounds a number to a specified number of decimal places.",
+            Self::Clip => "Clips a number to a specified range. If left bound is None, no lower clipping is applied. If right bound is None, no upper clipping is applied. Panics if right bound < left bound.",
             Self::Sign => "Returns the sign of a number (-1, 0, or 1).",
             Self::Sqrt => "Calculates the square root of a number.",
             Self::Sin => "Calculates the sine of an angle in radians.",
@@ -147,6 +151,7 @@ impl SQLFunction for SQLNumericExpr {
             Self::Round => &["input", "precision"],
             Self::Exp => &["input", "exponent"],
             Self::ArcTan2 => &["y", "x"],
+            Self::Clip => &["input", "min", "max"],
         }
     }
 }
@@ -178,6 +183,10 @@ fn to_expr(expr: &SQLNumericExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef>
                 _ => invalid_operation_err!("round precision must be an integer"),
             };
             Ok(round(args[0].clone(), precision))
+        }
+        SQLNumericExpr::Clip => {
+            ensure!(args.len() == 3, "clip takes exactly three arguments");
+            Ok(clip(args[0].clone(), args[1].clone(), args[2].clone()))
         }
         SQLNumericExpr::Sqrt => {
             ensure!(args.len() == 1, "sqrt takes exactly one argument");
