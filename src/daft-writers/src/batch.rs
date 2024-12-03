@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, sync::Arc};
+use std::{cmp::max, collections::VecDeque, sync::Arc};
 
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
@@ -6,20 +6,12 @@ use daft_table::Table;
 
 use crate::{FileWriter, TargetInMemorySizeBytesCalculator, WriterFactory};
 
-struct TableWithSize {
-    table: Table,
-    size_bytes: usize,
-}
-
-impl TableWithSize {
-    fn new(table: Table) -> DaftResult<Self> {
-        let size_bytes = table.size_bytes()?;
-        Ok(Self { table, size_bytes })
-    }
-}
-
+// SizeBasedBuffer is a buffer that stores tables and their sizes in bytes.
+// It produces Micropartitions that are within a certain size range.
+// Having a size range instead of exact size allows for more flexibility in the size of the produced Micropartitions,
+// and reducing the amount of '.slice' operations.
 struct SizeBasedBuffer {
-    buffer: VecDeque<TableWithSize>,
+    buffer: VecDeque<(Table, usize)>,
     size_bytes: usize,
 }
 
@@ -32,19 +24,22 @@ impl SizeBasedBuffer {
     }
 
     fn push(&mut self, mp: Arc<MicroPartition>) -> DaftResult<()> {
+        assert!(!mp.is_empty());
         for table in mp.get_tables()?.iter() {
-            let table_with_size = TableWithSize::new(table.clone())?;
-            self.size_bytes += table_with_size.size_bytes;
-            self.buffer.push_back(table_with_size);
+            let size_bytes = table.size_bytes()?;
+            self.size_bytes += size_bytes;
+            self.buffer.push_back((table.clone(), size_bytes));
         }
         Ok(())
     }
 
+    // Pop tables from the buffer until the size of the tables is between min_bytes and max_bytes.
     fn pop(
         &mut self,
         min_bytes: usize,
         max_bytes: usize,
     ) -> DaftResult<Option<Arc<MicroPartition>>> {
+        assert!(min_bytes <= max_bytes);
         if self.size_bytes < min_bytes {
             return Ok(None);
         }
@@ -52,48 +47,36 @@ impl SizeBasedBuffer {
         let mut tables = Vec::new();
         let mut bytes_taken = 0;
 
-        while let Some(buffered) = self.buffer.pop_front() {
-            if bytes_taken + buffered.size_bytes <= max_bytes {
-                // Take whole table
-                bytes_taken += buffered.size_bytes;
-                tables.push(buffered.table);
+        while let Some((table, size)) = self.buffer.pop_front() {
+            // If we can fit the table in the current batch, add it and continue
+            if bytes_taken + size <= max_bytes {
+                bytes_taken += size;
+                tables.push(table);
+
+                // If we are above the minimum desired size, we can stop
                 if bytes_taken >= min_bytes {
                     break;
                 }
-            } else {
-                // Need to split table
+            }
+            // Else, we need to split the table
+            else {
+                let rows = table.len();
+                let avg_row_bytes = max(size / rows, 1);
                 let needed_bytes = min_bytes - bytes_taken;
-                let rows = buffered.table.len();
-                let avg_row_bytes = buffered.size_bytes.checked_div(rows).unwrap_or(1);
                 let rows_needed = needed_bytes / avg_row_bytes;
 
-                if rows_needed == 0 {
-                    // Can't split further
-                    self.buffer.push_front(buffered);
-                    break;
-                } else if rows_needed >= rows {
-                    // Take whole table
-                    bytes_taken += buffered.size_bytes;
-                    tables.push(buffered.table);
-                } else {
-                    // Split table
-                    let split = buffered.table.slice(0, rows_needed)?;
-                    let remainder = buffered.table.slice(rows_needed, rows)?;
+                let split = table.slice(0, rows_needed)?;
+                let remainder = table.slice(rows_needed, rows)?;
 
-                    bytes_taken += avg_row_bytes * rows_needed;
-                    tables.push(split);
+                bytes_taken += avg_row_bytes * rows_needed;
+                tables.push(split);
 
-                    self.buffer.push_front(TableWithSize {
-                        table: remainder,
-                        size_bytes: avg_row_bytes * (rows - rows_needed),
-                    });
+                if !remainder.is_empty() {
+                    let remainder_size = remainder.len() * avg_row_bytes;
+                    self.buffer.push_front((remainder, remainder_size));
                 }
                 break;
             }
-        }
-
-        if tables.is_empty() {
-            return Ok(None);
         }
 
         self.size_bytes -= bytes_taken;
@@ -110,7 +93,11 @@ impl SizeBasedBuffer {
             return Ok(None);
         }
 
-        let tables = self.buffer.drain(..).map(|b| b.table).collect::<Vec<_>>();
+        let tables = self
+            .buffer
+            .drain(..)
+            .map(|(table, _)| table)
+            .collect::<Vec<_>>();
 
         self.size_bytes = 0;
 
@@ -133,6 +120,8 @@ pub struct TargetBatchWriter {
 }
 
 impl TargetBatchWriter {
+    // The leniency factor for the size of the batch. This is used to allow for some flexibility in the size of the batch,
+    // so that we don't have to split tables too often.
     const SIZE_BYTE_LENIENCY: f64 = 0.2;
 
     pub fn new(

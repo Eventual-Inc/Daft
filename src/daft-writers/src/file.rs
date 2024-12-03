@@ -59,16 +59,22 @@ impl TargetFileSizeWriter {
     }
 
     fn rotate_writer_and_update_estimates(&mut self) -> DaftResult<()> {
+        // Record the size of the current file and update the inflation factor
         if let Some(bytes) = self.current_writer.tell()? {
             self.size_calculator
                 .record_and_update_inflation_factor(bytes, self.current_bytes_written);
         }
+        // Update the target size estimate
+        self.current_in_memory_size_estimate =
+            self.size_calculator.calculate_target_in_memory_size_bytes();
+
+        // Close the current writer and add the result to the results
         if let Some(result) = self.current_writer.close()? {
             self.results.push(result);
         }
+
+        // Create a new writer and reset the current bytes written
         self.current_bytes_written = 0;
-        self.current_in_memory_size_estimate =
-            self.size_calculator.calculate_target_in_memory_size_bytes();
         self.current_writer = self
             .writer_factory
             .create_writer(self.results.len(), self.partition_values.as_ref())?;

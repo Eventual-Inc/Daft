@@ -168,7 +168,9 @@ pub fn make_catalog_writer_factory(
     }
 }
 
-pub struct TargetInMemorySizeBytesCalculator {
+/// This struct is used to adaptively calculate the target in-memory size of a table
+/// given a target on-disk size, and the actual on-disk size of the written data.
+pub(crate) struct TargetInMemorySizeBytesCalculator {
     estimated_inflation_factor: AtomicU64, // Using u64 to store f64 bits
     target_size_bytes: usize,
     num_samples: AtomicUsize,
@@ -176,6 +178,7 @@ pub struct TargetInMemorySizeBytesCalculator {
 
 impl TargetInMemorySizeBytesCalculator {
     fn new(target_size_bytes: usize, initial_inflation_factor: f64) -> Self {
+        assert!(target_size_bytes > 0 && initial_inflation_factor > 0.0);
         Self {
             estimated_inflation_factor: AtomicU64::new(initial_inflation_factor.to_bits()),
             target_size_bytes,
@@ -188,11 +191,17 @@ impl TargetInMemorySizeBytesCalculator {
         (self.target_size_bytes as f64 * factor) as usize
     }
 
-    fn record_and_update_inflation_factor(
+    pub fn record_and_update_inflation_factor(
         &self,
         actual_on_disk_size_bytes: usize,
         estimate_in_memory_size_bytes: usize,
-    ) -> f64 {
+    ) {
+        // Avoid division by zero - in practice actual_on_disk_size_bytes should never be 0
+        // as we're dealing with real files, but be defensive
+        if actual_on_disk_size_bytes == 0 {
+            return;
+        }
+
         let new_inflation_factor =
             estimate_in_memory_size_bytes as f64 / actual_on_disk_size_bytes as f64;
         let new_num_samples = self.num_samples.fetch_add(1, Ordering::Relaxed) + 1;
@@ -200,6 +209,14 @@ impl TargetInMemorySizeBytesCalculator {
         let current_factor =
             f64::from_bits(self.estimated_inflation_factor.load(Ordering::Relaxed));
 
+        // Calculate running average:
+        // For n samples, new average = (previous_avg * (n-1)/n) + (new_value * 1/n)
+        // This ensures each sample's final weight is 1/n in the average.
+        // For example:
+        // - First sample (n=1): Uses just the new value
+        // - Second sample (n=2): Weights previous and new equally (1/2 each)
+        // - Third sample (n=3): Weights are 2/3 previous (preserving equal weight of its samples)
+        //                       and 1/3 new
         let new_factor = if new_num_samples == 1 {
             new_inflation_factor
         } else {
@@ -211,6 +228,5 @@ impl TargetInMemorySizeBytesCalculator {
 
         self.estimated_inflation_factor
             .store(new_factor.to_bits(), Ordering::Relaxed);
-        new_factor
     }
 }
