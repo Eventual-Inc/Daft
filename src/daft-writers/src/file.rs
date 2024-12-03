@@ -51,7 +51,7 @@ impl TargetFileSizeWriter {
         size_bytes: usize,
     ) -> DaftResult<()> {
         self.current_bytes_written += size_bytes;
-        self.current_writer.write(input.into())?;
+        self.current_writer.write(input)?;
         if self.current_bytes_written >= self.current_in_memory_size_estimate {
             self.rotate_writer_and_update_estimates()?;
         }
