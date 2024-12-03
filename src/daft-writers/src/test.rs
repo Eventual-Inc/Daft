@@ -25,6 +25,7 @@ impl WriterFactory for DummyWriterFactory {
             file_idx: file_idx.to_string(),
             partition_values: partition_values.cloned(),
             write_count: 0,
+            byte_count: 0,
         })
             as Box<
                 dyn FileWriter<Input = Self::Input, Result = Self::Result>,
@@ -36,19 +37,21 @@ pub(crate) struct DummyWriter {
     file_idx: String,
     partition_values: Option<Table>,
     write_count: usize,
+    byte_count: usize,
 }
 
 impl FileWriter for DummyWriter {
     type Input = Arc<MicroPartition>;
     type Result = Option<Table>;
 
-    fn write(&mut self, _input: Self::Input) -> DaftResult<()> {
+    fn write(&mut self, input: Self::Input) -> DaftResult<()> {
         self.write_count += 1;
+        self.byte_count += input.size_bytes()?.unwrap();
         Ok(())
     }
 
     fn tell(&self) -> DaftResult<Option<usize>> {
-        Ok(Some(self.write_count))
+        Ok(Some(self.byte_count))
     }
 
     fn close(&mut self) -> DaftResult<Self::Result> {
