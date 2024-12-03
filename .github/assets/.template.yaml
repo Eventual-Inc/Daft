@@ -1,4 +1,8 @@
-cluster_name: '{{RAY_CLUSTER_NAME}}'
+# Note:
+# GitHub Actions workflow will replace all parameters between `{{...}}` with the
+# actual values as determined dynamically during runtime of the actual workflow.
+
+cluster_name: \{{CLUSTER_NAME}}
 
 provider:
   type: aws
@@ -8,51 +12,40 @@ provider:
     GroupName: ray-autoscaler-c1
 
 auth:
-  ssh_user: ubuntu
+  ssh_user: \{{CLUSTER_PROFILE/ssh_user}}
   ssh_private_key: ~/.ssh/ci-github-actions-ray-cluster-key.pem
 
-max_workers: 2
+max_workers: \{{CLUSTER_PROFILE/node_count}}
 available_node_types:
   ray.head.default:
     resources: {"CPU": 0}
     node_config:
       KeyName: ci-github-actions-ray-cluster-key
-      InstanceType: i3.2xlarge
-      ImageId: ami-04dd23e62ed049936
+      InstanceType: \{{CLUSTER_PROFILE/instance_type}}
+      ImageId: \{{CLUSTER_PROFILE/image_id}}
       IamInstanceProfile:
         Name: ray-autoscaler-v1
 
   ray.worker.default:
-    min_workers: 2
-    max_workers: 2
+    min_workers: \{{CLUSTER_PROFILE/node_count}}
+    max_workers: \{{CLUSTER_PROFILE/node_count}}
     resources: {}
     node_config:
       KeyName: ci-github-actions-ray-cluster-key
-      InstanceType: i3.2xlarge
-      ImageId: ami-04dd23e62ed049936
+      InstanceType: \{{CLUSTER_PROFILE/instance_type}}
+      ImageId: \{{CLUSTER_PROFILE/image_id}}
       IamInstanceProfile:
         Name: ray-autoscaler-v1
 
 setup_commands:
-# Mount drive
-- |
-  findmnt /tmp 1> /dev/null
-  code=$?
-  if [ $code -ne 0 ]; then
-    sudo mkfs.ext4 /dev/nvme0n1
-    sudo mount -t ext4 /dev/nvme0n1 /tmp
-    sudo chmod 777 /tmp
-  fi
-# Install dependencies
-# GitHub Actions workflow will replace all parameters between `{{...}}` with the
-# actual values as determined dynamically during runtime of the actual workflow.
+- \{{CLUSTER_PROFILE/volume_mount}}
 - sudo snap install aws-cli --classic
 - curl -LsSf https://astral.sh/uv/install.sh | sh
 - echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
 - source ~/.bashrc
-- uv python install {{PYTHON_VERSION}}
-- uv python pin {{PYTHON_VERSION}}
+- uv python install \{{PYTHON_VERSION}}
+- uv python pin \{{PYTHON_VERSION}}
 - uv v
 - echo "source $HOME/.venv/bin/activate" >> $HOME/.bashrc
 - source .venv/bin/activate
-- uv pip install pip ray[default] py-spy getdaft{{DAFT_VERSION}}
+- uv pip install pip ray[default] py-spy \{{DAFT_INSTALL}}

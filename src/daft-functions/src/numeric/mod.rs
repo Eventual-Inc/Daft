@@ -1,6 +1,7 @@
 pub mod abs;
 pub mod cbrt;
 pub mod ceil;
+pub mod clip;
 pub mod exp;
 pub mod floor;
 pub mod log;

@@ -69,6 +69,7 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     add!(numeric::abs);
     add!(numeric::cbrt);
     add!(numeric::ceil);
+    add!(numeric::clip);
     add!(numeric::exp);
     add!(numeric::floor);
     add!(numeric::sign);

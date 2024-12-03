@@ -4,6 +4,7 @@ use pyo3::{exceptions::PyValueError, pyfunction, PyResult};
 simple_python_wrapper!(abs, crate::numeric::abs::abs, [expr: PyExpr]);
 simple_python_wrapper!(cbrt, crate::numeric::cbrt::cbrt, [expr: PyExpr]);
 simple_python_wrapper!(ceil, crate::numeric::ceil::ceil, [expr: PyExpr]);
+simple_python_wrapper!(clip, crate::numeric::clip::clip, [expr: PyExpr, min: PyExpr, max: PyExpr]);
 simple_python_wrapper!(exp, crate::numeric::exp::exp, [expr: PyExpr]);
 simple_python_wrapper!(floor, crate::numeric::floor::floor, [expr: PyExpr]);
 simple_python_wrapper!(sign, crate::numeric::sign::sign, [expr: PyExpr]);
