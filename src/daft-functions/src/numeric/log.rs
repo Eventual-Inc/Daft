@@ -10,6 +10,8 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
+use super::evaluate_single_numeric;
+
 // super annoying, but using an enum with typetag::serde doesn't work with bincode because it uses Deserializer::deserialize_identifier
 macro_rules! log {
     ($name:ident, $variant:ident) => {
@@ -105,40 +107,4 @@ impl ScalarUDF for Log {
 #[must_use]
 pub fn log(input: ExprRef, base: f64) -> ExprRef {
     ScalarFunction::new(Log(FloatWrapper(base)), vec![input]).into()
-}
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-
-use super::evaluate_single_numeric;
-
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "log2")]
-pub fn py_log2(expr: PyExpr) -> PyResult<PyExpr> {
-    Ok(log2(expr.into()).into())
-}
-
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "log10")]
-pub fn py_log10(expr: PyExpr) -> PyResult<PyExpr> {
-    Ok(log10(expr.into()).into())
-}
-
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "log")]
-pub fn py_log(expr: PyExpr, base: f64) -> PyResult<PyExpr> {
-    Ok(log(expr.into(), base).into())
-}
-
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "ln")]
-pub fn py_ln(expr: PyExpr) -> PyResult<PyExpr> {
-    Ok(ln(expr.into()).into())
 }

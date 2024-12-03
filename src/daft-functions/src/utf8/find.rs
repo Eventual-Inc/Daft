@@ -58,15 +58,3 @@ impl ScalarUDF for Utf8Find {
 pub fn utf8_find(input: ExprRef, substr: ExprRef) -> ExprRef {
     ScalarFunction::new(Utf8Find {}, vec![input, substr]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "utf8_find")]
-pub fn py_utf8_find(expr: PyExpr, substr: PyExpr) -> PyResult<PyExpr> {
-    Ok(utf8_find(expr.into(), substr.into()).into())
-}

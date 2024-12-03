@@ -16,41 +16,6 @@ use daft_core::{
     series::Series,
 };
 use daft_dsl::{functions::ScalarUDF, ExprRef};
-#[cfg(feature = "python")]
-use pyo3::prelude::*;
-
-#[cfg(feature = "python")]
-pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
-    parent.add_function(wrap_pyfunction_bound!(abs::py_abs, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(cbrt::py_cbrt, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(ceil::py_ceil, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(exp::py_exp, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(clip::py_clip, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(floor::py_floor, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(log::py_log2, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(log::py_log10, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(log::py_log, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(log::py_ln, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(round::py_round, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(sign::py_sign, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(sqrt::py_sqrt, parent)?)?;
-
-    parent.add_function(wrap_pyfunction_bound!(trigonometry::py_sin, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(trigonometry::py_cos, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(trigonometry::py_tan, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(trigonometry::py_cot, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(trigonometry::py_arcsin, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(trigonometry::py_arccos, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(trigonometry::py_arctan, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(trigonometry::py_radians, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(trigonometry::py_degrees, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(trigonometry::py_arctanh, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(trigonometry::py_arccosh, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(trigonometry::py_arcsinh, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(trigonometry::py_arctan2, parent)?)?;
-
-    Ok(())
-}
 
 fn to_field_single_numeric(
     f: &dyn ScalarUDF,
@@ -92,6 +57,7 @@ fn to_field_single_floating(
         ))),
     }
 }
+
 fn evaluate_single_numeric<F: Fn(&Series) -> DaftResult<Series>>(
     inputs: &[Series],
     func: F,

@@ -54,15 +54,3 @@ impl ScalarUDF for Utf8Reverse {
 pub fn utf8_reverse(input: ExprRef) -> ExprRef {
     ScalarFunction::new(Utf8Reverse {}, vec![input]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "utf8_reverse")]
-pub fn py_utf8_reverse(expr: PyExpr) -> PyResult<PyExpr> {
-    Ok(utf8_reverse(expr.into()).into())
-}
