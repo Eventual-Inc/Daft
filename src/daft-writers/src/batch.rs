@@ -30,6 +30,8 @@ impl SizeBasedBuffer {
             self.size_bytes += size_bytes;
             self.buffer.push_back((table.clone(), size_bytes));
         }
+        println!("SizeBasedBuffer size_bytes: {}", self.size_bytes);
+        println!("SizeBasedBuffer buffer: {:?}", self.buffer.len());
         Ok(())
     }
 
@@ -40,7 +42,7 @@ impl SizeBasedBuffer {
         max_bytes: usize,
     ) -> DaftResult<Option<Arc<MicroPartition>>> {
         assert!(min_bytes <= max_bytes);
-        if self.size_bytes < min_bytes {
+        if self.size_bytes < min_bytes || self.buffer.is_empty() {
             return Ok(None);
         }
 
