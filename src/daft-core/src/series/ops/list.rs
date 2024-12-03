@@ -193,6 +193,18 @@ impl Series {
                 }
                 Ok(self.list()?.list_contains(contains)?.into_series())
             }
+            DataType::FixedSizeList(internal_dt, _) => {
+                if contains_dt != internal_dt.as_ref() {
+                    return Err(DaftError::TypeError(format!(
+                        "Cannot determine if a list of type {} contains a value of type {}",
+                        internal_dt, contains_dt
+                    )));
+                }
+                Ok(self
+                    .fixed_size_list()?
+                    .list_contains(contains)?
+                    .into_series())
+            }
             dt => Err(DaftError::TypeError(format!(
                 "List contains not implemented for {}",
                 dt
