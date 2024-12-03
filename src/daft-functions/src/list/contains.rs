@@ -29,7 +29,7 @@ impl ScalarUDF for ListContains {
                 let contains = contains.to_field(schema)?;
                 match input.dtype {
                     DataType::List(internal_dt) | DataType::FixedSizeList(internal_dt, _) => {
-                        if internal_dt.as_ref() != &contains.dtype {
+                        if internal_dt.as_ref() == &contains.dtype {
                             Ok(Field::new(input.name, DataType::Boolean))
                         } else {
                             Err(DaftError::TypeError(format!(
@@ -45,7 +45,7 @@ impl ScalarUDF for ListContains {
                 }
             }
             _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 1 input arg, got {}",
+                "Expected 2 input args, got {}",
                 inputs.len()
             ))),
         }
