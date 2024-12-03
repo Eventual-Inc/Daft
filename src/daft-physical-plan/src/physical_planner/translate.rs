@@ -13,7 +13,7 @@ use daft_dsl::{
     col, functions::agg::merge_mean, is_partition_compatible, AggExpr, ApproxPercentileParams,
     Expr, ExprRef, SketchType,
 };
-use daft_functions::numeric::sqrt;
+use daft_functions::{list::unique_count, numeric::sqrt};
 use daft_logical_plan::{
     logical_plan::LogicalPlan,
     ops::{
@@ -788,6 +788,9 @@ pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
                 AggExpr::Count(e, count_mode) => {
                     AggExpr::Count(Expr::Alias(e, name.clone()).into(), count_mode)
                 }
+                AggExpr::CountDistinct(e) => {
+                    AggExpr::CountDistinct(Expr::Alias(e, name.clone()).into())
+                },
                 AggExpr::Sum(e) => AggExpr::Sum(Expr::Alias(e, name.clone()).into()),
                 AggExpr::ApproxPercentile(ApproxPercentileParams {
                     child: e,
@@ -878,6 +881,27 @@ pub fn populate_aggregation_stages(
                         col(count_id.clone()).alias(sum_of_count_id.clone()),
                     ));
                 final_exprs.push(col(sum_of_count_id.clone()).alias(output_name));
+            }
+            AggExpr::CountDistinct(sub_expr) => {
+                // First stage
+                let list_agg_id = add_to_stage(
+                    AggExpr::List,
+                    sub_expr.clone(),
+                    schema,
+                    &mut first_stage_aggs,
+                );
+
+                // Second stage
+                let list_concat_id = add_to_stage(
+                    AggExpr::Concat,
+                    col(list_agg_id.clone()),
+                    schema,
+                    &mut second_stage_aggs,
+                );
+
+                // Final projection
+                let result = unique_count(col(list_concat_id.clone())).alias(output_name);
+                final_exprs.push(result);
             }
             AggExpr::Sum(e) => {
                 let sum_id = agg_expr.semantic_id(schema).id;

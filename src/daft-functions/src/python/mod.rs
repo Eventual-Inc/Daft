@@ -59,6 +59,7 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     add!(list::list_slice);
     add!(list::list_sort);
     add!(list::list_sum);
+    add!(list::list_unique_count);
     add!(list::list_value_counts);
 
     add!(misc::to_struct);

@@ -804,6 +804,10 @@ class Expression:
         expr = self._expr.count(mode)
         return Expression._from_pyexpr(expr)
 
+    def count_distinct(self) -> Expression:
+        expr = self._expr.count_distinct()
+        return Expression._from_pyexpr(expr)
+
     def sum(self) -> Expression:
         """Calculates the sum of the values in the expression"""
         expr = self._expr.sum()

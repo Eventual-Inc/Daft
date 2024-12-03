@@ -3,6 +3,7 @@ use daft_dsl::python::PyExpr;
 use pyo3::{pyfunction, PyResult};
 
 simple_python_wrapper!(list_chunk, crate::list::chunk, [expr: PyExpr, size: usize]);
+simple_python_wrapper!(list_unique_count, crate::list::unique_count, [expr: PyExpr]);
 simple_python_wrapper!(list_count, crate::list::count, [expr: PyExpr, mode: CountMode]);
 simple_python_wrapper!(explode, crate::list::explode, [expr: PyExpr]);
 simple_python_wrapper!(list_get, crate::list::get, [expr: PyExpr, idx: PyExpr, default_value: PyExpr]);
