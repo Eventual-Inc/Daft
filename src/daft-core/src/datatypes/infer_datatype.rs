@@ -61,6 +61,49 @@ impl<'a> InferDataType<'a> {
         }
     }
 
+    pub fn clip_op(&self, min_infer_type: &Self, max_infer_type: &Self) -> DaftResult<DataType> {
+        match (&self.0, &min_infer_type.0, &max_infer_type.0) {
+            // Error cases first
+            (input_type, _, _) if !input_type.is_numeric() => Err(DaftError::TypeError(format!(
+                "Expected input to be numeric, got {}",
+                input_type
+            ))),
+            (_, min_type, _) if !min_type.is_numeric() && !min_type.is_null() => {
+                Err(DaftError::TypeError(format!(
+                    "Expected min input to be numeric or null, got {}",
+                    min_type
+                )))
+            }
+            (_, _, max_type) if !max_type.is_numeric() && !max_type.is_null() => {
+                Err(DaftError::TypeError(format!(
+                    "Expected max input to be numeric or null, got {}",
+                    max_type
+                )))
+            }
+            // Main logic for valid inputs
+            (input_type, min_type, max_type) => {
+                // This path gets called when the Python bindings pass in a Series, but note that there can still be nulls within the series.
+                let mut output_type = (*input_type).clone();
+
+                // Check compatibility with min_infer_type
+                if !min_type.is_null() {
+                    let (_, _, new_output_type) =
+                        InferDataType::from(&output_type).comparison_op(min_infer_type)?;
+                    output_type = new_output_type;
+                }
+
+                // Check compatibility with max_infer_type
+                if !max_type.is_null() {
+                    let (_, _, new_output_type) =
+                        InferDataType::from(&output_type).comparison_op(max_infer_type)?;
+                    output_type = new_output_type;
+                }
+
+                Ok(output_type)
+            }
+        }
+    }
+
     pub fn comparison_op(
         &self,
         other: &Self,

@@ -11,6 +11,7 @@ pub mod broadcast;
 pub mod cast;
 pub mod cbrt;
 pub mod ceil;
+pub mod clip;
 pub mod comparison;
 pub mod concat;
 pub mod downcast;

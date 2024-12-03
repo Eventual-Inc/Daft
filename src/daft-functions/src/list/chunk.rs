@@ -55,16 +55,3 @@ impl ScalarUDF for ListChunk {
 pub fn list_chunk(expr: ExprRef, size: usize) -> ExprRef {
     ScalarFunction::new(ListChunk { size }, vec![expr]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "list_chunk")]
-pub fn py_list_chunk(expr: PyExpr, size: usize) -> PyResult<PyExpr> {
-    Ok(list_chunk(expr.into(), size).into())
-}

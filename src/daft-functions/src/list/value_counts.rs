@@ -1,13 +1,9 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::{DataType, Field, Schema, Series};
-#[cfg(feature = "python")]
-use daft_dsl::python::PyExpr;
 use daft_dsl::{
     functions::{ScalarFunction, ScalarUDF},
     ExprRef,
 };
-#[cfg(feature = "python")]
-use pyo3::{pyfunction, PyResult};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -62,11 +58,4 @@ impl ScalarUDF for ListValueCountsFunction {
 
 pub fn list_value_counts(expr: ExprRef) -> ExprRef {
     ScalarFunction::new(ListValueCountsFunction, vec![expr]).into()
-}
-
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "list_value_counts")]
-pub fn py_list_value_counts(expr: PyExpr) -> PyResult<PyExpr> {
-    Ok(list_value_counts(expr.into()).into())
 }

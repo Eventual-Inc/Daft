@@ -6,7 +6,7 @@ rustc_version = "0.4.0"
 ahash = "0.8"
 arrow-array = {version = "=51.0.0", optional = true}
 # Support conversion to/from arrow-rs
-arrow-buffer = {version = "=51.0.0", optional = true}
+arrow-buffer = {version = "=53.3.0", optional = true}
 arrow-data = {version = "=51.0.0", optional = true}
 arrow-format = {version = "0.8", optional = true, features = ["ipc"]}
 arrow-schema = {version = "=51.0.0", optional = true}
@@ -58,7 +58,7 @@ num-traits = "0.2"
 orc-format = {version = "0.3.0", optional = true}
 rand = {version = "0.8", optional = true}
 regex = {version = "1.9", optional = true}
-regex-syntax = {version = "0.7", optional = true}
+regex-syntax = {version = "0.8", optional = true}
 # Arrow integration tests support
 serde = {version = "^1.0", features = ["rc", "derive"]}
 serde_derive = {version = "^1.0", optional = true}
