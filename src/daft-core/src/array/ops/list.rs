@@ -632,36 +632,37 @@ impl ListArray {
     pub fn list_contains(&self, contains: &Series) -> DaftResult<BooleanArray> {
         let seed = UInt64Array::from_iter(
             Field::new("seed", DataType::UInt64),
-            std::iter::repeat(u64::MAX).take(self.len()).map(Some),
-        );
+            std::iter::repeat(u64::MAX).map(Some).take(1),
+        )
+        .into_series();
+        macro_rules! gen_seed {
+            ($size:expr) => {
+                Some(seed.broadcast($size)?.u64()?)
+            };
+        }
 
-        let hashed_contains_values = contains.hash_with_validity(Some(&seed))?;
+        let hashed_contains = contains
+            .hash_with_validity(gen_seed!(contains.len()))?
+            .get(0);
 
         let bool_iter = self
             .iter()
-            .zip(&hashed_contains_values)
-            .map(|(sub_series, hashed_contains_value)| -> DaftResult<_> {
-                let (sub_series, hashed_contains_value) =
-                    match sub_series.zip(hashed_contains_value) {
-                        Some((series, &hashed_contains_value)) => (series, hashed_contains_value),
-                        None => return Ok(false),
-                    };
+            .map(|sub_series| -> DaftResult<_> {
+                let (sub_series, hashed_contains) = match sub_series.zip(hashed_contains) {
+                    Some(inner) => inner,
+                    None => return Ok(false),
+                };
 
-                let hashed_sub_series = sub_series.hash_with_validity(Some(&seed))?;
-                let hashed_contains_value_array =
-                    PrimitiveArray::from_slice([hashed_contains_value]);
-                let comparator = build_is_equal(
-                    hashed_sub_series.as_arrow(),
-                    &hashed_contains_value_array,
-                    true,
-                    false,
-                )?;
+                let left = sub_series.hash_with_validity(gen_seed!(sub_series.len()))?;
+                let right = PrimitiveArray::from_slice([hashed_contains]);
+                let right_value = hashed_contains;
+                let comparator = build_is_equal(left.as_arrow(), &right, true, false)?;
 
-                Ok(hashed_sub_series.into_iter().flatten().enumerate().any(
-                    |(index, &hashed_sub_series_value)| {
-                        hashed_sub_series_value == hashed_contains_value && comparator(index, 0)
-                    },
-                ))
+                Ok(left
+                    .into_iter()
+                    .flatten()
+                    .enumerate()
+                    .any(|(index, &left_value)| left_value == right_value && comparator(index, 0)))
             })
             .map(Some)
             .map(Option::transpose);
@@ -911,36 +912,37 @@ impl FixedSizeListArray {
     pub fn list_contains(&self, contains: &Series) -> DaftResult<BooleanArray> {
         let seed = UInt64Array::from_iter(
             Field::new("seed", DataType::UInt64),
-            std::iter::repeat(u64::MAX).take(self.len()).map(Some),
-        );
+            std::iter::repeat(u64::MAX).map(Some).take(1),
+        )
+        .into_series();
+        macro_rules! gen_seed {
+            ($size:expr) => {
+                Some(seed.broadcast($size)?.u64()?)
+            };
+        }
 
-        let hashed_contains_values = contains.hash_with_validity(Some(&seed))?;
+        let hashed_contains = contains
+            .hash_with_validity(gen_seed!(contains.len()))?
+            .get(0);
 
         let bool_iter = self
             .iter()
-            .zip(&hashed_contains_values)
-            .map(|(sub_series, hashed_contains_value)| -> DaftResult<_> {
-                let (sub_series, hashed_contains_value) =
-                    match sub_series.zip(hashed_contains_value) {
-                        Some((series, &hashed_contains_value)) => (series, hashed_contains_value),
-                        None => return Ok(false),
-                    };
+            .map(|sub_series| -> DaftResult<_> {
+                let (sub_series, hashed_contains) = match sub_series.zip(hashed_contains) {
+                    Some(inner) => inner,
+                    None => return Ok(false),
+                };
 
-                let hashed_sub_series = sub_series.hash_with_validity(Some(&seed))?;
-                let hashed_contains_value_array =
-                    PrimitiveArray::from_slice([hashed_contains_value]);
-                let comparator = build_is_equal(
-                    hashed_sub_series.as_arrow(),
-                    &hashed_contains_value_array,
-                    true,
-                    false,
-                )?;
+                let left = sub_series.hash_with_validity(gen_seed!(sub_series.len()))?;
+                let right = PrimitiveArray::from_slice([hashed_contains]);
+                let right_value = hashed_contains;
+                let comparator = build_is_equal(left.as_arrow(), &right, true, false)?;
 
-                Ok(hashed_sub_series.into_iter().flatten().enumerate().any(
-                    |(index, &hashed_sub_series_value)| {
-                        hashed_sub_series_value == hashed_contains_value && comparator(index, 0)
-                    },
-                ))
+                Ok(left
+                    .into_iter()
+                    .flatten()
+                    .enumerate()
+                    .any(|(index, &left_value)| left_value == right_value && comparator(index, 0)))
             })
             .map(Some)
             .map(Option::transpose);
