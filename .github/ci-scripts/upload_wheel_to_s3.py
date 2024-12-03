@@ -1,4 +1,4 @@
-import sys
+import argparse
 from pathlib import Path
 
 import boto3
@@ -6,9 +6,15 @@ import constants
 import wheellib
 
 if __name__ == "__main__":
-    commit_hash = sys.argv[1]
-    platform_substring = sys.argv[2]
-    path_to_wheel_dir = Path(sys.argv[3])
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--commit-hash", required=True)
+    parser.add_argument("--platform-substring", required=True, choices=["x86", "aarch", "arm"])
+    parser.add_argument("--path-to-wheel-dir", required=True)
+    args = parser.parse_args()
+
+    commit_hash = args.commit_hash
+    platform_substring = args.platform_substring
+    path_to_wheel_dir = Path(args.path_to_wheel_dir)
 
     assert path_to_wheel_dir.exists(), f"Path to wheel directory does not exist: {path_to_wheel_dir}"
     wheelpaths = iter(filepath for filepath in path_to_wheel_dir.iterdir() if filepath.suffix == constants.WHEEL_SUFFIX)
@@ -21,9 +27,9 @@ if __name__ == "__main__":
 
     length = len(filtered_wheelpaths)
     if length == 0:
-        raise Exception(f"No wheels found that match the given platform substring: {platform_substring}; expected 1")
+        raise RuntimeError(f"No wheels found that match the given platform substring: {platform_substring}; expected 1")
     elif length > 1:
-        raise Exception(
+        raise RuntimeError(
             f"""Multiple wheels found that match the given platform substring: {platform_substring}; expected just 1
 Wheels available: {wheelpaths}"""
         )
