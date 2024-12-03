@@ -2,6 +2,7 @@
 common-daft-config = {path = "../common/daft-config"}
 common-error = {path = "../common/error"}
 common-io-config = {path = "../common/io-config", default-features = false}
+common-runtime = {workspace = true}
 daft-core = {path = "../daft-core"}
 daft-dsl = {path = "../daft-dsl"}
 daft-functions = {path = "../daft-functions"}

@@ -6,8 +6,9 @@ use common_treenode::Transformed;
 use super::{
     logical_plan_tracker::LogicalPlanTracker,
     rules::{
-        DropRepartition, EliminateCrossJoin, LiftProjectFromAgg, OptimizerRule, PushDownFilter,
-        PushDownLimit, PushDownProjection, SimplifyExpressionsRule, SplitActorPoolProjects,
+        DropRepartition, EliminateCrossJoin, EnrichWithStats, LiftProjectFromAgg, MaterializeScans,
+        OptimizerRule, PushDownFilter, PushDownLimit, PushDownProjection, SimplifyExpressionsRule,
+        SplitActorPoolProjects,
     },
 };
 use crate::LogicalPlan;
@@ -145,6 +146,18 @@ impl Optimizer {
         rule_batches.push(RuleBatch::new(
             vec![Box::new(SimplifyExpressionsRule::new())],
             RuleExecutionStrategy::FixedPoint(Some(3)),
+        ));
+
+        // --- Materialize scan nodes ---
+        rule_batches.push(RuleBatch::new(
+            vec![Box::new(MaterializeScans::new())],
+            RuleExecutionStrategy::Once,
+        ));
+
+        // --- Enrich logical plan with stats ---
+        rule_batches.push(RuleBatch::new(
+            vec![Box::new(EnrichWithStats::new())],
+            RuleExecutionStrategy::Once,
         ));
 
         Self::with_rule_batches(rule_batches, config)

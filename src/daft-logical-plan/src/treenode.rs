@@ -48,6 +48,7 @@ impl LogicalPlan {
                 input,
                 projection,
                 projected_schema,
+                stats_state,
             }) => projection
                 .into_iter()
                 .map_until_stop_and_collect(f)?
@@ -56,17 +57,24 @@ impl LogicalPlan {
                         input,
                         projection: expr,
                         projected_schema,
+                        stats_state,
                     })
                 }),
-            Self::Filter(Filter { input, predicate }) => f(predicate)?.update_data(|expr| {
+            Self::Filter(Filter {
+                input,
+                predicate,
+                stats_state,
+            }) => f(predicate)?.update_data(|expr| {
                 Self::Filter(Filter {
                     input,
                     predicate: expr,
+                    stats_state,
                 })
             }),
             Self::Repartition(Repartition {
                 input,
                 repartition_spec,
+                stats_state,
             }) => match repartition_spec {
                 RepartitionSpec::Hash(HashRepartitionConfig { num_partitions, by }) => by
                     .into_iter()
@@ -83,12 +91,14 @@ impl LogicalPlan {
                 Self::Repartition(Repartition {
                     input,
                     repartition_spec,
+                    stats_state,
                 })
             }),
             Self::ActorPoolProject(ActorPoolProject {
                 input,
                 projection,
                 projected_schema,
+                stats_state,
             }) => projection
                 .into_iter()
                 .map_until_stop_and_collect(f)?
@@ -97,6 +107,7 @@ impl LogicalPlan {
                         input,
                         projection: expr,
                         projected_schema,
+                        stats_state,
                     })
                 }),
             Self::Sort(Sort {
@@ -104,6 +115,7 @@ impl LogicalPlan {
                 sort_by,
                 descending,
                 nulls_first,
+                stats_state,
             }) => sort_by
                 .into_iter()
                 .map_until_stop_and_collect(f)?
@@ -113,12 +125,14 @@ impl LogicalPlan {
                         sort_by: expr,
                         descending,
                         nulls_first,
+                        stats_state,
                     })
                 }),
             Self::Explode(Explode {
                 input,
                 to_explode,
                 exploded_schema,
+                stats_state,
             }) => to_explode
                 .into_iter()
                 .map_until_stop_and_collect(f)?
@@ -127,6 +141,7 @@ impl LogicalPlan {
                         input,
                         to_explode: expr,
                         exploded_schema,
+                        stats_state,
                     })
                 }),
             Self::Join(Join {
@@ -138,6 +153,7 @@ impl LogicalPlan {
                 join_type,
                 join_strategy,
                 output_schema,
+                stats_state,
             }) => {
                 let o = left_on
                     .into_iter()
@@ -157,6 +173,7 @@ impl LogicalPlan {
                         join_type,
                         join_strategy,
                         output_schema,
+                        stats_state,
                     }))
                 } else {
                     Transformed::no(Self::Join(Join {
@@ -168,6 +185,7 @@ impl LogicalPlan {
                         join_type,
                         join_strategy,
                         output_schema,
+                        stats_state,
                     }))
                 }
             }

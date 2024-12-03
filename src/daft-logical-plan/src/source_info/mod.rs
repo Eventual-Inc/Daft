@@ -16,7 +16,7 @@ use {
 
 use crate::partitioning::ClusteringSpecRef;
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum SourceInfo {
     InMemory(InMemoryInfo),
     Physical(PhysicalScanInfo),
@@ -78,7 +78,7 @@ impl Hash for InMemoryInfo {
 
 static PLACEHOLDER_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PlaceHolderInfo {
     pub source_schema: SchemaRef,
     pub clustering_spec: ClusteringSpecRef,

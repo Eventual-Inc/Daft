@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_scan_info::PhysicalScanInfo;
+use common_scan_info::{PhysicalScanInfo, ScanState};
 use common_treenode::{Transformed, TreeNode};
 use daft_core::prelude::SchemaRef;
 use daft_dsl::{lit, null_lit, Expr, ExprRef, LiteralValue, Operator};
@@ -24,7 +24,7 @@ impl OptimizerRule for SimplifyExpressionsRule {
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         if plan.exists(|p| match p.as_ref() {
             LogicalPlan::Source(source) => match source.source_info.as_ref() {
-                crate::SourceInfo::Physical(PhysicalScanInfo { scan_op, .. })
+                crate::SourceInfo::Physical(PhysicalScanInfo { scan_state: ScanState::Operator(scan_op), .. })
                     // TODO: support simplify expressions for SQLScanOperator
                     if scan_op.0.name() == "SQLScanOperator" =>
                 {
@@ -410,6 +410,7 @@ mod test {
         ops::{Filter, Project, Source},
         optimization::rules::OptimizerRule,
         source_info::PlaceHolderInfo,
+        stats::StatsState,
         ClusteringSpec, LogicalPlan, LogicalPlanBuilder, SourceInfo,
     };
 
@@ -429,6 +430,7 @@ mod test {
                     clustering_spec: Arc::new(ClusteringSpec::unknown()),
                     source_id: 0,
                 })),
+                stats_state: StatsState::NotMaterialized,
             })
             .arced(),
         )
@@ -462,11 +464,7 @@ mod test {
         let optimizer = SimplifyExpressionsRule::new();
         let optimized = optimizer.try_optimize(source).unwrap();
 
-        let LogicalPlan::Filter(Filter {
-            input: _,
-            predicate,
-        }) = optimized.data.as_ref()
-        else {
+        let LogicalPlan::Filter(Filter { predicate, .. }) = optimized.data.as_ref() else {
             panic!("Expected Filter, got {:?}", optimized.data)
         };
 
@@ -513,11 +511,7 @@ mod test {
         let optimizer = SimplifyExpressionsRule::new();
         let optimized = optimizer.try_optimize(source).unwrap();
 
-        let LogicalPlan::Filter(Filter {
-            input: _,
-            predicate,
-        }) = optimized.data.as_ref()
-        else {
+        let LogicalPlan::Filter(Filter { predicate, .. }) = optimized.data.as_ref() else {
             panic!("Expected Filter, got {:?}", optimized.data)
         };
 
@@ -536,11 +530,7 @@ mod test {
         let optimizer = SimplifyExpressionsRule::new();
         let optimized = optimizer.try_optimize(source).unwrap();
 
-        let LogicalPlan::Filter(Filter {
-            input: _,
-            predicate,
-        }) = optimized.data.as_ref()
-        else {
+        let LogicalPlan::Filter(Filter { predicate, .. }) = optimized.data.as_ref() else {
             panic!("Expected Filter, got {:?}", optimized.data)
         };
 
@@ -570,11 +560,7 @@ mod test {
             panic!("Expected Filter, got {:?}", optimized.data)
         };
 
-        let LogicalPlan::Filter(Filter {
-            input: _,
-            predicate,
-        }) = input.as_ref()
-        else {
+        let LogicalPlan::Filter(Filter { predicate, .. }) = input.as_ref() else {
             panic!("Expected Filter, got {:?}", optimized.data)
         };
 

@@ -81,15 +81,3 @@ impl ScalarUDF for ImageCrop {
 pub fn crop(input: ExprRef, bbox: ExprRef) -> ExprRef {
     ScalarFunction::new(ImageCrop {}, vec![input, bbox]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "image_crop")]
-pub fn py_crop(expr: PyExpr, bbox: PyExpr) -> PyResult<PyExpr> {
-    Ok(crop(expr.into(), bbox.into()).into())
-}

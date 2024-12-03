@@ -1,4 +1,4 @@
-use std::{collections::HashSet, sync::Arc};
+use std::sync::Arc;
 
 use common_error::DaftError;
 use daft_core::prelude::*;
@@ -9,6 +9,7 @@ use snafu::ResultExt;
 
 use crate::{
     logical_plan::{self, CreationSnafu},
+    stats::StatsState,
     LogicalPlan,
 };
 
@@ -21,6 +22,7 @@ pub struct Pivot {
     pub aggregation: AggExpr,
     pub names: Vec<String>,
     pub output_schema: SchemaRef,
+    pub stats_state: StatsState,
 }
 
 impl Pivot {
@@ -34,11 +36,12 @@ impl Pivot {
     ) -> logical_plan::Result<Self> {
         let upstream_schema = input.schema();
 
-        let groupby_set = HashSet::from_iter(group_by.clone());
+        let agg_resolver = ExprResolver::builder().groupby(&group_by).build();
+        let (aggregation, _) = agg_resolver
+            .resolve_single(aggregation, &upstream_schema)
+            .context(CreationSnafu)?;
 
         let expr_resolver = ExprResolver::default();
-        let agg_resolver = ExprResolver::builder().groupby(&groupby_set).build();
-
         let (group_by, group_by_fields) = expr_resolver
             .resolve(group_by, &upstream_schema)
             .context(CreationSnafu)?;
@@ -47,10 +50,6 @@ impl Pivot {
             .context(CreationSnafu)?;
         let (value_column, value_col_field) = expr_resolver
             .resolve_single(value_column, &upstream_schema)
-            .context(CreationSnafu)?;
-
-        let (aggregation, _) = agg_resolver
-            .resolve_single(aggregation, &upstream_schema)
             .context(CreationSnafu)?;
 
         let Expr::Agg(agg_expr) = aggregation.as_ref() else {
@@ -81,7 +80,15 @@ impl Pivot {
             aggregation: agg_expr.clone(),
             names,
             output_schema,
+            stats_state: StatsState::NotMaterialized,
         })
+    }
+
+    pub(crate) fn with_materialized_stats(mut self) -> Self {
+        // TODO(desmond): Pivoting does affect cardinality, but for now we keep the old logic.
+        let input_stats = self.input.materialized_stats();
+        self.stats_state = StatsState::Materialized(input_stats.clone().into());
+        self
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
@@ -98,6 +105,9 @@ impl Pivot {
             "Output schema = {}",
             self.output_schema.short_string()
         ));
+        if let StatsState::Materialized(stats) = &self.stats_state {
+            res.push(format!("Stats = {}", stats));
+        }
         res
     }
 }

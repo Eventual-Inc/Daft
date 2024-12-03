@@ -54,15 +54,3 @@ impl ScalarUDF for Utf8Capitalize {
 pub fn utf8_capitalize(input: ExprRef) -> ExprRef {
     ScalarFunction::new(Utf8Capitalize {}, vec![input]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "utf8_capitalize")]
-pub fn py_utf8_capitalize(expr: PyExpr) -> PyResult<PyExpr> {
-    Ok(utf8_capitalize(expr.into()).into())
-}

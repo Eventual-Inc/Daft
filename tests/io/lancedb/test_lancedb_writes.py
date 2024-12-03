@@ -4,6 +4,7 @@ import pyarrow as pa
 import pytest
 
 import daft
+from tests.integration.io.conftest import minio_create_bucket
 
 TABLE_NAME = "my_table"
 data = {
@@ -30,3 +31,14 @@ def test_lancedb_roundtrip(lance_dataset_path):
     df.write_lance(lance_dataset_path)
     df = daft.read_lance(lance_dataset_path)
     assert df.to_pydict() == data
+
+
+@pytest.mark.integration()
+def test_lancedb_minio(minio_io_config):
+    df = daft.from_pydict(data)
+    bucket_name = "lance"
+    s3_path = f"s3://{bucket_name}/data"
+    with minio_create_bucket(minio_io_config=minio_io_config, bucket_name=bucket_name):
+        df.write_lance(s3_path, io_config=minio_io_config)
+        df = daft.read_lance(s3_path, io_config=minio_io_config)
+        assert df.to_pydict() == data

@@ -1,4 +1,8 @@
-use std::{any::Any, sync::Arc};
+use std::{
+    any::Any,
+    hash::{Hash, Hasher},
+    sync::Arc,
+};
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::DisplayAs;
@@ -9,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{PartitionField, Pushdowns, ScanOperator, ScanTaskLike, ScanTaskLikeRef};
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Hash)]
 struct DummyScanTask {
     pub schema: SchemaRef,
     pub pushdowns: Pushdowns,
@@ -36,6 +40,10 @@ impl ScanTaskLike for DummyScanTask {
             .as_any()
             .downcast_ref::<Self>()
             .map_or(false, |a| a == self)
+    }
+
+    fn dyn_hash(&self, mut state: &mut dyn Hasher) {
+        self.hash(&mut state);
     }
 
     fn materialized_schema(&self) -> SchemaRef {
@@ -124,11 +132,7 @@ impl ScanOperator for DummyScanOperator {
         vec!["DummyScanOperator".to_string()]
     }
 
-    fn to_scan_tasks(
-        &self,
-        pushdowns: Pushdowns,
-        _: Option<&DaftExecutionConfig>,
-    ) -> DaftResult<Vec<ScanTaskLikeRef>> {
+    fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<Vec<ScanTaskLikeRef>> {
         let scan_task = Arc::new(DummyScanTask {
             schema: self.schema.clone(),
             pushdowns,

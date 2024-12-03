@@ -54,15 +54,3 @@ impl ScalarUDF for Utf8LengthBytes {
 pub fn utf8_length_bytes(input: ExprRef) -> ExprRef {
     ScalarFunction::new(Utf8LengthBytes {}, vec![input]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "utf8_length_bytes")]
-pub fn py_utf8_length_bytes(expr: PyExpr) -> PyResult<PyExpr> {
-    Ok(utf8_length_bytes(expr.into()).into())
-}

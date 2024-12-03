@@ -7,13 +7,13 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
-use common_scan_info::PhysicalScanInfo;
+use common_scan_info::{PhysicalScanInfo, ScanState, SPLIT_AND_MERGE_PASS};
 use daft_core::prelude::*;
 use daft_dsl::{
     col, functions::agg::merge_mean, is_partition_compatible, AggExpr, ApproxPercentileParams,
     Expr, ExprRef, SketchType,
 };
-use daft_functions::numeric::sqrt;
+use daft_functions::{list::unique_count, numeric::sqrt};
 use daft_logical_plan::{
     logical_plan::LogicalPlan,
     ops::{
@@ -38,15 +38,22 @@ pub(super) fn translate_single_logical_node(
     physical_children: &mut Vec<PhysicalPlanRef>,
     cfg: &DaftExecutionConfig,
 ) -> DaftResult<PhysicalPlanRef> {
-    match logical_plan {
+    let physical_plan = match logical_plan {
         LogicalPlan::Source(Source { source_info, .. }) => match source_info.as_ref() {
             SourceInfo::Physical(PhysicalScanInfo {
                 pushdowns,
-                scan_op,
+                scan_state,
                 source_schema,
                 ..
             }) => {
-                let scan_tasks = scan_op.0.to_scan_tasks(pushdowns.clone(), Some(cfg))?;
+                let scan_tasks = {
+                    match scan_state {
+                        ScanState::Operator(scan_op) => {
+                            Arc::new(scan_op.0.to_scan_tasks(pushdowns.clone())?)
+                        }
+                        ScanState::Tasks(scan_tasks) => scan_tasks.clone(),
+                    }
+                };
 
                 if scan_tasks.is_empty() {
                     let clustering_spec =
@@ -58,6 +65,14 @@ pub(super) fn translate_single_logical_node(
                     ))
                     .arced())
                 } else {
+                    // Perform scan task splitting and merging.
+                    let scan_tasks = if let Some(split_and_merge_pass) = SPLIT_AND_MERGE_PASS.get()
+                    {
+                        split_and_merge_pass(scan_tasks, pushdowns, cfg)?
+                    } else {
+                        scan_tasks
+                    };
+
                     let clustering_spec = Arc::new(ClusteringSpec::Unknown(
                         UnknownClusteringConfig::new(scan_tasks.len()),
                     ));
@@ -205,7 +220,7 @@ pub(super) fn translate_single_logical_node(
             };
             Ok(repartitioned_plan.arced())
         }
-        LogicalPlan::Distinct(LogicalDistinct { input }) => {
+        LogicalPlan::Distinct(LogicalDistinct { input, .. }) => {
             let input_physical = physical_children.pop().expect("requires 1 input");
             let col_exprs = input
                 .schema()
@@ -756,7 +771,12 @@ pub(super) fn translate_single_logical_node(
         LogicalPlan::Union(_) => Err(DaftError::InternalError(
             "Union should already be optimized away".to_string(),
         )),
-    }
+    }?;
+    // TODO(desmond): We can't perform this check for now because ScanTasks currently provide
+    // different size estimations depending on when the approximation is computed. Once we fix
+    // this, we can add back in the assertion here.
+    // debug_assert!(logical_plan.get_stats().approx_stats == physical_plan.approximate_stats());
+    Ok(physical_plan)
 }
 
 pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
@@ -768,6 +788,9 @@ pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
                 AggExpr::Count(e, count_mode) => {
                     AggExpr::Count(Expr::Alias(e, name.clone()).into(), count_mode)
                 }
+                AggExpr::CountDistinct(e) => {
+                    AggExpr::CountDistinct(Expr::Alias(e, name.clone()).into())
+                },
                 AggExpr::Sum(e) => AggExpr::Sum(Expr::Alias(e, name.clone()).into()),
                 AggExpr::ApproxPercentile(ApproxPercentileParams {
                     child: e,
@@ -858,6 +881,27 @@ pub fn populate_aggregation_stages(
                         col(count_id.clone()).alias(sum_of_count_id.clone()),
                     ));
                 final_exprs.push(col(sum_of_count_id.clone()).alias(output_name));
+            }
+            AggExpr::CountDistinct(sub_expr) => {
+                // First stage
+                let list_agg_id = add_to_stage(
+                    AggExpr::List,
+                    sub_expr.clone(),
+                    schema,
+                    &mut first_stage_aggs,
+                );
+
+                // Second stage
+                let list_concat_id = add_to_stage(
+                    AggExpr::Concat,
+                    col(list_agg_id.clone()),
+                    schema,
+                    &mut second_stage_aggs,
+                );
+
+                // Final projection
+                let result = unique_count(col(list_concat_id.clone())).alias(output_name);
+                final_exprs.push(result);
             }
             AggExpr::Sum(e) => {
                 let sum_id = agg_expr.semantic_id(schema).id;

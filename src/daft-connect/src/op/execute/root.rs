@@ -1,4 +1,4 @@
-use std::{collections::HashMap, future::ready};
+use std::{collections::HashMap, future::ready, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
 use daft_local_execution::NativeExecutor;
@@ -33,10 +33,10 @@ impl Session {
             let execution_fut = async {
                 let plan = translation::to_logical_plan(command)?;
                 let optimized_plan = plan.optimize()?;
-                let cfg = DaftExecutionConfig::default();
+                let cfg = Arc::new(DaftExecutionConfig::default());
                 let native_executor = NativeExecutor::from_logical_plan_builder(&optimized_plan)?;
                 let mut result_stream = native_executor
-                    .run(HashMap::new(), cfg.into(), None)?
+                    .run(HashMap::new(), cfg, None)?
                     .into_stream();
 
                 while let Some(result) = result_stream.next().await {

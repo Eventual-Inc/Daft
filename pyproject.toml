@@ -28,7 +28,7 @@ azure = []
 deltalake = ["deltalake"]
 gcp = []
 hudi = ["pyarrow >= 8.0.0"]
-iceberg = ["pyiceberg >= 0.4.0, < 0.8", "packaging"]
+iceberg = ["pyiceberg >= 0.4.0", "packaging"]
 lance = ["lancedb"]
 numpy = ["numpy"]
 pandas = ["pandas"]
@@ -89,6 +89,9 @@ warn_return_any = false
 typeCheckingMode = "off"
 venv = ".venv"
 venvPath = "."
+
+[[tool.pyright.executionEnvironments]]
+root = ".github/ci-scripts"
 
 [tool.pytest.ini_options]
 addopts = "-m 'not (integration or benchmark or hypothesis)'"

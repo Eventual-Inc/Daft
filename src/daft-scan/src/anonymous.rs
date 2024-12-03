@@ -1,16 +1,11 @@
 use std::sync::Arc;
 
-use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use common_scan_info::{PartitionField, Pushdowns, ScanOperator, ScanTaskLike, ScanTaskLikeRef};
 use daft_schema::schema::SchemaRef;
 
-use crate::{
-    scan_task_iters::{merge_by_sizes, split_by_row_groups, BoxScanTaskIter},
-    storage_config::StorageConfig,
-    ChunkSpec, DataSource, ScanTask,
-};
+use crate::{storage_config::StorageConfig, ChunkSpec, DataSource, ScanTask};
 #[derive(Debug)]
 pub struct AnonymousScanOperator {
     files: Vec<String>,
@@ -77,11 +72,7 @@ impl ScanOperator for AnonymousScanOperator {
         lines
     }
 
-    fn to_scan_tasks(
-        &self,
-        pushdowns: Pushdowns,
-        cfg: Option<&DaftExecutionConfig>,
-    ) -> DaftResult<Vec<ScanTaskLikeRef>> {
+    fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<Vec<ScanTaskLikeRef>> {
         let files = self.files.clone();
         let file_format_config = self.file_format_config.clone();
         let schema = self.schema.clone();
@@ -98,10 +89,12 @@ impl ScanOperator for AnonymousScanOperator {
         };
 
         // Create one ScanTask per file.
-        let mut scan_tasks: BoxScanTaskIter =
-            Box::new(files.into_iter().zip(row_groups).map(|(f, rg)| {
+        Ok(files
+            .into_iter()
+            .zip(row_groups)
+            .map(|(f, rg)| {
                 let chunk_spec = rg.map(ChunkSpec::Parquet);
-                Ok(ScanTask::new(
+                Arc::new(ScanTask::new(
                     vec![DataSource::File {
                         path: f,
                         chunk_spec,
@@ -117,23 +110,9 @@ impl ScanOperator for AnonymousScanOperator {
                     storage_config.clone(),
                     pushdowns.clone(),
                     None,
-                )
-                .into())
-            }));
-
-        if let Some(cfg) = cfg {
-            scan_tasks = split_by_row_groups(
-                scan_tasks,
-                cfg.parquet_split_row_groups_max_files,
-                cfg.scan_tasks_min_size_bytes,
-                cfg.scan_tasks_max_size_bytes,
-            );
-
-            scan_tasks = merge_by_sizes(scan_tasks, &pushdowns, cfg);
-        }
-
-        scan_tasks
-            .map(|st| st.map(|task| task as Arc<dyn ScanTaskLike>))
-            .collect()
+                ))
+            })
+            .map(|st| st as Arc<dyn ScanTaskLike>)
+            .collect())
     }
 }
