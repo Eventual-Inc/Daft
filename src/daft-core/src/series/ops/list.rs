@@ -193,7 +193,7 @@ impl Series {
                 let iter = self.list()?.into_iter().map(|sub_series| {
                     let sub_series = sub_series?;
                     let length = sub_series
-                        .build_probe_table()
+                        .build_probe_table_without_nulls()
                         .expect("Building the probe table should always work")
                         .len() as u64;
                     Some(length)
@@ -204,7 +204,7 @@ impl Series {
                 let iter = self.fixed_size_list()?.into_iter().map(|sub_series| {
                     let sub_series = sub_series?;
                     let length = sub_series
-                        .build_probe_table()
+                        .build_probe_table_without_nulls()
                         .expect("Building the probe table should always work")
                         .len() as u64;
                     Some(length)
