@@ -74,21 +74,20 @@ pub fn make_physical_writer_factory(
     let base_writer_factory = PhysicalWriterFactory::new(file_info.clone());
     match file_info.file_format {
         FileFormat::Parquet => {
+            let file_size_calculator = TargetInMemorySizeBytesCalculator::new(
+                cfg.parquet_target_filesize,
+                cfg.parquet_inflation_factor,
+            );
             let row_group_size_calculator = TargetInMemorySizeBytesCalculator::new(
-                cfg.parquet_target_row_group_size,
+                max(
+                    cfg.parquet_target_row_group_size,
+                    cfg.parquet_target_filesize,
+                ),
                 cfg.parquet_inflation_factor,
             );
             let row_group_writer_factory = TargetBatchWriterFactory::new(
                 Arc::new(base_writer_factory),
                 Arc::new(row_group_size_calculator),
-            );
-
-            let file_size_calculator = TargetInMemorySizeBytesCalculator::new(
-                max(
-                    cfg.parquet_target_filesize,
-                    cfg.parquet_target_row_group_size,
-                ),
-                cfg.parquet_inflation_factor,
             );
             let file_writer_factory = TargetFileSizeWriterFactory::new(
                 Arc::new(row_group_writer_factory),
@@ -140,21 +139,20 @@ pub fn make_catalog_writer_factory(
 
     let base_writer_factory = CatalogWriterFactory::new(catalog_info.clone());
 
+    let file_size_calculator = TargetInMemorySizeBytesCalculator::new(
+        cfg.parquet_target_filesize,
+        cfg.parquet_inflation_factor,
+    );
     let row_group_size_calculator = TargetInMemorySizeBytesCalculator::new(
-        cfg.parquet_target_row_group_size,
+        max(
+            cfg.parquet_target_row_group_size,
+            cfg.parquet_target_filesize,
+        ),
         cfg.parquet_inflation_factor,
     );
     let row_group_writer_factory = TargetBatchWriterFactory::new(
         Arc::new(base_writer_factory),
         Arc::new(row_group_size_calculator),
-    );
-
-    let file_size_calculator = TargetInMemorySizeBytesCalculator::new(
-        max(
-            cfg.parquet_target_filesize,
-            cfg.parquet_target_row_group_size,
-        ),
-        cfg.parquet_inflation_factor,
     );
     let file_writer_factory = TargetFileSizeWriterFactory::new(
         Arc::new(row_group_writer_factory),
@@ -190,8 +188,13 @@ impl TargetInMemorySizeBytesCalculator {
         (self.target_size_bytes as f64 * factor) as usize
     }
 
-    fn record_and_update_inflation_factor(&self, actual_size_bytes: usize) -> f64 {
-        let new_inflation_factor = actual_size_bytes as f64 / self.target_size_bytes as f64;
+    fn record_and_update_inflation_factor(
+        &self,
+        actual_on_disk_size_bytes: usize,
+        estimate_in_memory_size_bytes: usize,
+    ) -> f64 {
+        let new_inflation_factor =
+            estimate_in_memory_size_bytes as f64 / actual_on_disk_size_bytes as f64;
         let new_num_samples = self.num_samples.fetch_add(1, Ordering::Relaxed) + 1;
 
         let current_factor =

@@ -6,15 +6,21 @@ use daft_table::Table;
 
 use crate::{FileWriter, TargetInMemorySizeBytesCalculator, WriterFactory};
 
-struct Entry {
+struct TableWithSize {
     table: Table,
     size_bytes: usize,
 }
 
+impl TableWithSize {
+    fn new(table: Table) -> DaftResult<Self> {
+        let size_bytes = table.size_bytes()?;
+        Ok(Self { table, size_bytes })
+    }
+}
+
 struct SizeBasedBuffer {
-    buffer: VecDeque<Entry>,
+    buffer: VecDeque<TableWithSize>,
     size_bytes: usize,
-    num_rows: usize,
 }
 
 impl SizeBasedBuffer {
@@ -22,63 +28,76 @@ impl SizeBasedBuffer {
         Self {
             buffer: VecDeque::new(),
             size_bytes: 0,
-            num_rows: 0,
         }
     }
 
     fn push(&mut self, mp: Arc<MicroPartition>) -> DaftResult<()> {
-        let tables = mp.get_tables()?;
-        for table in tables.iter() {
-            let size_bytes = table.size_bytes()?;
-            self.size_bytes += size_bytes;
-            self.num_rows += table.len();
-            self.buffer.push_back(Entry {
-                table: table.clone(),
-                size_bytes,
-            });
+        for table in mp.get_tables()?.iter() {
+            let table_with_size = TableWithSize::new(table.clone())?;
+            self.size_bytes += table_with_size.size_bytes;
+            self.buffer.push_back(table_with_size);
         }
         Ok(())
     }
 
     fn pop(
         &mut self,
-        min_size_bytes: usize,
-        max_size_bytes: usize,
+        min_bytes: usize,
+        max_bytes: usize,
     ) -> DaftResult<Option<Arc<MicroPartition>>> {
-        if self.size_bytes < min_size_bytes {
+        if self.size_bytes < min_bytes {
             return Ok(None);
         }
-        let mut tables = vec![];
-        let mut current_size_bytes = 0;
-        let mut current_num_rows = 0;
-        while let Some(entry) = self.buffer.pop_front() {
-            if current_size_bytes + entry.size_bytes < max_size_bytes {
-                current_size_bytes += entry.size_bytes;
-                current_num_rows += entry.table.len();
-                tables.push(entry.table);
-                if current_size_bytes >= min_size_bytes {
+
+        let mut tables = Vec::new();
+        let mut bytes_taken = 0;
+
+        while let Some(buffered) = self.buffer.pop_front() {
+            if bytes_taken + buffered.size_bytes <= max_bytes {
+                // Take whole table
+                bytes_taken += buffered.size_bytes;
+                tables.push(buffered.table);
+                if bytes_taken >= min_bytes {
                     break;
                 }
             } else {
-                let entry_table_len = entry.table.len();
-                let avg_row_size_bytes = entry.size_bytes / entry_table_len;
-                let size_bytes_needed = min_size_bytes - current_size_bytes;
-                let num_rows_needed = size_bytes_needed / avg_row_size_bytes;
+                // Need to split table
+                let needed_bytes = min_bytes - bytes_taken;
+                let rows = buffered.table.len();
+                let avg_row_bytes = buffered.size_bytes.checked_div(rows).unwrap_or(1);
+                let rows_needed = needed_bytes / avg_row_bytes;
 
-                let sliced = entry.table.slice(0, num_rows_needed)?;
-                tables.push(sliced);
+                if rows_needed == 0 {
+                    // Can't split further
+                    self.buffer.push_front(buffered);
+                    break;
+                } else if rows_needed >= rows {
+                    // Take whole table
+                    bytes_taken += buffered.size_bytes;
+                    tables.push(buffered.table);
+                } else {
+                    // Split table
+                    let split = buffered.table.slice(0, rows_needed)?;
+                    let remainder = buffered.table.slice(rows_needed, rows)?;
 
-                self.buffer.push_front(Entry {
-                    table: entry.table.slice(num_rows_needed, entry_table_len)?,
-                    size_bytes: avg_row_size_bytes * (entry_table_len - num_rows_needed),
-                });
-                current_size_bytes += size_bytes_needed;
-                current_num_rows += num_rows_needed;
+                    bytes_taken += avg_row_bytes * rows_needed;
+                    tables.push(split);
+
+                    self.buffer.push_front(TableWithSize {
+                        table: remainder,
+                        size_bytes: avg_row_bytes * (rows - rows_needed),
+                    });
+                }
                 break;
             }
         }
-        self.size_bytes -= current_size_bytes;
-        self.num_rows -= current_num_rows;
+
+        if tables.is_empty() {
+            return Ok(None);
+        }
+
+        self.size_bytes -= bytes_taken;
+
         Ok(Some(Arc::new(MicroPartition::new_loaded(
             tables[0].schema.clone(),
             tables.into(),
@@ -90,13 +109,11 @@ impl SizeBasedBuffer {
         if self.buffer.is_empty() {
             return Ok(None);
         }
-        let tables = self
-            .buffer
-            .drain(..)
-            .map(|entry| entry.table)
-            .collect::<Vec<_>>();
+
+        let tables = self.buffer.drain(..).map(|b| b.table).collect::<Vec<_>>();
+
         self.size_bytes = 0;
-        self.num_rows = 0;
+
         Ok(Some(Arc::new(MicroPartition::new_loaded(
             tables[0].schema.clone(),
             tables.into(),
@@ -131,14 +148,18 @@ impl TargetBatchWriter {
         }
     }
 
-    fn write_and_update_inflation_factor(&mut self, input: Arc<MicroPartition>) -> DaftResult<()> {
+    fn write_and_update_inflation_factor(
+        &mut self,
+        input: Arc<MicroPartition>,
+        in_memory_size_bytes: usize,
+    ) -> DaftResult<()> {
         self.writer.write(input)?;
         let current_position = self.writer.tell()?;
         if let Some(current_position) = current_position {
             let actual_size_bytes = current_position - self.previous_position;
             self.previous_position = current_position;
             self.size_calculator
-                .record_and_update_inflation_factor(actual_size_bytes);
+                .record_and_update_inflation_factor(actual_size_bytes, in_memory_size_bytes);
         }
         Ok(())
     }
@@ -159,12 +180,17 @@ impl FileWriter for TargetBatchWriter {
 
         self.buffer.push(input)?;
 
-        let target_size_bytes = self.size_calculator.calculate_target_in_memory_size_bytes();
-        let min_size_bytes = (target_size_bytes as f64 * (1.0 - Self::SIZE_BYTE_LENIENCY)) as usize;
-        let max_size_bytes = (target_size_bytes as f64 * (1.0 + Self::SIZE_BYTE_LENIENCY)) as usize;
+        let mut target_size_bytes = self.size_calculator.calculate_target_in_memory_size_bytes();
+        let mut min_size_bytes =
+            (target_size_bytes as f64 * (1.0 - Self::SIZE_BYTE_LENIENCY)) as usize;
+        let mut max_size_bytes =
+            (target_size_bytes as f64 * (1.0 + Self::SIZE_BYTE_LENIENCY)) as usize;
 
         while let Some(mp) = self.buffer.pop(min_size_bytes, max_size_bytes)? {
-            self.write_and_update_inflation_factor(mp)?;
+            self.write_and_update_inflation_factor(mp, target_size_bytes)?;
+            target_size_bytes = self.size_calculator.calculate_target_in_memory_size_bytes();
+            min_size_bytes = (target_size_bytes as f64 * (1.0 - Self::SIZE_BYTE_LENIENCY)) as usize;
+            max_size_bytes = (target_size_bytes as f64 * (1.0 + Self::SIZE_BYTE_LENIENCY)) as usize;
         }
 
         Ok(())

@@ -40,7 +40,7 @@ impl TargetFileSizeWriter {
     fn rotate_writer(&mut self) -> DaftResult<()> {
         if let Some(bytes) = self.current_writer.tell()? {
             self.size_calculator
-                .record_and_update_inflation_factor(bytes);
+                .record_and_update_inflation_factor(bytes, self.current_file_size_bytes);
         }
         if let Some(result) = self.current_writer.close()? {
             self.results.push(result);

@@ -150,11 +150,12 @@ class ParquetFileWriter(FileWriterBase):
         assert not self.is_closed, "Cannot write to a closed ParquetFileWriter"
         if self.current_writer is None:
             self.current_writer = self._create_writer(table.schema().to_pyarrow_schema())
-        self.current_writer.write_table(table.to_arrow())
+        self.current_writer.write_table(table.to_arrow(), row_group_size=len(table))
 
     def tell(self) -> int:
         if self.current_writer is not None and self.current_writer.file_handle is not None:
-            return self.current_writer.file_handle.tell()
+            tell = self.current_writer.file_handle.tell()
+            return tell
         return 0
 
     def close(self) -> Table:
