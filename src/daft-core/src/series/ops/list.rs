@@ -175,4 +175,40 @@ impl Series {
             ))),
         }
     }
+
+    pub fn list_contains(&self, contains: &Self) -> DaftResult<Self> {
+        if contains.len() != 1 {
+            return Err(DaftError::ValueError(
+                "Contains must be a single value".to_string(),
+            ));
+        }
+        let contains_dt = contains.data_type();
+        match self.data_type() {
+            DataType::List(internal_dt) => {
+                if contains_dt != internal_dt.as_ref() {
+                    return Err(DaftError::TypeError(format!(
+                        "Cannot determine if a list of type {} contains a value of type {}",
+                        internal_dt, contains_dt
+                    )));
+                }
+                Ok(self.list()?.list_contains(contains)?.into_series())
+            }
+            DataType::FixedSizeList(internal_dt, _) => {
+                if contains_dt != internal_dt.as_ref() {
+                    return Err(DaftError::TypeError(format!(
+                        "Cannot determine if a list of type {} contains a value of type {}",
+                        internal_dt, contains_dt
+                    )));
+                }
+                Ok(self
+                    .fixed_size_list()?
+                    .list_contains(contains)?
+                    .into_series())
+            }
+            dt => Err(DaftError::TypeError(format!(
+                "List contains not implemented for {}",
+                dt
+            ))),
+        }
+    }
 }

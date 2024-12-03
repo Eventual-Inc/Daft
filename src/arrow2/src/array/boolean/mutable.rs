@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use super::BooleanArray;
 use crate::{
     array::{
         physical_binary::extend_validity, Array, MutableArray, TryExtend, TryExtendFromSelf,
@@ -10,8 +11,6 @@ use crate::{
     error::Error,
     trusted_len::TrustedLen,
 };
-
-use super::BooleanArray;
 
 /// The Arrow's equivalent to `Vec<Option<bool>>`, but with `1/16` of its size.
 /// Converting a [`MutableBooleanArray`] into a [`BooleanArray`] is `O(1)`.
@@ -451,6 +450,16 @@ where
 
 impl<Ptr: std::borrow::Borrow<Option<bool>>> FromIterator<Ptr> for MutableBooleanArray {
     fn from_iter<I: IntoIterator<Item = Ptr>>(iter: I) -> Self {
+        Self::from_fallible_iter(iter.into_iter().map(Ok::<_, ()>)).unwrap()
+    }
+}
+
+impl MutableBooleanArray {
+    pub fn from_fallible_iter<I, E, Ptr>(iter: I) -> Result<Self, E>
+    where
+        I: Iterator<Item = Result<Ptr, E>>,
+        Ptr: std::borrow::Borrow<Option<bool>>,
+    {
         let iter = iter.into_iter();
         let (lower, _) = iter.size_hint();
 
@@ -458,15 +467,19 @@ impl<Ptr: std::borrow::Borrow<Option<bool>>> FromIterator<Ptr> for MutableBoolea
 
         let values: MutableBitmap = iter
             .map(|item| {
-                if let Some(a) = item.borrow() {
-                    validity.push(true);
-                    *a
-                } else {
-                    validity.push(false);
-                    false
-                }
+                let item = item?;
+                Ok(match item.borrow() {
+                    &Some(item) => {
+                        validity.push(true);
+                        item
+                    }
+                    None => {
+                        validity.push(false);
+                        false
+                    }
+                })
             })
-            .collect();
+            .collect::<Result<_, E>>()?;
 
         let validity = if validity.unset_bits() > 0 {
             Some(validity)
@@ -474,7 +487,7 @@ impl<Ptr: std::borrow::Borrow<Option<bool>>> FromIterator<Ptr> for MutableBoolea
             None
         };
 
-        MutableBooleanArray::try_new(DataType::Boolean, values, validity).unwrap()
+        Ok(MutableBooleanArray::try_new(DataType::Boolean, values, validity).unwrap())
     }
 }
 

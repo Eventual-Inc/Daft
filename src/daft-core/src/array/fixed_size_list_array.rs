@@ -220,6 +220,12 @@ impl<'a> IntoIterator for &'a FixedSizeListArray {
     }
 }
 
+impl FixedSizeListArray {
+    pub fn iter(&self) -> FixedSizeListArrayIter<'_> {
+        self.into_iter()
+    }
+}
+
 pub struct FixedSizeListArrayIter<'a> {
     array: &'a FixedSizeListArray,
     idx: usize,
