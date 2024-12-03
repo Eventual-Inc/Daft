@@ -218,7 +218,7 @@ mod tests {
 
     #[test]
     fn test_bool_nothing_encoded() {
-        let bit_width = 8usize;
+        let bit_width = 1usize;
         let values = [0, 0, 0, 0]; // Length indicator only.
 
         let mut decoder = Decoder::new(&values[4..], bit_width);
