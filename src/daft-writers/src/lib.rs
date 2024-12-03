@@ -16,7 +16,7 @@ mod lance;
 mod pyarrow;
 
 use std::{
-    cmp::max,
+    cmp::min,
     sync::{
         atomic::{AtomicU64, AtomicUsize, Ordering},
         Arc,
@@ -79,7 +79,7 @@ pub fn make_physical_writer_factory(
                 cfg.parquet_inflation_factor,
             );
             let row_group_size_calculator = TargetInMemorySizeBytesCalculator::new(
-                max(
+                min(
                     cfg.parquet_target_row_group_size,
                     cfg.parquet_target_filesize,
                 ),
@@ -144,7 +144,7 @@ pub fn make_catalog_writer_factory(
         cfg.parquet_inflation_factor,
     );
     let row_group_size_calculator = TargetInMemorySizeBytesCalculator::new(
-        max(
+        min(
             cfg.parquet_target_row_group_size,
             cfg.parquet_target_filesize,
         ),
