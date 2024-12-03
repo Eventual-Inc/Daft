@@ -5,7 +5,10 @@ use daft_core::{
     prelude::{BooleanArray, DaftLogical, DataType, Field, Schema},
     series::{IntoSeries, Series},
 };
-use daft_dsl::{functions::ScalarUDF, ExprRef};
+use daft_dsl::{
+    functions::{ScalarFunction, ScalarUDF},
+    ExprRef,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -101,6 +104,16 @@ impl ScalarUDF for Coalesce {
             }
         }
     }
+}
+
+#[must_use]
+/// Coalesce returns the first non-null value in a list of expressions.
+/// Returns the first non-null value from a sequence of expressions.
+///
+/// # Arguments
+/// * `inputs` - A vector of expressions to evaluate in order
+pub fn coalesce(inputs: Vec<ExprRef>) -> ExprRef {
+    ScalarFunction::new(Coalesce {}, inputs).into()
 }
 
 #[cfg(test)]

@@ -1185,6 +1185,7 @@ def minhash(
     seed: int = 1,
     hash_function: Literal["murmurhash3", "xxhash", "sha1"] = "murmurhash3",
 ) -> PyExpr: ...
+def coalesce(exprs: list[PyExpr]) -> PyExpr: ...
 
 # -----
 # SQL functions

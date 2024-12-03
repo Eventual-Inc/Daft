@@ -185,6 +185,35 @@ def interval(
     return Expression._from_pyexpr(lit_value)
 
 
+def coalesce(*args: Expression) -> Expression:
+    """Returns the first non-null value in a list of expressions. If all inputs are null, returns null.
+
+    Example:
+        >>> import daft
+        >>> df = daft.from_pydict({"x": [1, None, 3], "y": [None, 2, None]})
+        >>> df = df.with_column("first_valid", daft.coalesce(df["x"], df["y"]))
+        >>> df.show()
+        ╭───────┬───────┬─────────────╮
+        │ x     ┆ y     ┆ first_valid │
+        │ ---   ┆ ---   ┆ ---         │
+        │ Int64 ┆ Int64 ┆ Int64       │
+        ╞═══════╪═══════╪═════════════╡
+        │ 1     ┆ None  ┆ 1           │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ None  ┆ 2     ┆ 2           │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 3     ┆ None  ┆ 3           │
+        ╰───────┴───────┴─────────────╯
+
+    Args:
+        *args: Two or more expressions to coalesce
+
+    Returns:
+        Expression: Expression containing first non-null value encountered when evaluating arguments in order
+    """
+    return Expression._from_pyexpr(native.coalesce([arg._expr for arg in args]))
+
+
 class Expression:
     _expr: _PyExpr = None  # type: ignore
 
