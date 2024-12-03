@@ -318,6 +318,9 @@ class Series:
     def round(self, decimal: int) -> Series:
         return Series._from_pyseries(self._series.round(decimal))
 
+    def clip(self, min: Series, max: Series) -> Series:
+        return Series._from_pyseries(self._series.clip(min._series, max._series))
+
     def sqrt(self) -> Series:
         return Series._from_pyseries(self._series.sqrt())
 

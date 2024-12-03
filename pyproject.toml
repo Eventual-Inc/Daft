@@ -90,6 +90,9 @@ typeCheckingMode = "off"
 venv = ".venv"
 venvPath = "."
 
+[[tool.pyright.executionEnvironments]]
+root = ".github/ci-scripts"
+
 [tool.pytest.ini_options]
 addopts = "-m 'not (integration or benchmark or hypothesis)'"
 minversion = "6.0"

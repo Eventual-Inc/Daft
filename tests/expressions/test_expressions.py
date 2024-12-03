@@ -127,6 +127,17 @@ def test_repr_functions_round() -> None:
     assert repr_out == repr(copied)
 
 
+def test_repr_functions_clip() -> None:
+    a = col("a")
+    b = col("b")
+    c = col("c")
+    y = a.clip(b, c)
+    repr_out = repr(y)
+    assert repr_out == "clip(col(a), col(b), col(c))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
 def test_repr_functions_log2() -> None:
     a = col("a")
     y = a.log2()

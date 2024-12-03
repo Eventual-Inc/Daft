@@ -55,6 +55,7 @@ Numeric
     Expression.floor
     Expression.sign
     Expression.round
+    Expression.clip
     Expression.sqrt
     Expression.cbrt
     Expression.sin

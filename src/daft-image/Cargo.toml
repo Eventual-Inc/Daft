@@ -10,7 +10,7 @@ base64.workspace = true
 [dependencies.image]
 default-features = false
 features = ["gif", "jpeg", "ico", "png", "tiff", "webp", "bmp", "hdr"]
-version = "0.25.4"
+version = "0.25.5"
 
 [features]
 python = [
