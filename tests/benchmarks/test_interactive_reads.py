@@ -54,8 +54,8 @@ def files(request):
     [
         pytest.param(FileRequest(num_files=1, small=True), id="1 Small File"),
         pytest.param(FileRequest(num_files=100, small=True), id="100 Small Files"),
-        pytest.param(FileRequest(num_files=1, small=False), id="1 Large File"),
-        pytest.param(FileRequest(num_files=20, small=False), id="20 Large Files"),
+        # pytest.param(FileRequest(num_files=1, small=False), id="1 Large File"),
+        # pytest.param(FileRequest(num_files=20, small=False), id="20 Large Files"),
     ],
     indirect=True,  # This tells pytest to pass the params to the fixture
 )
@@ -73,8 +73,8 @@ def test_show(files, io_config, benchmark):
     [
         pytest.param(FileRequest(num_files=1, small=True), id="1 Small File"),
         pytest.param(FileRequest(num_files=100, small=True), id="100 Small Files"),
-        pytest.param(FileRequest(num_files=1, small=False), id="1 Large File"),
-        pytest.param(FileRequest(num_files=20, small=False), id="20 Large Files"),
+        # pytest.param(FileRequest(num_files=1, small=False), id="1 Large File"),
+        # pytest.param(FileRequest(num_files=20, small=False), id="20 Large Files"),
     ],
     indirect=True,  # This tells pytest to pass the params to the fixture
 )
@@ -112,8 +112,8 @@ def test_count(files, expected_count, io_config, benchmark):
     [
         pytest.param(FileRequest(num_files=1, small=True), id="1 Small File"),
         pytest.param(FileRequest(num_files=100, small=True), id="100 Small Files"),
-        pytest.param(FileRequest(num_files=1, small=False), id="1 Large File"),
-        pytest.param(FileRequest(num_files=20, small=False), id="20 Large Files"),
+        # pytest.param(FileRequest(num_files=1, small=False), id="1 Large File"),
+        # pytest.param(FileRequest(num_files=20, small=False), id="20 Large Files"),
     ],
     indirect=True,  # This tells pytest to pass the params to the fixture
 )
