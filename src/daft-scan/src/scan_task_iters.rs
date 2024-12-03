@@ -6,7 +6,6 @@ use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use common_scan_info::{ScanTaskLike, ScanTaskLikeRef, SPLIT_AND_MERGE_PASS};
 use daft_io::IOStatsContext;
 use daft_parquet::read::read_parquet_metadata;
-use itertools::Itertools;
 use parquet2::metadata::{FileMetaData, RowGroupList};
 
 use crate::{
@@ -178,6 +177,169 @@ impl<'a> Iterator for MergeByFileSize<'a> {
     }
 }
 
+/// Splits a single Parquet file by its rowgroups
+struct SplitSingleParquetFileByRowGroups<'a> {
+    accumulator: SplitParquetByRowGroupsAccumulator,
+    context: SplitParquetByRowGroupsContext<'a>,
+    idx: usize,
+}
+
+impl<'a> SplitSingleParquetFileByRowGroups<'a> {
+    pub fn try_new(
+        scan_task_to_split: ScanTaskRef,
+        config: &'a DaftExecutionConfig,
+    ) -> DaftResult<Option<Self>> {
+        /* Only split parquet tasks if they:
+            - have one source
+            - use native storage config
+            - have no specified chunk spec or number of rows
+            - have size past split threshold
+            - no iceberg delete files
+        */
+        if let (
+            FileFormatConfig::Parquet(ParquetSourceConfig {
+                field_id_mapping, ..
+            }),
+            StorageConfig::Native(_),
+            [source],
+            Some(None),
+            None,
+            est_materialized_size,
+        ) = (
+            scan_task_to_split.file_format_config.as_ref(),
+            scan_task_to_split.storage_config.as_ref(),
+            &scan_task_to_split.sources[..],
+            scan_task_to_split
+                .sources
+                .first()
+                .map(DataSource::get_chunk_spec),
+            scan_task_to_split.pushdowns.limit,
+            scan_task_to_split.estimate_in_memory_size_bytes(Some(config)),
+        ) && est_materialized_size.map_or(true, |est| est > config.scan_tasks_max_size_bytes)
+            && source
+                .get_iceberg_delete_files()
+                .map_or(true, std::vec::Vec::is_empty)
+        {
+            // Retrieve Parquet FileMetaData and construct SplitParquetByRowGroupsAccumulator
+            let (io_runtime, io_client) = scan_task_to_split
+                .storage_config
+                .get_io_client_and_runtime()?;
+            let path = source.get_path();
+            let io_stats = IOStatsContext::new(format!("split_by_row_groups for {path:#?}"));
+            let file_metadata = io_runtime.block_on_current_thread(read_parquet_metadata(
+                path,
+                io_client,
+                Some(io_stats),
+                field_id_mapping.clone(),
+            ))?;
+
+            let accumulator = SplitParquetByRowGroupsAccumulator::default();
+            let accumulation_context =
+                SplitParquetByRowGroupsContext::new(scan_task_to_split, file_metadata, config);
+            Ok(Some(Self {
+                accumulator,
+                context: accumulation_context,
+                idx: 0,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    #[inline]
+    fn wrap_data_source_into_scantask(&self, datasource: DataSource) -> ScanTaskRef {
+        ScanTask::new(
+            vec![datasource],
+            self.context.scan_task_ref.file_format_config.clone(),
+            self.context.scan_task_ref.schema.clone(),
+            self.context.scan_task_ref.storage_config.clone(),
+            self.context.scan_task_ref.pushdowns.clone(),
+            self.context.scan_task_ref.generated_fields.clone(),
+        )
+        .into()
+    }
+}
+
+impl<'a> Iterator for SplitSingleParquetFileByRowGroups<'a> {
+    type Item = ScanTaskRef;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            // Finished iterating: idx exceeds the number of available rowgroups
+            // We attempt a final flush and conclude the iterator if there is nothing left to flush
+            if self.idx >= self.context.file_metadata.row_groups.len() {
+                if let Some(final_result) = self.accumulator.flush(&self.context) {
+                    return Some(self.wrap_data_source_into_scantask(final_result));
+                } else {
+                    return None;
+                }
+            }
+
+            // Grab the next rowgroup
+            let (rg_idx, _) = self
+                .context
+                .file_metadata
+                .row_groups
+                .get_index(self.idx)
+                .unwrap();
+            self.idx += 1;
+
+            // Attempt an accumulation using that rowgroup
+            if let Some(accumulated) = self.accumulator.accumulate(rg_idx, &self.context) {
+                return Some(self.wrap_data_source_into_scantask(accumulated));
+            }
+        }
+    }
+}
+
+struct SplitParquetFilesByRowGroups<'a> {
+    iter: BoxScanTaskIter<'a>,
+    currently_splitting: Option<SplitSingleParquetFileByRowGroups<'a>>,
+    config: &'a DaftExecutionConfig,
+}
+
+impl<'a> Iterator for SplitParquetFilesByRowGroups<'a> {
+    type Item = DaftResult<ScanTaskRef>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            match &mut self.currently_splitting {
+                // No element to split, grab a next item from the underlying iterator
+                None => {
+                    let next_scan_task_to_split = match self.iter.next() {
+                        None => return None,
+                        Some(Err(e)) => return Some(Err(e)),
+                        Some(Ok(task)) => task,
+                    };
+
+                    // Attempt to split the ScanTask by rowgroups by setting `self.currently_splitting`
+                    match SplitSingleParquetFileByRowGroups::try_new(
+                        next_scan_task_to_split.clone(),
+                        self.config,
+                    ) {
+                        Err(e) => return Some(Err(e)),
+                        Ok(Some(splitter)) => {
+                            self.currently_splitting = Some(splitter);
+                            continue;
+                        }
+                        Ok(None) => return Some(Ok(next_scan_task_to_split)),
+                    }
+                }
+
+                // Currently splitting a file: keep splitting until it is exhausted
+                Some(splitter) => {
+                    if let Some(scan_task) = splitter.next() {
+                        return Some(Ok(scan_task));
+                    } else {
+                        self.currently_splitting = None;
+                        continue;
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[derive(Default)]
 struct SplitParquetByRowGroupsAccumulator {
     row_group_indices: Vec<usize>,
@@ -314,89 +476,11 @@ pub(crate) fn split_by_row_groups<'a>(
     scan_tasks: BoxScanTaskIter<'a>,
     config: &'a DaftExecutionConfig,
 ) -> BoxScanTaskIter<'a> {
-    Box::new(
-        scan_tasks
-            .map(move |t| -> DaftResult<BoxScanTaskIter> {
-                let t = t?;
-
-                /* Only split parquet tasks if they:
-                    - have one source
-                    - use native storage config
-                    - have no specified chunk spec or number of rows
-                    - have size past split threshold
-                    - no iceberg delete files
-                */
-                if let (
-                    FileFormatConfig::Parquet(ParquetSourceConfig {
-                        field_id_mapping, ..
-                    }),
-                    StorageConfig::Native(_),
-                    [source],
-                    Some(None),
-                    None,
-                    est_materialized_size,
-                ) = (
-                    t.file_format_config.as_ref(),
-                    t.storage_config.as_ref(),
-                    &t.sources[..],
-                    t.sources.first().map(DataSource::get_chunk_spec),
-                    t.pushdowns.limit,
-                    t.estimate_in_memory_size_bytes(Some(config)),
-                ) && est_materialized_size
-                    .map_or(true, |est| est > config.scan_tasks_max_size_bytes)
-                    && source
-                        .get_iceberg_delete_files()
-                        .map_or(true, std::vec::Vec::is_empty)
-                {
-                    // Retrieve Parquet FileMetaData and construct SplitParquetByRowGroupsAccumulator
-                    let (io_runtime, io_client) = t.storage_config.get_io_client_and_runtime()?;
-                    let path = source.get_path();
-                    let io_stats =
-                        IOStatsContext::new(format!("split_by_row_groups for {path:#?}"));
-                    let file_metadata =
-                        io_runtime.block_on_current_thread(read_parquet_metadata(
-                            path,
-                            io_client,
-                            Some(io_stats),
-                            field_id_mapping.clone(),
-                        ))?;
-                    let mut accumulator = SplitParquetByRowGroupsAccumulator::default();
-                    let accumulator_ctx =
-                        SplitParquetByRowGroupsContext::new(t, file_metadata, config);
-
-                    // Run accumulation over all rowgroups, make sure to flush last result
-                    let mut new_data_sources = Vec::new();
-                    for idx in accumulator_ctx.file_metadata.row_groups.keys() {
-                        if let Some(accumulated) = accumulator.accumulate(idx, &accumulator_ctx) {
-                            new_data_sources.push(accumulated);
-                        }
-                    }
-                    if let Some(accumulated) = accumulator.flush(&accumulator_ctx) {
-                        new_data_sources.push(accumulated);
-                    }
-
-                    // Construct ScanTasks with the new DataSources
-                    let new_scan_tasks = new_data_sources
-                        .into_iter()
-                        .map(|data_source| {
-                            ScanTask::new(
-                                vec![data_source],
-                                accumulator_ctx.scan_task_ref.file_format_config.clone(),
-                                accumulator_ctx.scan_task_ref.schema.clone(),
-                                accumulator_ctx.scan_task_ref.storage_config.clone(),
-                                accumulator_ctx.scan_task_ref.pushdowns.clone(),
-                                accumulator_ctx.scan_task_ref.generated_fields.clone(),
-                            )
-                            .into()
-                        })
-                        .collect_vec();
-                    Ok(Box::new(new_scan_tasks.into_iter().map(Ok)))
-                } else {
-                    Ok(Box::new(std::iter::once(Ok(t))))
-                }
-            })
-            .flat_map(|t| t.unwrap_or_else(|e| Box::new(std::iter::once(Err(e))))),
-    )
+    Box::new(SplitParquetFilesByRowGroups {
+        iter: scan_tasks,
+        currently_splitting: None,
+        config,
+    }) as BoxScanTaskIter
 }
 
 fn split_and_merge_pass(
