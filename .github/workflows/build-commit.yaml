@@ -62,7 +62,10 @@ jobs:
     - name: Check if build already exists in AWS S3
       run: |
         source .venv/bin/activate
-        wheel_name=$(python .github/ci-scripts/get_wheel_name_from_s3.py ${{ github.sha }} $platform_substring)
+        wheel_name=$(python .github/ci-scripts/get_wheel_name_from_s3.py \
+          --commit-hash "${{ github.sha }}" \
+          --platform-substring "$platform_substring" \
+        )
         if [ "$wheel_name" ]; then
           echo "Python wheel for this commit already built and uploaded"
         else
@@ -86,7 +89,11 @@ jobs:
           exit 0
         fi
         source .venv/bin/activate
-        wheel_name=$(python .github/ci-scripts/upload_wheel_to_s3.py ${{ github.sha }} $platform_substring ~/target/wheels)
+        wheel_name=$(python .github/ci-scripts/upload_wheel_to_s3.py \
+          --commit-hash "${{ github.sha }}" \
+          --platform-substring "$platform_substring" \
+          --path-to-wheel-dir ~/target/wheels \
+        )
         echo "wheel_name=$wheel_name" >> $GITHUB_ENV
     - name: Print url of the built wheel to GitHub Actions Summary Page
       run: |
