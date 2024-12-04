@@ -42,8 +42,8 @@ jobs:
       id-token: write
       contents: read
     steps:
-    - name: Save event payload to file
-      run: echo "${{ toJson(github.event) }}" > event_payload.json
+    - name: Echo event payload
+      run: echo "${{ toJson(github.event.inputs) }}"
     - name: Checkout repo
       uses: actions/checkout@v4
       with:
