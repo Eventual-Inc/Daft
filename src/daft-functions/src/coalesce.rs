@@ -24,7 +24,6 @@ impl ScalarUDF for Coalesce {
             match dtype {
                 DataType::Boolean | DataType::Utf8 => Ok(()),
                 dt if dt.is_physical() || dt.is_primitive() => Ok(()),
-
                 dt if dt.is_list() | dt.is_nested() => {
                     Err(DaftError::not_implemented("coalesce for nested datatypes"))
                 }
@@ -44,7 +43,6 @@ impl ScalarUDF for Coalesce {
                 ensure_valid_dtype(&input_field)?;
                 Ok(input_field)
             }
-
             _ => {
                 let first_field = inputs[0].to_field(schema)?;
                 ensure_valid_dtype(&first_field)?;
