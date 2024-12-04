@@ -8,9 +8,9 @@ from tests.assets import get_asset_dir
 def generate_parquet(dir: str, num_rows: int, num_cols: int, num_rowgroups: int):
     import numpy as np
     import pandas as pd
+    import pyarrow as pa
     import pyarrow.parquet as papq
     from faker import Faker
-    import pyarrow as pa
 
     # Initialize Faker
     Faker.seed(0)  # For reproducibility
