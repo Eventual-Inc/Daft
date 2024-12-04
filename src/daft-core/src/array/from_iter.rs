@@ -72,14 +72,6 @@ impl Utf8Array {
         )
         .unwrap()
     }
-    pub fn from_vec<S: AsRef<str>>(name: &str, values: Vec<S>) -> Self {
-        let arrow_array = arrow2::array::Utf8Array::<i64>::from_iter_values(values.into_iter());
-        Self::new(
-            Field::new(name, crate::datatypes::DataType::Utf8).into(),
-            arrow_array.boxed(),
-        )
-        .unwrap()
-    }
 }
 
 impl BinaryArray {
