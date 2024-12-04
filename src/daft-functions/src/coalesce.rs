@@ -67,7 +67,7 @@ impl ScalarUDF for Coalesce {
                     remainder = remainder.and(&input.is_null()?)?;
                 }
 
-                Ok(current_value)
+                Ok(current_value.rename(name))
             }
         }
     }
