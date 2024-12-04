@@ -34,7 +34,7 @@ on:
         type: string
         required: true
       entrypoint_args:
-        description: Entry-point python script arguments
+        description: Entry-point arguments
         type: string
         required: false
         default: ""
