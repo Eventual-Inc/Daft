@@ -21,7 +21,7 @@ on:
         required: false
         default: medium-x86
       script:
-        description: Entry-point python script (must be inside of the working directory)
+        description: Entry-point python script
         type: string
         required: true
       args:
