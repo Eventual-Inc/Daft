@@ -33,6 +33,11 @@ on:
         description: Entry-point python script (must be inside of the working directory)
         type: string
         required: true
+      entrypoint_args:
+        description: Entry-point python script arguments
+        type: string
+        required: false
+        default: ""
 
 jobs:
   run-command:
@@ -91,10 +96,6 @@ jobs:
       run: |
         source .venv/bin/activate
         ray dashboard .github/assets/ray.yaml &
-
-    # - name: Ssh breakpoint (remove later)
-    #   uses: lhotari/action-upterm@v1
-
     - name: Submit job to ray cluster
       run: |
         source .venv/bin/activate
@@ -106,7 +107,7 @@ jobs:
           --working-dir ${{ inputs.working_dir }} \
           --address http://localhost:8265 \
           --runtime-env-json '{"env_vars": {"DAFT_ENABLE_RAY_TRACING": "1"}}' \
-          -- python ${{ inputs.entrypoint_script }}
+          -- python ${{ inputs.entrypoint_script }} ${{ inputs.entrypoint_args }}
     - name: Download log files from ray cluster
       run: |
         source .venv/bin/activate
