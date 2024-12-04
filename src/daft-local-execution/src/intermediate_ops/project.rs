@@ -53,21 +53,24 @@ impl IntermediateOperator for ProjectOperator {
 
     fn max_concurrency(&self) -> DaftResult<usize> {
         match &self.resource_request {
-            Some(resource_request) => {
-                if let Some(requested_num_cpus) = resource_request.num_cpus() {
-                    if requested_num_cpus > *NUM_CPUS as f64 {
-                        Err(DaftError::ValueError(format!(
-                            "Requested {} CPUs but found only {} available",
-                            requested_num_cpus, *NUM_CPUS
-                        )))
-                    } else {
-                        Ok((*NUM_CPUS as f64 / requested_num_cpus).ceil() as usize)
-                    }
+            // If the resource request specifies a number of CPUs, the max concurrency is the number of CPUs
+            // divided by the requested number of CPUs, clamped to (1, NUM_CPUS).
+            // E.g. if the resource request specifies 2 CPUs and NUM_CPUS is 4, the max concurrency is 2.
+            Some(resource_request) if resource_request.num_cpus().is_some() => {
+                let requested_num_cpus = resource_request.num_cpus().unwrap();
+                if requested_num_cpus > *NUM_CPUS as f64 {
+                    Err(DaftError::ValueError(format!(
+                        "Requested {} CPUs but found only {} available",
+                        requested_num_cpus, *NUM_CPUS
+                    )))
                 } else {
-                    Ok(*NUM_CPUS)
+                    Ok(
+                        (*NUM_CPUS as f64 / requested_num_cpus).clamp(1.0, *NUM_CPUS as f64)
+                            as usize,
+                    )
                 }
             }
-            None => Ok(*NUM_CPUS),
+            _ => Ok(*NUM_CPUS),
         }
     }
 }
