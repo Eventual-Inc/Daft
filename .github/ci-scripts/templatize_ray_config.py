@@ -12,6 +12,8 @@ CLUSTER_PROFILE__IMAGE_ID = "\\{{CLUSTER_PROFILE/image_id}}"
 CLUSTER_PROFILE__SSH_USER = "\\{{CLUSTER_PROFILE/ssh_user}}"
 CLUSTER_PROFILE__VOLUME_MOUNT = "\\{{CLUSTER_PROFILE/volume_mount}}"
 
+NOOP_STEP = "echo 'noop step; skipping'"
+
 
 @dataclass
 class Profile:
@@ -92,6 +94,6 @@ if __name__ == "__main__":
         if profile.volume_mount:
             content = content.replace(CLUSTER_PROFILE__VOLUME_MOUNT, profile.volume_mount)
         else:
-            content = content.replace(CLUSTER_PROFILE__VOLUME_MOUNT, "echo 'Nothing to mount; skipping'")
+            content = content.replace(CLUSTER_PROFILE__VOLUME_MOUNT, NOOP_STEP)
 
     print(content)

@@ -48,4 +48,4 @@ setup_commands:
 - uv v
 - echo "source $HOME/.venv/bin/activate" >> $HOME/.bashrc
 - source .venv/bin/activate
-- uv pip install pip ray[default] py-spy \{{DAFT_INSTALL}}
+- uv pip install pip ray[default] py-spy \{{DAFT_INSTALL}} numpy
