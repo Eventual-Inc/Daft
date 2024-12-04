@@ -1,3 +1,7 @@
+# /// script
+# dependencies = ['numpy']
+# ///
+
 import argparse
 import random
 import time
