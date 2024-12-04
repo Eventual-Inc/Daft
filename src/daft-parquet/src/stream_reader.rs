@@ -1,15 +1,15 @@
 use std::{
+    cmp::max,
     collections::HashSet,
     fs::File,
     io::{Read, Seek},
     num::NonZeroUsize,
     sync::Arc,
-    time::Duration,
 };
 
 use arrow2::{bitmap::Bitmap, io::parquet::read};
 use common_error::DaftResult;
-use common_runtime::get_compute_runtime;
+use common_runtime::{get_compute_runtime, RuntimeTask};
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
 use daft_dsl::ExprRef;
 use daft_io::IOStatsRef;
@@ -26,7 +26,6 @@ use tokio_stream::wrappers::ReceiverStream;
 use crate::{
     file::{build_row_ranges, RowGroupRange},
     read::{ArrowChunk, ArrowChunkIters, ParquetSchemaInferenceOptions},
-    semaphore::DynamicParquetReadingSemaphore,
     stream_reader::read::schema::infer_schema_with_options,
     UnableToConvertSchemaToDaftSnafu,
 };
@@ -204,8 +203,7 @@ pub fn spawn_column_iters_to_table_task(
     delete_rows: Option<Vec<i64>>,
     output_sender: tokio::sync::mpsc::Sender<DaftResult<Table>>,
     permit: tokio::sync::OwnedSemaphorePermit,
-    record_compute_times_fn: impl Fn(Duration, Duration) + Send + Sync + 'static,
-) {
+) -> RuntimeTask<DaftResult<()>> {
     let (arrow_chunk_senders, mut arrow_chunk_receivers): (Vec<_>, Vec<_>) = arr_iters
         .iter()
         .map(|_| tokio::sync::mpsc::channel(1))
@@ -213,85 +211,68 @@ pub fn spawn_column_iters_to_table_task(
 
     let compute_runtime = get_compute_runtime();
 
-    let mut deserializer_handles = Vec::with_capacity(arr_iters.len());
-    for (sender, arr_iter) in arrow_chunk_senders.into_iter().zip(arr_iters.into_iter()) {
-        let deserialization_task = async move {
-            let mut total_deserialization_time = std::time::Duration::ZERO;
-            let mut deserialization_iteration_time = std::time::Instant::now();
-            for arr in arr_iter {
-                let elapsed = deserialization_iteration_time.elapsed();
-                total_deserialization_time += elapsed;
-                if sender.send(arr).await.is_err() {
-                    break;
+    let deserializer_handles = arrow_chunk_senders
+        .into_iter()
+        .zip(arr_iters)
+        .map(|(sender, arr_iter)| {
+            let deserialization_task = async move {
+                for arr in arr_iter {
+                    if sender.send(arr?).await.is_err() {
+                        break;
+                    }
                 }
-                deserialization_iteration_time = std::time::Instant::now();
-            }
-            total_deserialization_time
-        };
-        deserializer_handles.push(compute_runtime.spawn(deserialization_task));
-    }
+                DaftResult::Ok(())
+            };
+            compute_runtime.spawn(deserialization_task)
+        })
+        .collect::<Vec<_>>();
 
-    compute_runtime.spawn_detached(async move {
+    compute_runtime.spawn(async move {
         if deserializer_handles.is_empty() {
             let empty = Table::new_with_size(schema_ref.clone(), vec![], rg_range.num_rows);
             let _ = output_sender.send(empty).await;
-            return;
+            return Ok(());
         }
 
         let mut curr_delete_row_idx = 0;
         // Keep track of the current index in the row group so we can throw away arrays that are not needed
         // and slice arrays that are partially needed.
         let mut index_so_far = 0;
-        let mut total_compute_time = std::time::Duration::ZERO;
-        let mut total_waiting_time = std::time::Duration::ZERO;
         loop {
-            let arr_results =
-                futures::future::join_all(arrow_chunk_receivers.iter_mut().map(|s| s.recv())).await;
-            if arr_results.iter().any(|r| r.is_none()) {
-                break;
-            }
-
-            let table_creation_start_time = std::time::Instant::now();
-            let table = (|| {
-                let chunk = arr_results
+            let chunk =
+                futures::future::join_all(arrow_chunk_receivers.iter_mut().map(|s| s.recv()))
+                    .await
                     .into_iter()
                     .flatten()
-                    .collect::<Result<Vec<_>, _>>()
-                    .with_context(|_| super::UnableToCreateChunkFromStreamingFileReaderSnafu {
-                        path: uri.clone(),
-                    })?;
-                arrow_chunk_to_table(
-                    chunk,
-                    &schema_ref,
-                    &uri,
-                    rg_range.start,
-                    &mut index_so_far,
-                    delete_rows.as_deref(),
-                    &mut curr_delete_row_idx,
-                    predicate.clone(),
-                    original_columns.as_deref(),
-                    original_num_rows,
-                )
-            })();
-            total_compute_time += table_creation_start_time.elapsed();
-
-            let waiting_start_time = std::time::Instant::now();
-            if output_sender.send(table).await.is_err() {
+                    .collect::<Vec<_>>();
+            if chunk.len() != deserializer_handles.len() {
                 break;
             }
-            let waiting_elapsed = waiting_start_time.elapsed();
-            total_waiting_time += waiting_elapsed;
+            let table = arrow_chunk_to_table(
+                chunk,
+                &schema_ref,
+                &uri,
+                rg_range.start,
+                &mut index_so_far,
+                delete_rows.as_deref(),
+                &mut curr_delete_row_idx,
+                predicate.clone(),
+                original_columns.as_deref(),
+                original_num_rows,
+            )?;
+
+            if output_sender.send(Ok(table)).await.is_err() {
+                break;
+            }
         }
-        let average_deserialization_time = futures::future::join_all(deserializer_handles)
-            .await
-            .into_iter()
-            .filter_map(|r| r.ok())
-            .sum::<Duration>()
-            .div_f32(arrow_chunk_receivers.len() as f32);
-        total_compute_time += average_deserialization_time;
-        record_compute_times_fn(total_compute_time, total_waiting_time);
+
+        for handle in deserializer_handles {
+            handle.await??;
+        }
+
         drop(permit);
-    });
+        DaftResult::Ok(())
+    })
 }
 
 struct CountingReader<R> {
@@ -360,7 +341,6 @@ pub fn local_parquet_read_into_column_iters(
     metadata: Option<Arc<parquet2::metadata::FileMetaData>>,
     chunk_size: usize,
     io_stats: Option<IOStatsRef>,
-    semaphore: Arc<DynamicParquetReadingSemaphore>,
 ) -> super::Result<(
     Arc<parquet2::metadata::FileMetaData>,
     SchemaRef,
@@ -430,7 +410,6 @@ pub fn local_parquet_read_into_column_iters(
     // Read all the required row groups into memory sequentially
     let column_iters_per_rg = row_ranges.clone().into_iter().map(move |rg_range| {
         let rg_metadata = all_row_groups.get(&rg_range.row_group_index).unwrap();
-        let read_start_time = std::time::Instant::now();
 
         // This operation is IO-bounded O(C) where C is the number of columns in the row group.
         // It reads all the columns to memory from the row group associated to the requested fields,
@@ -445,7 +424,6 @@ pub fn local_parquet_read_into_column_iters(
         )
         .with_context(|_| super::UnableToReadParquetRowGroupSnafu { path: uri.clone() })?;
         reader.update_count();
-        semaphore.record_io_time(read_start_time.elapsed());
         Ok(single_rg_column_iter)
     });
     Ok((
@@ -677,15 +655,6 @@ pub async fn local_parquet_stream(
     BoxStream<'static, DaftResult<Table>>,
 )> {
     let chunk_size = 128 * 1024;
-    // We use a semaphore to limit the number of concurrent row group deserialization tasks.
-    // Set the maximum number of concurrent tasks to 2 * number of available threads.
-    let semaphore = DynamicParquetReadingSemaphore::new(
-        std::thread::available_parallelism()
-            .unwrap_or(NonZeroUsize::new(2).unwrap())
-            .checked_mul(2.try_into().unwrap())
-            .unwrap()
-            .into(),
-    );
     let (metadata, schema_ref, row_ranges, column_iters) = local_parquet_read_into_column_iters(
         uri,
         columns.as_deref(),
@@ -696,26 +665,39 @@ pub async fn local_parquet_stream(
         metadata,
         chunk_size,
         io_stats,
-        semaphore.clone(),
     )?;
 
-    let (output_senders, output_receivers) = row_ranges
-        .iter()
-        .map(|_| tokio::sync::mpsc::channel(1))
-        .unzip::<_, _, Vec<_>, Vec<_>>();
+    // We use a semaphore to limit the number of concurrent row group deserialization tasks.
+    // Set the maximum number of concurrent tasks to ceil(number of available threads / columns).
+    let num_parallel_tasks = (std::thread::available_parallelism()
+        .unwrap_or(NonZeroUsize::new(2).unwrap())
+        .checked_mul(2.try_into().unwrap())
+        .unwrap()
+        .get() as f64
+        / max(schema_ref.fields.len(), 1) as f64)
+        .ceil() as usize
+        * 2;
+
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(num_parallel_tasks));
 
     let owned_uri = uri.to_string();
     let compute_runtime = get_compute_runtime();
-    compute_runtime.spawn_detached(async move {
+
+    let (output_senders, output_receivers): (Vec<_>, Vec<_>) = row_ranges
+        .iter()
+        .map(|_| tokio::sync::mpsc::channel(1))
+        .unzip();
+
+    let parquet_task = compute_runtime.spawn(async move {
+        let mut table_tasks = Vec::with_capacity(row_ranges.len());
         for ((column_iters, sender), rg_range) in column_iters.zip(output_senders).zip(row_ranges) {
             if let Err(e) = column_iters {
                 let _ = sender.send(Err(e.into())).await;
                 break;
             }
 
-            let permit = semaphore.acquire().await;
-            let semaphore_ref = semaphore.clone();
-            spawn_column_iters_to_table_task(
+            let permit = semaphore.clone().acquire_owned().await.unwrap();
+            let table_task = spawn_column_iters_to_table_task(
                 column_iters.unwrap(),
                 rg_range,
                 schema_ref.clone(),
@@ -726,20 +708,40 @@ pub async fn local_parquet_stream(
                 delete_rows.clone(),
                 sender,
                 permit,
-                move |compute_time, waiting_time| {
-                    semaphore_ref.record_compute_times(compute_time, waiting_time);
-                },
             );
+            table_tasks.push(table_task);
         }
+
+        for task in table_tasks {
+            task.await??;
+        }
+        DaftResult::Ok(())
     });
 
-    let result_stream =
+    let stream_of_streams =
         futures::stream::iter(output_receivers.into_iter().map(ReceiverStream::new));
+    let flattened = match maintain_order {
+        true => stream_of_streams.flatten().boxed(),
+        false => stream_of_streams.flatten_unordered(None).boxed(),
+    };
+    let combined_stream = futures::stream::unfold(
+        (Some(parquet_task), flattened),
+        |(task, mut stream)| async move {
+            task.as_ref()?;
+            match stream.next().await {
+                Some(v) => Some((v, (task, stream))),
+                None => {
+                    if let Err(e) = task.unwrap().await {
+                        Some((Err(e), (None, stream)))
+                    } else {
+                        None
+                    }
+                }
+            }
+        },
+    );
 
-    match maintain_order {
-        true => Ok((metadata, Box::pin(result_stream.flatten()))),
-        false => Ok((metadata, Box::pin(result_stream.flatten_unordered(None)))),
-    }
+    Ok((metadata, combined_stream.boxed()))
 }
 
 #[allow(clippy::too_many_arguments)]

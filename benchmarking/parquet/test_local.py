@@ -6,42 +6,87 @@ from tests.assets import get_asset_dir
 
 
 def generate_parquet(dir: str, num_rows: int, num_cols: int, num_rowgroups: int):
-    from datetime import datetime, timedelta
-
-    import fastparquet
     import numpy as np
     import pandas as pd
+    import pyarrow.parquet as papq
+    from faker import Faker
 
-    # Generate different data types for each column
+    # Initialize Faker
+    Faker.seed(0)  # For reproducibility
+    fake = Faker()
+
+    # Generate small pools of fake data that we'll sample from
+    POOL_SIZE = 1000  # Size of initial fake data pools
+
+    # Pre-generate data pools
+    name_pool = [fake.name() for _ in range(POOL_SIZE)]
+    email_pool = [fake.email() for _ in range(POOL_SIZE)]
+    company_pool = [fake.company() for _ in range(POOL_SIZE)]
+    job_pool = [fake.job() for _ in range(POOL_SIZE)]
+    address_pool = [fake.address().replace("\n", ", ") for _ in range(POOL_SIZE)]
+
+    # Pre-generate date pools
+    recent_dates = pd.date_range(end=pd.Timestamp.now(), periods=POOL_SIZE, freq="H")
+    past_dates = pd.date_range(end=pd.Timestamp.now(), periods=POOL_SIZE, freq="D")
+    future_dates = pd.date_range(start=pd.Timestamp.now(), periods=POOL_SIZE, freq="D")
+
     data = {}
     for i in range(num_cols):
-        col_type = i % 5  # Cycle through 5 different data types
+        col_type = i % 5
 
         if col_type == 0:
-            # Integer columns
-            data[f"int_{i}"] = np.random.randint(low=0, high=1000000, size=num_rows, dtype=np.int64)
+            # Integer columns (vectorized operations)
+            data_type = i % 3
+            if data_type == 0:
+                data[f"age_{i}"] = np.random.randint(0, 100, size=num_rows)
+            elif data_type == 1:
+                data[f"price_{i}"] = np.random.randint(0, 1000, size=num_rows)
+            else:
+                data[f"views_{i}"] = np.random.randint(0, 1000000, size=num_rows)
+
         elif col_type == 1:
-            # Float columns
-            data[f"float_{i}"] = np.random.uniform(low=0, high=1000, size=num_rows).astype(np.float64)
+            # Float columns (vectorized operations)
+            data_type = i % 3
+            if data_type == 0:
+                data[f"rating_{i}"] = np.round(np.random.uniform(0, 5, size=num_rows), 1)
+            elif data_type == 1:
+                data[f"temp_{i}"] = np.round(np.random.uniform(-20, 45, size=num_rows), 1)
+            else:
+                data[f"percentage_{i}"] = np.round(np.random.uniform(0, 100, size=num_rows), 2)
+
         elif col_type == 2:
-            # String columns
-            data[f"str_{i}"] = [f"str_{j}" for j in np.random.randint(0, 1000, size=num_rows)]
+            # String columns (sampling from pre-generated pools)
+            data_type = i % 5
+            if data_type == 0:
+                data[f"name_{i}"] = np.random.choice(name_pool, size=num_rows)
+            elif data_type == 1:
+                data[f"email_{i}"] = np.random.choice(email_pool, size=num_rows)
+            elif data_type == 2:
+                data[f"company_{i}"] = np.random.choice(company_pool, size=num_rows)
+            elif data_type == 3:
+                data[f"address_{i}"] = np.random.choice(address_pool, size=num_rows)
+            else:
+                data[f"job_{i}"] = np.random.choice(job_pool, size=num_rows)
+
         elif col_type == 3:
-            # Boolean columns
-            data[f"bool_{i}"] = np.random.choice([True, False], size=num_rows)
+            # Boolean columns (vectorized operations)
+            data[f"is_active_{i}"] = np.random.choice([True, False], size=num_rows)
+
         else:
-            # Timestamp columns
-            start_date = datetime(2020, 1, 1)
-            dates = [start_date + timedelta(days=int(x)) for x in np.random.randint(0, 1825, size=num_rows)]
-            data[f"date_{i}"] = dates
+            # Timestamp columns (sampling from pre-generated date ranges)
+            data_type = i % 3
+            if data_type == 0:
+                data[f"recent_date_{i}"] = np.random.choice(recent_dates, size=num_rows)
+            elif data_type == 1:
+                data[f"past_date_{i}"] = np.random.choice(past_dates, size=num_rows)
+            else:
+                data[f"future_date_{i}"] = np.random.choice(future_dates, size=num_rows)
 
     df = pd.DataFrame(data)
-    print(f"Writing {num_rows} rows, {num_cols} columns, {num_rowgroups} rowgroups to {dir}")
-    fastparquet.write(
-        filename=dir,
-        data=df,
-        row_group_offsets=num_rows // num_rowgroups,
-        compression="SNAPPY",
+    papq.write_table(
+        table=papq.Table.from_pandas(df),
+        where=dir,
+        row_group_size=num_rows // num_rowgroups,
     )
     print(f"Finished writing {dir}")
 

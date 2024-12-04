@@ -13,7 +13,6 @@ pub mod read;
 mod statistics;
 pub use statistics::row_group_metadata_to_table_stats;
 mod read_planner;
-mod semaphore;
 mod stream_reader;
 #[cfg(feature = "python")]
 pub use python::register_modules;
