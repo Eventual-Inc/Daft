@@ -1,6 +1,6 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    prelude::{BooleanArray, DaftLogical, DataType, Field, Schema},
+    prelude::{BooleanArray, DaftLogical, Field, Schema},
     series::{IntoSeries, Series},
 };
 use daft_dsl::{functions::ScalarUDF, ExprRef};
@@ -20,32 +20,16 @@ impl ScalarUDF for Coalesce {
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-        fn ensure_valid_dtype(Field { dtype, .. }: &Field) -> DaftResult<()> {
-            match dtype {
-                DataType::Boolean | DataType::Utf8 => Ok(()),
-                dt if dt.is_physical() || dt.is_primitive() => Ok(()),
-                dt if dt.is_list() | dt.is_nested() => {
-                    Err(DaftError::not_implemented("coalesce for nested datatypes"))
-                }
-                other => Err(DaftError::ComputeError(format!(
-                    "Unsupported data type for coalesce: {:?}",
-                    other
-                ))),
-            }
-        }
-
         match inputs {
             [] => Err(DaftError::SchemaMismatch(
                 "Expected at least 1 input args, got 0".to_string(),
             )),
             [input] => {
                 let input_field = input.to_field(schema)?;
-                ensure_valid_dtype(&input_field)?;
                 Ok(input_field)
             }
             _ => {
                 let first_field = inputs[0].to_field(schema)?;
-                ensure_valid_dtype(&first_field)?;
 
                 for input in inputs {
                     if input.to_field(schema)?.dtype != first_field.dtype {
