@@ -266,9 +266,10 @@ pub fn spawn_column_iters_to_table_task(
             }
         }
 
-        for handle in deserializer_handles {
-            handle.await??;
-        }
+        futures::future::try_join_all(deserializer_handles)
+            .await?
+            .into_iter()
+            .collect::<DaftResult<()>>()?;
 
         drop(permit);
         DaftResult::Ok(())
@@ -675,8 +676,7 @@ pub async fn local_parquet_stream(
         .unwrap()
         .get() as f64
         / max(schema_ref.fields.len(), 1) as f64)
-        .ceil() as usize
-        * 2;
+        .ceil() as usize;
 
     let semaphore = Arc::new(tokio::sync::Semaphore::new(num_parallel_tasks));
 
@@ -712,9 +712,11 @@ pub async fn local_parquet_stream(
             table_tasks.push(table_task);
         }
 
-        for task in table_tasks {
-            task.await??;
-        }
+        futures::future::try_join_all(table_tasks)
+            .await?
+            .into_iter()
+            .collect::<DaftResult<()>>()?;
+
         DaftResult::Ok(())
     });
 

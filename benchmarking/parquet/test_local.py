@@ -10,6 +10,7 @@ def generate_parquet(dir: str, num_rows: int, num_cols: int, num_rowgroups: int)
     import pandas as pd
     import pyarrow.parquet as papq
     from faker import Faker
+    import pyarrow as pa
 
     # Initialize Faker
     Faker.seed(0)  # For reproducibility
@@ -84,7 +85,7 @@ def generate_parquet(dir: str, num_rows: int, num_cols: int, num_rowgroups: int)
 
     df = pd.DataFrame(data)
     papq.write_table(
-        table=papq.Table.from_pandas(df),
+        table=pa.Table.from_pandas(df),
         where=dir,
         row_group_size=num_rows // num_rowgroups,
     )
