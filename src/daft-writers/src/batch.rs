@@ -32,7 +32,7 @@ impl SizeBasedBuffer {
         Ok(())
     }
 
-    // Pop tables from the buffer until the size of the tables is between min_bytes and max_bytes.
+    // Pop tables from the buffer we've popped between min_bytes and max_bytes.
     fn pop(
         &mut self,
         min_bytes: usize,
@@ -58,7 +58,8 @@ impl SizeBasedBuffer {
                 tables.push(table);
                 break;
             }
-            // Else, we have a table that is too big for the batch, split it and add the remainder back to the buffer
+            // Else, we have a table that is too big for the batch, take enough rows to fill the batch, and put the rest back
+            // in the buffer.
             else {
                 let rows = table.len();
                 let avg_row_bytes = max(size / rows, 1);

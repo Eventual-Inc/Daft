@@ -17,7 +17,7 @@ mod pyarrow;
 
 use std::{
     cmp::min,
-    sync::{Arc, RwLock},
+    sync::{Arc, Mutex},
 };
 
 use batch::TargetBatchWriterFactory;
@@ -169,7 +169,7 @@ pub fn make_catalog_writer_factory(
 /// given a target on-disk size, and the actual on-disk size of the written data.
 pub(crate) struct TargetInMemorySizeBytesCalculator {
     target_size_bytes: usize,
-    state: RwLock<CalculatorState>,
+    state: Mutex<CalculatorState>,
 }
 
 struct CalculatorState {
@@ -182,7 +182,7 @@ impl TargetInMemorySizeBytesCalculator {
         assert!(target_size_bytes > 0 && initial_inflation_factor > 0.0);
         Self {
             target_size_bytes,
-            state: RwLock::new(CalculatorState {
+            state: Mutex::new(CalculatorState {
                 estimated_inflation_factor: initial_inflation_factor,
                 num_samples: 0,
             }),
@@ -190,7 +190,7 @@ impl TargetInMemorySizeBytesCalculator {
     }
 
     fn calculate_target_in_memory_size_bytes(&self) -> usize {
-        let state = self.state.read().unwrap();
+        let state = self.state.lock().unwrap();
         let factor = state.estimated_inflation_factor;
         (self.target_size_bytes as f64 * factor) as usize
     }
@@ -207,7 +207,7 @@ impl TargetInMemorySizeBytesCalculator {
         }
         let new_inflation_factor =
             estimate_in_memory_size_bytes as f64 / actual_on_disk_size_bytes as f64;
-        let mut state = self.state.write().unwrap();
+        let mut state = self.state.lock().unwrap();
 
         state.num_samples += 1;
 
