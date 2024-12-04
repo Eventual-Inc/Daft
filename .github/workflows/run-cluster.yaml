@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       daft_version:
-        description: Daft version (errors if both this and "Daft python-wheel URL" are provided)
+        description: Daft version
         type: string
         required: false
       python_version:
