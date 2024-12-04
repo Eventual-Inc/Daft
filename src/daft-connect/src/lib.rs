@@ -5,6 +5,7 @@
 #![feature(iter_from_coroutine)]
 #![feature(stmt_expr_attributes)]
 #![feature(try_trait_v2_residual)]
+#![deny(clippy::print_stdout)]
 
 use dashmap::DashMap;
 use eyre::Context;
