@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import uuid
+from typing import Literal
 
 import pandas as pd
 import pyarrow as pa
 import pytest
 
 import daft
+import daft.context
 from daft.table import MicroPartition
 
 # import all conftest
@@ -25,6 +27,16 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "integration: mark test as an integration test that runs with external dependencies"
     )
+
+
+def get_tests_daft_runner_name() -> Literal["ray"] | Literal["py"] | Literal["native"]:
+    """Test utility that checks the environment variable for the runner that is being used for the test"""
+    name = os.getenv("DAFT_RUNNER")
+    assert name is not None, "Tests must be run with $DAFT_RUNNER env var"
+    name = name.lower()
+
+    assert name in {"ray", "py", "native"}, f"Runner name not recognized: {name}"
+    return name
 
 
 class UuidType(pa.ExtensionType):
@@ -170,3 +182,13 @@ def assert_df_equals(
         except AssertionError:
             print(f"Failed assertion for col: {col}")
             raise
+
+
+@pytest.fixture(
+    scope="function",
+    params=[1, None] if get_tests_daft_runner_name() == "native" else [None],
+)
+def with_morsel_size(request):
+    morsel_size = request.param
+    with daft.context.execution_config_ctx(default_morsel_size=morsel_size):
+        yield morsel_size

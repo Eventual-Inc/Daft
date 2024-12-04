@@ -12,6 +12,7 @@ pub(crate) mod broadcast;
 pub(crate) mod cast;
 mod cbrt;
 mod ceil;
+mod clip;
 mod compare_agg;
 mod comparison;
 mod concat;
@@ -58,6 +59,8 @@ mod time;
 pub mod trigonometry;
 mod truncate;
 mod utf8;
+
+use std::hash::BuildHasher;
 
 use common_error::DaftResult;
 pub use hll_sketch::HLL_SKETCH_DTYPE;
@@ -143,7 +146,13 @@ pub trait DaftNotNan {
 
 pub trait DaftMinHash {
     type Output;
-    fn minhash(&self, num_hashes: usize, ngram_size: usize, seed: u32) -> Self::Output;
+    fn minhash(
+        &self,
+        num_hashes: usize,
+        ngram_size: usize,
+        seed: u32,
+        hasher: &impl BuildHasher,
+    ) -> Self::Output;
 }
 
 pub type VecIndices = Vec<u64>;

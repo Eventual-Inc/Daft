@@ -1,4 +1,4 @@
-use arrow2::array::{Array, PrimitiveArray};
+use arrow2::array::Array;
 use common_error::DaftResult;
 
 use super::{full::FullNull, DaftCompareAggable, GroupIndices};
@@ -8,15 +8,15 @@ use crate::{
 };
 
 fn grouped_cmp_native<T, F>(
-    data_array: &DataArray<T>,
+    array: &DataArray<T>,
     mut op: F,
     groups: &GroupIndices,
 ) -> DaftResult<DataArray<T>>
 where
-    T: DaftNumericType,
+    T: DaftPrimitiveType,
     F: Fn(T::Native, T::Native) -> T::Native,
 {
-    let arrow_array = data_array.as_arrow();
+    let arrow_array = array.as_arrow();
     let cmp_per_group = if arrow_array.null_count() > 0 {
         let cmp_values_iter = groups.iter().map(|g| {
             let reduced_val = g
@@ -36,9 +36,10 @@ where
                 });
             reduced_val.unwrap_or_default()
         });
-        Box::new(PrimitiveArray::from_trusted_len_iter(cmp_values_iter))
+        DataArray::<T>::from_iter(array.field.clone(), cmp_values_iter)
     } else {
-        Box::new(PrimitiveArray::from_trusted_len_values_iter(
+        DataArray::<T>::from_values_iter(
+            array.field.clone(),
             groups.iter().map(|g| {
                 g.iter()
                     .map(|i| {
@@ -48,19 +49,16 @@ where
                     .reduce(&mut op)
                     .unwrap()
             }),
-        ))
+        )
     };
-    Ok(DataArray::from((
-        data_array.field.name.as_ref(),
-        cmp_per_group,
-    )))
+    Ok(cmp_per_group)
 }
 
 use super::as_arrow::AsArrow;
 
 impl<T> DaftCompareAggable for DataArray<T>
 where
-    T: DaftNumericType,
+    T: DaftPrimitiveType,
     T::Native: PartialOrd,
     <T::Native as arrow2::types::simd::Simd>::Simd: arrow2::compute::aggregate::SimdOrd<T::Native>,
 {
@@ -70,18 +68,14 @@ where
         let primitive_arr = self.as_arrow();
 
         let result = arrow2::compute::aggregate::min_primitive(primitive_arr);
-        let arrow_array = Box::new(arrow2::array::PrimitiveArray::from([result]));
-
-        Self::new(self.field.clone(), arrow_array)
+        Ok(Self::from_iter(self.field.clone(), std::iter::once(result)))
     }
 
     fn max(&self) -> Self::Output {
         let primitive_arr = self.as_arrow();
 
         let result = arrow2::compute::aggregate::max_primitive(primitive_arr);
-        let arrow_array = Box::new(arrow2::array::PrimitiveArray::from([result]));
-
-        Self::new(self.field.clone(), arrow_array)
+        Ok(Self::from_iter(self.field.clone(), std::iter::once(result)))
     }
     fn grouped_min(&self, groups: &GroupIndices) -> Self::Output {
         grouped_cmp_native(
@@ -511,6 +505,7 @@ impl_todo_daft_comparable!(StructArray);
 impl_todo_daft_comparable!(FixedSizeListArray);
 impl_todo_daft_comparable!(ListArray);
 impl_todo_daft_comparable!(ExtensionArray);
+impl_todo_daft_comparable!(IntervalArray);
 
 #[cfg(feature = "python")]
 impl_todo_daft_comparable!(PythonArray);

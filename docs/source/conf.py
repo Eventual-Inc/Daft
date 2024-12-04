@@ -76,6 +76,10 @@ html_theme_options = {
     # This is how many levels are shown on the secondary sidebar
     "show_toc_level": 2,
 }
+# Set canonical link
+# Based on Google Search's recommendation, we use an absolute path here. For more details, see:
+# https://developers.google.com/search/docs/crawling-indexing/consolidate-duplicate-urls#use-rel=canonical-link-annotations
+html_baseurl = "https://www.getdaft.io/projects/docs/en/stable/"
 
 # -- Copy button configuration
 

@@ -14,24 +14,16 @@ mod object_store_glob;
 mod s3_like;
 mod stats;
 mod stream_utils;
+
 use azure_blob::AzureBlobSource;
 use common_file_formats::FileFormat;
-use futures::FutureExt;
 use google_cloud::GCSSource;
 use huggingface::HFSource;
 use lazy_static::lazy_static;
 #[cfg(feature = "python")]
 pub mod python;
 
-use std::{
-    borrow::Cow,
-    collections::HashMap,
-    future::Future,
-    hash::Hash,
-    ops::Range,
-    panic::AssertUnwindSafe,
-    sync::{Arc, OnceLock},
-};
+use std::{borrow::Cow, collections::HashMap, hash::Hash, ops::Range, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 pub use common_io_config::{AzureConfig, IOConfig, S3Config};
@@ -43,7 +35,6 @@ pub use python::register_modules;
 use s3_like::S3LikeSource;
 use snafu::{prelude::*, Snafu};
 pub use stats::{IOStatsContext, IOStatsRef};
-use tokio::{runtime::RuntimeFlavor, task::JoinHandle};
 use url::ParseError;
 
 #[cfg(feature = "enable_hdfs")]
@@ -206,15 +197,17 @@ impl IOClient {
         })
     }
 
-    async fn get_source(&self, source_type: &SourceType) -> Result<Arc<dyn ObjectSource>> {
+    async fn get_source(&self, input: &str) -> Result<Arc<dyn ObjectSource>> {
+        let (source_type, path) = parse_url(input)?;
+
         {
-            if let Some(client) = self.source_type_to_store.read().await.get(source_type) {
+            if let Some(client) = self.source_type_to_store.read().await.get(&source_type) {
                 return Ok(client.clone());
             }
         }
         let mut w_handle = self.source_type_to_store.write().await;
 
-        if let Some(client) = w_handle.get(source_type) {
+        if let Some(client) = w_handle.get(&source_type) {
             return Ok(client.clone());
         }
 
@@ -227,7 +220,8 @@ impl IOClient {
                 S3LikeSource::get_client(&self.config.s3).await? as Arc<dyn ObjectSource>
             }
             SourceType::AzureBlob => {
-                AzureBlobSource::get_client(&self.config.azure).await? as Arc<dyn ObjectSource>
+                AzureBlobSource::get_client(&self.config.azure, &path).await?
+                    as Arc<dyn ObjectSource>
             }
 
             SourceType::GCS => {
@@ -240,8 +234,8 @@ impl IOClient {
             SourceType::HDFS => HDFSSource::get_client().await? as Arc<dyn ObjectSource>,
         };
 
-        if w_handle.get(source_type).is_none() {
-            w_handle.insert(*source_type, new_source.clone());
+        if w_handle.get(&source_type).is_none() {
+            w_handle.insert(source_type, new_source.clone());
         }
         Ok(new_source)
     }
@@ -255,8 +249,7 @@ impl IOClient {
         io_stats: Option<Arc<IOStatsContext>>,
         file_format: Option<FileFormat>,
     ) -> Result<BoxStream<'static, Result<FileMetadata>>> {
-        let (scheme, _) = parse_url(input.as_str())?;
-        let source = self.get_source(&scheme).await?;
+        let source = self.get_source(&input).await?;
         let files = source
             .glob(
                 input.as_str(),
@@ -276,8 +269,8 @@ impl IOClient {
         range: Option<Range<usize>>,
         io_stats: Option<IOStatsRef>,
     ) -> Result<GetResult> {
-        let (scheme, path) = parse_url(&input)?;
-        let source = self.get_source(&scheme).await?;
+        let (_, path) = parse_url(&input)?;
+        let source = self.get_source(&input).await?;
         let get_result = source
             .get(path.as_ref(), range.clone(), io_stats.clone())
             .await?;
@@ -290,9 +283,9 @@ impl IOClient {
         data: bytes::Bytes,
         io_stats: Option<IOStatsRef>,
     ) -> Result<()> {
-        let (scheme, dest) = parse_url(dest)?;
-        let source = self.get_source(&scheme).await?;
-        source.put(dest.as_ref(), data, io_stats.clone()).await
+        let (_, path) = parse_url(dest)?;
+        let source = self.get_source(dest).await?;
+        source.put(path.as_ref(), data, io_stats.clone()).await
     }
 
     pub async fn single_url_get_size(
@@ -300,8 +293,8 @@ impl IOClient {
         input: String,
         io_stats: Option<IOStatsRef>,
     ) -> Result<usize> {
-        let (scheme, path) = parse_url(&input)?;
-        let source = self.get_source(&scheme).await?;
+        let (_, path) = parse_url(&input)?;
+        let source = self.get_source(&input).await?;
         source.get_size(path.as_ref(), io_stats).await
     }
 
@@ -441,12 +434,7 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
 }
 type CacheKey = (bool, Arc<IOConfig>);
 
-static THREADED_RUNTIME: OnceLock<RuntimeRef> = OnceLock::new();
-static SINGLE_THREADED_RUNTIME: OnceLock<RuntimeRef> = OnceLock::new();
-
 lazy_static! {
-    static ref NUM_CPUS: usize = std::thread::available_parallelism().unwrap().get();
-    static ref THREADED_RUNTIME_NUM_WORKER_THREADS: usize = 8.min(*NUM_CPUS);
     static ref CLIENT_CACHE: std::sync::RwLock<HashMap<CacheKey, Arc<IOClient>>> =
         std::sync::RwLock::new(HashMap::new());
 }
@@ -467,104 +455,6 @@ pub fn get_io_client(multi_thread: bool, config: Arc<IOConfig>) -> DaftResult<Ar
             w_handle.insert(key, client.clone());
             Ok(client)
         }
-    }
-}
-
-pub type RuntimeRef = Arc<Runtime>;
-
-pub struct Runtime {
-    runtime: tokio::runtime::Runtime,
-}
-
-impl Runtime {
-    fn new(runtime: tokio::runtime::Runtime) -> RuntimeRef {
-        Arc::new(Self { runtime })
-    }
-
-    /// Similar to tokio's Runtime::block_on but requires static lifetime + Send
-    /// You should use this when you are spawning IO tasks from an Expression Evaluator or in the Executor
-    pub fn block_on_io_pool<F>(&self, future: F) -> DaftResult<F::Output>
-    where
-        F: Future + Send + 'static,
-        F::Output: Send + 'static,
-    {
-        let (tx, rx) = oneshot::channel();
-        let _join_handle = self.spawn(async move {
-            let task_output = AssertUnwindSafe(future).catch_unwind().await.map_err(|e| {
-                let s = if let Some(s) = e.downcast_ref::<String>() {
-                    s.clone()
-                } else if let Some(s) = e.downcast_ref::<&str>() {
-                    (*s).to_string()
-                } else {
-                    "unknown internal error".to_string()
-                };
-                DaftError::ComputeError(format!(
-                    "Caught panic when spawning blocking task in io pool {s})"
-                ))
-            });
-
-            if tx.send(task_output).is_err() {
-                log::warn!("Spawned task output ignored: receiver dropped");
-            }
-        });
-        rx.recv().expect("Spawned task transmitter dropped")
-    }
-
-    /// Blocks current thread to compute future. Can not be called in tokio runtime context
-    ///
-    pub fn block_on_current_thread<F: Future>(&self, future: F) -> F::Output {
-        self.runtime.block_on(future)
-    }
-
-    pub fn spawn<F>(&self, future: F) -> JoinHandle<F::Output>
-    where
-        F: Future + Send + 'static,
-        F::Output: Send + 'static,
-    {
-        self.runtime.spawn(future)
-    }
-}
-
-fn init_runtime(num_threads: usize) -> Arc<Runtime> {
-    std::thread::spawn(move || {
-        Runtime::new(
-            tokio::runtime::Builder::new_multi_thread()
-                .worker_threads(num_threads)
-                .enable_all()
-                .build()
-                .unwrap(),
-        )
-    })
-    .join()
-    .unwrap()
-}
-
-pub fn get_runtime(multi_thread: bool) -> DaftResult<RuntimeRef> {
-    if !multi_thread {
-        let runtime = SINGLE_THREADED_RUNTIME
-            .get_or_init(|| init_runtime(1))
-            .clone();
-        Ok(runtime)
-    } else {
-        let runtime = THREADED_RUNTIME
-            .get_or_init(|| init_runtime(*THREADED_RUNTIME_NUM_WORKER_THREADS))
-            .clone();
-        Ok(runtime)
-    }
-}
-
-#[must_use]
-pub fn get_io_pool_num_threads() -> Option<usize> {
-    match tokio::runtime::Handle::try_current() {
-        Ok(handle) => {
-            match handle.runtime_flavor() {
-                RuntimeFlavor::CurrentThread => Some(1),
-                RuntimeFlavor::MultiThread => Some(*THREADED_RUNTIME_NUM_WORKER_THREADS),
-                // RuntimeFlavor is #non_exhaustive, so we default to 1 here to be conservative
-                _ => Some(1),
-            }
-        }
-        Err(_) => None,
     }
 }
 

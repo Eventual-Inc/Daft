@@ -32,7 +32,8 @@ def test_sql_create_dataframe_ok(test_db, pdf) -> None:
 
 @pytest.mark.integration()
 @pytest.mark.parametrize("num_partitions", [2, 3, 4])
-def test_sql_partitioned_read(test_db, num_partitions, pdf) -> None:
+@pytest.mark.parametrize("partition_bound_strategy", ["min-max", "percentile"])
+def test_sql_partitioned_read(test_db, num_partitions, partition_bound_strategy, pdf) -> None:
     row_size_bytes = daft.from_pandas(pdf).schema().estimate_row_size_bytes()
     num_rows_per_partition = len(pdf) / num_partitions
     with daft.execution_config_ctx(
@@ -40,7 +41,12 @@ def test_sql_partitioned_read(test_db, num_partitions, pdf) -> None:
         scan_tasks_min_size_bytes=0,
         scan_tasks_max_size_bytes=0,
     ):
-        df = daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", test_db, partition_col="id")
+        df = daft.read_sql(
+            f"SELECT * FROM {TEST_TABLE_NAME}",
+            test_db,
+            partition_col="id",
+            partition_bound_strategy=partition_bound_strategy,
+        )
         assert df.num_partitions() == num_partitions
         assert_df_equals(df.to_pandas(coerce_temporal_nanoseconds=True), pdf, sort_key="id")
 
@@ -48,8 +54,9 @@ def test_sql_partitioned_read(test_db, num_partitions, pdf) -> None:
 @pytest.mark.integration()
 @pytest.mark.parametrize("num_partitions", [1, 2, 3, 4])
 @pytest.mark.parametrize("partition_col", ["id", "float_col", "date_col", "date_time_col"])
+@pytest.mark.parametrize("partition_bound_strategy", ["min-max", "percentile"])
 def test_sql_partitioned_read_with_custom_num_partitions_and_partition_col(
-    test_db, num_partitions, partition_col, pdf
+    test_db, num_partitions, partition_col, partition_bound_strategy, pdf
 ) -> None:
     with daft.execution_config_ctx(
         scan_tasks_min_size_bytes=0,
@@ -60,6 +67,7 @@ def test_sql_partitioned_read_with_custom_num_partitions_and_partition_col(
             test_db,
             partition_col=partition_col,
             num_partitions=num_partitions,
+            partition_bound_strategy=partition_bound_strategy,
         )
         assert df.num_partitions() == num_partitions
         assert_df_equals(df.to_pandas(coerce_temporal_nanoseconds=True), pdf, sort_key="id")
@@ -141,6 +149,10 @@ def test_sql_read_with_partition_num_without_partition_col(test_db) -> None:
 )
 @pytest.mark.parametrize("num_partitions", [1, 2])
 def test_sql_read_with_binary_filter_pushdowns(test_db, column, operator, value, num_partitions, pdf) -> None:
+    # Skip invalid comparisons for bool_col
+    if column == "bool_col" and operator not in ("=", "!="):
+        pytest.skip(f"Operator {operator} not valid for bool_col")
+
     df = daft.read_sql(
         f"SELECT * FROM {TEST_TABLE_NAME}",
         test_db,
@@ -204,13 +216,15 @@ def test_sql_read_with_not_null_filter_pushdowns(test_db, num_partitions, pdf) -
 
 @pytest.mark.integration()
 @pytest.mark.parametrize("num_partitions", [1, 2])
-def test_sql_read_with_if_else_filter_pushdown(test_db, num_partitions, pdf) -> None:
+def test_sql_read_with_non_pushdowned_predicate(test_db, num_partitions, pdf) -> None:
     df = daft.read_sql(
         f"SELECT * FROM {TEST_TABLE_NAME}",
         test_db,
         partition_col="id",
         num_partitions=num_partitions,
     )
+
+    # If_else is not supported as a pushdown to read_sql, but it should still work
     df = df.where((df["id"] > 100).if_else(df["float_col"] > 150, df["float_col"] < 50))
 
     pdf = pdf[(pdf["id"] > 100) & (pdf["float_col"] > 150) | (pdf["float_col"] < 50)]

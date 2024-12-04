@@ -1,0 +1,133 @@
+name: run-cluster
+
+on:
+  workflow_dispatch:
+    inputs:
+      daft_wheel_url:
+        type: string
+        description: A public https url pointing directly to a daft python-wheel to install
+        required: false
+      daft_version:
+        type: string
+        description: A released version of daft on PyPi to install (errors if both this and `daft_wheel_url` are provided)
+        required: false
+      python_version:
+        type: string
+        description: The version of python to use
+        required: false
+        default: "3.9"
+      cluster_profile:
+        type: choice
+        options:
+        - medium-x86
+        - debug_xs-x86
+        description: The profile to use for the cluster
+        required: false
+        default: medium-x86
+      command:
+        type: string
+        description: The command to run on the cluster
+        required: true
+      working_dir:
+        type: string
+        description: The working directory to submit to the cluster
+        required: false
+        default: .github/working-dir
+
+jobs:
+  run-command:
+    runs-on: [self-hosted, linux, x64, ci-dev]
+    timeout-minutes: 15 # Remove for ssh debugging
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+    - name: Checkout repo
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-region: us-west-2
+        role-session-name: run-command-workflow
+    - name: Install uv, rust, python
+      uses: ./.github/actions/install
+      with:
+        python_version: ${{ inputs.python_version }}
+    - name: Setup uv environment
+      run: |
+        uv v
+        source .venv/bin/activate
+        uv pip install ray[default] boto3
+    - name: Dynamically update ray config file
+      run: |
+        source .venv/bin/activate
+        (cat .github/assets/.template.yaml \
+          | python .github/ci-scripts/templatize_ray_config.py \
+          --cluster-name "ray-ci-run-${{ github.run_id }}_${{ github.run_attempt }}" \
+          --daft-wheel-url '${{ inputs.daft_wheel_url }}' \
+          --daft-version '${{ inputs.daft_version }}' \
+          --python-version '${{ inputs.python_version }}' \
+          --cluster-profile '${{ inputs.cluster_profile }}'
+        ) >> .github/assets/ray.yaml
+        cat .github/assets/ray.yaml
+    - name: Download private ssh key
+      run: |
+        KEY=$(aws secretsmanager get-secret-value --secret-id ci-github-actions-ray-cluster-key-3 --query SecretString --output text)
+        echo "$KEY" >> ~/.ssh/ci-github-actions-ray-cluster-key.pem
+        chmod 600 ~/.ssh/ci-github-actions-ray-cluster-key.pem
+    - name: Spin up ray cluster
+      run: |
+        source .venv/bin/activate
+        ray up .github/assets/ray.yaml -y
+    - name: Setup connection to ray cluster
+      run: |
+        source .venv/bin/activate
+        ray dashboard .github/assets/ray.yaml &
+    - name: Submit job to ray cluster
+      run: |
+        source .venv/bin/activate
+        if [[ -z '${{ inputs.command }}' ]]; then
+          echo 'Invalid command submitted; command cannot be empty'
+          exit 1
+        fi
+        ray job submit \
+          --working-dir ${{ inputs.working_dir }} \
+          --address http://localhost:8265 \
+          --runtime-env-json '{"env_vars": {"DAFT_ENABLE_RAY_TRACING": "1"}}' \
+          -- ${{ inputs.command }}
+    - name: Download log files from ray cluster
+      run: |
+        source .venv/bin/activate
+        ray rsync-down .github/assets/ray.yaml /tmp/ray/session_*/logs ray-daft-logs
+        find ray-daft-logs -depth -name '*:*' -exec bash -c '
+        for filepath; do
+          dir=$(dirname "$filepath")
+          base=$(basename "$filepath")
+          new_base=${base//:/_}
+          mv "$filepath" "$dir/$new_base"
+        done
+        ' _ {} +
+    - name: Kill connection to ray cluster
+      run: |
+        PID=$(lsof -t -i:8265)
+        if [[ -n "$PID" ]]; then
+            echo "Process $PID is listening on port 8265; killing it..."
+            kill -9 "$PID"
+            if [[ $? -eq 0 ]]; then
+                echo "Process $PID killed successfully"
+            else
+                echo "Failed to kill process $PID"
+            fi
+        fi
+    - name: Spin down ray cluster
+      if: always()
+      run: |
+        source .venv/bin/activate
+        ray down .github/assets/ray.yaml -y
+    - name: Upload log files
+      uses: actions/upload-artifact@v4
+      with:
+        name: ray-daft-logs
+        path: ray-daft-logs

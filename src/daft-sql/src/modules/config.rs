@@ -125,6 +125,34 @@ impl SQLFunction for S3ConfigFunction {
 
         Ok(Expr::Literal(LiteralValue::Struct(entries)).arced())
     }
+    fn docstrings(&self, _: &str) -> String {
+        "Create configurations to be used when accessing an S3-compatible system.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &[
+            "region_name",
+            "endpoint_url",
+            "key_id",
+            "session_token",
+            "access_key",
+            "credentials_provider",
+            "buffer_time",
+            "max_connections_per_io_thread",
+            "retry_initial_backoff_ms",
+            "connect_timeout_ms",
+            "read_timeout_ms",
+            "num_tries",
+            "retry_mode",
+            "anonymous",
+            "use_ssl",
+            "verify_ssl",
+            "check_hostname_ssl",
+            "requester_pays",
+            "force_virtual_addressing",
+            "profile_name",
+        ]
+    }
 }
 
 pub struct HTTPConfigFunction;
@@ -150,6 +178,14 @@ impl SQLFunction for HTTPConfigFunction {
         .collect::<_>();
 
         Ok(Expr::Literal(LiteralValue::Struct(entries)).arced())
+    }
+
+    fn docstrings(&self, _: &str) -> String {
+        "Create configurations for sending web requests.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["user_agent", "bearer_token"]
     }
 }
 pub struct AzureConfigFunction;
@@ -211,6 +247,26 @@ impl SQLFunction for AzureConfigFunction {
 
         Ok(Expr::Literal(LiteralValue::Struct(entries)).arced())
     }
+
+    fn docstrings(&self, _: &str) -> String {
+        "Create configurations to be used when accessing Azure Blob Storage.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &[
+            "storage_account",
+            "access_key",
+            "sas_token",
+            "bearer_token",
+            "tenant_id",
+            "client_id",
+            "client_secret",
+            "use_fabric_endpoint",
+            "anonymous",
+            "endpoint_url",
+            "use_ssl",
+        ]
+    }
 }
 
 pub struct GCSConfigFunction;
@@ -243,6 +299,13 @@ impl SQLFunction for GCSConfigFunction {
         .collect::<_>();
 
         Ok(Expr::Literal(LiteralValue::Struct(entries)).arced())
+    }
+    fn docstrings(&self, _: &str) -> String {
+        "Create configurations to be used when accessing Google Cloud Storage.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["project_id", "credentials", "token", "anonymous"]
     }
 }
 
@@ -372,14 +435,27 @@ pub(crate) fn expr_to_iocfg(expr: &ExprRef) -> SQLPlannerResult<IOConfig> {
             let credentials = get_value!("credentials", Utf8)?;
             let token = get_value!("token", Utf8)?;
             let anonymous = get_value!("anonymous", Boolean)?;
-            let default = GCSConfig::default();
+            let max_connections_per_io_thread =
+                get_value!("max_connections_per_io_thread", UInt32)?;
+            let retry_initial_backoff_ms = get_value!("retry_initial_backoff_ms", UInt64)?;
+            let connect_timeout_ms = get_value!("connect_timeout_ms", UInt64)?;
+            let read_timeout_ms = get_value!("read_timeout_ms", UInt64)?;
+            let num_tries = get_value!("num_tries", UInt32)?;
 
+            let default = GCSConfig::default();
             Ok(IOConfig {
                 gcs: GCSConfig {
                     project_id,
                     credentials: credentials.map(|s| s.into()),
                     token,
                     anonymous: anonymous.unwrap_or(default.anonymous),
+                    max_connections_per_io_thread: max_connections_per_io_thread
+                        .unwrap_or(default.max_connections_per_io_thread),
+                    retry_initial_backoff_ms: retry_initial_backoff_ms
+                        .unwrap_or(default.retry_initial_backoff_ms),
+                    connect_timeout_ms: connect_timeout_ms.unwrap_or(default.connect_timeout_ms),
+                    read_timeout_ms: read_timeout_ms.unwrap_or(default.read_timeout_ms),
+                    num_tries: num_tries.unwrap_or(default.num_tries),
                 },
                 ..Default::default()
             })

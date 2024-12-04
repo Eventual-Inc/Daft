@@ -25,6 +25,7 @@ def read_parquet(
     schema: Optional[Dict[str, DataType]] = None,
     io_config: Optional["IOConfig"] = None,
     file_path_column: Optional[str] = None,
+    hive_partitioning: bool = False,
     use_native_downloader: bool = True,
     coerce_int96_timestamp_unit: Optional[Union[str, TimeUnit]] = None,
     schema_hints: Optional[Dict[str, DataType]] = None,
@@ -47,6 +48,7 @@ def read_parquet(
         schema (dict[str, DataType]): A schema that is used as the definitive schema for the Parquet file if infer_schema is False, otherwise it is used as a schema hint that is applied after the schema is inferred.
         io_config (IOConfig): Config to be used with the native downloader
         file_path_column: Include the source path(s) as a column with this name. Defaults to None.
+        hive_partitioning: Whether to infer hive_style partitions from file paths and include them as columns in the Dataframe. Defaults to False.
         use_native_downloader: Whether to use the native downloader instead of PyArrow for reading Parquet.
         coerce_int96_timestamp_unit: TimeUnit to coerce Int96 TimeStamps to. e.g.: [ns, us, ms], Defaults to None.
         _multithreaded_io: Whether to use multithreading for IO threads. Setting this to False can be helpful in reducing
@@ -66,10 +68,11 @@ def read_parquet(
             "Specifying schema_hints is deprecated from Daft version >= 0.3.0! Instead, please use the 'schema' and 'infer_schema' arguments."
         )
 
-    is_ray_runner = context.get_context().is_ray_runner
     # If running on Ray, we want to limit the amount of concurrency and requests being made.
     # This is because each Ray worker process receives its own pool of thread workers and connections
-    multithreaded_io = not is_ray_runner if _multithreaded_io is None else _multithreaded_io
+    multithreaded_io = (
+        (context.get_context().get_or_create_runner().name != "ray") if _multithreaded_io is None else _multithreaded_io
+    )
 
     if isinstance(coerce_int96_timestamp_unit, str):
         coerce_int96_timestamp_unit = TimeUnit.from_str(coerce_int96_timestamp_unit)
@@ -96,5 +99,6 @@ def read_parquet(
         file_format_config=file_format_config,
         storage_config=storage_config,
         file_path_column=file_path_column,
+        hive_partitioning=hive_partitioning,
     )
     return DataFrame(builder)

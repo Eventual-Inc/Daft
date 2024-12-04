@@ -63,16 +63,3 @@ impl ScalarUDF for ListGet {
 pub fn list_get(expr: ExprRef, idx: ExprRef, default_value: ExprRef) -> ExprRef {
     ScalarFunction::new(ListGet {}, vec![expr, idx, default_value]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "list_get")]
-pub fn py_list_get(expr: PyExpr, idx: PyExpr, default_value: PyExpr) -> PyResult<PyExpr> {
-    Ok(list_get(expr.into(), idx.into(), default_value.into()).into())
-}

@@ -1,10 +1,12 @@
+pub mod read_csv;
 pub mod read_parquet;
 use std::{collections::HashMap, sync::Arc};
 
-use daft_plan::LogicalPlanBuilder;
+use daft_logical_plan::LogicalPlanBuilder;
 use once_cell::sync::Lazy;
+use read_csv::ReadCsvFunction;
 use read_parquet::ReadParquetFunction;
-use sqlparser::ast::{TableAlias, TableFunctionArgs};
+use sqlparser::ast::TableFunctionArgs;
 
 use crate::{
     error::SQLPlannerResult,
@@ -16,6 +18,7 @@ use crate::{
 pub(crate) static SQL_TABLE_FUNCTIONS: Lazy<SQLTableFunctions> = Lazy::new(|| {
     let mut functions = SQLTableFunctions::new();
     functions.add_fn("read_parquet", ReadParquetFunction);
+    functions.add_fn("read_csv", ReadCsvFunction);
     #[cfg(feature = "python")]
     functions.add_fn("read_deltalake", ReadDeltalakeFunction);
 
@@ -47,12 +50,11 @@ impl SQLTableFunctions {
     }
 }
 
-impl SQLPlanner {
+impl<'a> SQLPlanner<'a> {
     pub(crate) fn plan_table_function(
         &self,
         fn_name: &str,
         args: &TableFunctionArgs,
-        alias: &Option<TableAlias>,
     ) -> SQLPlannerResult<Relation> {
         let fns = &SQL_TABLE_FUNCTIONS;
 
@@ -61,12 +63,8 @@ impl SQLPlanner {
         };
 
         let builder = func.plan(self, args)?;
-        let name = alias
-            .as_ref()
-            .map(|a| a.name.value.clone())
-            .unwrap_or_else(|| fn_name.to_string());
 
-        Ok(Relation::new(builder, name))
+        Ok(Relation::new(builder, fn_name.to_string()))
     }
 }
 
@@ -103,7 +101,7 @@ impl SQLTableFunction for ReadDeltalakeFunction {
             unsupported_sql_err!("Expected a string literal for the first argument");
         };
 
-        LogicalPlanBuilder::delta_scan(uri, io_config, true).map_err(From::from)
+        daft_scan::builder::delta_scan(uri, io_config, true).map_err(From::from)
     }
 }
 

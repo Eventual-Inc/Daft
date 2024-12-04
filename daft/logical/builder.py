@@ -12,6 +12,7 @@ from daft.daft import (
     JoinType,
     PyDaftExecutionConfig,
     ScanOperatorHandle,
+    logical_plan_table_scan,
 )
 from daft.daft import LogicalPlanBuilder as _LogicalPlanBuilder
 from daft.expressions import Expression, col
@@ -62,6 +63,9 @@ class LogicalPlanBuilder:
         used to generate executable tasks for the physical plan.
 
         This should be called after triggering optimization with self.optimize().
+
+        **Warning**: This function is not part of the stable API and may change
+        without notice. It is intended for internal or experimental use only.
         """
         from daft.plan_scheduler.physical_plan_scheduler import PhysicalPlanScheduler
 
@@ -139,7 +143,7 @@ class LogicalPlanBuilder:
         *,
         scan_operator: ScanOperatorHandle,
     ) -> LogicalPlanBuilder:
-        builder = _LogicalPlanBuilder.table_scan(scan_operator)
+        builder = logical_plan_table_scan(scan_operator)
         return cls(builder)
 
     def select(
@@ -199,11 +203,20 @@ class LogicalPlanBuilder:
         builder = self._builder.sample(fraction, with_replacement, seed)
         return LogicalPlanBuilder(builder)
 
-    def sort(self, sort_by: list[Expression], descending: list[bool] | bool = False) -> LogicalPlanBuilder:
+    def sort(
+        self,
+        sort_by: list[Expression],
+        descending: list[bool] | bool = False,
+        nulls_first: list[bool] | bool | None = None,
+    ) -> LogicalPlanBuilder:
         sort_by_pyexprs = [expr._expr for expr in sort_by]
         if not isinstance(descending, list):
             descending = [descending] * len(sort_by_pyexprs)
-        builder = self._builder.sort(sort_by_pyexprs, descending)
+        if nulls_first is None:
+            nulls_first = descending
+        elif isinstance(nulls_first, bool):
+            nulls_first = [nulls_first] * len(sort_by_pyexprs)
+        builder = self._builder.sort(sort_by_pyexprs, descending, nulls_first)
         return LogicalPlanBuilder(builder)
 
     def hash_repartition(self, num_partitions: int | None, partition_by: list[Expression]) -> LogicalPlanBuilder:
@@ -252,6 +265,8 @@ class LogicalPlanBuilder:
         right_on: list[Expression],
         how: JoinType = JoinType.Inner,
         strategy: JoinStrategy | None = None,
+        join_suffix: str | None = None,
+        join_prefix: str | None = None,
     ) -> LogicalPlanBuilder:
         builder = self._builder.join(
             right._builder,
@@ -259,11 +274,17 @@ class LogicalPlanBuilder:
             [expr._expr for expr in right_on],
             how,
             strategy,
+            join_suffix,
+            join_prefix,
         )
         return LogicalPlanBuilder(builder)
 
     def concat(self, other: LogicalPlanBuilder) -> LogicalPlanBuilder:  # type: ignore[override]
         builder = self._builder.concat(other._builder)
+        return LogicalPlanBuilder(builder)
+
+    def intersect(self, other: LogicalPlanBuilder) -> LogicalPlanBuilder:
+        builder = self._builder.intersect(other._builder, False)
         return LogicalPlanBuilder(builder)
 
     def add_monotonically_increasing_id(self, column_name: str | None) -> LogicalPlanBuilder:
@@ -285,16 +306,26 @@ class LogicalPlanBuilder:
         return LogicalPlanBuilder(builder)
 
     def write_iceberg(self, table: IcebergTable) -> LogicalPlanBuilder:
+        from daft.iceberg.iceberg_write import get_missing_columns, partition_field_to_expr
         from daft.io._iceberg import _convert_iceberg_file_io_properties_to_io_config
 
         name = ".".join(table.name())
         location = f"{table.location()}/data"
         partition_spec = table.spec()
         schema = table.schema()
+        missing_columns = get_missing_columns(self.schema().to_pyarrow_schema(), schema)
+        builder = (
+            self._builder
+            if len(missing_columns) == 0
+            else self._builder.with_columns([c._expr for c in missing_columns])
+        )
+        partition_cols = [partition_field_to_expr(field, schema)._expr for field in partition_spec.fields]
         props = table.properties
         columns = [col.name for col in schema.columns]
         io_config = _convert_iceberg_file_io_properties_to_io_config(table.io.properties)
-        builder = self._builder.iceberg_write(name, location, partition_spec, schema, props, columns, io_config)
+        builder = builder.iceberg_write(
+            name, location, partition_spec.spec_id, partition_cols, schema, props, columns, io_config
+        )
         return LogicalPlanBuilder(builder)
 
     def write_deltalake(

@@ -9,14 +9,9 @@ import pyarrow as pa
 import pytest
 
 import daft
-from daft import context
 from daft.io.object_store_options import io_config_to_storage_options
 from daft.logical.schema import Schema
-
-native_excutor_skip = pytest.mark.skipif(
-    context.get_context().daft_execution_config.enable_native_executor is True,
-    reason="Native executor fails for these tests",
-)
+from tests.conftest import get_tests_daft_runner_name
 
 PYARROW_LE_8_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (
     8,
@@ -24,11 +19,10 @@ PYARROW_LE_8_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeri
     0,
 )
 PYTHON_LT_3_8 = sys.version_info[:2] < (3, 8)
-py_version_or_arrow_skip = pytest.mark.skipif(
+pytestmark = pytest.mark.skipif(
     PYARROW_LE_8_0_0 or PYTHON_LT_3_8,
     reason="deltalake only supported if pyarrow >= 8.0.0 and python >= 3.8",
 )
-pytestmark = [native_excutor_skip, py_version_or_arrow_skip]
 
 
 def test_deltalake_write_basic(tmp_path, base_table):
@@ -116,6 +110,10 @@ def test_deltalake_write_overwrite_cloud(cloud_paths):
     assert read_delta.to_pyarrow_table() == df2.to_arrow()
 
 
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() == "native",
+    reason="Native executor does not support repartitioning",
+)
 def test_deltalake_write_overwrite_multi_partition(tmp_path):
     deltalake = pytest.importorskip("deltalake")
     path = tmp_path / "some_table"
@@ -185,6 +183,10 @@ def test_deltalake_write_ignore(tmp_path):
     assert read_delta.to_pyarrow_table() == df1.to_arrow()
 
 
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() == "native",
+    reason="Native executor does not support repartitioning",
+)
 def test_deltalake_write_with_empty_partition(tmp_path, base_table):
     deltalake = pytest.importorskip("deltalake")
     path = tmp_path / "some_table"
@@ -300,3 +302,13 @@ def test_deltalake_write_partitioned_existing_table(tmp_path):
     assert result["rows"] == [1, 1]
 
     check_equal_both_daft_and_delta_rs(df1.concat(df2), path, [("int", "ascending"), ("string", "ascending")])
+
+
+def test_deltalake_write_roundtrip(tmp_path):
+    path = tmp_path / "some_table"
+    df = daft.from_pydict({"a": [1, 2, 3, 4]})
+    df.write_deltalake(str(path))
+
+    read_df = daft.read_deltalake(str(path))
+    assert df.schema() == read_df.schema()
+    assert df.to_arrow() == read_df.to_arrow()

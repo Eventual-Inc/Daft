@@ -190,6 +190,10 @@ impl PyDataType {
     pub fn duration(timeunit: PyTimeUnit) -> PyResult<Self> {
         Ok(DataType::Duration(timeunit.timeunit).into())
     }
+    #[staticmethod]
+    pub fn interval() -> PyResult<Self> {
+        Ok(DataType::Interval.into())
+    }
 
     #[staticmethod]
     pub fn list(data_type: Self) -> PyResult<Self> {
@@ -343,6 +347,10 @@ impl PyDataType {
 
     pub fn is_numeric(&self) -> PyResult<bool> {
         Ok(self.dtype.is_numeric())
+    }
+
+    pub fn is_integer(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_integer())
     }
 
     pub fn is_image(&self) -> PyResult<bool> {

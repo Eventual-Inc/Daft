@@ -116,8 +116,8 @@ macro_rules! impl_series_like_for_logical_array {
                 Ok($da::new(self.0.field.clone(), new_array).into_series())
             }
 
-            fn sort(&self, descending: bool) -> DaftResult<Series> {
-                Ok(self.0.sort(descending)?.into_series())
+            fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Series> {
+                Ok(self.0.sort(descending, nulls_first)?.into_series())
             }
 
             fn str_value(&self, idx: usize) -> DaftResult<String> {
@@ -169,10 +169,10 @@ macro_rules! impl_series_like_for_logical_array {
     };
 }
 
-impl_series_like_for_logical_array!(Decimal128Array);
 impl_series_like_for_logical_array!(DateArray);
 impl_series_like_for_logical_array!(TimeArray);
 impl_series_like_for_logical_array!(DurationArray);
+
 impl_series_like_for_logical_array!(TimestampArray);
 impl_series_like_for_logical_array!(ImageArray);
 impl_series_like_for_logical_array!(FixedShapeImageArray);

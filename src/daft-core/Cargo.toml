@@ -24,6 +24,7 @@ common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}
 common-hashable-float-wrapper = {path = "../common/hashable-float-wrapper"}
 common-py-serde = {path = "../common/py-serde", default-features = false}
+daft-hash = {workspace = true}
 daft-minhash = {path = "../daft-minhash", default-features = false}
 daft-schema = {path = "../daft-schema", default-features = false}
 daft-sketch = {path = "../daft-sketch", default-features = false}
@@ -40,27 +41,28 @@ mur3 = "0.1.0"
 ndarray = "0.15.6"
 num-traits = {workspace = true}
 pyo3 = {workspace = true, optional = true}
+rand = "0.8.5"
 regex = {workspace = true}
 serde = {workspace = true}
 sketches-ddsketch = {workspace = true}
-unicode-normalization = "0.1.23"
+unicode-normalization = "0.1.24"
 
 [dependencies.numpy]
 optional = true
 version = "0.21.0"
 
 [dependencies.xxhash-rust]
-features = ["xxh3", "const_xxh3"]
+features = ["xxh3", "const_xxh3", "xxh64"]
 version = "0.8.5"
 
 [features]
 python = [
-  "dep:pyo3",
-  "dep:numpy",
+  "common-arrow-ffi/python",
   "common-error/python",
   "common-py-serde/python",
-  "common-arrow-ffi/python",
-  "daft-schema/python"
+  "daft-schema/python",
+  "dep:numpy",
+  "dep:pyo3"
 ]
 
 [lints]

@@ -117,7 +117,10 @@ impl ScalarUDF for CosineDistanceFunction {
                     }
                 }?;
 
-                let output = Float64Array::from_iter(source_name, res.into_iter());
+                let output = Float64Array::from_iter(
+                    Field::new(source_name, DataType::Float64),
+                    res.into_iter(),
+                );
 
                 Ok(output.into_series())
             }
@@ -167,15 +170,4 @@ impl ScalarUDF for CosineDistanceFunction {
 #[must_use]
 pub fn cosine_distance(a: ExprRef, b: ExprRef) -> ExprRef {
     ScalarFunction::new(CosineDistanceFunction {}, vec![a, b]).into()
-}
-
-#[cfg(feature = "python")]
-pub mod python {
-    use daft_dsl::python::PyExpr;
-    use pyo3::{pyfunction, PyResult};
-
-    #[pyfunction]
-    pub fn cosine_distance(a: PyExpr, b: PyExpr) -> PyResult<PyExpr> {
-        Ok(super::cosine_distance(a.into(), b.into()).into())
-    }
 }

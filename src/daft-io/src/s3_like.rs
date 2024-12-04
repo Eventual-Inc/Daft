@@ -17,6 +17,7 @@ use aws_sdk_s3::{
 use aws_sig_auth::signer::SigningRequirements;
 use aws_smithy_async::rt::sleep::TokioSleep;
 use common_io_config::S3Config;
+use common_runtime::get_io_pool_num_threads;
 use futures::{stream::BoxStream, StreamExt, TryStreamExt};
 use reqwest::StatusCode;
 use s3::{
@@ -34,7 +35,6 @@ use url::{ParseError, Position};
 
 use super::object_io::{GetResult, ObjectSource};
 use crate::{
-    get_io_pool_num_threads,
     object_io::{FileMetadata, FileType, LSResult},
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,

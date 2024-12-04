@@ -313,10 +313,9 @@ pub struct ParquetFileReader {
 
 impl ParquetFileReader {
     const DEFAULT_CHUNK_SIZE: usize = 2048;
-    // Set to a very high number 256MB to guard against unbounded large
-    // downloads from remote storage, which likely indicates corrupted Parquet data
-    // See: https://github.com/Eventual-Inc/Daft/issues/1551
-    const MAX_HEADER_SIZE: usize = 256 * 1024 * 1024;
+    // Set to 2GB because that's the maximum size of strings allowable by Parquet (using i32 offsets).
+    // See issue: https://github.com/Eventual-Inc/Daft/issues/3007
+    const MAX_PAGE_SIZE: usize = 2 * 1024 * 1024 * 1024;
 
     fn new(
         uri: String,
@@ -398,6 +397,7 @@ impl ParquetFileReader {
         predicate: Option<ExprRef>,
         original_columns: Option<Vec<String>>,
         original_num_rows: Option<usize>,
+        delete_rows: Option<Vec<i64>>,
     ) -> DaftResult<BoxStream<'static, DaftResult<Table>>> {
         let daft_schema = Arc::new(daft_core::prelude::Schema::try_from(
             self.arrow_schema.as_ref(),
@@ -426,6 +426,7 @@ impl ParquetFileReader {
                     let ranges = ranges.clone();
                     let predicate = predicate.clone();
                     let original_columns = original_columns.clone();
+                    let delete_rows = delete_rows.clone();
                     let row_range = *row_range;
 
                     tokio::task::spawn(async move {
@@ -471,7 +472,7 @@ impl ParquetFileReader {
                                             range_reader,
                                             vec![],
                                             Arc::new(|_, _| true),
-                                            Self::MAX_HEADER_SIZE,
+                                            Self::MAX_PAGE_SIZE,
                                         )
                                         .with_context(
                                             |_| UnableToCreateParquetPageStreamSnafu::<String> {
@@ -515,6 +516,7 @@ impl ParquetFileReader {
                                 predicate,
                                 original_columns,
                                 original_num_rows,
+                                delete_rows,
                             );
                             if table_iter.is_none() {
                                 let table =
@@ -635,7 +637,7 @@ impl ParquetFileReader {
                                         range_reader,
                                         vec![],
                                         Arc::new(|_, _| true),
-                                        Self::MAX_HEADER_SIZE,
+                                        Self::MAX_PAGE_SIZE,
                                     )
                                     .with_context(|_| {
                                         UnableToCreateParquetPageStreamSnafu::<String> {
@@ -818,7 +820,7 @@ impl ParquetFileReader {
                                         range_reader,
                                         vec![],
                                         Arc::new(|_, _| true),
-                                        Self::MAX_HEADER_SIZE,
+                                        Self::MAX_PAGE_SIZE,
                                     )
                                     .with_context(|_| {
                                         UnableToCreateParquetPageStreamSnafu::<String> {

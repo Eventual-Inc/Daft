@@ -1,6 +1,6 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    datatypes::try_mean_stddev_aggregation_supertype,
+    datatypes::try_mean_aggregation_supertype,
     prelude::{Field, Schema},
     series::Series,
 };
@@ -29,7 +29,7 @@ impl ScalarUDF for ListMean {
                 let inner_field = input.to_field(schema)?.to_exploded_field()?;
                 Ok(Field::new(
                     inner_field.name.as_str(),
-                    try_mean_stddev_aggregation_supertype(&inner_field.dtype)?,
+                    try_mean_aggregation_supertype(&inner_field.dtype)?,
                 ))
             }
             _ => Err(DaftError::SchemaMismatch(format!(
@@ -53,17 +53,4 @@ impl ScalarUDF for ListMean {
 #[must_use]
 pub fn list_mean(expr: ExprRef) -> ExprRef {
     ScalarFunction::new(ListMean {}, vec![expr]).into()
-}
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "list_mean")]
-pub fn py_list_mean(expr: PyExpr) -> PyResult<PyExpr> {
-    Ok(list_mean(expr.into()).into())
 }

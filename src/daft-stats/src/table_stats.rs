@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     fmt::Display,
+    hash::{Hash, Hasher},
     ops::{BitAnd, BitOr, Not},
 };
 
@@ -15,6 +16,15 @@ use crate::column_stats::ColumnRangeStatistics;
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TableStatistics {
     pub columns: IndexMap<String, ColumnRangeStatistics>,
+}
+
+impl Hash for TableStatistics {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        for (key, value) in &self.columns {
+            key.hash(state);
+            value.hash(state);
+        }
+    }
 }
 
 impl TableStatistics {

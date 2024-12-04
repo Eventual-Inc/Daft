@@ -4,8 +4,10 @@ base64 = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 common-hashable-float-wrapper = {path = "../common/hashable-float-wrapper"}
 common-io-config = {path = "../common/io-config", default-features = false}
+common-runtime = {path = "../common/runtime", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
+daft-hash = {workspace = true}
 daft-image = {path = "../daft-image", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
 futures = {workspace = true}
@@ -13,21 +15,22 @@ paste = "1.0.15"
 pyo3 = {workspace = true, optional = true}
 tiktoken-rs = {workspace = true}
 tokio = {workspace = true}
-typetag = "0.2.16"
+typetag = {workspace = true}
 uuid = "1.10.0"
+xxhash-rust = {workspace = true, features = ["xxh64"]}
 bytes.workspace = true
 serde.workspace = true
 snafu.workspace = true
 
 [features]
 python = [
-  "dep:pyo3",
   "common-error/python",
+  "common-io-config/python",
   "daft-core/python",
-  "daft-io/python",
   "daft-dsl/python",
   "daft-image/python",
-  "common-io-config/python"
+  "daft-io/python",
+  "dep:pyo3"
 ]
 
 [lints]

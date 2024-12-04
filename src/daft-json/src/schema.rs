@@ -1,9 +1,10 @@
 use std::{collections::HashSet, sync::Arc};
 
 use common_error::DaftResult;
+use common_runtime::get_io_runtime;
 use daft_compression::CompressionCodec;
 use daft_core::prelude::Schema;
-use daft_io::{get_runtime, GetResult, IOClient, IOStatsRef};
+use daft_io::{GetResult, IOClient, IOStatsRef};
 use futures::{StreamExt, TryStreamExt};
 use indexmap::IndexMap;
 use snafu::ResultExt;
@@ -48,25 +49,22 @@ impl Default for JsonReadStats {
     }
 }
 
-pub fn read_json_schema(
+pub async fn read_json_schema(
     uri: &str,
     parse_options: Option<JsonParseOptions>,
     max_bytes: Option<usize>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
 ) -> DaftResult<Schema> {
-    let runtime_handle = get_runtime(true)?;
-    runtime_handle.block_on_current_thread(async {
-        read_json_schema_single(
-            uri,
-            parse_options.unwrap_or_default(),
-            // Default to 1 MiB.
-            max_bytes.or(Some(1024 * 1024)),
-            io_client,
-            io_stats,
-        )
-        .await
-    })
+    read_json_schema_single(
+        uri,
+        parse_options.unwrap_or_default(),
+        // Default to 1 MiB.
+        max_bytes.or(Some(1024 * 1024)),
+        io_client,
+        io_stats,
+    )
+    .await
 }
 
 pub async fn read_json_schema_bulk(
@@ -77,7 +75,7 @@ pub async fn read_json_schema_bulk(
     io_stats: Option<IOStatsRef>,
     num_parallel_tasks: usize,
 ) -> DaftResult<Vec<Schema>> {
-    let runtime_handle = get_runtime(true)?;
+    let runtime_handle = get_io_runtime(true);
     let result = runtime_handle
         .block_on_current_thread(async {
             let task_stream = futures::stream::iter(uris.iter().map(|uri| {
@@ -204,7 +202,8 @@ mod tests {
     use super::read_json_schema;
 
     #[rstest]
-    fn test_json_schema_local(
+    #[tokio::test]
+    async fn test_json_schema_local(
         #[values(
             // Uncompressed
             None,
@@ -238,7 +237,7 @@ mod tests {
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let schema = read_json_schema(file.as_ref(), None, None, io_client, None)?;
+        let schema = read_json_schema(file.as_ref(), None, None, io_client, None).await?;
         assert_eq!(
             schema,
             Schema::new(vec![
@@ -254,7 +253,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_json_schema_local_dtypes() -> DaftResult<()> {
+    #[tokio::test]
+    async fn test_json_schema_local_dtypes() -> DaftResult<()> {
         let file = format!("{}/test/dtypes.jsonl", env!("CARGO_MANIFEST_DIR"),);
 
         let mut io_config = IOConfig::default();
@@ -262,7 +262,7 @@ mod tests {
 
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let schema = read_json_schema(file.as_ref(), None, None, io_client, None)?;
+        let schema = read_json_schema(file.as_ref(), None, None, io_client, None).await?;
         assert_eq!(
             schema,
             Schema::new(vec![
@@ -315,15 +315,15 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_json_schema_local_nulls() -> DaftResult<()> {
+    #[tokio::test]
+    async fn test_json_schema_local_nulls() -> DaftResult<()> {
         let file = format!("{}/test/iris_tiny_nulls.jsonl", env!("CARGO_MANIFEST_DIR"),);
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let schema = read_json_schema(file.as_ref(), None, None, io_client, None)?;
+        let schema = read_json_schema(file.as_ref(), None, None, io_client, None).await?;
         assert_eq!(
             schema,
             Schema::new(vec![
@@ -338,8 +338,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_json_schema_local_conflicting_types_utf8_fallback() -> DaftResult<()> {
+    #[tokio::test]
+    async fn test_json_schema_local_conflicting_types_utf8_fallback() -> DaftResult<()> {
         let file = format!(
             "{}/test/iris_tiny_conflicting_dtypes.jsonl",
             env!("CARGO_MANIFEST_DIR"),
@@ -349,7 +349,7 @@ mod tests {
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let schema = read_json_schema(file.as_ref(), None, None, io_client, None)?;
+        let schema = read_json_schema(file.as_ref(), None, None, io_client, None).await?;
         assert_eq!(
             schema,
             Schema::new(vec![
@@ -366,15 +366,15 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_json_schema_local_max_bytes() -> DaftResult<()> {
+    #[tokio::test]
+    async fn test_json_schema_local_max_bytes() -> DaftResult<()> {
         let file = format!("{}/test/iris_tiny.jsonl", env!("CARGO_MANIFEST_DIR"),);
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let schema = read_json_schema(file.as_ref(), None, Some(100), io_client, None)?;
+        let schema = read_json_schema(file.as_ref(), None, Some(100), io_client, None).await?;
         assert_eq!(
             schema,
             Schema::new(vec![
@@ -390,7 +390,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_json_schema_s3(
+    #[tokio::test]
+    async fn test_json_schema_s3(
         #[values(
                 // Uncompressed
                 None,
@@ -423,7 +424,7 @@ mod tests {
         io_config.s3.anonymous = true;
         let io_client = Arc::new(IOClient::new(io_config.into())?);
 
-        let schema = read_json_schema(file.as_ref(), None, None, io_client, None)?;
+        let schema = read_json_schema(file.as_ref(), None, None, io_client, None).await?;
         assert_eq!(
             schema,
             Schema::new(vec![

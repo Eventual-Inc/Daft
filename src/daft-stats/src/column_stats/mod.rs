@@ -2,7 +2,10 @@ mod arithmetic;
 mod comparison;
 mod logical;
 
-use std::string::FromUtf8Error;
+use std::{
+    hash::{Hash, Hasher},
+    string::FromUtf8Error,
+};
 
 use daft_core::prelude::*;
 use snafu::{ResultExt, Snafu};
@@ -12,6 +15,24 @@ use crate::DaftCoreComputeSnafu;
 pub enum ColumnRangeStatistics {
     Missing,
     Loaded(Series, Series),
+}
+
+impl Hash for ColumnRangeStatistics {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            Self::Missing => (),
+            Self::Loaded(l, u) => {
+                let lower_hashes = l
+                    .hash(None)
+                    .expect("Failed to hash lower column range statistics");
+                lower_hashes.into_iter().for_each(|h| h.hash(state));
+                let upper_hashes = u
+                    .hash(None)
+                    .expect("Failed to hash upper column range statistics");
+                upper_hashes.into_iter().for_each(|h| h.hash(state));
+            }
+        }
+    }
 }
 
 #[derive(PartialEq, Eq, Debug)]
@@ -60,7 +81,7 @@ impl ColumnRangeStatistics {
             DataType::Null |
 
             // Numeric types
-            DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 | DataType::Int128 |
+            DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 |
             DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 |
             DataType::Float32 | DataType::Float64 | DataType::Decimal128(..) | DataType::Boolean |
 
@@ -68,7 +89,7 @@ impl ColumnRangeStatistics {
             DataType::Utf8 | DataType::Binary | DataType::FixedSizeBinary(..) |
 
             // Temporal types
-            DataType::Date | DataType::Time(..) | DataType::Timestamp(..) | DataType::Duration(..) => true,
+            DataType::Date | DataType::Time(..) | DataType::Timestamp(..) | DataType::Duration(..) | DataType::Interval => true,
 
             // UNSUPPORTED TYPES:
             // Types that don't support comparisons and can't be used as ColumnRangeStatistics

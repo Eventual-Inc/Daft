@@ -21,7 +21,7 @@ impl ScalarUDF for ListSort {
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
         match inputs {
-            [data, desc] => match (data.to_field(schema), desc.to_field(schema)) {
+            [data, desc, _nulls_first] => match (data.to_field(schema), desc.to_field(schema)) {
                 (Ok(field), Ok(desc_field)) => match (&field.dtype, &desc_field.dtype) {
                     (
                         l @ (DataType::List(_) | DataType::FixedSizeList(_, _)),
@@ -34,7 +34,7 @@ impl ScalarUDF for ListSort {
                 (Err(e), _) | (_, Err(e)) => Err(e),
             },
             _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 2 input args, got {}",
+                "Expected 3 input args, got {}",
                 inputs.len()
             ))),
         }
@@ -42,9 +42,9 @@ impl ScalarUDF for ListSort {
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
         match inputs {
-            [data, desc] => data.list_sort(desc),
+            [data, desc, nulls_first] => data.list_sort(desc, nulls_first),
             _ => Err(DaftError::ValueError(format!(
-                "Expected 2 input args, got {}",
+                "Expected 3 input args, got {}",
                 inputs.len()
             ))),
         }
@@ -52,20 +52,8 @@ impl ScalarUDF for ListSort {
 }
 
 #[must_use]
-pub fn list_sort(input: ExprRef, desc: Option<ExprRef>) -> ExprRef {
+pub fn list_sort(input: ExprRef, desc: Option<ExprRef>, nulls_first: Option<ExprRef>) -> ExprRef {
     let desc = desc.unwrap_or_else(|| lit(false));
-    ScalarFunction::new(ListSort {}, vec![input, desc]).into()
-}
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "list_sort")]
-pub fn py_list_sort(expr: PyExpr, desc: PyExpr) -> PyResult<PyExpr> {
-    Ok(list_sort(expr.into(), Some(desc.into())).into())
+    let nulls_first = nulls_first.unwrap_or_else(|| desc.clone());
+    ScalarFunction::new(ListSort {}, vec![input, desc, nulls_first]).into()
 }

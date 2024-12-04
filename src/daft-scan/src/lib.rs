@@ -1,21 +1,18 @@
 #![feature(if_let_guard)]
 #![feature(let_chains)]
 use std::{
+    any::Any,
     borrow::Cow,
-    fmt::{Debug, Display},
+    fmt::Debug,
     hash::{Hash, Hasher},
     sync::Arc,
 };
 
 use common_display::DisplayAs;
-use common_error::{DaftError, DaftResult};
+use common_error::DaftError;
 use common_file_formats::FileFormatConfig;
-use daft_dsl::ExprRef;
-use daft_schema::{
-    dtype::DataType,
-    field::Field,
-    schema::{Schema, SchemaRef},
-};
+use common_scan_info::{Pushdowns, ScanTaskLike, ScanTaskLikeRef};
+use daft_schema::schema::{Schema, SchemaRef};
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
 use itertools::Itertools;
 use parquet2::metadata::FileMetaData;
@@ -24,7 +21,9 @@ use serde::{Deserialize, Serialize};
 mod anonymous;
 pub use anonymous::AnonymousScanOperator;
 pub mod glob;
+mod hive;
 use common_daft_config::DaftExecutionConfig;
+pub mod builder;
 pub mod scan_task_iters;
 
 #[cfg(feature = "python")]
@@ -36,8 +35,6 @@ use pyo3::PyErr;
 pub use python::register_modules;
 use snafu::Snafu;
 use storage_config::StorageConfig;
-mod expr_rewriter;
-pub use expr_rewriter::{rewrite_predicate_for_partitioning, PredicateGroups};
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[cfg(feature = "python")]
@@ -71,9 +68,9 @@ pub enum Error {
         fpc1,
         fpc2
     ))]
-    DifferingFilePathColumnsInScanTaskMerge {
-        fpc1: Option<String>,
-        fpc2: Option<String>,
+    DifferingGeneratedFieldsInScanTaskMerge {
+        fpc1: Option<SchemaRef>,
+        fpc2: Option<SchemaRef>,
     },
 
     #[snafu(display(
@@ -109,7 +106,7 @@ impl From<Error> for pyo3::PyErr {
 }
 
 /// Specification of a subset of a file to be read.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum ChunkSpec {
     /// Selection of Parquet row groups.
     Parquet(Vec<i64>),
@@ -156,6 +153,63 @@ pub enum DataSource {
         statistics: Option<TableStatistics>,
         partition_spec: Option<PartitionSpec>,
     },
+}
+
+impl Hash for DataSource {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        // Hash everything except for cached parquet metadata.
+        match self {
+            Self::File {
+                path,
+                chunk_spec,
+                size_bytes,
+                iceberg_delete_files,
+                metadata,
+                partition_spec,
+                statistics,
+                ..
+            } => {
+                path.hash(state);
+                if let Some(chunk_spec) = chunk_spec {
+                    chunk_spec.hash(state);
+                }
+                size_bytes.hash(state);
+                iceberg_delete_files.hash(state);
+                metadata.hash(state);
+                partition_spec.hash(state);
+                statistics.hash(state);
+            }
+            Self::Database {
+                path,
+                size_bytes,
+                metadata,
+                statistics,
+            } => {
+                path.hash(state);
+                size_bytes.hash(state);
+                metadata.hash(state);
+                statistics.hash(state);
+            }
+            #[cfg(feature = "python")]
+            Self::PythonFactoryFunction {
+                module,
+                func_name,
+                func_args,
+                size_bytes,
+                metadata,
+                statistics,
+                partition_spec,
+            } => {
+                module.hash(state);
+                func_name.hash(state);
+                func_args.hash(state);
+                size_bytes.hash(state);
+                metadata.hash(state);
+                statistics.hash(state);
+                partition_spec.hash(state);
+            }
+        }
+    }
 }
 
 impl DataSource {
@@ -358,7 +412,7 @@ impl DisplayAs for DataSource {
     }
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize, Hash)]
 pub struct ScanTask {
     pub sources: Vec<DataSource>,
 
@@ -377,8 +431,73 @@ pub struct ScanTask {
     pub size_bytes_on_disk: Option<u64>,
     pub metadata: Option<TableMetadata>,
     pub statistics: Option<TableStatistics>,
-    pub file_path_column: Option<String>,
+    pub generated_fields: Option<SchemaRef>,
 }
+
+#[typetag::serde]
+impl ScanTaskLike for ScanTask {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self
+    }
+
+    fn dyn_eq(&self, other: &dyn ScanTaskLike) -> bool {
+        other
+            .as_any()
+            .downcast_ref::<Self>()
+            .map_or(false, |a| a == self)
+    }
+
+    fn dyn_hash(&self, mut state: &mut dyn Hasher) {
+        self.hash(&mut state);
+    }
+
+    fn materialized_schema(&self) -> SchemaRef {
+        self.materialized_schema()
+    }
+
+    fn num_rows(&self) -> Option<usize> {
+        self.num_rows()
+    }
+
+    fn approx_num_rows(&self, config: Option<&DaftExecutionConfig>) -> Option<f64> {
+        self.approx_num_rows(config)
+    }
+
+    fn upper_bound_rows(&self) -> Option<usize> {
+        self.upper_bound_rows()
+    }
+
+    fn size_bytes_on_disk(&self) -> Option<usize> {
+        self.size_bytes_on_disk()
+    }
+
+    fn estimate_in_memory_size_bytes(&self, config: Option<&DaftExecutionConfig>) -> Option<usize> {
+        self.estimate_in_memory_size_bytes(config)
+    }
+
+    fn file_format_config(&self) -> Arc<FileFormatConfig> {
+        self.file_format_config.clone()
+    }
+
+    fn pushdowns(&self) -> &Pushdowns {
+        &self.pushdowns
+    }
+
+    fn schema(&self) -> SchemaRef {
+        self.schema.clone()
+    }
+}
+
+impl From<ScanTask> for ScanTaskLikeRef {
+    fn from(task: ScanTask) -> Self {
+        Arc::new(task)
+    }
+}
+
 pub type ScanTaskRef = Arc<ScanTask>;
 
 impl ScanTask {
@@ -389,7 +508,7 @@ impl ScanTask {
         schema: SchemaRef,
         storage_config: Arc<StorageConfig>,
         pushdowns: Pushdowns,
-        file_path_column: Option<String>,
+        generated_fields: Option<SchemaRef>,
     ) -> Self {
         assert!(!sources.is_empty());
         debug_assert!(
@@ -430,7 +549,7 @@ impl ScanTask {
             size_bytes_on_disk,
             metadata,
             statistics,
-            file_path_column,
+            generated_fields,
         }
     }
 
@@ -465,10 +584,10 @@ impl ScanTask {
                 p2: sc2.pushdowns.clone(),
             });
         }
-        if sc1.file_path_column != sc2.file_path_column {
-            return Err(Error::DifferingFilePathColumnsInScanTaskMerge {
-                fpc1: sc1.file_path_column.clone(),
-                fpc2: sc2.file_path_column.clone(),
+        if sc1.generated_fields != sc2.generated_fields {
+            return Err(Error::DifferingGeneratedFieldsInScanTaskMerge {
+                fpc1: sc1.generated_fields.clone(),
+                fpc2: sc2.generated_fields.clone(),
             });
         }
         Ok(Self::new(
@@ -481,46 +600,34 @@ impl ScanTask {
             sc1.schema.clone(),
             sc1.storage_config.clone(),
             sc1.pushdowns.clone(),
-            sc1.file_path_column.clone(),
+            sc1.generated_fields.clone(),
         ))
     }
 
     #[must_use]
     pub fn materialized_schema(&self) -> SchemaRef {
-        match (&self.pushdowns.columns, &self.file_path_column) {
+        match (&self.generated_fields, &self.pushdowns.columns) {
             (None, None) => self.schema.clone(),
-            (Some(columns), file_path_column_opt) => {
-                let filtered_fields = self
-                    .schema
-                    .fields
-                    .clone()
-                    .into_iter()
-                    .filter(|(name, _)| columns.contains(name));
-
-                let fields = match file_path_column_opt {
-                    Some(file_path_column) => filtered_fields
-                        .chain(std::iter::once((
-                            file_path_column.to_string(),
-                            Field::new(file_path_column.to_string(), DataType::Utf8),
-                        )))
-                        .collect(),
-                    None => filtered_fields.collect(),
-                };
-
+            _ => {
+                let mut fields = self.schema.fields.clone();
+                // Extend the schema with generated fields.
+                if let Some(generated_fields) = &self.generated_fields {
+                    fields.extend(
+                        generated_fields
+                            .fields
+                            .iter()
+                            .map(|(name, field)| (name.clone(), field.clone())),
+                    );
+                }
+                // Filter the schema based on the pushdown column filters.
+                if let Some(columns) = &self.pushdowns.columns {
+                    fields = fields
+                        .into_iter()
+                        .filter(|(name, _)| columns.contains(name))
+                        .collect();
+                }
                 Arc::new(Schema { fields })
             }
-            (None, Some(file_path_column)) => Arc::new(Schema {
-                fields: self
-                    .schema
-                    .fields
-                    .clone()
-                    .into_iter()
-                    .chain(std::iter::once((
-                        file_path_column.to_string(),
-                        Field::new(file_path_column.to_string(), DataType::Utf8),
-                    )))
-                    .collect(),
-            }),
         }
     }
 
@@ -723,313 +830,6 @@ Pushdowns = {pushdowns}
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct PartitionField {
-    field: Field,
-    source_field: Option<Field>,
-    transform: Option<PartitionTransform>,
-}
-
-impl PartitionField {
-    pub fn new(
-        field: Field,
-        source_field: Option<Field>,
-        transform: Option<PartitionTransform>,
-    ) -> DaftResult<Self> {
-        match (&source_field, &transform) {
-            (Some(_), Some(_)) => {
-                // TODO ADD VALIDATION OF TRANSFORM based on types
-                Ok(Self {
-                    field,
-                    source_field,
-                    transform,
-                })
-            }
-            (None, Some(tfm)) => Err(DaftError::ValueError(format!(
-                "transform set in PartitionField: {tfm} but source_field not set"
-            ))),
-            _ => Ok(Self {
-                field,
-                source_field,
-                transform,
-            }),
-        }
-    }
-}
-
-impl Display for PartitionField {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(tfm) = &self.transform {
-            write!(
-                f,
-                "PartitionField({}, src={}, tfm={})",
-                self.field,
-                self.source_field.as_ref().unwrap(),
-                tfm
-            )
-        } else {
-            write!(f, "PartitionField({})", self.field)
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub enum PartitionTransform {
-    /// https://iceberg.apache.org/spec/#partitioning
-    /// For Delta, Hudi and Hive, it should always be `Identity`.
-    Identity,
-    IcebergBucket(u64),
-    IcebergTruncate(u64),
-    Year,
-    Month,
-    Day,
-    Hour,
-    Void,
-}
-
-impl PartitionTransform {
-    #[must_use]
-    pub fn supports_equals(&self) -> bool {
-        true
-    }
-
-    #[must_use]
-    pub fn supports_not_equals(&self) -> bool {
-        matches!(self, Self::Identity)
-    }
-
-    #[must_use]
-    pub fn supports_comparison(&self) -> bool {
-        use PartitionTransform::{Day, Hour, IcebergTruncate, Identity, Month, Year};
-        matches!(
-            self,
-            Identity | IcebergTruncate(_) | Year | Month | Day | Hour
-        )
-    }
-}
-
-impl Display for PartitionTransform {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{self:?}")
-    }
-}
-
-pub trait ScanOperator: Send + Sync + Debug {
-    fn schema(&self) -> SchemaRef;
-    fn partitioning_keys(&self) -> &[PartitionField];
-    fn file_path_column(&self) -> Option<&str>;
-
-    fn can_absorb_filter(&self) -> bool;
-    fn can_absorb_select(&self) -> bool;
-    fn can_absorb_limit(&self) -> bool;
-    fn multiline_display(&self) -> Vec<String>;
-    fn to_scan_tasks(
-        &self,
-        pushdowns: Pushdowns,
-    ) -> DaftResult<Box<dyn Iterator<Item = DaftResult<ScanTaskRef>>>>;
-}
-
-impl Display for dyn ScanOperator {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.multiline_display().join("\n"))
-    }
-}
-
-/// Light transparent wrapper around an Arc<dyn ScanOperator> that implements Eq/PartialEq/Hash
-/// functionality to be performed on the **pointer** instead of on the value in the pointer.
-///
-/// This lets us get around having to implement full hashing/equality on [`ScanOperator`]`, which
-/// is difficult because we sometimes have weird Python implementations that can be hard to check.
-///
-/// [`ScanOperatorRef`] should be thus held by structs that need to check the "sameness" of the
-/// underlying ScanOperator instance, for example in the Scan nodes in a logical plan which need
-/// to check for sameness of Scan nodes during plan optimization.
-#[derive(Debug, Clone)]
-pub struct ScanOperatorRef(pub Arc<dyn ScanOperator>);
-
-impl Hash for ScanOperatorRef {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        Arc::as_ptr(&self.0).hash(state);
-    }
-}
-
-impl PartialEq<Self> for ScanOperatorRef {
-    fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0)
-    }
-}
-
-impl std::cmp::Eq for ScanOperatorRef {}
-
-impl Display for ScanOperatorRef {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Display::fmt(&self.0, f)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct PhysicalScanInfo {
-    pub scan_op: ScanOperatorRef,
-    pub source_schema: SchemaRef,
-    pub partitioning_keys: Vec<PartitionField>,
-    pub pushdowns: Pushdowns,
-}
-
-impl PhysicalScanInfo {
-    #[must_use]
-    pub fn new(
-        scan_op: ScanOperatorRef,
-        source_schema: SchemaRef,
-        partitioning_keys: Vec<PartitionField>,
-        pushdowns: Pushdowns,
-    ) -> Self {
-        Self {
-            scan_op,
-            source_schema,
-            partitioning_keys,
-            pushdowns,
-        }
-    }
-
-    #[must_use]
-    pub fn with_pushdowns(&self, pushdowns: Pushdowns) -> Self {
-        Self {
-            scan_op: self.scan_op.clone(),
-            source_schema: self.source_schema.clone(),
-            partitioning_keys: self.partitioning_keys.clone(),
-            pushdowns,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct Pushdowns {
-    /// Optional filters to apply to the source data.
-    pub filters: Option<ExprRef>,
-    /// Optional filters to apply on partitioning keys.
-    pub partition_filters: Option<ExprRef>,
-    /// Optional columns to select from the source data.
-    pub columns: Option<Arc<Vec<String>>>,
-    /// Optional number of rows to read.
-    pub limit: Option<usize>,
-}
-
-impl Default for Pushdowns {
-    fn default() -> Self {
-        Self::new(None, None, None, None)
-    }
-}
-
-impl Pushdowns {
-    #[must_use]
-    pub fn new(
-        filters: Option<ExprRef>,
-        partition_filters: Option<ExprRef>,
-        columns: Option<Arc<Vec<String>>>,
-        limit: Option<usize>,
-    ) -> Self {
-        Self {
-            filters,
-            partition_filters,
-            columns,
-            limit,
-        }
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.filters.is_none()
-            && self.partition_filters.is_none()
-            && self.columns.is_none()
-            && self.limit.is_none()
-    }
-
-    #[must_use]
-    pub fn with_limit(&self, limit: Option<usize>) -> Self {
-        Self {
-            filters: self.filters.clone(),
-            partition_filters: self.partition_filters.clone(),
-            columns: self.columns.clone(),
-            limit,
-        }
-    }
-
-    #[must_use]
-    pub fn with_filters(&self, filters: Option<ExprRef>) -> Self {
-        Self {
-            filters,
-            partition_filters: self.partition_filters.clone(),
-            columns: self.columns.clone(),
-            limit: self.limit,
-        }
-    }
-
-    #[must_use]
-    pub fn with_partition_filters(&self, partition_filters: Option<ExprRef>) -> Self {
-        Self {
-            filters: self.filters.clone(),
-            partition_filters,
-            columns: self.columns.clone(),
-            limit: self.limit,
-        }
-    }
-
-    #[must_use]
-    pub fn with_columns(&self, columns: Option<Arc<Vec<String>>>) -> Self {
-        Self {
-            filters: self.filters.clone(),
-            partition_filters: self.partition_filters.clone(),
-            columns,
-            limit: self.limit,
-        }
-    }
-
-    #[must_use]
-    pub fn multiline_display(&self) -> Vec<String> {
-        let mut res = vec![];
-        if let Some(columns) = &self.columns {
-            res.push(format!("Projection pushdown = [{}]", columns.join(", ")));
-        }
-        if let Some(filters) = &self.filters {
-            res.push(format!("Filter pushdown = {filters}"));
-        }
-        if let Some(pfilters) = &self.partition_filters {
-            res.push(format!("Partition Filter = {pfilters}"));
-        }
-        if let Some(limit) = self.limit {
-            res.push(format!("Limit pushdown = {limit}"));
-        }
-        res
-    }
-}
-impl DisplayAs for Pushdowns {
-    fn display_as(&self, level: common_display::DisplayLevel) -> String {
-        match level {
-            common_display::DisplayLevel::Compact => {
-                let mut s = String::new();
-                s.push_str("Pushdowns: {");
-                let mut sub_items = vec![];
-                if let Some(columns) = &self.columns {
-                    sub_items.push(format!("projection: [{}]", columns.join(", ")));
-                }
-                if let Some(filters) = &self.filters {
-                    sub_items.push(format!("filter: {filters}"));
-                }
-                if let Some(pfilters) = &self.partition_filters {
-                    sub_items.push(format!("partition_filter: {pfilters}"));
-                }
-                if let Some(limit) = self.limit {
-                    sub_items.push(format!("limit: {limit}"));
-                }
-                s.push_str(&sub_items.join(", "));
-                s.push('}');
-                s
-            }
-            _ => self.multiline_display().join("\n"),
-        }
-    }
-}
-
 #[cfg(test)]
 mod test {
     use std::sync::Arc;
@@ -1037,13 +837,14 @@ mod test {
     use common_display::{DisplayAs, DisplayLevel};
     use common_error::DaftResult;
     use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
+    use common_scan_info::{Pushdowns, ScanOperator};
     use daft_schema::{schema::Schema, time_unit::TimeUnit};
     use itertools::Itertools;
 
     use crate::{
         glob::GlobScanOperator,
         storage_config::{NativeStorageConfig, StorageConfig},
-        DataSource, Pushdowns, ScanOperator, ScanTask,
+        DataSource, ScanTask,
     };
 
     fn make_scan_task(num_sources: usize) -> ScanTask {
@@ -1079,7 +880,7 @@ mod test {
         )
     }
 
-    fn make_glob_scan_operator(num_sources: usize) -> GlobScanOperator {
+    async fn make_glob_scan_operator(num_sources: usize) -> GlobScanOperator {
         let file_format_config: FileFormatConfig = FileFormatConfig::Parquet(ParquetSourceConfig {
             coerce_int96_timestamp_unit: TimeUnit::Seconds,
             field_id_mapping: None,
@@ -1102,15 +903,17 @@ mod test {
             false,
             Some(Arc::new(Schema::empty())),
             None,
+            false,
         )
+        .await
         .unwrap();
 
         glob_scan_operator
     }
 
-    #[test]
-    fn test_glob_display_condenses() -> DaftResult<()> {
-        let glob_scan_operator: GlobScanOperator = make_glob_scan_operator(8);
+    #[tokio::test]
+    async fn test_glob_display_condenses() -> DaftResult<()> {
+        let glob_scan_operator: GlobScanOperator = make_glob_scan_operator(8).await;
         let condensed_glob_paths: Vec<String> = glob_scan_operator.multiline_display();
         assert_eq!(condensed_glob_paths[1], "Glob paths = [../../tests/assets/parquet-data/mvp.parquet, ../../tests/assets/parquet-data/mvp.parquet, ../../tests/assets/parquet-data/mvp.parquet, ..., ../../tests/assets/parquet-data/mvp.parquet, ../../tests/assets/parquet-data/mvp.parquet, ../../tests/assets/parquet-data/mvp.parquet]");
         Ok(())

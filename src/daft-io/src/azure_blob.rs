@@ -10,6 +10,7 @@ use azure_storage_blobs::{
     prelude::*,
 };
 use common_io_config::AzureConfig;
+use derive_builder::Builder;
 use futures::{stream::BoxStream, StreamExt, TryStreamExt};
 use snafu::{IntoError, ResultExt, Snafu};
 
@@ -66,9 +67,21 @@ enum Error {
     NotAFile { path: String },
 }
 
+#[derive(Builder)]
+#[builder(setter(into))]
+struct ParsedAzureUri {
+    pub protocol: String,
+    #[builder(setter(strip_option), default)]
+    pub account_name: Option<String>,
+    #[builder(setter(strip_option), default)]
+    pub container_and_key: Option<(String, String)>,
+}
+
 /// Parse an Azure URI into its components.
-/// Returns (protocol, (container, key) if exists).
-fn parse_azure_uri(uri: &str) -> super::Result<(String, Option<(String, String)>)> {
+/// Returns (protocol, (container, key) if exists, storage account if exists).
+fn parse_azure_uri(uri: &str) -> super::Result<ParsedAzureUri> {
+    let mut builder = ParsedAzureUriBuilder::default();
+
     let uri = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
 
     // "Container" is Azure's name for Bucket.
@@ -81,27 +94,33 @@ fn parse_azure_uri(uri: &str) -> super::Result<(String, Option<(String, String)>
     // It also supports PROTOCOL://account.dfs.core.windows.net/container/path-part/file
     // but it is not documented
     // https://github.com/fsspec/adlfs/blob/5c24b2e886fc8e068a313819ce3db9b7077c27e3/adlfs/spec.py#L364
-    let username = uri.username();
-    let container_and_key = if username.is_empty() {
-        match uri.host_str() {
-            Some(host) if host.ends_with(AZURE_STORE_SUFFIX) => uri
-                .path()
-                .split_once('/')
-                .map(|(c, k)| (c.into(), k.into())),
-            Some(host) => Some((host.into(), uri.path().into())),
-            None => None,
+    if let Some(host) = uri.host_str() {
+        if host.ends_with(AZURE_STORE_SUFFIX) {
+            match uri.username() {
+                "" => {
+                    if let Some((container, key)) = uri.path().split_once('/') {
+                        builder.container_and_key((container.into(), key.into()));
+                    }
+                }
+                username => {
+                    builder.container_and_key((username.into(), uri.path().into()));
+                }
+            }
+
+            let account_name_len = host.len() - AZURE_STORE_SUFFIX.len();
+            builder.account_name(&host[..account_name_len]);
+        } else {
+            builder.container_and_key((host.into(), uri.path().into()));
         }
-    } else {
-        Some((username.into(), uri.path().into()))
-    };
+    }
 
     // fsspec supports multiple URI protocol strings for Azure: az:// and abfs://.
     // NB: It's unclear if there is a semantic difference between the protocols
     // or if there is a standard for the behaviour either;
     // here, we will treat them both the same, but persist whichever protocol string was used.
-    let protocol = uri.scheme();
+    builder.protocol(uri.scheme());
 
-    Ok((protocol.into(), container_and_key))
+    Ok(builder.build().unwrap())
 }
 
 impl From<Error> for super::Error {
@@ -143,8 +162,12 @@ pub struct AzureBlobSource {
 }
 
 impl AzureBlobSource {
-    pub async fn get_client(config: &AzureConfig) -> super::Result<Arc<Self>> {
-        let storage_account = if let Some(storage_account) = &config.storage_account {
+    pub async fn get_client(config: &AzureConfig, uri: &str) -> super::Result<Arc<Self>> {
+        let parsed_uri = parse_azure_uri(uri)?;
+
+        let storage_account = if let Some(account_name) = parsed_uri.account_name {
+            account_name
+        } else if let Some(storage_account) = &config.storage_account {
             storage_account.clone()
         } else if let Ok(storage_account) = std::env::var("AZURE_STORAGE_ACCOUNT") {
             storage_account
@@ -498,11 +521,13 @@ impl ObjectSource for AzureBlobSource {
         range: Option<Range<usize>>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
-        let (_, container_and_key) = parse_azure_uri(uri)?;
-        let (container, key) = container_and_key.ok_or_else(|| Error::InvalidUrl {
-            path: uri.into(),
-            source: url::ParseError::EmptyHost,
-        })?;
+        let parsed_uri = parse_azure_uri(uri)?;
+        let (container, key) = parsed_uri
+            .container_and_key
+            .ok_or_else(|| Error::InvalidUrl {
+                path: uri.into(),
+                source: url::ParseError::EmptyHost,
+            })?;
 
         if key.is_empty() {
             return Err(Error::NotAFile { path: uri.into() }.into());
@@ -549,11 +574,13 @@ impl ObjectSource for AzureBlobSource {
     }
 
     async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<usize> {
-        let (_, container_and_key) = parse_azure_uri(uri)?;
-        let (container, key) = container_and_key.ok_or_else(|| Error::InvalidUrl {
-            path: uri.into(),
-            source: url::ParseError::EmptyHost,
-        })?;
+        let parsed_uri = parse_azure_uri(uri)?;
+        let (container, key) = parsed_uri
+            .container_and_key
+            .ok_or_else(|| Error::InvalidUrl {
+                path: uri.into(),
+                source: url::ParseError::EmptyHost,
+            })?;
 
         if key.is_empty() {
             return Err(Error::NotAFile { path: uri.into() }.into());
@@ -604,17 +631,17 @@ impl ObjectSource for AzureBlobSource {
         _page_size: Option<i32>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
-        let (protocol, container_and_key) = parse_azure_uri(uri)?;
+        let parsed_uri = parse_azure_uri(uri)?;
 
-        match container_and_key {
+        match parsed_uri.container_and_key {
             // List containers.
             None => Ok(self
-                .list_containers_stream(protocol.as_str(), io_stats)
+                .list_containers_stream(parsed_uri.protocol.as_str(), io_stats)
                 .await),
             // List a path within a container.
             Some((container_name, key)) => Ok(self
                 .list_directory_stream(
-                    protocol.as_str(),
+                    parsed_uri.protocol.as_str(),
                     container_name.as_str(),
                     key.as_str(),
                     posix,

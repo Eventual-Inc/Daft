@@ -14,12 +14,19 @@ struct ArrowTableEntry(Vec<Box<dyn arrow2::array::Array>>);
 
 pub fn make_probeable_builder(
     schema: SchemaRef,
+    nulls_equal_aware: Option<&Vec<bool>>,
     track_indices: bool,
 ) -> DaftResult<Box<dyn ProbeableBuilder>> {
     if track_indices {
-        Ok(Box::new(ProbeTableBuilder(ProbeTable::new(schema)?)))
+        Ok(Box::new(ProbeTableBuilder(ProbeTable::new(
+            schema,
+            nulls_equal_aware,
+        )?)))
     } else {
-        Ok(Box::new(ProbeSetBuilder(ProbeSet::new(schema)?)))
+        Ok(Box::new(ProbeSetBuilder(ProbeSet::new(
+            schema,
+            nulls_equal_aware,
+        )?)))
     }
 }
 
@@ -76,4 +83,24 @@ pub trait Probeable: Send + Sync {
         &'a self,
         table: &'a Table,
     ) -> DaftResult<Box<dyn Iterator<Item = bool> + 'a>>;
+}
+
+#[derive(Clone)]
+pub struct ProbeState {
+    probeable: Arc<dyn Probeable>,
+    tables: Arc<Vec<Table>>,
+}
+
+impl ProbeState {
+    pub fn new(probeable: Arc<dyn Probeable>, tables: Arc<Vec<Table>>) -> Self {
+        Self { probeable, tables }
+    }
+
+    pub fn get_probeable(&self) -> &Arc<dyn Probeable> {
+        &self.probeable
+    }
+
+    pub fn get_tables(&self) -> &Arc<Vec<Table>> {
+        &self.tables
+    }
 }

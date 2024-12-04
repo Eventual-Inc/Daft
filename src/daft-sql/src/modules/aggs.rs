@@ -16,7 +16,7 @@ pub struct SQLModuleAggs;
 
 impl SQLModule for SQLModuleAggs {
     fn register(parent: &mut SQLFunctions) {
-        use AggExpr::{Count, Max, Mean, Min, Sum};
+        use AggExpr::{Count, Max, Mean, Min, Stddev, Sum};
         // HACK TO USE AggExpr as an enum rather than a
         let nil = Arc::new(Expr::Literal(LiteralValue::Null));
         parent.add_fn(
@@ -27,7 +27,9 @@ impl SQLModule for SQLModuleAggs {
         parent.add_fn("avg", Mean(nil.clone()));
         parent.add_fn("mean", Mean(nil.clone()));
         parent.add_fn("min", Min(nil.clone()));
-        parent.add_fn("max", Max(nil));
+        parent.add_fn("max", Max(nil.clone()));
+        parent.add_fn("stddev", Stddev(nil.clone()));
+        parent.add_fn("stddev_samp", Stddev(nil));
     }
 }
 
@@ -49,15 +51,19 @@ impl SQLFunction for AggExpr {
             Self::Mean(_) => static_docs::AVG_DOCSTRING.replace("{}", alias),
             Self::Min(_) => static_docs::MIN_DOCSTRING.to_string(),
             Self::Max(_) => static_docs::MAX_DOCSTRING.to_string(),
+            Self::Stddev(_) => static_docs::STDDEV_DOCSTRING.to_string(),
             e => unimplemented!("Need to implement docstrings for {e}"),
         }
     }
 
     fn arg_names(&self) -> &'static [&'static str] {
         match self {
-            Self::Count(_, _) | Self::Sum(_) | Self::Mean(_) | Self::Min(_) | Self::Max(_) => {
-                &["input"]
-            }
+            Self::Count(_, _)
+            | Self::Sum(_)
+            | Self::Mean(_)
+            | Self::Min(_)
+            | Self::Max(_)
+            | Self::Stddev(_) => &["input"],
             e => unimplemented!("Need to implement arg names for {e}"),
         }
     }
@@ -76,7 +82,7 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
         },
         [FunctionArg::Unnamed(FunctionArgExpr::QualifiedWildcard(name))] => {
             match planner.relation_opt() {
-                Some(rel) if name.to_string() == rel.name => {
+                Some(rel) if name.to_string() == rel.get_name() => {
                     let schema = rel.schema();
                     col(schema.fields[0].name.clone())
                         .count(daft_core::count_mode::CountMode::All)
@@ -97,6 +103,7 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
 pub fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
     match expr {
         AggExpr::Count(_, _) => unreachable!("count should be handled by by this point"),
+        AggExpr::CountDistinct(..) => unsupported_sql_err!("COUNT(distinct ..)"),
         AggExpr::Sum(_) => {
             ensure!(args.len() == 1, "sum takes exactly one argument");
             Ok(args[0].clone().sum())
@@ -323,5 +330,43 @@ Example:
     ╞═══════╡
     │ 200   │
     ╰───────╯
+    (Showing first 1 of 1 rows)";
+
+    pub(crate) const STDDEV_DOCSTRING: &str =
+        "Calculates the standard deviation of non-null elements in the input expression.
+
+Example:
+
+.. code-block:: sql
+    :caption: SQL
+
+    SELECT stddev(x) FROM tbl
+
+.. code-block:: text
+    :caption: Input
+
+    ╭───────╮
+    │ x     │
+    │ ---   │
+    │ Int64 │
+    ╞═══════╡
+    │ 100   │
+    ├╌╌╌╌╌╌╌┤
+    │ 200   │
+    ├╌╌╌╌╌╌╌┤
+    │ null  │
+    ╰───────╯
+    (Showing first 3 of 3 rows)
+
+.. code-block:: text
+    :caption: Output
+
+    ╭──────────────╮
+    │ x            │
+    │ ---          │
+    │ Float64      │
+    ╞══════════════╡
+    │ 70.710678118 │
+    ╰──────────────╯
     (Showing first 1 of 1 rows)";
 }

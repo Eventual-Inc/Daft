@@ -8,6 +8,7 @@ use std::{
 use common_error::{DaftError, DaftResult};
 use common_hashable_float_wrapper::FloatWrapper;
 use daft_core::{
+    datatypes::IntervalValue,
     prelude::*,
     utils::display::{
         display_date32, display_decimal128, display_duration, display_series_literal,
@@ -62,6 +63,8 @@ pub enum LiteralValue {
     Time(i64, TimeUnit),
     /// An [`i64`] representing a measure of elapsed time. This elapsed time is a physical duration (i.e. 1s as defined in S.I.)
     Duration(i64, TimeUnit),
+    /// Interval: relative elapsed time measured in (months, days, nanoseconds)
+    Interval(IntervalValue),
     /// A 64-bit floating point number.
     Float64(f64),
     /// An [`i128`] representing a decimal number with the provided precision and scale.
@@ -102,6 +105,9 @@ impl Hash for LiteralValue {
             Self::Duration(n, tu) => {
                 n.hash(state);
                 tu.hash(state);
+            }
+            Self::Interval(n) => {
+                n.hash(state);
             }
             // Wrap float64 in hashable newtype.
             Self::Float64(n) => FloatWrapper(*n).hash(state),
@@ -149,6 +155,7 @@ impl Display for LiteralValue {
             Self::Decimal(val, precision, scale) => {
                 write!(f, "{}", display_decimal128(*val, *precision, *scale))
             }
+            Self::Interval(value) => write!(f, "{value}"),
             Self::Series(series) => write!(f, "{}", display_series_literal(series)),
             #[cfg(feature = "python")]
             Self::Python(pyobj) => write!(f, "PyObject({})", {
@@ -189,6 +196,7 @@ impl LiteralValue {
             Self::Decimal(_, precision, scale) => {
                 DataType::Decimal128(*precision as usize, *scale as usize)
             }
+            Self::Interval(_) => DataType::Interval,
             Self::Series(series) => series.data_type().clone(),
             #[cfg(feature = "python")]
             Self::Python(_) => DataType::Python,
@@ -224,10 +232,16 @@ impl LiteralValue {
                 let physical = Int64Array::from(("literal", [*val].as_slice()));
                 DurationArray::new(Field::new("literal", self.get_type()), physical).into_series()
             }
+            Self::Interval(val) => IntervalArray::from_values(
+                "literal",
+                std::iter::once((val.months, val.days, val.nanoseconds)),
+            )
+            .into_series(),
             Self::Float64(val) => Float64Array::from(("literal", [*val].as_slice())).into_series(),
-            Self::Decimal(val, ..) => {
-                let physical = Int128Array::from(("literal", [*val].as_slice()));
-                Decimal128Array::new(Field::new("literal", self.get_type()), physical).into_series()
+            Self::Decimal(val, p, s) => {
+                let dtype = DataType::Decimal128(*p as usize, *s as usize);
+                let field = Field::new("literal", dtype);
+                Decimal128Array::from_values_iter(field, std::iter::once(*val)).into_series()
             }
             Self::Series(series) => series.clone().rename("literal"),
             #[cfg(feature = "python")]
@@ -270,7 +284,8 @@ impl LiteralValue {
             | Self::Series(..)
             | Self::Time(..)
             | Self::Binary(..)
-            | Self::Duration(..) => display_sql_err,
+            | Self::Duration(..)
+            | Self::Interval(..) => display_sql_err,
             #[cfg(feature = "python")]
             Self::Python(..) => display_sql_err,
             Self::Struct(..) => display_sql_err,
@@ -351,6 +366,12 @@ pub trait Literal: Sized {
     fn literal_value(self) -> LiteralValue;
 }
 
+impl Literal for IntervalValue {
+    fn literal_value(self) -> LiteralValue {
+        LiteralValue::Interval(self)
+    }
+}
+
 impl Literal for String {
     fn literal_value(self) -> LiteralValue {
         LiteralValue::Utf8(self)
@@ -428,13 +449,18 @@ pub fn null_lit() -> ExprRef {
 pub fn literals_to_series(values: &[LiteralValue]) -> DaftResult<Series> {
     use daft_core::{datatypes::*, series::IntoSeries};
 
-    let dtype = values[0].get_type();
+    let first_non_null = values.iter().find(|v| !matches!(v, LiteralValue::Null));
+    let Some(first_non_null) = first_non_null else {
+        return Ok(Series::full_null("literal", &DataType::Null, values.len()));
+    };
 
-    // make sure all dtypes are the same
-    if !values
-        .windows(2)
-        .all(|w| w[0].get_type() == w[1].get_type())
-    {
+    let dtype = first_non_null.get_type();
+
+    // make sure all dtypes are the same, or null
+    if !values.windows(2).all(|w| {
+        w[0].get_type() == w[1].get_type()
+            || matches!(w, [LiteralValue::Null, _] | [_, LiteralValue::Null])
+    }) {
         return Err(DaftError::ValueError(format!(
             "All literals must have the same data type. Found: {:?}",
             values.iter().map(|lit| lit.get_type()).collect::<Vec<_>>()
@@ -444,7 +470,8 @@ pub fn literals_to_series(values: &[LiteralValue]) -> DaftResult<Series> {
     macro_rules! unwrap_unchecked {
         ($expr:expr, $variant:ident) => {
             match $expr {
-                LiteralValue::$variant(val, ..) => *val,
+                LiteralValue::$variant(val, ..) => Some(*val),
+                LiteralValue::Null => None,
                 _ => unreachable!("datatype is already checked"),
             }
         };
@@ -452,7 +479,8 @@ pub fn literals_to_series(values: &[LiteralValue]) -> DaftResult<Series> {
     macro_rules! unwrap_unchecked_ref {
         ($expr:expr, $variant:ident) => {
             match $expr {
-                LiteralValue::$variant(val) => val.clone(),
+                LiteralValue::$variant(val) => Some(val.clone()),
+                LiteralValue::Null => None,
                 _ => unreachable!("datatype is already checked"),
             }
         };
@@ -462,58 +490,65 @@ pub fn literals_to_series(values: &[LiteralValue]) -> DaftResult<Series> {
         DataType::Null => NullArray::full_null("literal", &dtype, values.len()).into_series(),
         DataType::Boolean => {
             let data = values.iter().map(|lit| unwrap_unchecked!(lit, Boolean));
-            BooleanArray::from_values("literal", data).into_series()
+            BooleanArray::from_iter("literal", data).into_series()
         }
         DataType::Utf8 => {
             let data = values.iter().map(|lit| unwrap_unchecked_ref!(lit, Utf8));
-            Utf8Array::from_values("literal", data).into_series()
+            Utf8Array::from_iter("literal", data).into_series()
         }
         DataType::Binary => {
             let data = values.iter().map(|lit| unwrap_unchecked_ref!(lit, Binary));
-            BinaryArray::from_values("literal", data).into_series()
+            BinaryArray::from_iter("literal", data).into_series()
         }
         DataType::Int32 => {
             let data = values.iter().map(|lit| unwrap_unchecked!(lit, Int32));
-            Int32Array::from_values("literal", data).into_series()
+            Int32Array::from_iter(Field::new("literal", DataType::Int32), data).into_series()
         }
         DataType::UInt32 => {
             let data = values.iter().map(|lit| unwrap_unchecked!(lit, UInt32));
-            UInt32Array::from_values("literal", data).into_series()
+            UInt32Array::from_iter(Field::new("literal", DataType::UInt32), data).into_series()
         }
         DataType::Int64 => {
             let data = values.iter().map(|lit| unwrap_unchecked!(lit, Int64));
-            Int64Array::from_values("literal", data).into_series()
+            Int64Array::from_iter(Field::new("literal", DataType::Int64), data).into_series()
         }
         DataType::UInt64 => {
             let data = values.iter().map(|lit| unwrap_unchecked!(lit, UInt64));
-            UInt64Array::from_values("literal", data).into_series()
+            UInt64Array::from_iter(Field::new("literal", DataType::UInt64), data).into_series()
         }
-
+        DataType::Interval => {
+            let data = values.iter().map(|lit| match lit {
+                LiteralValue::Interval(iv) => Some((iv.months, iv.days, iv.nanoseconds)),
+                LiteralValue::Null => None,
+                _ => unreachable!("datatype is already checked"),
+            });
+            IntervalArray::from_iter("literal", data).into_series()
+        }
         dtype @ DataType::Timestamp(_, _) => {
             let data = values.iter().map(|lit| unwrap_unchecked!(lit, Timestamp));
-            let physical = Int64Array::from_values("literal", data);
+            let physical = Int64Array::from_iter(Field::new("literal", DataType::Int64), data);
             TimestampArray::new(Field::new("literal", dtype), physical).into_series()
         }
         dtype @ DataType::Date => {
             let data = values.iter().map(|lit| unwrap_unchecked!(lit, Date));
-            let physical = Int32Array::from_values("literal", data);
+            let physical = Int32Array::from_iter(Field::new("literal", DataType::Int32), data);
             DateArray::new(Field::new("literal", dtype), physical).into_series()
         }
         dtype @ DataType::Time(_) => {
             let data = values.iter().map(|lit| unwrap_unchecked!(lit, Time));
-            let physical = Int64Array::from_values("literal", data);
+            let physical = Int64Array::from_iter(Field::new("literal", DataType::Int64), data);
+
             TimeArray::new(Field::new("literal", dtype), physical).into_series()
         }
         DataType::Float64 => {
             let data = values.iter().map(|lit| unwrap_unchecked!(lit, Float64));
 
-            Float64Array::from_values("literal", data).into_series()
+            Float64Array::from_iter(Field::new("literal", dtype), data).into_series()
         }
         dtype @ DataType::Decimal128 { .. } => {
             let data = values.iter().map(|lit| unwrap_unchecked!(lit, Decimal));
 
-            let physical = Int128Array::from_values("literal", data);
-            Decimal128Array::new(Field::new("literal", dtype), physical).into_series()
+            Decimal128Array::from_iter(Field::new("literal", dtype), data).into_series()
         }
         _ => {
             return Err(DaftError::ValueError(format!(
@@ -551,8 +586,17 @@ mod test {
             LiteralValue::UInt64(2),
             LiteralValue::UInt64(3),
         ];
-        let actual = super::literals_to_series(&values);
-        assert!(actual.is_err());
+        let expected = vec![None, Some(2), Some(3)];
+        let expected = UInt64Array::from_iter(
+            Field::new("literal", DataType::UInt64),
+            expected.into_iter(),
+        );
+        let expected = expected.into_series();
+        let actual = super::literals_to_series(&values).unwrap();
+        // Series.eq returns false for nulls
+        for (expected, actual) in expected.u64().iter().zip(actual.u64().iter()) {
+            assert_eq!(expected, actual);
+        }
     }
 
     #[test]

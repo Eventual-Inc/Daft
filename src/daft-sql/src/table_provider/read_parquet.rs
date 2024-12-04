@@ -1,5 +1,6 @@
 use daft_core::prelude::TimeUnit;
-use daft_plan::{LogicalPlanBuilder, ParquetScanBuilder};
+use daft_logical_plan::LogicalPlanBuilder;
+use daft_scan::builder::ParquetScanBuilder;
 use sqlparser::ast::TableFunctionArgs;
 
 use super::SQLTableFunction;
@@ -32,6 +33,7 @@ impl TryFrom<SQLFunctionArguments> for ParquetScanBuilder {
         let chunk_size = args.try_get_named("chunk_size")?;
         let file_path_column = args.try_get_named("file_path_column")?;
         let multithreaded = args.try_get_named("multithreaded")?.unwrap_or(true);
+        let hive_partitioning = args.try_get_named("hive_partitioning")?.unwrap_or(false);
 
         let field_id_mapping = None; // TODO
         let row_groups = None; // TODO
@@ -49,6 +51,7 @@ impl TryFrom<SQLFunctionArguments> for ParquetScanBuilder {
             multithreaded,
             schema,
             file_path_column,
+            hive_partitioning,
         })
     }
 }
@@ -74,6 +77,9 @@ impl SQLTableFunction for ReadParquetFunction {
             1, // 1 positional argument (path)
         )?;
 
-        builder.finish().map_err(From::from)
+        let runtime = common_runtime::get_io_runtime(true);
+
+        let result = runtime.block_on(builder.finish())??;
+        Ok(result)
     }
 }

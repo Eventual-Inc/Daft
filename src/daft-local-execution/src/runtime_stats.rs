@@ -5,12 +5,10 @@ use std::{
     time::Instant,
 };
 
-use tokio::sync::mpsc::error::SendError;
+use daft_micropartition::MicroPartition;
+use loole::SendError;
 
-use crate::{
-    channel::{PipelineReceiver, Sender},
-    pipeline::PipelineResultType,
-};
+use crate::channel::{Receiver, Sender};
 
 #[derive(Default)]
 pub struct RuntimeStatsContext {
@@ -109,51 +107,42 @@ impl RuntimeStatsContext {
 }
 
 pub struct CountingSender {
-    sender: Sender<PipelineResultType>,
+    sender: Sender<Arc<MicroPartition>>,
     rt: Arc<RuntimeStatsContext>,
 }
 
 impl CountingSender {
-    pub(crate) fn new(sender: Sender<PipelineResultType>, rt: Arc<RuntimeStatsContext>) -> Self {
+    pub(crate) fn new(sender: Sender<Arc<MicroPartition>>, rt: Arc<RuntimeStatsContext>) -> Self {
         Self { sender, rt }
     }
     #[inline]
     pub(crate) async fn send(
         &self,
-        v: PipelineResultType,
-    ) -> Result<(), SendError<PipelineResultType>> {
-        let len = match v {
-            PipelineResultType::Data(ref mp) => mp.len(),
-            PipelineResultType::ProbeTable(_, ref tables) => {
-                tables.iter().map(daft_table::Table::len).sum()
-            }
-        };
+        v: Arc<MicroPartition>,
+    ) -> Result<(), SendError<Arc<MicroPartition>>> {
+        self.rt.mark_rows_emitted(v.len() as u64);
         self.sender.send(v).await?;
-        self.rt.mark_rows_emitted(len as u64);
         Ok(())
     }
 }
 
 pub struct CountingReceiver {
-    receiver: PipelineReceiver,
+    receiver: Receiver<Arc<MicroPartition>>,
     rt: Arc<RuntimeStatsContext>,
 }
 
 impl CountingReceiver {
-    pub(crate) fn new(receiver: PipelineReceiver, rt: Arc<RuntimeStatsContext>) -> Self {
+    pub(crate) fn new(
+        receiver: Receiver<Arc<MicroPartition>>,
+        rt: Arc<RuntimeStatsContext>,
+    ) -> Self {
         Self { receiver, rt }
     }
     #[inline]
-    pub(crate) async fn recv(&mut self) -> Option<PipelineResultType> {
+    pub(crate) async fn recv(&self) -> Option<Arc<MicroPartition>> {
         let v = self.receiver.recv().await;
         if let Some(ref v) = v {
-            let len = match v {
-                PipelineResultType::Data(ref mp) => mp.len(),
-                PipelineResultType::ProbeTable(_, ref tables) => {
-                    tables.iter().map(daft_table::Table::len).sum()
-                }
-            };
-            self.rt.mark_rows_received(len as u64);
+            self.rt.mark_rows_received(v.len() as u64);
         }
         v
     }

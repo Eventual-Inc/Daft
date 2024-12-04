@@ -31,6 +31,7 @@ def minio_io_config() -> daft.io.IOConfig:
             endpoint_url="http://127.0.0.1:9001",
             key_id="minioadmin",
             access_key="minioadmin",
+            use_ssl=False,
         )
     )
 

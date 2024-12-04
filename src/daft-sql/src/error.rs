@@ -1,7 +1,6 @@
 use common_error::DaftError;
 use snafu::Snafu;
 use sqlparser::{parser::ParserError, tokenizer::TokenizerError};
-
 #[derive(Debug, Snafu)]
 pub enum PlannerError {
     #[snafu(display("Tokenization error: {source}"))]

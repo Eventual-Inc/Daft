@@ -334,6 +334,37 @@ fn _should_return(fm: &FileMetadata) -> bool {
     }
 }
 
+/// Validates the glob pattern before compiling it. The `globset` crate which we use for globbing is
+/// very permissive and does not check for invalid usage of the '**' wildcard. This function ensures
+/// that the glob pattern does not contain invalid usage of '**'.
+fn verify_glob(glob: &str) -> super::Result<()> {
+    let re = regex::Regex::new(r"(?P<before>.*?[^\\])\*\*(?P<after>[^/\n].*)").unwrap();
+
+    if let Some(captures) = re.captures(glob) {
+        let before = captures.name("before").map_or("", |m| m.as_str());
+        let after = captures.name("after").map_or("", |m| m.as_str());
+
+        // Ensure the 'before' part ends with a delimiter
+        let corrected_before = if !before.ends_with('/') {
+            format!("{}/", before)
+        } else {
+            before.to_string()
+        };
+
+        let corrected_pattern = format!("{corrected_before}**/*{after}");
+
+        return Err(super::Error::InvalidArgument {
+            msg: format!(
+                "Invalid usage of '**' in glob pattern. Found '{before}**{after}'. \
+                The '**' wildcard should be used to match directories and must be surrounded by delimiters. \
+                Did you perhaps mean: '{corrected_pattern}'?"
+            ),
+        });
+    }
+
+    Ok(())
+}
+
 /// Globs an ObjectSource for Files
 ///
 /// Uses the `globset` crate for matching, and thus supports all the syntax enabled by that crate.
@@ -403,6 +434,10 @@ pub async fn glob(
         glob.to_string()
     };
     let glob = glob.as_str();
+
+    // Validate the glob pattern, this is necessary since the `globset` crate is overly permissive and happily compiles patterns
+    // like "/foo/bar/**.txt" which don't make sense.
+    verify_glob(glob)?;
 
     let glob_fragments = to_glob_fragments(glob)?;
     let full_glob_matcher = GlobBuilder::new(glob)
@@ -661,4 +696,38 @@ pub async fn glob(
     };
 
     Ok(to_rtn_stream.boxed())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_verify_glob() {
+        // Test valid glob patterns
+        assert!(verify_glob("valid/pattern.txt").is_ok()); // Normal globbing works ok
+        assert!(verify_glob("another/valid/pattern/**/blah.txt").is_ok()); // No error if ** used as a segment
+        assert!(verify_glob("**").is_ok()); // ** by itself is ok
+        assert!(verify_glob("another/valid/pattern/**").is_ok()); // No trailing slash is ok
+        assert!(verify_glob("another/valid/pattern/**/").is_ok()); // Trailing slash is ok (should be interpreted as **/*)
+        assert!(verify_glob("another/valid/pattern/**/\\**.txt").is_ok()); // Escaped ** is ok
+        assert!(verify_glob("**/wildcard/*.txt").is_ok()); // Wildcard matching not affected
+
+        // Test invalid glob patterns and check error messages
+        // The '**' wildcard should be used to match directories and must be surrounded by delimiters.
+        let err = verify_glob("invalid/**.txt").unwrap_err();
+        assert!(err.to_string().contains("invalid/**/*.txt")); // Suggests adding a delimiter after '**'
+
+        // '**' should be surrounded by delimiters to match directories, not used directly with file names.
+        let err = verify_glob("invalid/blahblah**.txt").unwrap_err();
+        assert!(err.to_string().contains("invalid/blahblah/**/*.txt")); // Suggests adding a delimiter before '**'
+
+        // Backslash should only escape the first '*', leading to non-escaped '**'.
+        let err = verify_glob("invalid/\\***.txt").unwrap_err();
+        assert!(err.to_string().contains("invalid/\\\\*/**/*.txt")); // Suggests correcting the escape sequence (NOTE: double backslash)
+
+        // Non-escaped '**' should trigger even when there is an escaped '**'.
+        let err = verify_glob("invalid/\\**blahblah**.txt").unwrap_err();
+        assert!(err.to_string().contains("invalid/\\\\**blahblah/**/*.txt")); // Suggests adding delimiters around '**'
+    }
 }
