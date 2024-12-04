@@ -17,7 +17,7 @@ use daft_table::Table;
 use futures::{stream::BoxStream, StreamExt};
 use itertools::Itertools;
 use rayon::{
-    iter::{IntoParallelRefMutIterator, ParallelIterator},
+    iter::ParallelIterator,
     prelude::{IndexedParallelIterator, IntoParallelIterator, ParallelBridge},
 };
 use snafu::ResultExt;
@@ -50,60 +50,6 @@ fn prune_fields_from_schema(
     } else {
         Ok(schema)
     }
-}
-
-#[allow(clippy::too_many_arguments)]
-pub fn arrow_column_iters_to_table_iter(
-    arr_iters: ArrowChunkIters,
-    row_range_start: usize,
-    schema_ref: SchemaRef,
-    uri: String,
-    predicate: Option<ExprRef>,
-    original_columns: Option<Vec<String>>,
-    original_num_rows: Option<usize>,
-    delete_rows: Option<Vec<i64>>,
-) -> Option<impl Iterator<Item = DaftResult<Table>>> {
-    if arr_iters.is_empty() {
-        return None;
-    }
-    pub struct ParallelLockStepIter {
-        pub iters: ArrowChunkIters,
-    }
-    impl Iterator for ParallelLockStepIter {
-        type Item = arrow2::error::Result<ArrowChunk>;
-
-        fn next(&mut self) -> Option<Self::Item> {
-            self.iters
-                .par_iter_mut()
-                .map(std::iter::Iterator::next)
-                .collect()
-        }
-    }
-    let par_lock_step_iter = ParallelLockStepIter { iters: arr_iters };
-
-    let mut curr_delete_row_idx = 0;
-    // Keep track of the current index in the row group so we can throw away arrays that are not needed
-    // and slice arrays that are partially needed.
-    let mut index_so_far = 0;
-    let owned_schema_ref = schema_ref;
-    let table_iter = par_lock_step_iter.into_iter().map(move |chunk| {
-        let chunk = chunk.with_context(|_| {
-            super::UnableToCreateChunkFromStreamingFileReaderSnafu { path: uri.clone() }
-        })?;
-        arrow_chunk_to_table(
-            chunk,
-            &owned_schema_ref,
-            &uri,
-            row_range_start,
-            &mut index_so_far,
-            delete_rows.as_deref(),
-            &mut curr_delete_row_idx,
-            predicate.clone(),
-            original_columns.as_deref(),
-            original_num_rows,
-        )
-    });
-    Some(table_iter)
 }
 
 #[allow(clippy::too_many_arguments)]
