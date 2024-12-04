@@ -6,25 +6,12 @@ import pytest
 
 import daft
 from daft import col
-from daft.context import get_context, set_planning_config
 from daft.datatype import DataType
 from daft.expressions import Expression
 from daft.expressions.testing import expr_structurally_equal
 from daft.series import Series
 from daft.table import MicroPartition
 from daft.udf import udf
-
-
-@pytest.fixture(scope="function", params=[False, True])
-def actor_pool_enabled(request):
-    original_config = get_context().daft_planning_config
-    try:
-        set_planning_config(
-            config=get_context().daft_planning_config.with_config_values(enable_actor_pool_projections=request.param)
-        )
-        yield request.param
-    finally:
-        set_planning_config(config=original_config)
 
 
 def test_udf():
@@ -44,7 +31,7 @@ def test_udf():
 
 
 @pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
-def test_class_udf(batch_size, actor_pool_enabled):
+def test_class_udf(batch_size):
     df = daft.from_pydict({"a": ["foo", "bar", "baz"]})
 
     @udf(return_dtype=DataType.string(), batch_size=batch_size)
@@ -54,9 +41,6 @@ def test_class_udf(batch_size, actor_pool_enabled):
 
         def __call__(self, data):
             return Series.from_pylist([d.as_py() * self.n for d in data.to_arrow()])
-
-    if actor_pool_enabled:
-        RepeatN = RepeatN.with_concurrency(1)
 
     expr = RepeatN(col("a"))
     field = expr._to_field(df.schema())
@@ -68,7 +52,7 @@ def test_class_udf(batch_size, actor_pool_enabled):
 
 
 @pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
-def test_class_udf_init_args(batch_size, actor_pool_enabled):
+def test_class_udf_init_args(batch_size):
     df = daft.from_pydict({"a": ["foo", "bar", "baz"]})
 
     @udf(return_dtype=DataType.string(), batch_size=batch_size)
@@ -78,9 +62,6 @@ def test_class_udf_init_args(batch_size, actor_pool_enabled):
 
         def __call__(self, data):
             return Series.from_pylist([d.as_py() * self.n for d in data.to_arrow()])
-
-    if actor_pool_enabled:
-        RepeatN = RepeatN.with_concurrency(1)
 
     expr = RepeatN(col("a"))
     field = expr._to_field(df.schema())
@@ -98,7 +79,7 @@ def test_class_udf_init_args(batch_size, actor_pool_enabled):
 
 
 @pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
-def test_class_udf_init_args_no_default(batch_size, actor_pool_enabled):
+def test_class_udf_init_args_no_default(batch_size):
     df = daft.from_pydict({"a": ["foo", "bar", "baz"]})
 
     @udf(return_dtype=DataType.string(), batch_size=batch_size)
@@ -109,10 +90,7 @@ def test_class_udf_init_args_no_default(batch_size, actor_pool_enabled):
         def __call__(self, data):
             return Series.from_pylist([d.as_py() * self.n for d in data.to_arrow()])
 
-    if actor_pool_enabled:
-        RepeatN = RepeatN.with_concurrency(1)
-
-    with pytest.raises(ValueError, match="Cannot call actor pool UDF without initialization arguments."):
+    with pytest.raises(ValueError, match="Cannot call class UDF without initialization arguments."):
         RepeatN(col("a"))
 
     expr = RepeatN.with_init_args(initial_n=2)(col("a"))
@@ -123,7 +101,7 @@ def test_class_udf_init_args_no_default(batch_size, actor_pool_enabled):
     assert result.to_pydict() == {"a": ["foofoo", "barbar", "bazbaz"]}
 
 
-def test_class_udf_init_args_bad_args(actor_pool_enabled):
+def test_class_udf_init_args_bad_args():
     @udf(return_dtype=DataType.string())
     class RepeatN:
         def __init__(self, initial_n):
@@ -132,16 +110,12 @@ def test_class_udf_init_args_bad_args(actor_pool_enabled):
         def __call__(self, data):
             return Series.from_pylist([d.as_py() * self.n for d in data.to_arrow()])
 
-    if actor_pool_enabled:
-        RepeatN = RepeatN.with_concurrency(1)
-
     with pytest.raises(TypeError, match="missing a required argument: 'initial_n'"):
         RepeatN.with_init_args(wrong=5)
 
 
 @pytest.mark.parametrize("concurrency", [1, 2, 4])
-@pytest.mark.parametrize("actor_pool_enabled", [True], indirect=True)
-def test_actor_pool_udf_concurrency(concurrency, actor_pool_enabled):
+def test_actor_pool_udf_concurrency(concurrency):
     df = daft.from_pydict({"a": ["foo", "bar", "baz"]})
 
     @udf(return_dtype=DataType.string(), batch_size=1)
@@ -258,7 +232,8 @@ def test_full_udf_call():
         full_udf()
 
 
-def test_class_udf_initialization_error(actor_pool_enabled):
+@pytest.mark.parametrize("set_concurrency", [False, True])
+def test_class_udf_initialization_error(set_concurrency):
     df = daft.from_pydict({"a": ["foo", "bar", "baz"]})
 
     @udf(return_dtype=DataType.string())
@@ -269,11 +244,11 @@ def test_class_udf_initialization_error(actor_pool_enabled):
         def __call__(self, data):
             return data
 
-    if actor_pool_enabled:
+    if set_concurrency:
         IdentityWithInitError = IdentityWithInitError.with_concurrency(1)
 
     expr = IdentityWithInitError(col("a"))
-    if actor_pool_enabled:
+    if set_concurrency:
         with pytest.raises(Exception):
             df.select(expr).collect()
     else:

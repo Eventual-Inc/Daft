@@ -133,7 +133,7 @@ impl ActorPoolProjectOperator {
         let num_actor_pool_udfs: usize = count_actor_pool_udfs(&projection);
 
         assert_eq!(
-            num_actor_pool_udfs, 0,
+            num_actor_pool_udfs, 1,
             "Expected only one actor pool udf in an actor pool project"
         );
 

@@ -8,7 +8,6 @@ import ray
 
 import daft
 from daft import udf
-from daft.context import get_context, set_planning_config
 from daft.daft import SystemInfo
 from daft.expressions import col
 from daft.internal.gpu import cuda_visible_devices
@@ -39,38 +38,38 @@ def my_udf(c):
 
 def test_partial_resource_request_overrides():
     new_udf = my_udf.override_options(num_cpus=1.0)
-    assert new_udf.common_args.resource_request.num_cpus == 1.0
-    assert new_udf.common_args.resource_request.num_gpus is None
-    assert new_udf.common_args.resource_request.memory_bytes is None
+    assert new_udf.resource_request.num_cpus == 1.0
+    assert new_udf.resource_request.num_gpus is None
+    assert new_udf.resource_request.memory_bytes is None
 
     new_udf = new_udf.override_options(num_gpus=8.0)
-    assert new_udf.common_args.resource_request.num_cpus == 1.0
-    assert new_udf.common_args.resource_request.num_gpus == 8.0
-    assert new_udf.common_args.resource_request.memory_bytes is None
+    assert new_udf.resource_request.num_cpus == 1.0
+    assert new_udf.resource_request.num_gpus == 8.0
+    assert new_udf.resource_request.memory_bytes is None
 
     new_udf = new_udf.override_options(num_gpus=None)
-    assert new_udf.common_args.resource_request.num_cpus == 1.0
-    assert new_udf.common_args.resource_request.num_gpus is None
-    assert new_udf.common_args.resource_request.memory_bytes is None
+    assert new_udf.resource_request.num_cpus == 1.0
+    assert new_udf.resource_request.num_gpus is None
+    assert new_udf.resource_request.memory_bytes is None
 
     new_udf = new_udf.override_options(memory_bytes=100)
-    assert new_udf.common_args.resource_request.num_cpus == 1.0
-    assert new_udf.common_args.resource_request.num_gpus is None
-    assert new_udf.common_args.resource_request.memory_bytes == 100
+    assert new_udf.resource_request.num_cpus == 1.0
+    assert new_udf.resource_request.num_gpus is None
+    assert new_udf.resource_request.memory_bytes == 100
 
 
 def test_resource_request_pickle_roundtrip():
     new_udf = my_udf.override_options(num_cpus=1.0)
-    assert new_udf.common_args.resource_request.num_cpus == 1.0
-    assert new_udf.common_args.resource_request.num_gpus is None
-    assert new_udf.common_args.resource_request.memory_bytes is None
+    assert new_udf.resource_request.num_cpus == 1.0
+    assert new_udf.resource_request.num_gpus is None
+    assert new_udf.resource_request.memory_bytes is None
 
     assert new_udf == copy.deepcopy(new_udf)
 
     new_udf = new_udf.override_options(num_gpus=8.0)
-    assert new_udf.common_args.resource_request.num_cpus == 1.0
-    assert new_udf.common_args.resource_request.num_gpus == 8.0
-    assert new_udf.common_args.resource_request.memory_bytes is None
+    assert new_udf.resource_request.num_cpus == 1.0
+    assert new_udf.resource_request.num_gpus == 8.0
+    assert new_udf.resource_request.memory_bytes is None
     assert new_udf == copy.deepcopy(new_udf)
 
 
@@ -126,19 +125,6 @@ def test_requesting_too_much_memory():
 ###
 # Assert RayRunner behavior for requests
 ###
-
-
-@pytest.fixture(scope="function", params=[True])
-def enable_actor_pool():
-    try:
-        original_config = get_context().daft_planning_config
-
-        set_planning_config(
-            config=get_context().daft_planning_config.with_config_values(enable_actor_pool_projections=True)
-        )
-        yield
-    finally:
-        set_planning_config(config=original_config)
 
 
 @udf(return_dtype=daft.DataType.int64())
@@ -223,7 +209,7 @@ def test_with_column_folded_rayrunner():
     RAY_VERSION_LT_2, reason="The ray.get_runtime_context().get_assigned_resources() was only added in Ray >= 2.0"
 )
 @pytest.mark.skipif(get_tests_daft_runner_name() not in {"ray"}, reason="requires RayRunner to be in use")
-def test_with_column_rayrunner_class(enable_actor_pool):
+def test_with_column_rayrunner_class():
     assert_resources = AssertResourcesStateful.with_concurrency(1)
 
     df = daft.from_pydict(DATA).repartition(2)
@@ -241,7 +227,7 @@ def test_with_column_rayrunner_class(enable_actor_pool):
     RAY_VERSION_LT_2, reason="The ray.get_runtime_context().get_assigned_resources() was only added in Ray >= 2.0"
 )
 @pytest.mark.skipif(get_tests_daft_runner_name() not in {"ray"}, reason="requires RayRunner to be in use")
-def test_with_column_folded_rayrunner_class(enable_actor_pool):
+def test_with_column_folded_rayrunner_class():
     assert_resources = AssertResourcesStateful.with_concurrency(1)
 
     df = daft.from_pydict(DATA).repartition(2)
