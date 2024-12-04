@@ -302,7 +302,7 @@ pub fn init_nested(init: &[InitNested], capacity: usize) -> NestedState {
 }
 
 pub struct NestedPage<'a> {
-    iter: std::iter::Peekable<std::iter::Zip<HybridRleDecoder<'a, u32>, HybridRleDecoder<'a, u32>>>,
+    iter: std::iter::Peekable<std::iter::Zip<HybridRleDecoder<'a>, HybridRleDecoder<'a>>>,
 }
 
 impl<'a> NestedPage<'a> {

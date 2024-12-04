@@ -2,47 +2,13 @@
 mod bitmap;
 mod decoder;
 mod encoder;
-use std::fmt::Debug;
-
 pub use bitmap::{encode_bool as bitpacked_encode, BitmapIter};
 pub use decoder::Decoder;
 pub use encoder::{encode_bool, encode_u32};
 
 use crate::error::Error;
 
-use super::bitpacked::{self, Unpackable};
-
-pub trait Decodable: Sized + Unpackable
-where
-    <Self as Unpackable>::Unpacked: Debug
-{
-    fn from_le_bytes(bytes: &[u8]) -> Self;
-    fn zero() -> Self;
-}
-
-impl Decodable for u32 {
-    fn from_le_bytes(pack: &[u8]) -> Self {
-        let mut bytes = [0u8; std::mem::size_of::<u32>()];
-        pack.iter().zip(bytes.iter_mut()).for_each(|(src, dst)| {
-            *dst = *src;
-        });
-        u32::from_le_bytes(bytes)
-    }
-
-    fn zero() -> Self {
-        0
-    }
-}
-
-impl Decodable for u8 {
-    fn from_le_bytes(bytes: &[u8]) -> Self {
-        bytes[0]
-    }
-
-    fn zero() -> Self {
-        0
-    }
-}
+use super::bitpacked;
 
 /// The two possible states of an RLE-encoded run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,43 +21,38 @@ pub enum HybridEncoded<'a> {
 }
 
 #[derive(Debug, Clone)]
-enum State<'a, T: Decodable>
-where
-    <T as Unpackable>::Unpacked: Debug
-{
+enum State<'a> {
     None,
-    Bitpacked(bitpacked::Decoder<'a, T>),
-    Rle(std::iter::Take<std::iter::Repeat<T>>),
+    Bitpacked(bitpacked::Decoder<'a, u32>),
+    Rle(std::iter::Take<std::iter::Repeat<u32>>),
     // Add a special branch for a single value to
     // adhere to the strong law of small numbers.
-    Single(Option<T>),
+    Single(Option<u32>),
 }
 
 /// [`Iterator`] of [`u32`] from a byte slice of Hybrid-RLE encoded values
 #[derive(Debug, Clone)]
-pub struct HybridRleDecoder<'a, T: Decodable>
-where
-    <T as Unpackable>::Unpacked: Debug
-{
+pub struct HybridRleDecoder<'a> {
     decoder: Decoder<'a>,
-    state: State<'a, T>,
+    state: State<'a>,
     remaining: usize,
 }
 
 #[inline]
-fn read_next<'a, T: Decodable>(decoder: &mut Decoder<'a>, remaining: usize) -> Result<State<'a, T>, Error>
-where
-    <T as Unpackable>::Unpacked: Debug
-{
+fn read_next<'a>(decoder: &mut Decoder<'a>, remaining: usize) -> Result<State<'a>, Error> {
     Ok(match decoder.next().transpose()? {
         Some(HybridEncoded::Bitpacked(packed)) => {
             let num_bits = decoder.num_bits();
             let length = std::cmp::min(packed.len() * 8 / num_bits, remaining);
-            let decoder = bitpacked::Decoder::<T>::try_new(packed, num_bits, length)?;
+            let decoder = bitpacked::Decoder::<u32>::try_new(packed, num_bits, length)?;
             State::Bitpacked(decoder)
         }
         Some(HybridEncoded::Rle(pack, additional)) => {
-            let value = T::from_le_bytes(pack);
+            let mut bytes = [0u8; std::mem::size_of::<u32>()];
+            pack.iter().zip(bytes.iter_mut()).for_each(|(src, dst)| {
+                *dst = *src;
+            });
+            let value = u32::from_le_bytes(bytes);
             if additional == 1 {
                 State::Single(Some(value))
             } else {
@@ -102,10 +63,7 @@ where
     })
 }
 
-impl<'a, T: Decodable> HybridRleDecoder<'a, T>
-where
-    <T as Unpackable>::Unpacked: Debug
-{
+impl<'a> HybridRleDecoder<'a> {
     /// Returns a new [`HybridRleDecoder`]
     pub fn try_new(data: &'a [u8], num_bits: u32, num_values: usize) -> Result<Self, Error> {
         let num_bits = num_bits as usize;
@@ -119,11 +77,8 @@ where
     }
 }
 
-impl<'a, T: Decodable> Iterator for HybridRleDecoder<'a, T>
-where
-    <T as Unpackable>::Unpacked: Debug
-{
-    type Item = Result<T, Error>;
+impl<'a> Iterator for HybridRleDecoder<'a> {
+    type Item = Result<u32, Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.remaining == 0 {
@@ -137,7 +92,7 @@ where
             }
             State::Bitpacked(decoder) => decoder.next(),
             State::Rle(iter) => iter.next(),
-            State::None => Some(T::zero()),
+            State::None => Some(0),
         };
         if let Some(result) = result {
             self.remaining -= 1;
@@ -158,10 +113,7 @@ where
     }
 }
 
-impl<'a, T: Decodable> ExactSizeIterator for HybridRleDecoder<'a, T>
-where
-    <T as Unpackable>::Unpacked: Debug
-{}
+impl<'a> ExactSizeIterator for HybridRleDecoder<'a> {}
 
 #[cfg(test)]
 mod tests {
@@ -176,7 +128,7 @@ mod tests {
 
         encode_u32(&mut buffer, data.iter().cloned(), num_bits).unwrap();
 
-        let decoder = HybridRleDecoder::<u32>::try_new(&buffer, num_bits, data.len())?;
+        let decoder = HybridRleDecoder::try_new(&buffer, num_bits, data.len())?;
 
         let result = decoder.collect::<Result<Vec<_>, _>>()?;
 
@@ -260,7 +212,7 @@ mod tests {
         ];
         let num_bits = 10;
 
-        let decoder = HybridRleDecoder::<u32>::try_new(&data, num_bits, 1000)?;
+        let decoder = HybridRleDecoder::try_new(&data, num_bits, 1000)?;
 
         let result = decoder.collect::<Result<Vec<_>, _>>()?;
 
@@ -274,7 +226,7 @@ mod tests {
 
         let num_bits = 3;
 
-        let decoder = HybridRleDecoder::<u32>::try_new(&data, num_bits, 1)?;
+        let decoder = HybridRleDecoder::try_new(&data, num_bits, 1)?;
 
         let result = decoder.collect::<Result<Vec<_>, _>>()?;
 
@@ -288,7 +240,7 @@ mod tests {
 
         let num_bits = 0;
 
-        let decoder = HybridRleDecoder::<u32>::try_new(&data, num_bits, 2)?;
+        let decoder = HybridRleDecoder::try_new(&data, num_bits, 2)?;
 
         let result = decoder.collect::<Result<Vec<_>, _>>()?;
 
@@ -302,7 +254,7 @@ mod tests {
 
         let num_bits = 1;
 
-        let decoder = HybridRleDecoder::<u32>::try_new(&data, num_bits, 100)?;
+        let decoder = HybridRleDecoder::try_new(&data, num_bits, 100)?;
 
         let result = decoder.collect::<Result<Vec<_>, _>>()?;
 

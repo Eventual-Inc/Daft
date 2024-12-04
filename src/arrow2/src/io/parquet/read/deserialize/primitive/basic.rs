@@ -67,7 +67,7 @@ pub(super) struct ValuesDictionary<'a, T>
 where
     T: NativeType,
 {
-    pub values: hybrid_rle::HybridRleDecoder<'a, u32>,
+    pub values: hybrid_rle::HybridRleDecoder<'a>,
     pub dict: &'a Vec<T>,
 }
 

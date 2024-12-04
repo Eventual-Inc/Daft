@@ -52,7 +52,7 @@ impl<'a> Required<'a> {
 }
 
 #[derive(Debug)]
-struct ValuesRle<'a>(hybrid_rle::HybridRleDecoder<'a, u8>);
+struct ValuesRle<'a>(hybrid_rle::HybridRleDecoder<'a>);
 
 impl<'a> ValuesRle<'a> {
     pub fn try_new(page: &'a DataPage) -> Result<Self> {

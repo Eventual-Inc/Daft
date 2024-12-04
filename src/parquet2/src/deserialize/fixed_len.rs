@@ -36,7 +36,7 @@ impl<'a> Iterator for FixexBinaryIter<'a> {
 
 #[derive(Debug)]
 pub struct Dictionary<'a, P> {
-    pub indexes: hybrid_rle::HybridRleDecoder<'a, u32>,
+    pub indexes: hybrid_rle::HybridRleDecoder<'a>,
     pub dict: P,
 }
 
