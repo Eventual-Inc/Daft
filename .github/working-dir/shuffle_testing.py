@@ -1,5 +1,5 @@
 # /// script
-# dependencies = ['numpy']
+# dependencies = ['numpy', 'pyarrow']
 # ///
 
 import argparse
