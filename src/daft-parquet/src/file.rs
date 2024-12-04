@@ -62,7 +62,7 @@ fn streaming_decompression<S: futures::Stream<Item = parquet2::error::Result<Com
 
 pub struct StreamIterator<S> {
     curr: Option<Page>,
-    src: tokio::sync::Mutex<S>,
+    src: Arc<tokio::sync::Mutex<S>>,
     handle: tokio::runtime::Handle,
 }
 
@@ -73,7 +73,7 @@ where
     pub fn new(src: S, handle: tokio::runtime::Handle) -> Self {
         Self {
             curr: None,
-            src: tokio::sync::Mutex::new(src),
+            src: Arc::new(tokio::sync::Mutex::new(src)),
             handle,
         }
     }
@@ -86,9 +86,13 @@ where
     type Error = parquet2::error::Error;
     type Item = Page;
     fn advance(&mut self) -> Result<(), Self::Error> {
-        let val = self.handle.block_on(async {
-            let mut s_guard = self.src.lock().await;
-            s_guard.next().await
+        let handle = self.handle.clone();
+        let src = self.src.clone();
+        let val = tokio::task::block_in_place(move || {
+            handle.block_on(async {
+                let mut s_guard = src.lock().await;
+                s_guard.next().await
+            })
         });
         if let Some(val) = val {
             let val = val?;
