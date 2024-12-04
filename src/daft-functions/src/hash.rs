@@ -29,7 +29,7 @@ impl ScalarUDF for HashFunction {
                         // There's no way to natively extend the array, so we extract the element and repeat it.
                         let seed = seed.u64().unwrap();
                         let seed = seed.get(0).unwrap();
-                        let seed = UInt64Array::from_iter_and_fld(
+                        let seed = UInt64Array::from_iter(
                             Field::new("seed", DataType::UInt64),
                             std::iter::repeat(Some(seed)).take(input.len()),
                         );

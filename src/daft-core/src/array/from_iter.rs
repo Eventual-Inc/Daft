@@ -16,17 +16,7 @@ impl<T> DataArray<T>
 where
     T: DaftPrimitiveType,
 {
-    pub fn from_iter(
-        name: &str,
-        iter: impl arrow2::trusted_len::TrustedLen<Item = Option<T::Native>>,
-    ) -> Self {
-        let array = PrimitiveArray::<T::Native>::from_trusted_len_iter(iter);
-
-        let fld = Field::new(name, T::get_dtype());
-        Self::new(Arc::new(fld), array.boxed()).unwrap()
-    }
-
-    pub fn from_iter_and_fld<F: Into<Arc<Field>>>(
+    pub fn from_iter<F: Into<Arc<Field>>>(
         field: F,
         iter: impl arrow2::trusted_len::TrustedLen<Item = Option<T::Native>>,
     ) -> Self {
@@ -70,18 +60,6 @@ where
     }
 }
 
-impl<T> DataArray<T>
-where
-    T: DaftPrimitiveType,
-{
-    pub fn from_vec(name: &str, values: Vec<T::Native>) -> Self {
-        let array = PrimitiveArray::<T::Native>::from_vec(values);
-
-        let fld = Field::new(name, T::get_dtype());
-        Self::new(Arc::new(fld), array.boxed()).unwrap()
-    }
-}
-
 impl Utf8Array {
     pub fn from_iter<S: AsRef<str>>(
         name: &str,
@@ -118,17 +96,7 @@ impl BinaryArray {
         )
         .unwrap()
     }
-
-    pub fn from_vec<S: AsRef<[u8]>>(name: &str, values: Vec<S>) -> Self {
-        let arrow_array = arrow2::array::BinaryArray::<i64>::from_iter_values(values.into_iter());
-        Self::new(
-            Field::new(name, crate::datatypes::DataType::Binary).into(),
-            arrow_array.boxed(),
-        )
-        .unwrap()
-    }
 }
-
 impl FixedSizeBinaryArray {
     pub fn from_iter<S: AsRef<[u8]>>(
         name: &str,
@@ -153,15 +121,6 @@ impl BooleanArray {
         Self::new(
             Field::new(name, crate::datatypes::DataType::Boolean).into(),
             arrow_array,
-        )
-        .unwrap()
-    }
-    pub fn from_vec(name: &str, values: Vec<bool>) -> Self {
-        let arrow_array =
-            arrow2::array::BooleanArray::from_trusted_len_values_iter(values.into_iter());
-        Self::new(
-            Field::new(name, crate::datatypes::DataType::Boolean).into(),
-            arrow_array.boxed(),
         )
         .unwrap()
     }
