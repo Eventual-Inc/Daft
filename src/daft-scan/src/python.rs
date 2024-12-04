@@ -524,13 +524,15 @@ pub mod pylib {
         columns: Option<Vec<String>>,
         has_metadata: Option<bool>,
     ) -> PyResult<usize> {
-        let (schema, metadata) = daft_parquet::read::read_parquet_schema(
-            uri,
-            default::Default::default(),
-            None,
-            default::Default::default(),
-            None,
-        )?;
+        let io_runtime = common_runtime::get_io_runtime(true);
+        let (schema, metadata) =
+            io_runtime.block_on_current_thread(daft_parquet::read::read_parquet_schema(
+                uri,
+                default::Default::default(),
+                None,
+                default::Default::default(),
+                None,
+            ))?;
         let data_source = DataSource::File {
             path: uri.to_string(),
             chunk_spec: None,
