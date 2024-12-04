@@ -23,6 +23,16 @@ pub enum StorageConfig {
 }
 
 impl StorageConfig {
+    /// TODO: Arc the inner IOConfig on each StorageConfig instead to avoid needing to Arc here
+    pub fn get_io_config(&self) -> Arc<IOConfig> {
+        match self {
+            Self::Native(cfg) => Arc::new(cfg.io_config.clone().unwrap_or_default()),
+            #[cfg(feature = "python")]
+            Self::Python(cfg) => Arc::new(cfg.io_config.clone().unwrap_or_default()),
+        }
+    }
+
+    /// TODO: Deprecate this method in favor of `get_io_config`
     pub fn get_io_client_and_runtime(&self) -> DaftResult<(RuntimeRef, Arc<IOClient>)> {
         // Grab an IOClient and Runtime
         // TODO: This should be cleaned up and hidden behind a better API from daft-io
