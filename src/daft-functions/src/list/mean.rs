@@ -54,16 +54,3 @@ impl ScalarUDF for ListMean {
 pub fn list_mean(expr: ExprRef) -> ExprRef {
     ScalarFunction::new(ListMean {}, vec![expr]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "list_mean")]
-pub fn py_list_mean(expr: PyExpr) -> PyResult<PyExpr> {
-    Ok(list_mean(expr.into()).into())
-}

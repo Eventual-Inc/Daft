@@ -75,25 +75,3 @@ impl ScalarUDF for ImageDecode {
 pub fn decode(input: ExprRef, args: Option<ImageDecode>) -> ExprRef {
     ScalarFunction::new(args.unwrap_or_default(), vec![input]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "image_decode")]
-pub fn py_decode(
-    expr: PyExpr,
-    raise_on_error: Option<bool>,
-    mode: Option<ImageMode>,
-) -> PyResult<PyExpr> {
-    let image_decode = ImageDecode {
-        mode,
-        raise_on_error: raise_on_error.unwrap_or(true),
-    };
-
-    Ok(decode(expr.into(), Some(image_decode)).into())
-}

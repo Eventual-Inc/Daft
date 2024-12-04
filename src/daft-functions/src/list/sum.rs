@@ -58,16 +58,3 @@ impl ScalarUDF for ListSum {
 pub fn list_sum(expr: ExprRef) -> ExprRef {
     ScalarFunction::new(ListSum {}, vec![expr]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "list_sum")]
-pub fn py_list_sum(expr: PyExpr) -> PyResult<PyExpr> {
-    Ok(list_sum(expr.into()).into())
-}

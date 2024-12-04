@@ -622,6 +622,18 @@ class Expression:
         expr = native.floor(self._expr)
         return Expression._from_pyexpr(expr)
 
+    def clip(self, min: Expression | None = None, max: Expression | None = None) -> Expression:
+        """Clips an expression to the given minimum and maximum values (``expr.clip(min, max)``).
+
+        Args:
+            min: Minimum value to clip to. If None (or column value is Null), no lower clipping is applied.
+            max: Maximum value to clip to. If None (or column value is Null), no upper clipping is applied.
+
+        """
+        min_expr = Expression._to_expression(min)
+        max_expr = Expression._to_expression(max)
+        return Expression._from_pyexpr(native.clip(self._expr, min_expr._expr, max_expr._expr))
+
     def sign(self) -> Expression:
         """The sign of a numeric expression (``expr.sign()``)"""
         expr = native.sign(self._expr)
@@ -790,6 +802,10 @@ class Expression:
         if isinstance(mode, builtins.str):
             mode = CountMode.from_count_mode_str(mode)
         expr = self._expr.count(mode)
+        return Expression._from_pyexpr(expr)
+
+    def count_distinct(self) -> Expression:
+        expr = self._expr.count_distinct()
         return Expression._from_pyexpr(expr)
 
     def sum(self) -> Expression:

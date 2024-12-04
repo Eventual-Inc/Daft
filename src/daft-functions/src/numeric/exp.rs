@@ -53,16 +53,3 @@ impl ScalarUDF for Exp {
 pub fn exp(input: ExprRef) -> ExprRef {
     ScalarFunction::new(Exp {}, vec![input]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "exp")]
-pub fn py_exp(expr: PyExpr) -> PyResult<PyExpr> {
-    Ok(exp(expr.into()).into())
-}

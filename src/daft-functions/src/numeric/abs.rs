@@ -10,6 +10,7 @@ use daft_dsl::{
 use serde::{Deserialize, Serialize};
 
 use super::{evaluate_single_numeric, to_field_single_numeric};
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Abs {}
 
@@ -34,16 +35,4 @@ impl ScalarUDF for Abs {
 #[must_use]
 pub fn abs(input: ExprRef) -> ExprRef {
     ScalarFunction::new(Abs {}, vec![input]).into()
-}
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "abs")]
-pub fn py_abs(expr: PyExpr) -> PyResult<PyExpr> {
-    Ok(abs(expr.into()).into())
 }

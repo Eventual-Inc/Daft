@@ -3,15 +3,27 @@ name: run-cluster
 on:
   workflow_dispatch:
     inputs:
+      daft_wheel_url:
+        type: string
+        description: A public https url pointing directly to a daft python-wheel to install
+        required: false
       daft_version:
         type: string
-        description: The version of daft to install
+        description: A released version of daft on PyPi to install (errors if both this and `daft_wheel_url` are provided)
         required: false
       python_version:
         type: string
         description: The version of python to use
         required: false
         default: "3.9"
+      cluster_profile:
+        type: choice
+        options:
+        - medium-x86
+        - debug_xs-x86
+        description: The profile to use for the cluster
+        required: false
+        default: medium-x86
       command:
         type: string
         description: The command to run on the cluster
@@ -50,14 +62,16 @@ jobs:
         uv pip install ray[default] boto3
     - name: Dynamically update ray config file
       run: |
-        id="github-ci-${{ github.run_id }}_${{ github.run_attempt }}"
-        sed -i "s|{{RAY_CLUSTER_NAME}}|$id|g" .github/assets/benchmarking_ray_config.yaml
-        sed -i 's|{{PYTHON_VERSION}}|${{ inputs.python_version }}|g' .github/assets/benchmarking_ray_config.yaml
-        if [[ '${{ inputs.daft_version }}' ]]; then
-          sed -i 's|{{DAFT_VERSION}}|==${{ inputs.daft_version }}|g' .github/assets/benchmarking_ray_config.yaml
-        else
-          sed -i 's|{{DAFT_VERSION}}||g' .github/assets/benchmarking_ray_config.yaml
-        fi
+        source .venv/bin/activate
+        (cat .github/assets/.template.yaml \
+          | python .github/ci-scripts/templatize_ray_config.py \
+          --cluster-name "ray-ci-run-${{ github.run_id }}_${{ github.run_attempt }}" \
+          --daft-wheel-url '${{ inputs.daft_wheel_url }}' \
+          --daft-version '${{ inputs.daft_version }}' \
+          --python-version '${{ inputs.python_version }}' \
+          --cluster-profile '${{ inputs.cluster_profile }}'
+        ) >> .github/assets/ray.yaml
+        cat .github/assets/ray.yaml
     - name: Download private ssh key
       run: |
         KEY=$(aws secretsmanager get-secret-value --secret-id ci-github-actions-ray-cluster-key-3 --query SecretString --output text)
@@ -66,11 +80,11 @@ jobs:
     - name: Spin up ray cluster
       run: |
         source .venv/bin/activate
-        ray up .github/assets/benchmarking_ray_config.yaml -y
+        ray up .github/assets/ray.yaml -y
     - name: Setup connection to ray cluster
       run: |
         source .venv/bin/activate
-        ray dashboard .github/assets/benchmarking_ray_config.yaml &
+        ray dashboard .github/assets/ray.yaml &
     - name: Submit job to ray cluster
       run: |
         source .venv/bin/activate
@@ -86,7 +100,7 @@ jobs:
     - name: Download log files from ray cluster
       run: |
         source .venv/bin/activate
-        ray rsync-down .github/assets/benchmarking_ray_config.yaml /tmp/ray/session_*/logs ray-daft-logs
+        ray rsync-down .github/assets/ray.yaml /tmp/ray/session_*/logs ray-daft-logs
         find ray-daft-logs -depth -name '*:*' -exec bash -c '
         for filepath; do
           dir=$(dirname "$filepath")
@@ -111,7 +125,7 @@ jobs:
       if: always()
       run: |
         source .venv/bin/activate
-        ray down .github/assets/benchmarking_ray_config.yaml -y
+        ray down .github/assets/ray.yaml -y
     - name: Upload log files
       uses: actions/upload-artifact@v4
       with:
