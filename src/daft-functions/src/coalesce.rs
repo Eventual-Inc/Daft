@@ -58,6 +58,7 @@ impl ScalarUDF for Coalesce {
 
                 let mut current_value = Series::full_null(name, dtype, len);
                 let remainder = BooleanArray::from_values(name, vec![true; len].into_iter());
+                let all_false = BooleanArray::from_values(name, vec![false; len].into_iter());
                 let mut remainder = remainder.into_series();
 
                 for input in inputs {
@@ -65,6 +66,11 @@ impl ScalarUDF for Coalesce {
                     current_value = input.if_else(&current_value, &to_apply)?;
 
                     remainder = remainder.and(&input.is_null()?)?;
+
+                    // exit early if all values are filled
+                    if remainder.bool().unwrap() == &all_false {
+                        break;
+                    }
                 }
 
                 Ok(current_value.rename(name))
