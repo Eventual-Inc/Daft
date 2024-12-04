@@ -1,11 +1,3 @@
-# /// script
-# requires-python = ">=3.9"
-# dependencies = [
-#     "numpy",
-#     "pyarrow",
-# ]
-# ///
-
 import argparse
 import random
 import time
