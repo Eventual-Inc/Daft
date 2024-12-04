@@ -10,6 +10,7 @@ use common_runtime::get_io_runtime;
 use common_scan_info::{ScanTaskLike, ScanTaskLikeRef, SPLIT_AND_MERGE_PASS};
 use daft_io::{get_io_client, IOStatsContext};
 use daft_parquet::read::read_parquet_metadata;
+use daft_stats::TableMetadata;
 use futures::future::try_join_all;
 use itertools::Itertools;
 use parquet2::metadata::{FileMetaData, RowGroupList};
@@ -183,26 +184,17 @@ impl<'a> Iterator for MergeByFileSize<'a> {
     }
 }
 
-/// Splits a single Parquet file by its rowgroups
-struct SplitSingleParquetFileByRowGroups<'a> {
-    accumulator: SplitParquetByRowGroupsAccumulator,
-    context: SplitParquetByRowGroupsContext<'a>,
-    idx: usize,
+enum SplitSingleParquetFileByRowGroupsState {
+    Accumulating(usize, Vec<usize>, f64),
+    Finalized(usize, Vec<usize>),
 }
 
-impl<'a> SplitSingleParquetFileByRowGroups<'a> {
-    #[inline]
-    fn wrap_data_source_into_scantask(&self, datasource: DataSource) -> ScanTaskRef {
-        ScanTask::new(
-            vec![datasource],
-            self.context.scan_task_ref.file_format_config.clone(),
-            self.context.scan_task_ref.schema.clone(),
-            self.context.scan_task_ref.storage_config.clone(),
-            self.context.scan_task_ref.pushdowns.clone(),
-            self.context.scan_task_ref.generated_fields.clone(),
-        )
-        .into()
-    }
+/// Splits a single Parquet file by its rowgroups
+struct SplitSingleParquetFileByRowGroups<'a> {
+    state: SplitSingleParquetFileByRowGroupsState,
+    scan_task: &'a ScanTask,
+    file_metadata: FileMetaData,
+    config: &'a DaftExecutionConfig,
 }
 
 impl<'a> Iterator for SplitSingleParquetFileByRowGroups<'a> {
@@ -210,28 +202,145 @@ impl<'a> Iterator for SplitSingleParquetFileByRowGroups<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            // Finished iterating: idx exceeds the number of available rowgroups
-            // We attempt a final flush and conclude the iterator if there is nothing left to flush
-            if self.idx >= self.context.file_metadata.row_groups.len() {
-                if let Some(final_result) = self.accumulator.flush(&self.context) {
-                    return Some(self.wrap_data_source_into_scantask(final_result));
-                } else {
-                    return None;
+            match &mut self.state {
+                SplitSingleParquetFileByRowGroupsState::Accumulating(
+                    idx,
+                    accumulated,
+                    estimated_accumulated_size_bytes,
+                ) => {
+                    let idx = *idx;
+
+                    // Finished iterating: idx exceeds the number of available rowgroups
+                    if idx >= self.file_metadata.row_groups.len() {
+                        if accumulated.is_empty() {
+                            return None;
+                        } else {
+                            self.state = SplitSingleParquetFileByRowGroupsState::Finalized(
+                                idx,
+                                std::mem::take(accumulated),
+                            );
+                            continue;
+                        }
+                    }
+
+                    // Grab the next rowgroup index
+                    let (rg_idx, rg) = self.file_metadata.row_groups.get_index(idx).unwrap();
+                    let total_rg_compressed_size: usize = self
+                        .file_metadata
+                        .row_groups
+                        .iter()
+                        .map(|rg| rg.1.compressed_size())
+                        .sum();
+                    let rg_estimated_in_memory_size_bytes = self
+                        .scan_task
+                        .estimate_in_memory_size_bytes(Some(self.config))
+                        .map_or(0., |est_materialized_size| {
+                            (rg.compressed_size() as f64 / total_rg_compressed_size as f64)
+                                * est_materialized_size as f64
+                        });
+
+                    // Move to next state
+                    let mut accumulated = std::mem::take(accumulated);
+                    accumulated.push(*rg_idx);
+
+                    let scan_task_missing_memory_estimates = self
+                        .scan_task
+                        .estimate_in_memory_size_bytes(Some(self.config))
+                        .is_none();
+                    let new_estimated_size_bytes =
+                        *estimated_accumulated_size_bytes + rg_estimated_in_memory_size_bytes;
+                    let accumulated_size_bytes_past_threshold =
+                        new_estimated_size_bytes as usize >= self.config.scan_tasks_min_size_bytes;
+
+                    if scan_task_missing_memory_estimates || accumulated_size_bytes_past_threshold {
+                        self.state =
+                            SplitSingleParquetFileByRowGroupsState::Finalized(idx + 1, accumulated);
+                    } else {
+                        self.state = SplitSingleParquetFileByRowGroupsState::Accumulating(
+                            idx + 1,
+                            accumulated,
+                            new_estimated_size_bytes,
+                        );
+                    }
+                    continue;
                 }
-            }
+                SplitSingleParquetFileByRowGroupsState::Finalized(idx, finalized_rg_idxs) => {
+                    let num_rows = finalized_rg_idxs
+                        .iter()
+                        .map(|rg_idx| {
+                            self.file_metadata
+                                .row_groups
+                                .get(rg_idx)
+                                .unwrap()
+                                .num_rows()
+                        })
+                        .sum();
 
-            // Grab the next rowgroup
-            let (rg_idx, _) = self
-                .context
-                .file_metadata
-                .row_groups
-                .get_index(self.idx)
-                .unwrap();
-            self.idx += 1;
+                    // Create a new DataSource by mutating a clone of the old one
+                    let mut new_source = match self.scan_task.sources.as_slice() {
+                        [source] => source,
+                        _ => unreachable!(
+                            "SplitByRowGroupsAccumulator should only have one DataSource in its ScanTask"
+                        ),
+                    }.clone();
+                    if let DataSource::File {
+                        chunk_spec,
+                        size_bytes,
+                        parquet_metadata,
+                        metadata,
+                        ..
+                    } = &mut new_source
+                    {
+                        // Create a new Parquet FileMetaData, only keeping the relevant row groups
+                        let row_group_list =
+                            RowGroupList::from_iter(finalized_rg_idxs.iter().map(|idx| {
+                                (
+                                    *idx,
+                                    self.file_metadata.row_groups.get(idx).unwrap().clone(),
+                                )
+                            }));
+                        let new_metadata = self
+                            .file_metadata
+                            .clone_with_row_groups(num_rows, row_group_list);
+                        *parquet_metadata = Some(Arc::new(new_metadata));
 
-            // Attempt an accumulation using that rowgroup
-            if let Some(accumulated) = self.accumulator.accumulate(rg_idx, &self.context) {
-                return Some(self.wrap_data_source_into_scantask(accumulated));
+                        // Mutate other necessary metadata
+                        *chunk_spec = Some(ChunkSpec::Parquet(
+                            finalized_rg_idxs.iter().map(|&idx| idx as i64).collect(),
+                        ));
+                        *size_bytes = Some(
+                            finalized_rg_idxs
+                                .iter()
+                                .map(|rg_idx| {
+                                    self.file_metadata
+                                        .row_groups
+                                        .get(rg_idx)
+                                        .unwrap()
+                                        .compressed_size()
+                                })
+                                .sum::<usize>() as u64,
+                        );
+                        *metadata = Some(TableMetadata { length: num_rows });
+                    } else {
+                        unreachable!(
+                            "Parquet file format should only be used with DataSource::File"
+                        );
+                    }
+
+                    // Move state back to Accumulating, and emit data
+                    self.state =
+                        SplitSingleParquetFileByRowGroupsState::Accumulating(*idx, Vec::new(), 0.);
+                    let new_scan_task = ScanTask::new(
+                        vec![new_source],
+                        self.scan_task.file_format_config.clone(),
+                        self.scan_task.schema.clone(),
+                        self.scan_task.storage_config.clone(),
+                        self.scan_task.pushdowns.clone(),
+                        self.scan_task.generated_fields.clone(),
+                    )
+                    .into();
+                    return Some(new_scan_task);
+                }
             }
         }
     }
@@ -317,13 +426,11 @@ fn split_scan_tasks(
         .iter()
         .zip(file_metadatas)
         .map(|((idx, scan_task, _), file_metadata)| {
-            let accumulator = SplitParquetByRowGroupsAccumulator::default();
-            let accumulation_context =
-                SplitParquetByRowGroupsContext::new(scan_task, file_metadata, config);
             let splitter = SplitSingleParquetFileByRowGroups {
-                accumulator,
-                context: accumulation_context,
-                idx: 0,
+                state: SplitSingleParquetFileByRowGroupsState::Accumulating(0, Vec::new(), 0.),
+                scan_task,
+                file_metadata,
+                config,
             };
             (*idx, splitter.collect_vec())
         })
@@ -431,137 +538,6 @@ impl<'a> Iterator for SplitParquetFilesByRowGroups<'a> {
                     }
                 }
             }
-        }
-    }
-}
-
-#[derive(Default)]
-struct SplitParquetByRowGroupsAccumulator {
-    row_group_indices: Vec<usize>,
-    size_bytes: f64,
-    num_rows: usize,
-}
-
-impl SplitParquetByRowGroupsAccumulator {
-    fn accumulate(
-        &mut self,
-        rg_idx: &usize,
-        ctx: &SplitParquetByRowGroupsContext,
-    ) -> Option<DataSource> {
-        let rg = ctx.file_metadata.row_groups.get(rg_idx).unwrap();
-
-        // Estimate the materialized size of this rowgroup and add it to curr_size_bytes
-        self.size_bytes += ctx
-            .scantask_estimated_size_bytes
-            .map_or(0., |est_materialized_size| {
-                (rg.compressed_size() as f64 / ctx.total_rg_compressed_size() as f64)
-                    * est_materialized_size as f64
-            });
-        self.num_rows += rg.num_rows();
-        self.row_group_indices.push(*rg_idx);
-
-        // Flush the accumulator if necessary
-        let reached_accumulator_limit =
-            self.size_bytes >= ctx.config.scan_tasks_min_size_bytes as f64;
-        let materialized_size_estimation_not_available =
-            ctx.scantask_estimated_size_bytes.is_none();
-        if materialized_size_estimation_not_available || reached_accumulator_limit {
-            self.flush(ctx)
-        } else {
-            None
-        }
-    }
-
-    fn flush(&mut self, ctx: &SplitParquetByRowGroupsContext) -> Option<DataSource> {
-        // If nothing to flush, return None early
-        if self.row_group_indices.is_empty() {
-            return None;
-        }
-
-        // Grab accumulated values and reset accumulators
-        let curr_row_group_indices = std::mem::take(&mut self.row_group_indices);
-        let curr_size_bytes = std::mem::take(&mut self.size_bytes);
-        let curr_num_rows = std::mem::take(&mut self.num_rows);
-
-        // Create a new DataSource by mutating a clone of the old one
-        let mut new_source = ctx.data_source().clone();
-        if let DataSource::File {
-            chunk_spec,
-            size_bytes,
-            parquet_metadata,
-            metadata: table_metadata,
-            ..
-        } = &mut new_source
-        {
-            // Create a new Parquet FileMetaData, only keeping the relevant row groups
-            let row_group_list = RowGroupList::from_iter(
-                curr_row_group_indices
-                    .iter()
-                    .map(|idx| (*idx, ctx.file_metadata.row_groups.get(idx).unwrap().clone())),
-            );
-            let new_metadata = ctx
-                .file_metadata
-                .clone_with_row_groups(curr_num_rows, row_group_list);
-            *parquet_metadata = Some(Arc::new(new_metadata));
-
-            // Mutate other necessary metadata
-            *chunk_spec = Some(ChunkSpec::Parquet(
-                curr_row_group_indices
-                    .into_iter()
-                    .map(|idx| idx as i64)
-                    .collect(),
-            ));
-            *size_bytes = Some(curr_size_bytes as u64);
-            if let Some(metadata) = table_metadata {
-                metadata.length = curr_num_rows;
-            }
-        } else {
-            unreachable!("Parquet file format should only be used with DataSource::File");
-        }
-
-        Some(new_source)
-    }
-}
-
-struct SplitParquetByRowGroupsContext<'a> {
-    config: &'a DaftExecutionConfig,
-    file_metadata: FileMetaData,
-    scan_task_ref: &'a ScanTask,
-    scantask_estimated_size_bytes: Option<usize>,
-}
-
-impl<'a> SplitParquetByRowGroupsContext<'a> {
-    pub fn new(
-        scan_task_ref: &'a ScanTask,
-        file_metadata: FileMetaData,
-        config: &'a DaftExecutionConfig,
-    ) -> Self {
-        let scantask_estimated_size_bytes =
-            scan_task_ref.estimate_in_memory_size_bytes(Some(config));
-        Self {
-            config,
-            file_metadata,
-            scan_task_ref,
-            scantask_estimated_size_bytes,
-        }
-    }
-
-    #[inline]
-    fn total_rg_compressed_size(&self) -> usize {
-        self.file_metadata
-            .row_groups
-            .iter()
-            .map(|rg| rg.1.compressed_size())
-            .sum()
-    }
-
-    #[inline]
-    fn data_source(&self) -> &DataSource {
-        match self.scan_task_ref.sources.as_slice() {
-            [source] => source,
-            _ => unreachable!(
-                "SplitByRowGroupsAccumulator should only have one DataSource in its ScanTask"
-            ),
         }
     }
 }
