@@ -1,4 +1,8 @@
-use std::{cmp::max, collections::VecDeque, sync::Arc};
+use std::{
+    cmp::{max, min},
+    collections::VecDeque,
+    sync::Arc,
+};
 
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
@@ -48,7 +52,7 @@ impl SizeBasedBuffer {
 
         while let Some((table, size)) = self.buffer.pop_front() {
             // If we can fit the table in the current batch, add it and continue
-            if bytes_taken + size <= min_bytes {
+            if bytes_taken + size < min_bytes {
                 bytes_taken += size;
                 tables.push(table);
             }
@@ -63,13 +67,16 @@ impl SizeBasedBuffer {
             else {
                 let rows = table.len();
                 let avg_row_bytes = max(size / rows, 1);
-                let needed_bytes = min_bytes - bytes_taken;
-                let rows_needed = needed_bytes / avg_row_bytes;
+                let remaining_to_min = min_bytes - bytes_taken;
+                let rows_to_take = min(
+                    (remaining_to_min + avg_row_bytes - 1) / avg_row_bytes, // Round up to ensure we hit min_bytes
+                    rows,
+                );
 
-                let split = table.slice(0, rows_needed)?;
-                let remainder = table.slice(rows_needed, rows)?;
+                let split = table.slice(0, rows_to_take)?;
+                let remainder = table.slice(rows_to_take, rows)?;
 
-                bytes_taken += avg_row_bytes * rows_needed;
+                bytes_taken += avg_row_bytes * rows_to_take;
                 tables.push(split);
 
                 if !remainder.is_empty() {
