@@ -3,10 +3,7 @@ use std::{collections::HashSet, iter, sync::Arc};
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion, TreeNodeRewriter};
 use daft_dsl::{
-    functions::{
-        python::{PythonUDF, StatefulPythonUDF},
-        FunctionExpr,
-    },
+    is_actor_pool_udf,
     optimization::{get_required_columns, requires_computation},
     Expr, ExprRef,
 };
@@ -130,13 +127,13 @@ impl OptimizerRule for SplitActorPoolProjects {
 
 // TreeNodeRewriter that assumes the Expression tree is rooted at a StatefulUDF (or alias of a StatefulUDF)
 // and its children need to be truncated + replaced with Expr::Columns
-struct TruncateRootStatefulUDF {
+struct TruncateRootActorPoolUDF {
     pub(crate) new_children: Vec<ExprRef>,
     stage_idx: usize,
     expr_idx: usize,
 }
 
-impl TruncateRootStatefulUDF {
+impl TruncateRootActorPoolUDF {
     fn new(stage_idx: usize, expr_idx: usize) -> Self {
         Self {
             new_children: Vec::new(),
@@ -148,13 +145,13 @@ impl TruncateRootStatefulUDF {
 
 // TreeNodeRewriter that assumes the Expression tree has some children which are StatefulUDFs
 // which needs to be truncated and replaced with Expr::Columns
-struct TruncateAnyStatefulUDFChildren {
+struct TruncateAnyActorPoolUDFChildren {
     pub(crate) new_children: Vec<ExprRef>,
     stage_idx: usize,
     expr_idx: usize,
 }
 
-impl TruncateAnyStatefulUDFChildren {
+impl TruncateAnyActorPoolUDFChildren {
     fn new(stage_idx: usize, expr_idx: usize) -> Self {
         Self {
             new_children: Vec::new(),
@@ -171,7 +168,7 @@ impl TruncateAnyStatefulUDFChildren {
 /// 1. Add an `alias(...)` to the child and push it onto `self.new_children`
 /// 2. Replace the child with a `col("...")`
 /// 3. Add any `col("...")` leaf nodes to `self.new_children` (only once per unique column name)
-impl TreeNodeRewriter for TruncateRootStatefulUDF {
+impl TreeNodeRewriter for TruncateRootActorPoolUDF {
     type Node = ExprRef;
 
     fn f_down(&mut self, node: Self::Node) -> DaftResult<common_treenode::Transformed<Self::Node>> {
@@ -189,11 +186,9 @@ impl TreeNodeRewriter for TruncateRootStatefulUDF {
                 Ok(common_treenode::Transformed::no(node))
             }
             // Encountered stateful UDF: chop off all children and add to self.next_children
-            Expr::Function {
-                func: FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF { .. })),
-                inputs,
-            } => {
+            _ if is_actor_pool_udf(&node) => {
                 let mut monotonically_increasing_expr_identifier = 0;
+                let inputs = node.children();
                 let new_inputs = inputs.iter().map(|e| {
                     if requires_computation(e.as_ref()) {
                         // Give the new child a deterministic name
@@ -225,16 +220,13 @@ impl TreeNodeRewriter for TruncateRootStatefulUDF {
 /// 1. Add an `alias(...)` to any StatefulUDF child and push it onto `self.new_children`
 /// 2. Replace the child with a `col("...")`
 /// 3. Add any `col("...")` leaf nodes to `self.new_children` (only once per unique column name)
-impl TreeNodeRewriter for TruncateAnyStatefulUDFChildren {
+impl TreeNodeRewriter for TruncateAnyActorPoolUDFChildren {
     type Node = ExprRef;
 
     fn f_down(&mut self, node: Self::Node) -> DaftResult<common_treenode::Transformed<Self::Node>> {
         match node.as_ref() {
             // This rewriter should never encounter a StatefulUDF expression (they should always be truncated and replaced)
-            Expr::Function {
-                func: FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF { .. })),
-                ..
-            } => {
+            _ if is_actor_pool_udf(&node) => {
                 unreachable!(
                     "TruncateAnyStatefulUDFChildren should never run on a StatefulUDF expression"
                 );
@@ -254,32 +246,14 @@ impl TreeNodeRewriter for TruncateAnyStatefulUDFChildren {
             // Attempt to truncate any children that are StatefulUDFs, replacing them with a Expr::Column
             expr => {
                 // None of the direct children are stateful UDFs, so we keep going
-                if node.children().iter().all(|e| {
-                    !matches!(
-                        e.as_ref(),
-                        Expr::Function {
-                            func: FunctionExpr::Python(PythonUDF::Stateful(
-                                StatefulPythonUDF { .. }
-                            )),
-                            ..
-                        }
-                    )
-                }) {
+                if !node.children().iter().any(is_actor_pool_udf) {
                     return Ok(common_treenode::Transformed::no(node));
                 }
 
                 let mut monotonically_increasing_expr_identifier = 0;
                 let inputs = expr.children();
                 let new_inputs = inputs.iter().map(|e| {
-                    if matches!(
-                        e.as_ref(),
-                        Expr::Function {
-                            func: FunctionExpr::Python(PythonUDF::Stateful(
-                                StatefulPythonUDF { .. }
-                            )),
-                            ..
-                        }
-                    ) {
+                    if is_actor_pool_udf(e) {
                         let intermediate_expr_name = format!(
                             "__TruncateAnyStatefulUDFChildren_{}-{}-{}__",
                             self.stage_idx, self.expr_idx, monotonically_increasing_expr_identifier
@@ -309,27 +283,24 @@ fn split_projection(
     let (mut new_children_seen, mut new_children): (HashSet<String>, Vec<ExprRef>) =
         (HashSet::new(), Vec::new());
 
-    fn _is_stateful_udf_and_should_truncate_children(expr: &ExprRef) -> bool {
-        let mut is_stateful_udf = true;
+    fn _is_actor_pool_udf_and_should_truncate_children(expr: &ExprRef) -> bool {
+        let mut cond = true;
         expr.apply(|e| match e.as_ref() {
             Expr::Alias(..) => Ok(TreeNodeRecursion::Continue),
-            Expr::Function {
-                func: FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF { .. })),
-                ..
-            } => Ok(TreeNodeRecursion::Stop),
+            _ if is_actor_pool_udf(e) => Ok(TreeNodeRecursion::Stop),
             _ => {
-                is_stateful_udf = false;
+                cond = false;
                 Ok(TreeNodeRecursion::Stop)
             }
         })
         .unwrap();
-        is_stateful_udf
+        cond
     }
 
     for (expr_idx, expr) in projection.iter().enumerate() {
         // Run the TruncateRootStatefulUDF TreeNodeRewriter
-        if _is_stateful_udf_and_should_truncate_children(expr) {
-            let mut rewriter = TruncateRootStatefulUDF::new(stage_idx, expr_idx);
+        if _is_actor_pool_udf_and_should_truncate_children(expr) {
+            let mut rewriter = TruncateRootActorPoolUDF::new(stage_idx, expr_idx);
             let rewritten_root = expr.clone().rewrite(&mut rewriter)?.data;
             truncated_exprs.push(rewritten_root);
             for new_child in rewriter.new_children {
@@ -340,8 +311,8 @@ fn split_projection(
             }
 
         // Run the TruncateAnyStatefulUDFChildren TreeNodeRewriter
-        } else if has_stateful_udf(expr) {
-            let mut rewriter = TruncateAnyStatefulUDFChildren::new(stage_idx, expr_idx);
+        } else if expr.exists(is_actor_pool_udf) {
+            let mut rewriter = TruncateAnyActorPoolUDFChildren::new(stage_idx, expr_idx);
             let rewritten_root = expr.clone().rewrite(&mut rewriter)?.data;
             truncated_exprs.push(rewritten_root);
             for new_child in rewriter.new_children {
@@ -381,11 +352,11 @@ fn try_optimize_project(
     let aliased_projection_exprs = projection
         .projection
         .iter()
-        .map(|e| {
-            if has_stateful_udf(e) && !matches!(e.as_ref(), Expr::Alias(..)) {
-                e.alias(e.name())
+        .map(|expr| {
+            if expr.exists(is_actor_pool_udf) && !matches!(expr.as_ref(), Expr::Alias(..)) {
+                expr.alias(expr.name())
             } else {
-                e.clone()
+                expr.clone()
             }
         })
         .collect();
@@ -403,7 +374,10 @@ fn recursive_optimize_project(
     // TODO: eliminate the need for recursive calls by doing a post-order traversal of the plan tree.
 
     // Base case: no stateful UDFs at all
-    let has_stateful_udfs = projection.projection.iter().any(has_stateful_udf);
+    let has_stateful_udfs = projection
+        .projection
+        .iter()
+        .any(|expr| expr.exists(is_actor_pool_udf));
     if !has_stateful_udfs {
         return Ok(Transformed::no(plan));
     }
@@ -452,8 +426,9 @@ fn recursive_optimize_project(
     };
 
     // Start building a chain of `child -> Project -> ActorPoolProject -> ActorPoolProject -> ... -> Project`
-    let (stateful_stages, stateless_stages): (Vec<_>, Vec<_>) =
-        truncated_exprs.into_iter().partition(has_stateful_udf);
+    let (stateful_stages, stateless_stages): (Vec<_>, Vec<_>) = truncated_exprs
+        .into_iter()
+        .partition(|expr| expr.exists(is_actor_pool_udf));
 
     // Build the new stateless Project: [...all columns that came before it, ...stateless_projections]
     let passthrough_columns = {
@@ -524,19 +499,6 @@ fn recursive_optimize_project(
     Ok(Transformed::yes(final_selection_project))
 }
 
-#[inline]
-fn has_stateful_udf(e: &ExprRef) -> bool {
-    e.exists(|e| {
-        matches!(
-            e.as_ref(),
-            Expr::Function {
-                func: FunctionExpr::Python(PythonUDF::Stateful(_)),
-                ..
-            }
-        )
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -547,7 +509,7 @@ mod tests {
     use daft_dsl::{
         col,
         functions::{
-            python::{PythonUDF, StatefulPythonUDF, UDFRuntimeBinding},
+            python::{MaybeInitializedUDF, PythonUDF, RuntimePyObject},
             FunctionExpr,
         },
         Expr, ExprRef,
@@ -595,18 +557,19 @@ mod tests {
 
     fn create_stateful_udf(inputs: Vec<ExprRef>) -> ExprRef {
         Expr::Function {
-            func: FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
+            func: FunctionExpr::Python(PythonUDF {
                 name: Arc::new("foo".to_string()),
-                stateful_partial_func:
-                    daft_dsl::functions::python::RuntimePyObject::new_testing_none(),
+                func: MaybeInitializedUDF::Uninitialized {
+                    inner: RuntimePyObject::new_testing_none(),
+                    init_args: RuntimePyObject::new_testing_none(),
+                },
+                bound_args: RuntimePyObject::new_testing_none(),
                 num_expressions: inputs.len(),
-                return_dtype: DataType::Int64,
+                return_dtype: DataType::Utf8,
                 resource_request: Some(create_resource_request()),
                 batch_size: None,
                 concurrency: Some(8),
-                init_args: None,
-                runtime_binding: UDFRuntimeBinding::Unbound,
-            })),
+            }),
             inputs,
         }
         .arced()

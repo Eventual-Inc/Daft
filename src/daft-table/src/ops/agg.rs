@@ -73,8 +73,15 @@ impl Table {
         use daft_dsl::functions::python::PythonUDF;
 
         let udf = match func {
-            FunctionExpr::Python(PythonUDF::Stateless(udf)) => udf,
-            FunctionExpr::Python(PythonUDF::Stateful(_)) => {
+            FunctionExpr::Python(
+                udf @ PythonUDF {
+                    concurrency: None, ..
+                },
+            ) => udf,
+            FunctionExpr::Python(PythonUDF {
+                concurrency: Some(_),
+                ..
+            }) => {
                 return Err(DaftError::ComputeError(
                     "Cannot run stateful UDF in MapGroups".to_string(),
                 ))

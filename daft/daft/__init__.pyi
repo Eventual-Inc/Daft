@@ -9,7 +9,7 @@ from daft.io.scan import ScanOperator
 from daft.plan_scheduler.physical_plan_scheduler import PartitionT
 from daft.runners.partitioning import PartitionCacheEntry
 from daft.sql.sql_connection import SQLConnection
-from daft.udf import InitArgsType, PartialStatefulUDF, PartialStatelessUDF
+from daft.udf import BoundUDFArgs, InitArgsType, UninitializedUdf
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -1123,29 +1123,20 @@ def interval_lit(
 ) -> PyExpr: ...
 def decimal_lit(sign: bool, digits: tuple[int, ...], exp: int) -> PyExpr: ...
 def series_lit(item: PySeries) -> PyExpr: ...
-def stateless_udf(
+def udf(
     name: str,
-    partial_stateless_udf: PartialStatelessUDF,
+    inner: UninitializedUdf,
+    bound_args: BoundUDFArgs,
     expressions: list[PyExpr],
     return_dtype: PyDataType,
-    resource_request: ResourceRequest | None,
-    batch_size: int | None,
-) -> PyExpr: ...
-def stateful_udf(
-    name: str,
-    partial_stateful_udf: PartialStatefulUDF,
-    expressions: list[PyExpr],
-    return_dtype: PyDataType,
-    resource_request: ResourceRequest | None,
     init_args: InitArgsType,
+    resource_request: ResourceRequest | None,
     batch_size: int | None,
     concurrency: int | None,
 ) -> PyExpr: ...
 def check_column_name_validity(name: str, schema: PySchema): ...
-def extract_partial_stateful_udf_py(
-    expression: PyExpr,
-) -> dict[str, tuple[PartialStatefulUDF, InitArgsType]]: ...
-def bind_stateful_udfs(expression: PyExpr, initialized_funcs: dict[str, Callable]) -> PyExpr: ...
+def initialize_udfs(expression: PyExpr) -> PyExpr: ...
+def get_udf_names(expression: PyExpr) -> list[str]: ...
 def resolve_expr(expr: PyExpr, schema: PySchema) -> tuple[PyExpr, PyField]: ...
 def hash(expr: PyExpr, seed: Any | None = None) -> PyExpr: ...
 def cosine_distance(expr: PyExpr, other: PyExpr) -> PyExpr: ...

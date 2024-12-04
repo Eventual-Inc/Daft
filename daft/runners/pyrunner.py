@@ -14,6 +14,7 @@ from daft.context import get_context
 from daft.daft import FileFormatConfig, FileInfos, IOConfig, ResourceRequest, SystemInfo
 from daft.execution.native_executor import NativeExecutor
 from daft.execution.physical_plan import ActorPoolManager
+from daft.expressions import ExpressionsProjection
 from daft.filesystem import glob_path_with_stats
 from daft.internal.gpu import cuda_visible_devices
 from daft.runners import runner_io
@@ -34,7 +35,6 @@ from daft.table import MicroPartition
 if TYPE_CHECKING:
     from daft.execution import physical_plan
     from daft.execution.execution_step import Instruction, PartitionTask
-    from daft.expressions import ExpressionsProjection
     from daft.logical.builder import LogicalPlanBuilder
 
 logger = logging.getLogger(__name__)
@@ -186,11 +186,11 @@ class PyStatefulActorSingleton:
 
         import os
 
-        from daft.execution.stateful_actor import initialize_actor_pool_projection
-
         os.environ["CUDA_VISIBLE_DEVICES"] = cuda_device_queue.get(timeout=1)
 
-        PyStatefulActorSingleton.initialized_projection = initialize_actor_pool_projection(uninitialized_projection)
+        PyStatefulActorSingleton.initialized_projection = ExpressionsProjection(
+            [e._initialize_udfs() for e in uninitialized_projection]
+        )
 
     @staticmethod
     def build_partitions_with_stateful_project(

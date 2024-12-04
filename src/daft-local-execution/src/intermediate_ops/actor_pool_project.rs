@@ -4,7 +4,11 @@ use common_error::DaftResult;
 use common_runtime::RuntimeRef;
 #[cfg(feature = "python")]
 use daft_dsl::python::PyExpr;
-use daft_dsl::{functions::python::extract_stateful_udf_exprs, ExprRef};
+use daft_dsl::{
+    common_treenode::{TreeNode, TreeNodeRecursion},
+    functions::{python::PythonUDF, FunctionExpr},
+    Expr, ExprRef,
+};
 #[cfg(feature = "python")]
 use daft_micropartition::python::PyMicroPartition;
 use daft_micropartition::MicroPartition;
@@ -126,21 +130,41 @@ pub struct ActorPoolProjectOperator {
 
 impl ActorPoolProjectOperator {
     pub fn new(projection: Vec<ExprRef>) -> Self {
-        let stateful_udf_vec = projection
-            .iter()
-            .flat_map(|expr| extract_stateful_udf_exprs(expr.clone()))
-            .collect::<Vec<_>>();
+        let mut concurrency = 0;
+        let mut batch_size = None;
+        let mut num_actor_pool_udfs = 0;
 
-        let [stateful_udf] = stateful_udf_vec
-            .try_into()
-            .expect("Expected only one stateful udf in an actor pool project");
+        for expr in &projection {
+            expr.apply(|e| {
+                if let Expr::Function {
+                    func:
+                        FunctionExpr::Python(PythonUDF {
+                            concurrency: Some(c),
+                            batch_size: bs,
+                            ..
+                        }),
+                    ..
+                } = e.as_ref()
+                {
+                    concurrency = *c;
+                    batch_size = *bs;
+                    num_actor_pool_udfs += 1;
+                }
+
+                Ok(TreeNodeRecursion::Continue)
+            })
+            .unwrap();
+        }
+
+        assert_eq!(
+            num_actor_pool_udfs, 0,
+            "Expected only one stateful udf in an actor pool project"
+        );
 
         Self {
             projection,
-            concurrency: stateful_udf
-                .concurrency
-                .expect("Stateful UDF should have concurrency"),
-            batch_size: stateful_udf.batch_size,
+            concurrency,
+            batch_size,
         }
     }
 }

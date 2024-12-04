@@ -15,7 +15,7 @@ mod resolve_expr;
 mod treenode;
 pub use common_treenode;
 pub use expr::{
-    binary_op, col, has_agg, has_stateful_udf, is_partition_compatible, AggExpr,
+    binary_op, col, has_agg, is_actor_pool_udf, is_partition_compatible, AggExpr,
     ApproxPercentileParams, Expr, ExprRef, Operator, OuterReferenceColumn, SketchType, Subquery,
     SubqueryPlan,
 };
@@ -37,13 +37,8 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction_bound!(python::interval_lit, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(python::decimal_lit, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(python::series_lit, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(python::stateless_udf, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(python::stateful_udf, parent)?)?;
-    parent.add_function(wrap_pyfunction_bound!(
-        python::extract_partial_stateful_udf_py,
-        parent
-    )?)?;
-    parent.add_function(wrap_pyfunction_bound!(python::bind_stateful_udfs, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(python::udf, parent)?)?;
+    parent.add_function(wrap_pyfunction_bound!(python::initialize_udfs, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(python::eq, parent)?)?;
     parent.add_function(wrap_pyfunction_bound!(
         python::check_column_name_validity,

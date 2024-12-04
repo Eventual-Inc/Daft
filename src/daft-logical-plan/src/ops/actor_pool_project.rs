@@ -4,11 +4,8 @@ use common_error::DaftError;
 use common_resource_request::ResourceRequest;
 use common_treenode::TreeNode;
 use daft_dsl::{
-    functions::{
-        python::{get_concurrency, get_resource_request, PythonUDF, StatefulPythonUDF},
-        FunctionExpr,
-    },
-    Expr, ExprRef, ExprResolver,
+    functions::python::{get_concurrency, get_resource_request, get_udf_names},
+    is_actor_pool_udf, ExprRef, ExprResolver,
 };
 use daft_schema::schema::{Schema, SchemaRef};
 use itertools::Itertools;
@@ -36,18 +33,12 @@ impl ActorPoolProject {
             .resolve(projection, input.schema().as_ref())
             .context(CreationSnafu)?;
 
-        let num_stateful_udf_exprs: usize = projection
+        let num_actor_pool_udfs: usize = projection
             .iter()
             .map(|expr| {
                 let mut num_stateful_udfs = 0;
                 expr.apply(|e| {
-                    if matches!(
-                        e.as_ref(),
-                        Expr::Function {
-                            func: FunctionExpr::Python(PythonUDF::Stateful(_)),
-                            ..
-                        }
-                    ) {
+                    if is_actor_pool_udf(e) {
                         num_stateful_udfs += 1;
                     }
                     Ok(common_treenode::TreeNodeRecursion::Continue)
@@ -56,8 +47,8 @@ impl ActorPoolProject {
                 num_stateful_udfs
             })
             .sum();
-        if !num_stateful_udf_exprs == 1 {
-            return Err(Error::CreationError { source: DaftError::InternalError(format!("Expected ActorPoolProject to have exactly 1 stateful UDF expression but found: {num_stateful_udf_exprs}")) });
+        if !num_actor_pool_udfs == 1 {
+            return Err(Error::CreationError { source: DaftError::InternalError(format!("Expected ActorPoolProject to have exactly 1 actor pool UDF expression but found: {num_actor_pool_udfs}")) });
         }
 
         let projected_schema = Schema::new(fields).context(CreationSnafu)?.into();
@@ -94,28 +85,7 @@ impl ActorPoolProject {
         ));
         res.push(format!(
             "UDFs = [{}]",
-            self.projection
-                .iter()
-                .flat_map(|proj| {
-                    let mut udf_names = vec![];
-                    proj.apply(|e| {
-                        if let Expr::Function {
-                            func:
-                                FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
-                                    name,
-                                    ..
-                                })),
-                            ..
-                        } = e.as_ref()
-                        {
-                            udf_names.push(name.clone());
-                        }
-                        Ok(common_treenode::TreeNodeRecursion::Continue)
-                    })
-                    .unwrap();
-                    udf_names
-                })
-                .join(", ")
+            self.projection.iter().flat_map(get_udf_names).join(", ")
         ));
         res.push(format!("Concurrency = {}", self.concurrency()));
         if let Some(resource_request) = self.resource_request() {

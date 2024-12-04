@@ -5,10 +5,10 @@ use common_resource_request::ResourceRequest;
 use common_treenode::TreeNode;
 use daft_dsl::{
     functions::{
-        python::{get_concurrency, get_resource_request, PythonUDF, StatefulPythonUDF},
+        python::{get_concurrency, get_resource_request, PythonUDF},
         FunctionExpr,
     },
-    Expr, ExprRef,
+    is_actor_pool_udf, Expr, ExprRef,
 };
 use daft_logical_plan::partitioning::{translate_clustering_spec, ClusteringSpec};
 use itertools::Itertools;
@@ -32,13 +32,7 @@ impl ActorPoolProject {
             .map(|expr| {
                 let mut num_stateful_udfs = 0;
                 expr.apply(|e| {
-                    if matches!(
-                        e.as_ref(),
-                        Expr::Function {
-                            func: FunctionExpr::Python(PythonUDF::Stateful(_)),
-                            ..
-                        }
-                    ) {
+                    if is_actor_pool_udf(e) {
                         num_stateful_udfs += 1;
                     }
                     Ok(common_treenode::TreeNodeRecursion::Continue)
@@ -83,10 +77,11 @@ impl ActorPoolProject {
                     proj.apply(|e| {
                         if let Expr::Function {
                             func:
-                                FunctionExpr::Python(PythonUDF::Stateful(StatefulPythonUDF {
+                                FunctionExpr::Python(PythonUDF {
                                     name,
+                                    concurrency: Some(_),
                                     ..
-                                })),
+                                }),
                             ..
                         } = e.as_ref()
                         {

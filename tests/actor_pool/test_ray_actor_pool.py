@@ -3,7 +3,6 @@ import ray
 import daft
 from daft import DataType, ResourceRequest
 from daft.daft import PyDaftExecutionConfig
-from daft.execution.execution_step import StatefulUDFProject
 from daft.expressions import ExpressionsProjection
 from daft.runners.partitioning import PartialPartitionMetadata
 from daft.runners.ray_runner import RayRoundRobinActorPool
@@ -27,10 +26,9 @@ def test_ray_actor_pool():
     )
     initial_partition = ray.put(MicroPartition.from_pydict({"x": [1, 1, 1]}))
     ppm = PartialPartitionMetadata(num_rows=None, size_bytes=None)
-    instr = StatefulUDFProject(projection=projection)
     pool.setup()
 
-    result = pool.submit(instruction_stack=[instr], partial_metadatas=[ppm], inputs=[initial_partition])
+    result = pool.submit(partial_metadatas=[ppm], inputs=[initial_partition])
     [partial_metadata, result_data] = ray.get(result)
     assert len(partial_metadata) == 1
     pm = partial_metadata[0]
@@ -38,7 +36,7 @@ def test_ray_actor_pool():
     assert pm.num_rows == 3
     assert result_data.to_pydict() == {"x": [2, 2, 2]}
 
-    result = pool.submit(instruction_stack=[instr], partial_metadatas=[ppm], inputs=[initial_partition])
+    result = pool.submit(partial_metadatas=[ppm], inputs=[initial_partition])
     [partial_metadata, result_data] = ray.get(result)
     assert len(partial_metadata) == 1
     pm = partial_metadata[0]
@@ -46,7 +44,7 @@ def test_ray_actor_pool():
     assert pm.num_rows == 3
     assert result_data.to_pydict() == {"x": [3, 3, 3]}
 
-    result = pool.submit(instruction_stack=[instr], partial_metadatas=[ppm], inputs=[initial_partition])
+    result = pool.submit(partial_metadatas=[ppm], inputs=[initial_partition])
     [partial_metadata, result_data] = ray.get(result)
     assert len(partial_metadata) == 1
     pm = partial_metadata[0]

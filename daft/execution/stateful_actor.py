@@ -15,39 +15,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def initialize_actor_pool_projection(projection: ExpressionsProjection) -> ExpressionsProjection:
-    """Initializes the stateful UDFs in the projection."""
-
-    from daft.daft import extract_partial_stateful_udf_py
-
-    partial_stateful_udfs = {
-        name: psu for expr in projection for name, psu in extract_partial_stateful_udf_py(expr._expr).items()
-    }
-
-    logger.info("Initializing stateful UDFs: %s", ", ".join(partial_stateful_udfs.keys()))
-
-    initialized_stateful_udfs = {}
-    for name, (partial_udf, init_args) in partial_stateful_udfs.items():
-        if init_args is None:
-            initialized_stateful_udfs[name] = partial_udf.func_cls()
-        else:
-            args, kwargs = init_args
-            initialized_stateful_udfs[name] = partial_udf.func_cls(*args, **kwargs)
-
-    initialized_projection = ExpressionsProjection(
-        [e._bind_stateful_udfs(initialized_stateful_udfs) for e in projection]
-    )
-
-    return initialized_projection
-
-
 def stateful_actor_event_loop(uninitialized_projection: ExpressionsProjection, conn: Connection) -> None:
     """
     Event loop that runs in a stateful actor process and receives MicroPartitions to evaluate with a stateful UDF.
 
     Terminates once it receives None.
     """
-    initialized_projection = initialize_actor_pool_projection(uninitialized_projection)
+    initialized_projection = ExpressionsProjection([e._initialize_udfs() for e in uninitialized_projection])
 
     while True:
         input: MicroPartition | None = conn.recv()

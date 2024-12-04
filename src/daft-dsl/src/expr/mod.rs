@@ -1273,14 +1273,16 @@ pub fn has_agg(expr: &ExprRef) -> bool {
     expr.exists(|e| matches!(e.as_ref(), Expr::Agg(_)))
 }
 
-pub fn has_stateful_udf(expr: &ExprRef) -> bool {
-    expr.exists(|e| {
-        matches!(
-            e.as_ref(),
-            Expr::Function {
-                func: FunctionExpr::Python(PythonUDF::Stateful(_)),
+#[inline]
+pub fn is_actor_pool_udf(expr: &ExprRef) -> bool {
+    matches!(
+        expr.as_ref(),
+        Expr::Function {
+            func: FunctionExpr::Python(PythonUDF {
+                concurrency: Some(_),
                 ..
-            }
-        )
-    })
+            }),
+            ..
+        }
+    )
 }
