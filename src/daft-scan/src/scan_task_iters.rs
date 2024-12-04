@@ -239,26 +239,32 @@ impl<'a> Iterator for SplitSingleParquetFileByRowGroups<'a> {
                                 * est_materialized_size as f64
                         });
 
-                    // Move to next state
-                    let mut accumulated = std::mem::take(accumulated);
-                    accumulated.push(*rg_idx);
+                    // State updates
+                    let mut new_accumulated = std::mem::take(accumulated);
+                    new_accumulated.push(*rg_idx);
+                    let new_estimated_size_bytes =
+                        *estimated_accumulated_size_bytes + rg_estimated_in_memory_size_bytes;
+                    let new_idx = idx + 1;
 
+                    // Decide which state to jump to
+                    //
+                    // If the estimated size in bytes of the materialized data is past our configured threshold, we perform a split.
+                    // NOTE: If the ScanTask is missing memory estimates for some reason, we will naively split it
                     let scan_task_missing_memory_estimates = self
                         .scan_task
                         .estimate_in_memory_size_bytes(Some(self.config))
                         .is_none();
-                    let new_estimated_size_bytes =
-                        *estimated_accumulated_size_bytes + rg_estimated_in_memory_size_bytes;
                     let accumulated_size_bytes_past_threshold =
                         new_estimated_size_bytes as usize >= self.config.scan_tasks_min_size_bytes;
-
                     if scan_task_missing_memory_estimates || accumulated_size_bytes_past_threshold {
-                        self.state =
-                            SplitSingleParquetFileByRowGroupsState::Finalized(idx + 1, accumulated);
+                        self.state = SplitSingleParquetFileByRowGroupsState::Finalized(
+                            new_idx,
+                            new_accumulated,
+                        );
                     } else {
                         self.state = SplitSingleParquetFileByRowGroupsState::Accumulating(
-                            idx + 1,
-                            accumulated,
+                            new_idx,
+                            new_accumulated,
                             new_estimated_size_bytes,
                         );
                     }
