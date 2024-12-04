@@ -1,3 +1,10 @@
+# /// script
+# requires-python = ">=3.9"
+# dependencies = [
+#     "numpy==2.1.3",
+# ]
+# ///
+
 import argparse
 import random
 import time
