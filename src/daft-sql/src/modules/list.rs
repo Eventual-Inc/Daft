@@ -304,7 +304,7 @@ impl SQLFunction for SQLListSort {
         match inputs {
             [input] => {
                 let input = planner.plan_function_arg(input)?;
-                Ok(daft_functions::list::sort(input, None))
+                Ok(daft_functions::list::sort(input, None, None))
             }
             [input, order] => {
                 let input = planner.plan_function_arg(input)?;
@@ -323,7 +323,7 @@ impl SQLFunction for SQLListSort {
                     }
                     _ => unsupported_sql_err!("invalid order for list_sort"),
                 };
-                Ok(daft_functions::list::sort(input, Some(order)))
+                Ok(daft_functions::list::sort(input, Some(order), None))
             }
             _ => unsupported_sql_err!(
                 "invalid arguments for list_sort. Expected list_sort(expr, ASC|DESC)"

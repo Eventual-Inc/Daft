@@ -241,7 +241,12 @@ class Table:
         pyexprs = [e._expr for e in exprs]
         return Table._from_pytable(self._table.filter(pyexprs))
 
-    def sort(self, sort_keys: ExpressionsProjection, descending: bool | list[bool] | None = None) -> Table:
+    def sort(
+        self,
+        sort_keys: ExpressionsProjection,
+        descending: bool | list[bool] | None = None,
+        nulls_first: bool | list[bool] | None = None,
+    ) -> Table:
         assert all(isinstance(e, Expression) for e in sort_keys)
         pyexprs = [e._expr for e in sort_keys]
         if descending is None:
@@ -256,7 +261,19 @@ class Table:
                 )
         else:
             raise TypeError(f"Expected a bool, list[bool] or None for `descending` but got {type(descending)}")
-        return Table._from_pytable(self._table.sort(pyexprs, descending))
+        if nulls_first is None:
+            nulls_first = descending
+        elif isinstance(nulls_first, bool):
+            nulls_first = [nulls_first for _ in pyexprs]
+        elif isinstance(nulls_first, list):
+            if len(nulls_first) != len(sort_keys):
+                raise ValueError(
+                    f"Expected length of `nulls_first` to be the same length as `sort_keys` since a list was passed in,"
+                    f"got {len(nulls_first)} instead of {len(sort_keys)}"
+                )
+            else:
+                nulls_first = [bool(x) for x in nulls_first]
+        return Table._from_pytable(self._table.sort(pyexprs, descending, nulls_first))
 
     def sample(
         self,
@@ -378,7 +395,12 @@ class Table:
     # Compute methods (Table -> Series)
     ###
 
-    def argsort(self, sort_keys: ExpressionsProjection, descending: bool | list[bool] | None = None) -> Series:
+    def argsort(
+        self,
+        sort_keys: ExpressionsProjection,
+        descending: bool | list[bool] | None = None,
+        nulls_first: bool | list[bool] | None = None,
+    ) -> Series:
         assert all(isinstance(e, Expression) for e in sort_keys)
         pyexprs = [e._expr for e in sort_keys]
         if descending is None:
@@ -393,7 +415,21 @@ class Table:
                 )
         else:
             raise TypeError(f"Expected a bool, list[bool] or None for `descending` but got {type(descending)}")
-        return Series._from_pyseries(self._table.argsort(pyexprs, descending))
+        if nulls_first is None:
+            nulls_first = descending
+        elif isinstance(nulls_first, bool):
+            nulls_first = [nulls_first for _ in pyexprs]
+        elif isinstance(nulls_first, list):
+            if len(nulls_first) != len(sort_keys):
+                raise ValueError(
+                    f"Expected length of `nulls_first` to be the same length as `sort_keys` since a list was passed in,"
+                    f"got {len(nulls_first)} instead of {len(sort_keys)}"
+                )
+            else:
+                nulls_first = [bool(x) for x in nulls_first]
+        else:
+            raise TypeError(f"Expected a bool, list[bool] or None for `nulls_first` but got {type(nulls_first)}")
+        return Series._from_pyseries(self._table.argsort(pyexprs, descending, nulls_first))
 
     def __reduce__(self) -> tuple:
         names = self.column_names()
@@ -526,7 +562,7 @@ def read_parquet_into_pyarrow(
     io_config: IOConfig | None = None,
     multithreaded_io: bool | None = None,
     coerce_int96_timestamp_unit: TimeUnit = TimeUnit.ns(),
-    string_encoding: Literal["utf-8"] | Literal["raw"] = "utf-8",
+    string_encoding: Literal["utf-8", "raw"] = "utf-8",
     file_timeout_ms: int | None = 900_000,  # 15 minutes
 ) -> pa.Table:
     fields, metadata, columns, num_rows_read = _read_parquet_into_pyarrow(

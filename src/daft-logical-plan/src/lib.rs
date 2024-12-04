@@ -10,6 +10,7 @@ pub mod optimization;
 pub mod partitioning;
 pub mod sink_info;
 pub mod source_info;
+pub mod stats;
 #[cfg(test)]
 mod test;
 mod treenode;

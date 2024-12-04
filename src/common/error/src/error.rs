@@ -50,6 +50,8 @@ pub enum DaftError {
     FromUtf8Error(#[from] std::string::FromUtf8Error),
     #[error("Not Yet Implemented: {0}")]
     NotImplemented(String),
+    #[error("DaftError::CatalogError {0}")]
+    CatalogError(String),
 }
 
 impl DaftError {

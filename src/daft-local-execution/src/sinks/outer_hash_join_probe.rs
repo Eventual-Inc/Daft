@@ -126,6 +126,7 @@ struct OuterHashJoinParams {
     right_non_join_columns: Vec<String>,
     right_non_join_schema: SchemaRef,
     join_type: JoinType,
+    build_on_left: bool,
 }
 
 pub(crate) struct OuterHashJoinProbeSink {
@@ -134,16 +135,23 @@ pub(crate) struct OuterHashJoinProbeSink {
     probe_state_bridge: ProbeStateBridgeRef,
 }
 
+#[allow(clippy::too_many_arguments)]
 impl OuterHashJoinProbeSink {
     pub(crate) fn new(
         probe_on: Vec<ExprRef>,
         left_schema: &SchemaRef,
         right_schema: &SchemaRef,
         join_type: JoinType,
+        build_on_left: bool,
         common_join_keys: IndexSet<String>,
         output_schema: &SchemaRef,
         probe_state_bridge: ProbeStateBridgeRef,
     ) -> Self {
+        // For outer joins, we need to swap the left and right schemas if we are building on the right.
+        let (left_schema, right_schema) = match (join_type, build_on_left) {
+            (JoinType::Outer, false) => (right_schema, left_schema),
+            _ => (left_schema, right_schema),
+        };
         let left_non_join_columns = left_schema
             .fields
             .keys()
@@ -168,6 +176,7 @@ impl OuterHashJoinProbeSink {
                 right_non_join_columns,
                 right_non_join_schema,
                 join_type,
+                build_on_left,
             }),
             output_schema: output_schema.clone(),
             probe_state_bridge,
@@ -243,6 +252,7 @@ impl OuterHashJoinProbeSink {
         )))
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn probe_outer(
         input: &Arc<MicroPartition>,
         probe_state: &ProbeState,
@@ -251,6 +261,7 @@ impl OuterHashJoinProbeSink {
         common_join_keys: &[String],
         left_non_join_columns: &[String],
         right_non_join_columns: &[String],
+        build_on_left: bool,
     ) -> DaftResult<Arc<MicroPartition>> {
         let probe_table = probe_state.get_probeable().clone();
         let tables = probe_state.get_tables().clone();
@@ -297,6 +308,12 @@ impl OuterHashJoinProbeSink {
         let join_table = probe_side_table.get_columns(common_join_keys)?;
         let left = build_side_table.get_columns(left_non_join_columns)?;
         let right = probe_side_table.get_columns(right_non_join_columns)?;
+        // If we built the probe table on the right, flip the order of union.
+        let (left, right) = if build_on_left {
+            (left, right)
+        } else {
+            (right, left)
+        };
         let final_table = join_table.union(&left)?.union(&right)?;
         Ok(Arc::new(MicroPartition::new_loaded(
             final_table.schema.clone(),
@@ -310,6 +327,7 @@ impl OuterHashJoinProbeSink {
         common_join_keys: &[String],
         left_non_join_columns: &[String],
         right_non_join_schema: &SchemaRef,
+        build_on_left: bool,
     ) -> DaftResult<Option<Arc<MicroPartition>>> {
         let mut states_iter = states.iter_mut();
         let first_state = states_iter
@@ -372,6 +390,12 @@ impl OuterHashJoinProbeSink {
                 .collect::<Vec<_>>();
             Table::new_unchecked(right_non_join_schema.clone(), columns, left.len())
         };
+        // If we built the probe table on the right, flip the order of union.
+        let (left, right) = if build_on_left {
+            (left, right)
+        } else {
+            (right, left)
+        };
         let final_table = join_table.union(&left)?.union(&right)?;
         Ok(Some(Arc::new(MicroPartition::new_loaded(
             final_table.schema.clone(),
@@ -426,6 +450,7 @@ impl StreamingSink for OuterHashJoinProbeSink {
                             &params.common_join_keys,
                             &params.left_non_join_columns,
                             &params.right_non_join_columns,
+                            params.build_on_left,
                         )
                     }
                     _ => unreachable!(
@@ -462,6 +487,7 @@ impl StreamingSink for OuterHashJoinProbeSink {
                         &params.common_join_keys,
                         &params.left_non_join_columns,
                         &params.right_non_join_schema,
+                        params.build_on_left,
                     )
                     .await
                 })

@@ -6,7 +6,7 @@ use daft_dsl::{ExprRef, ExprResolver};
 use itertools::Itertools;
 use snafu::ResultExt;
 
-use crate::{logical_plan, logical_plan::CreationSnafu, LogicalPlan};
+use crate::{logical_plan, logical_plan::CreationSnafu, stats::StatsState, LogicalPlan};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Sort {
@@ -14,6 +14,8 @@ pub struct Sort {
     pub input: Arc<LogicalPlan>,
     pub sort_by: Vec<ExprRef>,
     pub descending: Vec<bool>,
+    pub nulls_first: Vec<bool>,
+    pub stats_state: StatsState,
 }
 
 impl Sort {
@@ -21,6 +23,7 @@ impl Sort {
         input: Arc<LogicalPlan>,
         sort_by: Vec<ExprRef>,
         descending: Vec<bool>,
+        nulls_first: Vec<bool>,
     ) -> logical_plan::Result<Self> {
         if sort_by.is_empty() {
             return Err(DaftError::ValueError(
@@ -51,7 +54,16 @@ impl Sort {
             input,
             sort_by,
             descending,
+            nulls_first,
+            stats_state: StatsState::NotMaterialized,
         })
+    }
+
+    pub(crate) fn with_materialized_stats(mut self) -> Self {
+        // Sorting does not affect cardinality.
+        let input_stats = self.input.materialized_stats();
+        self.stats_state = StatsState::Materialized(input_stats.clone().into());
+        self
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
@@ -62,9 +74,20 @@ impl Sort {
             .sort_by
             .iter()
             .zip(self.descending.iter())
-            .map(|(sb, d)| format!("({}, {})", sb, if *d { "descending" } else { "ascending" },))
+            .zip(self.nulls_first.iter())
+            .map(|((sb, d), nf)| {
+                format!(
+                    "({}, {}, {})",
+                    sb,
+                    if *d { "descending" } else { "ascending" },
+                    if *nf { "nulls first" } else { "nulls last" }
+                )
+            })
             .join(", ");
         res.push(format!("Sort: Sort by = {}", pairs));
+        if let StatsState::Materialized(stats) = &self.stats_state {
+            res.push(format!("Stats = {}", stats));
+        }
         res
     }
 }

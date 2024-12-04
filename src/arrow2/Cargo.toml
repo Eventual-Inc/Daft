@@ -6,19 +6,19 @@ rustc_version = "0.4.0"
 ahash = "0.8"
 arrow-array = {version = "=51.0.0", optional = true}
 # Support conversion to/from arrow-rs
-arrow-buffer = {version = "=51.0.0", optional = true}
+arrow-buffer = {version = "=53.3.0", optional = true}
 arrow-data = {version = "=51.0.0", optional = true}
 arrow-format = {version = "0.8", optional = true, features = ["ipc"]}
 arrow-schema = {version = "=51.0.0", optional = true}
 # to read IPC as a stream
-async-stream = {version = "0.3.2", optional = true}
+async-stream = {version = "0.3.6", optional = true}
 # avro support
 avro-schema = {version = "0.3", optional = true}
 base64 = {version = "0.21.0", optional = true}
 bytemuck = {version = "1", features = ["derive"]}
 chrono = {version = "0.4.31", default-features = false, features = ["std"]}
 # for timezone support
-chrono-tz = {version = "0.8", optional = true}
+chrono-tz = {version = "0.10", optional = true}
 # used to print columns in a nice columnar format
 comfy-table = {version = "6.0", optional = true, default-features = false}
 # for csv io
@@ -58,7 +58,7 @@ num-traits = "0.2"
 orc-format = {version = "0.3.0", optional = true}
 rand = {version = "0.8", optional = true}
 regex = {version = "1.9", optional = true}
-regex-syntax = {version = "0.7", optional = true}
+regex-syntax = {version = "0.8", optional = true}
 # Arrow integration tests support
 serde = {version = "^1.0", features = ["rc", "derive"]}
 serde_derive = {version = "^1.0", optional = true}
@@ -90,7 +90,7 @@ proptest = {version = "1", default-features = false, features = ["std"]}
 # use for flaky testing
 rand = "0.8"
 # use for generating and testing random data samples
-sample-arrow2 = "0.1"
+sample-arrow2 = "0.17"
 sample-std = "0.1"
 sample-test = "0.1"
 # used to test async readers

@@ -33,6 +33,7 @@ ALL_DTYPES = [
 
 ALL_DATATYPES_BINARY_PAIRS = list(itertools.product(ALL_DTYPES, repeat=2))
 
+ALL_DATATYPES_TERNARY_PAIRS = list(itertools.product(ALL_DTYPES, repeat=3))
 
 ALL_TEMPORAL_DTYPES = [
     (
@@ -101,6 +102,28 @@ DECIMAL_DTYPES = [
     (DataType.decimal128(7, 2), pa.array([1, 2, None], type=pa.decimal128(7, 2))),
     (DataType.decimal128(4, 3), pa.array([1, 2, None], type=pa.decimal128(4, 3))),
 ]
+
+ALL_DATATYPES_TERNARY_PAIRS = [
+    ((dt1, data1), (dt2, data2), (dt3, data3))
+    for (dt1, data1), (dt2, data2), (dt3, data3) in itertools.product(ALL_DTYPES, repeat=3)
+]
+
+
+@pytest.fixture(
+    scope="module",
+    params=ALL_DATATYPES_TERNARY_PAIRS,
+    ids=[f"{dt1}-{dt2}-{dt3}" for (dt1, _), (dt2, _), (dt3, _) in ALL_DATATYPES_TERNARY_PAIRS],
+)
+def ternary_data_fixture(request) -> tuple[Series, Series, Series]:
+    """Returns ternary permutation of Series' of all DataType pairs"""
+    (dt1, data1), (dt2, data2), (dt3, data3) = request.param
+    s1 = Series.from_arrow(data1, name="first")
+    assert s1.datatype() == dt1
+    s2 = Series.from_arrow(data2, name="second")
+    assert s2.datatype() == dt2
+    s3 = Series.from_arrow(data3, name="third")
+    assert s3.datatype() == dt3
+    return (s1, s2, s3)
 
 
 @pytest.fixture(
@@ -185,6 +208,11 @@ def assert_typing_resolve_vs_runtime_behavior(
         # TODO: check that types also fail to resolve at runtime
         # with pytest.raises(ValueError):
         #     run_kernel()
+
+
+def is_numeric_or_null(dt: DataType) -> bool:
+    """Checks if this type is a numeric or null type"""
+    return dt == DataType.null() or is_numeric(dt)
 
 
 def is_numeric(dt: DataType) -> bool:

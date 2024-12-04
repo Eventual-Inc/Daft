@@ -1,4 +1,5 @@
 use common_error::{DaftError, DaftResult};
+use daft_schema::field::Field;
 
 use crate::{
     datatypes::{DataType, UInt64Array, Utf8Array},
@@ -159,17 +160,60 @@ impl Series {
         }
     }
 
-    pub fn list_sort(&self, desc: &Self) -> DaftResult<Self> {
+    pub fn list_sort(&self, desc: &Self, nulls_first: &Self) -> DaftResult<Self> {
         let desc_arr = desc.bool()?;
+        let nulls_first = nulls_first.bool()?;
 
         match self.data_type() {
-            DataType::List(_) => Ok(self.list()?.list_sort(desc_arr)?.into_series()),
-            DataType::FixedSizeList(..) => {
-                Ok(self.fixed_size_list()?.list_sort(desc_arr)?.into_series())
-            }
+            DataType::List(_) => Ok(self.list()?.list_sort(desc_arr, nulls_first)?.into_series()),
+            DataType::FixedSizeList(..) => Ok(self
+                .fixed_size_list()?
+                .list_sort(desc_arr, nulls_first)?
+                .into_series()),
             dt => Err(DaftError::TypeError(format!(
                 "List sort not implemented for {}",
                 dt
+            ))),
+        }
+    }
+
+    /// Given a series of `List` or `FixedSizeList`, return the count of distinct elements in the list.
+    ///
+    /// # Note
+    /// `NULL` values are not counted.
+    ///
+    /// # Example
+    /// ```txt
+    /// [[1, 2, 3], [1, 1, 1], [NULL, NULL, 5]] -> [3, 1, 1]
+    /// ```
+    pub fn list_unique_count(&self) -> DaftResult<Self> {
+        let field = Field::new(self.name(), DataType::UInt64);
+        match self.data_type() {
+            DataType::List(..) => {
+                let iter = self.list()?.into_iter().map(|sub_series| {
+                    let sub_series = sub_series?;
+                    let length = sub_series
+                        .build_probe_table_without_nulls()
+                        .expect("Building the probe table should always work")
+                        .len() as u64;
+                    Some(length)
+                });
+                Ok(UInt64Array::from_regular_iter(field, iter)?.into_series())
+            }
+            DataType::FixedSizeList(..) => {
+                let iter = self.fixed_size_list()?.into_iter().map(|sub_series| {
+                    let sub_series = sub_series?;
+                    let length = sub_series
+                        .build_probe_table_without_nulls()
+                        .expect("Building the probe table should always work")
+                        .len() as u64;
+                    Some(length)
+                });
+                Ok(UInt64Array::from_regular_iter(field, iter)?.into_series())
+            }
+            _ => Err(DaftError::TypeError(format!(
+                "List count distinct not implemented for {}",
+                self.data_type()
             ))),
         }
     }

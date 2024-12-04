@@ -21,7 +21,7 @@ def _worker_thread_initializer() -> None:
     thread_local.filesystems_cache = {}
 
 
-def _download(path: str | None, on_error: Literal["raise"] | Literal["null"]) -> bytes | None:
+def _download(path: str | None, on_error: Literal["raise", "null"]) -> bytes | None:
     if path is None:
         return None
     protocol = filesystem.get_protocol_from_path(path)
@@ -64,7 +64,7 @@ def _warmup_fsspec_registry(urls_pylist: list[str | None]) -> None:
 def download_udf(
     urls,
     max_worker_threads: int = 8,
-    on_error: Literal["raise"] | Literal["null"] = "raise",
+    on_error: Literal["raise", "null"] = "raise",
 ):
     """Downloads the contents of the supplied URLs.
 

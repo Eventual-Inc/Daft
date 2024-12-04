@@ -6,7 +6,11 @@ use daft_dsl::ExprResolver;
 
 #[cfg(feature = "python")]
 use crate::sink_info::CatalogType;
-use crate::{sink_info::SinkInfo, LogicalPlan, OutputFileInfo};
+use crate::{
+    sink_info::SinkInfo,
+    stats::{PlanStats, StatsState},
+    LogicalPlan, OutputFileInfo,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Sink {
@@ -15,6 +19,7 @@ pub struct Sink {
     pub schema: SchemaRef,
     /// Information about the sink data location.
     pub sink_info: Arc<SinkInfo>,
+    pub stats_state: StatsState,
 }
 
 impl Sink {
@@ -82,7 +87,15 @@ impl Sink {
             input,
             schema,
             sink_info,
+            stats_state: StatsState::NotMaterialized,
         })
+    }
+
+    pub(crate) fn with_materialized_stats(mut self) -> Self {
+        // Post-write DataFrame will contain paths to files that were written.
+        // TODO(desmond): Estimate output size via root directory and estimates for # of partitions given partitioning column.
+        self.stats_state = StatsState::Materialized(PlanStats::empty().into());
+        self
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
@@ -110,6 +123,9 @@ impl Sink {
             },
         }
         res.push(format!("Output schema = {}", self.schema.short_string()));
+        if let StatsState::Materialized(stats) = &self.stats_state {
+            res.push(format!("Stats = {}", stats));
+        }
         res
     }
 }

@@ -52,7 +52,6 @@ if TYPE_CHECKING:
     import ray
     import torch
 
-    from daft.daft import ResourceRequest
     from daft.io import DataCatalogTable
 
 from daft.logical.schema import Schema
@@ -185,9 +184,10 @@ class DataFrame:
         return None
 
     def num_partitions(self) -> int:
-        daft_execution_config = get_context().daft_execution_config
         # We need to run the optimizer since that could change the number of partitions
-        return self.__builder.optimize().to_physical_plan_scheduler(daft_execution_config).num_partitions()
+        return (
+            self.__builder.optimize().to_physical_plan_scheduler(get_context().daft_execution_config).num_partitions()
+        )
 
     @DataframePublicAPI
     def schema(self) -> Schema:
@@ -520,7 +520,7 @@ class DataFrame:
         self,
         root_dir: Union[str, pathlib.Path],
         compression: str = "snappy",
-        write_mode: Union[Literal["append"], Literal["overwrite"]] = "append",
+        write_mode: Literal["append", "overwrite"] = "append",
         partition_cols: Optional[List[ColumnInputType]] = None,
         io_config: Optional[IOConfig] = None,
     ) -> "DataFrame":
@@ -592,7 +592,7 @@ class DataFrame:
     def write_csv(
         self,
         root_dir: Union[str, pathlib.Path],
-        write_mode: Union[Literal["append"], Literal["overwrite"]] = "append",
+        write_mode: Literal["append", "overwrite"] = "append",
         partition_cols: Optional[List[ColumnInputType]] = None,
         io_config: Optional[IOConfig] = None,
     ) -> "DataFrame":
@@ -728,7 +728,16 @@ class DataFrame:
                 partitioning[field].append(getattr(data_file.partition, field, None))
 
         if parse(pyiceberg.__version__) >= parse("0.7.0"):
-            from pyiceberg.table import ALWAYS_TRUE, PropertyUtil, TableProperties
+            from pyiceberg.table import ALWAYS_TRUE, TableProperties
+
+            if parse(pyiceberg.__version__) >= parse("0.8.0"):
+                from pyiceberg.utils.properties import property_as_bool
+
+                property_as_bool = property_as_bool
+            else:
+                from pyiceberg.table import PropertyUtil
+
+                property_as_bool = PropertyUtil.property_as_bool
 
             tx = table.transaction()
 
@@ -737,7 +746,7 @@ class DataFrame:
 
             update_snapshot = tx.update_snapshot()
 
-            manifest_merge_enabled = mode == "append" and PropertyUtil.property_as_bool(
+            manifest_merge_enabled = mode == "append" and property_as_bool(
                 tx.table_metadata.properties,
                 TableProperties.MANIFEST_MERGE_ENABLED,
                 TableProperties.MANIFEST_MERGE_ENABLED_DEFAULT,
@@ -1051,6 +1060,7 @@ class DataFrame:
         import sys
 
         from daft import from_pydict
+        from daft.io.object_store_options import io_config_to_storage_options
 
         if sys.version_info < (3, 9):
             raise ValueError("'write_lance' requires python 3.9 or higher")
@@ -1105,7 +1115,8 @@ class DataFrame:
         elif mode == "append":
             operation = lance.LanceOperation.Append(fragments)
 
-        dataset = lance.LanceDataset.commit(table_uri, operation, read_version=version)
+        storage_options = io_config_to_storage_options(io_config, table_uri)
+        dataset = lance.LanceDataset.commit(table_uri, operation, read_version=version, storage_options=storage_options)
         stats = dataset.stats.dataset_stats()
 
         tbl = from_pydict(
@@ -1430,7 +1441,6 @@ class DataFrame:
         self,
         column_name: str,
         expr: Expression,
-        resource_request: Optional["ResourceRequest"] = None,
     ) -> "DataFrame":
         """Adds a column to the current DataFrame with an Expression, equivalent to a ``select``
         with all current columns and the new one
@@ -1461,22 +1471,12 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame with new column.
         """
-        if resource_request is not None:
-            raise ValueError(
-                "Specifying resource_request through `with_column` is deprecated from Daft version >= 0.3.0! "
-                "Instead, please use the APIs on UDFs directly for controlling the resource requests of your UDFs. "
-                "You can define resource requests directly on the `@udf(num_gpus=N, num_cpus=M, ...)` decorator. "
-                "Alternatively, you can override resource requests on UDFs like so: `my_udf.override_options(num_gpus=N)`. "
-                "Check the Daft documentation for more details."
-            )
-
         return self.with_columns({column_name: expr})
 
     @DataframePublicAPI
     def with_columns(
         self,
         columns: Dict[str, Expression],
-        resource_request: Optional["ResourceRequest"] = None,
     ) -> "DataFrame":
         """Adds columns to the current DataFrame with Expressions, equivalent to a ``select``
         with all current columns and the new ones
@@ -1506,15 +1506,6 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame with new columns.
         """
-        if resource_request is not None:
-            raise ValueError(
-                "Specifying resource_request through `with_columns` is deprecated from Daft version >= 0.3.0! "
-                "Instead, please use the APIs on UDFs directly for controlling the resource requests of your UDFs. "
-                "You can define resource requests directly on the `@udf(num_gpus=N, num_cpus=M, ...)` decorator. "
-                "Alternatively, you can override resource requests on UDFs like so: `my_udf.override_options(num_gpus=N)`. "
-                "Check the Daft documentation for more details."
-            )
-
         new_columns = [col.alias(name) for name, col in columns.items()]
 
         builder = self._builder.with_columns(new_columns)
@@ -1583,8 +1574,10 @@ class DataFrame:
             by = [
                 by,
             ]
+
         sort_by = self.__column_input_to_expression(by)
-        builder = self._builder.sort(sort_by=sort_by, descending=desc)
+
+        builder = self._builder.sort(sort_by=sort_by, descending=desc, nulls_first=desc)
         return DataFrame(builder)
 
     @DataframePublicAPI

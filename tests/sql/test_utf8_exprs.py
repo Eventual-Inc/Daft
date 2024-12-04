@@ -78,7 +78,7 @@ def test_utf8_exprs():
             col("a").str.extract("ba.").alias("extract_a"),
             col("a").str.extract_all("ba.").alias("extract_all_a"),
             col("a").str.split(r"\s+", regex=True).alias("regexp_split_a"),
-            col("a").str.replace("ba.", "foo").alias("replace_a"),
+            col("a").str.replace("ba.", "foo", regex=True).alias("replace_a"),
             col("a").str.length().alias("length_a"),
             col("a").str.length_bytes().alias("length_bytes_a"),
             col("a").str.lower().alias("lower_a"),

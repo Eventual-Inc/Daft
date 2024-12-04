@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use common_error::DaftResult;
-use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
+use common_file_formats::{CsvSourceConfig, FileFormatConfig, ParquetSourceConfig};
 use common_io_config::IOConfig;
 use common_scan_info::ScanOperatorRef;
 use daft_core::prelude::TimeUnit;
@@ -97,7 +97,7 @@ impl ParquetScanBuilder {
         self
     }
 
-    pub fn finish(self) -> DaftResult<LogicalPlanBuilder> {
+    pub async fn finish(self) -> DaftResult<LogicalPlanBuilder> {
         let cfg = ParquetSourceConfig {
             coerce_int96_timestamp_unit: self.coerce_int96_timestamp_unit,
             field_id_mapping: self.field_id_mapping,
@@ -105,17 +105,20 @@ impl ParquetScanBuilder {
             chunk_size: self.chunk_size,
         };
 
-        let operator = Arc::new(GlobScanOperator::try_new(
-            self.glob_paths,
-            Arc::new(FileFormatConfig::Parquet(cfg)),
-            Arc::new(StorageConfig::Native(Arc::new(
-                NativeStorageConfig::new_internal(self.multithreaded, self.io_config),
-            ))),
-            self.infer_schema,
-            self.schema,
-            self.file_path_column,
-            self.hive_partitioning,
-        )?);
+        let operator = Arc::new(
+            GlobScanOperator::try_new(
+                self.glob_paths,
+                Arc::new(FileFormatConfig::Parquet(cfg)),
+                Arc::new(StorageConfig::Native(Arc::new(
+                    NativeStorageConfig::new_internal(self.multithreaded, self.io_config),
+                ))),
+                self.infer_schema,
+                self.schema,
+                self.file_path_column,
+                self.hive_partitioning,
+            )
+            .await?,
+        );
 
         LogicalPlanBuilder::table_scan(ScanOperatorRef(operator), None)
     }
@@ -123,6 +126,151 @@ impl ParquetScanBuilder {
 
 pub fn parquet_scan<T: IntoGlobPath>(glob_path: T) -> ParquetScanBuilder {
     ParquetScanBuilder::new(glob_path)
+}
+
+pub struct CsvScanBuilder {
+    pub glob_paths: Vec<String>,
+    pub infer_schema: bool,
+    pub io_config: Option<IOConfig>,
+    pub schema: Option<SchemaRef>,
+    pub file_path_column: Option<String>,
+    pub hive_partitioning: bool,
+    pub delimiter: Option<char>,
+    pub has_headers: bool,
+    pub double_quote: bool,
+    pub quote: Option<char>,
+    pub escape_char: Option<char>,
+    pub comment: Option<char>,
+    pub allow_variable_columns: bool,
+    pub buffer_size: Option<usize>,
+    pub chunk_size: Option<usize>,
+    pub use_native_downloader: bool,
+    pub schema_hints: Option<SchemaRef>,
+}
+
+impl CsvScanBuilder {
+    pub fn new<T: IntoGlobPath>(glob_paths: T) -> Self {
+        let glob_paths = glob_paths.into_glob_path();
+        Self::new_impl(glob_paths)
+    }
+
+    // concrete implementation to reduce LLVM code duplication
+    fn new_impl(glob_paths: Vec<String>) -> Self {
+        Self {
+            glob_paths,
+            infer_schema: true,
+            schema: None,
+            io_config: None,
+            file_path_column: None,
+            hive_partitioning: false,
+            delimiter: None,
+            has_headers: true,
+            double_quote: true,
+            quote: None,
+            escape_char: None,
+            comment: None,
+            allow_variable_columns: false,
+            buffer_size: None,
+            chunk_size: None,
+            use_native_downloader: true,
+            schema_hints: None,
+        }
+    }
+    pub fn infer_schema(mut self, infer_schema: bool) -> Self {
+        self.infer_schema = infer_schema;
+        self
+    }
+    pub fn io_config(mut self, io_config: IOConfig) -> Self {
+        self.io_config = Some(io_config);
+        self
+    }
+    pub fn schema(mut self, schema: SchemaRef) -> Self {
+        self.schema = Some(schema);
+        self
+    }
+    pub fn file_path_column(mut self, file_path_column: String) -> Self {
+        self.file_path_column = Some(file_path_column);
+        self
+    }
+    pub fn hive_partitioning(mut self, hive_partitioning: bool) -> Self {
+        self.hive_partitioning = hive_partitioning;
+        self
+    }
+    pub fn delimiter(mut self, delimiter: char) -> Self {
+        self.delimiter = Some(delimiter);
+        self
+    }
+    pub fn has_headers(mut self, has_headers: bool) -> Self {
+        self.has_headers = has_headers;
+        self
+    }
+    pub fn double_quote(mut self, double_quote: bool) -> Self {
+        self.double_quote = double_quote;
+        self
+    }
+    pub fn quote(mut self, quote: char) -> Self {
+        self.quote = Some(quote);
+        self
+    }
+    pub fn escape_char(mut self, escape_char: char) -> Self {
+        self.escape_char = Some(escape_char);
+        self
+    }
+    pub fn comment(mut self, comment: char) -> Self {
+        self.comment = Some(comment);
+        self
+    }
+    pub fn allow_variable_columns(mut self, allow_variable_columns: bool) -> Self {
+        self.allow_variable_columns = allow_variable_columns;
+        self
+    }
+    pub fn buffer_size(mut self, buffer_size: usize) -> Self {
+        self.buffer_size = Some(buffer_size);
+        self
+    }
+    pub fn chunk_size(mut self, chunk_size: usize) -> Self {
+        self.chunk_size = Some(chunk_size);
+        self
+    }
+    pub fn schema_hints(mut self, schema_hints: SchemaRef) -> Self {
+        self.schema_hints = Some(schema_hints);
+        self
+    }
+    pub fn use_native_downloader(mut self, use_native_downloader: bool) -> Self {
+        self.use_native_downloader = use_native_downloader;
+        self
+    }
+
+    pub async fn finish(self) -> DaftResult<LogicalPlanBuilder> {
+        let cfg = CsvSourceConfig {
+            delimiter: self.delimiter,
+            has_headers: self.has_headers,
+            double_quote: self.double_quote,
+            quote: self.quote,
+            escape_char: self.escape_char,
+            comment: self.comment,
+            allow_variable_columns: self.allow_variable_columns,
+            buffer_size: self.buffer_size,
+            chunk_size: self.chunk_size,
+        };
+
+        let operator = Arc::new(
+            GlobScanOperator::try_new(
+                self.glob_paths,
+                Arc::new(FileFormatConfig::Csv(cfg)),
+                Arc::new(StorageConfig::Native(Arc::new(
+                    NativeStorageConfig::new_internal(false, self.io_config),
+                ))),
+                self.infer_schema,
+                self.schema,
+                self.file_path_column,
+                self.hive_partitioning,
+            )
+            .await?,
+        );
+
+        LogicalPlanBuilder::table_scan(ScanOperatorRef(operator), None)
+    }
 }
 
 #[cfg(feature = "python")]

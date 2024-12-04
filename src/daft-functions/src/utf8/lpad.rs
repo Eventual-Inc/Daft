@@ -60,15 +60,3 @@ impl ScalarUDF for Utf8Lpad {
 pub fn utf8_lpad(input: ExprRef, length: ExprRef, pad: ExprRef) -> ExprRef {
     ScalarFunction::new(Utf8Lpad {}, vec![input, length, pad]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "utf8_lpad")]
-pub fn py_utf8_lpad(expr: PyExpr, length: PyExpr, pad: PyExpr) -> PyResult<PyExpr> {
-    Ok(utf8_lpad(expr.into(), length.into(), pad.into()).into())
-}

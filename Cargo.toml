@@ -9,6 +9,8 @@ common-scan-info = {path = "src/common/scan-info", default-features = false}
 common-system-info = {path = "src/common/system-info", default-features = false}
 common-tracing = {path = "src/common/tracing", default-features = false}
 common-version = {path = "src/common/version", default-features = false}
+daft-catalog = {path = "src/daft-catalog", default-features = false}
+daft-catalog-python-catalog = {path = "src/daft-catalog/python-catalog", optional = true}
 daft-compression = {path = "src/daft-compression", default-features = false}
 daft-connect = {path = "src/daft-connect", optional = true}
 daft-core = {path = "src/daft-core", default-features = false}
@@ -44,14 +46,20 @@ sysinfo = {workspace = true}
 # maturin will turn this on
 python = [
   "common-daft-config/python",
+  "common-daft-config/python",
+  "common-daft-config/python",
   "common-display/python",
+  "common-display/python",
+  "common-display/python",
+  "common-resource-request/python",
+  "common-resource-request/python",
   "common-resource-request/python",
   "common-scan-info/python",
   "common-system-info/python",
-  "common-daft-config/python",
-  "common-display/python",
-  "common-resource-request/python",
   "common-system-info/python",
+  "common-system-info/python",
+  "daft-catalog-python-catalog/python",
+  "daft-catalog/python",
   "daft-connect/python",
   "daft-core/python",
   "daft-csv/python",
@@ -72,8 +80,9 @@ python = [
   "daft-sql/python",
   "daft-stats/python",
   "daft-stats/python",
-  "daft-writers/python",
   "daft-table/python",
+  "daft-writers/python",
+  "dep:daft-catalog-python-catalog",
   "dep:daft-connect",
   "dep:pyo3",
   "dep:pyo3-log"
@@ -126,7 +135,7 @@ debug = true
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 libc = {version = "^0.2.150", default-features = false}
-tikv-jemallocator = {version = "0.5.4", features = [
+tikv-jemallocator = {version = "0.6.0", features = [
   "disable_initial_exec_tls"
 ]}
 
@@ -140,6 +149,7 @@ members = [
   "src/common/scan-info",
   "src/common/system-info",
   "src/common/treenode",
+  "src/daft-catalog",
   "src/daft-core",
   "src/daft-csv",
   "src/daft-dsl",
@@ -169,41 +179,32 @@ members = [
 ]
 
 [workspace.dependencies]
-ahash = "0.8.11"
-anyhow = "1.0.89"
 approx = "0.5.1"
 async-compat = "0.2.3"
 async-compression = {version = "0.4.12", features = [
   "tokio",
   "all-algorithms"
 ]}
-async-stream = "0.3.5"
+async-stream = "0.3.6"
 async-trait = "0.1.79"
 base64 = "0.22.1"
-bytes = "1.6.0"
+bytes = "1.8.0"
 chrono = "0.4.38"
-chrono-tz = "0.8.4"
+chrono-tz = "0.10.0"
 comfy-table = "7.1.1"
 common-daft-config = {path = "src/common/daft-config"}
-common-display = {path = "src/common/display"}
 common-error = {path = "src/common/error", default-features = false}
-common-file-formats = {path = "src/common/file-formats"}
-daft-connect = {path = "src/daft-connect", default-features = false}
+common-runtime = {path = "src/common/runtime", default-features = false}
 daft-core = {path = "src/daft-core"}
 daft-dsl = {path = "src/daft-dsl"}
 daft-hash = {path = "src/daft-hash"}
 daft-local-execution = {path = "src/daft-local-execution"}
-daft-local-plan = {path = "src/daft-local-plan"}
 daft-logical-plan = {path = "src/daft-logical-plan"}
-daft-micropartition = {path = "src/daft-micropartition"}
-daft-physical-plan = {path = "src/daft-physical-plan"}
+daft-scan = {path = "src/daft-scan"}
 daft-schema = {path = "src/daft-schema"}
-daft-sql = {path = "src/daft-sql"}
 daft-table = {path = "src/daft-table"}
 derivative = "2.2.0"
 derive_builder = "0.20.2"
-divan = "0.1.14"
-dyn-clone = "1"
 futures = "0.3.30"
 html-escape = "0.2.13"
 indexmap = "2.1.0"
@@ -223,8 +224,7 @@ rand = "^0.8"
 rayon = "1.10.0"
 regex = "1.10.4"
 rstest = "0.18.2"
-rustc-hash = "2.0.0"
-serde_json = "1.0.116"
+serde_json = "1.0.133"
 sha1 = "0.11.0-pre.4"
 sketches-ddsketch = {version = "0.2.2", features = ["use_serde"]}
 snafu = {version = "0.7.4", features = ["futures"]}

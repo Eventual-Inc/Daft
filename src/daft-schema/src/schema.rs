@@ -77,6 +77,10 @@ impl Schema {
         }
     }
 
+    pub fn has_field(&self, name: &str) -> bool {
+        self.fields.contains_key(name)
+    }
+
     pub fn get_index(&self, name: &str) -> DaftResult<usize> {
         match self.fields.get_index_of(name) {
             None => Err(DaftError::FieldNotFound(format!(

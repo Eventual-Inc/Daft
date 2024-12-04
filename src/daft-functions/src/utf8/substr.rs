@@ -62,15 +62,3 @@ impl ScalarUDF for Utf8Substr {
 pub fn utf8_substr(input: ExprRef, start: ExprRef, length: ExprRef) -> ExprRef {
     ScalarFunction::new(Utf8Substr {}, vec![input, start, length]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "utf8_substr")]
-pub fn py_utf8_substr(expr: PyExpr, start: PyExpr, length: PyExpr) -> PyResult<PyExpr> {
-    Ok(utf8_substr(expr.into(), start.into(), length.into()).into())
-}

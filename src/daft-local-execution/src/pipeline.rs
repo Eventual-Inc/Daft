@@ -12,10 +12,10 @@ use daft_core::{
 use daft_dsl::{col, join::get_common_join_keys, Expr};
 use daft_local_plan::{
     ActorPoolProject, Concat, EmptyScan, Explode, Filter, HashAggregate, HashJoin, InMemoryScan,
-    Limit, LocalPhysicalPlan, PhysicalWrite, Pivot, Project, Sample, Sort, UnGroupedAggregate,
-    Unpivot,
+    Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite, Pivot, Project, Sample,
+    Sort, UnGroupedAggregate, Unpivot,
 };
-use daft_logical_plan::JoinType;
+use daft_logical_plan::{stats::StatsState, JoinType};
 use daft_micropartition::MicroPartition;
 use daft_physical_plan::{extract_agg_expr, populate_aggregation_stages};
 use daft_scan::ScanTaskRef;
@@ -38,6 +38,7 @@ use crate::{
         concat::ConcatSink,
         hash_join_build::{HashJoinBuildSink, ProbeStateBridge},
         limit::LimitSink,
+        monotonically_increasing_id::MonotonicallyIncreasingIdSink,
         outer_hash_join_probe::OuterHashJoinProbeSink,
         pivot::PivotSink,
         sort::SortSink,
@@ -291,13 +292,25 @@ pub fn physical_plan_to_pipeline(
             input,
             sort_by,
             descending,
+            nulls_first,
             ..
         }) => {
-            let sort_sink = SortSink::new(sort_by.clone(), descending.clone());
+            let sort_sink = SortSink::new(sort_by.clone(), descending.clone(), nulls_first.clone());
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
             BlockingSinkNode::new(Arc::new(sort_sink), child_node).boxed()
         }
-
+        LocalPhysicalPlan::MonotonicallyIncreasingId(MonotonicallyIncreasingId {
+            input,
+            column_name,
+            schema,
+            ..
+        }) => {
+            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            let monotonically_increasing_id_sink =
+                MonotonicallyIncreasingIdSink::new(column_name.clone(), schema.clone());
+            StreamingSinkNode::new(Arc::new(monotonically_increasing_id_sink), vec![child_node])
+                .boxed()
+        }
         LocalPhysicalPlan::HashJoin(HashJoin {
             left,
             right,
@@ -306,18 +319,54 @@ pub fn physical_plan_to_pipeline(
             null_equals_null,
             join_type,
             schema,
+            ..
         }) => {
             let left_schema = left.schema();
             let right_schema = right.schema();
 
-            // Determine the build and probe sides based on the join type
-            // Currently it is a naive determination, in the future we should leverage the cardinality of the tables
-            // to determine the build and probe sides
+            // To determine whether to use the left or right side of a join for building a probe table, we consider:
+            // 1. Cardinality of the sides. Probe tables should be built on the smaller side.
+            // 2. Join type. Different join types have different requirements for which side can build the probe table.
+            let left_stats_state = left.get_stats_state();
+            let right_stats_state = right.get_stats_state();
+            let build_on_left = match (left_stats_state, right_stats_state) {
+                (StatsState::Materialized(left_stats), StatsState::Materialized(right_stats)) => {
+                    left_stats.approx_stats.upper_bound_bytes
+                        <= right_stats.approx_stats.upper_bound_bytes
+                }
+                // If stats are only available on the right side of the join, and the upper bound bytes on the
+                // right are under the broadcast join size threshold, we build on the right instead of the left.
+                (StatsState::NotMaterialized, StatsState::Materialized(right_stats)) => right_stats
+                    .approx_stats
+                    .upper_bound_bytes
+                    .map_or(true, |size| size > cfg.broadcast_join_size_bytes_threshold),
+                // If stats are not available, we fall back and build on the left by default.
+                _ => true,
+            };
+
+            // TODO(desmond): We might potentially want to flip the probe table side for
+            // left/right outer joins if one side is significantly larger. Needs to be tuned.
+            //
+            // In greater detail, consider a right outer join where the left side is several orders
+            // of magnitude larger than the right. An extreme example might have 1B rows on the left,
+            // and 10 rows on the right.
+            //
+            // Typically we would build the probe table on the left, then stream rows from the right
+            // to match against the probe table. But in this case we would have a giant intermediate
+            // probe table.
+            //
+            // An alternative 2-pass algorithm would be to:
+            // 1. Build the probe table on the right, but add a second data structure to keep track of
+            //    which rows on the right have been matched.
+            // 2. Stream rows on the left until all rows have been seen.
+            // 3. Finally, emit all unmatched rows from the right.
             let build_on_left = match join_type {
-                JoinType::Inner => true,
-                JoinType::Right => true,
-                JoinType::Outer => true,
+                JoinType::Inner => build_on_left,
+                JoinType::Outer => build_on_left,
+                // For left outer joins, we build on right so we can stream the left side.
                 JoinType::Left => false,
+                // For right outer joins, we build on left so we can stream the right side.
+                JoinType::Right => true,
                 JoinType::Anti | JoinType::Semi => false,
             };
             let (build_on, probe_on, build_child, probe_child) = match build_on_left {
@@ -408,6 +457,7 @@ pub fn physical_plan_to_pipeline(
                                 left_schema,
                                 right_schema,
                                 *join_type,
+                                build_on_left,
                                 common_join_keys,
                                 schema,
                                 probe_state_bridge,

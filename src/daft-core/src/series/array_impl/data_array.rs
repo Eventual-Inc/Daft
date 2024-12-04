@@ -118,8 +118,8 @@ macro_rules! impl_series_like_for_data_array {
             fn slice(&self, start: usize, end: usize) -> DaftResult<Series> {
                 Ok(self.0.slice(start, end)?.into_series())
             }
-            fn sort(&self, descending: bool) -> DaftResult<Series> {
-                Ok(self.0.sort(descending)?.into_series())
+            fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Series> {
+                Ok(self.0.sort(descending, nulls_first)?.into_series())
             }
             fn str_value(&self, idx: usize) -> DaftResult<String> {
                 self.0.str_value(idx)
