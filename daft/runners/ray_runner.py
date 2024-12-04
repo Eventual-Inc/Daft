@@ -43,6 +43,7 @@ from daft.daft import (
 )
 from daft.datatype import DataType
 from daft.execution.execution_step import (
+    ActorPoolProject,
     FanoutInstruction,
     Instruction,
     MultiOutputPartitionTask,
@@ -50,7 +51,6 @@ from daft.execution.execution_step import (
     ReduceInstruction,
     ScanWithTask,
     SingleOutputPartitionTask,
-    StatefulUDFProject,
 )
 from daft.execution.physical_plan import ActorPoolManager
 from daft.expressions import ExpressionsProjection
@@ -1061,8 +1061,8 @@ def _build_partitions_on_actor_pool(
     actor_pool: RayRoundRobinActorPool,
 ) -> list[ray.ObjectRef]:
     """Run a PartitionTask on an actor pool and return the resulting list of partitions."""
-    assert len(task.instructions) == 1, "Actor pool can only handle single StatefulUDFProject instructions"
-    assert isinstance(task.instructions[0], StatefulUDFProject)
+    assert len(task.instructions) == 1, "Actor pool can only handle single ActorPoolProject instructions"
+    assert isinstance(task.instructions[0], ActorPoolProject)
 
     [metadatas_ref, *partitions] = actor_pool.submit(task.partial_metadatas, task.inputs)
     metadatas_accessor = PartitionMetadataAccessor(metadatas_ref)

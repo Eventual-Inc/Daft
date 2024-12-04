@@ -26,8 +26,8 @@ impl SplitActorPoolProjects {
 
 /// Implement SplitActorPoolProjects as an OptimizerRule
 /// * Splits PROJECT nodes into chains of (PROJECT -> ...ACTOR_POOL_PROJECTS -> PROJECT) ...
-/// * Resultant PROJECT nodes will never contain any StatefulUDF expressions
-/// * Each ACTOR_POOL_PROJECT node only contains a single StatefulUDF expression
+/// * Resultant PROJECT nodes will never contain any actor pool UDF expressions
+/// * Each ACTOR_POOL_PROJECT node only contains a single actor pool UDF expression
 ///
 /// Given a projection with 3 expressions that look like the following:
 ///
@@ -36,22 +36,22 @@ impl SplitActorPoolProjects {
 /// │        ┌─────┐              ┌─────┐              ┌─────┐      │
 /// │        │ E1  │              │ E2  │              │ E3  │      │
 /// │        │     │              │     │              │     │      │
-/// │   StatefulUDF│           Stateless│           Stateless│      │
+/// │       UDF    │           Stateless│           Stateless│      │
 /// │        └──┬──┘              └─┬┬──┘              └──┬──┘      │
 /// │           │                ┌──┘└──┐                 │         │
 /// │        ┌──▼──┐         ┌───▼─┐  ┌─▼───┐          ┌──▼────┐    │
 /// │        │ E1a │         │ E2a │  │ E2b │          │col(E3)│    │
 /// │        │     │         │     │  │     │          └───────┘    │
-/// │       Any    │    StatefulUDF│  │ Stateless                   │
+/// │       Any    │        UDF    │  │ Stateless                   │
 /// │        └─────┘         └─────┘  └─────┘                       │
 /// │                                                               │
 /// └───────────────────────────────────────────────────────────────┘
 ///
 /// We will attempt to split this recursively into "stages". We split a given projection by truncating each expression as follows:
 ///
-/// 1. (See E1 -> E1') Expressions with (aliased) StatefulUDFs as root nodes have all their children truncated
-/// 2. (See E2 -> E2') Expressions with children StatefulUDFs have each child StatefulUDF truncated
-/// 3. (See E3) Expressions without any StatefulUDFs at all are not modified
+/// 1. (See E1 -> E1') Expressions with (aliased) actor pool UDFs as root nodes have all their children truncated
+/// 2. (See E2 -> E2') Expressions with children actor pool UDFs have each child actor pool UDF truncated
+/// 3. (See E3) Expressions without any actor pool UDFs at all are not modified
 ///
 /// The truncated children as well as any required `col` references are collected into a new set of [`remaining`]
 /// expressions. The new [`truncated_exprs`] make up current stage, and the [`remaining`] exprs represent the projections
@@ -59,11 +59,11 @@ impl SplitActorPoolProjects {
 ///
 /// ┌───────────────────────────────────────────────────────────SPLIT: split_projection()
 /// │                                                                                 │
-/// │   TruncateRootStatefulUDF     TruncateAnyStatefulUDFChildren        No-Op       │
+/// │   TruncateRootActorPoolUDF     TruncateAnyActorPoolUDFChildren        No-Op       │
 /// │   =======================     ==============================        =====       │
 /// │           ┌─────┐                       ┌─────┐                    ┌─────┐      │
 /// │           │ E1' │                       │ E2' │                    │ E3  │      │
-/// │      StatefulUDF│                    Stateless│                 Stateless│      │
+/// │          UDF    │                    Stateless│                 Stateless│      │
 /// │           └───┬─┘                       └─┬┬──┘                    └──┬──┘      │
 /// │               │                       ┌───┘└───┐                      │         │
 /// │          *--- ▼---*              *--- ▼---* ┌──▼──┐                ┌──▼────┐    │
@@ -81,7 +81,7 @@ impl SplitActorPoolProjects {
 /// │           ┌──▼──┐               ┌───▼─┐                                         │
 /// │           │ E1a │               │ E2a │                                         │
 /// │           │     │               │     │                                         │
-/// │          Any    │          StatefulUDF│                                         │
+/// │          Any    │              UDF    │                                         │
 /// │           └─────┘               └─────┘                                         │
 /// └─────────────────────────────────────────────────────────────────────────────────┘
 ///
@@ -96,14 +96,14 @@ impl SplitActorPoolProjects {
 /// │      ┌──▼──┐           ┌───▼─┐                                │
 /// │      │ E1a │           │ E2a │                                │
 /// │      │     │           │     │                                │
-/// │     Any    │      StatefulUDF│                                │
+/// │     Any    │          UDF    │                                │
 /// │      └─────┘           └─────┘                                │
 /// │                                                               │
 /// └─┬─────────────────────────────────────────────────────────────┘
 ///   |
 ///   │    Then, we link this up with our current stage, which will be resolved into a chain of logical nodes:
 ///   |    * The first PROJECT contains all the stateless expressions (E2' and E3) and passes through all required columns.
-///   |    * Subsequent ACTOR_POOL_PROJECT nodes each contain only one StatefulUDF, and passes through all required columns.
+///   |    * Subsequent ACTOR_POOL_PROJECT nodes each contain only one actor pool UDF, and passes through all required columns.
 ///   |    * The last PROJECT contains only `col` references, and correctly orders/prunes columns according to the original projection.
 ///   |
 ///   │
@@ -112,7 +112,7 @@ impl SplitActorPoolProjects {
 ///   │    │ PROJECT         │  │ ACTOR_POOL_PROJECT │                 │ PROJECT   │
 ///   │    │ -------         │  │ ------------------ │  ...ACTOR_PPs,  │ ----------│
 ///   └───►│ E2', E3, col(*) ├─►│ E1', col(*)        ├─ 1 per each   ─►│ col("e1") │
-///        │                 │  │                    │  StatefulUDF    │ col("e2") │
+///        │                 │  │                    │  actor pool UDF │ col("e2") │
 ///        │                 │  │                    │                 │ col("e3") │
 ///        │                 │  │                    │                 │           │
 ///        └─────────────────┘  └────────────────────┘                 └───────────┘
@@ -125,7 +125,7 @@ impl OptimizerRule for SplitActorPoolProjects {
     }
 }
 
-// TreeNodeRewriter that assumes the Expression tree is rooted at a StatefulUDF (or alias of a StatefulUDF)
+// TreeNodeRewriter that assumes the Expression tree is rooted at a actor pool UDF (or alias of a actor pool UDF)
 // and its children need to be truncated + replaced with Expr::Columns
 struct TruncateRootActorPoolUDF {
     pub(crate) new_children: Vec<ExprRef>,
@@ -143,7 +143,7 @@ impl TruncateRootActorPoolUDF {
     }
 }
 
-// TreeNodeRewriter that assumes the Expression tree has some children which are StatefulUDFs
+// TreeNodeRewriter that assumes the Expression tree has some children which are actor pool UDFs
 // which needs to be truncated and replaced with Expr::Columns
 struct TruncateAnyActorPoolUDFChildren {
     pub(crate) new_children: Vec<ExprRef>,
@@ -161,9 +161,9 @@ impl TruncateAnyActorPoolUDFChildren {
     }
 }
 
-/// Performs truncation of Expressions which are assumed to be rooted at a StatefulUDF expression
+/// Performs truncation of Expressions which are assumed to be rooted at a actor pool UDF expression
 ///
-/// This TreeNodeRewriter will truncate all children of the StatefulUDF expression like so:
+/// This TreeNodeRewriter will truncate all children of the actor pool UDF expression like so:
 ///
 /// 1. Add an `alias(...)` to the child and push it onto `self.new_children`
 /// 2. Replace the child with a `col("...")`
@@ -185,7 +185,7 @@ impl TreeNodeRewriter for TruncateRootActorPoolUDF {
                 }
                 Ok(common_treenode::Transformed::no(node))
             }
-            // Encountered stateful UDF: chop off all children and add to self.next_children
+            // Encountered actor pool UDF: chop off all children and add to self.next_children
             _ if is_actor_pool_udf(&node) => {
                 let mut monotonically_increasing_expr_identifier = 0;
                 let inputs = node.children();
@@ -193,7 +193,7 @@ impl TreeNodeRewriter for TruncateRootActorPoolUDF {
                     if requires_computation(e.as_ref()) {
                         // Give the new child a deterministic name
                         let intermediate_expr_name = format!(
-                            "__TruncateRootStatefulUDF_{}-{}-{}__",
+                            "__TruncateRootActorPoolUDF_{}-{}-{}__",
                             self.stage_idx, self.expr_idx, monotonically_increasing_expr_identifier
                         );
                         monotonically_increasing_expr_identifier += 1;
@@ -213,11 +213,11 @@ impl TreeNodeRewriter for TruncateRootActorPoolUDF {
     }
 }
 
-/// Performs truncation of Expressions which are assumed to have some subtrees which contain StatefulUDF expressions
+/// Performs truncation of Expressions which are assumed to have some subtrees which contain actor pool UDF expressions
 ///
-/// This TreeNodeRewriter will truncate StatefulUDF expressions from the tree like so:
+/// This TreeNodeRewriter will truncate actor pool UDF expressions from the tree like so:
 ///
-/// 1. Add an `alias(...)` to any StatefulUDF child and push it onto `self.new_children`
+/// 1. Add an `alias(...)` to any actor pool UDF child and push it onto `self.new_children`
 /// 2. Replace the child with a `col("...")`
 /// 3. Add any `col("...")` leaf nodes to `self.new_children` (only once per unique column name)
 impl TreeNodeRewriter for TruncateAnyActorPoolUDFChildren {
@@ -225,10 +225,10 @@ impl TreeNodeRewriter for TruncateAnyActorPoolUDFChildren {
 
     fn f_down(&mut self, node: Self::Node) -> DaftResult<common_treenode::Transformed<Self::Node>> {
         match node.as_ref() {
-            // This rewriter should never encounter a StatefulUDF expression (they should always be truncated and replaced)
+            // This rewriter should never encounter a actor pool UDF expression (they should always be truncated and replaced)
             _ if is_actor_pool_udf(&node) => {
                 unreachable!(
-                    "TruncateAnyStatefulUDFChildren should never run on a StatefulUDF expression"
+                    "TruncateAnyActorPoolUDFChildren should never run on a actor pool UDF expression"
                 );
             }
             // If we encounter a ColumnExpr, we add it to new_children only if it hasn't already been accounted for
@@ -243,9 +243,9 @@ impl TreeNodeRewriter for TruncateAnyActorPoolUDFChildren {
                 }
                 Ok(common_treenode::Transformed::no(node))
             }
-            // Attempt to truncate any children that are StatefulUDFs, replacing them with a Expr::Column
+            // Attempt to truncate any children that are actor pool UDFs, replacing them with a Expr::Column
             expr => {
-                // None of the direct children are stateful UDFs, so we keep going
+                // None of the direct children are actor pool UDFs, so we keep going
                 if !node.children().iter().any(is_actor_pool_udf) {
                     return Ok(common_treenode::Transformed::no(node));
                 }
@@ -255,7 +255,7 @@ impl TreeNodeRewriter for TruncateAnyActorPoolUDFChildren {
                 let new_inputs = inputs.iter().map(|e| {
                     if is_actor_pool_udf(e) {
                         let intermediate_expr_name = format!(
-                            "__TruncateAnyStatefulUDFChildren_{}-{}-{}__",
+                            "__TruncateAnyActorPoolUDFChildren_{}-{}-{}__",
                             self.stage_idx, self.expr_idx, monotonically_increasing_expr_identifier
                         );
                         monotonically_increasing_expr_identifier += 1;
@@ -298,7 +298,7 @@ fn split_projection(
     }
 
     for (expr_idx, expr) in projection.iter().enumerate() {
-        // Run the TruncateRootStatefulUDF TreeNodeRewriter
+        // Run the TruncateRootActorPoolUDF TreeNodeRewriter
         if _is_actor_pool_udf_and_should_truncate_children(expr) {
             let mut rewriter = TruncateRootActorPoolUDF::new(stage_idx, expr_idx);
             let rewritten_root = expr.clone().rewrite(&mut rewriter)?.data;
@@ -310,7 +310,7 @@ fn split_projection(
                 }
             }
 
-        // Run the TruncateAnyStatefulUDFChildren TreeNodeRewriter
+        // Run the TruncateAnyActorPoolUDFChildren TreeNodeRewriter
         } else if expr.exists(is_actor_pool_udf) {
             let mut rewriter = TruncateAnyActorPoolUDFChildren::new(stage_idx, expr_idx);
             let rewritten_root = expr.clone().rewrite(&mut rewriter)?.data;
@@ -346,8 +346,8 @@ fn try_optimize_project(
     projection: &Project,
     plan: Arc<LogicalPlan>,
 ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
-    // Add aliases to the expressions in the projection to preserve original names when splitting stateful UDFs.
-    // This is needed because when we split stateful UDFs, we create new names for intermediates, but we would like
+    // Add aliases to the expressions in the projection to preserve original names when splitting actor pool UDFs.
+    // This is needed because when we split actor pool UDFs, we create new names for intermediates, but we would like
     // to have the same expression names as the original projection.
     let aliased_projection_exprs = projection
         .projection
@@ -373,12 +373,12 @@ fn recursive_optimize_project(
 ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
     // TODO: eliminate the need for recursive calls by doing a post-order traversal of the plan tree.
 
-    // Base case: no stateful UDFs at all
-    let has_stateful_udfs = projection
+    // Base case: no actor pool UDFs at all
+    let has_actor_pool_udfs = projection
         .projection
         .iter()
         .any(|expr| expr.exists(is_actor_pool_udf));
-    if !has_stateful_udfs {
+    if !has_actor_pool_udfs {
         return Ok(Transformed::no(plan));
     }
 
@@ -426,7 +426,7 @@ fn recursive_optimize_project(
     };
 
     // Start building a chain of `child -> Project -> ActorPoolProject -> ActorPoolProject -> ... -> Project`
-    let (stateful_stages, stateless_stages): (Vec<_>, Vec<_>) = truncated_exprs
+    let (actor_pool_stages, stateless_stages): (Vec<_>, Vec<_>) = truncated_exprs
         .into_iter()
         .partition(|expr| expr.exists(is_actor_pool_udf));
 
@@ -456,30 +456,27 @@ fn recursive_optimize_project(
     let new_plan =
         LogicalPlan::Project(Project::try_new(new_plan_child, stateless_projection)?).arced();
 
-    // Iteratively build ActorPoolProject nodes: [...all columns that came before it, StatefulUDF]
+    // Iteratively build ActorPoolProject nodes: [...all columns that came before it, actor pool UDF]
     let new_plan = {
         let mut child = new_plan;
 
-        for stateful_expr in stateful_stages {
-            let stateful_expr_name = stateful_expr.name().to_string();
-            let stateful_projection = child
+        for expr in actor_pool_stages {
+            let expr_name = expr.name().to_string();
+            let projection = child
                 .schema()
                 .fields
                 .iter()
                 .filter_map(|(name, _)| {
-                    if name == &stateful_expr_name {
+                    if name == &expr_name {
                         None
                     } else {
                         Some(Expr::Column(name.as_str().into()).arced())
                     }
                 })
-                .chain(iter::once(stateful_expr))
+                .chain(iter::once(expr))
                 .collect();
-            child = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
-                child,
-                stateful_projection,
-            )?)
-            .arced();
+            child = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(child, projection)?)
+                .arced();
         }
         child
     };
@@ -524,7 +521,7 @@ mod tests {
         LogicalPlan,
     };
 
-    /// Helper that creates an optimizer with the SplitExprByStatefulUDF rule registered, optimizes
+    /// Helper that creates an optimizer with the SplitExprByActorPoolUDF rule registered, optimizes
     /// the provided plan with said optimizer, and compares the optimized plan with
     /// the provided expected plan.
     fn assert_optimized_plan_eq(
@@ -538,7 +535,7 @@ mod tests {
         )
     }
 
-    /// Helper that creates an optimizer with the SplitExprByStatefulUDF rule registered, optimizes
+    /// Helper that creates an optimizer with the SplitExprByActorPoolUDF rule registered, optimizes
     /// the provided plan with said optimizer, and compares the optimized plan with
     /// the provided expected plan.
     fn assert_optimized_plan_eq_with_projection_pushdown(
@@ -555,7 +552,7 @@ mod tests {
         )
     }
 
-    fn create_stateful_udf(inputs: Vec<ExprRef>) -> ExprRef {
+    fn create_actor_pool_udf(inputs: Vec<ExprRef>) -> ExprRef {
         Expr::Function {
             func: FunctionExpr::Python(PythonUDF {
                 name: Arc::new("foo".to_string()),
@@ -580,21 +577,21 @@ mod tests {
     }
 
     #[test]
-    fn test_with_column_stateful_udf_happypath() -> DaftResult<()> {
+    fn test_with_column_actor_pool_udf_happypath() -> DaftResult<()> {
         let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Utf8)]);
         let scan_plan = dummy_scan_node(scan_op);
-        let stateful_project_expr = create_stateful_udf(vec![col("a")]);
+        let actor_pool_project_expr = create_actor_pool_udf(vec![col("a")]);
 
-        // Add a Projection with StatefulUDF and resource request
+        // Add a Projection with actor pool UDF and resource request
         let project_plan = scan_plan
-            .with_columns(vec![stateful_project_expr.alias("b")])?
+            .with_columns(vec![actor_pool_project_expr.alias("b")])?
             .build();
 
         // Project([col("a")]) --> ActorPoolProject([col("a"), foo(col("a")).alias("b")]) --> Project([col("a"), col("b")])
         let expected = scan_plan.select(vec![col("a")])?.build();
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             expected,
-            vec![col("a"), stateful_project_expr.alias("b")],
+            vec![col("a"), actor_pool_project_expr.alias("b")],
         )?)
         .arced();
         let expected =
@@ -614,20 +611,20 @@ mod tests {
         let scan_plan = dummy_scan_node(scan_op);
         let project_plan = scan_plan
             .with_columns(vec![
-                create_stateful_udf(vec![create_stateful_udf(vec![col("a")])]).alias("a_prime"),
-                create_stateful_udf(vec![create_stateful_udf(vec![col("b")])]).alias("b_prime"),
+                create_actor_pool_udf(vec![create_actor_pool_udf(vec![col("a")])]).alias("a_prime"),
+                create_actor_pool_udf(vec![create_actor_pool_udf(vec![col("b")])]).alias("b_prime"),
             ])?
             .build();
 
-        let intermediate_column_name_0 = "__TruncateRootStatefulUDF_0-2-0__";
-        let intermediate_column_name_1 = "__TruncateRootStatefulUDF_0-3-0__";
+        let intermediate_column_name_0 = "__TruncateRootActorPoolUDF_0-2-0__";
+        let intermediate_column_name_1 = "__TruncateRootActorPoolUDF_0-3-0__";
         let expected = scan_plan.select(vec![col("a"), col("b")])?.build();
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             expected,
             vec![
                 col("a"),
                 col("b"),
-                create_stateful_udf(vec![col("a")]).alias(intermediate_column_name_0),
+                create_actor_pool_udf(vec![col("a")]).alias(intermediate_column_name_0),
             ],
         )?)
         .arced();
@@ -637,7 +634,7 @@ mod tests {
                 col("a"),
                 col("b"),
                 col(intermediate_column_name_0),
-                create_stateful_udf(vec![col("b")]).alias(intermediate_column_name_1),
+                create_actor_pool_udf(vec![col("b")]).alias(intermediate_column_name_1),
             ],
         )?)
         .arced();
@@ -668,7 +665,7 @@ mod tests {
                 col(intermediate_column_name_1),
                 col("a"),
                 col("b"),
-                create_stateful_udf(vec![col(intermediate_column_name_0)]).alias("a_prime"),
+                create_actor_pool_udf(vec![col(intermediate_column_name_0)]).alias("a_prime"),
             ],
         )?)
         .arced();
@@ -680,7 +677,7 @@ mod tests {
                 col("a"),
                 col("b"),
                 col("a_prime"),
-                create_stateful_udf(vec![col(intermediate_column_name_1)]).alias("b_prime"),
+                create_actor_pool_udf(vec![col(intermediate_column_name_1)]).alias("b_prime"),
             ],
         )?)
         .arced();
@@ -697,22 +694,22 @@ mod tests {
     fn test_multiple_with_column_serial() -> DaftResult<()> {
         let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Utf8)]);
         let scan_plan = dummy_scan_node(scan_op);
-        let stacked_stateful_project_expr =
-            create_stateful_udf(vec![create_stateful_udf(vec![col("a")])]);
+        let stacked_actor_pool_project_expr =
+            create_actor_pool_udf(vec![create_actor_pool_udf(vec![col("a")])]);
 
-        // Add a Projection with StatefulUDF and resource request
+        // Add a Projection with actor pool UDF and resource request
         // Project([col("a"), foo(foo(col("a"))).alias("b")])
         let project_plan = scan_plan
-            .with_columns(vec![stacked_stateful_project_expr.alias("b")])?
+            .with_columns(vec![stacked_actor_pool_project_expr.alias("b")])?
             .build();
 
-        let intermediate_name = "__TruncateRootStatefulUDF_0-1-0__";
+        let intermediate_name = "__TruncateRootActorPoolUDF_0-1-0__";
         let expected = scan_plan.select(vec![col("a")])?.build();
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             expected,
             vec![
                 col("a"),
-                create_stateful_udf(vec![col("a")]).alias(intermediate_name),
+                create_actor_pool_udf(vec![col("a")]).alias(intermediate_name),
             ],
         )?)
         .arced();
@@ -731,7 +728,7 @@ mod tests {
             vec![
                 col(intermediate_name),
                 col("a"),
-                create_stateful_udf(vec![col(intermediate_name)]).alias("b"),
+                create_actor_pool_udf(vec![col(intermediate_name)]).alias("b"),
             ],
         )?)
         .arced();
@@ -744,7 +741,7 @@ mod tests {
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             expected,
             vec![
-                create_stateful_udf(vec![col("a")]).alias(intermediate_name),
+                create_actor_pool_udf(vec![col("a")]).alias(intermediate_name),
                 col("a"),
             ],
         )?)
@@ -753,7 +750,7 @@ mod tests {
             expected,
             vec![
                 col("a"),
-                create_stateful_udf(vec![col(intermediate_name)]).alias("b"),
+                create_actor_pool_udf(vec![col(intermediate_name)]).alias("b"),
             ],
         )?)
         .arced();
@@ -765,22 +762,22 @@ mod tests {
     fn test_multiple_with_column_serial_no_alias() -> DaftResult<()> {
         let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Utf8)]);
         let scan_plan = dummy_scan_node(scan_op);
-        let stacked_stateful_project_expr =
-            create_stateful_udf(vec![create_stateful_udf(vec![col("a")])]);
+        let stacked_actor_pool_project_expr =
+            create_actor_pool_udf(vec![create_actor_pool_udf(vec![col("a")])]);
 
-        // Add a Projection with StatefulUDF and resource request
+        // Add a Projection with actor pool UDF and resource request
         let project_plan = scan_plan
-            .select(vec![stacked_stateful_project_expr])?
+            .select(vec![stacked_actor_pool_project_expr])?
             .build();
 
-        let intermediate_name = "__TruncateRootStatefulUDF_0-0-0__";
+        let intermediate_name = "__TruncateRootActorPoolUDF_0-0-0__";
 
         let expected = scan_plan.select(vec![col("a")])?.build();
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             expected,
             vec![
                 col("a"),
-                create_stateful_udf(vec![col("a")]).alias(intermediate_name),
+                create_actor_pool_udf(vec![col("a")]).alias(intermediate_name),
             ],
         )?)
         .arced();
@@ -792,7 +789,7 @@ mod tests {
             expected,
             vec![
                 col(intermediate_name),
-                create_stateful_udf(vec![col(intermediate_name)]).alias("a"),
+                create_actor_pool_udf(vec![col(intermediate_name)]).alias("a"),
             ],
         )?)
         .arced();
@@ -801,12 +798,12 @@ mod tests {
 
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             scan_plan.build(),
-            vec![create_stateful_udf(vec![col("a")]).alias(intermediate_name)],
+            vec![create_actor_pool_udf(vec![col("a")]).alias(intermediate_name)],
         )?)
         .arced();
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             expected,
-            vec![create_stateful_udf(vec![col(intermediate_name)]).alias("a")],
+            vec![create_actor_pool_udf(vec![col(intermediate_name)]).alias("a")],
         )?)
         .arced();
         assert_optimized_plan_eq_with_projection_pushdown(project_plan, expected)?;
@@ -821,26 +818,26 @@ mod tests {
             Field::new("b", DataType::Utf8),
         ]);
         let scan_plan = dummy_scan_node(scan_op);
-        let stacked_stateful_project_expr = create_stateful_udf(vec![
-            create_stateful_udf(vec![col("a")]),
-            create_stateful_udf(vec![col("b")]),
+        let stacked_actor_pool_project_expr = create_actor_pool_udf(vec![
+            create_actor_pool_udf(vec![col("a")]),
+            create_actor_pool_udf(vec![col("b")]),
         ]);
 
-        // Add a Projection with StatefulUDF and resource request
+        // Add a Projection with actor pool UDF and resource request
         // Project([foo(foo(col("a")), foo(col("b"))).alias("c")])
         let project_plan = scan_plan
-            .select(vec![stacked_stateful_project_expr.alias("c")])?
+            .select(vec![stacked_actor_pool_project_expr.alias("c")])?
             .build();
 
-        let intermediate_name_0 = "__TruncateRootStatefulUDF_0-0-0__";
-        let intermediate_name_1 = "__TruncateRootStatefulUDF_0-0-1__";
+        let intermediate_name_0 = "__TruncateRootActorPoolUDF_0-0-0__";
+        let intermediate_name_1 = "__TruncateRootActorPoolUDF_0-0-1__";
         let expected = scan_plan.select(vec![col("a"), col("b")])?.build();
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             expected,
             vec![
                 col("a"),
                 col("b"),
-                create_stateful_udf(vec![col("a")]).alias(intermediate_name_0),
+                create_actor_pool_udf(vec![col("a")]).alias(intermediate_name_0),
             ],
         )?)
         .arced();
@@ -850,7 +847,7 @@ mod tests {
                 col("a"),
                 col("b"),
                 col(intermediate_name_0),
-                create_stateful_udf(vec![col("b")]).alias(intermediate_name_1),
+                create_actor_pool_udf(vec![col("b")]).alias(intermediate_name_1),
             ],
         )?)
         .arced();
@@ -869,7 +866,7 @@ mod tests {
             vec![
                 col(intermediate_name_0),
                 col(intermediate_name_1),
-                create_stateful_udf(vec![col(intermediate_name_0), col(intermediate_name_1)])
+                create_actor_pool_udf(vec![col(intermediate_name_0), col(intermediate_name_1)])
                     .alias("c"),
             ],
         )?)
@@ -882,7 +879,7 @@ mod tests {
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             expected,
             vec![
-                create_stateful_udf(vec![col("a")]).alias(intermediate_name_0),
+                create_actor_pool_udf(vec![col("a")]).alias(intermediate_name_0),
                 col("b"),
             ],
         )?)
@@ -891,14 +888,14 @@ mod tests {
             expected,
             vec![
                 col(intermediate_name_0),
-                create_stateful_udf(vec![col("b")]).alias(intermediate_name_1),
+                create_actor_pool_udf(vec![col("b")]).alias(intermediate_name_1),
             ],
         )?)
         .arced();
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             expected,
             vec![
-                create_stateful_udf(vec![col(intermediate_name_0), col(intermediate_name_1)])
+                create_actor_pool_udf(vec![col(intermediate_name_0), col(intermediate_name_1)])
                     .alias("c"),
             ],
         )?)
@@ -914,27 +911,27 @@ mod tests {
             Field::new("b", DataType::Int64),
         ]);
         let scan_plan = dummy_scan_node(scan_op);
-        let stacked_stateful_project_expr = create_stateful_udf(vec![create_stateful_udf(vec![
-            col("a"),
-        ])
-        .add(create_stateful_udf(vec![col("b")]))]);
+        let stacked_actor_pool_project_expr =
+            create_actor_pool_udf(vec![
+                create_actor_pool_udf(vec![col("a")]).add(create_actor_pool_udf(vec![col("b")]))
+            ]);
 
-        // Add a Projection with StatefulUDF and resource request
+        // Add a Projection with actor pool UDF and resource request
         // Project([foo(foo(col("a")) + foo(col("b"))).alias("c")])
         let project_plan = scan_plan
-            .select(vec![stacked_stateful_project_expr.alias("c")])?
+            .select(vec![stacked_actor_pool_project_expr.alias("c")])?
             .build();
 
-        let intermediate_name_0 = "__TruncateAnyStatefulUDFChildren_1-0-0__";
-        let intermediate_name_1 = "__TruncateAnyStatefulUDFChildren_1-0-1__";
-        let intermediate_name_2 = "__TruncateRootStatefulUDF_0-0-0__";
+        let intermediate_name_0 = "__TruncateAnyActorPoolUDFChildren_1-0-0__";
+        let intermediate_name_1 = "__TruncateAnyActorPoolUDFChildren_1-0-1__";
+        let intermediate_name_2 = "__TruncateRootActorPoolUDF_0-0-0__";
         let expected = scan_plan.select(vec![col("a"), col("b")])?.build();
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             expected,
             vec![
                 col("a"),
                 col("b"),
-                create_stateful_udf(vec![col("a")]).alias(intermediate_name_0),
+                create_actor_pool_udf(vec![col("a")]).alias(intermediate_name_0),
             ],
         )?)
         .arced();
@@ -944,7 +941,7 @@ mod tests {
                 col("a"),
                 col("b"),
                 col(intermediate_name_0),
-                create_stateful_udf(vec![col("b")]).alias(intermediate_name_1),
+                create_actor_pool_udf(vec![col("b")]).alias(intermediate_name_1),
             ],
         )?)
         .arced();
@@ -974,7 +971,7 @@ mod tests {
             expected,
             vec![
                 col(intermediate_name_2),
-                create_stateful_udf(vec![col(intermediate_name_2)]).alias("c"),
+                create_actor_pool_udf(vec![col(intermediate_name_2)]).alias("c"),
             ],
         )?)
         .arced();
@@ -986,7 +983,7 @@ mod tests {
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             expected,
             vec![
-                create_stateful_udf(vec![col("a")]).alias(intermediate_name_0),
+                create_actor_pool_udf(vec![col("a")]).alias(intermediate_name_0),
                 col("b"),
             ],
         )?)
@@ -995,7 +992,7 @@ mod tests {
             expected,
             vec![
                 col(intermediate_name_0),
-                create_stateful_udf(vec![col("b")]).alias(intermediate_name_1),
+                create_actor_pool_udf(vec![col("b")]).alias(intermediate_name_1),
             ],
         )?)
         .arced();
@@ -1008,7 +1005,7 @@ mod tests {
         .arced();
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             expected,
-            vec![create_stateful_udf(vec![col(intermediate_name_2)]).alias("c")],
+            vec![create_actor_pool_udf(vec![col(intermediate_name_2)]).alias("c")],
         )?)
         .arced();
         assert_optimized_plan_eq_with_projection_pushdown(project_plan, expected)?;
@@ -1019,24 +1016,24 @@ mod tests {
     fn test_nested_with_column_same_names() -> DaftResult<()> {
         let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
         let scan_plan = dummy_scan_node(scan_op);
-        let stacked_stateful_project_expr =
-            create_stateful_udf(vec![col("a").add(create_stateful_udf(vec![col("a")]))]);
+        let stacked_actor_pool_project_expr =
+            create_actor_pool_udf(vec![col("a").add(create_actor_pool_udf(vec![col("a")]))]);
 
-        // Add a Projection with StatefulUDF and resource request
+        // Add a Projection with actor pool UDF and resource request
         // Project([foo(col("a") + foo(col("a"))).alias("c")])
         let project_plan = scan_plan
-            .select(vec![col("a"), stacked_stateful_project_expr.alias("c")])?
+            .select(vec![col("a"), stacked_actor_pool_project_expr.alias("c")])?
             .build();
 
-        let intermediate_name_0 = "__TruncateAnyStatefulUDFChildren_1-1-0__";
-        let intermediate_name_1 = "__TruncateRootStatefulUDF_0-1-0__";
+        let intermediate_name_0 = "__TruncateAnyActorPoolUDFChildren_1-1-0__";
+        let intermediate_name_1 = "__TruncateRootActorPoolUDF_0-1-0__";
         let expected = scan_plan.build();
         let expected = LogicalPlan::Project(Project::try_new(expected, vec![col("a")])?).arced();
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             expected,
             vec![
                 col("a"),
-                create_stateful_udf(vec![col("a")]).alias(intermediate_name_0),
+                create_actor_pool_udf(vec![col("a")]).alias(intermediate_name_0),
             ],
         )?)
         .arced();
@@ -1071,7 +1068,7 @@ mod tests {
             vec![
                 col(intermediate_name_1),
                 col("a"),
-                create_stateful_udf(vec![col(intermediate_name_1)]).alias("c"),
+                create_actor_pool_udf(vec![col(intermediate_name_1)]).alias("c"),
             ],
         )?)
         .arced();
@@ -1084,28 +1081,28 @@ mod tests {
     }
 
     #[test]
-    fn test_stateless_expr_with_only_some_stateful_children() -> DaftResult<()> {
+    fn test_stateless_expr_with_only_some_actor_pool_children() -> DaftResult<()> {
         let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
         let scan_plan = dummy_scan_node(scan_op);
 
         // (col("a") + col("a"))  +  foo(col("a"))
-        let stateful_project_expr = col("a")
+        let actor_pool_project_expr = col("a")
             .add(col("a"))
-            .add(create_stateful_udf(vec![col("a")]))
+            .add(create_actor_pool_udf(vec![col("a")]))
             .alias("result");
         let project_plan = scan_plan
-            .select(vec![col("a"), stateful_project_expr])?
+            .select(vec![col("a"), actor_pool_project_expr])?
             .build();
 
-        let intermediate_name_0 = "__TruncateAnyStatefulUDFChildren_0-1-0__";
-        // let intermediate_name_1 = "__TruncateRootStatefulUDF_0-1-0__";
+        let intermediate_name_0 = "__TruncateAnyActorPoolUDFChildren_0-1-0__";
+        // let intermediate_name_1 = "__TruncateRootActorPoolUDF_0-1-0__";
         let expected = scan_plan.build();
         let expected = LogicalPlan::Project(Project::try_new(expected, vec![col("a")])?).arced();
         let expected = LogicalPlan::ActorPoolProject(ActorPoolProject::try_new(
             expected,
             vec![
                 col("a"),
-                create_stateful_udf(vec![col("a")]).alias(intermediate_name_0),
+                create_actor_pool_udf(vec![col("a")]).alias(intermediate_name_0),
             ],
         )?)
         .arced();

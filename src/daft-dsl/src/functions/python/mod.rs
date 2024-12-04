@@ -1,6 +1,5 @@
 mod runtime_py_object;
 mod udf;
-mod udf_runtime_binding;
 
 use std::sync::Arc;
 
@@ -11,7 +10,6 @@ use daft_core::prelude::*;
 use itertools::Itertools;
 pub use runtime_py_object::RuntimePyObject;
 use serde::{Deserialize, Serialize};
-pub use udf_runtime_binding::UDFRuntimeBinding;
 
 use super::FunctionExpr;
 use crate::{Expr, ExprRef};
@@ -109,13 +107,13 @@ pub fn get_resource_request(exprs: &[ExprRef]) -> Option<ResourceRequest> {
 pub fn get_concurrency(exprs: &[ExprRef]) -> usize {
     let mut projection_concurrency = None;
     for expr in exprs {
-        let mut found_stateful_udf = false;
+        let mut found_actor_pool_udf = false;
         expr.apply(|e| match e.as_ref() {
             Expr::Function {
                 func: FunctionExpr::Python(PythonUDF { concurrency, .. }),
                 ..
             } => {
-                found_stateful_udf = true;
+                found_actor_pool_udf = true;
                 projection_concurrency =
                     Some(concurrency.expect("Should have concurrency specified"));
                 Ok(common_treenode::TreeNodeRecursion::Stop)
@@ -123,11 +121,35 @@ pub fn get_concurrency(exprs: &[ExprRef]) -> usize {
             _ => Ok(common_treenode::TreeNodeRecursion::Continue),
         })
         .unwrap();
-        if found_stateful_udf {
+        if found_actor_pool_udf {
             break;
         }
     }
-    projection_concurrency.expect("get_concurrency expects one StatefulUDF")
+    projection_concurrency.expect("get_concurrency expects one UDF with concurrency set")
+}
+
+/// Gets the concurrency from the first UDF encountered in a given slice of expressions
+pub fn get_batch_size(exprs: &[ExprRef]) -> Option<usize> {
+    let mut projection_batch_size = None;
+    for expr in exprs {
+        let mut found_udf = false;
+        expr.apply(|e| match e.as_ref() {
+            Expr::Function {
+                func: FunctionExpr::Python(PythonUDF { batch_size, .. }),
+                ..
+            } => {
+                found_udf = true;
+                projection_batch_size = Some(*batch_size);
+                Ok(common_treenode::TreeNodeRecursion::Stop)
+            }
+            _ => Ok(common_treenode::TreeNodeRecursion::Continue),
+        })
+        .unwrap();
+        if found_udf {
+            break;
+        }
+    }
+    projection_batch_size.expect("get_batch_size expects one UDF")
 }
 
 #[cfg(feature = "python")]

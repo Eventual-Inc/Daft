@@ -6,7 +6,7 @@ import pytest
 import daft
 from daft import DataType, ResourceRequest
 from daft.context import get_context
-from daft.execution.execution_step import StatefulUDFProject
+from daft.execution.execution_step import ActorPoolProject
 from daft.expressions import ExpressionsProjection
 from daft.runners.partitioning import PartialPartitionMetadata
 from daft.runners.pyrunner import AcquiredResources, PyActorPool, PyRunner
@@ -15,7 +15,7 @@ from tests.conftest import get_tests_daft_runner_name
 
 
 @daft.udf(return_dtype=DataType.int64())
-class MyStatefulUDF:
+class MyUDF:
     def __init__(self):
         self.state = 0
 
@@ -25,11 +25,11 @@ class MyStatefulUDF:
 
 
 def test_pyactor_pool():
-    projection = ExpressionsProjection([MyStatefulUDF(daft.col("x"))])
+    projection = ExpressionsProjection([MyUDF(daft.col("x"))])
     pool = PyActorPool("my-pool", 1, [AcquiredResources(num_cpus=1, gpus={}, memory_bytes=0)], projection)
     initial_partition = MicroPartition.from_pydict({"x": [1, 1, 1]})
     ppm = PartialPartitionMetadata(num_rows=None, size_bytes=None)
-    instr = StatefulUDFProject(projection=projection)
+    instr = ActorPoolProject(projection=projection)
 
     pool.setup()
 
@@ -66,7 +66,7 @@ def test_pyactor_pool_not_enough_resources():
     from copy import deepcopy
 
     cpu_count = multiprocessing.cpu_count()
-    projection = ExpressionsProjection([MyStatefulUDF(daft.col("x"))])
+    projection = ExpressionsProjection([MyUDF(daft.col("x"))])
 
     runner = get_context().get_or_create_runner()
     assert isinstance(runner, PyRunner)

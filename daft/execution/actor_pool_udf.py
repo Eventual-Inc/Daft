@@ -15,9 +15,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def stateful_actor_event_loop(uninitialized_projection: ExpressionsProjection, conn: Connection) -> None:
+def actor_event_loop(uninitialized_projection: ExpressionsProjection, conn: Connection) -> None:
     """
-    Event loop that runs in a stateful actor process and receives MicroPartitions to evaluate with a stateful UDF.
+    Event loop that runs in a actor process and receives MicroPartitions to evaluate with an initialized UDF projection.
 
     Terminates once it receives None.
     """
@@ -32,14 +32,14 @@ def stateful_actor_event_loop(uninitialized_projection: ExpressionsProjection, c
         conn.send(output)
 
 
-class StatefulActorHandle:
-    """Handle class for initializing, interacting with, and tearing down a single local stateful actor process."""
+class ActorHandle:
+    """Handle class for initializing, interacting with, and tearing down a single local actor process."""
 
     def __init__(self, projection: list[PyExpr]) -> None:
         self.handle_conn, actor_conn = mp.Pipe()
 
         expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in projection])
-        self.actor_process = mp.Process(target=stateful_actor_event_loop, args=(expr_projection, actor_conn))
+        self.actor_process = mp.Process(target=actor_event_loop, args=(expr_projection, actor_conn))
         self.actor_process.start()
 
     def eval_input(self, input: PyMicroPartition) -> PyMicroPartition:

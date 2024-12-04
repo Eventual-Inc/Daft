@@ -86,7 +86,7 @@ def run_udf(
     py_return_dtype: PyDataType,
     batch_size: int | None,
 ) -> PySeries:
-    """API to call from Rust code that will call an UDF (initialized, in the case of stateful UDFs) on the inputs"""
+    """API to call from Rust code that will call an UDF (initialized, in the case of actor pool UDFs) on the inputs"""
     return_dtype = DataType._from_pydatatype(py_return_dtype)
     kwarg_keys = list(bound_args.bound_args.kwargs.keys())
     arg_keys = bound_args.arg_keys()

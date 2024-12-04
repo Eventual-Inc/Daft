@@ -59,7 +59,7 @@ def reset_runner_with_gpus(num_gpus, monkeypatch):
 
 @pytest.mark.parametrize("concurrency", [1, 2])
 @pytest.mark.parametrize("num_gpus", [1, 2])
-def test_stateful_udf_cuda_env_var(enable_actor_pool, monkeypatch, concurrency, num_gpus):
+def test_actor_pool_udf_cuda_env_var(enable_actor_pool, monkeypatch, concurrency, num_gpus):
     with reset_runner_with_gpus(concurrency * num_gpus, monkeypatch):
 
         @udf(return_dtype=DataType.string(), num_gpus=num_gpus)
@@ -91,7 +91,7 @@ def test_stateful_udf_cuda_env_var(enable_actor_pool, monkeypatch, concurrency, 
         assert len(all_devices) == concurrency * num_gpus
 
 
-def test_stateful_udf_fractional_gpu(enable_actor_pool, monkeypatch):
+def test_actor_pool_udf_fractional_gpu(enable_actor_pool, monkeypatch):
     with reset_runner_with_gpus(1, monkeypatch):
 
         @udf(return_dtype=DataType.string(), num_gpus=0.5)
@@ -121,7 +121,7 @@ def test_stateful_udf_fractional_gpu(enable_actor_pool, monkeypatch):
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "py", reason="Test can only be run on PyRunner")
-def test_stateful_udf_no_cuda_devices(enable_actor_pool, monkeypatch):
+def test_actor_pool_udf_no_cuda_devices(enable_actor_pool, monkeypatch):
     monkeypatch.setattr(daft.internal.gpu, "_raw_device_count_nvml", lambda: 0)
     monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
 
@@ -150,7 +150,7 @@ def test_stateful_udf_no_cuda_devices(enable_actor_pool, monkeypatch):
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "py", reason="Test can only be run on PyRunner")
-def test_stateful_udf_no_cuda_visible_device_envvar(enable_actor_pool, monkeypatch):
+def test_actor_pool_udf_no_cuda_visible_device_envvar(enable_actor_pool, monkeypatch):
     monkeypatch.setattr(daft.internal.gpu, "_raw_device_count_nvml", lambda: 1)
     monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
 

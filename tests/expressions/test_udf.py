@@ -112,7 +112,7 @@ def test_class_udf_init_args_no_default(batch_size, actor_pool_enabled):
     if actor_pool_enabled:
         RepeatN = RepeatN.with_concurrency(1)
 
-    with pytest.raises(ValueError, match="Cannot call StatefulUDF without initialization arguments."):
+    with pytest.raises(ValueError, match="Cannot call actor pool UDF without initialization arguments."):
         RepeatN(col("a"))
 
     expr = RepeatN.with_init_args(initial_n=2)(col("a"))
@@ -141,7 +141,7 @@ def test_class_udf_init_args_bad_args(actor_pool_enabled):
 
 @pytest.mark.parametrize("concurrency", [1, 2, 4])
 @pytest.mark.parametrize("actor_pool_enabled", [True], indirect=True)
-def test_stateful_udf_concurrency(concurrency, actor_pool_enabled):
+def test_actor_pool_udf_concurrency(concurrency, actor_pool_enabled):
     df = daft.from_pydict({"a": ["foo", "bar", "baz"]})
 
     @udf(return_dtype=DataType.string(), batch_size=1)

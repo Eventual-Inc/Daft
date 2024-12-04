@@ -15,9 +15,9 @@ mod resolve_expr;
 mod treenode;
 pub use common_treenode;
 pub use expr::{
-    binary_op, col, has_agg, is_actor_pool_udf, is_partition_compatible, AggExpr,
-    ApproxPercentileParams, Expr, ExprRef, Operator, OuterReferenceColumn, SketchType, Subquery,
-    SubqueryPlan,
+    binary_op, col, count_actor_pool_udfs, has_agg, is_actor_pool_udf, is_partition_compatible,
+    AggExpr, ApproxPercentileParams, Expr, ExprRef, Operator, OuterReferenceColumn, SketchType,
+    Subquery, SubqueryPlan,
 };
 pub use lit::{lit, literal_value, literals_to_series, null_lit, Literal, LiteralValue};
 #[cfg(feature = "python")]

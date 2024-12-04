@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use common_error::DaftError;
 use common_resource_request::ResourceRequest;
-use common_treenode::TreeNode;
 use daft_dsl::{
+    count_actor_pool_udfs,
     functions::python::{get_concurrency, get_resource_request, get_udf_names},
-    is_actor_pool_udf, ExprRef, ExprResolver,
+    ExprRef, ExprResolver,
 };
 use daft_schema::schema::{Schema, SchemaRef};
 use itertools::Itertools;
@@ -28,25 +28,12 @@ pub struct ActorPoolProject {
 
 impl ActorPoolProject {
     pub(crate) fn try_new(input: Arc<LogicalPlan>, projection: Vec<ExprRef>) -> Result<Self> {
-        let expr_resolver = ExprResolver::builder().allow_stateful_udf(true).build();
+        let expr_resolver = ExprResolver::builder().allow_actor_pool_udf(true).build();
         let (projection, fields) = expr_resolver
             .resolve(projection, input.schema().as_ref())
             .context(CreationSnafu)?;
 
-        let num_actor_pool_udfs: usize = projection
-            .iter()
-            .map(|expr| {
-                let mut num_stateful_udfs = 0;
-                expr.apply(|e| {
-                    if is_actor_pool_udf(e) {
-                        num_stateful_udfs += 1;
-                    }
-                    Ok(common_treenode::TreeNodeRecursion::Continue)
-                })
-                .unwrap();
-                num_stateful_udfs
-            })
-            .sum();
+        let num_actor_pool_udfs: usize = count_actor_pool_udfs(&projection);
         if !num_actor_pool_udfs == 1 {
             return Err(Error::CreationError { source: DaftError::InternalError(format!("Expected ActorPoolProject to have exactly 1 actor pool UDF expression but found: {num_actor_pool_udfs}")) });
         }

@@ -10,7 +10,7 @@ from daft.table import MicroPartition
 
 
 @daft.udf(return_dtype=DataType.int64())
-class MyStatefulUDF:
+class MyUDF:
     def __init__(self):
         self.state = 0
 
@@ -20,7 +20,7 @@ class MyStatefulUDF:
 
 
 def test_ray_actor_pool():
-    projection = ExpressionsProjection([MyStatefulUDF(daft.col("x"))])
+    projection = ExpressionsProjection([MyUDF(daft.col("x"))])
     pool = RayRoundRobinActorPool(
         "my-pool", 1, ResourceRequest(num_cpus=1), projection, execution_config=PyDaftExecutionConfig.from_env()
     )

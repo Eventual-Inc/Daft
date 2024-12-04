@@ -229,7 +229,7 @@ class ActorPoolManager:
             name: Name of the actor pool for debugging/observability
             resource_request: Requested amount of resources for each actor
             num_actors: Number of actors to spin up
-            projection: Projection to be run on the incoming data (contains Stateful UDFs as well as other stateless expressions such as aliases)
+            projection: Projection to be run on the incoming data (contains actor pool UDFs as well as other stateless expressions such as aliases)
         """
         ...
 
@@ -245,8 +245,8 @@ def actor_pool_project(
 
     from daft.daft import get_udf_names
 
-    stateful_udf_names = "-".join(name for expr in projection for name in get_udf_names(expr._expr))
-    actor_pool_name = f"{stateful_udf_names}-stage={stage_id}"
+    udf_names = "-".join(name for expr in projection for name in get_udf_names(expr._expr))
+    actor_pool_name = f"{udf_names}-stage={stage_id}"
 
     # Keep track of materializations of the children tasks
     child_materializations: deque[SingleOutputPartitionTask[PartitionT]] = deque()
@@ -283,7 +283,7 @@ def actor_pool_project(
                         actor_pool_id=actor_pool_id,
                     )
                     .add_instruction(
-                        instruction=execution_step.StatefulUDFProject(projection),
+                        instruction=execution_step.ActorPoolProject(projection),
                         resource_request=task_resource_request,
                     )
                     .finalize_partition_task_single_output(

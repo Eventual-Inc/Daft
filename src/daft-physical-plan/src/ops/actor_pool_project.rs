@@ -4,11 +4,12 @@ use common_error::{DaftError, DaftResult};
 use common_resource_request::ResourceRequest;
 use common_treenode::TreeNode;
 use daft_dsl::{
+    count_actor_pool_udfs,
     functions::{
         python::{get_concurrency, get_resource_request, PythonUDF},
         FunctionExpr,
     },
-    is_actor_pool_udf, Expr, ExprRef,
+    Expr, ExprRef,
 };
 use daft_logical_plan::partitioning::{translate_clustering_spec, ClusteringSpec};
 use itertools::Itertools;
@@ -27,22 +28,9 @@ impl ActorPoolProject {
     pub(crate) fn try_new(input: PhysicalPlanRef, projection: Vec<ExprRef>) -> DaftResult<Self> {
         let clustering_spec = translate_clustering_spec(input.clustering_spec(), &projection);
 
-        let num_stateful_udf_exprs: usize = projection
-            .iter()
-            .map(|expr| {
-                let mut num_stateful_udfs = 0;
-                expr.apply(|e| {
-                    if is_actor_pool_udf(e) {
-                        num_stateful_udfs += 1;
-                    }
-                    Ok(common_treenode::TreeNodeRecursion::Continue)
-                })
-                .unwrap();
-                num_stateful_udfs
-            })
-            .sum();
-        if !num_stateful_udf_exprs == 1 {
-            return Err(DaftError::InternalError(format!("Expected ActorPoolProject to have exactly 1 stateful UDF expression but found: {num_stateful_udf_exprs}")));
+        let num_actor_pool_udfs: usize = count_actor_pool_udfs(&projection);
+        if !num_actor_pool_udfs == 1 {
+            return Err(DaftError::InternalError(format!("Expected ActorPoolProject to have exactly 1 actor pool UDF expression but found: {num_actor_pool_udfs}")));
         }
 
         Ok(Self {

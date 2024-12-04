@@ -83,7 +83,7 @@ impl Table {
                 ..
             }) => {
                 return Err(DaftError::ComputeError(
-                    "Cannot run stateful UDF in MapGroups".to_string(),
+                    "Cannot run actor pool UDF in MapGroups".to_string(),
                 ))
             }
             _ => {
