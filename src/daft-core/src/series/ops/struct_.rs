@@ -1,10 +1,9 @@
-use crate::datatypes::DataType;
-use crate::series::Series;
-use common_error::DaftError;
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
+
+use crate::{datatypes::DataType, series::Series};
 
 impl Series {
-    pub fn struct_get(&self, name: &str) -> DaftResult<Series> {
+    pub fn struct_get(&self, name: &str) -> DaftResult<Self> {
         match self.data_type() {
             DataType::Struct(_) => self.struct_()?.get(name),
             dt => Err(DaftError::TypeError(format!(

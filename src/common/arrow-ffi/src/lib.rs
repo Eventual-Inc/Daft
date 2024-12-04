@@ -1,7 +1,6 @@
 use std::io::Cursor;
 
 use arrow2::{array::Array, datatypes::Field, ffi};
-
 #[cfg(feature = "python")]
 use pyo3::ffi::Py_uintptr_t;
 #[cfg(feature = "python")]

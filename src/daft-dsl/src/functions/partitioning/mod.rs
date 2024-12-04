@@ -2,6 +2,7 @@ mod evaluators;
 
 use serde::{Deserialize, Serialize};
 
+use super::FunctionEvaluator;
 use crate::{
     functions::partitioning::evaluators::{
         DaysEvaluator, HoursEvaluator, IcebergBucketEvaluator, IcebergTruncateEvaluator,
@@ -9,8 +10,6 @@ use crate::{
     },
     Expr, ExprRef,
 };
-
-use super::FunctionEvaluator;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum PartitioningExpr {
@@ -25,14 +24,13 @@ pub enum PartitioningExpr {
 impl PartitioningExpr {
     #[inline]
     pub fn get_evaluator(&self) -> &dyn FunctionEvaluator {
-        use PartitioningExpr::*;
         match self {
-            Years => &YearsEvaluator {},
-            Months => &MonthsEvaluator {},
-            Days => &DaysEvaluator {},
-            Hours => &HoursEvaluator {},
-            IcebergBucket(..) => &IcebergBucketEvaluator {},
-            IcebergTruncate(..) => &IcebergTruncateEvaluator {},
+            Self::Years => &YearsEvaluator {},
+            Self::Months => &MonthsEvaluator {},
+            Self::Days => &DaysEvaluator {},
+            Self::Hours => &HoursEvaluator {},
+            Self::IcebergBucket(..) => &IcebergBucketEvaluator {},
+            Self::IcebergTruncate(..) => &IcebergTruncateEvaluator {},
         }
     }
 }

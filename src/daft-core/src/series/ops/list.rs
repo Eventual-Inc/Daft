@@ -1,13 +1,30 @@
-use crate::datatypes::{DataType, UInt64Array, Utf8Array};
-use crate::prelude::CountMode;
-use crate::series::IntoSeries;
-use crate::series::Series;
-use common_error::DaftError;
+use common_error::{DaftError, DaftResult};
+use daft_schema::field::Field;
 
-use common_error::DaftResult;
+use crate::{
+    datatypes::{DataType, UInt64Array, Utf8Array},
+    prelude::CountMode,
+    series::{IntoSeries, Series},
+};
 
 impl Series {
-    pub fn explode(&self) -> DaftResult<Series> {
+    pub fn list_value_counts(&self) -> DaftResult<Self> {
+        let series = match self.data_type() {
+            DataType::List(_) => self.list()?.value_counts(),
+            DataType::FixedSizeList(..) => self.fixed_size_list()?.value_counts(),
+            dt => {
+                return Err(DaftError::TypeError(format!(
+                    "List contains not implemented for {}",
+                    dt
+                )))
+            }
+        }?
+        .into_series();
+
+        Ok(series)
+    }
+
+    pub fn explode(&self) -> DaftResult<Self> {
         match self.data_type() {
             DataType::List(_) => self.list()?.explode(),
             DataType::FixedSizeList(..) => self.fixed_size_list()?.explode(),
@@ -55,7 +72,7 @@ impl Series {
         }
     }
 
-    pub fn list_get(&self, idx: &Series, default: &Series) -> DaftResult<Series> {
+    pub fn list_get(&self, idx: &Self, default: &Self) -> DaftResult<Self> {
         let idx = idx.cast(&DataType::Int64)?;
         let idx_arr = idx.i64().unwrap();
 
@@ -69,7 +86,7 @@ impl Series {
         }
     }
 
-    pub fn list_slice(&self, start: &Series, end: &Series) -> DaftResult<Series> {
+    pub fn list_slice(&self, start: &Self, end: &Self) -> DaftResult<Self> {
         let start = start.cast(&DataType::Int64)?;
         let start_arr = start.i64().unwrap();
         let end_arr = if end.data_type().is_integer() {
@@ -89,7 +106,7 @@ impl Series {
         }
     }
 
-    pub fn list_chunk(&self, size: usize) -> DaftResult<Series> {
+    pub fn list_chunk(&self, size: usize) -> DaftResult<Self> {
         match self.data_type() {
             DataType::List(_) => self.list()?.get_chunks(size),
             DataType::FixedSizeList(..) => self.fixed_size_list()?.get_chunks(size),
@@ -99,7 +116,7 @@ impl Series {
         }
     }
 
-    pub fn list_sum(&self) -> DaftResult<Series> {
+    pub fn list_sum(&self) -> DaftResult<Self> {
         match self.data_type() {
             DataType::List(_) => self.list()?.sum(),
             DataType::FixedSizeList(..) => self.fixed_size_list()?.sum(),
@@ -110,7 +127,7 @@ impl Series {
         }
     }
 
-    pub fn list_mean(&self) -> DaftResult<Series> {
+    pub fn list_mean(&self) -> DaftResult<Self> {
         match self.data_type() {
             DataType::List(_) => self.list()?.mean(),
             DataType::FixedSizeList(..) => self.fixed_size_list()?.mean(),
@@ -121,7 +138,7 @@ impl Series {
         }
     }
 
-    pub fn list_min(&self) -> DaftResult<Series> {
+    pub fn list_min(&self) -> DaftResult<Self> {
         match self.data_type() {
             DataType::List(_) => self.list()?.min(),
             DataType::FixedSizeList(..) => self.fixed_size_list()?.min(),
@@ -132,7 +149,7 @@ impl Series {
         }
     }
 
-    pub fn list_max(&self) -> DaftResult<Series> {
+    pub fn list_max(&self) -> DaftResult<Self> {
         match self.data_type() {
             DataType::List(_) => self.list()?.max(),
             DataType::FixedSizeList(..) => self.fixed_size_list()?.max(),
@@ -143,17 +160,60 @@ impl Series {
         }
     }
 
-    pub fn list_sort(&self, desc: &Series) -> DaftResult<Series> {
+    pub fn list_sort(&self, desc: &Self, nulls_first: &Self) -> DaftResult<Self> {
         let desc_arr = desc.bool()?;
+        let nulls_first = nulls_first.bool()?;
 
         match self.data_type() {
-            DataType::List(_) => Ok(self.list()?.list_sort(desc_arr)?.into_series()),
-            DataType::FixedSizeList(..) => {
-                Ok(self.fixed_size_list()?.list_sort(desc_arr)?.into_series())
-            }
+            DataType::List(_) => Ok(self.list()?.list_sort(desc_arr, nulls_first)?.into_series()),
+            DataType::FixedSizeList(..) => Ok(self
+                .fixed_size_list()?
+                .list_sort(desc_arr, nulls_first)?
+                .into_series()),
             dt => Err(DaftError::TypeError(format!(
                 "List sort not implemented for {}",
                 dt
+            ))),
+        }
+    }
+
+    /// Given a series of `List` or `FixedSizeList`, return the count of distinct elements in the list.
+    ///
+    /// # Note
+    /// `NULL` values are not counted.
+    ///
+    /// # Example
+    /// ```txt
+    /// [[1, 2, 3], [1, 1, 1], [NULL, NULL, 5]] -> [3, 1, 1]
+    /// ```
+    pub fn list_unique_count(&self) -> DaftResult<Self> {
+        let field = Field::new(self.name(), DataType::UInt64);
+        match self.data_type() {
+            DataType::List(..) => {
+                let iter = self.list()?.into_iter().map(|sub_series| {
+                    let sub_series = sub_series?;
+                    let length = sub_series
+                        .build_probe_table_without_nulls()
+                        .expect("Building the probe table should always work")
+                        .len() as u64;
+                    Some(length)
+                });
+                Ok(UInt64Array::from_regular_iter(field, iter)?.into_series())
+            }
+            DataType::FixedSizeList(..) => {
+                let iter = self.fixed_size_list()?.into_iter().map(|sub_series| {
+                    let sub_series = sub_series?;
+                    let length = sub_series
+                        .build_probe_table_without_nulls()
+                        .expect("Building the probe table should always work")
+                        .len() as u64;
+                    Some(length)
+                });
+                Ok(UInt64Array::from_regular_iter(field, iter)?.into_series())
+            }
+            _ => Err(DaftError::TypeError(format!(
+                "List count distinct not implemented for {}",
+                self.data_type()
             ))),
         }
     }

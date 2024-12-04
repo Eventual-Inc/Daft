@@ -1,20 +1,13 @@
-use daft_core::datatypes::DataType;
-
+use common_error::{DaftError, DaftResult};
+use daft_core::prelude::*;
 #[cfg(feature = "python")]
 use pyo3::{
     types::{PyAnyMethods, PyModule},
     Bound, PyAny, PyResult,
 };
 
-use daft_core::prelude::*;
-
-use crate::ExprRef;
-
-use common_error::{DaftError, DaftResult};
-
-use super::super::FunctionEvaluator;
-use super::{StatefulPythonUDF, StatelessPythonUDF};
-use crate::functions::FunctionExpr;
+use super::{super::FunctionEvaluator, StatefulPythonUDF, StatelessPythonUDF};
+use crate::{functions::FunctionExpr, ExprRef};
 
 impl FunctionEvaluator for StatelessPythonUDF {
     fn fn_name(&self) -> &'static str {
@@ -63,8 +56,7 @@ fn run_udf(
     return_dtype: &DataType,
     batch_size: Option<usize>,
 ) -> DaftResult<Series> {
-    use daft_core::python::PyDataType;
-    use daft_core::python::PySeries;
+    use daft_core::python::{PyDataType, PySeries};
 
     // Convert input Rust &[Series] to wrapped Python Vec<Bound<PyAny>>
     let py_series_module = PyModule::import_bound(py, pyo3::intern!(py, "daft.series"))?;
@@ -174,11 +166,12 @@ impl FunctionEvaluator for StatefulPythonUDF {
 
         #[cfg(feature = "python")]
         {
-            use crate::functions::python::udf_runtime_binding::UDFRuntimeBinding;
             use pyo3::{
                 types::{PyDict, PyTuple},
                 Python,
             };
+
+            use crate::functions::python::udf_runtime_binding::UDFRuntimeBinding;
 
             if inputs.len() != self.num_expressions {
                 return Err(DaftError::SchemaMismatch(format!(

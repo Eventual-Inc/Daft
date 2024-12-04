@@ -1,12 +1,14 @@
-use crate::{
-    array::growable::{Growable, GrowableArray},
-    array::prelude::*,
-    datatypes::prelude::*,
-};
 use arrow2::types::Index;
 use common_error::DaftResult;
 
 use super::as_arrow::AsArrow;
+use crate::{
+    array::{
+        growable::{Growable, GrowableArray},
+        prelude::*,
+    },
+    datatypes::{prelude::*, IntervalArray},
+};
 
 impl<T> DataArray<T>
 where
@@ -58,7 +60,9 @@ impl_dataarray_take!(BooleanArray);
 impl_dataarray_take!(BinaryArray);
 impl_dataarray_take!(NullArray);
 impl_dataarray_take!(ExtensionArray);
-impl_logicalarray_take!(Decimal128Array);
+impl_dataarray_take!(IntervalArray);
+impl_dataarray_take!(Decimal128Array);
+
 impl_logicalarray_take!(DateArray);
 impl_logicalarray_take!(TimeArray);
 impl_logicalarray_take!(DurationArray);
@@ -67,6 +71,8 @@ impl_logicalarray_take!(EmbeddingArray);
 impl_logicalarray_take!(ImageArray);
 impl_logicalarray_take!(FixedShapeImageArray);
 impl_logicalarray_take!(TensorArray);
+impl_logicalarray_take!(SparseTensorArray);
+impl_logicalarray_take!(FixedShapeSparseTensorArray);
 impl_logicalarray_take!(FixedShapeTensorArray);
 impl_logicalarray_take!(MapArray);
 
@@ -76,7 +82,7 @@ impl FixedSizeBinaryArray {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        let mut growable = FixedSizeBinaryArray::make_growable(
+        let mut growable = Self::make_growable(
             self.name(),
             self.data_type(),
             vec![self],
@@ -95,10 +101,7 @@ impl FixedSizeBinaryArray {
             }
         }
 
-        Ok(growable
-            .build()?
-            .downcast::<FixedSizeBinaryArray>()?
-            .clone())
+        Ok(growable.build()?.downcast::<Self>()?.clone())
     }
 }
 
@@ -109,11 +112,10 @@ impl crate::datatypes::PythonArray {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        use crate::array::pseudo_arrow::PseudoArrowArray;
-        use crate::datatypes::PythonType;
-
         use arrow2::array::Array;
         use pyo3::prelude::*;
+
+        use crate::array::pseudo_arrow::PseudoArrowArray;
 
         let indices = idx.as_arrow();
 
@@ -162,7 +164,7 @@ impl crate::datatypes::PythonArray {
         let arrow_array: Box<dyn arrow2::array::Array> =
             Box::new(PseudoArrowArray::new(new_values.into(), new_validity));
 
-        DataArray::<PythonType>::new(self.field().clone().into(), arrow_array)
+        Self::new(self.field().clone().into(), arrow_array)
     }
 }
 
@@ -172,7 +174,7 @@ impl FixedSizeListArray {
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
-        let mut growable = FixedSizeListArray::make_growable(
+        let mut growable = Self::make_growable(
             self.name(),
             self.data_type(),
             vec![self],
@@ -191,7 +193,7 @@ impl FixedSizeListArray {
             }
         }
 
-        Ok(growable.build()?.downcast::<FixedSizeListArray>()?.clone())
+        Ok(growable.build()?.downcast::<Self>()?.clone())
     }
 }
 
@@ -212,7 +214,7 @@ impl ListArray {
                 }
             })
             .sum();
-        let mut growable = <ListArray as GrowableArray>::GrowableType::new(
+        let mut growable = <Self as GrowableArray>::GrowableType::new(
             self.name(),
             self.data_type(),
             vec![self],
@@ -232,7 +234,7 @@ impl ListArray {
             }
         }
 
-        Ok(growable.build()?.downcast::<ListArray>()?.clone())
+        Ok(growable.build()?.downcast::<Self>()?.clone())
     }
 }
 

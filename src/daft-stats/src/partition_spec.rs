@@ -1,4 +1,7 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    hash::{Hash, Hasher},
+};
 
 use daft_core::array::ops::{DaftCompare, DaftLogical};
 use daft_dsl::{ExprRef, Literal};
@@ -10,12 +13,14 @@ pub struct PartitionSpec {
 }
 
 impl PartitionSpec {
+    #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         res.push(format!("Keys = {}", self.keys));
         res
     }
 
+    #[must_use]
     pub fn to_fill_map(&self) -> HashMap<&str, ExprRef> {
         self.keys
             .schema
@@ -69,3 +74,15 @@ impl PartialEq for PartitionSpec {
 }
 
 impl Eq for PartitionSpec {}
+
+// Manually implement Hash to ensure consistency with `PartialEq`.
+impl Hash for PartitionSpec {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.keys.schema.hash(state);
+
+        for column in &self.keys {
+            let column_hashes = column.hash(None).expect("Failed to hash column");
+            column_hashes.into_iter().for_each(|h| h.hash(state));
+        }
+    }
+}

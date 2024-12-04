@@ -3,24 +3,32 @@ mod from;
 mod ops;
 mod serdes;
 mod series_like;
-use derive_more::Display;
-use std::sync::Arc;
-
-use crate::{
-    array::{
-        ops::{from_arrow::FromArrow, full::FullNull, DaftCompare},
-        DataArray,
-    },
-    datatypes::{DaftDataType, DaftNumericType, DataType, Field, FieldRef, NumericNative},
-    with_match_daft_types,
+mod utils;
+use std::{
+    collections::{hash_map::RawEntryMut, HashMap},
+    ops::Sub,
+    sync::Arc,
 };
-use common_display::table_display::{make_comfy_table, StrValue};
-use common_error::DaftResult;
 
 pub use array_impl::IntoSeries;
+use common_display::table_display::{make_comfy_table, StrValue};
+use common_error::DaftResult;
+use derive_more::Display;
 pub use ops::cast_series_to_supertype;
 
 pub(crate) use self::series_like::SeriesLike;
+use crate::{
+    array::{
+        ops::{
+            arrow2::comparison::build_is_equal, from_arrow::FromArrow, full::FullNull, DaftCompare,
+        },
+        DataArray,
+    },
+    datatypes::{DaftDataType, DaftNumericType, DataType, Field, FieldRef, NumericNative},
+    prelude::AsArrow,
+    utils::identity_hash_set::{IdentityBuildHasher, IndexHash},
+    with_match_daft_types,
+};
 
 #[derive(Clone, Debug, Display)]
 #[display("{}\n", self.to_comfy_table())]
@@ -38,6 +46,66 @@ impl PartialEq for Series {
 }
 
 impl Series {
+    /// Build a hashset of the [`IndexHash`]s of each element in this [`Series`].
+    ///
+    /// The returned hashset can be used to probe for the existence of a given element in this [`Series`].
+    /// Its length can also be used to determine the *exact* number of unique elements in this [`Series`].
+    ///
+    /// # Note
+    /// 1. This function returns a `HashMap<X, ()>` rather than a `HashSet<X>`. These two types are functionally equivalent.
+    ///
+    /// 2. `NULL`s are *not* inserted into the returned hashset. They won't be counted towards the final number of unique elements.
+    pub fn build_probe_table_without_nulls(
+        &self,
+    ) -> DaftResult<HashMap<IndexHash, (), IdentityBuildHasher>> {
+        // Building a comparator function over a series of type `NULL` will result in a failure.
+        // (I.e., `let comparator = build_is_equal(..)` will fail).
+        //
+        // Therefore, exit early with an empty hashmap.
+        if matches!(self.data_type(), DataType::Null) {
+            return Ok(HashMap::default());
+        };
+
+        const DEFAULT_SIZE: usize = 20;
+        let hashed_series = self.hash_with_validity(None)?;
+        let array = self.to_arrow();
+        let comparator = build_is_equal(&*array, &*array, true, false)?;
+
+        let mut probe_table =
+            HashMap::<IndexHash, (), IdentityBuildHasher>::with_capacity_and_hasher(
+                DEFAULT_SIZE,
+                Default::default(),
+            );
+
+        for (idx, hash) in hashed_series.as_arrow().iter().enumerate() {
+            let hash = match hash {
+                Some(&hash) => hash,
+                None => continue,
+            };
+            let entry = probe_table.raw_entry_mut().from_hash(hash, |other| {
+                (hash == other.hash) && comparator(idx, other.idx as _)
+            });
+            if let RawEntryMut::Vacant(entry) = entry {
+                entry.insert_hashed_nocheck(
+                    hash,
+                    IndexHash {
+                        idx: idx as u64,
+                        hash,
+                    },
+                    (),
+                );
+            };
+        }
+
+        Ok(probe_table)
+    }
+
+    /// Exports this Series into an Arrow arrow that is corrected for the Arrow type system.
+    /// For example, Daft's TimestampArray is a logical type that is backed by an Int64Array Physical array.
+    /// If we were to call `.as_arrow()` or `.physical`on the TimestampArray, we would get an Int64Array that represented the time units.
+    /// However if we want to export our Timestamp array to another arrow system like arrow2 kernels or python, duckdb or more.
+    /// We should convert it back to the canonical arrow dtype of Timestamp rather than Int64.
+    /// To get the internal physical type without conversion, see `as_arrow()`.
     pub fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
         self.inner.to_arrow()
     }
@@ -81,6 +149,7 @@ impl Series {
         self.inner.name()
     }
 
+    #[must_use]
     pub fn rename<S: AsRef<str>>(&self, name: S) -> Self {
         self.inner.rename(name.as_ref())
     }
@@ -88,7 +157,7 @@ impl Series {
     pub fn field(&self) -> &Field {
         self.inner.field()
     }
-    pub fn as_physical(&self) -> DaftResult<Series> {
+    pub fn as_physical(&self) -> DaftResult<Self> {
         let physical_dtype = self.data_type().to_physical();
         if &physical_dtype == self.data_type() {
             Ok(self.clone())
@@ -109,12 +178,19 @@ impl Series {
         )
     }
 
-    pub fn with_validity(&self, validity: Option<arrow2::bitmap::Bitmap>) -> DaftResult<Series> {
+    pub fn with_validity(&self, validity: Option<arrow2::bitmap::Bitmap>) -> DaftResult<Self> {
         self.inner.with_validity(validity)
     }
 
     pub fn validity(&self) -> Option<&arrow2::bitmap::Bitmap> {
         self.inner.validity()
+    }
+
+    pub fn is_valid(&self, idx: usize) -> bool {
+        let Some(validity) = self.validity() else {
+            return true;
+        };
+        validity.get_bit(idx)
     }
 
     /// Attempts to downcast the Series to a primitive slice
@@ -133,5 +209,26 @@ impl Series {
     {
         let data: &DataArray<N::DAFTTYPE> = self.downcast()?;
         Ok(data.as_slice())
+    }
+
+    /// Helper function to check that two series of floats are within some `epsilon` of each other.
+    pub fn fuzzy_eq(&self, other: &Self, epsilon: &Self) -> bool {
+        if self.data_type() != other.data_type() {
+            return false;
+        }
+        match self.data_type() {
+            DataType::Float32 | DataType::Float64 => {
+                let diff = self
+                    .sub(other)
+                    .expect("Failed to subtract one series from the other")
+                    .abs()
+                    .expect("Failed to get absolute difference between the two given series");
+                match diff.lte(epsilon) {
+                    Ok(arr) => arr.into_iter().all(|x| x.unwrap_or(false)),
+                    Err(_) => false,
+                }
+            }
+            _ => self == other,
+        }
     }
 }

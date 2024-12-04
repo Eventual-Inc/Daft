@@ -1,29 +1,28 @@
-use crate::{
-    array::{DataArray, FixedSizeListArray, ListArray, StructArray},
-    datatypes::{
-        logical::{
-            DateArray, Decimal128Array, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            FixedShapeTensorArray, ImageArray, MapArray, TensorArray, TimeArray, TimestampArray,
-        },
-        BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, ExtensionArray,
-        FixedSizeBinaryArray, Float32Array, Float64Array, NullArray, Utf8Array,
-    },
-    kernels::search_sorted::{build_compare_with_nulls, cmp_float},
-    series::Series,
-};
-use common_error::DaftResult;
-
-#[cfg(feature = "python")]
-use crate::datatypes::PythonArray;
-
 use arrow2::{
     array::ord::{self, DynComparator},
     types::Index,
 };
+use common_error::DaftResult;
 
-use super::arrow2::sort::primitive::common::multi_column_idx_sort;
-
-use super::as_arrow::AsArrow;
+use super::{arrow2::sort::primitive::common::multi_column_idx_sort, as_arrow::AsArrow};
+#[cfg(feature = "python")]
+use crate::datatypes::PythonArray;
+use crate::{
+    array::{DataArray, FixedSizeListArray, ListArray, StructArray},
+    datatypes::{
+        logical::{
+            DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
+            FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
+            SparseTensorArray, TensorArray, TimeArray, TimestampArray,
+        },
+        BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, Decimal128Array,
+        ExtensionArray, FixedSizeBinaryArray, Float32Array, Float64Array, IntervalArray, NullArray,
+        Utf8Array,
+    },
+    kernels::search_sorted::{build_compare_with_nulls, cmp_float},
+    series::Series,
+    utils::{ensure_nulls_first, ensure_nulls_first_arr},
+};
 
 pub fn build_multi_array_compare(
     arrays: &[Series],
@@ -48,7 +47,7 @@ pub fn build_multi_array_bicompare(
     }
 
     let combined_comparator = Box::new(move |a_idx: usize, b_idx: usize| -> std::cmp::Ordering {
-        for comparator in cmp_list.iter() {
+        for comparator in &cmp_list {
             match comparator(a_idx, b_idx) {
                 std::cmp::Ordering::Equal => continue,
                 other => return other,
@@ -64,11 +63,13 @@ where
     T: DaftIntegerType,
     <T as DaftNumericType>::Native: Ord,
 {
-    pub fn argsort<I>(&self, descending: bool) -> DaftResult<DataArray<I>>
+    pub fn argsort<I>(&self, descending: bool, nulls_first: bool) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
+        ensure_nulls_first(descending, nulls_first)?;
+
         let arrow_array = self.as_arrow();
 
         let result =
@@ -85,11 +86,13 @@ where
         &self,
         others: &[Series],
         descending: &[bool],
+        nulls_first: &[bool],
     ) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
+        ensure_nulls_first_arr(descending, nulls_first)?;
         let arrow_array = self.as_arrow();
         let first_desc = *descending.first().unwrap();
 
@@ -136,10 +139,10 @@ where
         Ok(DataArray::<I>::from((self.name(), Box::new(result))))
     }
 
-    pub fn sort(&self, descending: bool) -> DaftResult<Self> {
+    pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
         let options = arrow2::compute::sort::SortOptions {
             descending,
-            nulls_first: descending,
+            nulls_first,
         };
 
         let arrow_array = self.as_arrow();
@@ -151,16 +154,17 @@ where
             None,
         );
 
-        Ok(DataArray::<T>::from((self.name(), Box::new(result))))
+        Ok(Self::from((self.name(), Box::new(result))))
     }
 }
 
 impl Float32Array {
-    pub fn argsort<I>(&self, descending: bool) -> DaftResult<DataArray<I>>
+    pub fn argsort<I>(&self, descending: bool, nulls_first: bool) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
+        ensure_nulls_first(descending, nulls_first)?;
         let arrow_array = self.as_arrow();
 
         let result =
@@ -177,11 +181,14 @@ impl Float32Array {
         &self,
         others: &[Series],
         descending: &[bool],
+        nulls_first: &[bool],
     ) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
+        ensure_nulls_first_arr(descending, nulls_first)?;
+
         let arrow_array = self.as_arrow();
         let first_desc = *descending.first().unwrap();
 
@@ -228,10 +235,10 @@ impl Float32Array {
         Ok(DataArray::<I>::from((self.name(), Box::new(result))))
     }
 
-    pub fn sort(&self, descending: bool) -> DaftResult<Self> {
+    pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
         let options = arrow2::compute::sort::SortOptions {
             descending,
-            nulls_first: descending,
+            nulls_first,
         };
 
         let arrow_array = self.as_arrow();
@@ -243,16 +250,17 @@ impl Float32Array {
             None,
         );
 
-        Ok(Float32Array::from((self.name(), Box::new(result))))
+        Ok(Self::from((self.name(), Box::new(result))))
     }
 }
 
 impl Float64Array {
-    pub fn argsort<I>(&self, descending: bool) -> DaftResult<DataArray<I>>
+    pub fn argsort<I>(&self, descending: bool, nulls_first: bool) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
+        ensure_nulls_first(descending, nulls_first)?;
         let arrow_array = self.as_arrow();
 
         let result =
@@ -269,11 +277,14 @@ impl Float64Array {
         &self,
         others: &[Series],
         descending: &[bool],
+        nulls_first: &[bool],
     ) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
+        ensure_nulls_first_arr(descending, nulls_first)?;
+
         let arrow_array = self.as_arrow();
         let first_desc = *descending.first().unwrap();
 
@@ -320,10 +331,10 @@ impl Float64Array {
         Ok(DataArray::<I>::from((self.name(), Box::new(result))))
     }
 
-    pub fn sort(&self, descending: bool) -> DaftResult<Self> {
+    pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
         let options = arrow2::compute::sort::SortOptions {
             descending,
-            nulls_first: descending,
+            nulls_first,
         };
 
         let arrow_array = self.as_arrow();
@@ -335,12 +346,107 @@ impl Float64Array {
             None,
         );
 
-        Ok(Float64Array::from((self.name(), Box::new(result))))
+        Ok(Self::from((self.name(), Box::new(result))))
+    }
+}
+
+impl Decimal128Array {
+    pub fn argsort<I>(&self, descending: bool, nulls_first: bool) -> DaftResult<DataArray<I>>
+    where
+        I: DaftIntegerType,
+        <I as DaftNumericType>::Native: arrow2::types::Index,
+    {
+        ensure_nulls_first(descending, nulls_first)?;
+        let arrow_array = self.as_arrow();
+
+        let result =
+            crate::array::ops::arrow2::sort::primitive::indices::indices_sorted_unstable_by::<
+                I::Native,
+                i128,
+                _,
+            >(arrow_array, ord::total_cmp, descending);
+
+        Ok(DataArray::<I>::from((self.name(), Box::new(result))))
+    }
+
+    pub fn argsort_multikey<I>(
+        &self,
+        others: &[Series],
+        descending: &[bool],
+        nulls_first: &[bool],
+    ) -> DaftResult<DataArray<I>>
+    where
+        I: DaftIntegerType,
+        <I as DaftNumericType>::Native: arrow2::types::Index,
+    {
+        ensure_nulls_first_arr(descending, nulls_first)?;
+        let arrow_array = self.as_arrow();
+        let first_desc = *descending.first().unwrap();
+
+        let others_cmp = build_multi_array_compare(others, &descending[1..])?;
+
+        let values = arrow_array.values().as_slice();
+
+        let result = if first_desc {
+            multi_column_idx_sort(
+                arrow_array.validity(),
+                |a: &I::Native, b: &I::Native| {
+                    let a = a.to_usize();
+                    let b = b.to_usize();
+                    let l = unsafe { values.get_unchecked(a) };
+                    let r = unsafe { values.get_unchecked(b) };
+                    match ord::total_cmp(r, l) {
+                        std::cmp::Ordering::Equal => others_cmp(a, b),
+                        v => v,
+                    }
+                },
+                &others_cmp,
+                arrow_array.len(),
+                first_desc,
+            )
+        } else {
+            multi_column_idx_sort(
+                arrow_array.validity(),
+                |a: &I::Native, b: &I::Native| {
+                    let a = a.to_usize();
+                    let b = b.to_usize();
+                    let l = unsafe { values.get_unchecked(a) };
+                    let r = unsafe { values.get_unchecked(b) };
+                    match ord::total_cmp(l, r) {
+                        std::cmp::Ordering::Equal => others_cmp(a, b),
+                        v => v,
+                    }
+                },
+                &others_cmp,
+                arrow_array.len(),
+                first_desc,
+            )
+        };
+
+        Ok(DataArray::<I>::from((self.name(), Box::new(result))))
+    }
+
+    pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
+        let options = arrow2::compute::sort::SortOptions {
+            descending,
+            nulls_first,
+        };
+
+        let arrow_array = self.as_arrow();
+
+        let result = crate::array::ops::arrow2::sort::primitive::sort::sort_by::<i128, _>(
+            arrow_array,
+            ord::total_cmp,
+            &options,
+            None,
+        );
+
+        Self::new(self.field.clone(), Box::new(result))
     }
 }
 
 impl NullArray {
-    pub fn argsort<I>(&self, _descending: bool) -> DaftResult<DataArray<I>>
+    pub fn argsort<I>(&self, _descending: bool, _nulls_first: bool) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
@@ -352,11 +458,13 @@ impl NullArray {
         &self,
         others: &[Series],
         descending: &[bool],
+        nulls_first: &[bool],
     ) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
+        ensure_nulls_first_arr(descending, nulls_first)?;
         let first_desc = *descending.first().unwrap();
 
         let others_cmp = build_multi_array_compare(others, &descending[1..])?;
@@ -376,20 +484,20 @@ impl NullArray {
         Ok(DataArray::<I>::from((self.name(), Box::new(result))))
     }
 
-    pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
+    pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
         Ok(self.clone())
     }
 }
 
 impl BooleanArray {
-    pub fn argsort<I>(&self, descending: bool) -> DaftResult<DataArray<I>>
+    pub fn argsort<I>(&self, descending: bool, nulls_first: bool) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
         let options = arrow2::compute::sort::SortOptions {
             descending,
-            nulls_first: descending,
+            nulls_first,
         };
 
         let result =
@@ -402,11 +510,13 @@ impl BooleanArray {
         &self,
         others: &[Series],
         descending: &[bool],
+        nulls_first: &[bool],
     ) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
     {
+        ensure_nulls_first_arr(descending, nulls_first)?;
         let first_desc = *descending.first().unwrap();
 
         let others_cmp = build_multi_array_compare(others, &descending[1..])?;
@@ -457,29 +567,33 @@ impl BooleanArray {
         Ok(DataArray::<I>::from((self.name(), Box::new(result))))
     }
 
-    pub fn sort(&self, descending: bool) -> DaftResult<Self> {
+    pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
         let options = arrow2::compute::sort::SortOptions {
             descending,
-            nulls_first: descending,
+            nulls_first,
         };
 
         let result = arrow2::compute::sort::sort(self.data(), &options, None)?;
 
-        BooleanArray::try_from((self.field.clone(), result))
+        Self::try_from((self.field.clone(), result))
     }
 }
 
 macro_rules! impl_binary_like_sort {
     ($da:ident) => {
         impl $da {
-            pub fn argsort<I>(&self, descending: bool) -> DaftResult<DataArray<I>>
+            pub fn argsort<I>(
+                &self,
+                descending: bool,
+                nulls_first: bool,
+            ) -> DaftResult<DataArray<I>>
             where
                 I: DaftIntegerType,
                 <I as DaftNumericType>::Native: arrow2::types::Index,
             {
                 let options = arrow2::compute::sort::SortOptions {
                     descending,
-                    nulls_first: descending,
+                    nulls_first,
                 };
 
                 let result = arrow2::compute::sort::sort_to_indices::<I::Native>(
@@ -495,11 +609,13 @@ macro_rules! impl_binary_like_sort {
                 &self,
                 others: &[Series],
                 descending: &[bool],
+                nulls_first: &[bool],
             ) -> DaftResult<DataArray<I>>
             where
                 I: DaftIntegerType,
                 <I as DaftNumericType>::Native: arrow2::types::Index,
             {
+                ensure_nulls_first_arr(descending, nulls_first)?;
                 let first_desc = *descending.first().unwrap();
 
                 let others_cmp = build_multi_array_compare(others, &descending[1..])?;
@@ -545,10 +661,10 @@ macro_rules! impl_binary_like_sort {
                 Ok(DataArray::<I>::from((self.name(), Box::new(result))))
             }
 
-            pub fn sort(&self, descending: bool) -> DaftResult<Self> {
+            pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
                 let options = arrow2::compute::sort::SortOptions {
                     descending,
-                    nulls_first: descending,
+                    nulls_first,
                 };
 
                 let result = arrow2::compute::sort::sort(self.data(), &options, None)?;
@@ -563,7 +679,7 @@ impl_binary_like_sort!(BinaryArray);
 impl_binary_like_sort!(Utf8Array);
 
 impl FixedSizeBinaryArray {
-    pub fn argsort<I>(&self, _descending: bool) -> DaftResult<DataArray<I>>
+    pub fn argsort<I>(&self, _descending: bool, _nulls_first: bool) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
         <I as DaftNumericType>::Native: arrow2::types::Index,
@@ -574,6 +690,7 @@ impl FixedSizeBinaryArray {
         &self,
         _others: &[Series],
         _descending: &[bool],
+        _nulls_first: &[bool],
     ) -> DaftResult<DataArray<I>>
     where
         I: DaftIntegerType,
@@ -581,109 +698,120 @@ impl FixedSizeBinaryArray {
     {
         todo!("impl argsort_multikey for FixedSizeBinaryArray")
     }
-    pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
+    pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
         todo!("impl sort for FixedSizeBinaryArray")
     }
 }
 
 impl FixedSizeListArray {
-    pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
+    pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
         todo!("impl sort for FixedSizeListArray")
     }
 }
 
 impl ListArray {
-    pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
+    pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
         todo!("impl sort for ListArray")
     }
 }
 
 impl MapArray {
-    pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
+    pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
         todo!("impl sort for MapArray")
     }
 }
 
 impl StructArray {
-    pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
+    pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
         todo!("impl sort for StructArray")
     }
 }
 
 impl ExtensionArray {
-    pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
+    pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
         todo!("impl sort for ExtensionArray")
+    }
+}
+
+impl IntervalArray {
+    pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
+        todo!("impl sort for IntervalArray")
     }
 }
 
 #[cfg(feature = "python")]
 impl PythonArray {
-    pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
+    pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
         todo!("impl sort for python array")
     }
 }
 
-impl Decimal128Array {
-    pub fn sort(&self, descending: bool) -> DaftResult<Self> {
-        let new_array = self.physical.sort(descending)?;
-        Ok(Self::new(self.field.clone(), new_array))
-    }
-}
-
 impl DateArray {
-    pub fn sort(&self, descending: bool) -> DaftResult<Self> {
-        let new_array = self.physical.sort(descending)?;
+    pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
+        let new_array = self.physical.sort(descending, nulls_first)?;
         Ok(Self::new(self.field.clone(), new_array))
     }
 }
 
 impl TimeArray {
-    pub fn sort(&self, descending: bool) -> DaftResult<Self> {
-        let new_array = self.physical.sort(descending)?;
+    pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
+        let new_array = self.physical.sort(descending, nulls_first)?;
         Ok(Self::new(self.field.clone(), new_array))
     }
 }
 
 impl DurationArray {
-    pub fn sort(&self, descending: bool) -> DaftResult<Self> {
-        let new_array = self.physical.sort(descending)?;
+    pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
+        let new_array = self.physical.sort(descending, nulls_first)?;
         Ok(Self::new(self.field.clone(), new_array))
     }
 }
 
 impl TimestampArray {
-    pub fn sort(&self, descending: bool) -> DaftResult<Self> {
-        let new_array = self.physical.sort(descending)?;
+    pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
+        let new_array = self.physical.sort(descending, nulls_first)?;
         Ok(Self::new(self.field.clone(), new_array))
     }
 }
 
 impl EmbeddingArray {
-    pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
+    pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
         todo!("impl sort for EmbeddingArray")
     }
 }
 
 impl ImageArray {
-    pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
+    pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
         todo!("impl sort for ImageArray")
     }
 }
 
 impl FixedShapeImageArray {
-    pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
+    pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
         todo!("impl sort for FixedShapeImageArray")
     }
 }
 
 impl TensorArray {
-    pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
+    pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
         todo!("impl sort for TensorArray")
     }
 }
 
+impl SparseTensorArray {
+    pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
+        todo!("impl sort for SparseTensorArray")
+    }
+}
+
+impl FixedShapeSparseTensorArray {
+    pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
+        todo!("impl sort for FixedShapeSparseTensorArray")
+    }
+}
+
 impl FixedShapeTensorArray {
-    pub fn sort(&self, _descending: bool) -> DaftResult<Self> {
+    pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
         todo!("impl sort for FixedShapeTensorArray")
     }
 }

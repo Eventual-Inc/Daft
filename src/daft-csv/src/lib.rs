@@ -1,10 +1,14 @@
 #![feature(async_closure)]
 #![feature(let_chains)]
+#![feature(new_uninit)]
 #![feature(trait_alias)]
 #![feature(trait_upcasting)]
+#![feature(test)]
+extern crate test;
 use common_error::DaftError;
 use snafu::Snafu;
 
+pub mod local;
 pub mod metadata;
 pub mod options;
 #[cfg(feature = "python")]
@@ -43,17 +47,17 @@ pub enum Error {
 }
 
 impl From<Error> for DaftError {
-    fn from(err: Error) -> DaftError {
+    fn from(err: Error) -> Self {
         match err {
             Error::IOError { source } => source.into(),
-            _ => DaftError::External(err.into()),
+            _ => Self::External(err.into()),
         }
     }
 }
 
 impl From<daft_io::Error> for Error {
     fn from(err: daft_io::Error) -> Self {
-        Error::IOError { source: err }
+        Self::IOError { source: err }
     }
 }
 

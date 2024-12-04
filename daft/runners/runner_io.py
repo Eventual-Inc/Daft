@@ -3,10 +3,8 @@ from __future__ import annotations
 from abc import abstractmethod
 from typing import TYPE_CHECKING
 
-from daft.daft import FileFormatConfig, FileInfos, IOConfig
-
 if TYPE_CHECKING:
-    pass
+    from daft.daft import FileFormatConfig, FileInfos, IOConfig
 
 
 class RunnerIO:

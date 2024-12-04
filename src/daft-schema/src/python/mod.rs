@@ -3,10 +3,9 @@ pub mod datatype;
 pub mod field;
 pub mod schema;
 
-use crate::image_format::ImageFormat;
-use crate::image_mode::ImageMode;
-pub use datatype::PyDataType;
-pub use datatype::PyTimeUnit;
+pub use datatype::{PyDataType, PyTimeUnit};
+
+use crate::{image_format::ImageFormat, image_mode::ImageMode};
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<datatype::PyDataType>()?;

@@ -1,15 +1,12 @@
-use pyo3::exceptions::PyValueError;
-
-use pyo3::prelude::*;
-use pyo3::types::PyList;
-
-use crate::Table;
 use common_error::DaftResult;
 use daft_core::{
     prelude::SchemaRef,
     series::Series,
     utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
 };
+use pyo3::{exceptions::PyValueError, prelude::*, types::PyList};
+
+use crate::Table;
 
 pub fn record_batches_to_table(
     py: Python,
@@ -45,12 +42,12 @@ pub fn record_batches_to_table(
             let columns = cols
                 .into_iter()
                 .enumerate()
-                .map(|(i, c)| {
-                    let c = cast_array_for_daft_if_needed(c);
-                    Series::try_from((names.get(i).unwrap().as_str(), c))
+                .map(|(i, array)| {
+                    let cast_array = cast_array_for_daft_if_needed(array);
+                    Series::try_from((names.get(i).unwrap().as_str(), cast_array))
                 })
                 .collect::<DaftResult<Vec<_>>>()?;
-            tables.push(Table::new_with_size(schema.clone(), columns, num_rows)?)
+            tables.push(Table::new_with_size(schema.clone(), columns, num_rows)?);
         }
         Ok(Table::concat(tables.as_slice())?)
     })
@@ -75,7 +72,7 @@ pub fn table_to_record_batch(
 
     let record = pyarrow
         .getattr(pyo3::intern!(py, "RecordBatch"))?
-        .call_method1(pyo3::intern!(py, "from_arrays"), (arrays, names.to_vec()))?;
+        .call_method1(pyo3::intern!(py, "from_arrays"), (arrays, names.clone()))?;
 
     Ok(record.into())
 }

@@ -1,5 +1,11 @@
-use std::ops::{Add, Div, Mul, Rem, Sub};
+use std::{
+    hash::BuildHasherDefault,
+    ops::{Add, Div, Mul, Rem, Sub},
+};
 
+use common_arrow_ffi as ffi;
+use daft_hash::{HashFunctionKind, MurBuildHasher, Sha1Hasher};
+use daft_schema::python::PyDataType;
 use pyo3::{
     exceptions::PyValueError,
     prelude::*,
@@ -9,7 +15,10 @@ use pyo3::{
 
 use crate::{
     array::{
-        ops::{DaftLogical, Utf8NormalizeOptions},
+        ops::{
+            as_arrow::AsArrow, trigonometry::TrigonometricFunction, DaftLogical,
+            Utf8NormalizeOptions,
+        },
         pseudo_arrow::PseudoArrowArray,
         DataArray,
     },
@@ -18,12 +27,6 @@ use crate::{
     series::{self, IntoSeries, Series},
     utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
 };
-
-use common_arrow_ffi as ffi;
-
-use crate::array::ops::as_arrow::AsArrow;
-use crate::array::ops::trigonometry::TrigonometricFunction;
-use daft_schema::python::PyDataType;
 
 #[pyclass]
 #[derive(Clone)]
@@ -122,6 +125,10 @@ impl PySeries {
         Ok(self.series.shift_right(&other.series)?.into())
     }
 
+    pub fn __floordiv__(&self, other: &Self) -> PyResult<Self> {
+        Ok(self.series.floor_div(&other.series)?.into())
+    }
+
     pub fn ceil(&self) -> PyResult<Self> {
         Ok(self.series.ceil()?.into())
     }
@@ -141,6 +148,9 @@ impl PySeries {
             )));
         }
         Ok(self.series.round(decimal)?.into())
+    }
+    pub fn clip(&self, min: &Self, max: &Self) -> PyResult<Self> {
+        Ok(self.series.clip(&min.series, &max.series)?.into())
     }
 
     pub fn sqrt(&self) -> PyResult<Self> {
@@ -292,15 +302,15 @@ impl PySeries {
         Ok(self.series.filter(mask.series.downcast()?)?.into())
     }
 
-    pub fn sort(&self, descending: bool) -> PyResult<Self> {
-        Ok(self.series.sort(descending)?.into())
+    pub fn sort(&self, descending: bool, nulls_first: bool) -> PyResult<Self> {
+        Ok(self.series.sort(descending, nulls_first)?.into())
     }
 
-    pub fn argsort(&self, descending: bool) -> PyResult<Self> {
-        Ok(self.series.argsort(descending)?.into())
+    pub fn argsort(&self, descending: bool, nulls_first: bool) -> PyResult<Self> {
+        Ok(self.series.argsort(descending, nulls_first)?.into())
     }
 
-    pub fn hash(&self, seed: Option<PySeries>) -> PyResult<Self> {
+    pub fn hash(&self, seed: Option<Self>) -> PyResult<Self> {
         let seed_series;
         let mut seed_array = None;
         if let Some(s) = seed {
@@ -316,7 +326,15 @@ impl PySeries {
         Ok(self.series.hash(seed_array)?.into_series().into())
     }
 
-    pub fn minhash(&self, num_hashes: i64, ngram_size: i64, seed: i64) -> PyResult<Self> {
+    pub fn minhash(
+        &self,
+        num_hashes: i64,
+        ngram_size: i64,
+        seed: i64,
+        hash_function: &str,
+    ) -> PyResult<Self> {
+        let hash_function: HashFunctionKind = hash_function.parse()?;
+
         if num_hashes <= 0 {
             return Err(PyValueError::new_err(format!(
                 "num_hashes must be positive: {num_hashes}"
@@ -327,12 +345,27 @@ impl PySeries {
                 "ngram_size must be positive: {ngram_size}"
             )));
         }
-        let cast_seed = seed as u32;
+        let seed = seed as u32;
 
-        Ok(self
-            .series
-            .minhash(num_hashes as usize, ngram_size as usize, cast_seed)?
-            .into())
+        let num_hashes = num_hashes as usize;
+        let ngram_size = ngram_size as usize;
+
+        let result = match hash_function {
+            HashFunctionKind::MurmurHash3 => {
+                let hasher = MurBuildHasher::new(seed);
+                self.series.minhash(num_hashes, ngram_size, seed, &hasher)
+            }
+            HashFunctionKind::XxHash => {
+                let hasher = xxhash_rust::xxh64::Xxh64Builder::new(seed as u64);
+                self.series.minhash(num_hashes, ngram_size, seed, &hasher)
+            }
+            HashFunctionKind::Sha1 => {
+                let hasher = BuildHasherDefault::<Sha1Hasher>::default();
+                self.series.minhash(num_hashes, ngram_size, seed, &hasher)
+            }
+        }?;
+
+        Ok(result.into())
     }
 
     pub fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<Self> {
@@ -666,8 +699,11 @@ impl PySeries {
         Ok(self.series.list_slice(&start.series, &end.series)?.into())
     }
 
-    pub fn list_sort(&self, desc: &Self) -> PyResult<Self> {
-        Ok(self.series.list_sort(&desc.series)?.into())
+    pub fn list_sort(&self, desc: &Self, nulls_first: &Self) -> PyResult<Self> {
+        Ok(self
+            .series
+            .list_sort(&desc.series, &nulls_first.series)?
+            .into())
     }
 
     pub fn map_get(&self, key: &Self) -> PyResult<Self> {
@@ -711,7 +747,7 @@ impl PySeries {
 
 impl From<series::Series> for PySeries {
     fn from(value: series::Series) -> Self {
-        PySeries { series: value }
+        Self { series: value }
     }
 }
 
@@ -741,7 +777,7 @@ fn infer_daft_dtype_for_sequence(
             .getattr(pyo3::intern!(py, "from_numpy_dtype"))?
     };
     let mut dtype: Option<DataType> = None;
-    for obj in vec_pyobj.iter() {
+    for obj in vec_pyobj {
         let obj = obj.bind(py);
         if let Ok(pil_image_type) = &py_pil_image_type
             && obj.is_instance(pil_image_type)?

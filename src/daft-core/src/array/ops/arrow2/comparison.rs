@@ -3,13 +3,13 @@ use arrow2::{
     datatypes::DataType,
     error::Result,
 };
+use common_error::DaftResult;
 use num_traits::Float;
 
 use crate::{
     kernels::search_sorted::{build_is_valid, cmp_float},
     series::Series,
 };
-use common_error::DaftResult;
 
 fn build_is_equal_float<F: Float + arrow2::types::NativeType>(
     left: &dyn Array,
@@ -49,7 +49,7 @@ fn build_is_equal_with_nan(
     }
 }
 
-fn build_is_equal(
+pub fn build_is_equal(
     left: &dyn Array,
     right: &dyn Array,
     nulls_equal: bool,
@@ -80,22 +80,22 @@ fn build_is_equal(
 pub fn build_multi_array_is_equal(
     left: &[Series],
     right: &[Series],
-    nulls_equal: bool,
-    nan_equal: bool,
+    nulls_equal: &[bool],
+    nans_equal: &[bool],
 ) -> DaftResult<Box<dyn Fn(usize, usize) -> bool + Send + Sync>> {
     let mut fn_list = Vec::with_capacity(left.len());
 
-    for (l, r) in left.iter().zip(right.iter()) {
+    for (idx, (l, r)) in left.iter().zip(right.iter()).enumerate() {
         fn_list.push(build_is_equal(
             l.to_arrow().as_ref(),
             r.to_arrow().as_ref(),
-            nulls_equal,
-            nan_equal,
+            nulls_equal[idx],
+            nans_equal[idx],
         )?);
     }
 
     let combined_fn = Box::new(move |a_idx: usize, b_idx: usize| -> bool {
-        for f in fn_list.iter() {
+        for f in &fn_list {
             if !f(a_idx, b_idx) {
                 return false;
             }

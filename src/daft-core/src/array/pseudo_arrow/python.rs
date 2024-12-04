@@ -1,8 +1,7 @@
-use crate::array::pseudo_arrow::PseudoArrowArray;
-use arrow2::array::Array;
-use arrow2::bitmap::Bitmap;
-
+use arrow2::{array::Array, bitmap::Bitmap};
 use pyo3::prelude::*;
+
+use crate::array::pseudo_arrow::PseudoArrowArray;
 
 impl PseudoArrowArray<PyObject> {
     pub fn from_pyobj_vec(pyobj_vec: Vec<PyObject>) -> Self {
@@ -12,7 +11,7 @@ impl PseudoArrowArray<PyObject> {
         let validity: arrow2::bitmap::Bitmap = Python::with_gil(|py| {
             arrow2::bitmap::Bitmap::from_iter(pyobj_vec.iter().map(|pyobj| !pyobj.is_none(py)))
         });
-        PseudoArrowArray::new(pyobj_vec.into(), Some(validity))
+        Self::new(pyobj_vec.into(), Some(validity))
     }
 
     pub fn to_pyobj_vec(&self) -> Vec<PyObject> {
@@ -43,15 +42,10 @@ impl PseudoArrowArray<PyObject> {
 
         let (new_values, new_validity): (Vec<PyObject>, Vec<bool>) = {
             lhs.as_any()
-                .downcast_ref::<PseudoArrowArray<PyObject>>()
+                .downcast_ref::<Self>()
                 .unwrap()
                 .iter()
-                .zip(
-                    rhs.as_any()
-                        .downcast_ref::<PseudoArrowArray<PyObject>>()
-                        .unwrap()
-                        .iter(),
-                )
+                .zip(rhs.as_any().downcast_ref::<Self>().unwrap().iter())
                 .zip(predicate.iter())
                 .map(|((self_val, other_val), pred_val)| match pred_val {
                     None => None,
@@ -67,6 +61,6 @@ impl PseudoArrowArray<PyObject> {
 
         let new_validity: Option<Bitmap> = Some(Bitmap::from_iter(new_validity));
 
-        PseudoArrowArray::new(new_values.into(), new_validity)
+        Self::new(new_values.into(), new_validity)
     }
 }

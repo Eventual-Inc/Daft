@@ -12,7 +12,7 @@ from daft.series import Series
 from tests.cookbook.assets import ASSET_FOLDER
 
 
-def test_image_resize_mixed_modes():
+def test_image_resize_mixed_modes(with_morsel_size) -> None:
     rgba = np.ones((2, 2, 4), dtype=np.uint8)
     rgba[..., 1] = 2
     rgba[..., 2] = 3
@@ -64,7 +64,7 @@ def test_image_resize_mixed_modes():
     assert as_py[-1] is None
 
 
-def test_image_decode() -> None:
+def test_image_decode(with_morsel_size) -> None:
     df = (
         daft.from_glob_path(f"{ASSET_FOLDER}/images/**")
         .into_partitions(2)
@@ -75,7 +75,7 @@ def test_image_decode() -> None:
     df.collect()
 
 
-def test_image_encode() -> None:
+def test_image_encode(with_morsel_size) -> None:
     file_format = "png"
     mode = "RGB"
     np_dtype = np.uint8

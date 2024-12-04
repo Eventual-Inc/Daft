@@ -1,16 +1,16 @@
 use std::{marker::PhantomData, sync::Arc};
 
+use common_error::DaftResult;
+
+use super::{
+    DaftArrayType, DaftDataType, DataArray, DataType, DurationType, EmbeddingType,
+    FixedShapeImageType, FixedShapeSparseTensorType, FixedShapeTensorType, FixedSizeListArray,
+    ImageType, MapType, SparseTensorType, TensorType, TimeType, TimestampType,
+};
 use crate::{
     array::{ListArray, StructArray},
     datatypes::{DaftLogicalType, DateType, Field},
     with_match_daft_logical_primitive_types,
-};
-use common_error::DaftResult;
-
-use super::{
-    DaftArrayType, DaftDataType, DataArray, DataType, Decimal128Type, DurationType, EmbeddingType,
-    FixedShapeImageType, FixedShapeTensorType, FixedSizeListArray, ImageType, MapType, TensorType,
-    TimeType, TimestampType,
 };
 
 /// A LogicalArray is a wrapper on top of some underlying array, applying the semantic meaning of its
@@ -44,7 +44,8 @@ impl<L: DaftLogicalType, P: DaftArrayType> LogicalArrayImpl<L, P> {
             &field.dtype.to_physical(),
             physical.data_type()
         );
-        LogicalArrayImpl {
+
+        Self {
             physical,
             field,
             marker_: PhantomData,
@@ -163,7 +164,7 @@ impl MapArray {
 
 pub type LogicalArray<L> =
     LogicalArrayImpl<L, <<L as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType>;
-pub type Decimal128Array = LogicalArray<Decimal128Type>;
+// pub type Decimal128Array = LogicalArray<Decimal128Type>;
 pub type DateArray = LogicalArray<DateType>;
 pub type TimeArray = LogicalArray<TimeType>;
 pub type DurationArray = LogicalArray<DurationType>;
@@ -172,6 +173,8 @@ pub type TimestampArray = LogicalArray<TimestampType>;
 pub type TensorArray = LogicalArray<TensorType>;
 pub type EmbeddingArray = LogicalArray<EmbeddingType>;
 pub type FixedShapeTensorArray = LogicalArray<FixedShapeTensorType>;
+pub type SparseTensorArray = LogicalArray<SparseTensorType>;
+pub type FixedShapeSparseTensorArray = LogicalArray<FixedShapeSparseTensorType>;
 pub type FixedShapeImageArray = LogicalArray<FixedShapeImageType>;
 pub type MapArray = LogicalArray<MapType>;
 

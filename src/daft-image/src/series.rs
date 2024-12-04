@@ -1,6 +1,5 @@
-use daft_core::prelude::*;
-
 use common_error::{DaftError, DaftResult};
+use daft_core::prelude::*;
 
 use crate::{
     ops::{image_array_from_img_buffers, ImageOps},
@@ -26,13 +25,12 @@ fn image_decode_impl(
             Err(err) => {
                 if raise_error_on_failure {
                     return Err(err);
-                } else {
-                    log::warn!(
+                }
+                log::warn!(
                         "Error occurred during image decoding at index: {index} {} (falling back to Null)",
                         err
                     );
-                    None
-                }
+                None
             }
         };
         if let Some(mode) = mode {
@@ -43,8 +41,7 @@ fn image_decode_impl(
             (Some(t1), Some(t2)) => {
                 if t1 != t2 {
                     return Err(DaftError::ValueError(format!(
-                        "All images in a column must have the same dtype, but got: {:?} and {:?}",
-                        t1, t2
+                        "All images in a column must have the same dtype, but got: {t1:?} and {t2:?}"
                     )));
                 }
             }
@@ -81,8 +78,7 @@ pub fn decode(
         DataType::Binary => image_decode_impl(s.binary()?, raise_error_on_failure, mode)
             .map(|arr| arr.into_series()),
         dtype => Err(DaftError::ValueError(format!(
-            "Decoding in-memory data into images is only supported for binary arrays, but got {}",
-            dtype
+            "Decoding in-memory data into images is only supported for binary arrays, but got {dtype}"
         ))),
     }
 }
@@ -110,8 +106,7 @@ pub fn encode(s: &Series, image_format: ImageFormat) -> DaftResult<Series> {
             .encode(image_format)?
             .into_series()),
         dtype => Err(DaftError::ValueError(format!(
-            "Encoding images into bytes is only supported for image arrays, but got {}",
-            dtype
+            "Encoding images into bytes is only supported for image arrays, but got {dtype}"
         ))),
     }
 }
@@ -168,13 +163,14 @@ pub fn crop(s: &Series, bbox: &Series) -> DaftResult<Series> {
             .downcast::<ImageArray>()?
             .crop(bbox)
             .map(|arr| arr.into_series()),
+
         DataType::FixedShapeImage(..) => s
             .fixed_size_image()?
             .crop(bbox)
             .map(|arr| arr.into_series()),
+
         dt => Err(DaftError::ValueError(format!(
-            "Expected input to crop to be an Image type, but received: {}",
-            dt
+            "Expected input to crop to be an Image type, but received: {dt}"
         ))),
     }
 }
@@ -197,8 +193,7 @@ pub fn to_mode(s: &Series, mode: ImageMode) -> DaftResult<Series> {
             .to_mode(mode)
             .map(|arr| arr.into_series()),
         dt => Err(DaftError::ValueError(format!(
-            "Expected input to crop to be an Image type, but received: {}",
-            dt
+            "Expected input to crop to be an Image type, but received: {dt}"
         ))),
     }
 }

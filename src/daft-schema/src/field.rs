@@ -1,13 +1,11 @@
-use std::hash::Hash;
-use std::sync::Arc;
+use std::{hash::Hash, sync::Arc};
 
 use arrow2::datatypes::Field as ArrowField;
-
-use crate::dtype::DataType;
 use common_error::{DaftError, DaftResult};
 use derive_more::Display;
-
 use serde::{Deserialize, Serialize};
+
+use crate::dtype::DataType;
 
 pub type Metadata = std::collections::BTreeMap<String, String>;
 
@@ -20,6 +18,7 @@ pub struct Field {
 }
 
 pub type FieldRef = Arc<Field>;
+pub type DaftField = Field;
 
 #[derive(Clone, Display, Debug, PartialEq, Eq, Deserialize, Serialize, Hash)]
 #[display("{id}")]
@@ -87,6 +86,14 @@ impl Field {
             ArrowField::new(self.name.clone(), self.dtype.to_arrow()?, true)
                 .with_metadata(self.metadata.as_ref().clone()),
         )
+    }
+
+    pub fn to_physical(&self) -> Self {
+        Self {
+            name: self.name.clone(),
+            dtype: self.dtype.to_physical(),
+            metadata: self.metadata.clone(),
+        }
     }
 
     pub fn rename<S: Into<String>>(&self, name: S) -> Self {

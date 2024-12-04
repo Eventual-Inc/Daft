@@ -1,13 +1,18 @@
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use daft_core::prelude::*;
-use daft_dsl::{functions::ScalarUDF, ExprRef};
+use daft_dsl::{
+    functions::{ScalarFunction, ScalarUDF},
+    ExprRef,
+};
 use serde::{Deserialize, Serialize};
 
+use super::{evaluate_single_numeric, to_field_single_floating};
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-struct CbrtFunction;
+pub struct Cbrt;
 
 #[typetag::serde]
-impl ScalarUDF for CbrtFunction {
+impl ScalarUDF for Cbrt {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -17,41 +22,15 @@ impl ScalarUDF for CbrtFunction {
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-        match inputs {
-            [input] => {
-                let field = input.to_field(schema)?;
-                let dtype = field.dtype.to_floating_representation()?;
-                Ok(Field::new(field.name, dtype))
-            }
-            _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 1 input args, got {}",
-                inputs.len()
-            ))),
-        }
+        to_field_single_floating(self, inputs, schema)
     }
 
     fn evaluate(&self, inputs: &[Series]) -> DaftResult<Series> {
-        match inputs {
-            [input] => input.cbrt(),
-            _ => Err(DaftError::SchemaMismatch(format!(
-                "Expected 1 input args, got {}",
-                inputs.len()
-            ))),
-        }
+        evaluate_single_numeric(inputs, Series::cbrt)
     }
 }
 
-#[cfg(feature = "python")]
-pub mod python {
-    use daft_dsl::{functions::ScalarFunction, python::PyExpr, ExprRef};
-    use pyo3::{pyfunction, PyResult};
-
-    use super::CbrtFunction;
-
-    #[pyfunction]
-    pub fn cbrt(expr: PyExpr) -> PyResult<PyExpr> {
-        let scalar_function = ScalarFunction::new(CbrtFunction, vec![expr.into()]);
-        let expr = ExprRef::from(scalar_function);
-        Ok(expr.into())
-    }
+#[must_use]
+pub fn cbrt(input: ExprRef) -> ExprRef {
+    ScalarFunction::new(Cbrt {}, vec![input]).into()
 }

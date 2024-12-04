@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, timedelta
 from typing import Generator
 
 import numpy as np
@@ -26,8 +26,10 @@ URLS = [
     "trino://user@localhost:8080/memory/default",
     "postgresql://username:password@localhost:5432/postgres",
     "mysql+pymysql://username:password@localhost:3306/mysql",
+    "mssql+pyodbc://SA:StrongPassword!@127.0.0.1:1433/master?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes",
 ]
 TEST_TABLE_NAME = "example"
+EMPTY_TEST_TABLE_NAME = "empty_table"
 
 
 @pytest.fixture(scope="session", params=[{"num_rows": 200}])
@@ -41,9 +43,6 @@ def generated_data(request: pytest.FixtureRequest) -> pd.DataFrame:
         "bool_col": [True for _ in range(num_rows // 2)] + [False for _ in range(num_rows // 2)],
         "date_col": [date(2021, 1, 1) + timedelta(days=i) for i in range(num_rows)],
         "date_time_col": [datetime(2020, 1, 1, 10, 0, 0) + timedelta(hours=i) for i in range(num_rows)],
-        "time_col": [
-            (datetime.combine(datetime.today(), time(0, 0)) + timedelta(minutes=x)).time() for x in range(200)
-        ],
         "null_col": [None if i % 2 == 0 else "not_null" for i in range(num_rows)],
         "non_uniformly_distributed_col": [1 for _ in range(num_rows)],
     }
@@ -54,6 +53,28 @@ def generated_data(request: pytest.FixtureRequest) -> pd.DataFrame:
 def test_db(request: pytest.FixtureRequest, generated_data: pd.DataFrame) -> Generator[str, None, None]:
     db_url = request.param
     setup_database(db_url, generated_data)
+    yield db_url
+
+
+@pytest.fixture(scope="session", params=URLS)
+def empty_test_db(request: pytest.FixtureRequest) -> Generator[str, None, None]:
+    data = pd.DataFrame(
+        {
+            "id": pd.Series(dtype="int"),
+            "string_col": pd.Series(dtype="str"),
+        }
+    )
+    db_url = request.param
+    engine = create_engine(db_url)
+    metadata = MetaData()
+    table = Table(
+        EMPTY_TEST_TABLE_NAME,
+        metadata,
+        Column("id", Integer),
+        Column("string_col", String(50)),
+    )
+    metadata.create_all(engine)
+    data.to_sql(table.name, con=engine, if_exists="replace", index=False)
     yield db_url
 
 

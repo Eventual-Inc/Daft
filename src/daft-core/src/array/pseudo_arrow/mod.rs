@@ -206,7 +206,6 @@ use arrow2::{
     buffer::Buffer,
     datatypes::DataType,
 };
-
 use common_error::{DaftError, DaftResult};
 
 pub mod compute;
@@ -299,7 +298,7 @@ impl<T: Send + Sync + Clone + 'static> Array for PseudoArrowArray<T> {
     }
 
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
-        Box::new(PseudoArrowArray {
+        Box::new(Self {
             values: self.values.clone(),
             validity,
         })

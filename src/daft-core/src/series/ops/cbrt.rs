@@ -1,11 +1,12 @@
 use common_error::DaftResult;
 
-use crate::datatypes::DataType;
-use crate::series::array_impl::IntoSeries;
-use crate::series::Series;
+use crate::{
+    datatypes::DataType,
+    series::{array_impl::IntoSeries, Series},
+};
 
 impl Series {
-    pub fn cbrt(&self) -> DaftResult<Series> {
+    pub fn cbrt(&self) -> DaftResult<Self> {
         let casted_dtype = self.to_floating_data_type()?;
         let casted_self = self
             .cast(&casted_dtype)

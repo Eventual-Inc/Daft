@@ -5,17 +5,16 @@ use std::{
     sync::Arc,
 };
 
-use arrow2::io::parquet::read;
+use arrow2::{bitmap::Bitmap, io::parquet::read};
 use common_error::DaftResult;
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
-
 use daft_dsl::ExprRef;
 use daft_io::IOStatsRef;
 use daft_table::Table;
 use futures::{stream::BoxStream, StreamExt};
 use itertools::Itertools;
 use rayon::{
-    iter::IntoParallelRefMutIterator,
+    iter::{IntoParallelRefMutIterator, ParallelIterator},
     prelude::{IndexedParallelIterator, IntoParallelIterator, ParallelBridge},
 };
 use snafu::ResultExt;
@@ -23,11 +22,9 @@ use snafu::ResultExt;
 use crate::{
     file::{build_row_ranges, RowGroupRange},
     read::{ArrowChunk, ArrowChunkIters, ParquetSchemaInferenceOptions},
+    stream_reader::read::schema::infer_schema_with_options,
     UnableToConvertSchemaToDaftSnafu,
 };
-
-use crate::stream_reader::read::schema::infer_schema_with_options;
-use rayon::iter::ParallelIterator;
 
 fn prune_fields_from_schema(
     schema: arrow2::datatypes::Schema,
@@ -51,7 +48,8 @@ fn prune_fields_from_schema(
     }
 }
 
-pub(crate) fn arrow_column_iters_to_table_iter(
+#[allow(clippy::too_many_arguments)]
+pub fn arrow_column_iters_to_table_iter(
     arr_iters: ArrowChunkIters,
     row_range_start: usize,
     schema_ref: SchemaRef,
@@ -59,7 +57,11 @@ pub(crate) fn arrow_column_iters_to_table_iter(
     predicate: Option<ExprRef>,
     original_columns: Option<Vec<String>>,
     original_num_rows: Option<usize>,
-) -> impl Iterator<Item = DaftResult<Table>> {
+    delete_rows: Option<Vec<i64>>,
+) -> Option<impl Iterator<Item = DaftResult<Table>>> {
+    if arr_iters.is_empty() {
+        return None;
+    }
     pub struct ParallelLockStepIter {
         pub iters: ArrowChunkIters,
     }
@@ -67,16 +69,20 @@ pub(crate) fn arrow_column_iters_to_table_iter(
         type Item = arrow2::error::Result<ArrowChunk>;
 
         fn next(&mut self) -> Option<Self::Item> {
-            self.iters.par_iter_mut().map(|iter| iter.next()).collect()
+            self.iters
+                .par_iter_mut()
+                .map(std::iter::Iterator::next)
+                .collect()
         }
     }
     let par_lock_step_iter = ParallelLockStepIter { iters: arr_iters };
 
+    let mut curr_delete_row_idx = 0;
     // Keep track of the current index in the row group so we can throw away arrays that are not needed
     // and slice arrays that are partially needed.
     let mut index_so_far = 0;
-    let owned_schema_ref = schema_ref.clone();
-    par_lock_step_iter.into_iter().map(move |chunk| {
+    let owned_schema_ref = schema_ref;
+    let table_iter = par_lock_step_iter.into_iter().map(move |chunk| {
         let chunk = chunk.with_context(|_| {
             super::UnableToCreateChunkFromStreamingFileReaderSnafu { path: uri.clone() }
         })?;
@@ -99,14 +105,41 @@ pub(crate) fn arrow_column_iters_to_table_iter(
             })
             .collect::<DaftResult<Vec<_>>>()?;
 
-        let len = all_series[0].len();
+        let len = all_series
+            .first()
+            .map(daft_core::series::Series::len)
+            .expect("All series should not be empty when creating table from parquet chunks");
         if all_series.iter().any(|s| s.len() != len) {
             return Err(super::Error::ParquetColumnsDontHaveEqualRows { path: uri.clone() }.into());
         }
+
+        let mut table = Table::new_with_size(
+            Schema::new(all_series.iter().map(|s| s.field().clone()).collect())?,
+            all_series,
+            len,
+        )
+        .with_context(|_| super::UnableToCreateTableFromChunkSnafu { path: uri.clone() })?;
+
+        // Apply delete rows if needed
+        if let Some(delete_rows) = &delete_rows
+            && !delete_rows.is_empty()
+        {
+            let mut selection_mask = Bitmap::new_trued(table.len()).make_mut();
+            while curr_delete_row_idx < delete_rows.len()
+                && delete_rows[curr_delete_row_idx] < index_so_far as i64 + len as i64
+            {
+                let table_row = delete_rows[curr_delete_row_idx] as usize - index_so_far;
+                unsafe {
+                    selection_mask.set_unchecked(table_row, false);
+                }
+                curr_delete_row_idx += 1;
+            }
+            let selection_mask: BooleanArray =
+                ("selection_mask", Bitmap::from(selection_mask)).into();
+            table = table.mask_filter(&selection_mask.into_series())?;
+        }
         index_so_far += len;
 
-        let mut table = Table::new_with_size(owned_schema_ref.clone(), all_series, len)
-            .with_context(|_| super::UnableToCreateTableFromChunkSnafu { path: uri.clone() })?;
         // Apply pushdowns if needed
         if let Some(predicate) = &predicate {
             table = table.filter(&[predicate.clone()])?;
@@ -118,7 +151,8 @@ pub(crate) fn arrow_column_iters_to_table_iter(
             }
         }
         Ok(table)
-    })
+    });
+    Some(table_iter)
 }
 
 struct CountingReader<R> {
@@ -172,15 +206,14 @@ where
 
 impl<R> Drop for CountingReader<R> {
     fn drop(&mut self) {
-        self.update_count()
+        self.update_count();
     }
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn local_parquet_read_into_column_iters(
+pub fn local_parquet_read_into_column_iters(
     uri: &str,
     columns: Option<&[String]>,
-    start_offset: Option<usize>,
     num_rows: Option<usize>,
     row_groups: Option<&[i64]>,
     predicate: Option<ExprRef>,
@@ -197,8 +230,8 @@ pub(crate) fn local_parquet_read_into_column_iters(
     const LOCAL_PROTOCOL: &str = "file://";
     let uri = uri
         .strip_prefix(LOCAL_PROTOCOL)
-        .map(|s| s.to_string())
-        .unwrap_or(uri.to_string());
+        .map(std::string::ToString::to_string)
+        .unwrap_or_else(|| uri.to_string());
 
     let reader = File::open(uri.clone()).with_context(|_| super::InternalIOSnafu {
         path: uri.to_string(),
@@ -232,7 +265,7 @@ pub(crate) fn local_parquet_read_into_column_iters(
             })?,
     };
 
-    let schema = infer_schema_with_options(&metadata, &Some(schema_infer_options.into()))
+    let schema = infer_schema_with_options(&metadata, Some(schema_infer_options.into()))
         .with_context(|_| super::UnableToParseSchemaFromMetadataSnafu {
             path: uri.to_string(),
         })?;
@@ -244,9 +277,9 @@ pub(crate) fn local_parquet_read_into_column_iters(
 
     let row_ranges = build_row_ranges(
         num_rows,
-        start_offset.unwrap_or(0),
+        0,
         row_groups,
-        predicate.clone(),
+        predicate,
         &daft_schema,
         &metadata,
         &uri,
@@ -282,7 +315,7 @@ pub(crate) fn local_parquet_read_into_column_iters(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn local_parquet_read_into_arrow(
+pub fn local_parquet_read_into_arrow(
     uri: &str,
     columns: Option<&[String]>,
     start_offset: Option<usize>,
@@ -328,7 +361,7 @@ pub(crate) fn local_parquet_read_into_arrow(
     };
 
     // and infer a [`Schema`] from the `metadata`.
-    let schema = infer_schema_with_options(&metadata, &Some(schema_infer_options.into()))
+    let schema = infer_schema_with_options(&metadata, Some(schema_infer_options.into()))
         .with_context(|_| super::UnableToParseSchemaFromMetadataSnafu {
             path: uri.to_string(),
         })?;
@@ -422,7 +455,7 @@ pub(crate) fn local_parquet_read_into_arrow(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) async fn local_parquet_read_async(
+pub async fn local_parquet_read_async(
     uri: &str,
     columns: Option<Vec<String>>,
     start_offset: Option<usize>,
@@ -484,13 +517,13 @@ pub(crate) async fn local_parquet_read_async(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn local_parquet_stream(
+pub fn local_parquet_stream(
     uri: &str,
     original_columns: Option<Vec<String>>,
     columns: Option<Vec<String>>,
-    start_offset: Option<usize>,
     original_num_rows: Option<usize>,
     num_rows: Option<usize>,
+    delete_rows: Option<Vec<i64>>,
     row_groups: Option<Vec<i64>>,
     predicate: Option<ExprRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
@@ -505,7 +538,6 @@ pub(crate) fn local_parquet_stream(
     let (metadata, schema_ref, row_ranges, column_iters) = local_parquet_read_into_column_iters(
         uri,
         columns.as_deref(),
-        start_offset,
         num_rows,
         row_groups.as_deref(),
         predicate.clone(),
@@ -527,36 +559,42 @@ pub(crate) fn local_parquet_stream(
         .unzip();
 
     let owned_uri = uri.to_string();
-    let table_iters =
-        column_iters
-            .into_iter()
-            .zip(row_ranges)
-            .map(move |(rg_col_iter_result, rg_range)| {
-                let rg_col_iter = rg_col_iter_result?;
-                let table_iter = arrow_column_iters_to_table_iter(
-                    rg_col_iter,
-                    rg_range.start,
-                    schema_ref.clone(),
-                    owned_uri.clone(),
-                    predicate.clone(),
-                    original_columns.clone(),
-                    original_num_rows,
-                );
-                DaftResult::Ok(table_iter)
-            });
 
     rayon::spawn(move || {
         // Once a row group has been read into memory and we have the column iterators,
         // we can start processing them in parallel.
-        let par_table_iters = table_iters.zip(senders).par_bridge();
+        let par_column_iters = column_iters.zip(row_ranges).zip(senders).par_bridge();
 
         // For each vec of column iters, iterate through them in parallel lock step such that each iteration
         // produces a chunk of the row group that can be converted into a table.
-        par_table_iters.for_each(move |(table_iter_result, tx)| {
-            let table_iter = match table_iter_result {
-                Ok(t) => t,
+        par_column_iters.for_each(move |((rg_column_iters_result, rg_range), tx)| {
+            let table_iter = match rg_column_iters_result {
+                Ok(rg_column_iters) => {
+                    let table_iter = arrow_column_iters_to_table_iter(
+                        rg_column_iters,
+                        rg_range.start,
+                        schema_ref.clone(),
+                        owned_uri.clone(),
+                        predicate.clone(),
+                        original_columns.clone(),
+                        original_num_rows,
+                        delete_rows.clone(),
+                    );
+                    // Even if there are no columns to read, we still need to create a empty table with the correct number of rows
+                    // This is because the columns may be present in other files. See https://github.com/Eventual-Inc/Daft/pull/2514
+                    if let Some(table_iter) = table_iter {
+                        table_iter
+                    } else {
+                        let table =
+                            Table::new_with_size(schema_ref.clone(), vec![], rg_range.num_rows);
+                        if let Err(crossbeam_channel::TrySendError::Full(_)) = tx.try_send(table) {
+                            panic!("Parquet stream channel should not be full")
+                        }
+                        return;
+                    }
+                }
                 Err(e) => {
-                    let _ = tx.send(Err(e));
+                    let _ = tx.send(Err(e.into()));
                     return;
                 }
             };
@@ -581,7 +619,7 @@ pub(crate) fn local_parquet_stream(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) async fn local_parquet_read_into_arrow_async(
+pub async fn local_parquet_read_into_arrow_async(
     uri: &str,
     columns: Option<Vec<String>>,
     start_offset: Option<usize>,

@@ -2,9 +2,8 @@ use std::collections::HashMap;
 
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 
-use crate::{ExprRef, Operator};
-
 use super::expr::Expr;
+use crate::{ExprRef, Operator};
 
 pub fn get_required_columns(e: &ExprRef) -> Vec<String> {
     let mut cols = vec![];
@@ -22,7 +21,7 @@ pub fn requires_computation(e: &Expr) -> bool {
     // Returns whether or not this expression runs any computation on the underlying data
     match e {
         Expr::Alias(child, _) => requires_computation(child),
-        Expr::Column(..) | Expr::Literal(_) => false,
+        Expr::Column(..) | Expr::Literal(_) | Expr::OuterReferenceColumn { .. } => false,
         Expr::Agg(..)
         | Expr::BinaryOp { .. }
         | Expr::Cast(..)
@@ -34,7 +33,10 @@ pub fn requires_computation(e: &Expr) -> bool {
         | Expr::FillNull(..)
         | Expr::IsIn { .. }
         | Expr::Between { .. }
-        | Expr::IfElse { .. } => true,
+        | Expr::IfElse { .. }
+        | Expr::Subquery { .. }
+        | Expr::InSubquery { .. }
+        | Expr::Exists(..) => true,
     }
 }
 

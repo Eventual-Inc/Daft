@@ -12,6 +12,7 @@ on:
 env:
   DAFT_ANALYTICS_ENABLED: '0'
   UV_SYSTEM_PYTHON: 1
+  PYTHON_VERSION: '3.8'
 
 jobs:
   integration-test-tpch:
@@ -29,13 +30,20 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v4
+    - name: Set up Python ${{ env.PYTHON_VERSION }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
     - name: Setup Virtual Env
       run: |
-        python3 -m venv venv
+        uv venv venv
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
+
     - name: Install Daft and dev dependencies
       run: |
-        pip install uv
         uv pip install -r requirements-dev.txt getdaft --pre --extra-index-url https://pypi.anaconda.org/daft-nightly/simple --force-reinstall
         rm -rf daft
     - uses: actions/cache@v4
@@ -50,7 +58,7 @@ jobs:
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v1.26.0
+      uses: slackapi/slack-github-action@v2.0.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |
@@ -93,13 +101,19 @@ jobs:
     - uses: docker-practice/actions-setup-docker@master
       timeout-minutes: 15
       if: runner.os == 'macos'
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v4
+    - name: Set up Python ${{ env.PYTHON_VERSION }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
     - name: Setup Virtual Env
       run: |
-        python3 -m venv venv
+        uv venv venv
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
     - name: Install Daft and dev dependencies
       run: |
-        pip install uv
         uv pip install -r requirements-dev.txt getdaft --pre --extra-index-url https://pypi.anaconda.org/daft-nightly/simple --force-reinstall
         rm -rf daft
     - name: Prepare tmpdirs for IO services
@@ -113,7 +127,7 @@ jobs:
         role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
         role-session-name: DaftPythonPackageGitHubWorkflow
     - name: Spin up IO services
-      uses: isbang/compose-action@v2.0.0
+      uses: isbang/compose-action@v2.0.2
       with:
         compose-file: ./tests/integration/io/docker-compose/docker-compose.yml
         down-flags: --volumes
@@ -123,7 +137,7 @@ jobs:
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v1.26.0
+      uses: slackapi/slack-github-action@v2.0.0
       if: ${{ failure() && (github.ref == 'refs/heads/main') }}
       with:
         payload: |

@@ -1,8 +1,6 @@
-use std::fmt::Display;
-use std::fmt::Formatter;
+use std::fmt::{Display, Formatter};
 
-use serde::Deserialize;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::ObfuscatedString;
 
@@ -14,7 +12,7 @@ pub struct HTTPConfig {
 
 impl Default for HTTPConfig {
     fn default() -> Self {
-        HTTPConfig {
+        Self {
             user_agent: "daft/0.0.1".to_string(), // NOTE: Ideally we grab the version of Daft, but that requires a dependency on daft-core
             bearer_token: None,
         }
@@ -23,18 +21,19 @@ impl Default for HTTPConfig {
 
 impl HTTPConfig {
     pub fn new<S: Into<ObfuscatedString>>(bearer_token: Option<S>) -> Self {
-        HTTPConfig {
-            bearer_token: bearer_token.map(|t| t.into()),
+        Self {
+            bearer_token: bearer_token.map(std::convert::Into::into),
             ..Default::default()
         }
     }
 }
 
 impl HTTPConfig {
+    #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
         let mut v = vec![format!("user_agent = {}", self.user_agent)];
         if let Some(bearer_token) = &self.bearer_token {
-            v.push(format!("bearer_token = {}", bearer_token));
+            v.push(format!("bearer_token = {bearer_token}"));
         }
 
         v
@@ -54,8 +53,7 @@ impl Display for HTTPConfig {
             write!(
                 f,
                 "
-    bearer_token: {}",
-                bearer_token
+    bearer_token: {bearer_token}"
             )
         } else {
             Ok(())

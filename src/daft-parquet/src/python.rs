@@ -1,16 +1,18 @@
 use pyo3::prelude::*;
 
 pub mod pylib {
+    use std::{collections::BTreeMap, sync::Arc};
+
     use common_arrow_ffi::{field_to_py, to_py_array};
-    use daft_core::python::PySeries;
-    use daft_core::python::{PySchema, PyTimeUnit};
+    use daft_core::python::{PySchema, PySeries, PyTimeUnit};
     use daft_dsl::python::PyExpr;
     use daft_io::{get_io_client, python::IOConfig, IOStatsContext};
     use daft_table::python::PyTable;
     use pyo3::{pyfunction, types::PyModule, Bound, PyResult, Python};
-    use std::{collections::BTreeMap, sync::Arc};
 
-    use crate::read::{ArrowChunk, ParquetSchemaInferenceOptions};
+    use crate::read::{
+        ArrowChunk, ParquetSchemaInferenceOptions, ParquetSchemaInferenceOptionsBuilder,
+    };
     #[allow(clippy::too_many_arguments)]
     #[pyfunction]
     pub fn read_parquet(
@@ -44,7 +46,7 @@ pub mod pylib {
                 row_groups,
                 predicate.map(|e| e.expr),
                 io_client,
-                Some(io_stats.clone()),
+                Some(io_stats),
                 multithreaded_io.unwrap_or(true),
                 schema_infer_options,
                 None,
@@ -72,7 +74,7 @@ pub mod pylib {
             .into_iter()
             .map(|v| {
                 v.into_iter()
-                    .map(|a| to_py_array(py, a, pyarrow).map(|pyarray| pyarray.unbind()))
+                    .map(|a| to_py_array(py, a, pyarrow).map(pyo3::Bound::unbind))
                     .collect::<PyResult<Vec<_>>>()
             })
             .collect::<PyResult<Vec<_>>>()?;
@@ -90,6 +92,7 @@ pub mod pylib {
     pub fn read_parquet_into_pyarrow(
         py: Python,
         uri: &str,
+        string_encoding: String,
         columns: Option<Vec<String>>,
         start_offset: Option<usize>,
         num_rows: Option<usize>,
@@ -99,14 +102,16 @@ pub mod pylib {
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
         file_timeout_ms: Option<i64>,
     ) -> PyResult<PyArrowParquetType> {
-        let read_parquet_result = py.allow_threads(|| {
+        let (schema, all_arrays, num_rows) = py.allow_threads(|| {
             let io_client = get_io_client(
                 multithreaded_io.unwrap_or(true),
                 io_config.unwrap_or_default().config.into(),
             )?;
-            let schema_infer_options = ParquetSchemaInferenceOptions::new(
-                coerce_int96_timestamp_unit.map(|tu| tu.timeunit),
-            );
+            let schema_infer_options = ParquetSchemaInferenceOptionsBuilder {
+                coerce_int96_timestamp_unit,
+                string_encoding,
+            }
+            .build()?;
 
             crate::read::read_parquet_into_pyarrow(
                 uri,
@@ -121,7 +126,6 @@ pub mod pylib {
                 file_timeout_ms,
             )
         })?;
-        let (schema, all_arrays, num_rows) = read_parquet_result;
         let pyarrow = py.import_bound(pyo3::intern!(py, "pyarrow"))?;
         convert_pyarrow_parquet_read_result_into_py(py, schema, all_arrays, num_rows, &pyarrow)
     }
@@ -168,7 +172,7 @@ pub mod pylib {
                 None,
             )?
             .into_iter()
-            .map(|v| v.into())
+            .map(std::convert::Into::into)
             .collect())
         })
     }
@@ -236,17 +240,23 @@ pub mod pylib {
                 multithreaded_io.unwrap_or(true),
                 io_config.unwrap_or_default().config.into(),
             )?;
-            Ok(Arc::new(
+
+            let runtime_handle = common_runtime::get_io_runtime(true);
+
+            let task = async move {
                 crate::read::read_parquet_schema(
                     uri,
                     io_client,
                     Some(io_stats),
                     schema_infer_options,
                     None, // TODO: allow passing in of field_id_mapping through Python API?
-                )?
-                .0,
-            )
-            .into())
+                )
+                .await
+            };
+
+            let (schema, _) = runtime_handle.block_on_current_thread(task)?;
+
+            Ok(Arc::new(schema).into())
         })
     }
 

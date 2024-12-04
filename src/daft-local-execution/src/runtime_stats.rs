@@ -5,22 +5,20 @@ use std::{
     time::Instant,
 };
 
-use tokio::sync::mpsc::error::SendError;
+use daft_micropartition::MicroPartition;
+use loole::SendError;
 
-use crate::{
-    channel::{PipelineReceiver, Sender},
-    pipeline::PipelineResultType,
-};
+use crate::channel::{Receiver, Sender};
 
 #[derive(Default)]
-pub(crate) struct RuntimeStatsContext {
+pub struct RuntimeStatsContext {
     rows_received: AtomicU64,
     rows_emitted: AtomicU64,
     cpu_us: AtomicU64,
 }
 
 #[derive(Debug)]
-pub(crate) struct RuntimeStats {
+pub struct RuntimeStats {
     pub rows_received: u64,
     pub rows_emitted: u64,
     pub cpu_us: u64,
@@ -34,8 +32,7 @@ impl RuntimeStats {
         emitted: bool,
         cpu_time: bool,
     ) -> Result<(), fmt::Error> {
-        use num_format::Locale;
-        use num_format::ToFormattedString;
+        use num_format::{Locale, ToFormattedString};
         if received {
             writeln!(
                 w,
@@ -54,7 +51,7 @@ impl RuntimeStats {
 
         if cpu_time {
             let tms = (self.cpu_us as f32) / 1000f32;
-            writeln!(w, "CPU Time = {:.2}ms", tms)?;
+            writeln!(w, "CPU Time = {tms:.2}ms")?;
         }
 
         Ok(())
@@ -109,50 +106,43 @@ impl RuntimeStatsContext {
     }
 }
 
-pub(crate) struct CountingSender {
-    sender: Sender<PipelineResultType>,
+pub struct CountingSender {
+    sender: Sender<Arc<MicroPartition>>,
     rt: Arc<RuntimeStatsContext>,
 }
 
 impl CountingSender {
-    pub(crate) fn new(sender: Sender<PipelineResultType>, rt: Arc<RuntimeStatsContext>) -> Self {
+    pub(crate) fn new(sender: Sender<Arc<MicroPartition>>, rt: Arc<RuntimeStatsContext>) -> Self {
         Self { sender, rt }
     }
     #[inline]
     pub(crate) async fn send(
         &self,
-        v: PipelineResultType,
-    ) -> Result<(), SendError<PipelineResultType>> {
-        let len = match v {
-            PipelineResultType::Data(ref mp) => mp.len(),
-            PipelineResultType::ProbeTable(_, ref tables) => tables.iter().map(|t| t.len()).sum(),
-        };
+        v: Arc<MicroPartition>,
+    ) -> Result<(), SendError<Arc<MicroPartition>>> {
+        self.rt.mark_rows_emitted(v.len() as u64);
         self.sender.send(v).await?;
-        self.rt.mark_rows_emitted(len as u64);
         Ok(())
     }
 }
 
-pub(crate) struct CountingReceiver {
-    receiver: PipelineReceiver,
+pub struct CountingReceiver {
+    receiver: Receiver<Arc<MicroPartition>>,
     rt: Arc<RuntimeStatsContext>,
 }
 
 impl CountingReceiver {
-    pub(crate) fn new(receiver: PipelineReceiver, rt: Arc<RuntimeStatsContext>) -> Self {
+    pub(crate) fn new(
+        receiver: Receiver<Arc<MicroPartition>>,
+        rt: Arc<RuntimeStatsContext>,
+    ) -> Self {
         Self { receiver, rt }
     }
     #[inline]
-    pub(crate) async fn recv(&mut self) -> Option<PipelineResultType> {
+    pub(crate) async fn recv(&self) -> Option<Arc<MicroPartition>> {
         let v = self.receiver.recv().await;
         if let Some(ref v) = v {
-            let len = match v {
-                PipelineResultType::Data(ref mp) => mp.len(),
-                PipelineResultType::ProbeTable(_, ref tables) => {
-                    tables.iter().map(|t| t.len()).sum()
-                }
-            };
-            self.rt.mark_rows_received(len as u64);
+            self.rt.mark_rows_received(v.len() as u64);
         }
         v
     }

@@ -6,6 +6,7 @@ from datetime import date, datetime, time, timedelta, timezone
 import pytest
 import pytz
 
+import daft
 from daft.datatype import DataType, TimeUnit
 from daft.expressions import col, lit
 from daft.expressions.testing import expr_structurally_equal
@@ -122,6 +123,17 @@ def test_repr_functions_round() -> None:
     y = a.round()
     repr_out = repr(y)
     assert repr_out == "round(col(a))"
+    copied = copy.deepcopy(y)
+    assert repr_out == repr(copied)
+
+
+def test_repr_functions_clip() -> None:
+    a = col("a")
+    b = col("b")
+    c = col("c")
+    y = a.clip(b, c)
+    repr_out = repr(y)
+    assert repr_out == "clip(col(a), col(b), col(c))"
     copied = copy.deepcopy(y)
     assert repr_out == repr(copied)
 
@@ -504,7 +516,108 @@ def test_datetime_lit_different_timeunits(timeunit, expected) -> None:
     assert timestamp_repr == expected
 
 
+@pytest.mark.parametrize(
+    "input, expected",
+    [
+        (
+            timedelta(days=1),
+            "lit(1d)",
+        ),
+        (
+            timedelta(days=1, hours=12, minutes=30, seconds=59),
+            "lit(1d 12h 30m 59s)",
+        ),
+        (
+            timedelta(days=1, hours=12, minutes=30, seconds=59, microseconds=123456),
+            "lit(1d 12h 30m 59s 123456µs)",
+        ),
+        (
+            timedelta(weeks=1, days=1, hours=12, minutes=30, seconds=59, microseconds=123456),
+            "lit(8d 12h 30m 59s 123456µs)",
+        ),
+    ],
+)
+def test_duration_lit(input, expected) -> None:
+    d = lit(input)
+    output = repr(d)
+    assert output == expected
+
+
 def test_repr_series_lit() -> None:
     s = lit(Series.from_pylist([1, 2, 3]))
     output = repr(s)
     assert output == "lit([1, 2, 3])"
+
+
+def test_list_value_counts():
+    # Create a MicroPartition with a list column
+    mp = MicroPartition.from_pydict(
+        {"list_col": [["a", "b", "a", "c"], ["b", "b", "c"], ["a", "a", "a"], [], ["d", None, "d"]]}
+    )
+
+    # Apply list_value_counts operation
+    result = mp.eval_expression_list([col("list_col").list.value_counts().alias("value_counts")])
+    value_counts = result.to_pydict()["value_counts"]
+
+    # Expected output
+    expected = [[("a", 2), ("b", 1), ("c", 1)], [("b", 2), ("c", 1)], [("a", 3)], [], [("d", 2)]]
+
+    # Check the result
+    assert value_counts == expected
+
+    # Test with empty input (no proper type -> should raise error)
+    empty_mp = MicroPartition.from_pydict({"list_col": []})
+    with pytest.raises(ValueError):
+        empty_mp.eval_expression_list([col("list_col").list.value_counts().alias("value_counts")])
+
+    # Test with empty input (no proper type -> should raise error)
+    none_mp = MicroPartition.from_pydict({"list_col": [None, None, None]})
+    with pytest.raises(ValueError):
+        none_mp.eval_expression_list([col("list_col").list.value_counts().alias("value_counts")])
+
+
+def test_list_value_counts_nested():
+    # Create a MicroPartition with a nested list column
+    mp = MicroPartition.from_pydict(
+        {
+            "nested_list_col": [
+                [[1, 2], [3, 4]],
+                [[1, 2], [5, 6]],
+                [[3, 4], [1, 2]],
+                [],
+                None,
+                [[1, 2], [1, 2]],
+            ]
+        }
+    )
+
+    # Apply list_value_counts operation and expect an exception
+    with pytest.raises(daft.exceptions.DaftCoreException) as exc_info:
+        mp.eval_expression_list([col("nested_list_col").list.value_counts().alias("value_counts")])
+
+    # Check the exception message
+    assert (
+        'DaftError::ArrowError Invalid argument error: The data type type LargeList(Field { name: "item", data_type: Int64, is_nullable: true, metadata: {} }) has no natural order'
+        in str(exc_info.value)
+    )
+
+
+def test_list_value_counts_degenerate():
+    import pyarrow as pa
+
+    # Create a MicroPartition with an empty list column of specified type
+    empty_mp = MicroPartition.from_pydict({"empty_list_col": pa.array([], type=pa.list_(pa.string()))})
+
+    # Apply list_value_counts operation
+    result = empty_mp.eval_expression_list([col("empty_list_col").list.value_counts().alias("value_counts")])
+
+    # Check the result
+    assert result.to_pydict() == {"value_counts": []}
+
+    # Test with null values
+    null_mp = MicroPartition.from_pydict({"null_list_col": pa.array([None, None], type=pa.list_(pa.string()))})
+
+    result_null = null_mp.eval_expression_list([col("null_list_col").list.value_counts().alias("value_counts")])
+
+    # Check the result for null values
+    assert result_null.to_pydict() == {"value_counts": [[], []]}

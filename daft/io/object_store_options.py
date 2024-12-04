@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
-from daft.daft import AzureConfig, GCSConfig, IOConfig, S3Config
+if TYPE_CHECKING:
+    from daft.daft import AzureConfig, GCSConfig, IOConfig, S3Config
 
 
 def io_config_to_storage_options(io_config: IOConfig, table_uri: str) -> dict[str, str] | None:

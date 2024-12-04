@@ -4,27 +4,19 @@ import os
 import tempfile
 from collections import defaultdict
 
-import _pytest
 import memray
 import pytest
+from fsspec.implementations.local import LocalFileSystem
 
+import daft
+from benchmarking.tpch import data_generation
+from tests.assets import TPCH_DBGEN_DIR
 
-# Monkeypatch to use dash delimiters when showing parameter lists.
-# https://github.com/pytest-dev/pytest/blob/31d0b51039fc295dfb14bfc5d2baddebe11bb746/src/_pytest/python.py#L1190
-# Related: https://github.com/pytest-dev/pytest/issues/3617
-# This allows us to perform pytest selection via the `-k` CLI flag
-def id(self):
-    return "-".join(self._idlist)
+IS_CI = True if os.getenv("CI") else False
 
-
-setattr(_pytest.python.CallSpec2, "id", property(id))
-
-
-def pytest_make_parametrize_id(config, val, argname):
-    if isinstance(val, int):
-        val = f"{val:_}"
-    return f"{argname}:{val}"
-
+SCALE_FACTOR = 0.2
+NUM_PARTS = [1] if IS_CI else [1, 2]
+SOURCE_TYPES = ["in-memory"] if IS_CI else ["parquet", "in-memory"]
 
 memray_stats = defaultdict(dict)
 
@@ -67,3 +59,67 @@ def benchmark_with_memray(request, benchmark):
             return track_mem(func, group)
 
     return benchmark_wrapper
+
+
+@pytest.fixture(scope="session", params=NUM_PARTS)
+def gen_tpch(request):
+    # Parametrize the number of parts for each file so that we run tests on single-partition files and multi-partition files
+    num_parts = request.param
+
+    csv_files_location = data_generation.gen_csv_files(TPCH_DBGEN_DIR, num_parts, SCALE_FACTOR)
+    parquet_files_location = data_generation.gen_parquet(csv_files_location)
+
+    in_memory_tables = {}
+    for tbl_name in data_generation.SCHEMA.keys():
+        arrow_table = daft.read_parquet(f"{parquet_files_location}/{tbl_name}/*").to_arrow()
+        in_memory_tables[tbl_name] = daft.from_arrow(arrow_table)
+
+    sqlite_path = data_generation.gen_sqlite_db(
+        csv_filepath=csv_files_location,
+        num_parts=num_parts,
+    )
+
+    return (
+        csv_files_location,
+        parquet_files_location,
+        in_memory_tables,
+        num_parts,
+    ), sqlite_path
+
+
+@pytest.fixture(scope="module", params=SOURCE_TYPES)
+def get_df(gen_tpch, request):
+    (csv_files_location, parquet_files_location, in_memory_tables, num_parts), _ = gen_tpch
+    source_type = request.param
+
+    def _get_df(tbl_name: str):
+        if source_type == "csv":
+            local_fs = LocalFileSystem()
+            nonchunked_filepath = f"{csv_files_location}/{tbl_name}.tbl"
+            chunked_filepath = nonchunked_filepath + ".*"
+            try:
+                local_fs.expand_path(chunked_filepath)
+                fp = chunked_filepath
+            except FileNotFoundError:
+                fp = nonchunked_filepath
+
+            df = daft.read_csv(
+                fp,
+                has_headers=False,
+                delimiter="|",
+            )
+            df = df.select(
+                *[
+                    daft.col(autoname).alias(colname)
+                    for autoname, colname in zip(df.column_names, data_generation.SCHEMA[tbl_name])
+                ]
+            )
+        elif source_type == "parquet":
+            fp = f"{parquet_files_location}/{tbl_name}/*"
+            df = daft.read_parquet(fp)
+        elif source_type == "in-memory":
+            df = in_memory_tables[tbl_name]
+
+        return df
+
+    return _get_df, num_parts

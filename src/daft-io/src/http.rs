@@ -3,7 +3,6 @@ use std::{num::ParseIntError, ops::Range, string::FromUtf8Error, sync::Arc};
 use async_trait::async_trait;
 use common_io_config::HTTPConfig;
 use futures::{stream::BoxStream, TryStreamExt};
-
 use hyper::header;
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -11,14 +10,13 @@ use reqwest::header::{CONTENT_LENGTH, RANGE};
 use snafu::{IntoError, ResultExt, Snafu};
 use url::Position;
 
+use super::object_io::{GetResult, ObjectSource};
 use crate::{
     object_io::{FileMetadata, FileType, LSResult},
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
     FileFormat,
 };
-
-use super::object_io::{GetResult, ObjectSource};
 
 const HTTP_DELIMITER: &str = "/";
 
@@ -140,26 +138,26 @@ fn _get_file_metadata_from_html(path: &str, text: &str) -> super::Result<Vec<Fil
     Ok(metas.into_iter().flatten().collect())
 }
 
-pub(crate) struct HttpSource {
+pub struct HttpSource {
     pub(crate) client: reqwest::Client,
 }
 
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
-        use Error::*;
+        use Error::{UnableToDetermineSize, UnableToOpenFile};
         match error {
             UnableToOpenFile { path, source } => match source.status().map(|v| v.as_u16()) {
-                Some(404) | Some(410) => super::Error::NotFound {
+                Some(404 | 410) => Self::NotFound {
                     path,
                     source: source.into(),
                 },
-                None | Some(_) => super::Error::UnableToOpenFile {
+                None | Some(_) => Self::UnableToOpenFile {
                     path,
                     source: source.into(),
                 },
             },
-            UnableToDetermineSize { path } => super::Error::UnableToDetermineSize { path },
-            _ => super::Error::Generic {
+            UnableToDetermineSize { path } => Self::UnableToDetermineSize { path },
+            _ => Self::Generic {
                 store: super::SourceType::Http,
                 source: error.into(),
             },
@@ -176,7 +174,7 @@ impl HttpSource {
                 .context(UnableToCreateHeaderSnafu)?,
         );
 
-        Ok(HttpSource {
+        Ok(Self {
             client: reqwest::ClientBuilder::default()
                 .pool_max_idle_per_host(70)
                 .default_headers(default_headers)
@@ -212,7 +210,7 @@ impl ObjectSource for HttpSource {
             .error_for_status()
             .context(UnableToOpenFileSnafu::<String> { path: uri.into() })?;
         if let Some(is) = io_stats.as_ref() {
-            is.mark_get_requests(1)
+            is.mark_get_requests(1);
         }
         let size_bytes = response.content_length().map(|s| s as usize);
         let stream = response.bytes_stream();
@@ -252,7 +250,7 @@ impl ObjectSource for HttpSource {
             .context(UnableToOpenFileSnafu::<String> { path: uri.into() })?;
 
         if let Some(is) = io_stats.as_ref() {
-            is.mark_head_requests(1)
+            is.mark_head_requests(1);
         }
 
         let headers = response.headers();
@@ -308,7 +306,7 @@ impl ObjectSource for HttpSource {
             .error_for_status()
             .with_context(|_| UnableToOpenFileSnafu { path })?;
         if let Some(is) = io_stats.as_ref() {
-            is.mark_list_requests(1)
+            is.mark_list_requests(1);
         }
 
         // Reconstruct the actual path of the request, which may have been redirected via a 301
@@ -353,9 +351,7 @@ mod tests {
 
     use std::default;
 
-    use crate::object_io::ObjectSource;
-    use crate::HttpSource;
-    use crate::Result;
+    use crate::{object_io::ObjectSource, HttpSource, Result};
 
     #[tokio::test]
     async fn test_full_get_from_http() -> Result<()> {

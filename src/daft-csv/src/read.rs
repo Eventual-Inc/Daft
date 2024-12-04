@@ -1,16 +1,22 @@
+use core::str;
 use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
 use arrow2::{
     datatypes::Field,
-    io::csv::read_async::{read_rows, AsyncReaderBuilder, ByteRecord},
+    io::csv::{
+        read_async,
+        read_async::{read_rows, AsyncReaderBuilder},
+    },
 };
 use async_compat::{Compat, CompatExt};
 use common_error::{DaftError, DaftResult};
+use common_runtime::get_io_runtime;
 use csv_async::AsyncReader;
+use daft_compression::CompressionCodec;
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
-
+use daft_decoding::deserialize::deserialize_column;
 use daft_dsl::optimization::get_required_columns;
-use daft_io::{get_runtime, GetResult, IOClient, IOStatsRef};
+use daft_io::{parse_url, GetResult, IOClient, IOStatsRef, SourceType};
 use daft_table::Table;
 use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
 use rayon::{
@@ -28,13 +34,18 @@ use tokio::{
 };
 use tokio_util::io::StreamReader;
 
-use crate::ArrowSnafu;
-use crate::{metadata::read_csv_schema_single, CsvConvertOptions, CsvParseOptions, CsvReadOptions};
-use daft_compression::CompressionCodec;
-use daft_decoding::deserialize::deserialize_column;
+use crate::{
+    metadata::read_csv_schema_single, ArrowSnafu, CsvConvertOptions, CsvParseOptions,
+    CsvReadOptions,
+};
 
-trait ByteRecordChunkStream: Stream<Item = super::Result<Vec<ByteRecord>>> {}
-impl<S> ByteRecordChunkStream for S where S: Stream<Item = super::Result<Vec<ByteRecord>>> {}
+trait ByteRecordChunkStream: Stream<Item = super::Result<Vec<read_async::ByteRecord>>> {}
+impl<S> ByteRecordChunkStream for S where
+    S: Stream<Item = super::Result<Vec<read_async::ByteRecord>>>
+{
+}
+
+use crate::local::{read_csv_local, stream_csv_local};
 
 type TableChunkResult =
     super::Result<Context<JoinHandle<DaftResult<Table>>, super::JoinSnafu, super::Error>>;
@@ -52,7 +63,7 @@ pub fn read_csv(
     multithreaded_io: bool,
     max_chunks_in_flight: Option<usize>,
 ) -> DaftResult<Table> {
-    let runtime_handle = get_runtime(multithreaded_io)?;
+    let runtime_handle = get_io_runtime(multithreaded_io);
     runtime_handle.block_on_current_thread(async {
         read_csv_single_into_table(
             uri,
@@ -79,12 +90,12 @@ pub fn read_csv_bulk(
     max_chunks_in_flight: Option<usize>,
     num_parallel_tasks: usize,
 ) -> DaftResult<Vec<Table>> {
-    let runtime_handle = get_runtime(multithreaded_io)?;
+    let runtime_handle = get_io_runtime(multithreaded_io);
     let tables = runtime_handle.block_on_current_thread(async move {
         // Launch a read task per URI, throttling the number of concurrent file reads to num_parallel tasks.
         let task_stream = futures::stream::iter(uris.iter().map(|uri| {
             let (uri, convert_options, parse_options, read_options, io_client, io_stats) = (
-                uri.to_string(),
+                (*uri).to_string(),
                 convert_options.clone(),
                 parse_options.clone(),
                 read_options.clone(),
@@ -144,23 +155,37 @@ pub async fn stream_csv(
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
 ) -> DaftResult<BoxStream<'static, DaftResult<Table>>> {
-    let stream = stream_csv_single(
-        &uri,
-        convert_options,
-        parse_options,
-        read_options,
-        io_client,
-        io_stats,
-        max_chunks_in_flight,
-    )
-    .await?;
-
-    Ok(Box::pin(stream))
+    let uri = uri.as_str();
+    let (source_type, _) = parse_url(uri)?;
+    let is_compressed = CompressionCodec::from_uri(uri).is_some();
+    if matches!(source_type, SourceType::File) && !is_compressed {
+        let stream = stream_csv_local(
+            uri,
+            convert_options,
+            parse_options.unwrap_or_default(),
+            read_options,
+            io_client,
+            io_stats,
+            max_chunks_in_flight,
+        )
+        .await?;
+        Ok(Box::pin(stream))
+    } else {
+        let stream = stream_csv_single(
+            uri,
+            convert_options,
+            parse_options,
+            read_options,
+            io_client,
+            io_stats,
+            max_chunks_in_flight,
+        )
+        .await?;
+        Ok(Box::pin(stream))
+    }
 }
 
-// Parallel version of table concat
-// get rid of this once Table APIs are parallel
-fn tables_concat(mut tables: Vec<Table>) -> DaftResult<Table> {
+pub fn tables_concat(mut tables: Vec<Table>) -> DaftResult<Table> {
     if tables.is_empty() {
         return Err(DaftError::ValueError(
             "Need at least 1 Table to perform concat".to_string(),
@@ -194,10 +219,11 @@ fn tables_concat(mut tables: Vec<Table>) -> DaftResult<Table> {
     Table::new_with_size(
         first_table.schema.clone(),
         new_series,
-        tables.iter().map(|t| t.len()).sum(),
+        tables.iter().map(daft_table::Table::len).sum(),
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn read_csv_single_into_table(
     uri: &str,
     convert_options: Option<CsvConvertOptions>,
@@ -207,6 +233,21 @@ async fn read_csv_single_into_table(
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
 ) -> DaftResult<Table> {
+    let (source_type, _) = parse_url(uri)?;
+    let is_compressed = CompressionCodec::from_uri(uri).is_some();
+    if matches!(source_type, SourceType::File) && !is_compressed {
+        return read_csv_local(
+            uri,
+            convert_options,
+            parse_options.unwrap_or_default(),
+            read_options,
+            io_client,
+            io_stats,
+            max_chunks_in_flight,
+        )
+        .await;
+    }
+
     let predicate = convert_options
         .as_ref()
         .and_then(|opts| opts.predicate.clone());
@@ -225,7 +266,7 @@ async fn read_csv_single_into_table(
                 let required_columns_for_predicate = get_required_columns(predicate);
                 for rc in required_columns_for_predicate {
                     if include_columns.iter().all(|c| c.as_str() != rc.as_str()) {
-                        include_columns.push(rc)
+                        include_columns.push(rc);
                     }
                 }
             }
@@ -324,7 +365,7 @@ async fn read_csv_single_into_table(
     }
 }
 
-async fn stream_csv_single(
+pub async fn stream_csv_single(
     uri: &str,
     convert_options: Option<CsvConvertOptions>,
     parse_options: Option<CsvParseOptions>,
@@ -351,7 +392,7 @@ async fn stream_csv_single(
                 let required_columns_for_predicate = get_required_columns(predicate);
                 for rc in required_columns_for_predicate {
                     if include_columns.iter().all(|c| c.as_str() != rc.as_str()) {
-                        include_columns.push(rc)
+                        include_columns.push(rc);
                     }
                 }
             }
@@ -423,10 +464,10 @@ async fn read_csv_single_into_stream(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
 ) -> DaftResult<(impl TableStream + Send, Vec<Field>)> {
-    let (mut schema, estimated_mean_row_size, estimated_std_row_size) = match convert_options.schema
-    {
-        Some(schema) => (schema.to_arrow()?, None, None),
-        None => {
+    let (mut schema, estimated_mean_row_size, estimated_std_row_size) =
+        if let Some(schema) = convert_options.schema {
+            (schema.to_arrow()?, None, None)
+        } else {
             let (schema, read_stats) = read_csv_schema_single(
                 uri,
                 parse_options.clone(),
@@ -441,8 +482,7 @@ async fn read_csv_single_into_stream(
                 Some(read_stats.mean_record_size_bytes),
                 Some(read_stats.stddev_record_size_bytes),
             )
-        }
-    };
+        };
     // Rename fields, if necessary.
     if let Some(column_names) = convert_options.column_names {
         schema = schema
@@ -556,7 +596,7 @@ where
                 estimated_rows_per_desired_chunk.max(8).min(num_rows - total_rows_read)
             };
             let mut chunk_buffer = vec![
-                ByteRecord::with_capacity(record_buffer_size, num_fields);
+                read_async::ByteRecord::with_capacity(record_buffer_size, num_fields);
                 chunk_size_rows
             ];
 
@@ -575,7 +615,7 @@ where
 
             chunk_buffer.truncate(rows_read);
             if rows_read > 0 {
-                yield chunk_buffer
+                yield chunk_buffer;
             }
         }
     }
@@ -626,7 +666,7 @@ fn parse_into_column_array_chunk_stream(
                             )
                         })
                         .collect::<DaftResult<Vec<Series>>>()?;
-                    let num_rows = chunk.first().map(|s| s.len()).unwrap_or(0);
+                    let num_rows = chunk.first().map_or(0, daft_core::series::Series::len);
                     Ok(Table::new_unchecked(read_schema, chunk, num_rows))
                 })();
                 let _ = send.send(result);
@@ -637,7 +677,7 @@ fn parse_into_column_array_chunk_stream(
     }))
 }
 
-fn fields_to_projection_indices(
+pub fn fields_to_projection_indices(
     fields: &[arrow2::datatypes::Field],
     include_columns: &Option<Vec<String>>,
 ) -> Arc<Vec<usize>> {
@@ -663,24 +703,21 @@ fn fields_to_projection_indices(
 mod tests {
     use std::sync::Arc;
 
-    use common_error::{DaftError, DaftResult};
-
     use arrow2::io::csv::read::{
         deserialize_batch, deserialize_column, infer, infer_schema, read_rows, ByteRecord,
         ReaderBuilder,
     };
+    use common_error::{DaftError, DaftResult};
     use daft_core::{
         prelude::*,
         utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
     };
-
     use daft_io::{IOClient, IOConfig};
     use daft_table::Table;
     use rstest::rstest;
 
-    use crate::{char_to_byte, CsvConvertOptions, CsvParseOptions, CsvReadOptions};
-
     use super::read_csv;
+    use crate::{char_to_byte, CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 
     #[allow(clippy::too_many_arguments)]
     fn check_equal_local_arrow2(
@@ -769,7 +806,7 @@ mod tests {
         let file = format!(
             "{}/test/iris_tiny.csv{}",
             env!("CARGO_MANIFEST_DIR"),
-            compression.map_or("".to_string(), |ext| format!(".{}", ext))
+            compression.map_or(String::new(), |ext| format!(".{ext}"))
         );
 
         let mut io_config = IOConfig::default();
@@ -830,10 +867,9 @@ mod tests {
         ];
         let table = read_csv(
             file.as_ref(),
-            Some(
-                CsvConvertOptions::default()
-                    .with_column_names(Some(column_names.iter().map(|s| s.to_string()).collect())),
-            ),
+            Some(CsvConvertOptions::default().with_column_names(Some(
+                column_names.iter().map(|s| (*s).to_string()).collect(),
+            ))),
             Some(CsvParseOptions::default().with_has_header(false)),
             None,
             io_client,
@@ -1236,7 +1272,9 @@ mod tests {
             file.as_ref(),
             Some(
                 CsvConvertOptions::default()
-                    .with_column_names(Some(column_names.iter().map(|s| s.to_string()).collect()))
+                    .with_column_names(Some(
+                        column_names.iter().map(|s| (*s).to_string()).collect(),
+                    ))
                     .with_include_columns(Some(vec![
                         "petal.length".to_string(),
                         "petal.width".to_string(),
@@ -1862,7 +1900,7 @@ mod tests {
     ) -> DaftResult<()> {
         let file = format!(
             "s3://daft-public-data/test_fixtures/csv-dev/mvp.csv{}",
-            compression.map_or("".to_string(), |ext| format!(".{}", ext))
+            compression.map_or(String::new(), |ext| format!(".{ext}"))
         );
 
         let mut io_config = IOConfig::default();
@@ -1896,10 +1934,9 @@ mod tests {
         let column_names = ["a", "b"];
         let table = read_csv(
             file,
-            Some(
-                CsvConvertOptions::default()
-                    .with_column_names(Some(column_names.iter().map(|s| s.to_string()).collect())),
-            ),
+            Some(CsvConvertOptions::default().with_column_names(Some(
+                column_names.iter().map(|s| (*s).to_string()).collect(),
+            ))),
             Some(CsvParseOptions::default().with_has_header(false)),
             None,
             io_client,
@@ -1934,7 +1971,9 @@ mod tests {
             file,
             Some(
                 CsvConvertOptions::default()
-                    .with_column_names(Some(column_names.iter().map(|s| s.to_string()).collect()))
+                    .with_column_names(Some(
+                        column_names.iter().map(|s| (*s).to_string()).collect(),
+                    ))
                     .with_include_columns(Some(vec!["b".to_string()])),
             ),
             Some(CsvParseOptions::default().with_has_header(false)),

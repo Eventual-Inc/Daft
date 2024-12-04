@@ -1,27 +1,13 @@
 from __future__ import annotations
 
+import warnings
 from typing import Any, Literal, TypeVar
-
-import pyarrow as pa
 
 from daft.arrow_utils import ensure_array, ensure_chunked_array
 from daft.daft import CountMode, ImageFormat, ImageMode, PySeries, image
-from daft.datatype import DataType
+from daft.datatype import DataType, _ensure_registered_super_ext_type
+from daft.dependencies import np, pa, pd
 from daft.utils import pyarrow_supports_fixed_shape_tensor
-
-_NUMPY_AVAILABLE = True
-try:
-    import numpy as np
-except ImportError:
-    _NUMPY_AVAILABLE = False
-
-_PANDAS_AVAILABLE = True
-try:
-    import pandas as pd
-except ImportError:
-    _PANDAS_AVAILABLE = False
-
-ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
 
 
 class Series:
@@ -49,6 +35,8 @@ class Series:
             array: The pyarrow (chunked) array whose data we wish to put in the Series.
             name: The name associated with the Series; this is usually the column name.
         """
+
+        _ensure_registered_super_ext_type()
         if DataType.from_arrow_type(array.type) == DataType.python():
             # If the Arrow type is not natively supported, go through the Python list path.
             return Series.from_pylist(array.to_pylist(), name=name, pyobj="force")
@@ -225,6 +213,8 @@ class Series:
         """
         Convert this Series to an pyarrow array.
         """
+        _ensure_registered_super_ext_type()
+
         dtype = self.datatype()
         arrow_arr = self._series.to_arrow()
 
@@ -266,17 +256,20 @@ class Series:
 
         return Series._from_pyseries(self._series.slice(start, end))
 
-    def argsort(self, descending: bool = False) -> Series:
+    def argsort(self, descending: bool = False, nulls_first: bool | None = None) -> Series:
         if not isinstance(descending, bool):
             raise TypeError(f"expected `descending` to be bool, got {type(descending)}")
+        if nulls_first is None:
+            nulls_first = descending
 
-        return Series._from_pyseries(self._series.argsort(descending))
+        return Series._from_pyseries(self._series.argsort(descending, nulls_first))
 
-    def sort(self, descending: bool = False) -> Series:
+    def sort(self, descending: bool = False, nulls_first: bool | None = None) -> Series:
         if not isinstance(descending, bool):
             raise TypeError(f"expected `descending` to be bool, got {type(descending)}")
-
-        return Series._from_pyseries(self._series.sort(descending))
+        if nulls_first is None:
+            nulls_first = descending
+        return Series._from_pyseries(self._series.sort(descending, nulls_first))
 
     def hash(self, seed: Series | None = None) -> Series:
         if not isinstance(seed, Series) and seed is not None:
@@ -324,6 +317,9 @@ class Series:
 
     def round(self, decimal: int) -> Series:
         return Series._from_pyseries(self._series.round(decimal))
+
+    def clip(self, min: Series, max: Series) -> Series:
+        return Series._from_pyseries(self._series.clip(min._series, max._series))
 
     def sqrt(self) -> Series:
         return Series._from_pyseries(self._series.sqrt())
@@ -508,6 +504,12 @@ class Series:
         assert self._series is not None and other._series is not None
         return Series._from_pyseries(self._series ^ other._series)
 
+    def __floordiv__(self, other: object) -> Series:
+        if not isinstance(other, Series):
+            raise TypeError(f"expected another Series but got {type(other)}")
+        assert self._series is not None and other._series is not None
+        return Series._from_pyseries(self._series // other._series)
+
     def count(self, mode: CountMode = CountMode.Valid) -> Series:
         assert self._series is not None
         return Series._from_pyseries(self._series.count(mode))
@@ -523,6 +525,10 @@ class Series:
     def mean(self) -> Series:
         assert self._series is not None
         return Series._from_pyseries(self._series.mean())
+
+    def stddev(self) -> Series:
+        assert self._series is not None
+        return Series._from_pyseries(self._series.stddev())
 
     def sum(self) -> Series:
         assert self._series is not None
@@ -568,6 +574,7 @@ class Series:
         num_hashes: int,
         ngram_size: int,
         seed: int = 1,
+        hash_function: Literal["murmurhash3", "xxhash", "sha1"] = "murmurhash3",
     ) -> Series:
         """
         Runs the MinHash algorithm on the series.
@@ -582,6 +589,7 @@ class Series:
             num_hashes: The number of hash permutations to compute.
             ngram_size: The number of tokens in each shingle/ngram.
             seed (optional): Seed used for generating permutations and the initial string hashes. Defaults to 1.
+            hash_function (optional): Hash function to use for initial string hashing. One of "murmur3", "xxhash", or "sha1". Defaults to "murmur3".
         """
         if not isinstance(num_hashes, int):
             raise ValueError(f"expected an integer for num_hashes but got {type(num_hashes)}")
@@ -589,8 +597,15 @@ class Series:
             raise ValueError(f"expected an integer for ngram_size but got {type(ngram_size)}")
         if seed is not None and not isinstance(seed, int):
             raise ValueError(f"expected an integer or None for seed but got {type(seed)}")
+        if not isinstance(hash_function, str):
+            raise ValueError(f"expected str for hash_function but got {type(hash_function)}")
+        assert hash_function in [
+            "murmurhash3",
+            "xxhash",
+            "sha1",
+        ], f"hash_function must be one of 'murmurhash3', 'xxhash', 'sha1', got {hash_function}"
 
-        return Series._from_pyseries(self._series.minhash(num_hashes, ngram_size, seed))
+        return Series._from_pyseries(self._series.minhash(num_hashes, ngram_size, seed, hash_function))
 
     def _to_str_values(self) -> Series:
         return Series._from_pyseries(self._series.to_str_values())
@@ -640,13 +655,13 @@ class Series:
 def item_to_series(name: str, item: Any) -> Series:
     if isinstance(item, list):
         series = Series.from_pylist(item, name)
-    elif _NUMPY_AVAILABLE and isinstance(item, np.ndarray):
+    elif np.module_available() and isinstance(item, np.ndarray):
         series = Series.from_numpy(item, name)
     elif isinstance(item, Series):
         series = item
     elif isinstance(item, (pa.Array, pa.ChunkedArray)):
         series = Series.from_arrow(item, name)
-    elif _PANDAS_AVAILABLE and isinstance(item, pd.Series):
+    elif pd.module_available() and isinstance(item, pd.Series):
         series = Series.from_pandas(item, name)
     else:
         raise ValueError(f"Creating a Series from data of type {type(item)} not implemented")
@@ -940,15 +955,28 @@ class SeriesPartitioningNamespace(SeriesNamespace):
 
 class SeriesListNamespace(SeriesNamespace):
     def lengths(self) -> Series:
+        warnings.warn(
+            "This function will be deprecated from Daft version >= 0.3.5!  Instead, please use 'length'",
+            category=DeprecationWarning,
+        )
+
+        return Series._from_pyseries(self._series.list_count(CountMode.All))
+
+    def length(self) -> Series:
         return Series._from_pyseries(self._series.list_count(CountMode.All))
 
     def get(self, idx: Series, default: Series) -> Series:
         return Series._from_pyseries(self._series.list_get(idx._series, default._series))
 
-    def sort(self, desc: bool | Series = False) -> Series:
+    def sort(self, desc: bool | Series = False, nulls_first: bool | Series | None = None) -> Series:
         if isinstance(desc, bool):
             desc = Series.from_pylist([desc], name="desc")
-        return Series._from_pyseries(self._series.list_sort(desc._series))
+        if nulls_first is None:
+            nulls_first = desc
+        elif isinstance(nulls_first, bool):
+            nulls_first = Series.from_pylist([nulls_first], name="nulls_first")
+
+        return Series._from_pyseries(self._series.list_sort(desc._series, nulls_first._series))
 
 
 class SeriesMapNamespace(SeriesNamespace):
@@ -959,7 +987,7 @@ class SeriesMapNamespace(SeriesNamespace):
 class SeriesImageNamespace(SeriesNamespace):
     def decode(
         self,
-        on_error: Literal["raise"] | Literal["null"] = "raise",
+        on_error: Literal["raise", "null"] = "raise",
         mode: str | ImageMode | None = None,
     ) -> Series:
         raise_on_error = False

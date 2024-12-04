@@ -1,9 +1,9 @@
-use common_error::DaftError;
+use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
-
-use common_error::DaftResult;
-use daft_dsl::functions::{ScalarFunction, ScalarUDF};
-use daft_dsl::ExprRef;
+use daft_dsl::{
+    functions::{ScalarFunction, ScalarUDF},
+    ExprRef,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -42,8 +42,7 @@ impl ScalarUDF for ImageCrop {
                     dtype => {
                         return Err(DaftError::TypeError(
                             format!(
-                            "bbox list field must be List with numeric child type or FixedSizeList with size 4, got {}",
-                dtype
+                            "bbox list field must be List with numeric child type or FixedSizeList with size 4, got {dtype}"
                             )
                         ));
                     }
@@ -56,8 +55,7 @@ impl ScalarUDF for ImageCrop {
                         Ok(Field::new(input_field.name, DataType::Image(Some(*mode))))
                     }
                     _ => Err(DaftError::TypeError(format!(
-                        "Image crop can only crop ImageArrays and FixedShapeImage, got {}",
-                        input_field
+                        "Image crop can only crop ImageArrays and FixedShapeImage, got {input_field}"
                     ))),
                 }
             }
@@ -79,18 +77,7 @@ impl ScalarUDF for ImageCrop {
     }
 }
 
+#[must_use]
 pub fn crop(input: ExprRef, bbox: ExprRef) -> ExprRef {
     ScalarFunction::new(ImageCrop {}, vec![input, bbox]).into()
-}
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "image_crop")]
-pub fn py_crop(expr: PyExpr, bbox: PyExpr) -> PyResult<PyExpr> {
-    Ok(crop(expr.into(), bbox.into()).into())
 }

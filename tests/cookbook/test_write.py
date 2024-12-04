@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+import os
+import uuid
+from datetime import datetime
 
 import pyarrow as pa
 import pytest
@@ -13,7 +15,7 @@ from tests.cookbook.assets import COOKBOOK_DATA_CSV
 PYARROW_GE_7_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (7, 0, 0)
 
 
-def test_parquet_write(tmp_path):
+def test_parquet_write(tmp_path, with_morsel_size):
     df = daft.read_csv(COOKBOOK_DATA_CSV)
 
     pd_df = df.write_parquet(tmp_path)
@@ -26,7 +28,7 @@ def test_parquet_write(tmp_path):
     assert len(pd_df._preview.preview_partition) == 1
 
 
-def test_parquet_write_with_partitioning(tmp_path):
+def test_parquet_write_with_partitioning(tmp_path, with_morsel_size):
     df = daft.read_csv(COOKBOOK_DATA_CSV)
 
     pd_df = df.write_parquet(tmp_path, partition_cols=["Borough"])
@@ -40,31 +42,37 @@ def test_parquet_write_with_partitioning(tmp_path):
     assert len(pd_df._preview.preview_partition) == 5
 
 
-def test_empty_parquet_write_without_partitioning(tmp_path):
+@pytest.mark.parametrize("write_mode", ["append", "overwrite"])
+def test_empty_parquet_write_without_partitioning(tmp_path, write_mode, with_morsel_size):
     df = daft.read_csv(COOKBOOK_DATA_CSV)
     df = df.where(daft.lit(False))
 
-    pd_df = df.write_parquet(tmp_path)
-    read_back_pd_df = daft.read_parquet(tmp_path.as_posix() + "/*.parquet").to_pandas()
+    # Create a unique path to make sure that the writer is comfortable with nonexistent directories
+    path = os.path.join(tmp_path, str(uuid.uuid4()))
+    pd_df = df.write_parquet(path, write_mode=write_mode)
+    read_back_pd_df = daft.read_parquet(path).to_pandas()
     assert_df_equals(df.to_pandas(), read_back_pd_df)
 
     assert len(pd_df) == 1
     assert len(pd_df._preview.preview_partition) == 1
 
 
-def test_empty_parquet_write_with_partitioning(tmp_path):
+@pytest.mark.parametrize("write_mode", ["append", "overwrite"])
+def test_empty_parquet_write_with_partitioning(tmp_path, write_mode, with_morsel_size):
     df = daft.read_csv(COOKBOOK_DATA_CSV)
     df = df.where(daft.lit(False))
 
-    output_files = df.write_parquet(tmp_path, partition_cols=["Borough"])
-    read_back_pd_df = daft.read_parquet(tmp_path.as_posix() + "/**/*.parquet").to_pandas()
+    # Create a unique path to make sure that the writer is comfortable with nonexistent directories
+    path = os.path.join(tmp_path, str(uuid.uuid4()))
+    output_files = df.write_parquet(path, partition_cols=["Borough"], write_mode=write_mode)
+    read_back_pd_df = daft.read_parquet(os.path.join(path, "**/*.parquet")).to_pandas()
     assert_df_equals(df.to_pandas(), read_back_pd_df)
 
     assert len(output_files) == 1
     assert len(output_files._preview.preview_partition) == 1
 
 
-def test_parquet_write_with_partitioning_readback_values(tmp_path):
+def test_parquet_write_with_partitioning_readback_values(tmp_path, with_morsel_size):
     df = daft.read_csv(COOKBOOK_DATA_CSV)
 
     output_files = df.write_parquet(tmp_path, partition_cols=["Borough"])
@@ -92,14 +100,14 @@ def test_parquet_write_with_partitioning_readback_values(tmp_path):
         (
             daft.col("date").partitioning.days(),
             "date_days",
-            [date(2024, 1, 1), date(2024, 2, 1), date(2024, 3, 1), date(2024, 4, 1), date(2024, 5, 1)],
+            [19723, 19754, 19783, 19814, 19844],
         ),
         (daft.col("date").partitioning.hours(), "date_hours", [473352, 474096, 474792, 475536, 476256]),
         (daft.col("date").partitioning.months(), "date_months", [648, 649, 650, 651, 652]),
         (daft.col("date").partitioning.years(), "date_years", [54]),
     ],
 )
-def test_parquet_write_with_iceberg_date_partitioning(exp, key, answer, tmp_path):
+def test_parquet_write_with_iceberg_date_partitioning(exp, key, answer, tmp_path, with_morsel_size):
     data = {
         "id": [1, 2, 3, 4, 5],
         "date": [
@@ -123,10 +131,10 @@ def test_parquet_write_with_iceberg_date_partitioning(exp, key, answer, tmp_path
     "exp,key,answer",
     [
         (daft.col("id").partitioning.iceberg_bucket(10), "id_bucket", [0, 3, 5, 6, 8]),
-        (daft.col("id").partitioning.iceberg_truncate(10), "id_truncate", [0, 10, 20, 40]),
+        (daft.col("id").partitioning.iceberg_truncate(10), "id_trunc", [0, 10, 20, 40]),
     ],
 )
-def test_parquet_write_with_iceberg_bucket_and_trunc(exp, key, answer, tmp_path):
+def test_parquet_write_with_iceberg_bucket_and_trunc(exp, key, answer, tmp_path, with_morsel_size):
     data = {
         "id": [1, 12, 23, 24, 45],
         "date": [
@@ -150,7 +158,7 @@ def test_parquet_write_with_iceberg_bucket_and_trunc(exp, key, answer, tmp_path)
     not PYARROW_GE_7_0_0,
     reason="We only use pyarrow datasets 7 for this test",
 )
-def test_parquet_write_with_null_values(tmp_path):
+def test_parquet_write_with_null_values(tmp_path, with_morsel_size):
     df = daft.from_pydict({"x": [1, 2, 3, None]})
     df.write_parquet(tmp_path, partition_cols=[df["x"].alias("y")])
     ds = pads.dataset(tmp_path, format="parquet", partitioning=pads.HivePartitioning(pa.schema([("y", pa.int64())])))
@@ -168,21 +176,20 @@ def smaller_parquet_target_filesize():
     not PYARROW_GE_7_0_0,
     reason="We only use pyarrow datasets 7 for this test",
 )
-def test_parquet_write_multifile(tmp_path, smaller_parquet_target_filesize):
+def test_parquet_write_multifile(tmp_path, smaller_parquet_target_filesize, with_morsel_size):
     data = {"x": list(range(1_000))}
     df = daft.from_pydict(data)
     df2 = df.write_parquet(tmp_path)
     assert len(df2) > 1
-    ds = pads.dataset(tmp_path, format="parquet")
-    readback = ds.to_table()
-    assert readback.to_pydict() == data
+    read_back = daft.read_parquet(tmp_path.as_posix() + "/*.parquet").sort(by="x").to_pydict()
+    assert read_back == data
 
 
 @pytest.mark.skipif(
     not PYARROW_GE_7_0_0,
     reason="We only use pyarrow datasets 7 for this test",
 )
-def test_parquet_write_multifile_with_partitioning(tmp_path, smaller_parquet_target_filesize):
+def test_parquet_write_multifile_with_partitioning(tmp_path, smaller_parquet_target_filesize, with_morsel_size):
     data = {"x": list(range(1_000))}
     df = daft.from_pydict(data)
     df2 = df.write_parquet(tmp_path, partition_cols=[df["x"].alias("y") % 2])
@@ -194,7 +201,25 @@ def test_parquet_write_multifile_with_partitioning(tmp_path, smaller_parquet_tar
     assert readback["y"] == [y % 2 for y in data["x"]]
 
 
-def test_csv_write(tmp_path):
+def test_parquet_write_with_some_empty_partitions(tmp_path, with_morsel_size):
+    data = {"x": [1, 2, 3], "y": ["a", "b", "c"]}
+    daft.from_pydict(data).into_partitions(4).write_parquet(tmp_path)
+
+    read_back = daft.read_parquet(tmp_path.as_posix() + "/**/*.parquet").sort("x").to_pydict()
+    assert read_back == data
+
+
+def test_parquet_partitioned_write_with_some_empty_partitions(tmp_path, with_morsel_size):
+    data = {"x": [1, 2, 3], "y": ["a", "b", "c"]}
+    output_files = daft.from_pydict(data).into_partitions(4).write_parquet(tmp_path, partition_cols=["x"])
+
+    assert len(output_files) == 3
+
+    read_back = daft.read_parquet(tmp_path.as_posix() + "/**/*.parquet").sort("x").to_pydict()
+    assert read_back == data
+
+
+def test_csv_write(tmp_path, with_morsel_size):
     df = daft.read_csv(COOKBOOK_DATA_CSV)
 
     pd_df = df.write_csv(tmp_path)
@@ -208,7 +233,7 @@ def test_csv_write(tmp_path):
     assert len(pd_df._preview.preview_partition) == 1
 
 
-def test_csv_write_with_partitioning(tmp_path):
+def test_csv_write_with_partitioning(tmp_path, with_morsel_size):
     df = daft.read_csv(COOKBOOK_DATA_CSV)
     schema = df.schema()
     names = schema.column_names()
@@ -223,7 +248,7 @@ def test_csv_write_with_partitioning(tmp_path):
     assert len(pd_df) == 5
 
 
-def test_empty_csv_write(tmp_path):
+def test_empty_csv_write(tmp_path, with_morsel_size):
     df = daft.read_csv(COOKBOOK_DATA_CSV)
     df = df.where(daft.lit(False))
 
@@ -241,7 +266,7 @@ def test_empty_csv_write(tmp_path):
     assert len(pd_df._preview.preview_partition) == 1
 
 
-def test_empty_csv_write_with_partitioning(tmp_path):
+def test_empty_csv_write_with_partitioning(tmp_path, with_morsel_size):
     df = daft.read_csv(COOKBOOK_DATA_CSV)
     df = df.where(daft.lit(False))
 
@@ -257,3 +282,21 @@ def test_empty_csv_write_with_partitioning(tmp_path):
 
     assert len(pd_df) == 1
     assert len(pd_df._preview.preview_partition) == 1
+
+
+def test_csv_write_with_some_empty_partitions(tmp_path, with_morsel_size):
+    data = {"x": [1, 2, 3], "y": ["a", "b", "c"]}
+    daft.from_pydict(data).into_partitions(4).write_csv(tmp_path)
+
+    read_back = daft.read_csv(tmp_path.as_posix() + "/**/*.csv").sort("x").to_pydict()
+    assert read_back == data
+
+
+def test_csv_partitioned_write_with_some_empty_partitions(tmp_path, with_morsel_size):
+    data = {"x": [1, 2, 3], "y": ["a", "b", "c"]}
+    output_files = daft.from_pydict(data).into_partitions(4).write_csv(tmp_path, partition_cols=["x"])
+
+    assert len(output_files) == 3
+
+    read_back = daft.read_csv(tmp_path.as_posix() + "/**/*.csv").sort("x").to_pydict()
+    assert read_back == data

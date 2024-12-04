@@ -1,6 +1,5 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
-
 use daft_dsl::{
     functions::{ScalarFunction, ScalarUDF},
     ExprRef,
@@ -50,19 +49,7 @@ impl ScalarUDF for ToStructFunction {
     }
 }
 
+#[must_use]
 pub fn to_struct(inputs: Vec<ExprRef>) -> ExprRef {
     ScalarFunction::new(ToStructFunction {}, inputs).into()
-}
-
-#[cfg(feature = "python")]
-pub mod python {
-    use daft_dsl::python::PyExpr;
-    use pyo3::{pyfunction, PyResult};
-
-    #[pyfunction]
-    pub fn to_struct(inputs: Vec<PyExpr>) -> PyResult<PyExpr> {
-        let inputs = inputs.into_iter().map(|x| x.into()).collect();
-        let expr = super::to_struct(inputs);
-        Ok(expr.into())
-    }
 }

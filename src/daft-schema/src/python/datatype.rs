@@ -1,15 +1,10 @@
-use crate::dtype::DataType;
-use crate::field::Field;
-use crate::image_mode::ImageMode;
-
 use common_arrow_ffi as ffi;
-
 use common_py_serde::impl_bincode_py_state_serialization;
 use indexmap::IndexMap;
 use pyo3::{class::basic::CompareOp, exceptions::PyValueError, prelude::*};
 use serde::{Deserialize, Serialize};
 
-use crate::time_unit::TimeUnit;
+use crate::{dtype::DataType, field::Field, image_mode::ImageMode, time_unit::TimeUnit};
 
 #[pyclass]
 #[derive(Clone)]
@@ -19,7 +14,7 @@ pub struct PyTimeUnit {
 
 impl From<TimeUnit> for PyTimeUnit {
     fn from(value: TimeUnit) -> Self {
-        PyTimeUnit { timeunit: value }
+        Self { timeunit: value }
     }
 }
 
@@ -58,10 +53,12 @@ impl PyTimeUnit {
             _ => Err(pyo3::exceptions::PyNotImplementedError::new_err(())),
         }
     }
+    #[must_use]
     pub fn __hash__(&self) -> u64 {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::Hash;
-        use std::hash::Hasher;
+        use std::{
+            collections::hash_map::DefaultHasher,
+            hash::{Hash, Hasher},
+        };
         let mut hasher = DefaultHasher::new();
         self.timeunit.hash(&mut hasher);
         hasher.finish()
@@ -149,8 +146,7 @@ impl PyDataType {
     pub fn fixed_size_binary(size: i64) -> PyResult<Self> {
         if size <= 0 {
             return Err(PyValueError::new_err(format!(
-                "The size for fixed-size binary types must be a positive integer, but got: {}",
-                size
+                "The size for fixed-size binary types must be a positive integer, but got: {size}"
             )));
         }
         Ok(DataType::FixedSizeBinary(usize::try_from(size)?).into())
@@ -194,6 +190,10 @@ impl PyDataType {
     pub fn duration(timeunit: PyTimeUnit) -> PyResult<Self> {
         Ok(DataType::Duration(timeunit.timeunit).into())
     }
+    #[staticmethod]
+    pub fn interval() -> PyResult<Self> {
+        Ok(DataType::Interval.into())
+    }
 
     #[staticmethod]
     pub fn list(data_type: Self) -> PyResult<Self> {
@@ -204,8 +204,7 @@ impl PyDataType {
     pub fn fixed_size_list(data_type: Self, size: i64) -> PyResult<Self> {
         if size <= 0 {
             return Err(PyValueError::new_err(format!(
-                "The size for fixed-size list types must be a positive integer, but got: {}",
-                size
+                "The size for fixed-size list types must be a positive integer, but got: {size}"
             )));
         }
         Ok(DataType::FixedSizeList(Box::new(data_type.dtype), usize::try_from(size)?).into())
@@ -213,15 +212,16 @@ impl PyDataType {
 
     #[staticmethod]
     pub fn map(key_type: Self, value_type: Self) -> PyResult<Self> {
-        Ok(DataType::Map(Box::new(DataType::Struct(vec![
-            Field::new("key", key_type.dtype),
-            Field::new("value", value_type.dtype),
-        ])))
+        Ok(DataType::Map {
+            key: Box::new(key_type.dtype),
+            value: Box::new(value_type.dtype),
+        }
         .into())
     }
 
     #[staticmethod]
-    pub fn r#struct(fields: IndexMap<String, PyDataType>) -> Self {
+    #[must_use]
+    pub fn r#struct(fields: IndexMap<String, Self>) -> Self {
         DataType::Struct(
             fields
                 .into_iter()
@@ -240,7 +240,7 @@ impl PyDataType {
         Ok(DataType::Extension(
             name.to_string(),
             Box::new(storage_data_type.dtype),
-            metadata.map(|s| s.to_string()),
+            metadata.map(std::string::ToString::to_string),
         )
         .into())
     }
@@ -249,8 +249,7 @@ impl PyDataType {
     pub fn embedding(data_type: Self, size: i64) -> PyResult<Self> {
         if size <= 0 {
             return Err(PyValueError::new_err(format!(
-                "The size for embedding types must be a positive integer, but got: {}",
-                size
+                "The size for embedding types must be a positive integer, but got: {size}"
             )));
         }
         if !data_type.dtype.is_numeric() {
@@ -271,13 +270,13 @@ impl PyDataType {
     ) -> PyResult<Self> {
         match (height, width) {
             (Some(height), Some(width)) => {
-                let image_mode = mode.ok_or(PyValueError::new_err(
+                let image_mode = mode.ok_or_else(|| PyValueError::new_err(
                     "Image mode must be provided if specifying an image size.",
                 ))?;
                 Ok(DataType::FixedShapeImage(image_mode, height, width).into())
             }
             (None, None) => Ok(DataType::Image(mode).into()),
-            (_, _) => Err(PyValueError::new_err(format!("Height and width for image type must both be specified or both not specified, but got: height={:?}, width={:?}", height, width))),
+            (_, _) => Err(PyValueError::new_err(format!("Height and width for image type must both be specified or both not specified, but got: height={height:?}, width={width:?}"))),
         }
     }
 
@@ -294,6 +293,21 @@ impl PyDataType {
         match shape {
             Some(shape) => Ok(DataType::FixedShapeTensor(dtype, shape).into()),
             None => Ok(DataType::Tensor(dtype).into()),
+        }
+    }
+
+    #[staticmethod]
+    pub fn sparse_tensor(dtype: Self, shape: Option<Vec<u64>>) -> PyResult<Self> {
+        if !dtype.dtype.is_numeric() {
+            return Err(PyValueError::new_err(format!(
+                "The data type for a tensor column must be numeric, but got: {}",
+                dtype.dtype
+            )));
+        }
+        let dtype = Box::new(dtype.dtype);
+        match shape {
+            Some(shape) => Ok(DataType::FixedShapeSparseTensor(dtype, shape).into()),
+            None => Ok(DataType::SparseTensor(dtype).into()),
         }
     }
 
@@ -335,6 +349,10 @@ impl PyDataType {
         Ok(self.dtype.is_numeric())
     }
 
+    pub fn is_integer(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_integer())
+    }
+
     pub fn is_image(&self) -> PyResult<bool> {
         Ok(self.dtype.is_image())
     }
@@ -349,6 +367,14 @@ impl PyDataType {
 
     pub fn is_fixed_shape_tensor(&self) -> PyResult<bool> {
         Ok(self.dtype.is_fixed_shape_tensor())
+    }
+
+    pub fn is_sparse_tensor(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_sparse_tensor())
+    }
+
+    pub fn is_fixed_shape_sparse_tensor(&self) -> PyResult<bool> {
+        Ok(self.dtype.is_fixed_shape_sparse_tensor())
     }
 
     pub fn is_map(&self) -> PyResult<bool> {
@@ -376,8 +402,8 @@ impl PyDataType {
     }
 
     pub fn is_equal(&self, other: Bound<PyAny>) -> PyResult<bool> {
-        if other.is_instance_of::<PyDataType>() {
-            let other = other.extract::<PyDataType>()?;
+        if other.is_instance_of::<Self>() {
+            let other = other.extract::<Self>()?;
             Ok(self.dtype == other.dtype)
         } else {
             Ok(false)
@@ -389,10 +415,12 @@ impl PyDataType {
         Ok(DataType::from_json(serialized)?.into())
     }
 
+    #[must_use]
     pub fn __hash__(&self) -> u64 {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::Hash;
-        use std::hash::Hasher;
+        use std::{
+            collections::hash_map::DefaultHasher,
+            hash::{Hash, Hasher},
+        };
         let mut hasher = DefaultHasher::new();
         self.dtype.hash(&mut hasher);
         hasher.finish()
@@ -403,7 +431,7 @@ impl_bincode_py_state_serialization!(PyDataType);
 
 impl From<DataType> for PyDataType {
     fn from(value: DataType) -> Self {
-        PyDataType { dtype: value }
+        Self { dtype: value }
     }
 }
 

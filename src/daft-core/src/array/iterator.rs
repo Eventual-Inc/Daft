@@ -1,14 +1,11 @@
 use arrow2::bitmap::utils::{BitmapIter, ZipValidity};
 
-use crate::datatypes::{BooleanArray, DaftNumericType};
-
-use super::DataArray;
-
-use super::ops::as_arrow::AsArrow;
+use super::{ops::as_arrow::AsArrow, DataArray};
+use crate::datatypes::{BooleanArray, DaftPrimitiveType};
 
 impl<'a, T> IntoIterator for &'a DataArray<T>
 where
-    T: DaftNumericType,
+    T: DaftPrimitiveType,
 {
     type Item = Option<&'a T::Native>;
     type IntoIter = ZipValidity<&'a T::Native, std::slice::Iter<'a, T::Native>, BitmapIter<'a>>;

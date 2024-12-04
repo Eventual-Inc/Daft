@@ -1,3 +1,6 @@
+use common_error::DaftResult;
+
+use super::{as_arrow::AsArrow, DaftListAggable, GroupIndices};
 use crate::{
     array::{
         growable::{Growable, GrowableArray},
@@ -6,66 +9,83 @@ use crate::{
     datatypes::DaftArrowBackedType,
     series::IntoSeries,
 };
-use common_error::DaftResult;
 
-use super::{as_arrow::AsArrow, DaftListAggable, GroupIndices};
+macro_rules! impl_daft_list_agg {
+    () => {
+        type Output = DaftResult<ListArray>;
+
+        fn list(&self) -> Self::Output {
+            let child_series = self.clone().into_series();
+            let offsets =
+                arrow2::offset::OffsetsBuffer::try_from(vec![0, child_series.len() as i64])?;
+            let list_field = self.field.to_list_field()?;
+            Ok(ListArray::new(list_field, child_series, offsets, None))
+        }
+
+        fn grouped_list(&self, groups: &GroupIndices) -> Self::Output {
+            let mut offsets = Vec::with_capacity(groups.len() + 1);
+
+            offsets.push(0);
+            for g in groups {
+                offsets.push(offsets.last().unwrap() + g.len() as i64);
+            }
+
+            let total_capacity = *offsets.last().unwrap();
+
+            let mut growable: Box<dyn Growable> = Box::new(Self::make_growable(
+                self.name(),
+                self.data_type(),
+                vec![self],
+                self.null_count() > 0,
+                total_capacity as usize,
+            ));
+
+            for g in groups {
+                for idx in g {
+                    growable.extend(0, *idx as usize, 1);
+                }
+            }
+            let list_field = self.field.to_list_field()?;
+
+            Ok(ListArray::new(
+                list_field,
+                growable.build()?,
+                arrow2::offset::OffsetsBuffer::try_from(offsets)?,
+                None,
+            ))
+        }
+    };
+}
 
 impl<T> DaftListAggable for DataArray<T>
 where
     T: DaftArrowBackedType,
-    DataArray<T>: IntoSeries,
-    DataArray<T>: GrowableArray,
+    Self: IntoSeries,
+    Self: GrowableArray,
 {
-    type Output = DaftResult<ListArray>;
-    fn list(&self) -> Self::Output {
-        let child_series = self.clone().into_series();
-        let offsets = arrow2::offset::OffsetsBuffer::try_from(vec![0, child_series.len() as i64])?;
-        let list_field = self.field.to_list_field()?;
-        Ok(ListArray::new(list_field, child_series, offsets, None))
-    }
+    impl_daft_list_agg!();
+}
 
-    fn grouped_list(&self, groups: &GroupIndices) -> Self::Output {
-        let mut offsets = Vec::with_capacity(groups.len() + 1);
+impl DaftListAggable for ListArray {
+    impl_daft_list_agg!();
+}
 
-        offsets.push(0);
-        for g in groups {
-            offsets.push(offsets.last().unwrap() + g.len() as i64);
-        }
+impl DaftListAggable for FixedSizeListArray {
+    impl_daft_list_agg!();
+}
 
-        let total_capacity = *offsets.last().unwrap();
-
-        let mut growable: Box<dyn Growable> = Box::new(Self::make_growable(
-            self.name(),
-            self.data_type(),
-            vec![self],
-            self.data.null_count() > 0,
-            total_capacity as usize,
-        ));
-
-        for g in groups {
-            for idx in g {
-                growable.extend(0, *idx as usize, 1);
-            }
-        }
-        let list_field = self.field.to_list_field()?;
-
-        Ok(ListArray::new(
-            list_field,
-            growable.build()?,
-            arrow2::offset::OffsetsBuffer::try_from(offsets)?,
-            None,
-        ))
-    }
+impl DaftListAggable for StructArray {
+    impl_daft_list_agg!();
 }
 
 #[cfg(feature = "python")]
 impl DaftListAggable for crate::datatypes::PythonArray {
-    type Output = DaftResult<crate::datatypes::PythonArray>;
+    type Output = DaftResult<Self>;
 
     fn list(&self) -> Self::Output {
+        use pyo3::{prelude::*, types::PyList};
+
         use crate::array::pseudo_arrow::PseudoArrowArray;
-        use pyo3::prelude::*;
-        use pyo3::types::PyList;
 
         let pyobj_vec = self.as_arrow().to_pyobj_vec();
 
@@ -76,9 +96,9 @@ impl DaftListAggable for crate::datatypes::PythonArray {
     }
 
     fn grouped_list(&self, groups: &GroupIndices) -> Self::Output {
+        use pyo3::{prelude::*, types::PyList};
+
         use crate::array::pseudo_arrow::PseudoArrowArray;
-        use pyo3::prelude::*;
-        use pyo3::types::PyList;
 
         let mut result_pylists: Vec<PyObject> = Vec::with_capacity(groups.len());
 
@@ -93,47 +113,5 @@ impl DaftListAggable for crate::datatypes::PythonArray {
 
         let arrow_array = PseudoArrowArray::<PyObject>::from_pyobj_vec(result_pylists);
         Self::new(self.field().clone().into(), Box::new(arrow_array))
-    }
-}
-
-impl DaftListAggable for ListArray {
-    type Output = DaftResult<ListArray>;
-
-    fn list(&self) -> Self::Output {
-        // TODO(FixedSizeList)
-        todo!("Requires new ListArrays for implementation")
-    }
-
-    fn grouped_list(&self, _groups: &GroupIndices) -> Self::Output {
-        // TODO(FixedSizeList)
-        todo!("Requires new ListArrays for implementation")
-    }
-}
-
-impl DaftListAggable for FixedSizeListArray {
-    type Output = DaftResult<ListArray>;
-
-    fn list(&self) -> Self::Output {
-        // TODO(FixedSizeList)
-        todo!("Requires new ListArrays for implementation")
-    }
-
-    fn grouped_list(&self, _groups: &GroupIndices) -> Self::Output {
-        // TODO(FixedSizeList)
-        todo!("Requires new ListArrays for implementation")
-    }
-}
-
-impl DaftListAggable for StructArray {
-    type Output = DaftResult<ListArray>;
-
-    fn list(&self) -> Self::Output {
-        // TODO(FixedSizeList)
-        todo!("Requires new ListArrays for implementation")
-    }
-
-    fn grouped_list(&self, _groups: &GroupIndices) -> Self::Output {
-        // TODO(FixedSizeList)
-        todo!("Requires new ListArrays for implementation")
     }
 }

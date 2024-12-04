@@ -1,13 +1,10 @@
-use crate::{
-    array::ops::as_arrow::AsArrow,
-    datatypes::DataType,
-    datatypes::{FixedSizeBinaryArray, UInt64Array},
-};
+use common_error::DaftResult;
 use hyperloglog::{HyperLogLog, NUM_REGISTERS};
 
-use common_error::DaftResult;
-
-use crate::array::ops::{DaftHllSketchAggable, GroupIndices};
+use crate::{
+    array::ops::{as_arrow::AsArrow, DaftHllSketchAggable, GroupIndices},
+    datatypes::{DataType, FixedSizeBinaryArray, UInt64Array},
+};
 
 pub const HLL_SKETCH_DTYPE: DataType = DataType::FixedSizeBinary(NUM_REGISTERS);
 

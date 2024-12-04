@@ -2,10 +2,11 @@ use std::vec;
 
 use common_error::DaftResult;
 
-use crate::array::prelude::*;
-use crate::datatypes::prelude::*;
-
-use crate::series::{IntoSeries, Series};
+use crate::{
+    array::prelude::*,
+    datatypes::prelude::*,
+    series::{IntoSeries, Series},
+};
 
 #[derive(Clone)]
 pub struct BBox(pub u32, pub u32, pub u32, pub u32);
@@ -18,7 +19,7 @@ impl BBox {
             .downcast_ref::<arrow2::array::UInt32Array>()
             .unwrap()
             .iter();
-        BBox(
+        Self(
             *iter.next().unwrap().unwrap(),
             *iter.next().unwrap().unwrap(),
             *iter.next().unwrap().unwrap(),
@@ -137,9 +138,7 @@ impl ImageArray {
         let offsets = arrow2::offset::OffsetsBuffer::try_from(offsets)?;
         let arrow_dtype: arrow2::datatypes::DataType = T::PRIMITIVE.into();
         if let DataType::Image(Some(mode)) = &data_type {
-            if mode.get_dtype().to_arrow()? != arrow_dtype {
-                panic!("Inner value dtype of provided dtype {data_type:?} is inconsistent with inferred value dtype {arrow_dtype:?}");
-            }
+            assert!(!(mode.get_dtype().to_arrow()? != arrow_dtype), "Inner value dtype of provided dtype {data_type:?} is inconsistent with inferred value dtype {arrow_dtype:?}");
         }
         let data_array = ListArray::new(
             Field::new("data", DataType::List(Box::new((&arrow_dtype).into()))),

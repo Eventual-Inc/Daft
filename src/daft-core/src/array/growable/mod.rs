@@ -1,8 +1,7 @@
 use common_error::DaftResult;
 
 use crate::{
-    array::prelude::*,
-    array::{FixedSizeListArray, ListArray, StructArray},
+    array::{prelude::*, FixedSizeListArray, ListArray, StructArray},
     datatypes::prelude::*,
     series::Series,
     with_match_daft_types,
@@ -165,7 +164,7 @@ impl_growable_array!(Int8Array, arrow_growable::ArrowInt8Growable<'a>);
 impl_growable_array!(Int16Array, arrow_growable::ArrowInt16Growable<'a>);
 impl_growable_array!(Int32Array, arrow_growable::ArrowInt32Growable<'a>);
 impl_growable_array!(Int64Array, arrow_growable::ArrowInt64Growable<'a>);
-impl_growable_array!(Int128Array, arrow_growable::ArrowInt128Growable<'a>);
+impl_growable_array!(Decimal128Array, arrow_growable::ArrowDecimal128Growable<'a>);
 impl_growable_array!(UInt8Array, arrow_growable::ArrowUInt8Growable<'a>);
 impl_growable_array!(UInt16Array, arrow_growable::ArrowUInt16Growable<'a>);
 impl_growable_array!(UInt32Array, arrow_growable::ArrowUInt32Growable<'a>);
@@ -189,6 +188,12 @@ impl_growable_array!(
     logical_growable::LogicalTimestampGrowable<'a>
 );
 impl_growable_array!(DurationArray, logical_growable::LogicalDurationGrowable<'a>);
+
+impl_growable_array!(
+    IntervalArray,
+    arrow_growable::ArrowMonthDayNanoIntervalGrowable<'a>
+);
+
 impl_growable_array!(DateArray, logical_growable::LogicalDateGrowable<'a>);
 impl_growable_array!(TimeArray, logical_growable::LogicalTimeGrowable<'a>);
 impl_growable_array!(
@@ -203,10 +208,14 @@ impl_growable_array!(
     FixedShapeTensorArray,
     logical_growable::LogicalFixedShapeTensorGrowable<'a>
 );
+impl_growable_array!(
+    SparseTensorArray,
+    logical_growable::LogicalSparseTensorGrowable<'a>
+);
+impl_growable_array!(
+    FixedShapeSparseTensorArray,
+    logical_growable::LogicalFixedShapeSparseTensorGrowable<'a>
+);
 impl_growable_array!(ImageArray, logical_growable::LogicalImageGrowable<'a>);
 impl_growable_array!(TensorArray, logical_growable::LogicalTensorGrowable<'a>);
-impl_growable_array!(
-    Decimal128Array,
-    logical_growable::LogicalDecimal128Growable<'a>
-);
 impl_growable_array!(MapArray, logical_growable::LogicalMapGrowable<'a>);

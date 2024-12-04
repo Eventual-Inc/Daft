@@ -1,5 +1,4 @@
-use daft_core::datatypes::ExtensionArray;
-use daft_core::{prelude::DataType, series::Series};
+use daft_core::{datatypes::ExtensionArray, prelude::DataType, series::Series};
 
 pub fn html_value(s: &Series, idx: usize) -> String {
     match s.data_type() {
@@ -29,10 +28,6 @@ pub fn html_value(s: &Series, idx: usize) -> String {
         }
         DataType::Int64 => {
             let arr = s.i64().unwrap();
-            arr.html_value(idx)
-        }
-        DataType::Int128 => {
-            let arr = s.i128().unwrap();
             arr.html_value(idx)
         }
         DataType::UInt8 => {
@@ -79,6 +74,11 @@ pub fn html_value(s: &Series, idx: usize) -> String {
             let arr = s.duration().unwrap();
             arr.html_value(idx)
         }
+        DataType::Interval => {
+            let arr = s.interval().unwrap();
+            arr.html_value(idx)
+        }
+
         DataType::Binary => {
             let arr = s.binary().unwrap();
             arr.html_value(idx)
@@ -103,7 +103,7 @@ pub fn html_value(s: &Series, idx: usize) -> String {
             let arr = s.struct_().unwrap();
             arr.html_value(idx)
         }
-        DataType::Map(_) => {
+        DataType::Map { .. } => {
             let arr = s.map().unwrap();
             arr.html_value(idx)
         }
@@ -125,6 +125,14 @@ pub fn html_value(s: &Series, idx: usize) -> String {
         }
         DataType::FixedShapeTensor(_, _) => {
             let arr = s.fixed_shape_tensor().unwrap();
+            arr.html_value(idx)
+        }
+        DataType::SparseTensor(_) => {
+            let arr = s.sparse_tensor().unwrap();
+            arr.html_value(idx)
+        }
+        DataType::FixedShapeSparseTensor(_, _) => {
+            let arr = s.fixed_shape_sparse_tensor().unwrap();
             arr.html_value(idx)
         }
         #[cfg(feature = "python")]

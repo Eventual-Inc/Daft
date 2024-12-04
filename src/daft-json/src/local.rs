@@ -2,12 +2,10 @@ use std::{borrow::Cow, collections::HashSet, num::NonZeroUsize, sync::Arc};
 
 use common_error::DaftResult;
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
-
 use daft_dsl::Expr;
 use daft_table::Table;
 use indexmap::IndexMap;
 use num_traits::Pow;
-
 use rayon::{prelude::*, ThreadPoolBuilder};
 use serde_json::value::RawValue;
 use snafu::ResultExt;
@@ -119,9 +117,9 @@ impl<'a> JsonReader<'a> {
         let mut total_rows = 128;
 
         if let Some((mean, std)) = get_line_stats_json(bytes, self.sample_size) {
-            let line_length_upper_bound = mean + 1.1 * std;
+            let line_length_upper_bound = 1.1f32.mul_add(std, mean);
 
-            total_rows = (bytes.len() as f32 / (mean - 0.01 * std)) as usize;
+            total_rows = (bytes.len() as f32 / 0.01f32.mul_add(-std, mean)) as usize;
             if let Some(n_rows) = self.n_rows {
                 total_rows = std::cmp::min(n_rows, total_rows);
                 // the guessed upper bound of the no. of bytes in the file
@@ -129,7 +127,7 @@ impl<'a> JsonReader<'a> {
 
                 if n_bytes < bytes.len() {
                     if let Some(pos) = next_line_position(&bytes[n_bytes..]) {
-                        bytes = &bytes[..n_bytes + pos]
+                        bytes = &bytes[..n_bytes + pos];
                     }
                 }
             }
@@ -199,7 +197,7 @@ impl<'a> JsonReader<'a> {
 
             match v {
                 Value::Object(record) => {
-                    for (s, inner) in columns.iter_mut() {
+                    for (s, inner) in &mut columns {
                         match record.get(s) {
                             Some(value) => {
                                 deserialize_into(inner, &[value]);
@@ -227,10 +225,7 @@ impl<'a> JsonReader<'a> {
             .zip(daft_fields)
             .map(|(mut ma, fld)| {
                 let arr = ma.as_box();
-                Series::try_from_field_and_arrow_array(
-                    fld.clone(),
-                    cast_array_for_daft_if_needed(arr),
-                )
+                Series::try_from_field_and_arrow_array(fld, cast_array_for_daft_if_needed(arr))
             })
             .collect::<DaftResult<Vec<_>>>()?;
 
@@ -370,8 +365,8 @@ fn get_line_stats_json(bytes: &[u8], n_lines: usize) -> Option<(f32, f32)> {
     let n_samples = lengths.len();
     let mean = (n_read as f32) / (n_samples as f32);
     let mut std = 0.0;
-    for &len in lengths.iter() {
-        std += (len as f32 - mean).pow(2.0)
+    for &len in &lengths {
+        std += (len as f32 - mean).pow(2.0);
     }
     std = (std / n_samples as f32).sqrt();
     Some((mean, std))
@@ -440,10 +435,11 @@ fn next_line_position(input: &[u8]) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use arrow2::datatypes::{
         DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema,
     };
+
+    use super::*;
 
     #[test]
     fn test_infer_schema() {
@@ -464,7 +460,7 @@ mod tests {
 
     #[test]
     fn test_infer_schema_empty() {
-        let json = r#""#;
+        let json = r"";
 
         let result = infer_schema(json.as_bytes(), None, None);
         let expected_schema = ArrowSchema::from(vec![]);

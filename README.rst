@@ -4,13 +4,13 @@
 
 `Website <https://www.getdaft.io>`_ • `Docs <https://www.getdaft.io/projects/docs/>`_ • `Installation`_ • `10-minute tour of Daft <https://www.getdaft.io/projects/docs/en/latest/learn/10-min.html>`_ • `Community and Support <https://github.com/Eventual-Inc/Daft/discussions>`_
 
-Daft: Distributed dataframes for multimodal data
-=======================================================
+Daft: Unified Engine for Data Analytics, Engineering & ML/AI
+============================================================
 
 
-`Daft <https://www.getdaft.io>`_ is a distributed query engine for large-scale data processing in Python and is implemented in Rust.
+`Daft <https://www.getdaft.io>`_ is a distributed query engine for large-scale data processing using Python or SQL, implemented in Rust.
 
-* **Familiar interactive API:** Lazy Python Dataframe for rapid and interactive iteration
+* **Familiar interactive API:** Lazy Python Dataframe for rapid and interactive iteration, or SQL for analytical queries
 * **Focus on the what:** Powerful Query Optimizer that rewrites queries to be as efficient as possible
 * **Data Catalog integrations:** Full integration with data catalogs such as Apache Iceberg
 * **Rich multimodal type-system:** Supports multimodal types such as Images, URLs, Tensors and more
@@ -51,7 +51,7 @@ Quickstart
 
 In this example, we load images from an AWS S3 bucket's URLs and resize each image in the dataframe:
 
-.. code::
+.. code:: python
 
     import daft
 
@@ -142,7 +142,7 @@ Daft has an Apache 2.0 license - please see the LICENSE file.
 .. |Benchmark Image| image:: https://github-production-user-asset-6210df.s3.amazonaws.com/2550285/243524430-338e427d-f049-40b3-b555-4059d6be7bfd.png
    :alt: Benchmarks for SF100 TPCH
 
-.. |Banner| image:: https://user-images.githubusercontent.com/17691182/190476440-28f29e87-8e3b-41c4-9c28-e112e595f558.png
+.. |Banner| image:: https://github.com/user-attachments/assets/ac676800-b799-454e-a6e0-9a58974a4154
    :target: https://www.getdaft.io
    :alt: Daft dataframes can load any data such as PDF documents, images, protobufs, csv, parquet and audio files into a table dataframe structure for easy querying
 

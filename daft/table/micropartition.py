@@ -3,8 +3,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-import pyarrow as pa
-
 from daft.daft import (
     CsvConvertOptions,
     CsvParseOptions,
@@ -26,14 +24,7 @@ from daft.table.table import Table
 
 if TYPE_CHECKING:
     import pandas as pd
-
-
-_PANDAS_AVAILABLE = True
-try:
-    import pandas as pd
-except ImportError:
-    _PANDAS_AVAILABLE = False
-
+    import pyarrow as pa
 
 logger = logging.getLogger(__name__)
 
@@ -183,7 +174,12 @@ class MicroPartition:
         pyexprs = [e._expr for e in exprs]
         return MicroPartition._from_pymicropartition(self._micropartition.filter(pyexprs))
 
-    def sort(self, sort_keys: ExpressionsProjection, descending: bool | list[bool] | None = None) -> MicroPartition:
+    def sort(
+        self,
+        sort_keys: ExpressionsProjection,
+        descending: bool | list[bool] | None = None,
+        nulls_first: bool | list[bool] | None = None,
+    ) -> MicroPartition:
         assert all(isinstance(e, Expression) for e in sort_keys)
         pyexprs = [e._expr for e in sort_keys]
         if descending is None:
@@ -198,7 +194,21 @@ class MicroPartition:
                 )
         else:
             raise TypeError(f"Expected a bool, list[bool] or None for `descending` but got {type(descending)}")
-        return MicroPartition._from_pymicropartition(self._micropartition.sort(pyexprs, descending))
+        if nulls_first is None:
+            nulls_first = descending
+        elif isinstance(nulls_first, bool):
+            nulls_first = [nulls_first for _ in pyexprs]
+        elif isinstance(nulls_first, list):
+            if len(nulls_first) != len(sort_keys):
+                raise ValueError(
+                    f"Expected length of `nulls_first` to be the same length as `sort_keys` since a list was passed in,"
+                    f"got {len(nulls_first)} instead of {len(sort_keys)}"
+                )
+            else:
+                nulls_first = [bool(x) for x in nulls_first]
+        else:
+            raise TypeError(f"Expected a bool, list[bool] or None for `nulls_first` but got {type(nulls_first)}")
+        return MicroPartition._from_pymicropartition(self._micropartition.sort(pyexprs, descending, nulls_first))
 
     def sample(
         self,
@@ -257,6 +267,7 @@ class MicroPartition:
         right: MicroPartition,
         left_on: ExpressionsProjection,
         right_on: ExpressionsProjection,
+        null_equals_nulls: list[bool] | None = None,
         how: JoinType = JoinType.Inner,
     ) -> MicroPartition:
         if len(left_on) != len(right_on):
@@ -271,7 +282,13 @@ class MicroPartition:
         right_exprs = [e._expr for e in right_on]
 
         return MicroPartition._from_pymicropartition(
-            self._micropartition.hash_join(right._micropartition, left_on=left_exprs, right_on=right_exprs, how=how)
+            self._micropartition.hash_join(
+                right._micropartition,
+                left_on=left_exprs,
+                right_on=right_exprs,
+                null_equals_nulls=null_equals_nulls,
+                how=how,
+            )
         )
 
     def sort_merge_join(
@@ -351,7 +368,12 @@ class MicroPartition:
     # Compute methods (MicroPartition -> Series)
     ###
 
-    def argsort(self, sort_keys: ExpressionsProjection, descending: bool | list[bool] | None = None) -> Series:
+    def argsort(
+        self,
+        sort_keys: ExpressionsProjection,
+        descending: bool | list[bool] | None = None,
+        nulls_first: bool | list[bool] | None = None,
+    ) -> Series:
         assert all(isinstance(e, Expression) for e in sort_keys)
         pyexprs = [e._expr for e in sort_keys]
         if descending is None:
@@ -366,7 +388,21 @@ class MicroPartition:
                 )
         else:
             raise TypeError(f"Expected a bool, list[bool] or None for `descending` but got {type(descending)}")
-        return Series._from_pyseries(self._micropartition.argsort(pyexprs, descending))
+        if nulls_first is None:
+            nulls_first = descending
+        elif isinstance(nulls_first, bool):
+            nulls_first = [nulls_first for _ in pyexprs]
+        elif isinstance(nulls_first, list):
+            if len(nulls_first) != len(sort_keys):
+                raise ValueError(
+                    f"Expected length of `nulls_first` to be the same length as `sort_keys` since a list was passed in,"
+                    f"got {len(nulls_first)} instead of {len(sort_keys)}"
+                )
+            else:
+                nulls_first = [bool(x) for x in nulls_first]
+        else:
+            raise TypeError(f"Expected a bool, list[bool] or None for `nulls_first` but got {type(nulls_first)}")
+        return Series._from_pyseries(self._micropartition.argsort(pyexprs, descending, nulls_first))
 
     def __reduce__(self) -> tuple:
         names = self.column_names()

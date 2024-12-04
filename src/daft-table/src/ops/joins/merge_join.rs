@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 
+use common_error::{DaftError, DaftResult};
 use daft_core::{
     array::ops::full::FullNull,
     datatypes::{DataType, UInt64Array},
@@ -8,7 +9,6 @@ use daft_core::{
 };
 
 use crate::Table;
-use common_error::{DaftError, DaftResult};
 
 /// A state machine for the below merge-join algorithm.
 ///
@@ -88,7 +88,7 @@ pub fn merge_inner_join(left: &Table, right: &Table) -> DaftResult<(Series, Seri
         )?);
     }
     let combined_comparator = |a_idx: usize, b_idx: usize| -> Option<Ordering> {
-        for comparator in cmp_list.iter() {
+        for comparator in &cmp_list {
             match comparator(a_idx, b_idx) {
                 Some(Ordering::Equal) => continue,
                 other => return other,
@@ -218,11 +218,11 @@ pub fn merge_inner_join(left: &Table, right: &Table) -> DaftResult<(Series, Seri
                 match state {
                     // If extending a left-side run or propagating an existing right-side run, move left pointer forward.
                     MergeJoinState::LeftEqualRun(_) | MergeJoinState::StagedRightEqualRun(_) => {
-                        left_idx += 1
+                        left_idx += 1;
                     }
                     // If extending a right-side run or propagating an existing left-side run, move right pointer forward.
                     MergeJoinState::RightEqualRun(_) | MergeJoinState::StagedLeftEqualRun(_) => {
-                        right_idx += 1
+                        right_idx += 1;
                     }
                     _ => unreachable!(),
                 }

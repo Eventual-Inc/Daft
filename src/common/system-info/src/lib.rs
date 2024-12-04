@@ -9,7 +9,7 @@ pub struct SystemInfo {
 
 impl Default for SystemInfo {
     fn default() -> Self {
-        SystemInfo {
+        Self {
             info: sysinfo::System::new_with_specifics(
                 RefreshKind::new()
                     .with_cpu(CpuRefreshKind::everything())
@@ -23,14 +23,17 @@ impl Default for SystemInfo {
 #[pymethods]
 impl SystemInfo {
     #[new]
+    #[must_use]
     pub fn new() -> Self {
-        Default::default()
+        Self::default()
     }
 
+    #[must_use]
     pub fn cpu_count(&self) -> Option<u64> {
         self.info.physical_core_count().map(|x| x as u64)
     }
 
+    #[must_use]
     pub fn total_memory(&self) -> u64 {
         if let Some(cgroup) = self.info.cgroup_limits() {
             cgroup.total_memory

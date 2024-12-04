@@ -1,11 +1,10 @@
-use derive_more::Display;
 use std::str::FromStr;
 
+use common_error::{DaftError, DaftResult};
+use derive_more::Display;
 #[cfg(feature = "python")]
 use pyo3::{exceptions::PyValueError, prelude::*};
 use serde::{Deserialize, Serialize};
-
-use common_error::{DaftError, DaftResult};
 
 /// Supported image formats for Daft's I/O layer.
 #[allow(clippy::upper_case_acronyms)]
@@ -39,8 +38,8 @@ impl ImageFormat {
 }
 
 impl ImageFormat {
-    pub fn iterator() -> std::slice::Iter<'static, ImageFormat> {
-        use ImageFormat::*;
+    pub fn iterator() -> std::slice::Iter<'static, Self> {
+        use ImageFormat::{BMP, GIF, JPEG, PNG, TIFF};
 
         static FORMATS: [ImageFormat; 5] = [PNG, JPEG, TIFF, GIF, BMP];
         FORMATS.iter()
@@ -51,7 +50,7 @@ impl FromStr for ImageFormat {
     type Err = DaftError;
 
     fn from_str(format: &str) -> DaftResult<Self> {
-        use ImageFormat::*;
+        use ImageFormat::{BMP, GIF, JPEG, PNG, TIFF};
 
         match format {
             "PNG" => Ok(PNG),
@@ -62,7 +61,7 @@ impl FromStr for ImageFormat {
             _ => Err(DaftError::TypeError(format!(
                 "Image format {} is not supported; only the following formats are supported: {:?}",
                 format,
-                ImageFormat::iterator().as_slice()
+                Self::iterator().as_slice()
             ))),
         }
     }

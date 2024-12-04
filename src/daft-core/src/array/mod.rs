@@ -11,19 +11,19 @@ mod struct_array;
 use arrow2::bitmap::Bitmap;
 pub use fixed_size_list_array::FixedSizeListArray;
 pub use list_array::ListArray;
-
 pub use struct_array::StructArray;
 mod boolean;
 mod from_iter;
 pub mod prelude;
 use std::{marker::PhantomData, sync::Arc};
 
+use common_error::{DaftError, DaftResult};
+use daft_schema::field::DaftField;
+
 use crate::datatypes::{DaftArrayType, DaftPhysicalType, DataType, Field};
 
-use common_error::{DaftError, DaftResult};
-
 #[derive(Debug)]
-pub struct DataArray<T: DaftPhysicalType> {
+pub struct DataArray<T> {
     pub field: Arc<Field>,
     pub data: Box<dyn arrow2::array::Array>,
     marker_: PhantomData<T>,
@@ -31,7 +31,7 @@ pub struct DataArray<T: DaftPhysicalType> {
 
 impl<T: DaftPhysicalType> Clone for DataArray<T> {
     fn clone(&self) -> Self {
-        DataArray::new(self.field.clone(), self.data.clone()).unwrap()
+        Self::new(self.field.clone(), self.data.clone()).unwrap()
     }
 }
 
@@ -41,30 +41,43 @@ impl<T: DaftPhysicalType> DaftArrayType for DataArray<T> {
     }
 }
 
-impl<T> DataArray<T>
-where
-    T: DaftPhysicalType,
-{
-    pub fn new(field: Arc<Field>, data: Box<dyn arrow2::array::Array>) -> DaftResult<DataArray<T>> {
+impl<T> DataArray<T> {
+    pub fn new(
+        physical_field: Arc<DaftField>,
+        arrow_array: Box<dyn arrow2::array::Array>,
+    ) -> DaftResult<Self> {
         assert!(
-            field.dtype.is_physical(),
+            physical_field.dtype.is_physical(),
             "Can only construct DataArray for PhysicalTypes, got {}",
-            field.dtype
+            physical_field.dtype
         );
 
-        if let Ok(arrow_dtype) = field.dtype.to_physical().to_arrow() {
-            if !arrow_dtype.eq(data.data_type()) {
-                panic!(
-                    "expected {:?}, got {:?} when creating a new DataArray",
-                    arrow_dtype,
-                    data.data_type()
-                )
-            }
+        if let Ok(expected_arrow_physical_type) = physical_field.dtype.to_arrow() {
+            let arrow_data_type = arrow_array.data_type();
+
+            assert!(
+                !(&expected_arrow_physical_type != arrow_data_type),
+                "Mismatch between expected and actual Arrow types for DataArray.\n\
+                Field name: {}\n\
+                Logical type: {}\n\
+                Physical type: {}\n\
+                Expected Arrow physical type: {:?}\n\
+                Actual Arrow Logical type: {:?}
+
+                This error typically occurs when there's a discrepancy between the Daft DataType \
+                and the underlying Arrow representation. Please ensure that the physical type \
+                of the Daft DataType matches the Arrow type of the provided data.",
+                physical_field.name,
+                physical_field.dtype,
+                physical_field.dtype.to_physical(),
+                expected_arrow_physical_type,
+                arrow_data_type
+            );
         }
 
-        Ok(DataArray {
-            field,
-            data,
+        Ok(Self {
+            field: physical_field,
+            data: arrow_array,
             marker_: PhantomData,
         })
     }
@@ -94,7 +107,7 @@ where
             )));
         }
         let with_bitmap = self.data.with_validity(Some(Bitmap::from(validity)));
-        DataArray::new(self.field.clone(), with_bitmap)
+        Self::new(self.field.clone(), with_bitmap)
     }
 
     pub fn with_validity(&self, validity: Option<Bitmap>) -> DaftResult<Self> {
@@ -108,7 +121,7 @@ where
             )));
         }
         let with_bitmap = self.data.with_validity(validity);
-        DataArray::new(self.field.clone(), with_bitmap)
+        Self::new(self.field.clone(), with_bitmap)
     }
 
     pub fn validity(&self) -> Option<&Bitmap> {
