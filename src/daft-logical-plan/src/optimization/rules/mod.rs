@@ -6,6 +6,7 @@ mod materialize_scans;
 mod push_down_filter;
 mod push_down_limit;
 mod push_down_projection;
+mod reorder_joins;
 mod rule;
 mod split_actor_pool_projects;
 
