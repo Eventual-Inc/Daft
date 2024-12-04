@@ -502,23 +502,19 @@ pub fn literals_to_series(values: &[LiteralValue]) -> DaftResult<Series> {
         }
         DataType::Int32 => {
             let data = values.iter().map(|lit| unwrap_unchecked!(lit, Int32));
-            Int32Array::from_iter_and_fld(Field::new("literal", DataType::Int32), data)
-                .into_series()
+            Int32Array::from_iter(Field::new("literal", DataType::Int32), data).into_series()
         }
         DataType::UInt32 => {
             let data = values.iter().map(|lit| unwrap_unchecked!(lit, UInt32));
-            UInt32Array::from_iter_and_fld(Field::new("literal", DataType::UInt32), data)
-                .into_series()
+            UInt32Array::from_iter(Field::new("literal", DataType::UInt32), data).into_series()
         }
         DataType::Int64 => {
             let data = values.iter().map(|lit| unwrap_unchecked!(lit, Int64));
-            Int64Array::from_iter_and_fld(Field::new("literal", DataType::Int64), data)
-                .into_series()
+            Int64Array::from_iter(Field::new("literal", DataType::Int64), data).into_series()
         }
         DataType::UInt64 => {
             let data = values.iter().map(|lit| unwrap_unchecked!(lit, UInt64));
-            UInt64Array::from_iter_and_fld(Field::new("literal", DataType::UInt64), data)
-                .into_series()
+            UInt64Array::from_iter(Field::new("literal", DataType::UInt64), data).into_series()
         }
         DataType::Interval => {
             let data = values.iter().map(|lit| match lit {
@@ -530,32 +526,29 @@ pub fn literals_to_series(values: &[LiteralValue]) -> DaftResult<Series> {
         }
         dtype @ DataType::Timestamp(_, _) => {
             let data = values.iter().map(|lit| unwrap_unchecked!(lit, Timestamp));
-            let physical =
-                Int64Array::from_iter_and_fld(Field::new("literal", DataType::Int64), data);
+            let physical = Int64Array::from_iter(Field::new("literal", DataType::Int64), data);
             TimestampArray::new(Field::new("literal", dtype), physical).into_series()
         }
         dtype @ DataType::Date => {
             let data = values.iter().map(|lit| unwrap_unchecked!(lit, Date));
-            let physical =
-                Int32Array::from_iter_and_fld(Field::new("literal", DataType::Int32), data);
+            let physical = Int32Array::from_iter(Field::new("literal", DataType::Int32), data);
             DateArray::new(Field::new("literal", dtype), physical).into_series()
         }
         dtype @ DataType::Time(_) => {
             let data = values.iter().map(|lit| unwrap_unchecked!(lit, Time));
-            let physical =
-                Int64Array::from_iter_and_fld(Field::new("literal", DataType::Int64), data);
+            let physical = Int64Array::from_iter(Field::new("literal", DataType::Int64), data);
 
             TimeArray::new(Field::new("literal", dtype), physical).into_series()
         }
         DataType::Float64 => {
             let data = values.iter().map(|lit| unwrap_unchecked!(lit, Float64));
 
-            Float64Array::from_iter_and_fld(Field::new("literal", dtype), data).into_series()
+            Float64Array::from_iter(Field::new("literal", dtype), data).into_series()
         }
         dtype @ DataType::Decimal128 { .. } => {
             let data = values.iter().map(|lit| unwrap_unchecked!(lit, Decimal));
 
-            Decimal128Array::from_iter_and_fld(Field::new("literal", dtype), data).into_series()
+            Decimal128Array::from_iter(Field::new("literal", dtype), data).into_series()
         }
         _ => {
             return Err(DaftError::ValueError(format!(
@@ -594,7 +587,7 @@ mod test {
             LiteralValue::UInt64(3),
         ];
         let expected = vec![None, Some(2), Some(3)];
-        let expected = UInt64Array::from_iter_and_fld(
+        let expected = UInt64Array::from_iter(
             Field::new("literal", DataType::UInt64),
             expected.into_iter(),
         );

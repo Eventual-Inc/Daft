@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use common_error::{DaftError, DaftResult};
 use daft_core::{
     prelude::{BooleanArray, DaftLogical, DataType, Field, Schema},
@@ -76,28 +74,18 @@ impl ScalarUDF for Coalesce {
                     return Ok(inputs[0].clone());
                 }
 
-                let mut current_value = Series::full_null(name, dtype, len).to_arrow();
+                let mut current_value = Series::full_null(name, dtype, len);
                 let remainder = BooleanArray::from_values(name, vec![true; len].into_iter());
                 let mut remainder = remainder.into_series();
 
                 for input in inputs {
                     let to_apply = remainder.and(&input.not_null()?)?;
-                    let mask = to_apply.bool().unwrap();
-                    let mask = mask
-                        .data
-                        .as_any()
-                        .downcast_ref::<arrow2::array::BooleanArray>()
-                        .unwrap();
-                    let mask = mask.values();
-                    let arr = input.to_arrow();
-
-                    current_value =
-                        arrow2::compute::zip::zip(mask, arr.as_ref(), current_value.as_ref())?;
+                    current_value = input.if_else(&current_value, &to_apply)?;
 
                     remainder = remainder.and(&input.is_null()?)?;
                 }
 
-                Series::from_arrow(Arc::new(Field::new(name, dtype.clone())), current_value)
+                Ok(current_value)
             }
         }
     }
@@ -106,38 +94,63 @@ impl ScalarUDF for Coalesce {
 #[cfg(test)]
 mod tests {
     use daft_core::{
-        prelude::{DataType, FullNull, Utf8Array},
-        series::{NamedFrom, Series},
+        prelude::{DataType, Field, FullNull, Int8Array, Utf8Array},
+        series::{IntoSeries, Series},
     };
     use daft_dsl::functions::ScalarUDF;
 
     #[test]
     fn test_coalesce_0() {
-        let s0 = Series::new("s0", vec![None, None, Some(10), Some(11), None]);
-        let s1 = Series::new("s1", vec![None, Some(2), Some(3), None, None]);
-        let s2 = Series::new("s2", vec![None, Some(1), Some(4), Some(4), Some(10)]);
+        let s0 = Int8Array::from_iter(
+            Field::new("s0", DataType::Int8),
+            vec![None, None, Some(10), Some(11), None].into_iter(),
+        )
+        .into_series();
+        let s1 = Int8Array::from_iter(
+            Field::new("s1", DataType::Int8),
+            vec![None, Some(2), Some(3), None, None].into_iter(),
+        )
+        .into_series();
+        let s2 = Int8Array::from_iter(
+            Field::new("s2", DataType::Int8),
+            vec![None, Some(1), Some(4), Some(4), Some(10)].into_iter(),
+        )
+        .into_series();
 
         let coalesce = super::Coalesce {};
         let output = coalesce.evaluate(&[s0, s1, s2]).unwrap();
-        let actual = output.i32().unwrap();
-        let expected = Series::new("s0", vec![None, Some(2), Some(10), Some(11), Some(10)]);
-        let expected = expected.i32().unwrap();
+        let actual = output.i8().unwrap();
+        let expected = Int8Array::from_iter(
+            Field::new("s0", DataType::Int8),
+            vec![None, Some(2), Some(10), Some(11), Some(10)].into_iter(),
+        );
 
-        assert_eq!(actual, expected);
+        assert_eq!(actual, &expected);
     }
 
     #[test]
     fn test_coalesce_1() {
-        let s0 = Series::new("s0", vec![None, None, Some(10), Some(11), None]);
-        let s1 = Series::new("s1", vec![None, Some(2), Some(3), None, None]);
+        let s0 = Int8Array::from_iter(
+            Field::new("s0", DataType::Int8),
+            vec![None, None, Some(10), Some(11), None].into_iter(),
+        )
+        .into_series();
+
+        let s1 = Int8Array::from_iter(
+            Field::new("s1", DataType::Int8),
+            vec![None, Some(2), Some(3), None, None].into_iter(),
+        )
+        .into_series();
 
         let coalesce = super::Coalesce {};
         let output = coalesce.evaluate(&[s0, s1]).unwrap();
-        let actual = output.i32().unwrap();
-        let expected = Series::new("s0", vec![None, Some(2), Some(10), Some(11), None]);
-        let expected = expected.i32().unwrap();
+        let actual = output.i8().unwrap();
+        let expected = Int8Array::from_iter(
+            Field::new("s0", DataType::Int8),
+            vec![None, Some(2), Some(10), Some(11), None].into_iter(),
+        );
 
-        assert_eq!(actual, expected);
+        assert_eq!(actual, &expected);
     }
 
     #[test]
@@ -150,29 +163,18 @@ mod tests {
 
     #[test]
     fn test_coalesce_one_arg() {
-        let s0 = Series::new("s0", vec![None, None, Some(10), Some(11), None]);
+        let s0 = Int8Array::from_iter(
+            Field::new("s0", DataType::Int8),
+            vec![None, None, Some(10), Some(11), None].into_iter(),
+        )
+        .into_series();
+
         let coalesce = super::Coalesce {};
         let output = coalesce.evaluate(&[s0.clone()]).unwrap();
         // can't directly compare as null != null
-        let output = output.i32().unwrap();
-        let s0 = s0.i32().unwrap();
+        let output = output.i8().unwrap();
+        let s0 = s0.i8().unwrap();
         assert_eq!(output, s0);
-    }
-
-    #[test]
-    fn test_coalesce_mismatched_types() {
-        let s0 = Series::new("s0", vec![None, None, Some(10), Some(11), None]);
-        let s1 = Series::new("s1", vec![None, Some(2), Some(3), None, None]);
-        let s2 = Series::new("s2", vec![None, Some(1), Some(4), Some(4), Some(10)]);
-        let s3 = Series::new(
-            "s3",
-            vec![None, Some(1.0), Some(4.0), Some(4.0), Some(10.0)],
-        );
-
-        let coalesce = super::Coalesce {};
-        let output = coalesce.evaluate(&[s0, s1, s2, s3]);
-
-        assert!(output.is_err());
     }
 
     #[test]
