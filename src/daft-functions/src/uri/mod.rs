@@ -2,11 +2,7 @@ mod download;
 mod upload;
 
 use common_io_config::IOConfig;
-use daft_dsl::{
-    common_treenode::{TreeNode, TreeNodeRecursion},
-    functions::ScalarFunction,
-    Expr, ExprRef,
-};
+use daft_dsl::{functions::ScalarFunction, ExprRef};
 use download::DownloadFunction;
 use upload::UploadFunction;
 
@@ -48,24 +44,6 @@ pub fn upload(
         vec![input],
     )
     .into()
-}
-
-pub fn get_max_connections(exprs: &[ExprRef]) -> Option<usize> {
-    let mut max_connections: Option<usize> = None;
-    for expr in exprs {
-        let _ = expr.apply(|e| match e.as_ref() {
-            Expr::ScalarFunction(ScalarFunction { udf, .. }) => {
-                if let Some(dl) = udf.as_any().downcast_ref::<DownloadFunction>() {
-                    max_connections = Some(
-                        max_connections.map_or(dl.max_connections, |mc| mc.max(dl.max_connections)),
-                    );
-                }
-                Ok(TreeNodeRecursion::Continue)
-            }
-            _ => Ok(TreeNodeRecursion::Continue),
-        });
-    }
-    max_connections
 }
 
 #[cfg(feature = "python")]

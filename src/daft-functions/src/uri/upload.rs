@@ -111,6 +111,10 @@ pub fn url_upload(
         }
 
         let runtime_handle = get_io_runtime(multi_thread);
+        let max_connections = match multi_thread {
+            false => max_connections,
+            true => max_connections * usize::from(std::thread::available_parallelism()?),
+        };
         let io_client = get_io_client(multi_thread, config)?;
         let folder_path = folder_path.as_ref().trim_end_matches('/').to_string();
 
