@@ -2,6 +2,7 @@ use common_error::{DaftError, DaftResult};
 use daft_core::{
     prelude::{BooleanArray, DaftLogical, Field, Schema},
     series::{IntoSeries, Series},
+    utils::supertype::try_get_supertype,
 };
 use daft_dsl::{
     functions::{ScalarFunction, ScalarUDF},
@@ -33,15 +34,20 @@ impl ScalarUDF for Coalesce {
             }
             _ => {
                 let first_field = inputs[0].to_field(schema)?;
+                let mut output_dtype = first_field.dtype.clone();
 
                 for input in inputs {
-                    if input.to_field(schema)?.dtype != first_field.dtype {
-                        return Err(DaftError::SchemaMismatch(
-                            "All input fields must have the same data type".to_string(),
-                        ));
+                    let lhs = input.to_field(schema)?.dtype;
+                    let rhs = &first_field.dtype;
+                    output_dtype = try_get_supertype(&lhs, rhs)?;
+
+                    if try_get_supertype(&lhs, rhs).is_err() {
+                        return Err(DaftError::SchemaMismatch(format!(
+                            "All input fields must have the same data type. Got {lhs} and {rhs}"
+                        )));
                     }
                 }
-                Ok(first_field)
+                Ok(Field::new(first_field.name, output_dtype))
             }
         }
     }
@@ -94,11 +100,12 @@ pub fn coalesce(inputs: Vec<ExprRef>) -> ExprRef {
 
 #[cfg(test)]
 mod tests {
+    use common_error::DaftError;
     use daft_core::{
-        prelude::{DataType, Field, FullNull, Int8Array, Utf8Array},
+        prelude::{DataType, Field, FullNull, Int8Array, Schema, Utf8Array},
         series::{IntoSeries, Series},
     };
-    use daft_dsl::functions::ScalarUDF;
+    use daft_dsl::{col, functions::ScalarUDF, lit, null_lit};
 
     #[test]
     fn test_coalesce_0() {
@@ -190,5 +197,101 @@ mod tests {
         let expected = Utf8Array::full_null("s0", &DataType::Utf8, 100);
 
         assert_eq!(actual, &expected);
+    }
+
+    #[test]
+    fn test_coalesce_with_mismatched_types() {
+        let s0 = Int8Array::from_iter(
+            Field::new("s0", DataType::Int8),
+            vec![None, None, Some(10), Some(11), None].into_iter(),
+        )
+        .into_series();
+        let s1 = Int8Array::from_iter(
+            Field::new("s1", DataType::Int8),
+            vec![None, Some(2), Some(3), None, None].into_iter(),
+        )
+        .into_series();
+        let s2 = Utf8Array::from_iter(
+            "s2",
+            vec![
+                None,
+                Some("hello"),
+                Some("world"),
+                Some("hello"),
+                Some("world"),
+            ]
+            .into_iter(),
+        )
+        .into_series();
+
+        let coalesce = super::Coalesce {};
+        let output = coalesce.evaluate(&[s0, s1, s2]);
+
+        let expected = Utf8Array::from_iter(
+            "s2",
+            vec![None, Some("2"), Some("10"), Some("11"), Some("world")].into_iter(),
+        );
+        assert_eq!(output.unwrap().utf8().unwrap(), &expected);
+    }
+
+    #[test]
+    fn test_to_field() {
+        let col_0 = null_lit().alias("s0");
+        let fallback = lit(0);
+
+        let schema = Schema::new(vec![
+            Field::new("s0", DataType::Int32),
+            Field::new("s1", DataType::Int32),
+        ])
+        .unwrap();
+        let expected = Field::new("s0", DataType::Int32);
+
+        let coalesce = super::Coalesce {};
+        let output = coalesce.to_field(&[col_0, fallback], &schema).unwrap();
+        assert_eq!(output, expected);
+    }
+
+    #[test]
+    fn test_to_field_with_mismatched_types() {
+        let col_0 = col("s0");
+        let col_1 = col("s1");
+        let fallback = lit("not found");
+
+        let schema = Schema::new(vec![
+            Field::new("s0", DataType::Int8),
+            Field::new("s1", DataType::Int8),
+            Field::new("s2", DataType::Utf8),
+        ])
+        .unwrap();
+        let expected = Field::new("s0", DataType::Utf8);
+
+        let coalesce = super::Coalesce {};
+        let output = coalesce
+            .to_field(&[col_0, col_1, fallback], &schema)
+            .unwrap();
+        assert_eq!(output, expected);
+    }
+
+    #[test]
+    fn test_to_field_with_incompatible_types() {
+        let col_0 = col("s0");
+        let col_1 = col("s1");
+        let col_2 = lit(1u32);
+
+        let schema = Schema::new(vec![
+            Field::new("s0", DataType::Date),
+            Field::new("s1", DataType::Boolean),
+            Field::new("s2", DataType::UInt32),
+        ]);
+        let expected = "could not determine supertype of Boolean and Date".to_string();
+        let coalesce = super::Coalesce {};
+        let DaftError::TypeError(e) = coalesce
+            .to_field(&[col_0, col_1, col_2], &schema.unwrap())
+            .unwrap_err()
+        else {
+            panic!("Expected error")
+        };
+
+        assert_eq!(e, expected);
     }
 }
