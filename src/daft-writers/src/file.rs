@@ -10,7 +10,8 @@ use crate::{FileWriter, TargetInMemorySizeBytesCalculator, WriterFactory};
 // It rotates the writer when the current file reaches the target size.
 struct TargetFileSizeWriter {
     current_in_memory_size_estimate: usize,
-    current_bytes_written: usize,
+    current_in_memory_bytes_written: usize,
+    total_physical_bytes_written: usize,
     current_writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Option<Table>>>,
     writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<Table>>>,
     size_calculator: Arc<TargetInMemorySizeBytesCalculator>,
@@ -30,7 +31,8 @@ impl TargetFileSizeWriter {
         let estimate = size_calculator.calculate_target_in_memory_size_bytes();
         Ok(Self {
             current_in_memory_size_estimate: estimate,
-            current_bytes_written: 0,
+            current_in_memory_bytes_written: 0,
+            total_physical_bytes_written: 0,
             current_writer: writer,
             writer_factory,
             size_calculator,
@@ -42,28 +44,29 @@ impl TargetFileSizeWriter {
 
     fn remaining_bytes_for_current_file(&self) -> usize {
         self.current_in_memory_size_estimate
-            .saturating_sub(self.current_bytes_written)
+            .saturating_sub(self.current_in_memory_bytes_written)
     }
 
     fn write_and_update_bytes(
         &mut self,
         input: Arc<MicroPartition>,
         size_bytes: usize,
-    ) -> DaftResult<()> {
-        self.current_bytes_written += size_bytes;
-        self.current_writer.write(input)?;
-        if self.current_bytes_written >= self.current_in_memory_size_estimate {
+    ) -> DaftResult<usize> {
+        self.current_in_memory_bytes_written += size_bytes;
+        let written_bytes = self.current_writer.write(input)?;
+        self.total_physical_bytes_written += written_bytes;
+        if self.current_in_memory_bytes_written >= self.current_in_memory_size_estimate {
             self.rotate_writer_and_update_estimates()?;
         }
-        Ok(())
+        Ok(written_bytes)
     }
 
     fn rotate_writer_and_update_estimates(&mut self) -> DaftResult<()> {
         // Record the size of the current file and update the inflation factor
-        if let Some(bytes) = self.current_writer.tell()? {
-            self.size_calculator
-                .record_and_update_inflation_factor(bytes, self.current_bytes_written);
-        }
+        self.size_calculator.record_and_update_inflation_factor(
+            self.current_writer.bytes_written(),
+            self.current_in_memory_bytes_written,
+        );
         // Update the target size estimate
         self.current_in_memory_size_estimate =
             self.size_calculator.calculate_target_in_memory_size_bytes();
@@ -74,7 +77,7 @@ impl TargetFileSizeWriter {
         }
 
         // Create a new writer and reset the current bytes written
-        self.current_bytes_written = 0;
+        self.current_in_memory_bytes_written = 0;
         self.current_writer = self
             .writer_factory
             .create_writer(self.results.len(), self.partition_values.as_ref())?;
@@ -86,14 +89,14 @@ impl FileWriter for TargetFileSizeWriter {
     type Input = Arc<MicroPartition>;
     type Result = Vec<Table>;
 
-    fn write(&mut self, input: Arc<MicroPartition>) -> DaftResult<()> {
+    fn write(&mut self, input: Arc<MicroPartition>) -> DaftResult<usize> {
         assert!(
             !self.is_closed,
             "Cannot write to a closed TargetFileSizeWriter"
         );
         use std::cmp::Ordering;
         if input.is_empty() {
-            return Ok(());
+            return Ok(0);
         }
 
         let input_size_bytes = input.size_bytes()?.expect(
@@ -102,6 +105,7 @@ impl FileWriter for TargetFileSizeWriter {
         let avg_row_size_bytes = max(input_size_bytes / input.len(), 1);
         // Write the input, rotating the writer when the current file reaches the target size
         let mut local_offset = 0;
+        let mut bytes_written = 0;
         loop {
             let rows_until_target = max(
                 self.remaining_bytes_for_current_file() / avg_row_size_bytes,
@@ -113,11 +117,11 @@ impl FileWriter for TargetFileSizeWriter {
                 Ordering::Equal | Ordering::Less => {
                     let to_write =
                         input.slice(local_offset, local_offset + remaining_input_rows)?;
-                    self.write_and_update_bytes(
+                    bytes_written += self.write_and_update_bytes(
                         to_write.into(),
                         remaining_input_rows * avg_row_size_bytes,
                     )?;
-                    return Ok(());
+                    return Ok(bytes_written);
                 }
                 // We have more rows to write, write the target amount, rotate the writer and continue
                 Ordering::Greater => {
@@ -132,13 +136,12 @@ impl FileWriter for TargetFileSizeWriter {
         }
     }
 
-    fn tell(&self) -> DaftResult<Option<usize>> {
-        // File writer does not support tell because it writes to multiple files
-        Ok(None)
+    fn bytes_written(&self) -> usize {
+        self.total_physical_bytes_written
     }
 
     fn close(&mut self) -> DaftResult<Self::Result> {
-        if self.current_bytes_written > 0 {
+        if self.current_in_memory_bytes_written > 0 {
             if let Some(result) = self.current_writer.close()? {
                 self.results.push(result);
             }

@@ -44,14 +44,15 @@ impl FileWriter for DummyWriter {
     type Input = Arc<MicroPartition>;
     type Result = Option<Table>;
 
-    fn write(&mut self, input: Self::Input) -> DaftResult<()> {
+    fn write(&mut self, input: Self::Input) -> DaftResult<usize> {
         self.write_count += 1;
-        self.byte_count += input.size_bytes()?.unwrap();
-        Ok(())
+        let size_bytes = input.size_bytes()?.unwrap();
+        self.byte_count += size_bytes;
+        Ok(size_bytes)
     }
 
-    fn tell(&self) -> DaftResult<Option<usize>> {
-        Ok(Some(self.byte_count))
+    fn bytes_written(&self) -> usize {
+        self.byte_count
     }
 
     fn close(&mut self) -> DaftResult<Self::Result> {

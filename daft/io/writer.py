@@ -74,26 +74,21 @@ class FileWriterBase(ABC):
             self.fs.create_dir(self.dir_path, recursive=True)
 
         self.compression = compression if compression is not None else "none"
+        self.position = 0
 
     def resolve_path_and_fs(self, root_dir: str, io_config: Optional[IOConfig] = None):
         [resolved_path], fs = _resolve_paths_and_filesystem(root_dir, io_config=io_config)
         return resolved_path, fs
 
     @abstractmethod
-    def write(self, table: MicroPartition) -> None:
+    def write(self, table: MicroPartition) -> int:
         """Write data to the file using the appropriate writer.
 
         Args:
             table: MicroPartition containing the data to be written.
-        """
-        pass
-
-    @abstractmethod
-    def tell(self) -> int:
-        """Return the current position in the file.
 
         Returns:
-            int: The current position in the file.
+            int: The number of bytes written to the file.
         """
         pass
 
@@ -146,17 +141,16 @@ class ParquetFileWriter(FileWriterBase):
             **opts,
         )
 
-    def write(self, table: MicroPartition) -> None:
+    def write(self, table: MicroPartition) -> int:
         assert not self.is_closed, "Cannot write to a closed ParquetFileWriter"
         if self.current_writer is None:
             self.current_writer = self._create_writer(table.schema().to_pyarrow_schema())
         self.current_writer.write_table(table.to_arrow(), row_group_size=len(table))
 
-    def tell(self) -> int:
-        if self.current_writer is not None and self.current_writer.file_handle is not None:
-            tell = self.current_writer.file_handle.tell()
-            return tell
-        return 0
+        current_position = self.current_writer.file_handle.tell()
+        bytes_written = current_position - self.position
+        self.position = current_position
+        return bytes_written
 
     def close(self) -> Table:
         if self.current_writer is not None:
@@ -196,16 +190,17 @@ class CSVFileWriter(FileWriterBase):
             schema,
         )
 
-    def write(self, table: MicroPartition) -> None:
+    def write(self, table: MicroPartition) -> int:
         assert not self.is_closed, "Cannot write to a closed CSVFileWriter"
         if self.current_writer is None:
             self.current_writer = self._create_writer(table.schema().to_pyarrow_schema())
         self.current_writer.write_table(table.to_arrow())
 
-    def tell(self) -> int:
-        if self.file_handle is not None:
-            return self.file_handle.tell()
-        return 0
+        assert self.file_handle is not None  # We should have created the file handle in _create_writer
+        current_position = self.file_handle.tell()
+        bytes_written = current_position - self.position
+        self.position = current_position
+        return bytes_written
 
     def close(self) -> Table:
         if self.current_writer is not None:
@@ -251,12 +246,17 @@ class IcebergWriter(ParquetFileWriter):
         self.partition_spec_id = partition_spec_id
         self.properties = properties
 
-    def write(self, table: MicroPartition):
+    def write(self, table: MicroPartition) -> int:
         assert not self.is_closed, "Cannot write to a closed IcebergFileWriter"
         if self.current_writer is None:
             self.current_writer = self._create_writer(self.file_schema)
         casted = coerce_pyarrow_table_to_schema(table.to_arrow(), self.file_schema)
         self.current_writer.write_table(casted)
+
+        current_position = self.current_writer.file_handle.tell()
+        bytes_written = current_position - self.position
+        self.position = current_position
+        return bytes_written
 
     def close(self) -> Table:
         if self.current_writer is not None:
@@ -304,7 +304,7 @@ class DeltalakeWriter(ParquetFileWriter):
     def resolve_path_and_fs(self, root_dir: str, io_config: Optional[IOConfig] = None):
         return "", make_deltalake_fs(root_dir, io_config)
 
-    def write(self, table: MicroPartition):
+    def write(self, table: MicroPartition) -> int:
         assert not self.is_closed, "Cannot write to a closed DeltalakeFileWriter"
 
         converted_arrow_table = sanitize_table_for_deltalake(
@@ -315,6 +315,11 @@ class DeltalakeWriter(ParquetFileWriter):
         if self.current_writer is None:
             self.current_writer = self._create_writer(converted_arrow_table.schema)
         self.current_writer.write_table(converted_arrow_table)
+
+        current_position = self.current_writer.file_handle.tell()
+        bytes_written = current_position - self.position
+        self.position = current_position
+        return bytes_written
 
     def close(self) -> Table:
         if self.current_writer is not None:

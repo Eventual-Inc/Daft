@@ -24,14 +24,11 @@ impl SizeBasedBuffer {
     }
 
     fn push(&mut self, mp: Arc<MicroPartition>) -> DaftResult<()> {
-        assert!(!mp.is_empty());
         for table in mp.get_tables()?.iter() {
             let size_bytes = table.size_bytes()?;
             self.size_bytes += size_bytes;
             self.buffer.push_back((table.clone(), size_bytes));
         }
-        println!("SizeBasedBuffer size_bytes: {}", self.size_bytes);
-        println!("SizeBasedBuffer buffer: {:?}", self.buffer.len());
         Ok(())
     }
 
@@ -51,16 +48,17 @@ impl SizeBasedBuffer {
 
         while let Some((table, size)) = self.buffer.pop_front() {
             // If we can fit the table in the current batch, add it and continue
-            if bytes_taken + size <= max_bytes {
+            if bytes_taken + size <= min_bytes {
                 bytes_taken += size;
                 tables.push(table);
-
-                // If we are above the minimum desired size, we can stop
-                if bytes_taken >= min_bytes {
-                    break;
-                }
             }
-            // Else, we need to split the table
+            // Else if we have enough tables to fill the batch, break
+            else if bytes_taken + size <= max_bytes {
+                bytes_taken += size;
+                tables.push(table);
+                break;
+            }
+            // Else, we have a table that is too big for the batch, split it and add the remainder back to the buffer
             else {
                 let rows = table.len();
                 let avg_row_bytes = max(size / rows, 1);
@@ -115,7 +113,6 @@ impl SizeBasedBuffer {
 // a row group at a time.
 pub struct TargetBatchWriter {
     size_calculator: Arc<TargetInMemorySizeBytesCalculator>,
-    previous_position: usize,
     writer: Box<dyn FileWriter<Input = Arc<MicroPartition>, Result = Option<Table>>>,
     buffer: SizeBasedBuffer,
     is_closed: bool,
@@ -132,7 +129,6 @@ impl TargetBatchWriter {
     ) -> Self {
         Self {
             size_calculator,
-            previous_position: 0,
             writer,
             buffer: SizeBasedBuffer::new(),
             is_closed: false,
@@ -143,16 +139,11 @@ impl TargetBatchWriter {
         &mut self,
         input: Arc<MicroPartition>,
         in_memory_size_bytes: usize,
-    ) -> DaftResult<()> {
-        self.writer.write(input)?;
-        let current_position = self.writer.tell()?;
-        if let Some(current_position) = current_position {
-            let actual_size_bytes = current_position - self.previous_position;
-            self.previous_position = current_position;
-            self.size_calculator
-                .record_and_update_inflation_factor(actual_size_bytes, in_memory_size_bytes);
-        }
-        Ok(())
+    ) -> DaftResult<usize> {
+        let bytes_written = self.writer.write(input)?;
+        self.size_calculator
+            .record_and_update_inflation_factor(bytes_written, in_memory_size_bytes);
+        Ok(bytes_written)
     }
 }
 
@@ -160,13 +151,13 @@ impl FileWriter for TargetBatchWriter {
     type Input = Arc<MicroPartition>;
     type Result = Option<Table>;
 
-    fn write(&mut self, input: Arc<MicroPartition>) -> DaftResult<()> {
+    fn write(&mut self, input: Arc<MicroPartition>) -> DaftResult<usize> {
         assert!(
             !self.is_closed,
             "Cannot write to a closed TargetBatchWriter"
         );
         if input.is_empty() {
-            return Ok(());
+            return Ok(0);
         }
 
         self.buffer.push(input)?;
@@ -176,19 +167,19 @@ impl FileWriter for TargetBatchWriter {
             (target_size_bytes as f64 * (1.0 - Self::SIZE_BYTE_LENIENCY)) as usize;
         let mut max_size_bytes =
             (target_size_bytes as f64 * (1.0 + Self::SIZE_BYTE_LENIENCY)) as usize;
-
+        let mut bytes_written = 0;
         while let Some(mp) = self.buffer.pop(min_size_bytes, max_size_bytes)? {
-            self.write_and_update_inflation_factor(mp, target_size_bytes)?;
+            bytes_written += self.write_and_update_inflation_factor(mp, target_size_bytes)?;
             target_size_bytes = self.size_calculator.calculate_target_in_memory_size_bytes();
             min_size_bytes = (target_size_bytes as f64 * (1.0 - Self::SIZE_BYTE_LENIENCY)) as usize;
             max_size_bytes = (target_size_bytes as f64 * (1.0 + Self::SIZE_BYTE_LENIENCY)) as usize;
         }
 
-        Ok(())
+        Ok(bytes_written)
     }
 
-    fn tell(&self) -> DaftResult<Option<usize>> {
-        self.writer.tell()
+    fn bytes_written(&self) -> usize {
+        self.writer.bytes_written()
     }
 
     fn close(&mut self) -> DaftResult<Self::Result> {

@@ -17,10 +17,7 @@ mod pyarrow;
 
 use std::{
     cmp::min,
-    sync::{
-        atomic::{AtomicU64, AtomicUsize, Ordering},
-        Arc,
-    },
+    sync::{Arc, RwLock},
 };
 
 use batch::TargetBatchWriterFactory;
@@ -43,14 +40,14 @@ pub trait FileWriter: Send + Sync {
     type Input;
     type Result;
 
-    /// Write data to the file.
-    fn write(&mut self, data: Self::Input) -> DaftResult<()>;
+    /// Write data to the file, returning the number of bytes written.
+    fn write(&mut self, data: Self::Input) -> DaftResult<usize>;
 
     /// Close the file and return the result. The caller should NOT write to the file after calling this method.
     fn close(&mut self) -> DaftResult<Self::Result>;
 
     /// Return the current position of the file, if applicable.
-    fn tell(&self) -> DaftResult<Option<usize>>;
+    fn bytes_written(&self) -> usize;
 }
 
 /// This trait is used to abstract the creation of a `FileWriter`
@@ -171,23 +168,30 @@ pub fn make_catalog_writer_factory(
 /// This struct is used to adaptively calculate the target in-memory size of a table
 /// given a target on-disk size, and the actual on-disk size of the written data.
 pub(crate) struct TargetInMemorySizeBytesCalculator {
-    estimated_inflation_factor: AtomicU64, // Using u64 to store f64 bits
     target_size_bytes: usize,
-    num_samples: AtomicUsize,
+    state: RwLock<CalculatorState>,
+}
+
+struct CalculatorState {
+    estimated_inflation_factor: f64,
+    num_samples: usize,
 }
 
 impl TargetInMemorySizeBytesCalculator {
     fn new(target_size_bytes: usize, initial_inflation_factor: f64) -> Self {
         assert!(target_size_bytes > 0 && initial_inflation_factor > 0.0);
         Self {
-            estimated_inflation_factor: AtomicU64::new(initial_inflation_factor.to_bits()),
             target_size_bytes,
-            num_samples: AtomicUsize::new(0),
+            state: RwLock::new(CalculatorState {
+                estimated_inflation_factor: initial_inflation_factor,
+                num_samples: 0,
+            }),
         }
     }
 
     fn calculate_target_in_memory_size_bytes(&self) -> usize {
-        let factor = f64::from_bits(self.estimated_inflation_factor.load(Ordering::Relaxed));
+        let state = self.state.read().unwrap();
+        let factor = state.estimated_inflation_factor;
         (self.target_size_bytes as f64 * factor) as usize
     }
 
@@ -201,13 +205,11 @@ impl TargetInMemorySizeBytesCalculator {
         if actual_on_disk_size_bytes == 0 {
             return;
         }
-
         let new_inflation_factor =
             estimate_in_memory_size_bytes as f64 / actual_on_disk_size_bytes as f64;
-        let new_num_samples = self.num_samples.fetch_add(1, Ordering::Relaxed) + 1;
+        let mut state = self.state.write().unwrap();
 
-        let current_factor =
-            f64::from_bits(self.estimated_inflation_factor.load(Ordering::Relaxed));
+        state.num_samples += 1;
 
         // Calculate running average:
         // For n samples, new average = (previous_avg * (n-1)/n) + (new_value * 1/n)
@@ -217,16 +219,15 @@ impl TargetInMemorySizeBytesCalculator {
         // - Second sample (n=2): Weights previous and new equally (1/2 each)
         // - Third sample (n=3): Weights are 2/3 previous (preserving equal weight of its samples)
         //                       and 1/3 new
-        let new_factor = if new_num_samples == 1 {
+        let new_factor = if state.num_samples == 1 {
             new_inflation_factor
         } else {
-            current_factor.mul_add(
-                (new_num_samples - 1) as f64 / new_num_samples as f64,
-                new_inflation_factor * (1.0 / new_num_samples as f64),
+            state.estimated_inflation_factor.mul_add(
+                (state.num_samples - 1) as f64 / state.num_samples as f64,
+                new_inflation_factor * (1.0 / state.num_samples as f64),
             )
         };
 
-        self.estimated_inflation_factor
-            .store(new_factor.to_bits(), Ordering::Relaxed);
+        state.estimated_inflation_factor = new_factor;
     }
 }
