@@ -37,7 +37,7 @@ on:
 jobs:
   run-command:
     runs-on: [self-hosted, linux, x64, ci-dev]
-    timeout-minutes: 15 # Remove for ssh debugging
+    # timeout-minutes: 15 # Remove for ssh debugging
     permissions:
       id-token: write
       contents: read
@@ -87,6 +87,9 @@ jobs:
       run: |
         source .venv/bin/activate
         ray dashboard .github/assets/ray.yaml &
+
+    - uses: lhotari/action-upterm@v1
+
     - name: Submit job to ray cluster
       run: |
         source .venv/bin/activate
