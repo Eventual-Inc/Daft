@@ -1,6 +1,6 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    prelude::{BooleanArray, DaftLogical, DataType, Field, Schema},
+    prelude::{BooleanArray, DaftLogical, Field, Schema},
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
@@ -23,34 +23,16 @@ impl ScalarUDF for Coalesce {
     }
 
     fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-        fn ensure_valid_dtype(Field { dtype, .. }: &Field) -> DaftResult<()> {
-            match dtype {
-                DataType::Boolean | DataType::Utf8 => Ok(()),
-                dt if dt.is_physical() || dt.is_primitive() => Ok(()),
-
-                dt if dt.is_list() | dt.is_nested() => {
-                    Err(DaftError::not_implemented("coalesce for nested datatypes"))
-                }
-                other => Err(DaftError::ComputeError(format!(
-                    "Unsupported data type for coalesce: {:?}",
-                    other
-                ))),
-            }
-        }
-
         match inputs {
             [] => Err(DaftError::SchemaMismatch(
                 "Expected at least 1 input args, got 0".to_string(),
             )),
             [input] => {
                 let input_field = input.to_field(schema)?;
-                ensure_valid_dtype(&input_field)?;
                 Ok(input_field)
             }
-
             _ => {
                 let first_field = inputs[0].to_field(schema)?;
-                ensure_valid_dtype(&first_field)?;
 
                 for input in inputs {
                     if input.to_field(schema)?.dtype != first_field.dtype {
@@ -79,6 +61,7 @@ impl ScalarUDF for Coalesce {
 
                 let mut current_value = Series::full_null(name, dtype, len);
                 let remainder = BooleanArray::from_values(name, vec![true; len].into_iter());
+                let all_false = BooleanArray::from_values(name, vec![false; len].into_iter());
                 let mut remainder = remainder.into_series();
 
                 for input in inputs {
@@ -86,9 +69,14 @@ impl ScalarUDF for Coalesce {
                     current_value = input.if_else(&current_value, &to_apply)?;
 
                     remainder = remainder.and(&input.is_null()?)?;
+
+                    // exit early if all values are filled
+                    if remainder.bool().unwrap() == &all_false {
+                        break;
+                    }
                 }
 
-                Ok(current_value)
+                Ok(current_value.rename(name))
             }
         }
     }
