@@ -14,15 +14,20 @@ echo $WHEELNAME
 ```
 """
 
-import sys
+import argparse
 from pathlib import Path
 
 import boto3
 import wheellib
 
 if __name__ == "__main__":
-    commit_hash = sys.argv[1]
-    platform_substring = sys.argv[2]
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--commit-hash", required=True)
+    parser.add_argument("--platform-substring", required=True, choices=["x86", "aarch", "arm"])
+    args = parser.parse_args()
+
+    commit_hash = args.commit_hash
+    platform_substring = args.platform_substring
 
     s3 = boto3.client("s3")
     response = s3.list_objects_v2(Bucket="github-actions-artifacts-bucket", Prefix=f"builds/{commit_hash}/")
@@ -34,11 +39,8 @@ if __name__ == "__main__":
             matches.append(wheelname)
 
     if len(matches) > 1:
-        raise Exception(
+        raise RuntimeError(
             f"Multiple wheels found that match the given platform substring: {platform_substring}; expected just 1"
         )
 
-    try:
-        print(next(iter(matches)))
-    except StopIteration:
-        pass
+    print(matches[0]) if matches else None
