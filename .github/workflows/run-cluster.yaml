@@ -42,7 +42,7 @@ jobs:
       id-token: write
       contents: read
     steps:
-    - name: Echo event payload
+    - name: Log workflow inputs
       run: echo "${{ toJson(github.event.inputs) }}"
     - name: Checkout repo
       uses: actions/checkout@v4
