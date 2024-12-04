@@ -6,6 +6,8 @@ pub use bitmap::{encode_bool as bitpacked_encode, BitmapIter};
 pub use decoder::Decoder;
 pub use encoder::{encode_bool, encode_u32};
 
+use std::convert::TryInto;
+
 use crate::error::Error;
 
 use super::bitpacked;
@@ -48,10 +50,7 @@ fn read_next<'a>(decoder: &mut Decoder<'a>, remaining: usize) -> Result<State<'a
             State::Bitpacked(decoder)
         }
         Some(HybridEncoded::Rle(pack, additional)) => {
-            let mut bytes = [0u8; std::mem::size_of::<u32>()];
-            pack.iter().zip(bytes.iter_mut()).for_each(|(src, dst)| {
-                *dst = *src;
-            });
+            let bytes = pack.try_into().expect("Parquet should always encode u32 values");
             let value = u32::from_le_bytes(bytes);
             if additional == 1 {
                 State::Single(Some(value))
