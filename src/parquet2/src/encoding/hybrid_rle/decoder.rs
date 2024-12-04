@@ -193,7 +193,7 @@ mod tests {
         let values = [
             4, 0, 0, 0, // Length indicator as u32.
             0b00000011, // Bitpacked indicator with 1 value (1 << 1 | 1).
-            0b00001101,  // Values (true, false, true, true).
+            0b00001101, // Values (true, false, true, true).
             0b00001000, // RLE indicator (4 << 1 | 0)
             false as u8 // RLE value
         ];
