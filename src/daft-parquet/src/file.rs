@@ -511,9 +511,8 @@ impl ParquetFileReader {
             for ((row_range, chunk_iter_handle), output_sender) in chunk_iter_handles.zip(senders) {
                 // We want to ensure that the channel capacity can hold one morsel worth of data for better deserialization performance.
                 let channel_size = {
-                    let chunks_per_morsel =
-                        max((PARQUET_MORSEL_SIZE + chunk_size - 1) / chunk_size, 1);
-                    let max_num_chunks = max((row_range.num_rows + chunk_size - 1) / chunk_size, 1);
+                    let chunks_per_morsel = max(PARQUET_MORSEL_SIZE / chunk_size, 1);
+                    let max_num_chunks = max(row_range.num_rows / chunk_size, 1);
                     min(chunks_per_morsel, max_num_chunks)
                 };
 

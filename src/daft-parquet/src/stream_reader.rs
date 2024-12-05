@@ -1,8 +1,5 @@
 use std::{
-    collections::HashSet,
-    fs::File,
-    io::{Read, Seek},
-    sync::Arc,
+    cmp::max, collections::HashSet, fs::File, io::{Read, Seek}, sync::Arc
 };
 
 use arrow2::{bitmap::Bitmap, io::parquet::read};
@@ -647,7 +644,7 @@ pub async fn local_parquet_stream(
                 delete_rows.clone(),
                 sender,
                 permit,
-                1,
+                max(PARQUET_MORSEL_SIZE / chunk_size, 1),
             );
             table_tasks.push(table_task);
         }
