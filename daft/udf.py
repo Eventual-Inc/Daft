@@ -358,12 +358,12 @@ class UDF:
         ...     def __call__(self, data):
         ...         return [x + self.text for x in data.to_pylist()]
         >>>
-        >>> # Create a customized version of MyInitializedClass by overriding the init args
-        >>> MyInitializedClass_CustomInitArgs = MyInitializedClass.with_init_args(text=" my old friend")
+        >>> # Create a customized version of MyUdfWithInit by overriding the init args
+        >>> MyUdfWithInit_CustomInitArgs = MyUdfWithInit.with_init_args(text=" my old friend")
         >>>
         >>> df = daft.from_pydict({"foo": ["hello", "hello", "hello"]})
-        >>> df = df.with_column("bar_world", MyInitializedClass(df["foo"]))
-        >>> df = df.with_column("bar_custom", MyInitializedClass_CustomInitArgs(df["foo"]))
+        >>> df = df.with_column("bar_world", MyUdfWithInit(df["foo"]))
+        >>> df = df.with_column("bar_custom", MyUdfWithInit_CustomInitArgs(df["foo"]))
         >>> df.show()
         ╭───────┬─────────────┬─────────────────────╮
         │ foo   ┆ bar_world   ┆ bar_custom          │
