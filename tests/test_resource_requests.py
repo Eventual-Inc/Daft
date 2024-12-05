@@ -13,11 +13,6 @@ from daft.expressions import col
 from daft.internal.gpu import cuda_visible_devices
 from tests.conftest import get_tests_daft_runner_name
 
-pytestmark = pytest.mark.skipif(
-    get_tests_daft_runner_name() == "native",
-    reason="Native runner does not support resource requests",
-)
-
 
 def no_gpu_available() -> bool:
     return len(cuda_visible_devices()) == 0
@@ -81,18 +76,19 @@ def test_resource_request_pickle_roundtrip():
 ###
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() not in {"py"}, reason="requires PyRunner to be in use")
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() not in {"native", "py"}, reason="requires Native or Py Runner to be in use"
+)
 def test_requesting_too_many_cpus():
     df = daft.from_pydict(DATA)
-    system_info = SystemInfo()
 
-    my_udf_parametrized = my_udf.override_options(num_cpus=system_info.cpu_count() + 1)
+    my_udf_parametrized = my_udf.override_options(num_cpus=1000)
     df = df.with_column(
         "foo",
         my_udf_parametrized(col("id")),
     )
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(Exception):
         df.collect()
 
 
