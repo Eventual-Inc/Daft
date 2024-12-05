@@ -31,7 +31,8 @@ def test_udf():
 
 
 @pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
-def test_class_udf(batch_size):
+@pytest.mark.parametrize("use_actor_pool", [False, True])
+def test_class_udf(batch_size, use_actor_pool):
     df = daft.from_pydict({"a": ["foo", "bar", "baz"]})
 
     @udf(return_dtype=DataType.string(), batch_size=batch_size)
@@ -41,6 +42,9 @@ def test_class_udf(batch_size):
 
         def __call__(self, data):
             return Series.from_pylist([d.as_py() * self.n for d in data.to_arrow()])
+
+    if use_actor_pool:
+        RepeatN = RepeatN.with_concurrency(2)
 
     expr = RepeatN(col("a"))
     field = expr._to_field(df.schema())
@@ -52,7 +56,8 @@ def test_class_udf(batch_size):
 
 
 @pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
-def test_class_udf_init_args(batch_size):
+@pytest.mark.parametrize("use_actor_pool", [False, True])
+def test_class_udf_init_args(batch_size, use_actor_pool):
     df = daft.from_pydict({"a": ["foo", "bar", "baz"]})
 
     @udf(return_dtype=DataType.string(), batch_size=batch_size)
@@ -62,6 +67,9 @@ def test_class_udf_init_args(batch_size):
 
         def __call__(self, data):
             return Series.from_pylist([d.as_py() * self.n for d in data.to_arrow()])
+
+    if use_actor_pool:
+        RepeatN = RepeatN.with_concurrency(2)
 
     expr = RepeatN(col("a"))
     field = expr._to_field(df.schema())
@@ -79,7 +87,8 @@ def test_class_udf_init_args(batch_size):
 
 
 @pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
-def test_class_udf_init_args_no_default(batch_size):
+@pytest.mark.parametrize("use_actor_pool", [False, True])
+def test_class_udf_init_args_no_default(batch_size, use_actor_pool):
     df = daft.from_pydict({"a": ["foo", "bar", "baz"]})
 
     @udf(return_dtype=DataType.string(), batch_size=batch_size)
@@ -89,6 +98,9 @@ def test_class_udf_init_args_no_default(batch_size):
 
         def __call__(self, data):
             return Series.from_pylist([d.as_py() * self.n for d in data.to_arrow()])
+
+    if use_actor_pool:
+        RepeatN = RepeatN.with_concurrency(2)
 
     with pytest.raises(ValueError, match="Cannot call class UDF without initialization arguments."):
         RepeatN(col("a"))
@@ -101,7 +113,8 @@ def test_class_udf_init_args_no_default(batch_size):
     assert result.to_pydict() == {"a": ["foofoo", "barbar", "bazbaz"]}
 
 
-def test_class_udf_init_args_bad_args():
+@pytest.mark.parametrize("use_actor_pool", [False, True])
+def test_class_udf_init_args_bad_args(use_actor_pool):
     @udf(return_dtype=DataType.string())
     class RepeatN:
         def __init__(self, initial_n):
@@ -109,6 +122,9 @@ def test_class_udf_init_args_bad_args():
 
         def __call__(self, data):
             return Series.from_pylist([d.as_py() * self.n for d in data.to_arrow()])
+
+    if use_actor_pool:
+        RepeatN = RepeatN.with_concurrency(2)
 
     with pytest.raises(TypeError, match="missing a required argument: 'initial_n'"):
         RepeatN.with_init_args(wrong=5)
@@ -207,10 +223,14 @@ def test_udf_error():
 
 
 @pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
-def test_no_args_udf_call(batch_size):
+@pytest.mark.parametrize("use_actor_pool", [False, True])
+def test_no_args_udf_call(batch_size, use_actor_pool):
     @udf(return_dtype=DataType.int64(), batch_size=batch_size)
     def udf_no_args():
         pass
+
+    if use_actor_pool:
+        udf_no_args = udf_no_args.with_concurrency(2)
 
     assert isinstance(udf_no_args(), Expression)
 
@@ -221,10 +241,14 @@ def test_no_args_udf_call(batch_size):
         udf_no_args(invalid="invalid")
 
 
-def test_full_udf_call():
+@pytest.mark.parametrize("use_actor_pool", [False, True])
+def test_full_udf_call(use_actor_pool):
     @udf(return_dtype=DataType.int64())
     def full_udf(e_arg, val, kwarg_val=None, kwarg_ex=None):
         pass
+
+    if use_actor_pool:
+        full_udf = full_udf.with_concurrency(2)
 
     assert isinstance(full_udf(col("x"), 1, kwarg_val=0, kwarg_ex=col("y")), Expression)
 
@@ -232,8 +256,8 @@ def test_full_udf_call():
         full_udf()
 
 
-@pytest.mark.parametrize("set_concurrency", [False, True])
-def test_class_udf_initialization_error(set_concurrency):
+@pytest.mark.parametrize("use_actor_pool", [False, True])
+def test_class_udf_initialization_error(use_actor_pool):
     df = daft.from_pydict({"a": ["foo", "bar", "baz"]})
 
     @udf(return_dtype=DataType.string())
@@ -244,11 +268,11 @@ def test_class_udf_initialization_error(set_concurrency):
         def __call__(self, data):
             return data
 
-    if set_concurrency:
+    if use_actor_pool:
         IdentityWithInitError = IdentityWithInitError.with_concurrency(1)
 
     expr = IdentityWithInitError(col("a"))
-    if set_concurrency:
+    if use_actor_pool:
         with pytest.raises(Exception):
             df.select(expr).collect()
     else:
@@ -256,10 +280,14 @@ def test_class_udf_initialization_error(set_concurrency):
             df.select(expr).collect()
 
 
-def test_udf_equality():
+@pytest.mark.parametrize("use_actor_pool", [False, True])
+def test_udf_equality(use_actor_pool):
     @udf(return_dtype=DataType.int64())
     def udf1(x):
         pass
+
+    if use_actor_pool:
+        udf1 = udf1.with_concurrency(2)
 
     assert expr_structurally_equal(udf1("x"), udf1("x"))
     assert not expr_structurally_equal(udf1("x"), udf1("y"))
@@ -327,6 +355,7 @@ def test_udf_arbitrary_number_of_kwargs(batch_size):
 
 
 @pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
+@pytest.mark.parametrize("use_actor_pool", [False, True])
 def test_udf_arbitrary_number_of_args_with_kwargs(batch_size):
     table = MicroPartition.from_pydict({"a": [1, 2, 3], "b": [1, 2, 3], "c": [1, 2, 3]})
 

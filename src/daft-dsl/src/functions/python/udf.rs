@@ -76,6 +76,8 @@ impl PythonUDF {
         let func = match &self.func {
             MaybeInitializedUDF::Initialized(func) => func.clone().unwrap(),
             MaybeInitializedUDF::Uninitialized { inner, init_args } => {
+                // TODO(Kevin): warn user if initialization is taking too long and ask them to use actor pool UDFs
+
                 py_udf_initialize(inner.clone().unwrap(), init_args.clone().unwrap())?
             }
         };

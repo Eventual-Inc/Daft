@@ -19,17 +19,14 @@ UserDefinedPyFuncLike = Union[UserDefinedPyFunc, type]
 
 @dataclasses.dataclass(frozen=True)
 class UninitializedUdf:
-    inner: UserDefinedPyFuncLike
+    inner: Callable[..., UserDefinedPyFunc]
 
     def initialize(self, init_args: InitArgsType) -> UserDefinedPyFunc:
-        if isinstance(self.inner, type):
-            if init_args is None:
-                return self.inner()
-            else:
-                args, kwargs = init_args
-                return self.inner(*args, **kwargs)
+        if init_args is None:
+            return self.inner()
         else:
-            return self.inner
+            args, kwargs = init_args
+            return self.inner(*args, **kwargs)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -228,16 +225,21 @@ class UDF:
         # self.__module__ and self.__qualname__, which is used in `__reduce__` during serialization.
         functools.update_wrapper(self, self.inner)
 
+        # construct the UninitializedUdf here so that the constructed expressions can maintain equality
+        if isinstance(self.inner, type):
+            self.wrapped_inner = UninitializedUdf(self.inner)
+        else:
+            self.wrapped_inner = UninitializedUdf(lambda: self.inner)
+
     def __call__(self, *args, **kwargs) -> Expression:
         self._validate_init_args()
 
         bound_args = self._bind_args(*args, **kwargs)
         expressions = list(bound_args.expressions().values())
-        uninitialized_func = UninitializedUdf(self.inner)
 
         return Expression.udf(
             name=self.name,
-            inner=uninitialized_func,
+            inner=self.wrapped_inner,
             bound_args=bound_args,
             expressions=expressions,
             return_dtype=self.return_dtype,
@@ -301,6 +303,9 @@ class UDF:
                     "Cannot call class UDF without initialization arguments. Please either specify default arguments in your __init__ or provide "
                     "initialization arguments using `.with_init_args(...)`."
                 )
+        else:
+            if self.init_args is not None:
+                raise ValueError("Function UDFs cannot have init args.")
 
     def _bind_args(self, *args, **kwargs) -> BoundUDFArgs:
         if isinstance(self.inner, type):
@@ -353,8 +358,26 @@ class UDF:
         ...     def __call__(self, data):
         ...         return [x + self.text for x in data.to_pylist()]
         >>>
-        >>> # Create a customized version of MyUdfWithInit by overriding the init args
-        >>> MyUdfWithInit_CustomInitArgs = MyUdfWithInit.with_init_args(text=" my old friend")
+        >>> # Create a customized version of MyInitializedClass by overriding the init args
+        >>> MyInitializedClass_CustomInitArgs = MyInitializedClass.with_init_args(text=" my old friend")
+        >>>
+        >>> df = daft.from_pydict({"foo": ["hello", "hello", "hello"]})
+        >>> df = df.with_column("bar_world", MyInitializedClass(df["foo"]))
+        >>> df = df.with_column("bar_custom", MyInitializedClass_CustomInitArgs(df["foo"]))
+        >>> df.show()
+        ╭───────┬─────────────┬─────────────────────╮
+        │ foo   ┆ bar_world   ┆ bar_custom          │
+        │ ---   ┆ ---         ┆ ---                 │
+        │ Utf8  ┆ Utf8        ┆ Utf8                │
+        ╞═══════╪═════════════╪═════════════════════╡
+        │ hello ┆ hello world ┆ hello my old friend │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ hello ┆ hello world ┆ hello my old friend │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ hello ┆ hello world ┆ hello my old friend │
+        ╰───────┴─────────────┴─────────────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
         """
         if not isinstance(self.inner, type):
             raise ValueError("Function UDFs cannot have init args.")

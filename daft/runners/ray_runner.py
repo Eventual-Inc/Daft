@@ -1082,7 +1082,14 @@ def _build_partitions_on_actor_pool(
 @ray.remote
 class DaftRayActor:
     def __init__(self, daft_execution_config: PyDaftExecutionConfig, uninitialized_projection: ExpressionsProjection):
+        from daft.daft import get_udf_names
+
         self.daft_execution_config = daft_execution_config
+
+        logger.info(
+            "Initializing stateful UDFs: %s",
+            ", ".join(name for expr in uninitialized_projection for name in get_udf_names(expr._expr)),
+        )
         self.initialized_projection = ExpressionsProjection([e._initialize_udfs() for e in uninitialized_projection])
 
     @ray.method(num_returns=2)

@@ -128,7 +128,7 @@ pub fn get_concurrency(exprs: &[ExprRef]) -> usize {
     projection_concurrency.expect("get_concurrency expects one UDF with concurrency set")
 }
 
-/// Gets the concurrency from the first UDF encountered in a given slice of expressions
+/// Gets the batch size from the first UDF encountered in a given slice of expressions
 pub fn get_batch_size(exprs: &[ExprRef]) -> Option<usize> {
     let mut projection_batch_size = None;
     for expr in exprs {
