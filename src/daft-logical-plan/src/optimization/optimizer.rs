@@ -94,12 +94,6 @@ impl Optimizer {
     pub fn new(config: OptimizerConfig) -> Self {
         let mut rule_batches = Vec::new();
 
-        // we want to simplify expressions first to make the rest of the rules easier
-        rule_batches.push(RuleBatch::new(
-            vec![Box::new(SimplifyExpressionsRule::new())],
-            RuleExecutionStrategy::FixedPoint(Some(3)),
-        ));
-
         // --- Split ActorPoolProjection nodes from Project nodes ---
         // This is feature-flagged behind DAFT_ENABLE_ACTOR_POOL_PROJECTIONS=1
         if config.enable_actor_pool_projections {
@@ -117,6 +111,12 @@ impl Optimizer {
         rule_batches.push(RuleBatch::new(
             vec![Box::new(LiftProjectFromAgg::new())],
             RuleExecutionStrategy::Once,
+        ));
+
+        // we want to simplify expressions first to make the rest of the rules easier
+        rule_batches.push(RuleBatch::new(
+            vec![Box::new(SimplifyExpressionsRule::new())],
+            RuleExecutionStrategy::FixedPoint(Some(3)),
         ));
 
         // --- Bulk of our rules ---
