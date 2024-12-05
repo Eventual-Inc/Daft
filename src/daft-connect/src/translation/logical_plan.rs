@@ -9,13 +9,14 @@ use tracing::warn;
 
 use crate::translation::logical_plan::{
     aggregate::aggregate, local_relation::local_relation, project::project, range::range,
-    set_op::set_op, to_df::to_df, with_columns::with_columns,
+    repartition::repartition, set_op::set_op, to_df::to_df, with_columns::with_columns,
 };
 
 mod aggregate;
 mod local_relation;
 mod project;
 mod range;
+mod repartition;
 mod set_op;
 mod to_df;
 mod with_columns;
@@ -55,6 +56,9 @@ pub fn to_logical_plan(relation: Relation) -> eyre::Result<Plan> {
         }
         RelType::WithColumns(w) => {
             with_columns(*w).wrap_err("Failed to apply with_columns to logical plan")
+        }
+        RelType::Repartition(r) => {
+            repartition(*r).wrap_err("Failed to apply repartition to logical plan")
         }
         RelType::ToDf(t) => to_df(*t).wrap_err("Failed to apply to_df to logical plan"),
         RelType::LocalRelation(l) => {
