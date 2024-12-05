@@ -16,55 +16,42 @@ use crate::PhysicalPlanRef;
 pub struct CrossJoin {
     pub left: PhysicalPlanRef,
     pub right: PhysicalPlanRef,
-
-    /// the side that is used for the outer loop is relevant for maintaining the clustering spec
     pub outer_loop_side: JoinSide,
     pub clustering_spec: ClusteringSpecRef,
 }
 
 impl CrossJoin {
-    pub(crate) fn new(left: PhysicalPlanRef, right: PhysicalPlanRef) -> Self {
+    pub(crate) fn new(
+        left: PhysicalPlanRef,
+        right: PhysicalPlanRef,
+        outer_loop_side: JoinSide,
+    ) -> Self {
         let left_spec = left.clustering_spec();
         let right_spec = right.clustering_spec();
 
         let num_partitions = left_spec.num_partitions() * right_spec.num_partitions();
 
-        fn try_clustering_spec_from(
-            spec: &ClusteringSpec,
-            other_spec: &ClusteringSpec,
-            num_partitions: usize,
-        ) -> Option<ClusteringSpec> {
-            if other_spec.num_partitions() == 1 {
-                match spec {
-                    ClusteringSpec::Hash(HashClusteringConfig { by, .. }) => Some(
-                        ClusteringSpec::Hash(HashClusteringConfig::new(num_partitions, by.clone())),
-                    ),
-                    ClusteringSpec::Range(RangeClusteringConfig { by, descending, .. }) => {
-                        Some(ClusteringSpec::Range(RangeClusteringConfig::new(
-                            num_partitions,
-                            by.clone(),
-                            descending.clone(),
-                        )))
-                    }
-                    _ => None,
-                }
-            } else {
-                None
-            }
-        }
+        let (outer_spec, inner_spec) = match outer_loop_side {
+            JoinSide::Left => (left_spec, right_spec),
+            JoinSide::Right => (right_spec, left_spec),
+        };
 
-        let (outer_loop_side, clustering_spec) = if let Some(spec) =
-            try_clustering_spec_from(&left_spec, &right_spec, num_partitions)
-        {
-            (JoinSide::Left, spec)
-        } else if let Some(spec) = try_clustering_spec_from(&right_spec, &left_spec, num_partitions)
-        {
-            (JoinSide::Right, spec)
+        let clustering_spec = if inner_spec.num_partitions() == 1 {
+            match outer_spec.as_ref() {
+                ClusteringSpec::Hash(HashClusteringConfig { by, .. }) => {
+                    ClusteringSpec::Hash(HashClusteringConfig::new(num_partitions, by.clone()))
+                }
+                ClusteringSpec::Range(RangeClusteringConfig { by, descending, .. }) => {
+                    ClusteringSpec::Range(RangeClusteringConfig::new(
+                        num_partitions,
+                        by.clone(),
+                        descending.clone(),
+                    ))
+                }
+                _ => ClusteringSpec::Unknown(UnknownClusteringConfig::new(num_partitions)),
+            }
         } else {
-            (
-                JoinSide::Left,
-                ClusteringSpec::Unknown(UnknownClusteringConfig::new(num_partitions)),
-            )
+            ClusteringSpec::Unknown(UnknownClusteringConfig::new(num_partitions))
         };
 
         Self {

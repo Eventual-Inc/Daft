@@ -490,12 +490,12 @@ pub fn physical_plan_to_pipeline(
                     left_stats.approx_stats.upper_bound_bytes
                         > right_stats.approx_stats.upper_bound_bytes
                 }
-                // If stats are only available on the right side of the join, and the upper bound bytes on the
-                // right are under the broadcast join size threshold, we stream on the left.
-                (StatsState::NotMaterialized, StatsState::Materialized(right_stats)) => right_stats
+                // If stats are only available on the left side of the join, and the upper bound bytes on the
+                // left are under the broadcast join size threshold, we stream on the right.
+                (StatsState::Materialized(left_stats), StatsState::NotMaterialized) => left_stats
                     .approx_stats
                     .upper_bound_bytes
-                    .map_or(true, |size| size < cfg.broadcast_join_size_bytes_threshold),
+                    .map_or(true, |size| size > cfg.broadcast_join_size_bytes_threshold),
                 // If stats are not available, we fall back and stream on the left by default.
                 _ => true,
             };

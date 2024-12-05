@@ -186,7 +186,7 @@ def test_cross_join():
 
     catalog = SQLCatalog({"x": x, "y": y})
 
-    df = daft.sql("select * from x, y", catalog)
+    df = daft.sql("select * from x, y order by A, C", catalog)
 
     assert df.to_pydict() == {
         "A": [1, 1, 1, 1, 3, 3, 3, 3, 5, 5, 5, 5],

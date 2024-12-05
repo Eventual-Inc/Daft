@@ -8,7 +8,7 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
 use common_scan_info::{PhysicalScanInfo, ScanState, SPLIT_AND_MERGE_PASS};
-use daft_core::prelude::*;
+use daft_core::{join::JoinSide, prelude::*};
 use daft_dsl::{
     col, functions::agg::merge_mean, is_partition_compatible, AggExpr, ApproxPercentileParams,
     Expr, ExprRef, SketchType,
@@ -700,10 +700,19 @@ pub(super) fn translate_single_logical_node(
                         ));
                     }
 
-                    Ok(
-                        PhysicalPlan::CrossJoin(CrossJoin::new(left_physical, right_physical))
-                            .arced(),
-                    )
+                    // choose the larger side to be in the outer loop since the inner side has to be fully materialized
+                    let outer_loop_side = if left_is_larger {
+                        JoinSide::Left
+                    } else {
+                        JoinSide::Right
+                    };
+
+                    Ok(PhysicalPlan::CrossJoin(CrossJoin::new(
+                        left_physical,
+                        right_physical,
+                        outer_loop_side,
+                    ))
+                    .arced())
                 }
             }
         }

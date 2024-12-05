@@ -444,7 +444,7 @@ impl PhysicalPlan {
                     ..
                 }) => Self::BroadcastJoin(BroadcastJoin::new(input1.clone(), input2.clone(), left_on.clone(), right_on.clone(), null_equals_nulls.clone(), *join_type, *is_swapped)),
                 Self::SortMergeJoin(SortMergeJoin { left_on, right_on, join_type, num_partitions, left_is_larger, needs_presort, .. }) => Self::SortMergeJoin(SortMergeJoin::new(input1.clone(), input2.clone(), left_on.clone(), right_on.clone(), *join_type, *num_partitions, *left_is_larger, *needs_presort)),
-                Self::CrossJoin(_) => Self::CrossJoin(CrossJoin::new(input1.clone(), input2.clone())),
+                Self::CrossJoin(CrossJoin { outer_loop_side, .. }) => Self::CrossJoin(CrossJoin::new(input1.clone(), input2.clone(), *outer_loop_side)),
                 Self::Concat(_) => Self::Concat(Concat::new(input1.clone(), input2.clone())),
                 _ => panic!("Physical op {:?} has one input, but got two", self),
             },

@@ -574,33 +574,15 @@ def cross_join(
 
     outer_plan, inner_plan = (left_plan, right_plan) if outer_loop_side == JoinSide.Left else (right_plan, left_plan)
 
+    # Materialize inner side first
     inner_requests: deque[SingleOutputPartitionTask[PartitionT]] = deque()
+    for step in inner_plan:
+        if isinstance(step, PartitionTaskBuilder):
+            step = step.finalize_partition_task_single_output(stage_id=stage_id)
+            inner_requests.append(step)
+        yield step
+
     outer_requests: deque[SingleOutputPartitionTask[PartitionT]] = deque()
-
-    # fetch one inner and one outer step at a time to kick off all tasks from both sides
-    # while minimizing time to first output
-    inner_has_more, outer_has_more = True, True
-    while inner_has_more or outer_has_more:
-        if inner_has_more:
-            try:
-                step = next(inner_plan)
-                if isinstance(step, PartitionTaskBuilder):
-                    step = step.finalize_partition_task_single_output(stage_id=stage_id)
-                    inner_requests.append(step)
-                yield step
-            except StopIteration:
-                inner_has_more = False
-
-        if outer_has_more:
-            try:
-                step = next(outer_plan)
-                if isinstance(step, PartitionTaskBuilder):
-                    step = step.finalize_partition_task_single_output(stage_id=stage_id)
-                    outer_requests.append(step)
-                yield step
-            except StopIteration:
-                outer_has_more = False
-
     while True:
         while outer_requests and outer_requests[0].done():
             next_outer = outer_requests.popleft()
@@ -637,14 +619,22 @@ def cross_join(
 
                 yield join_step
 
-        if outer_requests:
-            logger.debug(
-                "cross join blocked on completion of outer side of join.\n outer sources: %s",
-                outer_requests,
-            )
-            yield None
-        else:
-            return
+        # Execute single child step to pull in more outer partitions.
+        try:
+            step = next(outer_plan)
+            if isinstance(step, PartitionTaskBuilder):
+                step = step.finalize_partition_task_single_output(stage_id=stage_id)
+                outer_requests.append(step)
+            yield step
+        except StopIteration:
+            if outer_requests:
+                logger.debug(
+                    "broadcast join blocked on completion of receiver side of join.\n receiver sources: %s",
+                    outer_requests,
+                )
+                yield None
+            else:
+                return
 
 
 class MergeJoinTaskTracker(Generic[PartitionT]):
