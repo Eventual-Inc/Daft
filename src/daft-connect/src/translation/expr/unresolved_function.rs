@@ -32,10 +32,25 @@ pub fn unresolved_to_daft_expr(f: &UnresolvedFunction) -> eyre::Result<daft_dsl:
             .wrap_err("Failed to handle <= function"),
         ">=" => handle_binary_op(arguments, daft_dsl::Operator::GtEq)
             .wrap_err("Failed to handle >= function"),
+        "%" => handle_binary_op(arguments, daft_dsl::Operator::Modulus)
+            .wrap_err("Failed to handle % function"),
+        "sum" => handle_sum(arguments).wrap_err("Failed to handle sum function"),
         "isnotnull" => handle_isnotnull(arguments).wrap_err("Failed to handle isnotnull function"),
         "isnull" => handle_isnull(arguments).wrap_err("Failed to handle isnull function"),
         n => bail!("Unresolved function {n} not yet supported"),
     }
+}
+
+pub fn handle_sum(arguments: Vec<daft_dsl::ExprRef>) -> eyre::Result<daft_dsl::ExprRef> {
+    let arguments: [daft_dsl::ExprRef; 1] = match arguments.try_into() {
+        Ok(arguments) => arguments,
+        Err(arguments) => {
+            bail!("requires exactly one argument; got {arguments:?}");
+        }
+    };
+
+    let [arg] = arguments;
+    Ok(arg.sum())
 }
 
 pub fn handle_binary_op(
