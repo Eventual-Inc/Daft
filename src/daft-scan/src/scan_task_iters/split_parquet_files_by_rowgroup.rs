@@ -25,14 +25,34 @@ enum SplitSingleParquetFileByRowGroupsState {
 /// Splits a single Parquet-based ScanTask by rowgroups into smaller chunked ScanTasks
 ///
 /// This is used as an Iterator, yielding ScanTaskRefs after splitting the Parquet file
-struct SplitSingleParquetFileByRowGroups<'a> {
+struct ParquetFileSplitter<'a> {
     state: SplitSingleParquetFileByRowGroupsState,
     scan_task: &'a ScanTask,
     file_metadata: FileMetaData,
     config: &'a DaftExecutionConfig,
+
+    // Call once and cache this, since it can be expensive when called in a loop
+    scan_task_in_memory_size_estimate: Option<usize>,
 }
 
-impl<'a> Iterator for SplitSingleParquetFileByRowGroups<'a> {
+impl<'a> ParquetFileSplitter<'a> {
+    pub fn new(
+        scan_task: &'a ScanTask,
+        file_metadata: FileMetaData,
+        config: &'a DaftExecutionConfig,
+    ) -> Self {
+        Self {
+            state: SplitSingleParquetFileByRowGroupsState::Accumulating(0, Vec::new(), 0.),
+            scan_task,
+            file_metadata,
+            config,
+            scan_task_in_memory_size_estimate: scan_task
+                .estimate_in_memory_size_bytes(Some(config)),
+        }
+    }
+}
+
+impl<'a> Iterator for ParquetFileSplitter<'a> {
     type Item = ScanTaskRef;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -67,8 +87,7 @@ impl<'a> Iterator for SplitSingleParquetFileByRowGroups<'a> {
                         .map(|rg| rg.1.compressed_size())
                         .sum();
                     let rg_estimated_in_memory_size_bytes = self
-                        .scan_task
-                        .estimate_in_memory_size_bytes(Some(self.config))
+                        .scan_task_in_memory_size_estimate
                         .map_or(0., |est_materialized_size| {
                             (rg.compressed_size() as f64 / total_rg_compressed_size as f64)
                                 * est_materialized_size as f64
@@ -85,10 +104,8 @@ impl<'a> Iterator for SplitSingleParquetFileByRowGroups<'a> {
                     //
                     // If the estimated size in bytes of the materialized data is past our configured threshold, we perform a split.
                     // NOTE: If the ScanTask is missing memory estimates for some reason, we will naively split it
-                    let scan_task_missing_memory_estimates = self
-                        .scan_task
-                        .estimate_in_memory_size_bytes(Some(self.config))
-                        .is_none();
+                    let scan_task_missing_memory_estimates =
+                        self.scan_task_in_memory_size_estimate.is_none();
                     let accumulated_size_bytes_past_threshold =
                         new_estimated_size_bytes as usize >= self.config.scan_tasks_min_size_bytes;
                     if scan_task_missing_memory_estimates || accumulated_size_bytes_past_threshold {
@@ -187,19 +204,45 @@ impl<'a> Iterator for SplitSingleParquetFileByRowGroups<'a> {
     }
 }
 
-/// Information for splitting a ScanTask by RowGroups
-///
-/// TODO: this can be extended to hold other useful information to inform the splitting *without* requiring
-/// a Parquet metadata fetch. For example, rowgroup indices provided by a catalog/parquet metadata provider.
-struct SplitScanTaskInfo<'a> {
-    to_split: &'a ScanTask,
-    path: &'a str,
-    parquet_source_config: &'a ParquetSourceConfig,
+/// Wraps a ScanTaskRef, indicating whether or not it should be split by Parquet Rowgroups
+enum MaybeSplitScanTaskByParquetRowgroups {
+    NoSplit(ScanTaskRef),
+    Split(SplittableScanTaskRef),
 }
 
-impl<'a> SplitScanTaskInfo<'a> {
+struct SplittableScanTaskRef(ScanTaskRef);
+
+impl SplittableScanTaskRef {
+    /// Uses Parquet FileMetaData to create an Iterator of ScanTasks that are the result of splitting the existing Parquet ScanTask
+    pub fn get_scan_task_iter<'a>(
+        &'a self,
+        file_metadata: FileMetaData,
+        config: &'a DaftExecutionConfig,
+    ) -> ParquetFileSplitter<'a> {
+        ParquetFileSplitter::new(self.0.as_ref(), file_metadata, config)
+    }
+
+    pub fn get_path(&self) -> &str {
+        match &self.0.sources[..] {
+            [data_source] => data_source.get_path(),
+            _ => panic!("Should not have more than 1 source in a SplitScanTaskRef"),
+        }
+    }
+
+    pub fn get_parquet_source_config(&self) -> &ParquetSourceConfig {
+        if let FileFormatConfig::Parquet(cfg @ ParquetSourceConfig { .. }) =
+            self.0.file_format_config.as_ref()
+        {
+            cfg
+        } else {
+            panic!("SplitScanTaskRef should be a Parquet file");
+        }
+    }
+}
+
+impl MaybeSplitScanTaskByParquetRowgroups {
     /// Optionally creates [`SplitScanTaskInfo`] depending on whether or not a given ScanTask can be split
-    pub fn from_scan_task(scan_task: &'a ScanTask, config: &DaftExecutionConfig) -> Option<Self> {
+    pub fn from_scan_task(scan_task: ScanTaskRef, config: &DaftExecutionConfig) -> Self {
         /* Only split parquet tasks if they:
             - have one source
             - use native storage config
@@ -208,7 +251,7 @@ impl<'a> SplitScanTaskInfo<'a> {
             - no iceberg delete files
         */
         if let (
-            FileFormatConfig::Parquet(parquet_source_config @ ParquetSourceConfig { .. }),
+            FileFormatConfig::Parquet(ParquetSourceConfig { .. }),
             StorageConfig::Native(_),
             [source],
             Some(None),
@@ -226,27 +269,16 @@ impl<'a> SplitScanTaskInfo<'a> {
                 .get_iceberg_delete_files()
                 .map_or(true, std::vec::Vec::is_empty)
         {
-            Some(SplitScanTaskInfo {
-                to_split: scan_task,
-                path: source.get_path(),
-                parquet_source_config,
-            })
+            Self::Split(SplittableScanTaskRef(scan_task))
         } else {
-            None
+            Self::NoSplit(scan_task)
         }
     }
 
-    /// Uses Parquet FileMetaData to create an Iterator of ScanTasks that are the result of splitting the existing Parquet ScanTask
-    pub fn get_scan_task_iter(
-        &self,
-        file_metadata: FileMetaData,
-        config: &'a DaftExecutionConfig,
-    ) -> SplitSingleParquetFileByRowGroups {
-        SplitSingleParquetFileByRowGroups {
-            state: SplitSingleParquetFileByRowGroupsState::Accumulating(0, Vec::new(), 0.),
-            scan_task: self.to_split,
-            file_metadata,
-            config,
+    pub fn unwrap(self) -> ScanTaskRef {
+        match self {
+            Self::NoSplit(scan_task) => scan_task,
+            Self::Split(split_scan_task) => split_scan_task.0,
         }
     }
 }
@@ -255,7 +287,7 @@ impl<'a> SplitScanTaskInfo<'a> {
 ///
 /// Returns a HashMap of {idx: split_results}
 fn split_scan_tasks_by_parquet_metadata(
-    scan_tasks_to_split: &[(usize, SplitScanTaskInfo)],
+    scan_tasks_to_split: &[(usize, &SplittableScanTaskRef)],
     config: &DaftExecutionConfig,
 ) -> DaftResult<HashMap<usize, Vec<ScanTaskRef>>> {
     // Perform a bulk Parquet metadata fetch
@@ -266,12 +298,15 @@ fn split_scan_tasks_by_parquet_metadata(
     ));
     let parquet_metadata_futures = scan_tasks_to_split
         .iter()
-        .map(|(_, split_info)| {
-            let io_config = split_info.to_split.storage_config.get_io_config();
+        .map(|(_, scan_task_to_split)| {
+            let io_config = scan_task_to_split.0.storage_config.get_io_config();
             let io_client = get_io_client(true, io_config)?;
             let io_stats = io_stats.clone();
-            let field_id_mapping = split_info.parquet_source_config.field_id_mapping.clone();
-            let path = split_info.path.to_string();
+            let field_id_mapping = scan_task_to_split
+                .get_parquet_source_config()
+                .field_id_mapping
+                .clone();
+            let path = scan_task_to_split.get_path().to_string();
             Ok(io_runtime.spawn(async move {
                 read_parquet_metadata(path.as_str(), io_client, Some(io_stats), field_id_mapping)
                     .await
@@ -297,8 +332,8 @@ fn split_scan_tasks_by_parquet_metadata(
 static WINDOW_SIZE_MAX_PARQUET_METADATA_FETCHES: usize = 16;
 
 enum SplitParquetFilesByRowGroupsState {
-    ConstructingWindow(Vec<ScanTaskRef>),
-    WindowFinalized(Vec<ScanTaskRef>),
+    ConstructingWindow(Vec<MaybeSplitScanTaskByParquetRowgroups>),
+    WindowFinalized(Vec<MaybeSplitScanTaskByParquetRowgroups>),
     EmittingSplitWindow(VecDeque<ScanTaskRef>),
 }
 
@@ -325,17 +360,21 @@ impl<'a> Iterator for SplitParquetFilesByRowGroups<'a> {
                         match next_scan_task {
                             Err(e) => return Some(Err(e)),
                             Ok(next_scan_task) => {
-                                window.push(next_scan_task);
+                                let maybe_split_scan_task =
+                                    MaybeSplitScanTaskByParquetRowgroups::from_scan_task(
+                                        next_scan_task,
+                                        self.config,
+                                    );
+                                window.push(maybe_split_scan_task);
 
                                 // Windows are "finalized" when there are >= 16 Parquet Metadatas to be fetched
                                 let should_finalize_window = window
                                     .iter()
-                                    .filter(|scan_task| {
-                                        SplitScanTaskInfo::from_scan_task(
-                                            scan_task.as_ref(),
-                                            self.config,
+                                    .filter(|maybe_split_scan_task| {
+                                        matches!(
+                                            maybe_split_scan_task,
+                                            MaybeSplitScanTaskByParquetRowgroups::Split(_)
                                         )
-                                        .is_some()
                                     })
                                     .count()
                                     >= WINDOW_SIZE_MAX_PARQUET_METADATA_FETCHES;
@@ -360,14 +399,14 @@ impl<'a> Iterator for SplitParquetFilesByRowGroups<'a> {
                 // then construct a new window of (split) ScanTasks and enter the EmittingSplitWindow state.
                 SplitParquetFilesByRowGroupsState::WindowFinalized(finalized_window) => {
                     let finalized_window = std::mem::take(finalized_window);
-                    let scan_tasks_to_split =
-                        finalized_window
-                            .iter()
-                            .enumerate()
-                            .filter_map(|(idx, maybe_split)| {
-                                SplitScanTaskInfo::from_scan_task(maybe_split.as_ref(), self.config)
-                                    .map(|split_info| (idx, split_info))
-                            });
+                    let scan_tasks_to_split = finalized_window.iter().enumerate().filter_map(
+                        |(idx, maybe_split_scan_task)| match maybe_split_scan_task {
+                            MaybeSplitScanTaskByParquetRowgroups::NoSplit(_) => None,
+                            MaybeSplitScanTaskByParquetRowgroups::Split(split) => {
+                                Some((idx, split))
+                            }
+                        },
+                    );
 
                     // Perform a split of ScanTasks: note that this might trigger expensive I/O to retrieve Parquet metadata
                     let split_scan_tasks = split_scan_tasks_by_parquet_metadata(
@@ -385,11 +424,11 @@ impl<'a> Iterator for SplitParquetFilesByRowGroups<'a> {
 
                     // Zip the split_scan_tasks back into the iterator by substituting entries that have been split using their index
                     let mut window_after_split = VecDeque::<ScanTaskRef>::new();
-                    for (idx, maybe_split) in finalized_window.into_iter().enumerate() {
+                    for (idx, maybe_split_scan_task) in finalized_window.into_iter().enumerate() {
                         if let Some(splits) = split_scan_tasks.remove(&idx) {
                             window_after_split.extend(splits);
                         } else {
-                            window_after_split.push_back(maybe_split);
+                            window_after_split.push_back(maybe_split_scan_task.unwrap());
                         }
                     }
                     self.state =
