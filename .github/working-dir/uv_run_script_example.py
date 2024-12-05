@@ -1,3 +1,0 @@
-import daft
-
-print(daft)

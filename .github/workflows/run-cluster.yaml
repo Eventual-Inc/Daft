@@ -38,6 +38,11 @@ on:
         type: string
         required: false
         default: ""
+      env_vars:
+        description: Environment variables
+        type: string
+        required: false
+        default: ""
 
 jobs:
   run-command:
@@ -83,6 +88,11 @@ jobs:
             --entrypoint-script '${{ inputs.entrypoint_script }}'
         ) >> .github/assets/ray.yaml
         cat .github/assets/ray.yaml
+    - name: Setup ray env vars
+      run: |
+        ray_env_var=$(python .github/ci-scripts/format_env_vars.py --env-vars '${{ inputs.env_vars }}')
+        echo $ray_env_var
+        echo "ray_env_var=$ray_env_var" >> $GITHUB_ENV
     - name: Download private ssh key
       run: |
         KEY=$(aws secretsmanager get-secret-value --secret-id ci-github-actions-ray-cluster-key-3 --query SecretString --output text)
@@ -106,7 +116,7 @@ jobs:
         ray job submit \
           --working-dir ${{ inputs.working_dir }} \
           --address http://localhost:8265 \
-          --runtime-env-json '{"env_vars": {"DAFT_ENABLE_RAY_TRACING": "1"}}' \
+          --runtime-env-json "$ray_env_var" \
           -- python ${{ inputs.entrypoint_script }} ${{ inputs.entrypoint_args }}
     - name: Download log files from ray cluster
       run: |
