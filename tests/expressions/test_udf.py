@@ -355,7 +355,6 @@ def test_udf_arbitrary_number_of_kwargs(batch_size):
 
 
 @pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
-@pytest.mark.parametrize("use_actor_pool", [False, True])
 def test_udf_arbitrary_number_of_args_with_kwargs(batch_size):
     table = MicroPartition.from_pydict({"a": [1, 2, 3], "b": [1, 2, 3], "c": [1, 2, 3]})
 
