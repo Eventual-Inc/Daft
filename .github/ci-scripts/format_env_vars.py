@@ -1,16 +1,17 @@
+"""
+Given a comma-separated string of environment variables, parse them into a dictionary.
+
+Example:
+    env_str = "a=1,b=2"
+    result = parse_env_var_str(env_str)
+    # returns {"a":1,"b":2}
+"""
+
 import argparse
 import json
 
 
 def parse_env_var_str(env_var_str: str) -> dict:
-    """
-    Given a comma-separated string of environment variables, parse them into a dictionary.
-
-    Example:
-        env_str = "a=1,b=2"
-        result = parse_env_var_str(env_str)
-        # returns {"a":1,"b":2}
-    """
     iter = map(
         lambda s: s.strip().split("="),
         filter(lambda s: s, env_var_str.split(",")),
