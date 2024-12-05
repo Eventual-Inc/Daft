@@ -36,7 +36,9 @@ impl From<LogicalPlanBuilder> for Plan {
 
 pub fn to_logical_plan(relation: Relation) -> eyre::Result<Plan> {
     if let Some(common) = relation.common {
-        warn!("Ignoring common metadata for relation: {common:?}; not yet implemented");
+        if common.origin.is_some() {
+            warn!("Ignoring common metadata for relation: {common:?}; not yet implemented");
+        }
     };
 
     let Some(rel_type) = relation.rel_type else {
