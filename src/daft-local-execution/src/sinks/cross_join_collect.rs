@@ -12,6 +12,7 @@ use super::blocking_sink::{
 
 pub(crate) type CrossJoinStateBridgeRef = Arc<CrossJoinStateBridge>;
 
+// TODO(Colin): rework into more generic broadcast bridge that can be used for both probe table and micropartition
 pub(crate) struct CrossJoinStateBridge {
     inner: OnceLock<Arc<Vec<Table>>>,
     notify: tokio::sync::Notify,

@@ -30,7 +30,6 @@ impl IntermediateOpState for DefaultIntermediateOperatorState {
 
 pub enum IntermediateOperatorResult {
     NeedMoreInput(Option<Arc<MicroPartition>>),
-    #[allow(dead_code)]
     HasMoreOutput(Arc<MicroPartition>),
 }
 

@@ -11,7 +11,21 @@ use super::intermediate_op::{
 };
 use crate::sinks::cross_join_collect::CrossJoinStateBridgeRef;
 
-struct CrossJoinState(CrossJoinStateBridgeRef);
+struct CrossJoinState {
+    bridge: CrossJoinStateBridgeRef,
+    stream_idx: usize,
+    collect_idx: usize,
+}
+
+impl CrossJoinState {
+    fn new(bridge: CrossJoinStateBridgeRef) -> Self {
+        Self {
+            bridge,
+            stream_idx: 0,
+            collect_idx: 0,
+        }
+    }
+}
 
 impl IntermediateOpState for CrossJoinState {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
@@ -67,34 +81,44 @@ impl IntermediateOperator for CrossJoinOperator {
                     .expect("CrossJoinState should be used with CrossJoinOperator");
 
                 let stream_tables = input.get_tables()?;
-                let collect_tables = cross_join_state.0.get_state().await;
+                let collect_tables = cross_join_state.bridge.get_state().await;
 
-                let output_tables = Arc::new(
-                    stream_tables
-                        .iter()
-                        .flat_map(|stream_tbl| {
-                            collect_tables.iter().map(move |collect_tbl| {
-                                let (left, right) = match stream_side {
-                                    JoinSide::Left => (stream_tbl, collect_tbl),
-                                    JoinSide::Right => (collect_tbl, stream_tbl),
-                                };
+                let stream_tbl = &stream_tables[cross_join_state.stream_idx];
+                let collect_tbl = &collect_tables[cross_join_state.collect_idx];
 
-                                left.cross_join(right, stream_side)
-                            })
-                        })
-                        .collect::<DaftResult<Vec<_>>>()?,
-                );
+                let (left_tbl, right_tbl) = match stream_side {
+                    JoinSide::Left => (stream_tbl, collect_tbl),
+                    JoinSide::Right => (collect_tbl, stream_tbl),
+                };
 
-                let result = Arc::new(MicroPartition::new_loaded(
+                let output_tbl = left_tbl.cross_join(right_tbl, stream_side)?;
+
+                let output_morsel = Arc::new(MicroPartition::new_loaded(
                     output_schema,
-                    output_tables,
+                    Arc::new(vec![output_tbl]),
                     None,
                 ));
 
-                Ok((
-                    state,
-                    IntermediateOperatorResult::NeedMoreInput(Some(result)),
-                ))
+                // increment inner loop index
+                cross_join_state.collect_idx =
+                    (cross_join_state.collect_idx + 1) % collect_tables.len();
+
+                if cross_join_state.collect_idx == 0 {
+                    // finished the inner loop, increment outer loop index
+                    cross_join_state.stream_idx =
+                        (cross_join_state.stream_idx + 1) % stream_tables.len();
+                }
+
+                let result =
+                    if cross_join_state.stream_idx == 0 && cross_join_state.collect_idx == 0 {
+                        // finished the outer loop, move onto next input
+                        IntermediateOperatorResult::NeedMoreInput(Some(output_morsel))
+                    } else {
+                        // still looping through tables
+                        IntermediateOperatorResult::HasMoreOutput(output_morsel)
+                    };
+
+                Ok((state, result))
             })
             .into()
     }
@@ -104,6 +128,6 @@ impl IntermediateOperator for CrossJoinOperator {
     }
 
     fn make_state(&self) -> DaftResult<Box<dyn IntermediateOpState>> {
-        Ok(Box::new(CrossJoinState(self.state_bridge.clone())))
+        Ok(Box::new(CrossJoinState::new(self.state_bridge.clone())))
     }
 }
