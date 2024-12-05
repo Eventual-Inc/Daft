@@ -48,6 +48,7 @@ def daft_native_read(path: str, columns: list[str] | None = None) -> pa.Table:
 def daft_native_read_to_arrow(path: str, columns: list[str] | None = None) -> pa.Table:
     return daft.table.read_parquet_into_pyarrow(path, columns=columns)
 
+
 def daft_dataframe_read(path: str, columns: list[str] | None = None) -> pa.Table:
     df = daft.read_parquet(path)
     if columns is not None:
