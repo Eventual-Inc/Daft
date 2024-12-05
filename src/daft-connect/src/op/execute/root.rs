@@ -1,4 +1,4 @@
-use std::{collections::HashMap, future::ready, sync::Arc};
+use std::{future::ready, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
 use daft_local_execution::NativeExecutor;
@@ -10,6 +10,7 @@ use crate::{
     op::execute::{ExecuteStream, PlanIds},
     session::Session,
     translation,
+    translation::Plan,
 };
 
 impl Session {
@@ -31,13 +32,11 @@ impl Session {
         let (tx, rx) = tokio::sync::mpsc::channel::<eyre::Result<ExecutePlanResponse>>(1);
         tokio::spawn(async move {
             let execution_fut = async {
-                let plan = translation::to_logical_plan(command)?;
-                let optimized_plan = plan.optimize()?;
+                let Plan { builder, psets } = translation::to_logical_plan(command)?;
+                let optimized_plan = builder.optimize()?;
                 let cfg = Arc::new(DaftExecutionConfig::default());
                 let native_executor = NativeExecutor::from_logical_plan_builder(&optimized_plan)?;
-                let mut result_stream = native_executor
-                    .run(HashMap::new(), cfg, None)?
-                    .into_stream();
+                let mut result_stream = native_executor.run(psets, cfg, None)?.into_stream();
 
                 while let Some(result) = result_stream.next().await {
                     let result = result?;

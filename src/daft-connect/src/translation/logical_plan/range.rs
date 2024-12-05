@@ -2,7 +2,9 @@ use daft_logical_plan::LogicalPlanBuilder;
 use eyre::{ensure, Context};
 use spark_connect::Range;
 
-pub fn range(range: Range) -> eyre::Result<LogicalPlanBuilder> {
+use crate::translation::logical_plan::Plan;
+
+pub fn range(range: Range) -> eyre::Result<Plan> {
     #[cfg(not(feature = "python"))]
     {
         use eyre::bail;
@@ -50,6 +52,6 @@ pub fn range(range: Range) -> eyre::Result<LogicalPlanBuilder> {
         })
         .wrap_err("Failed to create range scan")?;
 
-        Ok(plan)
+        Ok(plan.into())
     }
 }

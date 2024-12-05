@@ -63,6 +63,34 @@ ColumnInputType = Union[Expression, str]
 ManyColumnsInputType = Union[ColumnInputType, Iterable[ColumnInputType]]
 
 
+def to_logical_plan_builder(*parts: MicroPartition) -> LogicalPlanBuilder:
+    """Creates a Daft DataFrame from a single Table.
+
+    Args:
+        parts: The Tables that we wish to convert into a Daft DataFrame.
+
+    Returns:
+        DataFrame: Daft DataFrame created from the provided Table.
+    """
+    if not parts:
+        raise ValueError("Can't create a DataFrame from an empty list of tables.")
+
+    result_pset = LocalPartitionSet()
+
+    for i, part in enumerate(parts):
+        result_pset.set_partition_from_table(i, part)
+
+    context = get_context()
+    cache_entry = context.get_or_create_runner().put_partition_set_into_cache(result_pset)
+    size_bytes = result_pset.size_bytes()
+    num_rows = len(result_pset)
+
+    assert size_bytes is not None, "In-memory data should always have non-None size in bytes"
+    return LogicalPlanBuilder.from_in_memory_scan(
+        cache_entry, parts[0].schema(), result_pset.num_partitions(), size_bytes, num_rows=num_rows
+    )
+
+
 class DataFrame:
     """A Daft DataFrame is a table of data. It has columns, where each column has a type and the same
     number of items (rows) as all other columns.
