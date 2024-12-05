@@ -96,6 +96,8 @@ def components(df: DataFrame) -> DataFrame:
 
 
 if __name__ == "__main__":
+    daft.set_execution_config(enable_ray_tracing=True)
+
     df = daft.read_parquet("s3://eventual-dev-benchmarking-fixtures/redpajama-parquet/v1.0.0/sample-0.01")
     df = dedupe(
         df,
@@ -109,6 +111,7 @@ if __name__ == "__main__":
         col("v").alias("original_doc_id"),
     )
 
+    print(daft.context.get_context())
     print(df.explain(True))
     df.collect()
     print(df)
