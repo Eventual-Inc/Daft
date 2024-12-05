@@ -14,7 +14,7 @@ pub fn relation_to_schema(input: Relation) -> eyre::Result<DataType> {
 
     let plan = to_logical_plan(input)?;
 
-    let result = plan.schema();
+    let result = plan.builder.schema();
 
     let fields: eyre::Result<Vec<StructField>> = result
         .fields

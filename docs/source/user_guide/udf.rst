@@ -143,7 +143,7 @@ Your UDF function itself needs to return a batch of columnar data, and can do so
 
 Note that if the data you have returned is not castable to the return_dtype that you specify (e.g. if you return a list of floats when you've specified a ``return_dtype=DataType.bool()``), Daft will throw a runtime error!
 
-Stateful UDFs
+Class UDFs
 -------------
 
 UDFs can also be created on Classes, which allow for initialization on some expensive state that can be shared
@@ -161,7 +161,7 @@ between invocations of the class, for example downloading data or creating a mod
         def __call__(self, features_col):
             return self._model(features_col)
 
-Running Stateful UDFs are exactly the same as running their Stateless cousins.
+Running Class UDFs are exactly the same as running their functional cousins.
 
 .. code:: python
 

@@ -47,7 +47,7 @@ impl FunctionExpr {
             Self::Map(expr) => expr.get_evaluator(),
             Self::Sketch(expr) => expr.get_evaluator(),
             Self::Struct(expr) => expr.get_evaluator(),
-            Self::Python(expr) => expr.get_evaluator(),
+            Self::Python(expr) => expr,
             Self::Partitioning(expr) => expr.get_evaluator(),
         }
     }

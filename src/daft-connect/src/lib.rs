@@ -5,7 +5,6 @@
 #![feature(iter_from_coroutine)]
 #![feature(stmt_expr_attributes)]
 #![feature(try_trait_v2_residual)]
-#![deny(clippy::print_stdout)]
 
 use dashmap::DashMap;
 use eyre::Context;
@@ -23,7 +22,7 @@ use spark_connect::{
     ReleaseExecuteResponse, ReleaseSessionRequest, ReleaseSessionResponse,
 };
 use tonic::{transport::Server, Request, Response, Status};
-use tracing::{debug, info};
+use tracing::info;
 use uuid::Uuid;
 
 use crate::session::Session;
@@ -325,8 +324,6 @@ impl SparkConnectService for DaftSparkConnectService {
                     result: Some(analyze_plan_response::Result::Schema(schema)),
                 };
 
-                debug!("response: {response:#?}");
-
                 Ok(Response::new(response))
             }
             _ => unimplemented_err!("Analyze plan operation is not yet implemented"),
@@ -346,7 +343,6 @@ impl SparkConnectService for DaftSparkConnectService {
         &self,
         _request: Request<InterruptRequest>,
     ) -> Result<Response<InterruptResponse>, Status> {
-        println!("got interrupt");
         unimplemented_err!("interrupt operation is not yet implemented")
     }
 
@@ -361,9 +357,19 @@ impl SparkConnectService for DaftSparkConnectService {
     #[tracing::instrument(skip_all)]
     async fn release_execute(
         &self,
-        _request: Request<ReleaseExecuteRequest>,
+        request: Request<ReleaseExecuteRequest>,
     ) -> Result<Response<ReleaseExecuteResponse>, Status> {
-        unimplemented_err!("release_execute operation is not yet implemented")
+        let request = request.into_inner();
+
+        let session = self.get_session(&request.session_id)?;
+
+        let response = ReleaseExecuteResponse {
+            session_id: session.client_side_session_id().to_string(),
+            server_side_session_id: session.server_side_session_id().to_string(),
+            operation_id: None, // todo: set but not strictly required
+        };
+
+        Ok(Response::new(response))
     }
 
     #[tracing::instrument(skip_all)]
@@ -371,7 +377,6 @@ impl SparkConnectService for DaftSparkConnectService {
         &self,
         _request: Request<ReleaseSessionRequest>,
     ) -> Result<Response<ReleaseSessionResponse>, Status> {
-        println!("got release session");
         unimplemented_err!("release_session operation is not yet implemented")
     }
 
@@ -380,7 +385,6 @@ impl SparkConnectService for DaftSparkConnectService {
         &self,
         _request: Request<FetchErrorDetailsRequest>,
     ) -> Result<Response<FetchErrorDetailsResponse>, Status> {
-        println!("got fetch error details");
         unimplemented_err!("fetch_error_details operation is not yet implemented")
     }
 }

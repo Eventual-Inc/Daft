@@ -12,6 +12,7 @@ macro_rules! simple_python_wrapper {
     };
 }
 
+mod coalesce;
 mod distance;
 mod float;
 mod image;
@@ -35,6 +36,7 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
         };
     }
 
+    add!(coalesce::coalesce);
     add!(distance::cosine_distance);
 
     add!(float::is_inf);

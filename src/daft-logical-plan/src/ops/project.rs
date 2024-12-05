@@ -24,7 +24,7 @@ pub struct Project {
 
 impl Project {
     pub(crate) fn try_new(input: Arc<LogicalPlan>, projection: Vec<ExprRef>) -> Result<Self> {
-        let expr_resolver = ExprResolver::builder().allow_stateful_udf(true).build();
+        let expr_resolver = ExprResolver::builder().allow_actor_pool_udf(true).build();
 
         let (projection, fields) = expr_resolver
             .resolve(projection, &input.schema())
