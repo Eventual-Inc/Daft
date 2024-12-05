@@ -17,6 +17,17 @@ def parquet_files(tmpdir):
     return tmpdir
 
 
+@pytest.fixture(scope="function")
+def many_parquet_files(tmpdir):
+    """Writes 20 Parquet file with 10 rowgroups, each of 100 bytes in size"""
+    for i in range(20):
+        tbl = pa.table({"data": ["aaa"] * 100})
+        path = tmpdir / f"file.{i}.pq"
+        papq.write_table(tbl, str(path), row_group_size=10, use_dictionary=False)
+
+    return tmpdir
+
+
 def test_split_parquet_read(parquet_files):
     with daft.execution_config_ctx(
         scan_tasks_min_size_bytes=1,
@@ -25,3 +36,13 @@ def test_split_parquet_read(parquet_files):
         df = daft.read_parquet(str(parquet_files))
         assert df.num_partitions() == 10, "Should have 10 partitions since we will split the file"
         assert df.to_pydict() == {"data": ["aaa"] * 100}
+
+
+def test_split_parquet_read_many_files(many_parquet_files):
+    with daft.execution_config_ctx(
+        scan_tasks_min_size_bytes=1,
+        scan_tasks_max_size_bytes=10,
+    ):
+        df = daft.read_parquet(str(many_parquet_files))
+        assert df.num_partitions() == 200, "Should have 200 partitions since we will split all files"
+        assert df.to_pydict() == {"data": ["aaa"] * 2000}
