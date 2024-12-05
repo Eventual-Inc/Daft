@@ -27,14 +27,13 @@ const PARQUET_MORSEL_SIZE: usize = 128 * 1024;
 // It is calculated by taking 2x the number of cores available (to ensure pipelining), and dividing
 // by the number of columns in the schema.
 fn determine_parquet_parallelism(daft_schema: &SchemaRef) -> usize {
-    let num_parallel_tasks = (std::thread::available_parallelism()
+    (std::thread::available_parallelism()
         .unwrap_or(NonZeroUsize::new(2).unwrap())
         .checked_mul(2.try_into().unwrap())
         .unwrap()
         .get() as f64
         / max(daft_schema.fields.len(), 1) as f64)
-        .ceil() as usize;
-    num_parallel_tasks
+        .ceil() as usize
 }
 
 #[derive(Debug, Snafu)]
