@@ -1,3 +1,5 @@
+import os
+
 import daft
 from daft import DataFrame, DataType, Expression, Series, col
 
@@ -96,10 +98,15 @@ def components(df: DataFrame) -> DataFrame:
 
 
 if __name__ == "__main__":
+    import ray
+
+    print("RAY_JOB_ID", os.getenv("RAY_JOB_ID"))
+    print("Ray is initialized", ray.is_initialized())
+
     daft.context.set_runner_ray()
     daft.set_execution_config(enable_ray_tracing=True)
 
-    df = daft.read_parquet("s3://eventual-dev-benchmarking-fixtures/redpajama-parquet/v1.0.0/sample-0.01")
+    df = daft.read_parquet("s3://eventual-dev-benchmarking-fixtures/redpajama-parquet/v1.0.0/sample-0.1")
     df = dedupe(
         df,
         col("doc_id"),
