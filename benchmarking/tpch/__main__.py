@@ -19,10 +19,11 @@ import warnings
 from datetime import datetime, timezone
 from typing import Any, Callable, Literal
 
+import answers
+import data_generation
 import ray
 
 import daft
-from benchmarking.tpch import answers, data_generation
 from daft import DataFrame
 from daft.runners.profiler import profiler
 
