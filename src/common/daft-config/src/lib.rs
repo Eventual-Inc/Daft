@@ -10,21 +10,12 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Serialize, Deserialize, Default, Debug)]
 pub struct DaftPlanningConfig {
     pub default_io_config: IOConfig,
-    pub enable_actor_pool_projections: bool,
 }
 
 impl DaftPlanningConfig {
     #[must_use]
     pub fn from_env() -> Self {
-        let mut cfg = Self::default();
-
-        let enable_actor_pool_projections_env_var_name = "DAFT_ENABLE_ACTOR_POOL_PROJECTIONS";
-        if let Ok(val) = std::env::var(enable_actor_pool_projections_env_var_name)
-            && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
-        {
-            cfg.enable_actor_pool_projections = true;
-        }
-        cfg
+        Default::default()
     }
 }
 

@@ -19,7 +19,7 @@ from typing import (
 
 import daft.daft as native
 from daft import context
-from daft.daft import CountMode, ImageFormat, ImageMode, ResourceRequest, bind_stateful_udfs
+from daft.daft import CountMode, ImageFormat, ImageMode, ResourceRequest, initialize_udfs
 from daft.daft import PyExpr as _PyExpr
 from daft.daft import col as _col
 from daft.daft import date_lit as _date_lit
@@ -28,13 +28,12 @@ from daft.daft import duration_lit as _duration_lit
 from daft.daft import list_sort as _list_sort
 from daft.daft import lit as _lit
 from daft.daft import series_lit as _series_lit
-from daft.daft import stateful_udf as _stateful_udf
-from daft.daft import stateless_udf as _stateless_udf
 from daft.daft import time_lit as _time_lit
 from daft.daft import timestamp_lit as _timestamp_lit
 from daft.daft import to_struct as _to_struct
 from daft.daft import tokenize_decode as _tokenize_decode
 from daft.daft import tokenize_encode as _tokenize_encode
+from daft.daft import udf as _udf
 from daft.daft import url_download as _url_download
 from daft.daft import utf8_count_matches as _utf8_count_matches
 from daft.datatype import DataType, TimeUnit
@@ -45,7 +44,7 @@ from daft.series import Series, item_to_series
 
 if TYPE_CHECKING:
     from daft.io import IOConfig
-    from daft.udf import PartialStatefulUDF, PartialStatelessUDF
+    from daft.udf import BoundUDFArgs, InitArgsType, UninitializedUdf
 # This allows Sphinx to correctly work against our "namespaced" accessor functions by overriding @property to
 # return a class instance of the namespace instead of a property object.
 elif os.getenv("DAFT_SPHINX_BUILD") == "1":
@@ -260,39 +259,26 @@ class Expression:
             return lit(obj)
 
     @staticmethod
-    def stateless_udf(
+    def udf(
         name: builtins.str,
-        partial: PartialStatelessUDF,
+        inner: UninitializedUdf,
+        bound_args: BoundUDFArgs,
         expressions: builtins.list[Expression],
         return_dtype: DataType,
+        init_args: InitArgsType,
         resource_request: ResourceRequest | None,
-        batch_size: int | None,
-    ) -> Expression:
-        return Expression._from_pyexpr(
-            _stateless_udf(
-                name, partial, [e._expr for e in expressions], return_dtype._dtype, resource_request, batch_size
-            )
-        )
-
-    @staticmethod
-    def stateful_udf(
-        name: builtins.str,
-        partial: PartialStatefulUDF,
-        expressions: builtins.list[Expression],
-        return_dtype: DataType,
-        resource_request: ResourceRequest | None,
-        init_args: tuple[tuple[Any, ...], dict[builtins.str, Any]] | None,
         batch_size: int | None,
         concurrency: int | None,
     ) -> Expression:
         return Expression._from_pyexpr(
-            _stateful_udf(
+            _udf(
                 name,
-                partial,
+                inner,
+                bound_args,
                 [e._expr for e in expressions],
                 return_dtype._dtype,
-                resource_request,
                 init_args,
+                resource_request,
                 batch_size,
                 concurrency,
             )
@@ -1018,7 +1004,7 @@ class Expression:
         Returns:
             Expression: New expression after having run the function on the expression
         """
-        from daft.udf import CommonUDFArgs, StatelessUDF
+        from daft.udf import UDF
 
         def batch_func(self_series):
             return [func(x) for x in self_series.to_pylist()]
@@ -1028,14 +1014,10 @@ class Expression:
             name = name + "."
         name = name + getattr(func, "__qualname__")  # type: ignore[call-overload]
 
-        return StatelessUDF(
+        return UDF(
+            inner=batch_func,
             name=name,
-            func=batch_func,
             return_dtype=return_dtype,
-            common_args=CommonUDFArgs(
-                resource_request=None,
-                batch_size=None,
-            ),
         )(self)
 
     def is_null(self) -> Expression:
@@ -1263,8 +1245,8 @@ class Expression:
     def _input_mapping(self) -> builtins.str | None:
         return self._expr._input_mapping()
 
-    def _bind_stateful_udfs(self, initialized_funcs: dict[builtins.str, Callable]) -> Expression:
-        return Expression._from_pyexpr(bind_stateful_udfs(self._expr, initialized_funcs))
+    def _initialize_udfs(self) -> Expression:
+        return Expression._from_pyexpr(initialize_udfs(self._expr))
 
 
 SomeExpressionNamespace = TypeVar("SomeExpressionNamespace", bound="ExpressionNamespace")

@@ -13,7 +13,7 @@ use daft_core::prelude::*;
 use typed_builder::TypedBuilder;
 
 use crate::{
-    col, expr::has_agg, functions::FunctionExpr, has_stateful_udf, AggExpr, Expr, ExprRef,
+    col, expr::has_agg, functions::FunctionExpr, is_actor_pool_udf, AggExpr, Expr, ExprRef,
 };
 
 // Calculates all the possible struct get expressions in a schema.
@@ -223,12 +223,12 @@ fn convert_udfs_to_map_groups(expr: &ExprRef) -> ExprRef {
 }
 
 /// Used for resolving and validating expressions.
-/// Specifically, makes sure the expression does not contain aggregations or stateful UDFs
+/// Specifically, makes sure the expression does not contain aggregations or actor pool UDFs
 /// where they are not allowed, and resolves struct accessors and wildcards.
 #[derive(Default, TypedBuilder)]
 pub struct ExprResolver<'a> {
     #[builder(default)]
-    allow_stateful_udf: bool,
+    allow_actor_pool_udf: bool,
     #[builder(via_mutators, mutators(
         pub fn in_agg_context(&mut self, in_agg_context: bool) {
             // workaround since typed_builder can't have defaults for mutator requirements
@@ -247,9 +247,9 @@ pub struct ExprResolver<'a> {
 
 impl<'a> ExprResolver<'a> {
     fn resolve_helper(&self, expr: ExprRef, schema: &Schema) -> DaftResult<Vec<ExprRef>> {
-        if !self.allow_stateful_udf && has_stateful_udf(&expr) {
+        if !self.allow_actor_pool_udf && expr.exists(is_actor_pool_udf) {
             return Err(DaftError::ValueError(format!(
-                "Stateful UDFs are only allowed in projections: {expr}"
+                "UDFs with concurrency set are only allowed in projections: {expr}"
             )));
         }
 

@@ -4,7 +4,11 @@ use common_error::DaftResult;
 use common_runtime::RuntimeRef;
 #[cfg(feature = "python")]
 use daft_dsl::python::PyExpr;
-use daft_dsl::{functions::python::extract_stateful_udf_exprs, ExprRef};
+use daft_dsl::{
+    count_actor_pool_udfs,
+    functions::python::{get_batch_size, get_concurrency},
+    ExprRef,
+};
 #[cfg(feature = "python")]
 use daft_micropartition::python::PyMicroPartition;
 use daft_micropartition::MicroPartition;
@@ -33,8 +37,8 @@ impl ActorHandle {
             let handle = Python::with_gil(|py| {
                 // create python object
                 Ok::<PyObject, PyErr>(
-                    py.import_bound(pyo3::intern!(py, "daft.execution.stateful_actor"))?
-                        .getattr(pyo3::intern!(py, "StatefulActorHandle"))?
+                    py.import_bound(pyo3::intern!(py, "daft.execution.actor_pool_udf"))?
+                        .getattr(pyo3::intern!(py, "ActorHandle"))?
                         .call1((projection
                             .iter()
                             .map(|expr| PyExpr::from(expr.clone()))
@@ -70,7 +74,7 @@ impl ActorHandle {
 
         #[cfg(not(feature = "python"))]
         {
-            panic!("Cannot evaluate a stateful UDF without compiling for Python");
+            panic!("Cannot evaluate a UDF without compiling for Python");
         }
     }
 
@@ -98,7 +102,7 @@ impl Drop for ActorHandle {
         let result = self.teardown();
 
         if let Err(e) = result {
-            log::error!("Error tearing down stateful UDF actor: {}", e);
+            log::error!("Error tearing down UDF actor: {}", e);
         }
     }
 }
@@ -126,21 +130,20 @@ pub struct ActorPoolProjectOperator {
 
 impl ActorPoolProjectOperator {
     pub fn new(projection: Vec<ExprRef>) -> Self {
-        let stateful_udf_vec = projection
-            .iter()
-            .flat_map(|expr| extract_stateful_udf_exprs(expr.clone()))
-            .collect::<Vec<_>>();
+        let num_actor_pool_udfs: usize = count_actor_pool_udfs(&projection);
 
-        let [stateful_udf] = stateful_udf_vec
-            .try_into()
-            .expect("Expected only one stateful udf in an actor pool project");
+        assert_eq!(
+            num_actor_pool_udfs, 1,
+            "Expected only one actor pool udf in an actor pool project"
+        );
+
+        let concurrency = get_concurrency(&projection);
+        let batch_size = get_batch_size(&projection);
 
         Self {
             projection,
-            concurrency: stateful_udf
-                .concurrency
-                .expect("Stateful UDF should have concurrency"),
-            batch_size: stateful_udf.batch_size,
+            concurrency,
+            batch_size,
         }
     }
 }
