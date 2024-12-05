@@ -91,7 +91,10 @@ jobs:
     - name: Setup ray env vars
       run: |
         source .venv/bin/activate
-        ray_env_var=$(python .github/ci-scripts/format_env_vars.py --env-vars '${{ inputs.env_vars }}')
+        ray_env_var=$(python .github/ci-scripts/format_env_vars.py \
+          --env-vars '${{ inputs.env_vars }}' \
+          --enable-ray-tracing \
+        )
         echo $ray_env_var
         echo "ray_env_var=$ray_env_var" >> $GITHUB_ENV
     - name: Download private ssh key
