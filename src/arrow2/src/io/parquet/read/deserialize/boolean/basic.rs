@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use parquet2::{
     deserialize::SliceFilteredIter,
-    encoding::Encoding,
+    encoding::{hybrid_rle, Encoding},
     page::{split_buffer, DataPage, DictPage},
     schema::Repetition,
 };
@@ -52,6 +52,25 @@ impl<'a> Required<'a> {
 }
 
 #[derive(Debug)]
+struct ValuesRle<'a>(hybrid_rle::HybridRleDecoder<'a>);
+
+impl<'a> ValuesRle<'a> {
+    pub fn try_new(page: &'a DataPage) -> Result<Self> {
+        let (_, _, indices_buffer) = split_buffer(page)?;
+        // Skip the u32 length prefix.
+        let indices_buffer = &indices_buffer[std::mem::size_of::<u32>()..];
+        let decoder =
+            hybrid_rle::HybridRleDecoder::try_new(
+                indices_buffer,
+                1_u32, // The bit width for a boolean is 1.
+                page.num_values()
+            )
+            .map_err(crate::error::Error::from)?;
+        Ok(Self(decoder))
+    }
+}
+
+#[derive(Debug)]
 struct FilteredRequired<'a> {
     values: SliceFilteredIter<BitmapIter<'a>>,
 }
@@ -79,6 +98,7 @@ impl<'a> FilteredRequired<'a> {
 enum State<'a> {
     Optional(OptionalPageValidity<'a>, Values<'a>),
     Required(Required<'a>),
+    OptionalRle(OptionalPageValidity<'a>, ValuesRle<'a>),
     FilteredRequired(FilteredRequired<'a>),
     FilteredOptional(FilteredOptionalPageValidity<'a>, Values<'a>),
 }
@@ -88,6 +108,7 @@ impl<'a> State<'a> {
         match self {
             State::Optional(validity, _) => validity.len(),
             State::Required(page) => page.length - page.offset,
+            Self::OptionalRle(validity, _) => validity.len(),
             State::FilteredRequired(page) => page.len(),
             State::FilteredOptional(optional, _) => optional.len(),
         }
@@ -125,6 +146,12 @@ impl<'a> Decoder<'a> for BooleanDecoder {
                 Values::try_new(page)?,
             )),
             (Encoding::Plain, false, false) => Ok(State::Required(Required::new(page))),
+            (Encoding::Rle, true, false) => {
+                Ok(State::OptionalRle(
+                    OptionalPageValidity::try_new(page)?,
+                    ValuesRle::try_new(page)?,
+                ))
+            },
             (Encoding::Plain, true, true) => Ok(State::FilteredOptional(
                 FilteredOptionalPageValidity::try_new(page)?,
                 Values::try_new(page)?,
@@ -163,6 +190,15 @@ impl<'a> Decoder<'a> for BooleanDecoder {
                 values.extend_from_slice(page.values, page.offset, remaining);
                 page.offset += remaining;
             }
+            State::OptionalRle(page_validity, page_values) => {
+                utils::extend_from_decoder(
+                    validity,
+                    page_validity,
+                    Some(remaining),
+                    values,
+                    &mut page_values.0.by_ref().map(|x| x.unwrap()).map(|v| v != 0),
+                )
+            },
             State::FilteredRequired(page) => {
                 values.reserve(remaining);
                 for item in page.values.by_ref().take(remaining) {

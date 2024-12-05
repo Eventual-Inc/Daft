@@ -72,7 +72,7 @@ from daft.daft import ImageFormat, ImageMode, ResourceRequest
 from daft.dataframe import DataFrame
 from daft.logical.schema import Schema
 from daft.datatype import DataType, TimeUnit
-from daft.expressions import Expression, col, lit, interval
+from daft.expressions import Expression, col, lit, interval, coalesce
 from daft.io import (
     DataCatalogTable,
     DataCatalogType,
@@ -135,4 +135,5 @@ __all__ = [
     "sql",
     "sql_expr",
     "to_struct",
+    "coalesce",
 ]

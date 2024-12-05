@@ -26,7 +26,7 @@ use {
 use crate::{
     logical_plan::LogicalPlan,
     ops,
-    optimization::{Optimizer, OptimizerConfig},
+    optimization::Optimizer,
     partitioning::{
         HashRepartitionConfig, IntoPartitionsConfig, RandomShuffleConfig, RepartitionSpec,
     },
@@ -590,16 +590,7 @@ impl LogicalPlanBuilder {
     }
 
     pub fn optimize(&self) -> DaftResult<Self> {
-        let default_optimizer_config: OptimizerConfig = Default::default();
-        let optimizer_config = OptimizerConfig {
-            enable_actor_pool_projections: self
-                .config
-                .as_ref()
-                .map(|planning_cfg| planning_cfg.enable_actor_pool_projections)
-                .unwrap_or(default_optimizer_config.enable_actor_pool_projections),
-            ..default_optimizer_config
-        };
-        let optimizer = Optimizer::new(optimizer_config);
+        let optimizer = Optimizer::new(Default::default());
 
         // Run LogicalPlan optimizations
         let unoptimized_plan = self.build();
@@ -653,7 +644,7 @@ impl LogicalPlanBuilder {
 /// as possible, converting pyo3 wrapper type arguments into their underlying Rust-native types
 /// (e.g. PySchema -> Schema).
 #[cfg_attr(feature = "python", pyclass(name = "LogicalPlanBuilder"))]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PyLogicalPlanBuilder {
     // Internal logical plan builder.
     pub builder: LogicalPlanBuilder,

@@ -1273,14 +1273,35 @@ pub fn has_agg(expr: &ExprRef) -> bool {
     expr.exists(|e| matches!(e.as_ref(), Expr::Agg(_)))
 }
 
-pub fn has_stateful_udf(expr: &ExprRef) -> bool {
-    expr.exists(|e| {
-        matches!(
-            e.as_ref(),
-            Expr::Function {
-                func: FunctionExpr::Python(PythonUDF::Stateful(_)),
+#[inline]
+pub fn is_actor_pool_udf(expr: &ExprRef) -> bool {
+    matches!(
+        expr.as_ref(),
+        Expr::Function {
+            func: FunctionExpr::Python(PythonUDF {
+                concurrency: Some(_),
                 ..
-            }
-        )
-    })
+            }),
+            ..
+        }
+    )
+}
+
+pub fn count_actor_pool_udfs(exprs: &[ExprRef]) -> usize {
+    exprs
+        .iter()
+        .map(|expr| {
+            let mut count = 0;
+            expr.apply(|e| {
+                if is_actor_pool_udf(e) {
+                    count += 1;
+                }
+
+                Ok(common_treenode::TreeNodeRecursion::Continue)
+            })
+            .unwrap();
+
+            count
+        })
+        .sum()
 }

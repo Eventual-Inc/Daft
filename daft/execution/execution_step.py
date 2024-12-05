@@ -553,7 +553,7 @@ class Project(SingleOutputInstruction):
 
 
 @dataclass(frozen=True)
-class StatefulUDFProject(SingleOutputInstruction):
+class ActorPoolProject(SingleOutputInstruction):
     projection: ExpressionsProjection
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
@@ -564,7 +564,7 @@ class StatefulUDFProject(SingleOutputInstruction):
             PartialPartitionMetadata(
                 num_rows=None,  # UDFs can potentially change cardinality
                 size_bytes=None,
-                boundaries=None,  # TODO: figure out if the stateful UDF projection changes boundaries
+                boundaries=None,  # TODO: figure out if the actor pool UDF projection changes boundaries
             )
         ]
 

@@ -1,12 +1,15 @@
 use std::{
+    cmp::max,
     collections::HashSet,
     fs::File,
     io::{Read, Seek},
+    num::NonZeroUsize,
     sync::Arc,
 };
 
 use arrow2::{bitmap::Bitmap, io::parquet::read};
 use common_error::DaftResult;
+use common_runtime::{get_compute_runtime, RuntimeTask};
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
 use daft_dsl::ExprRef;
 use daft_io::IOStatsRef;
@@ -18,6 +21,7 @@ use rayon::{
     prelude::{IndexedParallelIterator, IntoParallelIterator, ParallelBridge},
 };
 use snafu::ResultExt;
+use tokio_stream::wrappers::ReceiverStream;
 
 use crate::{
     file::{build_row_ranges, RowGroupRange},
@@ -86,73 +90,190 @@ pub fn arrow_column_iters_to_table_iter(
         let chunk = chunk.with_context(|_| {
             super::UnableToCreateChunkFromStreamingFileReaderSnafu { path: uri.clone() }
         })?;
-        let all_series = chunk
-            .into_iter()
-            .zip(owned_schema_ref.as_ref().fields.iter())
-            .filter_map(|(mut arr, (f_name, _))| {
-                if (index_so_far + arr.len()) < row_range_start {
-                    // No need to process arrays that are less than the start offset
-                    return None;
-                }
-                if index_so_far < row_range_start {
-                    // Slice arrays that are partially needed
-                    let offset = row_range_start.saturating_sub(index_so_far);
-                    arr = arr.sliced(offset, arr.len() - offset);
-                }
-                let series_result =
-                    Series::try_from((f_name.as_str(), cast_array_for_daft_if_needed(arr)));
-                Some(series_result)
-            })
-            .collect::<DaftResult<Vec<_>>>()?;
-
-        let len = all_series
-            .first()
-            .map(daft_core::series::Series::len)
-            .expect("All series should not be empty when creating table from parquet chunks");
-        if all_series.iter().any(|s| s.len() != len) {
-            return Err(super::Error::ParquetColumnsDontHaveEqualRows { path: uri.clone() }.into());
-        }
-
-        let mut table = Table::new_with_size(
-            Schema::new(all_series.iter().map(|s| s.field().clone()).collect())?,
-            all_series,
-            len,
+        arrow_chunk_to_table(
+            chunk,
+            &owned_schema_ref,
+            &uri,
+            row_range_start,
+            &mut index_so_far,
+            delete_rows.as_deref(),
+            &mut curr_delete_row_idx,
+            predicate.clone(),
+            original_columns.as_deref(),
+            original_num_rows,
         )
-        .with_context(|_| super::UnableToCreateTableFromChunkSnafu { path: uri.clone() })?;
-
-        // Apply delete rows if needed
-        if let Some(delete_rows) = &delete_rows
-            && !delete_rows.is_empty()
-        {
-            let mut selection_mask = Bitmap::new_trued(table.len()).make_mut();
-            while curr_delete_row_idx < delete_rows.len()
-                && delete_rows[curr_delete_row_idx] < index_so_far as i64 + len as i64
-            {
-                let table_row = delete_rows[curr_delete_row_idx] as usize - index_so_far;
-                unsafe {
-                    selection_mask.set_unchecked(table_row, false);
-                }
-                curr_delete_row_idx += 1;
-            }
-            let selection_mask: BooleanArray =
-                ("selection_mask", Bitmap::from(selection_mask)).into();
-            table = table.mask_filter(&selection_mask.into_series())?;
-        }
-        index_so_far += len;
-
-        // Apply pushdowns if needed
-        if let Some(predicate) = &predicate {
-            table = table.filter(&[predicate.clone()])?;
-            if let Some(oc) = &original_columns {
-                table = table.get_columns(oc)?;
-            }
-            if let Some(nr) = original_num_rows {
-                table = table.head(nr)?;
-            }
-        }
-        Ok(table)
     });
     Some(table_iter)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn arrow_chunk_to_table(
+    arrow_chunk: ArrowChunk,
+    schema_ref: &SchemaRef,
+    uri: &str,
+    row_range_start: usize,
+    index_so_far: &mut usize,
+    delete_rows: Option<&[i64]>,
+    curr_delete_row_idx: &mut usize,
+    predicate: Option<ExprRef>,
+    original_columns: Option<&[String]>,
+    original_num_rows: Option<usize>,
+) -> DaftResult<Table> {
+    let all_series = arrow_chunk
+        .into_iter()
+        .zip(schema_ref.fields.iter())
+        .filter_map(|(mut arr, (f_name, _))| {
+            if (*index_so_far + arr.len()) < row_range_start {
+                // No need to process arrays that are less than the start offset
+                return None;
+            }
+            if *index_so_far < row_range_start {
+                // Slice arrays that are partially needed
+                let offset = row_range_start.saturating_sub(*index_so_far);
+                arr = arr.sliced(offset, arr.len() - offset);
+            }
+            let series_result =
+                Series::try_from((f_name.as_str(), cast_array_for_daft_if_needed(arr)));
+            Some(series_result)
+        })
+        .collect::<DaftResult<Vec<_>>>()?;
+
+    let len = all_series
+        .first()
+        .map(daft_core::series::Series::len)
+        .expect("All series should not be empty when creating table from parquet chunks");
+    if all_series.iter().any(|s| s.len() != len) {
+        return Err(super::Error::ParquetColumnsDontHaveEqualRows {
+            path: uri.to_string(),
+        }
+        .into());
+    }
+
+    let mut table = Table::new_with_size(
+        Schema::new(all_series.iter().map(|s| s.field().clone()).collect())?,
+        all_series,
+        len,
+    )
+    .with_context(|_| super::UnableToCreateTableFromChunkSnafu {
+        path: uri.to_string(),
+    })?;
+
+    // Apply delete rows if needed
+    if let Some(delete_rows) = &delete_rows
+        && !delete_rows.is_empty()
+    {
+        let mut selection_mask = Bitmap::new_trued(table.len()).make_mut();
+        while *curr_delete_row_idx < delete_rows.len()
+            && delete_rows[*curr_delete_row_idx] < *index_so_far as i64 + len as i64
+        {
+            let table_row = delete_rows[*curr_delete_row_idx] as usize - *index_so_far;
+            unsafe {
+                selection_mask.set_unchecked(table_row, false);
+            }
+            *curr_delete_row_idx += 1;
+        }
+        let selection_mask: BooleanArray = ("selection_mask", Bitmap::from(selection_mask)).into();
+        table = table.mask_filter(&selection_mask.into_series())?;
+    }
+    *index_so_far += len;
+
+    // Apply pushdowns if needed
+    if let Some(predicate) = predicate {
+        table = table.filter(&[predicate])?;
+        if let Some(oc) = &original_columns {
+            table = table.get_columns(oc)?;
+        }
+        if let Some(nr) = original_num_rows {
+            table = table.head(nr)?;
+        }
+    }
+    Ok(table)
+}
+
+/// Spawns a task that reads the column iterators and converts them into a table.
+#[allow(clippy::too_many_arguments)]
+pub fn spawn_column_iters_to_table_task(
+    arr_iters: ArrowChunkIters,
+    rg_range: RowGroupRange,
+    schema_ref: SchemaRef,
+    uri: String,
+    predicate: Option<ExprRef>,
+    original_columns: Option<Vec<String>>,
+    original_num_rows: Option<usize>,
+    delete_rows: Option<Vec<i64>>,
+    output_sender: tokio::sync::mpsc::Sender<DaftResult<Table>>,
+    permit: tokio::sync::OwnedSemaphorePermit,
+) -> RuntimeTask<DaftResult<()>> {
+    let (arrow_chunk_senders, mut arrow_chunk_receivers): (Vec<_>, Vec<_>) = arr_iters
+        .iter()
+        .map(|_| tokio::sync::mpsc::channel(1))
+        .unzip();
+
+    let compute_runtime = get_compute_runtime();
+
+    let deserializer_handles = arrow_chunk_senders
+        .into_iter()
+        .zip(arr_iters)
+        .map(|(sender, arr_iter)| {
+            let deserialization_task = async move {
+                for arr in arr_iter {
+                    if sender.send(arr?).await.is_err() {
+                        break;
+                    }
+                }
+                DaftResult::Ok(())
+            };
+            compute_runtime.spawn(deserialization_task)
+        })
+        .collect::<Vec<_>>();
+
+    compute_runtime.spawn(async move {
+        if deserializer_handles.is_empty() {
+            let empty = Table::new_with_size(schema_ref.clone(), vec![], rg_range.num_rows);
+            let _ = output_sender.send(empty).await;
+            return Ok(());
+        }
+
+        let mut curr_delete_row_idx = 0;
+        // Keep track of the current index in the row group so we can throw away arrays that are not needed
+        // and slice arrays that are partially needed.
+        let mut index_so_far = 0;
+        loop {
+            let chunk =
+                futures::future::join_all(arrow_chunk_receivers.iter_mut().map(|s| s.recv()))
+                    .await
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<_>>();
+            if chunk.len() != deserializer_handles.len() {
+                break;
+            }
+            let table = arrow_chunk_to_table(
+                chunk,
+                &schema_ref,
+                &uri,
+                rg_range.start,
+                &mut index_so_far,
+                delete_rows.as_deref(),
+                &mut curr_delete_row_idx,
+                predicate.clone(),
+                original_columns.as_deref(),
+                original_num_rows,
+            )?;
+
+            if output_sender.send(Ok(table)).await.is_err() {
+                break;
+            }
+        }
+
+        futures::future::try_join_all(deserializer_handles)
+            .await?
+            .into_iter()
+            .collect::<DaftResult<()>>()?;
+
+        drop(permit);
+        DaftResult::Ok(())
+    })
 }
 
 struct CountingReader<R> {
@@ -517,7 +638,7 @@ pub async fn local_parquet_read_async(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn local_parquet_stream(
+pub async fn local_parquet_stream(
     uri: &str,
     original_columns: Option<Vec<String>>,
     columns: Option<Vec<String>>,
@@ -547,75 +668,82 @@ pub fn local_parquet_stream(
         io_stats,
     )?;
 
-    // Create a channel for each row group to send the processed tables to the stream
-    // Each channel is expected to have a number of chunks equal to the number of chunks in the row group
-    let (senders, receivers): (Vec<_>, Vec<_>) = row_ranges
-        .iter()
-        .map(|rg_range| {
-            let expected_num_chunks =
-                f32::ceil(rg_range.num_rows as f32 / chunk_size as f32) as usize;
-            crossbeam_channel::bounded(expected_num_chunks)
-        })
-        .unzip();
+    // We use a semaphore to limit the number of concurrent row group deserialization tasks.
+    // Set the maximum number of concurrent tasks to ceil(number of available threads / columns).
+    let num_parallel_tasks = (std::thread::available_parallelism()
+        .unwrap_or(NonZeroUsize::new(2).unwrap())
+        .checked_mul(2.try_into().unwrap())
+        .unwrap()
+        .get() as f64
+        / max(schema_ref.fields.len(), 1) as f64)
+        .ceil() as usize;
+
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(num_parallel_tasks));
 
     let owned_uri = uri.to_string();
+    let compute_runtime = get_compute_runtime();
 
-    rayon::spawn(move || {
-        // Once a row group has been read into memory and we have the column iterators,
-        // we can start processing them in parallel.
-        let par_column_iters = column_iters.zip(row_ranges).zip(senders).par_bridge();
+    let (output_senders, output_receivers): (Vec<_>, Vec<_>) = row_ranges
+        .iter()
+        .map(|_| tokio::sync::mpsc::channel(1))
+        .unzip();
 
-        // For each vec of column iters, iterate through them in parallel lock step such that each iteration
-        // produces a chunk of the row group that can be converted into a table.
-        par_column_iters.for_each(move |((rg_column_iters_result, rg_range), tx)| {
-            let table_iter = match rg_column_iters_result {
-                Ok(rg_column_iters) => {
-                    let table_iter = arrow_column_iters_to_table_iter(
-                        rg_column_iters,
-                        rg_range.start,
-                        schema_ref.clone(),
-                        owned_uri.clone(),
-                        predicate.clone(),
-                        original_columns.clone(),
-                        original_num_rows,
-                        delete_rows.clone(),
-                    );
-                    // Even if there are no columns to read, we still need to create a empty table with the correct number of rows
-                    // This is because the columns may be present in other files. See https://github.com/Eventual-Inc/Daft/pull/2514
-                    if let Some(table_iter) = table_iter {
-                        table_iter
-                    } else {
-                        let table =
-                            Table::new_with_size(schema_ref.clone(), vec![], rg_range.num_rows);
-                        if let Err(crossbeam_channel::TrySendError::Full(_)) = tx.try_send(table) {
-                            panic!("Parquet stream channel should not be full")
-                        }
-                        return;
-                    }
-                }
-                Err(e) => {
-                    let _ = tx.send(Err(e.into()));
-                    return;
-                }
-            };
-            for table_result in table_iter {
-                let table_err = table_result.is_err();
-                if let Err(crossbeam_channel::TrySendError::Full(_)) = tx.try_send(table_result) {
-                    panic!("Parquet stream channel should not be full")
-                }
-                if table_err {
-                    break;
-                }
+    let parquet_task = compute_runtime.spawn(async move {
+        let mut table_tasks = Vec::with_capacity(row_ranges.len());
+        for ((column_iters, sender), rg_range) in column_iters.zip(output_senders).zip(row_ranges) {
+            if let Err(e) = column_iters {
+                let _ = sender.send(Err(e.into())).await;
+                break;
             }
-        });
+
+            let permit = semaphore.clone().acquire_owned().await.unwrap();
+            let table_task = spawn_column_iters_to_table_task(
+                column_iters.unwrap(),
+                rg_range,
+                schema_ref.clone(),
+                owned_uri.clone(),
+                predicate.clone(),
+                original_columns.clone(),
+                original_num_rows,
+                delete_rows.clone(),
+                sender,
+                permit,
+            );
+            table_tasks.push(table_task);
+        }
+
+        futures::future::try_join_all(table_tasks)
+            .await?
+            .into_iter()
+            .collect::<DaftResult<()>>()?;
+
+        DaftResult::Ok(())
     });
 
-    let result_stream = futures::stream::iter(receivers.into_iter().map(futures::stream::iter));
+    let stream_of_streams =
+        futures::stream::iter(output_receivers.into_iter().map(ReceiverStream::new));
+    let flattened = match maintain_order {
+        true => stream_of_streams.flatten().boxed(),
+        false => stream_of_streams.flatten_unordered(None).boxed(),
+    };
+    let combined_stream = futures::stream::unfold(
+        (Some(parquet_task), flattened),
+        |(task, mut stream)| async move {
+            task.as_ref()?;
+            match stream.next().await {
+                Some(v) => Some((v, (task, stream))),
+                None => {
+                    if let Err(e) = task.unwrap().await {
+                        Some((Err(e), (None, stream)))
+                    } else {
+                        None
+                    }
+                }
+            }
+        },
+    );
 
-    match maintain_order {
-        true => Ok((metadata, Box::pin(result_stream.flatten()))),
-        false => Ok((metadata, Box::pin(result_stream.flatten_unordered(None)))),
-    }
+    Ok((metadata, combined_stream.boxed()))
 }
 
 #[allow(clippy::too_many_arguments)]

@@ -1,11 +1,18 @@
 use std::sync::Arc;
 
 use eyre::{bail, Context};
-use spark_connect::{expression as spark_expr, Expression};
+use spark_connect::{
+    expression as spark_expr,
+    expression::{
+        cast::{CastToType, EvalMode},
+        sort_order::{NullOrdering, SortDirection},
+    },
+    Expression,
+};
 use tracing::warn;
 use unresolved_function::unresolved_to_daft_expr;
 
-use crate::translation::to_daft_literal;
+use crate::translation::{to_daft_datatype, to_daft_literal};
 
 mod unresolved_function;
 
@@ -69,11 +76,63 @@ pub fn to_daft_expr(expression: &Expression) -> eyre::Result<daft_dsl::ExprRef> 
 
             Ok(child.alias(name))
         }
-        spark_expr::ExprType::Cast(_) => bail!("Cast expressions not yet supported"),
+        spark_expr::ExprType::Cast(c) => {
+            // Cast { expr: Some(Expression { common: None, expr_type: Some(UnresolvedAttribute(UnresolvedAttribute { unparsed_identifier: "id", plan_id: None, is_metadata_column: None })) }), eval_mode: Unspecified, cast_to_type: Some(Type(DataType { kind: Some(String(String { type_variation_reference: 0, collation: "" })) })) }
+            // thread 'tokio-runtime-worker' panicked at src/daft-connect/src/trans
+            let spark_expr::Cast {
+                expr,
+                eval_mode,
+                cast_to_type,
+            } = &**c;
+
+            let Some(expr) = expr else {
+                bail!("Cast expression is required");
+            };
+
+            let expr = to_daft_expr(expr)?;
+
+            let Some(cast_to_type) = cast_to_type else {
+                bail!("Cast to type is required");
+            };
+
+            let data_type = match cast_to_type {
+                CastToType::Type(kind) => to_daft_datatype(kind).wrap_err_with(|| {
+                    format!("Failed to convert spark datatype to daft datatype: {kind:?}")
+                })?,
+                CastToType::TypeStr(s) => {
+                    bail!("Cast to type string not yet supported; tried to cast to {s}");
+                }
+            };
+
+            let eval_mode = EvalMode::try_from(*eval_mode)
+                .wrap_err_with(|| format!("Invalid cast eval mode: {eval_mode}"))?;
+
+            warn!("Ignoring cast eval mode: {eval_mode:?}");
+
+            Ok(expr.cast(&data_type))
+        }
         spark_expr::ExprType::UnresolvedRegex(_) => {
             bail!("Unresolved regex expressions not yet supported")
         }
-        spark_expr::ExprType::SortOrder(_) => bail!("Sort order expressions not yet supported"),
+        spark_expr::ExprType::SortOrder(s) => {
+            let spark_expr::SortOrder {
+                child,
+                direction,
+                null_ordering,
+            } = &**s;
+
+            let Some(_child) = child else {
+                bail!("Sort order child is required");
+            };
+
+            let _sort_direction = SortDirection::try_from(*direction)
+                .wrap_err_with(|| format!("Invalid sort direction: {direction}"))?;
+
+            let _sort_nulls = NullOrdering::try_from(*null_ordering)
+                .wrap_err_with(|| format!("Invalid sort nulls: {null_ordering}"))?;
+
+            bail!("Sort order expressions not yet supported");
+        }
         spark_expr::ExprType::LambdaFunction(_) => {
             bail!("Lambda function expressions not yet supported")
         }
