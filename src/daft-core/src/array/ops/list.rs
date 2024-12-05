@@ -384,6 +384,95 @@ impl ListArray {
         ))
     }
 
+    pub fn distinct(&self) -> DaftResult<Self> {
+        use std::collections::HashMap;
+
+        let flat_child = self.flat_child.to_arrow();
+        let flat_child = &*flat_child;
+
+        let is_equal = build_is_equal(
+            flat_child, flat_child,
+            false, // this value does not matter; invalid (= nulls) are never included
+            true,  // NaNs are equal so we do not get a bunch of {Nan: 1, Nan: 1, ...}
+        )?;
+
+        let is_valid = build_is_valid(flat_child);
+        let total_len = self.flat_child.len();
+        let list_len = self.len();
+
+        // Pre-allocate with estimated capacity
+        let mut include_mask = Vec::with_capacity(total_len);
+        let mut offsets = Vec::with_capacity(list_len);
+        offsets.push(0_i64);
+
+        // Use HashMap to group indices by their hash values
+        let mut value_groups: HashMap<u64, Vec<usize>> = HashMap::with_capacity(64);
+        let hashes = self.flat_child.hash(None)?;
+
+        // Process each list
+        for range in self.offsets().ranges() {
+            value_groups.clear();
+            let mut has_null = false;
+            let mut distinct_count = 0;
+
+            // First pass: group indices by hash
+            for index in range.clone() {
+                let index = index as usize;
+                if !is_valid(index) {
+                    if !has_null {
+                        include_mask.push(true);
+                        has_null = true;
+                        distinct_count += 1;
+                    } else {
+                        include_mask.push(false);
+                    }
+                    continue;
+                }
+
+                let hash = hashes.get(index).unwrap();
+                let is_new = if let Some(group) = value_groups.get_mut(&hash) {
+                    // Check if this value equals any in the group
+                    let mut found_equal = false;
+                    for &existing_index in group.iter() {
+                        if is_equal(existing_index, index) {
+                            found_equal = true;
+                            break;
+                        }
+                    }
+                    if !found_equal {
+                        group.push(index);
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    value_groups.insert(hash, vec![index]);
+                    true
+                };
+
+                if is_new {
+                    include_mask.push(true);
+                    distinct_count += 1;
+                } else {
+                    include_mask.push(false);
+                }
+            }
+
+            offsets.push(offsets.last().unwrap() + distinct_count as i64);
+        }
+
+        let include_mask = BooleanArray::from(("boolean", include_mask.as_slice()));
+        let filtered_child = self.flat_child.filter(&include_mask)?;
+        let offsets = OffsetsBuffer::try_from(offsets)?;
+
+        Ok(Self::new(
+            Arc::new(Field::new(self.name(), self.data_type().clone())),
+            filtered_child,
+            offsets,
+            self.validity().cloned(),
+        ))
+    }
+
     pub fn count(&self, mode: CountMode) -> DaftResult<UInt64Array> {
         let counts = match (mode, self.flat_child.validity()) {
             (CountMode::All, _) | (CountMode::Valid, None) => {
@@ -631,6 +720,11 @@ impl FixedSizeListArray {
     pub fn value_counts(&self) -> DaftResult<MapArray> {
         let list = self.to_list();
         list.value_counts()
+    }
+
+    pub fn distinct(&self) -> DaftResult<ListArray> {
+        let list = self.to_list();
+        list.distinct()
     }
 
     pub fn count(&self, mode: CountMode) -> DaftResult<UInt64Array> {

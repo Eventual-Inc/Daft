@@ -3009,6 +3009,30 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(native.list_value_counts(self._expr))
 
+    def distinct(self) -> Expression:
+        """Returns a list containing only the unique elements from the input list, preserving order.
+
+        Returns:
+            Expression: A List expression containing only unique elements from the input list.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"letters": [["a", "b", "a"], ["b", "c", "b", "c"]]})
+            >>> df.with_column("distinct", df["letters"].list.distinct()).collect()
+            ╭──────────────┬───────────╮
+            │ letters      ┆ distinct  │
+            │ ---          ┆ ---       │
+            │ List[Utf8]   ┆ List[Utf8]│
+            ╞══════════════╪═══════════╡
+            │ [a, b, a]    ┆ [a, b]    │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+            │ [b, c, b, c] ┆ [b, c]    │
+            ╰──────────────┴───────────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+        """
+        return Expression._from_pyexpr(native.list_distinct(self._expr))
+
     def count(self, mode: Literal["all", "valid", "null"] | CountMode = CountMode.Valid) -> Expression:
         """Counts the number of elements in each list
 

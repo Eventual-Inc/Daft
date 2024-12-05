@@ -1,5 +1,6 @@
 mod chunk;
 mod count;
+mod distinct;
 mod explode;
 mod get;
 mod join;
@@ -14,6 +15,7 @@ mod value_counts;
 
 pub use chunk::{list_chunk as chunk, ListChunk};
 pub use count::{list_count as count, ListCount};
+pub use distinct::list_distinct as distinct;
 pub use explode::{explode, Explode};
 pub use get::{list_get as get, ListGet};
 pub use join::{list_join as join, ListJoin};
