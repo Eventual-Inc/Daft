@@ -293,6 +293,9 @@ fn split_scan_tasks_by_parquet_metadata(
         .collect())
 }
 
+/// Maximum number of Parquet Metadata fetches to perform at once while iterating through ScanTasks
+static WINDOW_SIZE_MAX_PARQUET_METADATA_FETCHES: usize = 16;
+
 enum SplitParquetFilesByRowGroupsState {
     ConstructingWindow(Vec<ScanTaskRef>),
     WindowFinalized(Vec<ScanTaskRef>),
@@ -324,9 +327,19 @@ impl<'a> Iterator for SplitParquetFilesByRowGroups<'a> {
                             Ok(next_scan_task) => {
                                 window.push(next_scan_task);
 
-                                // TODO: Naively construct windows of size 1 for now, but should do it conditionally
-                                let should_finalize_window = |_window| true;
-                                if should_finalize_window(&window) {
+                                // Windows are "finalized" when there are >= 16 Parquet Metadatas to be fetched
+                                let should_finalize_window = window
+                                    .iter()
+                                    .filter(|scan_task| {
+                                        SplitScanTaskInfo::from_scan_task(
+                                            scan_task.as_ref(),
+                                            self.config,
+                                        )
+                                        .is_some()
+                                    })
+                                    .count()
+                                    >= WINDOW_SIZE_MAX_PARQUET_METADATA_FETCHES;
+                                if should_finalize_window {
                                     let window = std::mem::take(window);
                                     self.state =
                                         SplitParquetFilesByRowGroupsState::WindowFinalized(window);
