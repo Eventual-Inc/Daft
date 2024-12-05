@@ -1,7 +1,6 @@
 use std::{
-    cmp::max,
+    cmp::{max, min},
     collections::{BTreeMap, HashSet},
-    num::NonZeroUsize,
     sync::Arc,
 };
 
@@ -23,6 +22,7 @@ use snafu::ResultExt;
 use tokio_stream::wrappers::ReceiverStream;
 
 use crate::{
+    determine_parquet_parallelism,
     metadata::read_parquet_metadata,
     read::ParquetSchemaInferenceOptions,
     read_planner::{CoalescePass, RangesContainer, ReadPlanner, SplitLargeRequestPass},
@@ -30,7 +30,7 @@ use crate::{
     stream_reader::spawn_column_iters_to_table_task,
     JoinSnafu, OneShotRecvSnafu, UnableToConvertRowGroupMetadataToStatsSnafu,
     UnableToConvertSchemaToDaftSnafu, UnableToCreateParquetPageStreamSnafu,
-    UnableToParseSchemaFromMetadataSnafu, UnableToRunExpressionOnStatsSnafu,
+    UnableToParseSchemaFromMetadataSnafu, UnableToRunExpressionOnStatsSnafu, PARQUET_MORSEL_SIZE,
 };
 
 pub struct ParquetReaderBuilder {
@@ -411,15 +411,7 @@ impl ParquetFileReader {
             self.arrow_schema.as_ref(),
         )?);
 
-        // We use a semaphore to limit the number of concurrent row group deserialization tasks.
-        // Set the maximum number of concurrent tasks to ceil(number of available threads / columns).
-        let num_parallel_tasks = (std::thread::available_parallelism()
-            .unwrap_or(NonZeroUsize::new(2).unwrap())
-            .checked_mul(2.try_into().unwrap())
-            .unwrap()
-            .get() as f64
-            / max(daft_schema.fields.len(), 1) as f64)
-            .ceil() as usize;
+        let num_parallel_tasks = determine_parquet_parallelism(&daft_schema);
         let semaphore = Arc::new(tokio::sync::Semaphore::new(num_parallel_tasks));
 
         let (senders, receivers): (Vec<_>, Vec<_>) = self
@@ -429,6 +421,7 @@ impl ParquetFileReader {
             .unzip();
 
         let uri = self.uri.clone();
+        let chunk_size = self.chunk_size.unwrap_or(Self::DEFAULT_CHUNK_SIZE);
         let chunk_iter_handles = <Vec<RowGroupRange> as Clone>::clone(&self.row_ranges)
             .into_iter()
             .map(move |row_range| {
@@ -451,7 +444,6 @@ impl ParquetFileReader {
                                 .get(&row_range.row_group_index)
                                 .expect("Row Group index should be in bounds");
                             let num_rows = rg.num_rows().min(row_range.start + row_range.num_rows);
-                            let chunk_size = self.chunk_size.unwrap_or(Self::DEFAULT_CHUNK_SIZE);
                             let filtered_columns = rg
                                 .columns()
                                 .iter()
@@ -517,6 +509,14 @@ impl ParquetFileReader {
         let parquet_task = compute_runtime.spawn(async move {
             let mut table_tasks = Vec::with_capacity(chunk_iter_handles.len());
             for ((row_range, chunk_iter_handle), output_sender) in chunk_iter_handles.zip(senders) {
+                // We want to ensure that the channel capacity can hold one morsel worth of data for better deserialization performance.
+                let channel_size = {
+                    let chunks_per_morsel =
+                        max((PARQUET_MORSEL_SIZE + chunk_size - 1) / chunk_size, 1);
+                    let max_num_chunks = max((row_range.num_rows + chunk_size - 1) / chunk_size, 1);
+                    min(chunks_per_morsel, max_num_chunks)
+                };
+
                 let chunk_iter = chunk_iter_handle
                     .await
                     .context(JoinSnafu { path: uri.clone() })??;
@@ -533,6 +533,7 @@ impl ParquetFileReader {
                     delete_rows.clone(),
                     output_sender,
                     permit,
+                    channel_size,
                 );
                 table_tasks.push(table_task);
             }
@@ -778,7 +779,7 @@ impl ParquetFileReader {
                             .get(&row_range.row_group_index)
                             .expect("Row Group index should be in bounds");
                         let num_rows = rg.num_rows().min(row_range.start + row_range.num_rows);
-                        let chunk_size = self.chunk_size.unwrap_or(128 * 1024);
+                        let chunk_size = self.chunk_size.unwrap_or(PARQUET_MORSEL_SIZE);
                         let columns = rg.columns();
                         let field_name = &field.name;
                         let filtered_cols_idx = columns

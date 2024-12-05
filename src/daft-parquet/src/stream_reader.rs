@@ -1,9 +1,7 @@
 use std::{
-    cmp::max,
     collections::HashSet,
     fs::File,
     io::{Read, Seek},
-    num::NonZeroUsize,
     sync::Arc,
 };
 
@@ -24,10 +22,11 @@ use snafu::ResultExt;
 use tokio_stream::wrappers::ReceiverStream;
 
 use crate::{
+    determine_parquet_parallelism,
     file::{build_row_ranges, RowGroupRange},
     read::{ArrowChunk, ArrowChunkIters, ParquetSchemaInferenceOptions},
     stream_reader::read::schema::infer_schema_with_options,
-    UnableToConvertSchemaToDaftSnafu,
+    UnableToConvertSchemaToDaftSnafu, PARQUET_MORSEL_SIZE,
 };
 
 fn prune_fields_from_schema(
@@ -149,10 +148,11 @@ pub fn spawn_column_iters_to_table_task(
     delete_rows: Option<Vec<i64>>,
     output_sender: tokio::sync::mpsc::Sender<DaftResult<Table>>,
     permit: tokio::sync::OwnedSemaphorePermit,
+    channel_size: usize,
 ) -> RuntimeTask<DaftResult<()>> {
     let (arrow_chunk_senders, mut arrow_chunk_receivers): (Vec<_>, Vec<_>) = arr_iters
         .iter()
-        .map(|_| tokio::sync::mpsc::channel(1))
+        .map(|_| tokio::sync::mpsc::channel(channel_size))
         .unzip();
 
     let compute_runtime = get_compute_runtime();
@@ -437,7 +437,7 @@ pub fn local_parquet_read_into_arrow(
         Schema::try_from(&schema).with_context(|_| UnableToConvertSchemaToDaftSnafu {
             path: uri.to_string(),
         })?;
-    let chunk_size = chunk_size.unwrap_or(128 * 1024);
+    let chunk_size = chunk_size.unwrap_or(PARQUET_MORSEL_SIZE);
     let max_rows = metadata.num_rows.min(num_rows.unwrap_or(metadata.num_rows));
 
     let num_expected_arrays = f32::ceil(max_rows as f32 / chunk_size as f32) as usize;
@@ -601,7 +601,7 @@ pub async fn local_parquet_stream(
     Arc<parquet2::metadata::FileMetaData>,
     BoxStream<'static, DaftResult<Table>>,
 )> {
-    let chunk_size = 128 * 1024;
+    let chunk_size = PARQUET_MORSEL_SIZE;
     let (metadata, schema_ref, row_ranges, column_iters) = local_parquet_read_into_column_iters(
         uri,
         columns.as_deref(),
@@ -616,14 +616,7 @@ pub async fn local_parquet_stream(
 
     // We use a semaphore to limit the number of concurrent row group deserialization tasks.
     // Set the maximum number of concurrent tasks to ceil(number of available threads / columns).
-    let num_parallel_tasks = (std::thread::available_parallelism()
-        .unwrap_or(NonZeroUsize::new(2).unwrap())
-        .checked_mul(2.try_into().unwrap())
-        .unwrap()
-        .get() as f64
-        / max(schema_ref.fields.len(), 1) as f64)
-        .ceil() as usize;
-
+    let num_parallel_tasks = determine_parquet_parallelism(&schema_ref);
     let semaphore = Arc::new(tokio::sync::Semaphore::new(num_parallel_tasks));
 
     let owned_uri = uri.to_string();
@@ -654,6 +647,7 @@ pub async fn local_parquet_stream(
                 delete_rows.clone(),
                 sender,
                 permit,
+                1,
             );
             table_tasks.push(table_task);
         }
