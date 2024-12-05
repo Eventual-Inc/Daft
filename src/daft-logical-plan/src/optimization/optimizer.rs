@@ -7,7 +7,8 @@ use super::{
     logical_plan_tracker::LogicalPlanTracker,
     rules::{
         DropRepartition, EliminateCrossJoin, EnrichWithStats, LiftProjectFromAgg, MaterializeScans,
-        OptimizerRule, PushDownFilter, PushDownLimit, PushDownProjection, SplitActorPoolProjects,
+        OptimizerRule, PushDownFilter, PushDownLimit, PushDownProjection, SimplifyExpressionsRule,
+        SplitActorPoolProjects,
     },
 };
 use crate::LogicalPlan;
@@ -97,6 +98,11 @@ impl Optimizer {
                 ],
                 RuleExecutionStrategy::Once,
             ),
+            // we want to simplify expressions first to make the rest of the rules easier
+            RuleBatch::new(
+                vec![Box::new(SimplifyExpressionsRule::new())],
+                RuleExecutionStrategy::FixedPoint(Some(3)),
+            ),
             // --- Bulk of our rules ---
             RuleBatch::new(
                 vec![
@@ -128,6 +134,11 @@ impl Optimizer {
             RuleBatch::new(
                 vec![Box::new(EnrichWithStats::new())],
                 RuleExecutionStrategy::Once,
+            ),
+            // try to simplify expressions again as other rules could introduce new exprs
+            RuleBatch::new(
+                vec![Box::new(SimplifyExpressionsRule::new())],
+                RuleExecutionStrategy::FixedPoint(Some(3)),
             ),
         ];
 

@@ -97,6 +97,9 @@ Pushdowns: {pushdowns}
 }
 
 impl ScanOperator for DummyScanOperator {
+    fn name(&self) -> &'static str {
+        "dummy"
+    }
     fn schema(&self) -> SchemaRef {
         self.schema.clone()
     }

@@ -115,6 +115,9 @@ class IcebergScanOperator(ScanOperator):
     def schema(self) -> Schema:
         return self._schema
 
+    def name(self) -> str:
+        return "IcebergScanOperator"
+
     def display_name(self) -> str:
         return f"IcebergScanOperator({'.'.join(self._table.name())})"
 
