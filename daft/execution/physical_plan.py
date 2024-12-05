@@ -579,7 +579,7 @@ def cross_join(
 
     # fetch one inner and one outer step at a time to kick off all tasks from both sides
     # while minimizing time to first output
-    inner_has_more, outer_has_more = False, False
+    inner_has_more, outer_has_more = True, True
     while inner_has_more or outer_has_more:
         if inner_has_more:
             try:

@@ -959,8 +959,7 @@ def calculate_cross_join_stats(
         num_rows = left_rows * right_rows
 
         if left_bytes is not None and right_bytes is not None:
-            row_size = left_bytes / left_rows + right_bytes / right_rows
-            size_bytes = int(num_rows * row_size)
+            size_bytes = left_bytes * right_rows + right_bytes * left_rows
         else:
             size_bytes = None
     else:
