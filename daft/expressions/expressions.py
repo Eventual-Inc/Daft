@@ -3019,15 +3019,15 @@ class ExpressionListNamespace(ExpressionNamespace):
             >>> import daft
             >>> df = daft.from_pydict({"letters": [["a", "b", "a"], ["b", "c", "b", "c"]]})
             >>> df.with_column("distinct", df["letters"].list.distinct()).collect()
-            ╭──────────────┬───────────╮
-            │ letters      ┆ distinct  │
-            │ ---          ┆ ---       │
-            │ List[Utf8]   ┆ List[Utf8]│
-            ╞══════════════╪═══════════╡
-            │ [a, b, a]    ┆ [a, b]    │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-            │ [b, c, b, c] ┆ [b, c]    │
-            ╰──────────────┴───────────╯
+            ╭──────────────┬────────────╮
+            │ letters      ┆ distinct   │
+            │ ---          ┆ ---        │
+            │ List[Utf8]   ┆ List[Utf8] │
+            ╞══════════════╪════════════╡
+            │ [a, b, a]    ┆ [a, b]     │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ [b, c, b, c] ┆ [b, c]     │
+            ╰──────────────┴────────────╯
             <BLANKLINE>
             (Showing first 2 of 2 rows)
         """
