@@ -1,5 +1,3 @@
-import os
-
 import daft
 from daft import DataFrame, DataType, Expression, Series, col
 
@@ -98,11 +96,6 @@ def components(df: DataFrame) -> DataFrame:
 
 
 if __name__ == "__main__":
-    import ray
-
-    print("RAY_JOB_ID", os.getenv("RAY_JOB_ID"))
-    print("Ray is initialized", ray.is_initialized())
-
     daft.context.set_runner_ray()
     daft.set_execution_config(enable_ray_tracing=True)
 
