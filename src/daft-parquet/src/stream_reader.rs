@@ -1,5 +1,9 @@
 use std::{
-    cmp::max, collections::HashSet, fs::File, io::{Read, Seek}, sync::Arc
+    cmp::max,
+    collections::HashSet,
+    fs::File,
+    io::{Read, Seek},
+    sync::Arc,
 };
 
 use arrow2::{bitmap::Bitmap, io::parquet::read};
