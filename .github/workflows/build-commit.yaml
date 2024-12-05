@@ -22,7 +22,7 @@ jobs:
     runs-on: ${{ inputs.arch == 'x86' && 'buildjet-8vcpu-ubuntu-2004' || 'buildjet-8vcpu-ubuntu-2204-arm' }}
     timeout-minutes: 30 # Remove for ssh debugging
     permissions:
-      id-token: write
+      id-token: read
       contents: read
     steps:
     - name: Set platform substring

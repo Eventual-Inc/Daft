@@ -49,7 +49,7 @@ jobs:
     runs-on: [self-hosted, linux, x64, ci-dev]
     timeout-minutes: 15 # Remove for ssh debugging
     permissions:
-      id-token: write
+      id-token: read
       contents: read
     steps:
     - name: Log workflow inputs
