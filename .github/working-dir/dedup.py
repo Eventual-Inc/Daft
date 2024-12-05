@@ -96,6 +96,7 @@ def components(df: DataFrame) -> DataFrame:
 
 
 if __name__ == "__main__":
+    daft.context.set_runner_ray()
     daft.set_execution_config(enable_ray_tracing=True)
 
     df = daft.read_parquet("s3://eventual-dev-benchmarking-fixtures/redpajama-parquet/v1.0.0/sample-0.01")
