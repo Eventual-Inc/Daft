@@ -50,6 +50,7 @@ pub trait IntermediateOperator: Send + Sync {
     }
     /// The maximum number of concurrent workers that can be spawned for this operator.
     /// Each worker will has its own IntermediateOperatorState.
+    /// This method should be overridden if the operator needs to limit the number of concurrent workers, i.e. UDFs with resource requests.
     fn max_concurrency(&self) -> DaftResult<usize> {
         Ok(*NUM_CPUS)
     }

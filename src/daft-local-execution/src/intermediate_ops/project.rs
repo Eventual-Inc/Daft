@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
-use common_resource_request::ResourceRequest;
 use common_runtime::RuntimeRef;
-use daft_dsl::ExprRef;
+use daft_dsl::{functions::python::get_resource_request, ExprRef};
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
@@ -15,14 +14,12 @@ use crate::NUM_CPUS;
 
 pub struct ProjectOperator {
     projection: Arc<Vec<ExprRef>>,
-    resource_request: Option<ResourceRequest>,
 }
 
 impl ProjectOperator {
-    pub fn new(projection: Vec<ExprRef>, resource_request: Option<ResourceRequest>) -> Self {
+    pub fn new(projection: Vec<ExprRef>) -> Self {
         Self {
             projection: Arc::new(projection),
-            resource_request,
         }
     }
 }
@@ -52,7 +49,8 @@ impl IntermediateOperator for ProjectOperator {
     }
 
     fn max_concurrency(&self) -> DaftResult<usize> {
-        match &self.resource_request {
+        let resource_request = get_resource_request(&self.projection);
+        match resource_request {
             // If the resource request specifies a number of CPUs, the max concurrency is the number of CPUs
             // divided by the requested number of CPUs, clamped to (1, NUM_CPUS).
             // E.g. if the resource request specifies 2 CPUs and NUM_CPUS is 4, the max concurrency is 2.

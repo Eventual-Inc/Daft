@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_error::{DaftError, DaftResult};
 use common_scan_info::ScanState;
 use daft_core::join::JoinStrategy;
-use daft_dsl::{functions::python::get_resource_request, ExprRef};
+use daft_dsl::ExprRef;
 use daft_logical_plan::{JoinType, LogicalPlan, LogicalPlanRef, SourceInfo};
 
 use super::plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
@@ -58,11 +58,9 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
         }
         LogicalPlan::Project(project) => {
             let input = translate(&project.input)?;
-            let resource_request = get_resource_request(&project.projection);
             Ok(LocalPhysicalPlan::project(
                 input,
                 project.projection.clone(),
-                resource_request,
                 project.projected_schema.clone(),
                 project.stats_state.clone(),
             ))
