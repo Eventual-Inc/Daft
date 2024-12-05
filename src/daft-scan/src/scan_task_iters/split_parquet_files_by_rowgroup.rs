@@ -22,7 +22,9 @@ enum SplitSingleParquetFileByRowGroupsState {
     ReadyToEmit(usize, Vec<usize>),
 }
 
-/// Splits a single Parquet file by its rowgroups
+/// Splits a single Parquet-based ScanTask by rowgroups into smaller chunked ScanTasks
+///
+/// This is used as an Iterator, yielding ScanTaskRefs after splitting the Parquet file
 struct SplitSingleParquetFileByRowGroups<'a> {
     state: SplitSingleParquetFileByRowGroupsState,
     scan_task: &'a ScanTask,
@@ -190,12 +192,13 @@ impl<'a> Iterator for SplitSingleParquetFileByRowGroups<'a> {
 /// TODO: this can be extended to hold other useful information to inform the splitting *without* requiring
 /// a Parquet metadata fetch. For example, rowgroup indices provided by a catalog/parquet metadata provider.
 struct SplitScanTaskInfo<'a> {
+    to_split: &'a ScanTask,
     path: &'a str,
     parquet_source_config: &'a ParquetSourceConfig,
 }
 
 impl<'a> SplitScanTaskInfo<'a> {
-    /// Optionally generates [`SplitScanTaskInfo`] depending on whether or not a given ScanTask can be split
+    /// Optionally creates [`SplitScanTaskInfo`] depending on whether or not a given ScanTask can be split
     pub fn from_scan_task(scan_task: &'a ScanTask, config: &DaftExecutionConfig) -> Option<Self> {
         /* Only split parquet tasks if they:
             - have one source
@@ -224,11 +227,26 @@ impl<'a> SplitScanTaskInfo<'a> {
                 .map_or(true, std::vec::Vec::is_empty)
         {
             Some(SplitScanTaskInfo {
+                to_split: scan_task,
                 path: source.get_path(),
                 parquet_source_config,
             })
         } else {
             None
+        }
+    }
+
+    /// Uses Parquet FileMetaData to create an Iterator of ScanTasks that are the result of splitting the existing Parquet ScanTask
+    pub fn get_scan_task_iter(
+        &self,
+        file_metadata: FileMetaData,
+        config: &'a DaftExecutionConfig,
+    ) -> SplitSingleParquetFileByRowGroups {
+        SplitSingleParquetFileByRowGroups {
+            state: SplitSingleParquetFileByRowGroupsState::Accumulating(0, Vec::new(), 0.),
+            scan_task: self.to_split,
+            file_metadata,
+            config,
         }
     }
 }
@@ -237,7 +255,7 @@ impl<'a> SplitScanTaskInfo<'a> {
 ///
 /// Returns a HashMap of {idx: split_results}
 fn split_scan_tasks_by_parquet_metadata(
-    scan_tasks_to_split: &[(usize, &ScanTask, SplitScanTaskInfo)],
+    scan_tasks_to_split: &[(usize, SplitScanTaskInfo)],
     config: &DaftExecutionConfig,
 ) -> DaftResult<HashMap<usize, Vec<ScanTaskRef>>> {
     // Perform a bulk Parquet metadata fetch
@@ -248,8 +266,8 @@ fn split_scan_tasks_by_parquet_metadata(
     ));
     let parquet_metadata_futures = scan_tasks_to_split
         .iter()
-        .map(|(_, scan_task, split_info)| {
-            let io_config = scan_task.storage_config.get_io_config();
+        .map(|(_, split_info)| {
+            let io_config = split_info.to_split.storage_config.get_io_config();
             let io_client = get_io_client(true, io_config)?;
             let io_stats = io_stats.clone();
             let field_id_mapping = split_info.parquet_source_config.field_id_mapping.clone();
@@ -268,14 +286,9 @@ fn split_scan_tasks_by_parquet_metadata(
     Ok(scan_tasks_to_split
         .iter()
         .zip(file_metadatas)
-        .map(|((idx, scan_task, _), file_metadata)| {
-            let splitter = SplitSingleParquetFileByRowGroups {
-                state: SplitSingleParquetFileByRowGroupsState::Accumulating(0, Vec::new(), 0.),
-                scan_task,
-                file_metadata,
-                config,
-            };
-            (*idx, splitter.collect_vec())
+        .map(|((idx, split_info), file_metadata)| {
+            let split_tasks = split_info.get_scan_task_iter(file_metadata, config);
+            (*idx, split_tasks.collect_vec())
         })
         .collect())
 }
@@ -340,7 +353,7 @@ impl<'a> Iterator for SplitParquetFilesByRowGroups<'a> {
                             .enumerate()
                             .filter_map(|(idx, maybe_split)| {
                                 SplitScanTaskInfo::from_scan_task(maybe_split.as_ref(), self.config)
-                                    .map(|split_info| (idx, maybe_split.as_ref(), split_info))
+                                    .map(|split_info| (idx, split_info))
                             });
 
                     // Perform a split of ScanTasks: note that this might trigger expensive I/O to retrieve Parquet metadata
