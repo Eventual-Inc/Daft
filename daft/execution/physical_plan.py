@@ -40,6 +40,7 @@ from daft.execution.execution_step import (
     PartitionTaskBuilder,
     ReduceInstruction,
     SingleOutputPartitionTask,
+    calculate_cross_join_stats,
 )
 from daft.expressions import ExpressionsProjection
 from daft.runners.partitioning import (
@@ -574,13 +575,32 @@ def cross_join(
     outer_plan, inner_plan = (left_plan, right_plan) if outer_loop_side == JoinSide.Left else (right_plan, left_plan)
 
     inner_requests: deque[SingleOutputPartitionTask[PartitionT]] = deque()
-    for step in inner_plan:
-        if isinstance(step, PartitionTaskBuilder):
-            step = step.finalize_partition_task_single_output(stage_id=stage_id)
-            inner_requests.append(step)
-        yield step
-
     outer_requests: deque[SingleOutputPartitionTask[PartitionT]] = deque()
+
+    # fetch one inner and one outer step at a time to kick off all tasks from both sides
+    # while minimizing time to first output
+    inner_has_more, outer_has_more = False, False
+    while inner_has_more or outer_has_more:
+        if inner_has_more:
+            try:
+                step = next(inner_plan)
+                if isinstance(step, PartitionTaskBuilder):
+                    step = step.finalize_partition_task_single_output(stage_id=stage_id)
+                    inner_requests.append(step)
+                yield step
+            except StopIteration:
+                inner_has_more = False
+
+        if outer_has_more:
+            try:
+                step = next(outer_plan)
+                if isinstance(step, PartitionTaskBuilder):
+                    step = step.finalize_partition_task_single_output(stage_id=stage_id)
+                    outer_requests.append(step)
+                yield step
+            except StopIteration:
+                outer_has_more = False
+
     while True:
         while outer_requests and outer_requests[0].done():
             next_outer = outer_requests.popleft()
@@ -598,18 +618,16 @@ def cross_join(
                 )
 
                 # Calculate memory request for task.
-                left_size_bytes = next_left.partition_metadata().size_bytes
-                right_size_bytes = next_right.partition_metadata().size_bytes
-                if left_size_bytes is None and right_size_bytes is None:
-                    size_bytes = None
-                elif left_size_bytes is None and right_size_bytes is not None:
-                    # Assume that left and right side are ~ the same size.
-                    size_bytes = right_size_bytes**2
-                elif right_size_bytes is None and left_size_bytes is not None:
-                    # Assume that left and right side are ~ the same size.
-                    size_bytes = left_size_bytes**2
-                elif left_size_bytes is not None and right_size_bytes is not None:
-                    size_bytes = left_size_bytes * right_size_bytes
+                left_meta = next_left.partition_metadata()
+                right_meta = next_right.partition_metadata()
+
+                size_bytes = None
+
+                # If left or right side metadata missing, assume that left and right side are ~ the same size.
+                for first, second in [(left_meta, right_meta), (left_meta, left_meta), (right_meta, right_meta)]:
+                    _, size_bytes = calculate_cross_join_stats(first, second)
+                    if size_bytes is not None:
+                        break
 
                 join_step = PartitionTaskBuilder[PartitionT](
                     inputs=[next_left.partition(), next_right.partition()],
@@ -619,21 +637,14 @@ def cross_join(
 
                 yield join_step
 
-        try:
-            step = next(outer_plan)
-            if isinstance(step, PartitionTaskBuilder):
-                step = step.finalize_partition_task_single_output(stage_id=stage_id)
-                outer_requests.append(step)
-            yield step
-        except StopIteration:
-            if outer_requests:
-                logger.debug(
-                    "cross join blocked on completion of outer side of join.\n outer sources: %s",
-                    outer_requests,
-                )
-                yield None
-            else:
-                return
+        if outer_requests:
+            logger.debug(
+                "cross join blocked on completion of outer side of join.\n outer sources: %s",
+                outer_requests,
+            )
+            yield None
+        else:
+            return
 
 
 class MergeJoinTaskTracker(Generic[PartitionT]):

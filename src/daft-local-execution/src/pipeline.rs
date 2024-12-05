@@ -6,6 +6,7 @@ use common_error::DaftResult;
 use common_file_formats::FileFormat;
 use daft_core::{
     datatypes::Field,
+    join::JoinSide,
     prelude::{Schema, SchemaRef},
     utils::supertype,
 };
@@ -27,16 +28,16 @@ use crate::{
     channel::Receiver,
     intermediate_ops::{
         actor_pool_project::ActorPoolProjectOperator, aggregate::AggregateOperator,
-        anti_semi_hash_join_probe::AntiSemiProbeOperator, explode::ExplodeOperator,
-        filter::FilterOperator, inner_hash_join_probe::InnerHashJoinProbeOperator,
-        intermediate_op::IntermediateNode, project::ProjectOperator, sample::SampleOperator,
-        unpivot::UnpivotOperator,
+        anti_semi_hash_join_probe::AntiSemiProbeOperator, cross_join::CrossJoinOperator,
+        explode::ExplodeOperator, filter::FilterOperator,
+        inner_hash_join_probe::InnerHashJoinProbeOperator, intermediate_op::IntermediateNode,
+        project::ProjectOperator, sample::SampleOperator, unpivot::UnpivotOperator,
     },
     sinks::{
         aggregate::AggregateSink,
         blocking_sink::BlockingSinkNode,
         concat::ConcatSink,
-        cross_join::CrossJoinSink,
+        cross_join_collect::{CrossJoinCollectSink, CrossJoinStateBridge},
         hash_join_build::{HashJoinBuildSink, ProbeStateBridge},
         limit::LimitSink,
         monotonically_increasing_id::MonotonicallyIncreasingIdSink,
@@ -473,13 +474,60 @@ pub fn physical_plan_to_pipeline(
                 plan_name: physical_plan.name(),
             })?
         }
-        LocalPhysicalPlan::CrossJoin(CrossJoin { left, right, .. }) => {
-            let left_node = physical_plan_to_pipeline(left, psets, cfg)?;
-            let right_node = physical_plan_to_pipeline(right, psets, cfg)?;
+        LocalPhysicalPlan::CrossJoin(CrossJoin {
+            left,
+            right,
+            schema,
+            ..
+        }) => {
+            let left_stats_state = left.get_stats_state();
+            let right_stats_state = right.get_stats_state();
 
-            StreamingSinkNode::new(
-                Arc::new(CrossJoinSink::new(right.schema().clone())),
-                vec![right_node, left_node],
+            // To determine whether to use the left or right side of a join for collecting vs streaming, we choose
+            // the larger side to stream so that it can be parallelized via an intermediate op. Default to left side.
+            let stream_on_left = match (left_stats_state, right_stats_state) {
+                (StatsState::Materialized(left_stats), StatsState::Materialized(right_stats)) => {
+                    left_stats.approx_stats.upper_bound_bytes
+                        > right_stats.approx_stats.upper_bound_bytes
+                }
+                // If stats are only available on the right side of the join, and the upper bound bytes on the
+                // right are under the broadcast join size threshold, we stream on the left.
+                (StatsState::NotMaterialized, StatsState::Materialized(right_stats)) => right_stats
+                    .approx_stats
+                    .upper_bound_bytes
+                    .map_or(true, |size| size < cfg.broadcast_join_size_bytes_threshold),
+                // If stats are not available, we fall back and stream on the left by default.
+                _ => true,
+            };
+
+            let stream_side = if stream_on_left {
+                JoinSide::Left
+            } else {
+                JoinSide::Right
+            };
+
+            let (stream_child, collect_child) = match stream_side {
+                JoinSide::Left => (left, right),
+                JoinSide::Right => (right, left),
+            };
+
+            let stream_child_node = physical_plan_to_pipeline(stream_child, psets, cfg)?;
+            let collect_child_node = physical_plan_to_pipeline(collect_child, psets, cfg)?;
+
+            let state_bridge = CrossJoinStateBridge::new();
+            let collect_node = BlockingSinkNode::new(
+                Arc::new(CrossJoinCollectSink::new(state_bridge.clone())),
+                collect_child_node,
+            )
+            .boxed();
+
+            IntermediateNode::new(
+                Arc::new(CrossJoinOperator::new(
+                    schema.clone(),
+                    stream_side,
+                    state_bridge,
+                )),
+                vec![collect_node, stream_child_node],
             )
             .boxed()
         }

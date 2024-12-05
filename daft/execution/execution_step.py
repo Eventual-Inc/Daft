@@ -947,6 +947,29 @@ class ReduceToQuantiles(ReduceInstruction):
         ]
 
 
+def calculate_cross_join_stats(
+    left_meta: PartialPartitionMetadata, right_meta: PartialPartitionMetadata
+) -> tuple[int | None, int | None]:
+    """Given the left and right partition metadata, returns the expected (num rows, size bytes) of the cross join output."""
+
+    left_rows, left_bytes = left_meta.num_rows, left_meta.size_bytes
+    right_rows, right_bytes = right_meta.num_rows, right_meta.size_bytes
+
+    if left_rows is not None and right_rows is not None:
+        num_rows = left_rows * right_rows
+
+        if left_bytes is not None and right_bytes is not None:
+            row_size = left_bytes / left_rows + right_bytes / right_rows
+            size_bytes = int(num_rows * row_size)
+        else:
+            size_bytes = None
+    else:
+        num_rows = None
+        size_bytes = None
+
+    return num_rows, size_bytes
+
+
 @dataclass(frozen=True)
 class CrossJoin(SingleOutputInstruction):
     outer_loop_side: JoinSide
@@ -965,16 +988,8 @@ class CrossJoin(SingleOutputInstruction):
     def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
         left_meta, right_meta = input_metadatas
 
-        num_rows = (
-            (left_meta.num_rows * right_meta.num_rows)
-            if (left_meta.num_rows is not None and right_meta.num_rows is not None)
-            else None
-        )
-        size_bytes = (
-            (left_meta.size_bytes * right_meta.size_bytes)
-            if (left_meta.size_bytes is not None and right_meta.size_bytes is not None)
-            else None
-        )
+        num_rows, size_bytes = calculate_cross_join_stats(left_meta, right_meta)
+
         boundaries = left_meta.boundaries if self.outer_loop_side == JoinSide.Left else right_meta.boundaries
 
         return [PartialPartitionMetadata(num_rows=num_rows, size_bytes=size_bytes, boundaries=boundaries)]

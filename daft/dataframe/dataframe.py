@@ -1777,21 +1777,21 @@ class DataFrame:
         Returns:
             DataFrame: Joined DataFrame.
         """
+
         if how == "cross":
             if any(side_on is not None for side_on in [on, left_on, right_on]):
                 raise ValueError("In a cross join, `on`, `left_on`, and `right_on` cannot be set")
 
             left_on = []
             right_on = []
+        elif on is None:
+            if left_on is None or right_on is None:
+                raise ValueError("If `on` is None then both `left_on` and `right_on` must not be None")
         else:
-            if on is None:
-                if left_on is None or right_on is None:
-                    raise ValueError("If `on` is None then both `left_on` and `right_on` must not be None")
-            else:
-                if left_on is not None or right_on is not None:
-                    raise ValueError("If `on` is not None then both `left_on` and `right_on` must be None")
-                left_on = on
-                right_on = on
+            if left_on is not None or right_on is not None:
+                raise ValueError("If `on` is not None then both `left_on` and `right_on` must be None")
+            left_on = on
+            right_on = on
 
         join_type = JoinType.from_join_type_str(how)
         join_strategy = JoinStrategy.from_join_strategy_str(strategy) if strategy is not None else None
