@@ -8,6 +8,7 @@ mod run;
 mod runtime_stats;
 mod sinks;
 mod sources;
+mod state_bridge;
 
 use std::{
     future::Future,
