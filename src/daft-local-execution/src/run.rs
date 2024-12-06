@@ -12,7 +12,7 @@ use common_tracing::refresh_chrome_trace;
 use daft_local_plan::{translate, LocalPhysicalPlan};
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::{
-    partitioning::{LocalPartitionSet, PartitionSet},
+    partitioning::{InMemoryPartitionSet, PartitionSet},
     MicroPartition,
 };
 use futures::{FutureExt, Stream};
@@ -92,7 +92,7 @@ impl PyNativeExecutor {
                 )
             })
             .collect();
-        let psets = Arc::new(LocalPartitionSet::new(native_psets));
+        let psets = Arc::new(InMemoryPartitionSet::new(native_psets));
         let out = py.allow_threads(|| {
             self.executor
                 .run(psets, cfg.config, results_buffer_size)

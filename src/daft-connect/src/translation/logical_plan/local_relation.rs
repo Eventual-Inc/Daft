@@ -9,7 +9,7 @@ use daft_logical_plan::{
     logical_plan::Source, InMemoryInfo, LogicalPlan, LogicalPlanBuilder, PyLogicalPlanBuilder,
     SourceInfo,
 };
-use daft_micropartition::partitioning::LocalPartitionSet;
+use daft_micropartition::partitioning::InMemoryPartitionSet;
 use daft_schema::dtype::DaftDataType;
 use daft_table::Table;
 use eyre::{bail, ensure, WrapErr};
@@ -183,7 +183,7 @@ pub fn local_relation(plan: spark_connect::LocalRelation) -> eyre::Result<Plan> 
 
         let plan = Plan {
             builder: plan,
-            psets: Arc::new(LocalPartitionSet::new(psets)),
+            psets: Arc::new(InMemoryPartitionSet::new(psets)),
         };
 
         Ok(plan)

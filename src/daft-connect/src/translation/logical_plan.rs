@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_logical_plan::LogicalPlanBuilder;
-use daft_micropartition::partitioning::{LocalPartitionSet, PartitionSet};
+use daft_micropartition::partitioning::{InMemoryPartitionSet, PartitionSet};
 use eyre::{bail, Context};
 use spark_connect::{relation::RelType, Limit, Relation};
 use tracing::warn;
@@ -27,7 +27,7 @@ impl Plan {
     pub fn new(builder: LogicalPlanBuilder) -> Self {
         Self {
             builder,
-            psets: Arc::new(LocalPartitionSet::default()),
+            psets: Arc::new(InMemoryPartitionSet::default()),
         }
     }
 }
@@ -36,7 +36,7 @@ impl From<LogicalPlanBuilder> for Plan {
     fn from(builder: LogicalPlanBuilder) -> Self {
         Self {
             builder,
-            psets: Arc::new(LocalPartitionSet::default()),
+            psets: Arc::new(InMemoryPartitionSet::default()),
         }
     }
 }

@@ -75,7 +75,7 @@ impl PartitionBatch for InMemoryPartitionBatch {
     }
 }
 
-/// an arc'd reference to a partition batch
+/// an arc'd reference to a [`PartitionBatch`]
 pub type PartitionBatchRef = Arc<dyn PartitionBatch>;
 
 pub trait PartitionSet {
@@ -107,17 +107,17 @@ pub trait PartitionSet {
 }
 
 #[derive(Debug, Default)]
-pub struct LocalPartitionSet {
+pub struct InMemoryPartitionSet {
     pub partitions: HashMap<String, Vec<Arc<MicroPartition>>>,
 }
 
-impl LocalPartitionSet {
+impl InMemoryPartitionSet {
     pub fn new(psets: HashMap<String, Vec<Arc<MicroPartition>>>) -> Self {
         Self { partitions: psets }
     }
 }
 
-impl PartitionSet for LocalPartitionSet {
+impl PartitionSet for InMemoryPartitionSet {
     fn get_merged_micropartitions(&self) -> DaftResult<MicroPartition> {
         let parts = self.values()?;
         let parts = parts
