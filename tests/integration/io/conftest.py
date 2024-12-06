@@ -71,7 +71,7 @@ def azure_storage_public_config() -> daft.io.IOConfig:
 
 @pytest.fixture(scope="session")
 def nginx_config() -> tuple[str, pathlib.Path]:
-    """Returns the (nginx_server_url, static_files_tmpdir) as a tuple"""
+    """Returns the (nginx_server_url, static_files_tmpdir) as a tuple."""
     return (
         "http://127.0.0.1:8080",
         pathlib.Path("/tmp/daft-integration-testing/nginx"),
@@ -80,7 +80,7 @@ def nginx_config() -> tuple[str, pathlib.Path]:
 
 @pytest.fixture(scope="session", params=["standard", "adaptive"], ids=["standard", "adaptive"])
 def retry_server_s3_config(request) -> daft.io.IOConfig:
-    """Returns the URL to the local retry_server fixture"""
+    """Returns the URL to the local retry_server fixture."""
     retry_mode = request.param
     return daft.io.IOConfig(
         s3=daft.io.S3Config(endpoint_url="http://127.0.0.1:8001", anonymous=True, num_tries=10, retry_mode=retry_mode)
@@ -96,7 +96,7 @@ def retry_server_s3_config(request) -> daft.io.IOConfig:
 def minio_create_bucket(
     minio_io_config: daft.io.IOConfig, bucket_name: str = "my-minio-bucket"
 ) -> YieldFixture[list[str]]:
-    """Creates a bucket in MinIO
+    """Creates a bucket in MinIO.
 
     Yields a s3fs FileSystem
     """
@@ -118,7 +118,7 @@ def minio_create_bucket(
 def mount_data_minio(
     minio_io_config: daft.io.IOConfig, folder: pathlib.Path, bucket_name: str = "my-minio-bucket"
 ) -> YieldFixture[list[str]]:
-    """Mounts data in `folder` into files in minio
+    """Mounts data in `folder` into files in minio.
 
     Yields a list of S3 URLs
     """
@@ -137,7 +137,7 @@ def mount_data_minio(
 
 @contextlib.contextmanager
 def mount_data_nginx(nginx_config: tuple[str, pathlib.Path], folder: pathlib.Path) -> YieldFixture[list[str]]:
-    """Mounts data in `folder` into servable static files in NGINX
+    """Mounts data in `folder` into servable static files in NGINX.
 
     Yields a list of HTTP URLs
     """
@@ -178,7 +178,7 @@ def mount_data_nginx(nginx_config: tuple[str, pathlib.Path], folder: pathlib.Pat
 
 @pytest.fixture(scope="session")
 def image_data() -> YieldFixture[bytes]:
-    """Bytes of a small image"""
+    """Bytes of a small image."""
     bio = io.BytesIO()
     image = Image.fromarray(np.ones((3, 3)).astype(np.uint8))
     image.save(bio, format="JPEG")
@@ -187,7 +187,7 @@ def image_data() -> YieldFixture[bytes]:
 
 @pytest.fixture(scope="function")
 def image_data_folder(image_data, tmpdir) -> YieldFixture[str]:
-    """Dumps 10 small JPEG files into a tmpdir"""
+    """Dumps 10 small JPEG files into a tmpdir."""
     tmpdir = pathlib.Path(tmpdir)
 
     for i in range(10):
@@ -201,7 +201,7 @@ def image_data_folder(image_data, tmpdir) -> YieldFixture[str]:
 def mock_http_image_urls(
     nginx_config: tuple[str, pathlib.Path], image_data_folder: pathlib.Path
 ) -> YieldFixture[list[str]]:
-    """Uses the docker-compose Nginx server to serve HTTP image URLs
+    """Uses the docker-compose Nginx server to serve HTTP image URLs.
 
     This fixture yields:
         list[str]: URLs of files available on the HTTP server
@@ -212,14 +212,14 @@ def mock_http_image_urls(
 
 @pytest.fixture(scope="function")
 def minio_image_data_fixture(minio_io_config, image_data_folder) -> YieldFixture[list[str]]:
-    """Populates the minio session with some fake data and yields (S3Config, paths)"""
+    """Populates the minio session with some fake data and yields (S3Config, paths)."""
     with mount_data_minio(minio_io_config, image_data_folder) as urls:
         yield urls
 
 
 @pytest.fixture(scope="session")
 def small_images_s3_paths() -> list[str]:
-    """Paths to small *.jpg files in a public S3 bucket"""
+    """Paths to small *.jpg files in a public S3 bucket."""
     return [f"s3://daft-public-data/test_fixtures/small_images/rickroll{i}.jpg" for i in range(6)] + [
         f"s3a://daft-public-data/test_fixtures/small_images/rickroll{i}.jpg" for i in range(6)
     ]

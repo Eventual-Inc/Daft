@@ -83,7 +83,7 @@ def run_udf(
     py_return_dtype: PyDataType,
     batch_size: int | None,
 ) -> PySeries:
-    """API to call from Rust code that will call an UDF (initialized, in the case of actor pool UDFs) on the inputs"""
+    """API to call from Rust code that will call an UDF (initialized, in the case of actor pool UDFs) on the inputs."""
     return_dtype = DataType._from_pydatatype(py_return_dtype)
     kwarg_keys = list(bound_args.bound_args.kwargs.keys())
     arg_keys = bound_args.arg_keys()
@@ -326,7 +326,6 @@ class UDF:
         """Override the concurrency of this UDF, which tells Daft how many instances of your UDF to run concurrently.
 
         Example:
-
         >>> import daft
         >>>
         >>> @daft.udf(return_dtype=daft.DataType.string(), num_gpus=1)
@@ -343,11 +342,9 @@ class UDF:
         return dataclasses.replace(self, concurrency=concurrency)
 
     def with_init_args(self, *args, **kwargs) -> UDF:
-        """Replace initialization arguments for a class UDF when calling `__init__` at runtime
-        on each instance of the UDF.
+        """Replace initialization arguments for a class UDF when calling `__init__` at runtime on each instance of the UDF.
 
         Example:
-
         >>> import daft
         >>>
         >>> @daft.udf(return_dtype=daft.DataType.string())
@@ -403,7 +400,7 @@ def udf(
     memory_bytes: int | None = None,
     batch_size: int | None = None,
 ) -> Callable[[UserDefinedPyFuncLike], UDF]:
-    """`@udf` Decorator to convert a Python function/class into a `UDF`
+    """`@udf` Decorator to convert a Python function/class into a `UDF`.
 
     UDFs allow users to run arbitrary Python code on the outputs of Expressions.
 

@@ -16,8 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 def actor_event_loop(uninitialized_projection: ExpressionsProjection, conn: Connection) -> None:
-    """
-    Event loop that runs in a actor process and receives MicroPartitions to evaluate with an initialized UDF projection.
+    """Event loop that runs in a actor process and receives MicroPartitions to evaluate with an initialized UDF projection.
 
     Terminates once it receives None.
     """

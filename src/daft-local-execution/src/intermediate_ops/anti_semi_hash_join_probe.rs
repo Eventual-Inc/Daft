@@ -5,17 +5,17 @@ use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
 use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;
-use daft_table::{GrowableTable, Probeable};
+use daft_table::{GrowableTable, ProbeState, Probeable};
 use tracing::{info_span, instrument, Span};
 
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::{runtime_stats::ExecutionTaskSpawner, sinks::hash_join_build::ProbeStateBridgeRef};
+use crate::{runtime_stats::ExecutionTaskSpawner, state_bridge::BroadcastStateBridgeRef};
 
 enum AntiSemiProbeState {
-    Building(ProbeStateBridgeRef),
+    Building(BroadcastStateBridgeRef<ProbeState>),
     Probing(Arc<dyn Probeable>),
 }
 
@@ -23,7 +23,7 @@ impl AntiSemiProbeState {
     async fn get_or_await_probeable(&mut self) -> Arc<dyn Probeable> {
         match self {
             Self::Building(bridge) => {
-                let probe_state = bridge.get_probe_state().await;
+                let probe_state = bridge.get_state().await;
                 let probeable = probe_state.get_probeable();
                 *self = Self::Probing(probeable.clone());
                 probeable.clone()
@@ -47,7 +47,7 @@ struct AntiSemiJoinParams {
 pub(crate) struct AntiSemiProbeOperator {
     params: Arc<AntiSemiJoinParams>,
     output_schema: SchemaRef,
-    probe_state_bridge: ProbeStateBridgeRef,
+    probe_state_bridge: BroadcastStateBridgeRef<ProbeState>,
 }
 
 impl AntiSemiProbeOperator {
@@ -57,7 +57,7 @@ impl AntiSemiProbeOperator {
         probe_on: Vec<ExprRef>,
         join_type: &JoinType,
         output_schema: &SchemaRef,
-        probe_state_bridge: ProbeStateBridgeRef,
+        probe_state_bridge: BroadcastStateBridgeRef<ProbeState>,
     ) -> Self {
         Self {
             params: Arc::new(AntiSemiJoinParams {

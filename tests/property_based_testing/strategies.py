@@ -46,7 +46,7 @@ _default_strategies = {
 
 @composite
 def generate_data(draw, daft_type: DataType, strategies: dict[DataType, SearchStrategy] = _default_strategies):
-    """Helper to generate data when given a daft_type"""
+    """Helper to generate data when given a daft_type."""
     if daft_type not in strategies:
         raise NotImplementedError(f"Strategy for type {daft_type} not implemented")
     return draw(strategies[daft_type], label=f"Generated data for type {daft_type}")
@@ -90,7 +90,7 @@ def series(
     dtypes: SearchStrategy[DataType] = all_dtypes,
     strategies: dict[DataType, SearchStrategy] = _default_strategies,
 ) -> Series:
-    """Generate a column of data
+    """Generate a column of data.
 
     Args:
         draw: Hypothesis draw function

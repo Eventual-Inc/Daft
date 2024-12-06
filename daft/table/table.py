@@ -157,7 +157,7 @@ class Table:
     ###
 
     def to_table(self) -> Table:
-        """For compatibility with MicroPartition"""
+        """For compatibility with MicroPartition."""
         return self
 
     def to_arrow(self) -> pa.Table:
@@ -221,7 +221,7 @@ class Table:
     ###
 
     def cast_to_schema(self, schema: Schema) -> Table:
-        """Casts a Table into the provided schema"""
+        """Casts a Table into the provided schema."""
         return Table._from_pytable(self._table.cast_to_schema(schema._schema))
 
     def eval_expression_list(self, exprs: ExpressionsProjection) -> Table:
@@ -306,7 +306,7 @@ class Table:
         return Table._from_pytable(self._table.quantiles(num))
 
     def explode(self, columns: ExpressionsProjection) -> Table:
-        """NOTE: Expressions here must be Explode expressions (Expression._explode())"""
+        """NOTE: Expressions here must be Explode expressions."""
         to_explode_pyexprs = [e._expr for e in columns]
         return Table._from_pytable(self._table.explode(to_explode_pyexprs))
 

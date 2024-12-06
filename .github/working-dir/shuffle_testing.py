@@ -6,7 +6,7 @@ import argparse
 import random
 import time
 from functools import partial
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import numpy as np
 import pyarrow as pa
@@ -32,8 +32,8 @@ def parse_size(size_str: str) -> int:
 
 
 def get_skewed_distribution(num_partitions: int, skew_factor: float) -> np.ndarray:
-    """
-    Generate a skewed distribution using a power law.
+    """Generate a skewed distribution using a power law.
+
     Higher skew_factor means more skewed distribution.
     """
     if skew_factor <= 0:
@@ -46,8 +46,7 @@ def get_skewed_distribution(num_partitions: int, skew_factor: float) -> np.ndarr
 
 
 def get_partition_size(base_size: int, size_variation: float, partition_idx: int) -> int:
-    """
-    Calculate size for a specific partition with variation.
+    """Calculate size for a specific partition with variation.
 
     Args:
         base_size: The base partition size in bytes
@@ -80,7 +79,6 @@ def generate(
     partition_idx: int,
 ):
     """Generate data for a single partition with optional skew, timing and size variations."""
-
     # Calculate actual partition size with variation
     actual_partition_size = get_partition_size(base_partition_size, size_variation, partition_idx)
     num_rows = actual_partition_size // ROW_SIZE
@@ -135,7 +133,7 @@ def generator(
         )
 
 
-def setup_daft(shuffle_algorithm: str = None):
+def setup_daft(shuffle_algorithm: Optional[str] = None):
     """Configure Daft execution settings."""
     daft.context.set_runner_ray()
     daft.context.set_execution_config(shuffle_algorithm=shuffle_algorithm, pre_shuffle_merge_threshold=8 * GB)
@@ -152,7 +150,7 @@ def run_benchmark(
     skew_factor: float,
     timing_variation: float,
     size_variation: float,
-    shuffle_algorithm: str = None,
+    shuffle_algorithm: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Run the memory benchmark and return statistics."""
     setup_daft(shuffle_algorithm)
@@ -249,7 +247,7 @@ def main():
         print(f"Total time: {timing:.2f}s")
 
     except Exception as e:
-        print(f"Error running benchmark: {str(e)}")
+        print(f"Error running benchmark: {e!s}")
         raise
 
 

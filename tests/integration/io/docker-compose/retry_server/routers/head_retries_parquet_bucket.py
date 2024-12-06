@@ -22,7 +22,7 @@ app = FastAPI()
 async def retryable_bucket_head(
     request: Request, status_code: int, status_code_str: str, num_errors: int, item_id: str
 ):
-    """Reading of Parquet starts with a head request, which potentially must be retried as well"""
+    """Reading of Parquet starts with a head request, which potentially must be retried as well."""
     key = item_id
     if key not in ITEM_ID_TO_NUM_RETRIES:
         ITEM_ID_TO_NUM_RETRIES[key] = 1
