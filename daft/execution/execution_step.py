@@ -234,7 +234,9 @@ class SingleOutputPartitionTask(PartitionTask[PartitionT]):
 
 @dataclass
 class MultiOutputPartitionTask(PartitionTask[PartitionT]):
-    """A PartitionTask that is ready to run. More instructions cannot be added.
+    """A PartitionTask that is ready to run.
+
+    More instructions cannot be added.
     This PartitionTask will return a list of any number of partitions.
     """
 
@@ -570,9 +572,7 @@ class ActorPoolProject(SingleOutputInstruction):
 
 
 def _prune_boundaries(boundaries: Boundaries, projection: ExpressionsProjection) -> Boundaries | None:
-    """If projection expression is a nontrivial computation (i.e. not a direct col() reference and not an alias) on top of a boundary
-    expression, then invalidate the boundary.
-    """
+    """If projection expression is a nontrivial computation (i.e. not a direct col() reference and not an alias) on top of a boundary expression, then invalidate the boundary."""
     proj_all_names = projection.to_name_set()
     proj_names_needing_compute = proj_all_names - projection.input_mapping().keys()
     for i, e in enumerate(boundaries.sort_by):

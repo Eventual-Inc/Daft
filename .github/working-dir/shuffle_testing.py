@@ -33,6 +33,7 @@ def parse_size(size_str: str) -> int:
 
 def get_skewed_distribution(num_partitions: int, skew_factor: float) -> np.ndarray:
     """Generate a skewed distribution using a power law.
+
     Higher skew_factor means more skewed distribution.
     """
     if skew_factor <= 0:

@@ -295,8 +295,9 @@ def set_planning_config(
     config: PyDaftPlanningConfig | None = None,
     default_io_config: IOConfig | None = None,
 ) -> DaftContext:
-    """Globally sets various configuration parameters which control Daft plan construction behavior. These configuration values
-    are used when a Dataframe is being constructed (e.g. calls to create a Dataframe, or to build on an existing Dataframe).
+    """Globally sets various configuration parameters which control Daft plan construction behavior.
+
+    These configuration values are used when a Dataframe is being constructed (e.g. calls to create a Dataframe, or to build on an existing Dataframe).
 
     Args:
         config: A PyDaftPlanningConfig object to set the config to, before applying other kwargs. Defaults to None which indicates
@@ -351,7 +352,9 @@ def set_execution_config(
     pre_shuffle_merge_threshold: int | None = None,
     enable_ray_tracing: bool | None = None,
 ) -> DaftContext:
-    """Globally sets various configuration parameters which control various aspects of Daft execution. These configuration values
+    """Globally sets various configuration parameters which control various aspects of Daft execution.
+
+    These configuration values
     are used when a Dataframe is executed (e.g. calls to `.write_*`, `.collect()` or `.show()`).
 
     Args:

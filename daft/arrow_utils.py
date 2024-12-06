@@ -27,8 +27,7 @@ def ensure_table(tbl: pa.Table) -> pa.Table:
 
 
 class _FixEmptyStructArrays:
-    """Converts StructArrays that are empty (have no fields) to StructArrays with a single field
-    named "" and with a NullType.
+    """Converts StructArrays that are empty (have no fields) to StructArrays with a single field named "" and with a NullType.
 
     This is done because arrow2::ffi cannot handle empty StructArrays and we need to handle this on the
     Python layer before going through ffi into Rust.
@@ -118,9 +117,7 @@ class _FixSliceOffsets:
 
     @staticmethod
     def ensure_table(arrow_table: pa.Table) -> pa.Table:
-        """Ensures that table-level slice offsets are properly propagated to child arrays
-        to prevent them from being dropped upon record batch conversion and FFI transfer.
-        """
+        """Ensures that table-level slice offsets are properly propagated to child arrays to prevent them from being dropped upon record batch conversion and FFI transfer."""
         arrow_schema = arrow_table.schema
         for idx, name in enumerate(arrow_schema.names):
             field = arrow_schema.field(name)
@@ -132,9 +129,7 @@ class _FixSliceOffsets:
 
     @staticmethod
     def ensure_chunked_array(chunked_array: pa.ChunkedArray) -> pa.ChunkedArray:
-        """Ensures that chunked-array-level slice offsets are properly propagated to child arrays
-        to prevent them from being dropped upon record batch conversion and FFI transfer.
-        """
+        """Ensures that chunked-array-level slice offsets are properly propagated to child arrays to prevent them from being dropped upon record batch conversion and FFI transfer."""
         if _FixSliceOffsets._chunked_array_needs_slice_offset_propagation(chunked_array):
             return _FixSliceOffsets._propagate_chunked_array_slice_offsets(chunked_array)
         else:
@@ -142,9 +137,7 @@ class _FixSliceOffsets:
 
     @staticmethod
     def ensure_array(array: pa.Array) -> pa.Array:
-        """Ensures that array-level slice offsets are properly propagated to child arrays
-        to prevent them from being dropped upon record batch conversion and FFI transfer.
-        """
+        """Ensures that array-level slice offsets are properly propagated to child arrays to prevent them from being dropped upon record batch conversion and FFI transfer."""
         if _FixSliceOffsets._array_needs_slice_offset_propagation(array):
             return _FixSliceOffsets._propagate_array_slice_offsets(array)
         else:

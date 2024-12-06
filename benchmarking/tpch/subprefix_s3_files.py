@@ -1,4 +1,5 @@
 """Introduces more prefixes into TPCH data files hosted on S3.
+
 This improves S3 read performance. For more details, see:
 https://docs.aws.amazon.com/AmazonS3/latest/userguide/optimizing-performance.html.
 

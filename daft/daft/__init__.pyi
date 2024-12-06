@@ -603,9 +603,7 @@ class PythonStorageConfig:
     def __init__(self, io_config: IOConfig): ...
 
 class StorageConfig:
-    """Configuration for interacting with a particular storage backend, using a particular
-    I/O layer implementation.
-    """
+    """Configuration for interacting with a particular storage backend, using a particular I/O layer implementation."""
 
     @staticmethod
     def native(config: NativeStorageConfig) -> StorageConfig:
@@ -1596,8 +1594,9 @@ class AdaptivePhysicalPlanScheduler:
     ) -> None: ...
 
 class LogicalPlanBuilder:
-    """A logical plan builder, which simplifies constructing logical plans via
-    a fluent interface. E.g., LogicalPlanBuilder.table_scan(..).project(..).filter(..).
+    """A logical plan builder, which simplifies constructing logical plans via a fluent interface.
+
+    E.g., LogicalPlanBuilder.table_scan(..).project(..).filter(..).
 
     This builder holds the current root (sink) of the logical plan, and the building methods return
     a brand new builder holding a new plan; i.e., this is an immutable builder.

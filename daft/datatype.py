@@ -213,8 +213,7 @@ class DataType:
 
     @classmethod
     def fixed_size_list(cls, dtype: DataType, size: int) -> DataType:
-        """Create a FixedSizeList DataType: Fixed-size list, where each element in the list has type ``dtype``
-        and each list has length ``size``.
+        """Create a FixedSizeList DataType: Fixed-size list, where each element in the list has type ``dtype`` and each list has length ``size``.
 
         Args:
             dtype: DataType of each element in the list
@@ -252,8 +251,7 @@ class DataType:
 
     @classmethod
     def embedding(cls, dtype: DataType, size: int) -> DataType:
-        """Create an Embedding DataType: embeddings are fixed size arrays, where each element
-        in the array has a **numeric** ``dtype`` and each array has a fixed length of ``size``.
+        """Create an Embedding DataType: embeddings are fixed size arrays, where each element in the array has a **numeric** ``dtype`` and each array has a fixed length of ``size``.
 
         Args:
             dtype: DataType of each element in the list (must be numeric)
@@ -310,8 +308,7 @@ class DataType:
         dtype: DataType,
         shape: tuple[int, ...] | None = None,
     ) -> DataType:
-        """Create a tensor DataType: tensor arrays contain n-dimensional arrays of data of the provided ``dtype`` as elements, each of the provided
-        ``shape``.
+        """Create a tensor DataType: tensor arrays contain n-dimensional arrays of data of the provided ``dtype`` as elements, each of the provided ``shape``.
 
         If a ``shape`` is given, each ndarray in the column will have this shape.
 
@@ -334,8 +331,7 @@ class DataType:
         dtype: DataType,
         shape: tuple[int, ...] | None = None,
     ) -> DataType:
-        """Create a SparseTensor DataType: SparseTensor arrays implemented as 'COO Sparse Tensor' representation of n-dimensional arrays of data of the provided ``dtype`` as elements, each of the provided
-        ``shape``.
+        """Create a SparseTensor DataType: SparseTensor arrays implemented as 'COO Sparse Tensor' representation of n-dimensional arrays of data of the provided ``dtype`` as elements, each of the provided ``shape``.
 
         If a ``shape`` is given, each ndarray in the column will have this shape.
 
