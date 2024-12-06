@@ -34,6 +34,7 @@ if __name__ == "__main__":
         ]
         * 10
     )
+    df = df.with_column("name", df["name"] + "a")  # trigger data materialization by adding a projection
 
     start = time.time()
     df.explain(True)
