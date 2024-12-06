@@ -28,14 +28,14 @@ extend-select = [
 ignore = [
   "E402",  # Module level import not at top of file [TODO(sammy): We want to fix this]
   "D417",  # requires documentation for every function parameter.
-  "D100",
-  "D101",
-  "D102",
-  "D103",
-  "D104",
-  "D105",
-  "D106",
-  "D107"
+  "D100",  # Missing docstring in public module
+  "D101",  # Missing docstring in public class
+  "D102",  # Missing docstring in public method
+  "D103",  # Missing docstring in public function
+  "D104",  # Missing docstring in public package
+  "D105",  # Missing docstring in magic method
+  "D106",  # Missing docstring in public nested class
+  "D107"  # Missing docstring in __init__
 ]
 
 [lint.per-file-ignores]
