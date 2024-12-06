@@ -18,7 +18,7 @@ PYARROW_GE_7_0_0 = ARROW_VERSION >= (7, 0, 0)
 
 
 def get_total_buffer_size(arr: pa.Array) -> int:
-    """Helper to get total buffer size because older versions of Arrow don't have the Array.get_total_buffer_size() method"""
+    """Helper to get total buffer size because older versions of Arrow don't have the Array.get_total_buffer_size() method."""
     return sum([buf.size if buf is not None else 0 for buf in arr.buffers()])
 
 

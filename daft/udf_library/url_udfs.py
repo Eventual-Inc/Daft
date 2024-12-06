@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 def _worker_thread_initializer() -> None:
-    """Initializes per-thread local state"""
+    """Initializes per-thread local state."""
     thread_local.filesystems_cache = {}
 
 
@@ -48,7 +48,7 @@ def _download(path: str | None, on_error: Literal["raise", "null"]) -> bytes | N
 
 def _warmup_fsspec_registry(urls_pylist: list[str | None]) -> None:
     """HACK: filesystem.get_filesystem calls fsspec.get_filesystem_class under the hood, which throws an error
-    if accessed concurrently for the first time. We "warm" it up in a single-threaded fashion here
+    if accessed concurrently for the first time. We "warm" it up in a single-threaded fashion here.
 
     This should be fixed in the next release of FSSpec
     See: https://github.com/Eventual-Inc/Daft/issues/892
@@ -76,7 +76,6 @@ def download_udf(
         fs (fsspec.AbstractFileSystem): fsspec FileSystem to use for downloading data.
             By default, Daft will automatically construct a FileSystem instance internally.
     """
-
     urls_pylist = urls.to_arrow().to_pylist()
 
     _warmup_fsspec_registry(urls_pylist)

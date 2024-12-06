@@ -219,7 +219,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def schema(self) -> Schema:
-        """Returns the Schema of the DataFrame, which provides information about each column
+        """Returns the Schema of the DataFrame, which provides information about each column.
 
         Returns:
             Schema: schema of the DataFrame
@@ -271,7 +271,6 @@ class DataFrame:
             The default value is the total number of CPUs available on the current machine.
 
         Example:
-
         >>> import daft
         >>>
         >>> df = daft.from_pydict({"foo": [1, 2, 3], "bar": ["a", "b", "c"]})
@@ -320,9 +319,7 @@ class DataFrame:
         self,
         results_buffer_size: Union[Optional[int], Literal["num_cpus"]] = "num_cpus",
     ) -> Iterator["pyarrow.RecordBatch"]:
-        """
-        Return an iterator of pyarrow recordbatches for this dataframe.
-        """
+        """Return an iterator of pyarrow recordbatches for this dataframe."""
         for name in self.schema().column_names():
             if self.schema()[name].dtype._is_python_type():
                 raise ValueError(
@@ -552,7 +549,7 @@ class DataFrame:
         partition_cols: Optional[List[ColumnInputType]] = None,
         io_config: Optional[IOConfig] = None,
     ) -> "DataFrame":
-        """Writes the DataFrame as parquet files, returning a new DataFrame with paths to the files that were written
+        """Writes the DataFrame as parquet files, returning a new DataFrame with paths to the files that were written.
 
         Files will be written to ``<root_dir>/*`` with randomly generated UUIDs as the file names.
 
@@ -624,7 +621,7 @@ class DataFrame:
         partition_cols: Optional[List[ColumnInputType]] = None,
         io_config: Optional[IOConfig] = None,
     ) -> "DataFrame":
-        """Writes the DataFrame as CSV files, returning a new DataFrame with paths to the files that were written
+        """Writes the DataFrame as CSV files, returning a new DataFrame with paths to the files that were written.
 
         Files will be written to ``<root_dir>/*`` with randomly generated UUIDs as the file names.
 
@@ -696,7 +693,6 @@ class DataFrame:
         Returns:
             DataFrame: The operations that occurred with this write.
         """
-
         import pyarrow as pa
         import pyiceberg
         from packaging.version import parse
@@ -857,7 +853,6 @@ class DataFrame:
         Returns:
             DataFrame: The operations that occurred with this write.
         """
-
         import json
 
         import deltalake
@@ -1028,19 +1023,17 @@ class DataFrame:
         io_config: Optional[IOConfig] = None,
         **kwargs,
     ) -> "DataFrame":
-        """
-        Writes the DataFrame to a Lance table
+        """Writes the DataFrame to a Lance table
         Note:
             `write_lance` requires python 3.9 or higher
         Args:
           uri: The URI of the Lance table to write to
           mode: The write mode. One of "create", "append", or "overwrite"
           io_config (IOConfig, optional): configurations to use when interacting with remote storage.
-          **kwargs: Additional keyword arguments to pass to the Lance writer
+          **kwargs: Additional keyword arguments to pass to the Lance writer.
+
         Example:
         --------
-
-
         >>> import daft
         >>> df = daft.from_pydict({"a": [1, 2, 3, 4]})
         >>> df.write_lance("/tmp/lance/my_table.lance")  # doctest: +SKIP
@@ -1169,23 +1162,20 @@ class DataFrame:
         return isinstance(x, str) or isinstance(x, Expression)
 
     def _column_inputs_to_expressions(self, columns: ManyColumnsInputType) -> List[Expression]:
-        """
-        Inputs to dataframe operations can be passed in as individual arguments or an iterable.
+        """Inputs to dataframe operations can be passed in as individual arguments or an iterable.
         In addition, they may be strings or Expressions.
         This method normalizes the inputs to a list of Expressions.
         """
-
         column_iter: Iterable[ColumnInputType] = [columns] if self._is_column_input(columns) else columns  # type: ignore
         return [col(c) if isinstance(c, str) else c for c in column_iter]
 
     def _wildcard_inputs_to_expressions(self, columns: Tuple[ManyColumnsInputType, ...]) -> List[Expression]:
-        """Handles wildcard argument column inputs"""
-
+        """Handles wildcard argument column inputs."""
         column_input: Iterable[ColumnInputType] = columns[0] if len(columns) == 1 else columns  # type: ignore
         return self._column_inputs_to_expressions(column_input)
 
     def __getitem__(self, item: Union[slice, int, str, Iterable[Union[str, int]]]) -> Union[Expression, "DataFrame"]:
-        """Gets a column from the DataFrame as an Expression (``df["mycol"]``)"""
+        """Gets a column from the DataFrame as an Expression (``df["mycol"]``)."""
         result: Optional[Expression]
 
         if isinstance(item, int):
@@ -1257,13 +1247,12 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame with a new column of monotonically increasing ids.
         """
-
         builder = self._builder.add_monotonically_increasing_id(column_name)
         return DataFrame(builder)
 
     @DataframePublicAPI
     def select(self, *columns: ColumnInputType) -> "DataFrame":
-        """Creates a new DataFrame from the provided expressions, similar to a SQL ``SELECT``
+        """Creates a new DataFrame from the provided expressions, similar to a SQL ``SELECT``.
 
         Examples:
             >>> import daft
@@ -1296,7 +1285,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def distinct(self) -> "DataFrame":
-        """Computes unique rows, dropping duplicates
+        """Computes unique rows, dropping duplicates.
 
         Example:
             >>> import daft
@@ -1329,7 +1318,7 @@ class DataFrame:
         with_replacement: bool = False,
         seed: Optional[int] = None,
     ) -> "DataFrame":
-        """Samples a fraction of rows from the DataFrame
+        """Samples a fraction of rows from the DataFrame.
 
         Example:
             >>> import daft
@@ -1363,7 +1352,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def exclude(self, *names: str) -> "DataFrame":
-        """Drops columns from the current DataFrame by name
+        """Drops columns from the current DataFrame by name.
 
         This is equivalent of performing a select with all the columns but the ones excluded.
 
@@ -1417,7 +1406,6 @@ class DataFrame:
         """Filters rows via a predicate expression, similar to SQL ``WHERE``.
 
         Example:
-
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 6, 6], "z": [7, 8, 9]})
             >>> df.where((col("x") > 1) & (col("y") > 1)).collect()
@@ -1471,7 +1459,7 @@ class DataFrame:
         expr: Expression,
     ) -> "DataFrame":
         """Adds a column to the current DataFrame with an Expression, equivalent to a ``select``
-        with all current columns and the new one
+        with all current columns and the new one.
 
         Example:
             >>> import daft
@@ -1507,7 +1495,7 @@ class DataFrame:
         columns: Dict[str, Expression],
     ) -> "DataFrame":
         """Adds columns to the current DataFrame with Expressions, equivalent to a ``select``
-        with all current columns and the new ones
+        with all current columns and the new ones.
 
         Example:
             >>> import daft
@@ -1545,7 +1533,7 @@ class DataFrame:
         by: Union[ColumnInputType, List[ColumnInputType]],
         desc: Union[bool, List[bool]] = False,
     ) -> "DataFrame":
-        """Sorts DataFrame globally
+        """Sorts DataFrame globally.
 
         Note:
             * Since this a global sort, this requires an expensive repartition which can be quite slow.
@@ -1610,7 +1598,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def limit(self, num: int) -> "DataFrame":
-        """Limits the rows in the DataFrame to the first ``N`` rows, similar to a SQL ``LIMIT``
+        """Limits the rows in the DataFrame to the first ``N`` rows, similar to a SQL ``LIMIT``.
 
         Example:
             >>> import daft
@@ -1661,7 +1649,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def repartition(self, num: Optional[int], *partition_by: ColumnInputType) -> "DataFrame":
-        """Repartitions DataFrame to ``num`` partitions
+        """Repartitions DataFrame to ``num`` partitions.
 
         If columns are passed in, then DataFrame will be repartitioned by those, otherwise
         random repartitioning will occur.
@@ -1734,7 +1722,7 @@ class DataFrame:
         prefix: Optional[str] = None,
         suffix: Optional[str] = None,
     ) -> "DataFrame":
-        """Column-wise join of the current DataFrame with an ``other`` DataFrame, similar to a SQL ``JOIN``
+        """Column-wise join of the current DataFrame with an ``other`` DataFrame, similar to a SQL ``JOIN``.
 
         If the two DataFrames have duplicate non-join key column names, "right." will be prepended to the conflicting right columns. You can change the behavior by passing either (or both) `prefix` or `suffix` to the function.
         If `prefix` is passed, it will be prepended to the conflicting right columns. If `suffix` is passed, it will be appended to the conflicting right columns.
@@ -1816,7 +1804,6 @@ class DataFrame:
         Returns:
             DataFrame: Joined DataFrame.
         """
-
         if how == "cross":
             if any(side_on is not None for side_on in [on, left_on, right_on]):
                 raise ValueError("In a cross join, `on`, `left_on`, and `right_on` cannot be set")
@@ -1980,7 +1967,7 @@ class DataFrame:
     @DataframePublicAPI
     def explode(self, *columns: ColumnInputType) -> "DataFrame":
         """Explodes a List column, where every element in each row's List becomes its own row, and all
-        other columns in the DataFrame are duplicated across rows
+        other columns in the DataFrame are duplicated across rows.
 
         If multiple columns are specified, each row must contain the same number of
         items in each specified column.
@@ -2075,7 +2062,7 @@ class DataFrame:
         Returns:
             DataFrame: Unpivoted DataFrame
 
-        See also:
+        See Also:
             `melt`
         """
         ids_exprs = self._column_inputs_to_expressions(ids)
@@ -2092,9 +2079,9 @@ class DataFrame:
         variable_name: str = "variable",
         value_name: str = "value",
     ) -> "DataFrame":
-        """Alias for unpivot
+        """Alias for unpivot.
 
-        See also:
+        See Also:
             `unpivot`
         """
         return self.unpivot(ids, values, variable_name, value_name)
@@ -2135,6 +2122,7 @@ class DataFrame:
             func: A function that takes and returns a DataFrame.
             *args: Positional arguments to pass to func.
             **kwargs: Keyword arguments to pass to func.
+
         Returns:
             DataFrame: Transformed DataFrame.
         """
@@ -2192,7 +2180,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def sum(self, *cols: ManyColumnsInputType) -> "DataFrame":
-        """Performs a global sum on the DataFrame
+        """Performs a global sum on the DataFrame.
 
         Args:
             *cols (Union[str, Expression]): columns to sum
@@ -2203,7 +2191,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def mean(self, *cols: ColumnInputType) -> "DataFrame":
-        """Performs a global mean on the DataFrame
+        """Performs a global mean on the DataFrame.
 
         Args:
             *cols (Union[str, Expression]): columns to mean
@@ -2214,7 +2202,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def stddev(self, *cols: ColumnInputType) -> "DataFrame":
-        """Performs a global standard deviation on the DataFrame
+        """Performs a global standard deviation on the DataFrame.
 
         Example:
             >>> import daft
@@ -2241,7 +2229,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def min(self, *cols: ColumnInputType) -> "DataFrame":
-        """Performs a global min on the DataFrame
+        """Performs a global min on the DataFrame.
 
         Args:
             *cols (Union[str, Expression]): columns to min
@@ -2252,7 +2240,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def max(self, *cols: ColumnInputType) -> "DataFrame":
-        """Performs a global max on the DataFrame
+        """Performs a global max on the DataFrame.
 
         Args:
             *cols (Union[str, Expression]): columns to max
@@ -2275,7 +2263,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def count(self, *cols: ColumnInputType) -> "DataFrame":
-        """Performs a global count on the DataFrame
+        """Performs a global count on the DataFrame.
 
         If no columns are specified (i.e. in the case you call `df.count()`), or only the literal string "*",
         this functions very similarly to a COUNT(*) operation in SQL and will return a new dataframe with a
@@ -2340,7 +2328,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def agg_list(self, *cols: ColumnInputType) -> "DataFrame":
-        """Performs a global list agg on the DataFrame
+        """Performs a global list agg on the DataFrame.
 
         Args:
             *cols (Union[str, Expression]): columns to form into a list
@@ -2351,7 +2339,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def agg_concat(self, *cols: ColumnInputType) -> "DataFrame":
-        """Performs a global list concatenation agg on the DataFrame
+        """Performs a global list concatenation agg on the DataFrame.
 
         Args:
             *cols (Union[str, Expression]): columns that are lists to concatenate
@@ -2410,7 +2398,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def groupby(self, *group_by: ManyColumnsInputType) -> "GroupedDataFrame":
-        """Performs a GroupBy on the DataFrame for aggregation
+        """Performs a GroupBy on the DataFrame for aggregation.
 
         Example:
             >>> import daft
@@ -2546,7 +2534,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def collect(self, num_preview_rows: Optional[int] = 8) -> "DataFrame":
-        """Executes the entire DataFrame and materializes the results
+        """Executes the entire DataFrame and materializes the results.
 
         .. NOTE::
             This call is **blocking** and will execute the DataFrame when called
@@ -2568,7 +2556,7 @@ class DataFrame:
         return self
 
     def _construct_show_display(self, n: int) -> "DataFrameDisplay":
-        """Helper for .show() which will construct the underlying DataFrameDisplay object"""
+        """Helper for .show() which will construct the underlying DataFrameDisplay object."""
         preview_partition = self._preview.preview_partition
         total_rows = self._preview.dataframe_num_rows
 
@@ -2617,7 +2605,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def show(self, n: int = 8) -> None:
-        """Executes enough of the DataFrame in order to display the first ``n`` rows
+        """Executes enough of the DataFrame in order to display the first ``n`` rows.
 
         If IPython is installed, this will use IPython's `display` utility to pretty-print in a
         notebook/REPL environment. Otherwise, this will fall back onto a naive Python `print`.
@@ -2645,7 +2633,6 @@ class DataFrame:
             int: count of rows.
 
         """
-
         if self._result is not None:
             return len(self._result)
 
@@ -2800,7 +2787,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def to_ray_dataset(self) -> "ray.data.dataset.DataSet":
-        """Converts the current DataFrame to a `Ray Dataset <https://docs.ray.io/en/latest/data/api/dataset.html#ray.data.Dataset>`__ which is useful for running distributed ML model training in Ray
+        """Converts the current DataFrame to a `Ray Dataset <https://docs.ray.io/en/latest/data/api/dataset.html#ray.data.Dataset>`__ which is useful for running distributed ML model training in Ray.
 
         .. NOTE::
             This function can only work if Daft is running using the RayRunner
@@ -2978,7 +2965,7 @@ class GroupedDataFrame:
                 raise ExpressionTypeError(f"Cannot groupby on null type expression: {e}")
 
     def __getitem__(self, item: Union[slice, int, str, Iterable[Union[str, int]]]) -> Union[Expression, "DataFrame"]:
-        """Gets a column from the DataFrame as an Expression"""
+        """Gets a column from the DataFrame as an Expression."""
         return self.df.__getitem__(item)
 
     def sum(self, *cols: ColumnInputType) -> "DataFrame":

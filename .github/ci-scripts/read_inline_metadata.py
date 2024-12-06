@@ -3,9 +3,8 @@
 # dependencies = []
 # ///
 
-"""
-The `read` function below is sourced from:
-https://packaging.python.org/en/latest/specifications/inline-script-metadata/#inline-script-metadata
+"""The `read` function below is sourced from:
+https://packaging.python.org/en/latest/specifications/inline-script-metadata/#inline-script-metadata.
 """
 
 import re

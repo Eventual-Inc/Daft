@@ -1,5 +1,4 @@
-"""
-This file was copied from the Polars project (https://github.com/pola-rs/polars/blob/main/py-polars/debug/launch.py)
+"""This file was copied from the Polars project (https://github.com/pola-rs/polars/blob/main/py-polars/debug/launch.py)
 under the license provided by Ritchie Vink and NVIDIA Corporation & Affiliates.
 
 The following parameter determines the sleep time of the Python process after a signal
@@ -18,8 +17,7 @@ LLDB_DEBUG_WAIT_TIME_SECONDS = 1
 
 
 def launch_debugging() -> None:
-    """
-    Debug Rust files via Python.
+    """Debug Rust files via Python.
 
     Determine the pID for the current debugging session, attach the Rust LLDB launcher,
     and execute the originally-requested script.

@@ -9,7 +9,7 @@ import daft
 
 @pytest.fixture(scope="function")
 def parquet_files(tmpdir):
-    """Writes 1 Parquet file with 10 rowgroups, each of 100 bytes in size"""
+    """Writes 1 Parquet file with 10 rowgroups, each of 100 bytes in size."""
     tbl = pa.table({"data": ["aaa"] * 100})
     path = tmpdir / "file.pq"
     papq.write_table(tbl, str(path), row_group_size=10, use_dictionary=False)

@@ -1,4 +1,4 @@
-"""This script provides a pipelined data generation implementation of data_generation.py
+"""This script provides a pipelined data generation implementation of data_generation.py.
 
 Note that after running this script, data will no longer be coherent/exist locally. This is used for generating large amounts
 of benchmarking data that lands directly in AWS S3, but for local benchmarking/testing use-cases use data_generation.py instead.

@@ -31,7 +31,7 @@ def from_csv(
         csv_options (vPartitionParseCSVOptions, optional): CSV-specific configs to apply when reading the file
         read_options (TableReadOptions, optional): Options for reading the file
     Returns:
-        Schema: Inferred Schema from the CSV
+        Schema: Inferred Schema from the CSV.
     """
     # Have PyArrow generate the column names if user specifies that there are no headers
     pyarrow_autogenerate_column_names = csv_options.header_index is None
@@ -77,7 +77,7 @@ def from_json(
     file: FileInput,
     storage_config: StorageConfig | None = None,
 ) -> Schema:
-    """Reads a Schema from a JSON file
+    """Reads a Schema from a JSON file.
 
     Args:
         file (FileInput): either a file-like object or a string file path (potentially prefixed with a protocol such as "s3://")
@@ -111,7 +111,7 @@ def from_parquet(
     file: FileInput,
     storage_config: StorageConfig | None = None,
 ) -> Schema:
-    """Infers a Schema from a Parquet file"""
+    """Infers a Schema from a Parquet file."""
     io_config = None
     if storage_config is not None:
         config = storage_config.config

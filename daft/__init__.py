@@ -37,7 +37,7 @@ def get_build_type() -> str:
 
 
 def refresh_logger() -> None:
-    """Refreshes Daft's internal rust logging to the current python log level"""
+    """Refreshes Daft's internal rust logging to the current python log level."""
     _refresh_logger()
 
 

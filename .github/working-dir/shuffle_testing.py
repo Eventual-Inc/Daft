@@ -32,8 +32,7 @@ def parse_size(size_str: str) -> int:
 
 
 def get_skewed_distribution(num_partitions: int, skew_factor: float) -> np.ndarray:
-    """
-    Generate a skewed distribution using a power law.
+    """Generate a skewed distribution using a power law.
     Higher skew_factor means more skewed distribution.
     """
     if skew_factor <= 0:
@@ -46,8 +45,7 @@ def get_skewed_distribution(num_partitions: int, skew_factor: float) -> np.ndarr
 
 
 def get_partition_size(base_size: int, size_variation: float, partition_idx: int) -> int:
-    """
-    Calculate size for a specific partition with variation.
+    """Calculate size for a specific partition with variation.
 
     Args:
         base_size: The base partition size in bytes
@@ -80,7 +78,6 @@ def generate(
     partition_idx: int,
 ):
     """Generate data for a single partition with optional skew, timing and size variations."""
-
     # Calculate actual partition size with variation
     actual_partition_size = get_partition_size(base_partition_size, size_variation, partition_idx)
     num_rows = actual_partition_size // ROW_SIZE

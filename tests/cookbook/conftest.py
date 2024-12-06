@@ -49,6 +49,6 @@ def service_requests_csv_pd_df():
 )
 def repartition_nparts(request):
     """Adds a `n_repartitions` parameter to test cases which provides the number of
-    partitions that the test case should repartition its dataset into for testing
+    partitions that the test case should repartition its dataset into for testing.
     """
     return request.param

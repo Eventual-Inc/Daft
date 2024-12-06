@@ -32,7 +32,7 @@ def read_parquet(
     _multithreaded_io: Optional[bool] = None,
     _chunk_size: Optional[int] = None,  # A hidden parameter for testing purposes.
 ) -> DataFrame:
-    """Creates a DataFrame from Parquet file(s)
+    """Creates a DataFrame from Parquet file(s).
 
     Example:
         >>> df = daft.read_parquet("/path/to/file.parquet")

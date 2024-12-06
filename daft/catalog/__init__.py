@@ -73,7 +73,7 @@ unregister_catalog = native_catalog.unregister_catalog
 
 
 def read_table(name: str) -> DataFrame:
-    """Finds a table with the specified name and reads it as a DataFrame
+    """Finds a table with the specified name and reads it as a DataFrame.
 
     The provided name can be any of the following, and Daft will return them with the following order of priority:
 
@@ -113,7 +113,7 @@ def register_table(name: str, dataframe: DataFrame) -> str:
 
 
 def register_python_catalog(catalog: PyIcebergCatalog | UnityCatalog, name: str | None = None) -> str:
-    """Registers a Python catalog with Daft
+    """Registers a Python catalog with Daft.
 
     Currently supports:
 

@@ -6,21 +6,21 @@ from daft.dependencies import pa
 
 
 def ensure_array(arr: pa.Array) -> pa.Array:
-    """Applies all fixes to an Arrow array"""
+    """Applies all fixes to an Arrow array."""
     arr = _FixEmptyStructArrays.ensure_array(arr)
     arr = _FixSliceOffsets.ensure_array(arr)
     return arr
 
 
 def ensure_chunked_array(arr: pa.ChunkedArray) -> pa.ChunkedArray:
-    """Applies all fixes to an Arrow chunked array"""
+    """Applies all fixes to an Arrow chunked array."""
     arr = _FixEmptyStructArrays.ensure_chunked_array(arr)
     arr = _FixSliceOffsets.ensure_chunked_array(arr)
     return arr
 
 
 def ensure_table(tbl: pa.Table) -> pa.Table:
-    """Applies all fixes to an Arrow table"""
+    """Applies all fixes to an Arrow table."""
     tbl = _FixEmptyStructArrays.ensure_table(tbl)
     tbl = _FixSliceOffsets.ensure_table(tbl)
     return tbl
@@ -28,7 +28,7 @@ def ensure_table(tbl: pa.Table) -> pa.Table:
 
 class _FixEmptyStructArrays:
     """Converts StructArrays that are empty (have no fields) to StructArrays with a single field
-    named "" and with a NullType
+    named "" and with a NullType.
 
     This is done because arrow2::ffi cannot handle empty StructArrays and we need to handle this on the
     Python layer before going through ffi into Rust.
@@ -62,7 +62,7 @@ class _FixEmptyStructArrays:
         return pa.chunked_array([_FixEmptyStructArrays.ensure_array(chunk) for chunk in arr.chunks])
 
     def ensure_array(arr: pa.Array) -> pa.Array:
-        """Recursively converts empty struct arrays to single-field struct arrays"""
+        """Recursively converts empty struct arrays to single-field struct arrays."""
         if arr.type == _FixEmptyStructArrays.get_empty_struct_type():
             return pa.array(
                 [
@@ -84,7 +84,7 @@ class _FixEmptyStructArrays:
 
 
 def remove_empty_struct_placeholders(arr: pa.Array):
-    """Recursively removes the empty struct placeholders placed by _FixEmptyStructArrays.ensure_array"""
+    """Recursively removes the empty struct placeholders placed by _FixEmptyStructArrays.ensure_array."""
     if arr.type == _FixEmptyStructArrays.get_single_field_struct_type():
         return pa.array(
             [{} if valid.as_py() else None for valid in arr.is_valid()],
@@ -118,8 +118,7 @@ class _FixSliceOffsets:
 
     @staticmethod
     def ensure_table(arrow_table: pa.Table) -> pa.Table:
-        """
-        Ensures that table-level slice offsets are properly propagated to child arrays
+        """Ensures that table-level slice offsets are properly propagated to child arrays
         to prevent them from being dropped upon record batch conversion and FFI transfer.
         """
         arrow_schema = arrow_table.schema
@@ -133,8 +132,7 @@ class _FixSliceOffsets:
 
     @staticmethod
     def ensure_chunked_array(chunked_array: pa.ChunkedArray) -> pa.ChunkedArray:
-        """
-        Ensures that chunked-array-level slice offsets are properly propagated to child arrays
+        """Ensures that chunked-array-level slice offsets are properly propagated to child arrays
         to prevent them from being dropped upon record batch conversion and FFI transfer.
         """
         if _FixSliceOffsets._chunked_array_needs_slice_offset_propagation(chunked_array):
@@ -144,8 +142,7 @@ class _FixSliceOffsets:
 
     @staticmethod
     def ensure_array(array: pa.Array) -> pa.Array:
-        """
-        Ensures that array-level slice offsets are properly propagated to child arrays
+        """Ensures that array-level slice offsets are properly propagated to child arrays
         to prevent them from being dropped upon record batch conversion and FFI transfer.
         """
         if _FixSliceOffsets._array_needs_slice_offset_propagation(array):
@@ -155,8 +152,7 @@ class _FixSliceOffsets:
 
     @staticmethod
     def _chunked_array_needs_slice_offset_propagation(chunked_array: pa.ChunkedArray) -> bool:
-        """
-        Whether an Arrow ChunkedArray needs slice offset propagation.
+        """Whether an Arrow ChunkedArray needs slice offset propagation.
 
         This is currently only true for struct arrays and fixed-size list arrays that contain
         slice offsets/truncations.
@@ -167,8 +163,7 @@ class _FixSliceOffsets:
 
     @staticmethod
     def _array_needs_slice_offset_propagation(array: pa.Array) -> bool:
-        """
-        Whether an Arrow array needs slice offset propagation.
+        """Whether an Arrow array needs slice offset propagation.
 
         This is currently only true for struct arrays and fixed-size list arrays that contain
         slice offsets/truncations.
@@ -182,9 +177,7 @@ class _FixSliceOffsets:
 
     @staticmethod
     def _struct_array_needs_slice_offset_propagation(array: pa.StructArray) -> bool:
-        """
-        Whether the provided struct array needs slice offset propagation.
-        """
+        """Whether the provided struct array needs slice offset propagation."""
         assert isinstance(array, pa.StructArray)
         # TODO(Clark): Only propagate slice offsets if a slice exists; checking whether the
         # array length has been truncated is currently difficult since StructArray.field()
@@ -198,17 +191,13 @@ class _FixSliceOffsets:
 
     @staticmethod
     def _fixed_size_list_array_needs_slice_offset_propagation(array: pa.FixedSizeListArray) -> bool:
-        """
-        Whether the provided fixed-size list array needs slice offset propagation.
-        """
+        """Whether the provided fixed-size list array needs slice offset propagation."""
         assert isinstance(array, pa.FixedSizeListArray)
         return array.offset > 0 or len(array) < array.type.list_size * len(array.values)
 
     @staticmethod
     def _propagate_chunked_array_slice_offsets(chunked_array: pa.ChunkedArray) -> pa.ChunkedArray:
-        """
-        Propagate slice offsets for the provided chunked array to the child arrays of each chunk.
-        """
+        """Propagate slice offsets for the provided chunked array to the child arrays of each chunk."""
         new_chunks = []
         # Flatten each chunk to propagate slice offsets to child arrays.
         for chunk in chunked_array.chunks:
@@ -218,9 +207,7 @@ class _FixSliceOffsets:
 
     @staticmethod
     def _propagate_array_slice_offsets(array: pa.Array) -> pa.Array:
-        """
-        Propagate slice offsets for the provided array to its child arrays.
-        """
+        """Propagate slice offsets for the provided array to its child arrays."""
         assert _FixSliceOffsets._array_needs_slice_offset_propagation(array)
         dtype = array.type
         if pa.types.is_struct(dtype):
@@ -246,8 +233,7 @@ class _FixSliceOffsets:
 
     @staticmethod
     def _slice_bitmap_buffer(buf: pa.Buffer, offset: int, length: int) -> pa.Buffer:
-        """
-        Slice the provided bitpacked boolean bitmap buffer at the given offset and length.
+        """Slice the provided bitpacked boolean bitmap buffer at the given offset and length.
 
         This function takes care of the byte and bit offset bookkeeping required due to the buffer
         being bitpacked.

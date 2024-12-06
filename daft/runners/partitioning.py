@@ -22,7 +22,7 @@ PartID = int
 
 @dataclass(frozen=True)
 class TableReadOptions:
-    """Options for reading a vPartition
+    """Options for reading a vPartition.
 
     Args:
         num_rows: Number of rows to read, or None to read all rows
@@ -35,7 +35,7 @@ class TableReadOptions:
 
 @dataclass(frozen=True)
 class TableParseCSVOptions:
-    """Options for parsing CSVs
+    """Options for parsing CSVs.
 
     Args:
         delimiter: The delimiter to use when parsing CSVs, defaults to ","
@@ -59,7 +59,7 @@ class TableParseCSVOptions:
 
 @dataclass(frozen=True)
 class TableParseParquetOptions:
-    """Options for parsing Parquet files
+    """Options for parsing Parquet files.
 
     Args:
         coerce_int96_timestamp_unit: TimeUnit to use when parsing Int96 fields
@@ -196,7 +196,7 @@ class MaterializedResult(Generic[PartitionT]):
     @abstractmethod
     def _noop(self, _: PartitionT) -> None:
         """Implement this as a no-op.
-        https://peps.python.org/pep-0544/#overriding-inferred-variance-of-protocol-classes
+        https://peps.python.org/pep-0544/#overriding-inferred-variance-of-protocol-classes.
         """
         ...
 
@@ -229,8 +229,7 @@ class PartitionSet(Generic[PartitionT]):
         return merged_partition.to_arrow()
 
     def items(self) -> list[tuple[PartID, MaterializedResult[PartitionT]]]:
-        """
-        Returns all (partition id, partition) in this PartitionSet,
+        """Returns all (partition id, partition) in this PartitionSet,
         ordered by partition ID.
         """
         raise NotImplementedError()

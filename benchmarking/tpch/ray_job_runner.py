@@ -23,8 +23,7 @@ async def wait_on_job(logs, timeout_s):
 
 
 def run_on_ray(ray_address: str, job_params: dict, timeout_s: int = 1500):
-    """Submits a job to run in the Ray cluster"""
-
+    """Submits a job to run in the Ray cluster."""
     print("Submitting benchmarking job to Ray cluster...")
     print("Parameters:")
     print(job_params)

@@ -95,7 +95,7 @@ def read_json(
     json_read_options: JsonReadOptions | None = None,
     read_options: TableReadOptions = TableReadOptions(),
 ) -> MicroPartition:
-    """Reads a MicroPartition from a JSON file
+    """Reads a MicroPartition from a JSON file.
 
     Args:
         file (str | IO): either a file-like object or a string file path (potentially prefixed with a protocol such as "s3://")
@@ -150,7 +150,7 @@ def read_parquet(
     read_options: TableReadOptions = TableReadOptions(),
     parquet_options: TableParseParquetOptions = TableParseParquetOptions(),
 ) -> MicroPartition:
-    """Reads a MicroPartition from a Parquet file
+    """Reads a MicroPartition from a Parquet file.
 
     Args:
         file (str | IO): either a file-like object or a string file path (potentially prefixed with a protocol such as "s3://")
@@ -234,7 +234,7 @@ def read_sql(
     read_options: TableReadOptions = TableReadOptions(),
     predicate: Expression | None = None,
 ) -> MicroPartition:
-    """Reads a MicroPartition from a SQL query
+    """Reads a MicroPartition from a SQL query.
 
     Args:
         sql (str): SQL query to execute
@@ -245,7 +245,6 @@ def read_sql(
     Returns:
         MicroPartition: MicroPartition from SQL query
     """
-
     pa_table = conn.execute_sql_query(sql)
     mp = MicroPartition.from_arrow(pa_table)
 
@@ -285,7 +284,7 @@ def read_csv(
     csv_options: TableParseCSVOptions = TableParseCSVOptions(),
     read_options: TableReadOptions = TableReadOptions(),
 ) -> MicroPartition:
-    """Reads a MicroPartition from a CSV file
+    """Reads a MicroPartition from a CSV file.
 
     Args:
         file (str | IO): either a file-like object or a string file path (potentially prefixed with a protocol such as "s3://")

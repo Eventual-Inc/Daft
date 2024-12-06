@@ -22,11 +22,23 @@ extend-select = [
   "G",  # flake8-logging-format
   "I",  # isort
   "RUF100",  # unused-noqa"
-  "T10"  # flake8-debugger
+  "T10",  # flake8-debugger
+  "D"  # pydocstyle rules
 ]
 ignore = [
-  "E402"  # Module level import not at top of file [TODO(sammy): We want to fix this]
+  "E402",  # Module level import not at top of file [TODO(sammy): We want to fix this]
+  "D417", # requires documentation for every function parameter.
+  "D100",
+  "D101",
+  "D102",
+  "D103",
+  "D105",
+  "D107",
 ]
+
+[lint.pydocstyle]
+convention = "google"
+
 
 [lint.per-file-ignores]
 # Do not enforce usage and import order rules in init files

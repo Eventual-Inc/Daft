@@ -3,13 +3,13 @@
 
 
 class DaftCoreException(ValueError):
-    """DaftCore Base Exception"""
+    """DaftCore Base Exception."""
 
     pass
 
 
 class DaftTypeError(DaftCoreException):
-    """Type Error that occurred in Daft Core"""
+    """Type Error that occurred in Daft Core."""
 
     pass
 

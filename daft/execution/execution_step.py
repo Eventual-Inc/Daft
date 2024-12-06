@@ -570,8 +570,7 @@ class ActorPoolProject(SingleOutputInstruction):
 
 
 def _prune_boundaries(boundaries: Boundaries, projection: ExpressionsProjection) -> Boundaries | None:
-    """
-    If projection expression is a nontrivial computation (i.e. not a direct col() reference and not an alias) on top of a boundary
+    """If projection expression is a nontrivial computation (i.e. not a direct col() reference and not an alias) on top of a boundary
     expression, then invalidate the boundary.
     """
     proj_all_names = projection.to_name_set()
@@ -951,7 +950,6 @@ def calculate_cross_join_stats(
     left_meta: PartialPartitionMetadata, right_meta: PartialPartitionMetadata
 ) -> tuple[int | None, int | None]:
     """Given the left and right partition metadata, returns the expected (num rows, size bytes) of the cross join output."""
-
     left_rows, left_bytes = left_meta.num_rows, left_meta.size_bytes
     right_rows, right_bytes = right_meta.num_rows, right_meta.size_bytes
 

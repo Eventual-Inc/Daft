@@ -30,7 +30,7 @@ def read_json(
     _buffer_size: Optional[int] = None,
     _chunk_size: Optional[int] = None,
 ) -> DataFrame:
-    """Creates a DataFrame from line-delimited JSON file(s)
+    """Creates a DataFrame from line-delimited JSON file(s).
 
     Example:
         >>> df = daft.read_json("/path/to/file.json")

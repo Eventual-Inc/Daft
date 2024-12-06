@@ -69,8 +69,7 @@ class PyRunnerResources:
         return resources[0] if resources is not None else None
 
     def try_acquire_multiple(self, resource_requests: list[ResourceRequest]) -> list[AcquiredResources] | None:
-        """
-        Attempts to acquire the requested resources.
+        """Attempts to acquire the requested resources.
 
         If the requested resources are available, returns a list of `AcquiredResources` with the amount of acquired CPUs and memory, as well as the specific GPUs that were acquired per request.
 
@@ -166,8 +165,7 @@ class PyRunnerResources:
 
 
 class PyActorSingleton:
-    """
-    This class stores the singleton `initialized_projection` that is isolated to each Python process. It stores the projection with initialized actor pool UDF objects of a single actor.
+    """This class stores the singleton `initialized_projection` that is isolated to each Python process. It stores the projection with initialized actor pool UDF objects of a single actor.
 
     Currently, only one actor pool UDF per actor is supported, but we allow multiple here in case we want to support multiple actor pool UDFs in the future.
 
@@ -447,8 +445,7 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
             del self._actor_pools[actor_pool_id]
 
     def _create_resource_release_callback(self, resources: AcquiredResources) -> Callable[[futures.Future], None]:
-        """
-        This higher order function is used so that the `resources` released by the callback
+        """This higher order function is used so that the `resources` released by the callback
         are from the ones stored in the variable at the creation of the callback instead of during its call.
         """
         return lambda _: self._resources.release(resources)

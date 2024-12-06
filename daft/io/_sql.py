@@ -85,7 +85,6 @@ def read_sql(
 
         >>> df = daft.read_sql("SELECT * FROM my_table", "sqlite:///my_database.db", partition_col="id", num_partitions=3)
     """
-
     if num_partitions is not None and partition_col is None:
         raise ValueError("Failed to execute sql: partition_col must be specified when num_partitions is specified")
 
