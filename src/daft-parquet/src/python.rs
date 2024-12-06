@@ -240,17 +240,23 @@ pub mod pylib {
                 multithreaded_io.unwrap_or(true),
                 io_config.unwrap_or_default().config.into(),
             )?;
-            Ok(Arc::new(
+
+            let runtime_handle = common_runtime::get_io_runtime(true);
+
+            let task = async move {
                 crate::read::read_parquet_schema(
                     uri,
                     io_client,
                     Some(io_stats),
                     schema_infer_options,
                     None, // TODO: allow passing in of field_id_mapping through Python API?
-                )?
-                .0,
-            )
-            .into())
+                )
+                .await
+            };
+
+            let (schema, _) = runtime_handle.block_on_current_thread(task)?;
+
+            Ok(Arc::new(schema).into())
         })
     }
 

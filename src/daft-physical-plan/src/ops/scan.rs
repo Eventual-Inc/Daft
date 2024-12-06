@@ -6,15 +6,15 @@ use common_scan_info::ScanTaskLikeRef;
 use daft_logical_plan::partitioning::ClusteringSpec;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TabularScan {
-    pub scan_tasks: Vec<ScanTaskLikeRef>,
+    pub scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
     pub clustering_spec: Arc<ClusteringSpec>,
 }
 
 impl TabularScan {
     pub(crate) fn new(
-        scan_tasks: Vec<ScanTaskLikeRef>,
+        scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
         clustering_spec: Arc<ClusteringSpec>,
     ) -> Self {
         Self {
@@ -100,7 +100,7 @@ Clustering spec = {{ {clustering_spec} }}
                 let mut s = base_display(self);
                 writeln!(s, "Scan Tasks: [").unwrap();
 
-                for st in &self.scan_tasks {
+                for st in self.scan_tasks.iter() {
                     writeln!(s, "{}", st.as_ref().display_as(DisplayLevel::Verbose)).unwrap();
                 }
                 s

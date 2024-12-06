@@ -44,7 +44,7 @@ def _put_fs_in_cache(protocol: str, fs: pafs.FileSystem, io_config: IOConfig | N
 class ListingInfo:
     path: str
     size: int
-    type: Literal["file"] | Literal["directory"]
+    type: Literal["file", "directory"]
     rows: int | None = None
 
 

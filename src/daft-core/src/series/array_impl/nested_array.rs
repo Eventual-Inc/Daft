@@ -121,7 +121,7 @@ macro_rules! impl_series_like_for_nested_arrays {
                 Ok(self.0.not_null()?.into_series())
             }
 
-            fn sort(&self, _descending: bool) -> DaftResult<Series> {
+            fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Series> {
                 Err(DaftError::ValueError(format!(
                     "Cannot sort a {}",
                     stringify!($da)

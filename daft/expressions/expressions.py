@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 import math
 import os
 import warnings
@@ -43,8 +44,6 @@ from daft.logical.schema import Field, Schema
 from daft.series import Series, item_to_series
 
 if TYPE_CHECKING:
-    import builtins
-
     from daft.io import IOConfig
     from daft.udf import PartialStatefulUDF, PartialStatelessUDF
 # This allows Sphinx to correctly work against our "namespaced" accessor functions by overriding @property to
@@ -623,6 +622,18 @@ class Expression:
         expr = native.floor(self._expr)
         return Expression._from_pyexpr(expr)
 
+    def clip(self, min: Expression | None = None, max: Expression | None = None) -> Expression:
+        """Clips an expression to the given minimum and maximum values (``expr.clip(min, max)``).
+
+        Args:
+            min: Minimum value to clip to. If None (or column value is Null), no lower clipping is applied.
+            max: Maximum value to clip to. If None (or column value is Null), no upper clipping is applied.
+
+        """
+        min_expr = Expression._to_expression(min)
+        max_expr = Expression._to_expression(max)
+        return Expression._from_pyexpr(native.clip(self._expr, min_expr._expr, max_expr._expr))
+
     def sign(self) -> Expression:
         """The sign of a numeric expression (``expr.sign()``)"""
         expr = native.sign(self._expr)
@@ -782,13 +793,19 @@ class Expression:
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr >> expr._expr)
 
-    def count(self, mode: CountMode = CountMode.Valid) -> Expression:
+    def count(self, mode: Literal["all", "valid", "null"] | CountMode = CountMode.Valid) -> Expression:
         """Counts the number of values in the expression.
 
         Args:
-            mode: whether to count all values, non-null (valid) values, or null values. Defaults to CountMode.Valid.
+            mode: A string ("all", "valid", or "null") that represents whether to count all values, non-null (valid) values, or null values. Defaults to "valid".
         """
+        if isinstance(mode, builtins.str):
+            mode = CountMode.from_count_mode_str(mode)
         expr = self._expr.count(mode)
+        return Expression._from_pyexpr(expr)
+
+    def count_distinct(self) -> Expression:
+        expr = self._expr.count_distinct()
         return Expression._from_pyexpr(expr)
 
     def sum(self) -> Expression:
@@ -1299,7 +1316,7 @@ class ExpressionUrlNamespace(ExpressionNamespace):
     def download(
         self,
         max_connections: int = 32,
-        on_error: Literal["raise"] | Literal["null"] = "raise",
+        on_error: Literal["raise", "null"] = "raise",
         io_config: IOConfig | None = None,
         use_native_downloader: bool = True,
     ) -> Expression:
@@ -3010,15 +3027,17 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(native.list_value_counts(self._expr))
 
-    def count(self, mode: CountMode = CountMode.Valid) -> Expression:
+    def count(self, mode: Literal["all", "valid", "null"] | CountMode = CountMode.Valid) -> Expression:
         """Counts the number of elements in each list
 
         Args:
-            mode: The mode to use for counting. Defaults to CountMode.Valid
+            mode: A string ("all", "valid", or "null") that represents whether to count all values, non-null (valid) values, or null values. Defaults to "valid".
 
         Returns:
             Expression: a UInt64 expression which is the length of each list
         """
+        if isinstance(mode, str):
+            mode = CountMode.from_count_mode_str(mode)
         return Expression._from_pyexpr(native.list_count(self._expr, mode))
 
     def lengths(self) -> Expression:
@@ -3116,7 +3135,7 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(native.list_max(self._expr))
 
-    def sort(self, desc: bool | Expression = False) -> Expression:
+    def sort(self, desc: bool | Expression = False, nulls_first: bool | Expression | None = None) -> Expression:
         """Sorts the inner lists of a list column.
 
         Example:
@@ -3145,7 +3164,11 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         if isinstance(desc, bool):
             desc = Expression._to_expression(desc)
-        return Expression._from_pyexpr(_list_sort(self._expr, desc._expr))
+        if nulls_first is None:
+            nulls_first = desc
+        elif isinstance(nulls_first, bool):
+            nulls_first = Expression._to_expression(nulls_first)
+        return Expression._from_pyexpr(_list_sort(self._expr, desc._expr, nulls_first._expr))
 
 
 class ExpressionStructNamespace(ExpressionNamespace):
@@ -3311,7 +3334,7 @@ class ExpressionImageNamespace(ExpressionNamespace):
 
     def decode(
         self,
-        on_error: Literal["raise"] | Literal["null"] = "raise",
+        on_error: Literal["raise", "null"] = "raise",
         mode: str | ImageMode | None = None,
     ) -> Expression:
         """

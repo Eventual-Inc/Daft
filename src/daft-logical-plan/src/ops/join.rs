@@ -18,6 +18,7 @@ use uuid::Uuid;
 use crate::{
     logical_plan::{self, CreationSnafu},
     ops::Project,
+    stats::{ApproxStats, PlanStats, StatsState},
     LogicalPlan,
 };
 
@@ -33,6 +34,7 @@ pub struct Join {
     pub join_type: JoinType,
     pub join_strategy: Option<JoinStrategy>,
     pub output_schema: SchemaRef,
+    pub stats_state: StatsState,
 }
 
 impl std::hash::Hash for Join {
@@ -49,6 +51,30 @@ impl std::hash::Hash for Join {
 }
 
 impl Join {
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new(
+        left: Arc<LogicalPlan>,
+        right: Arc<LogicalPlan>,
+        left_on: Vec<ExprRef>,
+        right_on: Vec<ExprRef>,
+        null_equals_nulls: Option<Vec<bool>>,
+        join_type: JoinType,
+        join_strategy: Option<JoinStrategy>,
+        output_schema: SchemaRef,
+    ) -> Self {
+        Self {
+            left,
+            right,
+            left_on,
+            right_on,
+            null_equals_nulls,
+            join_type,
+            join_strategy,
+            output_schema,
+            stats_state: StatsState::NotMaterialized,
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn try_new(
         left: Arc<LogicalPlan>,
@@ -129,6 +155,7 @@ impl Join {
                 join_type,
                 join_strategy,
                 output_schema,
+                stats_state: StatsState::NotMaterialized,
             })
         } else {
             let common_join_keys: HashSet<_> =
@@ -224,6 +251,7 @@ impl Join {
                 join_type,
                 join_strategy,
                 output_schema,
+                stats_state: StatsState::NotMaterialized,
             })
         }
     }
@@ -283,6 +311,27 @@ impl Join {
             .unzip()
     }
 
+    pub(crate) fn with_materialized_stats(mut self) -> Self {
+        // Assume a Primary-key + Foreign-Key join which would yield the max of the two tables.
+        // TODO(desmond): We can do better estimations here. For now, use the old logic.
+        let left_stats = self.left.materialized_stats();
+        let right_stats = self.right.materialized_stats();
+        let approx_stats = ApproxStats {
+            lower_bound_rows: 0,
+            upper_bound_rows: left_stats
+                .approx_stats
+                .upper_bound_rows
+                .and_then(|l| right_stats.approx_stats.upper_bound_rows.map(|r| l.max(r))),
+            lower_bound_bytes: 0,
+            upper_bound_bytes: left_stats
+                .approx_stats
+                .upper_bound_bytes
+                .and_then(|l| right_stats.approx_stats.upper_bound_bytes.map(|r| l.max(r))),
+        };
+        self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
+        self
+    }
+
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
         res.push(format!("Join: Type = {}", self.join_type));
@@ -320,6 +369,9 @@ impl Join {
             "Output schema = {}",
             self.output_schema.short_string()
         ));
+        if let StatsState::Materialized(stats) = &self.stats_state {
+            res.push(format!("Stats = {}", stats));
+        }
         res
     }
 }

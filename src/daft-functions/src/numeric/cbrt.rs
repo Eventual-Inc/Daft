@@ -6,9 +6,10 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
+use super::{evaluate_single_numeric, to_field_single_floating};
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Cbrt;
-use super::{evaluate_single_numeric, to_field_single_floating};
 
 #[typetag::serde]
 impl ScalarUDF for Cbrt {
@@ -32,16 +33,4 @@ impl ScalarUDF for Cbrt {
 #[must_use]
 pub fn cbrt(input: ExprRef) -> ExprRef {
     ScalarFunction::new(Cbrt {}, vec![input]).into()
-}
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "cbrt")]
-pub fn py_cbrt(expr: PyExpr) -> PyResult<PyExpr> {
-    Ok(cbrt(expr.into()).into())
 }

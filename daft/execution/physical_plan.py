@@ -1510,6 +1510,7 @@ def sort(
     child_plan: InProgressPhysicalPlan[PartitionT],
     sort_by: ExpressionsProjection,
     descending: list[bool],
+    nulls_first: list[bool],
     num_partitions: int,
 ) -> InProgressPhysicalPlan[PartitionT]:
     """Sort the result of `child_plan` according to `sort_info`."""
@@ -1565,6 +1566,7 @@ def sort(
                 num_quantiles=num_partitions,
                 sort_by=sort_by,
                 descending=descending,
+                nulls_first=nulls_first,
             ),
         )
         .finalize_partition_task_single_output(stage_id=stage_id_reduce)

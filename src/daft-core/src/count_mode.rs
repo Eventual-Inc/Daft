@@ -50,7 +50,7 @@ impl FromStr for CountMode {
     type Err = DaftError;
 
     fn from_str(count_mode: &str) -> DaftResult<Self> {
-        match count_mode {
+        match count_mode.to_lowercase().as_str() {
             "all" => Ok(Self::All),
             "valid" => Ok(Self::Valid),
             "null" => Ok(Self::Null),

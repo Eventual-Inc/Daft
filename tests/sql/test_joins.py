@@ -126,13 +126,43 @@ def test_joins_with_duplicate_columns():
         "b.y = a.x",
     ],
 )
-def test_join_qualifiers(join_condition):
+@pytest.mark.parametrize("selection", ["*", "a.*, b.y, b.score", "a.x, a.val, b.*", "a.x, a.val, b.y, b.score"])
+def test_join_qualifiers(join_condition, selection):
     a = daft.from_pydict({"x": [1, None], "val": [10, 20]})
     b = daft.from_pydict({"y": [1, None], "score": [0.1, 0.2]})
 
     catalog = SQLCatalog({"a": a, "b": b})
 
-    df_sql = daft.sql(f"select * from a join b on {join_condition}", catalog).to_pydict()
+    df_sql = daft.sql(f"select {selection} from a join b on {join_condition}", catalog).to_pydict()
+
+    expected = {"x": [1], "val": [10], "y": [1], "score": [0.1]}
+
+    assert df_sql == expected
+
+
+@pytest.mark.parametrize(
+    "join_condition",
+    [
+        "x = y",
+        "x = b1.y",
+        "y = x",
+        "y = a1.x",
+        "a1.x = y",
+        "a1.x = b1.y",
+        "b1.y = x",
+        "b1.y = a1.x",
+    ],
+)
+@pytest.mark.parametrize(
+    "selection", ["*", "a1.*, b1.y, b1.score", "a1.x, a1.val, b1.*", "a1.x, a1.val, b1.y, b1.score"]
+)
+def test_join_qualifiers_with_alias(join_condition, selection):
+    a = daft.from_pydict({"x": [1, None], "val": [10, 20]})
+    b = daft.from_pydict({"y": [1, None], "score": [0.1, 0.2]})
+
+    catalog = SQLCatalog({"a": a, "b": b})
+
+    df_sql = daft.sql(f"select {selection} from a as a1 join b as b1 on {join_condition}", catalog).to_pydict()
 
     expected = {"x": [1], "val": [10], "y": [1], "score": [0.1]}
 

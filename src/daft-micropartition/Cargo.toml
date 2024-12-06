@@ -19,7 +19,7 @@ pyo3 = {workspace = true, optional = true}
 snafu = {workspace = true}
 
 [features]
-python = ["dep:pyo3", "common-error/python", "common-file-formats/python", "common-scan-info/python", "daft-core/python", "daft-dsl/python", "daft-table/python", "daft-io/python", "daft-parquet/python", "daft-scan/python", "daft-stats/python"]
+python = ["dep:pyo3", "common-error/python", "common-file-formats/python", "common-scan-info/python", "daft-core/python", "daft-dsl/python", "daft-table/python", "daft-io/python", "daft-parquet/python", "daft-scan/python", "daft-stats/python", "daft-csv/python", "daft-json/python"]
 
 [lints]
 workspace = true

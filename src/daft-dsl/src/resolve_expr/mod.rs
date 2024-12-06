@@ -3,7 +3,7 @@ mod tests;
 
 use std::{
     cmp::Ordering,
-    collections::{BinaryHeap, HashMap},
+    collections::{BinaryHeap, HashMap, HashSet},
     sync::Arc,
 };
 
@@ -207,31 +207,6 @@ fn expand_wildcards(
     }
 }
 
-/// Checks if an expression used in an aggregation is well formed.
-/// Expressions for aggregations must be in the form (optional) non-agg expr <- agg exprs or literals <- non-agg exprs
-///
-/// # Examples
-///
-/// Allowed:
-/// - lit("x")
-/// - sum(col("a"))
-/// - sum(col("a")) > 0
-/// - sum(col("a")) - sum(col("b")) > sum(col("c"))
-///
-/// Not allowed:
-/// - col("a")
-///     - not an aggregation
-/// - sum(col("a")) + col("b")
-///     - not all branches are aggregations
-fn has_single_agg_layer(expr: &ExprRef) -> bool {
-    match expr.as_ref() {
-        Expr::Agg(agg_expr) => !agg_expr.children().iter().any(has_agg),
-        Expr::Column(_) => false,
-        Expr::Literal(_) => true,
-        _ => expr.children().iter().all(has_single_agg_layer),
-    }
-}
-
 fn convert_udfs_to_map_groups(expr: &ExprRef) -> ExprRef {
     expr.clone()
         .transform(|e| match e.as_ref() {
@@ -247,40 +222,30 @@ fn convert_udfs_to_map_groups(expr: &ExprRef) -> ExprRef {
         .data
 }
 
-fn validate_expr(expr: ExprRef) -> DaftResult<ExprRef> {
-    if has_agg(&expr) {
-        return Err(DaftError::ValueError(format!(
-            "Aggregation expressions are currently only allowed in agg and pivot: {expr}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383",
-        )));
-    }
-
-    Ok(expr)
-}
-
-fn validate_expr_in_agg(expr: ExprRef) -> DaftResult<ExprRef> {
-    let converted_expr = convert_udfs_to_map_groups(&expr);
-
-    if !has_single_agg_layer(&converted_expr) {
-        return Err(DaftError::ValueError(format!(
-            "Expressions in aggregations must be composed of non-nested aggregation expressions, got {expr}"
-        )));
-    }
-
-    Ok(converted_expr)
-}
-
 /// Used for resolving and validating expressions.
 /// Specifically, makes sure the expression does not contain aggregations or stateful UDFs
 /// where they are not allowed, and resolves struct accessors and wildcards.
 #[derive(Default, TypedBuilder)]
-pub struct ExprResolver {
+pub struct ExprResolver<'a> {
     #[builder(default)]
     allow_stateful_udf: bool,
-    #[builder(default)]
+    #[builder(via_mutators, mutators(
+        pub fn in_agg_context(&mut self, in_agg_context: bool) {
+            // workaround since typed_builder can't have defaults for mutator requirements
+            self.in_agg_context = in_agg_context;
+        }
+    ))]
     in_agg_context: bool,
+    #[builder(via_mutators, mutators(
+        pub fn groupby(&mut self, groupby: &'a Vec<ExprRef>) {
+            self.groupby = HashSet::from_iter(groupby);
+            self.in_agg_context = true;
+        }
+    ))]
+    groupby: HashSet<&'a ExprRef>,
 }
 
-impl ExprResolver {
+impl<'a> ExprResolver<'a> {
     fn resolve_helper(&self, expr: ExprRef, schema: &Schema) -> DaftResult<Vec<ExprRef>> {
         if !self.allow_stateful_udf && has_stateful_udf(&expr) {
             return Err(DaftError::ValueError(format!(
@@ -289,9 +254,9 @@ impl ExprResolver {
         }
 
         let validated_expr = if self.in_agg_context {
-            validate_expr_in_agg(expr)
+            self.validate_expr_in_agg(expr)
         } else {
-            validate_expr(expr)
+            self.validate_expr(expr)
         }?;
 
         let struct_expr_map = calculate_struct_expr_map(schema);
@@ -329,6 +294,55 @@ impl ExprResolver {
                 resolved_exprs.len()
             ))),
         }
+    }
+
+    fn validate_expr(&self, expr: ExprRef) -> DaftResult<ExprRef> {
+        if has_agg(&expr) {
+            return Err(DaftError::ValueError(format!(
+                "Aggregation expressions are currently only allowed in agg and pivot: {expr}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383",
+            )));
+        }
+
+        Ok(expr)
+    }
+
+    fn validate_expr_in_agg(&self, expr: ExprRef) -> DaftResult<ExprRef> {
+        let converted_expr = convert_udfs_to_map_groups(&expr);
+
+        if !self.is_valid_expr_in_agg(&converted_expr) {
+            return Err(DaftError::ValueError(format!(
+                "Expressions in aggregations must be composed of non-nested aggregation expressions, got {expr}"
+            )));
+        }
+
+        Ok(converted_expr)
+    }
+
+    /// Checks if an expression used in an aggregation is well formed.
+    /// Expressions for aggregations must be in the form (optional) non-agg expr <- [(agg exprs <- non-agg exprs) or literals or group by keys]
+    ///
+    /// # Examples
+    ///
+    /// Allowed:
+    /// - lit("x")
+    /// - sum(col("a"))
+    /// - sum(col("a")) > 0
+    /// - sum(col("a")) - sum(col("b")) > sum(col("c"))
+    /// - sum(col("a")) + col("b") when "b" is a group by key
+    ///
+    /// Not allowed:
+    /// - col("a") when "a" is not a group by key
+    ///     - not an aggregation
+    /// - sum(col("a")) + col("b") when "b" is not a group by key
+    ///     - not all branches are aggregations, literals, or group by keys
+    fn is_valid_expr_in_agg(&self, expr: &ExprRef) -> bool {
+        self.groupby.contains(expr)
+            || match expr.as_ref() {
+                Expr::Agg(agg_expr) => !agg_expr.children().iter().any(has_agg),
+                Expr::Column(_) => false,
+                Expr::Literal(_) => true,
+                _ => expr.children().iter().all(|e| self.is_valid_expr_in_agg(e)),
+            }
     }
 }
 

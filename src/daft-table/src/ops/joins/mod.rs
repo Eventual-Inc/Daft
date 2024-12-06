@@ -130,6 +130,10 @@ impl Table {
                     .take(left_on.len())
                     .collect::<Vec<_>>()
                     .as_slice(),
+                std::iter::repeat(false)
+                    .take(left_on.len())
+                    .collect::<Vec<_>>()
+                    .as_slice(),
             )?;
             if right_on.is_empty() {
                 return Err(DaftError::ValueError(
@@ -138,6 +142,10 @@ impl Table {
             }
             let right = right.sort(
                 right_on,
+                std::iter::repeat(false)
+                    .take(right_on.len())
+                    .collect::<Vec<_>>()
+                    .as_slice(),
                 std::iter::repeat(false)
                     .take(right_on.len())
                     .collect::<Vec<_>>()

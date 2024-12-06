@@ -58,15 +58,3 @@ impl ScalarUDF for Utf8Endswith {
 pub fn utf8_endswith(input: ExprRef, pattern: ExprRef) -> ExprRef {
     ScalarFunction::new(Utf8Endswith {}, vec![input, pattern]).into()
 }
-
-#[cfg(feature = "python")]
-use {
-    daft_dsl::python::PyExpr,
-    pyo3::{pyfunction, PyResult},
-};
-#[cfg(feature = "python")]
-#[pyfunction]
-#[pyo3(name = "utf8_endswith")]
-pub fn py_utf8_endswith(expr: PyExpr, pattern: PyExpr) -> PyResult<PyExpr> {
-    Ok(utf8_endswith(expr.into(), pattern.into()).into())
-}

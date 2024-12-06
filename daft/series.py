@@ -256,17 +256,20 @@ class Series:
 
         return Series._from_pyseries(self._series.slice(start, end))
 
-    def argsort(self, descending: bool = False) -> Series:
+    def argsort(self, descending: bool = False, nulls_first: bool | None = None) -> Series:
         if not isinstance(descending, bool):
             raise TypeError(f"expected `descending` to be bool, got {type(descending)}")
+        if nulls_first is None:
+            nulls_first = descending
 
-        return Series._from_pyseries(self._series.argsort(descending))
+        return Series._from_pyseries(self._series.argsort(descending, nulls_first))
 
-    def sort(self, descending: bool = False) -> Series:
+    def sort(self, descending: bool = False, nulls_first: bool | None = None) -> Series:
         if not isinstance(descending, bool):
             raise TypeError(f"expected `descending` to be bool, got {type(descending)}")
-
-        return Series._from_pyseries(self._series.sort(descending))
+        if nulls_first is None:
+            nulls_first = descending
+        return Series._from_pyseries(self._series.sort(descending, nulls_first))
 
     def hash(self, seed: Series | None = None) -> Series:
         if not isinstance(seed, Series) and seed is not None:
@@ -314,6 +317,9 @@ class Series:
 
     def round(self, decimal: int) -> Series:
         return Series._from_pyseries(self._series.round(decimal))
+
+    def clip(self, min: Series, max: Series) -> Series:
+        return Series._from_pyseries(self._series.clip(min._series, max._series))
 
     def sqrt(self) -> Series:
         return Series._from_pyseries(self._series.sqrt())
@@ -962,10 +968,15 @@ class SeriesListNamespace(SeriesNamespace):
     def get(self, idx: Series, default: Series) -> Series:
         return Series._from_pyseries(self._series.list_get(idx._series, default._series))
 
-    def sort(self, desc: bool | Series = False) -> Series:
+    def sort(self, desc: bool | Series = False, nulls_first: bool | Series | None = None) -> Series:
         if isinstance(desc, bool):
             desc = Series.from_pylist([desc], name="desc")
-        return Series._from_pyseries(self._series.list_sort(desc._series))
+        if nulls_first is None:
+            nulls_first = desc
+        elif isinstance(nulls_first, bool):
+            nulls_first = Series.from_pylist([nulls_first], name="nulls_first")
+
+        return Series._from_pyseries(self._series.list_sort(desc._series, nulls_first._series))
 
 
 class SeriesMapNamespace(SeriesNamespace):
@@ -976,7 +987,7 @@ class SeriesMapNamespace(SeriesNamespace):
 class SeriesImageNamespace(SeriesNamespace):
     def decode(
         self,
-        on_error: Literal["raise"] | Literal["null"] = "raise",
+        on_error: Literal["raise", "null"] = "raise",
         mode: str | ImageMode | None = None,
     ) -> Series:
         raise_on_error = False

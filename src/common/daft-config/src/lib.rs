@@ -37,7 +37,7 @@ impl DaftPlanningConfig {
 /// 3. Task generation from physical plan
 /// 4. Task scheduling
 /// 5. Task local execution
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DaftExecutionConfig {
     pub scan_tasks_min_size_bytes: usize,
     pub scan_tasks_max_size_bytes: usize,
@@ -105,6 +105,12 @@ impl DaftExecutionConfig {
             && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
         {
             log::warn!("DAFT_ENABLE_NATIVE_EXECUTOR will be deprecated and removed in the future. Please switch to using DAFT_RUNNER=NATIVE instead.");
+            cfg.enable_native_executor = true;
+        }
+        let daft_runner_var_name = "DAFT_RUNNER";
+        if let Ok(val) = std::env::var(daft_runner_var_name)
+            && matches!(val.trim().to_lowercase().as_str(), "native")
+        {
             cfg.enable_native_executor = true;
         }
         let ray_tracing_env_var_name = "DAFT_ENABLE_RAY_TRACING";

@@ -149,12 +149,15 @@ pub enum Expr {
     #[display("{_0}")]
     ScalarFunction(ScalarFunction),
 
-    #[display("{_0}")]
+    #[display("subquery {_0}")]
     Subquery(Subquery),
-    #[display("{_0}, {_1}")]
+    #[display("{_0} in {_1}")]
     InSubquery(ExprRef, Subquery),
-    #[display("{_0}")]
+    #[display("exists {_0}")]
     Exists(Subquery),
+
+    #[display("{_0}")]
+    OuterReferenceColumn(OuterReferenceColumn),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Hash, Eq)]
@@ -164,10 +167,27 @@ pub struct ApproxPercentileParams {
     pub force_list_output: bool,
 }
 
+/// Reference to a qualified field in a parent query, used for correlated subqueries.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Hash, Eq)]
+pub struct OuterReferenceColumn {
+    pub field: Field,
+    /// The parent query that the column refers to, with depth=1 denoting the direct parent.
+    pub depth: u64,
+}
+
+impl Display for OuterReferenceColumn {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "outer_col({}, {})", self.field.name, self.depth)
+    }
+}
+
 #[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum AggExpr {
     #[display("count({_0}, {_1})")]
     Count(ExprRef, CountMode),
+
+    #[display("count_distinct({_0})")]
+    CountDistinct(ExprRef),
 
     #[display("sum({_0})")]
     Sum(ExprRef),
@@ -230,6 +250,7 @@ impl AggExpr {
     pub fn name(&self) -> &str {
         match self {
             Self::Count(expr, ..)
+            | Self::CountDistinct(expr)
             | Self::Sum(expr)
             | Self::ApproxPercentile(ApproxPercentileParams { child: expr, .. })
             | Self::ApproxCountDistinct(expr)
@@ -251,6 +272,10 @@ impl AggExpr {
             Self::Count(expr, mode) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_count({mode})"))
+            }
+            Self::CountDistinct(expr) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.local_count_distinct()"))
             }
             Self::Sum(expr) => {
                 let child_id = expr.semantic_id(schema);
@@ -320,6 +345,7 @@ impl AggExpr {
     pub fn children(&self) -> Vec<ExprRef> {
         match self {
             Self::Count(expr, ..)
+            | Self::CountDistinct(expr)
             | Self::Sum(expr)
             | Self::ApproxPercentile(ApproxPercentileParams { child: expr, .. })
             | Self::ApproxCountDistinct(expr)
@@ -344,7 +370,8 @@ impl AggExpr {
         }
         let mut first_child = || children.pop().unwrap();
         match self {
-            Self::Count(_, count_mode) => Self::Count(first_child(), *count_mode),
+            &Self::Count(_, count_mode) => Self::Count(first_child(), count_mode),
+            Self::CountDistinct(_) => Self::CountDistinct(first_child()),
             Self::Sum(_) => Self::Sum(first_child()),
             Self::Mean(_) => Self::Mean(first_child()),
             Self::Stddev(_) => Self::Stddev(first_child()),
@@ -374,7 +401,7 @@ impl AggExpr {
 
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
         match self {
-            Self::Count(expr, ..) => {
+            Self::Count(expr, ..) | Self::CountDistinct(expr) => {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(field.name.as_str(), DataType::UInt64))
             }
@@ -520,6 +547,10 @@ impl Expr {
 
     pub fn count(self: ExprRef, mode: CountMode) -> ExprRef {
         Self::Agg(AggExpr::Count(self, mode)).into()
+    }
+
+    pub fn count_distinct(self: ExprRef) -> ExprRef {
+        Self::Agg(AggExpr::CountDistinct(self)).into()
     }
 
     pub fn sum(self: ExprRef) -> ExprRef {
@@ -717,6 +748,11 @@ impl Expr {
             Self::Subquery(..) | Self::InSubquery(..) | Self::Exists(..) => {
                 FieldID::new("__subquery__")
             } // todo: better/unique id
+            Self::OuterReferenceColumn(c) => {
+                let name = &c.field.name;
+                let depth = c.depth;
+                FieldID::new(format!("outer_col({name}, {depth})"))
+            }
         }
     }
 
@@ -727,6 +763,7 @@ impl Expr {
             Self::Literal(..) => vec![],
             Self::Subquery(..) => vec![],
             Self::Exists(..) => vec![],
+            Self::OuterReferenceColumn(..) => vec![],
 
             // One child.
             Self::Not(expr)
@@ -763,7 +800,11 @@ impl Expr {
     pub fn with_new_children(&self, children: Vec<ExprRef>) -> Self {
         match self {
             // no children
-            Self::Column(..) | Self::Literal(..) | Self::Subquery(..) | Self::Exists(..) => {
+            Self::Column(..)
+            | Self::Literal(..)
+            | Self::Subquery(..)
+            | Self::Exists(..)
+            | Self::OuterReferenceColumn(..) => {
                 assert!(children.is_empty(), "Should have no children");
                 self.clone()
             }
@@ -1027,6 +1068,7 @@ impl Expr {
             }
             Self::InSubquery(expr, _) => Ok(Field::new(expr.name(), DataType::Boolean)),
             Self::Exists(_) => Ok(Field::new("exists", DataType::Boolean)),
+            Self::OuterReferenceColumn(c) => Ok(c.field.clone()),
         }
     }
 
@@ -1060,6 +1102,7 @@ impl Expr {
             Self::Subquery(subquery) => subquery.name(),
             Self::InSubquery(expr, _) => expr.name(),
             Self::Exists(subquery) => subquery.name(),
+            Self::OuterReferenceColumn(c) => &c.field.name,
         }
     }
 
@@ -1135,7 +1178,8 @@ impl Expr {
                 | Expr::ScalarFunction { .. }
                 | Expr::Subquery(..)
                 | Expr::InSubquery(..)
-                | Expr::Exists(..) => Err(io::Error::new(
+                | Expr::Exists(..)
+                | Expr::OuterReferenceColumn(..) => Err(io::Error::new(
                     io::ErrorKind::Other,
                     "Unsupported expression for SQL translation",
                 )),
