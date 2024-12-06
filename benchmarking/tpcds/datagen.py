@@ -8,10 +8,10 @@ logger = logging.getLogger(__name__)
 
 
 def gen_tpcds(basedir: str, scale_factor: float):
-    db = duckdb.connect(f"{basedir}/tpcds.db")
-    db.sql(f"call dsdgen(sf = {scale_factor})")
     if not os.path.exists(basedir):
         os.makedirs(basedir)
+    db = duckdb.connect(f"{basedir}/tpcds.db")
+    db.sql(f"call dsdgen(sf = {scale_factor})")
     for item in db.sql("show tables").fetchall():
         tbl = item[0]
         print(f"Exporting {tbl} to {basedir}/{tbl}.parquet")
@@ -23,7 +23,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--tpcds-gen-folder",
         default="data/tpcds-dbgen",
-        help="Path to the folder containing the TPCH dbgen tool and generated data",
+        help="Path to the folder containing the TPC-DS dsdgen tool and generated data",
     )
     parser.add_argument("--scale-factor", default=0.01, help="Scale factor to run on in GB", type=float)
 
@@ -32,8 +32,8 @@ if __name__ == "__main__":
 
     logger.info(
         "Generating data at %s with: scale_factor=%s",
-        args.tpch_gen_folder,
+        args.tpcds_gen_folder,
         args.scale_factor,
     )
 
-    gen_tpcds(basedir=args.tpch_gen_folder, scale_factor=args.scale_factor)
+    gen_tpcds(basedir=args.tpcds_gen_folder, scale_factor=args.scale_factor)
