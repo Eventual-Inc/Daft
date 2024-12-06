@@ -63,6 +63,34 @@ ColumnInputType = Union[Expression, str]
 ManyColumnsInputType = Union[ColumnInputType, Iterable[ColumnInputType]]
 
 
+def to_logical_plan_builder(*parts: MicroPartition) -> LogicalPlanBuilder:
+    """Creates a Daft DataFrame from a single Table.
+
+    Args:
+        parts: The Tables that we wish to convert into a Daft DataFrame.
+
+    Returns:
+        DataFrame: Daft DataFrame created from the provided Table.
+    """
+    if not parts:
+        raise ValueError("Can't create a DataFrame from an empty list of tables.")
+
+    result_pset = LocalPartitionSet()
+
+    for i, part in enumerate(parts):
+        result_pset.set_partition_from_table(i, part)
+
+    context = get_context()
+    cache_entry = context.get_or_create_runner().put_partition_set_into_cache(result_pset)
+    size_bytes = result_pset.size_bytes()
+    num_rows = len(result_pset)
+
+    assert size_bytes is not None, "In-memory data should always have non-None size in bytes"
+    return LogicalPlanBuilder.from_in_memory_scan(
+        cache_entry, parts[0].schema(), result_pset.num_partitions(), size_bytes, num_rows=num_rows
+    )
+
+
 class DataFrame:
     """A Daft DataFrame is a table of data. It has columns, where each column has a type and the same
     number of items (rows) as all other columns.
@@ -1716,8 +1744,8 @@ class DataFrame:
         on: Optional[Union[List[ColumnInputType], ColumnInputType]] = None,
         left_on: Optional[Union[List[ColumnInputType], ColumnInputType]] = None,
         right_on: Optional[Union[List[ColumnInputType], ColumnInputType]] = None,
-        how: str = "inner",
-        strategy: Optional[str] = None,
+        how: Literal["inner", "inner", "left", "right", "outer", "anti", "semi", "cross"] = "inner",
+        strategy: Optional[Literal["hash", "sort_merge", "broadcast"]] = None,
         prefix: Optional[str] = None,
         suffix: Optional[str] = None,
     ) -> "DataFrame":
@@ -1735,7 +1763,7 @@ class DataFrame:
             on (Optional[Union[List[ColumnInputType], ColumnInputType]], optional): key or keys to join on [use if the keys on the left and right side match.]. Defaults to None.
             left_on (Optional[Union[List[ColumnInputType], ColumnInputType]], optional): key or keys to join on left DataFrame. Defaults to None.
             right_on (Optional[Union[List[ColumnInputType], ColumnInputType]], optional): key or keys to join on right DataFrame. Defaults to None.
-            how (str, optional): what type of join to perform; currently "inner", "left", "right", "outer", "anti", and "semi" are supported. Defaults to "inner".
+            how (str, optional): what type of join to perform; currently "inner", "left", "right", "outer", "anti", "semi", and "cross" are supported. Defaults to "inner".
             strategy (Optional[str]): The join strategy (algorithm) to use; currently "hash", "sort_merge", "broadcast", and None are supported, where None
                 chooses the join strategy automatically during query optimization. The default is None.
             suffix (Optional[str], optional): Suffix to add to the column names in case of a name collision. Defaults to "".
@@ -1747,7 +1775,6 @@ class DataFrame:
 
         Returns:
             DataFrame: Joined DataFrame.
-
 
         Examples:
             >>> import daft
@@ -1803,9 +1830,15 @@ class DataFrame:
             ╰──────┴───────┴─────────╯
             <BLANKLINE>
             (Showing first 2 of 2 rows)
-
         """
-        if on is None:
+
+        if how == "cross":
+            if any(side_on is not None for side_on in [on, left_on, right_on]):
+                raise ValueError("In a cross join, `on`, `left_on`, and `right_on` cannot be set")
+
+            left_on = []
+            right_on = []
+        elif on is None:
             if left_on is None or right_on is None:
                 raise ValueError("If `on` is None then both `left_on` and `right_on` must not be None")
         else:
@@ -1813,6 +1846,7 @@ class DataFrame:
                 raise ValueError("If `on` is not None then both `left_on` and `right_on` must be None")
             left_on = on
             right_on = on
+
         join_type = JoinType.from_join_type_str(how)
         join_strategy = JoinStrategy.from_join_strategy_str(strategy) if strategy is not None else None
 

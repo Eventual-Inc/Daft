@@ -37,6 +37,9 @@ class HudiScanOperator(ScanOperator):
     def schema(self) -> Schema:
         return self._schema
 
+    def name(self) -> str:
+        return "HudiScanOperator"
+
     def display_name(self) -> str:
         return f"HudiScanOperator({self._table.props.name})"
 

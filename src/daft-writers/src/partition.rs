@@ -40,7 +40,7 @@ impl PartitionedWriter {
 
     fn partition(
         partition_cols: &[ExprRef],
-        data: &Arc<MicroPartition>,
+        data: Arc<MicroPartition>,
     ) -> DaftResult<(Vec<Table>, Table)> {
         let data = data.concat_or_get(IOStatsContext::new("MicroPartition::partition_by_value"))?;
         let table = data.first().unwrap();
@@ -53,7 +53,7 @@ impl FileWriter for PartitionedWriter {
     type Input = Arc<MicroPartition>;
     type Result = Vec<Table>;
 
-    fn write(&mut self, input: &Arc<MicroPartition>) -> DaftResult<()> {
+    fn write(&mut self, input: Arc<MicroPartition>) -> DaftResult<usize> {
         assert!(
             !self.is_closed,
             "Cannot write to a closed PartitionedWriter"
@@ -62,6 +62,7 @@ impl FileWriter for PartitionedWriter {
         let (split_tables, partition_values) =
             Self::partition(self.partition_by.as_slice(), input)?;
         let partition_values_hash = partition_values.hash_rows()?;
+        let mut bytes_written = 0;
         for (idx, (table, partition_value_hash)) in split_tables
             .into_iter()
             .zip(partition_values_hash.as_arrow().values_iter())
@@ -83,7 +84,7 @@ impl FileWriter for PartitionedWriter {
                     let mut writer = self
                         .writer_factory
                         .create_writer(0, Some(partition_value_row.as_ref()))?;
-                    writer.write(&Arc::new(MicroPartition::new_loaded(
+                    bytes_written += writer.write(Arc::new(MicroPartition::new_loaded(
                         table.schema.clone(),
                         vec![table].into(),
                         None,
@@ -100,7 +101,7 @@ impl FileWriter for PartitionedWriter {
                 }
                 RawEntryMut::Occupied(mut entry) => {
                     let writer = entry.get_mut();
-                    writer.write(&Arc::new(MicroPartition::new_loaded(
+                    bytes_written += writer.write(Arc::new(MicroPartition::new_loaded(
                         table.schema.clone(),
                         vec![table].into(),
                         None,
@@ -108,7 +109,14 @@ impl FileWriter for PartitionedWriter {
                 }
             }
         }
-        Ok(())
+        Ok(bytes_written)
+    }
+
+    fn bytes_written(&self) -> usize {
+        self.per_partition_writers
+            .values()
+            .map(|writer| writer.bytes_written())
+            .sum::<usize>()
     }
 
     fn close(&mut self) -> DaftResult<Self::Result> {

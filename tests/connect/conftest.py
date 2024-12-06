@@ -11,6 +11,7 @@ def spark_session():
     This fixture is available to all test files and creates a single
     Spark session for the entire test suite run.
     """
+
     from daft.daft import connect_start
 
     # Start Daft Connect server

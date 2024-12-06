@@ -139,14 +139,6 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             ))
         }
         LogicalPlan::Join(join) => {
-            if join.left_on.is_empty()
-                && join.right_on.is_empty()
-                && join.join_type == JoinType::Inner
-            {
-                return Err(DaftError::not_implemented(
-                    "Joins without join conditions (cross join) are not supported yet",
-                ));
-            }
             if join.join_strategy.is_some_and(|x| x != JoinStrategy::Hash) {
                 return Err(DaftError::not_implemented(
                     "Only hash join is supported for now",
@@ -154,16 +146,29 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             }
             let left = translate(&join.left)?;
             let right = translate(&join.right)?;
-            Ok(LocalPhysicalPlan::hash_join(
-                left,
-                right,
-                join.left_on.clone(),
-                join.right_on.clone(),
-                join.null_equals_nulls.clone(),
-                join.join_type,
-                join.output_schema.clone(),
-                join.stats_state.clone(),
-            ))
+
+            if join.left_on.is_empty()
+                && join.right_on.is_empty()
+                && join.join_type == JoinType::Inner
+            {
+                Ok(LocalPhysicalPlan::cross_join(
+                    left,
+                    right,
+                    join.output_schema.clone(),
+                    join.stats_state.clone(),
+                ))
+            } else {
+                Ok(LocalPhysicalPlan::hash_join(
+                    left,
+                    right,
+                    join.left_on.clone(),
+                    join.right_on.clone(),
+                    join.null_equals_nulls.clone(),
+                    join.join_type,
+                    join.output_schema.clone(),
+                    join.stats_state.clone(),
+                ))
+            }
         }
         LogicalPlan::Distinct(distinct) => {
             let schema = distinct.input.schema();

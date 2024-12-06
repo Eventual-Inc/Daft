@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_core::{
-    prelude::{Int64Array, Schema, UInt64Array, Utf8Array},
+    prelude::{Schema, UInt64Array, UInt8Array, Utf8Array},
     series::IntoSeries,
 };
 use daft_micropartition::MicroPartition;
@@ -25,6 +25,7 @@ impl WriterFactory for DummyWriterFactory {
             file_idx: file_idx.to_string(),
             partition_values: partition_values.cloned(),
             write_count: 0,
+            byte_count: 0,
         })
             as Box<
                 dyn FileWriter<Input = Self::Input, Result = Self::Result>,
@@ -36,15 +37,22 @@ pub(crate) struct DummyWriter {
     file_idx: String,
     partition_values: Option<Table>,
     write_count: usize,
+    byte_count: usize,
 }
 
 impl FileWriter for DummyWriter {
     type Input = Arc<MicroPartition>;
     type Result = Option<Table>;
 
-    fn write(&mut self, _input: &Self::Input) -> DaftResult<()> {
+    fn write(&mut self, input: Self::Input) -> DaftResult<usize> {
         self.write_count += 1;
-        Ok(())
+        let size_bytes = input.size_bytes()?.unwrap();
+        self.byte_count += size_bytes;
+        Ok(size_bytes)
+    }
+
+    fn bytes_written(&self) -> usize {
+        self.byte_count
     }
 
     fn close(&mut self) -> DaftResult<Self::Result> {
@@ -71,11 +79,11 @@ impl FileWriter for DummyWriter {
     }
 }
 
-pub(crate) fn make_dummy_mp(num_rows: usize) -> Arc<MicroPartition> {
+pub(crate) fn make_dummy_mp(size_bytes: usize) -> Arc<MicroPartition> {
     let series =
-        Int64Array::from_values("ints", std::iter::repeat(42).take(num_rows)).into_series();
+        UInt8Array::from_values("ints", std::iter::repeat(42).take(size_bytes)).into_series();
     let schema = Arc::new(Schema::new(vec![series.field().clone()]).unwrap());
-    let table = Table::new_unchecked(schema.clone(), vec![series.into()], num_rows);
+    let table = Table::new_unchecked(schema.clone(), vec![series.into()], size_bytes);
     Arc::new(MicroPartition::new_loaded(
         schema.into(),
         vec![table].into(),

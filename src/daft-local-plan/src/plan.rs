@@ -36,6 +36,7 @@ pub enum LocalPhysicalPlan {
     Pivot(Pivot),
     Concat(Concat),
     HashJoin(HashJoin),
+    CrossJoin(CrossJoin),
     // SortMergeJoin(SortMergeJoin),
     // BroadcastJoin(BroadcastJoin),
     PhysicalWrite(PhysicalWrite),
@@ -78,6 +79,7 @@ impl LocalPhysicalPlan {
             | Self::Pivot(Pivot { stats_state, .. })
             | Self::Concat(Concat { stats_state, .. })
             | Self::HashJoin(HashJoin { stats_state, .. })
+            | Self::CrossJoin(CrossJoin { stats_state, .. })
             | Self::PhysicalWrite(PhysicalWrite { stats_state, .. }) => stats_state,
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { stats_state, .. })
@@ -348,6 +350,21 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    pub(crate) fn cross_join(
+        left: LocalPhysicalPlanRef,
+        right: LocalPhysicalPlanRef,
+        schema: SchemaRef,
+        stats_state: StatsState,
+    ) -> LocalPhysicalPlanRef {
+        Self::CrossJoin(CrossJoin {
+            left,
+            right,
+            schema,
+            stats_state,
+        })
+        .arced()
+    }
+
     pub(crate) fn concat(
         input: LocalPhysicalPlanRef,
         other: LocalPhysicalPlanRef,
@@ -430,6 +447,7 @@ impl LocalPhysicalPlan {
             | Self::Sort(Sort { schema, .. })
             | Self::Sample(Sample { schema, .. })
             | Self::HashJoin(HashJoin { schema, .. })
+            | Self::CrossJoin(CrossJoin { schema, .. })
             | Self::Explode(Explode { schema, .. })
             | Self::Unpivot(Unpivot { schema, .. })
             | Self::Concat(Concat { schema, .. })
@@ -580,6 +598,14 @@ pub struct HashJoin {
     pub right_on: Vec<ExprRef>,
     pub null_equals_null: Option<Vec<bool>>,
     pub join_type: JoinType,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+}
+
+#[derive(Debug)]
+pub struct CrossJoin {
+    pub left: LocalPhysicalPlanRef,
+    pub right: LocalPhysicalPlanRef,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
 }

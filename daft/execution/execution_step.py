@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Generic, Protocol
 
 from daft.context import get_context
-from daft.daft import ResourceRequest
+from daft.daft import JoinSide, ResourceRequest
 from daft.expressions import Expression, ExpressionsProjection, col
 from daft.runners.partitioning import (
     Boundaries,
@@ -553,7 +553,7 @@ class Project(SingleOutputInstruction):
 
 
 @dataclass(frozen=True)
-class StatefulUDFProject(SingleOutputInstruction):
+class ActorPoolProject(SingleOutputInstruction):
     projection: ExpressionsProjection
 
     def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
@@ -564,7 +564,7 @@ class StatefulUDFProject(SingleOutputInstruction):
             PartialPartitionMetadata(
                 num_rows=None,  # UDFs can potentially change cardinality
                 size_bytes=None,
-                boundaries=None,  # TODO: figure out if the stateful UDF projection changes boundaries
+                boundaries=None,  # TODO: figure out if the actor pool UDF projection changes boundaries
             )
         ]
 
@@ -944,6 +944,53 @@ class ReduceToQuantiles(ReduceInstruction):
                 size_bytes=None,
             )
         ]
+
+
+def calculate_cross_join_stats(
+    left_meta: PartialPartitionMetadata, right_meta: PartialPartitionMetadata
+) -> tuple[int | None, int | None]:
+    """Given the left and right partition metadata, returns the expected (num rows, size bytes) of the cross join output."""
+
+    left_rows, left_bytes = left_meta.num_rows, left_meta.size_bytes
+    right_rows, right_bytes = right_meta.num_rows, right_meta.size_bytes
+
+    if left_rows is not None and right_rows is not None:
+        num_rows = left_rows * right_rows
+
+        if left_bytes is not None and right_bytes is not None:
+            size_bytes = left_bytes * right_rows + right_bytes * left_rows
+        else:
+            size_bytes = None
+    else:
+        num_rows = None
+        size_bytes = None
+
+    return num_rows, size_bytes
+
+
+@dataclass(frozen=True)
+class CrossJoin(SingleOutputInstruction):
+    outer_loop_side: JoinSide
+
+    def run(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        return self._cross_join(inputs)
+
+    def _cross_join(self, inputs: list[MicroPartition]) -> list[MicroPartition]:
+        left, right = inputs
+        result = left.cross_join(
+            right,
+            self.outer_loop_side,
+        )
+        return [result]
+
+    def run_partial_metadata(self, input_metadatas: list[PartialPartitionMetadata]) -> list[PartialPartitionMetadata]:
+        left_meta, right_meta = input_metadatas
+
+        num_rows, size_bytes = calculate_cross_join_stats(left_meta, right_meta)
+
+        boundaries = left_meta.boundaries if self.outer_loop_side == JoinSide.Left else right_meta.boundaries
+
+        return [PartialPartitionMetadata(num_rows=num_rows, size_bytes=size_bytes, boundaries=boundaries)]
 
 
 @dataclass(frozen=True)

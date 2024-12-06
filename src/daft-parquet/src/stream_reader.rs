@@ -3,7 +3,6 @@ use std::{
     collections::HashSet,
     fs::File,
     io::{Read, Seek},
-    num::NonZeroUsize,
     sync::Arc,
 };
 
@@ -17,17 +16,19 @@ use daft_table::Table;
 use futures::{stream::BoxStream, StreamExt};
 use itertools::Itertools;
 use rayon::{
-    iter::{IntoParallelRefMutIterator, ParallelIterator},
+    iter::ParallelIterator,
     prelude::{IndexedParallelIterator, IntoParallelIterator, ParallelBridge},
 };
 use snafu::ResultExt;
 use tokio_stream::wrappers::ReceiverStream;
 
 use crate::{
+    determine_parquet_parallelism,
     file::{build_row_ranges, RowGroupRange},
     read::{ArrowChunk, ArrowChunkIters, ParquetSchemaInferenceOptions},
     stream_reader::read::schema::infer_schema_with_options,
-    UnableToConvertSchemaToDaftSnafu,
+    utils::combine_stream,
+    UnableToConvertSchemaToDaftSnafu, PARQUET_MORSEL_SIZE,
 };
 
 fn prune_fields_from_schema(
@@ -50,60 +51,6 @@ fn prune_fields_from_schema(
     } else {
         Ok(schema)
     }
-}
-
-#[allow(clippy::too_many_arguments)]
-pub fn arrow_column_iters_to_table_iter(
-    arr_iters: ArrowChunkIters,
-    row_range_start: usize,
-    schema_ref: SchemaRef,
-    uri: String,
-    predicate: Option<ExprRef>,
-    original_columns: Option<Vec<String>>,
-    original_num_rows: Option<usize>,
-    delete_rows: Option<Vec<i64>>,
-) -> Option<impl Iterator<Item = DaftResult<Table>>> {
-    if arr_iters.is_empty() {
-        return None;
-    }
-    pub struct ParallelLockStepIter {
-        pub iters: ArrowChunkIters,
-    }
-    impl Iterator for ParallelLockStepIter {
-        type Item = arrow2::error::Result<ArrowChunk>;
-
-        fn next(&mut self) -> Option<Self::Item> {
-            self.iters
-                .par_iter_mut()
-                .map(std::iter::Iterator::next)
-                .collect()
-        }
-    }
-    let par_lock_step_iter = ParallelLockStepIter { iters: arr_iters };
-
-    let mut curr_delete_row_idx = 0;
-    // Keep track of the current index in the row group so we can throw away arrays that are not needed
-    // and slice arrays that are partially needed.
-    let mut index_so_far = 0;
-    let owned_schema_ref = schema_ref;
-    let table_iter = par_lock_step_iter.into_iter().map(move |chunk| {
-        let chunk = chunk.with_context(|_| {
-            super::UnableToCreateChunkFromStreamingFileReaderSnafu { path: uri.clone() }
-        })?;
-        arrow_chunk_to_table(
-            chunk,
-            &owned_schema_ref,
-            &uri,
-            row_range_start,
-            &mut index_so_far,
-            delete_rows.as_deref(),
-            &mut curr_delete_row_idx,
-            predicate.clone(),
-            original_columns.as_deref(),
-            original_num_rows,
-        )
-    });
-    Some(table_iter)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -203,10 +150,11 @@ pub fn spawn_column_iters_to_table_task(
     delete_rows: Option<Vec<i64>>,
     output_sender: tokio::sync::mpsc::Sender<DaftResult<Table>>,
     permit: tokio::sync::OwnedSemaphorePermit,
+    channel_size: usize,
 ) -> RuntimeTask<DaftResult<()>> {
     let (arrow_chunk_senders, mut arrow_chunk_receivers): (Vec<_>, Vec<_>) = arr_iters
         .iter()
-        .map(|_| tokio::sync::mpsc::channel(1))
+        .map(|_| tokio::sync::mpsc::channel(channel_size))
         .unzip();
 
     let compute_runtime = get_compute_runtime();
@@ -491,7 +439,7 @@ pub fn local_parquet_read_into_arrow(
         Schema::try_from(&schema).with_context(|_| UnableToConvertSchemaToDaftSnafu {
             path: uri.to_string(),
         })?;
-    let chunk_size = chunk_size.unwrap_or(128 * 1024);
+    let chunk_size = chunk_size.unwrap_or(PARQUET_MORSEL_SIZE);
     let max_rows = metadata.num_rows.min(num_rows.unwrap_or(metadata.num_rows));
 
     let num_expected_arrays = f32::ceil(max_rows as f32 / chunk_size as f32) as usize;
@@ -655,7 +603,7 @@ pub async fn local_parquet_stream(
     Arc<parquet2::metadata::FileMetaData>,
     BoxStream<'static, DaftResult<Table>>,
 )> {
-    let chunk_size = 128 * 1024;
+    let chunk_size = PARQUET_MORSEL_SIZE;
     let (metadata, schema_ref, row_ranges, column_iters) = local_parquet_read_into_column_iters(
         uri,
         columns.as_deref(),
@@ -670,14 +618,7 @@ pub async fn local_parquet_stream(
 
     // We use a semaphore to limit the number of concurrent row group deserialization tasks.
     // Set the maximum number of concurrent tasks to ceil(number of available threads / columns).
-    let num_parallel_tasks = (std::thread::available_parallelism()
-        .unwrap_or(NonZeroUsize::new(2).unwrap())
-        .checked_mul(2.try_into().unwrap())
-        .unwrap()
-        .get() as f64
-        / max(schema_ref.fields.len(), 1) as f64)
-        .ceil() as usize;
-
+    let num_parallel_tasks = determine_parquet_parallelism(&schema_ref);
     let semaphore = Arc::new(tokio::sync::Semaphore::new(num_parallel_tasks));
 
     let owned_uri = uri.to_string();
@@ -708,6 +649,7 @@ pub async fn local_parquet_stream(
                 delete_rows.clone(),
                 sender,
                 permit,
+                max(PARQUET_MORSEL_SIZE / chunk_size, 1),
             );
             table_tasks.push(table_task);
         }
@@ -722,28 +664,11 @@ pub async fn local_parquet_stream(
 
     let stream_of_streams =
         futures::stream::iter(output_receivers.into_iter().map(ReceiverStream::new));
-    let flattened = match maintain_order {
-        true => stream_of_streams.flatten().boxed(),
-        false => stream_of_streams.flatten_unordered(None).boxed(),
+    let combined = match maintain_order {
+        true => combine_stream(stream_of_streams.flatten(), parquet_task).boxed(),
+        false => combine_stream(stream_of_streams.flatten_unordered(None), parquet_task).boxed(),
     };
-    let combined_stream = futures::stream::unfold(
-        (Some(parquet_task), flattened),
-        |(task, mut stream)| async move {
-            task.as_ref()?;
-            match stream.next().await {
-                Some(v) => Some((v, (task, stream))),
-                None => {
-                    if let Err(e) = task.unwrap().await {
-                        Some((Err(e), (None, stream)))
-                    } else {
-                        None
-                    }
-                }
-            }
-        },
-    );
-
-    Ok((metadata, combined_stream.boxed()))
+    Ok((metadata, combined))
 }
 
 #[allow(clippy::too_many_arguments)]
