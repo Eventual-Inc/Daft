@@ -102,10 +102,10 @@ pub fn physical_plan_to_pipeline(
             scan_task_source.arced().into()
         }
         LocalPhysicalPlan::InMemoryScan(InMemoryScan { info, .. }) => {
-            let partitions = psets
+            let materialized_pset = psets
                 .get_partition(&info.cache_key)
                 .unwrap_or_else(|_| panic!("Cache key not found: {:?}", info.cache_key));
-            InMemorySource::new(partitions.micropartitions(), info.source_schema.clone())
+            InMemorySource::new(materialized_pset, info.source_schema.clone())
                 .arced()
                 .into()
         }
