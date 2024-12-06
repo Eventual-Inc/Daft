@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::{mermaid::MermaidDisplayVisitor, tree::TreeDisplay};
@@ -16,7 +16,7 @@ use daft_local_plan::{
     Sort, UnGroupedAggregate, Unpivot,
 };
 use daft_logical_plan::{stats::StatsState, JoinType};
-use daft_micropartition::MicroPartition;
+use daft_micropartition::{partitioning::PartitionSet, MicroPartition};
 use daft_physical_plan::{extract_agg_expr, populate_aggregation_stages};
 use daft_scan::ScanTaskRef;
 use daft_writers::make_physical_writer_factory;
@@ -75,7 +75,7 @@ pub fn viz_pipeline(root: &dyn PipelineNode) -> String {
 
 pub fn physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
-    psets: &HashMap<String, Vec<Arc<MicroPartition>>>,
+    psets: &dyn PartitionSet,
     cfg: &Arc<DaftExecutionConfig>,
 ) -> crate::Result<Box<dyn PipelineNode>> {
     use daft_local_plan::PhysicalScan;
@@ -103,9 +103,9 @@ pub fn physical_plan_to_pipeline(
         }
         LocalPhysicalPlan::InMemoryScan(InMemoryScan { info, .. }) => {
             let partitions = psets
-                .get(&info.cache_key)
-                .unwrap_or_else(|| panic!("Cache key not found: {:?}", info.cache_key));
-            InMemorySource::new(partitions.clone(), info.source_schema.clone())
+                .get_partition(&info.cache_key)
+                .unwrap_or_else(|_| panic!("Cache key not found: {:?}", info.cache_key));
+            InMemorySource::new(partitions.micropartitions(), info.source_schema.clone())
                 .arced()
                 .into()
         }

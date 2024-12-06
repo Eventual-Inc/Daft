@@ -11,7 +11,10 @@ use common_error::DaftResult;
 use common_tracing::refresh_chrome_trace;
 use daft_local_plan::{translate, LocalPhysicalPlan};
 use daft_logical_plan::LogicalPlanBuilder;
-use daft_micropartition::MicroPartition;
+use daft_micropartition::{
+    partitioning::{LocalPartitionSet, PartitionSet},
+    MicroPartition,
+};
 use futures::{FutureExt, Stream};
 use loole::RecvFuture;
 use tokio_util::sync::CancellationToken;
@@ -89,9 +92,10 @@ impl PyNativeExecutor {
                 )
             })
             .collect();
+        let psets = Arc::new(LocalPartitionSet::new(native_psets));
         let out = py.allow_threads(|| {
             self.executor
-                .run(native_psets, cfg.config, results_buffer_size)
+                .run(psets, cfg.config, results_buffer_size)
                 .map(|res| res.into_iter())
         })?;
         let iter = Box::new(out.map(|part| {
@@ -121,7 +125,7 @@ impl NativeExecutor {
 
     pub fn run(
         &self,
-        psets: HashMap<String, Vec<Arc<MicroPartition>>>,
+        psets: Arc<dyn PartitionSet>,
         cfg: Arc<DaftExecutionConfig>,
         results_buffer_size: Option<usize>,
     ) -> DaftResult<ExecutionEngineResult> {
@@ -246,13 +250,13 @@ impl IntoIterator for ExecutionEngineResult {
 
 pub fn run_local(
     physical_plan: &LocalPhysicalPlan,
-    psets: HashMap<String, Vec<Arc<MicroPartition>>>,
+    psets: Arc<dyn PartitionSet>,
     cfg: Arc<DaftExecutionConfig>,
     results_buffer_size: Option<usize>,
     cancel: CancellationToken,
 ) -> DaftResult<ExecutionEngineResult> {
     refresh_chrome_trace();
-    let pipeline = physical_plan_to_pipeline(physical_plan, &psets, &cfg)?;
+    let pipeline = physical_plan_to_pipeline(physical_plan, psets.as_ref(), &cfg)?;
     let (tx, rx) = create_channel(results_buffer_size.unwrap_or(1));
     let handle = std::thread::spawn(move || {
         let runtime = tokio::runtime::Builder::new_current_thread()

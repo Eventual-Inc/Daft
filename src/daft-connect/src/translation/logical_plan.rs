@@ -1,8 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use daft_logical_plan::LogicalPlanBuilder;
-use daft_micropartition::MicroPartition;
-use derive_more::Constructor;
+use daft_micropartition::partitioning::{LocalPartitionSet, PartitionSet};
 use eyre::{bail, Context};
 use spark_connect::{relation::RelType, Limit, Relation};
 use tracing::warn;
@@ -19,17 +18,25 @@ mod range;
 mod to_df;
 mod with_columns;
 
-#[derive(Constructor)]
 pub struct Plan {
     pub builder: LogicalPlanBuilder,
-    pub psets: HashMap<String, Vec<Arc<MicroPartition>>>,
+    pub psets: Arc<dyn PartitionSet>,
+}
+
+impl Plan {
+    pub fn new(builder: LogicalPlanBuilder) -> Self {
+        Self {
+            builder,
+            psets: Arc::new(LocalPartitionSet::default()),
+        }
+    }
 }
 
 impl From<LogicalPlanBuilder> for Plan {
     fn from(builder: LogicalPlanBuilder) -> Self {
         Self {
             builder,
-            psets: HashMap::new(),
+            psets: Arc::new(LocalPartitionSet::default()),
         }
     }
 }
