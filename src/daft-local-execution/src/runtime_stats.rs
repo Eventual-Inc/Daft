@@ -146,7 +146,7 @@ impl<F: Future> Future for TimedFuture<F> {
 pub struct ExecutionTaskSpawner {
     runtime_ref: RuntimeRef,
     runtime_context: Arc<RuntimeStatsContext>,
-    span: tracing::Span,
+    outer_span: tracing::Span,
 }
 
 impl ExecutionTaskSpawner {
@@ -158,20 +158,20 @@ impl ExecutionTaskSpawner {
         Self {
             runtime_ref,
             runtime_context,
-            span,
+            outer_span: span,
         }
     }
 
     pub fn spawn<T: Send + 'static>(
         &self,
         task: impl std::future::Future<Output = T> + Send + 'static,
-        span: tracing::Span,
+        inner_span: tracing::Span,
     ) -> RuntimeTask<T> {
-        let instrumented = task.instrument(span);
+        let instrumented = task.instrument(inner_span);
         let timed_fut = TimedFuture::new(
             instrumented,
             self.runtime_context.clone(),
-            self.span.clone(),
+            self.outer_span.clone(),
         );
         self.runtime_ref.spawn(timed_fut)
     }
