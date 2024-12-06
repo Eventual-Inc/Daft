@@ -1,7 +1,8 @@
-use std::{any::Any, collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 use daft_dsl::Expr;
+use futures::stream::BoxStream;
 
 use crate::MicroPartition;
 type PartId = String;
@@ -31,24 +32,22 @@ impl PartitionMetadata {
     }
 }
 
-/// A fully materialized partition set
-pub trait MaterializedPartitionSet: Send + Sync {
-    fn as_any(&self) -> &dyn Any;
+/// A batch of micropartitions
+pub trait PartitionBatch: Send + Sync {
     fn micropartitions(&self) -> Vec<Arc<MicroPartition>>;
     fn metadata(&self) -> PartitionMetadata;
+    fn into_partition_stream(
+        self: Arc<Self>,
+    ) -> BoxStream<'static, DaftResult<Arc<MicroPartition>>>;
 }
 
 #[derive(Debug, Clone)]
-pub struct LocalMaterializedPartitionSet {
+pub struct InMemoryPartitionBatch {
     pub partition: Vec<Arc<MicroPartition>>,
     pub metadata: Option<PartitionMetadata>,
 }
 
-impl MaterializedPartitionSet for LocalMaterializedPartitionSet {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
+impl PartitionBatch for InMemoryPartitionBatch {
     fn micropartitions(&self) -> Vec<Arc<MicroPartition>> {
         self.partition.clone()
     }
@@ -66,18 +65,26 @@ impl MaterializedPartitionSet for LocalMaterializedPartitionSet {
             PartitionMetadata::from_micro_partition(&self.partition[0])
         }
     }
+
+    fn into_partition_stream(
+        self: Arc<Self>,
+    ) -> BoxStream<'static, DaftResult<Arc<MicroPartition>>> {
+        Box::pin(futures::stream::iter(
+            self.partition.clone().into_iter().map(Ok),
+        ))
+    }
 }
 
-/// an arc'd reference to a materialized partition set
-pub type MaterializedPartitionSetRef = Arc<dyn MaterializedPartitionSet>;
+/// an arc'd reference to a partition batch
+pub type PartitionBatchRef = Arc<dyn PartitionBatch>;
 
 pub trait PartitionSet {
     /// Merge all micropartitions into a single micropartition
     fn get_merged_micropartitions(&self) -> DaftResult<MicroPartition>;
     /// Get a preview of the micropartitions
     fn get_preview_micropartitions(&self, num_rows: usize) -> DaftResult<Vec<Arc<MicroPartition>>>;
-    fn items(&self) -> DaftResult<Vec<(PartId, MaterializedPartitionSetRef)>>;
-    fn values(&self) -> DaftResult<Vec<MaterializedPartitionSetRef>> {
+    fn items(&self) -> DaftResult<Vec<(PartId, PartitionBatchRef)>>;
+    fn values(&self) -> DaftResult<Vec<PartitionBatchRef>> {
         let items = self.items()?;
         Ok(items.into_iter().map(|(_, mp)| mp).collect())
     }
@@ -94,9 +101,9 @@ pub trait PartitionSet {
     /// Delete a partition
     fn delete_partition(&mut self, idx: &PartId) -> DaftResult<()>;
     /// Set a partition
-    fn set_partition(&mut self, idx: PartId, part: MaterializedPartitionSetRef) -> DaftResult<()>;
+    fn set_partition(&mut self, idx: PartId, part: PartitionBatchRef) -> DaftResult<()>;
     /// Get a partition
-    fn get_partition(&self, idx: &PartId) -> DaftResult<MaterializedPartitionSetRef>;
+    fn get_partition(&self, idx: &PartId) -> DaftResult<PartitionBatchRef>;
 }
 
 #[derive(Debug, Default)]
@@ -139,11 +146,11 @@ impl PartitionSet for LocalPartitionSet {
         Ok(preview_parts)
     }
 
-    fn items(&self) -> DaftResult<Vec<(PartId, MaterializedPartitionSetRef)>> {
+    fn items(&self) -> DaftResult<Vec<(PartId, PartitionBatchRef)>> {
         self.partitions
             .iter()
             .map(|(k, v)| {
-                let partition = LocalMaterializedPartitionSet {
+                let partition = InMemoryPartitionBatch {
                     partition: v.clone(),
                     metadata: None,
                 };
@@ -180,24 +187,20 @@ impl PartitionSet for LocalPartitionSet {
         Ok(())
     }
 
-    fn set_partition(
-        &mut self,
-        partition_id: PartId,
-        part: MaterializedPartitionSetRef,
-    ) -> DaftResult<()> {
+    fn set_partition(&mut self, partition_id: PartId, part: PartitionBatchRef) -> DaftResult<()> {
         let part = part.micropartitions();
 
         self.partitions.insert(partition_id, part);
         Ok(())
     }
 
-    fn get_partition(&self, idx: &PartId) -> DaftResult<MaterializedPartitionSetRef> {
+    fn get_partition(&self, idx: &PartId) -> DaftResult<PartitionBatchRef> {
         let part = self
             .partitions
             .get(idx)
             .ok_or(DaftError::ValueError("Partition not found".to_string()))?;
 
-        Ok(Arc::new(LocalMaterializedPartitionSet {
+        Ok(Arc::new(InMemoryPartitionBatch {
             partition: part.clone(),
             metadata: None,
         }))

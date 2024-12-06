@@ -2364,6 +2364,7 @@ dependencies = [
  "daft-scan",
  "daft-stats",
  "daft-table",
+ "futures",
  "parquet2",
  "pyo3",
  "snafu",
