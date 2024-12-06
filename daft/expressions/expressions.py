@@ -323,7 +323,7 @@ class Expression:
             >>> import daft
             >>> from daft import col
             >>> df = daft.from_pydict({"a": [1, 2, 3], "b": ["a", "b", "c"]})
-            >>> df.select(daft.to_struct(col("a")*2, col("b"))).show()
+            >>> df.select(daft.to_struct(col("a") * 2, col("b"))).show()
             ╭───────────────────────────╮
             │ struct                    │
             │ ---                       │
@@ -891,7 +891,7 @@ class Expression:
 
             A grouped calculation of approximate percentiles:
 
-            >>> df = daft.from_pydict({"class":  ["a", "a", "a", "b", "c"], "scores": [1, 2, 3, 1, None]})
+            >>> df = daft.from_pydict({"class": ["a", "a", "a", "b", "c"], "scores": [1, 2, 3, 1, None]})
             >>> df = df.groupby("class").agg(
             ...     df["scores"].approx_percentiles(0.5).alias("approx_median_score"),
             ...     df["scores"].approx_percentiles([0.25, 0.5, 0.75]).alias("approx_percentiles_scores"),
@@ -970,7 +970,10 @@ class Expression:
         Example:
             >>> import daft
             >>> df = daft.from_pydict({"A": [1, 2, 3], "B": [0, 2, 4]})
-            >>> df = df.with_column("A_if_bigger_else_B", (df["A"] > df["B"]).if_else(df["A"], df["B"]),)
+            >>> df = df.with_column(
+            ...     "A_if_bigger_else_B",
+            ...     (df["A"] > df["B"]).if_else(df["A"], df["B"]),
+            ... )
             >>> df.collect()
             ╭───────┬───────┬────────────────────╮
             │ A     ┆ B     ┆ A_if_bigger_else_B │
@@ -1013,7 +1016,7 @@ class Expression:
             ...         return int(x_val)
             ...     else:
             ...         return 0
-            >>> df.with_column("num_x", df['x'].apply(f, return_dtype=daft.DataType.int64())).collect()
+            >>> df.with_column("num_x", df["x"].apply(f, return_dtype=daft.DataType.int64())).collect()
             ╭──────┬───────╮
             │ x    ┆ num_x │
             │ ---  ┆ ---   │
@@ -1056,8 +1059,8 @@ class Expression:
 
         Example:
             >>> import daft
-            >>> df = daft.from_pydict({"x": [1., None, float("nan")]})
-            >>> df = df.select(df['x'].is_null())
+            >>> df = daft.from_pydict({"x": [1.0, None, float("nan")]})
+            >>> df = df.select(df["x"].is_null())
             >>> df.collect()
             ╭─────────╮
             │ x       │
@@ -1084,8 +1087,8 @@ class Expression:
 
         Example:
             >>> import daft
-            >>> df = daft.from_pydict({"x": [1., None, float("nan")]})
-            >>> df = df.select(df['x'].not_null())
+            >>> df = daft.from_pydict({"x": [1.0, None, float("nan")]})
+            >>> df = df.select(df["x"].not_null())
             >>> df.collect()
             ╭─────────╮
             │ x       │
@@ -1393,7 +1396,7 @@ class ExpressionUrlNamespace(ExpressionNamespace):
         will be returned as a column of string paths that is compatible with the ``.url.download()`` Expression.
 
         Example:
-            >>> col("data").url.upload("s3://my-bucket/my-folder") # doctest: +SKIP
+            >>> col("data").url.upload("s3://my-bucket/my-folder")  # doctest: +SKIP
 
         Args:
             location: a folder location to upload data into
@@ -1422,7 +1425,7 @@ class ExpressionFloatNamespace(ExpressionNamespace):
 
         Example:
             >>> import daft
-            >>> df = daft.from_pydict({"data": [1., None, float("nan")]})
+            >>> df = daft.from_pydict({"data": [1.0, None, float("nan")]})
             >>> df = df.select(df["data"].float.is_nan())
             >>> df.collect()
             ╭─────────╮
@@ -1452,7 +1455,7 @@ class ExpressionFloatNamespace(ExpressionNamespace):
 
         Example:
             >>> import daft
-            >>> df = daft.from_pydict({"data": [-float("inf"), 0., float("inf"), None]})
+            >>> df = daft.from_pydict({"data": [-float("inf"), 0.0, float("inf"), None]})
             >>> df = df.select(df["data"].float.is_inf())
             >>> df.collect()
             ╭─────────╮
@@ -1753,7 +1756,8 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
 
         Example:
             >>> import daft, datetime
-            >>> df = daft.from_pydict({
+            >>> df = daft.from_pydict(
+            ...     {
             ...         "datetime": [
             ...             datetime.datetime(2024, 7, 3, 0, 0, 0),
             ...             datetime.datetime(2024, 6, 4, 0, 0, 0),
@@ -1786,7 +1790,8 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
 
         Example:
             >>> import daft, datetime
-            >>> df = daft.from_pydict({
+            >>> df = daft.from_pydict(
+            ...     {
             ...         "datetime": [
             ...             datetime.datetime(2024, 7, 3, 0, 0, 0),
             ...             datetime.datetime(2023, 7, 4, 0, 0, 0),
@@ -1820,7 +1825,8 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
 
         Example:
             >>> import daft, datetime
-            >>> df = daft.from_pydict({
+            >>> df = daft.from_pydict(
+            ...     {
             ...         "datetime": [
             ...             datetime.datetime(2024, 7, 3, 0, 0, 0),
             ...             datetime.datetime(2024, 7, 4, 0, 0, 0),
@@ -1853,7 +1859,8 @@ class ExpressionDatetimeNamespace(ExpressionNamespace):
 
         Example:
             >>> import daft, datetime
-            >>> df = daft.from_pydict({
+            >>> df = daft.from_pydict(
+            ...     {
             ...         "datetime": [
             ...             datetime.datetime(2021, 1, 1, 0, 1, 1),
             ...             datetime.datetime(2021, 1, 1, 0, 1, 59),
@@ -2735,7 +2742,7 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Example:
             >>> import daft
             >>> df = daft.from_pydict({"x": ["daft", "query", "engine"]})
-            >>> df = df.select(df["x"].str.substr(2,4))
+            >>> df = df.select(df["x"].str.substr(2, 4))
             >>> df.show()
             ╭──────╮
             │ x    │
@@ -2818,7 +2825,9 @@ class ExpressionStringNamespace(ExpressionNamespace):
             If a timezone is provided, the datetime will be parsed in that timezone
 
             >>> df = daft.from_pydict({"x": ["2021-01-01 00:00:00.123 +0800", "2021-01-02 12:30:00.456 +0800", None]})
-            >>> df = df.with_column("datetime", df["x"].str.to_datetime("%Y-%m-%d %H:%M:%S%.3f %z", timezone="Asia/Shanghai"))
+            >>> df = df.with_column(
+            ...     "datetime", df["x"].str.to_datetime("%Y-%m-%d %H:%M:%S%.3f %z", timezone="Asia/Shanghai")
+            ... )
             >>> df.show()
             ╭───────────────────────────────┬────────────────────────────────────────────────╮
             │ x                             ┆ datetime                                       │
@@ -2855,7 +2864,9 @@ class ExpressionStringNamespace(ExpressionNamespace):
         Example:
             >>> import daft
             >>> df = daft.from_pydict({"x": ["hello world", "Hello, world!", "HELLO,   \\nWORLD!!!!"]})
-            >>> df = df.with_column("normalized", df["x"].str.normalize(remove_punct=True, lowercase=True, white_space=True))
+            >>> df = df.with_column(
+            ...     "normalized", df["x"].str.normalize(remove_punct=True, lowercase=True, white_space=True)
+            ... )
             >>> df.show()
             ╭───────────────┬─────────────╮
             │ x             ┆ normalized  │
@@ -3204,7 +3215,7 @@ class ExpressionMapNamespace(ExpressionNamespace):
         Example:
             >>> import pyarrow as pa
             >>> import daft
-            >>> pa_array = pa.array([[("a", 1)],[],[("b", 2)]], type=pa.map_(pa.string(), pa.int64()))
+            >>> pa_array = pa.array([[("a", 1)], [], [("b", 2)]], type=pa.map_(pa.string(), pa.int64()))
             >>> df = daft.from_arrow(pa.table({"map_col": pa_array}))
             >>> df = df.with_column("a", df["map_col"].map.get("a"))
             >>> df.show()

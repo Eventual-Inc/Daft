@@ -1043,7 +1043,7 @@ class DataFrame:
 
         >>> import daft
         >>> df = daft.from_pydict({"a": [1, 2, 3, 4]})
-        >>> df.write_lance("/tmp/lance/my_table.lance") # doctest: +SKIP
+        >>> df.write_lance("/tmp/lance/my_table.lance")  # doctest: +SKIP
         ╭───────────────┬──────────────────┬─────────────────┬─────────╮
         │ num_fragments ┆ num_deleted_rows ┆ num_small_files ┆ version │
         │ ---           ┆ ---              ┆ ---             ┆ ---     │
@@ -1054,7 +1054,7 @@ class DataFrame:
         <BLANKLINE>
         (Showing first 1 of 1 rows)
 
-        >>> daft.read_lance("/tmp/lance/my_table.lance").collect() # doctest: +SKIP
+        >>> daft.read_lance("/tmp/lance/my_table.lance").collect()  # doctest: +SKIP
         ╭───────╮
         │ a     │
         │ ---   │
@@ -1074,7 +1074,7 @@ class DataFrame:
 
         # Pass additional keyword arguments to the Lance writer
         # All additional keyword arguments are passed to `lance.write_fragments`
-        >>> df.write_lance("/tmp/lance/my_table.lance", mode="overwrite", max_bytes_per_file=1024) # doctest: +SKIP
+        >>> df.write_lance("/tmp/lance/my_table.lance", mode="overwrite", max_bytes_per_file=1024)  # doctest: +SKIP
         ╭───────────────┬──────────────────┬─────────────────┬─────────╮
         │ num_fragments ┆ num_deleted_rows ┆ num_small_files ┆ version │
         │ ---           ┆ ---              ┆ ---             ┆ ---     │
@@ -1268,7 +1268,7 @@ class DataFrame:
         Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
-            >>> df = df.select('x', daft.col('y'), daft.col('z') + 1)
+            >>> df = df.select("x", daft.col("y"), daft.col("z") + 1)
             >>> df.show()
             ╭───────┬───────┬───────╮
             │ x     ┆ y     ┆ z     │
@@ -1370,7 +1370,7 @@ class DataFrame:
         Example:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
-            >>> df_without_x = df.exclude('x')
+            >>> df_without_x = df.exclude("x")
             >>> df_without_x.show()
             ╭───────┬───────╮
             │ y     ┆ z     │
@@ -1420,7 +1420,7 @@ class DataFrame:
 
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 6, 6], "z": [7, 8, 9]})
-            >>> df.where((col('x') > 1) & (col('y') > 1)).collect()
+            >>> df.where((col("x") > 1) & (col("y") > 1)).collect()
             ╭───────┬───────┬───────╮
             │ x     ┆ y     ┆ z     │
             │ ---   ┆ ---   ┆ ---   │
@@ -1476,7 +1476,7 @@ class DataFrame:
         Example:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3]})
-            >>> new_df = df.with_column('x+1', col('x') + 1)
+            >>> new_df = df.with_column("x+1", col("x") + 1)
             >>> new_df.show()
             ╭───────┬───────╮
             │ x     ┆ x+1   │
@@ -1511,8 +1511,8 @@ class DataFrame:
 
         Example:
             >>> import daft
-            >>> df = daft.from_pydict({'x': [1, 2, 3], 'y': [4, 5, 6]})
-            >>> new_df = df.with_columns({'foo': df['x'] + 1,'bar': df['y'] - df['x']})
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+            >>> new_df = df.with_columns({"foo": df["x"] + 1, "bar": df["y"] - df["x"]})
             >>> new_df.show()
             ╭───────┬───────┬───────┬───────╮
             │ x     ┆ y     ┆ foo   ┆ bar   │
@@ -1554,7 +1554,7 @@ class DataFrame:
         Example:
             >>> import daft
             >>> df = daft.from_pydict({"x": [3, 2, 1], "y": [6, 4, 5]})
-            >>> sorted_df = df.sort(col('x') + col('y'))
+            >>> sorted_df = df.sort(col("x") + col("y"))
             >>> sorted_df.show()
             ╭───────┬───────╮
             │ x     ┆ y     │
@@ -1615,7 +1615,7 @@ class DataFrame:
         Example:
             >>> import daft
             >>> df = df = daft.from_pydict({"x": [1, 2, 3, 4, 5, 6, 7]})
-            >>> df_limited = df.limit(5) # returns 5 rows
+            >>> df_limited = df.limit(5)  # returns 5 rows
             >>> df_limited.show()
             ╭───────╮
             │ x     │
@@ -1746,9 +1746,9 @@ class DataFrame:
         Example:
             >>> import daft
             >>> from daft import col
-            >>> df1 = daft.from_pydict({ "a": ["w", "x", "y"], "b": [1, 2, 3] })
-            >>> df2 = daft.from_pydict({ "a": ["x", "y", "z"], "b": [20, 30, 40] })
-            >>> joined_df = df1.join(df2, left_on=[col("a"), col("b")], right_on=[col("a"), col("b")/10])
+            >>> df1 = daft.from_pydict({"a": ["w", "x", "y"], "b": [1, 2, 3]})
+            >>> df2 = daft.from_pydict({"a": ["x", "y", "z"], "b": [20, 30, 40]})
+            >>> joined_df = df1.join(df2, left_on=[col("a"), col("b")], right_on=[col("a"), col("b") / 10])
             >>> joined_df.show()
             ╭──────┬───────┬─────────╮
             │ a    ┆ b     ┆ right.b │
@@ -1764,9 +1764,9 @@ class DataFrame:
 
             >>> import daft
             >>> from daft import col
-            >>> df1 = daft.from_pydict({ "a": ["w", "x", "y"], "b": [1, 2, 3] })
-            >>> df2 = daft.from_pydict({ "a": ["x", "y", "z"], "b": [20, 30, 40] })
-            >>> joined_df = df1.join(df2, left_on=[col("a"), col("b")], right_on=[col("a"), col("b")/10], prefix="right_")
+            >>> df1 = daft.from_pydict({"a": ["w", "x", "y"], "b": [1, 2, 3]})
+            >>> df2 = daft.from_pydict({"a": ["x", "y", "z"], "b": [20, 30, 40]})
+            >>> joined_df = df1.join(df2, left_on=[col("a"), col("b")], right_on=[col("a"), col("b") / 10], prefix="right_")
             >>> joined_df.show()
             ╭──────┬───────┬─────────╮
             │ a    ┆ b     ┆ right_b │
@@ -1782,9 +1782,9 @@ class DataFrame:
 
             >>> import daft
             >>> from daft import col
-            >>> df1 = daft.from_pydict({ "a": ["w", "x", "y"], "b": [1, 2, 3] })
-            >>> df2 = daft.from_pydict({ "a": ["x", "y", "z"], "b": [20, 30, 40] })
-            >>> joined_df = df1.join(df2, left_on=[col("a"), col("b")], right_on=[col("a"), col("b")/10], suffix="_right")
+            >>> df1 = daft.from_pydict({"a": ["w", "x", "y"], "b": [1, 2, 3]})
+            >>> df2 = daft.from_pydict({"a": ["x", "y", "z"], "b": [20, 30, 40]})
+            >>> joined_df = df1.join(df2, left_on=[col("a"), col("b")], right_on=[col("a"), col("b") / 10], suffix="_right")
             >>> joined_df.show()
             ╭──────┬───────┬─────────╮
             │ a    ┆ b     ┆ b_right │
@@ -1884,7 +1884,7 @@ class DataFrame:
         Example:
             >>> import daft
             >>> df = daft.from_pydict({"a": [1.0, 2.2, 3.5, float("nan")]})
-            >>> df.drop_nan().collect() # drops rows where any column contains NaN values
+            >>> df.drop_nan().collect()  # drops rows where any column contains NaN values
             ╭─────────╮
             │ a       │
             │ ---     │
@@ -2036,11 +2036,13 @@ class DataFrame:
 
         Example:
             >>> import daft
-            >>> df = daft.from_pydict({
-            ...     "year": [2020, 2021, 2022],
-            ...     "Jan": [10, 30, 50],
-            ...     "Feb": [20, 40, 60],
-            ... })
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "year": [2020, 2021, 2022],
+            ...         "Jan": [10, 30, 50],
+            ...         "Feb": [20, 40, 60],
+            ...     }
+            ... )
             >>> df = df.unpivot("year", ["Jan", "Feb"], variable_name="month", value_name="inventory")
             >>> df = df.sort("year")
             >>> df.show()
@@ -2104,15 +2106,13 @@ class DataFrame:
 
         Example:
             >>> import daft
-            >>> df = daft.from_pydict({"col_a":[1,2,3,4]})
+            >>> df = daft.from_pydict({"col_a": [1, 2, 3, 4]})
             >>> def add_1(df):
             ...     df = df.select(daft.col("col_a") + 1)
             ...     return df
-            ...
             >>> def multiply_x(df, x):
             ...     df = df.select(daft.col("col_a") * x)
             ...     return df
-            ...
             >>> df = df.transform(add_1).transform(multiply_x, 4)
             >>> df.show()
             ╭───────╮
@@ -2218,7 +2218,7 @@ class DataFrame:
 
         Example:
             >>> import daft
-            >>> df = daft.from_pydict({"col_a":[0,1,2]})
+            >>> df = daft.from_pydict({"col_a": [0, 1, 2]})
             >>> df = df.stddev("col_a")
             >>> df.show()
             ╭───────────────────╮
@@ -2370,16 +2370,14 @@ class DataFrame:
         Example:
             >>> import daft
             >>> from daft import col
-            >>> df = daft.from_pydict({
-            ...     "student_id": [1, 2, 3, 4],
-            ...     "test1": [0.5, 0.4, 0.6, 0.7],
-            ...     "test2": [0.9, 0.8, 0.7, 1.0]
-            ... })
+            >>> df = daft.from_pydict(
+            ...     {"student_id": [1, 2, 3, 4], "test1": [0.5, 0.4, 0.6, 0.7], "test2": [0.9, 0.8, 0.7, 1.0]}
+            ... )
             >>> agg_df = df.agg(
             ...     col("test1").mean(),
             ...     col("test2").mean(),
-            ...     ((col("test1") + col("test2"))/2).min().alias("total_min"),
-            ...     ((col("test1") + col("test2"))/2).max().alias("total_max"),
+            ...     ((col("test1") + col("test2")) / 2).min().alias("total_min"),
+            ...     ((col("test1") + col("test2")) / 2).max().alias("total_max"),
             ... )
             >>> agg_df.show()
             ╭─────────┬────────────────────┬────────────────────┬───────────╮
@@ -2417,16 +2415,14 @@ class DataFrame:
         Example:
             >>> import daft
             >>> from daft import col
-            >>> df = daft.from_pydict({
-            ...     "pet": ["cat", "dog", "dog", "cat"],
-            ...     "age": [1, 2, 3, 4],
-            ...     "name": ["Alex", "Jordan", "Sam", "Riley"]
-            ... })
+            >>> df = daft.from_pydict(
+            ...     {"pet": ["cat", "dog", "dog", "cat"], "age": [1, 2, 3, 4], "name": ["Alex", "Jordan", "Sam", "Riley"]}
+            ... )
             >>> grouped_df = df.groupby("pet").agg(
             ...     col("age").min().alias("min_age"),
             ...     col("age").max().alias("max_age"),
             ...     col("pet").count().alias("count"),
-            ...     col("name").any_value()
+            ...     col("name").any_value(),
             ... )
             >>> grouped_df.show()
             ╭──────┬─────────┬─────────┬────────┬────────╮
@@ -2666,7 +2662,7 @@ class DataFrame:
         Example:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
-            >>> 'x' in df
+            >>> "x" in df
             True
 
         Args:
@@ -3012,7 +3008,7 @@ class GroupedDataFrame:
 
         Example:
             >>> import daft
-            >>> df = daft.from_pydict({"keys": ["a", "a", "a", "b"], "col_a": [0,1,2,100]})
+            >>> df = daft.from_pydict({"keys": ["a", "a", "a", "b"], "col_a": [0, 1, 2, 100]})
             >>> df = df.groupby("keys").stddev()
             >>> df.show()
             ╭──────┬───────────────────╮
@@ -3101,16 +3097,14 @@ class GroupedDataFrame:
         Example:
             >>> import daft
             >>> from daft import col
-            >>> df = daft.from_pydict({
-            ...     "pet": ["cat", "dog", "dog", "cat"],
-            ...     "age": [1, 2, 3, 4],
-            ...     "name": ["Alex", "Jordan", "Sam", "Riley"]
-            ... })
+            >>> df = daft.from_pydict(
+            ...     {"pet": ["cat", "dog", "dog", "cat"], "age": [1, 2, 3, 4], "name": ["Alex", "Jordan", "Sam", "Riley"]}
+            ... )
             >>> grouped_df = df.groupby("pet").agg(
             ...     col("age").min().alias("min_age"),
             ...     col("age").max().alias("max_age"),
             ...     col("pet").count().alias("count"),
-            ...     col("name").any_value()
+            ...     col("name").any_value(),
             ... )
             >>> grouped_df.show()
             ╭──────┬─────────┬─────────┬────────┬────────╮
