@@ -46,7 +46,7 @@ pub trait FileWriter: Send + Sync {
     /// Close the file and return the result. The caller should NOT write to the file after calling this method.
     fn close(&mut self) -> DaftResult<Self::Result>;
 
-    /// Return the current position of the file, if applicable.
+    /// Return the total number of bytes written by this writer.
     fn bytes_written(&self) -> usize;
 }
 
