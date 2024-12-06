@@ -364,11 +364,11 @@ class Expression:
         )
 
     def __abs__(self) -> Expression:
-        """Absolute of a numeric expression (``abs(expr)``)."""
+        """Absolute of a numeric expression."""
         return self.abs()
 
     def abs(self) -> Expression:
-        """Absolute of a numeric expression (``expr.abs()``)."""
+        """Absolute of a numeric expression."""
         return Expression._from_pyexpr(native.abs(self._expr))
 
     def __add__(self, other: object) -> Expression:
@@ -627,17 +627,17 @@ class Expression:
         return Expression._from_pyexpr(expr)
 
     def ceil(self) -> Expression:
-        """The ceiling of a numeric expression (``expr.ceil()``)."""
+        """The ceiling of a numeric expression."""
         expr = native.ceil(self._expr)
         return Expression._from_pyexpr(expr)
 
     def floor(self) -> Expression:
-        """The floor of a numeric expression (``expr.floor()``)."""
+        """The floor of a numeric expression."""
         expr = native.floor(self._expr)
         return Expression._from_pyexpr(expr)
 
     def clip(self, min: Expression | None = None, max: Expression | None = None) -> Expression:
-        """Clips an expression to the given minimum and maximum values (``expr.clip(min, max)``).
+        """Clips an expression to the given minimum and maximum values.
 
         Args:
             min: Minimum value to clip to. If None (or column value is Null), no lower clipping is applied.
@@ -649,12 +649,12 @@ class Expression:
         return Expression._from_pyexpr(native.clip(self._expr, min_expr._expr, max_expr._expr))
 
     def sign(self) -> Expression:
-        """The sign of a numeric expression (``expr.sign()``)."""
+        """The sign of a numeric expression."""
         expr = native.sign(self._expr)
         return Expression._from_pyexpr(expr)
 
     def round(self, decimals: int = 0) -> Expression:
-        """The round of a numeric expression (``expr.round(decimals = 0)``).
+        """The round of a numeric expression.
 
         Args:
             decimals: number of decimal places to round to. Defaults to 0.
@@ -664,51 +664,51 @@ class Expression:
         return Expression._from_pyexpr(expr)
 
     def sqrt(self) -> Expression:
-        """The square root of a numeric expression (``expr.sqrt()``)."""
+        """The square root of a numeric expression."""
         expr = native.sqrt(self._expr)
         return Expression._from_pyexpr(expr)
 
     def cbrt(self) -> Expression:
-        """The cube root of a numeric expression (``expr.cbrt()``)."""
+        """The cube root of a numeric expression."""
         return Expression._from_pyexpr(native.cbrt(self._expr))
 
     def sin(self) -> Expression:
-        """The elementwise sine of a numeric expression (``expr.sin()``)."""
+        """The elementwise sine of a numeric expression."""
         expr = native.sin(self._expr)
         return Expression._from_pyexpr(expr)
 
     def cos(self) -> Expression:
-        """The elementwise cosine of a numeric expression (``expr.cos()``)."""
+        """The elementwise cosine of a numeric expression."""
         expr = native.cos(self._expr)
         return Expression._from_pyexpr(expr)
 
     def tan(self) -> Expression:
-        """The elementwise tangent of a numeric expression (``expr.tan()``)."""
+        """The elementwise tangent of a numeric expression."""
         expr = native.tan(self._expr)
         return Expression._from_pyexpr(expr)
 
     def cot(self) -> Expression:
-        """The elementwise cotangent of a numeric expression (``expr.cot()``)."""
+        """The elementwise cotangent of a numeric expression."""
         expr = native.cot(self._expr)
         return Expression._from_pyexpr(expr)
 
     def arcsin(self) -> Expression:
-        """The elementwise arc sine of a numeric expression (``expr.arcsin()``)."""
+        """The elementwise arc sine of a numeric expression."""
         expr = native.arcsin(self._expr)
         return Expression._from_pyexpr(expr)
 
     def arccos(self) -> Expression:
-        """The elementwise arc cosine of a numeric expression (``expr.arccos()``)."""
+        """The elementwise arc cosine of a numeric expression."""
         expr = native.arccos(self._expr)
         return Expression._from_pyexpr(expr)
 
     def arctan(self) -> Expression:
-        """The elementwise arc tangent of a numeric expression (``expr.arctan()``)."""
+        """The elementwise arc tangent of a numeric expression."""
         expr = native.arctan(self._expr)
         return Expression._from_pyexpr(expr)
 
     def arctan2(self, other: Expression) -> Expression:
-        """Calculates the four quadrant arctangent of coordinates (y, x), in radians (``expr_y.arctan2(expr_x)``).
+        """Calculates the four quadrant arctangent of coordinates (y, x), in radians.
 
         * ``x = 0``, ``y = 0``: ``0``
         * ``x >= 0``: ``[-pi/2, pi/2]``
@@ -719,42 +719,42 @@ class Expression:
         return Expression._from_pyexpr(native.arctan2(self._expr, expr._expr))
 
     def arctanh(self) -> Expression:
-        """The elementwise inverse hyperbolic tangent of a numeric expression (``expr.arctanh()``)."""
+        """The elementwise inverse hyperbolic tangent of a numeric expression."""
         expr = native.arctanh(self._expr)
         return Expression._from_pyexpr(expr)
 
     def arccosh(self) -> Expression:
-        """The elementwise inverse hyperbolic cosine of a numeric expression (``expr.arccosh()``)."""
+        """The elementwise inverse hyperbolic cosine of a numeric expression."""
         expr = native.arccosh(self._expr)
         return Expression._from_pyexpr(expr)
 
     def arcsinh(self) -> Expression:
-        """The elementwise inverse hyperbolic sine of a numeric expression (``expr.arcsinh()``)."""
+        """The elementwise inverse hyperbolic sine of a numeric expression."""
         expr = native.arcsinh(self._expr)
         return Expression._from_pyexpr(expr)
 
     def radians(self) -> Expression:
-        """The elementwise radians of a numeric expression (``expr.radians()``)."""
+        """The elementwise radians of a numeric expression."""
         expr = native.radians(self._expr)
         return Expression._from_pyexpr(expr)
 
     def degrees(self) -> Expression:
-        """The elementwise degrees of a numeric expression (``expr.degrees()``)."""
+        """The elementwise degrees of a numeric expression."""
         expr = native.degrees(self._expr)
         return Expression._from_pyexpr(expr)
 
     def log2(self) -> Expression:
-        """The elementwise log base 2 of a numeric expression (``expr.log2()``)."""
+        """The elementwise log base 2 of a numeric expression."""
         expr = native.log2(self._expr)
         return Expression._from_pyexpr(expr)
 
     def log10(self) -> Expression:
-        """The elementwise log base 10 of a numeric expression (``expr.log10()``)."""
+        """The elementwise log base 10 of a numeric expression."""
         expr = native.log10(self._expr)
         return Expression._from_pyexpr(expr)
 
     def log(self, base: float = math.e) -> Expression:  # type: ignore
-        """The elementwise log with given base, of a numeric expression (``expr.log(base = math.e)``).
+        """The elementwise log with given base, of a numeric expression.
 
         Args:
             base: The base of the logarithm. Defaults to e.
@@ -764,27 +764,27 @@ class Expression:
         return Expression._from_pyexpr(expr)
 
     def ln(self) -> Expression:
-        """The elementwise natural log of a numeric expression (``expr.ln()``)."""
+        """The elementwise natural log of a numeric expression."""
         expr = native.ln(self._expr)
         return Expression._from_pyexpr(expr)
 
     def exp(self) -> Expression:
-        """The e^self of a numeric expression (``expr.exp()``)."""
+        """The e^self of a numeric expression."""
         expr = native.exp(self._expr)
         return Expression._from_pyexpr(expr)
 
     def bitwise_and(self, other: Expression) -> Expression:
-        """Bitwise AND of two integer expressions (``expr.bitwise_and(other)``)."""
+        """Bitwise AND of two integer expressions."""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr & expr._expr)
 
     def bitwise_or(self, other: Expression) -> Expression:
-        """Bitwise OR of two integer expressions (``expr.bitwise_or(other)``)."""
+        """Bitwise OR of two integer expressions."""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr | expr._expr)
 
     def bitwise_xor(self, other: Expression) -> Expression:
-        """Bitwise XOR of two integer expressions (``expr.bitwise_xor(other)``)."""
+        """Bitwise XOR of two integer expressions."""
         expr = Expression._to_expression(other)
         return Expression._from_pyexpr(self._expr ^ expr._expr)
 
