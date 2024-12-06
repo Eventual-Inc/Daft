@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_runtime::RuntimeRef;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
@@ -13,7 +12,7 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::sinks::hash_join_build::ProbeStateBridgeRef;
+use crate::{runtime_stats::ExecutionTaskSpawner, sinks::hash_join_build::ProbeStateBridgeRef};
 
 enum InnerHashJoinProbeState {
     Building(ProbeStateBridgeRef),
@@ -172,7 +171,7 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn IntermediateOpState>,
-        runtime_ref: &RuntimeRef,
+        spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult {
         if input.is_empty() {
             let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));
@@ -184,7 +183,7 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
         }
 
         let params = self.params.clone();
-        runtime_ref
+        spawner
             .spawn(async move {
                 let inner_join_state = state
                     .as_any_mut()

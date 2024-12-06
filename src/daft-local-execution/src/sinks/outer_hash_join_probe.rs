@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_runtime::RuntimeRef;
 use daft_core::{
     prelude::{
         bitmap::{and, Bitmap, MutableBitmap},
@@ -26,6 +25,7 @@ use super::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
+    runtime_stats::ExecutionTaskSpawner,
     ExecutionRuntimeContext,
 };
 
@@ -411,7 +411,7 @@ impl StreamingSink for OuterHashJoinProbeSink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn StreamingSinkState>,
-        runtime_ref: &RuntimeRef,
+        spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkExecuteResult {
         if input.is_empty() {
             let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));
@@ -419,7 +419,7 @@ impl StreamingSink for OuterHashJoinProbeSink {
         }
 
         let params = self.params.clone();
-        runtime_ref
+        spawner
             .spawn(async move {
                 let outer_join_state = state
                     .as_any_mut()
@@ -476,11 +476,11 @@ impl StreamingSink for OuterHashJoinProbeSink {
     fn finalize(
         &self,
         states: Vec<Box<dyn StreamingSinkState>>,
-        runtime_ref: &RuntimeRef,
+        spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkFinalizeResult {
         if self.params.join_type == JoinType::Outer {
             let params = self.params.clone();
-            runtime_ref
+            spawner
                 .spawn(async move {
                     Self::finalize_outer(
                         states,

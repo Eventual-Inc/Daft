@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_runtime::RuntimeRef;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
@@ -10,7 +9,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
     BlockingSinkStatus,
 };
-use crate::NUM_CPUS;
+use crate::{runtime_stats::ExecutionTaskSpawner, NUM_CPUS};
 
 enum AggregateState {
     Accumulating(Vec<Arc<MicroPartition>>),
@@ -69,7 +68,7 @@ impl BlockingSink for AggregateSink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn BlockingSinkState>,
-        _runtime: &RuntimeRef,
+        _runtime: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult {
         state
             .as_any_mut()
@@ -83,11 +82,13 @@ impl BlockingSink for AggregateSink {
     fn finalize(
         &self,
         states: Vec<Box<dyn BlockingSinkState>>,
-        runtime: &RuntimeRef,
+        spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkFinalizeResult {
         let params = self.agg_sink_params.clone();
-        runtime
+        spawner
             .spawn(async move {
+                println!("Finalizing AggregateSink");
+                let start = std::time::Instant::now();
                 let all_parts = states.into_iter().flat_map(|mut state| {
                     state
                         .as_any_mut()
@@ -97,6 +98,7 @@ impl BlockingSink for AggregateSink {
                 });
                 let concated = MicroPartition::concat(all_parts)?;
                 let agged = Arc::new(concated.agg(&params.agg_exprs, &params.group_by)?);
+                println!("Aggregation took {:?}", start.elapsed());
                 Ok(Some(agged))
             })
             .into()

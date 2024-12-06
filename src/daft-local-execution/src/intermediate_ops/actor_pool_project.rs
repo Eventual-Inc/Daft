@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_runtime::RuntimeRef;
 #[cfg(feature = "python")]
 use daft_dsl::python::PyExpr;
 use daft_dsl::{
@@ -22,6 +21,7 @@ use super::intermediate_op::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
+    runtime_stats::ExecutionTaskSpawner,
     ExecutionRuntimeContext,
 };
 
@@ -154,9 +154,9 @@ impl IntermediateOperator for ActorPoolProjectOperator {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn IntermediateOpState>,
-        runtime: &RuntimeRef,
+        spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult {
-        let fut = runtime.spawn(async move {
+        let fut = spawner.spawn(async move {
             let actor_pool_project_state = state
                 .as_any_mut()
                 .downcast_mut::<ActorPoolProjectState>()

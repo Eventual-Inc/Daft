@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use common_runtime::RuntimeRef;
 use daft_core::prelude::SchemaRef;
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
@@ -11,6 +10,7 @@ use super::streaming_sink::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, UnorderedDispatcher},
+    runtime_stats::ExecutionTaskSpawner,
     ExecutionRuntimeContext,
 };
 
@@ -57,10 +57,10 @@ impl StreamingSink for MonotonicallyIncreasingIdSink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn StreamingSinkState>,
-        runtime_ref: &RuntimeRef,
+        spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkExecuteResult {
         let params = self.params.clone();
-        runtime_ref
+        spawner
             .spawn(async move {
                 let mut id_offset = state
                     .as_any_mut()
@@ -101,7 +101,7 @@ impl StreamingSink for MonotonicallyIncreasingIdSink {
     fn finalize(
         &self,
         _states: Vec<Box<dyn StreamingSinkState>>,
-        _runtime_ref: &RuntimeRef,
+        _spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkFinalizeResult {
         Ok(None).into()
     }

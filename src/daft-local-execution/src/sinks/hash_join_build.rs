@@ -1,7 +1,6 @@
 use std::sync::{Arc, OnceLock};
 
 use common_error::DaftResult;
-use common_runtime::RuntimeRef;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
 use daft_logical_plan::JoinType;
@@ -12,6 +11,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
     BlockingSinkStatus,
 };
+use crate::runtime_stats::ExecutionTaskSpawner;
 
 /// ProbeStateBridge is a bridge between the build and probe phase of a hash join.
 /// It is used to pass the probe state from the build phase to the probe phase.
@@ -161,9 +161,9 @@ impl BlockingSink for HashJoinBuildSink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn BlockingSinkState>,
-        runtime: &RuntimeRef,
+        spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult {
-        runtime
+        spawner
             .spawn(async move {
                 let probe_table_state: &mut ProbeTableState = state
                     .as_any_mut()
@@ -178,7 +178,7 @@ impl BlockingSink for HashJoinBuildSink {
     fn finalize(
         &self,
         states: Vec<Box<dyn BlockingSinkState>>,
-        _runtime: &RuntimeRef,
+        _spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkFinalizeResult {
         assert_eq!(states.len(), 1);
         let mut state = states.into_iter().next().unwrap();

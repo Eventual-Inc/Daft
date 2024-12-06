@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
-use common_runtime::{get_compute_runtime, RuntimeRef};
+use common_runtime::get_compute_runtime;
 use daft_micropartition::MicroPartition;
 use snafu::ResultExt;
 use tracing::{info_span, instrument};
@@ -11,7 +11,7 @@ use crate::{
     channel::{create_channel, Receiver},
     dispatcher::{DispatchSpawner, UnorderedDispatcher},
     pipeline::PipelineNode,
-    runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
+    runtime_stats::{CountingReceiver, CountingSender, ExecutionTaskSpawner, RuntimeStatsContext},
     ExecutionRuntimeContext, JoinSnafu, OperatorOutput, TaskSet,
 };
 pub trait BlockingSinkState: Send + Sync {
@@ -32,12 +32,12 @@ pub trait BlockingSink: Send + Sync {
         &self,
         input: Arc<MicroPartition>,
         state: Box<dyn BlockingSinkState>,
-        runtime: &RuntimeRef,
+        spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult;
     fn finalize(
         &self,
         states: Vec<Box<dyn BlockingSinkState>>,
-        runtime: &RuntimeRef,
+        spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkFinalizeResult;
     fn name(&self) -> &'static str;
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>>;
@@ -81,11 +81,10 @@ impl BlockingSinkNode {
     ) -> DaftResult<Box<dyn BlockingSinkState>> {
         let span = info_span!("BlockingSink::Sink");
         let compute_runtime = get_compute_runtime();
+        let spawner = ExecutionTaskSpawner::new(compute_runtime, rt_context, span);
         let mut state = op.make_state()?;
         while let Some(morsel) = input_receiver.recv().await {
-            let result = rt_context
-                .in_span(&span, || op.sink(morsel, state, &compute_runtime))
-                .await??;
+            let result = op.sink(morsel, state, &spawner).await??;
             match result {
                 BlockingSinkStatus::NeedMoreInput(new_state) => {
                     state = new_state;
@@ -183,11 +182,12 @@ impl PipelineNode for BlockingSinkNode {
                 }
 
                 let compute_runtime = get_compute_runtime();
-                let finalized_result = runtime_stats
-                    .in_span(&info_span!("BlockingSinkNode::finalize"), || {
-                        op.finalize(finished_states, &compute_runtime)
-                    })
-                    .await??;
+                let spawner = ExecutionTaskSpawner::new(
+                    compute_runtime,
+                    runtime_stats.clone(),
+                    info_span!("finalize"),
+                );
+                let finalized_result = op.finalize(finished_states, &spawner).await??;
                 if let Some(res) = finalized_result {
                     let _ = counting_sender.send(res).await;
                 }

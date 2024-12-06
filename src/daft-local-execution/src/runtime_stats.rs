@@ -1,12 +1,17 @@
 use core::fmt;
 use std::{
     fmt::Write,
+    future::Future,
+    pin::Pin,
     sync::{atomic::AtomicU64, Arc},
+    task::{Context, Poll},
     time::Instant,
 };
 
+use common_runtime::{RuntimeRef, RuntimeTask};
 use daft_micropartition::MicroPartition;
 use loole::SendError;
+use tracing::{instrument::Instrumented, Instrument};
 
 use crate::channel::{Receiver, Sender};
 
@@ -66,15 +71,11 @@ impl RuntimeStatsContext {
             cpu_us: AtomicU64::new(0),
         })
     }
-    pub(crate) fn in_span<F: FnOnce() -> T, T>(&self, span: &tracing::Span, f: F) -> T {
-        let _enter = span.enter();
-        let start = Instant::now();
-        let result = f();
-        let total = start.elapsed();
-        let micros = total.as_micros() as u64;
-        self.cpu_us
-            .fetch_add(micros, std::sync::atomic::Ordering::Relaxed);
-        result
+    pub(crate) fn record_elapsed_cpu_time(&self, elapsed: std::time::Duration) {
+        self.cpu_us.fetch_add(
+            elapsed.as_micros() as u64,
+            std::sync::atomic::Ordering::Relaxed,
+        );
     }
 
     pub(crate) fn mark_rows_received(&self, rows: u64) {
@@ -103,6 +104,70 @@ impl RuntimeStatsContext {
             rows_emitted: self.rows_emitted.load(std::sync::atomic::Ordering::Relaxed),
             cpu_us: self.cpu_us.load(std::sync::atomic::Ordering::Relaxed),
         }
+    }
+}
+
+#[pin_project::pin_project]
+pub struct TimedFuture<F: Future> {
+    start: Option<Instant>,
+    #[pin]
+    future: Instrumented<F>,
+    runtime_context: Arc<RuntimeStatsContext>,
+}
+
+impl<F: Future> TimedFuture<F> {
+    pub fn new(future: F, runtime_context: Arc<RuntimeStatsContext>, span: tracing::Span) -> Self {
+        let instrumented = future.instrument(span);
+        Self {
+            start: None,
+            future: instrumented,
+            runtime_context,
+        }
+    }
+}
+
+impl<F: Future> Future for TimedFuture<F> {
+    type Output = F::Output;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let mut this = self.project();
+        let start = this.start.get_or_insert_with(Instant::now);
+        let inner_poll = this.future.as_mut().poll(cx);
+        let elapsed = start.elapsed();
+        this.runtime_context.record_elapsed_cpu_time(elapsed);
+
+        match inner_poll {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(output) => Poll::Ready(output),
+        }
+    }
+}
+
+pub struct ExecutionTaskSpawner {
+    runtime_ref: RuntimeRef,
+    runtime_context: Arc<RuntimeStatsContext>,
+    span: tracing::Span,
+}
+
+impl ExecutionTaskSpawner {
+    pub fn new(
+        runtime_ref: RuntimeRef,
+        runtime_context: Arc<RuntimeStatsContext>,
+        span: tracing::Span,
+    ) -> Self {
+        Self {
+            runtime_ref,
+            runtime_context,
+            span,
+        }
+    }
+
+    pub fn spawn<T: Send + 'static>(
+        &self,
+        task: impl std::future::Future<Output = T> + Send + 'static,
+    ) -> RuntimeTask<T> {
+        let timed_fut = TimedFuture::new(task, self.runtime_context.clone(), self.span.clone());
+        self.runtime_ref.spawn(timed_fut)
     }
 }
 

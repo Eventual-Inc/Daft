@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_runtime::RuntimeRef;
 use daft_dsl::{AggExpr, Expr, ExprRef};
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
@@ -10,7 +9,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
     BlockingSinkStatus,
 };
-use crate::NUM_CPUS;
+use crate::{runtime_stats::ExecutionTaskSpawner, NUM_CPUS};
 
 enum PivotState {
     Accumulating(Vec<Arc<MicroPartition>>),
@@ -81,7 +80,7 @@ impl BlockingSink for PivotSink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn BlockingSinkState>,
-        _runtime: &RuntimeRef,
+        _spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult {
         state
             .as_any_mut()
@@ -95,10 +94,10 @@ impl BlockingSink for PivotSink {
     fn finalize(
         &self,
         states: Vec<Box<dyn BlockingSinkState>>,
-        runtime: &RuntimeRef,
+        spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkFinalizeResult {
         let pivot_params = self.pivot_params.clone();
-        runtime
+        spawner
             .spawn(async move {
                 let all_parts = states.into_iter().flat_map(|mut state| {
                     state

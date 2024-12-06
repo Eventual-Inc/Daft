@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
-use common_runtime::RuntimeRef;
 use daft_dsl::{functions::python::get_resource_request, ExprRef};
 use daft_micropartition::MicroPartition;
 use tracing::instrument;
@@ -10,7 +9,7 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::NUM_CPUS;
+use crate::{runtime_stats::ExecutionTaskSpawner, NUM_CPUS};
 
 pub struct ProjectOperator {
     projection: Arc<Vec<ExprRef>>,
@@ -30,10 +29,10 @@ impl IntermediateOperator for ProjectOperator {
         &self,
         input: Arc<MicroPartition>,
         state: Box<dyn IntermediateOpState>,
-        runtime: &RuntimeRef,
+        spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult {
         let projection = self.projection.clone();
-        runtime
+        spawner
             .spawn(async move {
                 let out = input.eval_expression_list(&projection)?;
                 Ok((

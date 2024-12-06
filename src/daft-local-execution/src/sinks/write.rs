@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_runtime::RuntimeRef;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
@@ -15,6 +14,7 @@ use super::blocking_sink::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, PartitionedDispatcher, UnorderedDispatcher},
+    runtime_stats::ExecutionTaskSpawner,
     ExecutionRuntimeContext, NUM_CPUS,
 };
 
@@ -77,9 +77,9 @@ impl BlockingSink for WriteSink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn BlockingSinkState>,
-        runtime_ref: &RuntimeRef,
+        spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult {
-        runtime_ref
+        spawner
             .spawn(async move {
                 state
                     .as_any_mut()
@@ -96,10 +96,10 @@ impl BlockingSink for WriteSink {
     fn finalize(
         &self,
         states: Vec<Box<dyn BlockingSinkState>>,
-        runtime: &RuntimeRef,
+        spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkFinalizeResult {
         let file_schema = self.file_schema.clone();
-        runtime
+        spawner
             .spawn(async move {
                 let mut results = vec![];
                 for mut state in states {

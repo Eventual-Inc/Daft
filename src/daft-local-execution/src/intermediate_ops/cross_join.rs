@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_runtime::RuntimeRef;
 use daft_core::{join::JoinSide, prelude::SchemaRef};
 use daft_micropartition::MicroPartition;
 use tracing::{info_span, instrument, Instrument};
@@ -10,7 +9,9 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::sinks::cross_join_collect::CrossJoinStateBridgeRef;
+use crate::{
+    runtime_stats::ExecutionTaskSpawner, sinks::cross_join_collect::CrossJoinStateBridgeRef,
+};
 
 struct CrossJoinState {
     bridge: CrossJoinStateBridgeRef,
@@ -72,7 +73,7 @@ impl IntermediateOperator for CrossJoinOperator {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn IntermediateOpState>,
-        runtime: &RuntimeRef,
+        spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult {
         let output_schema = self.output_schema.clone();
 
@@ -82,7 +83,7 @@ impl IntermediateOperator for CrossJoinOperator {
 
         let stream_side = self.stream_side;
 
-        runtime
+        spawner
             .spawn(
                 async move {
                     let cross_join_state = state

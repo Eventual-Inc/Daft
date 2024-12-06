@@ -1,7 +1,6 @@
 use std::sync::{Arc, OnceLock};
 
 use common_error::DaftResult;
-use common_runtime::RuntimeRef;
 use daft_micropartition::MicroPartition;
 use daft_table::Table;
 use tracing::instrument;
@@ -10,6 +9,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
     BlockingSinkStatus,
 };
+use crate::runtime_stats::ExecutionTaskSpawner;
 
 pub(crate) type CrossJoinStateBridgeRef = Arc<CrossJoinStateBridge>;
 
@@ -73,13 +73,13 @@ impl BlockingSink for CrossJoinCollectSink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn BlockingSinkState>,
-        runtime: &RuntimeRef,
+        spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult {
         if input.is_empty() {
             return Ok(BlockingSinkStatus::NeedMoreInput(state)).into();
         }
 
-        runtime
+        spawner
             .spawn(async move {
                 let cross_join_collect_state = state
                     .as_any_mut()
@@ -101,7 +101,7 @@ impl BlockingSink for CrossJoinCollectSink {
     fn finalize(
         &self,
         states: Vec<Box<dyn BlockingSinkState>>,
-        _runtime: &RuntimeRef,
+        _spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkFinalizeResult {
         let mut state = states.into_iter().next().unwrap();
         let cross_join_collect_state = state
