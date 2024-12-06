@@ -4,6 +4,7 @@ use common_error::DaftResult;
 use common_runtime::RuntimeRef;
 use daft_core::{join::JoinSide, prelude::SchemaRef};
 use daft_micropartition::MicroPartition;
+use tracing::{info_span, instrument, Instrument};
 
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
@@ -54,6 +55,7 @@ impl CrossJoinOperator {
 }
 
 impl IntermediateOperator for CrossJoinOperator {
+    #[instrument(skip_all, name = "CrossJoinOperator::execute")]
     fn execute(
         &self,
         input: Arc<MicroPartition>,
@@ -74,52 +76,54 @@ impl IntermediateOperator for CrossJoinOperator {
         let stream_side = self.stream_side;
 
         runtime
-            .spawn(async move {
-                let cross_join_state = state
-                    .as_any_mut()
-                    .downcast_mut::<CrossJoinState>()
-                    .expect("CrossJoinState should be used with CrossJoinOperator");
+            .spawn(
+                async move {
+                    let cross_join_state = state
+                        .as_any_mut()
+                        .downcast_mut::<CrossJoinState>()
+                        .expect("CrossJoinState should be used with CrossJoinOperator");
 
-                let stream_tables = input.get_tables()?;
-                let collect_tables = cross_join_state.bridge.get_state().await;
+                    let stream_tables = input.get_tables()?;
+                    let collect_tables = cross_join_state.bridge.get_state().await;
 
-                let stream_tbl = &stream_tables[cross_join_state.stream_idx];
-                let collect_tbl = &collect_tables[cross_join_state.collect_idx];
+                    let stream_tbl = &stream_tables[cross_join_state.stream_idx];
+                    let collect_tbl = &collect_tables[cross_join_state.collect_idx];
 
-                let (left_tbl, right_tbl) = match stream_side {
-                    JoinSide::Left => (stream_tbl, collect_tbl),
-                    JoinSide::Right => (collect_tbl, stream_tbl),
-                };
-
-                let output_tbl = left_tbl.cross_join(right_tbl, stream_side)?;
-
-                let output_morsel = Arc::new(MicroPartition::new_loaded(
-                    output_schema,
-                    Arc::new(vec![output_tbl]),
-                    None,
-                ));
-
-                // increment inner loop index
-                cross_join_state.collect_idx =
-                    (cross_join_state.collect_idx + 1) % collect_tables.len();
-
-                if cross_join_state.collect_idx == 0 {
-                    // finished the inner loop, increment outer loop index
-                    cross_join_state.stream_idx =
-                        (cross_join_state.stream_idx + 1) % stream_tables.len();
-                }
-
-                let result =
-                    if cross_join_state.stream_idx == 0 && cross_join_state.collect_idx == 0 {
-                        // finished the outer loop, move onto next input
-                        IntermediateOperatorResult::NeedMoreInput(Some(output_morsel))
-                    } else {
-                        // still looping through tables
-                        IntermediateOperatorResult::HasMoreOutput(output_morsel)
+                    let (left_tbl, right_tbl) = match stream_side {
+                        JoinSide::Left => (stream_tbl, collect_tbl),
+                        JoinSide::Right => (collect_tbl, stream_tbl),
                     };
 
-                Ok((state, result))
-            })
+                    let output_tbl = left_tbl.cross_join(right_tbl, stream_side)?;
+
+                    let output_morsel = Arc::new(MicroPartition::new_loaded(
+                        output_schema,
+                        Arc::new(vec![output_tbl]),
+                        None,
+                    ));
+
+                    // increment inner loop index
+                    cross_join_state.collect_idx =
+                        (cross_join_state.collect_idx + 1) % collect_tables.len();
+
+                    if cross_join_state.collect_idx == 0 {
+                        // finished the inner loop, increment outer loop index
+                        cross_join_state.stream_idx =
+                            (cross_join_state.stream_idx + 1) % stream_tables.len();
+                    }
+
+                    let result =
+                        if cross_join_state.stream_idx == 0 && cross_join_state.collect_idx == 0 {
+                            // finished the outer loop, move onto next input
+                            IntermediateOperatorResult::NeedMoreInput(Some(output_morsel))
+                        } else {
+                            // still looping through tables
+                            IntermediateOperatorResult::HasMoreOutput(output_morsel)
+                        };
+                    Ok((state, result))
+                }
+                .instrument(info_span!("CrossJoinOperator::execute")),
+            )
             .into()
     }
 

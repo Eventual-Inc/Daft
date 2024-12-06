@@ -4,6 +4,7 @@ use common_error::DaftResult;
 use common_runtime::RuntimeRef;
 use daft_micropartition::MicroPartition;
 use daft_table::Table;
+use tracing::instrument;
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
@@ -67,6 +68,7 @@ impl BlockingSink for CrossJoinCollectSink {
         "CrossJoinCollectSink"
     }
 
+    #[instrument(skip_all, name = "CrossJoinCollectSink::Sink")]
     fn sink(
         &self,
         input: Arc<MicroPartition>,
@@ -95,6 +97,7 @@ impl BlockingSink for CrossJoinCollectSink {
             .into()
     }
 
+    #[instrument(skip_all, name = "CrossJoinCollectSink::finalize")]
     fn finalize(
         &self,
         states: Vec<Box<dyn BlockingSinkState>>,
