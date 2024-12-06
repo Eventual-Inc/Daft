@@ -1,9 +1,12 @@
 import argparse
+import logging
 from datetime import datetime
 from pathlib import Path
 
 import daft
 from daft.sql import SQLCatalog
+
+from . import datagen
 
 
 def generate_tpcds_catalog(tpcds_gen_folder: Path):
@@ -39,11 +42,11 @@ def run_query(query_index: int, catalog: SQLCatalog) -> str:
     return duration, success, error_message if error_message else None
 
 
-def run_benchmarks(tpcds_gen_folder: Path):
+def run_benchmarks(basedir: Path):
     successes = {}
     failures = {}
 
-    catalog = generate_tpcds_catalog(tpcds_gen_folder)
+    catalog = generate_tpcds_catalog(basedir)
     for query_index in range(1, 100):
         duration, was_successful, error_msg = run_query(query_index, catalog)
         if was_successful:
@@ -53,40 +56,15 @@ def run_benchmarks(tpcds_gen_folder: Path):
 
     return successes, failures
 
-    # failed = []
-    # failed_messages = []
-    # success = []
-    # success_duration = []
-    # queries = []
 
-    # for i in range(1, 100):
-    #     query = open(f"{TPCDS_QUERIES_PATH}/{str(i).zfill(2)}.sql").read()
-    #     try:
-    #         start = time.time()
+def main():
+    logging.basicConfig(level="INFO")
 
-    #         daft.sql(query, catalog=catalog).collect()
-    #         duration = time.time() - start
-    #         print(f"Query {i} ran successfully")
-    #         success.append(i)
-    #         success_duration.append(duration)
-    #     except Exception as e:
-    #         failed.append(i)
-    #         queries.append(query)
-    #         failed_messages.append(str(e))
-
-    # pl.Config.set_fmt_str_lengths(10000)
-    # pl.Config.set_fmt_table_cell_list_len(100)
-    # pl.Config.set_tbl_rows(100)
-    # df = pl.DataFrame({"q": failed, "query": queries, "message": failed_messages})
-    # success_df = pl.DataFrame({"q": success, "duration": success_duration})
-    # df.group_by("message").agg(pl.len(), pl.col("q")).sort("len", descending=True)
-
-
-if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--tpcds-gen-folder",
         default="data/tpcds-dbgen",
+        type=Path,
         help="Path to the folder containing the TPC-DS dsdgen tool and generated data",
     )
     parser.add_argument("--scale-factor", default=0.01, type=float, help="Scale factor to run on in GB")
@@ -96,4 +74,10 @@ if __name__ == "__main__":
     assert tpcds_gen_folder.exists()
     assert args.scale_factor > 0
 
-    run_benchmarks(tpcds_gen_folder)
+    basedir = tpcds_gen_folder / str(args.scale_factor)
+    datagen.gen_tpcds(basedir=basedir, scale_factor=args.scale_factor)
+    run_benchmarks(basedir)
+
+
+if __name__ == "__main__":
+    main()
