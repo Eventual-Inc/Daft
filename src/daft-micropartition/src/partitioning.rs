@@ -31,15 +31,9 @@ impl PartitionMetadata {
     }
 }
 
-pub trait MaterializedResult<T> {
+pub trait MaterializedResult {
     fn as_any(&self) -> &dyn Any;
-    fn partition(&self) -> T;
-    /// returns the result as a single micropartition.
-    fn micropartition(&self) -> Arc<MicroPartition>;
-    /// If the result has multiple micropartitions, returns all of them
-    fn micropartitions(&self) -> Vec<Arc<MicroPartition>> {
-        vec![self.micropartition()]
-    }
+    fn micropartitions(&self) -> Vec<Arc<MicroPartition>>;
     fn metadata(&self) -> PartitionMetadata;
 }
 
@@ -49,17 +43,11 @@ pub struct LocalMaterializedResult {
     pub metadata: Option<PartitionMetadata>,
 }
 
-impl MaterializedResult<Vec<Arc<MicroPartition>>> for LocalMaterializedResult {
+impl MaterializedResult for LocalMaterializedResult {
     fn as_any(&self) -> &dyn Any {
         self
     }
-    fn partition(&self) -> Vec<Arc<MicroPartition>> {
-        self.partition.clone()
-    }
 
-    fn micropartition(&self) -> Arc<MicroPartition> {
-        Arc::new(MicroPartition::concat(self.partition.clone()).unwrap())
-    }
     fn micropartitions(&self) -> Vec<Arc<MicroPartition>> {
         self.partition.clone()
     }
@@ -67,31 +55,46 @@ impl MaterializedResult<Vec<Arc<MicroPartition>>> for LocalMaterializedResult {
     fn metadata(&self) -> PartitionMetadata {
         if let Some(metadata) = &self.metadata {
             metadata.clone()
+        } else if self.partition.is_empty() {
+            PartitionMetadata {
+                num_rows: 0,
+                size_bytes: 0,
+                boundaries: None,
+            }
         } else {
             PartitionMetadata::from_micro_partition(&self.partition[0])
         }
     }
 }
 
-type MaterializedPartitionSet = Arc<dyn MaterializedResult<Vec<Arc<MicroPartition>>>>;
+type MaterializedResultRef = Arc<dyn MaterializedResult>;
 
 pub trait PartitionSet {
+    /// Merge all micropartitions into a single micropartition
     fn get_merged_micropartitions(&self) -> DaftResult<MicroPartition>;
+    /// Get a preview of the micropartitions
     fn get_preview_micropartitions(&self, num_rows: usize) -> DaftResult<Vec<Arc<MicroPartition>>>;
-    fn items(&self) -> DaftResult<Vec<(PartId, MaterializedPartitionSet)>>;
-    fn values(&self) -> DaftResult<Vec<MaterializedPartitionSet>> {
+    fn items(&self) -> DaftResult<Vec<(PartId, MaterializedResultRef)>>;
+    fn values(&self) -> DaftResult<Vec<MaterializedResultRef>> {
         let items = self.items()?;
         Ok(items.into_iter().map(|(_, mp)| mp).collect())
     }
-
+    /// Number of partitions
     fn num_partitions(&self) -> usize;
+
     fn len(&self) -> usize;
+    /// Check if the partition set is empty
     fn is_empty(&self) -> bool;
+    /// Size of the partition set in bytes
     fn size_bytes(&self) -> DaftResult<usize>;
+    /// Check if a partition exists
     fn has_partition(&self, idx: &PartId) -> bool;
+    /// Delete a partition
     fn delete_partition(&mut self, idx: &PartId) -> DaftResult<()>;
-    fn set_partition(&mut self, idx: PartId, part: MaterializedPartitionSet) -> DaftResult<()>;
-    fn get_partition(&self, idx: &PartId) -> DaftResult<MaterializedPartitionSet>;
+    /// Set a partition
+    fn set_partition(&mut self, idx: PartId, part: MaterializedResultRef) -> DaftResult<()>;
+    /// Get a partition
+    fn get_partition(&self, idx: &PartId) -> DaftResult<MaterializedResultRef>;
 }
 
 #[derive(Debug, Default)]
@@ -108,7 +111,9 @@ impl LocalPartitionSet {
 impl PartitionSet for LocalPartitionSet {
     fn get_merged_micropartitions(&self) -> DaftResult<MicroPartition> {
         let parts = self.values()?;
-        let parts = parts.into_iter().map(|mat_res| mat_res.micropartition());
+        let parts = parts
+            .into_iter()
+            .flat_map(|mat_res| mat_res.micropartitions());
 
         MicroPartition::concat(parts)
     }
@@ -132,7 +137,7 @@ impl PartitionSet for LocalPartitionSet {
         Ok(preview_parts)
     }
 
-    fn items(&self) -> DaftResult<Vec<(PartId, MaterializedPartitionSet)>> {
+    fn items(&self) -> DaftResult<Vec<(PartId, MaterializedResultRef)>> {
         self.partitions
             .iter()
             .map(|(k, v)| {
@@ -160,7 +165,7 @@ impl PartitionSet for LocalPartitionSet {
 
     fn size_bytes(&self) -> DaftResult<usize> {
         let partitions = self.values()?;
-        let mut partitions = partitions.into_iter().map(|mp| mp.micropartition());
+        let mut partitions = partitions.into_iter().flat_map(|mp| mp.micropartitions());
         partitions.try_fold(0, |acc, mp| Ok(acc + mp.size_bytes()?.unwrap_or(0)))
     }
 
@@ -176,7 +181,7 @@ impl PartitionSet for LocalPartitionSet {
     fn set_partition(
         &mut self,
         partition_id: PartId,
-        part: MaterializedPartitionSet,
+        part: MaterializedResultRef,
     ) -> DaftResult<()> {
         let part = part.micropartitions();
 
@@ -184,7 +189,7 @@ impl PartitionSet for LocalPartitionSet {
         Ok(())
     }
 
-    fn get_partition(&self, idx: &PartId) -> DaftResult<MaterializedPartitionSet> {
+    fn get_partition(&self, idx: &PartId) -> DaftResult<MaterializedResultRef> {
         let part = self
             .partitions
             .get(idx)
