@@ -1989,7 +1989,6 @@ dependencies = [
  "daft-schema",
  "daft-table",
  "dashmap",
- "derive_more",
  "eyre",
  "futures",
  "itertools 0.11.0",
