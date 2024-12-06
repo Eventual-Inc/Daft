@@ -1,5 +1,4 @@
-"""
-Given a commit hash and a "platform substring", prints the wheelname of the wheel (if one exists) to stdout.
+"""Given a commit hash and a "platform substring", prints the wheelname of the wheel (if one exists) to stdout.
 
 # Example
 

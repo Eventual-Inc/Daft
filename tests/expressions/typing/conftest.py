@@ -115,7 +115,7 @@ ALL_DATATYPES_TERNARY_PAIRS = [
     ids=[f"{dt1}-{dt2}-{dt3}" for (dt1, _), (dt2, _), (dt3, _) in ALL_DATATYPES_TERNARY_PAIRS],
 )
 def ternary_data_fixture(request) -> tuple[Series, Series, Series]:
-    """Returns ternary permutation of Series' of all DataType pairs"""
+    """Returns ternary permutation of Series' of all DataType pairs."""
     (dt1, data1), (dt2, data2), (dt3, data3) = request.param
     s1 = Series.from_arrow(data1, name="first")
     assert s1.datatype() == dt1
@@ -132,7 +132,7 @@ def ternary_data_fixture(request) -> tuple[Series, Series, Series]:
     ids=[f"{dt1}-{dt2}" for (dt1, _), (dt2, _) in ALL_DATATYPES_BINARY_PAIRS],
 )
 def binary_data_fixture(request) -> tuple[Series, Series]:
-    """Returns binary permutation of Series' of all DataType pairs"""
+    """Returns binary permutation of Series' of all DataType pairs."""
     (dt1, data1), (dt2, data2) = request.param
     s1 = Series.from_arrow(data1, name="lhs")
     assert s1.datatype() == dt1
@@ -147,7 +147,7 @@ def binary_data_fixture(request) -> tuple[Series, Series]:
     ids=[f"{dt}" for (dt, _) in ALL_DTYPES],
 )
 def unary_data_fixture(request) -> Series:
-    """Returns unary permutation of Series' of all DataType pairs"""
+    """Returns unary permutation of Series' of all DataType pairs."""
     (dt, data) = request.param
     s = Series.from_arrow(data, name="arg")
     assert s.datatype() == dt
@@ -160,7 +160,7 @@ def unary_data_fixture(request) -> Series:
     ids=[f"{dt}" for (dt, _) in DECIMAL_DTYPES],
 )
 def decimal_unary_data_fixture(request) -> Series:
-    """Returns unary permutation of Series' of select decimal DataType pairs"""
+    """Returns unary permutation of Series' of select decimal DataType pairs."""
     (dt, data) = request.param
     s = Series.from_arrow(data, name="arg")
     assert s.datatype() == dt
@@ -173,7 +173,7 @@ def assert_typing_resolve_vs_runtime_behavior(
     run_kernel: Callable[[], Series],
     resolvable: bool,
 ):
-    """Asserts that typing behavior during schema resolution matches behavior during runtime on Series'
+    """Asserts that typing behavior during schema resolution matches behavior during runtime on Series'.
 
     Example Usage:
 
@@ -211,12 +211,12 @@ def assert_typing_resolve_vs_runtime_behavior(
 
 
 def is_numeric_or_null(dt: DataType) -> bool:
-    """Checks if this type is a numeric or null type"""
+    """Checks if this type is a numeric or null type."""
     return dt == DataType.null() or is_numeric(dt)
 
 
 def is_numeric(dt: DataType) -> bool:
-    """Checks if this type is a numeric type"""
+    """Checks if this type is a numeric type."""
     return (
         dt == DataType.int8()
         or dt == DataType.int16()
@@ -232,7 +232,7 @@ def is_numeric(dt: DataType) -> bool:
 
 
 def is_integer(dt: DataType) -> bool:
-    """Checks if this type is an integer type"""
+    """Checks if this type is an integer type."""
     return (
         dt == DataType.int8()
         or dt == DataType.int16()
@@ -246,12 +246,12 @@ def is_integer(dt: DataType) -> bool:
 
 
 def is_signed_integer(dt: DataType) -> bool:
-    """Checks if this type is a signed integer type"""
+    """Checks if this type is a signed integer type."""
     return dt == DataType.int8() or dt == DataType.int16() or dt == DataType.int32() or dt == DataType.int64()
 
 
 def is_comparable(dt: DataType):
-    """Checks if this type is a comparable type"""
+    """Checks if this type is a comparable type."""
     return (
         is_numeric(dt)
         or dt == DataType.bool()
@@ -264,7 +264,7 @@ def is_comparable(dt: DataType):
 
 
 def is_numeric_bitwidth_gte_32(dt: DataType):
-    """Checks if type is numeric and above a bitwidth of 32"""
+    """Checks if type is numeric and above a bitwidth of 32."""
     return (
         dt == DataType.int32()
         or dt == DataType.int64()
@@ -276,7 +276,9 @@ def is_numeric_bitwidth_gte_32(dt: DataType):
 
 
 def has_supertype(dt1: DataType, dt2: DataType) -> bool:
-    """Checks if two DataTypes have supertypes - note that this is a simplified
+    """Checks if two DataTypes have supertypes.
+
+    this is a simplified
     version of `supertype.rs`, since it only defines "reachability" within the supertype
     tree in a more human-readable way for testing purposes.
     """

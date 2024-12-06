@@ -155,7 +155,7 @@ class MicroPartition:
     ###
 
     def cast_to_schema(self, schema: Schema) -> MicroPartition:
-        """Casts a MicroPartition into the provided schema"""
+        """Casts a MicroPartition into the provided schema."""
         return MicroPartition._from_pymicropartition(self._micropartition.cast_to_schema(schema._schema))
 
     def eval_expression_list(self, exprs: ExpressionsProjection) -> MicroPartition:
@@ -250,7 +250,7 @@ class MicroPartition:
         return MicroPartition._from_pymicropartition(self._micropartition.quantiles(num))
 
     def explode(self, columns: ExpressionsProjection) -> MicroPartition:
-        """NOTE: Expressions here must be Explode expressions (Expression._explode())"""
+        """NOTE: Expressions here must be Explode expressions."""
         to_explode_pyexprs = [e._expr for e in columns]
         return MicroPartition._from_pymicropartition(self._micropartition.explode(to_explode_pyexprs))
 

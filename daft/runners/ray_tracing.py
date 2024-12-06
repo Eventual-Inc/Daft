@@ -1,4 +1,4 @@
-"""This module contains utilities and wrappers that instrument tracing over our RayRunner's task scheduling + execution
+"""This module contains utilities and wrappers that instrument tracing over our RayRunner's task scheduling + execution.
 
 These utilities are meant to provide light wrappers on top of Ray functionality (e.g. remote functions, actors, ray.get/ray.wait)
 which allow us to intercept these calls and perform the necessary actions for tracing the interaction between Daft and Ray.
@@ -46,7 +46,7 @@ FILE_WRITE_BUFFERING_DEFAULT = 1024 * 1024  # 1MB
 
 @contextlib.contextmanager
 def ray_tracer(execution_id: str, daft_execution_config: PyDaftExecutionConfig) -> Iterator[RunnerTracer]:
-    """Instantiates a RunnerTracer for the duration of the code block"""
+    """Instantiates a RunnerTracer for the duration of the code block."""
     # Dump the RayRunner trace if we detect an active Ray session, otherwise we give up and do not write the trace
     ray_logs_location = get_log_location()
     filepath: pathlib.Path | None
@@ -82,19 +82,19 @@ def ray_tracer(execution_id: str, daft_execution_config: PyDaftExecutionConfig) 
 
 @dataclasses.dataclass
 class TraceWriter:
-    """Handles writing trace events to a JSON file in Chrome Trace Event Format"""
+    """Handles writing trace events to a JSON file in Chrome Trace Event Format."""
 
     file: TextIO | None
     start: float
     has_written_event: bool = False
 
     def write_header(self) -> None:
-        """Initialize the JSON file with an opening bracket"""
+        """Initialize the JSON file with an opening bracket."""
         if self.file is not None:
             self.file.write("[")
 
     def write_metadata(self, event: dict[str, Any]) -> None:
-        """Write a metadata event to the trace file
+        """Write a metadata event to the trace file.
 
         Args:
             event: The metadata event to write
@@ -106,7 +106,7 @@ class TraceWriter:
             self.has_written_event = True
 
     def write_event(self, event: dict[str, Any], ts: int | None = None) -> int:
-        """Write a single trace event to the file
+        """Write a single trace event to the file.
 
         Args:
             event: The event data to write
@@ -308,7 +308,7 @@ class RunnerTracer:
         process_meta: list[tuple[int, str]],
         thread_meta: list[tuple[int, int, str]],
     ):
-        """Writes metadata for the file
+        """Writes metadata for the file.
 
         Args:
             process_meta: Pass in custom names for PIDs as a list of (pid, name).
@@ -581,7 +581,7 @@ class RunnerTracer:
 
 @dataclasses.dataclass(frozen=True)
 class _RayFunctionWrapper:
-    """Wrapper around a Ray remote function that allows us to intercept calls and record the call for a given task ID"""
+    """Wrapper around a Ray remote function that allows us to intercept calls and record the call for a given task ID."""
 
     f: ray.remote_function.RemoteFunction
 
@@ -593,7 +593,7 @@ class _RayFunctionWrapper:
 
 
 def ray_remote_traced(f: ray.remote_function.RemoteFunction):
-    """Decorates a Ray Remote function to ensure that we can trace it
+    """Decorates a Ray Remote function to ensure that we can trace it.
 
     Usage:
 
@@ -609,7 +609,7 @@ def ray_remote_traced(f: ray.remote_function.RemoteFunction):
 
 @dataclasses.dataclass(frozen=True)
 class _RayRunnableFunctionWrapper:
-    """Runnable variant of RayFunctionWrapper that supports `.remote` calls"""
+    """Runnable variant of RayFunctionWrapper that supports `.remote` calls."""
 
     f: ray.remote_function.RemoteFunction
     runner_tracer: RunnerTracer
@@ -625,7 +625,7 @@ class _RayRunnableFunctionWrapper:
 
 @dataclasses.dataclass(frozen=True)
 class MaterializedPhysicalPlanWrapper:
-    """Wrapper around MaterializedPhysicalPlan that hooks into tracing capabilities"""
+    """Wrapper around MaterializedPhysicalPlan that hooks into tracing capabilities."""
 
     plan: MaterializedPhysicalPlan
     runner_tracer: RunnerTracer
@@ -654,7 +654,7 @@ class MaterializedPhysicalPlanWrapper:
 
 @contextlib.contextmanager
 def collect_ray_task_metrics(execution_id: str, task_id: str, stage_id: int, execution_config: PyDaftExecutionConfig):
-    """Context manager that will ping the metrics actor to record various execution metrics about a given task"""
+    """Context manager that will ping the metrics actor to record various execution metrics about a given task."""
     if execution_config.enable_ray_tracing:
         import time
 

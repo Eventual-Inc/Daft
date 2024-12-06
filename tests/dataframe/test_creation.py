@@ -51,7 +51,7 @@ COL_NAMES = [
 
 @pytest.mark.parametrize("read_method", ["read_csv", "read_json", "read_parquet"])
 def test_load_missing(read_method):
-    """Loading data from a missing filepath"""
+    """Loading data from a missing filepath."""
     with pytest.raises(FileNotFoundError):
         getattr(daft, read_method)(str(uuid.uuid4()))
 

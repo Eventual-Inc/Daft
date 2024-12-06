@@ -7,7 +7,7 @@ from tests.conftest import assert_df_equals
 
 
 def test_literal_column(daft_df, service_requests_csv_pd_df):
-    """Creating a new column that is derived from (1 + other_column) and retrieving the top N results"""
+    """Creating a new column that is derived from (1 + other_column) and retrieving the top N results."""
     daft_df = daft_df.with_column("literal_col", lit(1))
     daft_pd_df = daft_df.to_pandas()
     service_requests_csv_pd_df["literal_col"] = 1
@@ -16,7 +16,7 @@ def test_literal_column(daft_df, service_requests_csv_pd_df):
 
 
 def test_literal_column_computation(daft_df, service_requests_csv_pd_df):
-    """Creating a new column that is derived from (1 + other_column) and retrieving the top N results"""
+    """Creating a new column that is derived from (1 + other_column) and retrieving the top N results."""
     daft_df = daft_df.with_column("literal_col", lit(1) + 1)
     daft_pd_df = daft_df.to_pandas()
     service_requests_csv_pd_df["literal_col"] = 1 + 1
@@ -25,7 +25,7 @@ def test_literal_column_computation(daft_df, service_requests_csv_pd_df):
 
 
 def test_literal_column_aggregation(daft_df, service_requests_csv_pd_df):
-    """Creating a new column that is derived from (1 + other_column) and retrieving the top N results"""
+    """Creating a new column that is derived from (1 + other_column) and retrieving the top N results."""
     daft_df = daft_df.repartition(2).groupby("Borough").agg(col("Unique Key").sum())
     daft_df = daft_df.with_column("literal_col", lit(1) + 1)
     daft_pd_df = daft_df.to_pandas()
@@ -37,7 +37,7 @@ def test_literal_column_aggregation(daft_df, service_requests_csv_pd_df):
 
 
 def test_pyobj_literal_column(daft_df, service_requests_csv_pd_df):
-    """Creating a new column that is derived from (1 + other_column) and retrieving the top N results"""
+    """Creating a new column that is derived from (1 + other_column) and retrieving the top N results."""
     daft_df = daft_df.with_column("literal_col", lit({"foo": "bar"}))
     daft_pd_df = daft_df.to_pandas()
     service_requests_csv_pd_df["literal_col"] = pd.Series(
@@ -47,7 +47,7 @@ def test_pyobj_literal_column(daft_df, service_requests_csv_pd_df):
 
 
 def test_literal_column_computation_apply(daft_df, service_requests_csv_pd_df):
-    """Creating a new column that is derived from (1 + other_column) and retrieving the top N results"""
+    """Creating a new column that is derived from (1 + other_column) and retrieving the top N results."""
     daft_df = daft_df.with_column(
         "literal_col", lit({"foo": "bar"}).apply(lambda d: d["foo"], return_dtype=DataType.string())
     )

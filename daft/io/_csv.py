@@ -37,7 +37,7 @@ def read_csv(
     _buffer_size: Optional[int] = None,
     _chunk_size: Optional[int] = None,
 ) -> DataFrame:
-    """Creates a DataFrame from CSV file(s)
+    """Creates a DataFrame from CSV file(s).
 
     Example:
         >>> df = daft.read_csv("/path/to/file.csv")

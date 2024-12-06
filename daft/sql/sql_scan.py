@@ -216,7 +216,7 @@ class SQLScanOperator(ScanOperator):
 
             except Exception as e:
                 warnings.warn(
-                    f"Failed to calculate partition bounds for read_sql using percentile strategy: {str(e)}. "
+                    f"Failed to calculate partition bounds for read_sql using percentile strategy: {e!s}. "
                     "Falling back to MIN_MAX strategy."
                 )
                 self._partition_bound_strategy = PartitionBoundStrategy.MIN_MAX

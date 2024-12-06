@@ -10,7 +10,7 @@ from tests.integration.io.conftest import YieldFixture
 
 @pytest.fixture(scope="function")
 def local_image_data_fixture(tmpdir, image_data) -> YieldFixture[list[str]]:
-    """Populates the local tmpdir with some fake data and returns filepaths"""
+    """Populates the local tmpdir with some fake data and returns filepaths."""
     # Dump some images into the tmpdir
     tmpdir = pathlib.Path(tmpdir)
     urls = []

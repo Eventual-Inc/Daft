@@ -52,8 +52,7 @@ class PartitionedTable:
             self._partitions, self._partition_values = self.table.partition_by_value(partition_keys=self.partition_keys)
 
     def partitions(self) -> List[MicroPartition]:
-        """
-        Returns a list of MicroPartitions representing the table partitioned by the partition keys.
+        """Returns a list of MicroPartitions representing the table partitioned by the partition keys.
 
         If the table is not partitioned, returns the original table as the single element in the list.
         """
@@ -62,8 +61,7 @@ class PartitionedTable:
         return self._partitions  # type: ignore
 
     def partition_values(self) -> Optional[MicroPartition]:
-        """
-        Returns the partition values, with each row corresponding to the partition at the same index in PartitionedTable.partitions().
+        """Returns the partition values, with each row corresponding to the partition at the same index in PartitionedTable.partitions().
 
         If the table is not partitioned, returns None.
 
@@ -73,8 +71,7 @@ class PartitionedTable:
         return self._partition_values
 
     def partition_values_str(self) -> Optional[MicroPartition]:
-        """
-        Returns the partition values converted to human-readable strings, keeping null values as null.
+        """Returns the partition values converted to human-readable strings, keeping null values as null.
 
         If the table is not partitioned, returns None.
         """

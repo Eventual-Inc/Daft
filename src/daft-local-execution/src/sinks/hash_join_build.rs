@@ -1,4 +1,4 @@
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_runtime::RuntimeRef;
@@ -12,42 +12,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
     BlockingSinkStatus,
 };
-
-/// ProbeStateBridge is a bridge between the build and probe phase of a hash join.
-/// It is used to pass the probe state from the build phase to the probe phase.
-/// The build phase sets the probe state once building is complete, and the probe phase
-/// waits for the probe state to be set via the `get_probe_state` method.
-pub(crate) type ProbeStateBridgeRef = Arc<ProbeStateBridge>;
-pub(crate) struct ProbeStateBridge {
-    inner: OnceLock<Arc<ProbeState>>,
-    notify: tokio::sync::Notify,
-}
-
-impl ProbeStateBridge {
-    pub(crate) fn new() -> Arc<Self> {
-        Arc::new(Self {
-            inner: OnceLock::new(),
-            notify: tokio::sync::Notify::new(),
-        })
-    }
-
-    pub(crate) fn set_probe_state(&self, state: Arc<ProbeState>) {
-        assert!(
-            !self.inner.set(state).is_err(),
-            "ProbeStateBridge should be set only once"
-        );
-        self.notify.notify_waiters();
-    }
-
-    pub(crate) async fn get_probe_state(&self) -> Arc<ProbeState> {
-        loop {
-            if let Some(state) = self.inner.get() {
-                return state.clone();
-            }
-            self.notify.notified().await;
-        }
-    }
-}
+use crate::state_bridge::BroadcastStateBridgeRef;
 
 enum ProbeTableState {
     Building {
@@ -131,7 +96,7 @@ pub struct HashJoinBuildSink {
     projection: Vec<ExprRef>,
     nulls_equal_aware: Option<Vec<bool>>,
     join_type: JoinType,
-    probe_state_bridge: ProbeStateBridgeRef,
+    probe_state_bridge: BroadcastStateBridgeRef<ProbeState>,
 }
 
 impl HashJoinBuildSink {
@@ -140,7 +105,7 @@ impl HashJoinBuildSink {
         projection: Vec<ExprRef>,
         nulls_equal_aware: Option<Vec<bool>>,
         join_type: &JoinType,
-        probe_state_bridge: ProbeStateBridgeRef,
+        probe_state_bridge: BroadcastStateBridgeRef<ProbeState>,
     ) -> DaftResult<Self> {
         Ok(Self {
             key_schema,
@@ -188,7 +153,7 @@ impl BlockingSink for HashJoinBuildSink {
             .expect("State type mismatch");
         let finalized_probe_state = probe_table_state.finalize();
         self.probe_state_bridge
-            .set_probe_state(finalized_probe_state.into());
+            .set_state(finalized_probe_state.into());
         Ok(None).into()
     }
 

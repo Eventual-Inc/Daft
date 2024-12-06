@@ -106,8 +106,9 @@ if __name__ == "__main__":
     entrypoint_script_fullpath: Path = working_dir / args.entrypoint_script
     assert entrypoint_script_fullpath.exists() and entrypoint_script_fullpath.is_file()
     with open(entrypoint_script_fullpath) as f:
-        metadata = Metadata(**read_inline_metadata.read(f.read()))
-
-    content = content.replace(OTHER_INSTALL_PLACEHOLDER, " ".join(metadata.dependencies))
+        metadata = read_inline_metadata.read(f.read())
+        if metadata:
+            metadata = Metadata(**metadata)
+            content = content.replace(OTHER_INSTALL_PLACEHOLDER, " ".join(metadata.dependencies))
 
     print(content)

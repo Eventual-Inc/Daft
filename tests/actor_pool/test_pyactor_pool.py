@@ -39,7 +39,7 @@ def test_pyactor_pool():
         final_metadata=[ppm],
     )
     done, _ = wait([result], timeout=None)
-    result_data = list(done)[0].result()[0]
+    result_data = next(iter(done)).result()[0]
     assert result_data.partition().to_pydict() == {"x": [2, 2, 2]}
 
     result = pool.submit(
@@ -48,7 +48,7 @@ def test_pyactor_pool():
         final_metadata=[ppm],
     )
     done, _ = wait([result], timeout=None)
-    result_data = list(done)[0].result()[0]
+    result_data = next(iter(done)).result()[0]
     assert result_data.partition().to_pydict() == {"x": [3, 3, 3]}
 
     result = pool.submit(
@@ -57,7 +57,7 @@ def test_pyactor_pool():
         final_metadata=[ppm],
     )
     done, _ = wait([result], timeout=None)
-    result_data = list(done)[0].result()[0]
+    result_data = next(iter(done)).result()[0]
     assert result_data.partition().to_pydict() == {"x": [4, 4, 4]}
 
 

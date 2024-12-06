@@ -4,22 +4,23 @@ use common_error::DaftResult;
 use common_runtime::RuntimeRef;
 use daft_core::{join::JoinSide, prelude::SchemaRef};
 use daft_micropartition::MicroPartition;
+use daft_table::Table;
 use tracing::{info_span, instrument, Instrument};
 
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::sinks::cross_join_collect::CrossJoinStateBridgeRef;
+use crate::state_bridge::BroadcastStateBridgeRef;
 
 struct CrossJoinState {
-    bridge: CrossJoinStateBridgeRef,
+    bridge: BroadcastStateBridgeRef<Vec<Table>>,
     stream_idx: usize,
     collect_idx: usize,
 }
 
 impl CrossJoinState {
-    fn new(bridge: CrossJoinStateBridgeRef) -> Self {
+    fn new(bridge: BroadcastStateBridgeRef<Vec<Table>>) -> Self {
         Self {
             bridge,
             stream_idx: 0,
@@ -37,14 +38,14 @@ impl IntermediateOpState for CrossJoinState {
 pub struct CrossJoinOperator {
     output_schema: SchemaRef,
     stream_side: JoinSide,
-    state_bridge: CrossJoinStateBridgeRef,
+    state_bridge: BroadcastStateBridgeRef<Vec<Table>>,
 }
 
 impl CrossJoinOperator {
     pub(crate) fn new(
         output_schema: SchemaRef,
         stream_side: JoinSide,
-        state_bridge: CrossJoinStateBridgeRef,
+        state_bridge: BroadcastStateBridgeRef<Vec<Table>>,
     ) -> Self {
         Self {
             output_schema,

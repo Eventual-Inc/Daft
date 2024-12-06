@@ -30,7 +30,7 @@ PYARROW_GE_13_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumer
 
 
 @contextlib.contextmanager
-def _parquet_write_helper(data: pa.Table, row_group_size: int = None, papq_write_table_kwargs: dict = {}):
+def _parquet_write_helper(data: pa.Table, row_group_size: int | None = None, papq_write_table_kwargs: dict = {}):
     with tempfile.TemporaryDirectory() as directory_name:
         file = os.path.join(directory_name, "tempfile")
         papq.write_table(data, file, row_group_size=row_group_size, **papq_write_table_kwargs)
@@ -260,7 +260,7 @@ def test_parquet_rows_cross_page_boundaries(tmpdir, minio_io_config, chunk_size)
     def test_parquet_helper(data_and_type, use_daft_writer):
         data, data_type = data_and_type
         index_data = [x for x in range(0, len(data))]
-        file_path = f"{tmpdir}/{str(uuid.uuid4())}.parquet"
+        file_path = f"{tmpdir}/{uuid.uuid4()!s}.parquet"
 
         # Test Daft roundtrip. Daft does not support the dictionary logical type, hence we skip
         # writing with Daft for this type.
@@ -281,7 +281,7 @@ def test_parquet_rows_cross_page_boundaries(tmpdir, minio_io_config, chunk_size)
                 compare_before_and_after(before, after)
 
         # Test Arrow write with Daft read.
-        file_path = f"{tmpdir}/{str(uuid.uuid4())}.parquet"
+        file_path = f"{tmpdir}/{uuid.uuid4()!s}.parquet"
         before = pa.Table.from_arrays(
             [pa.array(data, type=data_type), pa.array(index_data, type=pa.int64())], names=["nested_col", "_index"]
         )
@@ -354,7 +354,7 @@ def test_parquet_limits_across_row_groups(tmpdir, minio_io_config):
     default_row_group_size = daft_execution_config.parquet_target_row_group_size
     int_array = np.full(shape=4096, fill_value=3, dtype=np.int32)
     before = daft.from_pydict({"col": pa.array(int_array, type=pa.int32())})
-    file_path = f"{tmpdir}/{str(uuid.uuid4())}.parquet"
+    file_path = f"{tmpdir}/{uuid.uuid4()!s}.parquet"
     # Decrease the target row group size before writing the parquet file.
     daft.set_execution_config(parquet_target_row_group_size=test_row_group_size)
     before.write_parquet(file_path)

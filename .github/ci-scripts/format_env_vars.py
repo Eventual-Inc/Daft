@@ -1,5 +1,4 @@
-"""
-Given a comma-separated string of environment variables, parse them into a dictionary.
+"""Given a comma-separated string of environment variables, parse them into a dictionary.
 
 Example:
     env_str = "a=1,b=2"

@@ -1,4 +1,4 @@
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_runtime::RuntimeRef;
@@ -10,40 +10,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
     BlockingSinkStatus,
 };
-
-pub(crate) type CrossJoinStateBridgeRef = Arc<CrossJoinStateBridge>;
-
-// TODO(Colin): rework into more generic broadcast bridge that can be used for both probe table and micropartition
-pub(crate) struct CrossJoinStateBridge {
-    inner: OnceLock<Arc<Vec<Table>>>,
-    notify: tokio::sync::Notify,
-}
-
-impl CrossJoinStateBridge {
-    pub(crate) fn new() -> Arc<Self> {
-        Arc::new(Self {
-            inner: OnceLock::new(),
-            notify: tokio::sync::Notify::new(),
-        })
-    }
-
-    pub(crate) fn set_state(&self, state: Arc<Vec<Table>>) {
-        assert!(
-            !self.inner.set(state).is_err(),
-            "CrossJoinStateBridge should be set only once"
-        );
-        self.notify.notify_waiters();
-    }
-
-    pub(crate) async fn get_state(&self) -> Arc<Vec<Table>> {
-        loop {
-            if let Some(state) = self.inner.get() {
-                return state.clone();
-            }
-            self.notify.notified().await;
-        }
-    }
-}
+use crate::state_bridge::BroadcastStateBridgeRef;
 
 struct CrossJoinCollectState(Option<Vec<Table>>);
 
@@ -54,11 +21,11 @@ impl BlockingSinkState for CrossJoinCollectState {
 }
 
 pub struct CrossJoinCollectSink {
-    state_bridge: CrossJoinStateBridgeRef,
+    state_bridge: BroadcastStateBridgeRef<Vec<Table>>,
 }
 
 impl CrossJoinCollectSink {
-    pub(crate) fn new(state_bridge: CrossJoinStateBridgeRef) -> Self {
+    pub(crate) fn new(state_bridge: BroadcastStateBridgeRef<Vec<Table>>) -> Self {
         Self { state_bridge }
     }
 }

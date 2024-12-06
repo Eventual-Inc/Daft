@@ -9,7 +9,7 @@ pytest.skip(allow_module_level=True, reason="Skipping because these tests don't 
 
 
 def get_scantask_estimated_size(pq_path: str, size_on_disk: int, columns: list[str] | None = None) -> int:
-    """Retrieve the estimated size for reading a given Parquet file"""
+    """Retrieve the estimated size for reading a given Parquet file."""
     return native_testing_utils.estimate_in_memory_size_bytes(str(pq_path), size_on_disk, columns=columns)
 
 

@@ -37,8 +37,8 @@ use crate::{
         aggregate::AggregateSink,
         blocking_sink::BlockingSinkNode,
         concat::ConcatSink,
-        cross_join_collect::{CrossJoinCollectSink, CrossJoinStateBridge},
-        hash_join_build::{HashJoinBuildSink, ProbeStateBridge},
+        cross_join_collect::CrossJoinCollectSink,
+        hash_join_build::HashJoinBuildSink,
         limit::LimitSink,
         monotonically_increasing_id::MonotonicallyIncreasingIdSink,
         outer_hash_join_probe::OuterHashJoinProbeSink,
@@ -48,6 +48,7 @@ use crate::{
         write::{WriteFormat, WriteSink},
     },
     sources::{empty_scan::EmptyScanSource, in_memory::InMemorySource},
+    state_bridge::BroadcastStateBridge,
     ExecutionRuntimeContext, PipelineCreationSnafu,
 };
 
@@ -416,7 +417,7 @@ pub fn physical_plan_to_pipeline(
                     .map(|(e, f)| e.clone().cast(&f.dtype))
                     .collect::<Vec<_>>();
                 // we should move to a builder pattern
-                let probe_state_bridge = ProbeStateBridge::new();
+                let probe_state_bridge = BroadcastStateBridge::new();
                 let build_sink = HashJoinBuildSink::new(
                     key_schema,
                     casted_build_on,
@@ -516,7 +517,7 @@ pub fn physical_plan_to_pipeline(
             let stream_child_node = physical_plan_to_pipeline(stream_child, psets, cfg)?;
             let collect_child_node = physical_plan_to_pipeline(collect_child, psets, cfg)?;
 
-            let state_bridge = CrossJoinStateBridge::new();
+            let state_bridge = BroadcastStateBridge::new();
             let collect_node = BlockingSinkNode::new(
                 Arc::new(CrossJoinCollectSink::new(state_bridge.clone())),
                 collect_child_node,

@@ -52,7 +52,7 @@ def scan_with_tasks(
 def empty_scan(
     schema: Schema,
 ) -> physical_plan.InProgressPhysicalPlan[PartitionT]:
-    """yield a plan to create an empty Partition"""
+    """Yield a plan to create an empty Partition."""
     scan_step = execution_step.PartitionTaskBuilder[PartitionT](
         inputs=[],
         partial_metadatas=None,

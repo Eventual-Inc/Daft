@@ -555,7 +555,7 @@ def get_metas(*partitions: MicroPartition) -> list[PartitionMetadata]:
 
 
 def _ray_num_cpus_provider(ttl_seconds: int = 1) -> Generator[int, None, None]:
-    """Helper that gets the number of CPUs from Ray
+    """Helper that gets the number of CPUs from Ray.
 
     Used as a generator as it provides a guard against calling ray.cluster_resources()
     more than once per `ttl_seconds`.
@@ -578,10 +578,7 @@ def _ray_num_cpus_provider(ttl_seconds: int = 1) -> Generator[int, None, None]:
 
 class Scheduler(ActorPoolManager):
     def __init__(self, max_task_backlog: int | None, use_ray_tqdm: bool) -> None:
-        """
-        max_task_backlog: Max number of inflight tasks waiting for cores.
-        """
-
+        """max_task_backlog: Max number of inflight tasks waiting for cores."""
         # As of writing, Ray does not seem to be guaranteed to support
         # more than this number of pending scheduling tasks.
         # Ray has an internal proto that reports backlogged tasks [1],
@@ -683,10 +680,9 @@ class Scheduler(ActorPoolManager):
         dispatches_allowed: int,
         runner_tracer: RunnerTracer,
     ) -> tuple[list[PartitionTask], bool]:
-        """Constructs a batch of PartitionTasks that should be dispatched
+        """Constructs a batch of PartitionTasks that should be dispatched.
 
         Args:
-
             execution_id: The ID of the current execution.
             tasks: The iterator over the physical plan.
             dispatches_allowed (int): The maximum number of tasks that can be dispatched in this batch.
@@ -758,7 +754,7 @@ class Scheduler(ActorPoolManager):
         daft_execution_config_objref: ray.ObjectRef,
         runner_tracer: RunnerTracer,
     ) -> Iterator[tuple[PartitionTask, list[ray.ObjectRef]]]:
-        """Iteratively Dispatches a batch of tasks to the Ray backend"""
+        """Iteratively Dispatches a batch of tasks to the Ray backend."""
         with runner_tracer.dispatching():
             for task in tasks_to_dispatch:
                 if task.actor_pool_id is None:
@@ -814,14 +810,15 @@ class Scheduler(ActorPoolManager):
         return readies
 
     def _is_active(self, execution_id: str):
-        """Checks if the execution for the provided `execution_id` is still active"""
+        """Checks if the execution for the provided `execution_id` is still active."""
         return self.active_by_df.get(execution_id, False)
 
     def _place_in_queue(self, execution_id: str, item: ray.ObjectRef):
-        """Places a result into the queue for the provided `execution_id
+        """Places a result into the queue for the provided `execution_id.
 
         NOTE: This will block and poll busily until space is available on the queue
-        `"""
+        `
+        """
         while self._is_active(execution_id):
             try:
                 self.results_by_df[execution_id].put(item, timeout=0.1)
@@ -1113,7 +1110,7 @@ class DaftRayActor:
 
 
 class RayRoundRobinActorPool:
-    """Naive implementation of an ActorPool that performs round-robin task submission to the actors"""
+    """Naive implementation of an ActorPool that performs round-robin task submission to the actors."""
 
     def __init__(
         self,

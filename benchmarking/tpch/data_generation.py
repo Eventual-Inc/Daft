@@ -202,7 +202,7 @@ TPCH_SQLITE_TABLE_CREATION_SQL = [
 
 
 def gen_sqlite_db(csv_filepath: str, num_parts: int) -> str:
-    """Generates a SQLite DB from a folder filled with generated CSVs
+    """Generates a SQLite DB from a folder filled with generated CSVs.
 
     Args:
         csv_filepath (str): path to folder with generated CSVs
@@ -243,7 +243,7 @@ def gen_sqlite_db(csv_filepath: str, num_parts: int) -> str:
 
 
 def gen_csv_files(basedir: str, num_parts: int, scale_factor: float) -> str:
-    """Generates CSV files
+    """Generates CSV files.
 
     Args:
         basedir (str): path to generate files into
@@ -302,7 +302,7 @@ def gen_csv_files(basedir: str, num_parts: int, scale_factor: float) -> str:
 
 
 def gen_parquet(csv_files_location: str) -> str:
-    """Generates Parquet from generated CSV files
+    """Generates Parquet from generated CSV files.
 
     Args:
         csv_files_location (str): path to folder with generated CSV files

@@ -88,7 +88,7 @@ def read_iceberg(
     snapshot_id: Optional[int] = None,
     io_config: Optional["IOConfig"] = None,
 ) -> DataFrame:
-    """Create a DataFrame from an Iceberg table
+    """Create a DataFrame from an Iceberg table.
 
     Example:
         >>> import pyiceberg

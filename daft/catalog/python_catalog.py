@@ -8,7 +8,7 @@ if TYPE_CHECKING:
 
 
 class PythonCatalog:
-    """Wrapper class for various Python implementations of Data Catalogs"""
+    """Wrapper class for various Python implementations of Data Catalogs."""
 
     @abstractmethod
     def list_tables(self, prefix: str) -> list[str]: ...
@@ -18,7 +18,7 @@ class PythonCatalog:
 
 
 class PythonCatalogTable:
-    """Wrapper class for various Python implementations of Data Catalog Tables"""
+    """Wrapper class for various Python implementations of Data Catalog Tables."""
 
     @abstractmethod
     def to_dataframe(self) -> DataFrame: ...

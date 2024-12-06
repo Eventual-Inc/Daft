@@ -19,7 +19,7 @@ pytestmark = pytest.mark.skipif(
 
 @contextmanager
 def reset_runner_with_gpus(num_gpus, monkeypatch):
-    """If current runner does not have enough GPUs, create a new runner with mocked GPU resources"""
+    """If current runner does not have enough GPUs, create a new runner with mocked GPU resources."""
     if len(cuda_visible_devices()) < num_gpus:
         if get_tests_daft_runner_name() == "ray":
             try:
