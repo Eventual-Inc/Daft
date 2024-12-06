@@ -536,12 +536,11 @@ pub fn physical_plan_to_pipeline(
         LocalPhysicalPlan::PhysicalWrite(PhysicalWrite {
             input,
             file_info,
-            data_schema,
             file_schema,
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
-            let writer_factory = make_physical_writer_factory(file_info, data_schema, cfg);
+            let writer_factory = make_physical_writer_factory(file_info, cfg);
             let write_format = match (file_info.file_format, file_info.partition_cols.is_some()) {
                 (FileFormat::Parquet, true) => WriteFormat::PartitionedParquet,
                 (FileFormat::Parquet, false) => WriteFormat::Parquet,
@@ -561,7 +560,6 @@ pub fn physical_plan_to_pipeline(
         LocalPhysicalPlan::CatalogWrite(daft_local_plan::CatalogWrite {
             input,
             catalog_type,
-            data_schema,
             file_schema,
             ..
         }) => {
@@ -594,12 +592,8 @@ pub fn physical_plan_to_pipeline(
                 }
                 _ => panic!("Unsupported catalog type"),
             };
-            let writer_factory = daft_writers::make_catalog_writer_factory(
-                catalog_type,
-                data_schema,
-                &partition_by,
-                cfg,
-            );
+            let writer_factory =
+                daft_writers::make_catalog_writer_factory(catalog_type, &partition_by, cfg);
             let write_sink = WriteSink::new(
                 write_format,
                 writer_factory,
