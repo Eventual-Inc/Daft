@@ -26,9 +26,7 @@ if __name__ == "__main__":
         help="Path to the folder containing the TPC-DS dsdgen tool and generated data",
     )
     parser.add_argument("--scale-factor", default=0.01, help="Scale factor to run on in GB", type=float)
-
     args = parser.parse_args()
-    num_parts = args.scale_factor
 
     logger.info(
         "Generating data at %s with: scale_factor=%s",
