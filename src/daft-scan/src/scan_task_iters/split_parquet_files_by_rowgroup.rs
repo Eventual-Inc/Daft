@@ -453,7 +453,7 @@ impl<'a> Iterator for SplitParquetFilesByRowGroups<'a> {
 }
 
 #[must_use]
-pub(crate) fn split_by_row_groups<'a>(
+pub(crate) fn split_all_files_by_rowgroup<'a>(
     scan_tasks: BoxScanTaskIter<'a>,
     config: &'a DaftExecutionConfig,
 ) -> BoxScanTaskIter<'a> {

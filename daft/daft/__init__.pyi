@@ -1829,6 +1829,7 @@ class PyDaftExecutionConfig:
         enable_ray_tracing: bool | None = None,
         shuffle_algorithm: str | None = None,
         pre_shuffle_merge_threshold: int | None = None,
+        enable_aggressive_scantask_splitting: bool | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
     def scan_tasks_min_size_bytes(self) -> int: ...
