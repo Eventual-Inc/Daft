@@ -70,8 +70,9 @@ def _open_stream(
 
 
 def _cast_table_to_schema(table: MicroPartition, read_options: TableReadOptions, schema: Schema) -> pa.Table:
-    """Performs a cast of a Daft MicroPartition to the requested Schema/Data. This is required because:
+    """Performs a cast of a Daft MicroPartition to the requested Schema/Data.
 
+    This is required because:
     1. Data read from the datasource may have types that do not match the inferred global schema
     2. Data read from the datasource may have columns that are out-of-order with the inferred schema
     3. We may need only a subset of columns, or differently-ordered columns, in `read_options`

@@ -47,8 +47,7 @@ def _download(path: str | None, on_error: Literal["raise", "null"]) -> bytes | N
 
 
 def _warmup_fsspec_registry(urls_pylist: list[str | None]) -> None:
-    """HACK: filesystem.get_filesystem calls fsspec.get_filesystem_class under the hood, which throws an error
-    if accessed concurrently for the first time. We "warm" it up in a single-threaded fashion here.
+    """HACK: filesystem.get_filesystem calls fsspec.get_filesystem_class under the hood, which throws an error if accessed concurrently for the first time. We "warm" it up in a single-threaded fashion here.
 
     This should be fixed in the next release of FSSpec
     See: https://github.com/Eventual-Inc/Daft/issues/892

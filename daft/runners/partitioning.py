@@ -196,6 +196,7 @@ class MaterializedResult(Generic[PartitionT]):
     @abstractmethod
     def _noop(self, _: PartitionT) -> None:
         """Implement this as a no-op.
+
         https://peps.python.org/pep-0544/#overriding-inferred-variance-of-protocol-classes.
         """
         ...
@@ -229,9 +230,7 @@ class PartitionSet(Generic[PartitionT]):
         return merged_partition.to_arrow()
 
     def items(self) -> list[tuple[PartID, MaterializedResult[PartitionT]]]:
-        """Returns all (partition id, partition) in this PartitionSet,
-        ordered by partition ID.
-        """
+        """Returns all (partition id, partition) in this PartitionSet ordered by partition ID."""
         raise NotImplementedError()
 
     def values(self) -> list[MaterializedResult[PartitionT]]:

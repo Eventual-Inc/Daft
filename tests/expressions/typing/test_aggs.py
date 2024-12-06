@@ -48,7 +48,7 @@ def test_decimal_sum(decimal_unary_data_fixture):
     """A copy of the above but for decimal types that do not more widely support
     numeric operations. When they do and can be added to ALL_DTYPES and resolve
     is_numeric to True, this test can be removed.
-    """
+    """  # noqa: D205
     arg = decimal_unary_data_fixture
 
     def op(x):

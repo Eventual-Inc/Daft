@@ -48,7 +48,5 @@ def service_requests_csv_pd_df():
     params=[1, 2] if get_tests_daft_runner_name() != "native" else [1],
 )
 def repartition_nparts(request):
-    """Adds a `n_repartitions` parameter to test cases which provides the number of
-    partitions that the test case should repartition its dataset into for testing.
-    """
+    """Adds a `n_repartitions` parameter to test cases which provides the number of partitions that the test case should repartition its dataset into for testing."""
     return request.param

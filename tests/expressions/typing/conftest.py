@@ -276,7 +276,9 @@ def is_numeric_bitwidth_gte_32(dt: DataType):
 
 
 def has_supertype(dt1: DataType, dt2: DataType) -> bool:
-    """Checks if two DataTypes have supertypes - note that this is a simplified
+    """Checks if two DataTypes have supertypes.
+
+    this is a simplified
     version of `supertype.rs`, since it only defines "reachability" within the supertype
     tree in a more human-readable way for testing purposes.
     """

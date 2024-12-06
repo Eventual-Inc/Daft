@@ -56,8 +56,9 @@ class LogicalPlanBuilder:
         self._builder = builder
 
     def to_physical_plan_scheduler(self, daft_execution_config: PyDaftExecutionConfig) -> PhysicalPlanScheduler:
-        """Convert the underlying logical plan to a physical plan scheduler, which is
-        used to generate executable tasks for the physical plan.
+        """Convert the underlying logical plan to a physical plan scheduler.
+
+        physical plan scheduler is used to generate executable tasks for the physical plan.
 
         This should be called after triggering optimization with self.optimize().
 

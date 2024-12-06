@@ -14,9 +14,7 @@ _PILLOW_REGISTERED = False
 
 
 def register_viz_hook(klass: type[HookClass], hook: Callable[[object], str]):
-    """Registers a visualization hook that returns the appropriate HTML for
-    visualizing a specific class in HTML.
-    """
+    """Registers a visualization hook that returns the appropriate HTML for visualizing a specific class in HTML."""
     _VIZ_HOOKS_REGISTRY[klass] = hook
 
 

@@ -27,21 +27,22 @@ extend-select = [
 ]
 ignore = [
   "E402",  # Module level import not at top of file [TODO(sammy): We want to fix this]
-  "D417", # requires documentation for every function parameter.
+  "D417",  # requires documentation for every function parameter.
   "D100",
   "D101",
   "D102",
   "D103",
+  "D104",
   "D105",
-  "D107",
+  "D106",
+  "D107"
 ]
-
-[lint.pydocstyle]
-convention = "google"
-
 
 [lint.per-file-ignores]
 # Do not enforce usage and import order rules in init files
 "__init__.py" = ["E402", "F401", "I"]
 # Allow wild imports in conftest
 "tests/conftest.py" = ["F405", "E402", "F403"]
+
+[lint.pydocstyle]
+convention = "google"

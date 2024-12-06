@@ -342,8 +342,7 @@ class UDF:
         return dataclasses.replace(self, concurrency=concurrency)
 
     def with_init_args(self, *args, **kwargs) -> UDF:
-        """Replace initialization arguments for a class UDF when calling `__init__` at runtime
-        on each instance of the UDF.
+        """Replace initialization arguments for a class UDF when calling `__init__` at runtime on each instance of the UDF.
 
         Example:
         >>> import daft

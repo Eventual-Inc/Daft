@@ -23,7 +23,8 @@ def from_csv(
     storage_config: StorageConfig | None = None,
     csv_options: TableParseCSVOptions = TableParseCSVOptions(),
 ) -> Schema:
-    """Infers a Schema from a CSV file
+    """Infers a Schema from a CSV file.
+
     Args:
         file (str | IO): either a file-like object or a string file path (potentially prefixed with a protocol such as "s3://")
         fs (fsspec.AbstractFileSystem): fsspec FileSystem to use for reading data.

@@ -105,9 +105,7 @@ _CANONICAL_PROTOCOLS = {
 
 
 def canonicalize_protocol(protocol: str) -> str:
-    """Return the canonical protocol from the provided protocol, such that there's a 1:1
-    mapping between protocols and pyarrow/fsspec filesystem implementations.
-    """
+    """Return the canonical protocol from the provided protocol, such that there's a 1:1 mapping between protocols and pyarrow/fsspec filesystem implementations."""
     return _CANONICAL_PROTOCOLS.get(protocol, protocol)
 
 
@@ -115,8 +113,9 @@ def _resolve_paths_and_filesystem(
     paths: str | pathlib.Path | list[str],
     io_config: IOConfig | None = None,
 ) -> tuple[list[str], pafs.FileSystem]:
-    """Resolves and normalizes all provided paths, infers a filesystem from the
-    paths, and ensures that all paths use the same filesystem.
+    """Resolves and normalizes the provided path and infers it's filesystem.
+
+    Also ensures that the inferred filesystem is compatible with the passed filesystem, if provided.
 
     Args:
         paths: A single file/directory path or a list of file/directory paths.
@@ -188,9 +187,9 @@ def _infer_filesystem(
     path: str,
     io_config: IOConfig | None,
 ) -> tuple[str, pafs.FileSystem]:
-    """Resolves and normalizes the provided path, infers a filesystem from the
-    path, and ensures that the inferred filesystem is compatible with the passed
-    filesystem, if provided.
+    """Resolves and normalizes the provided path and infers it's filesystem.
+
+    Also ensures that the inferred filesystem is compatible with the passedfilesystem, if provided.
 
     Args:
         path: A single file/directory path.
@@ -344,9 +343,7 @@ def glob_path_with_stats(
 
 
 def join_path(fs: pafs.FileSystem, base_path: str, *sub_paths: str) -> str:
-    """Join a base path with sub-paths using the appropriate path separator
-    for the given filesystem.
-    """
+    """Join a base path with sub-paths using the appropriate path separator for the given filesystem."""
     if isinstance(fs, pafs.LocalFileSystem):
         return os.path.join(base_path, *sub_paths)
     else:

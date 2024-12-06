@@ -8,8 +8,9 @@ if TYPE_CHECKING:
 
 
 def io_config_to_storage_options(io_config: IOConfig, table_uri: str) -> dict[str, str] | None:
-    """Converts the Daft IOConfig to a storage options dict that the object_store crate
-    understands. The object_store crate is used by many Rust-backed Python libraries such as
+    """Converts the Daft IOConfig to a storage options dict that the object_store crate understands.
+
+    The object_store crate is used by many Rust-backed Python libraries such as
     delta-rs and lance.
 
     This function takes as input the table_uri, which it uses to determine the backend to be used.

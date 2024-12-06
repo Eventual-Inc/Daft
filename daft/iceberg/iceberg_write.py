@@ -115,6 +115,7 @@ def partition_field_to_expr(field: "IcebergPartitionField", schema: "IcebergSche
 
 def to_partition_representation(value: Any):
     """Converts a partition value to the format expected by Iceberg metadata.
+
     Most transforms already do this, but the identity transforms preserve the original value type so we need to convert it.
     """
     if value is None:

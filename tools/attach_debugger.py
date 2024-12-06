@@ -1,11 +1,9 @@
-"""This file was copied from the Polars project (https://github.com/pola-rs/polars/blob/main/py-polars/debug/launch.py)
-under the license provided by Ritchie Vink and NVIDIA Corporation & Affiliates.
+# This file was copied from the Polars project (https://github.com/pola-rs/polars/blob/main/py-polars/debug/launch.py)
+# under the license provided by Ritchie Vink and NVIDIA Corporation & Affiliates. The following parameter determines the sleep time of the Python process after a signal
+# is sent that attaches the Rust LLDB debugger. If the Rust LLDB debugger attaches to the
+# current session too late, it might miss any set breakpoints. If this happens
+# consistently, it is recommended to increase this value.
 
-The following parameter determines the sleep time of the Python process after a signal
-is sent that attaches the Rust LLDB debugger. If the Rust LLDB debugger attaches to the
-current session too late, it might miss any set breakpoints. If this happens
-consistently, it is recommended to increase this value.
-"""
 
 import os
 import re

@@ -445,9 +445,7 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
             del self._actor_pools[actor_pool_id]
 
     def _create_resource_release_callback(self, resources: AcquiredResources) -> Callable[[futures.Future], None]:
-        """This higher order function is used so that the `resources` released by the callback
-        are from the ones stored in the variable at the creation of the callback instead of during its call.
-        """
+        """This higher order function is used so that the `resources` released by the callback are from the ones stored in the variable at the creation of the callback instead of during its call."""
         return lambda _: self._resources.release(resources)
 
     def _physical_plan_to_partitions(
