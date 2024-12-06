@@ -58,7 +58,10 @@ def main(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run Daft cluster workflow")
+    parser = argparse.ArgumentParser(
+        description="Run Daft cluster workflow on github actions",
+        usage="uv run gha_run_cluster_job.py [-h] [--branch BRANCH] [--daft-wheel-url DAFT_WHEEL_URL | --daft-version DAFT_VERSION] path_to_script [-- script_args ...]",
+    )
     parser.add_argument("path_to_script", type=pathlib.Path, help="Path to the script to run")
     parser.add_argument("--branch", default="main", help="GitHub branch to use")
     group = parser.add_mutually_exclusive_group(required=False)
