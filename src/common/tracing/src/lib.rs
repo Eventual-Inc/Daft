@@ -47,12 +47,19 @@ pub fn init_tracing(enable_chrome_trace: bool) {
     *mg = Some(guard);
 }
 
-pub fn refresh_chrome_trace() -> bool {
-    let mut mg = CHROME_GUARD_HANDLE.lock().unwrap();
-    if let Some(fg) = mg.as_mut() {
+pub fn refresh_chrome_trace() -> Option<impl FnOnce()> {
+    let mg = CHROME_GUARD_HANDLE.lock().unwrap();
+    if let Some(fg) = mg.as_ref() {
         fg.start_new(None);
-        true
+        Some(flush_trace_fn)
     } else {
-        false
+        None
+    }
+}
+
+fn flush_trace_fn() {
+    let mg = CHROME_GUARD_HANDLE.lock().unwrap();
+    if let Some(fg) = mg.as_ref() {
+        fg.flush();
     }
 }

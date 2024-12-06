@@ -251,7 +251,7 @@ pub fn run_local(
     results_buffer_size: Option<usize>,
     cancel: CancellationToken,
 ) -> DaftResult<ExecutionEngineResult> {
-    refresh_chrome_trace();
+    let flush_trace_fn = refresh_chrome_trace();
     let pipeline = physical_plan_to_pipeline(physical_plan, &psets, &cfg)?;
     let (tx, rx) = create_channel(results_buffer_size.unwrap_or(1));
     let handle = std::thread::spawn(move || {
@@ -290,6 +290,9 @@ pub fn run_local(
                 let file_name = format!("explain-analyze-{curr_ms}-mermaid.md");
                 let mut file = File::create(file_name)?;
                 writeln!(file, "```mermaid\n{}\n```", viz_pipeline(pipeline.as_ref()))?;
+            }
+            if let Some(flush_trace_fn) = flush_trace_fn {
+                flush_trace_fn();
             }
             Ok(())
         };
