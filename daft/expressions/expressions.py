@@ -511,8 +511,7 @@ class Expression:
         return Expression._from_pyexpr(expr._expr // self._expr)
 
     def alias(self, name: builtins.str) -> Expression:
-        """Gives the expression a new name, which is its column's name in the DataFrame schema and the name
-        by which subsequent expressions can refer to the results of this expression.
+        """Gives the expression a new name.
 
         Example:
             >>> import daft
@@ -3382,8 +3381,7 @@ class ExpressionImageNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(native.image_decode(self._expr, raise_on_error=raise_on_error, mode=mode))
 
     def encode(self, image_format: str | ImageFormat) -> Expression:
-        """Encode an image column as the provided image file format, returning a binary column
-        of encoded bytes.
+        """Encode an image column as the provided image file format, returning a binary column of encoded bytes.
 
         Args:
             image_format: The image file format into which the images will be encoded.
@@ -3475,8 +3473,9 @@ class ExpressionPartitioningNamespace(ExpressionNamespace):
         return Expression._from_pyexpr(self._expr.partitioning_years())
 
     def iceberg_bucket(self, n: int) -> Expression:
-        """Partitioning Transform that returns the Hash Bucket following the Iceberg Specification of murmur3_32_x86
-        https://iceberg.apache.org/spec/#appendix-b-32-bit-hash-requirements.
+        """Partitioning Transform that returns the Hash Bucket following the Iceberg Specification of murmur3_32_x86.
+
+        See https://iceberg.apache.org/spec/#appendix-b-32-bit-hash-requirements for more details.
 
         Args:
             n (int): Number of buckets
@@ -3488,6 +3487,7 @@ class ExpressionPartitioningNamespace(ExpressionNamespace):
 
     def iceberg_truncate(self, w: int) -> Expression:
         """Partitioning Transform that truncates the input to a standard width `w` following the Iceberg Specification.
+
         https://iceberg.apache.org/spec/#truncate-transform-details.
 
         Args:
@@ -3501,7 +3501,8 @@ class ExpressionPartitioningNamespace(ExpressionNamespace):
 
 class ExpressionJsonNamespace(ExpressionNamespace):
     def query(self, jq_query: str) -> Expression:
-        """Query JSON data in a column using a JQ-style filter https://jqlang.github.io/jq/manual/
+        """Query JSON data in a column using a JQ-style filter https://jqlang.github.io/jq/manual/.
+
         This expression uses jaq as the underlying executor, see https://github.com/01mf02/jaq for the full list of supported filters.
 
         Example:

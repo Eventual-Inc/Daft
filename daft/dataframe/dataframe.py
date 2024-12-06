@@ -92,12 +92,16 @@ def to_logical_plan_builder(*parts: MicroPartition) -> LogicalPlanBuilder:
 
 
 class DataFrame:
-    """A Daft DataFrame is a table of data. It has columns, where each column has a type and the same
+    """A Daft DataFrame is a table of data.
+
+    It has columns, where each column has a type and the same
     number of items (rows) as all other columns.
     """
 
     def __init__(self, builder: LogicalPlanBuilder) -> None:
-        """Constructs a DataFrame according to a given LogicalPlan. Users are expected instead to call
+        """Constructs a DataFrame according to a given LogicalPlan.
+
+        Users are expected instead to call
         the classmethods on DataFrame to create a DataFrame.
 
         Args:
@@ -157,6 +161,7 @@ class DataFrame:
         self, show_all: bool = False, format: str = "ascii", simple: bool = False, file: Optional[io.IOBase] = None
     ) -> Any:
         """Prints the (logical and physical) plans that will be executed to produce this DataFrame.
+
         Defaults to showing the unoptimized logical plan. Use ``show_all=True`` to show the unoptimized logical plan,
         the optimized logical plan, and the physical plan.
 
@@ -681,6 +686,7 @@ class DataFrame:
     @DataframePublicAPI
     def write_iceberg(self, table: "pyiceberg.table.Table", mode: str = "append") -> "DataFrame":
         """Writes the DataFrame to an `Iceberg <https://iceberg.apache.org/docs/nightly/>`__ table, returning a new DataFrame with the operations that occurred.
+
         Can be run in either `append` or `overwrite` mode which will either appends the rows in the DataFrame or will delete the existing rows and then append the DataFrame rows respectively.
 
         .. NOTE::
@@ -1023,7 +1029,8 @@ class DataFrame:
         io_config: Optional[IOConfig] = None,
         **kwargs,
     ) -> "DataFrame":
-        """Writes the DataFrame to a Lance table
+        """Writes the DataFrame to a Lance table.
+
         Note:
             `write_lance` requires python 3.9 or higher
         Args:
@@ -1163,6 +1170,7 @@ class DataFrame:
 
     def _column_inputs_to_expressions(self, columns: ManyColumnsInputType) -> List[Expression]:
         """Inputs to dataframe operations can be passed in as individual arguments or an iterable.
+
         In addition, they may be strings or Expressions.
         This method normalizes the inputs to a list of Expressions.
         """
@@ -1458,8 +1466,7 @@ class DataFrame:
         column_name: str,
         expr: Expression,
     ) -> "DataFrame":
-        """Adds a column to the current DataFrame with an Expression, equivalent to a ``select``
-        with all current columns and the new one.
+        """Adds a column to the current DataFrame with an Expression, equivalent to a ``select`` with all current columns and the new one.
 
         Example:
             >>> import daft
@@ -1494,8 +1501,7 @@ class DataFrame:
         self,
         columns: Dict[str, Expression],
     ) -> "DataFrame":
-        """Adds columns to the current DataFrame with Expressions, equivalent to a ``select``
-        with all current columns and the new ones.
+        """Adds columns to the current DataFrame with Expressions, equivalent to a ``select`` with all current columns and the new ones.
 
         Example:
             >>> import daft
@@ -1842,7 +1848,9 @@ class DataFrame:
 
     @DataframePublicAPI
     def concat(self, other: "DataFrame") -> "DataFrame":
-        """Concatenates two DataFrames together in a "vertical" concatenation. The resulting DataFrame
+        """Concatenates two DataFrames together in a "vertical" concatenation.
+
+        The resulting DataFrame
         has number of rows equal to the sum of the number of rows of the input DataFrames.
 
         .. NOTE::
@@ -1866,6 +1874,7 @@ class DataFrame:
     @DataframePublicAPI
     def drop_nan(self, *cols: ColumnInputType):
         """Drops rows that contains NaNs. If cols is None it will drop rows with any NaN value.
+
         If column names are supplied, it will drop only those rows that contains NaNs in one of these columns.
 
         Example:
@@ -1932,6 +1941,7 @@ class DataFrame:
     @DataframePublicAPI
     def drop_null(self, *cols: ColumnInputType):
         """Drops rows that contains NaNs or NULLs. If cols is None it will drop rows with any NULL value.
+
         If column names are supplied, it will drop only those rows that contains NULLs in one of these columns.
 
         Example:
@@ -1966,8 +1976,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def explode(self, *columns: ColumnInputType) -> "DataFrame":
-        """Explodes a List column, where every element in each row's List becomes its own row, and all
-        other columns in the DataFrame are duplicated across rows.
+        """Explodes a List column, where every element in each row's List becomes its own row, and all other columns in the DataFrame are duplicated across rows.
 
         If multiple columns are specified, each row must contain the same number of
         items in each specified column.
@@ -2089,6 +2098,7 @@ class DataFrame:
     @DataframePublicAPI
     def transform(self, func: Callable[..., "DataFrame"], *args: Any, **kwargs: Any) -> "DataFrame":
         """Apply a function that takes and returns a DataFrame.
+
         Allow splitting your transformation into different units of work (functions) while preserving the syntax for chaining transformations.
 
         Example:
@@ -2252,6 +2262,7 @@ class DataFrame:
     @DataframePublicAPI
     def any_value(self, *cols: ColumnInputType) -> "DataFrame":
         """Returns an arbitrary value on this DataFrame.
+
         Values for each column are not guaranteed to be from the same row.
 
         Args:
@@ -2350,7 +2361,9 @@ class DataFrame:
 
     @DataframePublicAPI
     def agg(self, *to_agg: Union[Expression, Iterable[Expression]]) -> "DataFrame":
-        """Perform aggregations on this DataFrame. Allows for mixed aggregations for multiple columns
+        """Perform aggregations on this DataFrame.
+
+        Allows for mixed aggregations for multiple columns.
         Will return a single row that aggregated the entire DataFrame.
 
         For a full list of aggregation expressions, see :ref:`Aggregation Expressions <api=aggregation-expression>`
@@ -2627,6 +2640,7 @@ class DataFrame:
 
     def __len__(self):
         """Returns the count of rows when dataframe is materialized.
+
         If dataframe is not materialized yet, raises a runtime error.
 
         Returns:
@@ -2663,6 +2677,7 @@ class DataFrame:
     @DataframePublicAPI
     def to_pandas(self, coerce_temporal_nanoseconds: bool = False) -> "pandas.DataFrame":
         """Converts the current DataFrame to a `pandas DataFrame <https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.html>`__.
+
         If results have not computed yet, collect will be called.
 
         Args:
@@ -2687,6 +2702,7 @@ class DataFrame:
     @DataframePublicAPI
     def to_arrow(self) -> "pyarrow.Table":
         """Converts the current DataFrame to a `pyarrow Table <https://arrow.apache.org/docs/python/generated/pyarrow.Table.html>`__.
+
         If results have not computed yet, collect will be called.
 
         Returns:
@@ -2720,6 +2736,7 @@ class DataFrame:
     @DataframePublicAPI
     def to_pylist(self) -> List[Any]:
         """Converts the current Dataframe into a python list.
+
         .. WARNING::
 
             This is a convenience method over :meth:`DataFrame.iter_rows() <daft.DataFrame.iter_rows>`. Users should prefer using `.iter_rows()` directly instead for lower memory utilization if they are streaming rows out of a DataFrame and don't require full materialization of the Python list.
@@ -2740,9 +2757,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def to_torch_map_dataset(self) -> "torch.utils.data.Dataset":
-        """Convert the current DataFrame into a map-style
-        `Torch Dataset <https://pytorch.org/docs/stable/data.html#map-style-datasets>`__
-        for use with PyTorch.
+        """Convert the current DataFrame into a map-style `Torch Dataset <https://pytorch.org/docs/stable/data.html#map-style-datasets>`__ for use with PyTorch.
 
         This method will materialize the entire DataFrame and block on completion.
 
@@ -2762,9 +2777,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def to_torch_iter_dataset(self) -> "torch.utils.data.IterableDataset":
-        """Convert the current DataFrame into a
-        `Torch IterableDataset <https://pytorch.org/docs/stable/data.html#torch.utils.data.IterableDataset>`__
-        for use with PyTorch.
+        """Convert the current DataFrame into a `Torch IterableDataset <https://pytorch.org/docs/stable/data.html#torch.utils.data.IterableDataset>`__ for use with PyTorch.
 
         Begins execution of the DataFrame if it is not yet executed.
 
@@ -3042,6 +3055,7 @@ class GroupedDataFrame:
 
     def any_value(self, *cols: ColumnInputType) -> "DataFrame":
         """Returns an arbitrary value on this GroupedDataFrame.
+
         Values for each column are not guaranteed to be from the same row.
 
         Args:

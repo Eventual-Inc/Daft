@@ -1,4 +1,5 @@
 """This file contains physical plan building blocks.
+
 To get a physical plan for a logical plan, see physical_plan_factory.py.
 
 Conceptually, a physical plan decides what steps, and the order of steps, to run to build some target.
@@ -686,7 +687,9 @@ class MergeJoinTaskTracker(Generic[PartitionT]):
     def yield_ready(
         self, part_id: str
     ) -> Iterator[SingleOutputPartitionTask[PartitionT] | PartitionTaskBuilder[PartitionT]]:
-        """Returns an iterator of all tasks for this partition that are ready for execution. Each merge-join task will be
+        """Returns an iterator of all tasks for this partition that are ready for execution.
+
+        Each merge-join task will be
         yielded once, even across multiple calls.
         """
         assert self._is_contained(part_id)
@@ -702,7 +705,9 @@ class MergeJoinTaskTracker(Generic[PartitionT]):
             yield self._task_staging.pop(part_id)
 
     def pop_uncoalesced(self, part_id: str) -> deque[SingleOutputPartitionTask[PartitionT]] | None:
-        """Returns all tasks for this partition that need to be coalesced. If this partition only involved a single
+        """Returns all tasks for this partition that need to be coalesced.
+
+        If this partition only involved a single
         merge-join task (i.e. we don't need to coalesce), this this function will return None.
 
         NOTE: tracker.finalize(part_id) must be called before this function.
@@ -1000,9 +1005,7 @@ def merge_join_sorted(
 def _is_strictly_bounded_above_by(
     lower_part: SingleOutputPartitionTask[PartitionT], upper_part: SingleOutputPartitionTask[PartitionT]
 ) -> bool:
-    """Returns whether lower_part is strictly bounded above by upper part; i.e., whether lower_part's upper bound is
-    strictly less than upper_part's upper bound.
-    """
+    """Returns whether lower_part is strictly bounded above by upper part."""
     lower_boundaries = lower_part.partition_metadata().boundaries
     upper_boundaries = upper_part.partition_metadata().boundaries
     assert lower_boundaries is not None and upper_boundaries is not None
