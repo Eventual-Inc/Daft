@@ -8,7 +8,7 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
 use common_scan_info::{PhysicalScanInfo, ScanState, SPLIT_AND_MERGE_PASS};
-use daft_core::prelude::*;
+use daft_core::{join::JoinSide, prelude::*};
 use daft_dsl::{
     col, functions::agg::merge_mean, is_partition_compatible, AggExpr, ApproxPercentileParams,
     Expr, ExprRef, SketchType,
@@ -424,11 +424,6 @@ pub(super) fn translate_single_logical_node(
             join_strategy,
             ..
         }) => {
-            if left_on.is_empty() && right_on.is_empty() && join_type == &JoinType::Inner {
-                return Err(DaftError::not_implemented(
-                    "Joins without join conditions (cross join) are not supported yet",
-                ));
-            }
             let mut right_physical = physical_children.pop().expect("requires 1 inputs");
             let mut left_physical = physical_children.pop().expect("requires 2 inputs");
 
@@ -498,6 +493,10 @@ pub(super) fn translate_single_logical_node(
                 .as_ref()
                 .map_or(false, |v| v.iter().any(|b| *b));
             let join_strategy = join_strategy.unwrap_or_else(|| {
+                if left_on.is_empty() && right_on.is_empty() && join_type == &JoinType::Inner {
+                    return JoinStrategy::Cross;
+                }
+
                 fn keys_are_primitive(on: &[ExprRef], schema: &SchemaRef) -> bool {
                     on.iter().all(|expr| {
                         let dtype = expr.get_type(schema).unwrap();
@@ -686,6 +685,32 @@ pub(super) fn translate_single_logical_node(
                         right_on.clone(),
                         null_equals_nulls.clone(),
                         *join_type,
+                    ))
+                    .arced())
+                }
+                JoinStrategy::Cross => {
+                    if *join_type != JoinType::Inner {
+                        return Err(common_error::DaftError::ValueError(
+                            "Cross join is only applicable for inner joins".to_string(),
+                        ));
+                    }
+                    if !left_on.is_empty() || !right_on.is_empty() {
+                        return Err(common_error::DaftError::ValueError(
+                            "Cross join cannot have join keys".to_string(),
+                        ));
+                    }
+
+                    // choose the larger side to be in the outer loop since the inner side has to be fully materialized
+                    let outer_loop_side = if left_is_larger {
+                        JoinSide::Left
+                    } else {
+                        JoinSide::Right
+                    };
+
+                    Ok(PhysicalPlan::CrossJoin(CrossJoin::new(
+                        left_physical,
+                        right_physical,
+                        outer_loop_side,
                     ))
                     .arced())
                 }

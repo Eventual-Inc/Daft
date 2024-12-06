@@ -8,8 +8,10 @@ use crate::translation::{to_logical_plan, to_spark_datatype};
 
 #[tracing::instrument(skip_all)]
 pub fn relation_to_schema(input: Relation) -> eyre::Result<DataType> {
-    if input.common.is_some() {
-        warn!("We do not currently look at common fields");
+    if let Some(common) = &input.common {
+        if common.origin.is_some() {
+            warn!("Ignoring common metadata for relation: {common:?}; not yet implemented");
+        }
     }
 
     let plan = to_logical_plan(input)?;

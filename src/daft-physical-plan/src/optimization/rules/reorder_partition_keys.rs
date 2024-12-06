@@ -159,7 +159,8 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
                 PhysicalPlan::Concat(..) |
                 PhysicalPlan::HashJoin(..) |
                 PhysicalPlan::SortMergeJoin(..) |
-                PhysicalPlan::BroadcastJoin(..) => unreachable!("PhysicalPlan match for ReorderPartitionKeys physical optimizer rule should not be reachable"),
+                PhysicalPlan::BroadcastJoin(..) |
+                PhysicalPlan::CrossJoin(..) => unreachable!("PhysicalPlan match for ReorderPartitionKeys physical optimizer rule should not be reachable"),
                 #[cfg(feature = "python")]
                 PhysicalPlan::IcebergWrite(..) | PhysicalPlan::DeltaLakeWrite(..) | PhysicalPlan::LanceWrite(..) => {
                     unreachable!("PhysicalPlan match for ReorderPartitionKeys physical optimizer rule should not be reachable")

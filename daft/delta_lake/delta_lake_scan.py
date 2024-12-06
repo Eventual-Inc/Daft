@@ -111,6 +111,9 @@ class DeltaLakeScanOperator(ScanOperator):
     def schema(self) -> Schema:
         return self._schema
 
+    def name(self) -> str:
+        return "DeltaLakeScanOperator"
+
     def display_name(self) -> str:
         return f"DeltaLakeScanOperator({self._table.metadata().name})"
 

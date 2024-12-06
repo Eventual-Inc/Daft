@@ -40,10 +40,10 @@ from daft.daft import (
     IOConfig,
     PyDaftExecutionConfig,
     ResourceRequest,
-    extract_partial_stateful_udf_py,
 )
 from daft.datatype import DataType
 from daft.execution.execution_step import (
+    ActorPoolProject,
     FanoutInstruction,
     Instruction,
     MultiOutputPartitionTask,
@@ -51,7 +51,6 @@ from daft.execution.execution_step import (
     ReduceInstruction,
     ScanWithTask,
     SingleOutputPartitionTask,
-    StatefulUDFProject,
 )
 from daft.execution.physical_plan import ActorPoolManager
 from daft.expressions import ExpressionsProjection
@@ -1062,7 +1061,10 @@ def _build_partitions_on_actor_pool(
     actor_pool: RayRoundRobinActorPool,
 ) -> list[ray.ObjectRef]:
     """Run a PartitionTask on an actor pool and return the resulting list of partitions."""
-    [metadatas_ref, *partitions] = actor_pool.submit(task.instructions, task.partial_metadatas, task.inputs)
+    assert len(task.instructions) == 1, "Actor pool can only handle single ActorPoolProject instructions"
+    assert isinstance(task.instructions[0], ActorPoolProject)
+
+    [metadatas_ref, *partitions] = actor_pool.submit(task.partial_metadatas, task.inputs)
     metadatas_accessor = PartitionMetadataAccessor(metadatas_ref)
     task.set_result(
         [
@@ -1080,26 +1082,19 @@ def _build_partitions_on_actor_pool(
 @ray.remote
 class DaftRayActor:
     def __init__(self, daft_execution_config: PyDaftExecutionConfig, uninitialized_projection: ExpressionsProjection):
-        self.daft_execution_config = daft_execution_config
-        partial_stateful_udfs = {
-            name: psu
-            for expr in uninitialized_projection
-            for name, psu in extract_partial_stateful_udf_py(expr._expr).items()
-        }
-        logger.info("Initializing stateful UDFs: %s", ", ".join(partial_stateful_udfs.keys()))
+        from daft.daft import get_udf_names
 
-        self.initialized_stateful_udfs = {}
-        for name, (partial_udf, init_args) in partial_stateful_udfs.items():
-            if init_args is None:
-                self.initialized_stateful_udfs[name] = partial_udf.func_cls()
-            else:
-                args, kwargs = init_args
-                self.initialized_stateful_udfs[name] = partial_udf.func_cls(*args, **kwargs)
+        self.daft_execution_config = daft_execution_config
+
+        logger.info(
+            "Initializing stateful UDFs: %s",
+            ", ".join(name for expr in uninitialized_projection for name in get_udf_names(expr._expr)),
+        )
+        self.initialized_projection = ExpressionsProjection([e._initialize_udfs() for e in uninitialized_projection])
 
     @ray.method(num_returns=2)
     def run(
         self,
-        uninitialized_projection: ExpressionsProjection,
         partial_metadatas: list[PartitionMetadata],
         *inputs: MicroPartition,
     ) -> list[list[PartitionMetadata] | MicroPartition]:
@@ -1109,11 +1104,7 @@ class DaftRayActor:
             part = inputs[0]
             partial = partial_metadatas[0]
 
-            # Bind the ExpressionsProjection to the initialized UDFs
-            initialized_projection = ExpressionsProjection(
-                [e._bind_stateful_udfs(self.initialized_stateful_udfs) for e in uninitialized_projection]
-            )
-            new_part = part.eval_expression_list(initialized_projection)
+            new_part = part.eval_expression_list(self.initialized_projection)
 
             return [
                 [PartitionMetadata.from_table(new_part).merge_with_partial(partial)],
@@ -1159,24 +1150,15 @@ class RayRoundRobinActorPool:
         self._actors = None
         del old_actors
 
-    def submit(
-        self, instruction_stack: list[Instruction], partial_metadatas: list[ray.ObjectRef], inputs: list[ray.ObjectRef]
-    ) -> list[ray.ObjectRef]:
+    def submit(self, partial_metadatas: list[ray.ObjectRef], inputs: list[ray.ObjectRef]) -> list[ray.ObjectRef]:
         assert self._actors is not None, "Must have active Ray actors during submission"
-
-        assert (
-            len(instruction_stack) == 1
-        ), "RayRoundRobinActorPool can only handle single StatefulUDFProject instructions"
-        instruction = instruction_stack[0]
-        assert isinstance(instruction, StatefulUDFProject)
-        projection = instruction.projection
 
         # Determine which actor to schedule on in a round-robin fashion
         idx = self._task_idx % self._num_actors
         self._task_idx += 1
         actor = self._actors[idx]
 
-        return actor.run.remote(projection, partial_metadatas, *inputs)
+        return actor.run.remote(partial_metadatas, *inputs)
 
 
 class RayRunner(Runner[ray.ObjectRef]):

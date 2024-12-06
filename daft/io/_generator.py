@@ -80,6 +80,9 @@ class GeneratorScanOperator(ScanOperator):
         self._generators = generators
         self._schema = schema
 
+    def name(self) -> str:
+        return self.display_name()
+
     def display_name(self) -> str:
         return "GeneratorScanOperator"
 

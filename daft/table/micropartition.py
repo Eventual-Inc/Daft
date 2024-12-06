@@ -8,6 +8,7 @@ from daft.daft import (
     CsvParseOptions,
     CsvReadOptions,
     IOConfig,
+    JoinSide,
     JoinType,
     JsonConvertOptions,
     JsonParseOptions,
@@ -316,6 +317,15 @@ class MicroPartition:
             self._micropartition.sort_merge_join(
                 right._micropartition, left_on=left_exprs, right_on=right_exprs, is_sorted=is_sorted
             )
+        )
+
+    def cross_join(
+        self,
+        right: MicroPartition,
+        outer_loop_side: JoinSide,
+    ) -> MicroPartition:
+        return MicroPartition._from_pymicropartition(
+            self._micropartition.cross_join(right._micropartition, outer_loop_side=outer_loop_side)
         )
 
     def partition_by_hash(self, exprs: ExpressionsProjection, num_partitions: int) -> list[MicroPartition]:

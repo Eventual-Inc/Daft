@@ -18,7 +18,9 @@ mod unresolved_function;
 
 pub fn to_daft_expr(expression: &Expression) -> eyre::Result<daft_dsl::ExprRef> {
     if let Some(common) = &expression.common {
-        warn!("Ignoring common metadata for relation: {common:?}; not yet implemented");
+        if common.origin.is_some() {
+            warn!("Ignoring common metadata for relation: {common:?}; not yet implemented");
+        }
     };
 
     let Some(expr) = &expression.expr_type else {

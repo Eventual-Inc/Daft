@@ -7,8 +7,7 @@ A UDF can be used just like :doc:`Expressions <../user_guide/expressions>`, allo
 should be executed by Daft lazily.
 
 To write a UDF, you should use the :func:`@udf <daft.udf.udf>` decorator, which can decorate either a Python
-function or a Python class, producing either a :class:`StatelessUDF <daft.udf.StatelessUDF>` or
-:class:`StatefulUDF <daft.udf.StatefulUDF>` respectively.
+function or a Python class, producing a :class:`UDF <daft.udf.UDF>`.
 
 For more details, please consult the :doc:`UDF User Guide <../user_guide/udf>`
 
@@ -23,10 +22,6 @@ Creating UDFs
 Using UDFs
 ==========
 
-.. autoclass:: daft.udf.StatelessUDF
-   :members:
-   :special-members: __call__
-
-.. autoclass:: daft.udf.StatefulUDF
+.. autoclass:: daft.udf.UDF
    :members:
    :special-members: __call__

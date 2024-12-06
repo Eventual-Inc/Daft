@@ -69,6 +69,9 @@ class LanceDBScanOperator(ScanOperator):
     def __init__(self, ds: "lance.LanceDataset"):
         self._ds = ds
 
+    def name(self) -> str:
+        return "LanceDBScanOperator"
+
     def display_name(self) -> str:
         return f"LanceDBScanOperator({self._ds.uri})"
 

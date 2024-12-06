@@ -34,6 +34,7 @@ pub enum PhysicalPlan {
     HashJoin(HashJoin),
     SortMergeJoin(SortMergeJoin),
     BroadcastJoin(BroadcastJoin),
+    CrossJoin(CrossJoin),
     TabularWriteParquet(TabularWriteParquet),
     TabularWriteJson(TabularWriteJson),
     TabularWriteCsv(TabularWriteCsv),
@@ -170,6 +171,9 @@ impl PhysicalPlan {
                 std::iter::repeat(false).take(left_on.len()).collect(),
             ))
             .into(),
+            Self::CrossJoin(CrossJoin {
+                clustering_spec, ..
+            }) => clustering_spec.clone(),
             Self::TabularWriteParquet(TabularWriteParquet { input, .. }) => input.clustering_spec(),
             Self::TabularWriteCsv(TabularWriteCsv { input, .. }) => input.clustering_spec(),
             Self::TabularWriteJson(TabularWriteJson { input, .. }) => input.clustering_spec(),
@@ -283,7 +287,8 @@ impl PhysicalPlan {
                 ..
             })
             | Self::HashJoin(HashJoin { left, right, .. })
-            | Self::SortMergeJoin(SortMergeJoin { left, right, .. }) => {
+            | Self::SortMergeJoin(SortMergeJoin { left, right, .. })
+            | Self::CrossJoin(CrossJoin { left, right, .. }) => {
                 // assume a Primary-key + Foreign-Key join which would yield the max of the two tables
                 let left_stats = left.approximate_stats();
                 let right_stats = right.approximate_stats();
@@ -383,6 +388,7 @@ impl PhysicalPlan {
             Self::SortMergeJoin(SortMergeJoin { left, right, .. }) => {
                 vec![left, right]
             }
+            Self::CrossJoin(CrossJoin { left, right, .. }) => vec![left, right],
             Self::Concat(Concat { input, other }) => vec![input, other],
             Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. }) => {
                 vec![input]
@@ -421,7 +427,7 @@ impl PhysicalPlan {
                 Self::DeltaLakeWrite(DeltaLakeWrite {schema, delta_lake_info, .. }) => Self::DeltaLakeWrite(DeltaLakeWrite::new(schema.clone(), delta_lake_info.clone(), input.clone())),
                 #[cfg(feature = "python")]
                 Self::LanceWrite(LanceWrite { schema, lance_info, .. }) => Self::LanceWrite(LanceWrite::new(schema.clone(), lance_info.clone(), input.clone())),
-                Self::Concat(_) | Self::HashJoin(_) | Self::SortMergeJoin(_) | Self::BroadcastJoin(_) => panic!("{} requires more than 1 input, but received: {}", self, children.len()),
+                Self::Concat(_) | Self::HashJoin(_) | Self::SortMergeJoin(_) | Self::BroadcastJoin(_) | Self::CrossJoin(_) => panic!("{} requires more than 1 input, but received: {}", self, children.len()),
             },
             [input1, input2] => match self {
                 #[cfg(feature = "python")]
@@ -438,6 +444,7 @@ impl PhysicalPlan {
                     ..
                 }) => Self::BroadcastJoin(BroadcastJoin::new(input1.clone(), input2.clone(), left_on.clone(), right_on.clone(), null_equals_nulls.clone(), *join_type, *is_swapped)),
                 Self::SortMergeJoin(SortMergeJoin { left_on, right_on, join_type, num_partitions, left_is_larger, needs_presort, .. }) => Self::SortMergeJoin(SortMergeJoin::new(input1.clone(), input2.clone(), left_on.clone(), right_on.clone(), *join_type, *num_partitions, *left_is_larger, *needs_presort)),
+                Self::CrossJoin(CrossJoin { outer_loop_side, .. }) => Self::CrossJoin(CrossJoin::new(input1.clone(), input2.clone(), *outer_loop_side)),
                 Self::Concat(_) => Self::Concat(Concat::new(input1.clone(), input2.clone())),
                 _ => panic!("Physical op {:?} has one input, but got two", self),
             },
@@ -464,6 +471,7 @@ impl PhysicalPlan {
             Self::HashJoin(..) => "HashJoin",
             Self::BroadcastJoin(..) => "BroadcastJoin",
             Self::SortMergeJoin(..) => "SortMergeJoin",
+            Self::CrossJoin(..) => "CrossJoin",
             Self::Concat(..) => "Concat",
             Self::TabularWriteParquet(..) => "TabularWriteParquet",
             Self::TabularWriteCsv(..) => "TabularWriteCsv",
@@ -498,6 +506,7 @@ impl PhysicalPlan {
             Self::HashJoin(hash_join) => hash_join.multiline_display(),
             Self::BroadcastJoin(broadcast_join) => broadcast_join.multiline_display(),
             Self::SortMergeJoin(sort_merge_join) => sort_merge_join.multiline_display(),
+            Self::CrossJoin(cross_join) => cross_join.multiline_display(),
             Self::Concat(concat) => concat.multiline_display(),
             Self::TabularWriteParquet(tabular_write_parquet) => {
                 tabular_write_parquet.multiline_display()

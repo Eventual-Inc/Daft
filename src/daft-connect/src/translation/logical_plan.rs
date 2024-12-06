@@ -9,7 +9,7 @@ use tracing::warn;
 
 use crate::translation::logical_plan::{
     aggregate::aggregate, local_relation::local_relation, project::project, range::range,
-    to_df::to_df,
+    to_df::to_df, with_columns::with_columns,
 };
 
 mod aggregate;
@@ -17,6 +17,7 @@ mod local_relation;
 mod project;
 mod range;
 mod to_df;
+mod with_columns;
 
 #[derive(Constructor)]
 pub struct Plan {
@@ -35,7 +36,9 @@ impl From<LogicalPlanBuilder> for Plan {
 
 pub fn to_logical_plan(relation: Relation) -> eyre::Result<Plan> {
     if let Some(common) = relation.common {
-        warn!("Ignoring common metadata for relation: {common:?}; not yet implemented");
+        if common.origin.is_some() {
+            warn!("Ignoring common metadata for relation: {common:?}; not yet implemented");
+        }
     };
 
     let Some(rel_type) = relation.rel_type else {
@@ -48,6 +51,9 @@ pub fn to_logical_plan(relation: Relation) -> eyre::Result<Plan> {
         RelType::Project(p) => project(*p).wrap_err("Failed to apply project to logical plan"),
         RelType::Aggregate(a) => {
             aggregate(*a).wrap_err("Failed to apply aggregate to logical plan")
+        }
+        RelType::WithColumns(w) => {
+            with_columns(*w).wrap_err("Failed to apply with_columns to logical plan")
         }
         RelType::ToDf(t) => to_df(*t).wrap_err("Failed to apply to_df to logical plan"),
         RelType::LocalRelation(l) => {

@@ -69,6 +69,9 @@ class SQLScanOperator(ScanOperator):
     def schema(self) -> Schema:
         return self._schema
 
+    def name(self) -> str:
+        return "SQLScanOperator"
+
     def display_name(self) -> str:
         return f"SQLScanOperator(sql={self.sql}, conn={self.conn})"
 
