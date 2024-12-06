@@ -71,6 +71,7 @@ class Schema:
 
         Returns:
             Schema: Converted Daft schema
+
         """
         return cls._from_field_name_and_types(
             [(pa_field.name, DataType.from_arrow_type(pa_field.type)) for pa_field in pa_schema]
@@ -81,6 +82,7 @@ class Schema:
 
         Returns:
             pa.Schema: PyArrow schema that corresponds to the provided Daft schema
+
         """
         _ensure_registered_super_ext_type()
         return self._schema.to_pyarrow_schema()

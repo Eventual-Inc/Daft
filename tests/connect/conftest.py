@@ -6,8 +6,7 @@ from pyspark.sql import SparkSession
 
 @pytest.fixture(scope="session")
 def spark_session():
-    """
-    Fixture to create and clean up a Spark session.
+    """Fixture to create and clean up a Spark session.
 
     This fixture is available to all test files and creates a single
     Spark session for the entire test suite run.

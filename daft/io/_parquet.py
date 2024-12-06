@@ -34,7 +34,7 @@ def read_parquet(
 ) -> DataFrame:
     """Creates a DataFrame from Parquet file(s)
 
-    Example:
+    Examples:
         >>> df = daft.read_parquet("/path/to/file.parquet")
         >>> df = daft.read_parquet("/path/to/directory")
         >>> df = daft.read_parquet("/path/to/files-*.parquet")
@@ -57,6 +57,7 @@ def read_parquet(
 
     returns:
         DataFrame: parsed DataFrame
+
     """
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
 

@@ -50,6 +50,7 @@ class Runner(Generic[PartitionT]):
             builder: the builder for the LogicalPlan that is to be executed
             results_buffer_size: if the plan is executed asynchronously, this is the maximum size of the number of results
                 that can be buffered before execution should pause and wait.
+
         """
         ...
 
@@ -63,5 +64,6 @@ class Runner(Generic[PartitionT]):
             builder: the builder for the LogicalPlan that is to be executed
             results_buffer_size: if the plan is executed asynchronously, this is the maximum size of the number of results
                 that can be buffered before execution should pause and wait.
+
         """
         ...

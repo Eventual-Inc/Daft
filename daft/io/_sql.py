@@ -66,7 +66,7 @@ def read_sql(
             Daft pushes down operations such as filtering, projections, and limits into the SQL query when possible.
             You can disable pushdowns by setting `disable_pushdowns_to_sql=True`, which will execute the SQL query as is.
 
-    Example:
+    Examples:
         Read data from a SQL query and a database URL:
 
         >>> df = daft.read_sql("SELECT * FROM my_table", "sqlite:///my_database.db")
@@ -93,8 +93,8 @@ def read_sql(
         ...     partition_col="id",
         ...     num_partitions=3
         ... )
-    """
 
+    """
     if num_partitions is not None and partition_col is None:
         raise ValueError("Failed to execute sql: partition_col must be specified when num_partitions is specified")
 
@@ -136,5 +136,6 @@ def sql(sql: str) -> DataFrame:
 
     Returns:
         DataFrame: Dataframe containing the results of the query
+
     """
     return from_pydict({})

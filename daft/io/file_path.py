@@ -30,7 +30,7 @@ def from_glob_path(path: str, io_config: Optional[IOConfig] = None) -> DataFrame
     2. size: size of the object in bytes
     3. type: either "file" or "directory"
 
-    Example:
+    Examples:
         >>> df = daft.from_glob_path("/path/to/files/*.jpeg")
         >>> df = daft.from_glob_path("/path/to/files/**/*.jpeg")
         >>> df = daft.from_glob_path("/path/to/files/**/image-?.jpeg")
@@ -42,6 +42,7 @@ def from_glob_path(path: str, io_config: Optional[IOConfig] = None) -> DataFrame
     Returns:
         DataFrame: DataFrame containing the path to each file as a row, along with other metadata
             parsed from the provided filesystem.
+
     """
     context = get_context()
     io_config = context.daft_planning_config.default_io_config if io_config is None else io_config

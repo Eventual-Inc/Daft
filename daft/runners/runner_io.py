@@ -27,5 +27,6 @@ class RunnerIO:
 
         Returns:
             FileInfo: The file infos for the globbed paths.
+
         """
         raise NotImplementedError()

@@ -27,6 +27,7 @@ class TableReadOptions:
     Args:
         num_rows: Number of rows to read, or None to read all rows
         column_names: Column names to include when reading, or None to read all columns
+
     """
 
     num_rows: int | None = None
@@ -44,6 +45,7 @@ class TableParseCSVOptions:
         buffer_size: Size of the buffer (in bytes) used by the streaming reader.
         chunk_size: Size of the chunks (in bytes) deserialized in parallel by the streaming reader.
         allow_variable_columns: Whether to allow for variable number of columns in the CSV, defaults to False.
+
     """
 
     delimiter: str | None = None
@@ -63,6 +65,7 @@ class TableParseParquetOptions:
 
     Args:
         coerce_int96_timestamp_unit: TimeUnit to use when parsing Int96 fields
+
     """
 
     coerce_int96_timestamp_unit: TimeUnit = TimeUnit.ns()
@@ -229,8 +232,7 @@ class PartitionSet(Generic[PartitionT]):
         return merged_partition.to_arrow()
 
     def items(self) -> list[tuple[PartID, MaterializedResult[PartitionT]]]:
-        """
-        Returns all (partition id, partition) in this PartitionSet,
+        """Returns all (partition id, partition) in this PartitionSet,
         ordered by partition ID.
         """
         raise NotImplementedError()

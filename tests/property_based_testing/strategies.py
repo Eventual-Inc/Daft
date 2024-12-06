@@ -97,6 +97,7 @@ def series(
         length: length of column
         dtypes: strategy for generating daft_type
         strategies: strategies for generating data for each daft_type, defaults to `_default_strategies`
+
     """
     daft_type = draw(dtypes, label="Column dtype")
     dtype_strategy = strategies[daft_type]
@@ -127,6 +128,7 @@ def columns_dict(
         draw: Hypothesis draw function
         num_rows_strategy: strategy for generating number of rows
         generate_columns_with_type: {col_name: column_strategy} for specific strategies (e.g. hashable columns, numeric columns etc)
+
     """
     df_len = draw(num_rows_strategy, label="Number of rows")
 

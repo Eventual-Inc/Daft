@@ -21,7 +21,7 @@ InputListType = Union[list, "np.ndarray", "pa.Array", "pa.ChunkedArray"]
 def from_pylist(data: List[Dict[str, Any]]) -> "DataFrame":
     """Creates a DataFrame from a list of dictionaries.
 
-    Example:
+    Examples:
         >>> import daft
         >>> df = daft.from_pylist([{"foo": 1}, {"foo": 2}])
         >>> df.show()
@@ -42,6 +42,7 @@ def from_pylist(data: List[Dict[str, Any]]) -> "DataFrame":
 
     Returns:
         DataFrame: DataFrame created from list of dictionaries.
+
     """
     from daft import DataFrame
 
@@ -52,7 +53,7 @@ def from_pylist(data: List[Dict[str, Any]]) -> "DataFrame":
 def from_pydict(data: Dict[str, InputListType]) -> "DataFrame":
     """Creates a DataFrame from a Python dictionary.
 
-    Example:
+    Examples:
         >>> import daft
         >>> df = daft.from_pydict({"foo": [1, 2]})
         >>> df.show()
@@ -74,6 +75,7 @@ def from_pydict(data: Dict[str, InputListType]) -> "DataFrame":
 
     Returns:
         DataFrame: DataFrame created from dictionary of columns
+
     """
     from daft import DataFrame
 
@@ -84,7 +86,7 @@ def from_pydict(data: Dict[str, InputListType]) -> "DataFrame":
 def from_arrow(data: Union["pa.Table", List["pa.Table"], Iterable["pa.Table"]]) -> "DataFrame":
     """Creates a DataFrame from a pyarrow Table.
 
-    Example:
+    Examples:
         >>> import pyarrow as pa
         >>> import daft
         >>> t = pa.table({"a": [1, 2, 3], "b": ["foo", "bar", "baz"]})
@@ -109,6 +111,7 @@ def from_arrow(data: Union["pa.Table", List["pa.Table"], Iterable["pa.Table"]]) 
 
     Returns:
         DataFrame: DataFrame created from the provided pyarrow Table.
+
     """
     from daft import DataFrame
 
@@ -119,7 +122,7 @@ def from_arrow(data: Union["pa.Table", List["pa.Table"], Iterable["pa.Table"]]) 
 def from_pandas(data: Union["pd.DataFrame", List["pd.DataFrame"]]) -> "DataFrame":
     """Creates a Daft DataFrame from a pandas DataFrame.
 
-    Example:
+    Examples:
         >>> import pandas as pd
         >>> import daft
         >>> pd_df = pd.DataFrame({"a": [1, 2, 3], "b": ["foo", "bar", "baz"]})
@@ -144,6 +147,7 @@ def from_pandas(data: Union["pd.DataFrame", List["pd.DataFrame"]]) -> "DataFrame
 
     Returns:
         DataFrame: Daft DataFrame created from the provided pandas DataFrame.
+
     """
     from daft import DataFrame
 
@@ -159,6 +163,7 @@ def from_ray_dataset(ds: "RayDataset") -> "DataFrame":
 
     Args:
         ds: The Ray Dataset to create a Daft DataFrame from.
+
     """
     from daft import DataFrame
 
@@ -177,6 +182,7 @@ def from_dask_dataframe(ddf: "dask.DataFrame") -> "DataFrame":
 
     Args:
         ddf: The Dask DataFrame to create a Daft DataFrame from.
+
     """
     from daft import DataFrame
 

@@ -183,6 +183,7 @@ def generate_parquet_data(tpch_gen_folder: str, scale_factor: float, num_parts: 
 
     Returns:
         str: Path to folder containing Parquet files
+
     """
     csv_folder = data_generation.gen_csv_files(basedir=tpch_gen_folder, scale_factor=scale_factor, num_parts=num_parts)
     return data_generation.gen_parquet(csv_folder)

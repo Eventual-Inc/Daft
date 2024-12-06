@@ -48,7 +48,7 @@ def test_mean(daft_df, service_requests_csv_pd_df, repartition_nparts, with_mors
 
 
 def test_min(daft_df, service_requests_csv_pd_df, repartition_nparts, with_morsel_size):
-    """min across a column for entire table"""
+    """Min across a column for entire table"""
     daft_df = daft_df.repartition(repartition_nparts).min(col("Unique Key").alias("unique_key_min"))
     service_requests_csv_pd_df = pd.DataFrame.from_records(
         [{"unique_key_min": service_requests_csv_pd_df["Unique Key"].min()}]
@@ -58,7 +58,7 @@ def test_min(daft_df, service_requests_csv_pd_df, repartition_nparts, with_morse
 
 
 def test_max(daft_df, service_requests_csv_pd_df, repartition_nparts, with_morsel_size):
-    """max across a column for entire table"""
+    """Max across a column for entire table"""
     daft_df = daft_df.repartition(repartition_nparts).max(col("Unique Key").alias("unique_key_max"))
     service_requests_csv_pd_df = pd.DataFrame.from_records(
         [{"unique_key_max": service_requests_csv_pd_df["Unique Key"].max()}]
@@ -68,7 +68,7 @@ def test_max(daft_df, service_requests_csv_pd_df, repartition_nparts, with_morse
 
 
 def test_count(daft_df, service_requests_csv_pd_df, repartition_nparts, with_morsel_size):
-    """count a column for entire table"""
+    """Count a column for entire table"""
     daft_df = daft_df.repartition(repartition_nparts).count(col("Unique Key").alias("unique_key_count"))
     service_requests_csv_pd_df = pd.DataFrame.from_records(
         [{"unique_key_count": service_requests_csv_pd_df["Unique Key"].count()}]
@@ -79,7 +79,7 @@ def test_count(daft_df, service_requests_csv_pd_df, repartition_nparts, with_mor
 
 
 def test_list(daft_df, service_requests_csv_pd_df, repartition_nparts, with_morsel_size):
-    """list agg a column for entire table"""
+    """List agg a column for entire table"""
     daft_df = daft_df.repartition(repartition_nparts).agg_list(col("Unique Key").alias("unique_key_list")).collect()
     unique_key_list = service_requests_csv_pd_df["Unique Key"].to_list()
 
@@ -196,7 +196,7 @@ def test_mean_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, k
     ],
 )
 def test_count_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, keys, with_morsel_size):
-    """count across groups"""
+    """Count across groups"""
     daft_df = daft_df.repartition(repartition_nparts).groupby(*[col(k) for k in keys]).count()
     service_requests_csv_pd_df = service_requests_csv_pd_df.groupby(keys).count().reset_index()
     for cname in service_requests_csv_pd_df:
@@ -214,7 +214,7 @@ def test_count_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, 
     ],
 )
 def test_min_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, keys, with_morsel_size):
-    """min across groups"""
+    """Min across groups"""
     daft_df = (
         daft_df.repartition(repartition_nparts)
         .groupby(*[col(k) for k in keys])
@@ -235,7 +235,7 @@ def test_min_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, ke
     ],
 )
 def test_max_groupby(daft_df, service_requests_csv_pd_df, repartition_nparts, keys, with_morsel_size):
-    """max across groups"""
+    """Max across groups"""
     daft_df = (
         daft_df.repartition(repartition_nparts)
         .groupby(*[col(k) for k in keys])

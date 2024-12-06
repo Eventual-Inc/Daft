@@ -267,7 +267,7 @@ def _enum_getstate(obj):
 def _code_reduce(obj):
     """codeobject reducer"""
     # If you are not sure about the order of arguments, take a look at help
-    # of the specific type from types, for example:
+    # of the specific type from types, for Examples:
     # >>> from types import CodeType
     # >>> help(CodeType)
     if hasattr(obj, "co_exceptiontable"):  # pragma: no branch
@@ -665,7 +665,7 @@ class CloudPickler(Pickler):
         # since globals_ref is an attribute of a CloudPickler instance, and
         # that a new CloudPickler is created each time pickle.dump or
         # pickle.dumps is called, functions also need to be saved within the
-        # same invocation of cloudpickle.dump/cloudpickle.dumps (for example:
+        # same invocation of cloudpickle.dump/cloudpickle.dumps (for Examples:
         # cloudpickle.dumps([f1, f2])). There is no such limitation when using
         # CloudPickler.dump, as long as the multiple invocations are bound to
         # the same CloudPickler.

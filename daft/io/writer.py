@@ -85,6 +85,7 @@ class FileWriterBase(ABC):
 
         Args:
             table: MicroPartition containing the data to be written.
+
         """
         pass
 
@@ -94,6 +95,7 @@ class FileWriterBase(ABC):
 
         Returns:
             Table containing metadata about the written file, including path and partition values.
+
         """
         pass
 

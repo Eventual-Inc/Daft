@@ -20,7 +20,6 @@ def with_null_env():
 
 def test_explicit_set_runner_py():
     """Test that a freshly imported context doesn't have a runner config set and can be set explicitly to Python"""
-
     explicit_set_runner_script = """
 import daft
 print(daft.context.get_context()._runner)
@@ -35,7 +34,6 @@ print(daft.context.get_context()._runner.name)
 
 def test_implicit_set_runner_py():
     """Test that a freshly imported context doesn't have a runner config set and can be set implicitly to Python"""
-
     implicit_set_runner_script = """
 import daft
 print(daft.context.get_context()._runner)
@@ -50,7 +48,6 @@ print(daft.context.get_context()._runner.name)
 
 def test_explicit_set_runner_ray():
     """Test that a freshly imported context doesn't have a runner config set and can be set explicitly to Ray"""
-
     explicit_set_runner_script_ray = """
 import daft
 print(daft.context.get_context()._runner)
@@ -65,7 +62,6 @@ print(daft.context.get_context()._runner.name)
 
 def test_implicit_set_runner_ray():
     """Test that a freshly imported context doesn't have a runner config set and can be set implicitly to Ray"""
-
     implicit_set_runner_script_ray = """
 import daft
 import ray
@@ -82,7 +78,6 @@ print(daft.context.get_context()._runner.name)
 
 def test_switch_local_runners():
     """Test that a runner can be switched from Python to Native"""
-
     switch_local_runners_script = """
 import daft
 print(daft.context.get_context()._runner)
@@ -108,7 +103,6 @@ print(daft.context.get_context()._runner.name)
 )
 def test_cannot_switch_local_to_ray(set_local_command):
     """Test that a runner cannot be switched from local to Ray"""
-
     script = f"""
 import daft
 {set_local_command}
@@ -129,7 +123,6 @@ daft.context.set_runner_ray()
 )
 def test_cannot_switch_from_ray(set_new_runner_command):
     """Test that a runner cannot be switched from Ray"""
-
     script = f"""
 import daft
 daft.context.set_runner_ray()
@@ -143,7 +136,6 @@ daft.context.set_runner_ray()
 @pytest.mark.parametrize("daft_runner_envvar", ["py", "ray", "native"])
 def test_env_var(daft_runner_envvar):
     """Test that environment variables are correctly picked up"""
-
     autodetect_script = """
 import daft
 df = daft.from_pydict({"foo": [1, 2, 3]})
@@ -159,7 +151,6 @@ print(daft.context.get_context()._runner.name)
 
 def test_in_ray_job():
     """Test that Ray job ID environment variable is being picked up"""
-
     autodetect_script = """
 import daft
 df = daft.from_pydict({"foo": [1, 2, 3]})

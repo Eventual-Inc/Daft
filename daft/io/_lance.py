@@ -34,8 +34,7 @@ def read_lance(url: str, io_config: Optional["IOConfig"] = None) -> DataFrame:
 
         To ensure that this is installed with Daft, you may install: ``pip install getdaft[lance]``
 
-    Example:
-
+    Examples:
     >>> df = daft.read_lance("s3://my-lancedb-bucket/data/")
     >>> df.show()
 
@@ -45,8 +44,8 @@ def read_lance(url: str, io_config: Optional["IOConfig"] = None) -> DataFrame:
 
     Returns:
         DataFrame: a DataFrame with the schema converted from the specified LanceDB table
-    """
 
+    """
     try:
         import lance
     except ImportError as e:

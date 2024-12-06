@@ -90,7 +90,7 @@ def read_iceberg(
 ) -> DataFrame:
     """Create a DataFrame from an Iceberg table
 
-    Example:
+    Examples:
         >>> import pyiceberg
         >>>
         >>> pyiceberg_table = pyiceberg.Table(...)
@@ -112,6 +112,7 @@ def read_iceberg(
 
     Returns:
         DataFrame: a DataFrame with the schema converted from the specified Iceberg table
+
     """
     from daft.iceberg.iceberg_scan import IcebergScanOperator
 

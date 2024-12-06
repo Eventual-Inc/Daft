@@ -78,14 +78,15 @@ def read_table(name: str) -> DataFrame:
     The provided name can be any of the following, and Daft will return them with the following order of priority:
 
     1. Name of a registered dataframe/SQL view (manually registered using `daft.register_table`): `"my_registered_table"`
-    2. Name of a table within the default catalog (without inputting the catalog name) for example: `"my.table.name"`
-    3. Name of a fully-qualified table path with the catalog name for example: `"my_catalog.my.table.name"`
+    2. Name of a table within the default catalog (without inputting the catalog name) for Examples: `"my.table.name"`
+    3. Name of a fully-qualified table path with the catalog name for Examples: `"my_catalog.my.table.name"`
 
     Args:
         name: The identifier for the table to read
 
     Returns:
         A DataFrame containing the data from the specified table.
+
     """
     native_logical_plan_builder = native_catalog.read_table(name)
     return DataFrame(LogicalPlanBuilder(native_logical_plan_builder))
@@ -104,10 +105,11 @@ def register_table(name: str, dataframe: DataFrame) -> str:
     Returns:
         str: The name of the registered table.
 
-    Example:
+    Examples:
         >>> df = daft.from_pydict({"foo": [1, 2, 3]})
         >>> daft.catalog.register_table("my_table", df)
         >>> daft.read_table("my_table")
+
     """
     return native_catalog.register_table(name, dataframe._builder._builder)
 
@@ -130,7 +132,7 @@ def register_python_catalog(catalog: PyIcebergCatalog | UnityCatalog, name: str 
     Raises:
         ValueError: If an unsupported catalog type is provided.
 
-    Example:
+    Examples:
         >>> from pyiceberg.catalog import load_catalog
         >>> catalog = load_catalog("my_catalog")
         >>> daft.catalog.register_python_catalog(catalog, "my_daft_catalog")

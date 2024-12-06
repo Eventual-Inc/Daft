@@ -32,7 +32,7 @@ def read_json(
 ) -> DataFrame:
     """Creates a DataFrame from line-delimited JSON file(s)
 
-    Example:
+    Examples:
         >>> df = daft.read_json("/path/to/file.json")
         >>> df = daft.read_json("/path/to/directory")
         >>> df = daft.read_json("/path/to/files-*.json")
@@ -50,6 +50,7 @@ def read_json(
 
     returns:
         DataFrame: parsed DataFrame
+
     """
     if isinstance(path, list) and len(path) == 0:
         raise ValueError("Cannot read DataFrame from from empty list of JSON filepaths")

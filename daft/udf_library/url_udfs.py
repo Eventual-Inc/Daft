@@ -75,8 +75,8 @@ def download_udf(
             the error but fallback to a Null value. Defaults to "raise".
         fs (fsspec.AbstractFileSystem): fsspec FileSystem to use for downloading data.
             By default, Daft will automatically construct a FileSystem instance internally.
-    """
 
+    """
     urls_pylist = urls.to_arrow().to_pylist()
 
     _warmup_fsspec_registry(urls_pylist)

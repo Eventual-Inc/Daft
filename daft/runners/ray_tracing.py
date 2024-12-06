@@ -98,6 +98,7 @@ class TraceWriter:
 
         Args:
             event: The metadata event to write
+
         """
         if self.file is not None:
             if self.has_written_event:
@@ -114,6 +115,7 @@ class TraceWriter:
 
         Returns:
             The timestamp that was used for the event
+
         """
         if self.file is not None:
             if ts is None:
@@ -313,6 +315,7 @@ class RunnerTracer:
         Args:
             process_meta: Pass in custom names for PIDs as a list of (pid, name).
             thread_meta: Pass in custom names for threads a a list of (pid, tid, name).
+
         """
         for pid, name in [
             (RunnerTracer.SCHEDULER_PID, "Scheduler"),

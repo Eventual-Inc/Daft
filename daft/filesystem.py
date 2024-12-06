@@ -23,8 +23,7 @@ _CACHED_FSES: dict[tuple[str, IOConfig | None], pafs.FileSystem] = {}
 
 
 def _get_fs_from_cache(protocol: str, io_config: IOConfig | None) -> pafs.FileSystem | None:
-    """
-    Get an instantiated pyarrow filesystem from the cache based on the URI protocol.
+    """Get an instantiated pyarrow filesystem from the cache based on the URI protocol.
 
     Returns None if no such cache entry exists.
     """
@@ -106,8 +105,7 @@ _CANONICAL_PROTOCOLS = {
 
 
 def canonicalize_protocol(protocol: str) -> str:
-    """
-    Return the canonical protocol from the provided protocol, such that there's a 1:1
+    """Return the canonical protocol from the provided protocol, such that there's a 1:1
     mapping between protocols and pyarrow/fsspec filesystem implementations.
     """
     return _CANONICAL_PROTOCOLS.get(protocol, protocol)
@@ -117,8 +115,7 @@ def _resolve_paths_and_filesystem(
     paths: str | pathlib.Path | list[str],
     io_config: IOConfig | None = None,
 ) -> tuple[list[str], pafs.FileSystem]:
-    """
-    Resolves and normalizes all provided paths, infers a filesystem from the
+    """Resolves and normalizes all provided paths, infers a filesystem from the
     paths, and ensures that all paths use the same filesystem.
 
     Args:
@@ -126,6 +123,7 @@ def _resolve_paths_and_filesystem(
             A list of paths can contain both files and directories.
         io_config: A Daft IOConfig that should be best-effort applied onto the returned
             FileSystem
+
     """
     if isinstance(paths, pathlib.Path):
         paths = str(paths)
@@ -191,8 +189,7 @@ def _infer_filesystem(
     path: str,
     io_config: IOConfig | None,
 ) -> tuple[str, pafs.FileSystem]:
-    """
-    Resolves and normalizes the provided path, infers a filesystem from the
+    """Resolves and normalizes the provided path, infers a filesystem from the
     path, and ensures that the inferred filesystem is compatible with the passed
     filesystem, if provided.
 
@@ -200,6 +197,7 @@ def _infer_filesystem(
         path: A single file/directory path.
         io_config: A Daft IOConfig that should be best-effort applied onto the returned
             FileSystem
+
     """
     protocol = get_protocol_from_path(path)
     translated_kwargs: dict[str, Any]
@@ -302,9 +300,7 @@ def _infer_filesystem(
 
 
 def _unwrap_protocol(path):
-    """
-    Slice off any protocol prefixes on path.
-    """
+    """Slice off any protocol prefixes on path."""
     parsed = urllib.parse.urlparse(path, allow_fragments=False)  # support '#' in path
     query = "?" + parsed.query if parsed.query else ""  # support '?' in path
     return parsed.netloc + parsed.path + query
@@ -350,8 +346,7 @@ def glob_path_with_stats(
 
 
 def join_path(fs: pafs.FileSystem, base_path: str, *sub_paths: str) -> str:
-    """
-    Join a base path with sub-paths using the appropriate path separator
+    """Join a base path with sub-paths using the appropriate path separator
     for the given filesystem.
     """
     if isinstance(fs, pafs.LocalFileSystem):

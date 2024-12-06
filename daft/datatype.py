@@ -208,6 +208,7 @@ class DataType:
 
         Args:
             dtype: DataType of each element in the list
+
         """
         return cls._from_pydatatype(PyDataType.list(dtype._dtype))
 
@@ -219,6 +220,7 @@ class DataType:
         Args:
             dtype: DataType of each element in the list
             size: length of each list
+
         """
         if not isinstance(size, int) or size <= 0:
             raise ValueError("The size for a fixed-size list must be a positive integer, but got: ", size)
@@ -227,9 +229,11 @@ class DataType:
     @classmethod
     def map(cls, key_type: DataType, value_type: DataType) -> DataType:
         """Create a Map DataType: A map is a nested type of key-value pairs that is implemented as a list of structs with two fields, key and value.
+
         Args:
             key_type: DataType of the keys in the map
             value_type: DataType of the values in the map
+
         """
         return cls._from_pydatatype(PyDataType.map(key_type._dtype, value_type._dtype))
 
@@ -237,11 +241,12 @@ class DataType:
     def struct(cls, fields: dict[str, DataType]) -> DataType:
         """Create a Struct DataType: a nested type which has names mapped to child types
 
-        Example:
+        Examples:
         >>> DataType.struct({"name": DataType.string(), "age": DataType.int64()})
 
         Args:
             fields: Nested fields of the Struct
+
         """
         return cls._from_pydatatype(PyDataType.struct({name: datatype._dtype for name, datatype in fields.items()}))
 
@@ -257,6 +262,7 @@ class DataType:
         Args:
             dtype: DataType of each element in the list (must be numeric)
             size: length of each list
+
         """
         if not isinstance(size, int) or size <= 0:
             raise ValueError("The size for a embedding must be a positive integer, but got: ", size)
@@ -287,6 +293,7 @@ class DataType:
                 Must be specified if the width is specified.
             width: The width of the image. By default, this is inferred from the underlying data.
                 Must be specified if the width is specified.
+
         """
         if isinstance(mode, str):
             mode = ImageMode.from_mode_string(mode.upper())
@@ -321,6 +328,7 @@ class DataType:
             dtype: The type of the data contained within the tensor elements.
             shape: The shape of each tensor in the column. This is ``None`` by default, which allows the shapes of
                 each tensor element to vary.
+
         """
         if shape is not None:
             if not isinstance(shape, tuple) or not shape or any(not isinstance(n, int) for n in shape):
@@ -345,6 +353,7 @@ class DataType:
             dtype: The type of the data contained within the tensor elements.
             shape: The shape of each SparseTensor in the column. This is ``None`` by default, which allows the shapes of
                 each tensor element to vary.
+
         """
         if shape is not None:
             if not isinstance(shape, tuple) or not shape or any(not isinstance(n, int) for n in shape):

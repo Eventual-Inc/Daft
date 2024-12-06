@@ -54,6 +54,7 @@ def coerce_pyarrow_table_to_schema(pa_table: "pa.Table", schema: "pa.Schema") ->
 
     Returns:
         pa.Table: Table with schema == `schema`
+
     """
     import pyarrow as pa
 
@@ -114,11 +115,9 @@ def partition_field_to_expr(field: "IcebergPartitionField", schema: "IcebergSche
 
 
 def to_partition_representation(value: Any):
-    """
-    Converts a partition value to the format expected by Iceberg metadata.
+    """Converts a partition value to the format expected by Iceberg metadata.
     Most transforms already do this, but the identity transforms preserve the original value type so we need to convert it.
     """
-
     if value is None:
         return None
 

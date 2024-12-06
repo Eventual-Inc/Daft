@@ -191,6 +191,7 @@ def assert_typing_resolve_vs_runtime_behavior(
         expr (Expression): Expression used to run the kernel in a MicroPartition (use `.name()` of the generated data to refer to columns)
         run_kernel (Callable): A lambda that will run the kernel directly on the generated Series' without going through the Expressions API
         resolvable (bool): Whether this kernel should be valid, given the datatypes of the generated Series'
+
     """
     table = MicroPartition.from_pydict({s.name(): s for s in data})
     projection = ExpressionsProjection([expr.alias("result")])

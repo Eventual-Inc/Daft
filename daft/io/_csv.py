@@ -39,7 +39,7 @@ def read_csv(
 ) -> DataFrame:
     """Creates a DataFrame from CSV file(s)
 
-    Example:
+    Examples:
         >>> df = daft.read_csv("/path/to/file.csv")
         >>> df = daft.read_csv("/path/to/directory")
         >>> df = daft.read_csv("/path/to/files-*.csv")
@@ -63,6 +63,7 @@ def read_csv(
 
     returns:
         DataFrame: parsed DataFrame
+
     """
     if isinstance(path, list) and len(path) == 0:
         raise ValueError("Cannot read DataFrame from from empty list of CSV filepaths")

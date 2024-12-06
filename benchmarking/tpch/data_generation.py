@@ -208,6 +208,7 @@ def gen_sqlite_db(csv_filepath: str, num_parts: int) -> str:
         csv_filepath (str): path to folder with generated CSVs
         sqlite_db_file_path (str): path to write sqlite db to
         num_parts (int): number of parts of CSVs
+
     """
     sqlite_db_file_path = os.path.join(csv_filepath, "TPC-H.db")
 
@@ -252,6 +253,7 @@ def gen_csv_files(basedir: str, num_parts: int, scale_factor: float) -> str:
 
     Returns:
         str: path to folder with generated CSV files
+
     """
     cachedir = os.path.join(basedir, (f"{scale_factor:.1f}").replace(".", "_"), str(num_parts))
     if not os.path.exists(cachedir):
@@ -309,6 +311,7 @@ def gen_parquet(csv_files_location: str) -> str:
 
     Returns:
         str: path to generated Parquet files
+
     """
     PARQUET_FILE_PATH = os.path.join(csv_files_location, "parquet")
     for tab_name in SCHEMA.keys():

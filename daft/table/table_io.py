@@ -106,6 +106,7 @@ def read_json(
 
     Returns:
         MicroPartition: Parsed MicroPartition from JSON
+
     """
     io_config = None
     if storage_config is not None:
@@ -160,6 +161,7 @@ def read_parquet(
 
     Returns:
         MicroPartition: Parsed MicroPartition from Parquet
+
     """
     io_config = None
     if storage_config is not None:
@@ -244,8 +246,8 @@ def read_sql(
 
     Returns:
         MicroPartition: MicroPartition from SQL query
-    """
 
+    """
     pa_table = conn.execute_sql_query(sql)
     mp = MicroPartition.from_arrow(pa_table)
 
@@ -297,6 +299,7 @@ def read_csv(
 
     Returns:
         MicroPartition: Parsed MicroPartition from CSV
+
     """
     io_config = None
     if storage_config is not None:

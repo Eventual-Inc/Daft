@@ -25,7 +25,7 @@ def read_deltalake(
 ) -> DataFrame:
     """Create a DataFrame from a Delta Lake table.
 
-    Example:
+    Examples:
         >>> df = daft.read_deltalake("some-table-uri")
         >>>
         >>> # Filters on this dataframe can now be pushed into
@@ -50,6 +50,7 @@ def read_deltalake(
 
     Returns:
         DataFrame: A DataFrame with the schema converted from the specified Delta Lake table.
+
     """
     from daft.delta_lake.delta_lake_scan import DeltaLakeScanOperator
 

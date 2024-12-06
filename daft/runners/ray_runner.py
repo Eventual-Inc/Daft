@@ -561,9 +561,10 @@ def _ray_num_cpus_provider(ttl_seconds: int = 1) -> Generator[int, None, None]:
     Used as a generator as it provides a guard against calling ray.cluster_resources()
     more than once per `ttl_seconds`.
 
-    Example:
+    Examples:
     >>> p = _ray_num_cpus_provider()
     >>> next(p)
+
     """
     last_checked_time = time.time()
     last_num_cpus_queried = int(ray.cluster_resources().get("CPU", 0))
@@ -579,10 +580,7 @@ def _ray_num_cpus_provider(ttl_seconds: int = 1) -> Generator[int, None, None]:
 
 class Scheduler(ActorPoolManager):
     def __init__(self, max_task_backlog: int | None, use_ray_tqdm: bool) -> None:
-        """
-        max_task_backlog: Max number of inflight tasks waiting for cores.
-        """
-
+        """max_task_backlog: Max number of inflight tasks waiting for cores."""
         # As of writing, Ray does not seem to be guaranteed to support
         # more than this number of pending scheduling tasks.
         # Ray has an internal proto that reports backlogged tasks [1],
@@ -687,7 +685,6 @@ class Scheduler(ActorPoolManager):
         """Constructs a batch of PartitionTasks that should be dispatched
 
         Args:
-
             execution_id: The ID of the current execution.
             tasks: The iterator over the physical plan.
             dispatches_allowed (int): The maximum number of tasks that can be dispatched in this batch.
@@ -697,6 +694,7 @@ class Scheduler(ActorPoolManager):
             tuple[list[PartitionTask], bool]: A tuple containing:
                 - A list of PartitionTasks to be dispatched.
                 - A pagination boolean indicating whether or not there are more tasks to be had by calling _construct_dispatch_batch again
+
         """
         with runner_tracer.dispatch_batching():
             tasks_to_dispatch: list[PartitionTask] = []
@@ -822,7 +820,8 @@ class Scheduler(ActorPoolManager):
         """Places a result into the queue for the provided `execution_id
 
         NOTE: This will block and poll busily until space is available on the queue
-        `"""
+        `
+        """
         while self._is_active(execution_id):
             try:
                 self.results_by_df[execution_id].put(item, timeout=0.1)

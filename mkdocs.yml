@@ -1,0 +1,62 @@
+site_name: Daft
+site_url: https://www.getdaft.io/projects/docs/en/stable/
+theme:
+  # custom_dir: overrides
+  favicon: _static/assets/daft-favicon.png
+  features:
+  - navigation.instant
+  - navigation.tabs
+  - navigation.indexes
+  - navigation.top
+  - navigation.footer
+  - toc.follow
+  - content.code.copy
+  - search.suggest
+  - search.highlight
+  logo: _static/assets/daft-logo.png
+  name: material
+  palette:
+  - media: (prefers-color-scheme)
+    toggle:
+      icon: material/brightness-auto
+      name: Switch to light mode
+  - accent: purple
+    media: "(prefers-color-scheme: light)"
+    primary: white
+    scheme: default
+    toggle:
+      icon: material/brightness-7
+      name: Switch to dark mode
+  - accent: purple
+    media: "(prefers-color-scheme: dark)"
+    primary: black
+    scheme: slate
+    toggle:
+      icon: material/brightness-4
+      name: Switch to system preference
+
+plugins:
+  mkdocstrings:
+    handlers:
+      python:
+        options:
+          docstring_style: google
+          extensions:
+          - griffe_typingdoc
+          show_root_heading: true
+          show_if_no_docstring: true
+          # preload_modules:
+          # - httpx
+          # - starlette
+          # inherited_members: true
+          members_order: source
+          separate_signature: true
+          unwrap_annotated: true
+          # filters:
+          # - '!^_'
+          merge_init_into_class: true
+          docstring_section_style: spacy
+          signature_crossrefs: true
+          show_symbol_type_heading: true
+          show_symbol_type_toc: true
+          show_docstring_examples: true

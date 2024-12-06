@@ -345,7 +345,7 @@ def _find_imported_submodules(code, top_level_dependencies):
     need a special introspection technique that does not rely on GLOBAL-related
     opcodes to find references of them in a code object.
 
-    Example:
+    Examples:
     ```
     import concurrent.futures
     import cloudpickle

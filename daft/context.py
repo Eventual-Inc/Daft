@@ -221,8 +221,8 @@ def set_runner_ray(
 
     Returns:
         DaftContext: Daft context after setting the Ray runner
-    """
 
+    """
     ctx = get_context()
     with ctx._lock:
         if ctx._runner is not None:
@@ -250,6 +250,7 @@ def set_runner_py(use_thread_pool: bool | None = None) -> DaftContext:
 
     Returns:
         DaftContext: Daft context after setting the Py runner
+
     """
     ctx = get_context()
     with ctx._lock:
@@ -269,6 +270,7 @@ def set_runner_native() -> DaftContext:
 
     Returns:
         DaftContext: Daft context after setting the native runner
+
     """
     ctx = get_context()
     with ctx._lock:
@@ -304,6 +306,7 @@ def set_planning_config(
             that the old (current) config should be used.
         default_io_config: A default IOConfig to use in the absence of one being explicitly passed into any Expression (e.g. `.url.download()`)
             or Dataframe operation (e.g. `daft.read_parquet()`).
+
     """
     # Replace values in the DaftPlanningConfig with user-specified overrides
     ctx = get_context()
@@ -390,6 +393,7 @@ def set_execution_config(
         shuffle_algorithm: The shuffle algorithm to use. Defaults to "map_reduce". Other options are "pre_shuffle_merge".
         pre_shuffle_merge_threshold: Memory threshold in bytes for pre-shuffle merge. Defaults to 1GB
         enable_ray_tracing: Enable tracing for Ray. Accessible in `/tmp/ray/session_latest/logs/daft` after the run completes. Defaults to False.
+
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()

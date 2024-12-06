@@ -50,16 +50,13 @@ def _apply_daft_planning_config_to_initializer(classmethod_func: Callable[..., L
 
 
 class LogicalPlanBuilder:
-    """
-    A logical plan builder for the Daft DataFrame.
-    """
+    """A logical plan builder for the Daft DataFrame."""
 
     def __init__(self, builder: _LogicalPlanBuilder) -> None:
         self._builder = builder
 
     def to_physical_plan_scheduler(self, daft_execution_config: PyDaftExecutionConfig) -> PhysicalPlanScheduler:
-        """
-        Convert the underlying logical plan to a physical plan scheduler, which is
+        """Convert the underlying logical plan to a physical plan scheduler, which is
         used to generate executable tasks for the physical plan.
 
         This should be called after triggering optimization with self.optimize().
@@ -87,16 +84,12 @@ class LogicalPlanBuilder:
         )
 
     def schema(self) -> Schema:
-        """
-        The schema of the current logical plan.
-        """
+        """The schema of the current logical plan."""
         pyschema = self._builder.schema()
         return Schema._from_pyschema(pyschema)
 
     def pretty_print(self, simple: bool = False, format: str = "ascii") -> str:
-        """
-        Pretty prints the current underlying logical plan.
-        """
+        """Pretty prints the current underlying logical plan."""
         from daft.dataframe.display import MermaidOptions
 
         if format == "ascii":
@@ -110,9 +103,7 @@ class LogicalPlanBuilder:
         return self._builder.repr_ascii(simple=False)
 
     def optimize(self) -> LogicalPlanBuilder:
-        """
-        Optimize the underlying logical plan.
-        """
+        """Optimize the underlying logical plan."""
         builder = self._builder.optimize()
         return LogicalPlanBuilder(builder)
 

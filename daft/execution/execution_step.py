@@ -570,8 +570,7 @@ class StatefulUDFProject(SingleOutputInstruction):
 
 
 def _prune_boundaries(boundaries: Boundaries, projection: ExpressionsProjection) -> Boundaries | None:
-    """
-    If projection expression is a nontrivial computation (i.e. not a direct col() reference and not an alias) on top of a boundary
+    """If projection expression is a nontrivial computation (i.e. not a direct col() reference and not an alias) on top of a boundary
     expression, then invalidate the boundary.
     """
     proj_all_names = projection.to_name_set()

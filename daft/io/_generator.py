@@ -23,7 +23,7 @@ def read_generator(
 ) -> DataFrame:
     """Create a DataFrame from a generator function.
 
-    Example:
+    Examples:
         >>> import daft
         >>> from daft.io._generator import read_generator
         >>> from daft.table.table import Table
@@ -60,8 +60,8 @@ def read_generator(
 
     Returns:
         DataFrame: a DataFrame containing the generated data
-    """
 
+    """
     generator_scan_operator = GeneratorScanOperator(
         generators=generators,
         schema=schema,

@@ -85,6 +85,7 @@ def from_json(
 
     Returns:
         Schema: Inferred Schema from the JSON
+
     """
     io_config = None
     if storage_config is not None:
