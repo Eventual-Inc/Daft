@@ -23,7 +23,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--tpcds-gen-folder",
         default="data/tpcds-dbgen",
-        help="Path to the folder containing the TPC-DS dbgen tool and generated data",
+        help="Path to the folder containing the TPC-DS dsdgen tool and generated data",
     )
     parser.add_argument("--scale-factor", default=0.01, help="Scale factor to run on in GB", type=float)
 
