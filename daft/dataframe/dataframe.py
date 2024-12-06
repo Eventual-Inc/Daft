@@ -2400,7 +2400,7 @@ class DataFrame:
         to_agg_list = (
             list(to_agg[0])
             if (len(to_agg) == 1 and not isinstance(to_agg[0], Expression))
-            else list(typing.cast(Tuple[Expression], to_agg))
+            else list(typing.cast("Tuple[Expression]", to_agg))
         )
 
         for expr in to_agg_list:
@@ -3129,7 +3129,7 @@ class GroupedDataFrame:
         to_agg_list = (
             list(to_agg[0])
             if (len(to_agg) == 1 and not isinstance(to_agg[0], Expression))
-            else list(typing.cast(Tuple[Expression], to_agg))
+            else list(typing.cast("Tuple[Expression]", to_agg))
         )
 
         for expr in to_agg_list:

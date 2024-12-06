@@ -37,6 +37,7 @@ ignore = [
   "D106",  # Missing docstring in public nested class
   "D107"  # Missing docstring in __init__
 ]
+preview = true
 
 [lint.per-file-ignores]
 # Do not enforce usage and import order rules in init files

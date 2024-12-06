@@ -161,7 +161,7 @@ def test_read_and_overwrite(simple_local_table):
 
 
 def test_missing_columns_write(simple_local_table):
-    table, num_partitions = simple_local_table
+    table, _ = simple_local_table
 
     df = daft.from_pydict({"x": [1, 2, 3, 4, 5]})
 
