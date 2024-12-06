@@ -54,6 +54,8 @@ def main(
     if not created:
         raise RuntimeError("Could not create workflow, suggestion: run again with --verbose")
 
+    print("Workflow created, view it at: https://github.com/Eventual-Inc/Daft/actions/workflows/run-cluster.yaml")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run Daft cluster workflow")
