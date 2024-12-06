@@ -54,6 +54,18 @@ impl CrossJoinOperator {
     }
 }
 
+fn empty_result(
+    state: Box<dyn IntermediateOpState>,
+    output_schema: SchemaRef,
+) -> DaftResult<(Box<dyn IntermediateOpState>, IntermediateOperatorResult)> {
+    let empty = Arc::new(MicroPartition::empty(Some(output_schema)));
+
+    Ok((
+        state,
+        IntermediateOperatorResult::NeedMoreInput(Some(empty)),
+    ))
+}
+
 impl IntermediateOperator for CrossJoinOperator {
     #[instrument(skip_all, name = "CrossJoinOperator::execute")]
     fn execute(
@@ -65,12 +77,7 @@ impl IntermediateOperator for CrossJoinOperator {
         let output_schema = self.output_schema.clone();
 
         if input.is_empty() {
-            let empty = Arc::new(MicroPartition::empty(Some(output_schema)));
-            return Ok((
-                state,
-                IntermediateOperatorResult::NeedMoreInput(Some(empty)),
-            ))
-            .into();
+            return empty_result(state, output_schema).into();
         }
 
         let stream_side = self.stream_side;
@@ -83,8 +90,12 @@ impl IntermediateOperator for CrossJoinOperator {
                         .downcast_mut::<CrossJoinState>()
                         .expect("CrossJoinState should be used with CrossJoinOperator");
 
-                    let stream_tables = input.get_tables()?;
                     let collect_tables = cross_join_state.bridge.get_state().await;
+                    if collect_tables.is_empty() {
+                        return empty_result(state, output_schema);
+                    }
+
+                    let stream_tables = input.get_tables()?;
 
                     let stream_tbl = &stream_tables[cross_join_state.stream_idx];
                     let collect_tbl = &collect_tables[cross_join_state.collect_idx];
