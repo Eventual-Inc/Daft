@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
-use tracing::instrument;
+use tracing::{instrument, Span};
 
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
@@ -40,13 +40,16 @@ impl IntermediateOperator for AggregateOperator {
     ) -> IntermediateOpExecuteResult {
         let params = self.params.clone();
         spawner
-            .spawn(async move {
-                let out = input.agg(&params.agg_exprs, &params.group_by)?;
-                Ok((
-                    state,
-                    IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(out))),
-                ))
-            })
+            .spawn(
+                async move {
+                    let out = input.agg(&params.agg_exprs, &params.group_by)?;
+                    Ok((
+                        state,
+                        IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(out))),
+                    ))
+                },
+                Span::current(),
+            )
             .into()
     }
 

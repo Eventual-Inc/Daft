@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
-use tracing::instrument;
+use tracing::{instrument, Span};
 
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
@@ -48,18 +48,21 @@ impl IntermediateOperator for UnpivotOperator {
     ) -> IntermediateOpExecuteResult {
         let params = self.params.clone();
         spawner
-            .spawn(async move {
-                let out = input.unpivot(
-                    &params.ids,
-                    &params.values,
-                    &params.variable_name,
-                    &params.value_name,
-                )?;
-                Ok((
-                    state,
-                    IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(out))),
-                ))
-            })
+            .spawn(
+                async move {
+                    let out = input.unpivot(
+                        &params.ids,
+                        &params.values,
+                        &params.variable_name,
+                        &params.value_name,
+                    )?;
+                    Ok((
+                        state,
+                        IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(out))),
+                    ))
+                },
+                Span::current(),
+            )
             .into()
     }
 

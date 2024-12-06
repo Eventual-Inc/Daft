@@ -165,8 +165,14 @@ impl ExecutionTaskSpawner {
     pub fn spawn<T: Send + 'static>(
         &self,
         task: impl std::future::Future<Output = T> + Send + 'static,
+        span: tracing::Span,
     ) -> RuntimeTask<T> {
-        let timed_fut = TimedFuture::new(task, self.runtime_context.clone(), self.span.clone());
+        let instrumented = task.instrument(span);
+        let timed_fut = TimedFuture::new(
+            instrumented,
+            self.runtime_context.clone(),
+            self.span.clone(),
+        );
         self.runtime_ref.spawn(timed_fut)
     }
 }

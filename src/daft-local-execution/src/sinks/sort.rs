@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
-use tracing::instrument;
+use tracing::{instrument, Span};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
@@ -87,22 +87,25 @@ impl BlockingSink for SortSink {
     ) -> BlockingSinkFinalizeResult {
         let params = self.params.clone();
         spawner
-            .spawn(async move {
-                let parts = states.into_iter().flat_map(|mut state| {
-                    let state = state
-                        .as_any_mut()
-                        .downcast_mut::<SortState>()
-                        .expect("State type mismatch");
-                    state.finalize()
-                });
-                let concated = MicroPartition::concat(parts)?;
-                let sorted = Arc::new(concated.sort(
-                    &params.sort_by,
-                    &params.descending,
-                    &params.nulls_first,
-                )?);
-                Ok(Some(sorted))
-            })
+            .spawn(
+                async move {
+                    let parts = states.into_iter().flat_map(|mut state| {
+                        let state = state
+                            .as_any_mut()
+                            .downcast_mut::<SortState>()
+                            .expect("State type mismatch");
+                        state.finalize()
+                    });
+                    let concated = MicroPartition::concat(parts)?;
+                    let sorted = Arc::new(concated.sort(
+                        &params.sort_by,
+                        &params.descending,
+                        &params.nulls_first,
+                    )?);
+                    Ok(Some(sorted))
+                },
+                Span::current(),
+            )
             .into()
     }
 

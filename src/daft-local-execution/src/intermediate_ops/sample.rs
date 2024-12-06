@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_micropartition::MicroPartition;
-use tracing::instrument;
+use tracing::{instrument, Span};
 
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
@@ -41,17 +41,20 @@ impl IntermediateOperator for SampleOperator {
     ) -> IntermediateOpExecuteResult {
         let params = self.params.clone();
         spawner
-            .spawn(async move {
-                let out = input.sample_by_fraction(
-                    params.fraction,
-                    params.with_replacement,
-                    params.seed,
-                )?;
-                Ok((
-                    state,
-                    IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(out))),
-                ))
-            })
+            .spawn(
+                async move {
+                    let out = input.sample_by_fraction(
+                        params.fraction,
+                        params.with_replacement,
+                        params.seed,
+                    )?;
+                    Ok((
+                        state,
+                        IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(out))),
+                    ))
+                },
+                Span::current(),
+            )
             .into()
     }
 

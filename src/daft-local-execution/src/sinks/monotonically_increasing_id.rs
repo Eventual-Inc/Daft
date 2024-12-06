@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use daft_core::prelude::SchemaRef;
 use daft_micropartition::MicroPartition;
-use tracing::instrument;
+use tracing::{instrument, Span};
 
 use super::streaming_sink::{
     StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
@@ -90,7 +90,7 @@ impl StreamingSink for MonotonicallyIncreasingIdSink {
                     state,
                     StreamingSinkOutput::NeedMoreInput(Some(Arc::new(out))),
                 ))
-            })
+            }, Span::current())
             .into()
     }
 

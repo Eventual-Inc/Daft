@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
-use tracing::instrument;
+use tracing::{instrument, Span};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
@@ -86,21 +86,21 @@ impl BlockingSink for AggregateSink {
     ) -> BlockingSinkFinalizeResult {
         let params = self.agg_sink_params.clone();
         spawner
-            .spawn(async move {
-                println!("Finalizing AggregateSink");
-                let start = std::time::Instant::now();
-                let all_parts = states.into_iter().flat_map(|mut state| {
-                    state
-                        .as_any_mut()
-                        .downcast_mut::<AggregateState>()
-                        .expect("AggregateSink should have AggregateState")
-                        .finalize()
-                });
-                let concated = MicroPartition::concat(all_parts)?;
-                let agged = Arc::new(concated.agg(&params.agg_exprs, &params.group_by)?);
-                println!("Aggregation took {:?}", start.elapsed());
-                Ok(Some(agged))
-            })
+            .spawn(
+                async move {
+                    let all_parts = states.into_iter().flat_map(|mut state| {
+                        state
+                            .as_any_mut()
+                            .downcast_mut::<AggregateState>()
+                            .expect("AggregateSink should have AggregateState")
+                            .finalize()
+                    });
+                    let concated = MicroPartition::concat(all_parts)?;
+                    let agged = Arc::new(concated.agg(&params.agg_exprs, &params.group_by)?);
+                    Ok(Some(agged))
+                },
+                Span::current(),
+            )
             .into()
     }
 

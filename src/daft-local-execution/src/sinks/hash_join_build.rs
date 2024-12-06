@@ -6,6 +6,7 @@ use daft_dsl::ExprRef;
 use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;
 use daft_table::{make_probeable_builder, ProbeState, ProbeableBuilder, Table};
+use tracing::{info_span, instrument};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
@@ -164,17 +165,21 @@ impl BlockingSink for HashJoinBuildSink {
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult {
         spawner
-            .spawn(async move {
-                let probe_table_state: &mut ProbeTableState = state
-                    .as_any_mut()
-                    .downcast_mut::<ProbeTableState>()
-                    .expect("HashJoinBuildSink should have ProbeTableState");
-                probe_table_state.add_tables(&input)?;
-                Ok(BlockingSinkStatus::NeedMoreInput(state))
-            })
+            .spawn(
+                async move {
+                    let probe_table_state: &mut ProbeTableState = state
+                        .as_any_mut()
+                        .downcast_mut::<ProbeTableState>()
+                        .expect("HashJoinBuildSink should have ProbeTableState");
+                    probe_table_state.add_tables(&input)?;
+                    Ok(BlockingSinkStatus::NeedMoreInput(state))
+                },
+                info_span!("HashJoinBuildSink::sink"),
+            )
             .into()
     }
 
+    #[instrument(skip_all, name = "HashJoinBuildSink::finalize")]
     fn finalize(
         &self,
         states: Vec<Box<dyn BlockingSinkState>>,

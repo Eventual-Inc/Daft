@@ -3,7 +3,7 @@ use std::sync::{Arc, OnceLock};
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 use daft_table::Table;
-use tracing::instrument;
+use tracing::{info_span, instrument};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
@@ -68,7 +68,6 @@ impl BlockingSink for CrossJoinCollectSink {
         "CrossJoinCollectSink"
     }
 
-    #[instrument(skip_all, name = "CrossJoinCollectSink::Sink")]
     fn sink(
         &self,
         input: Arc<MicroPartition>,
@@ -80,20 +79,23 @@ impl BlockingSink for CrossJoinCollectSink {
         }
 
         spawner
-            .spawn(async move {
-                let cross_join_collect_state = state
-                    .as_any_mut()
-                    .downcast_mut::<CrossJoinCollectState>()
-                    .expect("CrossJoinCollectSink should have CrossJoinCollectState");
+            .spawn(
+                async move {
+                    let cross_join_collect_state = state
+                        .as_any_mut()
+                        .downcast_mut::<CrossJoinCollectState>()
+                        .expect("CrossJoinCollectSink should have CrossJoinCollectState");
 
-                cross_join_collect_state
-                    .0
-                    .as_mut()
-                    .expect("Collected tables should not be consumed before sink stage is done")
-                    .extend(input.get_tables()?.iter().cloned());
+                    cross_join_collect_state
+                        .0
+                        .as_mut()
+                        .expect("Collected tables should not be consumed before sink stage is done")
+                        .extend(input.get_tables()?.iter().cloned());
 
-                Ok(BlockingSinkStatus::NeedMoreInput(state))
-            })
+                    Ok(BlockingSinkStatus::NeedMoreInput(state))
+                },
+                info_span!("CrossJoinCollectSink::sink"),
+            )
             .into()
     }
 

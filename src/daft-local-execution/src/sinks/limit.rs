@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_micropartition::MicroPartition;
-use tracing::instrument;
+use tracing::{instrument, Span};
 
 use super::streaming_sink::{
     StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
@@ -72,10 +72,13 @@ impl StreamingSink for LimitSink {
                 let to_head = *remaining;
                 *remaining = 0;
                 spawner
-                    .spawn(async move {
-                        let taken = input.head(to_head)?;
-                        Ok((state, StreamingSinkOutput::Finished(Some(taken.into()))))
-                    })
+                    .spawn(
+                        async move {
+                            let taken = input.head(to_head)?;
+                            Ok((state, StreamingSinkOutput::Finished(Some(taken.into()))))
+                        },
+                        Span::current(),
+                    )
                     .into()
             }
         }

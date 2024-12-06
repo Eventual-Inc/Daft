@@ -6,7 +6,7 @@ use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use daft_table::{GrowableTable, ProbeState};
 use indexmap::IndexSet;
-use tracing::{info_span, instrument};
+use tracing::{info_span, instrument, Span};
 
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
@@ -184,25 +184,28 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
 
         let params = self.params.clone();
         spawner
-            .spawn(async move {
-                let inner_join_state = state
+            .spawn(
+                async move {
+                    let inner_join_state = state
                     .as_any_mut()
                     .downcast_mut::<InnerHashJoinProbeState>()
                     .expect(
                         "InnerHashJoinProbeState should be used with InnerHashJoinProbeOperator",
                     );
-                let probe_state = inner_join_state.get_or_await_probe_state().await;
-                let res = Self::probe_inner(
-                    &input,
-                    &probe_state,
-                    &params.probe_on,
-                    &params.common_join_keys,
-                    &params.left_non_join_columns,
-                    &params.right_non_join_columns,
-                    params.build_on_left,
-                );
-                Ok((state, IntermediateOperatorResult::NeedMoreInput(Some(res?))))
-            })
+                    let probe_state = inner_join_state.get_or_await_probe_state().await;
+                    let res = Self::probe_inner(
+                        &input,
+                        &probe_state,
+                        &params.probe_on,
+                        &params.common_join_keys,
+                        &params.left_non_join_columns,
+                        &params.right_non_join_columns,
+                        params.build_on_left,
+                    );
+                    Ok((state, IntermediateOperatorResult::NeedMoreInput(Some(res?))))
+                },
+                Span::current(),
+            )
             .into()
     }
 

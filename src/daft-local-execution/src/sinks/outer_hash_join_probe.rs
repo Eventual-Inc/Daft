@@ -14,7 +14,7 @@ use daft_micropartition::MicroPartition;
 use daft_table::{GrowableTable, ProbeState, Table};
 use futures::{stream, StreamExt};
 use indexmap::IndexSet;
-use tracing::{info_span, instrument};
+use tracing::{info_span, instrument, Span};
 
 use super::{
     hash_join_build::ProbeStateBridgeRef,
@@ -420,45 +420,48 @@ impl StreamingSink for OuterHashJoinProbeSink {
 
         let params = self.params.clone();
         spawner
-            .spawn(async move {
-                let outer_join_state = state
-                    .as_any_mut()
-                    .downcast_mut::<OuterHashJoinState>()
-                    .expect("OuterHashJoinProbeSink should have OuterHashJoinProbeState");
-                let probe_state = outer_join_state.get_or_build_probe_state().await;
-                let out = match params.join_type {
-                    JoinType::Left | JoinType::Right => Self::probe_left_right(
-                        &input,
-                        &probe_state,
-                        params.join_type,
-                        &params.probe_on,
-                        &params.common_join_keys,
-                        &params.left_non_join_columns,
-                        &params.right_non_join_columns,
-                    ),
-                    JoinType::Outer => {
-                        let bitmap_builder = outer_join_state
-                            .get_or_build_bitmap()
-                            .await
-                            .as_mut()
-                            .expect("bitmap should be set");
-                        Self::probe_outer(
+            .spawn(
+                async move {
+                    let outer_join_state = state
+                        .as_any_mut()
+                        .downcast_mut::<OuterHashJoinState>()
+                        .expect("OuterHashJoinProbeSink should have OuterHashJoinProbeState");
+                    let probe_state = outer_join_state.get_or_build_probe_state().await;
+                    let out = match params.join_type {
+                        JoinType::Left | JoinType::Right => Self::probe_left_right(
                             &input,
                             &probe_state,
-                            bitmap_builder,
+                            params.join_type,
                             &params.probe_on,
                             &params.common_join_keys,
                             &params.left_non_join_columns,
                             &params.right_non_join_columns,
-                            params.build_on_left,
-                        )
-                    }
-                    _ => unreachable!(
+                        ),
+                        JoinType::Outer => {
+                            let bitmap_builder = outer_join_state
+                                .get_or_build_bitmap()
+                                .await
+                                .as_mut()
+                                .expect("bitmap should be set");
+                            Self::probe_outer(
+                                &input,
+                                &probe_state,
+                                bitmap_builder,
+                                &params.probe_on,
+                                &params.common_join_keys,
+                                &params.left_non_join_columns,
+                                &params.right_non_join_columns,
+                                params.build_on_left,
+                            )
+                        }
+                        _ => unreachable!(
                         "Only Left, Right, and Outer joins are supported in OuterHashJoinProbeSink"
                     ),
-                }?;
-                Ok((state, StreamingSinkOutput::NeedMoreInput(Some(out))))
-            })
+                    }?;
+                    Ok((state, StreamingSinkOutput::NeedMoreInput(Some(out))))
+                },
+                Span::current(),
+            )
             .into()
     }
 
@@ -473,6 +476,7 @@ impl StreamingSink for OuterHashJoinProbeSink {
         ))
     }
 
+    #[instrument(skip_all, name = "OuterHashJoinProbeSink::finalize")]
     fn finalize(
         &self,
         states: Vec<Box<dyn StreamingSinkState>>,
@@ -481,16 +485,19 @@ impl StreamingSink for OuterHashJoinProbeSink {
         if self.params.join_type == JoinType::Outer {
             let params = self.params.clone();
             spawner
-                .spawn(async move {
-                    Self::finalize_outer(
-                        states,
-                        &params.common_join_keys,
-                        &params.left_non_join_columns,
-                        &params.right_non_join_schema,
-                        params.build_on_left,
-                    )
-                    .await
-                })
+                .spawn(
+                    async move {
+                        Self::finalize_outer(
+                            states,
+                            &params.common_join_keys,
+                            &params.left_non_join_columns,
+                            &params.right_non_join_schema,
+                            params.build_on_left,
+                        )
+                        .await
+                    },
+                    Span::current(),
+                )
                 .into()
         } else {
             Ok(None).into()

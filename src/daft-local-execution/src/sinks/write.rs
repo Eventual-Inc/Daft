@@ -6,7 +6,7 @@ use daft_dsl::ExprRef;
 use daft_micropartition::MicroPartition;
 use daft_table::Table;
 use daft_writers::{FileWriter, WriterFactory};
-use tracing::instrument;
+use tracing::{instrument, Span};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult, BlockingSinkState,
@@ -80,15 +80,18 @@ impl BlockingSink for WriteSink {
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult {
         spawner
-            .spawn(async move {
-                state
-                    .as_any_mut()
-                    .downcast_mut::<WriteState>()
-                    .expect("WriteSink should have WriteState")
-                    .writer
-                    .write(input)?;
-                Ok(BlockingSinkStatus::NeedMoreInput(state))
-            })
+            .spawn(
+                async move {
+                    state
+                        .as_any_mut()
+                        .downcast_mut::<WriteState>()
+                        .expect("WriteSink should have WriteState")
+                        .writer
+                        .write(input)?;
+                    Ok(BlockingSinkStatus::NeedMoreInput(state))
+                },
+                Span::current(),
+            )
             .into()
     }
 
@@ -100,22 +103,25 @@ impl BlockingSink for WriteSink {
     ) -> BlockingSinkFinalizeResult {
         let file_schema = self.file_schema.clone();
         spawner
-            .spawn(async move {
-                let mut results = vec![];
-                for mut state in states {
-                    let state = state
-                        .as_any_mut()
-                        .downcast_mut::<WriteState>()
-                        .expect("State type mismatch");
-                    results.extend(state.writer.close()?);
-                }
-                let mp = Arc::new(MicroPartition::new_loaded(
-                    file_schema,
-                    results.into(),
-                    None,
-                ));
-                Ok(Some(mp))
-            })
+            .spawn(
+                async move {
+                    let mut results = vec![];
+                    for mut state in states {
+                        let state = state
+                            .as_any_mut()
+                            .downcast_mut::<WriteState>()
+                            .expect("State type mismatch");
+                        results.extend(state.writer.close()?);
+                    }
+                    let mp = Arc::new(MicroPartition::new_loaded(
+                        file_schema,
+                        results.into(),
+                        None,
+                    ));
+                    Ok(Some(mp))
+                },
+                Span::current(),
+            )
             .into()
     }
 

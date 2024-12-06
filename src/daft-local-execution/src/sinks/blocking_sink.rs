@@ -185,7 +185,7 @@ impl PipelineNode for BlockingSinkNode {
                 let spawner = ExecutionTaskSpawner::new(
                     compute_runtime,
                     runtime_stats.clone(),
-                    info_span!("finalize"),
+                    info_span!("BlockingSink::Finalize"),
                 );
                 let finalized_result = op.finalize(finished_states, &spawner).await??;
                 if let Some(res) = finalized_result {
