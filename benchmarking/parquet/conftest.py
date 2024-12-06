@@ -73,7 +73,7 @@ def daft_dataframe_read(path: str, columns: list[str] | None = None) -> pa.Table
     ],
 )
 def read_fn(request):
-    """Fixture which returns the function to read a PyArrow table from a path"""
+    """Fixture which returns the function to read a PyArrow table from a path."""
     return request.param
 
 
@@ -116,5 +116,5 @@ def boto_bulk_read(paths: list[str], columns: list[str] | None = None) -> list[p
     ],
 )
 def bulk_read_fn(request):
-    """Fixture which returns the function to read a PyArrow table from a path"""
+    """Fixture which returns the function to read a PyArrow table from a path."""
     return request.param

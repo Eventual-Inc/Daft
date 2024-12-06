@@ -4,8 +4,7 @@ import warnings
 
 
 def _raw_device_count_nvml() -> int:
-    """
-    Return number of devices as reported by NVML or zero if NVML discovery/initialization failed.
+    """Return number of devices as reported by NVML or zero if NVML discovery/initialization failed.
 
     Inspired by PyTorch: https://github.com/pytorch/pytorch/blob/88e54de21976aa504e797e47f06b480b9108ef5c/torch/cuda/__init__.py#L711
     """

@@ -20,9 +20,7 @@ if TYPE_CHECKING:
 
 
 class PhysicalPlanScheduler:
-    """
-    Generates executable tasks for an underlying physical plan.
-    """
+    """Generates executable tasks for an underlying physical plan."""
 
     def __init__(self, scheduler: _PhysicalPlanScheduler):
         self._scheduler = scheduler
@@ -38,9 +36,7 @@ class PhysicalPlanScheduler:
         return self._scheduler.num_partitions()
 
     def pretty_print(self, simple: bool = False, format: str = "ascii") -> str:
-        """
-        Pretty prints the current underlying physical plan.
-        """
+        """Pretty prints the current underlying physical plan."""
         from daft.dataframe.display import MermaidOptions
 
         if format == "ascii":

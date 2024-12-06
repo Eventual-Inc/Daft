@@ -42,7 +42,7 @@ def get_sql_func_names():
 
 
 def generate_stub(name: str):
-    """Generates a stub string for a SQL function"""
+    """Generates a stub string for a SQL function."""
     stub = name + "\n"
     stub += "=" * len(name) + "\n\n"
     stub += STUB_TEMPLATE.format(module_name=SQL_MODULE_NAME, name=name)

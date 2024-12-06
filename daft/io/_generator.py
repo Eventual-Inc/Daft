@@ -61,7 +61,6 @@ def read_generator(
     Returns:
         DataFrame: a DataFrame containing the generated data
     """
-
     generator_scan_operator = GeneratorScanOperator(
         generators=generators,
         schema=schema,

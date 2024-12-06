@@ -42,7 +42,7 @@ class _RayRunnerConfig(_RunnerConfig):
 
 
 def _get_runner_config_from_env() -> _RunnerConfig:
-    """Retrieves the appropriate RunnerConfig from environment variables
+    """Retrieves the appropriate RunnerConfig from environment variables.
 
     To use:
 
@@ -121,7 +121,7 @@ def _get_runner_config_from_env() -> _RunnerConfig:
 
 @dataclasses.dataclass
 class DaftContext:
-    """Global context for the current Daft execution environment"""
+    """Global context for the current Daft execution environment."""
 
     # When a dataframe is executed, this config is copied into the Runner
     # which then keeps track of a per-unique-execution-ID copy of the config, using it consistently throughout the execution
@@ -204,7 +204,7 @@ def set_runner_ray(
     max_task_backlog: int | None = None,
     force_client_mode: bool = False,
 ) -> DaftContext:
-    """Set the runner for executing Daft dataframes to a Ray cluster
+    """Set the runner for executing Daft dataframes to a Ray cluster.
 
     Alternatively, users can set this behavior via environment variables:
 
@@ -222,7 +222,6 @@ def set_runner_ray(
     Returns:
         DaftContext: Daft context after setting the Ray runner
     """
-
     ctx = get_context()
     with ctx._lock:
         if ctx._runner is not None:
@@ -283,7 +282,7 @@ def set_runner_native() -> DaftContext:
 
 @contextlib.contextmanager
 def planning_config_ctx(**kwargs):
-    """Context manager that wraps set_planning_config to reset the config to its original setting afternwards"""
+    """Context manager that wraps set_planning_config to reset the config to its original setting afternwards."""
     original_config = get_context().daft_planning_config
     try:
         set_planning_config(**kwargs)
@@ -296,8 +295,9 @@ def set_planning_config(
     config: PyDaftPlanningConfig | None = None,
     default_io_config: IOConfig | None = None,
 ) -> DaftContext:
-    """Globally sets various configuration parameters which control Daft plan construction behavior. These configuration values
-    are used when a Dataframe is being constructed (e.g. calls to create a Dataframe, or to build on an existing Dataframe)
+    """Globally sets various configuration parameters which control Daft plan construction behavior.
+
+    These configuration values are used when a Dataframe is being constructed (e.g. calls to create a Dataframe, or to build on an existing Dataframe).
 
     Args:
         config: A PyDaftPlanningConfig object to set the config to, before applying other kwargs. Defaults to None which indicates
@@ -319,7 +319,7 @@ def set_planning_config(
 
 @contextlib.contextmanager
 def execution_config_ctx(**kwargs):
-    """Context manager that wraps set_execution_config to reset the config to its original setting afternwards"""
+    """Context manager that wraps set_execution_config to reset the config to its original setting afternwards."""
     original_config = get_context().daft_execution_config
     try:
         set_execution_config(**kwargs)
@@ -352,8 +352,10 @@ def set_execution_config(
     pre_shuffle_merge_threshold: int | None = None,
     enable_ray_tracing: bool | None = None,
 ) -> DaftContext:
-    """Globally sets various configuration parameters which control various aspects of Daft execution. These configuration values
-    are used when a Dataframe is executed (e.g. calls to `.write_*`, `.collect()` or `.show()`)
+    """Globally sets various configuration parameters which control various aspects of Daft execution.
+
+    These configuration values
+    are used when a Dataframe is executed (e.g. calls to `.write_*`, `.collect()` or `.show()`).
 
     Args:
         config: A PyDaftExecutionConfig object to set the config to, before applying other kwargs. Defaults to None which indicates

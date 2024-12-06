@@ -23,8 +23,7 @@ _CACHED_FSES: dict[tuple[str, IOConfig | None], pafs.FileSystem] = {}
 
 
 def _get_fs_from_cache(protocol: str, io_config: IOConfig | None) -> pafs.FileSystem | None:
-    """
-    Get an instantiated pyarrow filesystem from the cache based on the URI protocol.
+    """Get an instantiated pyarrow filesystem from the cache based on the URI protocol.
 
     Returns None if no such cache entry exists.
     """
@@ -106,10 +105,7 @@ _CANONICAL_PROTOCOLS = {
 
 
 def canonicalize_protocol(protocol: str) -> str:
-    """
-    Return the canonical protocol from the provided protocol, such that there's a 1:1
-    mapping between protocols and pyarrow/fsspec filesystem implementations.
-    """
+    """Return the canonical protocol from the provided protocol, such that there's a 1:1 mapping between protocols and pyarrow/fsspec filesystem implementations."""
     return _CANONICAL_PROTOCOLS.get(protocol, protocol)
 
 
@@ -117,9 +113,9 @@ def _resolve_paths_and_filesystem(
     paths: str | pathlib.Path | list[str],
     io_config: IOConfig | None = None,
 ) -> tuple[list[str], pafs.FileSystem]:
-    """
-    Resolves and normalizes all provided paths, infers a filesystem from the
-    paths, and ensures that all paths use the same filesystem.
+    """Resolves and normalizes the provided path and infers it's filesystem.
+
+    Also ensures that the inferred filesystem is compatible with the passed filesystem, if provided.
 
     Args:
         paths: A single file/directory path or a list of file/directory paths.
@@ -191,10 +187,9 @@ def _infer_filesystem(
     path: str,
     io_config: IOConfig | None,
 ) -> tuple[str, pafs.FileSystem]:
-    """
-    Resolves and normalizes the provided path, infers a filesystem from the
-    path, and ensures that the inferred filesystem is compatible with the passed
-    filesystem, if provided.
+    """Resolves and normalizes the provided path and infers it's filesystem.
+
+    Also ensures that the inferred filesystem is compatible with the passedfilesystem, if provided.
 
     Args:
         path: A single file/directory path.
@@ -205,7 +200,7 @@ def _infer_filesystem(
     translated_kwargs: dict[str, Any]
 
     def _set_if_not_none(kwargs: dict[str, Any], key: str, val: Any | None):
-        """Helper method used when setting kwargs for pyarrow"""
+        """Helper method used when setting kwargs for pyarrow."""
         if val is not None:
             kwargs[key] = val
 
@@ -302,9 +297,7 @@ def _infer_filesystem(
 
 
 def _unwrap_protocol(path):
-    """
-    Slice off any protocol prefixes on path.
-    """
+    """Slice off any protocol prefixes on path."""
     parsed = urllib.parse.urlparse(path, allow_fragments=False)  # support '#' in path
     query = "?" + parsed.query if parsed.query else ""  # support '?' in path
     return parsed.netloc + parsed.path + query
@@ -350,10 +343,7 @@ def glob_path_with_stats(
 
 
 def join_path(fs: pafs.FileSystem, base_path: str, *sub_paths: str) -> str:
-    """
-    Join a base path with sub-paths using the appropriate path separator
-    for the given filesystem.
-    """
+    """Join a base path with sub-paths using the appropriate path separator for the given filesystem."""
     if isinstance(fs, pafs.LocalFileSystem):
         return os.path.join(base_path, *sub_paths)
     else:

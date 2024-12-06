@@ -92,12 +92,16 @@ def to_logical_plan_builder(*parts: MicroPartition) -> LogicalPlanBuilder:
 
 
 class DataFrame:
-    """A Daft DataFrame is a table of data. It has columns, where each column has a type and the same
+    """A Daft DataFrame is a table of data.
+
+    It has columns, where each column has a type and the same
     number of items (rows) as all other columns.
     """
 
     def __init__(self, builder: LogicalPlanBuilder) -> None:
-        """Constructs a DataFrame according to a given LogicalPlan. Users are expected instead to call
+        """Constructs a DataFrame according to a given LogicalPlan.
+
+        Users are expected instead to call
         the classmethods on DataFrame to create a DataFrame.
 
         Args:
@@ -157,6 +161,7 @@ class DataFrame:
         self, show_all: bool = False, format: str = "ascii", simple: bool = False, file: Optional[io.IOBase] = None
     ) -> Any:
         """Prints the (logical and physical) plans that will be executed to produce this DataFrame.
+
         Defaults to showing the unoptimized logical plan. Use ``show_all=True`` to show the unoptimized logical plan,
         the optimized logical plan, and the physical plan.
 
@@ -219,7 +224,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def schema(self) -> Schema:
-        """Returns the Schema of the DataFrame, which provides information about each column
+        """Returns the Schema of the DataFrame, which provides information about each column.
 
         Returns:
             Schema: schema of the DataFrame
@@ -271,7 +276,6 @@ class DataFrame:
             The default value is the total number of CPUs available on the current machine.
 
         Example:
-
         >>> import daft
         >>>
         >>> df = daft.from_pydict({"foo": [1, 2, 3], "bar": ["a", "b", "c"]})
@@ -320,9 +324,7 @@ class DataFrame:
         self,
         results_buffer_size: Union[Optional[int], Literal["num_cpus"]] = "num_cpus",
     ) -> Iterator["pyarrow.RecordBatch"]:
-        """
-        Return an iterator of pyarrow recordbatches for this dataframe.
-        """
+        """Return an iterator of pyarrow recordbatches for this dataframe."""
         for name in self.schema().column_names():
             if self.schema()[name].dtype._is_python_type():
                 raise ValueError(
@@ -552,7 +554,7 @@ class DataFrame:
         partition_cols: Optional[List[ColumnInputType]] = None,
         io_config: Optional[IOConfig] = None,
     ) -> "DataFrame":
-        """Writes the DataFrame as parquet files, returning a new DataFrame with paths to the files that were written
+        """Writes the DataFrame as parquet files, returning a new DataFrame with paths to the files that were written.
 
         Files will be written to ``<root_dir>/*`` with randomly generated UUIDs as the file names.
 
@@ -624,7 +626,7 @@ class DataFrame:
         partition_cols: Optional[List[ColumnInputType]] = None,
         io_config: Optional[IOConfig] = None,
     ) -> "DataFrame":
-        """Writes the DataFrame as CSV files, returning a new DataFrame with paths to the files that were written
+        """Writes the DataFrame as CSV files, returning a new DataFrame with paths to the files that were written.
 
         Files will be written to ``<root_dir>/*`` with randomly generated UUIDs as the file names.
 
@@ -684,6 +686,7 @@ class DataFrame:
     @DataframePublicAPI
     def write_iceberg(self, table: "pyiceberg.table.Table", mode: str = "append") -> "DataFrame":
         """Writes the DataFrame to an `Iceberg <https://iceberg.apache.org/docs/nightly/>`__ table, returning a new DataFrame with the operations that occurred.
+
         Can be run in either `append` or `overwrite` mode which will either appends the rows in the DataFrame or will delete the existing rows and then append the DataFrame rows respectively.
 
         .. NOTE::
@@ -696,7 +699,6 @@ class DataFrame:
         Returns:
             DataFrame: The operations that occurred with this write.
         """
-
         import pyarrow as pa
         import pyiceberg
         from packaging.version import parse
@@ -857,7 +859,6 @@ class DataFrame:
         Returns:
             DataFrame: The operations that occurred with this write.
         """
-
         import json
 
         import deltalake
@@ -1028,22 +1029,21 @@ class DataFrame:
         io_config: Optional[IOConfig] = None,
         **kwargs,
     ) -> "DataFrame":
-        """
-        Writes the DataFrame to a Lance table
+        """Writes the DataFrame to a Lance table.
+
         Note:
             `write_lance` requires python 3.9 or higher
         Args:
           uri: The URI of the Lance table to write to
           mode: The write mode. One of "create", "append", or "overwrite"
           io_config (IOConfig, optional): configurations to use when interacting with remote storage.
-          **kwargs: Additional keyword arguments to pass to the Lance writer
+          **kwargs: Additional keyword arguments to pass to the Lance writer.
+
         Example:
         --------
-
-
         >>> import daft
         >>> df = daft.from_pydict({"a": [1, 2, 3, 4]})
-        >>> df.write_lance("/tmp/lance/my_table.lance") # doctest: +SKIP
+        >>> df.write_lance("/tmp/lance/my_table.lance")  # doctest: +SKIP
         ╭───────────────┬──────────────────┬─────────────────┬─────────╮
         │ num_fragments ┆ num_deleted_rows ┆ num_small_files ┆ version │
         │ ---           ┆ ---              ┆ ---             ┆ ---     │
@@ -1054,7 +1054,7 @@ class DataFrame:
         <BLANKLINE>
         (Showing first 1 of 1 rows)
 
-        >>> daft.read_lance("/tmp/lance/my_table.lance").collect() # doctest: +SKIP
+        >>> daft.read_lance("/tmp/lance/my_table.lance").collect()  # doctest: +SKIP
         ╭───────╮
         │ a     │
         │ ---   │
@@ -1074,7 +1074,7 @@ class DataFrame:
 
         # Pass additional keyword arguments to the Lance writer
         # All additional keyword arguments are passed to `lance.write_fragments`
-        >>> df.write_lance("/tmp/lance/my_table.lance", mode="overwrite", max_bytes_per_file=1024) # doctest: +SKIP
+        >>> df.write_lance("/tmp/lance/my_table.lance", mode="overwrite", max_bytes_per_file=1024)  # doctest: +SKIP
         ╭───────────────┬──────────────────┬─────────────────┬─────────╮
         │ num_fragments ┆ num_deleted_rows ┆ num_small_files ┆ version │
         │ ---           ┆ ---              ┆ ---             ┆ ---     │
@@ -1169,23 +1169,21 @@ class DataFrame:
         return isinstance(x, str) or isinstance(x, Expression)
 
     def _column_inputs_to_expressions(self, columns: ManyColumnsInputType) -> List[Expression]:
-        """
-        Inputs to dataframe operations can be passed in as individual arguments or an iterable.
+        """Inputs to dataframe operations can be passed in as individual arguments or an iterable.
+
         In addition, they may be strings or Expressions.
         This method normalizes the inputs to a list of Expressions.
         """
-
         column_iter: Iterable[ColumnInputType] = [columns] if self._is_column_input(columns) else columns  # type: ignore
         return [col(c) if isinstance(c, str) else c for c in column_iter]
 
     def _wildcard_inputs_to_expressions(self, columns: Tuple[ManyColumnsInputType, ...]) -> List[Expression]:
-        """Handles wildcard argument column inputs"""
-
+        """Handles wildcard argument column inputs."""
         column_input: Iterable[ColumnInputType] = columns[0] if len(columns) == 1 else columns  # type: ignore
         return self._column_inputs_to_expressions(column_input)
 
     def __getitem__(self, item: Union[slice, int, str, Iterable[Union[str, int]]]) -> Union[Expression, "DataFrame"]:
-        """Gets a column from the DataFrame as an Expression (``df["mycol"]``)"""
+        """Gets a column from the DataFrame as an Expression (``df["mycol"]``)."""
         result: Optional[Expression]
 
         if isinstance(item, int):
@@ -1257,18 +1255,17 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame with a new column of monotonically increasing ids.
         """
-
         builder = self._builder.add_monotonically_increasing_id(column_name)
         return DataFrame(builder)
 
     @DataframePublicAPI
     def select(self, *columns: ColumnInputType) -> "DataFrame":
-        """Creates a new DataFrame from the provided expressions, similar to a SQL ``SELECT``
+        """Creates a new DataFrame from the provided expressions, similar to a SQL ``SELECT``.
 
         Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
-            >>> df = df.select('x', daft.col('y'), daft.col('z') + 1)
+            >>> df = df.select("x", daft.col("y"), daft.col("z") + 1)
             >>> df.show()
             ╭───────┬───────┬───────╮
             │ x     ┆ y     ┆ z     │
@@ -1296,7 +1293,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def distinct(self) -> "DataFrame":
-        """Computes unique rows, dropping duplicates
+        """Computes unique rows, dropping duplicates.
 
         Example:
             >>> import daft
@@ -1329,7 +1326,7 @@ class DataFrame:
         with_replacement: bool = False,
         seed: Optional[int] = None,
     ) -> "DataFrame":
-        """Samples a fraction of rows from the DataFrame
+        """Samples a fraction of rows from the DataFrame.
 
         Example:
             >>> import daft
@@ -1363,14 +1360,14 @@ class DataFrame:
 
     @DataframePublicAPI
     def exclude(self, *names: str) -> "DataFrame":
-        """Drops columns from the current DataFrame by name
+        """Drops columns from the current DataFrame by name.
 
         This is equivalent of performing a select with all the columns but the ones excluded.
 
         Example:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
-            >>> df_without_x = df.exclude('x')
+            >>> df_without_x = df.exclude("x")
             >>> df_without_x.show()
             ╭───────┬───────╮
             │ y     ┆ z     │
@@ -1417,10 +1414,9 @@ class DataFrame:
         """Filters rows via a predicate expression, similar to SQL ``WHERE``.
 
         Example:
-
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 6, 6], "z": [7, 8, 9]})
-            >>> df.where((col('x') > 1) & (col('y') > 1)).collect()
+            >>> df.where((col("x") > 1) & (col("y") > 1)).collect()
             ╭───────┬───────┬───────╮
             │ x     ┆ y     ┆ z     │
             │ ---   ┆ ---   ┆ ---   │
@@ -1470,13 +1466,12 @@ class DataFrame:
         column_name: str,
         expr: Expression,
     ) -> "DataFrame":
-        """Adds a column to the current DataFrame with an Expression, equivalent to a ``select``
-        with all current columns and the new one
+        """Adds a column to the current DataFrame with an Expression, equivalent to a ``select`` with all current columns and the new one.
 
         Example:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3]})
-            >>> new_df = df.with_column('x+1', col('x') + 1)
+            >>> new_df = df.with_column("x+1", col("x") + 1)
             >>> new_df.show()
             ╭───────┬───────╮
             │ x     ┆ x+1   │
@@ -1506,13 +1501,12 @@ class DataFrame:
         self,
         columns: Dict[str, Expression],
     ) -> "DataFrame":
-        """Adds columns to the current DataFrame with Expressions, equivalent to a ``select``
-        with all current columns and the new ones
+        """Adds columns to the current DataFrame with Expressions, equivalent to a ``select`` with all current columns and the new ones.
 
         Example:
             >>> import daft
-            >>> df = daft.from_pydict({'x': [1, 2, 3], 'y': [4, 5, 6]})
-            >>> new_df = df.with_columns({'foo': df['x'] + 1,'bar': df['y'] - df['x']})
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+            >>> new_df = df.with_columns({"foo": df["x"] + 1, "bar": df["y"] - df["x"]})
             >>> new_df.show()
             ╭───────┬───────┬───────┬───────╮
             │ x     ┆ y     ┆ foo   ┆ bar   │
@@ -1545,7 +1539,7 @@ class DataFrame:
         by: Union[ColumnInputType, List[ColumnInputType]],
         desc: Union[bool, List[bool]] = False,
     ) -> "DataFrame":
-        """Sorts DataFrame globally
+        """Sorts DataFrame globally.
 
         Note:
             * Since this a global sort, this requires an expensive repartition which can be quite slow.
@@ -1554,7 +1548,7 @@ class DataFrame:
         Example:
             >>> import daft
             >>> df = daft.from_pydict({"x": [3, 2, 1], "y": [6, 4, 5]})
-            >>> sorted_df = df.sort(col('x') + col('y'))
+            >>> sorted_df = df.sort(col("x") + col("y"))
             >>> sorted_df.show()
             ╭───────┬───────╮
             │ x     ┆ y     │
@@ -1610,12 +1604,12 @@ class DataFrame:
 
     @DataframePublicAPI
     def limit(self, num: int) -> "DataFrame":
-        """Limits the rows in the DataFrame to the first ``N`` rows, similar to a SQL ``LIMIT``
+        """Limits the rows in the DataFrame to the first ``N`` rows, similar to a SQL ``LIMIT``.
 
         Example:
             >>> import daft
             >>> df = df = daft.from_pydict({"x": [1, 2, 3, 4, 5, 6, 7]})
-            >>> df_limited = df.limit(5) # returns 5 rows
+            >>> df_limited = df.limit(5)  # returns 5 rows
             >>> df_limited.show()
             ╭───────╮
             │ x     │
@@ -1661,7 +1655,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def repartition(self, num: Optional[int], *partition_by: ColumnInputType) -> "DataFrame":
-        """Repartitions DataFrame to ``num`` partitions
+        """Repartitions DataFrame to ``num`` partitions.
 
         If columns are passed in, then DataFrame will be repartitioned by those, otherwise
         random repartitioning will occur.
@@ -1734,7 +1728,7 @@ class DataFrame:
         prefix: Optional[str] = None,
         suffix: Optional[str] = None,
     ) -> "DataFrame":
-        """Column-wise join of the current DataFrame with an ``other`` DataFrame, similar to a SQL ``JOIN``
+        """Column-wise join of the current DataFrame with an ``other`` DataFrame, similar to a SQL ``JOIN``.
 
         If the two DataFrames have duplicate non-join key column names, "right." will be prepended to the conflicting right columns. You can change the behavior by passing either (or both) `prefix` or `suffix` to the function.
         If `prefix` is passed, it will be prepended to the conflicting right columns. If `suffix` is passed, it will be appended to the conflicting right columns.
@@ -1746,9 +1740,9 @@ class DataFrame:
         Example:
             >>> import daft
             >>> from daft import col
-            >>> df1 = daft.from_pydict({ "a": ["w", "x", "y"], "b": [1, 2, 3] })
-            >>> df2 = daft.from_pydict({ "a": ["x", "y", "z"], "b": [20, 30, 40] })
-            >>> joined_df = df1.join(df2, left_on=[col("a"), col("b")], right_on=[col("a"), col("b")/10])
+            >>> df1 = daft.from_pydict({"a": ["w", "x", "y"], "b": [1, 2, 3]})
+            >>> df2 = daft.from_pydict({"a": ["x", "y", "z"], "b": [20, 30, 40]})
+            >>> joined_df = df1.join(df2, left_on=[col("a"), col("b")], right_on=[col("a"), col("b") / 10])
             >>> joined_df.show()
             ╭──────┬───────┬─────────╮
             │ a    ┆ b     ┆ right.b │
@@ -1764,9 +1758,9 @@ class DataFrame:
 
             >>> import daft
             >>> from daft import col
-            >>> df1 = daft.from_pydict({ "a": ["w", "x", "y"], "b": [1, 2, 3] })
-            >>> df2 = daft.from_pydict({ "a": ["x", "y", "z"], "b": [20, 30, 40] })
-            >>> joined_df = df1.join(df2, left_on=[col("a"), col("b")], right_on=[col("a"), col("b")/10], prefix="right_")
+            >>> df1 = daft.from_pydict({"a": ["w", "x", "y"], "b": [1, 2, 3]})
+            >>> df2 = daft.from_pydict({"a": ["x", "y", "z"], "b": [20, 30, 40]})
+            >>> joined_df = df1.join(df2, left_on=[col("a"), col("b")], right_on=[col("a"), col("b") / 10], prefix="right_")
             >>> joined_df.show()
             ╭──────┬───────┬─────────╮
             │ a    ┆ b     ┆ right_b │
@@ -1782,9 +1776,9 @@ class DataFrame:
 
             >>> import daft
             >>> from daft import col
-            >>> df1 = daft.from_pydict({ "a": ["w", "x", "y"], "b": [1, 2, 3] })
-            >>> df2 = daft.from_pydict({ "a": ["x", "y", "z"], "b": [20, 30, 40] })
-            >>> joined_df = df1.join(df2, left_on=[col("a"), col("b")], right_on=[col("a"), col("b")/10], suffix="_right")
+            >>> df1 = daft.from_pydict({"a": ["w", "x", "y"], "b": [1, 2, 3]})
+            >>> df2 = daft.from_pydict({"a": ["x", "y", "z"], "b": [20, 30, 40]})
+            >>> joined_df = df1.join(df2, left_on=[col("a"), col("b")], right_on=[col("a"), col("b") / 10], suffix="_right")
             >>> joined_df.show()
             ╭──────┬───────┬─────────╮
             │ a    ┆ b     ┆ b_right │
@@ -1816,7 +1810,6 @@ class DataFrame:
         Returns:
             DataFrame: Joined DataFrame.
         """
-
         if how == "cross":
             if any(side_on is not None for side_on in [on, left_on, right_on]):
                 raise ValueError("In a cross join, `on`, `left_on`, and `right_on` cannot be set")
@@ -1855,7 +1848,9 @@ class DataFrame:
 
     @DataframePublicAPI
     def concat(self, other: "DataFrame") -> "DataFrame":
-        """Concatenates two DataFrames together in a "vertical" concatenation. The resulting DataFrame
+        """Concatenates two DataFrames together in a "vertical" concatenation.
+
+        The resulting DataFrame
         has number of rows equal to the sum of the number of rows of the input DataFrames.
 
         .. NOTE::
@@ -1879,12 +1874,13 @@ class DataFrame:
     @DataframePublicAPI
     def drop_nan(self, *cols: ColumnInputType):
         """Drops rows that contains NaNs. If cols is None it will drop rows with any NaN value.
+
         If column names are supplied, it will drop only those rows that contains NaNs in one of these columns.
 
         Example:
             >>> import daft
             >>> df = daft.from_pydict({"a": [1.0, 2.2, 3.5, float("nan")]})
-            >>> df.drop_nan().collect() # drops rows where any column contains NaN values
+            >>> df.drop_nan().collect()  # drops rows where any column contains NaN values
             ╭─────────╮
             │ a       │
             │ ---     │
@@ -1945,6 +1941,7 @@ class DataFrame:
     @DataframePublicAPI
     def drop_null(self, *cols: ColumnInputType):
         """Drops rows that contains NaNs or NULLs. If cols is None it will drop rows with any NULL value.
+
         If column names are supplied, it will drop only those rows that contains NULLs in one of these columns.
 
         Example:
@@ -1979,8 +1976,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def explode(self, *columns: ColumnInputType) -> "DataFrame":
-        """Explodes a List column, where every element in each row's List becomes its own row, and all
-        other columns in the DataFrame are duplicated across rows
+        """Explodes a List column, where every element in each row's List becomes its own row, and all other columns in the DataFrame are duplicated across rows.
 
         If multiple columns are specified, each row must contain the same number of
         items in each specified column.
@@ -2036,11 +2032,13 @@ class DataFrame:
 
         Example:
             >>> import daft
-            >>> df = daft.from_pydict({
-            ...     "year": [2020, 2021, 2022],
-            ...     "Jan": [10, 30, 50],
-            ...     "Feb": [20, 40, 60],
-            ... })
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "year": [2020, 2021, 2022],
+            ...         "Jan": [10, 30, 50],
+            ...         "Feb": [20, 40, 60],
+            ...     }
+            ... )
             >>> df = df.unpivot("year", ["Jan", "Feb"], variable_name="month", value_name="inventory")
             >>> df = df.sort("year")
             >>> df.show()
@@ -2073,7 +2071,7 @@ class DataFrame:
         Returns:
             DataFrame: Unpivoted DataFrame
 
-        See also:
+        See Also:
             `melt`
         """
         ids_exprs = self._column_inputs_to_expressions(ids)
@@ -2090,9 +2088,9 @@ class DataFrame:
         variable_name: str = "variable",
         value_name: str = "value",
     ) -> "DataFrame":
-        """Alias for unpivot
+        """Alias for unpivot.
 
-        See also:
+        See Also:
             `unpivot`
         """
         return self.unpivot(ids, values, variable_name, value_name)
@@ -2100,19 +2098,18 @@ class DataFrame:
     @DataframePublicAPI
     def transform(self, func: Callable[..., "DataFrame"], *args: Any, **kwargs: Any) -> "DataFrame":
         """Apply a function that takes and returns a DataFrame.
+
         Allow splitting your transformation into different units of work (functions) while preserving the syntax for chaining transformations.
 
         Example:
             >>> import daft
-            >>> df = daft.from_pydict({"col_a":[1,2,3,4]})
+            >>> df = daft.from_pydict({"col_a": [1, 2, 3, 4]})
             >>> def add_1(df):
             ...     df = df.select(daft.col("col_a") + 1)
             ...     return df
-            ...
             >>> def multiply_x(df, x):
             ...     df = df.select(daft.col("col_a") * x)
             ...     return df
-            ...
             >>> df = df.transform(add_1).transform(multiply_x, 4)
             >>> df.show()
             ╭───────╮
@@ -2135,6 +2132,7 @@ class DataFrame:
             func: A function that takes and returns a DataFrame.
             *args: Positional arguments to pass to func.
             **kwargs: Keyword arguments to pass to func.
+
         Returns:
             DataFrame: Transformed DataFrame.
         """
@@ -2192,7 +2190,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def sum(self, *cols: ManyColumnsInputType) -> "DataFrame":
-        """Performs a global sum on the DataFrame
+        """Performs a global sum on the DataFrame.
 
         Args:
             *cols (Union[str, Expression]): columns to sum
@@ -2203,7 +2201,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def mean(self, *cols: ColumnInputType) -> "DataFrame":
-        """Performs a global mean on the DataFrame
+        """Performs a global mean on the DataFrame.
 
         Args:
             *cols (Union[str, Expression]): columns to mean
@@ -2214,11 +2212,11 @@ class DataFrame:
 
     @DataframePublicAPI
     def stddev(self, *cols: ColumnInputType) -> "DataFrame":
-        """Performs a global standard deviation on the DataFrame
+        """Performs a global standard deviation on the DataFrame.
 
         Example:
             >>> import daft
-            >>> df = daft.from_pydict({"col_a":[0,1,2]})
+            >>> df = daft.from_pydict({"col_a": [0, 1, 2]})
             >>> df = df.stddev("col_a")
             >>> df.show()
             ╭───────────────────╮
@@ -2241,7 +2239,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def min(self, *cols: ColumnInputType) -> "DataFrame":
-        """Performs a global min on the DataFrame
+        """Performs a global min on the DataFrame.
 
         Args:
             *cols (Union[str, Expression]): columns to min
@@ -2252,7 +2250,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def max(self, *cols: ColumnInputType) -> "DataFrame":
-        """Performs a global max on the DataFrame
+        """Performs a global max on the DataFrame.
 
         Args:
             *cols (Union[str, Expression]): columns to max
@@ -2264,6 +2262,7 @@ class DataFrame:
     @DataframePublicAPI
     def any_value(self, *cols: ColumnInputType) -> "DataFrame":
         """Returns an arbitrary value on this DataFrame.
+
         Values for each column are not guaranteed to be from the same row.
 
         Args:
@@ -2275,7 +2274,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def count(self, *cols: ColumnInputType) -> "DataFrame":
-        """Performs a global count on the DataFrame
+        """Performs a global count on the DataFrame.
 
         If no columns are specified (i.e. in the case you call `df.count()`), or only the literal string "*",
         this functions very similarly to a COUNT(*) operation in SQL and will return a new dataframe with a
@@ -2340,7 +2339,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def agg_list(self, *cols: ColumnInputType) -> "DataFrame":
-        """Performs a global list agg on the DataFrame
+        """Performs a global list agg on the DataFrame.
 
         Args:
             *cols (Union[str, Expression]): columns to form into a list
@@ -2351,7 +2350,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def agg_concat(self, *cols: ColumnInputType) -> "DataFrame":
-        """Performs a global list concatenation agg on the DataFrame
+        """Performs a global list concatenation agg on the DataFrame.
 
         Args:
             *cols (Union[str, Expression]): columns that are lists to concatenate
@@ -2362,7 +2361,9 @@ class DataFrame:
 
     @DataframePublicAPI
     def agg(self, *to_agg: Union[Expression, Iterable[Expression]]) -> "DataFrame":
-        """Perform aggregations on this DataFrame. Allows for mixed aggregations for multiple columns
+        """Perform aggregations on this DataFrame.
+
+        Allows for mixed aggregations for multiple columns.
         Will return a single row that aggregated the entire DataFrame.
 
         For a full list of aggregation expressions, see :ref:`Aggregation Expressions <api=aggregation-expression>`
@@ -2370,16 +2371,14 @@ class DataFrame:
         Example:
             >>> import daft
             >>> from daft import col
-            >>> df = daft.from_pydict({
-            ...     "student_id": [1, 2, 3, 4],
-            ...     "test1": [0.5, 0.4, 0.6, 0.7],
-            ...     "test2": [0.9, 0.8, 0.7, 1.0]
-            ... })
+            >>> df = daft.from_pydict(
+            ...     {"student_id": [1, 2, 3, 4], "test1": [0.5, 0.4, 0.6, 0.7], "test2": [0.9, 0.8, 0.7, 1.0]}
+            ... )
             >>> agg_df = df.agg(
             ...     col("test1").mean(),
             ...     col("test2").mean(),
-            ...     ((col("test1") + col("test2"))/2).min().alias("total_min"),
-            ...     ((col("test1") + col("test2"))/2).max().alias("total_max"),
+            ...     ((col("test1") + col("test2")) / 2).min().alias("total_min"),
+            ...     ((col("test1") + col("test2")) / 2).max().alias("total_max"),
             ... )
             >>> agg_df.show()
             ╭─────────┬────────────────────┬────────────────────┬───────────╮
@@ -2401,7 +2400,7 @@ class DataFrame:
         to_agg_list = (
             list(to_agg[0])
             if (len(to_agg) == 1 and not isinstance(to_agg[0], Expression))
-            else list(typing.cast(Tuple[Expression], to_agg))
+            else list(typing.cast("Tuple[Expression]", to_agg))
         )
 
         for expr in to_agg_list:
@@ -2412,21 +2411,19 @@ class DataFrame:
 
     @DataframePublicAPI
     def groupby(self, *group_by: ManyColumnsInputType) -> "GroupedDataFrame":
-        """Performs a GroupBy on the DataFrame for aggregation
+        """Performs a GroupBy on the DataFrame for aggregation.
 
         Example:
             >>> import daft
             >>> from daft import col
-            >>> df = daft.from_pydict({
-            ...     "pet": ["cat", "dog", "dog", "cat"],
-            ...     "age": [1, 2, 3, 4],
-            ...     "name": ["Alex", "Jordan", "Sam", "Riley"]
-            ... })
+            >>> df = daft.from_pydict(
+            ...     {"pet": ["cat", "dog", "dog", "cat"], "age": [1, 2, 3, 4], "name": ["Alex", "Jordan", "Sam", "Riley"]}
+            ... )
             >>> grouped_df = df.groupby("pet").agg(
             ...     col("age").min().alias("min_age"),
             ...     col("age").max().alias("max_age"),
             ...     col("pet").count().alias("count"),
-            ...     col("name").any_value()
+            ...     col("name").any_value(),
             ... )
             >>> grouped_df.show()
             ╭──────┬─────────┬─────────┬────────┬────────╮
@@ -2550,7 +2547,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def collect(self, num_preview_rows: Optional[int] = 8) -> "DataFrame":
-        """Executes the entire DataFrame and materializes the results
+        """Executes the entire DataFrame and materializes the results.
 
         .. NOTE::
             This call is **blocking** and will execute the DataFrame when called
@@ -2572,7 +2569,7 @@ class DataFrame:
         return self
 
     def _construct_show_display(self, n: int) -> "DataFrameDisplay":
-        """Helper for .show() which will construct the underlying DataFrameDisplay object"""
+        """Helper for .show() which will construct the underlying DataFrameDisplay object."""
         preview_partition = self._preview.preview_partition
         total_rows = self._preview.dataframe_num_rows
 
@@ -2621,7 +2618,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def show(self, n: int = 8) -> None:
-        """Executes enough of the DataFrame in order to display the first ``n`` rows
+        """Executes enough of the DataFrame in order to display the first ``n`` rows.
 
         If IPython is installed, this will use IPython's `display` utility to pretty-print in a
         notebook/REPL environment. Otherwise, this will fall back onto a naive Python `print`.
@@ -2643,13 +2640,13 @@ class DataFrame:
 
     def __len__(self):
         """Returns the count of rows when dataframe is materialized.
+
         If dataframe is not materialized yet, raises a runtime error.
 
         Returns:
             int: count of rows.
 
         """
-
         if self._result is not None:
             return len(self._result)
 
@@ -2666,7 +2663,7 @@ class DataFrame:
         Example:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
-            >>> 'x' in df
+            >>> "x" in df
             True
 
         Args:
@@ -2680,6 +2677,7 @@ class DataFrame:
     @DataframePublicAPI
     def to_pandas(self, coerce_temporal_nanoseconds: bool = False) -> "pandas.DataFrame":
         """Converts the current DataFrame to a `pandas DataFrame <https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.html>`__.
+
         If results have not computed yet, collect will be called.
 
         Args:
@@ -2704,6 +2702,7 @@ class DataFrame:
     @DataframePublicAPI
     def to_arrow(self) -> "pyarrow.Table":
         """Converts the current DataFrame to a `pyarrow Table <https://arrow.apache.org/docs/python/generated/pyarrow.Table.html>`__.
+
         If results have not computed yet, collect will be called.
 
         Returns:
@@ -2737,6 +2736,7 @@ class DataFrame:
     @DataframePublicAPI
     def to_pylist(self) -> List[Any]:
         """Converts the current Dataframe into a python list.
+
         .. WARNING::
 
             This is a convenience method over :meth:`DataFrame.iter_rows() <daft.DataFrame.iter_rows>`. Users should prefer using `.iter_rows()` directly instead for lower memory utilization if they are streaming rows out of a DataFrame and don't require full materialization of the Python list.
@@ -2757,9 +2757,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def to_torch_map_dataset(self) -> "torch.utils.data.Dataset":
-        """Convert the current DataFrame into a map-style
-        `Torch Dataset <https://pytorch.org/docs/stable/data.html#map-style-datasets>`__
-        for use with PyTorch.
+        """Convert the current DataFrame into a map-style `Torch Dataset <https://pytorch.org/docs/stable/data.html#map-style-datasets>`__ for use with PyTorch.
 
         This method will materialize the entire DataFrame and block on completion.
 
@@ -2779,9 +2777,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def to_torch_iter_dataset(self) -> "torch.utils.data.IterableDataset":
-        """Convert the current DataFrame into a
-        `Torch IterableDataset <https://pytorch.org/docs/stable/data.html#torch.utils.data.IterableDataset>`__
-        for use with PyTorch.
+        """Convert the current DataFrame into a `Torch IterableDataset <https://pytorch.org/docs/stable/data.html#torch.utils.data.IterableDataset>`__ for use with PyTorch.
 
         Begins execution of the DataFrame if it is not yet executed.
 
@@ -2804,7 +2800,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def to_ray_dataset(self) -> "ray.data.dataset.DataSet":
-        """Converts the current DataFrame to a `Ray Dataset <https://docs.ray.io/en/latest/data/api/dataset.html#ray.data.Dataset>`__ which is useful for running distributed ML model training in Ray
+        """Converts the current DataFrame to a `Ray Dataset <https://docs.ray.io/en/latest/data/api/dataset.html#ray.data.Dataset>`__ which is useful for running distributed ML model training in Ray.
 
         .. NOTE::
             This function can only work if Daft is running using the RayRunner
@@ -2982,7 +2978,7 @@ class GroupedDataFrame:
                 raise ExpressionTypeError(f"Cannot groupby on null type expression: {e}")
 
     def __getitem__(self, item: Union[slice, int, str, Iterable[Union[str, int]]]) -> Union[Expression, "DataFrame"]:
-        """Gets a column from the DataFrame as an Expression"""
+        """Gets a column from the DataFrame as an Expression."""
         return self.df.__getitem__(item)
 
     def sum(self, *cols: ColumnInputType) -> "DataFrame":
@@ -3012,7 +3008,7 @@ class GroupedDataFrame:
 
         Example:
             >>> import daft
-            >>> df = daft.from_pydict({"keys": ["a", "a", "a", "b"], "col_a": [0,1,2,100]})
+            >>> df = daft.from_pydict({"keys": ["a", "a", "a", "b"], "col_a": [0, 1, 2, 100]})
             >>> df = df.groupby("keys").stddev()
             >>> df.show()
             ╭──────┬───────────────────╮
@@ -3059,6 +3055,7 @@ class GroupedDataFrame:
 
     def any_value(self, *cols: ColumnInputType) -> "DataFrame":
         """Returns an arbitrary value on this GroupedDataFrame.
+
         Values for each column are not guaranteed to be from the same row.
 
         Args:
@@ -3101,16 +3098,14 @@ class GroupedDataFrame:
         Example:
             >>> import daft
             >>> from daft import col
-            >>> df = daft.from_pydict({
-            ...     "pet": ["cat", "dog", "dog", "cat"],
-            ...     "age": [1, 2, 3, 4],
-            ...     "name": ["Alex", "Jordan", "Sam", "Riley"]
-            ... })
+            >>> df = daft.from_pydict(
+            ...     {"pet": ["cat", "dog", "dog", "cat"], "age": [1, 2, 3, 4], "name": ["Alex", "Jordan", "Sam", "Riley"]}
+            ... )
             >>> grouped_df = df.groupby("pet").agg(
             ...     col("age").min().alias("min_age"),
             ...     col("age").max().alias("max_age"),
             ...     col("pet").count().alias("count"),
-            ...     col("name").any_value()
+            ...     col("name").any_value(),
             ... )
             >>> grouped_df.show()
             ╭──────┬─────────┬─────────┬────────┬────────╮
@@ -3134,7 +3129,7 @@ class GroupedDataFrame:
         to_agg_list = (
             list(to_agg[0])
             if (len(to_agg) == 1 and not isinstance(to_agg[0], Expression))
-            else list(typing.cast(Tuple[Expression], to_agg))
+            else list(typing.cast("Tuple[Expression]", to_agg))
         )
 
         for expr in to_agg_list:
