@@ -21,6 +21,14 @@ extend-select = [
   "LOG",  # flake8-logging
   "G",  # flake8-logging-format
   "I",  # isort
+  "RUF010",  # Use explicit conversion flag
+  "RUF013",  # PEP 484 prohibits implicit Optional
+  "RUF015",  # Prefer next({iterable}) over single element slice
+  "RUF017",  # Avoid quadratic list summation
+  "RUF022",  # __all__ is not sorted
+  "RUF032",  # Decimal() called with float literal argument
+  "RUF034",  # Useless if-else condition
+  "RUF041",  # Unnecessary nested Literal
   "RUF100",  # unused-noqa"
   "T10",  # flake8-debugger
   "D"  # pydocstyle rules

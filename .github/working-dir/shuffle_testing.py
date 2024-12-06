@@ -6,7 +6,7 @@ import argparse
 import random
 import time
 from functools import partial
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import numpy as np
 import pyarrow as pa
@@ -133,7 +133,7 @@ def generator(
         )
 
 
-def setup_daft(shuffle_algorithm: str = None):
+def setup_daft(shuffle_algorithm: Optional[str] = None):
     """Configure Daft execution settings."""
     daft.context.set_runner_ray()
     daft.context.set_execution_config(shuffle_algorithm=shuffle_algorithm, pre_shuffle_merge_threshold=8 * GB)
@@ -150,7 +150,7 @@ def run_benchmark(
     skew_factor: float,
     timing_variation: float,
     size_variation: float,
-    shuffle_algorithm: str = None,
+    shuffle_algorithm: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Run the memory benchmark and return statistics."""
     setup_daft(shuffle_algorithm)
@@ -247,7 +247,7 @@ def main():
         print(f"Total time: {timing:.2f}s")
 
     except Exception as e:
-        print(f"Error running benchmark: {str(e)}")
+        print(f"Error running benchmark: {e!s}")
         raise
 
 

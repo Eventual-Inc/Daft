@@ -64,8 +64,8 @@ except ImportError:
 __all__ = [
     "read_table",
     "register_python_catalog",
-    "unregister_catalog",
     "register_table",
+    "unregister_catalog",
 ]
 
 # Forward imports from the native catalog which don't require Python wrappers

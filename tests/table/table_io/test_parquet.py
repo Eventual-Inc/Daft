@@ -53,7 +53,7 @@ def test_read_input(tmpdir):
 
 
 @contextlib.contextmanager
-def _parquet_write_helper(data: pa.Table, row_group_size: int = None, papq_write_table_kwargs: dict = {}):
+def _parquet_write_helper(data: pa.Table, row_group_size: int | None = None, papq_write_table_kwargs: dict = {}):
     with tempfile.TemporaryDirectory() as directory_name:
         file = os.path.join(directory_name, "tempfile")
         papq.write_table(data, file, row_group_size=row_group_size, **papq_write_table_kwargs)
