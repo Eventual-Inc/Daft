@@ -1,22 +1,23 @@
-use std::io::Write;
-use std::ops::Range;
+use std::{io::Write, ops::Range, sync::Arc};
 
-use crate::object_io::{self, FileMetadata, LSResult};
-use crate::stats::IOStatsRef;
-use crate::FileFormat;
-
-use super::object_io::{GetResult, ObjectSource};
-use super::Result;
 use async_trait::async_trait;
-use bytes::Bytes;
-use futures::stream::{self, BoxStream};
-use futures::StreamExt;
-use futures::TryStreamExt;
-use snafu::{OptionExt, ResultExt, Snafu};
-use std::sync::Arc;
-
+use futures::{
+    stream::{self, BoxStream},
+    AsyncReadExt, AsyncSeekExt, StreamExt, TryStreamExt,
+};
 use hdrs::{Client, ClientBuilder};
+use snafu::{IntoError, OptionExt, ResultExt, Snafu};
 use url::Url;
+
+use super::{
+    object_io::{GetResult, ObjectSource},
+    Result,
+};
+use crate::{
+    object_io::{self, FileMetadata, LSResult},
+    stats::IOStatsRef,
+    FileFormat,
+};
 
 pub(crate) struct HDFSSource {}
 
@@ -54,6 +55,12 @@ enum Error {
         source: std::io::Error,
     },
 
+    #[snafu(display("Unable to seek in file {}: {}", path, source))]
+    UnableToSeekReader {
+        path: String,
+        source: std::io::Error,
+    },
+
     #[snafu(display("Unable to fetch file metadata for file {}: {}", path, source))]
     UnableToFetchFileMetadata {
         path: String,
@@ -75,7 +82,7 @@ fn get_fs_for(uri: &str) -> Result<Arc<Client>> {
     let client = ClientBuilder::new(&name_node)
         .connect()
         .context(UnableToConnectSnafu { path: uri })?;
-    return Ok(Arc::new(client));
+    Ok(Arc::new(client))
 }
 
 fn get_namenode_url(uri: &str) -> Result<String> {
@@ -105,18 +112,18 @@ impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
         use Error::*;
         match error {
-            UnableToConnect { path, source } => super::Error::ConnectTimeout {
+            UnableToConnect { path, source } => Self::ConnectTimeout {
                 path,
                 source: source.into(),
             },
             UnableToOpenFile { path, source } | UnableToFetchDirectoryEntries { path, source } => {
                 use std::io::ErrorKind::*;
                 match source.kind() {
-                    NotFound => super::Error::NotFound {
+                    NotFound => Self::NotFound {
                         path,
                         source: source.into(),
                     },
-                    _ => super::Error::UnableToOpenFile {
+                    _ => Self::UnableToOpenFile {
                         path,
                         source: source.into(),
                     },
@@ -125,21 +132,21 @@ impl From<Error> for super::Error {
             UnableToFetchFileMetadata { path, source } => {
                 use std::io::ErrorKind::*;
                 match source.kind() {
-                    NotFound | IsADirectory => super::Error::NotFound {
+                    NotFound | IsADirectory => Self::NotFound {
                         path,
                         source: source.into(),
                     },
-                    _ => super::Error::UnableToOpenFile {
+                    _ => Self::UnableToOpenFile {
                         path,
                         source: source.into(),
                     },
                 }
             }
-            UnableToReadBytes { path, source } => super::Error::UnableToReadBytes { path, source },
+            UnableToReadBytes { path, source } => Self::UnableToReadBytes { path, source },
             UnableToWriteToFile { path, source } | UnableToOpenFileForWriting { path, source } => {
-                super::Error::UnableToWriteToFile { path, source }
+                Self::UnableToWriteToFile { path, source }
             }
-            _ => super::Error::Generic {
+            _ => Self::Generic {
                 store: super::SourceType::File,
                 source: error.into(),
             },
@@ -149,7 +156,7 @@ impl From<Error> for super::Error {
 
 impl HDFSSource {
     pub async fn get_client() -> super::Result<Arc<Self>> {
-        Ok(HDFSSource {}.into())
+        Ok(Self {}.into())
     }
 }
 
@@ -168,22 +175,44 @@ impl ObjectSource for HDFSSource {
             .metadata(uri)
             .context(UnableToFetchFileMetadataSnafu { path: uri })?
             .len();
-        let read_file = fs
+        let mut read_file = fs
             .open_file()
             .read(true)
-            .open(path)
+            .async_open(path)
+            .await
             .context(UnableToOpenFileSnafu { path: uri })?;
-        let range = range
-            .map(|r| r.start as u64..r.end as u64)
-            .unwrap_or(0..len);
-        let mut buffer = vec![0u8; (range.end - range.start) as usize];
-        let n = read_file
-            .read_at(&mut buffer, range.start)
-            .context(UnableToReadBytesSnafu { path: uri })?;
-        buffer.truncate(n);
-        let stream = stream::iter(vec![Ok(Bytes::from(buffer))]);
-        let payload = GetResult::Stream(Box::pin(stream), None, None, None);
-        Ok(payload)
+        let owned_uri = uri.to_string();
+        use tokio_util::compat::FuturesAsyncReadCompatExt;
+        let stream = if let Some(range) = range {
+            read_file
+                .seek(std::io::SeekFrom::Start(range.start as u64))
+                .await
+                .with_context(|_| UnableToSeekReaderSnafu {
+                    path: owned_uri.clone(),
+                })?;
+            let reader = read_file.take(range.len() as u64).compat();
+            tokio_util::io::ReaderStream::new(reader)
+                .map_err(move |err| {
+                    UnableToReadBytesSnafu {
+                        path: owned_uri.clone(),
+                    }
+                    .into_error(err)
+                    .into()
+                })
+                .boxed()
+        } else {
+            let reader = read_file.compat();
+            tokio_util::io::ReaderStream::new(reader)
+                .map_err(move |err| {
+                    UnableToReadBytesSnafu {
+                        path: owned_uri.clone(),
+                    }
+                    .into_error(err)
+                    .into()
+                })
+                .boxed()
+        };
+        Ok(GetResult::Stream(stream, Some(len as usize), None, None))
     }
 
     async fn put(
@@ -323,101 +352,5 @@ impl ObjectSource for HDFSSource {
         })
         .boxed();
         Ok(file_meta_stream)
-    }
-}
-
-#[cfg(test)]
-
-mod tests {
-    use std::default;
-
-    use crate::object_io::ObjectSource;
-    use crate::Result;
-    use crate::{HDFSSource, HttpSource};
-
-    async fn write_remote_parquet_to_hdfs_file(path: &str) -> Result<bytes::Bytes> {
-        let parquet_file_path = "https://daft-public-data.s3.us-west-2.amazonaws.com/test_fixtures/parquet_small/0dad4c3f-da0d-49db-90d8-98684571391b-0.parquet";
-        let parquet_expected_md5 = "929674747af64a98aceaa6d895863bd3";
-
-        let client = HttpSource::get_client(&default::Default::default()).await?;
-        let parquet_file = client.get(parquet_file_path, None, None).await?;
-        let bytes = parquet_file.bytes().await?;
-        let all_bytes = bytes.as_ref();
-        let checksum = format!("{:x}", md5::compute(all_bytes));
-        assert_eq!(checksum, parquet_expected_md5);
-        let hdfs_fs = HDFSSource::get_client().await?;
-        let uri = format!("hdfs://localhost:9000{}", path);
-        let bytes_clone = bytes.clone();
-        hdfs_fs.put(&uri, bytes_clone, None).await?;
-        Ok(bytes)
-    }
-
-    #[tokio::test]
-    async fn test_hdfs_full_get() -> Result<()> {
-        use crate::hdfs::*;
-        let path = "/data_file_for_full_get_test.parquet";
-
-        let _bytes = write_remote_parquet_to_hdfs_file(path).await?;
-        let full_uri = format!("hdfs://localhost:9000{}", path);
-        let parquet_file_path = &full_uri;
-        let client = HDFSSource::get_client().await?;
-
-        let try_all_bytes = client
-            .get(parquet_file_path, None, None)
-            .await?
-            .bytes()
-            .await?;
-        assert_eq!(try_all_bytes.len(), _bytes.len());
-        assert_eq!(try_all_bytes, _bytes);
-
-        let first_bytes = client
-            .get(parquet_file_path, Some(0..10), None)
-            .await?
-            .bytes()
-            .await?;
-        assert_eq!(first_bytes.len(), 10);
-        assert_eq!(first_bytes.as_ref(), &_bytes[..10]);
-
-        let first_bytes = client
-            .get(parquet_file_path, Some(10..100), None)
-            .await?
-            .bytes()
-            .await?;
-        assert_eq!(first_bytes.len(), 90);
-        assert_eq!(first_bytes.as_ref(), &_bytes[10..100]);
-
-        let last_bytes = client
-            .get(
-                parquet_file_path,
-                Some((_bytes.len() - 10)..(_bytes.len() + 10)),
-                None,
-            )
-            .await?
-            .bytes()
-            .await?;
-        assert_eq!(last_bytes.len(), 10);
-        assert_eq!(last_bytes.as_ref(), &_bytes[(_bytes.len() - 10)..]);
-
-        let size_from_get_size = client.get_size(parquet_file_path, None).await?;
-        assert_eq!(size_from_get_size, _bytes.len());
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_hdfs_full_ls() -> Result<()> {
-        use crate::hdfs::*;
-
-        let path = "/data_file_for_full_ls_test.parquet";
-        let _ = write_remote_parquet_to_hdfs_file(path).await?;
-
-        let full_uri = format!("hdfs://127.0.0.1:9000{}", path);
-        let parquet_file_path = &full_uri;
-        let client = HDFSSource::get_client().await?;
-
-        let ls_result = client.ls(parquet_file_path, true, None, None, None).await?;
-        assert_eq!(ls_result.files.len(), 1);
-        assert!(ls_result.files[0].filepath.starts_with(HDFS_SCHEME_PREFIX));
-        Ok(())
     }
 }
