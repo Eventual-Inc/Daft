@@ -2395,7 +2395,6 @@ dependencies = [
  "common-arrow-ffi",
  "common-error",
  "common-runtime",
- "crossbeam-channel",
  "daft-core",
  "daft-dsl",
  "daft-io",

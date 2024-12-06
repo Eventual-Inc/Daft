@@ -2,7 +2,10 @@
 #![feature(let_chains)]
 #![feature(result_flattening)]
 
+use std::{cmp::max, num::NonZeroUsize};
+
 use common_error::DaftError;
+use daft_core::prelude::SchemaRef;
 use snafu::Snafu;
 
 mod file;
@@ -14,8 +17,26 @@ mod statistics;
 pub use statistics::row_group_metadata_to_table_stats;
 mod read_planner;
 mod stream_reader;
+mod utils;
+
 #[cfg(feature = "python")]
 pub use python::register_modules;
+
+// This is the default size of an emitted morsel from the parquet reader
+const PARQUET_MORSEL_SIZE: usize = 128 * 1024;
+
+// This function determines the number of parallel deserialize tasks to use when reading parquet files
+// It is calculated by taking 2x the number of cores available (to ensure pipelining), and dividing
+// by the number of columns in the schema.
+fn determine_parquet_parallelism(daft_schema: &SchemaRef) -> usize {
+    (std::thread::available_parallelism()
+        .unwrap_or(NonZeroUsize::new(2).unwrap())
+        .checked_mul(2.try_into().unwrap())
+        .unwrap()
+        .get() as f64
+        / max(daft_schema.fields.len(), 1) as f64)
+        .ceil() as usize
+}
 
 #[derive(Debug, Snafu)]
 pub enum Error {

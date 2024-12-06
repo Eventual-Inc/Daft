@@ -12,6 +12,7 @@ pub struct LanceWriter {
     is_closed: bool,
     lance_info: LanceCatalogInfo,
     results: Vec<Table>,
+    bytes_written: usize,
 }
 
 impl LanceWriter {
@@ -20,6 +21,7 @@ impl LanceWriter {
             is_closed: false,
             lance_info,
             results: vec![],
+            bytes_written: 0,
         }
     }
 }
@@ -28,14 +30,17 @@ impl FileWriter for LanceWriter {
     type Input = Arc<MicroPartition>;
     type Result = Vec<Table>;
 
-    fn write(&mut self, data: &Self::Input) -> DaftResult<()> {
+    fn write(&mut self, data: Self::Input) -> DaftResult<usize> {
         assert!(!self.is_closed, "Cannot write to a closed LanceWriter");
+        self.bytes_written += data
+            .size_bytes()?
+            .expect("MicroPartition should have size_bytes for LanceWriter");
         Python::with_gil(|py| {
             let py_micropartition = py
                 .import_bound(pyo3::intern!(py, "daft.table"))?
                 .getattr(pyo3::intern!(py, "MicroPartition"))?
                 .getattr(pyo3::intern!(py, "_from_pymicropartition"))?
-                .call1((PyMicroPartition::from(data.clone()),))?;
+                .call1((PyMicroPartition::from(data),))?;
             let written_fragments: PyTable = py
                 .import_bound(pyo3::intern!(py, "daft.table.table_io"))?
                 .getattr(pyo3::intern!(py, "write_lance"))?
@@ -56,8 +61,12 @@ impl FileWriter for LanceWriter {
                 .getattr(pyo3::intern!(py, "_table"))?
                 .extract()?;
             self.results.push(written_fragments.into());
-            Ok(())
+            Ok(self.bytes_written)
         })
+    }
+
+    fn bytes_written(&self) -> usize {
+        self.bytes_written
     }
 
     fn close(&mut self) -> DaftResult<Self::Result> {
