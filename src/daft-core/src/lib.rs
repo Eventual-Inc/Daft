@@ -23,6 +23,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<count_mode::CountMode>()?;
     parent.add_class::<join::JoinType>()?;
     parent.add_class::<join::JoinStrategy>()?;
+    parent.add_class::<join::JoinSide>()?;
 
     Ok(())
 }
