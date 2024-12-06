@@ -27,6 +27,7 @@ use crate::{
     file::{build_row_ranges, RowGroupRange},
     read::{ArrowChunk, ArrowChunkIters, ParquetSchemaInferenceOptions},
     stream_reader::read::schema::infer_schema_with_options,
+    utils::combine_stream,
     UnableToConvertSchemaToDaftSnafu, PARQUET_MORSEL_SIZE,
 };
 
@@ -663,28 +664,11 @@ pub async fn local_parquet_stream(
 
     let stream_of_streams =
         futures::stream::iter(output_receivers.into_iter().map(ReceiverStream::new));
-    let flattened = match maintain_order {
-        true => stream_of_streams.flatten().boxed(),
-        false => stream_of_streams.flatten_unordered(None).boxed(),
+    let combined = match maintain_order {
+        true => combine_stream(stream_of_streams.flatten(), parquet_task).boxed(),
+        false => combine_stream(stream_of_streams.flatten_unordered(None), parquet_task).boxed(),
     };
-    let combined_stream = futures::stream::unfold(
-        (Some(parquet_task), flattened),
-        |(task, mut stream)| async move {
-            task.as_ref()?;
-            match stream.next().await {
-                Some(v) => Some((v, (task, stream))),
-                None => {
-                    if let Err(e) = task.unwrap().await {
-                        Some((Err(e), (None, stream)))
-                    } else {
-                        None
-                    }
-                }
-            }
-        },
-    );
-
-    Ok((metadata, combined_stream.boxed()))
+    Ok((metadata, combined))
 }
 
 #[allow(clippy::too_many_arguments)]

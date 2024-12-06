@@ -28,6 +28,7 @@ use crate::{
     read_planner::{CoalescePass, RangesContainer, ReadPlanner, SplitLargeRequestPass},
     statistics,
     stream_reader::spawn_column_iters_to_table_task,
+    utils::combine_stream,
     JoinSnafu, OneShotRecvSnafu, UnableToConvertRowGroupMetadataToStatsSnafu,
     UnableToConvertSchemaToDaftSnafu, UnableToCreateParquetPageStreamSnafu,
     UnableToParseSchemaFromMetadataSnafu, UnableToRunExpressionOnStatsSnafu, PARQUET_MORSEL_SIZE,
@@ -546,27 +547,12 @@ impl ParquetFileReader {
 
         let stream_of_streams =
             futures::stream::iter(receivers.into_iter().map(ReceiverStream::new));
-        let flattened = match maintain_order {
-            true => stream_of_streams.flatten().boxed(),
-            false => stream_of_streams.flatten_unordered(None).boxed(),
-        };
-        let combined_stream = futures::stream::unfold(
-            (Some(parquet_task), flattened),
-            |(task, mut stream)| async move {
-                task.as_ref()?;
-                match stream.next().await {
-                    Some(v) => Some((v, (task, stream))),
-                    None => {
-                        if let Err(e) = task.unwrap().await {
-                            Some((Err(e), (None, stream)))
-                        } else {
-                            None
-                        }
-                    }
-                }
-            },
-        );
-        Ok(combined_stream.boxed())
+        match maintain_order {
+            true => Ok(combine_stream(stream_of_streams.flatten(), parquet_task).boxed()),
+            false => {
+                Ok(combine_stream(stream_of_streams.flatten_unordered(None), parquet_task).boxed())
+            }
+        }
     }
 
     pub async fn read_from_ranges_into_table(
