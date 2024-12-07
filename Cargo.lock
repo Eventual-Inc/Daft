@@ -1980,6 +1980,7 @@ dependencies = [
  "async-stream",
  "color-eyre",
  "common-daft-config",
+ "common-file-formats",
  "daft-core",
  "daft-dsl",
  "daft-local-execution",

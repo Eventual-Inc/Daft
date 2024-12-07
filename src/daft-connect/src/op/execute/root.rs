@@ -32,7 +32,7 @@ impl Session {
         let (tx, rx) = tokio::sync::mpsc::channel::<eyre::Result<ExecutePlanResponse>>(1);
         tokio::spawn(async move {
             let execution_fut = async {
-                let Plan { builder, psets } = translation::to_logical_plan(command)?;
+                let Plan { builder, psets } = translation::to_logical_plan(command).await?;
                 let optimized_plan = builder.optimize()?;
                 let cfg = Arc::new(DaftExecutionConfig::default());
                 let native_executor = NativeExecutor::from_logical_plan_builder(&optimized_plan)?;
