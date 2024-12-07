@@ -384,8 +384,8 @@ impl LogicalPlanBuilder {
     }
 
     // Helper function to create inner joins more ergonimically in tests.
-    #[allow(dead_code)]
-    pub(crate) fn test_inner_join<Right: Into<LogicalPlanRef>>(
+    #[cfg(test)]
+    pub(crate) fn inner_join<Right: Into<LogicalPlanRef>>(
         &self,
         right: Right,
         left_on: Vec<ExprRef>,

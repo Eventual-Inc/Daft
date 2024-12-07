@@ -1,39 +1,60 @@
 use std::{
     collections::{HashMap, HashSet},
     fmt::Display,
+    sync::Arc,
 };
 
 use daft_core::join::JoinType;
-use daft_dsl::{col, ExprRef};
+use daft_dsl::{col, optimization::replace_columns_with_expressions, ExprRef};
 
 use crate::{
     ops::{Filter, Join, Project},
     LogicalPlan, LogicalPlanRef,
 };
 
-/// JoinEdges currently represent relations that have an equi-join condition between each other.
 #[derive(Debug)]
-struct JoinEdge {
-    l_relation_name: String,
-    lnode: LogicalPlanRef,
-    l_final_name: String,
-    r_relation_name: String,
-    rnode: LogicalPlanRef,
-    r_final_name: String,
+struct JoinNode {
+    relation_name: String,
+    plan: LogicalPlanRef,
+    final_name: String,
 }
+
+/// JoinNodes represent a relation (i.e. a non-reorderable logical plan node), the column
+/// that's being accessed from the relation, and the final name of the column in the output.
+impl JoinNode {
+    fn new(relation_name: String, plan: LogicalPlanRef, final_name: String) -> Self {
+        Self {
+            relation_name,
+            plan,
+            final_name,
+        }
+    }
+
+    fn simple_repr(&self) -> String {
+        format!(
+            "{}#{}({})",
+            self.final_name,
+            self.plan.name(),
+            self.relation_name
+        )
+    }
+}
+
+impl Display for JoinNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.simple_repr())
+    }
+}
+
+/// JoinEdges currently represent a bidirectional edge between two relations that have
+/// an equi-join condition between each other.
+#[derive(Debug)]
+struct JoinEdge(JoinNode, JoinNode);
 
 impl JoinEdge {
     /// Helper function that summarizes join edge information.
     fn simple_repr(&self) -> String {
-        format!(
-            "l_{}#{}({}) <-> r_{}#{}({})",
-            self.l_final_name,
-            self.lnode.name(),
-            self.l_relation_name,
-            self.r_final_name,
-            self.rnode.name(),
-            self.r_relation_name
-        )
+        format!("{} <-> {}", self.0, self.1)
     }
 }
 
@@ -62,228 +83,52 @@ struct JoinGraph {
 }
 
 impl JoinGraph {
-    #[allow(dead_code)]
-    pub(crate) fn new(plan: LogicalPlanRef) -> Self {
-        let mut join_conds_to_resolve = vec![];
-        let output_schema = plan.schema();
-        // During join reordering, we might produce an output schema that differs from the initial output schema. For example,
-        // columns might be rearranged, or columns that were not originally selected might now be in the output schema.
-        // Hence, we take the original output schema and turn it into a projection that we should apply after all other join
-        // ordering projections have been applied.
-        let output_projection = output_schema
-            .fields
-            .iter()
-            .map(|(name, _)| col(name.clone()))
-            .collect();
-        let mut graph = Self {
-            edges: vec![],
-            final_projections_and_filters: vec![ProjectionOrFilter::Projection(output_projection)],
-        };
-        let mut final_name_map = HashMap::new();
-        graph.process_node(&plan, &mut join_conds_to_resolve, &mut final_name_map);
-        graph
-    }
-
-    /// `process_node` goes down the query tree finding reorderable nodes (e.g. inner joins, filters, certain projects etc)
-    /// and extracting join edges. It stops recursing down each branch of the query tree once it hits an unreorderable node
-    /// (e.g. an aggregation, an outer join, a source node etc).
-    /// It keeps track of the following state:
-    /// - join_conds_to_resolve: Join conditions (left_on/right_on) from downstream joins that need to be resolved by
-    ///                          linking to some upstream relation.
-    /// - final_name_map: Map from a column's current name in the query plan to its name in the final output schema.
-    ///
-    /// Joins that added conditions to `join_conds_to_resolve` will pop them off the stack after they have been resolved.
-    /// Combining each of their resolved `left_on` conditions with their respective resolved `right_on` conditions produces
-    /// a join edge between the relation used in the left condition and the relation used in the right condition.
-    fn process_node<'a>(
-        &mut self,
-        plan: &'a LogicalPlanRef,
-        join_conds_to_resolve: &mut Vec<(String, LogicalPlanRef, bool)>,
-        final_name_map: &mut HashMap<String, String>,
-    ) {
-        let schema = plan.schema();
-        let mut schema_names: HashSet<_> = schema.names().into_iter().collect();
-        for (name, node, done) in join_conds_to_resolve.iter_mut() {
-            if !*done && schema_names.contains(name) {
-                *node = plan.clone();
-            }
-        }
-        match &**plan {
-            LogicalPlan::Project(Project {
-                input, projection, ..
-            }) => {
-                // Get the mapping from input->output for projections that don't need computation.
-                let projection_input_mapping = projection
-                    .iter()
-                    .filter_map(|e| e.input_mapping().map(|s| (e.name(), s)))
-                    .collect::<HashMap<&'a str, _>>();
-                // To be able to reorder through the current projection, all unresolved columns must either have a
-                // zero-computation projection, or must not be projected by the current Project node (i.e. it should be
-                // resolved from some other branch in the query tree).
-                let reorderable_project = join_conds_to_resolve.iter().all(|(name, _, done)| {
-                    *done
-                        || !schema_names.contains(name)
-                        || projection_input_mapping.contains_key(name.as_str())
-                });
-                if reorderable_project {
-                    for (name, _, done) in join_conds_to_resolve.iter_mut() {
-                        if !*done {
-                            if let Some(new_name) = projection_input_mapping.get(name.as_str()) {
-                                // Remove the current name from the list of schema names so that we can produce
-                                // a set of non-join-key names for the current Project's schema.
-                                schema_names.remove(name);
-                                // If we haven't updated the corresponding entry in the final name map, do so now.
-                                if let Some(final_name) = final_name_map.remove(name) {
-                                    final_name_map.insert(new_name.to_string(), final_name);
-                                }
-                                *name = new_name.to_string();
-                            }
-                        }
-                    }
-                    // Keep track of non-join-key projections so that we can reapply them once we've reordered the query tree.
-                    let non_join_key_projections = projection
-                        .iter()
-                        .filter(|e| schema_names.contains(e.name()))
-                        .cloned()
-                        .collect::<Vec<_>>();
-                    if !non_join_key_projections.is_empty() {
-                        self.final_projections_and_filters
-                            .push(ProjectionOrFilter::Projection(non_join_key_projections));
-                    }
-                    // Continue to children.
-                    self.process_node(input, join_conds_to_resolve, final_name_map);
-                } else {
-                    for (name, _, done) in join_conds_to_resolve.iter_mut() {
-                        if schema_names.contains(name) {
-                            *done = true;
-                        }
-                    }
-                }
-            }
-            LogicalPlan::Filter(Filter {
-                input, predicate, ..
-            }) => {
-                self.final_projections_and_filters
-                    .push(ProjectionOrFilter::Filter(predicate.clone()));
-                self.process_node(input, join_conds_to_resolve, final_name_map);
-            }
-            // Only reorder inner joins with non-empty join conditions.
-            LogicalPlan::Join(Join {
-                left,
-                right,
-                left_on,
-                right_on,
-                join_type,
-                ..
-            }) if *join_type == JoinType::Inner && !left_on.is_empty() => {
-                for l in left_on {
-                    let name = l.name();
-                    if final_name_map.get(name).is_none() {
-                        final_name_map.insert(name.to_string(), name.to_string());
-                    }
-                    join_conds_to_resolve.push((name.to_string(), plan.clone(), false));
-                }
-                self.process_node(left, join_conds_to_resolve, final_name_map);
-                let mut ready_left = vec![];
-                for _ in 0..left_on.len() {
-                    ready_left.push(join_conds_to_resolve.pop().unwrap());
-                }
-                for r in right_on {
-                    let name = r.name();
-                    if final_name_map.get(name).is_none() {
-                        final_name_map.insert(name.to_string(), name.to_string());
-                    }
-                    join_conds_to_resolve.push((name.to_string(), plan.clone(), false));
-                }
-                self.process_node(right, join_conds_to_resolve, final_name_map);
-                let mut ready_right = vec![];
-                for _ in 0..right_on.len() {
-                    ready_right.push(join_conds_to_resolve.pop().unwrap());
-                }
-                for ((lname, lnode, ldone), (rname, rnode, rdone)) in
-                    ready_left.into_iter().zip(ready_right.into_iter())
-                {
-                    if ldone && rdone {
-                        self.edges.push(JoinEdge {
-                            l_relation_name: lname.clone(),
-                            lnode: lnode.clone(),
-                            l_final_name: final_name_map.get(&lname).unwrap().to_string(),
-                            r_relation_name: rname.clone(),
-                            rnode: rnode.clone(),
-                            r_final_name: final_name_map.get(&rname).unwrap().to_string(),
-                        });
-                    }
-                }
-            }
-            // TODO(desmond): There are potentially more reorderable nodes. For example, we can move repartitions around.
-            _ => {
-                // This is an unreorderable node. All unresolved columns coming out of this node should be marked as resolved.
-                for (name, _, done) in join_conds_to_resolve.iter_mut() {
-                    if schema_names.contains(name) {
-                        *done = true;
-                    }
-                }
-                // TODO(desmond): At this point we should perform a fresh join reorder optimization starting from this
-                // node as the root node. We can do this once we add the optimizer rule.
-            }
+    pub(crate) fn new(
+        edges: Vec<JoinEdge>,
+        final_projections_and_filters: Vec<ProjectionOrFilter>,
+    ) -> Self {
+        Self {
+            edges,
+            final_projections_and_filters,
         }
     }
 
     /// Test helper function to get the number of edges that the current graph contains.
-    #[allow(dead_code)]
     pub(crate) fn num_edges(&self) -> usize {
         self.edges.len()
     }
 
     /// Test helper function to check that all relations in this graph are connected.
-    #[allow(dead_code)]
     pub(crate) fn fully_connected(&self) -> bool {
-        let relation_set: HashSet<_> = self
-            .edges
-            .iter()
-            .flat_map(|edge| [&edge.lnode, &edge.rnode])
-            .collect();
-        let num_relations = relation_set.len();
-        let relation_map: HashMap<_, _> = relation_set
-            .into_iter()
-            .enumerate()
-            .map(|(id, node)| (node.clone(), id))
-            .collect();
-        // Perform union between relations using all edges.
-        let mut parent: Vec<usize> = (0..num_relations).collect();
-        let mut size = vec![1usize; num_relations];
-        fn find_set(idx: usize, parent: &mut Vec<usize>) -> usize {
-            if idx == parent[idx] {
-                idx
-            } else {
-                parent[idx] = find_set(parent[idx], parent);
-                parent[idx]
-            }
+        // Assuming that we're not testing an empty graph, there should be at least one edge in a connected graph.
+        if self.edges.is_empty() {
+            return false;
         }
+        let mut adj_list: HashMap<*const _, Vec<*const _>> = HashMap::new();
         for edge in &self.edges {
-            let l = relation_map.get(&edge.lnode).unwrap();
-            let r = relation_map.get(&edge.rnode).unwrap();
-            let lset = find_set(*l, &mut parent);
-            let rset = find_set(*r, &mut parent);
-            if lset != rset {
-                let (small, big) = if size[lset] < size[rset] {
-                    (lset, rset)
-                } else {
-                    (rset, lset)
-                };
-                parent[small] = big;
-                size[big] += size[small];
+            let l_ptr = Arc::as_ptr(&edge.0.plan);
+            let r_ptr = Arc::as_ptr(&edge.1.plan);
+
+            adj_list.entry(l_ptr).or_default().push(r_ptr);
+            adj_list.entry(r_ptr).or_default().push(l_ptr);
+        }
+        let start_ptr = Arc::as_ptr(&self.edges[0].0.plan);
+        let mut seen = HashSet::new();
+        let mut stack = vec![start_ptr];
+
+        while let Some(current) = stack.pop() {
+            if seen.insert(current) {
+                // If this is a new node, add all its neighbors to the stack.
+                if let Some(neighbors) = adj_list.get(&current) {
+                    stack.extend(neighbors.iter().filter(|&&n| !seen.contains(&n)));
+                }
             }
         }
-        let relation_to_test = &self.edges.first().unwrap().lnode;
-        let index_to_test = relation_map.get(relation_to_test).unwrap();
-        let set_size = size[parent[*index_to_test]];
-        set_size == num_relations
+        seen.len() == adj_list.len()
     }
 
     /// Test helper function that checks if the graph contains the given projection/filter expressions
     /// in the given order.
-    #[allow(dead_code)]
     pub(crate) fn contains_projections_and_filters(&self, to_check: Vec<&ExprRef>) -> bool {
         let all_exprs: Vec<_> = self
             .final_projections_and_filters
@@ -307,7 +152,6 @@ impl JoinGraph {
 
     /// Helper function that loosely checks if a given edge (represented by a simple string)
     /// exists in the current graph.
-    #[allow(dead_code)]
     pub(crate) fn contains_edge(&self, edge_string: &str) -> bool {
         for edge in &self.edges {
             if edge.simple_repr() == edge_string {
@@ -315,6 +159,192 @@ impl JoinGraph {
             }
         }
         false
+    }
+}
+
+/// JoinGraphBuilder takes in a logical plan. On .build(), it returns a JoinGraph that represents the given logical plan.
+struct JoinGraphBuilder {
+    join_conds_to_resolve: Vec<(String, LogicalPlanRef, bool)>,
+    final_name_map: HashMap<String, ExprRef>,
+    edges: Vec<JoinEdge>,
+    final_projections_and_filters: Vec<ProjectionOrFilter>,
+}
+
+impl JoinGraphBuilder {
+    pub(crate) fn build(self) -> JoinGraph {
+        JoinGraph::new(self.edges, self.final_projections_and_filters)
+    }
+
+    pub(crate) fn from_logical_plan(plan: LogicalPlanRef) -> Self {
+        let output_schema = plan.schema();
+        // During join reordering, we might produce an output schema that differs from the initial output schema. For example,
+        // columns might be rearranged, or columns that were not originally selected might now be in the output schema.
+        // Hence, we take the original output schema and turn it into a projection that we should apply after all other join
+        // ordering projections have been applied.
+        let output_projection = output_schema
+            .fields
+            .iter()
+            .map(|(name, _)| col(name.clone()))
+            .collect();
+        let mut builder = Self {
+            join_conds_to_resolve: vec![],
+            final_name_map: HashMap::new(),
+            edges: vec![],
+            final_projections_and_filters: vec![ProjectionOrFilter::Projection(output_projection)],
+        };
+        builder.process_node(&plan);
+        builder
+    }
+
+    /// `process_node` goes down the query tree finding reorderable nodes (e.g. inner joins, filters, certain projects etc)
+    /// and extracting join edges. It stops recursing down each branch of the query tree once it hits an unreorderable node
+    /// (e.g. an aggregation, an outer join, a source node etc).
+    /// It keeps track of the following state:
+    /// - join_conds_to_resolve: Join conditions (left_on/right_on) from downstream joins that need to be resolved by
+    ///                          linking to some upstream relation.
+    /// - final_name_map: Map from a column's current name in the query plan to its name in the final output schema.
+    ///
+    /// Joins that added conditions to `join_conds_to_resolve` will pop them off the stack after they have been resolved.
+    /// Combining each of their resolved `left_on` conditions with their respective resolved `right_on` conditions produces
+    /// a join edge between the relation used in the left condition and the relation used in the right condition.
+    fn process_node<'a>(&mut self, plan: &'a LogicalPlanRef) {
+        let schema = plan.schema();
+        for (name, node, done) in self.join_conds_to_resolve.iter_mut() {
+            if !*done && schema.has_field(name) {
+                *node = plan.clone();
+            }
+        }
+        match &**plan {
+            LogicalPlan::Project(Project {
+                input, projection, ..
+            }) => {
+                // Get the mapping from input->output for projections that don't need computation.
+                let projection_input_mapping = projection
+                    .iter()
+                    .filter_map(|e| e.input_mapping().map(|s| (e.name().to_string(), col(s))))
+                    .collect::<HashMap<String, _>>();
+                // To be able to reorder through the current projection, all unresolved columns must either have a
+                // zero-computation projection, or must not be projected by the current Project node (i.e. it should be
+                // resolved from some other branch in the query tree).
+                let reorderable_project =
+                    self.join_conds_to_resolve.iter().all(|(name, _, done)| {
+                        *done
+                            || !schema.has_field(name)
+                            || projection_input_mapping.contains_key(name.as_str())
+                    });
+                if reorderable_project {
+                    let mut non_join_names: HashSet<String> = schema.names().into_iter().collect();
+                    for (name, _, done) in self.join_conds_to_resolve.iter_mut() {
+                        if !*done {
+                            if let Some(new_expr) = projection_input_mapping.get(name) {
+                                // Remove the current name from the list of schema names so that we can produce
+                                // a set of non-join-key names for the current Project's schema.
+                                non_join_names.remove(name);
+                                // If we haven't updated the corresponding entry in the final name map, do so now.
+                                if let Some(final_name) = self.final_name_map.remove(name) {
+                                    self.final_name_map
+                                        .insert(new_expr.name().to_string(), final_name);
+                                }
+                                *name = new_expr.name().to_string();
+                            }
+                        }
+                    }
+                    // Keep track of non-join-key projections so that we can reapply them once we've reordered the query tree.
+                    let non_join_key_projections = projection
+                        .iter()
+                        .filter(|e| non_join_names.contains(e.name()))
+                        .map(|e| {
+                            replace_columns_with_expressions(e.clone(), &projection_input_mapping)
+                        })
+                        .collect::<Vec<_>>();
+                    if !non_join_key_projections.is_empty() {
+                        self.final_projections_and_filters
+                            .push(ProjectionOrFilter::Projection(non_join_key_projections));
+                    }
+                    // Continue to children.
+                    self.process_node(input);
+                } else {
+                    for (name, _, done) in self.join_conds_to_resolve.iter_mut() {
+                        if schema.has_field(name) {
+                            *done = true;
+                        }
+                    }
+                }
+            }
+            LogicalPlan::Filter(Filter {
+                input, predicate, ..
+            }) => {
+                let new_predicate =
+                    replace_columns_with_expressions(predicate.clone(), &self.final_name_map);
+                self.final_projections_and_filters
+                    .push(ProjectionOrFilter::Filter(new_predicate));
+                self.process_node(input);
+            }
+            // Only reorder inner joins with non-empty join conditions.
+            LogicalPlan::Join(Join {
+                left,
+                right,
+                left_on,
+                right_on,
+                join_type,
+                ..
+            }) if *join_type == JoinType::Inner && !left_on.is_empty() => {
+                for l in left_on {
+                    let name = l.name();
+                    if self.final_name_map.get(name).is_none() {
+                        self.final_name_map.insert(name.to_string(), col(name));
+                    }
+                    self.join_conds_to_resolve
+                        .push((name.to_string(), plan.clone(), false));
+                }
+                self.process_node(left);
+                let mut ready_left = vec![];
+                for _ in 0..left_on.len() {
+                    ready_left.push(self.join_conds_to_resolve.pop().unwrap());
+                }
+                for r in right_on {
+                    let name = r.name();
+                    if self.final_name_map.get(name).is_none() {
+                        self.final_name_map.insert(name.to_string(), col(name));
+                    }
+                    self.join_conds_to_resolve
+                        .push((name.to_string(), plan.clone(), false));
+                }
+                self.process_node(right);
+                let mut ready_right = vec![];
+                for _ in 0..right_on.len() {
+                    ready_right.push(self.join_conds_to_resolve.pop().unwrap());
+                }
+                for ((lname, lnode, ldone), (rname, rnode, rdone)) in
+                    ready_left.into_iter().zip(ready_right.into_iter())
+                {
+                    if ldone && rdone {
+                        let node1 = JoinNode::new(
+                            lname.clone(),
+                            lnode.clone(),
+                            self.final_name_map.get(&lname).unwrap().name().to_string(),
+                        );
+                        let node2 = JoinNode::new(
+                            rname.clone(),
+                            rnode.clone(),
+                            self.final_name_map.get(&rname).unwrap().name().to_string(),
+                        );
+                        self.edges.push(JoinEdge(node1, node2));
+                    }
+                }
+            }
+            // TODO(desmond): There are potentially more reorderable nodes. For example, we can move repartitions around.
+            _ => {
+                // This is an unreorderable node. All unresolved columns coming out of this node should be marked as resolved.
+                for (name, _, done) in self.join_conds_to_resolve.iter_mut() {
+                    if schema.has_field(name) {
+                        *done = true;
+                    }
+                }
+                // TODO(desmond): At this point we should perform a fresh join reorder optimization starting from this
+                // node as the root node. We can do this once we add the optimizer rule.
+            }
+        }
     }
 }
 
@@ -327,7 +357,7 @@ mod tests {
     use daft_dsl::{col, AggExpr, Expr, LiteralValue};
     use daft_schema::{dtype::DataType, field::Field};
 
-    use super::JoinGraph;
+    use super::JoinGraphBuilder;
     use crate::test::{dummy_scan_node_with_pushdowns, dummy_scan_operator};
 
     #[test]
@@ -359,37 +389,37 @@ mod tests {
             Pushdowns::default(),
         );
         let join_plan_l = scan_a
-            .test_inner_join(
+            .inner_join(
                 scan_b,
                 vec![Arc::new(Expr::Column(Arc::from("a")))],
                 vec![Arc::new(Expr::Column(Arc::from("b")))],
             )
             .unwrap();
         let join_plan_r = scan_c
-            .test_inner_join(
+            .inner_join(
                 scan_d,
                 vec![Arc::new(Expr::Column(Arc::from("c")))],
                 vec![Arc::new(Expr::Column(Arc::from("d")))],
             )
             .unwrap();
         let join_plan = join_plan_l
-            .test_inner_join(
+            .inner_join(
                 join_plan_r,
                 vec![Arc::new(Expr::Column(Arc::from("a")))],
                 vec![Arc::new(Expr::Column(Arc::from("d")))],
             )
             .unwrap();
         let plan = join_plan.build();
-        let join_graph = JoinGraph::new(plan);
+        let join_graph = JoinGraphBuilder::from_logical_plan(plan).build();
         assert!(join_graph.fully_connected());
         // There should be edges between:
         // - a <-> b
         // - c_prime <-> d
         // - a <-> d
         assert!(join_graph.num_edges() == 3);
-        assert!(join_graph.contains_edge("l_a#Source(a) <-> r_b#Source(b)"));
-        assert!(join_graph.contains_edge("l_c#Source(c_prime) <-> r_d#Source(d)"));
-        assert!(join_graph.contains_edge("l_a#Source(a) <-> r_d#Source(d)"));
+        assert!(join_graph.contains_edge("a#Source(a) <-> b#Source(b)"));
+        assert!(join_graph.contains_edge("c#Source(c_prime) <-> d#Source(d)"));
+        assert!(join_graph.contains_edge("a#Source(a) <-> d#Source(d)"));
     }
 
     #[test]
@@ -421,37 +451,37 @@ mod tests {
             Pushdowns::default(),
         );
         let join_plan_l = scan_a
-            .test_inner_join(
+            .inner_join(
                 scan_b,
                 vec![Arc::new(Expr::Column(Arc::from("a")))],
                 vec![Arc::new(Expr::Column(Arc::from("b")))],
             )
             .unwrap();
         let join_plan_r = scan_c
-            .test_inner_join(
+            .inner_join(
                 scan_d,
                 vec![Arc::new(Expr::Column(Arc::from("c")))],
                 vec![Arc::new(Expr::Column(Arc::from("d")))],
             )
             .unwrap();
         let join_plan = join_plan_l
-            .test_inner_join(
+            .inner_join(
                 join_plan_r,
                 vec![Arc::new(Expr::Column(Arc::from("b")))],
                 vec![Arc::new(Expr::Column(Arc::from("d")))],
             )
             .unwrap();
         let plan = join_plan.build();
-        let join_graph = JoinGraph::new(plan);
+        let join_graph = JoinGraphBuilder::from_logical_plan(plan).build();
         assert!(join_graph.fully_connected());
         // There should be edges between:
         // - a <-> b
         // - c_prime <-> d
         // - b <-> d
         assert!(join_graph.num_edges() == 3);
-        assert!(join_graph.contains_edge("l_a#Source(a) <-> r_b#Source(b)"));
-        assert!(join_graph.contains_edge("l_c#Source(c_prime) <-> r_d#Source(d)"));
-        assert!(join_graph.contains_edge("l_b#Source(b) <-> r_d#Source(d)"));
+        assert!(join_graph.contains_edge("a#Source(a) <-> b#Source(b)"));
+        assert!(join_graph.contains_edge("c#Source(c_prime) <-> d#Source(d)"));
+        assert!(join_graph.contains_edge("b#Source(b) <-> d#Source(d)"));
     }
 
     #[test]
@@ -482,7 +512,7 @@ mod tests {
             Pushdowns::default(),
         );
         let join_plan_1 = scan_a
-            .test_inner_join(
+            .inner_join(
                 scan_b,
                 vec![Arc::new(Expr::Column(Arc::from("a_alpha")))],
                 vec![Arc::new(Expr::Column(Arc::from("b")))],
@@ -491,14 +521,14 @@ mod tests {
             .select(vec![col("a_alpha").alias("a_beta"), col("b")])
             .unwrap();
         let join_plan_2 = join_plan_1
-            .test_inner_join(
+            .inner_join(
                 scan_c,
                 vec![Arc::new(Expr::Column(Arc::from("a_beta")))],
                 vec![Arc::new(Expr::Column(Arc::from("c")))],
             )
             .unwrap();
         let plan = join_plan_2.build();
-        let join_graph = JoinGraph::new(plan);
+        let join_graph = JoinGraphBuilder::from_logical_plan(plan).build();
         assert!(join_graph.fully_connected());
         // There should be edges between:
         // - a <-> b
@@ -538,37 +568,37 @@ mod tests {
             Pushdowns::default(),
         );
         let join_plan_l = scan_a
-            .test_inner_join(
+            .inner_join(
                 scan_b,
                 vec![Arc::new(Expr::Column(Arc::from("a")))],
                 vec![Arc::new(Expr::Column(Arc::from("b")))],
             )
             .unwrap();
         let join_plan_r = scan_c
-            .test_inner_join(
+            .inner_join(
                 scan_d,
                 vec![Arc::new(Expr::Column(Arc::from("c")))],
                 vec![Arc::new(Expr::Column(Arc::from("d")))],
             )
             .unwrap();
         let join_plan = join_plan_l
-            .test_inner_join(
+            .inner_join(
                 join_plan_r,
                 vec![Arc::new(Expr::Column(Arc::from("a")))],
                 vec![Arc::new(Expr::Column(Arc::from("d")))],
             )
             .unwrap();
         let plan = join_plan.build();
-        let join_graph = JoinGraph::new(plan);
+        let join_graph = JoinGraphBuilder::from_logical_plan(plan).build();
         assert!(join_graph.fully_connected());
         // There should be edges between:
         // - a <-> b
         // - c_prime <-> d
         // - a <-> d
         assert!(join_graph.num_edges() == 3);
-        assert!(join_graph.contains_edge("l_a#Source(a) <-> r_b#Source(b)"));
-        assert!(join_graph.contains_edge("l_c#Source(c_prime) <-> r_d#Source(d)"));
-        assert!(join_graph.contains_edge("l_a#Source(a) <-> r_d#Source(d)"));
+        assert!(join_graph.contains_edge("a#Source(a) <-> b#Source(b)"));
+        assert!(join_graph.contains_edge("c#Source(c_prime) <-> d#Source(d)"));
+        assert!(join_graph.contains_edge("a#Source(a) <-> d#Source(d)"));
         // Check for non-join projections at the end.
         assert!(join_graph.contains_projections_and_filters(vec![&double_proj]));
     }
@@ -612,7 +642,7 @@ mod tests {
             Pushdowns::default(),
         );
         let join_plan_l = scan_a
-            .test_inner_join(
+            .inner_join(
                 scan_b,
                 vec![Arc::new(Expr::Column(Arc::from("a")))],
                 vec![Arc::new(Expr::Column(Arc::from("b")))],
@@ -620,7 +650,7 @@ mod tests {
             .unwrap();
         let quad_proj = col("double").add(col("double")).alias("quad");
         let join_plan_r = scan_c
-            .test_inner_join(
+            .inner_join(
                 scan_d,
                 vec![Arc::new(Expr::Column(Arc::from("c")))],
                 vec![Arc::new(Expr::Column(Arc::from("d")))],
@@ -629,23 +659,23 @@ mod tests {
             .select(vec![col("d"), quad_proj.clone()])
             .unwrap();
         let join_plan = join_plan_l
-            .test_inner_join(
+            .inner_join(
                 join_plan_r,
                 vec![Arc::new(Expr::Column(Arc::from("a")))],
                 vec![Arc::new(Expr::Column(Arc::from("d")))],
             )
             .unwrap();
         let plan = join_plan.build();
-        let join_graph = JoinGraph::new(plan);
+        let join_graph = JoinGraphBuilder::from_logical_plan(plan).build();
         assert!(join_graph.fully_connected());
         // There should be edges between:
         // - a <-> b
         // - c_prime <-> d
         // - a <-> d
         assert!(join_graph.num_edges() == 3);
-        assert!(join_graph.contains_edge("l_a#Source(a) <-> r_b#Source(b)"));
-        assert!(join_graph.contains_edge("l_c#Source(c_prime) <-> r_d#Source(d)"));
-        assert!(join_graph.contains_edge("l_a#Source(a) <-> r_d#Source(d)"));
+        assert!(join_graph.contains_edge("a#Source(a) <-> b#Source(b)"));
+        assert!(join_graph.contains_edge("c#Source(c_prime) <-> d#Source(d)"));
+        assert!(join_graph.contains_edge("a#Source(a) <-> d#Source(d)"));
         // Check for non-join projections and filters at the end.
         assert!(join_graph.contains_projections_and_filters(vec![
             &quad_proj,
@@ -697,37 +727,37 @@ mod tests {
             Pushdowns::default(),
         );
         let join_plan_l = scan_a
-            .test_inner_join(
+            .inner_join(
                 scan_b,
                 vec![Arc::new(Expr::Column(Arc::from("a")))],
                 vec![Arc::new(Expr::Column(Arc::from("b")))],
             )
             .unwrap();
         let join_plan_r = scan_c
-            .test_inner_join(
+            .inner_join(
                 scan_d,
                 vec![Arc::new(Expr::Column(Arc::from("c")))],
                 vec![Arc::new(Expr::Column(Arc::from("d")))],
             )
             .unwrap();
         let join_plan = join_plan_l
-            .test_inner_join(
+            .inner_join(
                 join_plan_r,
                 vec![Arc::new(Expr::Column(Arc::from("a")))],
                 vec![Arc::new(Expr::Column(Arc::from("d")))],
             )
             .unwrap();
         let plan = join_plan.build();
-        let join_graph = JoinGraph::new(plan);
+        let join_graph = JoinGraphBuilder::from_logical_plan(plan).build();
         assert!(join_graph.fully_connected());
         // There should be edges between:
         // - a <-> b
         // - c_prime <-> d
         // - a <-> d
         assert!(join_graph.num_edges() == 3);
-        assert!(join_graph.contains_edge("l_a#Aggregate(a) <-> r_b#Source(b)"));
-        assert!(join_graph.contains_edge("l_c#Source(c_prime) <-> r_d#Source(d)"));
-        assert!(join_graph.contains_edge("l_a#Aggregate(a) <-> r_d#Source(d)"));
+        assert!(join_graph.contains_edge("a#Aggregate(a) <-> b#Source(b)"));
+        assert!(join_graph.contains_edge("c#Source(c_prime) <-> d#Source(d)"));
+        assert!(join_graph.contains_edge("a#Aggregate(a) <-> d#Source(d)"));
         // Projections below the aggregation should not be part of the final projections.
         assert!(!join_graph.contains_projections_and_filters(vec![&a_proj]));
     }
