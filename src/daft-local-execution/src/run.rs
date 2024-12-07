@@ -92,7 +92,7 @@ impl PyNativeExecutor {
                 )
             })
             .collect();
-        let psets = Arc::new(InMemoryPartitionSet::new(native_psets));
+        let psets = InMemoryPartitionSet::new(native_psets);
         let out = py.allow_threads(|| {
             self.executor
                 .run(psets, cfg.config, results_buffer_size)
@@ -125,7 +125,7 @@ impl NativeExecutor {
 
     pub fn run(
         &self,
-        psets: Arc<dyn PartitionSet>,
+        psets: impl PartitionSet,
         cfg: Arc<DaftExecutionConfig>,
         results_buffer_size: Option<usize>,
     ) -> DaftResult<ExecutionEngineResult> {
@@ -250,13 +250,13 @@ impl IntoIterator for ExecutionEngineResult {
 
 pub fn run_local(
     physical_plan: &LocalPhysicalPlan,
-    psets: Arc<dyn PartitionSet>,
+    psets: impl PartitionSet,
     cfg: Arc<DaftExecutionConfig>,
     results_buffer_size: Option<usize>,
     cancel: CancellationToken,
 ) -> DaftResult<ExecutionEngineResult> {
     refresh_chrome_trace();
-    let pipeline = physical_plan_to_pipeline(physical_plan, psets.as_ref(), &cfg)?;
+    let pipeline = physical_plan_to_pipeline(physical_plan, &psets, &cfg)?;
     let (tx, rx) = create_channel(results_buffer_size.unwrap_or(1));
     let handle = std::thread::spawn(move || {
         let runtime = tokio::runtime::Builder::new_current_thread()

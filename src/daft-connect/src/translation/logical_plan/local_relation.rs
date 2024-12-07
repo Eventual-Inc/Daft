@@ -183,7 +183,7 @@ pub fn local_relation(plan: spark_connect::LocalRelation) -> eyre::Result<Plan> 
 
         let plan = Plan {
             builder: plan,
-            psets: Arc::new(InMemoryPartitionSet::new(psets)),
+            psets: InMemoryPartitionSet::new(psets),
         };
 
         Ok(plan)

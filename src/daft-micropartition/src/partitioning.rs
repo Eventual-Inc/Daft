@@ -5,7 +5,7 @@ use daft_dsl::Expr;
 use futures::stream::BoxStream;
 
 use crate::MicroPartition;
-type PartId = String;
+type PartitionId = String;
 
 #[derive(Debug, Clone)]
 pub struct Boundaries {
@@ -32,7 +32,7 @@ impl PartitionMetadata {
     }
 }
 
-/// A batch of micropartitions
+/// A collection of related [`MicroPartition`]'s that can be processed as a single unit.
 pub trait PartitionBatch: Send + Sync {
     fn micropartitions(&self) -> Vec<Arc<MicroPartition>>;
     fn metadata(&self) -> PartitionMetadata;
@@ -41,6 +41,7 @@ pub trait PartitionBatch: Send + Sync {
     ) -> BoxStream<'static, DaftResult<Arc<MicroPartition>>>;
 }
 
+/// an in memory batch of [`MicroPartition`]'s
 #[derive(Debug, Clone)]
 pub struct InMemoryPartitionBatch {
     pub partition: Vec<Arc<MicroPartition>>,
@@ -78,12 +79,16 @@ impl PartitionBatch for InMemoryPartitionBatch {
 /// an arc'd reference to a [`PartitionBatch`]
 pub type PartitionBatchRef = Arc<dyn PartitionBatch>;
 
+/// a collection of [`MicroPartition`]
+///
+/// Since we can have different partition sets such as an in memory, or a distributed partition set, we need to abstract over the partition set.
+/// This trait defines the common operations that can be performed on a partition set.
 pub trait PartitionSet {
     /// Merge all micropartitions into a single micropartition
     fn get_merged_micropartitions(&self) -> DaftResult<MicroPartition>;
     /// Get a preview of the micropartitions
     fn get_preview_micropartitions(&self, num_rows: usize) -> DaftResult<Vec<Arc<MicroPartition>>>;
-    fn items(&self) -> DaftResult<Vec<(PartId, PartitionBatchRef)>>;
+    fn items(&self) -> DaftResult<Vec<(PartitionId, PartitionBatchRef)>>;
     fn values(&self) -> DaftResult<Vec<PartitionBatchRef>> {
         let items = self.items()?;
         Ok(items.into_iter().map(|(_, mp)| mp).collect())
@@ -97,15 +102,16 @@ pub trait PartitionSet {
     /// Size of the partition set in bytes
     fn size_bytes(&self) -> DaftResult<usize>;
     /// Check if a partition exists
-    fn has_partition(&self, idx: &PartId) -> bool;
+    fn has_partition(&self, idx: &PartitionId) -> bool;
     /// Delete a partition
-    fn delete_partition(&mut self, idx: &PartId) -> DaftResult<()>;
+    fn delete_partition(&mut self, idx: &PartitionId) -> DaftResult<()>;
     /// Set a partition
-    fn set_partition(&mut self, idx: PartId, part: PartitionBatchRef) -> DaftResult<()>;
+    fn set_partition(&mut self, idx: PartitionId, part: PartitionBatchRef) -> DaftResult<()>;
     /// Get a partition
-    fn get_partition(&self, idx: &PartId) -> DaftResult<PartitionBatchRef>;
+    fn get_partition(&self, idx: &PartitionId) -> DaftResult<PartitionBatchRef>;
 }
 
+/// An in memory partition set
 #[derive(Debug, Default)]
 pub struct InMemoryPartitionSet {
     pub partitions: HashMap<String, Vec<Arc<MicroPartition>>>,
@@ -146,7 +152,7 @@ impl PartitionSet for InMemoryPartitionSet {
         Ok(preview_parts)
     }
 
-    fn items(&self) -> DaftResult<Vec<(PartId, PartitionBatchRef)>> {
+    fn items(&self) -> DaftResult<Vec<(PartitionId, PartitionBatchRef)>> {
         self.partitions
             .iter()
             .map(|(k, v)| {
@@ -178,23 +184,27 @@ impl PartitionSet for InMemoryPartitionSet {
         partitions.try_fold(0, |acc, mp| Ok(acc + mp.size_bytes()?.unwrap_or(0)))
     }
 
-    fn has_partition(&self, partition_id: &PartId) -> bool {
+    fn has_partition(&self, partition_id: &PartitionId) -> bool {
         self.partitions.contains_key(partition_id)
     }
 
-    fn delete_partition(&mut self, partition_id: &PartId) -> DaftResult<()> {
+    fn delete_partition(&mut self, partition_id: &PartitionId) -> DaftResult<()> {
         self.partitions.remove(partition_id);
         Ok(())
     }
 
-    fn set_partition(&mut self, partition_id: PartId, part: PartitionBatchRef) -> DaftResult<()> {
+    fn set_partition(
+        &mut self,
+        partition_id: PartitionId,
+        part: PartitionBatchRef,
+    ) -> DaftResult<()> {
         let part = part.micropartitions();
 
         self.partitions.insert(partition_id, part);
         Ok(())
     }
 
-    fn get_partition(&self, idx: &PartId) -> DaftResult<PartitionBatchRef> {
+    fn get_partition(&self, idx: &PartitionId) -> DaftResult<PartitionBatchRef> {
         let part = self
             .partitions
             .get(idx)
