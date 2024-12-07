@@ -253,9 +253,7 @@ impl JoinGraphBuilder {
                     let non_join_key_projections = projection
                         .iter()
                         .filter(|e| non_join_names.contains(e.name()))
-                        .map(|e| {
-                            replace_columns_with_expressions(e.clone(), &projection_input_mapping)
-                        })
+                        .map(|e| replace_columns_with_expressions(e.clone(), &self.final_name_map))
                         .collect::<Vec<_>>();
                     if !non_join_key_projections.is_empty() {
                         self.final_projections_and_filters
@@ -534,8 +532,8 @@ mod tests {
         // - a <-> b
         // - a <-> c
         assert!(join_graph.num_edges() == 2);
-        assert!(join_graph.contains_edge("l_a_beta#Source(a) <-> r_b#Source(b)"));
-        assert!(join_graph.contains_edge("l_a_beta#Source(a) <-> r_c#Source(c)"));
+        assert!(join_graph.contains_edge("a_beta#Source(a) <-> b#Source(b)"));
+        assert!(join_graph.contains_edge("a_beta#Source(a) <-> c#Source(c)"));
     }
 
     #[test]
@@ -600,6 +598,8 @@ mod tests {
         assert!(join_graph.contains_edge("c#Source(c_prime) <-> d#Source(d)"));
         assert!(join_graph.contains_edge("a#Source(a) <-> d#Source(d)"));
         // Check for non-join projections at the end.
+        // `c_prime` gets renamed to `c` in the final projection
+        let double_proj = col("c").add(col("c")).alias("double");
         assert!(join_graph.contains_projections_and_filters(vec![&double_proj]));
     }
 
@@ -618,6 +618,9 @@ mod tests {
         //                        Project
         //                        (c <- c_prime, double <- c_prime + c_prime)
         //                           |
+        //                        Filter
+        //                        (c_prime > 0)
+        //                           |
         //                        Scan(c_prime)
         let scan_a = dummy_scan_node_with_pushdowns(
             dummy_scan_operator(vec![Field::new("a", DataType::Int64)]),
@@ -628,11 +631,14 @@ mod tests {
             Pushdowns::default(),
         );
         let double_proj = col("c_prime").add(col("c_prime")).alias("double");
+        let filter_c_prime = col("c_prime").gt(Arc::new(Expr::Literal(LiteralValue::Int64(0))));
         let filter_c = col("c").lt(Arc::new(Expr::Literal(LiteralValue::Int64(5))));
         let scan_c = dummy_scan_node_with_pushdowns(
             dummy_scan_operator(vec![Field::new("c_prime", DataType::Int64)]),
             Pushdowns::default(),
         )
+        .filter(filter_c_prime.clone())
+        .unwrap()
         .select(vec![col("c_prime").alias("c"), double_proj.clone()])
         .unwrap()
         .filter(filter_c.clone())
@@ -677,10 +683,14 @@ mod tests {
         assert!(join_graph.contains_edge("c#Source(c_prime) <-> d#Source(d)"));
         assert!(join_graph.contains_edge("a#Source(a) <-> d#Source(d)"));
         // Check for non-join projections and filters at the end.
+        // `c_prime` gets renamed to `c` in the final projection
+        let double_proj = col("c").add(col("c")).alias("double");
+        let filter_c_prime = col("c").gt(Arc::new(Expr::Literal(LiteralValue::Int64(0))));
         assert!(join_graph.contains_projections_and_filters(vec![
             &quad_proj,
             &filter_c,
             &double_proj,
+            &filter_c_prime,
         ]));
     }
 
