@@ -67,3 +67,7 @@ You can take the IP address and port and pass it to Daft:
     ╰───────╯
 
     (Showing first 2 of 2 rows)
+
+.. toctree::
+
+    distributed-computing/daft-launcher
