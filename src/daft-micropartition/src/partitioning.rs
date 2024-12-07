@@ -7,12 +7,16 @@ use futures::stream::BoxStream;
 use crate::MicroPartition;
 type PartitionId = String;
 
+/// ported over from `daft/runners/partitioning.py`
+// TODO: port over the rest of the functionality
 #[derive(Debug, Clone)]
 pub struct Boundaries {
     pub sort_by: Vec<Expr>,
     pub bounds: Arc<MicroPartition>,
 }
 
+/// ported over from `daft/runners/partitioning.py`
+// TODO: port over the rest of the functionality
 #[derive(Debug, Clone)]
 pub struct PartitionMetadata {
     pub num_rows: usize,
