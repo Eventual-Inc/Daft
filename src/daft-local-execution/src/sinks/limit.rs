@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
-use common_runtime::RuntimeRef;
 use daft_micropartition::MicroPartition;
-use tracing::instrument;
+use tracing::{instrument, Span};
 
 use super::streaming_sink::{
     StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
@@ -10,6 +9,7 @@ use super::streaming_sink::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, UnorderedDispatcher},
+    runtime_stats::ExecutionTaskSpawner,
     ExecutionRuntimeContext,
 };
 
@@ -49,7 +49,7 @@ impl StreamingSink for LimitSink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn StreamingSinkState>,
-        runtime_ref: &RuntimeRef,
+        spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkExecuteResult {
         let input_num_rows = input.len();
 
@@ -71,11 +71,14 @@ impl StreamingSink for LimitSink {
             Greater => {
                 let to_head = *remaining;
                 *remaining = 0;
-                runtime_ref
-                    .spawn(async move {
-                        let taken = input.head(to_head)?;
-                        Ok((state, StreamingSinkOutput::Finished(Some(taken.into()))))
-                    })
+                spawner
+                    .spawn(
+                        async move {
+                            let taken = input.head(to_head)?;
+                            Ok((state, StreamingSinkOutput::Finished(Some(taken.into()))))
+                        },
+                        Span::current(),
+                    )
                     .into()
             }
         }
@@ -88,7 +91,7 @@ impl StreamingSink for LimitSink {
     fn finalize(
         &self,
         _states: Vec<Box<dyn StreamingSinkState>>,
-        _runtime_ref: &RuntimeRef,
+        _spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkFinalizeResult {
         Ok(None).into()
     }
