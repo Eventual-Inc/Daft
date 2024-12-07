@@ -8,11 +8,12 @@ use spark_connect::{relation::RelType, Limit, Relation};
 use tracing::warn;
 
 use crate::translation::logical_plan::{
-    aggregate::aggregate, local_relation::local_relation, project::project, range::range,
-    to_df::to_df, with_columns::with_columns,
+    aggregate::aggregate, drop::drop, local_relation::local_relation, project::project,
+    range::range, to_df::to_df, with_columns::with_columns,
 };
 
 mod aggregate;
+mod drop;
 mod local_relation;
 mod project;
 mod range;
@@ -59,6 +60,7 @@ pub fn to_logical_plan(relation: Relation) -> eyre::Result<Plan> {
         RelType::LocalRelation(l) => {
             local_relation(l).wrap_err("Failed to apply local_relation to logical plan")
         }
+        RelType::Drop(d) => drop(*d).wrap_err("Failed to apply drop to logical plan"),
         plan => bail!("Unsupported relation type: {plan:?}"),
     }
 }
