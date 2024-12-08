@@ -4,8 +4,6 @@ from pathlib import Path
 
 import helpers
 
-# from . import __main__ as tpcds
-# from . import helpers
 import daft
 
 
