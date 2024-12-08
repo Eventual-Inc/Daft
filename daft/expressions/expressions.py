@@ -1381,21 +1381,24 @@ class ExpressionUrlNamespace(ExpressionNamespace):
 
     def upload(
         self,
-        location: str,
+        location: str | Expression,
         max_connections: int = 32,
+        on_error: Literal["raise", "null"] = "raise",
         io_config: IOConfig | None = None,
     ) -> Expression:
-        """Uploads a column of binary data to the provided location (also supports S3, local etc).
+        """Uploads a column of binary data to the provided location(s) (also supports S3, local etc).
 
-        Files will be written into the location (folder) with a generated UUID filename, and the result
+        Files will be written into the location (folder(s)) with a generated UUID filename, and the result
         will be returned as a column of string paths that is compatible with the ``.url.download()`` Expression.
 
         Example:
             >>> col("data").url.upload("s3://my-bucket/my-folder")  # doctest: +SKIP
 
         Args:
-            location: a folder location to upload data into
+            location: a folder location or column of folder locations to upload data into
             max_connections: The maximum number of connections to use per thread to use for uploading data. Defaults to 32.
+            on_error: Behavior when a URL upload error is encountered - "raise" to raise the error immediately or "null" to log
+                the error but fallback to a Null value. Defaults to "raise".
             io_config: IOConfig to use when uploading data
 
         Returns:
@@ -1404,10 +1407,29 @@ class ExpressionUrlNamespace(ExpressionNamespace):
         if not (isinstance(max_connections, int) and max_connections > 0):
             raise ValueError(f"Invalid value for `max_connections`: {max_connections}")
 
+        location_expr = Expression._to_expression(location)
+        raise_on_error = False
+        if on_error == "raise":
+            raise_on_error = True
+        elif on_error == "null":
+            raise_on_error = False
+        else:
+            raise NotImplementedError(f"Unimplemented on_error option: {on_error}.")
         multi_thread = ExpressionUrlNamespace._should_use_multithreading_tokio_runtime()
+        # If the user specifies a single location via a string, we should upload to a single folder. Otherwise,
+        # if the user gave an expression, we assume that each row has a specific url to upload to.
+        is_single_folder = isinstance(location, str)
         io_config = ExpressionUrlNamespace._override_io_config_max_connections(max_connections, io_config)
         return Expression._from_pyexpr(
-            native.url_upload(self._expr, location, max_connections, multi_thread, io_config)
+            native.url_upload(
+                self._expr,
+                location_expr._expr,
+                max_connections,
+                raise_on_error,
+                multi_thread,
+                is_single_folder,
+                io_config,
+            )
         )
 
 
