@@ -124,7 +124,7 @@ def main(args: ParsedArgs):
     scaled_tpcds_gen_folder = args.tpcds_gen_folder / str(args.scale_factor)
     datagen.gen_tpcds(scaled_tpcds_gen_folder, args.scale_factor)
     query_indices = helpers.parse_questions_str(args.questions)
-    _successes, failures = run_benchmarks(
+    successes, failures = run_benchmarks(
         RunArgs(
             scaled_tpcds_gen_folder=scaled_tpcds_gen_folder,
             query_indices=query_indices,
@@ -132,6 +132,9 @@ def main(args: ParsedArgs):
             dry_run=args.dry_run,
         )
     )
+
+    # TODO(ronnie): improve visualization of results; simply printing them to console is not the best way...
+    print(successes)
     print(failures)
 
 
