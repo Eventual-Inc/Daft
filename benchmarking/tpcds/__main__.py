@@ -16,7 +16,7 @@ from . import datagen, helpers
 
 logger = logging.getLogger(__name__)
 
-SQL_QUERIES_PATH = Path("benchmarking") / "tpcds" / "queries"
+SQL_QUERIES_PATH = Path(__file__).parent / "queries"
 
 Results = tuple[dict[int, float], dict[int, str]]
 
@@ -27,6 +27,7 @@ class ParsedArgs:
     scale_factor: float
     questions: str
     ray_address: Optional[str]
+    dry_run: bool
 
 
 @dataclass
@@ -34,6 +35,7 @@ class RunArgs:
     scaled_tpcds_gen_folder: Path
     query_indices: list[int]
     ray_address: Optional[str]
+    dry_run: bool
 
 
 def run_query_on_ray(
@@ -81,7 +83,11 @@ def run_query_on_local(
         start = datetime.now()
 
         try:
-            daft.sql(query, catalog=catalog).collect()
+            if run_args.dry_run:
+                daft.sql(query, catalog=catalog).explain(show_all=True)
+            else:
+                daft.sql(query, catalog=catalog).collect()
+
             end = datetime.now()
             duration = end - start
             successes[query_index] = duration
@@ -123,6 +129,7 @@ def main(args: ParsedArgs):
             scaled_tpcds_gen_folder=scaled_tpcds_gen_folder,
             query_indices=query_indices,
             ray_address=args.ray_address,
+            dry_run=args.dry_run,
         )
     )
     print(failures)
@@ -141,6 +148,9 @@ if __name__ == "__main__":
     parser.add_argument("--scale-factor", default=0.01, type=float, help="Scale factor to run on in GB")
     parser.add_argument("--questions", default="*", type=str, help="The questions to run")
     parser.add_argument("--ray-address", type=str, help="The address of the head node of the ray cluster")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Whether to run in dry-run mode; this will only print the plan"
+    )
     args = parser.parse_args()
 
     tpcds_gen_folder: Path = args.tpcds_gen_folder
@@ -152,5 +162,6 @@ if __name__ == "__main__":
             scale_factor=args.scale_factor,
             questions=args.questions,
             ray_address=args.ray_address,
+            dry_run=args.dry_run,
         )
     )
