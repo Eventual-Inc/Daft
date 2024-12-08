@@ -827,7 +827,7 @@ class DataFrame:
     @DataframePublicAPI
     def write_deltalake(
         self,
-        table: Union[str, pathlib.Path, "DataCatalogTable", "deltalake.DeltaTable","UnityCatalogTable"],
+        table: Union[str, pathlib.Path, "DataCatalogTable", "deltalake.DeltaTable", "UnityCatalogTable"],
         partition_cols: Optional[List[str]] = None,
         mode: Literal["append", "overwrite", "error", "ignore"] = "append",
         schema_mode: Optional[Literal["merge", "overwrite"]] = None,
