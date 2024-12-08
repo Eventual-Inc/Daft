@@ -90,14 +90,48 @@ class UnityCatalog:
 
         return self._paginate_to_completion(_paginated_list_tables)
 
-    def load_table(self, table_name: str) -> UnityCatalogTable:
+    def load_table(self, table_name: str ,new_table_storage_path: str | None = None) -> UnityCatalogTable:
+        """
+        Loads an existing Unity Catalog table. If the table is not found, and information is provided in the method to create a new table, a new table will be attempted to be registered.
+
+        Args:
+            table_name (str): Name of the table in Unity Catalog in the form of dot-separated, 3-level namespace
+            new_table_storage_path (str, optional): Cloud storage path URI to register a new external table using this path. Unity Catalog will validate if the path is valid and authorized for the principal, else will raise an exception.
+        Returns:
+            UnityCatalogTable
+        """
         # Load the table ID
-        table_info = self._client.tables.retrieve(table_name)
+        try:
+            table_info = self._client.tables.retrieve(table_name)
+            if new_table_storage_path:
+                warnings.warn(f"Table {table_name} is an existing storage table with a valid storage path. The 'new_table_storage_path' argument provided will be ignored.")
+        except unitycatalog.NotFoundError as e:
+            if not new_table_storage_path:
+                raise ValueError(f"Table {table_name} is not an existing table. If a new table needs to be created, provide 'new_table_storage_path' value.")
+            try:
+                three_part_namesplit = table_name.split('.')
+                if len(three_part_namesplit) != 3 or not all(three_part_namesplit):
+                    raise ValueError("This is not a valid 3-level namespace formatted table. Make sure to have the table in format 'catalog.schema.table'")
+
+                params = {
+                    "catalog_name" : three_part_namesplit[0],
+                    "schema_name" : three_part_namesplit[1],
+                    "name" : three_part_namesplit[2],
+                    "columns" : None,
+                    "data_source_format" : "DELTA",
+                    "table_type" : "EXTERNAL",
+                    "storage_location" : new_table_storage_path,
+                    "comment" : None
+                }
+
+                table_info = self._client.tables.create(**params)
+            except Exception as e:
+                raise Exception(f"An error occurred while registering the table in Unity Catalog: {e}")
+
         table_id = table_info.table_id
         storage_location = table_info.storage_location
-
         # Grab credentials from Unity catalog and place it into the Table
-        temp_table_credentials = self._client.temporary_table_credentials.create(operation="READ", table_id=table_id)
+        temp_table_credentials = self._client.temporary_table_credentials.create(operation="READ_WRITE", table_id=table_id)
 
         scheme = urlparse(storage_location).scheme
         if scheme == "s3" or scheme == "s3a":
