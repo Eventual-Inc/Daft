@@ -115,11 +115,13 @@ jobs:
           echo 'Invalid command submitted; command cannot be empty'
           exit 1
         fi
-        ray job submit \
-          --working-dir ${{ inputs.working_dir }} \
-          --address http://localhost:8265 \
-          --runtime-env-json "$ray_env_var" \
-          -- ${{ inputs.command }}
+        rm -rf daft
+        ${{ inputs.command }}
+        # ray job submit \
+        #   --working-dir ${{ inputs.working_dir }} \
+        #   --address http://localhost:8265 \
+        #   --runtime-env-json "$ray_env_var" \
+        #   -- ${{ inputs.command }}
     - name: Download log files from ray cluster
       run: |
         source .venv/bin/activate
