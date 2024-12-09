@@ -116,6 +116,7 @@ jobs:
           exit 1
         fi
         rm -rf daft
+        uv pip install getdaft
         ${{ inputs.command }}
         # ray job submit \
         #   --working-dir ${{ inputs.working_dir }} \
