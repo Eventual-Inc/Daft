@@ -101,3 +101,23 @@ def test_canonical_files_in_hf(path):
     size_on_disk = int(response.headers["Content-Length"])
 
     assert_close(size_on_disk, get_scantask_estimated_size(path, size_on_disk), get_actual_size(path))
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "s3://daft-public-datasets/tpch_iceberg_sf1000.db/lineitem/data/L_SHIPDATE_month=1992-01/00000-6694-fa4594d5-f624-407c-8640-5b6db8150470-00001.parquet",
+    ],
+    ids=[
+        "lineitem",
+    ],
+)
+def test_canonical_files_in_s3(path):
+    import boto3
+
+    s3 = boto3.client("s3")
+    bucket, key = path.replace("s3://", "").split("/", 1)
+    response = s3.head_object(Bucket=bucket, Key=key)
+    size_on_disk = response["ContentLength"]
+
+    assert_close(size_on_disk, get_scantask_estimated_size(path, size_on_disk), get_actual_size(path))
