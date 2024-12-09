@@ -72,8 +72,7 @@ if __name__ == "__main__":
     parser.add_argument("--daft-version")
     parser.add_argument("--python-version", required=True)
     parser.add_argument("--cluster-profile", required=True, choices=["debug_xs-x86", "medium-x86"])
-    parser.add_argument("--working-dir", required=True)
-    parser.add_argument("--entrypoint-script", required=True)
+    parser.add_argument("--inline-metadata")
     args = parser.parse_args()
 
     content = content.replace(CLUSTER_NAME_PLACEHOLDER, args.cluster_name)
@@ -101,14 +100,15 @@ if __name__ == "__main__":
         CLUSTER_PROFILE__VOLUME_MOUNT, profile.volume_mount if profile.volume_mount else NOOP_STEP
     )
 
-    working_dir = Path(args.working_dir)
-    assert working_dir.exists() and working_dir.is_dir()
-    entrypoint_script_fullpath: Path = working_dir / args.entrypoint_script
-    assert entrypoint_script_fullpath.exists() and entrypoint_script_fullpath.is_file()
-    with open(entrypoint_script_fullpath) as f:
-        metadata = read_inline_metadata.read(f.read())
-        if metadata:
-            metadata = Metadata(**metadata)
-            content = content.replace(OTHER_INSTALL_PLACEHOLDER, " ".join(metadata.dependencies))
+    if args.inline_metadata:
+        inline_metadata: Path = args.inline_metadata
+        assert inline_metadata.exists() and inline_metadata.is_file()
+        with open(inline_metadata) as f:
+            metadata = read_inline_metadata.read(f.read())
+            if metadata:
+                metadata = Metadata(**metadata)
+                content = content.replace(OTHER_INSTALL_PLACEHOLDER, " ".join(metadata.dependencies))
+    else:
+        content = content.replace(OTHER_INSTALL_PLACEHOLDER, "")
 
     print(content)

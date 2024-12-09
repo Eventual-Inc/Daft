@@ -29,15 +29,14 @@ on:
         type: string
         required: false
         default: .github/working-dir
-      entrypoint_script:
-        description: Entry-point python script (must be inside of the working directory)
+      command:
+        description: Command
         type: string
         required: true
-      entrypoint_args:
-        description: Entry-point arguments
+      inline_metadata:
+        description: Inline metadata
         type: string
         required: false
-        default: ""
       env_vars:
         description: Environment variables
         type: string
@@ -84,8 +83,7 @@ jobs:
             --daft-version '${{ inputs.daft_version }}' \
             --python-version '${{ inputs.python_version }}' \
             --cluster-profile '${{ inputs.cluster_profile }}' \
-            --working-dir '${{ inputs.working_dir }}' \
-            --entrypoint-script '${{ inputs.entrypoint_script }}'
+            --inline-metadata '${{ inputs.inline_metadata }}'
         ) >> .github/assets/ray.yaml
         cat .github/assets/ray.yaml
     - name: Setup ray env vars
@@ -113,7 +111,7 @@ jobs:
     - name: Submit job to ray cluster
       run: |
         source .venv/bin/activate
-        if [[ -z '${{ inputs.entrypoint_script }}' ]]; then
+        if [[ -z '${{ inputs.command }}' ]]; then
           echo 'Invalid command submitted; command cannot be empty'
           exit 1
         fi
@@ -121,7 +119,7 @@ jobs:
           --working-dir ${{ inputs.working_dir }} \
           --address http://localhost:8265 \
           --runtime-env-json "$ray_env_var" \
-          -- python ${{ inputs.entrypoint_script }} ${{ inputs.entrypoint_args }}
+          -- ${{ inputs.command }}
     - name: Download log files from ray cluster
       run: |
         source .venv/bin/activate
