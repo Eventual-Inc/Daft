@@ -894,6 +894,10 @@ class DataFrame:
             else:
                 table_uri = table.table_uri(io_config)
 
+            if io_config is None:
+                raise ValueError(
+                    "io_config was not provided to write_deltalake and could not be retrieved from the default configuration."
+                )
             storage_options = io_config_to_storage_options(io_config, table_uri) or {}
             table = try_get_deltatable(table_uri, storage_options=storage_options)
         elif isinstance(table, deltalake.DeltaTable):
