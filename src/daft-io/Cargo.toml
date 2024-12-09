@@ -31,7 +31,7 @@ log = {workspace = true}
 openssl-sys = {version = "0.9.102", features = ["vendored"]}
 pyo3 = {workspace = true, optional = true}
 rand = "0.8.5"
-regex = {version = "1.10.4"}
+regex = {version = "1.11.1"}
 reqwest-middleware = "0.3.3"
 reqwest-retry = "0.6.1"
 retry-policies = "0.4.0"
