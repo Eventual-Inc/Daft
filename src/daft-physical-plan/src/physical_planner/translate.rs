@@ -97,8 +97,8 @@ pub(super) fn translate_single_logical_node(
                 .arced();
                 Ok(scan)
             }
-            SourceInfo::InMemory(batches) => {
-                let scan = InMemoryScan::try_new(batches.clone())?;
+            SourceInfo::InMemory(tables) => {
+                let scan = InMemoryScan::try_new(tables.clone())?;
                 Ok(PhysicalPlan::InMemoryScan(scan).arced())
             }
             SourceInfo::PlaceHolder(PlaceHolderInfo { source_id, .. }) => {

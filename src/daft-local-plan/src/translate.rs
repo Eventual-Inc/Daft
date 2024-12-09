@@ -41,7 +41,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 }
                 SourceInfo::InMemory(data) => {
                     let in_memory_scan = InMemoryScan {
-                        batches: data.clone(),
+                        tables: data.clone(),
                         stats_state: daft_logical_plan::stats::StatsState::Materialized(
                             AlwaysSame(PlanStats::empty()),
                         ),

@@ -2,12 +2,13 @@ use std::sync::Arc;
 
 use common_resource_request::ResourceRequest;
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
-use daft_core::{prelude::*, RecordBatch};
+use daft_core::prelude::*;
 use daft_dsl::{AggExpr, ExprRef};
 use daft_logical_plan::{
     stats::{PlanStats, StatsState},
     OutputFileInfo, PythonInfo,
 };
+use daft_table::Table;
 
 pub type LocalPhysicalPlanRef = Arc<LocalPhysicalPlan>;
 #[derive(Debug, strum::IntoStaticStr)]
@@ -460,16 +461,14 @@ impl LocalPhysicalPlan {
             Self::CatalogWrite(CatalogWrite { file_schema, .. }) => file_schema,
             #[cfg(feature = "python")]
             Self::LanceWrite(LanceWrite { file_schema, .. }) => file_schema,
-            Self::InMemoryScan(InMemoryScan { batches, .. }) => {
-                batches.first().map(|b| b.schema()).unwrap()
-            }
+            Self::InMemoryScan(InMemoryScan { tables, .. }) => &tables[0].schema,
         }
     }
 }
 
 #[derive(Debug)]
 pub struct InMemoryScan {
-    pub batches: Vec<RecordBatch>,
+    pub tables: Vec<Table>,
     pub stats_state: StatsState,
 }
 

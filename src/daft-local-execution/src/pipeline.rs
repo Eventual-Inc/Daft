@@ -116,7 +116,7 @@ pub fn physical_plan_to_pipeline(
                 .into()
         }
         LocalPhysicalPlan::InMemoryScan(InMemoryScan {
-            batches,
+            tables: batches,
             stats_state: _,
         }) => {
             let pset: DaftResult<InMemoryPartitionBatch> = batches.clone().try_into();
@@ -125,7 +125,7 @@ pub fn physical_plan_to_pipeline(
                 plan_name: "InMemory".to_string(),
             })?;
 
-            InMemorySource::new(Arc::new(pset), batches[0].schema().clone())
+            InMemorySource::new(Arc::new(pset), batches[0].schema.clone())
                 .arced()
                 .into()
         }

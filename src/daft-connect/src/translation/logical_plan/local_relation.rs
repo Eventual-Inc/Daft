@@ -4,10 +4,11 @@ use arrow2::io::ipc::{
     read::{StreamMetadata, StreamReader, StreamState, Version},
     IpcField, IpcSchema,
 };
-use daft_core::{series::Series, RecordBatch};
+use daft_core::series::Series;
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::partitioning::InMemoryPartitionSet;
 use daft_schema::dtype::DaftDataType;
+use daft_table::Table;
 use eyre::{bail, ensure, WrapErr};
 use itertools::Itertools;
 
@@ -77,7 +78,7 @@ pub fn local_relation(plan: spark_connect::LocalRelation) -> eyre::Result<Plan> 
     let little_endian = true;
     let version = Version::V5;
 
-    let record_batches = {
+    let tables = {
         let metadata = StreamMetadata {
             schema,
             version,
@@ -101,7 +102,7 @@ pub fn local_relation(plan: spark_connect::LocalRelation) -> eyre::Result<Plan> 
         // todo: eek
         let chunks = chunks.skip(1);
 
-        let mut record_batches = Vec::new();
+        let mut tables = Vec::new();
 
         for (idx, chunk) in chunks.enumerate() {
             let chunk = chunk.wrap_err_with(|| format!("chunk {idx} is invalid"))?;
@@ -125,14 +126,14 @@ pub fn local_relation(plan: spark_connect::LocalRelation) -> eyre::Result<Plan> 
                     "Mismatch in row counts across columns; all columns must have the same number of rows."
                 );
 
-            let batch = RecordBatch::try_new(columns)?;
+            let batch = Table::from_nonempty_columns(columns)?;
 
-            record_batches.push(batch);
+            tables.push(batch);
         }
-        record_batches
+        tables
     };
 
-    let plan = LogicalPlanBuilder::in_memory(record_batches)?;
+    let plan = LogicalPlanBuilder::in_memory(tables)?;
 
     let plan = Plan {
         builder: plan,

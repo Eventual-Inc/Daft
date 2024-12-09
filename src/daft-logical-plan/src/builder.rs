@@ -9,12 +9,10 @@ use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
 use common_io_config::IOConfig;
 use common_scan_info::{PhysicalScanInfo, Pushdowns, ScanOperatorRef};
-use daft_core::{
-    join::{JoinStrategy, JoinType},
-    RecordBatch,
-};
+use daft_core::join::{JoinStrategy, JoinType};
 use daft_dsl::{col, ExprRef};
 use daft_schema::schema::{Schema, SchemaRef};
+use daft_table::Table;
 #[cfg(feature = "python")]
 use {
     crate::sink_info::{CatalogInfo, IcebergCatalogInfo},
@@ -140,11 +138,16 @@ impl LogicalPlanBuilder {
         Ok(Self::from(Arc::new(logical_plan)))
     }
 
-    /// Create a LogicalPlanBuilder from fully materialized RecordBatch's
-    pub fn in_memory(record_batches: Vec<RecordBatch>) -> DaftResult<Self> {
-        let schema = record_batches[0].schema().clone();
+    /// Create a LogicalPlanBuilder from fully materialized Table's
+    pub fn in_memory(tables: Vec<Table>) -> DaftResult<Self> {
+        if tables.is_empty() {
+            return Err(DaftError::ComputeError(
+                "Cannot create an in-memory scan with no tables".to_string(),
+            ));
+        }
+        let schema = tables[0].schema.clone();
 
-        let source_info = SourceInfo::InMemory(record_batches);
+        let source_info = SourceInfo::InMemory(tables);
         let logical_plan: LogicalPlan = ops::Source::new(schema, source_info.into()).into();
         Ok(Self::from(Arc::new(logical_plan)))
     }

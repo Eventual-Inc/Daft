@@ -2,6 +2,7 @@
 #![feature(if_let_guard)]
 
 mod expr_rewriter;
+mod file_infos;
 mod partitioning;
 mod pushdowns;
 #[cfg(feature = "python")]
@@ -14,6 +15,7 @@ use std::{fmt::Debug, hash::Hash, sync::Arc};
 
 use daft_schema::schema::SchemaRef;
 pub use expr_rewriter::{rewrite_predicate_for_partitioning, PredicateGroups};
+pub use file_infos::{FileInfo, FileInfos};
 pub use partitioning::{PartitionField, PartitionTransform};
 pub use pushdowns::Pushdowns;
 #[cfg(feature = "python")]

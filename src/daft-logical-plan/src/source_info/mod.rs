@@ -1,13 +1,12 @@
-pub mod file_info;
 use std::{
     hash::{Hash, Hasher},
     sync::atomic::AtomicUsize,
 };
 
 use common_scan_info::PhysicalScanInfo;
-use daft_core::RecordBatch;
+pub use common_scan_info::{FileInfo, FileInfos};
 use daft_schema::schema::SchemaRef;
-pub use file_info::{FileInfo, FileInfos};
+use daft_table::Table;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
 use {
@@ -22,7 +21,7 @@ pub enum SourceInfo {
     Python(PythonInfo),
     Physical(PhysicalScanInfo),
     PlaceHolder(PlaceHolderInfo),
-    InMemory(Vec<RecordBatch>),
+    InMemory(Vec<Table>),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
