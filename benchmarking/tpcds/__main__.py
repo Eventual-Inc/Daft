@@ -43,7 +43,7 @@ def run_query_on_ray(
 ) -> Results:
     successes = {}
     failures = {}
-    ray.init()
+    ray.init(address=run_args.ray_address if run_args.ray_address else None)
 
     for query_index in run_args.query_indices:
         working_dir = Path("benchmarking") / "tpcds"
@@ -62,8 +62,8 @@ def run_query_on_ray(
             end = datetime.now()
             duration = end - start
             successes[query_index] = duration
-        except RuntimeError as rte:
-            failures[query_index] = str(rte)
+        except Exception as e:
+            failures[query_index] = str(e)
 
     return successes, failures
 
