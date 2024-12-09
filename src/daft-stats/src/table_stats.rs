@@ -13,7 +13,7 @@ use indexmap::{IndexMap, IndexSet};
 
 use crate::column_stats::ColumnRangeStatistics;
 
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TableStatistics {
     pub columns: IndexMap<String, ColumnRangeStatistics>,
 }

@@ -14,10 +14,13 @@ use daft_dsl::{col, join::get_common_join_keys, Expr};
 use daft_local_plan::{
     ActorPoolProject, Concat, CrossJoin, EmptyScan, Explode, Filter, HashAggregate, HashJoin,
     InMemoryScan, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite, Pivot,
-    Project, Sample, Sort, UnGroupedAggregate, Unpivot,
+    Project, PythonScan, Sample, Sort, UnGroupedAggregate, Unpivot,
 };
 use daft_logical_plan::{stats::StatsState, JoinType};
-use daft_micropartition::{partitioning::PartitionSet, MicroPartition};
+use daft_micropartition::{
+    partitioning::{InMemoryPartitionBatch, PartitionSet},
+    MicroPartition,
+};
 use daft_physical_plan::{extract_agg_expr, populate_aggregation_stages};
 use daft_scan::ScanTaskRef;
 use daft_writers::make_physical_writer_factory;
@@ -104,7 +107,7 @@ pub fn physical_plan_to_pipeline(
                 ScanTaskSource::new(scan_tasks, pushdowns.clone(), schema.clone(), cfg);
             scan_task_source.arced().into()
         }
-        LocalPhysicalPlan::InMemoryScan(InMemoryScan { info, .. }) => {
+        LocalPhysicalPlan::PythonScan(PythonScan { info, .. }) => {
             let materialized_pset = psets
                 .get_partition(&info.cache_key)
                 .unwrap_or_else(|_| panic!("Cache key not found: {:?}", info.cache_key));
@@ -112,6 +115,21 @@ pub fn physical_plan_to_pipeline(
                 .arced()
                 .into()
         }
+        LocalPhysicalPlan::InMemoryScan(InMemoryScan {
+            batches,
+            stats_state: _,
+        }) => {
+            let pset: DaftResult<InMemoryPartitionBatch> = batches.clone().try_into();
+            let pset = pset.map_err(|e| crate::Error::PipelineCreationError {
+                source: e,
+                plan_name: "InMemory".to_string(),
+            })?;
+
+            InMemorySource::new(Arc::new(pset), batches[0].schema().clone())
+                .arced()
+                .into()
+        }
+
         LocalPhysicalPlan::Project(Project {
             input, projection, ..
         }) => {

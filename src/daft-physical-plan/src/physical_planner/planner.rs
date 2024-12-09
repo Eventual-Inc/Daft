@@ -8,7 +8,7 @@ use common_treenode::{
 use daft_logical_plan::{
     ops::Source,
     optimization::Optimizer,
-    source_info::{InMemoryInfo, PlaceHolderInfo, SourceInfo},
+    source_info::{PlaceHolderInfo, PythonInfo, SourceInfo},
     LogicalPlan, LogicalPlanRef,
 };
 use serde::{Deserialize, Serialize};
@@ -102,15 +102,15 @@ impl TreeNodeRewriter for QueryStagePhysicalPlanTranslator {
                     }
 
                     let run_next: RunNext = match (left.as_ref(), right.as_ref()) {
-                        (PhysicalPlan::InMemoryScan(..), PhysicalPlan::InMemoryScan(..)) => {
+                        (PhysicalPlan::Python(..), PhysicalPlan::Python(..)) => {
                             // both are in memory, emit as is.
                             RunNext::Parent
                         }
-                        (PhysicalPlan::InMemoryScan(..), _) => {
+                        (PhysicalPlan::Python(..), _) => {
                             // we know the left, so let's run the right
                             RunNext::Right
                         }
-                        (_, PhysicalPlan::InMemoryScan(..)) => {
+                        (_, PhysicalPlan::Python(..)) => {
                             // we know the right, so let's run the left
                             RunNext::Left
                         }
@@ -229,7 +229,7 @@ impl TreeNodeRewriter for ReplacePlaceholdersWithMaterializedResult {
 
                     let new_source_node = LogicalPlan::Source(Source::new(
                         mat_results.in_memory_info.source_schema.clone(),
-                        SourceInfo::InMemory(mat_results.in_memory_info).into(),
+                        SourceInfo::Python(mat_results.in_memory_info).into(),
                     ))
                     .arced();
                     Ok(Transformed::new(
@@ -283,7 +283,7 @@ enum AdaptivePlannerStatus {
 
 pub struct MaterializedResults {
     pub source_id: usize,
-    pub in_memory_info: InMemoryInfo,
+    pub in_memory_info: PythonInfo,
 }
 
 pub struct AdaptivePlanner {

@@ -5,7 +5,7 @@ use common_error::DaftResult;
 use common_file_formats::FileFormat;
 use common_py_serde::impl_bincode_py_state_serialization;
 use daft_dsl::ExprRef;
-use daft_logical_plan::InMemoryInfo;
+use daft_logical_plan::PythonInfo;
 #[cfg(feature = "python")]
 use daft_logical_plan::{DeltaLakeCatalogInfo, IcebergCatalogInfo, LanceCatalogInfo};
 #[cfg(feature = "python")]
@@ -14,9 +14,8 @@ use daft_physical_plan::{
     logical_to_physical,
     ops::{
         ActorPoolProject, Aggregate, BroadcastJoin, Concat, EmptyScan, Explode, Filter, HashJoin,
-        InMemoryScan, Limit, MonotonicallyIncreasingId, Pivot, Project, Sample, Sort,
-        SortMergeJoin, TabularScan, TabularWriteCsv, TabularWriteJson, TabularWriteParquet,
-        Unpivot,
+        Limit, MonotonicallyIncreasingId, Pivot, Project, PythonScan, Sample, Sort, SortMergeJoin,
+        TabularScan, TabularWriteCsv, TabularWriteJson, TabularWriteParquet, Unpivot,
     },
     PhysicalPlan, PhysicalPlanRef, QueryStageOutput,
 };
@@ -267,8 +266,11 @@ fn physical_plan_to_partition_tasks(
     use daft_physical_plan::ops::{CrossJoin, ShuffleExchange, ShuffleExchangeStrategy};
 
     match physical_plan {
-        PhysicalPlan::InMemoryScan(InMemoryScan {
-            in_memory_info: InMemoryInfo { cache_key, .. },
+        PhysicalPlan::InMemoryScan(..) => {
+            todo!("InMemoryScan not yet implemented in physical_plan_to_partition_tasks")
+        }
+        PhysicalPlan::Python(PythonScan {
+            in_memory_info: PythonInfo { cache_key, .. },
             ..
         }) => {
             let partition_iter = PartitionIterator {

@@ -11,10 +11,12 @@ pub mod join;
 pub mod kernels;
 #[cfg(feature = "python")]
 pub mod python;
+pub mod record_batch;
 pub mod series;
 pub mod utils;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
+pub use record_batch::RecordBatch;
 
 pub mod prelude;
 

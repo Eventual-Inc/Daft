@@ -80,7 +80,9 @@ impl PushDownFilter {
             LogicalPlan::Source(source) => {
                 match source.source_info.as_ref() {
                     // Filter pushdown is not supported for in-memory sources.
-                    SourceInfo::InMemory(_) => return Ok(Transformed::no(plan)),
+                    SourceInfo::Python(_) | SourceInfo::InMemory(_) => {
+                        return Ok(Transformed::no(plan))
+                    }
                     // Do not pushdown if Source node already has a limit
                     SourceInfo::Physical(external_info)
                         if let Some(_) = external_info.pushdowns.limit =>

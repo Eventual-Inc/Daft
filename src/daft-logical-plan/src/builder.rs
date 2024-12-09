@@ -9,13 +9,16 @@ use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
 use common_io_config::IOConfig;
 use common_scan_info::{PhysicalScanInfo, Pushdowns, ScanOperatorRef};
-use daft_core::join::{JoinStrategy, JoinType};
+use daft_core::{
+    join::{JoinStrategy, JoinType},
+    RecordBatch,
+};
 use daft_dsl::{col, ExprRef};
 use daft_schema::schema::{Schema, SchemaRef};
 #[cfg(feature = "python")]
 use {
     crate::sink_info::{CatalogInfo, IcebergCatalogInfo},
-    crate::source_info::InMemoryInfo,
+    crate::source_info::PythonInfo,
     common_daft_config::PyDaftPlanningConfig,
     daft_dsl::python::PyExpr,
     // daft_scan::python::pylib::ScanOperatorHandle,
@@ -115,7 +118,7 @@ impl LogicalPlanBuilder {
     }
 
     #[cfg(feature = "python")]
-    pub fn in_memory_scan(
+    pub fn python_scan(
         partition_key: &str,
         cache_entry: PyObject,
         schema: Arc<Schema>,
@@ -123,7 +126,7 @@ impl LogicalPlanBuilder {
         size_bytes: usize,
         num_rows: usize,
     ) -> DaftResult<Self> {
-        let source_info = SourceInfo::InMemory(InMemoryInfo::new(
+        let source_info = SourceInfo::Python(PythonInfo::new(
             schema.clone(),
             partition_key.into(),
             cache_entry,
@@ -134,6 +137,15 @@ impl LogicalPlanBuilder {
         ));
         let logical_plan: LogicalPlan = ops::Source::new(schema, source_info.into()).into();
 
+        Ok(Self::from(Arc::new(logical_plan)))
+    }
+
+    /// Create a LogicalPlanBuilder from fully materialized RecordBatch's
+    pub fn in_memory(record_batches: Vec<RecordBatch>) -> DaftResult<Self> {
+        let schema = record_batches[0].schema().clone();
+
+        let source_info = SourceInfo::InMemory(record_batches);
+        let logical_plan: LogicalPlan = ops::Source::new(schema, source_info.into()).into();
         Ok(Self::from(Arc::new(logical_plan)))
     }
 
@@ -673,7 +685,7 @@ impl PyLogicalPlanBuilder {
         size_bytes: usize,
         num_rows: usize,
     ) -> PyResult<Self> {
-        Ok(LogicalPlanBuilder::in_memory_scan(
+        Ok(LogicalPlanBuilder::python_scan(
             partition_key,
             cache_entry,
             schema.into(),

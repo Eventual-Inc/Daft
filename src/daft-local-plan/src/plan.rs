@@ -2,17 +2,18 @@ use std::sync::Arc;
 
 use common_resource_request::ResourceRequest;
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
-use daft_core::prelude::*;
+use daft_core::{prelude::*, RecordBatch};
 use daft_dsl::{AggExpr, ExprRef};
 use daft_logical_plan::{
     stats::{PlanStats, StatsState},
-    InMemoryInfo, OutputFileInfo,
+    OutputFileInfo, PythonInfo,
 };
 
 pub type LocalPhysicalPlanRef = Arc<LocalPhysicalPlan>;
 #[derive(Debug, strum::IntoStaticStr)]
 pub enum LocalPhysicalPlan {
     InMemoryScan(InMemoryScan),
+    PythonScan(PythonScan),
     PhysicalScan(PhysicalScan),
     EmptyScan(EmptyScan),
     Project(Project),
@@ -62,7 +63,7 @@ impl LocalPhysicalPlan {
 
     pub fn get_stats_state(&self) -> &StatsState {
         match self {
-            Self::InMemoryScan(InMemoryScan { stats_state, .. })
+            Self::PythonScan(PythonScan { stats_state, .. })
             | Self::PhysicalScan(PhysicalScan { stats_state, .. })
             | Self::EmptyScan(EmptyScan { stats_state, .. })
             | Self::Project(Project { stats_state, .. })
@@ -80,18 +81,19 @@ impl LocalPhysicalPlan {
             | Self::Concat(Concat { stats_state, .. })
             | Self::HashJoin(HashJoin { stats_state, .. })
             | Self::CrossJoin(CrossJoin { stats_state, .. })
-            | Self::PhysicalWrite(PhysicalWrite { stats_state, .. }) => stats_state,
+            | Self::PhysicalWrite(PhysicalWrite { stats_state, .. })
+            | Self::InMemoryScan(InMemoryScan { stats_state, .. }) => stats_state,
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { stats_state, .. })
             | Self::LanceWrite(LanceWrite { stats_state, .. }) => stats_state,
         }
     }
 
-    pub(crate) fn in_memory_scan(
-        in_memory_info: InMemoryInfo,
+    pub(crate) fn python_scan(
+        in_memory_info: PythonInfo,
         stats_state: StatsState,
     ) -> LocalPhysicalPlanRef {
-        Self::InMemoryScan(InMemoryScan {
+        Self::PythonScan(PythonScan {
             info: in_memory_info,
             stats_state,
         })
@@ -453,18 +455,27 @@ impl LocalPhysicalPlan {
             | Self::Concat(Concat { schema, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { schema, .. }) => schema,
             Self::PhysicalWrite(PhysicalWrite { file_schema, .. }) => file_schema,
-            Self::InMemoryScan(InMemoryScan { info, .. }) => &info.source_schema,
+            Self::PythonScan(PythonScan { info, .. }) => &info.source_schema,
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { file_schema, .. }) => file_schema,
             #[cfg(feature = "python")]
             Self::LanceWrite(LanceWrite { file_schema, .. }) => file_schema,
+            Self::InMemoryScan(InMemoryScan { batches, .. }) => {
+                batches.first().map(|b| b.schema()).unwrap()
+            }
         }
     }
 }
 
 #[derive(Debug)]
 pub struct InMemoryScan {
-    pub info: InMemoryInfo,
+    pub batches: Vec<RecordBatch>,
+    pub stats_state: StatsState,
+}
+
+#[derive(Debug)]
+pub struct PythonScan {
+    pub info: PythonInfo,
     pub stats_state: StatsState,
 }
 

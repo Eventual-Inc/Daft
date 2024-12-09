@@ -5,6 +5,7 @@ use std::{
 };
 
 use common_scan_info::PhysicalScanInfo;
+use daft_core::RecordBatch;
 use daft_schema::schema::SchemaRef;
 pub use file_info::{FileInfo, FileInfos};
 use serde::{Deserialize, Serialize};
@@ -18,13 +19,14 @@ use crate::partitioning::ClusteringSpecRef;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum SourceInfo {
-    InMemory(InMemoryInfo),
+    Python(PythonInfo),
     Physical(PhysicalScanInfo),
     PlaceHolder(PlaceHolderInfo),
+    InMemory(Vec<RecordBatch>),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InMemoryInfo {
+pub struct PythonInfo {
     pub source_schema: SchemaRef,
     pub cache_key: String,
     #[cfg(feature = "python")]
@@ -40,7 +42,7 @@ pub struct InMemoryInfo {
 }
 
 #[cfg(feature = "python")]
-impl InMemoryInfo {
+impl PythonInfo {
     pub fn new(
         source_schema: SchemaRef,
         cache_key: String,
@@ -62,15 +64,15 @@ impl InMemoryInfo {
     }
 }
 
-impl PartialEq for InMemoryInfo {
+impl PartialEq for PythonInfo {
     fn eq(&self, other: &Self) -> bool {
         self.cache_key == other.cache_key
     }
 }
 
-impl Eq for InMemoryInfo {}
+impl Eq for PythonInfo {}
 
-impl Hash for InMemoryInfo {
+impl Hash for PythonInfo {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.cache_key.hash(state);
     }

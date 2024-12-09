@@ -1,7 +1,9 @@
 use std::{collections::HashMap, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
+use daft_core::RecordBatch;
 use daft_dsl::Expr;
+use daft_table::Table;
 use futures::stream::BoxStream;
 
 use crate::MicroPartition;
@@ -50,6 +52,38 @@ pub trait PartitionBatch: Send + Sync {
 pub struct InMemoryPartitionBatch {
     pub partition: Vec<Arc<MicroPartition>>,
     pub metadata: Option<PartitionMetadata>,
+}
+
+impl InMemoryPartitionBatch {
+    pub fn new(partition: Vec<Arc<MicroPartition>>, metadata: Option<PartitionMetadata>) -> Self {
+        Self {
+            partition,
+            metadata,
+        }
+    }
+}
+
+impl TryFrom<Vec<RecordBatch>> for InMemoryPartitionBatch {
+    type Error = DaftError;
+
+    fn try_from(batches: Vec<RecordBatch>) -> Result<Self, Self::Error> {
+        if batches.is_empty() {
+            return Ok(Self {
+                partition: vec![],
+                metadata: None,
+            });
+        }
+        let tables = batches
+            .into_iter()
+            .map(|batch| Table::from_nonempty_columns(batch.columns))
+            .collect::<DaftResult<Vec<_>>>()?;
+        let schema = &tables[0].schema;
+        let mp = MicroPartition::new_loaded(schema.clone(), Arc::new(tables), None);
+        Ok(Self {
+            partition: vec![Arc::new(mp)],
+            metadata: None,
+        })
+    }
 }
 
 impl PartitionBatch for InMemoryPartitionBatch {

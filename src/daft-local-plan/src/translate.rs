@@ -4,15 +4,19 @@ use common_error::{DaftError, DaftResult};
 use common_scan_info::ScanState;
 use daft_core::join::JoinStrategy;
 use daft_dsl::ExprRef;
-use daft_logical_plan::{JoinType, LogicalPlan, LogicalPlanRef, SourceInfo};
+use daft_logical_plan::{
+    stats::{AlwaysSame, PlanStats},
+    JoinType, LogicalPlan, LogicalPlanRef, SourceInfo,
+};
 
 use super::plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
+use crate::plan::InMemoryScan;
 
 pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
     match plan.as_ref() {
         LogicalPlan::Source(source) => {
             match source.source_info.as_ref() {
-                SourceInfo::InMemory(info) => Ok(LocalPhysicalPlan::in_memory_scan(
+                SourceInfo::Python(info) => Ok(LocalPhysicalPlan::python_scan(
                     info.clone(),
                     source.stats_state.clone(),
                 )),
@@ -34,6 +38,15 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                             source.stats_state.clone(),
                         ))
                     }
+                }
+                SourceInfo::InMemory(data) => {
+                    let in_memory_scan = InMemoryScan {
+                        batches: data.clone(),
+                        stats_state: daft_logical_plan::stats::StatsState::Materialized(
+                            AlwaysSame(PlanStats::empty()),
+                        ),
+                    };
+                    Ok(LocalPhysicalPlan::InMemoryScan(in_memory_scan).arced())
                 }
                 SourceInfo::PlaceHolder(_) => {
                     panic!("We should not encounter a PlaceHolder during translation")
