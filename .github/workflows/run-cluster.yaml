@@ -116,7 +116,7 @@ jobs:
           exit 1
         fi
         rm -rf daft
-        uv pip install getdaft
+        uv pip install getdaft duckdb
         ${{ inputs.command }}
         # ray job submit \
         #   --working-dir ${{ inputs.working_dir }} \
