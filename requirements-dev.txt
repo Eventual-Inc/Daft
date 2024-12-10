@@ -9,7 +9,7 @@ requests<2.32.0
 
 # Tracing
 orjson==3.10.12  # orjson recommended for viztracer
-py-spy==0.3.14
+py-spy==0.4.0
 viztracer==0.15.6
 
 # Testing frameworks
