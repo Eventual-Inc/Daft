@@ -6,13 +6,14 @@ use tracing::warn;
 
 use crate::translation::logical_plan::{
     aggregate::aggregate, local_relation::local_relation, project::project, range::range,
-    to_df::to_df, with_columns::with_columns,
+    set_op::set_op, to_df::to_df, with_columns::with_columns,
 };
 
 mod aggregate;
 mod local_relation;
 mod project;
 mod range;
+mod set_op;
 mod to_df;
 mod with_columns;
 
@@ -64,6 +65,7 @@ pub fn to_logical_plan(relation: Relation) -> eyre::Result<Plan> {
         RelType::LocalRelation(l) => {
             local_relation(l).wrap_err("Failed to apply local_relation to logical plan")
         }
+        RelType::SetOp(s) => set_op(*s).wrap_err("Failed to apply set_op to logical plan"),
         plan => bail!("Unsupported relation type: {plan:?}"),
     }
 }
