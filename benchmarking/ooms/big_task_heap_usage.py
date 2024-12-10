@@ -47,6 +47,8 @@ if __name__ == "__main__":
     parser.add_argument("--deflation-factor", type=int, default=100)
     args = parser.parse_args()
 
+    daft.context.set_runner_ray()
+
     df = read_generator(
         generator(args.num_partitions, args.num_rows_per_partition),
         schema=daft.Schema._from_field_name_and_types([("foo", daft.DataType.binary())]),
