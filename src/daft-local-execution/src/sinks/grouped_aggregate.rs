@@ -294,7 +294,7 @@ impl BlockingSink for GroupedAggregateSink {
             };
         Ok(Box::new(GroupedAggregateState::new(
             partial_agg,
-            params.final_group_by.clone(),
+            params.group_by.clone(),
             self.num_partitions(),
         )))
     }
