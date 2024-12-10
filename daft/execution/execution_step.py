@@ -54,7 +54,7 @@ class PartitionTask(Generic[PartitionT]):
     # Indicates if the PartitionTask is "done" or not
     is_done: bool = False
 
-    # Desired node_id to schedule this task
+    # Desired node_id to schedule this task on
     node_id: str | None = None
 
     _id: int = field(default_factory=lambda: next(ID_GEN))

@@ -1,4 +1,5 @@
 import logging
+from collections import defaultdict
 from typing import Dict
 
 import ray.experimental  # noqa: TID253
@@ -65,26 +66,24 @@ def pre_shuffle_merge(
             location_map = ray.experimental.get_object_locations(partitions)
 
             # Group partitions by node
-            node_groups = {}
+            node_groups = defaultdict(list)
             unknown_location_group = []  # Special group for partitions without known location
 
-            for (partition, size) in materialized_maps:
+            for partition, size in materialized_maps:
                 partition_ref = partition.partition()
                 location_info = location_map.get(partition_ref, {})
-                
-                if not location_info or 'node_ids' not in location_info or not location_info['node_ids']:
+
+                if not location_info or "node_ids" not in location_info or not location_info["node_ids"]:
                     unknown_location_group.append((partition, size))
                 else:
-                    node_id = location_info['node_ids'][0]  # Use first node if multiple locations exist
-                    if node_id not in node_groups:
-                        node_groups[node_id] = []
+                    node_id = location_info["node_ids"][0]  # Use first node if multiple locations exist
                     node_groups[node_id].append((partition, size))
 
             # Function to create merge groups for a list of partitions
             def create_merge_groups(partitions_list):
                 if not partitions_list:
                     return []
-                
+
                 groups = []
                 current_group = [partitions_list[0][0]]
                 current_size = partitions_list[0][1]
@@ -102,34 +101,35 @@ def pre_shuffle_merge(
                 # 1. Contains more than 1 partition
                 # 2. Is the last group and we're done with input
                 # 3. The partition exceeds the memory threshold
-                if current_group:
-                    if len(current_group) > 1 or done_with_input or current_size > pre_shuffle_merge_threshold:
-                        groups.append(current_group)
-                
+                should_add_last_group = (
+                    len(current_group) > 1 or done_with_input or current_size > pre_shuffle_merge_threshold
+                )
+                if current_group and should_add_last_group:
+                    groups.append(current_group)
+
                 return groups
 
             # Process each node's partitions and unknown location partitions
             merge_groups = {}
-            
+
             # Process node-specific groups
-            for (node_id, node_partitions) in node_groups.items():
+            for node_id, node_partitions in node_groups.items():
                 merge_groups[node_id] = create_merge_groups(node_partitions)
-            
+
             # Process unknown location group
             merge_groups[None] = create_merge_groups(unknown_location_group)
 
             # Create merge steps and remove processed maps
-            for (node_id, groups) in merge_groups.items():
+            for node_id, groups in merge_groups.items():
                 # Remove processed maps from in_flight_maps
                 for group in groups:
                     for partition in group:
                         del in_flight_maps[partition.id()]
-                    print(f"Scheduling merge step for {len(group)} partitions on node {node_id}")
                     total_size = sum(m.partition_metadata().size_bytes or 0 for m in group)
                     merge_step = PartitionTaskBuilder[PartitionT](
                         inputs=[p.partition() for p in group],
                         partial_metadatas=[m.partition_metadata() for m in group],
-                        resource_request=ResourceRequest(memory_bytes=total_size * 2),
+                        resource_request=ResourceRequest(memory_bytes=total_size),
                         node_id=node_id,
                     ).add_instruction(instruction=execution_step.ReduceMerge())
                     yield merge_step
