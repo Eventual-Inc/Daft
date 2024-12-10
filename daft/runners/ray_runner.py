@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, Generator, Iterable, Iterator
 # import times. If this changes, we first need to make the daft.lazy_import.LazyImport class
 # serializable before importing pa from daft.dependencies.
 import pyarrow as pa  # noqa: TID253
+import ray.experimental  # noqa: TID253
 
 from daft.arrow_utils import ensure_array
 from daft.context import execution_config_ctx, get_context
@@ -516,7 +517,7 @@ def fanout_pipeline(
 
 
 @ray_tracing.ray_remote_traced
-@ray.remote(scheduling_strategy="SPREAD")
+@ray.remote
 def reduce_pipeline(
     task_context: PartitionTaskContext,
     daft_execution_config: PyDaftExecutionConfig,
@@ -533,7 +534,7 @@ def reduce_pipeline(
 
 
 @ray_tracing.ray_remote_traced
-@ray.remote(scheduling_strategy="SPREAD")
+@ray.remote
 def reduce_and_fanout(
     task_context: PartitionTaskContext,
     daft_execution_config: PyDaftExecutionConfig,
@@ -1012,6 +1013,12 @@ def _build_partitions(
             if task.instructions and isinstance(task.instructions[-1], FanoutInstruction)
             else reduce_pipeline
         )
+        if task.node_id is not None:
+            ray_options["scheduling_strategy"] = ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
+                task.node_id, soft=True
+            )
+        else:
+            ray_options["scheduling_strategy"] = "SPREAD"
         build_remote = build_remote.options(**ray_options).with_tracing(runner_tracer, task)
         [metadatas_ref, *partitions] = build_remote.remote(
             PartitionTaskContext(job_id=job_id, task_id=task.id(), stage_id=task.stage_id),
