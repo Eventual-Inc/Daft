@@ -1,6 +1,4 @@
-"""This module is used for Sphinx documentation only. We procedurally generate Python functions to allow
-Sphinx to generate documentation pages for every SQL function.
-"""
+"""This module is used for Sphinx documentation only. We procedurally generate Python functions to allow Sphinx to generate documentation pages for every SQL function."""
 
 from __future__ import annotations
 

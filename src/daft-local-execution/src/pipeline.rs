@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::{mermaid::MermaidDisplayVisitor, tree::TreeDisplay};
@@ -17,7 +17,7 @@ use daft_local_plan::{
     Project, Sample, Sort, UnGroupedAggregate, Unpivot,
 };
 use daft_logical_plan::{stats::StatsState, JoinType};
-use daft_micropartition::MicroPartition;
+use daft_micropartition::{partitioning::PartitionSet, MicroPartition};
 use daft_scan::ScanTaskRef;
 use daft_writers::make_physical_writer_factory;
 use indexmap::IndexSet;
@@ -36,9 +36,9 @@ use crate::{
         aggregate::AggregateSink,
         blocking_sink::BlockingSinkNode,
         concat::ConcatSink,
-        cross_join_collect::{CrossJoinCollectSink, CrossJoinStateBridge},
+        cross_join_collect::CrossJoinCollectSink,
         grouped_aggregate::GroupedAggregateSink,
-        hash_join_build::{HashJoinBuildSink, ProbeStateBridge},
+        hash_join_build::HashJoinBuildSink,
         limit::LimitSink,
         monotonically_increasing_id::MonotonicallyIncreasingIdSink,
         outer_hash_join_probe::OuterHashJoinProbeSink,
@@ -48,6 +48,7 @@ use crate::{
         write::{WriteFormat, WriteSink},
     },
     sources::{empty_scan::EmptyScanSource, in_memory::InMemorySource},
+    state_bridge::BroadcastStateBridge,
     ExecutionRuntimeContext, PipelineCreationSnafu,
 };
 
@@ -77,7 +78,7 @@ pub fn viz_pipeline(root: &dyn PipelineNode) -> String {
 
 pub fn physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
-    psets: &HashMap<String, Vec<Arc<MicroPartition>>>,
+    psets: &(impl PartitionSet + ?Sized),
     cfg: &Arc<DaftExecutionConfig>,
 ) -> crate::Result<Box<dyn PipelineNode>> {
     use daft_local_plan::PhysicalScan;
@@ -104,10 +105,10 @@ pub fn physical_plan_to_pipeline(
             scan_task_source.arced().into()
         }
         LocalPhysicalPlan::InMemoryScan(InMemoryScan { info, .. }) => {
-            let partitions = psets
-                .get(&info.cache_key)
-                .unwrap_or_else(|| panic!("Cache key not found: {:?}", info.cache_key));
-            InMemorySource::new(partitions.clone(), info.source_schema.clone())
+            let materialized_pset = psets
+                .get_partition(&info.cache_key)
+                .unwrap_or_else(|_| panic!("Cache key not found: {:?}", info.cache_key));
+            InMemorySource::new(materialized_pset, info.source_schema.clone())
                 .arced()
                 .into()
         }
@@ -353,7 +354,7 @@ pub fn physical_plan_to_pipeline(
                     .map(|(e, f)| e.clone().cast(&f.dtype))
                     .collect::<Vec<_>>();
                 // we should move to a builder pattern
-                let probe_state_bridge = ProbeStateBridge::new();
+                let probe_state_bridge = BroadcastStateBridge::new();
                 let build_sink = HashJoinBuildSink::new(
                     key_schema,
                     casted_build_on,
@@ -453,7 +454,7 @@ pub fn physical_plan_to_pipeline(
             let stream_child_node = physical_plan_to_pipeline(stream_child, psets, cfg)?;
             let collect_child_node = physical_plan_to_pipeline(collect_child, psets, cfg)?;
 
-            let state_bridge = CrossJoinStateBridge::new();
+            let state_bridge = BroadcastStateBridge::new();
             let collect_node = BlockingSinkNode::new(
                 Arc::new(CrossJoinCollectSink::new(state_bridge.clone())),
                 collect_child_node,

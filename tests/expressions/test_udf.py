@@ -342,7 +342,7 @@ def test_udf_arbitrary_number_of_kwargs(batch_size):
     @udf(return_dtype=DataType.string(), batch_size=batch_size)
     def repeat_kwargs(**kwargs):
         data = {k: v.to_pylist() for k, v in kwargs.items()}
-        length = len(data[list(data.keys())[0]])
+        length = len(data[next(iter(data.keys()))])
         return Series.from_pylist(["".join([key * data[key][i] for key in data]) for i in range(length)])
 
     expr = repeat_kwargs(a=col("a"), b=col("b"), c=col("c"))

@@ -1,4 +1,4 @@
-"""This script provides a pipelined data generation implementation of data_generation.py
+"""This script provides a pipelined data generation implementation of data_generation.py.
 
 Note that after running this script, data will no longer be coherent/exist locally. This is used for generating large amounts
 of benchmarking data that lands directly in AWS S3, but for local benchmarking/testing use-cases use data_generation.py instead.
@@ -52,7 +52,7 @@ def pipelined_data_generation(
 
     if not cachedir.exists():
         logger.info("Cloning tpch dbgen repo")
-        subprocess.check_output(shlex.split(f"git clone https://github.com/electrum/tpch-dbgen {str(cachedir)}"))
+        subprocess.check_output(shlex.split(f"git clone https://github.com/electrum/tpch-dbgen {cachedir!s}"))
         subprocess.check_output("make", cwd=str(cachedir))
 
     for i, part_indices in enumerate(batch(range(1, num_parts + 1), n=parallelism)):

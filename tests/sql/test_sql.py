@@ -11,7 +11,7 @@ from tests.assets import TPCH_QUERIES
 
 
 def load_tpch_queries():
-    """Load all TPCH queries into a list of (name,sql) tuples"""
+    """Load all TPCH queries into a list of (name,sql) tuples."""
     queries = []
     for filename in os.listdir(TPCH_QUERIES):
         filepath = os.path.join(TPCH_QUERIES, filename)
@@ -24,7 +24,7 @@ def load_tpch_queries():
 
 
 def load_tpch_query(filename):
-    """Load a single TPCH query from a file"""
+    """Load a single TPCH query from a file."""
     filepath = os.path.join(TPCH_QUERIES, filename)
     if os.path.isfile(filepath) and filepath.endswith(".sql"):
         with open(filepath) as f:

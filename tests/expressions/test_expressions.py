@@ -602,6 +602,41 @@ def test_list_value_counts_nested():
     )
 
 
+def test_list_value_counts_fixed_size():
+    # Create data with lists of fixed size
+    data = {
+        "fixed_list": [
+            [1, 2, 3],
+            [4, 3, 4],
+            [4, 5, 6],
+            [1, 2, 3],
+            [7, 8, 9],
+            None,
+        ]
+    }
+
+    # Create DataFrame and cast the column to fixed size list
+    df = daft.from_pydict(data).with_column(
+        "fixed_list", daft.col("fixed_list").cast(DataType.fixed_size_list(DataType.int64(), 3))
+    )
+
+    df = df.with_column("fixed_list", col("fixed_list").cast(DataType.fixed_size_list(DataType.int64(), 3)))
+
+    # Get value counts
+    result = df.with_column("value_counts", col("fixed_list").list.value_counts())
+
+    # Verify the value counts
+    result_dict = result.to_pydict()
+    assert result_dict["value_counts"] == [
+        [(1, 1), (2, 1), (3, 1)],
+        [(4, 2), (3, 1)],
+        [(4, 1), (5, 1), (6, 1)],
+        [(1, 1), (2, 1), (3, 1)],
+        [(7, 1), (8, 1), (9, 1)],
+        [],
+    ]
+
+
 def test_list_value_counts_degenerate():
     import pyarrow as pa
 

@@ -213,7 +213,7 @@ def test_daft_iceberg_table_predicate_pushdown_on_number(predicate, table, limit
 
 @pytest.mark.integration()
 def test_daft_iceberg_table_predicate_pushdown_empty_scan(local_iceberg_catalog):
-    catalog_name, pyiceberg_catalog = local_iceberg_catalog
+    _, pyiceberg_catalog = local_iceberg_catalog
     tab = pyiceberg_catalog.load_table("default.test_partitioned_by_months")
     df = daft.read_iceberg(tab)
     df = df.where(df["dt"] > date(2030, 1, 1))
