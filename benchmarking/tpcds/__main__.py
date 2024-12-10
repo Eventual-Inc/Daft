@@ -72,6 +72,9 @@ def run_query_on_ray(
                     "entrypoint": f"python {ray_entrypoint_script} --tpcds-gen-folder 'data/0.01' --question {query_index} {'--dry-run' if run_args.dry_run else ''}",
                     "runtime_env": {
                         "working_dir": working_dir,
+                        "env_vars": {
+                            "DAFT_ENABLE_RAY_TRACING": "1",
+                        },
                     },
                 },
             )
