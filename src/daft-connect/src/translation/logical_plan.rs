@@ -62,9 +62,9 @@ pub async fn to_logical_plan(relation: Relation) -> eyre::Result<Plan> {
         RelType::Aggregate(a) => aggregate(*a)
             .await
             .wrap_err("Failed to apply aggregate to logical plan"),
-        RelType::WithColumns(w) => {
-            with_columns(*w).wrap_err("Failed to apply with_columns to logical plan")
-        }
+        RelType::WithColumns(w) => with_columns(*w)
+            .await
+            .wrap_err("Failed to apply with_columns to logical plan"),
         RelType::ToDf(t) => to_df(*t)
             .await
             .wrap_err("Failed to apply to_df to logical plan"),
