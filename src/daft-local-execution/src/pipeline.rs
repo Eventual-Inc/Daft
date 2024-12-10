@@ -81,7 +81,7 @@ pub fn viz_pipeline(root: &dyn PipelineNode) -> String {
 
 pub fn physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
-    psets: &(impl PartitionSet + ?Sized),
+    psets: &(impl PartitionSet<Arc<MicroPartition>> + ?Sized),
     cfg: &Arc<DaftExecutionConfig>,
 ) -> crate::Result<Box<dyn PipelineNode>> {
     use daft_local_plan::PhysicalScan;

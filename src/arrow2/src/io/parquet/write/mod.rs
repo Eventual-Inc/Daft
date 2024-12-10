@@ -27,13 +27,6 @@ mod sink;
 mod utf8;
 mod utils;
 
-use crate::array::*;
-use crate::datatypes::*;
-use crate::error::{Error, Result};
-use crate::types::days_ms;
-use crate::types::i256;
-use crate::types::NativeType;
-
 pub use nested::{num_values, write_rep_and_def};
 pub use pages::{to_leaves, to_nested, to_parquet_leaves};
 use parquet2::schema::types::PrimitiveType as ParquetPrimitiveType;
@@ -52,6 +45,13 @@ pub use parquet2::{
 };
 pub use utils::write_def_levels;
 
+use crate::{
+    array::*,
+    datatypes::*,
+    error::{Error, Result},
+    types::{days_ms, i256, NativeType},
+};
+
 /// Currently supported options to write to parquet
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WriteOptions {
@@ -65,16 +65,15 @@ pub struct WriteOptions {
     pub data_pagesize_limit: Option<usize>,
 }
 
-use crate::compute::aggregate::estimated_bytes_size;
 pub use file::FileWriter;
+pub use pages::{array_to_columns, Nested};
 pub use row_group::{row_group_iter, RowGroupIterator};
 pub use schema::to_parquet_type;
 #[cfg(feature = "io_parquet_async")]
 #[cfg_attr(docsrs, doc(cfg(feature = "io_parquet_async")))]
 pub use sink::FileSink;
 
-pub use pages::array_to_columns;
-pub use pages::Nested;
+use crate::compute::aggregate::estimated_bytes_size;
 
 /// returns offset and length to slice the leaf values
 pub fn slice_nested_leaf(nested: &[Nested]) -> (usize, usize) {

@@ -125,7 +125,7 @@ impl NativeExecutor {
 
     pub fn run(
         &self,
-        psets: impl PartitionSet,
+        psets: impl PartitionSet<Arc<MicroPartition>>,
         cfg: Arc<DaftExecutionConfig>,
         results_buffer_size: Option<usize>,
     ) -> DaftResult<ExecutionEngineResult> {
@@ -250,7 +250,7 @@ impl IntoIterator for ExecutionEngineResult {
 
 pub fn run_local(
     physical_plan: &LocalPhysicalPlan,
-    psets: impl PartitionSet,
+    psets: impl PartitionSet<Arc<MicroPartition>>,
     cfg: Arc<DaftExecutionConfig>,
     results_buffer_size: Option<usize>,
     cancel: CancellationToken,

@@ -915,7 +915,7 @@ dependencies = [
  "serde_json",
  "time",
  "url",
- "uuid 1.10.0",
+ "uuid 1.11.0",
 ]
 
 [[package]]
@@ -936,7 +936,7 @@ dependencies = [
  "time",
  "tz-rs",
  "url",
- "uuid 1.10.0",
+ "uuid 1.11.0",
 ]
 
 [[package]]
@@ -958,7 +958,7 @@ dependencies = [
  "sha2",
  "time",
  "url",
- "uuid 1.10.0",
+ "uuid 1.11.0",
 ]
 
 [[package]]
@@ -978,7 +978,7 @@ dependencies = [
  "serde_json",
  "time",
  "url",
- "uuid 1.10.0",
+ "uuid 1.11.0",
 ]
 
 [[package]]
@@ -1538,6 +1538,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "common-partitioning"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-error",
+ "dashmap",
+ "futures",
+ "pyo3",
+ "uuid 1.11.0",
+]
+
+[[package]]
 name = "common-py-serde"
 version = "0.3.0-dev0"
 dependencies = [
@@ -1900,6 +1911,7 @@ dependencies = [
  "common-display",
  "common-file-formats",
  "common-hashable-float-wrapper",
+ "common-partitioning",
  "common-resource-request",
  "common-runtime",
  "common-scan-info",
@@ -1999,7 +2011,7 @@ dependencies = [
  "tokio",
  "tonic",
  "tracing",
- "uuid 1.10.0",
+ "uuid 1.11.0",
 ]
 
 [[package]]
@@ -2131,7 +2143,7 @@ dependencies = [
  "tiktoken-rs",
  "tokio",
  "typetag",
- "uuid 1.10.0",
+ "uuid 1.11.0",
  "xxhash-rust",
 ]
 
@@ -2344,7 +2356,7 @@ dependencies = [
  "serde",
  "snafu",
  "test-log",
- "uuid 1.10.0",
+ "uuid 1.11.0",
 ]
 
 [[package]]
@@ -2355,6 +2367,7 @@ dependencies = [
  "bincode",
  "common-error",
  "common-file-formats",
+ "common-partitioning",
  "common-runtime",
  "common-scan-info",
  "daft-core",
@@ -6881,9 +6894,9 @@ dependencies = [
 
 [[package]]
 name = "uuid"
-version = "1.10.0"
+version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "81dfa00651efa65069b0b6b651f4aaa31ba9e3c3ce0137aaad053604ee7e0314"
+checksum = "f8c5f0a0af699448548ad1a2fbf920fb4bee257eae39953ba95cb84891a0446a"
 dependencies = [
  "getrandom 0.2.15",
  "serde",

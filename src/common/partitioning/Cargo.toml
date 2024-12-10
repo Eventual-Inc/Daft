@@ -1,0 +1,17 @@
+[package]
+name = "common-partitioning"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+common-error.workspace = true
+dashmap = "6.1.0"
+futures.workspace = true
+pyo3 = {workspace = true, optional = true}
+uuid = { version = "1.11.0", features = ["v4"] }
+
+[lints]
+workspace = true
+
+[features]
+python = ["dep:pyo3", "common-error/python"]

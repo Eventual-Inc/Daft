@@ -25,6 +25,16 @@ pub enum SourceInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InMemoryScan {
+    pub source_schema: SchemaRef,
+    pub cache_key: String,
+    pub num_partitions: usize,
+    pub size_bytes: usize,
+    pub num_rows: usize,
+    pub clustering_spec: Option<ClusteringSpecRef>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PythonInfo {
     pub source_schema: SchemaRef,
     pub cache_key: String,
