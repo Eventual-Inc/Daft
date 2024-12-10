@@ -17,8 +17,7 @@ from tests.expressions.typing.conftest import (
 
 
 def plus_type_validation(lhs: DataType, rhs: DataType) -> bool:
-    """Checks whether these input types are resolvable for the + operation"""
-
+    """Checks whether these input types are resolvable for the + operation."""
     # Plus only works for certain types
     for arg in (lhs, rhs):
         if not (is_numeric(arg) or (arg == DataType.string()) or (arg == DataType.bool()) or (arg == DataType.null())):
@@ -43,7 +42,7 @@ def test_plus(binary_data_fixture):
 
 
 def binary_numeric_arithmetic_type_validation(lhs: DataType, rhs: DataType, op: ops) -> bool:
-    """Checks whether these input types are resolvable for arithmetic operations"""
+    """Checks whether these input types are resolvable for arithmetic operations."""
     # (temporal - temporal = duration)
     if lhs._is_temporal_type() and rhs._is_temporal_type() and lhs == rhs and op == ops.sub:
         return True

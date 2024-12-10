@@ -60,7 +60,7 @@ def test_deltalake_multi_write_basic(tmp_path, base_table):
 
 def test_deltalake_write_cloud(base_table, cloud_paths):
     deltalake = pytest.importorskip("deltalake")
-    path, io_config, catalog_table = cloud_paths
+    path, io_config, _ = cloud_paths
     df = daft.from_arrow(base_table)
     result = df.write_deltalake(str(path), io_config=io_config)
     result = result.to_pydict()
@@ -93,7 +93,7 @@ def test_deltalake_write_overwrite_basic(tmp_path):
 
 def test_deltalake_write_overwrite_cloud(cloud_paths):
     deltalake = pytest.importorskip("deltalake")
-    path, io_config, catalog_table = cloud_paths
+    path, io_config, _ = cloud_paths
     df1 = daft.from_pydict({"a": [1, 2]})
     df1.write_deltalake(str(path), io_config=io_config)
 

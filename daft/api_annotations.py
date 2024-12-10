@@ -52,7 +52,6 @@ def type_check_function(func: Callable[..., Any], *args: Any, **kwargs: Any) -> 
 
     def isinstance_helper(value: Any, T: Any) -> bool:
         """Like builtins.isinstance, but also accepts typing.* types."""
-
         if T is Any:
             return True
 

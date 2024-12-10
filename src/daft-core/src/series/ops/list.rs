@@ -1,4 +1,5 @@
 use common_error::{DaftError, DaftResult};
+use daft_schema::field::Field;
 
 use crate::{
     datatypes::{DataType, UInt64Array, Utf8Array},
@@ -177,37 +178,165 @@ impl Series {
     }
 
     pub fn list_contains(&self, contains: &Self) -> DaftResult<Self> {
-        if contains.len() != 1 {
-            return Err(DaftError::ValueError(
-                "Contains must be a single value".to_string(),
-            ));
-        }
+        // if contains.len() != 1 {
+        //     return Err(DaftError::ValueError(
+        //         "Contains must be a single value".to_string(),
+        //     ));
+        // }
+        // let contains_dt = contains.data_type();
+        // match self.data_type() {
+        //     DataType::List(internal_dt) => {
+        //         if contains_dt != internal_dt.as_ref() {
+        //             return Err(DaftError::TypeError(format!(
+        //                 "Cannot determine if a list of type {} contains a value of type {}",
+        //                 internal_dt, contains_dt
+        //             )));
+        //         }
+        //         Ok(self.list()?.list_contains(contains)?.into_series())
+        //     }
+        //     DataType::FixedSizeList(internal_dt, _) => {
+        //         if contains_dt != internal_dt.as_ref() {
+        //             return Err(DaftError::TypeError(format!(
+        //                 "Cannot determine if a list of type {} contains a value of type {}",
+        //                 internal_dt, contains_dt
+        //             )));
+        //         }
+        //         Ok(self
+        //             .fixed_size_list()?
+        //             .list_contains(contains)?
+        //             .into_series())
+        //     }
+        //     dt => Err(DaftError::TypeError(format!(
+        //         "List contains not implemented for {}",
+        //         dt
+        //     ))),
+        // }
+
+        let self_length = self.len();
+        let contains = match contains.len() {
+            1 => contains.broadcast(self_length)?,
+            length if length == self_length => contains.clone(),
+            _ => todo!(),
+        };
         let contains_dt = contains.data_type();
+
         match self.data_type() {
             DataType::List(internal_dt) => {
-                if contains_dt != internal_dt.as_ref() {
+                if internal_dt.as_ref() != contains_dt {
                     return Err(DaftError::TypeError(format!(
                         "Cannot determine if a list of type {} contains a value of type {}",
                         internal_dt, contains_dt
                     )));
-                }
-                Ok(self.list()?.list_contains(contains)?.into_series())
+                };
+
+                let list = self.list()?;
+                let contains = contains.downcast::<crate::datatypes::BooleanArray>()?;
+                let _ = list
+                    .iter()
+                    .zip(contains)
+                    .map(|(sub_series, value)| sub_series.zip(value))
+                    .map(|zipped| -> DaftResult<_> {
+                        let (sub_series, contains_value) = match zipped {
+                            None => return Ok(false),
+                            Some(zipped) => zipped,
+                        };
+
+                        let sub_list = sub_series.downcast::<crate::datatypes::BooleanArray>()?;
+                        let mut found = false;
+                        for element in sub_list.into_iter().flatten() {
+                            if element == contains_value {
+                                found = true;
+                                break;
+                            }
+                        }
+                        Ok(found)
+                    })
+                    .map(Some)
+                    .map(Option::transpose);
+
+                // let x = arrow2::array::BooleanArray::from_fall
+                // let x = crate::array::DataArray::<crate::datatypes::UInt8Type>::from_regular_iter(
+                //     self.field().clone(),
+                //     x,
+                // )?;
+
+                // for zipped in list
+                //     .iter()
+                //     .zip(contains)
+                //     .map(|(sub_series, value)| sub_series.zip(value))
+                // {
+                //     match zipped {
+                //         Some((sub_series, value)) => {
+                //             let sub_list =
+                //                 sub_series.downcast::<crate::datatypes::BooleanArray>()?;
+                //             let mut found = false;
+                //             for element in sub_list.into_iter().flatten() {
+                //                 if element == value {
+                //                     found = true;
+                //                     break;
+                //                 }
+                //             }
+                //             found
+                //         }
+                //         None => false,
+                //     };
+                //     // let sub_series = match sub_series {
+                //     //     Some(sub_series) => sub_series,
+                //     //     None => continue,
+                //     // };
+
+                //     // let sub_list = sub_series.downcast::<crate::datatypes::BooleanArray>()?;
+                //     // for x in sub_list {}
+
+                //     // with_match_comparable_daft_types!(self.data_type(), |$T| {
+                //     //     let sub_list = sub_series.downcast::<<$T as DaftDataType>::ArrayType>()?;
+                //     //     x.get(0);
+                //     //     todo!()
+                //     // })
+                // }
+                todo!()
             }
-            DataType::FixedSizeList(internal_dt, _) => {
-                if contains_dt != internal_dt.as_ref() {
-                    return Err(DaftError::TypeError(format!(
-                        "Cannot determine if a list of type {} contains a value of type {}",
-                        internal_dt, contains_dt
-                    )));
-                }
-                Ok(self
-                    .fixed_size_list()?
-                    .list_contains(contains)?
-                    .into_series())
+            _ => todo!(),
+        }
+    }
+
+    /// Given a series of `List` or `FixedSizeList`, return the count of distinct elements in the list.
+    ///
+    /// # Note
+    /// `NULL` values are not counted.
+    ///
+    /// # Example
+    /// ```txt
+    /// [[1, 2, 3], [1, 1, 1], [NULL, NULL, 5]] -> [3, 1, 1]
+    /// ```
+    pub fn list_unique_count(&self) -> DaftResult<Self> {
+        let field = Field::new(self.name(), DataType::UInt64);
+        match self.data_type() {
+            DataType::List(..) => {
+                let iter = self.list()?.into_iter().map(|sub_series| {
+                    let sub_series = sub_series?;
+                    let length = sub_series
+                        .build_probe_table_without_nulls()
+                        .expect("Building the probe table should always work")
+                        .len() as u64;
+                    Some(length)
+                });
+                Ok(UInt64Array::from_regular_iter(field, iter)?.into_series())
+            }
+            DataType::FixedSizeList(..) => {
+                let iter = self.fixed_size_list()?.into_iter().map(|sub_series| {
+                    let sub_series = sub_series?;
+                    let length = sub_series
+                        .build_probe_table_without_nulls()
+                        .expect("Building the probe table should always work")
+                        .len() as u64;
+                    Some(length)
+                });
+                Ok(UInt64Array::from_regular_iter(field, iter)?.into_series())
             }
             dt => Err(DaftError::TypeError(format!(
-                "List contains not implemented for {}",
-                dt
+                "List count distinct not implemented for {}",
+                dt,
             ))),
         }
     }

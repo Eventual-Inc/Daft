@@ -139,6 +139,18 @@ impl ResourceRequest {
             self.memory_bytes.map(|x| x * (factor as usize)),
         )
     }
+
+    pub fn num_cpus(&self) -> Option<f64> {
+        self.num_cpus
+    }
+
+    pub fn num_gpus(&self) -> Option<f64> {
+        self.num_gpus
+    }
+
+    pub fn memory_bytes(&self) -> Option<usize> {
+        self.memory_bytes
+    }
 }
 
 impl Add for &ResourceRequest {

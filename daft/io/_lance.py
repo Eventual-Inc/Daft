@@ -26,7 +26,7 @@ def _lancedb_table_factory_function(
 
 @PublicAPI
 def read_lance(url: str, io_config: Optional["IOConfig"] = None) -> DataFrame:
-    """Create a DataFrame from a LanceDB table
+    """Create a DataFrame from a LanceDB table.
 
     .. NOTE::
         This function requires the use of `LanceDB <https://lancedb.github.io/lancedb/>`_, which is the Python
@@ -35,7 +35,6 @@ def read_lance(url: str, io_config: Optional["IOConfig"] = None) -> DataFrame:
         To ensure that this is installed with Daft, you may install: ``pip install getdaft[lance]``
 
     Example:
-
     >>> df = daft.read_lance("s3://my-lancedb-bucket/data/")
     >>> df.show()
 
@@ -46,7 +45,6 @@ def read_lance(url: str, io_config: Optional["IOConfig"] = None) -> DataFrame:
     Returns:
         DataFrame: a DataFrame with the schema converted from the specified LanceDB table
     """
-
     try:
         import lance
     except ImportError as e:
@@ -68,6 +66,9 @@ def read_lance(url: str, io_config: Optional["IOConfig"] = None) -> DataFrame:
 class LanceDBScanOperator(ScanOperator):
     def __init__(self, ds: "lance.LanceDataset"):
         self._ds = ds
+
+    def name(self) -> str:
+        return "LanceDBScanOperator"
 
     def display_name(self) -> str:
         return f"LanceDBScanOperator({self._ds.uri})"

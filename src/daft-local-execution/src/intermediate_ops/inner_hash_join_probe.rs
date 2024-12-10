@@ -13,10 +13,10 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
     IntermediateOperatorResult,
 };
-use crate::sinks::hash_join_build::ProbeStateBridgeRef;
+use crate::state_bridge::BroadcastStateBridgeRef;
 
 enum InnerHashJoinProbeState {
-    Building(ProbeStateBridgeRef),
+    Building(BroadcastStateBridgeRef<ProbeState>),
     Probing(Arc<ProbeState>),
 }
 
@@ -24,7 +24,7 @@ impl InnerHashJoinProbeState {
     async fn get_or_await_probe_state(&mut self) -> Arc<ProbeState> {
         match self {
             Self::Building(bridge) => {
-                let probe_state = bridge.get_probe_state().await;
+                let probe_state = bridge.get_state().await;
                 *self = Self::Probing(probe_state.clone());
                 probe_state
             }
@@ -50,7 +50,7 @@ struct InnerHashJoinParams {
 pub struct InnerHashJoinProbeOperator {
     params: Arc<InnerHashJoinParams>,
     output_schema: SchemaRef,
-    probe_state_bridge: ProbeStateBridgeRef,
+    probe_state_bridge: BroadcastStateBridgeRef<ProbeState>,
 }
 
 impl InnerHashJoinProbeOperator {
@@ -63,7 +63,7 @@ impl InnerHashJoinProbeOperator {
         build_on_left: bool,
         common_join_keys: IndexSet<String>,
         output_schema: &SchemaRef,
-        probe_state_bridge: ProbeStateBridgeRef,
+        probe_state_bridge: BroadcastStateBridgeRef<ProbeState>,
     ) -> Self {
         let left_non_join_columns = left_schema
             .fields

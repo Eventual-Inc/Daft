@@ -4,6 +4,7 @@ use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_runtime::{get_compute_runtime, RuntimeRef};
 use daft_micropartition::MicroPartition;
+use snafu::ResultExt;
 use tracing::{info_span, instrument};
 
 use crate::{
@@ -14,7 +15,7 @@ use crate::{
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
     pipeline::PipelineNode,
     runtime_stats::{CountingReceiver, CountingSender, RuntimeStatsContext},
-    ExecutionRuntimeContext, OperatorOutput, NUM_CPUS,
+    ExecutionRuntimeContext, OperatorOutput, PipelineExecutionSnafu, NUM_CPUS,
 };
 
 pub(crate) trait IntermediateOpState: Send + Sync {
@@ -30,7 +31,6 @@ impl IntermediateOpState for DefaultIntermediateOperatorState {
 
 pub enum IntermediateOperatorResult {
     NeedMoreInput(Option<Arc<MicroPartition>>),
-    #[allow(dead_code)]
     HasMoreOutput(Arc<MicroPartition>),
 }
 
@@ -49,8 +49,9 @@ pub trait IntermediateOperator: Send + Sync {
     }
     /// The maximum number of concurrent workers that can be spawned for this operator.
     /// Each worker will has its own IntermediateOperatorState.
-    fn max_concurrency(&self) -> usize {
-        *NUM_CPUS
+    /// This method should be overridden if the operator needs to limit the number of concurrent workers, i.e. UDFs with resource requests.
+    fn max_concurrency(&self) -> DaftResult<usize> {
+        Ok(*NUM_CPUS)
     }
 
     fn dispatch_spawner(
@@ -208,7 +209,9 @@ impl PipelineNode for IntermediateNode {
             ));
         }
         let op = self.intermediate_op.clone();
-        let num_workers = op.max_concurrency();
+        let num_workers = op.max_concurrency().context(PipelineExecutionSnafu {
+            node_name: self.name(),
+        })?;
         let (destination_sender, destination_receiver) = create_channel(1);
         let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
 

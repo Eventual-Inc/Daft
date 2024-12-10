@@ -37,7 +37,7 @@ def get_build_type() -> str:
 
 
 def refresh_logger() -> None:
-    """Refreshes Daft's internal rust logging to the current python log level"""
+    """Refreshes Daft's internal rust logging to the current python log level."""
     _refresh_logger()
 
 
@@ -72,7 +72,7 @@ from daft.daft import ImageFormat, ImageMode, ResourceRequest
 from daft.dataframe import DataFrame
 from daft.logical.schema import Schema
 from daft.datatype import DataType, TimeUnit
-from daft.expressions import Expression, col, lit, interval
+from daft.expressions import Expression, col, lit, interval, coalesce
 from daft.io import (
     DataCatalogTable,
     DataCatalogType,
@@ -94,45 +94,46 @@ from daft.viz import register_viz_hook
 to_struct = Expression.to_struct
 
 __all__ = [
-    "from_pylist",
-    "from_pydict",
-    "from_arrow",
-    "from_pandas",
-    "from_ray_dataset",
-    "from_dask_dataframe",
-    "from_glob_path",
-    "read_csv",
-    "read_json",
-    "read_parquet",
-    "read_hudi",
-    "read_iceberg",
-    "read_deltalake",
-    "read_sql",
-    "read_lance",
-    "DataCatalogType",
     "DataCatalogTable",
+    "DataCatalogType",
     "DataFrame",
-    "Expression",
-    "col",
-    "interval",
     "DataType",
-    "ImageMode",
+    "Expression",
     "ImageFormat",
-    "lit",
-    "Series",
-    "TimeUnit",
-    "register_viz_hook",
-    "refresh_logger",
-    "udf",
+    "ImageMode",
     "ResourceRequest",
     "Schema",
-    "set_planning_config",
-    "set_execution_config",
-    "planning_config_ctx",
+    "Series",
+    "TimeUnit",
+    "coalesce",
+    "col",
     "execution_config_ctx",
+    "from_arrow",
+    "from_dask_dataframe",
+    "from_glob_path",
+    "from_pandas",
+    "from_pydict",
+    "from_pylist",
+    "from_ray_dataset",
+    "interval",
+    "lit",
+    "planning_config_ctx",
+    "read_csv",
+    "read_deltalake",
+    "read_hudi",
+    "read_iceberg",
+    "read_json",
+    "read_lance",
+    "read_parquet",
+    "read_sql",
     "read_table",
+    "refresh_logger",
     "register_table",
+    "register_viz_hook",
+    "set_execution_config",
+    "set_planning_config",
     "sql",
     "sql_expr",
     "to_struct",
+    "udf",
 ]

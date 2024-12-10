@@ -349,9 +349,13 @@ def _find_imported_submodules(code, top_level_dependencies):
     ```
     import concurrent.futures
     import cloudpickle
+
+
     def func():
         x = concurrent.futures.ThreadPoolExecutor
-    if __name__ == '__main__':
+
+
+    if __name__ == "__main__":
         cloudpickle.dumps(func)
     ```
     The globals extracted by cloudpickle in the function's state include the
@@ -415,6 +419,7 @@ def cell_set(cell, value):
     >>> def f(var):
     ...     def g():
     ...         var += 1
+    ...
     ...     return g
 
     will not modify the closure variable ``var```inplace, but instead try to

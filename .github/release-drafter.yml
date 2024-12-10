@@ -1,70 +1,77 @@
 name-template: v$NEXT_PATCH_VERSION
 tag-template: v$NEXT_PATCH_VERSION
+
 categories:
-- title: 🏆 Highlights
+- title: '💥 Breaking Changes'
   labels:
-  - highlight
-- title: 💥 Breaking Changes
+  - 'breaking change'
+  - 'breaking'
+
+- title: '✨ Features'
   labels:
-  - breaking
-- title: ✨ New Features
+  - 'feat'
+  - 'feature'
+  - 'enhancement'
+
+- title: '🐛 Bug Fixes'
   labels:
-  - enhancement
-- title: 🚀 Performance Improvements
+  - 'fix'
+  - 'bug'
+
+- title: '🚀 Performance'
   labels:
-  - performance
-- title: 👾 Bug Fixes
+  - 'perf'
+  - 'performance'
+
+- title: '♻️ Refactor'
   labels:
-  - bug
-- title: 📖 Documentation
+  - 'refactor'
+
+- title: '📖 Documentation'
   labels:
-  - documentation
-- title: 🧰 Maintenance
+  - 'docs'
+  - 'documentation'
+
+- title: '✅ Tests'
   labels:
-  - chore
-- title: ⬆️ Dependencies
+  - 'test'
+  - 'testing'
+
+- title: '👷 CI'
+  labels:
+  - 'ci'
+
+- title: '🔧 Maintenance'
+  labels:
+  - 'chore'
+
+- title: '⏪ Reverts'
+  labels:
+  - 'revert'
+
+- title: '⬆️ Dependencies'
   collapse-after: 3
   labels:
-  - dependencies
+  - 'dependencies'
+  - 'deps'
 
-change-template: '- $TITLE @$AUTHOR (#$NUMBER)'
-change-title-escapes: \<*_&   # You can add # and @ to disable mentions, and add ` to disable code blocks.
-
-
-# Add the "increment-minor-version" label to increment minor versions
 version-resolver:
+  major:
+    labels:
+    - 'breaking'
   minor:
     labels:
-    - increment-minor-version
+    - 'feat'
+    - 'feature'
+    - 'enhancement'
   default: patch
 
+change-template: '- $TITLE @$AUTHOR (#$NUMBER)'
+change-title-escapes: '\<*_&' # Escapes to prevent mentions and markdown formatting
 
 template: |
-  ## Changes
+  ## What's Changed 🚀
 
   $CHANGES
 
-
-autolabeler:
-- label: breaking
-  title:
-  - /.*\[BREAKING\].*/
-- label: enhancement
-  title:
-  - /.*\[FEAT\].*/
-- label: performance
-  title:
-  - /.*\[PERF\].*/
-- label: bug
-  title:
-  - /.*\[BUG\].*/
-- label: chore
-  title:
-  - /.*\[CHORE\].*/
-- label: documentation
-  title:
-  - /.*\[DOCS\].*/
-  files:
-  - '*.rst'
-  - '*.html'
-  - '*.ipynb'
+  **Full Changelog**: https://github.com/$OWNER/$REPOSITORY/compare/$PREVIOUS_TAG...v$NEXT_PATCH_VERSION

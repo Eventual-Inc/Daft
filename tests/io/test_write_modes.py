@@ -149,7 +149,7 @@ def test_write_modes_s3_minio(
     num_partitions,
     partition_cols,
 ):
-    path = f"s3://{bucket}/{str(uuid.uuid4())}"
+    path = f"s3://{bucket}/{uuid.uuid4()!s}"
     existing_data = {"a": ["a", "a", "b", "b"], "b": [1, 2, 3, 4]}
     new_data = {
         "a": ["a", "a", "b", "b"],
@@ -186,7 +186,7 @@ def test_write_modes_s3_minio_empty_data(
     write_mode,
     format,
 ):
-    path = f"s3://{bucket}/{str(uuid.uuid4())}"
+    path = f"s3://{bucket}/{uuid.uuid4()!s}"
     existing_data = {"a": ["a", "a", "b", "b"], "b": ["c", "d", "e", "f"]}
     new_data = {
         "a": ["a", "a", "b", "b"],

@@ -70,8 +70,9 @@ def _open_stream(
 
 
 def _cast_table_to_schema(table: MicroPartition, read_options: TableReadOptions, schema: Schema) -> pa.Table:
-    """Performs a cast of a Daft MicroPartition to the requested Schema/Data. This is required because:
+    """Performs a cast of a Daft MicroPartition to the requested Schema/Data.
 
+    This is required because:
     1. Data read from the datasource may have types that do not match the inferred global schema
     2. Data read from the datasource may have columns that are out-of-order with the inferred schema
     3. We may need only a subset of columns, or differently-ordered columns, in `read_options`
@@ -95,7 +96,7 @@ def read_json(
     json_read_options: JsonReadOptions | None = None,
     read_options: TableReadOptions = TableReadOptions(),
 ) -> MicroPartition:
-    """Reads a MicroPartition from a JSON file
+    """Reads a MicroPartition from a JSON file.
 
     Args:
         file (str | IO): either a file-like object or a string file path (potentially prefixed with a protocol such as "s3://")
@@ -150,7 +151,7 @@ def read_parquet(
     read_options: TableReadOptions = TableReadOptions(),
     parquet_options: TableParseParquetOptions = TableParseParquetOptions(),
 ) -> MicroPartition:
-    """Reads a MicroPartition from a Parquet file
+    """Reads a MicroPartition from a Parquet file.
 
     Args:
         file (str | IO): either a file-like object or a string file path (potentially prefixed with a protocol such as "s3://")
@@ -234,7 +235,7 @@ def read_sql(
     read_options: TableReadOptions = TableReadOptions(),
     predicate: Expression | None = None,
 ) -> MicroPartition:
-    """Reads a MicroPartition from a SQL query
+    """Reads a MicroPartition from a SQL query.
 
     Args:
         sql (str): SQL query to execute
@@ -245,7 +246,6 @@ def read_sql(
     Returns:
         MicroPartition: MicroPartition from SQL query
     """
-
     pa_table = conn.execute_sql_query(sql)
     mp = MicroPartition.from_arrow(pa_table)
 
@@ -285,7 +285,7 @@ def read_csv(
     csv_options: TableParseCSVOptions = TableParseCSVOptions(),
     read_options: TableReadOptions = TableReadOptions(),
 ) -> MicroPartition:
-    """Reads a MicroPartition from a CSV file
+    """Reads a MicroPartition from a CSV file.
 
     Args:
         file (str | IO): either a file-like object or a string file path (potentially prefixed with a protocol such as "s3://")

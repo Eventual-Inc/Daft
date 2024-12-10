@@ -21,7 +21,6 @@ def test_sort_simple(benchmark, num_samples, num_partitions) -> None:
 
     Keys are consecutive integers; no data payload.
     """
-
     arr = np.arange(num_samples)
     np.random.shuffle(arr)
 
@@ -53,7 +52,6 @@ def test_sort_simple(benchmark, num_samples, num_partitions) -> None:
 )
 def test_sort_strings(benchmark, num_samples, num_partitions) -> None:
     """Test the impact of string keys vs integer keys."""
-
     keys = [str(uuid4()) for _ in range(num_samples)]
     random.shuffle(keys)
 
@@ -86,7 +84,6 @@ def test_sort_strings(benchmark, num_samples, num_partitions) -> None:
 )
 def test_sort_withdata(benchmark, num_samples, num_partitions) -> None:
     """Test the impact of data payloads."""
-
     arr = np.arange(num_samples)
     np.random.shuffle(arr)
 
@@ -132,7 +129,6 @@ def test_multicolumn_sort(benchmark, num_columns, num_samples, num_partitions) -
 
     Using all columns produces a unique sort key.
     """
-
     arr = np.arange(num_samples)
     np.random.shuffle(arr)
 

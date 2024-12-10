@@ -36,7 +36,7 @@ def get_missing_columns(data_schema: "pa.Schema", iceberg_schema: "IcebergSchema
 
 
 def coerce_pyarrow_table_to_schema(pa_table: "pa.Table", schema: "pa.Schema") -> "pa.Table":
-    """Coerces a PyArrow table to the supplied schema
+    """Coerces a PyArrow table to the supplied schema.
 
     1. For each field in `pa_table`, cast it to the field in `input_schema` if one with a matching name
         is available
@@ -114,11 +114,10 @@ def partition_field_to_expr(field: "IcebergPartitionField", schema: "IcebergSche
 
 
 def to_partition_representation(value: Any):
-    """
-    Converts a partition value to the format expected by Iceberg metadata.
+    """Converts a partition value to the format expected by Iceberg metadata.
+
     Most transforms already do this, but the identity transforms preserve the original value type so we need to convert it.
     """
-
     if value is None:
         return None
 

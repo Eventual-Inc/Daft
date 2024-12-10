@@ -23,8 +23,7 @@ class DataCatalogType(Enum):
 
 @dataclass
 class DataCatalogTable:
-    """
-    A reference to a table in some database in some data catalog.
+    """A reference to a table in some database in some data catalog.
 
     See :class:`~.DataCatalog`
     """
@@ -44,8 +43,7 @@ class DataCatalogTable:
         )
 
     def table_uri(self, io_config: IOConfig) -> str:
-        """
-        Get the URI of the table in the data catalog.
+        """Get the URI of the table in the data catalog.
 
         Returns:
             str: The URI of the table.

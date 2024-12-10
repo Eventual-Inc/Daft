@@ -8,12 +8,12 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
 use common_scan_info::{PhysicalScanInfo, ScanState, SPLIT_AND_MERGE_PASS};
-use daft_core::prelude::*;
+use daft_core::{join::JoinSide, prelude::*};
 use daft_dsl::{
     col, functions::agg::merge_mean, is_partition_compatible, AggExpr, ApproxPercentileParams,
     Expr, ExprRef, SketchType,
 };
-use daft_functions::numeric::sqrt;
+use daft_functions::{list::unique_count, numeric::sqrt};
 use daft_logical_plan::{
     logical_plan::LogicalPlan,
     ops::{
@@ -424,11 +424,6 @@ pub(super) fn translate_single_logical_node(
             join_strategy,
             ..
         }) => {
-            if left_on.is_empty() && right_on.is_empty() && join_type == &JoinType::Inner {
-                return Err(DaftError::not_implemented(
-                    "Joins without join conditions (cross join) are not supported yet",
-                ));
-            }
             let mut right_physical = physical_children.pop().expect("requires 1 inputs");
             let mut left_physical = physical_children.pop().expect("requires 2 inputs");
 
@@ -498,6 +493,10 @@ pub(super) fn translate_single_logical_node(
                 .as_ref()
                 .map_or(false, |v| v.iter().any(|b| *b));
             let join_strategy = join_strategy.unwrap_or_else(|| {
+                if left_on.is_empty() && right_on.is_empty() && join_type == &JoinType::Inner {
+                    return JoinStrategy::Cross;
+                }
+
                 fn keys_are_primitive(on: &[ExprRef], schema: &SchemaRef) -> bool {
                     on.iter().all(|expr| {
                         let dtype = expr.get_type(schema).unwrap();
@@ -689,6 +688,32 @@ pub(super) fn translate_single_logical_node(
                     ))
                     .arced())
                 }
+                JoinStrategy::Cross => {
+                    if *join_type != JoinType::Inner {
+                        return Err(common_error::DaftError::ValueError(
+                            "Cross join is only applicable for inner joins".to_string(),
+                        ));
+                    }
+                    if !left_on.is_empty() || !right_on.is_empty() {
+                        return Err(common_error::DaftError::ValueError(
+                            "Cross join cannot have join keys".to_string(),
+                        ));
+                    }
+
+                    // choose the larger side to be in the outer loop since the inner side has to be fully materialized
+                    let outer_loop_side = if left_is_larger {
+                        JoinSide::Left
+                    } else {
+                        JoinSide::Right
+                    };
+
+                    Ok(PhysicalPlan::CrossJoin(CrossJoin::new(
+                        left_physical,
+                        right_physical,
+                        outer_loop_side,
+                    ))
+                    .arced())
+                }
             }
         }
         LogicalPlan::Sink(LogicalSink {
@@ -788,6 +813,9 @@ pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
                 AggExpr::Count(e, count_mode) => {
                     AggExpr::Count(Expr::Alias(e, name.clone()).into(), count_mode)
                 }
+                AggExpr::CountDistinct(e) => {
+                    AggExpr::CountDistinct(Expr::Alias(e, name.clone()).into())
+                },
                 AggExpr::Sum(e) => AggExpr::Sum(Expr::Alias(e, name.clone()).into()),
                 AggExpr::ApproxPercentile(ApproxPercentileParams {
                     child: e,
@@ -878,6 +906,27 @@ pub fn populate_aggregation_stages(
                         col(count_id.clone()).alias(sum_of_count_id.clone()),
                     ));
                 final_exprs.push(col(sum_of_count_id.clone()).alias(output_name));
+            }
+            AggExpr::CountDistinct(sub_expr) => {
+                // First stage
+                let list_agg_id = add_to_stage(
+                    AggExpr::List,
+                    sub_expr.clone(),
+                    schema,
+                    &mut first_stage_aggs,
+                );
+
+                // Second stage
+                let list_concat_id = add_to_stage(
+                    AggExpr::Concat,
+                    col(list_agg_id.clone()),
+                    schema,
+                    &mut second_stage_aggs,
+                );
+
+                // Final projection
+                let result = unique_count(col(list_concat_id.clone())).alias(output_name);
+                final_exprs.push(result);
             }
             AggExpr::Sum(e) => {
                 let sum_id = agg_expr.semantic_id(schema).id;

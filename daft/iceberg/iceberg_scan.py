@@ -115,6 +115,9 @@ class IcebergScanOperator(ScanOperator):
     def schema(self) -> Schema:
         return self._schema
 
+    def name(self) -> str:
+        return "IcebergScanOperator"
+
     def display_name(self) -> str:
         return f"IcebergScanOperator({'.'.join(self._table.name())})"
 
@@ -154,7 +157,7 @@ class IcebergScanOperator(ScanOperator):
         limit_files = limit is not None and pushdowns.filters is None and pushdowns.partition_filters is None
 
         if len(self.partitioning_keys()) > 0 and pushdowns.partition_filters is None:
-            logging.warning(
+            logger.warning(
                 "%s has Partitioning Keys: %s but no partition filter was specified. This will result in a full table scan.",
                 self.display_name(),
                 self.partitioning_keys(),

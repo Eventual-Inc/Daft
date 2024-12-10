@@ -26,6 +26,7 @@ impl TreeDisplay for PhysicalPlan {
             Self::HashJoin(join) => join.display_as(level),
             Self::SortMergeJoin(join) => join.display_as(level),
             Self::BroadcastJoin(join) => join.display_as(level),
+            Self::CrossJoin(join) => join.display_as(level),
             Self::TabularWriteParquet(write) => write.display_as(level),
             Self::TabularWriteJson(write) => write.display_as(level),
             Self::TabularWriteCsv(write) => write.display_as(level),

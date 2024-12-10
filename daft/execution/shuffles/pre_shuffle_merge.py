@@ -19,8 +19,7 @@ def pre_shuffle_merge(
     map_plan: InProgressPhysicalPlan[PartitionT],
     pre_shuffle_merge_threshold: int,
 ) -> InProgressPhysicalPlan[PartitionT]:
-    """
-    Merges intermediate partitions from the map_plan based on memory constraints.
+    """Merges intermediate partitions from the map_plan based on memory constraints.
 
     The function processes incoming map tasks and merges their outputs when:
     1. There are multiple materialized maps available
@@ -32,7 +31,6 @@ def pre_shuffle_merge(
     Yields:
         Merged partition tasks or processed child steps
     """
-
     NUM_MAPS_THRESHOLD = 4
 
     stage_id = next(stage_id_counter)

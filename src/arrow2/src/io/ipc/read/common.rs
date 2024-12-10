@@ -87,7 +87,7 @@ pub fn read_record_batch<R: Read + Seek>(
     file_size: u64,
     scratch: &mut Vec<u8>,
 ) -> Result<Chunk<Box<dyn Array>>> {
-    assert_eq!(fields.len(), ipc_schema.fields.len());
+    assert_eq!(fields.len(), ipc_schema.fields.len(), "IPC schema fields and Arrow schema fields must be the same length");
     let buffers = batch
         .buffers()
         .map_err(|err| Error::from(OutOfSpecKind::InvalidFlatbufferBuffers(err)))?

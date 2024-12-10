@@ -24,7 +24,7 @@ pub struct Project {
 
 impl Project {
     pub(crate) fn try_new(input: Arc<LogicalPlan>, projection: Vec<ExprRef>) -> Result<Self> {
-        let expr_resolver = ExprResolver::builder().allow_stateful_udf(true).build();
+        let expr_resolver = ExprResolver::builder().allow_actor_pool_udf(true).build();
 
         let (projection, fields) = expr_resolver
             .resolve(projection, &input.schema())
@@ -421,6 +421,10 @@ fn replace_column_with_semantic_id_aggexpr(
                 |transformed_child| AggExpr::Count(transformed_child, mode),
                 |_| e,
             )
+        }
+        AggExpr::CountDistinct(ref child) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                .map_yes_no(AggExpr::CountDistinct, |_| e)
         }
         AggExpr::Sum(ref child) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)

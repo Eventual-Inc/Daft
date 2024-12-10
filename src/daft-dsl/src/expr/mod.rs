@@ -186,6 +186,9 @@ pub enum AggExpr {
     #[display("count({_0}, {_1})")]
     Count(ExprRef, CountMode),
 
+    #[display("count_distinct({_0})")]
+    CountDistinct(ExprRef),
+
     #[display("sum({_0})")]
     Sum(ExprRef),
 
@@ -247,6 +250,7 @@ impl AggExpr {
     pub fn name(&self) -> &str {
         match self {
             Self::Count(expr, ..)
+            | Self::CountDistinct(expr)
             | Self::Sum(expr)
             | Self::ApproxPercentile(ApproxPercentileParams { child: expr, .. })
             | Self::ApproxCountDistinct(expr)
@@ -268,6 +272,10 @@ impl AggExpr {
             Self::Count(expr, mode) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_count({mode})"))
+            }
+            Self::CountDistinct(expr) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.local_count_distinct()"))
             }
             Self::Sum(expr) => {
                 let child_id = expr.semantic_id(schema);
@@ -337,6 +345,7 @@ impl AggExpr {
     pub fn children(&self) -> Vec<ExprRef> {
         match self {
             Self::Count(expr, ..)
+            | Self::CountDistinct(expr)
             | Self::Sum(expr)
             | Self::ApproxPercentile(ApproxPercentileParams { child: expr, .. })
             | Self::ApproxCountDistinct(expr)
@@ -361,7 +370,8 @@ impl AggExpr {
         }
         let mut first_child = || children.pop().unwrap();
         match self {
-            Self::Count(_, count_mode) => Self::Count(first_child(), *count_mode),
+            &Self::Count(_, count_mode) => Self::Count(first_child(), count_mode),
+            Self::CountDistinct(_) => Self::CountDistinct(first_child()),
             Self::Sum(_) => Self::Sum(first_child()),
             Self::Mean(_) => Self::Mean(first_child()),
             Self::Stddev(_) => Self::Stddev(first_child()),
@@ -391,7 +401,7 @@ impl AggExpr {
 
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
         match self {
-            Self::Count(expr, ..) => {
+            Self::Count(expr, ..) | Self::CountDistinct(expr) => {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(field.name.as_str(), DataType::UInt64))
             }
@@ -537,6 +547,10 @@ impl Expr {
 
     pub fn count(self: ExprRef, mode: CountMode) -> ExprRef {
         Self::Agg(AggExpr::Count(self, mode)).into()
+    }
+
+    pub fn count_distinct(self: ExprRef) -> ExprRef {
+        Self::Agg(AggExpr::CountDistinct(self)).into()
     }
 
     pub fn sum(self: ExprRef) -> ExprRef {
@@ -1259,14 +1273,35 @@ pub fn has_agg(expr: &ExprRef) -> bool {
     expr.exists(|e| matches!(e.as_ref(), Expr::Agg(_)))
 }
 
-pub fn has_stateful_udf(expr: &ExprRef) -> bool {
-    expr.exists(|e| {
-        matches!(
-            e.as_ref(),
-            Expr::Function {
-                func: FunctionExpr::Python(PythonUDF::Stateful(_)),
+#[inline]
+pub fn is_actor_pool_udf(expr: &ExprRef) -> bool {
+    matches!(
+        expr.as_ref(),
+        Expr::Function {
+            func: FunctionExpr::Python(PythonUDF {
+                concurrency: Some(_),
                 ..
-            }
-        )
-    })
+            }),
+            ..
+        }
+    )
+}
+
+pub fn count_actor_pool_udfs(exprs: &[ExprRef]) -> usize {
+    exprs
+        .iter()
+        .map(|expr| {
+            let mut count = 0;
+            expr.apply(|e| {
+                if is_actor_pool_udf(e) {
+                    count += 1;
+                }
+
+                Ok(common_treenode::TreeNodeRecursion::Continue)
+            })
+            .unwrap();
+
+            count
+        })
+        .sum()
 }

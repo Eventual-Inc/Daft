@@ -125,6 +125,11 @@ pub mod pylib {
         let catalog_module = daft_catalog::python::register_modules(m)?;
         daft_catalog_python_catalog::python::register_modules(&catalog_module)?;
 
+        // Register testing module
+        let testing_module = PyModule::new_bound(m.py(), "testing")?;
+        m.add_submodule(&testing_module)?;
+        daft_scan::python::register_testing_modules(&testing_module)?;
+
         m.add_wrapped(wrap_pyfunction!(version))?;
         m.add_wrapped(wrap_pyfunction!(build_type))?;
         m.add_wrapped(wrap_pyfunction!(refresh_logger))?;

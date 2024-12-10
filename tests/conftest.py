@@ -30,7 +30,7 @@ def pytest_configure(config):
 
 
 def get_tests_daft_runner_name() -> Literal["ray"] | Literal["py"] | Literal["native"]:
-    """Test utility that checks the environment variable for the runner that is being used for the test"""
+    """Test utility that checks the environment variable for the runner that is being used for the test."""
     name = os.getenv("DAFT_RUNNER")
     assert name is not None, "Tests must be run with $DAFT_RUNNER env var"
     name = name.lower()
@@ -90,7 +90,7 @@ def join_strategy(request):
 
 @pytest.fixture(scope="function")
 def make_df(data_source, tmp_path) -> daft.Dataframe:
-    """Makes a dataframe when provided with data"""
+    """Makes a dataframe when provided with data."""
 
     def _make_df(
         data: pa.Table | dict | list,

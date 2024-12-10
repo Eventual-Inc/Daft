@@ -175,7 +175,7 @@ def run_all_benchmarks(
 
 
 def generate_parquet_data(tpch_gen_folder: str, scale_factor: float, num_parts: int) -> str:
-    """Generates Parquet data and returns the path to the folder
+    """Generates Parquet data and returns the path to the folder.
 
     Args:
         tpch_gen_folder (str): Path to the folder containing the TPCH dbgen tool and generated data
@@ -193,7 +193,7 @@ def get_daft_version() -> str:
 
 
 def get_daft_benchmark_runner_name() -> Literal["ray"] | Literal["py"] | Literal["native"]:
-    """Test utility that checks the environment variable for the runner that is being used for the benchmarking"""
+    """Test utility that checks the environment variable for the runner that is being used for the benchmarking."""
     name = os.getenv("DAFT_RUNNER")
     assert name is not None, "Tests must be run with $DAFT_RUNNER env var"
     name = name.lower()
@@ -217,7 +217,7 @@ def get_ray_runtime_env(requirements: str | None) -> dict:
 
 
 def warmup_environment(requirements: str | None, parquet_folder: str):
-    """Performs necessary setup of Daft on the current benchmarking environment"""
+    """Performs necessary setup of Daft on the current benchmarking environment."""
     if get_daft_benchmark_runner_name() == "ray":
         runtime_env = get_ray_runtime_env(requirements)
 

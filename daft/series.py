@@ -11,9 +11,7 @@ from daft.utils import pyarrow_supports_fixed_shape_tensor
 
 
 class Series:
-    """
-    A Daft Series is an array of data of a single type, and is usually a column in a DataFrame.
-    """
+    """A Daft Series is an array of data of a single type, and is usually a column in a DataFrame."""
 
     _series: PySeries
 
@@ -28,14 +26,12 @@ class Series:
 
     @staticmethod
     def from_arrow(array: pa.Array | pa.ChunkedArray, name: str = "arrow_series") -> Series:
-        """
-        Construct a Series from an pyarrow array or chunked array.
+        """Construct a Series from an pyarrow array or chunked array.
 
         Args:
             array: The pyarrow (chunked) array whose data we wish to put in the Series.
             name: The name associated with the Series; this is usually the column name.
         """
-
         _ensure_registered_super_ext_type()
         if DataType.from_arrow_type(array.type) == DataType.python():
             # If the Arrow type is not natively supported, go through the Python list path.
@@ -76,7 +72,6 @@ class Series:
                 falling back to Python type representation, or ``"force"`` the data to only
                 have a Python type representation. Default is ``"allow"``.
         """
-
         if not isinstance(data, list):
             raise TypeError(f"expected a python list, got {type(data)}")
 
@@ -98,8 +93,7 @@ class Series:
 
     @classmethod
     def from_numpy(cls, data: np.ndarray, name: str = "numpy_series") -> Series:
-        """
-        Construct a Series from a NumPy ndarray.
+        """Construct a Series from a NumPy ndarray.
 
         If the provided NumPy ndarray is 1-dimensional, Daft will attempt to store the ndarray
         in a pyarrow Array. If the ndarray has more than 1 dimension OR storing the 1D array in Arrow failed,
@@ -125,8 +119,7 @@ class Series:
 
     @classmethod
     def from_pandas(cls, data: pd.Series, name: str = "pd_series") -> Series:
-        """
-        Construct a Series from a pandas Series.
+        """Construct a Series from a pandas Series.
 
         This will first try to convert the series into a pyarrow array, then will fall
         back to converting the series to a NumPy ndarray and going through that construction path,
@@ -210,9 +203,7 @@ class Series:
         return DataType._from_pydatatype(self._series.data_type())
 
     def to_arrow(self) -> pa.Array:
-        """
-        Convert this Series to an pyarrow array.
-        """
+        """Convert this Series to an pyarrow array."""
         _ensure_registered_super_ext_type()
 
         dtype = self.datatype()
@@ -228,9 +219,7 @@ class Series:
         return arrow_arr
 
     def to_pylist(self) -> list:
-        """
-        Convert this Series to a Python list.
-        """
+        """Convert this Series to a Python list."""
         if self.datatype()._is_python_type():
             return self._series.to_pylist()
         elif self.datatype()._should_cast_to_python():
@@ -340,68 +329,69 @@ class Series:
         return Series._from_pyseries(self._series.tan())
 
     def cot(self) -> Series:
-        """The elementwise cotangent of a numeric series"""
+        """The elementwise cotangent of a numeric series."""
         return Series._from_pyseries(self._series.cot())
 
     def arcsin(self) -> Series:
-        """The elementwise arc sine of a numeric series"""
+        """The elementwise arc sine of a numeric series."""
         return Series._from_pyseries(self._series.arcsin())
 
     def arccos(self) -> Series:
-        """The elementwise arc cosine of a numeric series"""
+        """The elementwise arc cosine of a numeric series."""
         return Series._from_pyseries(self._series.arccos())
 
     def arctan(self) -> Series:
-        """The elementwise arc tangent of a numeric series"""
+        """The elementwise arc tangent of a numeric series."""
         return Series._from_pyseries(self._series.arctan())
 
     def arctan2(self, other: Series) -> Series:
-        """Calculates the four quadrant arctangent of coordinates (y, x)"""
+        """Calculates the four quadrant arctangent of coordinates (y, x)."""
         if not isinstance(other, Series):
             raise TypeError(f"expected another Series but got {type(other)}")
         return Series._from_pyseries(self._series.arctan2(other._series))
 
     def arctanh(self) -> Series:
-        """The elementwise inverse hyperbolic tangent of a numeric series"""
+        """The elementwise inverse hyperbolic tangent of a numeric series."""
         return Series._from_pyseries(self._series.arctanh())
 
     def arccosh(self) -> Series:
-        """The elementwise inverse hyperbolic cosine of a numeric series"""
+        """The elementwise inverse hyperbolic cosine of a numeric series."""
         return Series._from_pyseries(self._series.arccosh())
 
     def arcsinh(self) -> Series:
-        """The elementwise inverse hyperbolic sine of a numeric series"""
+        """The elementwise inverse hyperbolic sine of a numeric series."""
         return Series._from_pyseries(self._series.arcsinh())
 
     def radians(self) -> Series:
-        """The elementwise radians of a numeric series"""
+        """The elementwise radians of a numeric series."""
         return Series._from_pyseries(self._series.radians())
 
     def degrees(self) -> Series:
-        """The elementwise degrees of a numeric series"""
+        """The elementwise degrees of a numeric series."""
         return Series._from_pyseries(self._series.degrees())
 
     def log2(self) -> Series:
-        """The elementwise log2 of a numeric series"""
+        """The elementwise log2 of a numeric series."""
         return Series._from_pyseries(self._series.log2())
 
     def log10(self) -> Series:
-        """The elementwise log10 of a numeric series"""
+        """The elementwise log10 of a numeric series."""
         return Series._from_pyseries(self._series.log10())
 
     def log(self, base: float) -> Series:
         """The elementwise log with given base, of a numeric series.
+
         Args:
             base: The base of the logarithm.
         """
         return Series._from_pyseries(self._series.log(base))
 
     def ln(self) -> Series:
-        """The elementwise ln of a numeric series"""
+        """The elementwise ln of a numeric series."""
         return Series._from_pyseries(self._series.ln())
 
     def exp(self) -> Series:
-        """The e^self of a numeric series"""
+        """The e^self of a numeric series."""
         return Series._from_pyseries(self._series.exp())
 
     def __add__(self, other: object) -> Series:
@@ -576,8 +566,7 @@ class Series:
         seed: int = 1,
         hash_function: Literal["murmurhash3", "xxhash", "sha1"] = "murmurhash3",
     ) -> Series:
-        """
-        Runs the MinHash algorithm on the series.
+        """Runs the MinHash algorithm on the series.
 
         For a string, calculates the minimum hash over all its ngrams,
         repeating with `num_hashes` permutations. Returns as a list of 32-bit unsigned integers.

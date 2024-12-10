@@ -14,8 +14,7 @@ _PILLOW_REGISTERED = False
 
 
 def register_viz_hook(klass: type[HookClass], hook: Callable[[object], str]):
-    """Registers a visualization hook that returns the appropriate HTML for
-    visualizing a specific class in HTML"""
+    """Registers a visualization hook that returns the appropriate HTML for visualizing a specific class in HTML."""
     _VIZ_HOOKS_REGISTRY[klass] = hook
 
 
@@ -38,7 +37,7 @@ def get_viz_hook(val: object) -> Callable[[object], str] | None:
             bio = io.BytesIO()
             img.save(bio, "JPEG")
             base64_img = base64.b64encode(bio.getvalue())
-            return f'<img style="max-height:128px;width:auto" src="data:image/png;base64, {base64_img.decode("utf-8")}" alt="{str(val)}" />'
+            return f'<img style="max-height:128px;width:auto" src="data:image/png;base64, {base64_img.decode("utf-8")}" alt="{val!s}" />'
 
         register_viz_hook(pil_image.Image, _viz_pil_image)
         _PILLOW_REGISTERED = True

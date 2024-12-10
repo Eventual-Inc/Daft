@@ -220,7 +220,6 @@ def test_table_join_multicolumn_nocross(join_impl, null_safe_equal) -> None:
 )
 def test_table_join_multicolumn_cross(join_impl, null_safe_equal) -> None:
     """A multicol join that should produce a cross product and a non-cross product."""
-
     left_table = MicroPartition.from_pydict(
         {
             "a": ["apple", "apple", "banana", "banana", "banana", None],

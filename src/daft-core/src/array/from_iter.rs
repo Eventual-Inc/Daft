@@ -4,6 +4,7 @@ use arrow2::{
     array::{MutablePrimitiveArray, PrimitiveArray},
     types::months_days_ns,
 };
+use common_error::DaftResult;
 
 use super::DataArray;
 use crate::{
@@ -40,6 +41,23 @@ where
         let data_array: PrimitiveArray<_> = array.into();
         Self::new(field, data_array.boxed()).unwrap()
     }
+
+    pub fn from_regular_iter<F, I>(field: F, iter: I) -> DaftResult<Self>
+    where
+        F: Into<Arc<Field>>,
+        I: Iterator<Item = Option<T::Native>>,
+    {
+        let field = field.into();
+        let data_type = field.dtype.to_arrow()?;
+        let mut array = MutablePrimitiveArray::<T::Native>::from(data_type);
+        let (_, upper_bound) = iter.size_hint();
+        if let Some(upper_bound) = upper_bound {
+            array.reserve(upper_bound);
+        }
+        array.extend(iter);
+        let array = PrimitiveArray::from(array).boxed();
+        Self::new(field, array)
+    }
 }
 
 impl Utf8Array {
@@ -71,7 +89,6 @@ impl BinaryArray {
         .unwrap()
     }
 }
-
 impl FixedSizeBinaryArray {
     pub fn from_iter<S: AsRef<[u8]>>(
         name: &str,

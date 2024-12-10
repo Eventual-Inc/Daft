@@ -26,7 +26,7 @@ class TaskEvent:
 
 @dataclasses.dataclass(frozen=True)
 class StartTaskEvent(TaskEvent):
-    """Marks the start of a task, along with available metadata"""
+    """Marks the start of a task, along with available metadata."""
 
     # Start Unix timestamp
     start: float
@@ -47,14 +47,14 @@ class StartTaskEvent(TaskEvent):
 
 @dataclasses.dataclass(frozen=True)
 class EndTaskEvent(TaskEvent):
-    """Marks the end of a task, along with available metadata"""
+    """Marks the end of a task, along with available metadata."""
 
     # End Unix timestamp
     end: float
 
 
 class _NodeInfo:
-    """Information about nodes and their workers"""
+    """Information about nodes and their workers."""
 
     def __init__(self):
         self.node_to_workers = {}
@@ -62,7 +62,7 @@ class _NodeInfo:
         self.worker_idxs = {}
 
     def get_node_and_worker_idx(self, node_id: str, worker_id: str) -> tuple[int, int]:
-        """Returns a node and worker index for the provided IDs"""
+        """Returns a node and worker index for the provided IDs."""
         # Truncate to save space
         node_id = node_id[:8]
         worker_id = worker_id[:8]
@@ -80,7 +80,7 @@ class _NodeInfo:
         return node_idx, worker_idx
 
     def collect_node_info(self) -> dict[str, list[str]]:
-        """Returns a dictionary of {node_id: [worker_ids...]}"""
+        """Returns a dictionary of {node_id: [worker_ids...]}."""
         return self.node_to_workers.copy()
 
 
@@ -91,7 +91,7 @@ class _MetricsActor:
         self._node_info: dict[str, _NodeInfo] = defaultdict(_NodeInfo)
 
     def ready(self):
-        """Returns when the metrics actor is ready"""
+        """Returns when the metrics actor is ready."""
         # Discussion on how to check if an actor is ready: https://github.com/ray-project/ray/issues/14923
         return None
 
@@ -106,7 +106,7 @@ class _MetricsActor:
         ray_assigned_resources: dict,
         ray_task_id: str,
     ):
-        """Records a task start event"""
+        """Records a task start event."""
         # Update node info
         node_idx, worker_idx = self._node_info[execution_id].get_node_and_worker_idx(node_id, worker_id)
 
@@ -132,7 +132,7 @@ class _MetricsActor:
         return (events[idx:], len(events))
 
     def collect_and_close(self, execution_id: str) -> dict[str, list[str]]:
-        """Collect the metrics associated with this execution, cleaning up the memory used for this execution ID"""
+        """Collect the metrics associated with this execution, cleaning up the memory used for this execution ID."""
         # Data about the available nodes and worker IDs in those nodes
         node_data = self._node_info[execution_id].collect_node_info()
 
@@ -149,7 +149,7 @@ class MetricsActorHandle:
     actor: ray.actor.ActorHandle
 
     def wait(self) -> None:
-        """Call to block until the underlying actor is ready"""
+        """Call to block until the underlying actor is ready."""
         return ray.wait([self.actor.ready.remote()], fetch_local=False)
 
     def mark_task_start(
@@ -185,14 +185,14 @@ class MetricsActorHandle:
         )
 
     def get_task_events(self, idx: int) -> tuple[list[TaskEvent], int]:
-        """Collect task metrics from a given logical event index
+        """Collect task metrics from a given logical event index.
 
         Returns the task metrics and the new logical event index (to be used as a pagination offset token on subsequent requests)
         """
         return ray.get(self.actor.get_task_events.remote(self.execution_id, idx))
 
     def collect_and_close(self) -> dict[str, set[str]]:
-        """Collect node metrics and close the metrics actor for this execution"""
+        """Collect node metrics and close the metrics actor for this execution."""
         return ray.get(self.actor.collect_and_close.remote(self.execution_id))
 
 
@@ -207,7 +207,7 @@ _metrics_actor_lock: threading.Lock = threading.Lock()
 
 
 def get_metrics_actor(execution_id: str) -> MetricsActorHandle:
-    """Retrieves a handle to the Actor for a given job_id"""
+    """Retrieves a handle to the Actor for a given job_id."""
     with _metrics_actor_lock:
         actor = _MetricsActor.options(  # type: ignore[attr-defined]
             name="daft_metrics_actor",

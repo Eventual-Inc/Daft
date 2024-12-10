@@ -9,7 +9,7 @@ TESTS = [
     [[None] * 10, 0],
     [[1], 1],
     [["hello"], 1],
-    [[1, 2, 3, 4, 3, 2, 1], 4],
+    [[1, 2, 3, 4, 3, 2, 1, None, None, None], 4],
     [[10] * 10, 1],
     [["Hello", "hello", "he", "hello"], 3],
     [[True, False, True, False], 2],

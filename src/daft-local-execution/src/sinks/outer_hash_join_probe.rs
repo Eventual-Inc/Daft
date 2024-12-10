@@ -17,15 +17,13 @@ use futures::{stream, StreamExt};
 use indexmap::IndexSet;
 use tracing::{info_span, instrument};
 
-use super::{
-    hash_join_build::ProbeStateBridgeRef,
-    streaming_sink::{
-        StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult,
-        StreamingSinkOutput, StreamingSinkState,
-    },
+use super::streaming_sink::{
+    StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
+    StreamingSinkState,
 };
 use crate::{
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
+    state_bridge::BroadcastStateBridgeRef,
     ExecutionRuntimeContext,
 };
 
@@ -79,7 +77,7 @@ impl IndexBitmap {
 }
 
 enum OuterHashJoinState {
-    Building(ProbeStateBridgeRef, bool),
+    Building(BroadcastStateBridgeRef<ProbeState>, bool),
     Probing(Arc<ProbeState>, Option<IndexBitmapBuilder>),
 }
 
@@ -87,7 +85,7 @@ impl OuterHashJoinState {
     async fn get_or_build_probe_state(&mut self) -> Arc<ProbeState> {
         match self {
             Self::Building(bridge, needs_bitmap) => {
-                let probe_state = bridge.get_probe_state().await;
+                let probe_state = bridge.get_state().await;
                 let builder =
                     needs_bitmap.then(|| IndexBitmapBuilder::new(probe_state.get_tables()));
                 *self = Self::Probing(probe_state.clone(), builder);
@@ -100,7 +98,7 @@ impl OuterHashJoinState {
     async fn get_or_build_bitmap(&mut self) -> &mut Option<IndexBitmapBuilder> {
         match self {
             Self::Building(bridge, _) => {
-                let probe_state = bridge.get_probe_state().await;
+                let probe_state = bridge.get_state().await;
                 let builder = IndexBitmapBuilder::new(probe_state.get_tables());
                 *self = Self::Probing(probe_state, Some(builder));
                 match self {
@@ -132,7 +130,7 @@ struct OuterHashJoinParams {
 pub(crate) struct OuterHashJoinProbeSink {
     params: Arc<OuterHashJoinParams>,
     output_schema: SchemaRef,
-    probe_state_bridge: ProbeStateBridgeRef,
+    probe_state_bridge: BroadcastStateBridgeRef<ProbeState>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -145,7 +143,7 @@ impl OuterHashJoinProbeSink {
         build_on_left: bool,
         common_join_keys: IndexSet<String>,
         output_schema: &SchemaRef,
-        probe_state_bridge: ProbeStateBridgeRef,
+        probe_state_bridge: BroadcastStateBridgeRef<ProbeState>,
     ) -> Self {
         // For outer joins, we need to swap the left and right schemas if we are building on the right.
         let (left_schema, right_schema) = match (join_type, build_on_left) {

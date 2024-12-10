@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::{mermaid::MermaidDisplayVisitor, tree::TreeDisplay};
@@ -6,17 +6,18 @@ use common_error::DaftResult;
 use common_file_formats::FileFormat;
 use daft_core::{
     datatypes::Field,
+    join::JoinSide,
     prelude::{Schema, SchemaRef},
     utils::supertype,
 };
 use daft_dsl::{col, join::get_common_join_keys, Expr};
 use daft_local_plan::{
-    ActorPoolProject, Concat, EmptyScan, Explode, Filter, HashAggregate, HashJoin, InMemoryScan,
-    Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite, Pivot, Project, Sample,
-    Sort, UnGroupedAggregate, Unpivot,
+    ActorPoolProject, Concat, CrossJoin, EmptyScan, Explode, Filter, HashAggregate, HashJoin,
+    InMemoryScan, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite, Pivot,
+    Project, Sample, Sort, UnGroupedAggregate, Unpivot,
 };
 use daft_logical_plan::{stats::StatsState, JoinType};
-use daft_micropartition::MicroPartition;
+use daft_micropartition::{partitioning::PartitionSet, MicroPartition};
 use daft_physical_plan::{extract_agg_expr, populate_aggregation_stages};
 use daft_scan::ScanTaskRef;
 use daft_writers::make_physical_writer_factory;
@@ -27,16 +28,17 @@ use crate::{
     channel::Receiver,
     intermediate_ops::{
         actor_pool_project::ActorPoolProjectOperator, aggregate::AggregateOperator,
-        anti_semi_hash_join_probe::AntiSemiProbeOperator, explode::ExplodeOperator,
-        filter::FilterOperator, inner_hash_join_probe::InnerHashJoinProbeOperator,
-        intermediate_op::IntermediateNode, project::ProjectOperator, sample::SampleOperator,
-        unpivot::UnpivotOperator,
+        anti_semi_hash_join_probe::AntiSemiProbeOperator, cross_join::CrossJoinOperator,
+        explode::ExplodeOperator, filter::FilterOperator,
+        inner_hash_join_probe::InnerHashJoinProbeOperator, intermediate_op::IntermediateNode,
+        project::ProjectOperator, sample::SampleOperator, unpivot::UnpivotOperator,
     },
     sinks::{
         aggregate::AggregateSink,
         blocking_sink::BlockingSinkNode,
         concat::ConcatSink,
-        hash_join_build::{HashJoinBuildSink, ProbeStateBridge},
+        cross_join_collect::CrossJoinCollectSink,
+        hash_join_build::HashJoinBuildSink,
         limit::LimitSink,
         monotonically_increasing_id::MonotonicallyIncreasingIdSink,
         outer_hash_join_probe::OuterHashJoinProbeSink,
@@ -46,6 +48,7 @@ use crate::{
         write::{WriteFormat, WriteSink},
     },
     sources::{empty_scan::EmptyScanSource, in_memory::InMemorySource},
+    state_bridge::BroadcastStateBridge,
     ExecutionRuntimeContext, PipelineCreationSnafu,
 };
 
@@ -75,7 +78,7 @@ pub fn viz_pipeline(root: &dyn PipelineNode) -> String {
 
 pub fn physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
-    psets: &HashMap<String, Vec<Arc<MicroPartition>>>,
+    psets: &(impl PartitionSet + ?Sized),
     cfg: &Arc<DaftExecutionConfig>,
 ) -> crate::Result<Box<dyn PipelineNode>> {
     use daft_local_plan::PhysicalScan;
@@ -102,8 +105,10 @@ pub fn physical_plan_to_pipeline(
             scan_task_source.arced().into()
         }
         LocalPhysicalPlan::InMemoryScan(InMemoryScan { info, .. }) => {
-            let partitions = psets.get(&info.cache_key).expect("Cache key not found");
-            InMemorySource::new(partitions.clone(), info.source_schema.clone())
+            let materialized_pset = psets
+                .get_partition(&info.cache_key)
+                .unwrap_or_else(|_| panic!("Cache key not found: {:?}", info.cache_key));
+            InMemorySource::new(materialized_pset, info.source_schema.clone())
                 .arced()
                 .into()
         }
@@ -412,7 +417,7 @@ pub fn physical_plan_to_pipeline(
                     .map(|(e, f)| e.clone().cast(&f.dtype))
                     .collect::<Vec<_>>();
                 // we should move to a builder pattern
-                let probe_state_bridge = ProbeStateBridge::new();
+                let probe_state_bridge = BroadcastStateBridge::new();
                 let build_sink = HashJoinBuildSink::new(
                     key_schema,
                     casted_build_on,
@@ -472,15 +477,71 @@ pub fn physical_plan_to_pipeline(
                 plan_name: physical_plan.name(),
             })?
         }
+        LocalPhysicalPlan::CrossJoin(CrossJoin {
+            left,
+            right,
+            schema,
+            ..
+        }) => {
+            let left_stats_state = left.get_stats_state();
+            let right_stats_state = right.get_stats_state();
+
+            // To determine whether to use the left or right side of a join for collecting vs streaming, we choose
+            // the larger side to stream so that it can be parallelized via an intermediate op. Default to left side.
+            let stream_on_left = match (left_stats_state, right_stats_state) {
+                (StatsState::Materialized(left_stats), StatsState::Materialized(right_stats)) => {
+                    left_stats.approx_stats.upper_bound_bytes
+                        > right_stats.approx_stats.upper_bound_bytes
+                }
+                // If stats are only available on the left side of the join, and the upper bound bytes on the
+                // left are under the broadcast join size threshold, we stream on the right.
+                (StatsState::Materialized(left_stats), StatsState::NotMaterialized) => left_stats
+                    .approx_stats
+                    .upper_bound_bytes
+                    .map_or(true, |size| size > cfg.broadcast_join_size_bytes_threshold),
+                // If stats are not available, we fall back and stream on the left by default.
+                _ => true,
+            };
+
+            let stream_side = if stream_on_left {
+                JoinSide::Left
+            } else {
+                JoinSide::Right
+            };
+
+            let (stream_child, collect_child) = match stream_side {
+                JoinSide::Left => (left, right),
+                JoinSide::Right => (right, left),
+            };
+
+            let stream_child_node = physical_plan_to_pipeline(stream_child, psets, cfg)?;
+            let collect_child_node = physical_plan_to_pipeline(collect_child, psets, cfg)?;
+
+            let state_bridge = BroadcastStateBridge::new();
+            let collect_node = BlockingSinkNode::new(
+                Arc::new(CrossJoinCollectSink::new(state_bridge.clone())),
+                collect_child_node,
+            )
+            .boxed();
+
+            IntermediateNode::new(
+                Arc::new(CrossJoinOperator::new(
+                    schema.clone(),
+                    stream_side,
+                    state_bridge,
+                )),
+                vec![collect_node, stream_child_node],
+            )
+            .boxed()
+        }
         LocalPhysicalPlan::PhysicalWrite(PhysicalWrite {
             input,
             file_info,
-            data_schema,
             file_schema,
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
-            let writer_factory = make_physical_writer_factory(file_info, data_schema, cfg);
+            let writer_factory = make_physical_writer_factory(file_info, cfg);
             let write_format = match (file_info.file_format, file_info.partition_cols.is_some()) {
                 (FileFormat::Parquet, true) => WriteFormat::PartitionedParquet,
                 (FileFormat::Parquet, false) => WriteFormat::Parquet,
@@ -500,7 +561,6 @@ pub fn physical_plan_to_pipeline(
         LocalPhysicalPlan::CatalogWrite(daft_local_plan::CatalogWrite {
             input,
             catalog_type,
-            data_schema,
             file_schema,
             ..
         }) => {
@@ -533,12 +593,8 @@ pub fn physical_plan_to_pipeline(
                 }
                 _ => panic!("Unsupported catalog type"),
             };
-            let writer_factory = daft_writers::make_catalog_writer_factory(
-                catalog_type,
-                data_schema,
-                &partition_by,
-                cfg,
-            );
+            let writer_factory =
+                daft_writers::make_catalog_writer_factory(catalog_type, &partition_by, cfg);
             let write_sink = WriteSink::new(
                 write_format,
                 writer_factory,

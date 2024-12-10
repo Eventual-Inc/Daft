@@ -26,7 +26,6 @@ def test_join_simple(benchmark, num_samples, num_partitions, join_type) -> None:
 
     Keys are consecutive integers; no data payload; one-to-one matches.
     """
-
     left_arr = np.arange(num_samples)
     np.random.shuffle(left_arr)
     right_arr = np.arange(num_samples)
@@ -71,7 +70,6 @@ def test_join_simple(benchmark, num_samples, num_partitions, join_type) -> None:
 @pytest.mark.parametrize("join_type", JOIN_TYPES)
 def test_join_largekey(benchmark, num_samples, num_partitions, join_type) -> None:
     """Test the impact of string keys vs integer keys."""
-
     keys = [str(uuid4()) for _ in range(num_samples)]
 
     left_keys = keys.copy()
@@ -120,7 +118,6 @@ def test_join_largekey(benchmark, num_samples, num_partitions, join_type) -> Non
 @pytest.mark.parametrize("join_type", JOIN_TYPES)
 def test_join_withdata(benchmark, num_samples, num_partitions, join_type) -> None:
     """Test the impact of data payloads."""
-
     left_arr = np.arange(num_samples)
     np.random.shuffle(left_arr)
     right_arr = np.arange(num_samples)
@@ -179,7 +176,6 @@ def test_broadcast_join(benchmark, left_bigger, num_partitions, join_type) -> No
 
     The cardinality is one-to-many.
     """
-
     small_length = 1_000
     big_factor = 10
 
@@ -234,7 +230,6 @@ def test_multicolumn_joins(benchmark, num_columns, num_samples, num_partitions, 
     The join cardinality is the same for all cases;
     redundant columns are used for the multicolumn joins.
     """
-
     left_arr = np.arange(num_samples)
     np.random.shuffle(left_arr)
     right_arr = np.arange(num_samples)

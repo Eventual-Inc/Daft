@@ -79,22 +79,12 @@ def read_sql(
 
         Read data from a SQL query and partition the data by a column:
 
-        >>> df = daft.read_sql(
-        ...     "SELECT * FROM my_table",
-        ...     "sqlite:///my_database.db",
-        ...     partition_col="id"
-        ... )
+        >>> df = daft.read_sql("SELECT * FROM my_table", "sqlite:///my_database.db", partition_col="id")
 
         Read data from a SQL query and partition the data into 3 partitions:
 
-        >>> df = daft.read_sql(
-        ...     "SELECT * FROM my_table",
-        ...     "sqlite:///my_database.db",
-        ...     partition_col="id",
-        ...     num_partitions=3
-        ... )
+        >>> df = daft.read_sql("SELECT * FROM my_table", "sqlite:///my_database.db", partition_col="id", num_partitions=3)
     """
-
     if num_partitions is not None and partition_col is None:
         raise ValueError("Failed to execute sql: partition_col must be specified when num_partitions is specified")
 

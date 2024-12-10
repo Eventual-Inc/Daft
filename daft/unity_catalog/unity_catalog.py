@@ -17,7 +17,7 @@ class UnityCatalogTable:
 
 
 class UnityCatalog:
-    """Client to access the Unity Catalog
+    """Client to access the Unity Catalog.
 
     Unity Catalog is an open-sourced data catalog that can be self-hosted, or hosted by Databricks.
 

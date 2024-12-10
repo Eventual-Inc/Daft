@@ -51,7 +51,7 @@ def test_read_input(tmpdir, use_native_downloader):
 @contextlib.contextmanager
 def _json_write_helper(data: dict[str, list[Any]]):
     with tempfile.TemporaryDirectory() as directory_name:
-        first_key = list(data.keys())[0]
+        first_key = next(iter(data.keys()))
         data_len = len(data[first_key])
         for k in data:
             assert len(data[k]) == data_len

@@ -14,7 +14,7 @@ from tests.conftest import assert_df_equals
     ],
 )
 def test_distinct_all_columns(daft_df, service_requests_csv_pd_df, repartition_nparts, keys, with_morsel_size):
-    """Sums across groups"""
+    """Sums across groups."""
     daft_df = daft_df.repartition(repartition_nparts).select(*[col(k) for k in keys]).distinct()
 
     service_requests_csv_pd_df = (

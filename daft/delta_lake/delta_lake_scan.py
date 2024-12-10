@@ -111,6 +111,9 @@ class DeltaLakeScanOperator(ScanOperator):
     def schema(self) -> Schema:
         return self._schema
 
+    def name(self) -> str:
+        return "DeltaLakeScanOperator"
+
     def display_name(self) -> str:
         return f"DeltaLakeScanOperator({self._table.metadata().name})"
 
@@ -134,7 +137,7 @@ class DeltaLakeScanOperator(ScanOperator):
         add_actions: pa.RecordBatch = self._table.get_add_actions()
 
         if len(self.partitioning_keys()) > 0 and pushdowns.partition_filters is None:
-            logging.warning(
+            logger.warning(
                 "%s has partitioning keys = %s, but no partition filter was specified. This will result in a full table scan.",
                 self.display_name(),
                 self.partitioning_keys(),
