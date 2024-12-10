@@ -20,16 +20,58 @@ use crate::{
 };
 
 /// Rewriter rule to convert scalar subqueries into joins.
+///
+/// ## Examples
+/// ### Example 1 - Uncorrelated subquery
+/// Before:
+/// ```sql
+/// SELECT val
+/// FROM tbl1
+/// WHERE key = (SELECT max(key) FROM tbl2)
+/// ```
+/// After:
+/// ```sql
+/// SELECT val
+/// FROM tbl1
+/// CROSS JOIN (SELECT max(key) FROM tbl2) AS subquery
+/// WHERE key = subquery.key  -- this can be then pushed into join in a future rule
+/// ```
+///
+/// ### Example 2 - Correlated subquery
+/// Before:
+/// ```sql
+/// SELECT val
+/// FROM tbl1
+/// WHERE outer_key =
+///     (
+///         SELECT max(outer_key)
+///         FROM tbl2
+///         WHERE inner_key = tbl1.inner_key
+///     )
+/// ```
+/// After:
+/// ```sql
+/// SELECT val
+/// FROM tbl1
+/// LEFT JOIN
+///     (
+///         SELECT inner_key, max(outer_key)
+///         FROM tbl2
+///         GROUP BY inner_key
+///     ) AS subquery
+/// ON inner_key
+/// WHERE outer_key = subquery.outer_key
+/// ```
 #[derive(Debug)]
-pub struct EliminateScalarSubquery {}
+pub struct UnnestScalarSubquery {}
 
-impl EliminateScalarSubquery {
+impl UnnestScalarSubquery {
     pub fn new() -> Self {
         Self {}
     }
 }
 
-impl EliminateScalarSubquery {
+impl UnnestScalarSubquery {
     fn unnest_subqueries(
         input: LogicalPlanRef,
         exprs: Vec<&ExprRef>,
@@ -116,7 +158,7 @@ impl EliminateScalarSubquery {
     }
 }
 
-impl OptimizerRule for EliminateScalarSubquery {
+impl OptimizerRule for UnnestScalarSubquery {
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         plan.transform_down(|node| match node.as_ref() {
             LogicalPlan::Filter(Filter {
@@ -173,10 +215,47 @@ impl OptimizerRule for EliminateScalarSubquery {
 }
 
 /// Rewriter rule to convert IN and EXISTS subqueries into joins.
+///
+/// ## Examples
+/// ### Example 1 - Uncorrelated `IN` Query
+/// Before:
+/// ```sql
+/// SELECT val
+/// FROM tbl1
+/// WHERE key IN (SELECT key FROM tbl2)
+/// ```
+/// After:
+/// ```sql
+/// SELECT val
+/// FROM tbl1
+/// SEMI JOIN (SELECT key FROM tbl2) AS subquery
+/// ON key = subquery.key
+/// ```
+///
+/// ### Example 2 - Correlated `NOT EXISTS` Query
+/// Before:
+/// ```sql
+/// SELECT val
+/// FROM tbl1
+/// WHERE NOT EXISTS
+///     (
+///         SELECT *
+///         FROM tbl2
+///         WHERE key = tbl1.key
+///     )
+/// ```
+///
+/// After:
+/// ```sql
+/// SELECT val
+/// FROM tbl1
+/// ANTI JOIN (SELECT * FROM tbl2) AS subquery
+/// ON key = subquery.key
+/// ```
 #[derive(Debug)]
-pub struct EliminatePredicateSubquery {}
+pub struct UnnestPredicateSubquery {}
 
-impl EliminatePredicateSubquery {
+impl UnnestPredicateSubquery {
     pub fn new() -> Self {
         Self {}
     }
@@ -189,7 +268,7 @@ struct PredicateSubquery {
     pub join_type: JoinType,
 }
 
-impl OptimizerRule for EliminatePredicateSubquery {
+impl OptimizerRule for UnnestPredicateSubquery {
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         plan.transform_down(|node| match node.as_ref() {
             LogicalPlan::Filter(Filter {
@@ -480,4 +559,232 @@ fn get_missing_exprs(
     let missing_exprs = missing_exprs.into_iter().flatten().collect();
 
     (new_subquery_on, missing_exprs)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use common_error::DaftResult;
+    use daft_core::join::JoinType;
+    use daft_dsl::{col, Expr, OuterReferenceColumn, Subquery};
+    use daft_schema::{dtype::DataType, field::Field};
+
+    use super::{UnnestPredicateSubquery, UnnestScalarSubquery};
+    use crate::{
+        optimization::{
+            optimizer::{RuleBatch, RuleExecutionStrategy},
+            test::assert_optimized_plan_with_rules_eq,
+        },
+        test::{dummy_scan_node, dummy_scan_operator},
+        LogicalPlanRef,
+    };
+
+    fn assert_scalar_optimized_plan_eq(
+        plan: LogicalPlanRef,
+        expected: LogicalPlanRef,
+    ) -> DaftResult<()> {
+        assert_optimized_plan_with_rules_eq(
+            plan,
+            expected,
+            vec![RuleBatch::new(
+                vec![Box::new(UnnestScalarSubquery::new())],
+                RuleExecutionStrategy::Once,
+            )],
+        )
+    }
+
+    fn assert_predicate_optimized_plan_eq(
+        plan: LogicalPlanRef,
+        expected: LogicalPlanRef,
+    ) -> DaftResult<()> {
+        assert_optimized_plan_with_rules_eq(
+            plan,
+            expected,
+            vec![RuleBatch::new(
+                vec![Box::new(UnnestPredicateSubquery::new())],
+                RuleExecutionStrategy::Once,
+            )],
+        )
+    }
+
+    #[test]
+    fn uncorrelated_scalar_subquery() -> DaftResult<()> {
+        let tbl1 = dummy_scan_node(dummy_scan_operator(vec![
+            Field::new("key", DataType::Int64),
+            Field::new("val", DataType::Int64),
+        ]));
+
+        let tbl2 = dummy_scan_node(dummy_scan_operator(vec![Field::new(
+            "key",
+            DataType::Int64,
+        )]));
+
+        let subquery = tbl2.aggregate(vec![col("key").max()], vec![])?;
+        let subquery_expr = Arc::new(Expr::Subquery(Subquery {
+            plan: subquery.build(),
+        }));
+        let subquery_alias = subquery_expr.semantic_id(&subquery.schema()).id;
+
+        let plan = tbl1
+            .filter(col("key").eq(subquery_expr))?
+            .select(vec![col("val")])?
+            .build();
+
+        let expected = tbl1
+            .join(
+                subquery.select(vec![col("key").alias(subquery_alias.clone())])?,
+                vec![],
+                vec![],
+                JoinType::Inner,
+                None,
+                None,
+                None,
+                false,
+            )?
+            .filter(col("key").eq(col(subquery_alias)))?
+            .select(vec![col("key"), col("val")])?
+            .select(vec![col("val")])?
+            .build();
+
+        assert_scalar_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    #[test]
+    fn correlated_scalar_subquery() -> DaftResult<()> {
+        let tbl1 = dummy_scan_node(dummy_scan_operator(vec![
+            Field::new("outer_key", DataType::Int64),
+            Field::new("inner_key", DataType::Int64),
+            Field::new("val", DataType::Int64),
+        ]));
+
+        let tbl2 = dummy_scan_node(dummy_scan_operator(vec![
+            Field::new("outer_key", DataType::Int64),
+            Field::new("inner_key", DataType::Int64),
+        ]));
+
+        let subquery = tbl2
+            .filter(col("inner_key").eq(Arc::new(Expr::OuterReferenceColumn(
+                OuterReferenceColumn {
+                    field: Field::new("inner_key", DataType::Int64),
+                    depth: 1,
+                },
+            ))))?
+            .aggregate(vec![col("outer_key").max()], vec![])?;
+        let subquery_expr = Arc::new(Expr::Subquery(Subquery {
+            plan: subquery.build(),
+        }));
+        let subquery_alias = subquery_expr.semantic_id(&subquery.schema()).id;
+
+        let plan = tbl1
+            .filter(col("outer_key").eq(subquery_expr))?
+            .select(vec![col("val")])?
+            .build();
+
+        let expected = tbl1
+            .join(
+                tbl2.aggregate(vec![col("outer_key").max()], vec![col("inner_key")])?
+                    .select(vec![
+                        col("outer_key").alias(subquery_alias.clone()),
+                        col("inner_key"),
+                    ])?,
+                vec![col("inner_key")],
+                vec![col("inner_key")],
+                JoinType::Left,
+                None,
+                None,
+                None,
+                false,
+            )?
+            .filter(col("outer_key").eq(col(subquery_alias)))?
+            .select(vec![col("outer_key"), col("inner_key"), col("val")])?
+            .select(vec![col("val")])?
+            .build();
+
+        assert_scalar_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    #[test]
+    fn uncorrelated_predicate_subquery() -> DaftResult<()> {
+        let tbl1 = dummy_scan_node(dummy_scan_operator(vec![
+            Field::new("key", DataType::Int64),
+            Field::new("val", DataType::Int64),
+        ]));
+
+        let tbl2 = dummy_scan_node(dummy_scan_operator(vec![Field::new(
+            "key",
+            DataType::Int64,
+        )]));
+
+        let plan = tbl1
+            .filter(Arc::new(Expr::InSubquery(
+                col("key"),
+                Subquery { plan: tbl2.build() },
+            )))?
+            .select(vec![col("val")])?
+            .build();
+
+        let expected = tbl1
+            .join(
+                tbl2,
+                vec![col("key")],
+                vec![col("key")],
+                JoinType::Semi,
+                None,
+                None,
+                None,
+                false,
+            )?
+            .select(vec![col("val")])?
+            .build();
+
+        assert_predicate_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    #[test]
+    fn correlated_predicate_subquery() -> DaftResult<()> {
+        let tbl1 = dummy_scan_node(dummy_scan_operator(vec![
+            Field::new("key", DataType::Int64),
+            Field::new("val", DataType::Int64),
+        ]));
+
+        let tbl2 = dummy_scan_node(dummy_scan_operator(vec![Field::new(
+            "key",
+            DataType::Int64,
+        )]));
+
+        let subquery = tbl2
+            .filter(
+                col("key").eq(Arc::new(Expr::OuterReferenceColumn(OuterReferenceColumn {
+                    field: Field::new("key", DataType::Int64),
+                    depth: 1,
+                }))),
+            )?
+            .build();
+
+        let plan = tbl1
+            .filter(Arc::new(Expr::Exists(Subquery { plan: subquery })).not())?
+            .select(vec![col("val")])?
+            .build();
+
+        let expected = tbl1
+            .join(
+                tbl2,
+                vec![col("key")],
+                vec![col("key")],
+                JoinType::Anti,
+                None,
+                None,
+                None,
+                false,
+            )?
+            .select(vec![col("val")])?
+            .build();
+
+        assert_predicate_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
 }
