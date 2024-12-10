@@ -101,9 +101,8 @@ def run_query_on_local(
         duration = None
         error_msg = None
         try:
-            if run_args.dry_run:
-                daft.sql(query, catalog=catalog).explain(show_all=True)
-            else:
+            daft.sql(query, catalog=catalog).explain(show_all=True)
+            if not run_args.dry_run:
                 daft.sql(query, catalog=catalog).collect()
 
             end = datetime.now()
@@ -170,7 +169,9 @@ if __name__ == "__main__":
     parser.add_argument("--questions", default="*", type=str, help="The questions to run")
     parser.add_argument("--ray-address", type=str, help="The address of the head node of the ray cluster")
     parser.add_argument(
-        "--dry-run", action="store_true", help="Whether to run in dry-run mode; this will only print the plan"
+        "--dry-run",
+        action="store_true",
+        help="Whether to run in dry-run mode; if true, only the plan will be printed, but no query will be executed",
     )
     args = parser.parse_args()
 
