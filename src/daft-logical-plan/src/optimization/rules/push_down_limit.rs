@@ -58,9 +58,7 @@ impl PushDownLimit {
                     LogicalPlan::Source(source) => {
                         match source.source_info.as_ref() {
                             // Limit pushdown is not supported for in-memory sources.
-                            SourceInfo::Python(_) | SourceInfo::InMemory(_) => {
-                                Ok(Transformed::no(plan))
-                            }
+                            SourceInfo::InMemory(_) => Ok(Transformed::no(plan)),
                             // Do not pushdown if Source node is already more limited than `limit`
                             SourceInfo::Physical(external_info)
                                 if let Some(existing_limit) = external_info.pushdowns.limit
@@ -262,12 +260,11 @@ mod tests {
     #[test]
     #[cfg(feature = "python")]
     fn limit_does_not_push_into_in_memory_source() -> DaftResult<()> {
-        let py_obj = Python::with_gil(|py| py.None());
+        let _py_obj = Python::with_gil(|py| py.None());
         let schema: Arc<Schema> = Schema::new(vec![Field::new("a", DataType::Int64)])?.into();
-        let plan =
-            LogicalPlanBuilder::python_scan("foo", py_obj, schema, Default::default(), 5, 3)?
-                .limit(5, false)?
-                .build();
+        let plan = LogicalPlanBuilder::in_memory("foo", schema, Default::default(), 5, 3)?
+            .limit(5, false)?
+            .build();
         assert_optimized_plan_eq(plan.clone(), plan)?;
         Ok(())
     }

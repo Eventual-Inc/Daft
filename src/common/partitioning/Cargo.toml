@@ -1,17 +1,22 @@
-[package]
-name = "common-partitioning"
-edition.workspace = true
-version.workspace = true
-
 [dependencies]
-common-error.workspace = true
+common-py-serde = {version = "0.3.0-dev0", path = "../py-serde"}
 dashmap = "6.1.0"
-futures.workspace = true
 pyo3 = {workspace = true, optional = true}
-uuid = { version = "1.11.0", features = ["v4"] }
+uuid = {version = "1.11.0", features = ["v4"]}
+weak-table = "0.3.2"
+common-error.workspace = true
+futures.workspace = true
+once_cell.workspace = true
+serde.workspace = true
+typetag.workspace = true
+
+[features]
+python = ["dep:pyo3", "common-error/python"]
 
 [lints]
 workspace = true
 
-[features]
-python = ["dep:pyo3", "common-error/python"]
+[package]
+name = "common-partitioning"
+edition.workspace = true
+version.workspace = true

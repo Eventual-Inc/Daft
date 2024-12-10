@@ -6,7 +6,7 @@ use daft_core::prelude::*;
 use daft_dsl::{AggExpr, ExprRef};
 use daft_logical_plan::{
     stats::{PlanStats, StatsState},
-    OutputFileInfo, PythonInfo,
+    InMemoryInfo, OutputFileInfo,
 };
 use daft_table::Table;
 
@@ -14,7 +14,6 @@ pub type LocalPhysicalPlanRef = Arc<LocalPhysicalPlan>;
 #[derive(Debug, strum::IntoStaticStr)]
 pub enum LocalPhysicalPlan {
     InMemoryScan(InMemoryScan),
-    PythonScan(PythonScan),
     PhysicalScan(PhysicalScan),
     EmptyScan(EmptyScan),
     Project(Project),
@@ -64,7 +63,7 @@ impl LocalPhysicalPlan {
 
     pub fn get_stats_state(&self) -> &StatsState {
         match self {
-            Self::PythonScan(PythonScan { stats_state, .. })
+            Self::InMemoryScan(InMemoryScan { stats_state, .. })
             | Self::PhysicalScan(PhysicalScan { stats_state, .. })
             | Self::EmptyScan(EmptyScan { stats_state, .. })
             | Self::Project(Project { stats_state, .. })
@@ -82,19 +81,18 @@ impl LocalPhysicalPlan {
             | Self::Concat(Concat { stats_state, .. })
             | Self::HashJoin(HashJoin { stats_state, .. })
             | Self::CrossJoin(CrossJoin { stats_state, .. })
-            | Self::PhysicalWrite(PhysicalWrite { stats_state, .. })
-            | Self::InMemoryScan(InMemoryScan { stats_state, .. }) => stats_state,
+            | Self::PhysicalWrite(PhysicalWrite { stats_state, .. }) => stats_state,
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { stats_state, .. })
             | Self::LanceWrite(LanceWrite { stats_state, .. }) => stats_state,
         }
     }
 
-    pub(crate) fn python_scan(
-        in_memory_info: PythonInfo,
+    pub(crate) fn in_memory_scan(
+        in_memory_info: InMemoryInfo,
         stats_state: StatsState,
     ) -> LocalPhysicalPlanRef {
-        Self::PythonScan(PythonScan {
+        Self::InMemoryScan(InMemoryScan {
             info: in_memory_info,
             stats_state,
         })
@@ -456,25 +454,18 @@ impl LocalPhysicalPlan {
             | Self::Concat(Concat { schema, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { schema, .. }) => schema,
             Self::PhysicalWrite(PhysicalWrite { file_schema, .. }) => file_schema,
-            Self::PythonScan(PythonScan { info, .. }) => &info.source_schema,
+            Self::InMemoryScan(InMemoryScan { info, .. }) => &info.source_schema,
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { file_schema, .. }) => file_schema,
             #[cfg(feature = "python")]
             Self::LanceWrite(LanceWrite { file_schema, .. }) => file_schema,
-            Self::InMemoryScan(InMemoryScan { tables, .. }) => &tables[0].schema,
         }
     }
 }
 
 #[derive(Debug)]
 pub struct InMemoryScan {
-    pub tables: Vec<Table>,
-    pub stats_state: StatsState,
-}
-
-#[derive(Debug)]
-pub struct PythonScan {
-    pub info: PythonInfo,
+    pub info: InMemoryInfo,
     pub stats_state: StatsState,
 }
 

@@ -2,6 +2,7 @@ use std::{future::ready, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
 use daft_local_execution::NativeExecutor;
+use daft_micropartition::partitioning::InMemoryPartitionSetCache;
 use futures::stream;
 use spark_connect::{ExecutePlanResponse, Relation};
 use tonic::{codegen::tokio_stream::wrappers::ReceiverStream, Status};
@@ -10,7 +11,6 @@ use crate::{
     op::execute::{ExecuteStream, PlanIds},
     session::Session,
     translation,
-    translation::Plan,
 };
 
 impl Session {
@@ -32,11 +32,13 @@ impl Session {
         let (tx, rx) = tokio::sync::mpsc::channel::<eyre::Result<ExecutePlanResponse>>(1);
         tokio::spawn(async move {
             let execution_fut = async {
-                let Plan { builder, psets } = translation::to_logical_plan(command)?;
-                let optimized_plan = builder.optimize()?;
+                let pset_cache = InMemoryPartitionSetCache::new();
+
+                let plan = translation::to_logical_plan(command, &pset_cache)?;
+                let optimized_plan = plan.optimize()?;
                 let cfg = Arc::new(DaftExecutionConfig::default());
                 let native_executor = NativeExecutor::from_logical_plan_builder(&optimized_plan)?;
-                let mut result_stream = native_executor.run(psets, cfg, None)?.into_stream();
+                let mut result_stream = native_executor.run(pset_cache, cfg, None)?.into_stream();
 
                 while let Some(result) = result_stream.next().await {
                     let result = result?;

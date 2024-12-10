@@ -6,15 +6,21 @@ use arrow2::io::ipc::{
 };
 use daft_core::series::Series;
 use daft_logical_plan::LogicalPlanBuilder;
-use daft_micropartition::partitioning::InMemoryPartitionSet;
+use daft_micropartition::partitioning::{
+    InMemoryPartitionBatch, InMemoryPartitionSet, InMemoryPartitionSetCache, PartitionSet,
+    PartitionSetCache,
+};
 use daft_schema::dtype::DaftDataType;
 use daft_table::Table;
 use eyre::{bail, ensure, WrapErr};
 use itertools::Itertools;
 
-use crate::translation::{deser_spark_datatype, logical_plan::Plan, to_daft_datatype};
+use crate::translation::{deser_spark_datatype, to_daft_datatype};
 
-pub fn local_relation(plan: spark_connect::LocalRelation) -> eyre::Result<Plan> {
+pub fn local_relation(
+    plan: spark_connect::LocalRelation,
+    pset_cache: &InMemoryPartitionSetCache,
+) -> eyre::Result<LogicalPlanBuilder> {
     let spark_connect::LocalRelation { data, schema } = plan;
 
     let Some(data) = data else {
@@ -133,12 +139,21 @@ pub fn local_relation(plan: spark_connect::LocalRelation) -> eyre::Result<Plan> 
         tables
     };
 
-    let plan = LogicalPlanBuilder::in_memory(tables)?;
+    let batch: InMemoryPartitionBatch = tables.try_into()?;
 
-    let plan = Plan {
-        builder: plan,
-        psets: InMemoryPartitionSet::default(),
-    };
+    let mut pset = InMemoryPartitionSet::default();
 
-    Ok(plan)
+    let partition_id: Arc<str> = uuid::Uuid::new_v4().to_string().into();
+    let pset_id: Arc<str> = uuid::Uuid::new_v4().to_string().into();
+
+    pset.set_partition(partition_id, &batch)?;
+
+    let num_partitions = pset.num_partitions();
+    let size_bytes = pset.size_bytes()?;
+    let len = pset.len();
+
+    let lp = LogicalPlanBuilder::in_memory(&pset_id, daft_schema, num_partitions, size_bytes, len)?;
+    pset_cache.put_partition_set(pset_id, Arc::new(pset))?;
+
+    Ok(lp)
 }

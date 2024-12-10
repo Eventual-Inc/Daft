@@ -382,7 +382,7 @@ class PyRunner(Runner[MicroPartition], ActorPoolManager):
 
                 executor = NativeExecutor.from_logical_plan_builder(builder)
                 results_gen = executor.run(
-                    {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()},
+                    self._part_set_cache,
                     daft_execution_config,
                     results_buffer_size,
                 )

@@ -30,10 +30,8 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
         let res_transformed = plan_context.transform_down(|c| {
             let plan = c.plan.clone();
             match plan.as_ref() {
-                PhysicalPlan::InMemoryScan(..) => return Ok(Transformed::no(c)),
                 // 0-input nodes
-                #[cfg(feature = "python")]
-                PhysicalPlan::Python(..) => return Ok(Transformed::no(c)),
+                PhysicalPlan::InMemoryScan(..) => return Ok(Transformed::no(c)),
                 PhysicalPlan::EmptyScan(..) |
                 PhysicalPlan::TabularScan(..) => return Ok(Transformed::no(c)),
                 // 2-input nodes
@@ -155,7 +153,6 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
                 PhysicalPlan::ShuffleExchange(ShuffleExchange {strategy: ShuffleExchangeStrategy::SplitOrCoalesceToTargetNum { .. }, ..}) |
                 PhysicalPlan::Sort(..) |
                 PhysicalPlan::InMemoryScan(..) |
-                PhysicalPlan::Python(..) |
                 PhysicalPlan::TabularScan(..) |
                 PhysicalPlan::EmptyScan(..) |
                 PhysicalPlan::Concat(..) |

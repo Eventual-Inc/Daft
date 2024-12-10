@@ -4,19 +4,20 @@ use async_trait::async_trait;
 use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
 use daft_io::IOStatsRef;
-use daft_micropartition::{partitioning::PartitionBatchRef, MicroPartition};
+use daft_micropartition::partitioning::{downcast_to_micro_partition, PartitionSetRef};
+use futures::{StreamExt, TryStreamExt};
 use tracing::instrument;
 
 use super::source::Source;
 use crate::sources::source::SourceStream;
 
 pub struct InMemorySource {
-    data: PartitionBatchRef<Arc<MicroPartition>>,
+    data: PartitionSetRef,
     schema: SchemaRef,
 }
 
 impl InMemorySource {
-    pub fn new(data: PartitionBatchRef<Arc<MicroPartition>>, schema: SchemaRef) -> Self {
+    pub fn new(data: PartitionSetRef, schema: SchemaRef) -> Self {
         Self { data, schema }
     }
     pub fn arced(self) -> Arc<dyn Source> {
@@ -32,7 +33,12 @@ impl Source for InMemorySource {
         _maintain_order: bool,
         _io_stats: IOStatsRef,
     ) -> DaftResult<SourceStream<'static>> {
-        Ok(self.data.clone().into_partition_stream())
+        Ok(self
+            .data
+            .clone()
+            .into_partition_stream()
+            .map_ok(downcast_to_micro_partition)
+            .boxed())
     }
     fn name(&self) -> &'static str {
         "InMemory"

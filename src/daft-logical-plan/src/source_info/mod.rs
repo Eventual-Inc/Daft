@@ -6,26 +6,19 @@ use std::{
 use common_scan_info::PhysicalScanInfo;
 pub use common_scan_info::{FileInfo, FileInfos};
 use daft_schema::schema::SchemaRef;
-use daft_table::Table;
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "python")]
-use {
-    common_py_serde::{deserialize_py_object, serialize_py_object},
-    pyo3::PyObject,
-};
 
 use crate::partitioning::ClusteringSpecRef;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum SourceInfo {
-    Python(PythonInfo),
+    InMemory(InMemoryInfo),
     Physical(PhysicalScanInfo),
     PlaceHolder(PlaceHolderInfo),
-    InMemory(Vec<Table>),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InMemoryScan {
+pub struct InMemoryInfo {
     pub source_schema: SchemaRef,
     pub cache_key: String,
     pub num_partitions: usize,
@@ -34,28 +27,10 @@ pub struct InMemoryScan {
     pub clustering_spec: Option<ClusteringSpecRef>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PythonInfo {
-    pub source_schema: SchemaRef,
-    pub cache_key: String,
-    #[cfg(feature = "python")]
-    #[serde(
-        serialize_with = "serialize_py_object",
-        deserialize_with = "deserialize_py_object"
-    )]
-    pub cache_entry: PyObject,
-    pub num_partitions: usize,
-    pub size_bytes: usize,
-    pub num_rows: usize,
-    pub clustering_spec: Option<ClusteringSpecRef>,
-}
-
-#[cfg(feature = "python")]
-impl PythonInfo {
+impl InMemoryInfo {
     pub fn new(
         source_schema: SchemaRef,
         cache_key: String,
-        cache_entry: PyObject,
         num_partitions: usize,
         size_bytes: usize,
         num_rows: usize,
@@ -64,7 +39,6 @@ impl PythonInfo {
         Self {
             source_schema,
             cache_key,
-            cache_entry,
             num_partitions,
             size_bytes,
             num_rows,
@@ -73,15 +47,15 @@ impl PythonInfo {
     }
 }
 
-impl PartialEq for PythonInfo {
+impl PartialEq for InMemoryInfo {
     fn eq(&self, other: &Self) -> bool {
         self.cache_key == other.cache_key
     }
 }
 
-impl Eq for PythonInfo {}
+impl Eq for InMemoryInfo {}
 
-impl Hash for PythonInfo {
+impl Hash for InMemoryInfo {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.cache_key.hash(state);
     }

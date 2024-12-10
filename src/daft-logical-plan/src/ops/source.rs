@@ -5,7 +5,7 @@ use common_scan_info::{PhysicalScanInfo, ScanState};
 use daft_schema::schema::SchemaRef;
 
 use crate::{
-    source_info::{PlaceHolderInfo, PythonInfo, SourceInfo},
+    source_info::{InMemoryInfo, PlaceHolderInfo, SourceInfo},
     stats::{ApproxStats, PlanStats, StatsState},
 };
 
@@ -55,7 +55,7 @@ impl Source {
 
     pub(crate) fn with_materialized_stats(mut self) -> Self {
         let approx_stats = match &*self.source_info {
-            SourceInfo::Python(PythonInfo {
+            SourceInfo::InMemory(InMemoryInfo {
                 size_bytes,
                 num_rows,
                 ..
@@ -93,26 +93,6 @@ impl Source {
                     approx_stats
                 }
             },
-            SourceInfo::InMemory(batches) => {
-                let mut approx_stats = ApproxStats::empty();
-                for batch in batches {
-                    let size_bytes = batch.size_bytes().unwrap_or(0);
-                    let num_rows = batch.num_rows();
-                    approx_stats.lower_bound_rows += num_rows;
-                    approx_stats.lower_bound_bytes += size_bytes;
-                    if let Some(ub) = approx_stats.upper_bound_rows {
-                        approx_stats.upper_bound_rows = Some(ub + num_rows);
-                    } else {
-                        approx_stats.upper_bound_rows = Some(num_rows);
-                    }
-                    if let Some(ub) = approx_stats.upper_bound_bytes {
-                        approx_stats.upper_bound_bytes = Some(ub + size_bytes);
-                    } else {
-                        approx_stats.upper_bound_bytes = Some(size_bytes);
-                    }
-                }
-                approx_stats
-            }
             SourceInfo::PlaceHolder(_) => ApproxStats::empty(),
         };
         self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
@@ -139,7 +119,7 @@ impl Source {
                 ));
                 res.extend(pushdowns.multiline_display());
             }
-            SourceInfo::Python(PythonInfo { num_partitions, .. }) => {
+            SourceInfo::InMemory(InMemoryInfo { num_partitions, .. }) => {
                 res.push("Source:".to_string());
                 res.push(format!("Number of partitions = {}", num_partitions));
             }
@@ -151,10 +131,6 @@ impl Source {
                 res.push("PlaceHolder:".to_string());
                 res.push(format!("Source ID = {}", source_id));
                 res.extend(clustering_spec.multiline_display());
-            }
-            SourceInfo::InMemory(batches) => {
-                res.push("InMemory:".to_string());
-                res.push(format!("Number of batches = {}", batches.len()));
             }
         }
         res.push(format!(

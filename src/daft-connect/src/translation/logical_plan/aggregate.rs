@@ -1,9 +1,14 @@
+use daft_logical_plan::LogicalPlanBuilder;
+use daft_micropartition::partitioning::InMemoryPartitionSetCache;
 use eyre::{bail, WrapErr};
 use spark_connect::aggregate::GroupType;
 
-use crate::translation::{logical_plan::Plan, to_daft_expr, to_logical_plan};
+use crate::translation::{to_daft_expr, to_logical_plan};
 
-pub fn aggregate(aggregate: spark_connect::Aggregate) -> eyre::Result<Plan> {
+pub fn aggregate(
+    aggregate: spark_connect::Aggregate,
+    pset_cache: &InMemoryPartitionSetCache,
+) -> eyre::Result<LogicalPlanBuilder> {
     let spark_connect::Aggregate {
         input,
         group_type,
@@ -17,7 +22,7 @@ pub fn aggregate(aggregate: spark_connect::Aggregate) -> eyre::Result<Plan> {
         bail!("input is required");
     };
 
-    let mut plan = to_logical_plan(*input)?;
+    let mut plan = to_logical_plan(*input, pset_cache)?;
 
     let group_type = GroupType::try_from(group_type)
         .wrap_err_with(|| format!("Invalid group type: {group_type:?}"))?;
@@ -42,7 +47,7 @@ pub fn aggregate(aggregate: spark_connect::Aggregate) -> eyre::Result<Plan> {
         .map(to_daft_expr)
         .try_collect()?;
 
-    plan.builder = plan.builder
+    plan = plan
         .aggregate(aggregate_expressions.clone(), grouping_expressions.clone())
         .wrap_err_with(|| format!("Failed to apply aggregate to logical plan aggregate_expressions={aggregate_expressions:?} grouping_expressions={grouping_expressions:?}"))?;
 

@@ -17,7 +17,6 @@ pub type PhysicalPlanRef = Arc<PhysicalPlan>;
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum PhysicalPlan {
     InMemoryScan(InMemoryScan),
-    Python(PythonScan),
     TabularScan(TabularScan),
     EmptyScan(EmptyScan),
     Project(Project),
@@ -56,8 +55,7 @@ impl PhysicalPlan {
     pub fn clustering_spec(&self) -> Arc<ClusteringSpec> {
         // TODO: add cache or something to avoid excessive recalculation
         match self {
-            Self::InMemoryScan(InMemoryScan { .. }) => Arc::new(ClusteringSpec::unknown()),
-            Self::Python(PythonScan {
+            Self::InMemoryScan(InMemoryScan {
                 clustering_spec, ..
             }) => clustering_spec.clone(),
             Self::TabularScan(TabularScan {
@@ -188,17 +186,7 @@ impl PhysicalPlan {
 
     pub fn approximate_stats(&self) -> ApproxStats {
         match self {
-            Self::InMemoryScan(in_mem) => {
-                let num_rows = in_mem.num_rows();
-                let size_bytes = in_mem.size_bytes();
-                ApproxStats {
-                    lower_bound_rows: num_rows,
-                    upper_bound_rows: Some(num_rows),
-                    lower_bound_bytes: size_bytes,
-                    upper_bound_bytes: Some(size_bytes),
-                }
-            }
-            Self::Python(PythonScan { in_memory_info, .. }) => ApproxStats {
+            Self::InMemoryScan(InMemoryScan { in_memory_info, .. }) => ApproxStats {
                 lower_bound_rows: in_memory_info.num_rows,
                 upper_bound_rows: Some(in_memory_info.num_rows),
                 lower_bound_bytes: in_memory_info.size_bytes,
@@ -370,7 +358,6 @@ impl PhysicalPlan {
     pub fn children(&self) -> Vec<&Self> {
         match self {
             Self::InMemoryScan(..) => vec![],
-            Self::Python(..) => vec![],
             Self::TabularScan(..) | Self::EmptyScan(..) => vec![],
             Self::Project(Project { input, .. }) => vec![input],
             Self::ActorPoolProject(ActorPoolProject { input, .. }) => vec![input],
@@ -412,9 +399,8 @@ impl PhysicalPlan {
     pub fn with_new_children(&self, children: &[PhysicalPlanRef]) -> Self {
         match children {
             [input] => match self {
-                Self::Python(..) => panic!("Source nodes don't have children, with_new_children() should never be called for source ops"),
-                Self::InMemoryScan(..)
-                | Self::TabularScan(..)
+                Self::InMemoryScan(..) => panic!("Source nodes don't have children, with_new_children() should never be called for source ops"),
+                Self::TabularScan(..)
                 | Self::EmptyScan(..) => panic!("Source nodes don't have children, with_new_children() should never be called for source ops"),
                 Self::Project(Project { projection, clustering_spec, .. }) =>
                     Self::Project(Project::new_with_clustering_spec(
@@ -445,9 +431,8 @@ impl PhysicalPlan {
             },
             [input1, input2] => match self {
                 #[cfg(feature = "python")]
-                Self::Python(..) => panic!("Source nodes don't have children, with_new_children() should never be called for source ops"),
-                Self::InMemoryScan(..)
-                | Self::TabularScan(..)
+                Self::InMemoryScan(..) => panic!("Source nodes don't have children, with_new_children() should never be called for source ops"),
+                Self::TabularScan(..)
                 | Self::EmptyScan(..) => panic!("Source nodes don't have children, with_new_children() should never be called for source ops"),
                 Self::HashJoin(HashJoin { left_on, right_on, null_equals_nulls, join_type, .. }) => Self::HashJoin(HashJoin::new(input1.clone(), input2.clone(), left_on.clone(), right_on.clone(), null_equals_nulls.clone(), *join_type)),
                 Self::BroadcastJoin(BroadcastJoin {
@@ -470,7 +455,6 @@ impl PhysicalPlan {
     pub fn name(&self) -> String {
         let name = match self {
             Self::InMemoryScan(..) => "InMemoryScan",
-            Self::Python(..) => "PythonScan",
             Self::TabularScan(..) => "TabularScan",
             Self::EmptyScan(..) => "EmptyScan",
             Self::Project(..) => "Project",
@@ -506,7 +490,6 @@ impl PhysicalPlan {
     pub fn multiline_display(&self) -> Vec<String> {
         match self {
             Self::InMemoryScan(in_memory_scan) => in_memory_scan.multiline_display(),
-            Self::Python(in_memory_scan) => in_memory_scan.multiline_display(),
             Self::TabularScan(tabular_scan) => tabular_scan.multiline_display(),
             Self::EmptyScan(empty_scan) => empty_scan.multiline_display(),
             Self::Project(project) => project.multiline_display(),

@@ -1542,10 +1542,15 @@ name = "common-partitioning"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
+ "common-py-serde",
  "dashmap",
  "futures",
+ "once_cell",
  "pyo3",
+ "serde",
+ "typetag",
  "uuid 1.11.0",
+ "weak-table",
 ]
 
 [[package]]
@@ -2337,6 +2342,7 @@ dependencies = [
  "common-error",
  "common-file-formats",
  "common-io-config",
+ "common-partitioning",
  "common-py-serde",
  "common-resource-request",
  "common-scan-info",
@@ -2368,6 +2374,7 @@ dependencies = [
  "common-error",
  "common-file-formats",
  "common-partitioning",
+ "common-py-serde",
  "common-runtime",
  "common-scan-info",
  "daft-core",
@@ -2382,7 +2389,9 @@ dependencies = [
  "futures",
  "parquet2",
  "pyo3",
+ "serde",
  "snafu",
+ "typetag",
 ]
 
 [[package]]
@@ -2499,6 +2508,7 @@ dependencies = [
  "common-error",
  "common-file-formats",
  "common-io-config",
+ "common-partitioning",
  "common-py-serde",
  "daft-core",
  "daft-dsl",
@@ -7077,6 +7087,12 @@ dependencies = [
  "wasm-bindgen-futures",
  "web-sys",
 ]
+
+[[package]]
+name = "weak-table"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "323f4da9523e9a669e1eaf9c6e763892769b1d38c623913647bfdc1532fe4549"
 
 [[package]]
 name = "web-sys"

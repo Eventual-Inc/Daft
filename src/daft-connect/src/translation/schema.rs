@@ -1,3 +1,4 @@
+use daft_micropartition::partitioning::InMemoryPartitionSetCache;
 use spark_connect::{
     data_type::{Kind, Struct, StructField},
     DataType, Relation,
@@ -14,9 +15,9 @@ pub fn relation_to_schema(input: Relation) -> eyre::Result<DataType> {
         }
     }
 
-    let plan = to_logical_plan(input)?;
+    let plan = to_logical_plan(input, &InMemoryPartitionSetCache::new())?;
 
-    let result = plan.builder.schema();
+    let result = plan.schema();
 
     let fields: eyre::Result<Vec<StructField>> = result
         .fields

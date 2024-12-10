@@ -10,11 +10,7 @@ from daft.table import MicroPartition
 
 if TYPE_CHECKING:
     from daft.logical.builder import LogicalPlanBuilder
-    from daft.runners.partitioning import (
-        LocalMaterializedResult,
-        MaterializedResult,
-        PartitionT,
-    )
+    from daft.runners.partitioning import LocalMaterializedResult, PartitionSetCache
 
 
 class NativeExecutor:
@@ -28,16 +24,13 @@ class NativeExecutor:
 
     def run(
         self,
-        psets: dict[str, list[MaterializedResult[PartitionT]]],
+        pset_cache: PartitionSetCache,
         daft_execution_config: PyDaftExecutionConfig,
         results_buffer_size: int | None,
     ) -> Iterator[LocalMaterializedResult]:
         from daft.runners.partitioning import LocalMaterializedResult
 
-        psets_mp = {
-            part_id: [part.micropartition()._micropartition for part in parts] for part_id, parts in psets.items()
-        }
         return (
             LocalMaterializedResult(MicroPartition._from_pymicropartition(part))
-            for part in self._executor.run(psets_mp, daft_execution_config, results_buffer_size)
+            for part in self._executor.run(pset_cache, daft_execution_config, results_buffer_size)
         )

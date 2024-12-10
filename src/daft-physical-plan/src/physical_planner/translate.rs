@@ -83,23 +83,19 @@ pub(super) fn translate_single_logical_node(
                     )
                 }
             }
-            SourceInfo::Python(mem_info) => {
+            SourceInfo::InMemory(mem_info) => {
                 let clustering_spec = mem_info.clustering_spec.clone().unwrap_or_else(|| {
                     ClusteringSpec::Unknown(UnknownClusteringConfig::new(mem_info.num_partitions))
                         .into()
                 });
 
-                let scan = PhysicalPlan::Python(PythonScan::new(
+                let scan = PhysicalPlan::InMemoryScan(InMemoryScan::new(
                     mem_info.source_schema.clone(),
                     mem_info.clone(),
                     clustering_spec,
                 ))
                 .arced();
                 Ok(scan)
-            }
-            SourceInfo::InMemory(tables) => {
-                let scan = InMemoryScan::try_new(tables.clone())?;
-                Ok(PhysicalPlan::InMemoryScan(scan).arced())
             }
             SourceInfo::PlaceHolder(PlaceHolderInfo { source_id, .. }) => {
                 panic!("Placeholder {source_id} should not get to translation. This should have been optimized away");

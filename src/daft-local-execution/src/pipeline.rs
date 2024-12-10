@@ -14,13 +14,10 @@ use daft_dsl::{col, join::get_common_join_keys, Expr};
 use daft_local_plan::{
     ActorPoolProject, Concat, CrossJoin, EmptyScan, Explode, Filter, HashAggregate, HashJoin,
     InMemoryScan, Limit, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalWrite, Pivot,
-    Project, PythonScan, Sample, Sort, UnGroupedAggregate, Unpivot,
+    Project, Sample, Sort, UnGroupedAggregate, Unpivot,
 };
 use daft_logical_plan::{stats::StatsState, JoinType};
-use daft_micropartition::{
-    partitioning::{InMemoryPartitionBatch, PartitionSet},
-    MicroPartition,
-};
+use daft_micropartition::{partitioning::PartitionSetCache, MicroPartition};
 use daft_physical_plan::{extract_agg_expr, populate_aggregation_stages};
 use daft_scan::ScanTaskRef;
 use daft_writers::make_physical_writer_factory;
@@ -81,7 +78,7 @@ pub fn viz_pipeline(root: &dyn PipelineNode) -> String {
 
 pub fn physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
-    psets: &(impl PartitionSet<Arc<MicroPartition>> + ?Sized),
+    pset_cache: &(impl PartitionSetCache + ?Sized),
     cfg: &Arc<DaftExecutionConfig>,
 ) -> crate::Result<Box<dyn PipelineNode>> {
     use daft_local_plan::PhysicalScan;
@@ -107,41 +104,27 @@ pub fn physical_plan_to_pipeline(
                 ScanTaskSource::new(scan_tasks, pushdowns.clone(), schema.clone(), cfg);
             scan_task_source.arced().into()
         }
-        LocalPhysicalPlan::PythonScan(PythonScan { info, .. }) => {
-            let materialized_pset = psets
-                .get_partition(&info.cache_key)
-                .unwrap_or_else(|_| panic!("Cache key not found: {:?}", info.cache_key));
+        LocalPhysicalPlan::InMemoryScan(InMemoryScan { info, .. }) => {
+            let materialized_pset = pset_cache
+                .get_partition_set(&info.cache_key)
+                .unwrap_or_else(|| panic!("Cache key not found: {:?}", info.cache_key));
+
             InMemorySource::new(materialized_pset, info.source_schema.clone())
                 .arced()
                 .into()
         }
-        LocalPhysicalPlan::InMemoryScan(InMemoryScan {
-            tables: batches,
-            stats_state: _,
-        }) => {
-            let pset: DaftResult<InMemoryPartitionBatch> = batches.clone().try_into();
-            let pset = pset.map_err(|e| crate::Error::PipelineCreationError {
-                source: e,
-                plan_name: "InMemory".to_string(),
-            })?;
-
-            InMemorySource::new(Arc::new(pset), batches[0].schema.clone())
-                .arced()
-                .into()
-        }
-
         LocalPhysicalPlan::Project(Project {
             input, projection, ..
         }) => {
             let proj_op = ProjectOperator::new(projection.clone());
-            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            let child_node = physical_plan_to_pipeline(input, pset_cache, cfg)?;
             IntermediateNode::new(Arc::new(proj_op), vec![child_node]).boxed()
         }
         LocalPhysicalPlan::ActorPoolProject(ActorPoolProject {
             input, projection, ..
         }) => {
             let proj_op = ActorPoolProjectOperator::new(projection.clone());
-            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            let child_node = physical_plan_to_pipeline(input, pset_cache, cfg)?;
             IntermediateNode::new(Arc::new(proj_op), vec![child_node]).boxed()
         }
         LocalPhysicalPlan::Sample(Sample {
@@ -152,33 +135,33 @@ pub fn physical_plan_to_pipeline(
             ..
         }) => {
             let sample_op = SampleOperator::new(*fraction, *with_replacement, *seed);
-            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            let child_node = physical_plan_to_pipeline(input, pset_cache, cfg)?;
             IntermediateNode::new(Arc::new(sample_op), vec![child_node]).boxed()
         }
         LocalPhysicalPlan::Filter(Filter {
             input, predicate, ..
         }) => {
             let filter_op = FilterOperator::new(predicate.clone());
-            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            let child_node = physical_plan_to_pipeline(input, pset_cache, cfg)?;
             IntermediateNode::new(Arc::new(filter_op), vec![child_node]).boxed()
         }
         LocalPhysicalPlan::Explode(Explode {
             input, to_explode, ..
         }) => {
             let explode_op = ExplodeOperator::new(to_explode.clone());
-            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            let child_node = physical_plan_to_pipeline(input, pset_cache, cfg)?;
             IntermediateNode::new(Arc::new(explode_op), vec![child_node]).boxed()
         }
         LocalPhysicalPlan::Limit(Limit {
             input, num_rows, ..
         }) => {
             let sink = LimitSink::new(*num_rows as usize);
-            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            let child_node = physical_plan_to_pipeline(input, pset_cache, cfg)?;
             StreamingSinkNode::new(Arc::new(sink), vec![child_node]).boxed()
         }
         LocalPhysicalPlan::Concat(Concat { input, other, .. }) => {
-            let left_child = physical_plan_to_pipeline(input, psets, cfg)?;
-            let right_child = physical_plan_to_pipeline(other, psets, cfg)?;
+            let left_child = physical_plan_to_pipeline(input, pset_cache, cfg)?;
+            let right_child = physical_plan_to_pipeline(other, pset_cache, cfg)?;
             let sink = ConcatSink {};
             StreamingSinkNode::new(Arc::new(sink), vec![left_child, right_child]).boxed()
         }
@@ -206,7 +189,7 @@ pub fn physical_plan_to_pipeline(
                     .collect(),
                 vec![],
             );
-            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            let child_node = physical_plan_to_pipeline(input, pset_cache, cfg)?;
             let post_first_agg_node =
                 IntermediateNode::new(Arc::new(first_stage_agg_op), vec![child_node]).boxed();
 
@@ -242,7 +225,7 @@ pub fn physical_plan_to_pipeline(
 
             let (first_stage_aggs, second_stage_aggs, final_exprs) =
                 populate_aggregation_stages(&aggregations, schema, group_by);
-            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            let child_node = physical_plan_to_pipeline(input, pset_cache, cfg)?;
             let (post_first_agg_node, group_by) = if !first_stage_aggs.is_empty() {
                 let agg_op = AggregateOperator::new(
                     first_stage_aggs
@@ -283,7 +266,7 @@ pub fn physical_plan_to_pipeline(
             value_name,
             ..
         }) => {
-            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            let child_node = physical_plan_to_pipeline(input, pset_cache, cfg)?;
             let unpivot_op = UnpivotOperator::new(
                 ids.clone(),
                 values.clone(),
@@ -301,7 +284,7 @@ pub fn physical_plan_to_pipeline(
             names,
             ..
         }) => {
-            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            let child_node = physical_plan_to_pipeline(input, pset_cache, cfg)?;
             let pivot_sink = PivotSink::new(
                 group_by.clone(),
                 pivot_column.clone(),
@@ -319,7 +302,7 @@ pub fn physical_plan_to_pipeline(
             ..
         }) => {
             let sort_sink = SortSink::new(sort_by.clone(), descending.clone(), nulls_first.clone());
-            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            let child_node = physical_plan_to_pipeline(input, pset_cache, cfg)?;
             BlockingSinkNode::new(Arc::new(sort_sink), child_node).boxed()
         }
         LocalPhysicalPlan::MonotonicallyIncreasingId(MonotonicallyIncreasingId {
@@ -328,7 +311,7 @@ pub fn physical_plan_to_pipeline(
             schema,
             ..
         }) => {
-            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            let child_node = physical_plan_to_pipeline(input, pset_cache, cfg)?;
             let monotonically_increasing_id_sink =
                 MonotonicallyIncreasingIdSink::new(column_name.clone(), schema.clone());
             StreamingSinkNode::new(Arc::new(monotonically_increasing_id_sink), vec![child_node])
@@ -443,11 +426,11 @@ pub fn physical_plan_to_pipeline(
                     join_type,
                     probe_state_bridge.clone(),
                 )?;
-                let build_child_node = physical_plan_to_pipeline(build_child, psets, cfg)?;
+                let build_child_node = physical_plan_to_pipeline(build_child, pset_cache, cfg)?;
                 let build_node =
                     BlockingSinkNode::new(Arc::new(build_sink), build_child_node).boxed();
 
-                let probe_child_node = physical_plan_to_pipeline(probe_child, psets, cfg)?;
+                let probe_child_node = physical_plan_to_pipeline(probe_child, pset_cache, cfg)?;
 
                 match join_type {
                     JoinType::Anti | JoinType::Semi => Ok(IntermediateNode::new(
@@ -532,8 +515,8 @@ pub fn physical_plan_to_pipeline(
                 JoinSide::Right => (right, left),
             };
 
-            let stream_child_node = physical_plan_to_pipeline(stream_child, psets, cfg)?;
-            let collect_child_node = physical_plan_to_pipeline(collect_child, psets, cfg)?;
+            let stream_child_node = physical_plan_to_pipeline(stream_child, pset_cache, cfg)?;
+            let collect_child_node = physical_plan_to_pipeline(collect_child, pset_cache, cfg)?;
 
             let state_bridge = BroadcastStateBridge::new();
             let collect_node = BlockingSinkNode::new(
@@ -558,7 +541,7 @@ pub fn physical_plan_to_pipeline(
             file_schema,
             ..
         }) => {
-            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            let child_node = physical_plan_to_pipeline(input, pset_cache, cfg)?;
             let writer_factory = make_physical_writer_factory(file_info, cfg);
             let write_format = match (file_info.file_format, file_info.partition_cols.is_some()) {
                 (FileFormat::Parquet, true) => WriteFormat::PartitionedParquet,
@@ -584,7 +567,7 @@ pub fn physical_plan_to_pipeline(
         }) => {
             use daft_logical_plan::CatalogType;
 
-            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            let child_node = physical_plan_to_pipeline(input, pset_cache, cfg)?;
             let (partition_by, write_format) = match catalog_type {
                 CatalogType::Iceberg(ic) => {
                     if !ic.partition_cols.is_empty() {
@@ -628,7 +611,7 @@ pub fn physical_plan_to_pipeline(
             file_schema,
             ..
         }) => {
-            let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
+            let child_node = physical_plan_to_pipeline(input, pset_cache, cfg)?;
             let writer_factory = daft_writers::make_lance_writer_factory(lance_info.clone());
             let write_sink = WriteSink::new(
                 WriteFormat::Lance,
