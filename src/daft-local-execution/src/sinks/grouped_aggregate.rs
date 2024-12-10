@@ -203,7 +203,6 @@ impl BlockingSink for GroupedAggregateSink {
                                 .expect("GroupedAggregateSink should have GroupedAggregateState")
                                 .finalize()
                                 .into_iter()
-                                .flatten()
                         })
                         .collect::<Vec<_>>();
 
@@ -221,7 +220,7 @@ impl BlockingSink for GroupedAggregateSink {
                         per_partition_finalize_tasks.spawn(async move {
                             let mut unaggregated = vec![];
                             let mut partially_aggregated = vec![];
-                            for state in per_partition_state {
+                            for state in per_partition_state.into_iter().flatten() {
                                 unaggregated.extend(state.unaggregated);
                                 partially_aggregated.extend(state.partially_aggregated);
                             }
