@@ -29,9 +29,11 @@ pub fn url_download(
 #[pyfunction]
 pub fn url_upload(
     expr: PyExpr,
-    folder_location: &str,
+    folder_location: PyExpr,
     max_connections: i64,
+    raise_error_on_failure: bool,
     multi_thread: bool,
+    is_single_folder: bool,
     io_config: Option<IOConfig>,
 ) -> PyResult<PyExpr> {
     if max_connections <= 0 {
@@ -41,9 +43,11 @@ pub fn url_upload(
     }
     Ok(crate::uri::upload(
         expr.into(),
-        folder_location,
+        folder_location.into(),
         max_connections as usize,
+        raise_error_on_failure,
         multi_thread,
+        is_single_folder,
         io_config.map(|io_config| io_config.config),
     )
     .into())
