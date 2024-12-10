@@ -18,8 +18,6 @@ logger = logging.getLogger(__name__)
 
 SQL_QUERIES_PATH = Path(__file__).parent / "queries"
 
-# Results = tuple[dict[int, float], dict[int, str]]
-
 
 @dataclass
 class ParsedArgs:
