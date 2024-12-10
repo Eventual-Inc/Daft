@@ -1447,7 +1447,7 @@ impl<'a> SQLPlanner<'a> {
                 expr,
                 substring_from,
                 substring_for,
-                special: true, // We only support SUBSTRING(expr, start, length) syntax
+                ..
             } => {
                 let (Some(substring_from), Some(substring_for)) = (substring_from, substring_for)
                 else {
@@ -1458,10 +1458,10 @@ impl<'a> SQLPlanner<'a> {
                 let start = self.plan_expr(substring_from)?;
                 let length = self.plan_expr(substring_for)?;
 
+                // SQL substring is one indexed
+                let start = start.sub(lit(1));
+
                 Ok(daft_functions::utf8::substr(expr, start, length))
-            }
-            SQLExpr::Substring { special: false, .. } => {
-                unsupported_sql_err!("`SUBSTRING(expr [FROM start] [FOR len])` syntax")
             }
             SQLExpr::Trim { .. } => unsupported_sql_err!("TRIM"),
             SQLExpr::Overlay { .. } => unsupported_sql_err!("OVERLAY"),
