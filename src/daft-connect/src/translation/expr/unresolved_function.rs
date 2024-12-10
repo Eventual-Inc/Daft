@@ -1,6 +1,7 @@
 use daft_core::count_mode::CountMode;
 use eyre::{bail, Context};
 use spark_connect::expression::UnresolvedFunction;
+use tracing::debug;
 
 use crate::translation::to_daft_expr;
 
@@ -78,6 +79,16 @@ pub fn handle_count(arguments: Vec<daft_dsl::ExprRef>) -> eyre::Result<daft_dsl:
     };
 
     let [arg] = arguments;
+
+    // special case to be consistent with how spark handles counting literals
+    // see https://github.com/Eventual-Inc/Daft/issues/3421
+    let count_special_case = *arg == daft_dsl::Expr::Literal(daft_dsl::LiteralValue::Int32(1));
+
+    if count_special_case {
+        debug!("special case for count");
+        let result = daft_dsl::col("*").count(CountMode::All);
+        return Ok(result);
+    }
 
     let count = arg.count(CountMode::All);
 
