@@ -164,6 +164,7 @@ impl JoinGraph {
 
 /// JoinGraphBuilder takes in a logical plan. On .build(), it returns a JoinGraph that represents the given logical plan.
 struct JoinGraphBuilder {
+    plan: LogicalPlanRef,
     join_conds_to_resolve: Vec<(String, LogicalPlanRef, bool)>,
     final_name_map: HashMap<String, ExprRef>,
     edges: Vec<JoinEdge>,
@@ -171,7 +172,8 @@ struct JoinGraphBuilder {
 }
 
 impl JoinGraphBuilder {
-    pub(crate) fn build(self) -> JoinGraph {
+    pub(crate) fn build(mut self) -> JoinGraph {
+        self.process_node(&self.plan.clone());
         JoinGraph::new(self.edges, self.final_projections_and_filters)
     }
 
@@ -186,14 +188,13 @@ impl JoinGraphBuilder {
             .iter()
             .map(|(name, _)| col(name.clone()))
             .collect();
-        let mut builder = Self {
+        Self {
+            plan,
             join_conds_to_resolve: vec![],
             final_name_map: HashMap::new(),
             edges: vec![],
             final_projections_and_filters: vec![ProjectionOrFilter::Projection(output_projection)],
-        };
-        builder.process_node(&plan);
-        builder
+        }
     }
 
     /// `process_node` goes down the query tree finding reorderable nodes (e.g. inner joins, filters, certain projects etc)
@@ -328,6 +329,8 @@ impl JoinGraphBuilder {
                             self.final_name_map.get(&rname).unwrap().name().to_string(),
                         );
                         self.edges.push(JoinEdge(node1, node2));
+                    } else {
+                        panic!("Join conditions were unresolved");
                     }
                 }
             }
