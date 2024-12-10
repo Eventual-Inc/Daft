@@ -37,12 +37,14 @@ def generator(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        "Runs a workload which is a simple map workload, but it will run 2 custom UDFs which first inflates the data, and then deflates it."
+        "Runs a workload which is a simple map workload, but it will run 2 custom UDFs which first inflates the data, and then deflates it. "
+        "It starts with 1KB partitions, then runs inflation and subsequently deflation. We expect this to OOM if the heap memory usage exceeds "
+        "`MEM / N_CPUS` on a given worker node."
     )
     parser.add_argument("--num-partitions", default=8)
     parser.add_argument("--num-rows-per-partition", default=1000)
-    parser.add_argument("--inflation-factor", type=float, default=100)
-    parser.add_argument("--deflation-factor", type=float, default=100)
+    parser.add_argument("--inflation-factor", type=int, default=100)
+    parser.add_argument("--deflation-factor", type=int, default=100)
     args = parser.parse_args()
 
     df = read_generator(
