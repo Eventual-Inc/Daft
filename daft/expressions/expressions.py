@@ -3043,6 +3043,34 @@ class ExpressionListNamespace(ExpressionNamespace):
         """
         return Expression._from_pyexpr(native.list_value_counts(self._expr))
 
+    def contains(self, contains: Expression) -> Expression:
+        """Determines if each list contains a specified value.
+
+        Args:
+            contains (Expression): the value to check for in each list
+
+        Returns:
+            Expression: a Boolean expression which indicates whether or not each list contained the specified value.
+
+        Example:
+            >>> import daft
+            >>> df = daft.from_pydict({"letters": [["a", "b", "a"], ["b", "c", "b", "c"]]})
+            >>> df.with_column("contains", df["letters"].list.contains("c")).collect()
+            ╭──────────────┬──────────╮
+            │ letters      ┆ contains │
+            │ ---          ┆ ---      │
+            │ List[Utf8]   ┆ Boolean  │
+            ╞══════════════╪══════════╡
+            │ [a, b, a]    ┆ false    │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+            │ [b, c, b, c] ┆ true     │
+            ╰──────────────┴──────────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+        """
+        contains_expr = Expression._to_expression(contains)
+        return Expression._from_pyexpr(native.list_contains(self._expr, contains_expr._expr))
+
     def count(self, mode: Literal["all", "valid", "null"] | CountMode = CountMode.Valid) -> Expression:
         """Counts the number of elements in each list.
 

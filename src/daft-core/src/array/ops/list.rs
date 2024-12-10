@@ -1,6 +1,9 @@
 use std::{iter::repeat, sync::Arc};
 
-use arrow2::offset::OffsetsBuffer;
+use arrow2::{
+    array::{MutableBooleanArray, PrimitiveArray},
+    offset::OffsetsBuffer,
+};
 use common_error::DaftResult;
 use indexmap::{
     map::{raw_entry_v1::RawEntryMut, RawEntryApiV1},
@@ -625,6 +628,49 @@ impl ListArray {
             self.validity().cloned(),
         ))
     }
+
+    pub fn list_contains(&self, contains: &Series) -> DaftResult<BooleanArray> {
+        let seed = UInt64Array::from_iter(
+            Field::new("seed", DataType::UInt64),
+            std::iter::repeat(u64::MAX).map(Some).take(1),
+        )
+        .into_series();
+        macro_rules! gen_seed {
+            ($size:expr) => {
+                Some(seed.broadcast($size)?.u64()?)
+            };
+        }
+
+        let hashed_contains = contains
+            .hash_with_validity(gen_seed!(contains.len()))?
+            .get(0);
+
+        let bool_iter = self
+            .iter()
+            .map(|sub_series| -> DaftResult<_> {
+                let (sub_series, hashed_contains) = match sub_series.zip(hashed_contains) {
+                    Some(inner) => inner,
+                    None => return Ok(false),
+                };
+
+                let left = sub_series.hash_with_validity(gen_seed!(sub_series.len()))?;
+                let right = PrimitiveArray::from_slice([hashed_contains]);
+                let right_value = hashed_contains;
+                let comparator = build_is_equal(left.as_arrow(), &right, true, false)?;
+
+                Ok(left
+                    .into_iter()
+                    .flatten()
+                    .enumerate()
+                    .any(|(index, &left_value)| left_value == right_value && comparator(index, 0)))
+            })
+            .map(Some)
+            .map(Option::transpose);
+
+        let bool_array = MutableBooleanArray::from_fallible_iter(bool_iter)?;
+        let bool_array = BooleanArray::from_iter(self.name(), bool_array.iter());
+        Ok(bool_array)
+    }
 }
 
 impl FixedSizeListArray {
@@ -861,6 +907,49 @@ impl FixedSizeListArray {
             child,
             self.validity().cloned(),
         ))
+    }
+
+    pub fn list_contains(&self, contains: &Series) -> DaftResult<BooleanArray> {
+        let seed = UInt64Array::from_iter(
+            Field::new("seed", DataType::UInt64),
+            std::iter::repeat(u64::MAX).map(Some).take(1),
+        )
+        .into_series();
+        macro_rules! gen_seed {
+            ($size:expr) => {
+                Some(seed.broadcast($size)?.u64()?)
+            };
+        }
+
+        let hashed_contains = contains
+            .hash_with_validity(gen_seed!(contains.len()))?
+            .get(0);
+
+        let bool_iter = self
+            .iter()
+            .map(|sub_series| -> DaftResult<_> {
+                let (sub_series, hashed_contains) = match sub_series.zip(hashed_contains) {
+                    Some(inner) => inner,
+                    None => return Ok(false),
+                };
+
+                let left = sub_series.hash_with_validity(gen_seed!(sub_series.len()))?;
+                let right = PrimitiveArray::from_slice([hashed_contains]);
+                let right_value = hashed_contains;
+                let comparator = build_is_equal(left.as_arrow(), &right, true, false)?;
+
+                Ok(left
+                    .into_iter()
+                    .flatten()
+                    .enumerate()
+                    .any(|(index, &left_value)| left_value == right_value && comparator(index, 0)))
+            })
+            .map(Some)
+            .map(Option::transpose);
+
+        let bool_array = MutableBooleanArray::from_fallible_iter(bool_iter)?;
+        let bool_array = BooleanArray::from_iter(self.name(), bool_array.iter());
+        Ok(bool_array)
     }
 }
 
