@@ -53,7 +53,7 @@ def run_query_on_ray(
             ray_job_runner.run_on_ray(
                 run_args.ray_address,
                 {
-                    "entrypoint": f"python {ray_entrypoint_script} --tpcds-gen-folder 'data/0.01' --question {query_index}",
+                    "entrypoint": f"python {ray_entrypoint_script} --tpcds-gen-folder 'data/0.01' --question {query_index} {'--dry-run' if run_args.dry_run else ''}",
                     "runtime_env": {
                         "working_dir": working_dir,
                     },

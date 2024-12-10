@@ -10,6 +10,7 @@ import daft
 def run(
     parquet_folder: Path,
     question: int,
+    dry_run: bool,
 ):
     catalog = helpers.generate_catalog(parquet_folder)
     query_file = Path(__file__).parent / "queries" / f"{question:02}.sql"
@@ -17,7 +18,9 @@ def run(
         query = f.read()
 
     try:
-        daft.sql(query, catalog=catalog).collect()
+        daft.sql(query, catalog=catalog).explain(show_all=True)
+        if not dry_run:
+            daft.sql(query, catalog=catalog).collect()
     except Exception as e:
         print(str(e), file=sys.stderr)
 
@@ -36,10 +39,15 @@ if __name__ == "__main__":
         type=int,
         help="The TPC-DS question index to run",
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Whether or not to run the query in dry-run mode; if true, only the plan will be printed out",
+    )
     args = parser.parse_args()
 
     tpcds_gen_folder: Path = args.tpcds_gen_folder
     assert tpcds_gen_folder.exists()
     assert args.question in range(1, 100)
 
-    run(args.tpcds_gen_folder, args.question)
+    run(args.tpcds_gen_folder, args.question, args.dry_run)
