@@ -16,7 +16,9 @@ from . import datagen, helpers
 
 logger = logging.getLogger(__name__)
 
-SQL_QUERIES_PATH = Path(__file__).parent / "queries"
+BENCHMARKING_DIR = Path(__file__).parents[1]
+TPCDS_DIR = BENCHMARKING_DIR / "tpcds"
+SQL_QUERIES_PATH = TPCDS_DIR / "queries"
 
 
 @dataclass
