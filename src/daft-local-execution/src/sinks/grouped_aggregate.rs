@@ -23,8 +23,8 @@ struct SinglePartitionAggregateState {
 enum GroupedAggregateState {
     Accumulating {
         inner_states: Vec<Option<SinglePartitionAggregateState>>,
-        agg_exprs: Vec<ExprRef>,
-        group_by_exprs: Vec<ExprRef>,
+        agg_exprs: Option<Vec<ExprRef>>,
+        group_by: Vec<ExprRef>,
     },
     Done,
 }
@@ -35,12 +35,12 @@ impl GroupedAggregateState {
     // This is the maximum number of partitions we can have
     const MAX_NUM_PARTITIONS: usize = 16;
 
-    fn new(agg_exprs: Vec<ExprRef>, group_by_exprs: Vec<ExprRef>, num_partitions: usize) -> Self {
+    fn new(agg_exprs: Option<Vec<ExprRef>>, group_by: Vec<ExprRef>, num_partitions: usize) -> Self {
         let inner_states = (0..num_partitions).map(|_| None).collect();
         Self::Accumulating {
             inner_states,
             agg_exprs,
-            group_by_exprs,
+            group_by,
         }
     }
 
@@ -48,21 +48,23 @@ impl GroupedAggregateState {
         if let Self::Accumulating {
             ref mut inner_states,
             ref agg_exprs,
-            ref group_by_exprs,
+            ref group_by,
         } = self
         {
-            let partitioned = input.partition_by_hash(group_by_exprs, inner_states.len())?;
+            let partitioned = input.partition_by_hash(group_by, inner_states.len())?;
             for (p, state) in partitioned.into_iter().zip(inner_states.iter_mut()) {
                 let state = state.get_or_insert_with(|| SinglePartitionAggregateState {
                     partially_aggregated: vec![],
                     unaggregated: vec![],
                     unaggregated_size: 0,
                 });
-                if state.unaggregated_size + p.len() >= Self::PARTIAL_AGG_THRESHOLD {
+                if state.unaggregated_size + p.len() >= Self::PARTIAL_AGG_THRESHOLD
+                    && agg_exprs.is_some()
+                {
                     let unaggregated = std::mem::take(&mut state.unaggregated);
                     let aggregated =
                         MicroPartition::concat(unaggregated.iter().chain(std::iter::once(&p)))?
-                            .agg(agg_exprs, group_by_exprs)?;
+                            .agg(agg_exprs.as_ref().unwrap(), group_by)?;
                     state.partially_aggregated.push(aggregated);
                     state.unaggregated_size = 0;
                 } else {
@@ -105,7 +107,7 @@ struct GroupedAggregateParams {
     partial_agg_exprs: Vec<ExprRef>,
     // The expressions for the final aggregation
     final_agg_exprs: Vec<ExprRef>,
-    final_group_by_exprs: Vec<ExprRef>,
+    final_group_by: Vec<ExprRef>,
     final_projections: Vec<ExprRef>,
 }
 
@@ -148,7 +150,7 @@ impl GroupedAggregateSink {
                 group_by: group_by.to_vec(),
                 partial_agg_exprs,
                 final_agg_exprs,
-                final_group_by_exprs: final_group_by,
+                final_group_by,
                 final_projections,
             }),
         })
@@ -236,7 +238,7 @@ impl BlockingSink for GroupedAggregateSink {
                             else if unaggregated.is_empty() {
                                 let concated = MicroPartition::concat(&partially_aggregated)?;
                                 let agged = concated
-                                    .agg(&params.final_agg_exprs, &params.final_group_by_exprs)?;
+                                    .agg(&params.final_agg_exprs, &params.final_group_by)?;
                                 let projected =
                                     agged.eval_expression_list(&params.final_projections)?;
                                 Ok(projected)
@@ -252,7 +254,7 @@ impl BlockingSink for GroupedAggregateSink {
                                         .chain(std::iter::once(&leftover_partial_agg)),
                                 )?;
                                 let agged = concated
-                                    .agg(&params.final_agg_exprs, &params.final_group_by_exprs)?;
+                                    .agg(&params.final_agg_exprs, &params.final_group_by)?;
                                 let projected =
                                     agged.eval_expression_list(&params.final_projections)?;
                                 Ok(projected)
@@ -281,9 +283,18 @@ impl BlockingSink for GroupedAggregateSink {
     }
 
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
+        let params = &self.grouped_aggregate_params;
+        // If we have no partial aggregation expressions and only final aggregation expressions, e.g. map_groups
+        // we don't need to partially aggregate
+        let partial_agg =
+            if params.partial_agg_exprs.is_empty() && !params.final_agg_exprs.is_empty() {
+                None
+            } else {
+                Some(params.partial_agg_exprs.clone())
+            };
         Ok(Box::new(GroupedAggregateState::new(
-            self.grouped_aggregate_params.partial_agg_exprs.clone(),
-            self.grouped_aggregate_params.group_by.clone(),
+            partial_agg,
+            params.final_group_by.clone(),
             self.num_partitions(),
         )))
     }
