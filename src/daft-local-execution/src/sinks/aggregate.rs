@@ -93,7 +93,6 @@ impl BlockingSink for AggregateSink {
         runtime: &RuntimeRef,
     ) -> BlockingSinkSinkResult {
         let params = self.agg_sink_params.clone();
-        let input = input.clone();
         runtime
             .spawn(async move {
                 let agg_state = state

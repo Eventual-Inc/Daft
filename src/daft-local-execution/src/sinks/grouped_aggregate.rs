@@ -51,7 +51,7 @@ impl GroupedAggregateState {
             ref group_by_exprs,
         } = self
         {
-            let partitioned = input.partition_by_hash(&group_by_exprs, inner_states.len())?;
+            let partitioned = input.partition_by_hash(group_by_exprs, inner_states.len())?;
             for (p, state) in partitioned.into_iter().zip(inner_states.iter_mut()) {
                 let state = state.get_or_insert_with(|| SinglePartitionAggregateState {
                     partially_aggregated: vec![],

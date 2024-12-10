@@ -76,6 +76,7 @@ def test_having(agg, cond, expected):
     from df
     group by id
     having {cond}
+    order by id
     """,
         catalog,
     ).to_pydict()
