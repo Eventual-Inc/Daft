@@ -198,8 +198,18 @@ impl FixedSizeListArray {
     }
 
     pub fn to_list(&self) -> ListArray {
+        let field = &self.field;
+
+        let DataType::FixedSizeList(inner_type, _) = &field.dtype else {
+            unreachable!("Expected FixedSizeListArray, got {:?}", field.dtype);
+        };
+
+        let datatype = DataType::List(inner_type.clone());
+        let mut field = (**field).clone();
+        field.dtype = datatype;
+
         ListArray::new(
-            self.field.clone(),
+            field,
             self.flat_child.clone(),
             self.generate_offsets(),
             self.validity.clone(),
