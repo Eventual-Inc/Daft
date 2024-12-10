@@ -89,6 +89,6 @@ def test_tpch_sql(tmp_path, check_answer, get_df, benchmark_with_memray, engine,
         daft_df = daft.sql(query, catalog=catalog)
         return daft_df.to_arrow()
 
-    benchmark_group = f"q{q}-parts-{num_parts}"
+    benchmark_group = f"q{q}-sql-parts-{num_parts}"
     daft_pd_df = benchmark_with_memray(f, benchmark_group).to_pandas()
     check_answer(daft_pd_df, q, tmp_path)
