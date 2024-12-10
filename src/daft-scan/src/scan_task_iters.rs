@@ -1,3 +1,4 @@
+mod exact_limit_truncation;
 mod split_parquet_files_by_rowgroup;
 
 use std::sync::Arc;
@@ -367,9 +368,34 @@ fn split_and_merge_pass_v2<'a>(
     pushdowns: &Pushdowns,
     cfg: &'a DaftExecutionConfig,
 ) -> BoxScanTaskIter<'a> {
-    let split_tasks = split_parquet_files_by_rowgroup::split_all_files_by_rowgroup(inputs, cfg);
-    let merged_tasks = merge_by_sizes(split_tasks, pushdowns, cfg);
-    merged_tasks
+    let scan_tasks = inputs;
+
+    // Split Parquet files by RowGroup
+    let num_parallel_parquet_metadata_fetches = if let Some(limit) = pushdowns.limit
+        && limit <= 8
+    {
+        // If a small limit is provided: be less aggressive with retrieving Parquet Metadata to avoid large overheads
+        1
+    } else {
+        64
+    };
+    let scan_tasks = split_parquet_files_by_rowgroup::split_all_files_by_rowgroup(
+        scan_tasks,
+        num_parallel_parquet_metadata_fetches,
+        cfg,
+    );
+
+    // Truncate ScanTasks by exact num_rows and limits
+    let scan_tasks = if let Some(limit) = pushdowns.limit {
+        exact_limit_truncation::exact_limit_truncation(scan_tasks, limit)
+    } else {
+        scan_tasks
+    };
+
+    // Merge smaller ScanTasks together
+    let scan_tasks = merge_by_sizes(scan_tasks, pushdowns, cfg);
+
+    scan_tasks
 }
 
 #[ctor::ctor]

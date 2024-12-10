@@ -246,7 +246,7 @@ impl MaybeSplitScanTaskByParquetRowgroups {
         /* Only split parquet tasks if they:
             - have one source
             - use native storage config
-            - have no specified chunk spec or number of rows
+            - have no specified chunk spec
             - have size past split threshold
             - no iceberg delete files
         */
@@ -255,14 +255,12 @@ impl MaybeSplitScanTaskByParquetRowgroups {
             StorageConfig::Native(_),
             [source],
             Some(None),
-            None,
             est_materialized_size,
         ) = (
             scan_task.file_format_config.as_ref(),
             scan_task.storage_config.as_ref(),
             &scan_task.sources[..],
             scan_task.sources.first().map(DataSource::get_chunk_spec),
-            scan_task.pushdowns.limit,
             scan_task.estimate_in_memory_size_bytes(Some(config)),
         ) && est_materialized_size.map_or(true, |est| est > config.scan_tasks_max_size_bytes)
             && source
@@ -328,9 +326,6 @@ fn split_scan_tasks_by_parquet_metadata(
         .collect())
 }
 
-/// Maximum number of Parquet Metadata fetches to perform at once while iterating through ScanTasks
-static WINDOW_SIZE_MAX_PARQUET_METADATA_FETCHES: usize = 16;
-
 enum SplitParquetFilesByRowGroupsState {
     ConstructingWindow(Vec<MaybeSplitScanTaskByParquetRowgroups>),
     WindowFinalized(Vec<MaybeSplitScanTaskByParquetRowgroups>),
@@ -340,6 +335,7 @@ enum SplitParquetFilesByRowGroupsState {
 struct SplitParquetFilesByRowGroups<'a> {
     iter: BoxScanTaskIter<'a>,
     state: SplitParquetFilesByRowGroupsState,
+    num_parallel_parquet_fetches: usize,
     config: &'a DaftExecutionConfig,
 }
 
@@ -367,7 +363,7 @@ impl<'a> Iterator for SplitParquetFilesByRowGroups<'a> {
                                     );
                                 window.push(maybe_split_scan_task);
 
-                                // Windows are "finalized" when there are >= 16 Parquet Metadatas to be fetched
+                                // Windows are "finalized" when there are >= `num_parallel_parquet_fetches` Parquet Metadatas to be fetched
                                 let should_finalize_window = window
                                     .iter()
                                     .filter(|maybe_split_scan_task| {
@@ -377,7 +373,7 @@ impl<'a> Iterator for SplitParquetFilesByRowGroups<'a> {
                                         )
                                     })
                                     .count()
-                                    >= WINDOW_SIZE_MAX_PARQUET_METADATA_FETCHES;
+                                    >= self.num_parallel_parquet_fetches;
                                 if should_finalize_window {
                                     let window = std::mem::take(window);
                                     self.state =
@@ -455,11 +451,13 @@ impl<'a> Iterator for SplitParquetFilesByRowGroups<'a> {
 #[must_use]
 pub(crate) fn split_all_files_by_rowgroup<'a>(
     scan_tasks: BoxScanTaskIter<'a>,
+    num_parallel_parquet_fetches: usize,
     config: &'a DaftExecutionConfig,
 ) -> BoxScanTaskIter<'a> {
     Box::new(SplitParquetFilesByRowGroups {
         iter: scan_tasks,
         state: SplitParquetFilesByRowGroupsState::ConstructingWindow(Vec::new()),
+        num_parallel_parquet_fetches,
         config,
     }) as BoxScanTaskIter
 }
