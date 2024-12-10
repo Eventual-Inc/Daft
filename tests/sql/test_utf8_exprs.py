@@ -52,7 +52,7 @@ def test_utf8_exprs():
         repeat(a, 2) as repeat_a,
         a like 'a%' as like_a,
         a ilike 'a%' as ilike_a,
-        substring(a, 1, 3) as substring_a,
+        substring(a, 2, 3) as substring_a,
         count_matches(a, 'a') as count_matches_a_0,
         count_matches(a, 'a', case_sensitive := true) as count_matches_a_1,
         count_matches(a, 'a', case_sensitive := false, whole_words := false) as count_matches_a_2,
