@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any, Generator, Iterable, Iterator
 # The ray runner is not a top-level module, so we don't need to lazily import pyarrow to minimize
 # import times. If this changes, we first need to make the daft.lazy_import.LazyImport class
 # serializable before importing pa from daft.dependencies.
-import pyarrow as pa
+import pyarrow as pa  # noqa: TID253
 import ray.experimental  # noqa: TID253
 
 from daft.arrow_utils import ensure_array
@@ -1018,7 +1018,9 @@ def _build_partitions(
             else reduce_pipeline
         )
         if task.node_id is not None:
-            ray_options["scheduling_strategy"] = ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(task.node_id, soft=True)
+            ray_options["scheduling_strategy"] = ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
+                task.node_id, soft=True
+            )
         else:
             ray_options["scheduling_strategy"] = "SPREAD"
         build_remote = build_remote.options(**ray_options).with_tracing(runner_tracer, task)
