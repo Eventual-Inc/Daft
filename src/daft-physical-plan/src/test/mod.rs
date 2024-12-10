@@ -10,6 +10,7 @@ pub fn dummy_scan_operator(fields: Vec<Field>) -> ScanOperatorRef {
     ScanOperatorRef(Arc::new(DummyScanOperator {
         schema,
         num_scan_tasks: 1,
+        in_memory_size_per_task: None,
     }))
 }
 
