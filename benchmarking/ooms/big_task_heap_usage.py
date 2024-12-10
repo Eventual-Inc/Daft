@@ -5,6 +5,8 @@
 import argparse
 import functools
 
+import pyarrow as pa
+
 import daft
 from daft.io._generator import read_generator
 from daft.table.table import Table
@@ -14,7 +16,7 @@ NUM_PARTITIONS = 8
 
 @daft.udf(return_dtype=daft.DataType.binary())
 def mock_inflate_data(data, inflation_factor):
-    return [x * inflation_factor for x in data.to_pylist()]
+    return pa.array([x * inflation_factor for x in data.to_pylist()], type=pa.large_binary())
 
 
 @daft.udf(return_dtype=daft.DataType.binary())
