@@ -364,10 +364,6 @@ impl OptimizerRule for UnnestPredicateSubquery {
 fn pull_up_correlated_cols(
     plan: LogicalPlanRef,
 ) -> DaftResult<(LogicalPlanRef, Vec<ExprRef>, Vec<ExprRef>)> {
-    if matches!(plan.as_ref(), LogicalPlan::Sink(..)) {
-        return Ok((plan, vec![], vec![]));
-    }
-
     let (new_inputs, subquery_on, outer_on): (Vec<_>, Vec<_>, Vec<_>) = multiunzip(
         plan.arc_children()
             .into_iter()
@@ -375,7 +371,11 @@ fn pull_up_correlated_cols(
             .collect::<DaftResult<Vec<_>>>()?,
     );
 
-    let plan = Arc::new(plan.with_new_children(&new_inputs));
+    let plan = if new_inputs.is_empty() {
+        plan
+    } else {
+        Arc::new(plan.with_new_children(&new_inputs))
+    };
 
     let mut subquery_on = subquery_on.into_iter().flatten().collect::<Vec<_>>();
     let mut outer_on = outer_on.into_iter().flatten().collect::<Vec<_>>();
