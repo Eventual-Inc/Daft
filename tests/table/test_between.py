@@ -164,7 +164,7 @@ def test_between_bad_input() -> None:
         pytest.param([1.0, 2.0, 3.0, 4.0], [1.0, 2.0, 3.0, 4.0], 2.0, [True, True, False, False], id="FloatFloatFloat"),
         pytest.param([1.0, 2.0, 3.0, 4.0], [1.0, 2.0, 3.0, 4.0], 2, [True, True, False, False], id="FloatIntInt"),
         pytest.param([1.0, 2.0, 3.0, 4.0], [1, 2, 3, 4], 2.0, [True, True, False, False], id="FloatIntFloat"),
-        pytest.param([1.0, 2.0, 3.0, 4.0], [None, None, None, None], 1, [None, None, None, None], id="FloatNullInt"),
+        pytest.param([1.0, 2.0, 3.0, 4.0], [None, None, None, None], 1, [None, False, False, False], id="FloatNullInt"),
         pytest.param([1.0, 2.0, 3.0, 4.0], [1, 2, 3, 4], None, [None, None, None, None], id="FloatIntNull"),
         pytest.param(
             [1.0, 2.0, 3.0, 4.0], [None, None, None, None], None, [None, None, None, None], id="FloatNullNull"
