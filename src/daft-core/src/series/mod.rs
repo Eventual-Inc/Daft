@@ -45,6 +45,8 @@ impl PartialEq for Series {
     }
 }
 
+impl Eq for Series {}
+
 impl Series {
     /// Build a hashset of the [`IndexHash`]s of each element in this [`Series`].
     ///

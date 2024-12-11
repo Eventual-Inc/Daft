@@ -35,6 +35,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                         ))
                     }
                 }
+
                 SourceInfo::PlaceHolder(_) => {
                     panic!("We should not encounter a PlaceHolder during translation")
                 }

@@ -11,7 +11,7 @@ use daft_core::prelude::*;
 use snafu::{ResultExt, Snafu};
 
 use crate::DaftCoreComputeSnafu;
-#[derive(Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ColumnRangeStatistics {
     Missing,
     Loaded(Series, Series),

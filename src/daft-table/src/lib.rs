@@ -12,6 +12,7 @@ use std::{
 use arrow2::array::Array;
 use common_display::table_display::{make_comfy_table, StrValue};
 use common_error::{DaftError, DaftResult};
+use common_scan_info::FileInfos;
 use daft_core::{
     array::ops::{
         full::FullNull, DaftApproxCountDistinctAggable, DaftHllSketchAggable, GroupIndices,
@@ -22,7 +23,6 @@ use daft_dsl::{
     col, functions::FunctionEvaluator, null_lit, AggExpr, ApproxPercentileParams, Expr, ExprRef,
     LiteralValue, SketchType,
 };
-use daft_logical_plan::FileInfos;
 use num_traits::ToPrimitive;
 #[cfg(feature = "python")]
 pub mod ffi;
@@ -903,6 +903,7 @@ impl PartialEq for Table {
         true
     }
 }
+impl Eq for Table {}
 
 impl Display for Table {
     // `f` is a buffer, and this method must write the formatted string into it

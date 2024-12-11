@@ -15,10 +15,8 @@ use daft_schema::schema::{Schema, SchemaRef};
 #[cfg(feature = "python")]
 use {
     crate::sink_info::{CatalogInfo, IcebergCatalogInfo},
-    crate::source_info::InMemoryInfo,
     common_daft_config::PyDaftPlanningConfig,
     daft_dsl::python::PyExpr,
-    // daft_scan::python::pylib::ScanOperatorHandle,
     daft_schema::python::schema::PySchema,
     pyo3::prelude::*,
 };
@@ -31,7 +29,7 @@ use crate::{
         HashRepartitionConfig, IntoPartitionsConfig, RandomShuffleConfig, RepartitionSpec,
     },
     sink_info::{OutputFileInfo, SinkInfo},
-    source_info::SourceInfo,
+    source_info::{InMemoryInfo, SourceInfo},
     LogicalPlanRef,
 };
 
@@ -114,10 +112,8 @@ impl LogicalPlanBuilder {
         Self::new(self.plan.clone(), Some(config))
     }
 
-    #[cfg(feature = "python")]
-    pub fn in_memory_scan(
+    pub fn in_memory(
         partition_key: &str,
-        cache_entry: PyObject,
         schema: Arc<Schema>,
         num_partitions: usize,
         size_bytes: usize,
@@ -126,7 +122,6 @@ impl LogicalPlanBuilder {
         let source_info = SourceInfo::InMemory(InMemoryInfo::new(
             schema.clone(),
             partition_key.into(),
-            cache_entry,
             num_partitions,
             size_bytes,
             num_rows,
@@ -687,15 +682,13 @@ impl PyLogicalPlanBuilder {
     #[staticmethod]
     pub fn in_memory_scan(
         partition_key: &str,
-        cache_entry: PyObject,
         schema: PySchema,
         num_partitions: usize,
         size_bytes: usize,
         num_rows: usize,
     ) -> PyResult<Self> {
-        Ok(LogicalPlanBuilder::in_memory_scan(
+        Ok(LogicalPlanBuilder::in_memory(
             partition_key,
-            cache_entry,
             schema.into(),
             num_partitions,
             size_bytes,

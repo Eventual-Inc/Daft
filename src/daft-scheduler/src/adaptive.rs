@@ -56,17 +56,16 @@ impl AdaptivePhysicalPlanScheduler {
         &mut self,
         source_id: usize,
         partition_key: &str,
-        cache_entry: PyObject,
         num_partitions: usize,
         size_bytes: usize,
         num_rows: usize,
         py: Python,
     ) -> PyResult<()> {
         py.allow_threads(|| {
+            // let _cache_entry = Arc::new(PyPartitionSet::try_from(cache_entry)?);
             let in_memory_info = InMemoryInfo::new(
                 Schema::empty().into(), // TODO thread in schema from in memory scan
                 partition_key.into(),
-                cache_entry,
                 num_partitions,
                 size_bytes,
                 num_rows,

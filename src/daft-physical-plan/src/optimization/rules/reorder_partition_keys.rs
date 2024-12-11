@@ -31,7 +31,6 @@ impl PhysicalOptimizerRule for ReorderPartitionKeys {
             let plan = c.plan.clone();
             match plan.as_ref() {
                 // 0-input nodes
-                #[cfg(feature = "python")]
                 PhysicalPlan::InMemoryScan(..) => return Ok(Transformed::no(c)),
                 PhysicalPlan::EmptyScan(..) |
                 PhysicalPlan::TabularScan(..) => return Ok(Transformed::no(c)),

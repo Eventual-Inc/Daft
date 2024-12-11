@@ -1605,7 +1605,6 @@ class LogicalPlanBuilder:
     @staticmethod
     def in_memory_scan(
         partition_key: str,
-        cache_entry: PartitionCacheEntry,
         schema: PySchema,
         num_partitions: int,
         size_bytes: int,
@@ -1708,7 +1707,7 @@ class NativeExecutor:
         logical_plan_builder: LogicalPlanBuilder,
     ) -> NativeExecutor: ...
     def run(
-        self, psets: dict[str, list[PartitionT]], cfg: PyDaftExecutionConfig, results_buffer_size: int | None
+        self, psets_cache: object, cfg: PyDaftExecutionConfig, results_buffer_size: int | None
     ) -> Iterator[PyMicroPartition]: ...
 
 class PyDaftExecutionConfig:

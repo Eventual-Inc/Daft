@@ -120,7 +120,6 @@ class LogicalPlanBuilder:
     ) -> LogicalPlanBuilder:
         builder = _LogicalPlanBuilder.in_memory_scan(
             partition.key,
-            partition,
             schema._schema,
             num_partitions,
             size_bytes,

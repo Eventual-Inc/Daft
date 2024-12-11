@@ -8,6 +8,7 @@ use daft_logical_plan::{
     stats::{PlanStats, StatsState},
     InMemoryInfo, OutputFileInfo,
 };
+use daft_table::Table;
 
 pub type LocalPhysicalPlanRef = Arc<LocalPhysicalPlan>;
 #[derive(Debug, strum::IntoStaticStr)]

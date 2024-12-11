@@ -1,11 +1,11 @@
 use common_error::DaftError;
+use common_scan_info::FileInfos;
 use daft_core::{
     join::JoinType,
     prelude::*,
     python::{series::PySeries, PySchema},
 };
 use daft_dsl::python::PyExpr;
-use daft_logical_plan::FileInfos;
 use indexmap::IndexMap;
 use pyo3::{exceptions::PyValueError, prelude::*};
 

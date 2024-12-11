@@ -1,22 +1,19 @@
 //! APIs to read Arrow streams asynchronously
 
 use arrow_format::ipc::planus::ReadAsRoot;
-use futures::future::BoxFuture;
-use futures::AsyncRead;
-use futures::AsyncReadExt;
-use futures::FutureExt;
-use futures::Stream;
+use futures::{future::BoxFuture, AsyncRead, AsyncReadExt, FutureExt, Stream};
 
-use crate::array::*;
-use crate::chunk::Chunk;
-use crate::error::{Error, Result};
-
-use super::super::CONTINUATION_MARKER;
-use super::common::{read_dictionary, read_record_batch};
-use super::schema::deserialize_stream_metadata;
-use super::Dictionaries;
-use super::OutOfSpecKind;
-use super::StreamMetadata;
+use super::{
+    super::CONTINUATION_MARKER,
+    common::{read_dictionary, read_record_batch},
+    schema::deserialize_stream_metadata,
+    Dictionaries, OutOfSpecKind, StreamMetadata,
+};
+use crate::{
+    array::*,
+    chunk::Chunk,
+    error::{Error, Result},
+};
 
 /// A (private) state of stream messages
 struct ReadState<R> {
@@ -216,8 +213,7 @@ impl<'a, R: AsyncRead + Unpin + Send> Stream for AsyncStreamReader<'a, R> {
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Self::Item>> {
-        use std::pin::Pin;
-        use std::task::Poll;
+        use std::{pin::Pin, task::Poll};
         let me = Pin::into_inner(self);
 
         match &mut me.future {
