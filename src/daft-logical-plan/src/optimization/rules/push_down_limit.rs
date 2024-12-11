@@ -262,7 +262,7 @@ mod tests {
     fn limit_does_not_push_into_in_memory_source() -> DaftResult<()> {
         let _py_obj = Python::with_gil(|py| py.None());
         let schema: Arc<Schema> = Schema::new(vec![Field::new("a", DataType::Int64)])?.into();
-        let plan = LogicalPlanBuilder::in_memory("foo", schema, Default::default(), 5, 3)?
+        let plan = LogicalPlanBuilder::in_memory_scan("foo", schema, Default::default(), 5, 3)?
             .limit(5, false)?
             .build();
         assert_optimized_plan_eq(plan.clone(), plan)?;

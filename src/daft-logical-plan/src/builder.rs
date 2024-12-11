@@ -112,7 +112,7 @@ impl LogicalPlanBuilder {
         Self::new(self.plan.clone(), Some(config))
     }
 
-    pub fn in_memory(
+    pub fn in_memory_scan(
         partition_key: &str,
         schema: Arc<Schema>,
         num_partitions: usize,
@@ -687,7 +687,7 @@ impl PyLogicalPlanBuilder {
         size_bytes: usize,
         num_rows: usize,
     ) -> PyResult<Self> {
-        Ok(LogicalPlanBuilder::in_memory(
+        Ok(LogicalPlanBuilder::in_memory_scan(
             partition_key,
             schema.into(),
             num_partitions,

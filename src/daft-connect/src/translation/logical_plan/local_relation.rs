@@ -154,8 +154,13 @@ impl Translator<'_> {
         let size_bytes = pset.size_bytes()?;
         let len = pset.len();
 
-        let lp =
-            LogicalPlanBuilder::in_memory(&pset_id, daft_schema, num_partitions, size_bytes, len)?;
+        let lp = LogicalPlanBuilder::in_memory_scan(
+            &pset_id,
+            daft_schema,
+            num_partitions,
+            size_bytes,
+            len,
+        )?;
         self.pset_cache.put_partition_set(pset_id, Arc::new(pset))?;
 
         Ok(lp)

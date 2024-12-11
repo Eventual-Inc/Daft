@@ -2387,9 +2387,7 @@ dependencies = [
  "futures",
  "parquet2",
  "pyo3",
- "serde",
  "snafu",
- "typetag",
 ]
 
 [[package]]

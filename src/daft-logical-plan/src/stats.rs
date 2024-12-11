@@ -60,7 +60,7 @@ impl Display for PlanStats {
 // stats can easily implement PartialEq, Eq, and Hash in a way that ignores PlanStats when considering equality.
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct AlwaysSame<T>(pub T);
+pub struct AlwaysSame<T>(T);
 
 impl<T> Deref for AlwaysSame<T> {
     type Target = T;

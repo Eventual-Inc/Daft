@@ -24,14 +24,13 @@ use daft_scan::{
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
 use daft_table::Table;
 use parquet2::metadata::FileMetaData;
-use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 #[cfg(feature = "python")]
 use {crate::PyIOSnafu, common_file_formats::DatabaseSourceConfig};
 
 use crate::{DaftCSVSnafu, DaftCoreComputeSnafu};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub enum TableState {
     Unloaded(Arc<ScanTask>),
     Loaded(Arc<Vec<Table>>),
@@ -62,7 +61,7 @@ impl Display for TableState {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub struct MicroPartition {
     /// Schema of the MicroPartition
     ///
