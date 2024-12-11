@@ -16,9 +16,10 @@ def run(
     with open(query_file) as f:
         query = f.read()
 
-    daft.sql(query, catalog=catalog).explain(show_all=True)
+    query = daft.sql(query, catalog=catalog)
+    query.explain(show_all=True)
     if not dry_run:
-        daft.sql(query, catalog=catalog).collect()
+        query.collect()
 
 
 if __name__ == "__main__":

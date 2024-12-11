@@ -72,13 +72,16 @@ def run_query_on_ray(
                     "entrypoint": f"python {ray_entrypoint_script} --tpcds-gen-folder 'data/0.01' --question {query_index} {'--dry-run' if run_args.dry_run else ''}",
                     "runtime_env": {
                         "working_dir": working_dir,
+                        "env_vars": {
+                            "DAFT_ENABLE_RAY_TRACING": "1",
+                        },
                     },
                 },
             )
             end = datetime.now()
             duration = end - start
-        except Exception as e:
-            error_msg = str(e)
+        except Exception:
+            error_msg = "Failed"
 
         results.append(Result(index=query_index, duration=duration, error_msg=error_msg))
 

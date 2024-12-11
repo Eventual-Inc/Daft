@@ -1,0 +1,105 @@
+name: run-script
+
+on:
+  workflow_dispatch:
+    inputs:
+      python_version:
+        description: Python version
+        type: string
+        required: false
+        default: "3.9"
+      entrypoint:
+        description: Entrypoint script
+        type: string
+        required: true
+
+jobs:
+  run-command:
+    runs-on: [self-hosted, linux, x64, ci-dev]
+    timeout-minutes: 15 # Remove for ssh debugging
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      RUN_MODE: ci
+    steps:
+    - name: Log workflow inputs
+      run: echo "${{ toJson(github.event.inputs) }}"
+    - name: Checkout repo
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-region: us-west-2
+        role-session-name: run-cluster-workflow
+    - name: Install uv, rust, python
+      uses: ./.github/actions/install
+      with:
+        python_version: ${{ inputs.python_version }}
+    - name: Download private ssh key
+      run: |
+        KEY=$(aws secretsmanager get-secret-value --secret-id ci-github-actions-ray-cluster-key-3 --query SecretString --output text)
+        echo "$KEY" >> ~/.ssh/ci-github-actions-ray-cluster-key.pem
+        chmod 600 ~/.ssh/ci-github-actions-ray-cluster-key.pem
+    - name: Setup uv venv
+      run: |
+        uv v --python ${{ inputs.python_version }}
+    - name: Download daft
+      run: |
+        rm -rf daft
+        uv pip install getdaft
+    - name: Spin up ray cluster
+      run: |
+        source .venv/bin/activate
+        uv pip install ray[default] boto3
+        ray up ci/assets/medium-x86.yaml -y
+    - name: Setup connection to ray cluster
+      run: |
+        source .venv/bin/activate
+        ray dashboard ci/assets/medium-x86.yaml &
+    - name: Run the entrypoint script
+      run: |
+        set +e
+        source .venv/bin/activate
+        if [[ -z '${{ inputs.entrypoint }}' ]]; then
+          echo 'Invalid entrypoint submitted'
+          exit 1
+        fi
+        chmod +x ${{ inputs.entrypoint }}
+        ${{ inputs.entrypoint }}
+    - name: Download log files from ray cluster
+      run: |
+        source .venv/bin/activate
+        ray rsync-down ci/assets/medium-x86.yaml /tmp/ray/session_latest/logs ray-daft-logs
+        find ray-daft-logs -depth -name '*:*' -exec bash -c '
+        for filepath; do
+          dir=$(dirname "$filepath")
+          base=$(basename "$filepath")
+          new_base=${base//:/_}
+          mv "$filepath" "$dir/$new_base"
+        done
+        ' _ {} +
+    - name: Kill connection to ray cluster
+      run: |
+        PID=$(lsof -t -i:8265)
+        if [[ -n "$PID" ]]; then
+            echo "Process $PID is listening on port 8265; killing it..."
+            kill -9 "$PID"
+            if [[ $? -eq 0 ]]; then
+                echo "Process $PID killed successfully"
+            else
+                echo "Failed to kill process $PID"
+            fi
+        fi
+    - name: Spin down ray cluster
+      if: always()
+      run: |
+        source .venv/bin/activate
+        ray down ci/assets/medium-x86.yaml -y
+    - name: Upload log files
+      uses: actions/upload-artifact@v4
+      with:
+        name: ray-daft-logs
+        path: ray-daft-logs
