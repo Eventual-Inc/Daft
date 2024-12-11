@@ -903,7 +903,6 @@ impl PartialEq for Table {
         true
     }
 }
-impl Eq for Table {}
 
 impl Display for Table {
     // `f` is a buffer, and this method must write the formatted string into it

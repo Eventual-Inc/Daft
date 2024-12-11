@@ -27,7 +27,7 @@ impl InMemoryScan {
 
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
-        res.push("PythonScan:".to_string());
+        res.push("InMemoryScan:".to_string());
         res.push(format!("Schema = {}", self.schema.short_string()));
         res.push(format!("Size bytes = {}", self.in_memory_info.size_bytes,));
         res.push(format!(
@@ -43,7 +43,7 @@ impl TreeDisplay for InMemoryScan {
             DisplayLevel::Compact => self.get_name(),
             DisplayLevel::Default => {
                 format!(
-                    "PythonScan:
+                    "InMemoryScan:
 Schema = {},
 Size bytes = {},
 Clustering spec = {{ {} }}",
