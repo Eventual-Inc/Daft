@@ -194,6 +194,7 @@ chrono-tz = "0.10.0"
 comfy-table = "7.1.1"
 common-daft-config = {path = "src/common/daft-config"}
 common-error = {path = "src/common/error", default-features = false}
+common-file-formats = {path = "src/common/file-formats"}
 common-runtime = {path = "src/common/runtime", default-features = false}
 daft-core = {path = "src/daft-core"}
 daft-dsl = {path = "src/daft-dsl"}

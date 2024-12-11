@@ -3,14 +3,14 @@ use spark_connect::{expression::ExprType, Expression};
 
 use crate::translation::{to_daft_expr, to_logical_plan, Plan};
 
-pub fn with_columns(with_columns: spark_connect::WithColumns) -> eyre::Result<Plan> {
+pub async fn with_columns(with_columns: spark_connect::WithColumns) -> eyre::Result<Plan> {
     let spark_connect::WithColumns { input, aliases } = with_columns;
 
     let Some(input) = input else {
         bail!("input is required");
     };
 
-    let mut plan = to_logical_plan(*input)?;
+    let mut plan = Box::pin(to_logical_plan(*input)).await?;
 
     let daft_exprs: Vec<_> = aliases
         .into_iter()
