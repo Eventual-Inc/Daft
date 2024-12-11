@@ -182,32 +182,31 @@ impl JoinGraph {
 
     /// Test helper function to check that all relations in this graph are connected.
     pub(crate) fn fully_connected(&self) -> bool {
-        // // Assuming that we're not testing an empty graph, there should be at least one edge in a connected graph.
-        // if self.edges.is_empty() {
-        //     return false;
-        // }
-        // let mut adj_list: HashMap<*const _, Vec<*const _>> = HashMap::new();
-        // for edge in &self.edges {
-        //     let l_ptr = Arc::as_ptr(&edge.0.plan);
-        //     let r_ptr = Arc::as_ptr(&edge.1.plan);
-
-        //     adj_list.entry(l_ptr).or_default().push(r_ptr);
-        //     adj_list.entry(r_ptr).or_default().push(l_ptr);
-        // }
+        let start = if let Some((key, value)) = self.adj_list.0.iter().next() {
+            key
+        } else {
+            // There are no nodes. The empty graph is fully connected.
+            return true;
+        };
         // let start_ptr = Arc::as_ptr(&self.edges[0].0.plan);
-        // let mut seen = HashSet::new();
-        // let mut stack = vec![start_ptr];
+        let mut seen = HashSet::new();
+        let mut stack = vec![start];
 
-        // while let Some(current) = stack.pop() {
-        //     if seen.insert(current) {
-        //         // If this is a new node, add all its neighbors to the stack.
-        //         if let Some(neighbors) = adj_list.get(&current) {
-        //             stack.extend(neighbors.iter().filter(|&&n| !seen.contains(&n)));
-        //         }
-        //     }
-        // }
-        // seen.len() == adj_list.len()
-        true
+        while let Some(current) = stack.pop() {
+            if seen.insert(current) {
+                // If this is a new node, add all its neighbors to the stack.
+                if let Some(neighbors) = self.adj_list.0.get(current) {
+                    stack.extend(neighbors.iter().filter_map(|(neighbor, _)| {
+                        if !seen.contains(neighbor) {
+                            Some(neighbor)
+                        } else {
+                            None
+                        }
+                    }));
+                }
+            }
+        }
+        seen.len() == self.adj_list.0.len()
     }
 
     /// Test helper function that checks if the graph contains the given projection/filter expressions
