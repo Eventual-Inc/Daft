@@ -110,6 +110,10 @@ impl DaftExecutionConfig {
         {
             cfg.enable_ray_tracing = true;
         }
+        let shuffle_algorithm_env_var_name = "DAFT_SHUFFLE_ALGORITHM";
+        if let Ok(val) = std::env::var(shuffle_algorithm_env_var_name) {
+            cfg.shuffle_algorithm = val;
+        }
         cfg
     }
 }
