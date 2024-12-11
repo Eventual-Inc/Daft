@@ -1517,7 +1517,7 @@ def reduce(
     metadatas = []
     stage_id = next(stage_id_counter)
 
-    # Process all steps in the fanout plan
+    # Dispatch all fanouts.
     for step in fanout_plan:
         # Check any completed materializations, collect their partitions and metadatas, and add to reduce inputs
         newly_completed = [(i, m) for i, m in pending_materializations.items() if m.done()]
@@ -1534,7 +1534,8 @@ def reduce(
         else:
             yield step
 
-    # After all fanouts are launched, wait for remaining materializations
+    # All fanouts dispatched. Wait for all of them to materialize
+    # (since we need all of them to emit even a single reduce).
     while pending_materializations:
         newly_completed = [(i, m) for i, m in pending_materializations.items() if m.done()]
         for i, completed in newly_completed:
