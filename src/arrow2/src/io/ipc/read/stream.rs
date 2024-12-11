@@ -1,19 +1,19 @@
+use ahash::AHashMap;
 use std::io::Read;
 
-use ahash::AHashMap;
 use arrow_format::ipc::planus::ReadAsRoot;
 
-use super::{
-    super::CONTINUATION_MARKER, common::*, schema::deserialize_stream_metadata, Dictionaries,
-    OutOfSpecKind,
-};
-use crate::{
-    array::Array,
-    chunk::Chunk,
-    datatypes::Schema,
-    error::{Error, Result},
-    io::ipc::IpcSchema,
-};
+use crate::array::Array;
+use crate::chunk::Chunk;
+use crate::datatypes::Schema;
+use crate::error::{Error, Result};
+use crate::io::ipc::IpcSchema;
+
+use super::super::CONTINUATION_MARKER;
+use super::common::*;
+use super::schema::deserialize_stream_metadata;
+use super::Dictionaries;
+use super::OutOfSpecKind;
 
 /// Metadata of an Arrow IPC stream, written at the start of the stream
 #[derive(Debug, Clone)]
