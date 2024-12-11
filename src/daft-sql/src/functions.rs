@@ -4,7 +4,8 @@ use daft_dsl::ExprRef;
 use hashing::SQLModuleHashing;
 use once_cell::sync::Lazy;
 use sqlparser::ast::{
-    Function, FunctionArg, FunctionArgExpr, FunctionArgOperator, FunctionArguments,
+    DuplicateTreatment, Function, FunctionArg, FunctionArgExpr, FunctionArgOperator,
+    FunctionArguments,
 };
 
 use crate::{
@@ -242,14 +243,21 @@ impl<'a> SQLPlanner<'a> {
         // assert using only supported features
         check_features(func)?;
 
+        fn get(
+            fns: &Lazy<SQLFunctions>,
+            name: impl AsRef<str>,
+        ) -> SQLPlannerResult<Arc<dyn SQLFunction>> {
+            let name = name.as_ref();
+            let fn_match = fns.get(name).ok_or_else(|| {
+                PlannerError::unsupported_sql(format!("Function `{}` not found", name))
+            })?;
+            Ok(fn_match.clone())
+        }
+
         // lookup function variant(s) by name
-        let fns = &SQL_FUNCTIONS;
         // SQL function names are case-insensitive
         let fn_name = func.name.to_string().to_lowercase();
-        let fn_match = match fns.get(&fn_name) {
-            Some(func) => func,
-            None => unsupported_sql_err!("Function `{}` not found", fn_name),
-        };
+        let mut fn_match = get(&SQL_FUNCTIONS, fn_name)?;
 
         // TODO: Filter the variants for correct arity.
         //
@@ -274,9 +282,9 @@ impl<'a> SQLPlanner<'a> {
                 unsupported_sql_err!("subquery function argument")
             }
             sqlparser::ast::FunctionArguments::List(args) => {
-                if args.duplicate_treatment.is_some() {
-                    unsupported_sql_err!("function argument with duplicate treatment");
-                }
+                if matches!(args.duplicate_treatment, Some(DuplicateTreatment::Distinct)) {
+                    fn_match = get(&SQL_FUNCTIONS, "count_distinct")?;
+                };
                 if !args.clauses.is_empty() {
                     unsupported_sql_err!("function arguments with clauses");
                 }

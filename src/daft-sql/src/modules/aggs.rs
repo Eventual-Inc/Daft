@@ -16,20 +16,20 @@ pub struct SQLModuleAggs;
 
 impl SQLModule for SQLModuleAggs {
     fn register(parent: &mut SQLFunctions) {
-        use AggExpr::{Count, Max, Mean, Min, Stddev, Sum};
         // HACK TO USE AggExpr as an enum rather than a
         let nil = Arc::new(Expr::Literal(LiteralValue::Null));
         parent.add_fn(
             "count",
-            Count(nil.clone(), daft_core::count_mode::CountMode::Valid),
+            AggExpr::Count(nil.clone(), daft_core::count_mode::CountMode::Valid),
         );
-        parent.add_fn("sum", Sum(nil.clone()));
-        parent.add_fn("avg", Mean(nil.clone()));
-        parent.add_fn("mean", Mean(nil.clone()));
-        parent.add_fn("min", Min(nil.clone()));
-        parent.add_fn("max", Max(nil.clone()));
-        parent.add_fn("stddev", Stddev(nil.clone()));
-        parent.add_fn("stddev_samp", Stddev(nil));
+        parent.add_fn("count_distinct", AggExpr::CountDistinct(nil.clone()));
+        parent.add_fn("sum", AggExpr::Sum(nil.clone()));
+        parent.add_fn("avg", AggExpr::Mean(nil.clone()));
+        parent.add_fn("mean", AggExpr::Mean(nil.clone()));
+        parent.add_fn("min", AggExpr::Min(nil.clone()));
+        parent.add_fn("max", AggExpr::Max(nil.clone()));
+        parent.add_fn("stddev", AggExpr::Stddev(nil.clone()));
+        parent.add_fn("stddev_samp", AggExpr::Stddev(nil));
     }
 }
 
@@ -100,7 +100,7 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
     })
 }
 
-pub fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
+fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
     match expr {
         AggExpr::Count(_, _) => unreachable!("count should be handled by by this point"),
         AggExpr::CountDistinct(..) => unsupported_sql_err!("COUNT(distinct ..)"),
