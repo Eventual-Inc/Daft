@@ -173,7 +173,7 @@ impl OptimizerRule for UnnestScalarSubquery {
                 let (new_input, new_predicates) = unnest_result.data;
 
                 let new_predicate = conjuct(new_predicates)
-                    .expect("predicates should exist in unnested subquery filter");
+                    .expect("predicates are guaranteed to exist at this point, so 'conjunct' should never return 'None'");
 
                 let new_filter = Arc::new(LogicalPlan::Filter(Filter::try_new(
                     new_input,
@@ -312,12 +312,13 @@ impl OptimizerRule for UnnestPredicateSubquery {
 
                 let new_input = subqueries.into_iter().try_fold(input.clone(), |curr_input, PredicateSubquery { subquery, in_expr, join_type }| {
                     let subquery_plan = downcast_subquery(&subquery);
+                    let subquery_schema = subquery_plan.schema();
 
                     let (decorrelated_subquery, mut subquery_on, mut input_on) =
-                        pull_up_correlated_cols(subquery_plan.clone())?;
+                        pull_up_correlated_cols(subquery_plan)?;
 
                     if let Some(in_expr) = in_expr {
-                        let subquery_col_names = subquery_plan.schema().names();
+                        let subquery_col_names = subquery_schema.names();
                         let [output_col] = subquery_col_names.as_slice() else {
                             return Err(DaftError::ValueError(format!("Expected IN subquery to have one output column, received: {}", subquery_col_names.len())));
                         };
