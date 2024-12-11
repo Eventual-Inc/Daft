@@ -12,14 +12,14 @@ typetag = {workspace = true}
 
 [features]
 python = [
-  "dep:pyo3",
   "common-daft-config/python",
   "common-display/python",
   "common-error/python",
   "common-file-formats/python",
   "common-py-serde/python",
   "daft-dsl/python",
-  "daft-schema/python"
+  "daft-schema/python",
+  "dep:pyo3"
 ]
 
 [lints]
