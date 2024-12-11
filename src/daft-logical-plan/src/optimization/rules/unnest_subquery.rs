@@ -505,16 +505,16 @@ fn pull_up_correlated_cols(
 
         // ops that can trivially pull up correlated cols
         LogicalPlan::Distinct(..)
-        | LogicalPlan::Limit(..)
         | LogicalPlan::MonotonicallyIncreasingId(..)
         | LogicalPlan::Repartition(..)
-        | LogicalPlan::Sample(..)
         | LogicalPlan::Union(..)
         | LogicalPlan::Intersect(..)
         | LogicalPlan::Sort(..) => Ok((plan.clone(), subquery_on, outer_on)),
 
         // ops that cannot pull up correlated columns
         LogicalPlan::ActorPoolProject(..)
+        | LogicalPlan::Limit(..)
+        | LogicalPlan::Sample(..)
         | LogicalPlan::Source(..)
         | LogicalPlan::Explode(..)
         | LogicalPlan::Unpivot(..)
