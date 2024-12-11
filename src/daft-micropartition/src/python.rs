@@ -1,6 +1,14 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::HashMap,
+    future,
+    sync::{Arc, Mutex},
+};
 
 use common_error::DaftResult;
+use common_partitioning::{
+    Partition, PartitionBatch, PartitionBatchRef, PartitionId, PartitionRef, PartitionSet,
+    PartitionSetCache, PartitionSetRef,
+};
 use daft_core::{
     join::JoinSide,
     prelude::*,
@@ -16,6 +24,7 @@ use daft_scan::{
 };
 use daft_stats::{TableMetadata, TableStatistics};
 use daft_table::{python::PyTable, Table};
+use futures::stream::{self, BoxStream};
 use pyo3::{exceptions::PyValueError, prelude::*, types::PyBytes, PyTypeInfo};
 use snafu::ResultExt;
 
@@ -25,7 +34,7 @@ use crate::{
 };
 
 #[pyclass(module = "daft.daft", frozen)]
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct PyMicroPartition {
     inner: Arc<MicroPartition>,
 }
@@ -1047,4 +1056,156 @@ impl From<PyMicroPartition> for Arc<MicroPartition> {
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyMicroPartition>()?;
     Ok(())
+}
+
+impl Partition for PyMicroPartition {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
+        self
+    }
+
+    fn size_bytes(&self) -> DaftResult<Option<usize>> {
+        self.inner.size_bytes()
+    }
+}
+
+/// Rust wrapper around 'daft/runners.partitioning.py:LocalPartitionSet'
+#[derive(Debug, Clone)]
+pub struct PyPartitionSet {
+    pub inner: pyo3::PyObject,
+}
+
+impl PartitionSet<MicroPartition> for PyPartitionSet {
+    fn get_merged_partitions(&self) -> DaftResult<PartitionRef> {
+        unimplemented!("this should only be called in python at the moment")
+    }
+
+    fn get_preview_partitions(
+        &self,
+        _num_rows: usize,
+    ) -> DaftResult<PartitionBatchRef<MicroPartition>> {
+        unimplemented!("this should only be called in python at the moment")
+    }
+
+    fn num_partitions(&self) -> usize {
+        unimplemented!("this should only be called in python at the moment")
+    }
+
+    fn len(&self) -> usize {
+        unimplemented!("this should only be called in python at the moment")
+    }
+
+    fn is_empty(&self) -> bool {
+        unimplemented!("this should only be called in python at the moment")
+    }
+
+    fn size_bytes(&self) -> DaftResult<usize> {
+        unimplemented!("this should only be called in python at the moment")
+    }
+
+    fn has_partition(&self, _idx: &PartitionId) -> bool {
+        unimplemented!("this should only be called in python at the moment")
+    }
+
+    fn delete_partition(&mut self, _idx: &PartitionId) -> DaftResult<()> {
+        unimplemented!("this should only be called in python at the moment")
+    }
+
+    fn set_partition(
+        &mut self,
+        _idx: PartitionId,
+        _part: &dyn PartitionBatch<MicroPartition>,
+    ) -> DaftResult<()> {
+        unimplemented!("this should only be called in python at the moment")
+    }
+
+    fn get_partition(&self, _idx: &PartitionId) -> DaftResult<PartitionBatchRef<MicroPartition>> {
+        unimplemented!("this should only be called in python at the moment")
+    }
+
+    fn into_partition_stream(
+        self: Arc<Self>,
+    ) -> BoxStream<'static, DaftResult<Arc<MicroPartition>>> {
+        // daft/runners.partitioning.py:LocalPartitionSet::values
+        let out: DaftResult<_> = Python::with_gil(|py| {
+            // list[MaterializedResult[MicroPartition]]
+            let values = self.inner.call_method0(py, pyo3::intern!(py, "values"))?;
+            // Vec<MaterializedResult[MicroPartition]>
+            let values = values.extract::<Vec<PyObject>>(py)?;
+            let values = values
+                .into_iter()
+                .map(|v| {
+                    let mp = v
+                        // MaterializedResult[MicroPartition]
+                        .call_method0(py, pyo3::intern!(py, "micropartition"))?
+                        // MicroPartition (Python)
+                        .getattr(py, pyo3::intern!(py, "_micropartition"))?
+                        // PyMicroPartition
+                        .extract::<PyMicroPartition>(py)?
+                        // Arc<MicroPartition>
+                        .inner;
+
+                    Ok(mp)
+                })
+                .collect::<Vec<DaftResult<_>>>();
+
+            Ok(values)
+        });
+        match out {
+            Err(e) => Box::pin(stream::once(future::ready(Err(e)))),
+            Ok(out) => Box::pin(stream::iter(out)),
+        }
+    }
+}
+
+/// Rust wrapper around 'daft/runners.partitioning.py:PartitionSetCache'
+#[derive(Debug, Clone)]
+pub struct PyPartitionSetCache {
+    pub inner: pyo3::PyObject,
+}
+
+impl PyPartitionSetCache {
+    pub fn new(inner: pyo3::PyObject) -> Self {
+        Self { inner }
+    }
+}
+
+impl PartitionSetCache<MicroPartition> for PyPartitionSetCache {
+    fn get_partition_set(&self, pset_id: &str) -> Option<PartitionSetRef<MicroPartition>> {
+        let res: DaftResult<_> = pyo3::Python::with_gil(|py| {
+            let pset_id: String = pset_id.to_string();
+            // PartitionCacheEntry (Python)
+            let pset_cache_entry =
+                self.inner
+                    .call_method1(py, pyo3::intern!(py, "get_partition_set"), (pset_id,))?;
+            // PartitionSet[MicroPartition] (Python)
+            let pset = pset_cache_entry.getattr(py, pyo3::intern!(py, "value"))?;
+            Ok(Arc::new(PyPartitionSet { inner: pset }) as Arc<dyn PartitionSet<MicroPartition>>)
+        });
+
+        res.ok()
+    }
+
+    fn get_all_partition_sets(&self) -> HashMap<Arc<str>, PartitionSetRef<MicroPartition>> {
+        unimplemented!("this should only be called in python at the moment")
+    }
+
+    fn put_partition_set(
+        &self,
+        _pset_id: PartitionId,
+        _pset: PartitionSetRef<MicroPartition>,
+    ) -> DaftResult<()> {
+        unimplemented!("this should only be called in python at the moment")
+    }
+
+    fn rm(&self, _pset_id: &str) {
+        unimplemented!("this should only be called in python at the moment")
+    }
+
+    fn clear(&self) {
+        unimplemented!("this should only be called in python at the moment")
+    }
 }

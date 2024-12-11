@@ -18,8 +18,7 @@ use tokio_util::sync::CancellationToken;
 use {
     common_daft_config::PyDaftExecutionConfig,
     daft_logical_plan::PyLogicalPlanBuilder,
-    daft_micropartition::partitioning::PyPartitionSetCache,
-    daft_micropartition::python::PyMicroPartition,
+    daft_micropartition::python::{PyMicroPartition, PyPartitionSetCache},
     pyo3::{pyclass, pymethods, IntoPy, PyObject, PyRef, PyRefMut, PyResult, Python},
 };
 
