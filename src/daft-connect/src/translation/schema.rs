@@ -1,4 +1,3 @@
-use daft_micropartition::partitioning::InMemoryPartitionSetCache;
 use spark_connect::{
     data_type::{Kind, Struct, StructField},
     DataType, Relation,
@@ -6,7 +5,7 @@ use spark_connect::{
 use tracing::warn;
 
 use super::Translator;
-use crate::translation::to_spark_datatype;
+use crate::{pset_cache::InMemoryPartitionSetCache, translation::to_spark_datatype};
 
 #[tracing::instrument(skip_all)]
 pub async fn relation_to_schema(input: Relation) -> eyre::Result<DataType> {

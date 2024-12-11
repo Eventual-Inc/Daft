@@ -1,8 +1,4 @@
-use std::{
-    any::Any,
-    collections::HashMap,
-    sync::{Arc, RwLock},
-};
+use std::{any::Any, collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
 use futures::stream::BoxStream;
@@ -49,10 +45,8 @@ pub trait PartitionSet<T: Partition>: std::fmt::Debug + Send + Sync {
     fn get_merged_partitions(&self) -> DaftResult<PartitionRef>;
     /// Get a preview of the micropartitions
     fn get_preview_partitions(&self, num_rows: usize) -> DaftResult<PartitionBatchRef<T>>;
-
     /// Number of partitions
     fn num_partitions(&self) -> usize;
-
     fn len(&self) -> usize;
     /// Check if the partition set is empty
     fn is_empty(&self) -> bool;
@@ -88,56 +82,9 @@ pub type PartitionSetRef<T> = Arc<dyn PartitionSet<T>>;
 /// It is important to note that the methods do not take `&mut self` but instead take `&self`.
 /// So it is up to the implementation to manage any interior mutability.
 pub trait PartitionSetCache<T: Partition>: std::fmt::Debug + Send + Sync {
-    fn get_partition_set(&self, pset_id: &str) -> Option<PartitionSetRef<T>>;
-    fn get_all_partition_sets(&self) -> HashMap<PartitionId, PartitionSetRef<T>>;
+    fn get_partition_set(&self, pset_id: &str) -> DaftResult<Option<PartitionSetRef<T>>>;
+    fn get_all_partition_sets(&self) -> DaftResult<HashMap<PartitionId, PartitionSetRef<T>>>;
     fn put_partition_set(&self, pset_id: PartitionId, pset: PartitionSetRef<T>) -> DaftResult<()>;
-    fn rm(&self, pset_id: &str);
-    fn clear(&self);
+    fn rm(&self, pset_id: &str) -> DaftResult<()>;
+    fn clear(&self) -> DaftResult<()>;
 }
-
-#[derive(Debug, Default, Clone)]
-/// An in memory cache for partition sets
-/// This is a simple in memory cache that stores partition sets in a HashMap.
-/// TODO: this should drop partitions when the reference count for the partition id drops to 0
-pub struct InMemoryPartitionSetCache<T: Partition> {
-    uuid_to_partition_set: Arc<RwLock<HashMap<PartitionId, PartitionSetRef<T>>>>,
-}
-
-impl<T: Partition> InMemoryPartitionSetCache<T> {
-    pub fn new() -> Self {
-        Self {
-            uuid_to_partition_set: Arc::new(RwLock::new(HashMap::new())),
-        }
-    }
-}
-
-impl<T: Partition> PartitionSetCache<T> for InMemoryPartitionSetCache<T> {
-    fn get_partition_set(&self, pset_id: &str) -> Option<PartitionSetRef<T>> {
-        let lock = self.uuid_to_partition_set.read().unwrap();
-        let map = lock.get(pset_id);
-        map.cloned()
-    }
-
-    fn get_all_partition_sets(&self) -> HashMap<Arc<str>, PartitionSetRef<T>> {
-        let lock = self.uuid_to_partition_set.read().unwrap();
-        lock.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
-    }
-
-    fn put_partition_set(&self, pset_id: PartitionId, pset: PartitionSetRef<T>) -> DaftResult<()> {
-        let mut lock = self.uuid_to_partition_set.write().unwrap();
-        lock.insert(pset_id, pset);
-        Ok(())
-    }
-
-    fn rm(&self, pset_id: &str) {
-        let mut lock = self.uuid_to_partition_set.write().unwrap();
-        lock.remove(pset_id);
-    }
-
-    fn clear(&self) {
-        let mut lock = self.uuid_to_partition_set.write().unwrap();
-        lock.clear();
-    }
-}
-
-pub type PartitionSetCacheRef<T> = Arc<dyn PartitionSetCache<T>>;

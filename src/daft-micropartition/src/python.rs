@@ -1174,22 +1174,32 @@ impl PyPartitionSetCache {
 }
 
 impl PartitionSetCache<MicroPartition> for PyPartitionSetCache {
-    fn get_partition_set(&self, pset_id: &str) -> Option<PartitionSetRef<MicroPartition>> {
-        let res: DaftResult<_> = pyo3::Python::with_gil(|py| {
+    fn get_partition_set(
+        &self,
+        pset_id: &str,
+    ) -> DaftResult<Option<PartitionSetRef<MicroPartition>>> {
+        pyo3::Python::with_gil(|py| {
             let pset_id: String = pset_id.to_string();
             // PartitionCacheEntry (Python)
             let pset_cache_entry =
                 self.inner
-                    .call_method1(py, pyo3::intern!(py, "get_partition_set"), (pset_id,))?;
+                    .call_method1(py, pyo3::intern!(py, "get_partition_set"), (pset_id,));
+            if pset_cache_entry.is_err() {
+                return Ok(None);
+            }
             // PartitionSet[MicroPartition] (Python)
-            let pset = pset_cache_entry.getattr(py, pyo3::intern!(py, "value"))?;
-            Ok(Arc::new(PyPartitionSet { inner: pset }) as Arc<dyn PartitionSet<MicroPartition>>)
-        });
-
-        res.ok()
+            let pset = pset_cache_entry
+                .unwrap()
+                .getattr(py, pyo3::intern!(py, "value"))?;
+            Ok(Some(
+                Arc::new(PyPartitionSet { inner: pset }) as Arc<dyn PartitionSet<MicroPartition>>
+            ))
+        })
     }
 
-    fn get_all_partition_sets(&self) -> HashMap<Arc<str>, PartitionSetRef<MicroPartition>> {
+    fn get_all_partition_sets(
+        &self,
+    ) -> DaftResult<HashMap<Arc<str>, PartitionSetRef<MicroPartition>>> {
         unimplemented!("this should only be called in python at the moment")
     }
 
@@ -1201,11 +1211,11 @@ impl PartitionSetCache<MicroPartition> for PyPartitionSetCache {
         unimplemented!("this should only be called in python at the moment")
     }
 
-    fn rm(&self, _pset_id: &str) {
+    fn rm(&self, _pset_id: &str) -> DaftResult<()> {
         unimplemented!("this should only be called in python at the moment")
     }
 
-    fn clear(&self) {
+    fn clear(&self) -> DaftResult<()> {
         unimplemented!("this should only be called in python at the moment")
     }
 }

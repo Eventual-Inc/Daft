@@ -1,7 +1,8 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use daft_micropartition::{partitioning::InMemoryPartitionSetCache, MicroPartition};
 use uuid::Uuid;
+
+use crate::pset_cache::InMemoryPartitionSetCache;
 
 pub struct Session {
     /// so order is preserved, and so we can efficiently do a prefix search
@@ -11,7 +12,7 @@ pub struct Session {
 
     id: String,
     server_side_session_id: String,
-    pub(crate) pset_cache: Arc<InMemoryPartitionSetCache<MicroPartition>>,
+    pub(crate) pset_cache: Arc<InMemoryPartitionSetCache>,
 }
 
 impl Session {

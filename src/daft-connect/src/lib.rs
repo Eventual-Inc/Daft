@@ -30,6 +30,8 @@ use crate::session::Session;
 mod config;
 mod err;
 mod op;
+mod pset_cache;
+
 mod session;
 mod translation;
 pub mod util;

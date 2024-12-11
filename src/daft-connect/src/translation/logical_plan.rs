@@ -1,8 +1,9 @@
 use daft_logical_plan::LogicalPlanBuilder;
-use daft_micropartition::{partitioning::InMemoryPartitionSetCache, MicroPartition};
 use eyre::{bail, Context};
 use spark_connect::{relation::RelType, Limit, Relation};
 use tracing::warn;
+
+use crate::pset_cache::InMemoryPartitionSetCache;
 
 mod aggregate;
 mod local_relation;
@@ -13,10 +14,10 @@ mod to_df;
 mod with_columns;
 
 pub struct Translator<'a> {
-    pub pset_cache: &'a InMemoryPartitionSetCache<MicroPartition>,
+    pub pset_cache: &'a InMemoryPartitionSetCache,
 }
 impl Translator<'_> {
-    pub fn new(pset_cache: &InMemoryPartitionSetCache<MicroPartition>) -> Translator {
+    pub fn new(pset_cache: &InMemoryPartitionSetCache) -> Translator {
         Translator { pset_cache }
     }
 

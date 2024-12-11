@@ -107,6 +107,10 @@ pub fn physical_plan_to_pipeline(
         LocalPhysicalPlan::InMemoryScan(InMemoryScan { info, .. }) => {
             let materialized_pset = pset_cache
                 .get_partition_set(&info.cache_key)
+                .map_err(|e| crate::Error::PipelineExecutionError {
+                    source: e,
+                    node_name: "InMemoryScan".to_string(),
+                })?
                 .unwrap_or_else(|| panic!("Cache key not found: {:?}", info.cache_key));
 
             InMemorySource::new(materialized_pset, info.source_schema.clone())
