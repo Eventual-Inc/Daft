@@ -1,6 +1,7 @@
 name: run-cluster-2
 
 on:
+  pull_request:
   push:
   workflow_dispatch:
     inputs:
