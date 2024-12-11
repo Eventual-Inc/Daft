@@ -116,6 +116,27 @@ impl BooleanArray {
         )
         .unwrap()
     }
+
+    pub fn from_fallible_iter<A, I>(name: A, iter: I) -> DaftResult<Self>
+    where
+        A: AsRef<str>,
+        I: Iterator<Item = DaftResult<Option<bool>>>,
+    {
+        let name = name.as_ref();
+        let mut mutable_boolean_array = arrow2::array::MutableBooleanArray::new();
+        let (_, upper) = iter.size_hint();
+        if let Some(upper) = upper {
+            mutable_boolean_array.reserve(upper);
+        }
+        for value in iter {
+            let value = value?;
+            mutable_boolean_array.push(value);
+        }
+        let boolean_array =
+            arrow2::array::BooleanArray::from_trusted_len_iter(mutable_boolean_array.iter())
+                .boxed();
+        Ok(Self::new(Field::new(name, DataType::Boolean).into(), boolean_array).unwrap())
+    }
 }
 
 impl<T> DataArray<T>

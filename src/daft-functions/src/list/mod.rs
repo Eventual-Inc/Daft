@@ -1,4 +1,5 @@
 mod chunk;
+mod contains;
 mod count;
 mod explode;
 mod get;
@@ -13,6 +14,7 @@ mod unique_count;
 mod value_counts;
 
 pub use chunk::{list_chunk as chunk, ListChunk};
+pub use contains::{list_contains as contains, ListContains};
 pub use count::{list_count as count, ListCount};
 pub use explode::{explode, Explode};
 pub use get::{list_get as get, ListGet};

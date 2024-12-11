@@ -5,6 +5,7 @@ use crate::{
     datatypes::{DataType, UInt64Array, Utf8Array},
     prelude::CountMode,
     series::{IntoSeries, Series},
+    with_match_comparable_daft_types,
 };
 
 impl Series {
@@ -173,6 +174,109 @@ impl Series {
             dt => Err(DaftError::TypeError(format!(
                 "List sort not implemented for {}",
                 dt
+            ))),
+        }
+    }
+
+    /// Given a series of `List` or `FixedSizeList`, return a boolean series
+    /// indicating whether the list contains a value.
+    ///
+    /// The "contains" series that is being checked must be of length 1 or of
+    /// the same length as the series being checked against.
+    ///
+    /// If it is of length 1, it will be broadcasted to the length of the
+    /// series being checked against. This is useful to see if the lists in the
+    /// original series contain a singular value.
+    ///
+    /// If it is of the same length as the series being checked against, each
+    /// value in the "contains" list will be checked against the corresponding
+    /// value in the original list.
+    ///
+    /// # Example
+    /// ```txt
+    /// original: [[1,2,3], [4,5,6], [1,3,5]]
+    /// contains: 1
+    /// result: [true, false, true]
+    /// ```
+    ///
+    /// In the above case, "contains" will be broadcasted to `[1, 1, 1]`.
+    ///
+    /// ```txt
+    /// original: [[1,2,3], [4,5,6], [1,3,5]]
+    /// contains: [5, 3, 1]
+    /// result: [false, false, true]
+    /// ```
+    pub fn list_contains(&self, contains: &Self) -> DaftResult<Self> {
+        let self_length = self.len();
+        let contains = match contains.len() {
+            1 => contains.broadcast(self_length)?,
+            length if length == self_length => contains.clone(),
+            _ => return Err(DaftError::TypeError(format!(
+                "The contains series must be of length 1 or of the same length as the series being checked against; series len: {}, contains len: {}",
+                self.len(),
+                contains.len(),
+            ))),
+        };
+        let contains_dt = contains.data_type();
+
+        macro_rules! list_contains_impl {
+            (
+                $internal_dt:expr
+                , $downcast_to_list_function:ident
+                $(,)?
+            ) => {{
+                let internal_dt = $internal_dt.as_ref();
+                if internal_dt != contains_dt {
+                    return Err(DaftError::TypeError(format!(
+                        "Cannot determine if a list of type {} contains a value of type {}",
+                        $internal_dt, contains_dt,
+                    )));
+                };
+
+                let list = self.$downcast_to_list_function()?;
+                with_match_comparable_daft_types!(internal_dt, |$T| {
+                    type DataType = $T;
+                    type ArrayType = <DataType as DaftDataType>::ArrayType;
+
+                    let contains = contains.downcast::<ArrayType>()?;
+                    let iter = list
+                        .into_iter()
+                        .zip(contains)
+                        .map(|(sub_series, value)| -> DaftResult<_> {
+                            let (sub_series, contains_value) = match sub_series.zip(value) {
+                                Some(zipped) => zipped,
+                                None => return Ok(false),
+                            };
+
+                            let sub_list = sub_series.downcast::<ArrayType>()?;
+                            let mut found = false;
+                            for element in sub_list.into_iter().flatten() {
+                                if element == contains_value {
+                                    found = true;
+                                    break;
+                                }
+                            }
+                            Ok(found)
+                        })
+                        .map(Some)
+                        .map(Option::transpose);
+
+                    Ok(
+                        crate::datatypes::BooleanArray::from_fallible_iter(self.name(), iter)?
+                            .into_series(),
+                    )
+                })
+            }};
+        }
+
+        match self.data_type() {
+            DataType::List(internal_dt) => list_contains_impl!(internal_dt, list),
+            DataType::FixedSizeList(internal_dt, _) => {
+                list_contains_impl!(internal_dt, fixed_size_list)
+            }
+            dt => Err(DaftError::TypeError(format!(
+                "List contains not implemented for {}",
+                dt,
             ))),
         }
     }

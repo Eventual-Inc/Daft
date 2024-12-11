@@ -51,6 +51,7 @@ pub fn register(parent: &Bound<PyModule>) -> PyResult<()> {
     add!(image::image_resize);
 
     add!(list::list_chunk);
+    add!(list::list_contains);
     add!(list::list_count);
     add!(list::explode);
     add!(list::list_get);
