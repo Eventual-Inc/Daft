@@ -420,13 +420,44 @@ impl JoinGraphBuilder {
             // TODO(desmond): There are potentially more reorderable nodes. For example, we can move repartitions around.
             _ => {
                 // This is an unreorderable node. All unresolved columns coming out of this node should be marked as resolved.
-                for (name, _, done) in self.join_conds_to_resolve.iter_mut() {
-                    if schema.has_field(name) {
-                        *done = true;
-                    }
-                }
                 // TODO(desmond): At this point we should perform a fresh join reorder optimization starting from this
                 // node as the root node. We can do this once we add the optimizer rule.
+                let mut projections = vec![];
+                let mut needs_projection = false;
+                let mut seen_names = HashSet::new();
+                for (name, _, done) in self.join_conds_to_resolve.iter_mut() {
+                    if schema.has_field(name) && !*done && !seen_names.contains(name) {
+                        if let Some(final_name) = self.final_name_map.get(name) {
+                            let final_name = final_name.name().to_string();
+                            if final_name != *name {
+                                needs_projection = true;
+                                projections.push(col(name.clone()).alias(final_name));
+                            } else {
+                                projections.push(col(name.clone()));
+                            }
+                        } else {
+                            projections.push(col(name.clone()));
+                        }
+                        seen_names.insert(name);
+                    }
+                }
+                // Apply projections and return the new plan as the relation for the appropriate join conditions.
+                println!("projections: {projections:?}");
+                let projected_plan = if needs_projection {
+                    let projected_plan = LogicalPlanBuilder::from(plan.clone())
+                        .select(projections)
+                        .expect("Computed projections could not be applied to relation")
+                        .build();
+                    Arc::new(Arc::unwrap_or_clone(projected_plan).with_materialized_stats())
+                } else {
+                    plan.clone()
+                };
+                for (name, node, done) in self.join_conds_to_resolve.iter_mut() {
+                    if schema.has_field(name) && !*done {
+                        *done = true;
+                        *node = projected_plan.clone();
+                    }
+                }
             }
         }
     }
@@ -445,8 +476,8 @@ mod tests {
     use super::JoinGraphBuilder;
     use crate::{
         optimization::rules::{
-            reorder_joins::greedy_join_order::compute_join_order, EnrichWithStats,
-            MaterializeScans, OptimizerRule,
+            reorder_joins::greedy_join_order::GreedyJoinOrderer, EnrichWithStats, MaterializeScans,
+            OptimizerRule,
         },
         test::{
             dummy_scan_node_with_pushdowns, dummy_scan_operator, dummy_scan_operator_with_size,
@@ -472,15 +503,11 @@ mod tests {
             Pushdowns::default(),
         );
         let scan_c = dummy_scan_node_with_pushdowns(
-            dummy_scan_operator_with_size(vec![Field::new("c", DataType::Int64)], Some(100)),
+            dummy_scan_operator_with_size(vec![Field::new("c_prime", DataType::Int64)], Some(100)),
             Pushdowns::default(),
-        );
-        // let scan_c = dummy_scan_node_with_pushdowns(
-        //     dummy_scan_operator_with_size(vec![Field::new("c_prime", DataType::Int64)], Some(100)),
-        //     Pushdowns::default(),
-        // )
-        // .select(vec![col("c_prime").alias("c")])
-        // .unwrap();
+        )
+        .select(vec![col("c_prime").alias("c")])
+        .unwrap();
         let scan_d = dummy_scan_node_with_pushdowns(
             dummy_scan_operator_with_size(vec![Field::new("d", DataType::Int64)], Some(100)),
             Pushdowns::default(),
@@ -521,7 +548,8 @@ mod tests {
         assert!(join_graph.contains_edge("a#Source(a) <-> b#Source(b)"));
         assert!(join_graph.contains_edge("c#Source(c_prime) <-> d#Source(d)"));
         assert!(join_graph.contains_edge("a#Source(a) <-> d#Source(d)"));
-        println!("result: {:?}", compute_join_order(&mut join_graph));
+        let plan = GreedyJoinOrderer::compute_join_order(&mut join_graph).unwrap();
+        println!("{}", plan.repr_ascii(false))
     }
 
     #[test]
