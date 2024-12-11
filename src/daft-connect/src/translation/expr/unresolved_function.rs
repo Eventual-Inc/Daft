@@ -1,4 +1,5 @@
 use daft_core::count_mode::CountMode;
+use daft_schema::dtype::DataType;
 use eyre::{bail, Context};
 use spark_connect::expression::UnresolvedFunction;
 
@@ -79,7 +80,15 @@ pub fn handle_count(arguments: Vec<daft_dsl::ExprRef>) -> eyre::Result<daft_dsl:
 
     let [arg] = arguments;
 
-    let count = arg.count(CountMode::All);
+    let count = if arg == daft_dsl::lit(1_i32) {
+        // Count(Literal(1)) is handled differently by Daft. Generally speaking though, what
+        // this means is we are counting the number of rows in the table.
+        daft_dsl::col("*")
+            .count(CountMode::All)
+            .cast(&DataType::Int64)
+    } else {
+        arg.count(CountMode::All).cast(&DataType::Int64)
+    };
 
     Ok(count)
 }
