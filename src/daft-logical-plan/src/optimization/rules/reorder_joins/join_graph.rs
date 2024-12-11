@@ -170,10 +170,15 @@ impl JoinGraph {
         Ok(plan.build())
     }
 
-    // /// Test helper function to get the number of edges that the current graph contains.
-    // pub(crate) fn num_edges(&self) -> usize {
-    //     self.edges.len()
-    // }
+    /// Test helper function to get the number of edges that the current graph contains.
+    pub(crate) fn num_edges(&self) -> usize {
+        let mut num_edges = 0;
+        for (_, edges) in &self.adj_list.0 {
+            num_edges += edges.len();
+        }
+        // Each edge is bidirectional, so we divide by 2 to get the correct number of edges.
+        num_edges / 2
+    }
 
     /// Test helper function to check that all relations in this graph are connected.
     pub(crate) fn fully_connected(&self) -> bool {
@@ -513,7 +518,7 @@ mod tests {
         // - a <-> b
         // - c_prime <-> d
         // - a <-> d
-        // assert!(join_graph.num_edges() == 3);
+        assert!(join_graph.num_edges() == 3);
         assert!(join_graph.contains_edge("a#Source(a) <-> b#Source(b)"));
         assert!(join_graph.contains_edge("c#Source(c_prime) <-> d#Source(d)"));
         assert!(join_graph.contains_edge("a#Source(a) <-> d#Source(d)"));
@@ -576,7 +581,7 @@ mod tests {
         // - a <-> b
         // - c_prime <-> d
         // - b <-> d
-        // assert!(join_graph.num_edges() == 3);
+        assert!(join_graph.num_edges() == 3);
         assert!(join_graph.contains_edge("a#Source(a) <-> b#Source(b)"));
         assert!(join_graph.contains_edge("c#Source(c_prime) <-> d#Source(d)"));
         assert!(join_graph.contains_edge("b#Source(b) <-> d#Source(d)"));
@@ -631,7 +636,7 @@ mod tests {
         // There should be edges between:
         // - a <-> b
         // - a <-> c
-        // assert!(join_graph.num_edges() == 2);
+        assert!(join_graph.num_edges() == 2);
         assert!(join_graph.contains_edge("a_beta#Source(a) <-> b#Source(b)"));
         assert!(join_graph.contains_edge("a_beta#Source(a) <-> c#Source(c)"));
     }
@@ -693,7 +698,7 @@ mod tests {
         // - a <-> b
         // - c_prime <-> d
         // - a <-> d
-        // assert!(join_graph.num_edges() == 3);
+        assert!(join_graph.num_edges() == 3);
         assert!(join_graph.contains_edge("a#Source(a) <-> b#Source(b)"));
         assert!(join_graph.contains_edge("c#Source(c_prime) <-> d#Source(d)"));
         assert!(join_graph.contains_edge("a#Source(a) <-> d#Source(d)"));
@@ -778,7 +783,7 @@ mod tests {
         // - a <-> b
         // - c_prime <-> d
         // - a <-> d
-        // assert!(join_graph.num_edges() == 3);
+        assert!(join_graph.num_edges() == 3);
         assert!(join_graph.contains_edge("a#Source(a) <-> b#Source(b)"));
         assert!(join_graph.contains_edge("c#Source(c_prime) <-> d#Source(d)"));
         assert!(join_graph.contains_edge("a#Source(a) <-> d#Source(d)"));
@@ -864,7 +869,7 @@ mod tests {
         // - a <-> b
         // - c_prime <-> d
         // - a <-> d
-        // assert!(join_graph.num_edges() == 3);
+        assert!(join_graph.num_edges() == 3);
         assert!(join_graph.contains_edge("a#Aggregate(a) <-> b#Source(b)"));
         assert!(join_graph.contains_edge("c#Source(c_prime) <-> d#Source(d)"));
         assert!(join_graph.contains_edge("a#Aggregate(a) <-> d#Source(d)"));
