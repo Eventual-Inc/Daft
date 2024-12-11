@@ -601,7 +601,9 @@ impl Not for &BooleanArray {
 impl DaftLogical<&Self> for BooleanArray {
     type Output = DaftResult<Self>;
     fn and(&self, rhs: &Self) -> Self::Output {
-        // keep all valid false values when and with null
+        // When performing a logical AND with a NULL value:
+        // - If the non-null value is false, the result is false (not null)
+        // - If the non-null value is true, the result is null
         fn and_with_null(name: &str, arr: &BooleanArray) -> BooleanArray {
             let values = arr.as_arrow().values();
 
@@ -672,7 +674,9 @@ impl DaftLogical<&Self> for BooleanArray {
     }
 
     fn or(&self, rhs: &Self) -> Self::Output {
-        // keep all valid true values when or with null
+        // When performing a logical OR with a NULL value:
+        // - If the non-null value is false, the result is null
+        // - If the non-null value is true, the result is true (not null)
         fn or_with_null(name: &str, arr: &BooleanArray) -> BooleanArray {
             let values = arr.as_arrow().values();
 
