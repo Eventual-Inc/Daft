@@ -6,9 +6,12 @@ use arrow2::io::ipc::{
 };
 use daft_core::series::Series;
 use daft_logical_plan::LogicalPlanBuilder;
-use daft_micropartition::partitioning::{
-    InMemoryPartitionBatch, InMemoryPartitionSet, InMemoryPartitionSetCache, PartitionSet,
-    PartitionSetCache,
+use daft_micropartition::{
+    partitioning::{
+        InMemoryPartitionSetCache, MicroPartitionBatch, MicroPartitionSet, PartitionSet,
+        PartitionSetCache,
+    },
+    MicroPartition,
 };
 use daft_schema::dtype::DaftDataType;
 use daft_table::Table;
@@ -19,7 +22,7 @@ use crate::translation::{deser_spark_datatype, to_daft_datatype};
 
 pub fn local_relation(
     plan: spark_connect::LocalRelation,
-    pset_cache: &InMemoryPartitionSetCache,
+    pset_cache: &InMemoryPartitionSetCache<MicroPartition>,
 ) -> eyre::Result<LogicalPlanBuilder> {
     let spark_connect::LocalRelation { data, schema } = plan;
 
@@ -139,9 +142,9 @@ pub fn local_relation(
         tables
     };
 
-    let batch: InMemoryPartitionBatch = tables.try_into()?;
+    let batch: MicroPartitionBatch = tables.try_into()?;
 
-    let mut pset = InMemoryPartitionSet::default();
+    let mut pset = MicroPartitionSet::default();
 
     let partition_id: Arc<str> = uuid::Uuid::new_v4().to_string().into();
     let pset_id: Arc<str> = uuid::Uuid::new_v4().to_string().into();

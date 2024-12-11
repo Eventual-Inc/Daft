@@ -4,7 +4,7 @@
 //! and creates new columns from expressions. Example: `df.select(col("id").alias("my_number"))`
 
 use daft_logical_plan::LogicalPlanBuilder;
-use daft_micropartition::partitioning::InMemoryPartitionSetCache;
+use daft_micropartition::{partitioning::InMemoryPartitionSetCache, MicroPartition};
 use eyre::bail;
 use spark_connect::Project;
 
@@ -12,7 +12,7 @@ use crate::translation::{to_daft_expr, to_logical_plan};
 
 pub fn project(
     project: Project,
-    pset_cache: &InMemoryPartitionSetCache,
+    pset_cache: &InMemoryPartitionSetCache<MicroPartition>,
 ) -> eyre::Result<LogicalPlanBuilder> {
     let Project { input, expressions } = project;
 

@@ -1,12 +1,12 @@
 use daft_logical_plan::LogicalPlanBuilder;
-use daft_micropartition::partitioning::InMemoryPartitionSetCache;
+use daft_micropartition::{partitioning::InMemoryPartitionSetCache, MicroPartition};
 use eyre::{bail, WrapErr};
 
 use crate::translation::to_logical_plan;
 
 pub fn to_df(
     to_df: spark_connect::ToDf,
-    pset_cache: &InMemoryPartitionSetCache,
+    pset_cache: &InMemoryPartitionSetCache<MicroPartition>,
 ) -> eyre::Result<LogicalPlanBuilder> {
     let spark_connect::ToDf {
         input,

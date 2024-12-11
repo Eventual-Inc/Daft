@@ -17,6 +17,11 @@ pub enum SourceInfo {
     PlaceHolder(PlaceHolderInfo),
 }
 
+/// Information about an in-memory source
+///
+/// Unlike other systems, we don't directly store the data in memory, but rather a cache key that can be used to retrieve the data.
+/// This makes it much more efficient to (de)serialize the plan.
+/// The cache key is a unique identifier for the data in the cache. It is only during execution that the cache is actually accessed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InMemoryInfo {
     pub source_schema: SchemaRef,

@@ -111,7 +111,7 @@ impl NativeExecutor {
 
     pub fn run(
         &self,
-        pset_cache: impl PartitionSetCache,
+        pset_cache: impl PartitionSetCache<MicroPartition>,
         cfg: Arc<DaftExecutionConfig>,
         results_buffer_size: Option<usize>,
     ) -> DaftResult<ExecutionEngineResult> {
@@ -236,7 +236,7 @@ impl IntoIterator for ExecutionEngineResult {
 
 pub fn run_local(
     physical_plan: &LocalPhysicalPlan,
-    pset_cache: impl PartitionSetCache,
+    pset_cache: impl PartitionSetCache<MicroPartition>,
     cfg: Arc<DaftExecutionConfig>,
     results_buffer_size: Option<usize>,
     cancel: CancellationToken,

@@ -1,5 +1,5 @@
 use daft_logical_plan::LogicalPlanBuilder;
-use daft_micropartition::partitioning::InMemoryPartitionSetCache;
+use daft_micropartition::{partitioning::InMemoryPartitionSetCache, MicroPartition};
 use eyre::bail;
 use spark_connect::{expression::ExprType, Expression};
 
@@ -7,7 +7,7 @@ use crate::translation::{to_daft_expr, to_logical_plan};
 
 pub fn with_columns(
     with_columns: spark_connect::WithColumns,
-    pset_cache: &InMemoryPartitionSetCache,
+    pset_cache: &InMemoryPartitionSetCache<MicroPartition>,
 ) -> eyre::Result<LogicalPlanBuilder> {
     let spark_connect::WithColumns { input, aliases } = with_columns;
 

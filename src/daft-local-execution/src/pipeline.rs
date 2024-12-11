@@ -78,7 +78,7 @@ pub fn viz_pipeline(root: &dyn PipelineNode) -> String {
 
 pub fn physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
-    pset_cache: &(impl PartitionSetCache + ?Sized),
+    pset_cache: &(impl PartitionSetCache<MicroPartition> + ?Sized),
     cfg: &Arc<DaftExecutionConfig>,
 ) -> crate::Result<Box<dyn PipelineNode>> {
     use daft_local_plan::PhysicalScan;

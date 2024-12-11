@@ -1,5 +1,5 @@
 use daft_logical_plan::LogicalPlanBuilder;
-use daft_micropartition::partitioning::InMemoryPartitionSetCache;
+use daft_micropartition::{partitioning::InMemoryPartitionSetCache, MicroPartition};
 use eyre::{bail, Context};
 use spark_connect::{relation::RelType, Limit, Relation};
 use tracing::warn;
@@ -18,7 +18,7 @@ mod with_columns;
 
 pub fn to_logical_plan(
     relation: Relation,
-    pset_cache: &InMemoryPartitionSetCache,
+    pset_cache: &InMemoryPartitionSetCache<MicroPartition>,
 ) -> eyre::Result<LogicalPlanBuilder> {
     if let Some(common) = relation.common {
         if common.origin.is_some() {
@@ -52,7 +52,10 @@ pub fn to_logical_plan(
     }
 }
 
-fn limit(limit: Limit, pset_cache: &InMemoryPartitionSetCache) -> eyre::Result<LogicalPlanBuilder> {
+fn limit(
+    limit: Limit,
+    pset_cache: &InMemoryPartitionSetCache<MicroPartition>,
+) -> eyre::Result<LogicalPlanBuilder> {
     let Limit { input, limit } = limit;
 
     let Some(input) = input else {

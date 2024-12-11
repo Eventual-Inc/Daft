@@ -1,5 +1,5 @@
 use daft_logical_plan::LogicalPlanBuilder;
-use daft_micropartition::partitioning::InMemoryPartitionSetCache;
+use daft_micropartition::{partitioning::InMemoryPartitionSetCache, MicroPartition};
 use eyre::{bail, WrapErr};
 use spark_connect::aggregate::GroupType;
 
@@ -7,7 +7,7 @@ use crate::translation::{to_daft_expr, to_logical_plan};
 
 pub fn aggregate(
     aggregate: spark_connect::Aggregate,
-    pset_cache: &InMemoryPartitionSetCache,
+    pset_cache: &InMemoryPartitionSetCache<MicroPartition>,
 ) -> eyre::Result<LogicalPlanBuilder> {
     let spark_connect::Aggregate {
         input,

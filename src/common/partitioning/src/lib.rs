@@ -6,23 +6,32 @@ use std::{
 
 use common_error::DaftResult;
 use futures::stream::BoxStream;
-/// Marker trait for forward referencing a partition
-pub trait Partition: Send + Sync {
+
+/// Common trait interface for dataset partitioning, defined in this shared crate to avoid circular dependencies.
+/// Acts as a forward reference for concrete partition implementations. _(Specifically the `MicroPartition` type defined in `daft-micropartition`)_
+pub trait Partition: std::fmt::Debug + Send + Sync {
     fn as_any(&self) -> &dyn std::any::Any;
     fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
     fn size_bytes(&self) -> DaftResult<Option<usize>>;
 }
 
+/// An Arc'd reference to a [`Partition`]
 pub type PartitionRef = Arc<dyn Partition>;
 
+/// Key used to identify a partition
 pub type PartitionId = Arc<str>;
-/// A collection of related [`MicroPartition`]'s that can be processed as a single unit.
-pub trait PartitionBatch: Send + Sync {
-    fn partitions(&self) -> Vec<PartitionRef>;
+
+/// A collection of related [`Partitions`]'s that can be processed as a single unit.
+/// All partitions in a batch should have the same schema.
+pub trait PartitionBatch<T: Partition>: std::fmt::Debug + Send + Sync {
+    fn partitions(&self) -> Vec<Arc<T>>;
     fn metadata(&self) -> PartitionMetadata;
-    fn into_partition_stream(self: Arc<Self>) -> BoxStream<'static, DaftResult<PartitionRef>>;
+    /// consume the partition batch and return a stream of partitions
+    fn into_partition_stream(self) -> BoxStream<'static, DaftResult<Arc<T>>>;
 }
-pub type PartitionBatchRef = Arc<dyn PartitionBatch>;
+
+/// An Arc'd reference to a [`PartitionBatch`]
+pub type PartitionBatchRef<T> = Arc<dyn PartitionBatch<T>>;
 
 /// ported over from `daft/runners/partitioning.py`
 // TODO: port over the rest of the functionality
@@ -32,21 +41,15 @@ pub struct PartitionMetadata {
     pub size_bytes: usize,
 }
 
-/// a collection of [`T`]
-///
-/// Since we can have different partition sets such as an in memory, or a distributed partition set, we need to abstract over the partition set.
-/// This trait defines the common operations that can be performed on a partition set.
-#[typetag::serde(tag = "type")]
-pub trait PartitionSet: std::fmt::Debug + Send + Sync {
+/// A partition set is a collection of partition batches.
+/// It is up to the implementation to decide how to store and manage the partition batches.
+/// For example, an in memory partition set could likely be stored as `HashMap<PartitionId, PartitionBatchRef<T>>`.
+pub trait PartitionSet<T: Partition>: std::fmt::Debug + Send + Sync {
     /// Merge all micropartitions into a single micropartition
     fn get_merged_partitions(&self) -> DaftResult<PartitionRef>;
     /// Get a preview of the micropartitions
-    fn get_preview_partitions(&self, num_rows: usize) -> DaftResult<Vec<PartitionRef>>;
-    fn items(&self) -> DaftResult<Vec<(PartitionId, PartitionBatchRef)>>;
-    fn values(&self) -> DaftResult<Vec<PartitionBatchRef>> {
-        let items = self.items()?;
-        Ok(items.into_iter().map(|(_, mp)| mp).collect())
-    }
+    fn get_preview_partitions(&self, num_rows: usize) -> DaftResult<PartitionBatchRef<T>>;
+
     /// Number of partitions
     fn num_partitions(&self) -> usize;
 
@@ -60,30 +63,47 @@ pub trait PartitionSet: std::fmt::Debug + Send + Sync {
     /// Delete a partition
     fn delete_partition(&mut self, idx: &PartitionId) -> DaftResult<()>;
     /// Set a partition
-    fn set_partition(&mut self, idx: PartitionId, part: &dyn PartitionBatch) -> DaftResult<()>;
+    fn set_partition(&mut self, idx: PartitionId, part: &dyn PartitionBatch<T>) -> DaftResult<()>;
     /// Get a partition
-    fn get_partition(&self, idx: &PartitionId) -> DaftResult<PartitionBatchRef>;
+    fn get_partition(&self, idx: &PartitionId) -> DaftResult<PartitionBatchRef<T>>;
 
     /// Consume the partition set and return a stream of partitions
-    fn into_partition_stream(self: Arc<Self>) -> BoxStream<'static, DaftResult<PartitionRef>>;
+    fn into_partition_stream(self: Arc<Self>) -> BoxStream<'static, DaftResult<Arc<T>>>;
 }
 
-pub type PartitionSetRef = Arc<dyn PartitionSet>;
+// An in memory partition set
+#[derive(Debug, Default)]
+pub struct InMemoryPartitionSet<T: Partition> {
+    pub partitions: HashMap<PartitionId, PartitionBatchRef<T>>,
+}
 
-pub trait PartitionSetCache: std::fmt::Debug + Send + Sync {
-    fn get_partition_set(&self, pset_id: &str) -> Option<PartitionSetRef>;
-    fn get_all_partition_sets(&self) -> HashMap<PartitionId, PartitionSetRef>;
-    fn put_partition_set(&self, pset_id: PartitionId, pset: PartitionSetRef) -> DaftResult<()>;
+pub type PartitionSetRef<T> = Arc<dyn PartitionSet<T>>;
+
+/// A PartitionSetCache is a cache for partition sets.
+///
+/// A simple in memory cache is provided by `InMemoryPartitionSetCache`.
+///
+///
+/// Implementations can provide more sophisticated caching strategies.
+/// It is important to note that the methods do not take `&mut self` but instead take `&self`.
+/// So it is up to the implementation to manage any interior mutability.
+pub trait PartitionSetCache<T: Partition>: std::fmt::Debug + Send + Sync {
+    fn get_partition_set(&self, pset_id: &str) -> Option<PartitionSetRef<T>>;
+    fn get_all_partition_sets(&self) -> HashMap<PartitionId, PartitionSetRef<T>>;
+    fn put_partition_set(&self, pset_id: PartitionId, pset: PartitionSetRef<T>) -> DaftResult<()>;
     fn rm(&self, pset_id: &str);
     fn clear(&self);
 }
 
 #[derive(Debug, Default, Clone)]
-pub struct InMemoryPartitionSetCache {
-    uuid_to_partition_set: Arc<RwLock<HashMap<PartitionId, PartitionSetRef>>>,
+/// An in memory cache for partition sets
+/// This is a simple in memory cache that stores partition sets in a HashMap.
+/// TODO: this should drop partitions when the reference count for the partition id drops to 0
+pub struct InMemoryPartitionSetCache<T: Partition> {
+    uuid_to_partition_set: Arc<RwLock<HashMap<PartitionId, PartitionSetRef<T>>>>,
 }
 
-impl InMemoryPartitionSetCache {
+impl<T: Partition> InMemoryPartitionSetCache<T> {
     pub fn new() -> Self {
         Self {
             uuid_to_partition_set: Arc::new(RwLock::new(HashMap::new())),
@@ -91,19 +111,19 @@ impl InMemoryPartitionSetCache {
     }
 }
 
-impl PartitionSetCache for InMemoryPartitionSetCache {
-    fn get_partition_set(&self, pset_id: &str) -> Option<PartitionSetRef> {
+impl<T: Partition> PartitionSetCache<T> for InMemoryPartitionSetCache<T> {
+    fn get_partition_set(&self, pset_id: &str) -> Option<PartitionSetRef<T>> {
         let lock = self.uuid_to_partition_set.read().unwrap();
         let map = lock.get(pset_id);
         map.cloned()
     }
 
-    fn get_all_partition_sets(&self) -> HashMap<Arc<str>, PartitionSetRef> {
+    fn get_all_partition_sets(&self) -> HashMap<Arc<str>, PartitionSetRef<T>> {
         let lock = self.uuid_to_partition_set.read().unwrap();
         lock.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
     }
 
-    fn put_partition_set(&self, pset_id: PartitionId, pset: PartitionSetRef) -> DaftResult<()> {
+    fn put_partition_set(&self, pset_id: PartitionId, pset: PartitionSetRef<T>) -> DaftResult<()> {
         let mut lock = self.uuid_to_partition_set.write().unwrap();
         lock.insert(pset_id, pset);
         Ok(())
@@ -120,7 +140,7 @@ impl PartitionSetCache for InMemoryPartitionSetCache {
     }
 }
 
-pub type PartitionSetCacheRef = Arc<dyn PartitionSetCache>;
+pub type PartitionSetCacheRef<T> = Arc<dyn PartitionSetCache<T>>;
 
 #[cfg(feature = "python")]
 #[derive(Debug, Clone)]
@@ -142,17 +162,20 @@ impl PyPartitionSetCache {
 }
 
 #[cfg(feature = "python")]
-impl PartitionSetCache for PyPartitionSetCache {
-    fn get_partition_set(&self, _pset_id: &str) -> Option<PartitionSetRef> {
-        todo!("this is all handled in python world right now")
-        // let all_part_sets = self.inner.call0("get_all_partition_sets");
-    }
-
-    fn get_all_partition_sets(&self) -> HashMap<Arc<str>, PartitionSetRef> {
+impl<T: Partition> PartitionSetCache<T> for PyPartitionSetCache {
+    fn get_partition_set(&self, _pset_id: &str) -> Option<PartitionSetRef<T>> {
         todo!("this is all handled in python world right now")
     }
 
-    fn put_partition_set(&self, _pset_id: PartitionId, _pset: PartitionSetRef) -> DaftResult<()> {
+    fn get_all_partition_sets(&self) -> HashMap<Arc<str>, PartitionSetRef<T>> {
+        todo!("this is all handled in python world right now")
+    }
+
+    fn put_partition_set(
+        &self,
+        _pset_id: PartitionId,
+        _pset: PartitionSetRef<T>,
+    ) -> DaftResult<()> {
         todo!("this is all handled in python world right now")
     }
 
