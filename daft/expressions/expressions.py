@@ -3047,26 +3047,43 @@ class ExpressionListNamespace(ExpressionNamespace):
         """Determines if each list contains a specified value.
 
         Args:
-            contains (Expression): the value to check for in each list
+            contains (Expression): the value to check for in each list; can either be one singular literal, or a column
 
         Returns:
             Expression: a Boolean expression which indicates whether or not each list contained the specified value.
 
         Example:
             >>> import daft
-            >>> df = daft.from_pydict({"letters": [["a", "b", "a"], ["b", "c", "b", "c"]]})
-            >>> df.with_column("contains", df["letters"].list.contains("c")).collect()
-            ╭──────────────┬──────────╮
-            │ letters      ┆ contains │
-            │ ---          ┆ ---      │
-            │ List[Utf8]   ┆ Boolean  │
-            ╞══════════════╪══════════╡
-            │ [a, b, a]    ┆ false    │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
-            │ [b, c, b, c] ┆ true     │
-            ╰──────────────┴──────────╯
+            >>> df = daft.from_pydict({"values": [[1, 2, 3], [4, 5, 6], [1, 3, 5]]})
+            >>> df.with_column("contains", df["values"].list.contains(daft.lit(2).cast(daft.DataType.int64()))).collect()
+            ╭─────────────┬──────────╮
+            │ values      ┆ contains │
+            │ ---         ┆ ---      │
+            │ List[Int64] ┆ Boolean  │
+            ╞═════════════╪══════════╡
+            │ [1, 2, 3]   ┆ true     │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+            │ [4, 5, 6]   ┆ false    │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+            │ [1, 3, 5]   ┆ false    │
+            ╰─────────────┴──────────╯
             <BLANKLINE>
-            (Showing first 2 of 2 rows)
+            (Showing first 3 of 3 rows)
+            >>> df = daft.from_pydict({"values": [[1, 2, 3], [4, 5, 6], [1, 3, 5]], "contains": [1, 2, 3]})
+            >>> df.with_column("contains", df["values"].list.contains(daft.col("contains"))).collect()
+            ╭─────────────┬──────────╮
+            │ values      ┆ contains │
+            │ ---         ┆ ---      │
+            │ List[Int64] ┆ Boolean  │
+            ╞═════════════╪══════════╡
+            │ [1, 2, 3]   ┆ true     │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+            │ [4, 5, 6]   ┆ false    │
+            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+            │ [1, 3, 5]   ┆ true     │
+            ╰─────────────┴──────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
         """
         contains_expr = Expression._to_expression(contains)
         return Expression._from_pyexpr(native.list_contains(self._expr, contains_expr._expr))
