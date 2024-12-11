@@ -1,24 +1,24 @@
 //! Serialization and deserialization to Arrow's flight protocol
 
-use arrow_format::{
-    flight::data::{FlightData, SchemaResult},
-    ipc,
-    ipc::planus::ReadAsRoot,
-};
+use arrow_format::flight::data::{FlightData, SchemaResult};
+use arrow_format::ipc;
+use arrow_format::ipc::planus::ReadAsRoot;
 
-pub use super::ipc::write::default_ipc_fields;
-use super::ipc::{read::Dictionaries, IpcField, IpcSchema};
-pub use crate::io::ipc::write::common::WriteOptions;
 use crate::{
     array::Array,
     chunk::Chunk,
     datatypes::*,
     error::{Error, Result},
-    io::ipc::{
-        read, write,
-        write::common::{encode_chunk, DictionaryTracker, EncodedData},
-    },
+    io::ipc::read,
+    io::ipc::write,
+    io::ipc::write::common::{encode_chunk, DictionaryTracker, EncodedData},
 };
+
+use super::ipc::read::Dictionaries;
+use super::ipc::{IpcField, IpcSchema};
+
+pub use super::ipc::write::default_ipc_fields;
+pub use crate::io::ipc::write::common::WriteOptions;
 
 /// Serializes [`Chunk`] to a vector of [`FlightData`] representing the serialized dictionaries
 /// and a [`FlightData`] representing the batch.
