@@ -2,7 +2,7 @@ use eyre::{bail, WrapErr};
 
 use crate::translation::{logical_plan::Plan, to_logical_plan};
 
-pub fn to_df(to_df: spark_connect::ToDf) -> eyre::Result<Plan> {
+pub async fn to_df(to_df: spark_connect::ToDf) -> eyre::Result<Plan> {
     let spark_connect::ToDf {
         input,
         column_names,
@@ -12,8 +12,9 @@ pub fn to_df(to_df: spark_connect::ToDf) -> eyre::Result<Plan> {
         bail!("Input is required");
     };
 
-    let mut plan =
-        to_logical_plan(*input).wrap_err("Failed to translate relation to logical plan")?;
+    let mut plan = Box::pin(to_logical_plan(*input))
+        .await
+        .wrap_err("Failed to translate relation to logical plan")?;
 
     let column_names: Vec<_> = column_names
         .iter()

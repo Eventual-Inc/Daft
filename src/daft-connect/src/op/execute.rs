@@ -11,6 +11,7 @@ use uuid::Uuid;
 use crate::{DaftSparkConnectService, Session};
 
 mod root;
+mod write;
 
 pub type ExecuteStream = <DaftSparkConnectService as SparkConnectService>::ExecutePlanStream;
 
