@@ -116,7 +116,7 @@ class UnityCatalog:
                 three_part_namesplit = table_name.split(".")
                 if len(three_part_namesplit) != 3 or not all(three_part_namesplit):
                     raise ValueError(
-                        "This is not a valid 3-level namespace formatted table. Make sure to have the table in format 'catalog.schema.table'"
+                        f"Expected table name to be in the format of 'catalog.schema.table', received: {table_name}"
                     )
 
                 params = {
