@@ -84,8 +84,9 @@ macro_rules! impl_bincode_py_state_serialization {
                 py: Python<'py>,
             ) -> PyResult<(PyObject, (pyo3::Bound<'py, pyo3::types::PyBytes>,))> {
                 use pyo3::{
+                    exceptions::PyTypeError,
                     types::{PyAnyMethods, PyBytes},
-                    PyTypeInfo, ToPyObject,
+                    PyErr, PyTypeInfo, ToPyObject,
                 };
                 Ok((
                     Self::type_object_bound(py)
@@ -93,7 +94,8 @@ macro_rules! impl_bincode_py_state_serialization {
                         .into(),
                     (PyBytes::new_bound(
                         py,
-                        &$crate::bincode::serialize(&self).unwrap(),
+                        &$crate::bincode::serialize(&self)
+                            .map_err(|_| PyErr::new::<PyTypeError, _>("Failed to serialize"))?,
                     ),),
                 ))
             }
