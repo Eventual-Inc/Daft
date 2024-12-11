@@ -29,11 +29,15 @@ impl ScalarUDF for ListValueCountsFunction {
 
         let data_field = data.to_field(schema)?;
 
-        let DataType::List(inner_type) = &data_field.dtype else {
-            return Err(DaftError::TypeError(format!(
-                "Expected list, got {}",
-                data_field.dtype
-            )));
+        let inner_type = match &data_field.dtype {
+            DataType::List(inner_type) => inner_type,
+            DataType::FixedSizeList(inner_type, _) => inner_type,
+            _ => {
+                return Err(DaftError::TypeError(format!(
+                    "Expected list or fixed size list, got {}",
+                    data_field.dtype
+                )));
+            }
         };
 
         let map_type = DataType::Map {

@@ -383,6 +383,26 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(pivot_logical_plan))
     }
 
+    // Helper function to create inner joins more ergonimically in tests.
+    #[cfg(test)]
+    pub(crate) fn inner_join<Right: Into<LogicalPlanRef>>(
+        &self,
+        right: Right,
+        left_on: Vec<ExprRef>,
+        right_on: Vec<ExprRef>,
+    ) -> DaftResult<Self> {
+        self.join(
+            right,
+            left_on,
+            right_on,
+            JoinType::Inner,
+            None,
+            None,
+            None,
+            false,
+        )
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn join<Right: Into<LogicalPlanRef>>(
         &self,
