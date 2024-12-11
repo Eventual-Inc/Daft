@@ -6,9 +6,8 @@ use daft_core::{join::JoinType, prelude::SchemaRef};
 use daft_dsl::{
     col,
     optimization::{conjuct, split_conjuction},
-    Expr, ExprRef, Operator, OuterReferenceColumn, Subquery,
+    Expr, ExprRef, Operator, Subquery,
 };
-use daft_schema::field::Field;
 use itertools::multiunzip;
 use uuid::Uuid;
 
@@ -365,6 +364,10 @@ impl OptimizerRule for UnnestPredicateSubquery {
 fn pull_up_correlated_cols(
     plan: LogicalPlanRef,
 ) -> DaftResult<(LogicalPlanRef, Vec<ExprRef>, Vec<ExprRef>)> {
+    if matches!(plan.as_ref(), LogicalPlan::Sink(..)) {
+        return Ok((plan, vec![], vec![]));
+    }
+
     let (new_inputs, subquery_on, outer_on): (Vec<_>, Vec<_>, Vec<_>) = multiunzip(
         plan.arc_children()
             .into_iter()
@@ -372,11 +375,7 @@ fn pull_up_correlated_cols(
             .collect::<DaftResult<Vec<_>>>()?,
     );
 
-    let plan = if new_inputs.is_empty() {
-        plan
-    } else {
-        Arc::new(plan.with_new_children(&new_inputs))
-    };
+    let plan = Arc::new(plan.with_new_children(&new_inputs));
 
     let mut subquery_on = subquery_on.into_iter().flatten().collect::<Vec<_>>();
     let mut outer_on = outer_on.into_iter().flatten().collect::<Vec<_>>();
@@ -398,28 +397,16 @@ fn pull_up_correlated_cols(
                     {
                         match (left.as_ref(), right.as_ref()) {
                             (
-                                Expr::Column(subquery_col),
-                                Expr::OuterReferenceColumn(OuterReferenceColumn {
-                                    field:
-                                        Field {
-                                            name: outer_col, ..
-                                        },
-                                    ..
-                                }),
+                                Expr::Column(subquery_col_name),
+                                Expr::OuterReferenceColumn(outer_col),
                             )
                             | (
-                                Expr::OuterReferenceColumn(OuterReferenceColumn {
-                                    field:
-                                        Field {
-                                            name: outer_col, ..
-                                        },
-                                    ..
-                                }),
-                                Expr::Column(subquery_col),
+                                Expr::OuterReferenceColumn(outer_col),
+                                Expr::Column(subquery_col_name),
                             ) => {
                                 // remove correlated col from filter, use in join instead
-                                subquery_on.push(col(subquery_col.clone()));
-                                outer_on.push(col(outer_col.as_str()));
+                                subquery_on.push(col(subquery_col_name.clone()));
+                                outer_on.push(col(outer_col.field.name.as_str()));
 
                                 found_correlated_col = true;
                                 return false;
@@ -539,24 +526,26 @@ fn get_missing_exprs(
     existing_exprs: &[ExprRef],
     schema: &SchemaRef,
 ) -> (Vec<ExprRef>, Vec<ExprRef>) {
-    let (new_subquery_on, missing_exprs): (Vec<_>, Vec<_>) = subquery_on
-        .into_iter()
-        .map(|expr| {
-            if existing_exprs.contains(&expr) {
-                // column already exists in schema
-                (expr, None)
-            } else if schema.has_field(expr.name()) {
-                // another expression takes pull up column name, we rename the pull up column.
-                let unique_id = Uuid::new_v4().to_string();
-                let aliased_col = expr.alias(format!("{}_{}", expr.name(), unique_id));
-                (col(unique_id), Some(aliased_col))
-            } else {
-                (expr.clone(), Some(expr))
-            }
-        })
-        .unzip();
+    let mut new_subquery_on = Vec::new();
+    let mut missing_exprs = Vec::new();
 
-    let missing_exprs = missing_exprs.into_iter().flatten().collect();
+    for expr in subquery_on {
+        if existing_exprs.contains(&expr) {
+            // column already exists in schema
+            new_subquery_on.push(expr);
+        } else if schema.has_field(expr.name()) {
+            // another expression takes pull up column name, we rename the pull up column.
+            let new_name = format!("{}-{}", expr.name(), Uuid::new_v4());
+
+            new_subquery_on.push(col(new_name.clone()));
+            missing_exprs.push(expr.alias(new_name));
+        } else {
+            // missing from schema, can keep original name
+
+            new_subquery_on.push(expr.clone());
+            missing_exprs.push(expr);
+        }
+    }
 
     (new_subquery_on, missing_exprs)
 }

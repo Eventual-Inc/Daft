@@ -2,12 +2,8 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 
-use super::optimizer::OptimizerRuleInBatch;
 use crate::{
-    optimization::{
-        optimizer::{RuleBatch, RuleExecutionStrategy},
-        Optimizer,
-    },
+    optimization::{optimizer::RuleBatch, Optimizer},
     LogicalPlan,
 };
 
