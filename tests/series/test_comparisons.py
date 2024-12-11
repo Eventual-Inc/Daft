@@ -10,7 +10,16 @@ import pytz
 
 from daft import DataType, Series
 
-arrow_int_types = [pa.int8(), pa.uint8(), pa.int16(), pa.uint16(), pa.int32(), pa.uint32(), pa.int64(), pa.uint64()]
+arrow_int_types = [
+    pa.int8(),
+    pa.uint8(),
+    pa.int16(),
+    pa.uint16(),
+    pa.int32(),
+    pa.uint32(),
+    pa.int64(),
+    pa.uint64(),
+]
 arrow_decimal_types = [pa.decimal128(20, 5), pa.decimal128(15, 9)]
 arrow_string_types = [pa.string(), pa.large_string()]
 arrow_float_types = [pa.float32(), pa.float64()]
@@ -139,7 +148,8 @@ def test_comparisons_int_and_str_right_null_scalar(l_dtype, r_dtype) -> None:
 
 
 @pytest.mark.parametrize(
-    "l_dtype, r_dtype", itertools.product(arrow_int_types + arrow_float_types + arrow_decimal_types, repeat=2)
+    "l_dtype, r_dtype",
+    itertools.product(arrow_int_types + arrow_float_types + arrow_decimal_types, repeat=2),
 )
 def test_comparisons_int_and_float(l_dtype, r_dtype) -> None:
     l_arrow = make_array([1, 2, 3, None, 5, None], type=l_dtype)
@@ -168,7 +178,8 @@ def test_comparisons_int_and_float(l_dtype, r_dtype) -> None:
 
 
 @pytest.mark.parametrize(
-    "l_dtype, r_dtype", itertools.product(arrow_int_types + arrow_float_types + arrow_decimal_types, repeat=2)
+    "l_dtype, r_dtype",
+    itertools.product(arrow_int_types + arrow_float_types + arrow_decimal_types, repeat=2),
 )
 def test_comparisons_int_and_float_right_scalar(l_dtype, r_dtype) -> None:
     l_arrow = make_array([1, 2, 3, None, 5, None], type=l_dtype)
@@ -197,7 +208,8 @@ def test_comparisons_int_and_float_right_scalar(l_dtype, r_dtype) -> None:
 
 
 @pytest.mark.parametrize(
-    "l_dtype, r_dtype", itertools.product(arrow_int_types + arrow_float_types + arrow_decimal_types, repeat=2)
+    "l_dtype, r_dtype",
+    itertools.product(arrow_int_types + arrow_float_types + arrow_decimal_types, repeat=2),
 )
 def test_comparisons_int_and_float_right_null_scalar(l_dtype, r_dtype) -> None:
     l_arrow = make_array([1, 2, 3, None, 5, None], type=l_dtype)
@@ -226,39 +238,39 @@ def test_comparisons_int_and_float_right_null_scalar(l_dtype, r_dtype) -> None:
 
 
 def test_comparisons_boolean_array() -> None:
-    l_arrow = make_array([False, False, None, True, None])
-    r_arrow = make_array([True, False, True, None, None])
+    l_arrow = make_array([True, False, True, False, True, False, None, None, None])
+    r_arrow = make_array([True, True, False, False, None, None, True, False, None])
     # lt, eq, lt, None
 
     left = Series.from_arrow(l_arrow)
     right = Series.from_arrow(r_arrow)
 
     lt = (left < right).to_pylist()
-    assert lt == [True, False, None, None, None]
+    assert lt == [False, True, False, False, None, None, None, None, None]
 
     le = (left <= right).to_pylist()
-    assert le == [True, True, None, None, None]
+    assert le == [True, True, False, True, None, None, None, None, None]
 
     eq = (left == right).to_pylist()
-    assert eq == [False, True, None, None, None]
+    assert eq == [True, False, False, True, None, None, None, None, None]
 
     neq = (left != right).to_pylist()
-    assert neq == [True, False, None, None, None]
+    assert neq == [False, True, True, False, None, None, None, None, None]
 
     ge = (left >= right).to_pylist()
-    assert ge == [False, True, None, None, None]
+    assert ge == [True, False, True, True, None, None, None, None, None]
 
     gt = (left > right).to_pylist()
-    assert gt == [False, False, None, None, None]
+    assert gt == [False, False, True, False, None, None, None, None, None]
 
     _and = (left & right).to_pylist()
-    assert _and == [False, False, None, None, None]
+    assert _and == [True, False, False, False, None, False, None, False, None]
 
     _or = (left | right).to_pylist()
-    assert _or == [True, False, None, None, None]
+    assert _or == [True, True, True, False, True, None, True, None, None]
 
     _xor = (left ^ right).to_pylist()
-    assert _xor == [True, False, None, None, None]
+    assert _xor == [False, True, True, False, None, None, None, None, None]
 
 
 def test_comparisons_boolean_array_right_scalar() -> None:
@@ -290,7 +302,7 @@ def test_comparisons_boolean_array_right_scalar() -> None:
     assert _and == [False, True, None]
 
     _or = (left | right).to_pylist()
-    assert _or == [True, True, None]
+    assert _or == [True, True, True]
 
     _xor = (left ^ right).to_pylist()
     assert _xor == [True, False, None]
@@ -317,7 +329,7 @@ def test_comparisons_boolean_array_right_scalar() -> None:
     assert gt == [False, True, None]
 
     _and = (left & right).to_pylist()
-    assert _and == [False, False, None]
+    assert _and == [False, False, False]
 
     _or = (left | right).to_pylist()
     assert _or == [False, True, None]
@@ -347,10 +359,10 @@ def test_comparisons_boolean_array_right_scalar() -> None:
     assert gt == [None, None, None]
 
     _and = (left & right).to_pylist()
-    assert _and == [None, None, None]
+    assert _and == [False, None, None]
 
     _or = (left | right).to_pylist()
-    assert _or == [None, None, None]
+    assert _or == [None, True, None]
 
     _xor = (left ^ right).to_pylist()
     assert _xor == [None, None, None]
@@ -386,7 +398,7 @@ def test_comparisons_boolean_array_left_scalar() -> None:
     assert _and == [False, True, None]
 
     _oright = (left | right).to_pylist()
-    assert _oright == [True, True, None]
+    assert _oright == [True, True, True]
 
     _xoright = (left ^ right).to_pylist()
     assert _xoright == [True, False, None]
@@ -490,8 +502,26 @@ def test_logical_ops_with_non_boolean() -> None:
 def test_comparisons_dates() -> None:
     from datetime import date
 
-    left = Series.from_pylist([date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 3), None, date(2023, 1, 5), None])
-    right = Series.from_pylist([date(2023, 1, 1), date(2023, 1, 3), date(2023, 1, 1), date(2023, 1, 5), None, None])
+    left = Series.from_pylist(
+        [
+            date(2023, 1, 1),
+            date(2023, 1, 2),
+            date(2023, 1, 3),
+            None,
+            date(2023, 1, 5),
+            None,
+        ]
+    )
+    right = Series.from_pylist(
+        [
+            date(2023, 1, 1),
+            date(2023, 1, 3),
+            date(2023, 1, 1),
+            date(2023, 1, 5),
+            None,
+            None,
+        ]
+    )
 
     # eq, lt, gt, None, None, None
 
@@ -702,12 +732,42 @@ class CustomZero:
 @pytest.mark.parametrize(
     ["op", "reflected_op", "expected", "expected_self"],
     [
-        (operator.eq, operator.eq, [False, True, False, None, None], [True, True, True, True, None]),
-        (operator.ne, operator.ne, [True, False, True, None, None], [False, False, False, False, None]),
-        (operator.lt, operator.gt, [False, False, True, None, None], [False, False, False, False, None]),
-        (operator.gt, operator.lt, [True, False, False, None, None], [False, False, False, False, None]),
-        (operator.le, operator.ge, [False, True, True, None, None], [True, True, True, True, None]),
-        (operator.ge, operator.le, [True, True, False, None, None], [True, True, True, True, None]),
+        (
+            operator.eq,
+            operator.eq,
+            [False, True, False, None, None],
+            [True, True, True, True, None],
+        ),
+        (
+            operator.ne,
+            operator.ne,
+            [True, False, True, None, None],
+            [False, False, False, False, None],
+        ),
+        (
+            operator.lt,
+            operator.gt,
+            [False, False, True, None, None],
+            [False, False, False, False, None],
+        ),
+        (
+            operator.gt,
+            operator.lt,
+            [True, False, False, None, None],
+            [False, False, False, False, None],
+        ),
+        (
+            operator.le,
+            operator.ge,
+            [False, True, True, None, None],
+            [True, True, True, True, None],
+        ),
+        (
+            operator.ge,
+            operator.le,
+            [True, True, False, None, None],
+            [True, True, True, True, None],
+        ),
     ],
 )
 def test_comparisons_pyobjects(op, reflected_op, expected, expected_self) -> None:

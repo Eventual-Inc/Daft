@@ -10,6 +10,7 @@ mod reorder_joins;
 mod rule;
 mod simplify_expressions;
 mod split_actor_pool_projects;
+mod unnest_subquery;
 
 pub use drop_repartition::DropRepartition;
 pub use eliminate_cross_join::EliminateCrossJoin;
@@ -22,3 +23,4 @@ pub use push_down_projection::PushDownProjection;
 pub use rule::OptimizerRule;
 pub use simplify_expressions::SimplifyExpressionsRule;
 pub use split_actor_pool_projects::SplitActorPoolProjects;
+pub use unnest_subquery::{UnnestPredicateSubquery, UnnestScalarSubquery};

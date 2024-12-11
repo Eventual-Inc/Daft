@@ -2,12 +2,8 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 
-use super::optimizer::OptimizerRuleInBatch;
 use crate::{
-    optimization::{
-        optimizer::{RuleBatch, RuleExecutionStrategy},
-        Optimizer,
-    },
+    optimization::{optimizer::RuleBatch, Optimizer},
     LogicalPlan,
 };
 
@@ -17,12 +13,9 @@ use crate::{
 pub fn assert_optimized_plan_with_rules_eq(
     plan: Arc<LogicalPlan>,
     expected: Arc<LogicalPlan>,
-    rules: Vec<Box<dyn OptimizerRuleInBatch>>,
+    rule_batches: Vec<RuleBatch>,
 ) -> DaftResult<()> {
-    let optimizer = Optimizer::with_rule_batches(
-        vec![RuleBatch::new(rules, RuleExecutionStrategy::Once)],
-        Default::default(),
-    );
+    let optimizer = Optimizer::with_rule_batches(rule_batches, Default::default());
     let optimized_plan = optimizer
         .optimize_with_rules(optimizer.rule_batches[0].rules.as_slice(), plan.clone())?
         .data;

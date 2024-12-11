@@ -32,8 +32,14 @@ impl Session {
         let (tx, rx) = tokio::sync::mpsc::channel::<eyre::Result<ExecutePlanResponse>>(1);
         tokio::spawn(async move {
             let execution_fut = async {
-                let Plan { builder, psets } = translation::to_logical_plan(command)?;
-                let optimized_plan = builder.optimize()?;
+                let Plan { builder, psets } = translation::to_logical_plan(command).await?;
+
+                // todo: convert optimize to async (looks like A LOT of work)... it touches a lot of API
+                // I tried and spent about an hour and gave up ~ Andrew Gazelka 🪦 2024-12-09
+                let optimized_plan = tokio::task::spawn_blocking(move || builder.optimize())
+                    .await
+                    .unwrap()?;
+
                 let cfg = Arc::new(DaftExecutionConfig::default());
                 let native_executor = NativeExecutor::from_logical_plan_builder(&optimized_plan)?;
                 let mut result_stream = native_executor.run(psets, cfg, None)?.into_stream();

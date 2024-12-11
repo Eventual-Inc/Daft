@@ -680,7 +680,11 @@ mod tests {
     };
 
     use crate::{
-        optimization::{rules::PushDownProjection, test::assert_optimized_plan_with_rules_eq},
+        optimization::{
+            optimizer::{RuleBatch, RuleExecutionStrategy},
+            rules::PushDownProjection,
+            test::assert_optimized_plan_with_rules_eq,
+        },
         test::{dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator},
         LogicalPlan,
     };
@@ -695,7 +699,10 @@ mod tests {
         assert_optimized_plan_with_rules_eq(
             plan,
             expected,
-            vec![Box::new(PushDownProjection::new())],
+            vec![RuleBatch::new(
+                vec![Box::new(PushDownProjection::new())],
+                RuleExecutionStrategy::Once,
+            )],
         )
     }
 
