@@ -76,7 +76,7 @@ impl std::fmt::Display for JoinAdjList {
         for (node, neighbors) in &self.0 {
             writeln!(f, "Node {}:", node.name())?;
             for (neighbor, join_conds) in neighbors {
-                writeln!(f, " -> {} with conditions:", neighbor.name())?;
+                writeln!(f, "  -> {} with conditions:", neighbor.name())?;
                 for (i, cond) in join_conds.iter().enumerate() {
                     writeln!(f, "    {}: {} = {}", i, cond.left_on, cond.right_on)?;
                 }

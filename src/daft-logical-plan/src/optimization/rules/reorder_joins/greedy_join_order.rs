@@ -53,7 +53,7 @@ impl GreedyJoinOrderer {
                 let right_neighbors = join_graph.adj_list.0.remove(&right).unwrap();
                 let mut new_join_edges = HashMap::new();
 
-                // Helper function that takes in neighbors to the left and right nodes, the combines edges that point
+                // Helper function that takes in neighbors to the left and right nodes, then combines edges that point
                 // back to the left and/or right nodes into edges that point to the new join node.
                 let mut update_neighbors =
                     |neighbors: HashMap<LogicalPlanRef, Vec<JoinCondition>>| {
