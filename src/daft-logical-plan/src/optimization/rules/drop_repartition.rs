@@ -52,7 +52,9 @@ mod tests {
 
     use crate::{
         optimization::{
-            rules::drop_repartition::DropRepartition, test::assert_optimized_plan_with_rules_eq,
+            optimizer::{RuleBatch, RuleExecutionStrategy},
+            rules::drop_repartition::DropRepartition,
+            test::assert_optimized_plan_with_rules_eq,
         },
         test::{dummy_scan_node, dummy_scan_operator},
         LogicalPlan,
@@ -65,7 +67,14 @@ mod tests {
         plan: Arc<LogicalPlan>,
         expected: Arc<LogicalPlan>,
     ) -> DaftResult<()> {
-        assert_optimized_plan_with_rules_eq(plan, expected, vec![Box::new(DropRepartition::new())])
+        assert_optimized_plan_with_rules_eq(
+            plan,
+            expected,
+            vec![RuleBatch::new(
+                vec![Box::new(DropRepartition::new())],
+                RuleExecutionStrategy::Once,
+            )],
+        )
     }
 
     /// Tests that DropRepartition does drops the upstream Repartition in back-to-back Repartitions.

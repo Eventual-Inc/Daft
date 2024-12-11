@@ -359,7 +359,11 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        optimization::{rules::PushDownFilter, test::assert_optimized_plan_with_rules_eq},
+        optimization::{
+            optimizer::{RuleBatch, RuleExecutionStrategy},
+            rules::PushDownFilter,
+            test::assert_optimized_plan_with_rules_eq,
+        },
         test::{dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator},
         LogicalPlan,
     };
@@ -371,7 +375,14 @@ mod tests {
         plan: Arc<LogicalPlan>,
         expected: Arc<LogicalPlan>,
     ) -> DaftResult<()> {
-        assert_optimized_plan_with_rules_eq(plan, expected, vec![Box::new(PushDownFilter::new())])
+        assert_optimized_plan_with_rules_eq(
+            plan,
+            expected,
+            vec![RuleBatch::new(
+                vec![Box::new(PushDownFilter::new())],
+                RuleExecutionStrategy::Once,
+            )],
+        )
     }
 
     /// Tests that we can't pushdown a filter into a ScanOperator that has a limit.

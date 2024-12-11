@@ -115,7 +115,10 @@ mod tests {
 
     use super::LiftProjectFromAgg;
     use crate::{
-        optimization::test::assert_optimized_plan_with_rules_eq,
+        optimization::{
+            optimizer::{RuleBatch, RuleExecutionStrategy},
+            test::assert_optimized_plan_with_rules_eq,
+        },
         test::{dummy_scan_node, dummy_scan_operator},
         LogicalPlan,
     };
@@ -127,7 +130,10 @@ mod tests {
         assert_optimized_plan_with_rules_eq(
             plan,
             expected,
-            vec![Box::new(LiftProjectFromAgg::new())],
+            vec![RuleBatch::new(
+                vec![Box::new(LiftProjectFromAgg::new())],
+                RuleExecutionStrategy::Once,
+            )],
         )
     }
 

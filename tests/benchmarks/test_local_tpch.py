@@ -46,3 +46,49 @@ def test_tpch(tmp_path, check_answer, get_df, benchmark_with_memray, engine, q):
     benchmark_group = f"q{q}-parts-{num_parts}"
     daft_pd_df = benchmark_with_memray(f, benchmark_group).to_pandas()
     check_answer(daft_pd_df, q, tmp_path)
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() not in {"py", "native"},
+    reason="requires PyRunner to be in use",
+)
+@pytest.mark.benchmark(group="tpch")
+@pytest.mark.parametrize("engine, q", itertools.product(ENGINES, TPCH_QUESTIONS))
+def test_tpch_sql(tmp_path, check_answer, get_df, benchmark_with_memray, engine, q):  # noqa F811
+    from daft.sql import SQLCatalog
+
+    get_df, num_parts = get_df
+
+    # TODO: remove this once SQL allows case-insensitive column names
+    def lowercase_column_names(df):
+        return df.select(*[daft.col(name).alias(name.lower()) for name in df.column_names])
+
+    table_names = [
+        "part",
+        "supplier",
+        "partsupp",
+        "customer",
+        "orders",
+        "lineitem",
+        "nation",
+        "region",
+    ]
+    catalog = SQLCatalog({tbl: lowercase_column_names(get_df(tbl)) for tbl in table_names})
+
+    with open(f"benchmarking/tpch/queries/{q:02}.sql") as query_file:
+        query = query_file.read()
+
+    def f():
+        if engine == "native":
+            daft.context.set_runner_native()
+        elif engine == "python":
+            daft.context.set_runner_py()
+        else:
+            raise ValueError(f"{engine} unsupported")
+
+        daft_df = daft.sql(query, catalog=catalog)
+        return daft_df.to_arrow()
+
+    benchmark_group = f"q{q}-sql-parts-{num_parts}"
+    daft_pd_df = benchmark_with_memray(f, benchmark_group).to_pandas()
+    check_answer(daft_pd_df, q, tmp_path)
