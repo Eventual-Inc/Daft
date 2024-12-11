@@ -1,35 +1,35 @@
 use daft_logical_plan::LogicalPlanBuilder;
-use daft_micropartition::{partitioning::InMemoryPartitionSetCache, MicroPartition};
 use eyre::bail;
 use spark_connect::{expression::ExprType, Expression};
 
-use crate::translation::{to_daft_expr, to_logical_plan};
+use super::Translator;
+use crate::translation::to_daft_expr;
 
-pub fn with_columns(
-    with_columns: spark_connect::WithColumns,
-    pset_cache: &InMemoryPartitionSetCache<MicroPartition>,
-) -> eyre::Result<LogicalPlanBuilder> {
-    let spark_connect::WithColumns { input, aliases } = with_columns;
+impl Translator<'_> {
+    pub async fn with_columns(
+        &self,
+        with_columns: spark_connect::WithColumns,
+    ) -> eyre::Result<LogicalPlanBuilder> {
+        let spark_connect::WithColumns { input, aliases } = with_columns;
 
-    let Some(input) = input else {
-        bail!("input is required");
-    };
+        let Some(input) = input else {
+            bail!("input is required");
+        };
 
-    let mut plan = to_logical_plan(*input, pset_cache)?;
+        let plan = Box::pin(self.to_logical_plan(*input)).await?;
 
-    let daft_exprs: Vec<_> = aliases
-        .into_iter()
-        .map(|alias| {
-            let expression = Expression {
-                common: None,
-                expr_type: Some(ExprType::Alias(Box::new(alias))),
-            };
+        let daft_exprs: Vec<_> = aliases
+            .into_iter()
+            .map(|alias| {
+                let expression = Expression {
+                    common: None,
+                    expr_type: Some(ExprType::Alias(Box::new(alias))),
+                };
 
-            to_daft_expr(&expression)
-        })
-        .try_collect()?;
+                to_daft_expr(&expression)
+            })
+            .try_collect()?;
 
-    plan = plan.with_columns(daft_exprs)?;
-
-    Ok(plan)
+        Ok(plan.with_columns(daft_exprs)?)
+    }
 }

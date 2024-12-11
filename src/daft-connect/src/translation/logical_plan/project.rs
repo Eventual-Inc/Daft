@@ -4,26 +4,25 @@
 //! and creates new columns from expressions. Example: `df.select(col("id").alias("my_number"))`
 
 use daft_logical_plan::LogicalPlanBuilder;
-use daft_micropartition::{partitioning::InMemoryPartitionSetCache, MicroPartition};
 use eyre::bail;
 use spark_connect::Project;
 
-use crate::translation::{to_daft_expr, to_logical_plan};
+use super::Translator;
+use crate::translation::to_daft_expr;
 
-pub fn project(
-    project: Project,
-    pset_cache: &InMemoryPartitionSetCache<MicroPartition>,
-) -> eyre::Result<LogicalPlanBuilder> {
-    let Project { input, expressions } = project;
+impl Translator<'_> {
+    pub async fn project(&self, project: Project) -> eyre::Result<LogicalPlanBuilder> {
+        let Project { input, expressions } = project;
 
-    let Some(input) = input else {
-        bail!("Project input is required");
-    };
+        let Some(input) = input else {
+            bail!("Project input is required");
+        };
 
-    let mut plan = to_logical_plan(*input, pset_cache)?;
+        let mut plan = Box::pin(self.to_logical_plan(*input)).await?;
 
-    let daft_exprs: Vec<_> = expressions.iter().map(to_daft_expr).try_collect()?;
-    plan = plan.select(daft_exprs)?;
+        let daft_exprs: Vec<_> = expressions.iter().map(to_daft_expr).try_collect()?;
+        plan = plan.select(daft_exprs)?;
 
-    Ok(plan)
+        Ok(plan)
+    }
 }

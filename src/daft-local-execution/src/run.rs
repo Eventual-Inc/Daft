@@ -80,7 +80,7 @@ impl PyNativeExecutor {
 
         let out = py.allow_threads(|| {
             self.executor
-                .run(native_pset_cache, cfg.config, results_buffer_size)
+                .run(&native_pset_cache, cfg.config, results_buffer_size)
                 .map(|res| res.into_iter())
         })?;
         let iter = Box::new(out.map(|part| {
@@ -110,7 +110,7 @@ impl NativeExecutor {
 
     pub fn run(
         &self,
-        pset_cache: impl PartitionSetCache<MicroPartition>,
+        pset_cache: &(impl PartitionSetCache<MicroPartition> + ?Sized),
         cfg: Arc<DaftExecutionConfig>,
         results_buffer_size: Option<usize>,
     ) -> DaftResult<ExecutionEngineResult> {
@@ -235,13 +235,13 @@ impl IntoIterator for ExecutionEngineResult {
 
 pub fn run_local(
     physical_plan: &LocalPhysicalPlan,
-    pset_cache: impl PartitionSetCache<MicroPartition>,
+    pset_cache: &(impl PartitionSetCache<MicroPartition> + ?Sized),
     cfg: Arc<DaftExecutionConfig>,
     results_buffer_size: Option<usize>,
     cancel: CancellationToken,
 ) -> DaftResult<ExecutionEngineResult> {
     refresh_chrome_trace();
-    let pipeline = physical_plan_to_pipeline(physical_plan, &pset_cache, &cfg)?;
+    let pipeline = physical_plan_to_pipeline(physical_plan, pset_cache, &cfg)?;
     let (tx, rx) = create_channel(results_buffer_size.unwrap_or(1));
     let handle = std::thread::spawn(move || {
         let runtime = tokio::runtime::Builder::new_current_thread()

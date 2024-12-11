@@ -142,14 +142,10 @@ impl DaftSparkConnectService {
 #[tonic::async_trait]
 impl SparkConnectService for DaftSparkConnectService {
     type ExecutePlanStream = std::pin::Pin<
-        Box<
-            dyn futures::Stream<Item = Result<ExecutePlanResponse, Status>> + Send + Sync + 'static,
-        >,
+        Box<dyn futures::Stream<Item = Result<ExecutePlanResponse, Status>> + Send + 'static>,
     >;
     type ReattachExecuteStream = std::pin::Pin<
-        Box<
-            dyn futures::Stream<Item = Result<ExecutePlanResponse, Status>> + Send + Sync + 'static,
-        >,
+        Box<dyn futures::Stream<Item = Result<ExecutePlanResponse, Status>> + Send + 'static>,
     >;
 
     #[tracing::instrument(skip_all)]
@@ -190,8 +186,9 @@ impl SparkConnectService for DaftSparkConnectService {
                     CommandType::RegisterFunction(_) => {
                         unimplemented_err!("RegisterFunction not implemented")
                     }
-                    CommandType::WriteOperation(_) => {
-                        unimplemented_err!("WriteOperation not implemented")
+                    CommandType::WriteOperation(op) => {
+                        let result = session.handle_write_command(op, operation).await?;
+                        return Ok(Response::new(result));
                     }
                     CommandType::CreateDataframeView(_) => {
                         unimplemented_err!("CreateDataframeView not implemented")
@@ -305,7 +302,7 @@ impl SparkConnectService for DaftSparkConnectService {
                     return Err(Status::invalid_argument("op_type is required to be root"));
                 };
 
-                let result = match translation::relation_to_schema(relation) {
+                let result = match translation::relation_to_schema(relation).await {
                     Ok(schema) => schema,
                     Err(e) => {
                         return invalid_argument_err!(
