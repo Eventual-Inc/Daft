@@ -1,3 +1,5 @@
+mod split_parquet_files_by_rowgroup;
+
 use std::sync::Arc;
 
 use common_daft_config::DaftExecutionConfig;
@@ -329,20 +331,45 @@ fn split_and_merge_pass(
                 .downcast::<ScanTask>()
                 .map_err(|e| DaftError::TypeError(format!("Expected Arc<ScanTask>, found {:?}", e)))
         }));
-        let split_tasks = split_by_row_groups(
-            iter,
-            cfg.parquet_split_row_groups_max_files,
-            cfg.scan_tasks_min_size_bytes,
-            cfg.scan_tasks_max_size_bytes,
-        );
-        let merged_tasks = merge_by_sizes(split_tasks, pushdowns, cfg);
-        let scan_tasks: Vec<Arc<dyn ScanTaskLike>> = merged_tasks
+
+        let optimized = if cfg.enable_aggressive_scantask_splitting {
+            split_and_merge_pass_v2(iter, pushdowns, cfg)
+        } else {
+            split_and_merge_pass_v1(iter, pushdowns, cfg)
+        };
+
+        let scan_tasks: Vec<Arc<dyn ScanTaskLike>> = optimized
             .map(|st| st.map(|task| task as Arc<dyn ScanTaskLike>))
             .collect::<DaftResult<Vec<_>>>()?;
         Ok(Arc::new(scan_tasks))
     } else {
         Ok(scan_tasks)
     }
+}
+
+fn split_and_merge_pass_v1<'a>(
+    inputs: BoxScanTaskIter<'a>,
+    pushdowns: &Pushdowns,
+    cfg: &'a DaftExecutionConfig,
+) -> BoxScanTaskIter<'a> {
+    let split_tasks = split_by_row_groups(
+        inputs,
+        cfg.parquet_split_row_groups_max_files,
+        cfg.scan_tasks_min_size_bytes,
+        cfg.scan_tasks_max_size_bytes,
+    );
+    let merged_tasks = merge_by_sizes(split_tasks, pushdowns, cfg);
+    merged_tasks
+}
+
+fn split_and_merge_pass_v2<'a>(
+    inputs: BoxScanTaskIter<'a>,
+    pushdowns: &Pushdowns,
+    cfg: &'a DaftExecutionConfig,
+) -> BoxScanTaskIter<'a> {
+    let split_tasks = split_parquet_files_by_rowgroup::split_all_files_by_rowgroup(inputs, cfg);
+    let merged_tasks = merge_by_sizes(split_tasks, pushdowns, cfg);
+    merged_tasks
 }
 
 #[ctor::ctor]
