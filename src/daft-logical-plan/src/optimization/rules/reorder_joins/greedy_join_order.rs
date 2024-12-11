@@ -25,11 +25,14 @@ use crate::{LogicalPlanBuilder, LogicalPlanRef};
 pub(crate) struct GreedyJoinOrderer {}
 
 impl GreedyJoinOrderer {
+    /// Consumes the join graph and transforms it into a logical plan with joins reordered.
     pub(crate) fn compute_join_order(join_graph: &mut JoinGraph) -> DaftResult<LogicalPlanRef> {
-        // TODO(desmond): we need to handle projections.
+        // While the join graph consists of more than one join node, select the edge that has the smallest cost,
+        // then join the left and right nodes connected by this edge.
         while join_graph.adj_list.0.len() > 1 {
             let selected_pair = GreedyJoinOrderer::find_minimum_cost_join(&join_graph.adj_list.0);
             if let Some((left, right, join_conds)) = selected_pair {
+                // Join the left and right relations using the given join conditions.
                 let (left_on, right_on) = join_conds
                     .iter()
                     .map(|join_cond| {
@@ -44,11 +47,14 @@ impl GreedyJoinOrderer {
                     .inner_join(right.clone(), left_on, right_on)?
                     .build();
                 let join = Arc::new(Arc::unwrap_or_clone(join).with_materialized_stats());
+
+                // Add the new node into the adjacency list.
                 let left_neighbors = join_graph.adj_list.0.remove(&left).unwrap();
                 let right_neighbors = join_graph.adj_list.0.remove(&right).unwrap();
                 let mut new_join_edges = HashMap::new();
 
-                // Helper function to collapse the left and right node
+                // Helper function that takes in neighbors to the left and right nodes, the combines edges that point
+                // back to the left and/or right nodes into edges that point to the new join node.
                 let mut update_neighbors =
                     |neighbors: HashMap<LogicalPlanRef, Vec<JoinCondition>>| {
                         for (neighbor, _) in neighbors {
@@ -84,7 +90,7 @@ impl GreedyJoinOrderer {
                 update_neighbors(left_neighbors);
                 update_neighbors(right_neighbors);
 
-                // Add the new join node and its edges to the graph
+                // Add the new join node and its edges to the graph.
                 join_graph.adj_list.0.insert(join, new_join_edges);
             } else {
                 panic!(
@@ -100,6 +106,8 @@ impl GreedyJoinOrderer {
         }
     }
 
+    /// Helper functions that finds the next join edge in the adjacency list that has the smallest cost.
+    /// Currently cost is determined based on the max size in bytes of the candidate left and right relations.
     fn find_minimum_cost_join(
         adj_list: &HashMap<LogicalPlanRef, HashMap<LogicalPlanRef, Vec<JoinCondition>>>,
     ) -> Option<(LogicalPlanRef, LogicalPlanRef, Vec<JoinCondition>)> {

@@ -51,24 +51,6 @@ impl Display for JoinNode {
     }
 }
 
-/// JoinEdges currently represent a bidirectional edge between two relations that have
-/// an equi-join condition between each other.
-#[derive(Debug)]
-struct JoinEdge(JoinNode, JoinNode);
-
-impl JoinEdge {
-    /// Helper function that summarizes join edge information.
-    fn simple_repr(&self) -> String {
-        format!("{} <-> {}", self.0, self.1)
-    }
-}
-
-impl Display for JoinEdge {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.simple_repr())
-    }
-}
-
 #[derive(Clone, Debug)]
 pub(crate) struct JoinCondition {
     pub left_on: String,
@@ -161,10 +143,28 @@ impl JoinGraph {
         plan: LogicalPlanRef,
     ) -> DaftResult<LogicalPlanRef> {
         let mut plan = LogicalPlanBuilder::from(plan);
-        for projection_or_filter in self.final_projections_and_filters.drain(..).rev() {
+        // Apply projections and filters in post-traversal order.
+        let mut reversed_items = self
+            .final_projections_and_filters
+            .drain(..)
+            .rev()
+            .peekable();
+        while let Some(projection_or_filter) = reversed_items.next() {
+            let is_last = reversed_items.peek().is_none();
+
             match projection_or_filter {
-                ProjectionOrFilter::Projection(projections) => plan = plan.select(projections)?,
-                ProjectionOrFilter::Filter(predicate) => plan = plan.filter(predicate)?,
+                ProjectionOrFilter::Projection(projections) => {
+                    if is_last {
+                        // The final projection is the output projection, so here we select the final projection.
+                        plan = plan.select(projections)?;
+                    } else {
+                        // Intermediate projections might only transform a subset of columns, so we use `with_columns()` instead of `select()`.
+                        plan = plan.with_columns(projections)?;
+                    }
+                }
+                ProjectionOrFilter::Filter(predicate) => {
+                    plan = plan.filter(predicate)?;
+                }
             }
         }
         Ok(plan.build())
@@ -182,8 +182,8 @@ impl JoinGraph {
 
     /// Test helper function to check that all relations in this graph are connected.
     pub(crate) fn fully_connected(&self) -> bool {
-        let start = if let Some((key, value)) = self.adj_list.0.iter().next() {
-            key
+        let start = if let Some((node, _)) = self.adj_list.0.iter().next() {
+            node
         } else {
             // There are no nodes. The empty graph is fully connected.
             return true;
@@ -234,13 +234,26 @@ impl JoinGraph {
 
     /// Helper function that loosely checks if a given edge (represented by a simple string)
     /// exists in the current graph.
-    pub(crate) fn contains_edge(&self, edge_string: &str) -> bool {
-        // for edge in &self.edges {
-        //     if edge.simple_repr() == edge_string {
-        //         return true;
-        //     }
-        // }
-        // false
+    pub(crate) fn contains_edges(&self, to_check: Vec<&str>) -> bool {
+        let mut edge_strings = HashSet::new();
+        for (left, neighbors) in &self.adj_list.0 {
+            for (right, join_conds) in neighbors {
+                for join_cond in join_conds {
+                    edge_strings.insert(format!(
+                        "{}({}) <-> {}({})",
+                        left.name(),
+                        join_cond.left_on,
+                        right.name(),
+                        join_cond.right_on
+                    ));
+                }
+            }
+        }
+        for cur_check in to_check {
+            if !edge_strings.contains(cur_check) {
+                return false;
+            }
+        }
         true
     }
 }
@@ -442,7 +455,6 @@ impl JoinGraphBuilder {
                     }
                 }
                 // Apply projections and return the new plan as the relation for the appropriate join conditions.
-                println!("projections: {projections:?}");
                 let projected_plan = if needs_projection {
                     let projected_plan = LogicalPlanBuilder::from(plan.clone())
                         .select(projections)
@@ -533,23 +545,29 @@ mod tests {
                 vec![Arc::new(Expr::Column(Arc::from("d")))],
             )
             .unwrap();
-        let plan = join_plan.build();
+        let original_plan = join_plan.build();
         let scan_materializer = MaterializeScans::new();
-        let plan = scan_materializer.try_optimize(plan).data().unwrap();
+        let original_plan = scan_materializer
+            .try_optimize(original_plan)
+            .data()
+            .unwrap();
         let stats_enricher = EnrichWithStats::new();
-        let plan = stats_enricher.try_optimize(plan).data().unwrap();
-        let mut join_graph = JoinGraphBuilder::from_logical_plan(plan).build();
+        let original_plan = stats_enricher.try_optimize(original_plan).data().unwrap();
+        let mut join_graph = JoinGraphBuilder::from_logical_plan(original_plan.clone()).build();
         assert!(join_graph.fully_connected());
         // There should be edges between:
         // - a <-> b
-        // - c_prime <-> d
+        // - c <-> d
         // - a <-> d
         assert!(join_graph.num_edges() == 3);
-        assert!(join_graph.contains_edge("a#Source(a) <-> b#Source(b)"));
-        assert!(join_graph.contains_edge("c#Source(c_prime) <-> d#Source(d)"));
-        assert!(join_graph.contains_edge("a#Source(a) <-> d#Source(d)"));
-        let plan = GreedyJoinOrderer::compute_join_order(&mut join_graph).unwrap();
-        println!("{}", plan.repr_ascii(false))
+        assert!(join_graph.contains_edges(vec![
+            "Source(a) <-> Source(b)",
+            "Project(c) <-> Source(d)",
+            "Source(a) <-> Source(d)"
+        ]));
+        // Test greedy join reordering.
+        let reordered_plan = GreedyJoinOrderer::compute_join_order(&mut join_graph).unwrap();
+        assert!(reordered_plan.schema() == original_plan.schema());
     }
 
     #[test]
@@ -601,17 +619,29 @@ mod tests {
                 vec![Arc::new(Expr::Column(Arc::from("d")))],
             )
             .unwrap();
-        let plan = join_plan.build();
-        let join_graph = JoinGraphBuilder::from_logical_plan(plan).build();
+        let original_plan = join_plan.build();
+        let scan_materializer = MaterializeScans::new();
+        let original_plan = scan_materializer
+            .try_optimize(original_plan)
+            .data()
+            .unwrap();
+        let stats_enricher = EnrichWithStats::new();
+        let original_plan = stats_enricher.try_optimize(original_plan).data().unwrap();
+        let mut join_graph = JoinGraphBuilder::from_logical_plan(original_plan.clone()).build();
         assert!(join_graph.fully_connected());
         // There should be edges between:
         // - a <-> b
-        // - c_prime <-> d
+        // - c <-> d
         // - b <-> d
         assert!(join_graph.num_edges() == 3);
-        assert!(join_graph.contains_edge("a#Source(a) <-> b#Source(b)"));
-        assert!(join_graph.contains_edge("c#Source(c_prime) <-> d#Source(d)"));
-        assert!(join_graph.contains_edge("b#Source(b) <-> d#Source(d)"));
+        assert!(join_graph.contains_edges(vec![
+            "Source(a) <-> Source(b)",
+            "Project(c) <-> Source(d)",
+            "Source(b) <-> Source(d)",
+        ]));
+        // Test greedy join reordering.
+        let reordered_plan = GreedyJoinOrderer::compute_join_order(&mut join_graph).unwrap();
+        assert!(reordered_plan.schema() == original_plan.schema());
     }
 
     #[test]
@@ -657,15 +687,27 @@ mod tests {
                 vec![Arc::new(Expr::Column(Arc::from("c")))],
             )
             .unwrap();
-        let plan = join_plan_2.build();
-        let join_graph = JoinGraphBuilder::from_logical_plan(plan).build();
+        let original_plan = join_plan_2.build();
+        let scan_materializer = MaterializeScans::new();
+        let original_plan = scan_materializer
+            .try_optimize(original_plan)
+            .data()
+            .unwrap();
+        let stats_enricher = EnrichWithStats::new();
+        let original_plan = stats_enricher.try_optimize(original_plan).data().unwrap();
+        let mut join_graph = JoinGraphBuilder::from_logical_plan(original_plan.clone()).build();
         assert!(join_graph.fully_connected());
         // There should be edges between:
-        // - a <-> b
-        // - a <-> c
+        // - a_beta <-> b
+        // - a_beta <-> c
         assert!(join_graph.num_edges() == 2);
-        assert!(join_graph.contains_edge("a_beta#Source(a) <-> b#Source(b)"));
-        assert!(join_graph.contains_edge("a_beta#Source(a) <-> c#Source(c)"));
+        assert!(join_graph.contains_edges(vec![
+            "Project(a_beta) <-> Source(b)",
+            "Project(a_beta) <-> Source(c)",
+        ]));
+        // Test greedy join reordering.
+        let reordered_plan = GreedyJoinOrderer::compute_join_order(&mut join_graph).unwrap();
+        assert!(reordered_plan.schema() == original_plan.schema());
     }
 
     #[test]
@@ -718,21 +760,33 @@ mod tests {
                 vec![Arc::new(Expr::Column(Arc::from("d")))],
             )
             .unwrap();
-        let plan = join_plan.build();
-        let join_graph = JoinGraphBuilder::from_logical_plan(plan).build();
+        let original_plan = join_plan.build();
+        let scan_materializer = MaterializeScans::new();
+        let original_plan = scan_materializer
+            .try_optimize(original_plan)
+            .data()
+            .unwrap();
+        let stats_enricher = EnrichWithStats::new();
+        let original_plan = stats_enricher.try_optimize(original_plan).data().unwrap();
+        let mut join_graph = JoinGraphBuilder::from_logical_plan(original_plan.clone()).build();
         assert!(join_graph.fully_connected());
         // There should be edges between:
         // - a <-> b
-        // - c_prime <-> d
+        // - c <-> d
         // - a <-> d
         assert!(join_graph.num_edges() == 3);
-        assert!(join_graph.contains_edge("a#Source(a) <-> b#Source(b)"));
-        assert!(join_graph.contains_edge("c#Source(c_prime) <-> d#Source(d)"));
-        assert!(join_graph.contains_edge("a#Source(a) <-> d#Source(d)"));
+        assert!(join_graph.contains_edges(vec![
+            "Source(a) <-> Source(b)",
+            "Project(c) <-> Source(d)",
+            "Source(a) <-> Source(d)"
+        ]));
         // Check for non-join projections at the end.
         // `c_prime` gets renamed to `c` in the final projection
         let double_proj = col("c").add(col("c")).alias("double");
         assert!(join_graph.contains_projections_and_filters(vec![&double_proj]));
+        // Test greedy join reordering.
+        let reordered_plan = GreedyJoinOrderer::compute_join_order(&mut join_graph).unwrap();
+        assert!(reordered_plan.schema() == original_plan.schema());
     }
 
     #[test]
@@ -803,17 +857,26 @@ mod tests {
                 vec![Arc::new(Expr::Column(Arc::from("d")))],
             )
             .unwrap();
-        let plan = join_plan.build();
-        let join_graph = JoinGraphBuilder::from_logical_plan(plan).build();
+        let original_plan = join_plan.build();
+        let scan_materializer = MaterializeScans::new();
+        let original_plan = scan_materializer
+            .try_optimize(original_plan)
+            .data()
+            .unwrap();
+        let stats_enricher = EnrichWithStats::new();
+        let original_plan = stats_enricher.try_optimize(original_plan).data().unwrap();
+        let mut join_graph = JoinGraphBuilder::from_logical_plan(original_plan.clone()).build();
         assert!(join_graph.fully_connected());
         // There should be edges between:
         // - a <-> b
-        // - c_prime <-> d
+        // - c <-> d
         // - a <-> d
         assert!(join_graph.num_edges() == 3);
-        assert!(join_graph.contains_edge("a#Source(a) <-> b#Source(b)"));
-        assert!(join_graph.contains_edge("c#Source(c_prime) <-> d#Source(d)"));
-        assert!(join_graph.contains_edge("a#Source(a) <-> d#Source(d)"));
+        assert!(join_graph.contains_edges(vec![
+            "Source(a) <-> Source(b)",
+            "Project(c) <-> Source(d)",
+            "Source(a) <-> Source(d)",
+        ]));
         // Check for non-join projections and filters at the end.
         // `c_prime` gets renamed to `c` in the final projection
         let double_proj = col("c").add(col("c")).alias("double");
@@ -824,6 +887,9 @@ mod tests {
             &double_proj,
             &filter_c_prime,
         ]));
+        // Test greedy join reordering.
+        let reordered_plan = GreedyJoinOrderer::compute_join_order(&mut join_graph).unwrap();
+        assert!(reordered_plan.schema() == original_plan.schema());
     }
 
     #[test]
@@ -889,18 +955,30 @@ mod tests {
                 vec![Arc::new(Expr::Column(Arc::from("d")))],
             )
             .unwrap();
-        let plan = join_plan.build();
-        let join_graph = JoinGraphBuilder::from_logical_plan(plan).build();
+        let original_plan = join_plan.build();
+        let scan_materializer = MaterializeScans::new();
+        let original_plan = scan_materializer
+            .try_optimize(original_plan)
+            .data()
+            .unwrap();
+        let stats_enricher = EnrichWithStats::new();
+        let original_plan = stats_enricher.try_optimize(original_plan).data().unwrap();
+        let mut join_graph = JoinGraphBuilder::from_logical_plan(original_plan.clone()).build();
         assert!(join_graph.fully_connected());
         // There should be edges between:
         // - a <-> b
-        // - c_prime <-> d
+        // - c <-> d
         // - a <-> d
         assert!(join_graph.num_edges() == 3);
-        assert!(join_graph.contains_edge("a#Aggregate(a) <-> b#Source(b)"));
-        assert!(join_graph.contains_edge("c#Source(c_prime) <-> d#Source(d)"));
-        assert!(join_graph.contains_edge("a#Aggregate(a) <-> d#Source(d)"));
+        assert!(join_graph.contains_edges(vec![
+            "Aggregate(a) <-> Source(b)",
+            "Project(c) <-> Source(d)",
+            "Aggregate(a) <-> Source(d)"
+        ]));
         // Projections below the aggregation should not be part of the final projections.
         assert!(!join_graph.contains_projections_and_filters(vec![&a_proj]));
+        // Test greedy join reordering.
+        let reordered_plan = GreedyJoinOrderer::compute_join_order(&mut join_graph).unwrap();
+        assert!(reordered_plan.schema() == original_plan.schema());
     }
 }
