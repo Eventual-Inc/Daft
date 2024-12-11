@@ -2,14 +2,15 @@ use std::borrow::{Borrow, Cow};
 
 use arrow_format::ipc::planus::Builder;
 
-use super::{super::IpcField, write, write_dictionary};
-use crate::{
-    array::*,
-    chunk::Chunk,
-    datatypes::*,
-    error::{Error, Result},
-    io::ipc::{endianness::is_native_little_endian, read::Dictionaries},
-};
+use crate::array::*;
+use crate::chunk::Chunk;
+use crate::datatypes::*;
+use crate::error::{Error, Result};
+use crate::io::ipc::endianness::is_native_little_endian;
+use crate::io::ipc::read::Dictionaries;
+
+use super::super::IpcField;
+use super::{write, write_dictionary};
 
 /// Compression codec
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
