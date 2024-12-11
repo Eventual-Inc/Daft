@@ -10,6 +10,7 @@ import contextlib
 import dataclasses
 import json
 import logging
+import os
 import pathlib
 import time
 from datetime import datetime
@@ -255,6 +256,11 @@ class RunnerTracer:
                             "ph": RunnerTracer.PHASE_ASYNC_END,
                             "pid": 1,
                             "tid": 2,
+                            "args": {
+                                "memray_peak_memory_allocated": task_event.memory_stats.peak_memory_allocated,
+                                "memray_total_memory_allocated": task_event.memory_stats.total_memory_allocated,
+                                "memray_total_num_allocations": task_event.memory_stats.total_num_allocations,
+                            },
                         },
                         ts=end_ts,
                     )
@@ -272,6 +278,11 @@ class RunnerTracer:
                                 "ph": RunnerTracer.PHASE_DURATION_END,
                                 "pid": node_idx + RunnerTracer.NODE_PIDS_START,
                                 "tid": worker_idx,
+                                "args": {
+                                    "memray_peak_memory_allocated": task_event.memory_stats.peak_memory_allocated,
+                                    "memray_total_memory_allocated": task_event.memory_stats.total_memory_allocated,
+                                    "memray_total_num_allocations": task_event.memory_stats.total_num_allocations,
+                                },
                             },
                             ts=end_ts,
                         )
@@ -656,7 +667,11 @@ class MaterializedPhysicalPlanWrapper:
 def collect_ray_task_metrics(execution_id: str, task_id: str, stage_id: int, execution_config: PyDaftExecutionConfig):
     """Context manager that will ping the metrics actor to record various execution metrics about a given task."""
     if execution_config.enable_ray_tracing:
+        import tempfile
         import time
+
+        import memray
+        from memray._memray import compute_statistics
 
         runtime_context = ray.get_runtime_context()
 
@@ -670,7 +685,21 @@ def collect_ray_task_metrics(execution_id: str, task_id: str, stage_id: int, exe
             runtime_context.get_assigned_resources(),
             runtime_context.get_task_id(),
         )
-        yield
-        metrics_actor.mark_task_end(task_id, time.time())
+        with tempfile.TemporaryDirectory() as tmpdir:
+            memray_tmpfile = os.path.join(tmpdir, f"task-{task_id}.memray.bin")
+            try:
+                with memray.Tracker(memray_tmpfile):
+                    yield
+            finally:
+                stats = compute_statistics(memray_tmpfile)
+                metrics_actor.mark_task_end(
+                    task_id,
+                    time.time(),
+                    ray_metrics.TaskMemoryStats(
+                        peak_memory_allocated=stats.peak_memory_allocated,
+                        total_memory_allocated=stats.total_memory_allocated,
+                        total_num_allocations=stats.total_num_allocations,
+                    ),
+                )
     else:
         yield
