@@ -1534,9 +1534,6 @@ def reduce(
         else:
             yield step
 
-        if pending_materializations:
-            logger.debug("Processing continues with pending materializations: %s", pending_materializations)
-
     # After all fanouts are launched, wait for remaining materializations
     while pending_materializations:
         newly_completed = [(i, m) for i, m in pending_materializations.items() if m.done()]
@@ -1546,7 +1543,7 @@ def reduce(
             metadatas.append(deque(completed.partition_metadatas()))
 
         if pending_materializations:
-            logger.debug("Waiting for completion of remaining sources: %s", pending_materializations)
+            logger.debug("reduce blocked on completion of all sources in: %s", pending_materializations)
             yield None
 
     if not isinstance(reduce_instructions, list):
