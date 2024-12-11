@@ -161,7 +161,7 @@ impl Translator<'_> {
             size_bytes,
             len,
         )?;
-        self.pset_cache.put_partition_set(pset_id, Arc::new(pset))?;
+        self.pset_cache.put_partition_set(Arc::new(pset))?;
 
         Ok(lp)
     }

@@ -1079,6 +1079,12 @@ pub struct PyPartitionSet {
 }
 
 impl PartitionSet<MicroPartition> for PyPartitionSet {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
+        self
+    }
     fn get_merged_partitions(&self) -> DaftResult<PartitionRef> {
         unimplemented!("this should only be called in python at the moment")
     }
@@ -1197,18 +1203,40 @@ impl PartitionSetCache<MicroPartition> for PyPartitionSetCache {
         })
     }
 
+    // daft/runners/partitioning.py#L400
     fn get_all_partition_sets(
         &self,
     ) -> DaftResult<HashMap<Arc<str>, PartitionSetRef<MicroPartition>>> {
-        unimplemented!("this should only be called in python at the moment")
+        Python::with_gil(|py| {
+            let pset_cache_entries = self
+                .inner
+                .call_method0(py, pyo3::intern!(py, "get_alla-partition_sets"))?;
+            // dict[str, PartitionSet]
+            let pset_cache_entries = pset_cache_entries.extract::<HashMap<String, PyObject>>(py)?;
+
+            let pset_cache_entries = pset_cache_entries
+                .into_iter()
+                .map(|(k, v)| {
+                    let pset = Arc::new(PyPartitionSet { inner: v })
+                        as Arc<dyn PartitionSet<MicroPartition>>;
+
+                    (Arc::<str>::from(k), pset)
+                })
+                .collect::<HashMap<_, _>>();
+
+            Ok(pset_cache_entries)
+        })
     }
 
-    fn put_partition_set(
-        &self,
-        _pset_id: PartitionId,
-        _pset: PartitionSetRef<MicroPartition>,
-    ) -> DaftResult<()> {
-        unimplemented!("this should only be called in python at the moment")
+    fn put_partition_set(&self, pset: PartitionSetRef<MicroPartition>) -> DaftResult<()> {
+        Python::with_gil(|py| {
+            let pset = pset.clone().as_any_arc();
+            let pset = Arc::downcast::<PyPartitionSet>(pset).expect("Must be a PyPartitionSet");
+
+            self.inner
+                .call_method1(py, pyo3::intern!(py, "put_partition_set"), (&pset.inner,))?;
+            Ok(())
+        })
     }
 
     fn rm(&self, _pset_id: &str) -> DaftResult<()> {

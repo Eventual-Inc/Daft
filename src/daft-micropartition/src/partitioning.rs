@@ -99,6 +99,12 @@ impl MicroPartitionSet {
 }
 
 impl PartitionSet<MicroPartition> for MicroPartitionSet {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self
+    }
     fn get_merged_partitions(&self) -> DaftResult<PartitionRef> {
         let parts = self.partitions.values();
         let parts = parts.into_iter().flatten();

@@ -51,16 +51,14 @@ impl PartitionSetCache<MicroPartition> for InMemoryPartitionSetCache {
         Ok(lock.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
     }
 
-    fn put_partition_set(
-        &self,
-        pset_id: PartitionId,
-        pset: PartitionSetRef<MicroPartition>,
-    ) -> DaftResult<()> {
+    fn put_partition_set(&self, pset: PartitionSetRef<MicroPartition>) -> DaftResult<()> {
+        let uuid = uuid::Uuid::new_v4().to_string();
+        let uuid = Arc::<str>::from(uuid);
         let mut lock = self
             .uuid_to_partition_set
             .write()
             .map_err(|_| DaftError::InternalError("Failed to acquire write lock".to_string()))?;
-        lock.insert(pset_id, pset);
+        lock.insert(uuid, pset);
         Ok(())
     }
 

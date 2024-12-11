@@ -41,6 +41,8 @@ pub struct PartitionMetadata {
 /// It is up to the implementation to decide how to store and manage the partition batches.
 /// For example, an in memory partition set could likely be stored as `HashMap<PartitionId, PartitionBatchRef<T>>`.
 pub trait PartitionSet<T: Partition>: std::fmt::Debug + Send + Sync {
+    fn as_any(&self) -> &dyn Any;
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
     /// Merge all micropartitions into a single micropartition
     fn get_merged_partitions(&self) -> DaftResult<PartitionRef>;
     /// Get a preview of the micropartitions
@@ -84,7 +86,7 @@ pub type PartitionSetRef<T> = Arc<dyn PartitionSet<T>>;
 pub trait PartitionSetCache<T: Partition>: std::fmt::Debug + Send + Sync {
     fn get_partition_set(&self, pset_id: &str) -> DaftResult<Option<PartitionSetRef<T>>>;
     fn get_all_partition_sets(&self) -> DaftResult<HashMap<PartitionId, PartitionSetRef<T>>>;
-    fn put_partition_set(&self, pset_id: PartitionId, pset: PartitionSetRef<T>) -> DaftResult<()>;
+    fn put_partition_set(&self, pset: PartitionSetRef<T>) -> DaftResult<()>;
     fn rm(&self, pset_id: &str) -> DaftResult<()>;
     fn clear(&self) -> DaftResult<()>;
 }
