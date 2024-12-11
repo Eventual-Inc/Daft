@@ -61,6 +61,7 @@ impl PartitionBatch<MicroPartition> for MicroPartitionBatch {
     fn partitions(&self) -> Vec<Arc<MicroPartition>> {
         self.partition.clone()
     }
+
     fn metadata(&self) -> PartitionMetadata {
         if let Some(metadata) = &self.metadata {
             metadata.clone()
