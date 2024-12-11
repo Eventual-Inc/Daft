@@ -74,11 +74,11 @@ impl std::fmt::Display for JoinAdjList {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Join Graph Adjacency List:")?;
         for (node, neighbors) in &self.0 {
-            writeln!(f, "Node '{}':", node.name())?;
-            for (neighbor, conditions) in neighbors {
-                writeln!(f, "  →> '{}' with conditions:", neighbor.name())?;
-                for (i, cond) in conditions.iter().enumerate() {
-                    writeln!(f, "    {}: {} = {}", i + 1, cond.left_on, cond.right_on)?;
+            writeln!(f, "Node {}:", node.name())?;
+            for (neighbor, join_conds) in neighbors {
+                writeln!(f, " -> {} with conditions:", neighbor.name())?;
+                for (i, cond) in join_conds.iter().enumerate() {
+                    writeln!(f, "    {}: {} = {}", i, cond.left_on, cond.right_on)?;
                 }
             }
         }
