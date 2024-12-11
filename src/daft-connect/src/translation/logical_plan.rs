@@ -5,11 +5,12 @@ use spark_connect::{relation::RelType, Limit, Relation};
 use tracing::warn;
 
 use crate::translation::logical_plan::{
-    aggregate::aggregate, local_relation::local_relation, project::project, range::range,
-    read::read, to_df::to_df, with_columns::with_columns,
+    aggregate::aggregate, filter::filter, local_relation::local_relation, project::project,
+    range::range, read::read, to_df::to_df, with_columns::with_columns,
 };
 
 mod aggregate;
+mod filter;
 mod local_relation;
 mod project;
 mod range;
@@ -59,6 +60,9 @@ pub async fn to_logical_plan(relation: Relation) -> eyre::Result<Plan> {
         RelType::Project(p) => project(*p)
             .await
             .wrap_err("Failed to apply project to logical plan"),
+        RelType::Filter(f) => filter(*f)
+            .await
+            .wrap_err("Failed to apply filter to logical plan"),
         RelType::Aggregate(a) => aggregate(*a)
             .await
             .wrap_err("Failed to apply aggregate to logical plan"),
