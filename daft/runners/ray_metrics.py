@@ -51,6 +51,14 @@ class EndTaskEvent(TaskEvent):
 
     # End Unix timestamp
     end: float
+    memory_stats: TaskMemoryStats
+
+
+@dataclasses.dataclass(frozen=True)
+class TaskMemoryStats:
+    peak_memory_allocated: int
+    total_memory_allocated: int
+    total_num_allocations: int
 
 
 class _NodeInfo:
@@ -123,9 +131,15 @@ class _MetricsActor:
             )
         )
 
-    def mark_task_end(self, execution_id: str, task_id: str, end: float):
+    def mark_task_end(
+        self,
+        execution_id: str,
+        task_id: str,
+        end: float,
+        memory_stats: TaskMemoryStats,
+    ):
         # Add an EndTaskEvent
-        self._task_events[execution_id].append(EndTaskEvent(task_id=task_id, end=end))
+        self._task_events[execution_id].append(EndTaskEvent(task_id=task_id, end=end, memory_stats=memory_stats))
 
     def get_task_events(self, execution_id: str, idx: int) -> tuple[list[TaskEvent], int]:
         events = self._task_events[execution_id]
@@ -177,11 +191,13 @@ class MetricsActorHandle:
         self,
         task_id: str,
         end: float,
+        memory_stats: TaskMemoryStats,
     ) -> None:
         self.actor.mark_task_end.remote(
             self.execution_id,
             task_id,
             end,
+            memory_stats,
         )
 
     def get_task_events(self, idx: int) -> tuple[list[TaskEvent], int]:
