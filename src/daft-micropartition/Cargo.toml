@@ -4,7 +4,6 @@ bincode = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 common-file-formats = {path = "../common/file-formats", default-features = false}
 common-partitioning = {version = "0.3.0-dev0", path = "../common/partitioning"}
-common-py-serde = {version = "0.3.0-dev0", path = "../common/py-serde"}
 common-runtime = {path = "../common/runtime", default-features = false}
 common-scan-info = {path = "../common/scan-info", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
@@ -20,6 +19,7 @@ futures = {workspace = true}
 parquet2 = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 snafu = {workspace = true}
+uuid = {version = "1.11.0", features = ["v4"]}
 
 [features]
 python = ["dep:pyo3", "common-error/python", "common-file-formats/python", "common-scan-info/python", "daft-core/python", "daft-dsl/python", "daft-table/python", "daft-io/python", "daft-parquet/python", "daft-scan/python", "daft-stats/python", "daft-csv/python", "daft-json/python"]

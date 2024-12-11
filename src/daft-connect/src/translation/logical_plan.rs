@@ -1,9 +1,8 @@
 use daft_logical_plan::LogicalPlanBuilder;
+use daft_micropartition::partitioning::InMemoryPartitionSetCache;
 use eyre::{bail, Context};
 use spark_connect::{relation::RelType, Limit, Relation};
 use tracing::warn;
-
-use crate::pset_cache::InMemoryPartitionSetCache;
 
 mod aggregate;
 mod local_relation;

@@ -1542,12 +1542,7 @@ name = "common-partitioning"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
- "common-py-serde",
- "dashmap",
  "futures",
- "pyo3",
- "serde",
- "uuid 1.11.0",
 ]
 
 [[package]]
@@ -2341,7 +2336,6 @@ dependencies = [
  "common-error",
  "common-file-formats",
  "common-io-config",
- "common-partitioning",
  "common-py-serde",
  "common-resource-request",
  "common-scan-info",
@@ -2350,7 +2344,6 @@ dependencies = [
  "daft-dsl",
  "daft-functions",
  "daft-schema",
- "daft-table",
  "derivative",
  "indexmap 2.5.0",
  "itertools 0.11.0",
@@ -2373,7 +2366,6 @@ dependencies = [
  "common-error",
  "common-file-formats",
  "common-partitioning",
- "common-py-serde",
  "common-runtime",
  "common-scan-info",
  "daft-core",
@@ -2389,6 +2381,7 @@ dependencies = [
  "parquet2",
  "pyo3",
  "snafu",
+ "uuid 1.11.0",
 ]
 
 [[package]]
@@ -2453,7 +2446,6 @@ dependencies = [
  "daft-functions",
  "daft-logical-plan",
  "daft-schema",
- "daft-table",
  "itertools 0.11.0",
  "log",
  "rstest",
@@ -2505,7 +2497,6 @@ dependencies = [
  "common-error",
  "common-file-formats",
  "common-io-config",
- "common-partitioning",
  "common-py-serde",
  "daft-core",
  "daft-dsl",

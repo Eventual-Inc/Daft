@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fs::File,
     io::Write,
     sync::Arc,
@@ -10,7 +11,10 @@ use common_error::DaftResult;
 use common_tracing::refresh_chrome_trace;
 use daft_local_plan::{translate, LocalPhysicalPlan};
 use daft_logical_plan::LogicalPlanBuilder;
-use daft_micropartition::{partitioning::PartitionSetCache, MicroPartition};
+use daft_micropartition::{
+    partitioning::{InMemoryPartitionSetCache, MicroPartitionSet, PartitionSetCache},
+    MicroPartition,
+};
 use futures::{FutureExt, Stream};
 use loole::RecvFuture;
 use tokio_util::sync::CancellationToken;
@@ -18,7 +22,7 @@ use tokio_util::sync::CancellationToken;
 use {
     common_daft_config::PyDaftExecutionConfig,
     daft_logical_plan::PyLogicalPlanBuilder,
-    daft_micropartition::python::{PyMicroPartition, PyPartitionSetCache},
+    daft_micropartition::python::PyMicroPartition,
     pyo3::{pyclass, pymethods, IntoPy, PyObject, PyRef, PyRefMut, PyResult, Python},
 };
 
@@ -72,11 +76,33 @@ impl PyNativeExecutor {
     pub fn run(
         &self,
         py: Python,
-        pset_cache: PyObject,
+        psets: HashMap<String, Vec<PyMicroPartition>>,
         cfg: PyDaftExecutionConfig,
         results_buffer_size: Option<usize>,
     ) -> PyResult<PyObject> {
-        let native_pset_cache = PyPartitionSetCache::new(pset_cache);
+        println!("Running py native executor");
+        println!("psets: {:?}", psets);
+        let native_psets: HashMap<Arc<str>, _> = psets
+            .into_iter()
+            .map(|(part_id, parts)| {
+                println!("part_id: {}", part_id);
+                (
+                    Arc::<str>::from(part_id),
+                    parts
+                        .into_iter()
+                        .map(std::convert::Into::into)
+                        .collect::<Vec<Arc<MicroPartition>>>(),
+                )
+            })
+            .collect();
+
+        let native_pset = MicroPartitionSet {
+            partitions: native_psets,
+        };
+        let mut pset_map = HashMap::new();
+        pset_map.insert("default".into(), Arc::new(native_pset) as _);
+
+        let native_pset_cache = InMemoryPartitionSetCache::new(pset_map);
 
         let out = py.allow_threads(|| {
             self.executor
@@ -114,6 +140,7 @@ impl NativeExecutor {
         cfg: Arc<DaftExecutionConfig>,
         results_buffer_size: Option<usize>,
     ) -> DaftResult<ExecutionEngineResult> {
+        println!("Running native executor");
         run_local(
             &self.local_physical_plan,
             pset_cache,

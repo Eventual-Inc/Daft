@@ -67,12 +67,6 @@ pub trait PartitionSet<T: Partition>: std::fmt::Debug + Send + Sync {
     fn into_partition_stream(self: Arc<Self>) -> BoxStream<'static, DaftResult<Arc<T>>>;
 }
 
-// An in memory partition set
-#[derive(Debug, Default)]
-pub struct InMemoryPartitionSet<T: Partition> {
-    pub partitions: HashMap<PartitionId, PartitionBatchRef<T>>,
-}
-
 pub type PartitionSetRef<T> = Arc<dyn PartitionSet<T>>;
 
 /// A PartitionSetCache is a cache for partition sets.
