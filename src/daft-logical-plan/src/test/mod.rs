@@ -12,7 +12,10 @@ pub fn dummy_scan_operator(fields: Vec<Field>) -> ScanOperatorRef {
 
 /// Create  dummy scan node containing the provided fields in its schema and the provided limit,
 /// and with the provided size estimate.
-pub fn dummy_scan_operator_with_size(fields: Vec<Field>, in_memory_size_per_task: Option<usize>) -> ScanOperatorRef {
+pub fn dummy_scan_operator_with_size(
+    fields: Vec<Field>,
+    in_memory_size_per_task: Option<usize>,
+) -> ScanOperatorRef {
     let schema = Arc::new(Schema::new(fields).unwrap());
     ScanOperatorRef(Arc::new(DummyScanOperator {
         schema,

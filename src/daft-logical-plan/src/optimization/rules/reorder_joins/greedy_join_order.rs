@@ -1,11 +1,13 @@
-use std::{collections::{HashMap, HashSet}, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use common_error::DaftResult;
 use daft_dsl::{col, ExprRef};
 
-use crate::{LogicalPlanBuilder, LogicalPlanRef};
-
 use super::join_graph::{JoinCondition, JoinGraph};
+use crate::{LogicalPlanBuilder, LogicalPlanRef};
 
 // This is an implementation of the Greedy Operator Ordering algorithm (GOO) [1] for join selection. This algorithm
 // selects join edges greedily by picking the edge with the smallest cost at each step. This is similar to Kruskal's
@@ -14,7 +16,7 @@ use super::join_graph::{JoinCondition, JoinGraph};
 //
 // Compared to DP-based algorithms, GOO is not always optimal. However, GOO has a complexity of O(n^3) and is more viable
 // than DP-based algorithms when performing join ordering on many relations. DP Connected subgraph Complement Pairs (DPccp) [2]
-// is the DP-based algorithm widely used in database systems today and has a O(3^n) complexity, although the latest 
+// is the DP-based algorithm widely used in database systems today and has a O(3^n) complexity, although the latest
 // literature does offer a super-polynomially faster DP-algorithm but that still has a O(2^n) to O(2^n * n^3) complexity [3].
 //
 // For this reason, we maintain a greedy-based join ordering algorithm to use when the number of relations is large, and default
@@ -26,67 +28,100 @@ use super::join_graph::{JoinCondition, JoinGraph};
 
 pub(crate) fn compute_join_order(join_graph: &mut JoinGraph) -> DaftResult<LogicalPlanRef> {
     // TODO(desmond): we need to handle projections.
-    println!("adjlist: {}", join_graph.adj_list);
+    // println!("adjlist: {}", join_graph.adj_list);
     while join_graph.adj_list.0.len() > 1 {
         let (min_cost, selected_pair) = find_minimum_cost_join(&join_graph.adj_list.0);
-        println!("min cost: {min_cost:?}");
+        // println!("min cost: {min_cost:?}");
         if let Some((left, right, join_conds)) = selected_pair {
-            println!("selected pair: {}({}) <-> {}({}) on {:?}", left.name(), left.schema(), right.name(), right.schema(), join_conds);
+            // println!("selected pair: {}({}) <-> {}({}) on {:?}", left.name(), left.schema(), right.name(), right.schema(), join_conds);
             let (left_on, right_on) = join_conds
                 .iter()
-                .map(|join_cond| (col(join_cond.left_on.clone()), col(join_cond.right_on.clone())))
+                .map(|join_cond| {
+                    (
+                        col(join_cond.left_on.clone()),
+                        col(join_cond.right_on.clone()),
+                    )
+                })
                 .collect::<(Vec<ExprRef>, Vec<ExprRef>)>();
             let left_builder = LogicalPlanBuilder::from(left.clone());
-            let join = left_builder.inner_join(right.clone(), left_on, right_on)?.build();
+            let join = left_builder
+                .inner_join(right.clone(), left_on, right_on)?
+                .build();
             let join = Arc::new(Arc::unwrap_or_clone(join).with_materialized_stats());
-            let old_left_edges = join_graph.adj_list.0.remove(&left).unwrap();
-            let old_right_edges = join_graph.adj_list.0.remove(&right).unwrap();
+            let left_neighbors = join_graph.adj_list.0.remove(&left).unwrap();
+            let right_neighbors = join_graph.adj_list.0.remove(&right).unwrap();
             let mut new_join_edges = HashMap::new();
 
-            // Process all neighbors from both left and right nodes
-            let mut process_edges = |edges: HashMap<LogicalPlanRef, Vec<JoinCondition>>| {
-                for (neighbor, _) in edges {
+            // Helper function to collapse the left and right node
+            let mut update_neighbors = |neighbors: HashMap<LogicalPlanRef, Vec<JoinCondition>>| {
+                for (neighbor, _) in neighbors {
                     if neighbor == right || neighbor == left {
-                        continue; // Skip the nodes we just joined
+                        // Skip the nodes that we just joined.
+                        continue;
                     }
                     let mut join_conditions = Vec::new();
-                
-                    // If neighbor was connected to left node, collect those conditions
-                    if let Some(left_conds) = join_graph.adj_list.0.get_mut(&neighbor).unwrap().remove(&left) {
+                    // If this neighbor was connected to left or right nodes, collect the join conditions.
+                    if let Some(left_conds) = join_graph
+                        .adj_list
+                        .0
+                        .get_mut(&neighbor)
+                        .unwrap()
+                        .remove(&left)
+                    {
                         join_conditions.extend(left_conds);
                     }
-                    
-                    // If neighbor was connected to right node, collect those conditions
-                    if let Some(right_conds) = join_graph.adj_list.0.get_mut(&neighbor).unwrap().remove(&right) {
+                    if let Some(right_conds) = join_graph
+                        .adj_list
+                        .0
+                        .get_mut(&neighbor)
+                        .unwrap()
+                        .remove(&right)
+                    {
                         join_conditions.extend(right_conds);
                     }
-                    
-                    // If this neighbor had any connections to left or right, create new edge to join node
+                    // If this neighbor had any connections to left or right, create a new edge to the new join node.
                     if !join_conditions.is_empty() {
-                        join_graph.adj_list.0.get_mut(&neighbor).unwrap().insert(join.clone(), join_conditions.clone());
-                        new_join_edges.insert(neighbor.clone(), join_conditions.iter().map(|cond| cond.flip()).collect());
+                        join_graph
+                            .adj_list
+                            .0
+                            .get_mut(&neighbor)
+                            .unwrap()
+                            .insert(join.clone(), join_conditions.clone());
+                        new_join_edges.insert(
+                            neighbor.clone(),
+                            join_conditions.iter().map(|cond| cond.flip()).collect(),
+                        );
                     }
                 }
             };
 
-            // Process edges from both left and right nodes
-            process_edges(old_left_edges);
-            process_edges(old_right_edges);
+            // Process all neighbors from both the left and right sides.
+            update_neighbors(left_neighbors);
+            update_neighbors(right_neighbors);
 
             // Add the new join node and its edges to the graph
             join_graph.adj_list.0.insert(join, new_join_edges);
         } else {
-            panic!("No valid join edge selected despite join graph containing more than one relation");
+            panic!(
+                "No valid join edge selected despite join graph containing more than one relation"
+            );
         }
-        println!("adjlist: {}", join_graph.adj_list);
+        // println!("adjlist: {}", join_graph.adj_list);
     }
     // TODO(desmond): Apply projections.
-    todo!()
+    if let Some(joined_plan) = join_graph.adj_list.0.drain().map(|(plan, _)| plan).last() {
+        join_graph.apply_projections_and_filters_to_plan(joined_plan)
+    } else {
+        panic!("No valid logical plan after join reordering")
+    }
 }
 
 fn find_minimum_cost_join(
-    adj_list: &HashMap<LogicalPlanRef, HashMap<LogicalPlanRef, Vec<JoinCondition>>>
-) -> (Option<usize>, Option<(LogicalPlanRef, LogicalPlanRef, Vec<JoinCondition>)>) {
+    adj_list: &HashMap<LogicalPlanRef, HashMap<LogicalPlanRef, Vec<JoinCondition>>>,
+) -> (
+    Option<usize>,
+    Option<(LogicalPlanRef, LogicalPlanRef, Vec<JoinCondition>)>,
+) {
     let mut min_cost = None;
     let mut selected_pair = None;
 
@@ -94,10 +129,12 @@ fn find_minimum_cost_join(
         for (candidate_right, join_conds) in neighbors {
             let left_stats = candidate_left.materialized_stats();
             let right_stats = candidate_right.materialized_stats();
-            
+
             // Assume primary key foreign key join which would have a size bounded by the foreign key relation,
             // which is typically larger.
-            let cur_cost = left_stats.approx_stats.upper_bound_bytes
+            let cur_cost = left_stats
+                .approx_stats
+                .upper_bound_bytes
                 .max(right_stats.approx_stats.upper_bound_bytes);
 
             if let Some(existing_min) = min_cost {
@@ -107,7 +144,7 @@ fn find_minimum_cost_join(
                         selected_pair = Some((
                             candidate_left.clone(),
                             candidate_right.clone(),
-                            join_conds.clone()
+                            join_conds.clone(),
                         ));
                     }
                 }
@@ -116,7 +153,7 @@ fn find_minimum_cost_join(
                 selected_pair = Some((
                     candidate_left.clone(),
                     candidate_right.clone(),
-                    join_conds.clone()
+                    join_conds.clone(),
                 ));
             }
         }

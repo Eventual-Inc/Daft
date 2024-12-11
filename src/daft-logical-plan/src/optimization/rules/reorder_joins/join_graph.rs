@@ -4,12 +4,13 @@ use std::{
     sync::Arc,
 };
 
+use common_error::DaftResult;
 use daft_core::join::JoinType;
 use daft_dsl::{col, optimization::replace_columns_with_expressions, ExprRef};
 
 use crate::{
     ops::{Filter, Join, Project},
-    LogicalPlan, LogicalPlanRef,
+    LogicalPlan, LogicalPlanBuilder, LogicalPlanRef,
 };
 
 #[derive(Debug)]
@@ -76,11 +77,16 @@ pub(crate) struct JoinCondition {
 
 impl JoinCondition {
     pub(crate) fn flip(&self) -> Self {
-        JoinCondition { left_on: self.right_on.clone(), right_on: self.left_on.clone() }
+        JoinCondition {
+            left_on: self.right_on.clone(),
+            right_on: self.left_on.clone(),
+        }
     }
 }
 
-pub(crate) struct JoinAdjList(pub HashMap<LogicalPlanRef, HashMap<LogicalPlanRef, Vec<JoinCondition>>>);
+pub(crate) struct JoinAdjList(
+    pub HashMap<LogicalPlanRef, HashMap<LogicalPlanRef, Vec<JoinCondition>>>,
+);
 
 impl std::fmt::Display for JoinAdjList {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -101,7 +107,10 @@ impl std::fmt::Display for JoinAdjList {
 impl JoinAdjList {
     fn add_unidirectional_edge(&mut self, left: &JoinNode, right: &JoinNode) {
         // TODO(desmond): We should also keep track of projections that we need to do.
-        let join_condition = JoinCondition{left_on: left.final_name.clone(), right_on: right.final_name.clone()};
+        let join_condition = JoinCondition {
+            left_on: left.final_name.clone(),
+            right_on: right.final_name.clone(),
+        };
         if let Some(neighbors) = self.0.get_mut(&left.plan) {
             if let Some(join_conditions) = neighbors.get_mut(&right.plan) {
                 join_conditions.push(join_condition);
@@ -121,7 +130,7 @@ impl JoinAdjList {
 }
 
 #[derive(Debug)]
-enum ProjectionOrFilter {
+pub(crate) enum ProjectionOrFilter {
     Projection(Vec<ExprRef>),
     Filter(ExprRef),
 }
@@ -145,6 +154,20 @@ impl JoinGraph {
             adj_list,
             final_projections_and_filters,
         }
+    }
+
+    pub(crate) fn apply_projections_and_filters_to_plan(
+        &mut self,
+        plan: LogicalPlanRef,
+    ) -> DaftResult<LogicalPlanRef> {
+        let mut plan = LogicalPlanBuilder::from(plan);
+        for projection_or_filter in self.final_projections_and_filters.drain(..).rev() {
+            match projection_or_filter {
+                ProjectionOrFilter::Projection(projections) => plan = plan.select(projections)?,
+                ProjectionOrFilter::Filter(predicate) => plan = plan.filter(predicate)?,
+            }
+        }
+        Ok(plan.build())
     }
 
     // /// Test helper function to get the number of edges that the current graph contains.
@@ -416,7 +439,15 @@ mod tests {
     use daft_schema::{dtype::DataType, field::Field};
 
     use super::JoinGraphBuilder;
-    use crate::{optimization::rules::{reorder_joins::greedy_join_order::compute_join_order, EnrichWithStats, MaterializeScans, OptimizerRule}, test::{dummy_scan_node_with_pushdowns, dummy_scan_operator, dummy_scan_operator_with_size}};
+    use crate::{
+        optimization::rules::{
+            reorder_joins::greedy_join_order::compute_join_order, EnrichWithStats,
+            MaterializeScans, OptimizerRule,
+        },
+        test::{
+            dummy_scan_node_with_pushdowns, dummy_scan_operator, dummy_scan_operator_with_size,
+        },
+    };
 
     #[test]
     fn test_create_join_graph_basic_1() {
@@ -447,7 +478,7 @@ mod tests {
         // .select(vec![col("c_prime").alias("c")])
         // .unwrap();
         let scan_d = dummy_scan_node_with_pushdowns(
-            dummy_scan_operator_with_size(vec![Field::new("d", DataType::Int64)],Some(100)),
+            dummy_scan_operator_with_size(vec![Field::new("d", DataType::Int64)], Some(100)),
             Pushdowns::default(),
         );
         let join_plan_l = scan_a
