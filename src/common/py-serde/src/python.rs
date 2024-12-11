@@ -94,8 +94,12 @@ macro_rules! impl_bincode_py_state_serialization {
                         .into(),
                     (PyBytes::new_bound(
                         py,
-                        &$crate::bincode::serialize(&self)
-                            .map_err(|_| PyErr::new::<PyRuntimeError, _>("Failed to serialize"))?,
+                        &$crate::bincode::serialize(&self).map_err(|error| {
+                            PyErr::new::<PyRuntimeError, _>(format!(
+                                "Failed to serialize: {}",
+                                error.to_string()
+                            ))
+                        })?,
                     ),),
                 ))
             }
