@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_runtime::RuntimeRef;
 #[cfg(feature = "python")]
 use daft_dsl::python::PyExpr;
 use daft_dsl::{
@@ -14,7 +13,7 @@ use daft_micropartition::python::PyMicroPartition;
 use daft_micropartition::MicroPartition;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
-use tracing::instrument;
+use tracing::{instrument, Span};
 
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOpState, IntermediateOperator,
@@ -22,6 +21,7 @@ use super::intermediate_op::{
 };
 use crate::{
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
+    runtime_stats::ExecutionTaskSpawner,
     ExecutionRuntimeContext,
 };
 
@@ -154,19 +154,22 @@ impl IntermediateOperator for ActorPoolProjectOperator {
         &self,
         input: Arc<MicroPartition>,
         mut state: Box<dyn IntermediateOpState>,
-        runtime: &RuntimeRef,
+        spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult {
-        let fut = runtime.spawn(async move {
-            let actor_pool_project_state = state
-                .as_any_mut()
-                .downcast_mut::<ActorPoolProjectState>()
-                .expect("ActorPoolProjectState");
-            let res = actor_pool_project_state
-                .actor_handle
-                .eval_input(input)
-                .map(|result| IntermediateOperatorResult::NeedMoreInput(Some(result)))?;
-            Ok((state, res))
-        });
+        let fut = spawner.spawn(
+            async move {
+                let actor_pool_project_state = state
+                    .as_any_mut()
+                    .downcast_mut::<ActorPoolProjectState>()
+                    .expect("ActorPoolProjectState");
+                let res = actor_pool_project_state
+                    .actor_handle
+                    .eval_input(input)
+                    .map(|result| IntermediateOperatorResult::NeedMoreInput(Some(result)))?;
+                Ok((state, res))
+            },
+            Span::current(),
+        );
         fut.into()
     }
 
