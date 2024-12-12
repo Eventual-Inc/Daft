@@ -280,16 +280,18 @@ impl<'a> SQLPlanner<'a> {
                 unsupported_sql_err!("subquery function argument")
             }
             sqlparser::ast::FunctionArguments::List(args) => {
-                let fn_is_count = fn_name.as_str() == "count";
-                let using_duplicate_treatment =
-                    matches!(args.duplicate_treatment, Some(DuplicateTreatment::Distinct));
+                let duplicate_treatment =
+                    args.duplicate_treatment.unwrap_or(DuplicateTreatment::All);
 
-                match (fn_is_count, using_duplicate_treatment) {
-                    (true, true) => {
+                match (fn_name.as_str(), duplicate_treatment) {
+                    ("count", DuplicateTreatment::Distinct) => {
                         fn_match = get_func_from_sqlfunctions_registry("count_distinct")?;
                     }
-                    (false, true) => unsupported_sql_err!("DISTINCT is only supported on COUNT"),
-                    (true, false) | (false, false) => (),
+                    ("count", DuplicateTreatment::All) => (),
+                    (name, DuplicateTreatment::Distinct) => {
+                        unsupported_sql_err!("DISTINCT is only supported on COUNT, not on {}", name)
+                    }
+                    (_, DuplicateTreatment::All) => (),
                 }
 
                 if !args.clauses.is_empty() {
