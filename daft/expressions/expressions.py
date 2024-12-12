@@ -36,7 +36,7 @@ from daft.daft import tokenize_encode as _tokenize_encode
 from daft.daft import udf as _udf
 from daft.daft import url_download as _url_download
 from daft.daft import utf8_count_matches as _utf8_count_matches
-from daft.datatype import DataType, TimeUnit
+from daft.datatype import DataType, DataTypeLike, TimeUnit
 from daft.dependencies import pa
 from daft.expressions.testing import expr_structurally_equal
 from daft.logical.schema import Field, Schema
@@ -542,7 +542,7 @@ class Expression:
         expr = self._expr.alias(name)
         return Expression._from_pyexpr(expr)
 
-    def cast(self, dtype: DataType | type) -> Expression:
+    def cast(self, dtype: DataTypeLike) -> Expression:
         """Casts an expression to the given datatype if possible.
 
         The following combinations of datatype casting is valid:
@@ -1001,7 +1001,7 @@ class Expression:
         if_false = Expression._to_expression(if_false)
         return Expression._from_pyexpr(self._expr.if_else(if_true._expr, if_false._expr))
 
-    def apply(self, func: Callable, return_dtype: DataType | type) -> Expression:
+    def apply(self, func: Callable, return_dtype: DataTypeLike) -> Expression:
         """Apply a function on each value in a given expression.
 
         .. NOTE::

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Union
 
 from daft.context import get_context
 from daft.daft import ImageMode, PyDataType, PyTimeUnit
@@ -84,7 +84,7 @@ class DataType:
         )
 
     @classmethod
-    def _infer_type(cls, user_provided_type: DataType | type) -> DataType:
+    def _infer_type(cls, user_provided_type: DataTypeLike) -> DataType:
         from typing import get_args, get_origin
 
         if isinstance(user_provided_type, DataType):
@@ -567,6 +567,10 @@ class DataType:
 
     def __hash__(self) -> int:
         return self._dtype.__hash__()
+
+
+# Type alias for a union of types that can be inferred into a DataType
+DataTypeLike = Union[DataType, type]
 
 
 _EXT_TYPE_REGISTERED = False

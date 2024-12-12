@@ -6,7 +6,7 @@ import inspect
 from typing import Any, Callable, Dict, Optional, Tuple, Union
 
 from daft.daft import PyDataType, ResourceRequest
-from daft.datatype import DataType
+from daft.datatype import DataType, DataTypeLike
 from daft.dependencies import np, pa
 from daft.expressions import Expression
 from daft.series import PySeries, Series
@@ -394,7 +394,7 @@ class UDF:
 
 def udf(
     *,
-    return_dtype: DataType | type,
+    return_dtype: DataTypeLike,
     num_cpus: float | None = None,
     num_gpus: float | None = None,
     memory_bytes: int | None = None,
