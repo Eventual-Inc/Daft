@@ -288,7 +288,7 @@ impl<'a> SQLPlanner<'a> {
                     (true, true) => {
                         fn_match = get_function_from_sqlfunctions_registry("count_distinct")?;
                     }
-                    (false, true) => unreachable!("DISTINCT is only supported for COUNT"),
+                    (false, true) => unsupported_sql_err!("DISTINCT is only supported on COUNT"),
                     (true, false) | (false, false) => (),
                 }
 
