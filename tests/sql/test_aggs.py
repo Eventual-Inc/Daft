@@ -21,6 +21,7 @@ def test_aggs_sql():
                 col("values").min().alias("min"),
                 col("values").max().alias("max"),
                 col("values").count().alias("count"),
+                col("values").count_distinct().alias("count_distinct"),
                 col("values").stddev().alias("std"),
             ]
         )
@@ -36,6 +37,7 @@ def test_aggs_sql():
         min(values) as min,
         max(values) as max,
         count(values) as count,
+        count(distinct values) as count_distinct,
         stddev(values) as std
     FROM df
     """)
@@ -49,22 +51,27 @@ def test_aggs_sql():
 @pytest.mark.parametrize(
     "agg,cond,expected",
     [
-        ("sum(values)", "sum(values) > 10", {"values": [20.5, 29.5]}),
-        ("sum(values)", "values > 10", {"values": [20.5, 29.5]}),
-        ("sum(values) as sum_v", "sum(values) > 10", {"sum_v": [20.5, 29.5]}),
-        ("sum(values) as sum_v", "sum_v > 10", {"sum_v": [20.5, 29.5]}),
-        ("count(*) as cnt", "cnt > 2", {"cnt": [3, 5]}),
-        ("count(*) as cnt", "count(*) > 2", {"cnt": [3, 5]}),
-        ("count(*)", "count(*) > 2", {"count": [3, 5]}),
-        ("count(*) as cnt", "sum(values) > 10", {"cnt": [3, 5]}),
+        ("sum(values)", "sum(values) > 10", {"values": [22.0, 29.5]}),
+        ("sum(values)", "values > 10", {"values": [22.0, 29.5]}),
+        ("sum(values) as sum_v", "sum(values) > 10", {"sum_v": [22.0, 29.5]}),
+        ("sum(values) as sum_v", "sum_v > 10", {"sum_v": [22.0, 29.5]}),
+        ("count(*) as cnt", "cnt > 2", {"cnt": [4, 5]}),
+        ("count(*) as cnt", "count(*) > 2", {"cnt": [4, 5]}),
+        ("count(*)", "count(*) > 2", {"count": [4, 5]}),
+        ("count(*) as cnt", "sum(values) > 10", {"cnt": [4, 5]}),
+        # duplicates of the above 4 `count` tests but for count-distinct
+        ("count(distinct values) as count_distinct", "count_distinct > 2", {"count_distinct": [3, 5]}),
+        ("count(distinct values) as count_distinct", "count(distinct values) > 2", {"count_distinct": [3, 5]}),
+        ("count(distinct values)", "count(distinct values) > 2", {"values": [3, 5]}),
+        ("count(distinct values) as count_distinct", "sum(values) > 10", {"count_distinct": [3, 5]}),
         ("sum(values), count(*)", "id > 1", {"values": [10.0, 29.5], "count": [2, 5]}),
     ],
 )
 def test_having(agg, cond, expected):
     df = daft.from_pydict(
         {
-            "id": [1, 2, 3, 3, 3, 3, 2, 1, 3, 1],
-            "values": [1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5],
+            "id": [1, 2, 3, 3, 3, 3, 2, 1, 3, 1, 1],
+            "values": [1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 1.5],
         }
     )
     catalog = SQLCatalog({"df": df})
