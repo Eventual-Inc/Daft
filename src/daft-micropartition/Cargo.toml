@@ -20,7 +20,6 @@ futures = {workspace = true}
 parquet2 = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 snafu = {workspace = true}
-uuid = {version = "1.10.0", features = ["v4"]}
 
 [features]
 python = [
