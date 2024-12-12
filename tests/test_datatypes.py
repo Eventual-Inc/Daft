@@ -30,3 +30,22 @@ daft_nonnull_types = (
 def test_datatype_pickling(dtype) -> None:
     copy_dtype = copy.deepcopy(dtype)
     assert copy_dtype == dtype
+
+
+@pytest.mark.parametrize(
+    ["source", "expected"],
+    [
+        (str, DataType.string()),
+        (int, DataType.int64()),
+        (float, DataType.float64()),
+        (bytes, DataType.binary()),
+        (list[str], DataType.list(DataType.string())),
+        (
+            {"foo": list[str], "bar": int},
+            DataType.struct({"foo": DataType.list(DataType.string()), "bar": DataType.int64()}),
+        ),
+        (list[list[str]], DataType.list(DataType.list(DataType.string()))),
+    ],
+)
+def test_datatype_parsing(source, expected):
+    assert DataType._infer_type(source) == expected
