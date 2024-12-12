@@ -1992,7 +1992,6 @@ dependencies = [
  "async-stream",
  "color-eyre",
  "common-daft-config",
- "common-error",
  "common-file-formats",
  "daft-core",
  "daft-dsl",
@@ -2384,7 +2383,6 @@ dependencies = [
  "parquet2",
  "pyo3",
  "snafu",
- "uuid 1.11.0",
 ]
 
 [[package]]
