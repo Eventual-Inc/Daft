@@ -98,7 +98,8 @@ def test_joins_with_duplicate_columns():
         """
         SELECT *
         FROM table1 t1
-        LEFT JOIN table2 t2 on t2.id = t1.id;
+        LEFT JOIN table2 t2 on t2.id = t1.id
+        ORDER BY t1.id;
         """,
         catalog,
     ).collect()
