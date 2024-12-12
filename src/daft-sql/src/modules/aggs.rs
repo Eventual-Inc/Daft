@@ -45,6 +45,7 @@ impl SQLFunction for AggExpr {
     fn docstrings(&self, alias: &str) -> String {
         match self {
             Self::Count(_, _) => static_docs::COUNT_DOCSTRING.to_string(),
+            Self::CountDistinct(_) => static_docs::COUNT_DISTINCT_DOCSTRING.to_string(),
             Self::Sum(_) => static_docs::SUM_DOCSTRING.to_string(),
             Self::Mean(_) => static_docs::AVG_DOCSTRING.replace("{}", alias),
             Self::Min(_) => static_docs::MIN_DOCSTRING.to_string(),
@@ -57,6 +58,7 @@ impl SQLFunction for AggExpr {
     fn arg_names(&self) -> &'static [&'static str] {
         match self {
             Self::Count(_, _)
+            | Self::CountDistinct(_)
             | Self::Sum(_)
             | Self::Mean(_)
             | Self::Min(_)
@@ -171,7 +173,45 @@ Example:
     │ ---   │
     │ Int64 │
     ╞═══════╡
-    │ 1     │
+    │ 2     │
+    ╰───────╯
+    (Showing first 1 of 1 rows)";
+
+    pub(crate) const COUNT_DISTINCT_DOCSTRING: &str =
+        "Counts the number of distinct, non-null elements in the input expression.
+
+Example:
+
+.. code-block:: sql
+    :caption: SQL
+
+    SELECT count(distinct x) FROM tbl
+
+.. code-block:: text
+    :caption: Input
+
+    ╭───────╮
+    │ x     │
+    │ ---   │
+    │ Int64 │
+    ╞═══════╡
+    │ 100   │
+    ├╌╌╌╌╌╌╌┤
+    │ 200   │
+    ├╌╌╌╌╌╌╌┤
+    │ null  │
+    ╰───────╯
+    (Showing first 3 of 3 rows)
+
+.. code-block:: text
+    :caption: Output
+
+    ╭───────╮
+    │ x     │
+    │ ---   │
+    │ Int64 │
+    ╞═══════╡
+    │ 2     │
     ╰───────╯
     (Showing first 1 of 1 rows)";
 
