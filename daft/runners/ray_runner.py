@@ -808,6 +808,16 @@ class Scheduler(ActorPoolManager):
                 task_id = inflight_ref_to_task_id[ready]
                 runner_tracer.task_received_as_ready(task_id, inflight_tasks[task_id].stage_id)
 
+        # Run a .wait on the metadatas to retrieve them locally so that subsequent accesses will be faster
+        ready_metadatas = list(
+            {
+                result.get_metadata_objref()
+                for ready in readies
+                for result in inflight_tasks[inflight_ref_to_task_id[ready]].get_results()
+            }
+        )
+        ray.wait(ready_metadatas, fetch_local=True, num_returns=len(ready_metadatas), timeout=5)
+
         return readies
 
     def _is_active(self, execution_id: str):
@@ -1364,6 +1374,9 @@ class RayMaterializedResult(MaterializedResult[ray.ObjectRef]):
     def cancel(self) -> None:
         return ray.cancel(self._partition)
 
+    def get_metadata_objref(self) -> ray.ObjectRef:
+        return self._metadatas.get_objref()
+
     def _noop(self, _: ray.ObjectRef) -> None:
         return None
 
@@ -1382,6 +1395,9 @@ class PartitionMetadataAccessor:
 
     def get_index(self, key) -> PartitionMetadata:
         return self._get_metadatas()[key]
+
+    def get_objref(self) -> ray.ObjectRef:
+        return self._ref
 
     @classmethod
     def from_metadata_list(cls, meta: list[PartitionMetadata]) -> PartitionMetadataAccessor:

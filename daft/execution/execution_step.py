@@ -83,6 +83,14 @@ class PartitionTask(Generic[PartitionT]):
         """
         raise NotImplementedError
 
+    def get_results(self) -> list[MaterializedResult[PartitionT]]:
+        """Gets the results of this Task.
+
+        NOTE: A PartitionTask may contain a `result` without being `.done()`. This is because
+        results can potentially contain futures which are yet to be completed.
+        """
+        raise NotImplementedError
+
     def is_empty(self) -> bool:
         """Whether this partition task is guaranteed to result in an empty partition."""
         return len(self.partial_metadatas) > 0 and all(meta.num_rows == 0 for meta in self.partial_metadatas)
@@ -207,6 +215,9 @@ class SingleOutputPartitionTask(PartitionTask[PartitionT]):
         [partition] = result
         self._result = partition
 
+    def get_results(self) -> list[MaterializedResult[PartitionT]]:
+        return [self._result]
+
     def result(self) -> MaterializedResult[PartitionT]:
         assert self._result is not None, "Cannot call .result() on a PartitionTask that is not done"
         return self._result
@@ -253,6 +264,9 @@ class MultiOutputPartitionTask(PartitionTask[PartitionT]):
     def set_result(self, result: list[MaterializedResult[PartitionT]]) -> None:
         assert self._results is None, f"Cannot set result twice. Result is already {self._results}"
         self._results = result
+
+    def get_results(self) -> list[MaterializedResult[PartitionT]]:
+        return self._results
 
     def cancel(self) -> None:
         if self._results is not None:
