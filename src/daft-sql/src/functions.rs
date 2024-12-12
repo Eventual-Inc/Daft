@@ -255,7 +255,7 @@ impl<'a> SQLPlanner<'a> {
         // lookup function variant(s) by name
         // SQL function names are case-insensitive
         let fn_name = func.name.to_string().to_lowercase();
-        let mut fn_match = get_function_from_sqlfunctions_registry(fn_name)?;
+        let mut fn_match = get_function_from_sqlfunctions_registry(fn_name.as_str())?;
 
         // TODO: Filter the variants for correct arity.
         //
@@ -280,9 +280,18 @@ impl<'a> SQLPlanner<'a> {
                 unsupported_sql_err!("subquery function argument")
             }
             sqlparser::ast::FunctionArguments::List(args) => {
-                if matches!(args.duplicate_treatment, Some(DuplicateTreatment::Distinct)) {
-                    fn_match = get_function_from_sqlfunctions_registry("count_distinct")?;
-                };
+                let fn_is_count = fn_name.as_str() == "count";
+                let using_duplicate_treatment =
+                    matches!(args.duplicate_treatment, Some(DuplicateTreatment::Distinct));
+
+                match (fn_is_count, using_duplicate_treatment) {
+                    (true, true) => {
+                        fn_match = get_function_from_sqlfunctions_registry("count_distinct")?;
+                    }
+                    (false, true) => unreachable!("DISTINCT is only supported for COUNT"),
+                    (true, false) | (false, false) => (),
+                }
+
                 if !args.clauses.is_empty() {
                     unsupported_sql_err!("function arguments with clauses");
                 }
