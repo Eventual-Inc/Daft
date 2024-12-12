@@ -6,9 +6,6 @@ use arrow2::io::ipc::{
 };
 use daft_core::series::Series;
 use daft_logical_plan::LogicalPlanBuilder;
-use daft_micropartition::partitioning::{
-    MicroPartitionBatch, PartitionBatch, PartitionCacheEntry, PartitionMetadata, PartitionSet,
-};
 use daft_schema::dtype::DaftDataType;
 use daft_table::Table;
 use eyre::{bail, ensure, WrapErr};
@@ -141,26 +138,6 @@ impl SparkAnalyzer<'_> {
             tables
         };
 
-        let batch: MicroPartitionBatch = tables.try_into()?;
-
-        let partition_key: Arc<str> = uuid::Uuid::new_v4().to_string().into();
-        self.pset.set_partition(partition_key.clone(), &batch)?;
-
-        let PartitionMetadata {
-            size_bytes,
-            num_rows,
-        } = batch.metadata();
-        let num_partitions = batch.partition.len();
-
-        let cache_entry = PartitionCacheEntry::Rust(partition_key.to_string());
-
-        Ok(LogicalPlanBuilder::in_memory_scan(
-            &partition_key,
-            cache_entry,
-            daft_schema,
-            num_partitions,
-            size_bytes,
-            num_rows,
-        )?)
+        self.create_in_memory_scan(daft_schema, tables)
     }
 }

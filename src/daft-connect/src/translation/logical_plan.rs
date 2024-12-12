@@ -1,7 +1,21 @@
+use std::sync::Arc;
+
+use common_daft_config::DaftExecutionConfig;
+use daft_core::prelude::Schema;
+use daft_dsl::LiteralValue;
+use daft_local_execution::NativeExecutor;
 use daft_logical_plan::LogicalPlanBuilder;
-use daft_micropartition::partitioning::MicroPartitionSet;
+use daft_micropartition::{
+    partitioning::{
+        MicroPartitionBatch, MicroPartitionSet, PartitionBatch, PartitionCacheEntry,
+        PartitionMetadata, PartitionSet,
+    },
+    MicroPartition,
+};
+use daft_table::Table;
 use eyre::{bail, Context};
-use spark_connect::{relation::RelType, Limit, Relation};
+use futures::TryStreamExt;
+use spark_connect::{relation::RelType, Limit, Relation, ShowString};
 use tracing::warn;
 
 mod aggregate;
@@ -21,6 +35,32 @@ pub struct SparkAnalyzer<'a> {
 impl SparkAnalyzer<'_> {
     pub fn new(pset: &MicroPartitionSet) -> SparkAnalyzer {
         SparkAnalyzer { pset }
+    }
+    pub fn create_in_memory_scan(
+        &self,
+        schema: Arc<Schema>,
+        tables: Vec<Table>,
+    ) -> eyre::Result<LogicalPlanBuilder> {
+        let batch: MicroPartitionBatch = tables.try_into()?;
+        let partition_key: Arc<str> = uuid::Uuid::new_v4().to_string().into();
+
+        self.pset.set_partition(partition_key.clone(), &batch)?;
+        let PartitionMetadata {
+            size_bytes,
+            num_rows,
+        } = batch.metadata();
+        let num_partitions = batch.partition.len();
+
+        let cache_entry = PartitionCacheEntry::Rust(partition_key.to_string());
+
+        Ok(LogicalPlanBuilder::in_memory_scan(
+            &partition_key,
+            cache_entry,
+            schema,
+            num_partitions,
+            size_bytes,
+            num_rows,
+        )?)
     }
 
     pub async fn to_logical_plan(&self, relation: Relation) -> eyre::Result<LogicalPlanBuilder> {
@@ -72,12 +112,14 @@ impl SparkAnalyzer<'_> {
                 .filter(*f)
                 .await
                 .wrap_err("Failed to apply filter to logical plan"),
+            RelType::ShowString(ss) => self
+                .show_string(*ss)
+                .await
+                .wrap_err("Failed to apply show_string to logical plan"),
             plan => bail!("Unsupported relation type: {plan:?}"),
         }
     }
-}
 
-impl SparkAnalyzer<'_> {
     async fn limit(&self, limit: Limit) -> eyre::Result<LogicalPlanBuilder> {
         let Limit { input, limit } = limit;
 
@@ -89,5 +131,49 @@ impl SparkAnalyzer<'_> {
 
         plan.limit(i64::from(limit), false)
             .wrap_err("Failed to apply limit to logical plan")
+    }
+
+    /// right now this just naively applies a limit to the logical plan
+    /// In the future, we want this to more closely match our daft implementation
+    async fn show_string(&self, show_string: ShowString) -> eyre::Result<LogicalPlanBuilder> {
+        let ShowString {
+            input,
+            num_rows,
+            truncate: _,
+            vertical,
+        } = show_string;
+
+        if vertical {
+            bail!("Vertical show string is not supported");
+        }
+
+        let Some(input) = input else {
+            bail!("input must be set");
+        };
+
+        let plan = Box::pin(self.to_logical_plan(*input)).await?;
+        let plan = plan.limit(num_rows as i64, true)?;
+
+        let optimized_plan = tokio::task::spawn_blocking(move || plan.optimize())
+            .await
+            .unwrap()?;
+
+        let cfg = Arc::new(DaftExecutionConfig::default());
+        let native_executor = NativeExecutor::from_logical_plan_builder(&optimized_plan)?;
+        let result_stream = native_executor.run(self.pset, cfg, None)?.into_stream();
+        let batch = result_stream.try_collect::<Vec<_>>().await?;
+        let single_batch = MicroPartition::concat(batch)?;
+        let tbls = single_batch.get_tables()?;
+        let tbl = Table::concat(&tbls)?;
+        let output = tbl.to_comfy_table(None).to_string();
+
+        let s = LiteralValue::Utf8(output)
+            .into_single_value_series()?
+            .rename("show_string");
+
+        let tbl = Table::from_nonempty_columns(vec![s])?;
+        let schema = tbl.schema.clone();
+
+        self.create_in_memory_scan(schema, vec![tbl])
     }
 }
