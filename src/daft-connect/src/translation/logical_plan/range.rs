@@ -2,9 +2,9 @@ use daft_logical_plan::LogicalPlanBuilder;
 use eyre::{ensure, Context};
 use spark_connect::Range;
 
-use super::Translator;
+use super::SparkAnalyzer;
 
-impl Translator<'_> {
+impl SparkAnalyzer<'_> {
     pub fn range(&self, range: Range) -> eyre::Result<LogicalPlanBuilder> {
         #[cfg(not(feature = "python"))]
         {

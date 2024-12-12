@@ -7,10 +7,10 @@ use daft_logical_plan::LogicalPlanBuilder;
 use eyre::bail;
 use spark_connect::Project;
 
-use super::Translator;
+use super::SparkAnalyzer;
 use crate::translation::to_daft_expr;
 
-impl Translator<'_> {
+impl SparkAnalyzer<'_> {
     pub async fn project(&self, project: Project) -> eyre::Result<LogicalPlanBuilder> {
         let Project { input, expressions } = project;
 

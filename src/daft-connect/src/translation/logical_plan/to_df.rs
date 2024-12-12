@@ -1,8 +1,8 @@
 use daft_logical_plan::LogicalPlanBuilder;
 use eyre::{bail, WrapErr};
 
-use super::Translator;
-impl Translator<'_> {
+use super::SparkAnalyzer;
+impl SparkAnalyzer<'_> {
     pub async fn to_df(&self, to_df: spark_connect::ToDf) -> eyre::Result<LogicalPlanBuilder> {
         let spark_connect::ToDf {
             input,

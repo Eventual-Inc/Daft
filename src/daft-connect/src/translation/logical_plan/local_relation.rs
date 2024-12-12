@@ -14,10 +14,10 @@ use daft_table::Table;
 use eyre::{bail, ensure, WrapErr};
 use itertools::Itertools;
 
-use super::Translator;
+use super::SparkAnalyzer;
 use crate::translation::{deser_spark_datatype, to_daft_datatype};
 
-impl Translator<'_> {
+impl SparkAnalyzer<'_> {
     pub fn local_relation(
         &self,
         plan: spark_connect::LocalRelation,

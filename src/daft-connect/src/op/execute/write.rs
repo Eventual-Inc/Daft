@@ -111,7 +111,7 @@ impl Session {
                 }
             };
 
-            let translator = translation::Translator::new(&pset_cache);
+            let translator = translation::SparkAnalyzer::new(&pset_cache);
 
             let plan = translator.to_logical_plan(input).await?;
 

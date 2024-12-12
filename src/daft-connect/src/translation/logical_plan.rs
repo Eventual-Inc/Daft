@@ -5,6 +5,8 @@ use spark_connect::{relation::RelType, Limit, Relation};
 use tracing::warn;
 
 mod aggregate;
+mod drop;
+mod filter;
 mod local_relation;
 mod project;
 mod range;
@@ -12,13 +14,13 @@ mod read;
 mod to_df;
 mod with_columns;
 
-pub struct Translator<'a> {
+pub struct SparkAnalyzer<'a> {
     pub pset_cache: &'a InMemoryPartitionSetCache,
 }
 
-impl Translator<'_> {
-    pub fn new(pset_cache: &InMemoryPartitionSetCache) -> Translator {
-        Translator { pset_cache }
+impl SparkAnalyzer<'_> {
+    pub fn new(pset_cache: &InMemoryPartitionSetCache) -> SparkAnalyzer {
+        SparkAnalyzer { pset_cache }
     }
 
     pub async fn to_logical_plan(&self, relation: Relation) -> eyre::Result<LogicalPlanBuilder> {
@@ -62,12 +64,20 @@ impl Translator<'_> {
             RelType::Read(r) => read::read(r)
                 .await
                 .wrap_err("Failed to apply read to logical plan"),
+            RelType::Drop(d) => self
+                .drop(*d)
+                .await
+                .wrap_err("Failed to apply drop to logical plan"),
+            RelType::Filter(f) => self
+                .filter(*f)
+                .await
+                .wrap_err("Failed to apply filter to logical plan"),
             plan => bail!("Unsupported relation type: {plan:?}"),
         }
     }
 }
 
-impl Translator<'_> {
+impl SparkAnalyzer<'_> {
     async fn limit(&self, limit: Limit) -> eyre::Result<LogicalPlanBuilder> {
         let Limit { input, limit } = limit;
 

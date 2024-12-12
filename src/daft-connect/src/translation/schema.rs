@@ -5,7 +5,7 @@ use spark_connect::{
 };
 use tracing::warn;
 
-use super::Translator;
+use super::SparkAnalyzer;
 use crate::translation::to_spark_datatype;
 
 #[tracing::instrument(skip_all)]
@@ -18,7 +18,7 @@ pub async fn relation_to_schema(input: Relation) -> eyre::Result<DataType> {
 
     // We're just checking the schema here, so we don't need to use a persistent cache as it won't be used
     let pset_cache = InMemoryPartitionSetCache::empty();
-    let translator = Translator::new(&pset_cache);
+    let translator = SparkAnalyzer::new(&pset_cache);
     let plan = Box::pin(translator.to_logical_plan(input)).await?;
 
     let result = plan.schema();

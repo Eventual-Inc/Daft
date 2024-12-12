@@ -35,7 +35,7 @@ impl Session {
 
         tokio::spawn(async move {
             let execution_fut = async {
-                let translator = translation::Translator::new(&pset_cache);
+                let translator = translation::SparkAnalyzer::new(&pset_cache);
                 let lp = translator.to_logical_plan(command).await?;
 
                 // todo: convert optimize to async (looks like A LOT of work)... it touches a lot of API

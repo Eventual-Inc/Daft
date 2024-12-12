@@ -2,10 +2,10 @@ use daft_logical_plan::LogicalPlanBuilder;
 use eyre::bail;
 use spark_connect::{expression::ExprType, Expression};
 
-use super::Translator;
+use super::SparkAnalyzer;
 use crate::translation::to_daft_expr;
 
-impl Translator<'_> {
+impl SparkAnalyzer<'_> {
     pub async fn with_columns(
         &self,
         with_columns: spark_connect::WithColumns,
