@@ -122,6 +122,7 @@ struct OuterHashJoinParams {
     common_join_keys: Vec<String>,
     left_non_join_columns: Vec<String>,
     right_non_join_columns: Vec<String>,
+    left_non_join_schema: SchemaRef,
     right_non_join_schema: SchemaRef,
     join_type: JoinType,
     build_on_left: bool,
@@ -154,12 +155,15 @@ impl OuterHashJoinProbeSink {
             (JoinType::Outer, false) => (right_schema, left_schema),
             _ => (left_schema, right_schema),
         };
-        let left_non_join_columns = left_schema
+        let left_non_join_fields = left_schema
             .fields
-            .keys()
-            .filter(|c| !common_join_keys.contains(*c))
+            .values()
+            .filter(|f| !common_join_keys.contains(&f.name))
             .cloned()
             .collect();
+        let left_non_join_schema =
+            Arc::new(Schema::new(left_non_join_fields).expect("left schema should be valid"));
+        let left_non_join_columns = left_non_join_schema.fields.keys().cloned().collect();
         let right_non_join_fields = right_schema
             .fields
             .values()
@@ -176,6 +180,7 @@ impl OuterHashJoinProbeSink {
                 common_join_keys,
                 left_non_join_columns,
                 right_non_join_columns,
+                left_non_join_schema,
                 right_non_join_schema,
                 join_type,
                 build_on_left,
@@ -393,13 +398,9 @@ impl OuterHashJoinProbeSink {
         )))
     }
 
-    async fn finalize_outer(
+    async fn merge_bitmaps_and_construct_null_table(
         mut states: Vec<Box<dyn StreamingSinkState>>,
-        common_join_keys: &[String],
-        left_non_join_columns: &[String],
-        right_non_join_schema: &SchemaRef,
-        build_on_left: bool,
-    ) -> DaftResult<Option<Arc<MicroPartition>>> {
+    ) -> DaftResult<Table> {
         let mut states_iter = states.iter_mut();
         let first_state = states_iter
             .next()
@@ -449,8 +450,17 @@ impl OuterHashJoinProbeSink {
             .map(|(bitmap, table)| table.mask_filter(&bitmap.into_series()))
             .collect::<DaftResult<Vec<_>>>()?;
 
-        let build_side_table = Table::concat(&leftovers)?;
+        Table::concat(&leftovers)
+    }
 
+    async fn finalize_outer(
+        states: Vec<Box<dyn StreamingSinkState>>,
+        common_join_keys: &[String],
+        left_non_join_columns: &[String],
+        right_non_join_schema: &SchemaRef,
+        build_on_left: bool,
+    ) -> DaftResult<Option<Arc<MicroPartition>>> {
+        let build_side_table = Self::merge_bitmaps_and_construct_null_table(states).await?;
         let join_table = build_side_table.get_columns(common_join_keys)?;
         let left = build_side_table.get_columns(left_non_join_columns)?;
         let right = {
@@ -467,6 +477,60 @@ impl OuterHashJoinProbeSink {
         } else {
             (right, left)
         };
+        let final_table = join_table.union(&left)?.union(&right)?;
+        Ok(Some(Arc::new(MicroPartition::new_loaded(
+            final_table.schema.clone(),
+            Arc::new(vec![final_table]),
+            None,
+        ))))
+    }
+
+    async fn finalize_left(
+        states: Vec<Box<dyn StreamingSinkState>>,
+        common_join_keys: &[String],
+        left_non_join_columns: &[String],
+        right_non_join_schema: &SchemaRef,
+    ) -> DaftResult<Option<Arc<MicroPartition>>> {
+        let build_side_table = Self::merge_bitmaps_and_construct_null_table(states).await?;
+        let join_table = build_side_table.get_columns(common_join_keys)?;
+        let left = build_side_table.get_columns(left_non_join_columns)?;
+        let right = {
+            let columns = right_non_join_schema
+                .fields
+                .values()
+                .map(|field| Series::full_null(&field.name, &field.dtype, left.len()))
+                .collect::<Vec<_>>();
+            Table::new_unchecked(right_non_join_schema.clone(), columns, left.len())
+        };
+        let final_table = join_table.union(&left)?.union(&right)?;
+        Ok(Some(Arc::new(MicroPartition::new_loaded(
+            final_table.schema.clone(),
+            Arc::new(vec![final_table]),
+            None,
+        ))))
+    }
+
+    async fn finalize_right(
+        states: Vec<Box<dyn StreamingSinkState>>,
+        common_join_keys: &[String],
+        right_non_join_columns: &[String],
+        left_non_join_schema: &SchemaRef,
+    ) -> DaftResult<Option<Arc<MicroPartition>>> {
+        let build_side_table = Self::merge_bitmaps_and_construct_null_table(states).await?;
+        let join_table = build_side_table.get_columns(common_join_keys)?;
+        let left = {
+            let columns = left_non_join_schema
+                .fields
+                .values()
+                .map(|field| Series::full_null(&field.name, &field.dtype, build_side_table.len()))
+                .collect::<Vec<_>>();
+            Table::new_unchecked(
+                left_non_join_schema.clone(),
+                columns,
+                build_side_table.len(),
+            )
+        };
+        let right = build_side_table.get_columns(right_non_join_columns)?;
         let final_table = join_table.union(&left)?.union(&right)?;
         Ok(Some(Arc::new(MicroPartition::new_loaded(
             final_table.schema.clone(),
@@ -570,14 +634,33 @@ impl StreamingSink for OuterHashJoinProbeSink {
             let params = self.params.clone();
             runtime_ref
                 .spawn(async move {
-                    Self::finalize_outer(
-                        states,
-                        &params.common_join_keys,
-                        &params.left_non_join_columns,
-                        &params.right_non_join_schema,
-                        params.build_on_left,
-                    )
-                    .await
+                    match params.join_type {
+                        JoinType::Left => Self::finalize_left(
+                            states,
+                            &params.common_join_keys,
+                            &params.left_non_join_columns,
+                            &params.right_non_join_schema,
+                        )
+                        .await,
+                        JoinType::Right => Self::finalize_right(
+                            states,
+                            &params.common_join_keys,
+                            &params.right_non_join_columns,
+                            &params.left_non_join_schema,
+                        )
+                        .await,
+                        JoinType::Outer => Self::finalize_outer(
+                            states,
+                            &params.common_join_keys,
+                            &params.left_non_join_columns,
+                            &params.right_non_join_schema,
+                            params.build_on_left,
+                        )
+                        .await,
+                        _ => unreachable!(
+                            "Only Left, Right, and Outer joins are supported in OuterHashJoinProbeSink"
+                        ),
+                    }
                 })
                 .into()
         } else {
