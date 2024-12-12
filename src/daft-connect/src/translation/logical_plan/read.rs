@@ -1,12 +1,11 @@
+use daft_logical_plan::LogicalPlanBuilder;
 use eyre::{bail, WrapErr};
 use spark_connect::read::ReadType;
 use tracing::warn;
 
-use crate::translation::Plan;
-
 mod data_source;
 
-pub async fn read(read: spark_connect::Read) -> eyre::Result<Plan> {
+pub async fn read(read: spark_connect::Read) -> eyre::Result<LogicalPlanBuilder> {
     let spark_connect::Read {
         is_streaming,
         read_type,
@@ -28,5 +27,5 @@ pub async fn read(read: spark_connect::Read) -> eyre::Result<Plan> {
             .wrap_err("Failed to create data source"),
     }?;
 
-    Ok(Plan::from(builder))
+    Ok(builder)
 }

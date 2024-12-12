@@ -1,10 +1,12 @@
+use daft_micropartition::partitioning::SinglePartitionSetCache;
 use spark_connect::{
     data_type::{Kind, Struct, StructField},
     DataType, Relation,
 };
 use tracing::warn;
 
-use crate::translation::{to_logical_plan, to_spark_datatype};
+use super::Translator;
+use crate::translation::to_spark_datatype;
 
 #[tracing::instrument(skip_all)]
 pub async fn relation_to_schema(input: Relation) -> eyre::Result<DataType> {
@@ -14,9 +16,12 @@ pub async fn relation_to_schema(input: Relation) -> eyre::Result<DataType> {
         }
     }
 
-    let plan = Box::pin(to_logical_plan(input)).await?;
+    // We're just checking the schema here, so we don't need to use a persistent cache as it won't be used
+    let pset_cache = SinglePartitionSetCache::empty();
+    let translator = Translator::new(&pset_cache);
+    let plan = Box::pin(translator.to_logical_plan(input)).await?;
 
-    let result = plan.builder.schema();
+    let result = plan.schema();
 
     let fields: eyre::Result<Vec<StructField>> = result
         .fields

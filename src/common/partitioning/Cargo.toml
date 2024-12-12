@@ -1,0 +1,17 @@
+[dependencies]
+common-py-serde = {version = "0.3.0-dev0", path = "../py-serde"}
+common-error.workspace = true
+futures.workspace = true
+pyo3.workspace = true
+serde.workspace = true
+
+[features]
+python = ["common-error/python"]
+
+[lints]
+workspace = true
+
+[package]
+name = "common-partitioning"
+edition.workspace = true
+version.workspace = true

@@ -2,6 +2,7 @@ use std::{future::ready, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
 use daft_local_execution::NativeExecutor;
+use daft_micropartition::partitioning::PartitionSetCache;
 use futures::stream;
 use spark_connect::{ExecutePlanResponse, Relation};
 use tonic::{codegen::tokio_stream::wrappers::ReceiverStream, Status};
@@ -10,7 +11,6 @@ use crate::{
     op::execute::{ExecuteStream, PlanIds},
     session::Session,
     translation,
-    translation::Plan,
 };
 
 impl Session {
@@ -30,19 +30,32 @@ impl Session {
         let finished = context.finished();
 
         let (tx, rx) = tokio::sync::mpsc::channel::<eyre::Result<ExecutePlanResponse>>(1);
+
+        let pset_cache = self.pset_cache.clone();
+
         tokio::spawn(async move {
             let execution_fut = async {
-                let Plan { builder, psets } = translation::to_logical_plan(command).await?;
+                let translator = translation::Translator::new(&pset_cache);
+                let lp = translator.to_logical_plan(command).await?;
 
                 // todo: convert optimize to async (looks like A LOT of work)... it touches a lot of API
                 // I tried and spent about an hour and gave up ~ Andrew Gazelka 🪦 2024-12-09
-                let optimized_plan = tokio::task::spawn_blocking(move || builder.optimize())
+                let optimized_plan = tokio::task::spawn_blocking(move || lp.optimize())
                     .await
                     .unwrap()?;
 
                 let cfg = Arc::new(DaftExecutionConfig::default());
                 let native_executor = NativeExecutor::from_logical_plan_builder(&optimized_plan)?;
-                let mut result_stream = native_executor.run(psets, cfg, None)?.into_stream();
+                let psets = pset_cache.get_all_partition_sets()?;
+                let mut psets = psets.values();
+
+                let first_pset = psets
+                    .next()
+                    .ok_or_else(|| eyre::eyre!("No partition sets found"))?;
+
+                let mut result_stream = native_executor
+                    .run(first_pset.as_ref(), cfg, None)?
+                    .into_stream();
 
                 while let Some(result) = result_stream.next().await {
                     let result = result?;

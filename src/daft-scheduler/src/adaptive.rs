@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_daft_config::DaftExecutionConfig;
+use common_partitioning::PartitionCacheEntry;
 use daft_core::prelude::Schema;
 use daft_logical_plan::{InMemoryInfo, LogicalPlan};
 use daft_physical_plan::{AdaptivePlanner, MaterializedResults};
@@ -66,7 +67,7 @@ impl AdaptivePhysicalPlanScheduler {
             let in_memory_info = InMemoryInfo::new(
                 Schema::empty().into(), // TODO thread in schema from in memory scan
                 partition_key.into(),
-                cache_entry,
+                PartitionCacheEntry::Python(cache_entry),
                 num_partitions,
                 size_bytes,
                 num_rows,

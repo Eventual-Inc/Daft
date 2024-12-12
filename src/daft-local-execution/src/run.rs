@@ -12,7 +12,7 @@ use common_tracing::refresh_chrome_trace;
 use daft_local_plan::{translate, LocalPhysicalPlan};
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::{
-    partitioning::{InMemoryPartitionSet, PartitionSet},
+    partitioning::{MicroPartitionSet, PartitionSet},
     MicroPartition,
 };
 use futures::{FutureExt, Stream};
@@ -80,11 +80,11 @@ impl PyNativeExecutor {
         cfg: PyDaftExecutionConfig,
         results_buffer_size: Option<usize>,
     ) -> PyResult<PyObject> {
-        let native_psets: HashMap<String, Vec<Arc<MicroPartition>>> = psets
+        let native_psets: HashMap<Arc<str>, Vec<Arc<MicroPartition>>> = psets
             .into_iter()
             .map(|(part_id, parts)| {
                 (
-                    part_id,
+                    part_id.into(),
                     parts
                         .into_iter()
                         .map(std::convert::Into::into)
@@ -92,10 +92,10 @@ impl PyNativeExecutor {
                 )
             })
             .collect();
-        let psets = InMemoryPartitionSet::new(native_psets);
+        let psets = MicroPartitionSet::new(native_psets);
         let out = py.allow_threads(|| {
             self.executor
-                .run(psets, cfg.config, results_buffer_size)
+                .run(&psets, cfg.config, results_buffer_size)
                 .map(|res| res.into_iter())
         })?;
         let iter = Box::new(out.map(|part| {
@@ -125,7 +125,7 @@ impl NativeExecutor {
 
     pub fn run(
         &self,
-        psets: impl PartitionSet,
+        psets: &(impl PartitionSet<MicroPartition> + ?Sized),
         cfg: Arc<DaftExecutionConfig>,
         results_buffer_size: Option<usize>,
     ) -> DaftResult<ExecutionEngineResult> {
@@ -250,13 +250,13 @@ impl IntoIterator for ExecutionEngineResult {
 
 pub fn run_local(
     physical_plan: &LocalPhysicalPlan,
-    psets: impl PartitionSet,
+    psets: &(impl PartitionSet<MicroPartition> + ?Sized),
     cfg: Arc<DaftExecutionConfig>,
     results_buffer_size: Option<usize>,
     cancel: CancellationToken,
 ) -> DaftResult<ExecutionEngineResult> {
     refresh_chrome_trace();
-    let pipeline = physical_plan_to_pipeline(physical_plan, &psets, &cfg)?;
+    let pipeline = physical_plan_to_pipeline(physical_plan, psets, &cfg)?;
     let (tx, rx) = create_channel(results_buffer_size.unwrap_or(1));
     let handle = std::thread::spawn(move || {
         let runtime = tokio::runtime::Builder::new_current_thread()
