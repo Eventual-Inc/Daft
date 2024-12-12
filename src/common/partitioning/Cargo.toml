@@ -1,12 +1,12 @@
 [dependencies]
-common-py-serde = {version = "0.3.0-dev0", path = "../py-serde"}
+common-py-serde = {path = "../py-serde", optional = true}
+pyo3 = {workspace = true, optional = true}
 common-error.workspace = true
 futures.workspace = true
-pyo3.workspace = true
 serde.workspace = true
 
 [features]
-python = ["common-error/python"]
+python = ["dep:pyo3", "common-error/python", "common-py-serde"]
 
 [lints]
 workspace = true

@@ -1,8 +1,13 @@
-use std::{any::Any, collections::HashMap, sync::Arc};
+use std::{any::Any, sync::Arc};
 
 use common_error::DaftResult;
 use futures::stream::BoxStream;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "python")]
+use {
+    common_py_serde::{deserialize_py_object, serialize_py_object},
+    pyo3::PyObject,
+};
 
 /// Common trait interface for dataset partitioning, defined in this shared crate to avoid circular dependencies.
 /// Acts as a forward reference for concrete partition implementations. _(Specifically the `MicroPartition` type defined in `daft-micropartition`)_
@@ -41,6 +46,9 @@ pub struct PartitionMetadata {
 /// A partition set is a collection of partition batches.
 /// It is up to the implementation to decide how to store and manage the partition batches.
 /// For example, an in memory partition set could likely be stored as `HashMap<PartitionId, PartitionBatchRef<T>>`.
+///
+/// It is important to note that the methods do not take `&mut self` but instead take `&self`.
+/// So it is up to the implementation to manage any interior mutability.
 pub trait PartitionSet<T: Partition>: std::fmt::Debug + Send + Sync {
     fn as_any(&self) -> &dyn Any;
     fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
@@ -58,9 +66,9 @@ pub trait PartitionSet<T: Partition>: std::fmt::Debug + Send + Sync {
     /// Check if a partition exists
     fn has_partition(&self, idx: &PartitionId) -> bool;
     /// Delete a partition
-    fn delete_partition(&mut self, idx: &PartitionId) -> DaftResult<()>;
+    fn delete_partition(&self, idx: &PartitionId) -> DaftResult<()>;
     /// Set a partition
-    fn set_partition(&mut self, idx: PartitionId, part: &dyn PartitionBatch<T>) -> DaftResult<()>;
+    fn set_partition(&self, idx: PartitionId, part: &dyn PartitionBatch<T>) -> DaftResult<()>;
     /// Get a partition
     fn get_partition(&self, idx: &PartitionId) -> DaftResult<PartitionBatchRef<T>>;
 
@@ -69,27 +77,6 @@ pub trait PartitionSet<T: Partition>: std::fmt::Debug + Send + Sync {
 }
 
 pub type PartitionSetRef<T> = Arc<dyn PartitionSet<T>>;
-
-/// A PartitionSetCache is a cache for partition sets.
-///
-/// A simple in memory cache is provided by `InMemoryPartitionSetCache`.
-///
-///
-/// Implementations can provide more sophisticated caching strategies.
-/// It is important to note that the methods do not take `&mut self` but instead take `&self`.
-/// So it is up to the implementation to manage any interior mutability.
-pub trait PartitionSetCache<T: Partition>: std::fmt::Debug + Send + Sync {
-    fn get_partition_set(&self, pset_id: &str) -> DaftResult<Option<PartitionSetRef<T>>>;
-    fn get_all_partition_sets(&self) -> DaftResult<HashMap<PartitionId, PartitionSetRef<T>>>;
-    fn put_partition_set(&self, pset: PartitionSetRef<T>) -> DaftResult<PartitionCacheEntry>;
-    fn rm(&self, pset_id: &str) -> DaftResult<()>;
-    fn clear(&self) -> DaftResult<()>;
-}
-#[cfg(feature = "python")]
-use {
-    common_py_serde::{deserialize_py_object, serialize_py_object},
-    pyo3::PyObject,
-};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PartitionCacheEntry {
@@ -106,6 +93,7 @@ impl PartitionCacheEntry {
     pub fn new_rust(key: String) -> Self {
         Self::Rust(key)
     }
+
     #[cfg(feature = "python")]
     pub fn new_py(value: PyObject) -> Self {
         Self::Python(value)

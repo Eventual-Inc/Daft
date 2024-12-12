@@ -3,7 +3,6 @@ use std::future::ready;
 use common_daft_config::DaftExecutionConfig;
 use common_file_formats::FileFormat;
 use daft_local_execution::NativeExecutor;
-use daft_micropartition::partitioning::PartitionSetCache;
 use eyre::{bail, WrapErr};
 use spark_connect::{
     write_operation::{SaveMode, SaveType},
@@ -33,7 +32,7 @@ impl Session {
         };
 
         let finished = context.finished();
-        let pset_cache = self.pset_cache.clone();
+        let pset = self.pset.clone();
 
         let result = async move {
             let WriteOperation {
@@ -111,7 +110,7 @@ impl Session {
                 }
             };
 
-            let translator = translation::SparkAnalyzer::new(&pset_cache);
+            let translator = translation::SparkAnalyzer::new(&pset);
 
             let plan = translator.to_logical_plan(input).await?;
 
@@ -122,15 +121,9 @@ impl Session {
             let optimized_plan = plan.optimize()?;
             let cfg = DaftExecutionConfig::default();
             let native_executor = NativeExecutor::from_logical_plan_builder(&optimized_plan)?;
-            let psets = pset_cache.get_all_partition_sets()?;
-            let mut psets = psets.values();
-
-            let first_pset = psets
-                .next()
-                .ok_or_else(|| eyre::eyre!("No partition sets found"))?;
 
             let mut result_stream = native_executor
-                .run(first_pset.as_ref(), cfg.into(), None)?
+                .run(pset.as_ref(), cfg.into(), None)?
                 .into_stream();
 
             // this is so we make sure the operation is actually done

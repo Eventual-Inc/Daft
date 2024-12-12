@@ -1,5 +1,5 @@
 use daft_logical_plan::LogicalPlanBuilder;
-use daft_micropartition::partitioning::InMemoryPartitionSetCache;
+use daft_micropartition::partitioning::MicroPartitionSet;
 use eyre::{bail, Context};
 use spark_connect::{relation::RelType, Limit, Relation};
 use tracing::warn;
@@ -15,12 +15,12 @@ mod to_df;
 mod with_columns;
 
 pub struct SparkAnalyzer<'a> {
-    pub pset_cache: &'a InMemoryPartitionSetCache,
+    pub pset: &'a MicroPartitionSet,
 }
 
 impl SparkAnalyzer<'_> {
-    pub fn new(pset_cache: &InMemoryPartitionSetCache) -> SparkAnalyzer {
-        SparkAnalyzer { pset_cache }
+    pub fn new(pset: &MicroPartitionSet) -> SparkAnalyzer {
+        SparkAnalyzer { pset }
     }
 
     pub async fn to_logical_plan(&self, relation: Relation) -> eyre::Result<LogicalPlanBuilder> {

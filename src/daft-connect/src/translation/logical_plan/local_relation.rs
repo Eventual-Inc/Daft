@@ -143,34 +143,24 @@ impl SparkAnalyzer<'_> {
 
         let batch: MicroPartitionBatch = tables.try_into()?;
 
-        // TODO(cory): simplify this.
-        let lp = {
-            let mut lock = self
-                .pset_cache
-                .inner
-                .write()
-                .map_err(|_| eyre::eyre!("Failed to acquire write lock"))?;
-            let partition_key: Arc<str> = uuid::Uuid::new_v4().to_string().into();
-            lock.set_partition(partition_key.clone(), &batch)?;
+        let partition_key: Arc<str> = uuid::Uuid::new_v4().to_string().into();
+        self.pset.set_partition(partition_key.clone(), &batch)?;
 
-            let PartitionMetadata {
-                size_bytes,
-                num_rows,
-            } = batch.metadata();
-            let num_partitions = batch.partition.len();
+        let PartitionMetadata {
+            size_bytes,
+            num_rows,
+        } = batch.metadata();
+        let num_partitions = batch.partition.len();
 
-            let cache_entry = PartitionCacheEntry::Rust(partition_key.to_string());
+        let cache_entry = PartitionCacheEntry::Rust(partition_key.to_string());
 
-            LogicalPlanBuilder::in_memory_scan(
-                &partition_key,
-                cache_entry,
-                daft_schema,
-                num_partitions,
-                size_bytes,
-                num_rows,
-            )?
-        };
-
-        Ok(lp)
+        Ok(LogicalPlanBuilder::in_memory_scan(
+            &partition_key,
+            cache_entry,
+            daft_schema,
+            num_partitions,
+            size_bytes,
+            num_rows,
+        )?)
     }
 }

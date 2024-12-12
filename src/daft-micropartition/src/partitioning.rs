@@ -1,12 +1,9 @@
-use std::{
-    any::Any,
-    collections::HashMap,
-    sync::{Arc, RwLock},
-};
+use std::{any::Any, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 pub use common_partitioning::*;
 use daft_table::Table;
+use dashmap::DashMap;
 use futures::stream::BoxStream;
 
 use crate::MicroPartition;
@@ -97,12 +94,17 @@ impl PartitionBatch<MicroPartition> for MicroPartitionBatch {
 // An in memory partition set
 #[derive(Debug, Default, Clone)]
 pub struct MicroPartitionSet {
-    pub partitions: HashMap<PartitionId, Vec<Arc<MicroPartition>>>,
+    pub partitions: DashMap<PartitionId, Vec<Arc<MicroPartition>>>,
 }
 
 impl MicroPartitionSet {
-    pub fn new(psets: HashMap<PartitionId, Vec<Arc<MicroPartition>>>) -> Self {
-        Self { partitions: psets }
+    pub fn new<T: IntoIterator<Item = (PartitionId, Vec<Arc<MicroPartition>>)>>(psets: T) -> Self {
+        Self {
+            partitions: psets.into_iter().collect(),
+        }
+    }
+    pub fn empty() -> Self {
+        Self::default()
     }
 }
 
@@ -114,8 +116,7 @@ impl PartitionSet<MicroPartition> for MicroPartitionSet {
         self
     }
     fn get_merged_partitions(&self) -> DaftResult<PartitionRef> {
-        let parts = self.partitions.values();
-        let parts = parts.into_iter().flatten();
+        let parts = self.partitions.iter().flat_map(|v| v.value().clone());
         MicroPartition::concat(parts).map(|mp| Arc::new(mp) as _)
     }
 
@@ -125,7 +126,7 @@ impl PartitionSet<MicroPartition> for MicroPartitionSet {
     ) -> DaftResult<PartitionBatchRef<MicroPartition>> {
         let mut preview_parts = vec![];
 
-        for part in self.partitions.values().flatten() {
+        for part in self.partitions.iter().flat_map(|v| v.value().clone()) {
             let part_len = part.len();
             if part_len >= num_rows {
                 let mp = part.slice(0, num_rows)?;
@@ -158,24 +159,22 @@ impl PartitionSet<MicroPartition> for MicroPartitionSet {
     }
 
     fn size_bytes(&self) -> DaftResult<usize> {
-        let partitions = self.partitions.values();
+        let mut parts = self.partitions.iter().flat_map(|v| v.value().clone());
 
-        let mut partitions = partitions.into_iter().flatten();
-
-        partitions.try_fold(0, |acc, mp| Ok(acc + mp.size_bytes()?.unwrap_or(0)))
+        parts.try_fold(0, |acc, mp| Ok(acc + mp.size_bytes()?.unwrap_or(0)))
     }
 
     fn has_partition(&self, partition_id: &PartitionId) -> bool {
         self.partitions.contains_key(partition_id.as_ref())
     }
 
-    fn delete_partition(&mut self, partition_id: &PartitionId) -> DaftResult<()> {
+    fn delete_partition(&self, partition_id: &PartitionId) -> DaftResult<()> {
         self.partitions.remove(partition_id.as_ref());
         Ok(())
     }
 
     fn set_partition(
-        &mut self,
+        &self,
         partition_id: PartitionId,
         part: &dyn PartitionBatch<MicroPartition>,
     ) -> DaftResult<()> {
@@ -200,83 +199,12 @@ impl PartitionSet<MicroPartition> for MicroPartitionSet {
     fn into_partition_stream(
         self: Arc<Self>,
     ) -> BoxStream<'static, DaftResult<Arc<MicroPartition>>> {
+        let partitions = self.partitions.clone();
         Box::pin(futures::stream::iter(
-            self.partitions
-                .clone()
-                .into_values()
-                .flat_map(|v| v.into_iter().map(Ok)),
+            partitions
+                .into_iter()
+                .flat_map(|(_, v)| v.into_iter())
+                .map(Ok),
         ))
-    }
-}
-
-/// An in memory cache for partition sets
-/// This is a simple in memory cache that stores a single partition set
-///
-/// TODO: this should drop partitions when the reference count for the partition id drops to 0
-///
-/// TODO: **This will continue to hold onto partitions indefinitely**
-///
-#[derive(Debug, Clone)]
-pub struct InMemoryPartitionSetCache {
-    pub inner: Arc<RwLock<MicroPartitionSet>>,
-}
-
-impl Default for InMemoryPartitionSetCache {
-    fn default() -> Self {
-        Self::empty()
-    }
-}
-
-impl InMemoryPartitionSetCache {
-    pub fn new(pset: MicroPartitionSet) -> Self {
-        Self {
-            inner: Arc::new(RwLock::new(pset)),
-        }
-    }
-    pub fn empty() -> Self {
-        Self {
-            inner: Arc::new(RwLock::new(MicroPartitionSet::default())),
-        }
-    }
-}
-
-impl PartitionSetCache<MicroPartition> for InMemoryPartitionSetCache {
-    fn get_partition_set(
-        &self,
-        _pset_id: &str,
-    ) -> DaftResult<Option<PartitionSetRef<MicroPartition>>> {
-        let lock = self
-            .inner
-            .read()
-            .map_err(|_| DaftError::InternalError("Failed to acquire read lock".to_string()))?;
-
-        Ok(Some(Arc::new(lock.clone())))
-    }
-
-    fn get_all_partition_sets(
-        &self,
-    ) -> DaftResult<HashMap<Arc<str>, PartitionSetRef<MicroPartition>>> {
-        let lock = self
-            .inner
-            .read()
-            .map_err(|_| DaftError::InternalError("Failed to acquire read lock".to_string()))?;
-        let mut hmap = HashMap::new();
-        hmap.insert(Arc::from("default"), Arc::new(lock.clone()) as _);
-        Ok(hmap)
-    }
-
-    fn put_partition_set(
-        &self,
-        _pset: PartitionSetRef<MicroPartition>,
-    ) -> DaftResult<PartitionCacheEntry> {
-        Err(DaftError::InternalError("Not implemented".to_string()))
-    }
-
-    fn rm(&self, _pset_id: &str) -> DaftResult<()> {
-        Err(DaftError::InternalError("Not implemented".to_string()))
-    }
-
-    fn clear(&self) -> DaftResult<()> {
-        Err(DaftError::InternalError("Not implemented".to_string()))
     }
 }

@@ -2,7 +2,6 @@ use std::{future::ready, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
 use daft_local_execution::NativeExecutor;
-use daft_micropartition::partitioning::PartitionSetCache;
 use futures::stream;
 use spark_connect::{ExecutePlanResponse, Relation};
 use tonic::{codegen::tokio_stream::wrappers::ReceiverStream, Status};
@@ -31,11 +30,11 @@ impl Session {
 
         let (tx, rx) = tokio::sync::mpsc::channel::<eyre::Result<ExecutePlanResponse>>(1);
 
-        let pset_cache = self.pset_cache.clone();
+        let pset = self.pset.clone();
 
         tokio::spawn(async move {
             let execution_fut = async {
-                let translator = translation::SparkAnalyzer::new(&pset_cache);
+                let translator = translation::SparkAnalyzer::new(&pset);
                 let lp = translator.to_logical_plan(command).await?;
 
                 // todo: convert optimize to async (looks like A LOT of work)... it touches a lot of API
@@ -46,16 +45,9 @@ impl Session {
 
                 let cfg = Arc::new(DaftExecutionConfig::default());
                 let native_executor = NativeExecutor::from_logical_plan_builder(&optimized_plan)?;
-                let psets = pset_cache.get_all_partition_sets()?;
-                let mut psets = psets.values();
 
-                let first_pset = psets
-                    .next()
-                    .ok_or_else(|| eyre::eyre!("No partition sets found"))?;
-
-                let mut result_stream = native_executor
-                    .run(first_pset.as_ref(), cfg, None)?
-                    .into_stream();
+                let mut result_stream =
+                    native_executor.run(pset.as_ref(), cfg, None)?.into_stream();
 
                 while let Some(result) = result_stream.next().await {
                     let result = result?;
