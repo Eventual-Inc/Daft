@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import copy
+import sys
+from typing import Dict, List
 
 import pytest
 
@@ -40,14 +42,49 @@ def test_datatype_pickling(dtype) -> None:
         (float, DataType.float64()),
         (bytes, DataType.binary()),
         (object, DataType.python()),
-        (list[str], DataType.list(DataType.string())),
-        (dict[str, int], DataType.map(DataType.string(), DataType.int64())),
         (
-            {"foo": list[str], "bar": int},
-            DataType.struct({"foo": DataType.list(DataType.string()), "bar": DataType.int64()}),
+            {"foo": str, "bar": int},
+            DataType.struct({"foo": DataType.string(), "bar": DataType.int64()}),
         ),
-        (list[list[str]], DataType.list(DataType.list(DataType.string()))),
     ],
 )
 def test_datatype_parsing(source, expected):
+    assert DataType._infer_type(source) == expected
+
+
+# These tests are only valid for more modern versions of Python, but can't be skipped in the conventional
+# way either because we cannot even run the subscripting during import-time
+if sys.version_info >= (3, 9):
+
+    @pytest.mark.parametrize(
+        ["source", "expected"],
+        [
+            # These tests must be run in later version of Python that allow for subscripting of types
+            (list[str], DataType.list(DataType.string())),
+            (dict[str, int], DataType.map(DataType.string(), DataType.int64())),
+            (
+                {"foo": list[str], "bar": int},
+                DataType.struct({"foo": DataType.list(DataType.string()), "bar": DataType.int64()}),
+            ),
+            (list[list[str]], DataType.list(DataType.list(DataType.string()))),
+        ],
+    )
+    def test_subscripted_datatype_parsing(source, expected):
+        assert DataType._infer_type(source) == expected
+
+
+@pytest.mark.parametrize(
+    ["source", "expected"],
+    [
+        # These tests must be run in later version of Python that allow for subscripting of types
+        (List[str], DataType.list(DataType.string())),
+        (Dict[str, int], DataType.map(DataType.string(), DataType.int64())),
+        (
+            {"foo": List[str], "bar": int},
+            DataType.struct({"foo": DataType.list(DataType.string()), "bar": DataType.int64()}),
+        ),
+        (List[List[str]], DataType.list(DataType.list(DataType.string()))),
+    ],
+)
+def test_legacy_subscripted_datatype_parsing(source, expected):
     assert DataType._infer_type(source) == expected
