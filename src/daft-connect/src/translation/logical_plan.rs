@@ -1,5 +1,5 @@
 use daft_logical_plan::LogicalPlanBuilder;
-use daft_micropartition::partitioning::SinglePartitionSetCache;
+use daft_micropartition::partitioning::InMemoryPartitionSetCache;
 use eyre::{bail, Context};
 use spark_connect::{relation::RelType, Limit, Relation};
 use tracing::warn;
@@ -13,10 +13,11 @@ mod to_df;
 mod with_columns;
 
 pub struct Translator<'a> {
-    pub pset_cache: &'a SinglePartitionSetCache,
+    pub pset_cache: &'a InMemoryPartitionSetCache,
 }
+
 impl Translator<'_> {
-    pub fn new(pset_cache: &SinglePartitionSetCache) -> Translator {
+    pub fn new(pset_cache: &InMemoryPartitionSetCache) -> Translator {
         Translator { pset_cache }
     }
 

@@ -210,24 +210,24 @@ impl PartitionSet<MicroPartition> for MicroPartitionSet {
 }
 
 /// An in memory cache for partition sets
-/// This is a simple in memory cache that stores partition sets in a HashMap.
+/// This is a simple in memory cache that stores a single partition set
 ///
 /// TODO: this should drop partitions when the reference count for the partition id drops to 0
 ///
 /// TODO: **This will continue to hold onto partitions indefinitely**
 ///
 #[derive(Debug, Clone)]
-pub struct SinglePartitionSetCache {
+pub struct InMemoryPartitionSetCache {
     pub inner: Arc<RwLock<MicroPartitionSet>>,
 }
 
-impl Default for SinglePartitionSetCache {
+impl Default for InMemoryPartitionSetCache {
     fn default() -> Self {
         Self::empty()
     }
 }
 
-impl SinglePartitionSetCache {
+impl InMemoryPartitionSetCache {
     pub fn new(pset: MicroPartitionSet) -> Self {
         Self {
             inner: Arc::new(RwLock::new(pset)),
@@ -240,7 +240,7 @@ impl SinglePartitionSetCache {
     }
 }
 
-impl PartitionSetCache<MicroPartition> for SinglePartitionSetCache {
+impl PartitionSetCache<MicroPartition> for InMemoryPartitionSetCache {
     fn get_partition_set(
         &self,
         _pset_id: &str,
