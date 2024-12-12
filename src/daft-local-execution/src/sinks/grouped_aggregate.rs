@@ -1,4 +1,4 @@
-use std::{cmp::min, sync::Arc};
+use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_runtime::RuntimeRef;
@@ -14,6 +14,12 @@ use super::blocking_sink::{
 };
 use crate::NUM_CPUS;
 
+enum PartialAggStrategy {
+    AggThenPartition,
+    PartitionThenAgg,
+    PartitionOnly,
+}
+
 struct SinglePartitionAggregateState {
     partially_aggregated: Vec<MicroPartition>,
     unaggregated: Vec<MicroPartition>,
@@ -25,6 +31,7 @@ enum GroupedAggregateState {
         inner_states: Vec<Option<SinglePartitionAggregateState>>,
         agg_exprs: Option<Vec<ExprRef>>,
         group_by: Vec<ExprRef>,
+        strategy: Option<PartialAggStrategy>,
     },
     Done,
 }
@@ -32,15 +39,21 @@ enum GroupedAggregateState {
 impl GroupedAggregateState {
     // This is the threshold for when we should aggregate the unaggregated partitions
     const PARTIAL_AGG_THRESHOLD: usize = 10_000;
-    // This is the maximum number of partitions we can have
-    const MAX_NUM_PARTITIONS: usize = 16;
+    // This is the threshold for when we should use partitioning first strategy
+    const HIGH_CARDINALITY_THRESHOLD_RATIO: f64 = 0.8;
 
     fn new(agg_exprs: Option<Vec<ExprRef>>, group_by: Vec<ExprRef>, num_partitions: usize) -> Self {
         let inner_states = (0..num_partitions).map(|_| None).collect();
+        let strategy = if agg_exprs.is_some() {
+            None
+        } else {
+            Some(PartialAggStrategy::PartitionOnly)
+        };
         Self::Accumulating {
             inner_states,
             agg_exprs,
             group_by,
+            strategy,
         }
     }
 
@@ -49,27 +62,69 @@ impl GroupedAggregateState {
             ref mut inner_states,
             ref agg_exprs,
             ref group_by,
+            strategy,
         } = self
         {
-            let partitioned = input.partition_by_hash(group_by, inner_states.len())?;
-            for (p, state) in partitioned.into_iter().zip(inner_states.iter_mut()) {
-                let state = state.get_or_insert_with(|| SinglePartitionAggregateState {
-                    partially_aggregated: vec![],
-                    unaggregated: vec![],
-                    unaggregated_size: 0,
-                });
-                if state.unaggregated_size + p.len() >= Self::PARTIAL_AGG_THRESHOLD
-                    && agg_exprs.is_some()
-                {
-                    let unaggregated = std::mem::take(&mut state.unaggregated);
-                    let aggregated =
-                        MicroPartition::concat(unaggregated.iter().chain(std::iter::once(&p)))?
-                            .agg(agg_exprs.as_ref().unwrap(), group_by)?;
-                    state.partially_aggregated.push(aggregated);
-                    state.unaggregated_size = 0;
-                } else {
+            if matches!(strategy, Some(PartialAggStrategy::AggThenPartition)) {
+                let agged = input.agg(agg_exprs.as_ref().unwrap(), group_by)?;
+                let partitioned = agged.partition_by_hash(group_by, inner_states.len())?;
+                for (p, state) in partitioned.into_iter().zip(inner_states.iter_mut()) {
+                    let state = state.get_or_insert_with(|| SinglePartitionAggregateState {
+                        partially_aggregated: vec![],
+                        unaggregated: vec![],
+                        unaggregated_size: 0,
+                    });
+                    state.partially_aggregated.push(p);
+                }
+            } else if matches!(strategy, Some(PartialAggStrategy::PartitionThenAgg)) {
+                let partitioned = input.partition_by_hash(group_by, inner_states.len())?;
+                for (p, state) in partitioned.into_iter().zip(inner_states.iter_mut()) {
+                    let state = state.get_or_insert_with(|| SinglePartitionAggregateState {
+                        partially_aggregated: vec![],
+                        unaggregated: vec![],
+                        unaggregated_size: 0,
+                    });
+                    if state.unaggregated_size + p.len() >= Self::PARTIAL_AGG_THRESHOLD
+                        && agg_exprs.is_some()
+                    {
+                        let unaggregated = std::mem::take(&mut state.unaggregated);
+                        let aggregated =
+                            MicroPartition::concat(unaggregated.iter().chain(std::iter::once(&p)))?
+                                .agg(agg_exprs.as_ref().unwrap(), group_by)?;
+                        state.partially_aggregated.push(aggregated);
+                        state.unaggregated_size = 0;
+                    } else {
+                        state.unaggregated_size += p.len();
+                        state.unaggregated.push(p);
+                    }
+                }
+            } else if matches!(strategy, Some(PartialAggStrategy::PartitionOnly)) {
+                let partitioned = input.partition_by_hash(group_by, inner_states.len())?;
+                for (p, state) in partitioned.into_iter().zip(inner_states.iter_mut()) {
+                    let state = state.get_or_insert_with(|| SinglePartitionAggregateState {
+                        partially_aggregated: vec![],
+                        unaggregated: vec![],
+                        unaggregated_size: 0,
+                    });
                     state.unaggregated_size += p.len();
                     state.unaggregated.push(p);
+                }
+            } else {
+                let agged = input.agg(agg_exprs.as_ref().unwrap(), group_by)?;
+                let partitioned = agged.partition_by_hash(group_by, inner_states.len())?;
+                for (p, state) in partitioned.into_iter().zip(inner_states.iter_mut()) {
+                    let state = state.get_or_insert_with(|| SinglePartitionAggregateState {
+                        partially_aggregated: vec![],
+                        unaggregated: vec![],
+                        unaggregated_size: 0,
+                    });
+                    state.partially_aggregated.push(p);
+                }
+                if agged.len() as f64 / input.len() as f64 >= Self::HIGH_CARDINALITY_THRESHOLD_RATIO
+                {
+                    *strategy = Some(PartialAggStrategy::PartitionThenAgg);
+                } else {
+                    *strategy = Some(PartialAggStrategy::AggThenPartition);
                 }
             }
         } else {
@@ -157,7 +212,7 @@ impl GroupedAggregateSink {
     }
 
     fn num_partitions(&self) -> usize {
-        min(GroupedAggregateState::MAX_NUM_PARTITIONS, *NUM_CPUS)
+        *NUM_CPUS
     }
 }
 
