@@ -243,12 +243,9 @@ impl<'a> SQLPlanner<'a> {
         // assert using only supported features
         check_features(func)?;
 
-        fn get(
-            fns: &Lazy<SQLFunctions>,
-            name: impl AsRef<str>,
-        ) -> SQLPlannerResult<Arc<dyn SQLFunction>> {
+        fn get(name: impl AsRef<str>) -> SQLPlannerResult<Arc<dyn SQLFunction>> {
             let name = name.as_ref();
-            let fn_match = fns.get(name).ok_or_else(|| {
+            let fn_match = SQL_FUNCTIONS.get(name).ok_or_else(|| {
                 PlannerError::unsupported_sql(format!("Function `{}` not found", name))
             })?;
             Ok(fn_match.clone())
@@ -257,7 +254,7 @@ impl<'a> SQLPlanner<'a> {
         // lookup function variant(s) by name
         // SQL function names are case-insensitive
         let fn_name = func.name.to_string().to_lowercase();
-        let mut fn_match = get(&SQL_FUNCTIONS, fn_name)?;
+        let mut fn_match = get(fn_name)?;
 
         // TODO: Filter the variants for correct arity.
         //
@@ -283,7 +280,7 @@ impl<'a> SQLPlanner<'a> {
             }
             sqlparser::ast::FunctionArguments::List(args) => {
                 if matches!(args.duplicate_treatment, Some(DuplicateTreatment::Distinct)) {
-                    fn_match = get(&SQL_FUNCTIONS, "count_distinct")?;
+                    fn_match = get("count_distinct")?;
                 };
                 if !args.clauses.is_empty() {
                     unsupported_sql_err!("function arguments with clauses");
