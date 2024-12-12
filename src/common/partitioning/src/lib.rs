@@ -88,14 +88,3 @@ pub enum PartitionCacheEntry {
     Python(PyObject),
     Rust(String),
 }
-
-impl PartitionCacheEntry {
-    pub fn new_rust(key: String) -> Self {
-        Self::Rust(key)
-    }
-
-    #[cfg(feature = "python")]
-    pub fn new_py(value: PyObject) -> Self {
-        Self::Python(value)
-    }
-}
