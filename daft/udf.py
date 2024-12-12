@@ -394,7 +394,7 @@ class UDF:
 
 def udf(
     *,
-    return_dtype: DataType,
+    return_dtype: DataType | type,
     num_cpus: float | None = None,
     num_gpus: float | None = None,
     memory_bytes: int | None = None,
@@ -511,6 +511,7 @@ def udf(
     Returns:
         Callable[[UserDefinedPyFuncLike], UDF]: UDF decorator - converts a user-provided Python function as a UDF that can be called on Expressions
     """
+    inferred_return_dtype = DataType._infer_type(return_dtype)
 
     def _udf(f: UserDefinedPyFuncLike) -> UDF:
         # Grab a name for the UDF. It **should** be unique.
@@ -534,7 +535,7 @@ def udf(
         return UDF(
             inner=f,
             name=name,
-            return_dtype=return_dtype,
+            return_dtype=inferred_return_dtype,
             resource_request=resource_request,
             batch_size=batch_size,
         )

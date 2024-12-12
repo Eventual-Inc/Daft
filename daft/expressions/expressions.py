@@ -999,7 +999,7 @@ class Expression:
         if_false = Expression._to_expression(if_false)
         return Expression._from_pyexpr(self._expr.if_else(if_true._expr, if_false._expr))
 
-    def apply(self, func: Callable, return_dtype: DataType) -> Expression:
+    def apply(self, func: Callable, return_dtype: DataType | type) -> Expression:
         """Apply a function on each value in a given expression.
 
         .. NOTE::
@@ -1039,6 +1039,8 @@ class Expression:
         """
         from daft.udf import UDF
 
+        inferred_return_dtype = DataType._infer_type(return_dtype)
+
         def batch_func(self_series):
             return [func(x) for x in self_series.to_pylist()]
 
@@ -1050,7 +1052,7 @@ class Expression:
         return UDF(
             inner=batch_func,
             name=name,
-            return_dtype=return_dtype,
+            return_dtype=inferred_return_dtype,
         )(self)
 
     def is_null(self) -> Expression:

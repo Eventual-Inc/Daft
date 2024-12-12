@@ -84,13 +84,11 @@ class DataType:
         )
 
     @classmethod
-    def _infer_type(cls, user_provided_type: DataType | str | type) -> DataType:
+    def _infer_type(cls, user_provided_type: DataType | type) -> DataType:
         from typing import get_args, get_origin
 
         if isinstance(user_provided_type, DataType):
             return user_provided_type
-        elif isinstance(user_provided_type, str):
-            raise NotImplementedError("Parsing DataTypes from SQL-compatible strings is not yet implemented")
         elif isinstance(user_provided_type, dict):
             return DataType.struct({k: DataType._infer_type(user_provided_type[k]) for k in user_provided_type})
         elif isinstance(user_provided_type, type):
