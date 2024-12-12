@@ -51,27 +51,42 @@ impl GroupedAggregateState {
             ref group_by,
         } = self
         {
-            let partitioned = input.partition_by_hash(group_by, inner_states.len())?;
-            for (p, state) in partitioned.into_iter().zip(inner_states.iter_mut()) {
+            let shards = input.sharded_group_agg(
+                agg_exprs.as_ref().unwrap(),
+                group_by,
+                inner_states.len(),
+            )?;
+
+            for (shard, state) in shards.into_iter().zip(inner_states.iter_mut()) {
                 let state = state.get_or_insert_with(|| SinglePartitionAggregateState {
                     partially_aggregated: vec![],
                     unaggregated: vec![],
                     unaggregated_size: 0,
                 });
-                if state.unaggregated_size + p.len() >= Self::PARTIAL_AGG_THRESHOLD
-                    && agg_exprs.is_some()
-                {
-                    let unaggregated = std::mem::take(&mut state.unaggregated);
-                    let aggregated =
-                        MicroPartition::concat(unaggregated.iter().chain(std::iter::once(&p)))?
-                            .agg(agg_exprs.as_ref().unwrap(), group_by)?;
-                    state.partially_aggregated.push(aggregated);
-                    state.unaggregated_size = 0;
-                } else {
-                    state.unaggregated_size += p.len();
-                    state.unaggregated.push(p);
-                }
+                state.partially_aggregated.push(shard);
+                state.unaggregated_size = 0;
             }
+            // let partitioned = input.partition_by_hash(group_by, inner_states.len())?;
+            // for (p, state) in partitioned.into_iter().zip(inner_states.iter_mut()) {
+            //     let state = state.get_or_insert_with(|| SinglePartitionAggregateState {
+            //         partially_aggregated: vec![],
+            //         unaggregated: vec![],
+            //         unaggregated_size: 0,
+            //     });
+            //     if state.unaggregated_size + p.len() >= Self::PARTIAL_AGG_THRESHOLD
+            //         && agg_exprs.is_some()
+            //     {
+            //         let unaggregated = std::mem::take(&mut state.unaggregated);
+            //         let aggregated =
+            //             MicroPartition::concat(unaggregated.iter().chain(std::iter::once(&p)))?
+            //                 .agg(agg_exprs.as_ref().unwrap(), group_by)?;
+            //         state.partially_aggregated.push(aggregated);
+            //         state.unaggregated_size = 0;
+            //     } else {
+            //         state.unaggregated_size += p.len();
+            //         state.unaggregated.push(p);
+            //     }
+            // }
         } else {
             panic!("GroupedAggregateSink should be in Accumulating state");
         }

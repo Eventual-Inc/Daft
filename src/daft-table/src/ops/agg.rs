@@ -62,6 +62,64 @@ impl Table {
         Self::from_nonempty_columns([&groupkeys_table.columns[..], &grouped_cols].concat())
     }
 
+    pub fn sharded_agg_groupby(
+        &self,
+        to_agg: &[ExprRef],
+        group_by: &[ExprRef],
+        num_shards: usize,
+    ) -> DaftResult<Vec<Self>> {
+        let agg_exprs = to_agg
+            .iter()
+            .map(|e| match e.as_ref() {
+                Expr::Agg(e) => Ok(e),
+                _ => Err(DaftError::ValueError(format!(
+                    "Trying to run non-Agg expression in Grouped Agg! {e}"
+                ))),
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
+
+        #[cfg(feature = "python")]
+        if let [AggExpr::MapGroups { func, inputs }] = &agg_exprs[..] {
+            todo!("sharded map groups is not implemented");
+            // return self.map_groups(func, inputs, group_by);
+        }
+
+        // Table with just the groupby columns.
+        let groupby_table = self.eval_expression_list(group_by)?;
+
+        // Get the unique group keys (by indices)
+        // and the grouped values (also by indices, one array of indices per group).
+
+        let shards = groupby_table.sharded_hash_grouper(num_shards)?;
+        // let (groupkey_indices, groupvals_indices) = groupby_table.sharded_hash_grouper(shards)?;
+
+        shards
+            .into_iter()
+            .map(|(groupkey_indices, groupvals_indices)| {
+                // Table with the aggregated (deduplicated) group keys.
+                let groupkeys_table = {
+                    let indices_as_series = UInt64Array::from(("", groupkey_indices)).into_series();
+                    groupby_table.take(&indices_as_series)?
+                };
+
+                // Take fast path short circuit if there is only 1 group
+                let group_idx_input = if groupvals_indices.len() == 1 {
+                    None
+                } else {
+                    Some(&groupvals_indices)
+                };
+
+                let grouped_cols = agg_exprs
+                    .iter()
+                    .map(|e| self.eval_agg_expression(e, group_idx_input))
+                    .collect::<DaftResult<Vec<_>>>()?;
+
+                // Combine the groupkey columns and the aggregation result columns.
+                Self::from_nonempty_columns([&groupkeys_table.columns[..], &grouped_cols].concat())
+            })
+            .collect::<DaftResult<Vec<Self>>>()
+    }
+
     #[cfg(feature = "python")]
     pub fn map_groups(
         &self,

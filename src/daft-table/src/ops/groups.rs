@@ -39,6 +39,39 @@ impl Table {
         Ok((key_indices, values_indices))
     }
 
+    pub(crate) fn sharded_hash_grouper(&self, shards: usize) -> DaftResult<Vec<GroupIndicesPair>> {
+        // Group equal rows together.
+        //
+        // Given a table, returns a tuple:
+        // 1. Indices of the table, deduplicated.
+        // 2. Indices of the entire table, with identical values grouped.
+        //
+        // e.g. given a table [B, B, A, B, C, C]
+        // returns: (
+        //      [2, 0, 4]  <-- indices of A, B, and C
+        //      [[2], [0, 1, 3], [4, 5]]  <--- indices of all A, all B, all C
+        // )
+
+        // if self.num_columns() == 1 {
+        //     return self.columns.first().unwrap().make_groups();
+        // }
+
+        let probe_tables = self.to_sharded_probe_hash_table(shards)?;
+
+        let mut groups = Vec::with_capacity(shards);
+
+        for shard in probe_tables {
+            let mut key_indices: Vec<u64> = Vec::with_capacity(shard.len());
+            let mut values_indices: Vec<Vec<u64>> = Vec::with_capacity(shard.len());
+            for (idx_hash, val_idx) in shard {
+                key_indices.push(idx_hash.idx);
+                values_indices.push(val_idx);
+            }
+            groups.push((key_indices, values_indices));
+        }
+        Ok(groups)
+    }
+
     fn sort_grouper(&self) -> DaftResult<(Vec<u64>, Vec<UInt64Array>)> {
         #![allow(dead_code)]
         // Argsort the table, but also group identical values together.

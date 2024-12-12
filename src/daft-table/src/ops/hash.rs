@@ -68,6 +68,59 @@ impl Table {
         Ok(probe_table)
     }
 
+    pub fn to_sharded_probe_hash_table(
+        &self,
+        shards: usize,
+    ) -> DaftResult<Vec<HashMap<IndexHash, Vec<u64>, IdentityBuildHasher>>> {
+        let hashes = self.hash_rows()?;
+
+        const DEFAULT_SIZE: usize = 20;
+        let comparator = build_multi_array_is_equal(
+            self.columns.as_slice(),
+            self.columns.as_slice(),
+            vec![true; self.columns.len()].as_slice(),
+            vec![true; self.columns.len()].as_slice(),
+        )?;
+
+        let mut probe_tables = Vec::with_capacity(shards);
+
+        for _ in 0..shards {
+            probe_tables.push(
+                HashMap::<IndexHash, Vec<u64>, IdentityBuildHasher>::with_capacity_and_hasher(
+                    DEFAULT_SIZE,
+                    Default::default(),
+                ),
+            );
+        }
+
+        // TODO(Sammy): Drop nulls using validity array if requested
+        for (i, h) in hashes.as_arrow().values_iter().enumerate() {
+            let probe_table = &mut probe_tables[(*h % shards as u64) as usize];
+            let entry = probe_table.raw_entry_mut().from_hash(*h, |other| {
+                (*h == other.hash) && {
+                    let j = other.idx;
+                    comparator(i, j as usize)
+                }
+            });
+            match entry {
+                RawEntryMut::Vacant(entry) => {
+                    entry.insert_hashed_nocheck(
+                        *h,
+                        IndexHash {
+                            idx: i as u64,
+                            hash: *h,
+                        },
+                        vec![i as u64],
+                    );
+                }
+                RawEntryMut::Occupied(mut entry) => {
+                    entry.get_mut().push(i as u64);
+                }
+            }
+        }
+        Ok(probe_tables)
+    }
+
     pub fn to_probe_hash_map_without_idx(
         &self,
     ) -> DaftResult<HashMap<IndexHash, (), IdentityBuildHasher>> {
