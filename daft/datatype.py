@@ -83,6 +83,34 @@ class DataType:
             "use a creator method like DataType.int32() or use DataType.from_arrow_type(pa_type)"
         )
 
+    @classmethod
+    def _infer_type(cls, user_provided_type: DataType | str | type) -> DataType:
+        from typing import get_args, get_origin
+
+        if isinstance(user_provided_type, DataType):
+            return user_provided_type
+        elif isinstance(user_provided_type, str):
+            raise NotImplementedError("Parsing DataTypes from SQL-compatible strings is not yet implemented")
+        elif isinstance(user_provided_type, dict):
+            return DataType.struct({k: DataType._infer_type(user_provided_type[k]) for k in user_provided_type})
+        elif isinstance(user_provided_type, type):
+            origin_type = get_origin(user_provided_type)
+            if user_provided_type is str:
+                return DataType.string()
+            elif user_provided_type is int:
+                return DataType.int64()
+            elif user_provided_type is float:
+                return DataType.float64()
+            elif user_provided_type is bytes:
+                return DataType.binary()
+            elif origin_type is list:
+                child_type = get_args(user_provided_type)[0]
+                return DataType.list(DataType._infer_type(child_type))
+            else:
+                raise ValueError(f"Unrecognized Python type, cannot convert to Daft type: {user_provided_type}")
+        else:
+            raise ValueError(f"Unable to infer Daft DataType for provided value: {user_provided_type}")
+
     @staticmethod
     def _from_pydatatype(pydt: PyDataType) -> DataType:
         dt = DataType.__new__(DataType)
