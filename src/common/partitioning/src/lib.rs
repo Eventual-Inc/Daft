@@ -10,10 +10,8 @@ use {
 };
 
 /// Common trait interface for dataset partitioning, defined in this shared crate to avoid circular dependencies.
-/// Acts as a forward reference for concrete partition implementations. _(Specifically the `MicroPartition` type defined in `daft-micropartition`)_
+/// Acts as a forward declaration for concrete partition implementations. _(Specifically the `MicroPartition` type defined in `daft-micropartition`)_
 pub trait Partition: std::fmt::Debug + Send + Sync {
-    fn as_any(&self) -> &dyn std::any::Any;
-    fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
     fn size_bytes(&self) -> DaftResult<Option<usize>>;
 }
 
@@ -60,7 +58,9 @@ pub trait PartitionSet<T: Partition>: std::fmt::Debug + Send + Sync {
     fn num_partitions(&self) -> usize;
     fn len(&self) -> usize;
     /// Check if the partition set is empty
-    fn is_empty(&self) -> bool;
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
     /// Size of the partition set in bytes
     fn size_bytes(&self) -> DaftResult<usize>;
     /// Check if a partition exists

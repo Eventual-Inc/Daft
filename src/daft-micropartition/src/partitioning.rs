@@ -9,14 +9,6 @@ use futures::stream::BoxStream;
 use crate::MicroPartition;
 
 impl Partition for MicroPartition {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
-        self
-    }
-
     fn size_bytes(&self) -> DaftResult<Option<usize>> {
         self.size_bytes()
     }
