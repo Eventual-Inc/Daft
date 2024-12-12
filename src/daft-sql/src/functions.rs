@@ -243,7 +243,7 @@ impl<'a> SQLPlanner<'a> {
         // assert using only supported features
         check_features(func)?;
 
-        fn get_function_from_sqlfunctions_registry(
+        fn get_func_from_sqlfunctions_registry(
             name: impl AsRef<str>,
         ) -> SQLPlannerResult<Arc<dyn SQLFunction>> {
             let name = name.as_ref();
@@ -255,7 +255,7 @@ impl<'a> SQLPlanner<'a> {
         // lookup function variant(s) by name
         // SQL function names are case-insensitive
         let fn_name = func.name.to_string().to_lowercase();
-        let mut fn_match = get_function_from_sqlfunctions_registry(fn_name.as_str())?;
+        let mut fn_match = get_func_from_sqlfunctions_registry(fn_name.as_str())?;
 
         // TODO: Filter the variants for correct arity.
         //
@@ -286,7 +286,7 @@ impl<'a> SQLPlanner<'a> {
 
                 match (fn_is_count, using_duplicate_treatment) {
                     (true, true) => {
-                        fn_match = get_function_from_sqlfunctions_registry("count_distinct")?;
+                        fn_match = get_func_from_sqlfunctions_registry("count_distinct")?;
                     }
                     (false, true) => unsupported_sql_err!("DISTINCT is only supported on COUNT"),
                     (true, false) | (false, false) => (),
