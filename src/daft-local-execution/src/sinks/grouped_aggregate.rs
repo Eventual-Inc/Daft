@@ -24,7 +24,7 @@ enum AggStrategy {
 impl AggStrategy {
     fn execute_strategy(
         &self,
-        inner_states: &mut Vec<Option<SinglePartitionAggregateState>>,
+        inner_states: &mut [Option<SinglePartitionAggregateState>],
         input: Arc<MicroPartition>,
         agg_exprs: &Option<Vec<ExprRef>>,
         group_by: &[ExprRef],
@@ -47,7 +47,7 @@ impl AggStrategy {
     }
 
     fn execute_agg_then_partition(
-        inner_states: &mut Vec<Option<SinglePartitionAggregateState>>,
+        inner_states: &mut [Option<SinglePartitionAggregateState>],
         input: Arc<MicroPartition>,
         agg_exprs: &[ExprRef],
         group_by: &[ExprRef],
@@ -66,7 +66,7 @@ impl AggStrategy {
     }
 
     fn execute_partition_then_agg(
-        inner_states: &mut Vec<Option<SinglePartitionAggregateState>>,
+        inner_states: &mut [Option<SinglePartitionAggregateState>],
         input: Arc<MicroPartition>,
         agg_exprs: &[ExprRef],
         group_by: &[ExprRef],
@@ -94,7 +94,7 @@ impl AggStrategy {
     }
 
     fn execute_partition_only(
-        inner_states: &mut Vec<Option<SinglePartitionAggregateState>>,
+        inner_states: &mut [Option<SinglePartitionAggregateState>],
         input: Arc<MicroPartition>,
         group_by: &[ExprRef],
     ) -> DaftResult<()> {
