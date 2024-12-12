@@ -26,34 +26,26 @@ impl AggStrategy {
         &self,
         inner_states: &mut [Option<SinglePartitionAggregateState>],
         input: Arc<MicroPartition>,
-        agg_exprs: &Option<Vec<ExprRef>>,
-        group_by: &[ExprRef],
+        params: &GroupedAggregateParams,
     ) -> DaftResult<()> {
         match self {
-            Self::AggThenPartition => Self::execute_agg_then_partition(
-                inner_states,
-                input,
-                agg_exprs.as_ref().unwrap(),
-                group_by,
-            ),
-            Self::PartitionThenAgg => Self::execute_partition_then_agg(
-                inner_states,
-                input,
-                agg_exprs.as_ref().unwrap(),
-                group_by,
-            ),
-            Self::PartitionOnly => Self::execute_partition_only(inner_states, input, group_by),
+            Self::AggThenPartition => Self::execute_agg_then_partition(inner_states, input, params),
+            Self::PartitionThenAgg => Self::execute_partition_then_agg(inner_states, input, params),
+            Self::PartitionOnly => Self::execute_partition_only(inner_states, input, params),
         }
     }
 
     fn execute_agg_then_partition(
         inner_states: &mut [Option<SinglePartitionAggregateState>],
         input: Arc<MicroPartition>,
-        agg_exprs: &[ExprRef],
-        group_by: &[ExprRef],
+        params: &GroupedAggregateParams,
     ) -> DaftResult<()> {
-        let agged = input.agg(agg_exprs, group_by)?;
-        let partitioned = agged.partition_by_hash(group_by, inner_states.len())?;
+        let agged = input.agg(
+            params.partial_agg_exprs.as_slice(),
+            params.group_by.as_slice(),
+        )?;
+        let partitioned =
+            agged.partition_by_hash(params.final_group_by.as_slice(), inner_states.len())?;
         for (p, state) in partitioned.into_iter().zip(inner_states.iter_mut()) {
             let state = state.get_or_insert_with(|| SinglePartitionAggregateState {
                 partially_aggregated: vec![],
@@ -68,10 +60,10 @@ impl AggStrategy {
     fn execute_partition_then_agg(
         inner_states: &mut [Option<SinglePartitionAggregateState>],
         input: Arc<MicroPartition>,
-        agg_exprs: &[ExprRef],
-        group_by: &[ExprRef],
+        params: &GroupedAggregateParams,
     ) -> DaftResult<()> {
-        let partitioned = input.partition_by_hash(group_by, inner_states.len())?;
+        let partitioned =
+            input.partition_by_hash(params.group_by.as_slice(), inner_states.len())?;
         for (p, state) in partitioned.into_iter().zip(inner_states.iter_mut()) {
             let state = state.get_or_insert_with(|| SinglePartitionAggregateState {
                 partially_aggregated: vec![],
@@ -81,8 +73,10 @@ impl AggStrategy {
             if state.unaggregated_size + p.len() >= GroupedAggregateState::PARTIAL_AGG_THRESHOLD {
                 let unaggregated = std::mem::take(&mut state.unaggregated);
                 let aggregated =
-                    MicroPartition::concat(unaggregated.iter().chain(std::iter::once(&p)))?
-                        .agg(agg_exprs, group_by)?;
+                    MicroPartition::concat(unaggregated.iter().chain(std::iter::once(&p)))?.agg(
+                        params.partial_agg_exprs.as_slice(),
+                        params.group_by.as_slice(),
+                    )?;
                 state.partially_aggregated.push(aggregated);
                 state.unaggregated_size = 0;
             } else {
@@ -96,9 +90,10 @@ impl AggStrategy {
     fn execute_partition_only(
         inner_states: &mut [Option<SinglePartitionAggregateState>],
         input: Arc<MicroPartition>,
-        group_by: &[ExprRef],
+        params: &GroupedAggregateParams,
     ) -> DaftResult<()> {
-        let partitioned = input.partition_by_hash(group_by, inner_states.len())?;
+        let partitioned =
+            input.partition_by_hash(params.group_by.as_slice(), inner_states.len())?;
         for (p, state) in partitioned.into_iter().zip(inner_states.iter_mut()) {
             let state = state.get_or_insert_with(|| SinglePartitionAggregateState {
                 partially_aggregated: vec![],
@@ -121,8 +116,6 @@ struct SinglePartitionAggregateState {
 enum GroupedAggregateState {
     Accumulating {
         inner_states: Vec<Option<SinglePartitionAggregateState>>,
-        agg_exprs: Option<Vec<ExprRef>>,
-        group_by: Vec<ExprRef>,
         strategy: Option<AggStrategy>,
     },
     Done,
@@ -136,39 +129,48 @@ impl GroupedAggregateState {
     // For example if the input data had 100 rows and 80 groups or above, that's considered high cardinality.
     const HIGH_CARDINALITY_THRESHOLD_RATIO: f64 = 0.8;
 
-    fn new(agg_exprs: Option<Vec<ExprRef>>, group_by: Vec<ExprRef>, num_partitions: usize) -> Self {
+    fn new(num_partitions: usize) -> Self {
         let inner_states = (0..num_partitions).map(|_| None).collect();
-        // If we don't have any aggregation expressions, we should use partition only strategy
-        let strategy = if agg_exprs.is_none() {
-            Some(AggStrategy::PartitionOnly)
-        } else {
-            None
-        };
         Self::Accumulating {
             inner_states,
-            agg_exprs,
-            group_by,
-            strategy,
+            strategy: None,
         }
     }
 
-    fn push(&mut self, input: Arc<MicroPartition>) -> DaftResult<()> {
+    fn push(
+        &mut self,
+        input: Arc<MicroPartition>,
+        params: &GroupedAggregateParams,
+    ) -> DaftResult<()> {
         if let Self::Accumulating {
             ref mut inner_states,
-            agg_exprs,
-            group_by,
             strategy,
         } = self
         {
             // If we have determined a strategy, execute it.
             if let Some(strategy) = strategy {
-                strategy.execute_strategy(inner_states, input, agg_exprs, group_by)?;
+                strategy.execute_strategy(inner_states, input, params)?;
             }
-            // Otherwise, determine a strategy based on the input data. First, aggregate the input data and then partitions.
-            // Then, if the ratio of the number of groups to the number of rows is above a threshold, use partitioning first strategy.
+            // Otherwise, determine a strategy based on the input data.
             else {
-                let agged = input.agg(agg_exprs.as_ref().unwrap(), group_by)?;
-                let partitioned = agged.partition_by_hash(group_by, inner_states.len())?;
+                // If we have no partial aggregation expressions and only final aggregation expressions, e.g. map_groups, we don't need to partially aggregate
+                // and can just partition the input data.
+                if params.partial_agg_exprs.is_empty() && !params.final_agg_exprs.is_empty() {
+                    *strategy = Some(AggStrategy::PartitionOnly);
+                    strategy
+                        .as_ref()
+                        .unwrap()
+                        .execute_strategy(inner_states, input, params)?;
+                    return Ok(());
+                }
+                // If we do have partial aggregation expressions, we need to estimate the cardinality of the input data
+                // to determine the best strategy. If the cardinality is high, we should do partition first, otherwise we should do aggregation first.
+                let agged = input.agg(
+                    params.partial_agg_exprs.as_slice(),
+                    params.group_by.as_slice(),
+                )?;
+                let partitioned = agged
+                    .partition_by_hash(params.final_group_by.as_slice(), inner_states.len())?;
                 for (p, state) in partitioned.into_iter().zip(inner_states.iter_mut()) {
                     let state = state.get_or_insert_with(|| SinglePartitionAggregateState {
                         partially_aggregated: vec![],
@@ -281,6 +283,7 @@ impl BlockingSink for GroupedAggregateSink {
         mut state: Box<dyn BlockingSinkState>,
         runtime: &RuntimeRef,
     ) -> BlockingSinkSinkResult {
+        let params = self.grouped_aggregate_params.clone();
         runtime
             .spawn(
                 async move {
@@ -289,7 +292,7 @@ impl BlockingSink for GroupedAggregateSink {
                         .downcast_mut::<GroupedAggregateState>()
                         .expect("GroupedAggregateSink should have GroupedAggregateState");
 
-                    agg_state.push(input)?;
+                    agg_state.push(input, &params)?;
                     Ok(BlockingSinkStatus::NeedMoreInput(state))
                 }
                 .instrument(info_span!("GroupedAggregateSink::sink")),
@@ -395,19 +398,6 @@ impl BlockingSink for GroupedAggregateSink {
     }
 
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
-        let params = &self.grouped_aggregate_params;
-        // If we have no partial aggregation expressions and only final aggregation expressions, e.g. map_groups
-        // we don't need to partially aggregate
-        let partial_agg =
-            if params.partial_agg_exprs.is_empty() && !params.final_agg_exprs.is_empty() {
-                None
-            } else {
-                Some(params.partial_agg_exprs.clone())
-            };
-        Ok(Box::new(GroupedAggregateState::new(
-            partial_agg,
-            params.group_by.clone(),
-            self.num_partitions(),
-        )))
+        Ok(Box::new(GroupedAggregateState::new(self.num_partitions())))
     }
 }
