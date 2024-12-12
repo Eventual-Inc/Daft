@@ -243,7 +243,9 @@ impl<'a> SQLPlanner<'a> {
         // assert using only supported features
         check_features(func)?;
 
-        fn get(name: impl AsRef<str>) -> SQLPlannerResult<Arc<dyn SQLFunction>> {
+        fn get_function_from_sqlfunctions_registry(
+            name: impl AsRef<str>,
+        ) -> SQLPlannerResult<Arc<dyn SQLFunction>> {
             let name = name.as_ref();
             SQL_FUNCTIONS.get(name).cloned().ok_or_else(|| {
                 PlannerError::unsupported_sql(format!("Function `{}` not found", name))
@@ -253,7 +255,7 @@ impl<'a> SQLPlanner<'a> {
         // lookup function variant(s) by name
         // SQL function names are case-insensitive
         let fn_name = func.name.to_string().to_lowercase();
-        let mut fn_match = get(fn_name)?;
+        let mut fn_match = get_function_from_sqlfunctions_registry(fn_name)?;
 
         // TODO: Filter the variants for correct arity.
         //
@@ -279,7 +281,7 @@ impl<'a> SQLPlanner<'a> {
             }
             sqlparser::ast::FunctionArguments::List(args) => {
                 if matches!(args.duplicate_treatment, Some(DuplicateTreatment::Distinct)) {
-                    fn_match = get("count_distinct")?;
+                    fn_match = get_function_from_sqlfunctions_registry("count_distinct")?;
                 };
                 if !args.clauses.is_empty() {
                     unsupported_sql_err!("function arguments with clauses");
