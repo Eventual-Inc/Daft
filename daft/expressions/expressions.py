@@ -542,7 +542,7 @@ class Expression:
         expr = self._expr.alias(name)
         return Expression._from_pyexpr(expr)
 
-    def cast(self, dtype: DataType) -> Expression:
+    def cast(self, dtype: DataType | type) -> Expression:
         """Casts an expression to the given datatype if possible.
 
         The following combinations of datatype casting is valid:
@@ -622,8 +622,10 @@ class Expression:
         Returns:
             Expression: Expression with the specified new datatype
         """
-        assert isinstance(dtype, DataType)
-        expr = self._expr.cast(dtype._dtype)
+        assert isinstance(dtype, (DataType, type))
+        inferred_dtype = DataType._infer_type(dtype)
+
+        expr = self._expr.cast(inferred_dtype._dtype)
         return Expression._from_pyexpr(expr)
 
     def ceil(self) -> Expression:
