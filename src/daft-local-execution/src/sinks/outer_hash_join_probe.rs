@@ -201,8 +201,8 @@ impl OuterHashJoinProbeSink {
         left_non_join_columns: &[String],
         right_non_join_columns: &[String],
     ) -> DaftResult<Arc<MicroPartition>> {
-        let probe_table = probe_state.get_probeable().clone();
-        let tables = probe_state.get_tables().clone();
+        let probe_table = probe_state.get_probeable();
+        let tables = probe_state.get_tables();
 
         let _growables = info_span!("OuterHashJoinProbeSink::build_growables").entered();
         let mut build_side_growable = GrowableTable::new(
@@ -268,8 +268,8 @@ impl OuterHashJoinProbeSink {
         left_non_join_columns: &[String],
         right_non_join_columns: &[String],
     ) -> DaftResult<Arc<MicroPartition>> {
-        let probe_table = probe_state.get_probeable().clone();
-        let tables = probe_state.get_tables().clone();
+        let probe_table = probe_state.get_probeable();
+        let tables = probe_state.get_tables();
 
         let _growables = info_span!("OuterHashJoinProbeSink::build_growables").entered();
         let mut build_side_growable = GrowableTable::new(
@@ -339,8 +339,8 @@ impl OuterHashJoinProbeSink {
         right_non_join_columns: &[String],
         build_on_left: bool,
     ) -> DaftResult<Arc<MicroPartition>> {
-        let probe_table = probe_state.get_probeable().clone();
-        let tables = probe_state.get_tables().clone();
+        let probe_table = probe_state.get_probeable();
+        let tables = probe_state.get_tables();
 
         let _growables = info_span!("OuterHashJoinProbeSink::build_growables").entered();
         // Need to set use_validity to true here because we add nulls to the build side
