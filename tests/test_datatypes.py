@@ -39,6 +39,7 @@ def test_datatype_pickling(dtype) -> None:
         (int, DataType.int64()),
         (float, DataType.float64()),
         (bytes, DataType.binary()),
+        (object, DataType.python()),
         (list[str], DataType.list(DataType.string())),
         (
             {"foo": list[str], "bar": int},

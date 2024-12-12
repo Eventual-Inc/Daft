@@ -101,6 +101,8 @@ class DataType:
                 return DataType.float64()
             elif user_provided_type is bytes:
                 return DataType.binary()
+            if user_provided_type is object:
+                return DataType.python()
             elif origin_type is list:
                 child_type = get_args(user_provided_type)[0]
                 return DataType.list(DataType._infer_type(child_type))
