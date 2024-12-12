@@ -106,6 +106,9 @@ class DataType:
             elif origin_type is list:
                 child_type = get_args(user_provided_type)[0]
                 return DataType.list(DataType._infer_type(child_type))
+            elif origin_type is dict:
+                (key_type, val_type) = get_args(user_provided_type)
+                return DataType.map(DataType._infer_type(key_type), DataType._infer_type(val_type))
             else:
                 raise ValueError(f"Unrecognized Python type, cannot convert to Daft type: {user_provided_type}")
         else:

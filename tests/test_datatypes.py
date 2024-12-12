@@ -41,6 +41,7 @@ def test_datatype_pickling(dtype) -> None:
         (bytes, DataType.binary()),
         (object, DataType.python()),
         (list[str], DataType.list(DataType.string())),
+        (dict[str, int], DataType.map(DataType.string(), DataType.int64())),
         (
             {"foo": list[str], "bar": int},
             DataType.struct({"foo": DataType.list(DataType.string()), "bar": DataType.int64()}),
