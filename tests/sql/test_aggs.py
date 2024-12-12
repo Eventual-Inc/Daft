@@ -21,6 +21,7 @@ def test_aggs_sql():
                 col("values").min().alias("min"),
                 col("values").max().alias("max"),
                 col("values").count().alias("count"),
+                col("values").count_distinct().alias("count_distinct"),
                 col("values").stddev().alias("std"),
             ]
         )
@@ -36,6 +37,7 @@ def test_aggs_sql():
         min(values) as min,
         max(values) as max,
         count(values) as count,
+        count(distinct values) as count_distinct,
         stddev(values) as std
     FROM df
     """)
@@ -56,6 +58,7 @@ def test_aggs_sql():
         ("count(*) as cnt", "cnt > 2", {"cnt": [3, 5]}),
         ("count(*) as cnt", "count(*) > 2", {"cnt": [3, 5]}),
         ("count(*)", "count(*) > 2", {"count": [3, 5]}),
+        ("count(distinct values) as count_distinct", "count_distinct > 2", {"x": [0]}),
         ("count(*) as cnt", "sum(values) > 10", {"cnt": [3, 5]}),
         ("sum(values), count(*)", "id > 1", {"values": [10.0, 29.5], "count": [2, 5]}),
     ],
