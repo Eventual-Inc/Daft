@@ -76,6 +76,7 @@ def pre_shuffle_merge(
                 if not location_info or "node_ids" not in location_info or not location_info["node_ids"]:
                     unknown_location_group.append((partition, size))
                 else:
+                    # TODO: Handle multiple locations, with a strategy to select more optimal nodes, e.g. based on memory
                     node_id = location_info["node_ids"][0]  # Use first node if multiple locations exist
                     node_groups[node_id].append((partition, size))
 
