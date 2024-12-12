@@ -245,10 +245,9 @@ impl<'a> SQLPlanner<'a> {
 
         fn get(name: impl AsRef<str>) -> SQLPlannerResult<Arc<dyn SQLFunction>> {
             let name = name.as_ref();
-            let fn_match = SQL_FUNCTIONS.get(name).ok_or_else(|| {
+            SQL_FUNCTIONS.get(name).cloned().ok_or_else(|| {
                 PlannerError::unsupported_sql(format!("Function `{}` not found", name))
-            })?;
-            Ok(fn_match.clone())
+            })
         }
 
         // lookup function variant(s) by name
