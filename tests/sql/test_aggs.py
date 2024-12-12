@@ -58,8 +58,12 @@ def test_aggs_sql():
         ("count(*) as cnt", "cnt > 2", {"cnt": [3, 5]}),
         ("count(*) as cnt", "count(*) > 2", {"cnt": [3, 5]}),
         ("count(*)", "count(*) > 2", {"count": [3, 5]}),
-        ("count(distinct values) as count_distinct", "count_distinct > 2", {"x": [0]}),
         ("count(*) as cnt", "sum(values) > 10", {"cnt": [3, 5]}),
+        # duplicates of the above 4 `count` tests but for count-distinct
+        ("count(distinct values) as count_distinct", "count_distinct > 2", {"count_distinct": [3, 5]}),
+        ("count(distinct values) as count_distinct", "count(distinct values) > 2", {"count_distinct": [3, 5]}),
+        ("count(distinct values)", "count(distinct values) > 2", {"values": [3, 5]}),
+        ("count(distinct values) as count_distinct", "sum(values) > 10", {"count_distinct": [3, 5]}),
         ("sum(values), count(*)", "id > 1", {"values": [10.0, 29.5], "count": [2, 5]}),
     ],
 )
