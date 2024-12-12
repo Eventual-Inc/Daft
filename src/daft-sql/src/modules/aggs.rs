@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use daft_core::prelude::CountMode;
 use daft_dsl::{col, AggExpr, Expr, ExprRef, LiteralValue};
-use sqlparser::ast::{DuplicateTreatment, FunctionArg, FunctionArgExpr};
+use sqlparser::ast::{FunctionArg, FunctionArgExpr};
 
 use super::SQLModule;
 use crate::{
@@ -35,9 +35,7 @@ impl SQLFunction for AggExpr {
     fn to_expr(&self, inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
         // COUNT(*) needs a bit of extra handling, so we process that outside of `to_expr`
         if let Self::Count(_, _) = self {
-            handle_count(inputs, planner, DuplicateTreatment::All)
-        } else if let Self::CountDistinct(_) = self {
-            handle_count(inputs, planner, DuplicateTreatment::Distinct)
+            handle_count(inputs, planner)
         } else {
             let inputs = self.args_to_expr_unnamed(inputs, planner)?;
             to_expr(self, inputs.as_slice())
@@ -69,48 +67,43 @@ impl SQLFunction for AggExpr {
     }
 }
 
-fn handle_count(
-    inputs: &[FunctionArg],
-    planner: &SQLPlanner,
-    duplicate_treatment: DuplicateTreatment,
-) -> SQLPlannerResult<ExprRef> {
-    let [first] = inputs else {
-        unsupported_sql_err!("COUNT takes exactly one argument")
-    };
-    let (base_expr, count_mode) = match first {
-        FunctionArg::Unnamed(FunctionArgExpr::Wildcard) => {
-            let Some(rel) = planner.relation_opt() else {
-                unsupported_sql_err!("Wildcard is not supported in this context")
-            };
-            let schema = rel.schema();
-            (col(schema.fields[0].name.clone()), CountMode::All)
-        }
-        FunctionArg::Unnamed(FunctionArgExpr::QualifiedWildcard(name)) => {
-            let Some(rel) = planner.relation_opt() else {
-                unsupported_sql_err!("Wildcard is not supported in this context")
-            };
-            if name.to_string() != rel.get_name() {
-                unsupported_sql_err!("Argument name doesn't match relation name")
+fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
+    Ok(match inputs {
+        [FunctionArg::Unnamed(FunctionArgExpr::Wildcard)] => match planner.relation_opt() {
+            Some(rel) => {
+                let schema = rel.schema();
+                col(schema.fields[0].name.clone())
+                    .count(daft_core::count_mode::CountMode::All)
+                    .alias("count")
             }
-            let schema = rel.schema();
-            (col(schema.fields[0].name.clone()), CountMode::All)
+            None => unsupported_sql_err!("Wildcard is not supported in this context"),
+        },
+        [FunctionArg::Unnamed(FunctionArgExpr::QualifiedWildcard(name))] => {
+            match planner.relation_opt() {
+                Some(rel) if name.to_string() == rel.get_name() => {
+                    let schema = rel.schema();
+                    col(schema.fields[0].name.clone())
+                        .count(daft_core::count_mode::CountMode::All)
+                        .alias("count")
+                }
+                _ => unsupported_sql_err!("Wildcard is not supported in this context"),
+            }
         }
-        expr => {
-            (planner.plan_function_arg(expr)?, CountMode::Valid)
-            // input.count(CountMode::Valid)
+        [expr] => {
+            // SQL default COUNT ignores nulls
+            let input = planner.plan_function_arg(expr)?;
+            input.count(daft_core::count_mode::CountMode::Valid)
         }
-    };
-    Ok(match duplicate_treatment {
-        DuplicateTreatment::All => base_expr.count(count_mode),
-        DuplicateTreatment::Distinct => base_expr.count_distinct(),
+        _ => unsupported_sql_err!("COUNT takes exactly one argument"),
     })
 }
 
 fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
     match expr {
         AggExpr::Count(_, _) => unreachable!("count should be handled by by this point"),
-        AggExpr::CountDistinct(..) => {
-            unreachable!("count_distinct should be handled by by this point")
+        AggExpr::CountDistinct(_) => {
+            ensure!(args.len() == 1, "count_distinct takes exactly one argument");
+            Ok(args[0].clone().count_distinct())
         }
         AggExpr::Sum(_) => {
             ensure!(args.len() == 1, "sum takes exactly one argument");
