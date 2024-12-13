@@ -60,7 +60,7 @@ jobs:
         uv pip install getdaft
     - name: Select cluster profile ray configuration file
       run: |
-        ray_configuration_file="ci/assets/$cluster_profile.yaml"
+        ray_configuration_file="ci/assets/${{ inputs.cluster_profile }}.yaml"
         echo "ray_configuration_file=$ray_configuration_file" >> $GITHUB_ENV
     - name: Spin up ray cluster
       run: |
