@@ -1,4 +1,4 @@
-cluster_name: debug_xs-x86
+cluster_name: large-x86
 
 provider:
   type: aws
@@ -11,29 +11,37 @@ auth:
   ssh_user: ubuntu
   ssh_private_key: ~/.ssh/ci-github-actions-ray-cluster-key.pem
 
-max_workers: 2
+max_workers: 8
 available_node_types:
   ray.head.default:
     resources: {"CPU": 0}
     node_config:
       KeyName: ci-github-actions-ray-cluster-key
-      InstanceType: t3.large
+      InstanceType: i3.2xlarge
       ImageId: ami-04dd23e62ed049936
       IamInstanceProfile:
         Name: ray-autoscaler-v1
 
   ray.worker.default:
-    min_workers: 2
-    max_workers: 2
+    min_workers: 8
+    max_workers: 8
     resources: {}
     node_config:
       KeyName: ci-github-actions-ray-cluster-key
-      InstanceType: t3.large
+      InstanceType: i3.2xlarge
       ImageId: ami-04dd23e62ed049936
       IamInstanceProfile:
         Name: ray-autoscaler-v1
 
 setup_commands:
+- |
+  findmnt /tmp 1> /dev/null
+  code=$?
+  if [ $code -ne 0 ]; then
+      sudo mkfs.ext4 /dev/nvme0n1
+      sudo mount -t ext4 /dev/nvme0n1 /tmp
+      sudo chmod 777 /tmp
+  fi
 - sudo snap install aws-cli --classic
 - curl -LsSf https://astral.sh/uv/install.sh | sh
 - echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
