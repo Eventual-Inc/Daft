@@ -12,8 +12,9 @@ on:
         description: Cluster profile
         type: option
         choices:
-        - medium-x86
         - debug_xs-x86
+        - medium-x86
+        - large-x86
         required: false
         default: medium-x86
       entrypoint:
