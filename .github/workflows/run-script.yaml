@@ -10,8 +10,8 @@ on:
         default: "3.9"
       cluster_profile:
         description: Cluster profile
-        type: option
-        choices:
+        type: choice
+        options:
         - debug_xs-x86
         - medium-x86
         - large-x86
