@@ -6,13 +6,13 @@ use std::{
 };
 
 use common_error::{DaftError, DaftResult};
+use daft_algebra::boolean::combine_conjunction;
 use daft_core::prelude::*;
 use daft_dsl::{
     col,
     common_treenode::{Transformed, TreeNode},
-    has_agg, lit, literals_to_series, null_lit,
-    optimization::conjuct,
-    AggExpr, Expr, ExprRef, LiteralValue, Operator, OuterReferenceColumn, Subquery,
+    has_agg, lit, literals_to_series, null_lit, AggExpr, Expr, ExprRef, LiteralValue, Operator,
+    OuterReferenceColumn, Subquery,
 };
 use daft_functions::{
     numeric::{ceil::ceil, floor::floor},
@@ -959,12 +959,12 @@ impl<'a> SQLPlanner<'a> {
             };
 
             let mut left_plan = self.current_relation.as_ref().unwrap().inner.clone();
-            if let Some(left_predicate) = conjuct(left_filters) {
+            if let Some(left_predicate) = combine_conjunction(left_filters) {
                 left_plan = left_plan.filter(left_predicate)?;
             }
 
             let mut right_plan = right_rel.inner.clone();
-            if let Some(right_predicate) = conjuct(right_filters) {
+            if let Some(right_predicate) = combine_conjunction(right_filters) {
                 right_plan = right_plan.filter(right_predicate)?;
             }
 
