@@ -34,6 +34,14 @@ available_node_types:
         Name: ray-autoscaler-v1
 
 setup_commands:
+- |
+  findmnt /tmp 1> /dev/null
+  code=$?
+  if [ $code -ne 0 ]; then
+      sudo mkfs.ext4 /dev/nvme0n1
+      sudo mount -t ext4 /dev/nvme0n1 /tmp
+      sudo chmod 777 /tmp
+  fi
 - sudo snap install aws-cli --classic
 - curl -LsSf https://astral.sh/uv/install.sh | sh
 - echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc

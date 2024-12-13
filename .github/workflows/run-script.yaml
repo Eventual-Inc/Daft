@@ -8,6 +8,14 @@ on:
         type: string
         required: false
         default: "3.9"
+      cluster_profile:
+        description: Cluster profile
+        type: option
+        choices:
+        - medium-x86
+        - debug_xs-x86
+        required: false
+        default: medium-x86
       entrypoint:
         description: Entrypoint script
         type: string
@@ -50,15 +58,19 @@ jobs:
       run: |
         rm -rf daft
         uv pip install getdaft
+    - name: Select cluster profile ray configuration file
+      run: |
+        ray_configuration_file="ci/assets/$cluster_profile.yaml"
+        echo "ray_configuration_file=$ray_configuration_file" >> $GITHUB_ENV
     - name: Spin up ray cluster
       run: |
         source .venv/bin/activate
         uv pip install ray[default] boto3
-        ray up ci/assets/medium-x86.yaml -y
+        ray up $ray_configuration_file -y
     - name: Setup connection to ray cluster
       run: |
         source .venv/bin/activate
-        ray dashboard ci/assets/medium-x86.yaml &
+        ray dashboard $ray_configuration_file &
     - name: Run the entrypoint script
       run: |
         set +e
@@ -72,7 +84,7 @@ jobs:
     - name: Download log files from ray cluster
       run: |
         source .venv/bin/activate
-        ray rsync-down ci/assets/medium-x86.yaml /tmp/ray/session_latest/logs ray-daft-logs
+        ray rsync-down $ray_configuration_file /tmp/ray/session_latest/logs ray-daft-logs
         find ray-daft-logs -depth -name '*:*' -exec bash -c '
         for filepath; do
           dir=$(dirname "$filepath")
@@ -97,7 +109,7 @@ jobs:
       if: always()
       run: |
         source .venv/bin/activate
-        ray down ci/assets/medium-x86.yaml -y
+        ray down $ray_configuration_file -y
     - name: Upload log files
       uses: actions/upload-artifact@v4
       with:
