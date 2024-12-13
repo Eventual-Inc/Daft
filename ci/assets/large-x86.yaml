@@ -17,7 +17,7 @@ available_node_types:
     resources: {"CPU": 0}
     node_config:
       KeyName: ci-github-actions-ray-cluster-key
-      InstanceType: i3.2xlarge
+      InstanceType: i3.4xlarge
       ImageId: ami-04dd23e62ed049936
       IamInstanceProfile:
         Name: ray-autoscaler-v1
@@ -25,10 +25,10 @@ available_node_types:
   ray.worker.default:
     min_workers: 8
     max_workers: 8
-    resources: {}
+    resources: {CPU: 100}
     node_config:
       KeyName: ci-github-actions-ray-cluster-key
-      InstanceType: i3.2xlarge
+      InstanceType: i3.4xlarge
       ImageId: ami-04dd23e62ed049936
       IamInstanceProfile:
         Name: ray-autoscaler-v1
