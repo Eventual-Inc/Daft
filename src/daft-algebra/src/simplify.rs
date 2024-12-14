@@ -1,252 +1,258 @@
+use std::sync::Arc;
+
 use common_error::DaftResult;
-use common_treenode::{Transformed, TreeNode};
+use common_treenode::Transformed;
 use daft_core::prelude::*;
 use daft_dsl::{lit, null_lit, Expr, ExprRef, LiteralValue, Operator};
 
-pub fn simplify_expr(expr: ExprRef, schema: &SchemaRef) -> DaftResult<Transformed<ExprRef>> {
-    expr.transform_up(|e| {
-        Ok(match e.as_ref() {
-            // ----------------
-            // Eq
-            // ----------------
-            // true = A  --> A
-            // false = A --> !A
-            Expr::BinaryOp {
-                op: Operator::Eq,
-                left,
-                right,
+pub fn simplify_expr(expr: Expr, schema: &SchemaRef) -> DaftResult<Transformed<ExprRef>> {
+    Ok(match expr {
+        // ----------------
+        // Eq
+        // ----------------
+        // true = A  --> A
+        // false = A --> !A
+        Expr::BinaryOp {
+            op: Operator::Eq,
+            left,
+            right,
+        }
+        // A = true --> A
+        // A = false --> !A
+        | Expr::BinaryOp {
+            op: Operator::Eq,
+            left: right,
+            right: left,
+        } if is_bool_lit(&left) && is_bool_type(&right, schema) => {
+            Transformed::yes(match as_bool_lit(&left) {
+                Some(true) => right,
+                Some(false) => right.not(),
+                None => unreachable!(),
+            })
+        }
+
+        // null = A --> null
+        // A = null --> null
+        Expr::BinaryOp {
+            op: Operator::Eq,
+            left,
+            right,
+        }
+        | Expr::BinaryOp {
+            op: Operator::Eq,
+            left: right,
+            right: left,
+        } if is_null(&left) && is_bool_type(&right, schema) => Transformed::yes(null_lit()),
+
+        // ----------------
+        // Neq
+        // ----------------
+        // true != A  --> !A
+        // false != A --> A
+        Expr::BinaryOp {
+            op: Operator::NotEq,
+            left,
+            right,
+        }
+        // A != true --> !A
+        // A != false --> A
+        | Expr::BinaryOp {
+            op: Operator::NotEq,
+            left: right,
+            right: left,
+        } if is_bool_lit(&left) && is_bool_type(&right, schema) => {
+            Transformed::yes(match as_bool_lit(&left) {
+                Some(true) => right.not(),
+                Some(false) => right,
+                None => unreachable!(),
+            })
+        }
+
+        // null != A --> null
+        // A != null --> null
+        Expr::BinaryOp {
+            op: Operator::NotEq,
+            left,
+            right,
+        }
+        | Expr::BinaryOp {
+            op: Operator::NotEq,
+            left: right,
+            right: left,
+        } if is_null(&left) && is_bool_type(&right, schema) => Transformed::yes(null_lit()),
+
+        // ----------------
+        // OR
+        // ----------------
+
+        // true OR A  --> true
+        Expr::BinaryOp {
+            op: Operator::Or,
+            left,
+            right: _,
+        } if is_true(&left) => Transformed::yes(left),
+        // false OR A  --> A
+        Expr::BinaryOp {
+            op: Operator::Or,
+            left,
+            right,
+        } if is_false(&left) => Transformed::yes(right),
+        // A OR true  --> true
+        Expr::BinaryOp {
+            op: Operator::Or,
+            left: _,
+            right,
+        } if is_true(&right) => Transformed::yes(right),
+        // A OR false --> A
+        Expr::BinaryOp {
+            left,
+            op: Operator::Or,
+            right,
+        } if is_false(&right) => Transformed::yes(left),
+
+        // ----------------
+        // AND (TODO)
+        // ----------------
+
+        // ----------------
+        // Multiplication
+        // ----------------
+
+        // A * 1 --> A
+        // 1 * A --> A
+        Expr::BinaryOp {
+            op: Operator::Multiply,
+            left,
+            right,
+        }| Expr::BinaryOp {
+            op: Operator::Multiply,
+            left: right,
+            right: left,
+        } if is_one(&right) => Transformed::yes(left),
+
+        // A * null --> null
+        Expr::BinaryOp {
+            op: Operator::Multiply,
+            left: _,
+            right,
+        } if is_null(&right) => Transformed::yes(right),
+        // null * A --> null
+        Expr::BinaryOp {
+            op: Operator::Multiply,
+            left,
+            right: _,
+        } if is_null(&left) => Transformed::yes(left),
+
+        // TODO: Can't do this one because we don't have a way to determine if an expr potentially contains nulls (nullable)
+        // A * 0 --> 0 (if A is not null and not floating/decimal)
+        // 0 * A --> 0 (if A is not null and not floating/decimal)
+
+        // ----------------
+        // Division
+        // ----------------
+        // A / 1 --> A
+        Expr::BinaryOp {
+            op: Operator::TrueDivide,
+            left,
+            right,
+        } if is_one(&right) => Transformed::yes(left),
+        // null / A --> null
+        Expr::BinaryOp {
+            op: Operator::TrueDivide,
+            left,
+            right: _,
+        } if is_null(&left) => Transformed::yes(left),
+        // A / null --> null
+        Expr::BinaryOp {
+            op: Operator::TrueDivide,
+            left: _,
+            right,
+        } if is_null(&right) => Transformed::yes(right),
+
+        // ----------------
+        // Addition
+        // ----------------
+        // A + 0 --> A
+        Expr::BinaryOp {
+            op: Operator::Plus,
+            left,
+            right,
+        } if is_zero(&right) => Transformed::yes(left),
+
+        // 0 + A --> A
+        Expr::BinaryOp {
+            op: Operator::Plus,
+            left,
+            right,
+        } if is_zero(&left) => Transformed::yes(right),
+
+        // ----------------
+        // Subtraction
+        // ----------------
+
+        // A - 0 --> A
+        Expr::BinaryOp {
+            op: Operator::Minus,
+            left,
+            right,
+        } if is_zero(&right) => Transformed::yes(left),
+
+        // A - null --> null
+        Expr::BinaryOp {
+            op: Operator::Minus,
+            left: _,
+            right,
+        } if is_null(&right) => Transformed::yes(right),
+        // null - A --> null
+        Expr::BinaryOp {
+            op: Operator::Minus,
+            left,
+            right: _,
+        } if is_null(&left) => Transformed::yes(left),
+
+        // ----------------
+        // Modulus
+        // ----------------
+
+        // A % null --> null
+        Expr::BinaryOp {
+            op: Operator::Modulus,
+            left: _,
+            right,
+        } if is_null(&right) => Transformed::yes(right),
+
+        // null % A --> null
+        Expr::BinaryOp {
+            op: Operator::Modulus,
+            left,
+            right: _,
+        } if is_null(&left) => Transformed::yes(left),
+
+        // A BETWEEN low AND high --> A >= low AND A <= high
+        Expr::Between(expr, low, high) => {
+            Transformed::yes(expr.clone().lt_eq(high).and(expr.gt_eq(low)))
+        }
+        Expr::Not(expr) => match Arc::unwrap_or_clone(expr) {
+            // NOT (BETWEEN A AND B) --> A < low OR A > high
+            Expr::Between(expr, low, high) => {
+                Transformed::yes(expr.clone().lt(low).or(expr.gt(high)))
             }
-            // A = true --> A
-            // A = false --> !A
-            | Expr::BinaryOp {
-                op: Operator::Eq,
-                left: right,
-                right: left,
-            } if is_bool_lit(left) && is_bool_type(right, schema) => {
-                Transformed::yes(match as_bool_lit(left) {
-                    Some(true) => right.clone(),
-                    Some(false) => right.clone().not(),
-                    None => unreachable!(),
-                })
-            }
+            // expr NOT IN () --> true
+            Expr::IsIn(_, list) if list.is_empty() => Transformed::yes(lit(true)),
 
-            // null = A --> null
-            // A = null --> null
-            Expr::BinaryOp {
-                op: Operator::Eq,
-                left,
-                right,
-            }
-            | Expr::BinaryOp {
-                op: Operator::Eq,
-                left: right,
-                right: left,
-            } if is_null(left) && is_bool_type(right, schema) => Transformed::yes(null_lit()),
-
-            // ----------------
-            // Neq
-            // ----------------
-            // true != A  --> !A
-            // false != A --> A
-            Expr::BinaryOp {
-                op: Operator::NotEq,
-                left,
-                right,
-            }
-            // A != true --> !A
-            // A != false --> A
-            | Expr::BinaryOp {
-                op: Operator::NotEq,
-                left: right,
-                right: left,
-            } if is_bool_lit(left) && is_bool_type(right, schema) => {
-                Transformed::yes(match as_bool_lit(left) {
-                    Some(true) => right.clone().not(),
-                    Some(false) => right.clone(),
-                    None => unreachable!(),
-                })
-            }
-
-            // null != A --> null
-            // A != null --> null
-            Expr::BinaryOp {
-                op: Operator::NotEq,
-                left,
-                right,
-            }
-            | Expr::BinaryOp {
-                op: Operator::NotEq,
-                left: right,
-                right: left,
-            } if is_null(left) && is_bool_type(right, schema) => Transformed::yes(null_lit()),
-
-            // ----------------
-            // OR
-            // ----------------
-
-            // true OR A  --> true
-            Expr::BinaryOp {
-                op: Operator::Or,
-                left,
-                right: _,
-            } if is_true(left) => Transformed::yes(left.clone()),
-            // false OR A  --> A
-            Expr::BinaryOp {
-                op: Operator::Or,
-                left,
-                right,
-            } if is_false(left) => Transformed::yes(right.clone()),
-            // A OR true  --> true
-            Expr::BinaryOp {
-                op: Operator::Or,
-                left: _,
-                right,
-            } if is_true(right) => Transformed::yes(right.clone()),
-            // A OR false --> A
-            Expr::BinaryOp {
-                left,
-                op: Operator::Or,
-                right,
-            } if is_false(right) => Transformed::yes(left.clone()),
-
-            // ----------------
-            // AND (TODO)
-            // ----------------
-
-            // ----------------
-            // Multiplication
-            // ----------------
-
-            // A * 1 --> A
-            // 1 * A --> A
-            Expr::BinaryOp {
-                op: Operator::Multiply,
-                left,
-                right,
-            }| Expr::BinaryOp {
-                op: Operator::Multiply,
-                left: right,
-                right: left,
-            } if is_one(right) => Transformed::yes(left.clone()),
-
-            // A * null --> null
-            Expr::BinaryOp {
-                op: Operator::Multiply,
-                left: _,
-                right,
-            } if is_null(right) => Transformed::yes(right.clone()),
-            // null * A --> null
-            Expr::BinaryOp {
-                op: Operator::Multiply,
-                left,
-                right: _,
-            } if is_null(left) => Transformed::yes(left.clone()),
-
-            // TODO: Can't do this one because we don't have a way to determine if an expr potentially contains nulls (nullable)
-            // A * 0 --> 0 (if A is not null and not floating/decimal)
-            // 0 * A --> 0 (if A is not null and not floating/decimal)
-
-            // ----------------
-            // Division
-            // ----------------
-            // A / 1 --> A
-            Expr::BinaryOp {
-                op: Operator::TrueDivide,
-                left,
-                right,
-            } if is_one(right) => Transformed::yes(left.clone()),
-            // null / A --> null
-            Expr::BinaryOp {
-                op: Operator::TrueDivide,
-                left,
-                right: _,
-            } if is_null(left) => Transformed::yes(left.clone()),
-            // A / null --> null
-            Expr::BinaryOp {
-                op: Operator::TrueDivide,
-                left: _,
-                right,
-            } if is_null(right) => Transformed::yes(right.clone()),
-
-            // ----------------
-            // Addition
-            // ----------------
-            // A + 0 --> A
-            Expr::BinaryOp {
-                op: Operator::Plus,
-                left,
-                right,
-            } if is_zero(right) => Transformed::yes(left.clone()),
-
-            // 0 + A --> A
-            Expr::BinaryOp {
-                op: Operator::Plus,
-                left,
-                right,
-            } if is_zero(left) => Transformed::yes(right.clone()),
-
-            // ----------------
-            // Subtraction
-            // ----------------
-
-            // A - 0 --> A
-            Expr::BinaryOp {
-                op: Operator::Minus,
-                left,
-                right,
-            } if is_zero(right) => Transformed::yes(left.clone()),
-
-            // A - null --> null
-            Expr::BinaryOp {
-                op: Operator::Minus,
-                left: _,
-                right,
-            } if is_null(right) => Transformed::yes(right.clone()),
-            // null - A --> null
-            Expr::BinaryOp {
-                op: Operator::Minus,
-                left,
-                right: _,
-            } if is_null(left) => Transformed::yes(left.clone()),
-
-            // ----------------
-            // Modulus
-            // ----------------
-
-            // A % null --> null
-            Expr::BinaryOp {
-                op: Operator::Modulus,
-                left: _,
-                right,
-            } if is_null(right) => Transformed::yes(right.clone()),
-
-            // null % A --> null
-            Expr::BinaryOp {
-                op: Operator::Modulus,
-                left,
-                right: _,
-            } if is_null(left) => Transformed::yes(left.clone()),
-
-            // A BETWEEN low AND high --> A >= low AND A <= high
-            Expr::Between(child, low, high) => {
-                Transformed::yes(child.clone().lt_eq(high.clone()).and(child.clone().gt_eq(low.clone())))
-            }
-            Expr::Not(child) => match child.as_ref() {
-                // NOT (BETWEEN A AND B) --> A < low OR A > high
-                Expr::Between(child, low, high) => {
-                    Transformed::yes(child.clone().lt(low.clone()).or(child.clone().gt(high.clone())))
+            expr => {
+                let expr = simplify_expr(expr, schema)?;
+                if expr.transformed {
+                    Transformed::yes(expr.data.not())
+                } else {
+                    Transformed::no(expr.data.not())
                 }
-                // expr NOT IN () --> true
-                Expr::IsIn(_, list) if list.is_empty() => Transformed::yes(lit(true)),
+            }
+        },
+        // expr IN () --> false
+        Expr::IsIn(_, list) if list.is_empty() => Transformed::yes(lit(false)),
 
-                _ => Transformed::no(child.clone()),
-            },
-            // expr IN () --> false
-            Expr::IsIn(_, list) if list.is_empty() => Transformed::yes(lit(false)),
-
-            _ => Transformed::no(e),
-        })
-
+        other => Transformed::no(Arc::new(other)),
     })
 }
 
@@ -400,7 +406,7 @@ mod test {
         #[case] expected: ExprRef,
         schema: SchemaRef,
     ) -> DaftResult<()> {
-        let optimized = simplify_expr(input, &schema)?;
+        let optimized = simplify_expr(Arc::unwrap_or_clone(input), &schema)?;
 
         assert!(optimized.transformed);
         assert_eq!(optimized.data, expected);
@@ -423,7 +429,7 @@ mod test {
         #[case] expected: ExprRef,
         schema: SchemaRef,
     ) -> DaftResult<()> {
-        let optimized = simplify_expr(input, &schema)?;
+        let optimized = simplify_expr(Arc::unwrap_or_clone(input), &schema)?;
 
         assert!(optimized.transformed);
         assert_eq!(optimized.data, expected);
@@ -435,7 +441,7 @@ mod test {
         let input = col("int").between(lit(1), lit(10)).not();
         let expected = col("int").lt(lit(1)).or(col("int").gt(lit(10)));
 
-        let optimized = simplify_expr(input, &schema)?;
+        let optimized = simplify_expr(Arc::unwrap_or_clone(input), &schema)?;
 
         assert!(optimized.transformed);
         assert_eq!(optimized.data, expected);
@@ -447,7 +453,7 @@ mod test {
         let input = col("int").between(lit(1), lit(10));
         let expected = col("int").lt_eq(lit(10)).and(col("int").gt_eq(lit(1)));
 
-        let optimized = simplify_expr(input, &schema)?;
+        let optimized = simplify_expr(Arc::unwrap_or_clone(input), &schema)?;
 
         assert!(optimized.transformed);
         assert_eq!(optimized.data, expected);
