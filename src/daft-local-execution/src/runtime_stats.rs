@@ -8,7 +8,10 @@ use std::{
 use daft_micropartition::MicroPartition;
 use loole::SendError;
 
-use crate::channel::{Receiver, Sender};
+use crate::{
+    channel::{Receiver, Sender},
+    progress_bar::ProgressBarWrapper,
+};
 
 #[derive(Default)]
 pub struct RuntimeStatsContext {
@@ -109,11 +112,20 @@ impl RuntimeStatsContext {
 pub struct CountingSender {
     sender: Sender<Arc<MicroPartition>>,
     rt: Arc<RuntimeStatsContext>,
+    progress_bar: Option<Arc<ProgressBarWrapper>>,
 }
 
 impl CountingSender {
-    pub(crate) fn new(sender: Sender<Arc<MicroPartition>>, rt: Arc<RuntimeStatsContext>) -> Self {
-        Self { sender, rt }
+    pub(crate) fn new(
+        sender: Sender<Arc<MicroPartition>>,
+        rt: Arc<RuntimeStatsContext>,
+        progress_bar: Option<Arc<ProgressBarWrapper>>,
+    ) -> Self {
+        Self {
+            sender,
+            rt,
+            progress_bar,
+        }
     }
     #[inline]
     pub(crate) async fn send(
@@ -121,6 +133,9 @@ impl CountingSender {
         v: Arc<MicroPartition>,
     ) -> Result<(), SendError<Arc<MicroPartition>>> {
         self.rt.mark_rows_emitted(v.len() as u64);
+        if let Some(ref pb) = self.progress_bar {
+            pb.increment_emitted(v.len() as u64);
+        }
         self.sender.send(v).await?;
         Ok(())
     }
@@ -129,20 +144,29 @@ impl CountingSender {
 pub struct CountingReceiver {
     receiver: Receiver<Arc<MicroPartition>>,
     rt: Arc<RuntimeStatsContext>,
+    progress_bar: Option<Arc<ProgressBarWrapper>>,
 }
 
 impl CountingReceiver {
     pub(crate) fn new(
         receiver: Receiver<Arc<MicroPartition>>,
         rt: Arc<RuntimeStatsContext>,
+        progress_bar: Option<Arc<ProgressBarWrapper>>,
     ) -> Self {
-        Self { receiver, rt }
+        Self {
+            receiver,
+            rt,
+            progress_bar,
+        }
     }
     #[inline]
     pub(crate) async fn recv(&self) -> Option<Arc<MicroPartition>> {
         let v = self.receiver.recv().await;
         if let Some(ref v) = v {
             self.rt.mark_rows_received(v.len() as u64);
+            if let Some(ref pb) = self.progress_bar {
+                pb.increment_received(v.len() as u64);
+            }
         }
         v
     }

@@ -23,6 +23,7 @@ daft-table = {path = "../daft-table", default-features = false}
 daft-writers = {path = "../daft-writers", default-features = false}
 futures = {workspace = true}
 indexmap = {workspace = true}
+indicatif = "0.17.9"
 lazy_static = {workspace = true}
 log = {workspace = true}
 loole = "0.4.0"

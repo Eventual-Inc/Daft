@@ -4,6 +4,7 @@ mod channel;
 mod dispatcher;
 mod intermediate_ops;
 mod pipeline;
+mod progress_bar;
 mod run;
 mod runtime_stats;
 mod sinks;
@@ -11,14 +12,18 @@ mod sources;
 mod state_bridge;
 
 use std::{
+    borrow::Cow,
     future::Future,
     pin::Pin,
+    sync::Arc,
     task::{Context, Poll},
 };
 
 use common_error::{DaftError, DaftResult};
 use common_runtime::RuntimeTask;
+use indicatif::MultiProgress;
 use lazy_static::lazy_static;
+use progress_bar::{ProgressBarColor, ProgressBarWrapper};
 pub use run::{run_local, ExecutionEngineResult, NativeExecutor};
 use snafu::{futures::TryFutureExt, ResultExt, Snafu};
 
@@ -114,14 +119,16 @@ impl RuntimeHandle {
 pub struct ExecutionRuntimeContext {
     worker_set: TaskSet<crate::Result<()>>,
     default_morsel_size: usize,
+    multi_progress_bar: Option<MultiProgress>,
 }
 
 impl ExecutionRuntimeContext {
     #[must_use]
-    pub fn new(default_morsel_size: usize) -> Self {
+    pub fn new(default_morsel_size: usize, multi_progress_bar: Option<MultiProgress>) -> Self {
         Self {
             worker_set: TaskSet::new(),
             default_morsel_size,
+            multi_progress_bar,
         }
     }
     pub fn spawn(
@@ -147,8 +154,28 @@ impl ExecutionRuntimeContext {
         self.default_morsel_size
     }
 
+    pub fn make_progress_bar(
+        &self,
+        prefix: impl Into<Cow<'static, str>>,
+        color: ProgressBarColor,
+        show_received: bool,
+    ) -> Option<Arc<ProgressBarWrapper>> {
+        self.multi_progress_bar.as_ref().map(|mpb| {
+            let pb_wrapper = ProgressBarWrapper::new(prefix, color, show_received);
+            let inner = pb_wrapper.inner();
+            mpb.add(inner.clone());
+            Arc::new(pb_wrapper)
+        })
+    }
+
     pub(crate) fn handle(&self) -> RuntimeHandle {
         RuntimeHandle(tokio::runtime::Handle::current())
+    }
+}
+
+impl Drop for ExecutionRuntimeContext {
+    fn drop(&mut self) {
+        self.multi_progress_bar.take().map(|mpb| mpb.clear());
     }
 }
 
