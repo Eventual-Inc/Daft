@@ -101,6 +101,7 @@ impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
             State::Required(page) => {
                 let value = page.next().unwrap_or_default();
                 values.push(value);
+                validity.push(true);
             }
             State::RequiredDictionary(page) => {
                 let dict_values = &page.dict;
@@ -110,6 +111,7 @@ impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
                     .map(|index| dict_values[index.unwrap() as usize].as_ref())
                     .unwrap_or_default();
                 values.push(item);
+                validity.push(true);
             }
             State::OptionalDictionary(page) => {
                 let dict_values = &page.dict;
