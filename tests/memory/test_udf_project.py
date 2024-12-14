@@ -1,5 +1,6 @@
 import uuid
 
+import pyarrow as pa
 import pytest
 from memray._memray import compute_statistics
 
@@ -32,6 +33,12 @@ def to_pylist_identity_batched(s):
     return data
 
 
+@daft.udf(return_dtype=str, batch_size=128)
+def to_pylist_identity_batched_arrow_return(s):
+    data = s.to_pylist()
+    return pa.array(data)
+
+
 @pytest.mark.parametrize(
     "udf",
     [
@@ -39,6 +46,7 @@ def to_pylist_identity_batched(s):
         to_pylist_identity,
         to_arrow_identity_batched,
         to_pylist_identity_batched,
+        to_pylist_identity_batched_arrow_return,
     ],
 )
 def test_string_identity_projection(udf):
