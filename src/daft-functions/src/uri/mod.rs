@@ -1,5 +1,5 @@
-mod download;
-mod upload;
+pub mod download;
+pub mod upload;
 
 use common_io_config::IOConfig;
 use daft_dsl::{functions::ScalarFunction, ExprRef};
