@@ -96,7 +96,7 @@ redirects = {
     "learn/install": "../install.html",
     "learn/user_guides/dataframes": "intro-dataframes.html",
     "learn/user_guides/types_and_ops": "intro-dataframes.html",
-    "learn/user_guides/remote_cluster_execution": "distributed-computing.html",
+    "learn/user_guides/remote_cluster_execution": "user_guide/distributed-computing",
     "learn/quickstart": "learn/10-min.html",
     "learn/10-min": "../10-min.html",
     "user_guide/basic_concepts/expressions": "user_guide/expressions",
