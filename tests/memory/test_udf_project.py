@@ -20,16 +20,30 @@ def to_pylist_identity(s):
     return data
 
 
+@daft.udf(return_dtype=str, batch_size=128)
+def to_arrow_identity_batched(s):
+    data = s.to_arrow()
+    return data
+
+
+@daft.udf(return_dtype=str, batch_size=128)
+def to_pylist_identity_batched(s):
+    data = s.to_pylist()
+    return data
+
+
 @pytest.mark.parametrize(
     "udf",
     [
         to_arrow_identity,
         to_pylist_identity,
+        to_arrow_identity_batched,
+        to_pylist_identity_batched,
     ],
 )
 def test_string_identity_projection(udf):
     instructions = [Project(ExpressionsProjection([udf(daft.col("a"))]))]
-    inputs = [{"a": [str(uuid.uuid4()) for _ in range(62500)]}]
+    inputs = [{"a": [str(uuid.uuid4()) for _ in range(625000)]}]
     _, memray_file = run_wrapper_build_partitions(inputs, instructions)
     stats = compute_statistics(memray_file)
 
