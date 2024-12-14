@@ -667,7 +667,6 @@ class MaterializedPhysicalPlanWrapper:
 def collect_ray_task_metrics(execution_id: str, task_id: str, stage_id: int, execution_config: PyDaftExecutionConfig):
     """Context manager that will ping the metrics actor to record various execution metrics about a given task."""
     if execution_config.enable_ray_tracing:
-        import tempfile
         import time
 
         import memray
@@ -685,21 +684,22 @@ def collect_ray_task_metrics(execution_id: str, task_id: str, stage_id: int, exe
             runtime_context.get_assigned_resources(),
             runtime_context.get_task_id(),
         )
-        with tempfile.TemporaryDirectory() as tmpdir:
-            memray_tmpfile = os.path.join(tmpdir, f"task-{task_id}.memray.bin")
-            try:
-                with memray.Tracker(memray_tmpfile):
-                    yield
-            finally:
-                stats = compute_statistics(memray_tmpfile)
-                metrics_actor.mark_task_end(
-                    task_id,
-                    time.time(),
-                    ray_metrics.TaskMemoryStats(
-                        peak_memory_allocated=stats.peak_memory_allocated,
-                        total_memory_allocated=stats.total_memory_allocated,
-                        total_num_allocations=stats.total_num_allocations,
-                    ),
-                )
+        tmpdir = "/tmp/ray/session_latest/logs/daft/task_memray_dumps"
+        os.makedirs(tmpdir, exist_ok=True)
+        memray_tmpfile = os.path.join(tmpdir, f"task-{task_id}.memray.bin")
+        try:
+            with memray.Tracker(memray_tmpfile, native_traces=True, follow_fork=True):
+                yield
+        finally:
+            stats = compute_statistics(memray_tmpfile)
+            metrics_actor.mark_task_end(
+                task_id,
+                time.time(),
+                ray_metrics.TaskMemoryStats(
+                    peak_memory_allocated=stats.peak_memory_allocated,
+                    total_memory_allocated=stats.total_memory_allocated,
+                    total_num_allocations=stats.total_num_allocations,
+                ),
+            )
     else:
         yield
