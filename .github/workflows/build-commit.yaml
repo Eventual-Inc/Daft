@@ -77,7 +77,7 @@ jobs:
           --commit-hash="${{ github.sha }}" \
           --subdir="$run_id" \
           --platform-substring="$platform_substring" \
-          --path-to-wheel-dir="~/target/wheels" \
+          --path-to-wheel-dir ~/target/wheels \
         )
         echo "wheel_name=$wheel_name" >> $GITHUB_ENV
     - name: Print url of the built wheel to GitHub Actions Summary Page
