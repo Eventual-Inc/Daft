@@ -1,3 +1,5 @@
+use futures::Stream;
+
 #[derive(Clone)]
 pub(crate) struct Sender<T>(loole::Sender<T>);
 impl<T> Sender<T> {
@@ -20,9 +22,13 @@ impl<T> Receiver<T> {
     pub(crate) fn into_inner(self) -> loole::Receiver<T> {
         self.0
     }
+
+    pub(crate) fn into_stream(self) -> impl Stream<Item = T> {
+        self.0.into_stream()
+    }
 }
 
-pub(crate) fn create_channel<T: Clone>(buffer_size: usize) -> (Sender<T>, Receiver<T>) {
+pub(crate) fn create_channel<T>(buffer_size: usize) -> (Sender<T>, Receiver<T>) {
     let (tx, rx) = loole::bounded(buffer_size);
     (Sender(tx), Receiver(rx))
 }

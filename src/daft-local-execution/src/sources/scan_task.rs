@@ -16,11 +16,13 @@ use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_micropartition::MicroPartition;
 use daft_parquet::read::{read_parquet_bulk_async, ParquetSchemaInferenceOptions};
 use daft_scan::{storage_config::StorageConfig, ChunkSpec, ScanTask};
-use futures::{Stream, StreamExt, TryStreamExt};
+use daft_table::Table;
+use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
 use snafu::ResultExt;
 use tracing::instrument;
 
 use crate::{
+    channel::create_channel,
     sources::source::{Source, SourceStream},
     NUM_CPUS,
 };
@@ -90,31 +92,24 @@ impl Source for ScanTaskSource {
         maintain_order: bool,
         io_stats: IOStatsRef,
     ) -> DaftResult<SourceStream<'static>> {
-        let io_runtime = get_io_runtime(true);
         let delete_map = get_delete_map(&self.scan_tasks).await?.map(Arc::new);
-        let stream_of_streams =
-            futures::stream::iter(self.scan_tasks.clone().into_iter().map(move |scan_task| {
-                let io_stats = io_stats.clone();
-                let delete_map = delete_map.clone();
-                io_runtime.spawn(async move {
-                    stream_scan_task(scan_task, io_stats, delete_map, maintain_order).await
-                })
-            }));
+        let stream_of_streams = bulk_stream_scan_tasks(
+            self.scan_tasks.clone(),
+            delete_map,
+            maintain_order,
+            io_stats,
+            self.num_parallel_tasks,
+        )
+        .await;
 
         match maintain_order {
             true => {
-                let buffered_and_flattened = stream_of_streams
-                    .buffered(self.num_parallel_tasks)
-                    .map(|r| r?)
-                    .try_flatten();
-                Ok(Box::pin(buffered_and_flattened))
+                let flattened = stream_of_streams.try_flatten();
+                Ok(Box::pin(flattened))
             }
             false => {
-                let buffered_and_flattened = stream_of_streams
-                    .buffer_unordered(self.num_parallel_tasks)
-                    .map(|r| r?)
-                    .try_flatten_unordered(None);
-                Ok(Box::pin(buffered_and_flattened))
+                let flattened = stream_of_streams.try_flatten_unordered(None);
+                Ok(Box::pin(flattened))
             }
         }
     }
@@ -200,12 +195,48 @@ async fn get_delete_map(
         .await?
 }
 
+async fn bulk_stream_scan_tasks(
+    scan_tasks: Vec<Arc<ScanTask>>,
+    delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
+    maintain_order: bool,
+    io_stats: IOStatsRef,
+    num_parallel_tasks: usize,
+) -> impl Stream<Item = DaftResult<BoxStream<'static, DaftResult<Arc<MicroPartition>>>>> {
+    let io_runtime = get_io_runtime(true);
+    let (tx, rx) = create_channel(num_parallel_tasks);
+    let stream_spawning_task = io_runtime.spawn(async move {
+        for scan_task in scan_tasks {
+            let delete_map = delete_map.clone();
+            let io_stats = io_stats.clone();
+            let stream = stream_scan_task(scan_task, io_stats, delete_map, maintain_order).await?;
+            if tx.send(stream).await.is_err() {
+                break;
+            }
+        }
+        DaftResult::Ok(())
+    });
+    let initial_state = (Some(stream_spawning_task), rx.into_stream());
+
+    futures::stream::unfold(initial_state, |(future, mut stream)| async move {
+        future.as_ref()?;
+
+        match stream.next().await {
+            Some(item) => Some((Ok(item), (future, stream))),
+            None => match future.unwrap().await {
+                Err(error) => Some((Err(error), (None, stream))),
+                Ok(Err(error)) => Some((Err(error), (None, stream))),
+                Ok(Ok(())) => None,
+            },
+        }
+    })
+}
+
 async fn stream_scan_task(
     scan_task: Arc<ScanTask>,
     io_stats: IOStatsRef,
     delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
     maintain_order: bool,
-) -> DaftResult<impl Stream<Item = DaftResult<Arc<MicroPartition>>> + Send> {
+) -> DaftResult<BoxStream<'static, DaftResult<Arc<MicroPartition>>>> {
     let pushdown_columns = scan_task.pushdowns.columns.as_ref().map(|v| {
         v.iter()
             .map(std::string::String::as_str)
@@ -273,7 +304,7 @@ async fn stream_scan_task(
                 .sources
                 .first()
                 .and_then(|s| s.get_parquet_metadata().cloned());
-            daft_parquet::read::stream_parquet(
+            let parquet_stream = daft_parquet::read::stream_parquet(
                 url,
                 file_column_names.as_deref(),
                 scan_task.pushdowns.limit,
@@ -287,7 +318,8 @@ async fn stream_scan_task(
                 maintain_order,
                 delete_rows,
             )
-            .await?
+            .await?;
+            cast_stream_tables_to_schema(parquet_stream, scan_task)
         }
         FileFormatConfig::Csv(cfg) => {
             let schema_of_file = scan_task.schema.clone();
@@ -323,7 +355,7 @@ async fn stream_scan_task(
                 cfg.comment,
             )?;
             let read_options = CsvReadOptions::new_internal(cfg.buffer_size, cfg.chunk_size);
-            daft_csv::stream_csv(
+            let csv_stream = daft_csv::stream_csv(
                 url.to_string(),
                 Some(convert_options),
                 Some(parse_options),
@@ -333,7 +365,8 @@ async fn stream_scan_task(
                 None,
                 // maintain_order, TODO: Implement maintain_order for CSV
             )
-            .await?
+            .await?;
+            cast_stream_tables_to_schema(csv_stream, scan_task)
         }
         FileFormatConfig::Json(cfg) => {
             let schema_of_file = scan_task.schema.clone();
@@ -348,7 +381,7 @@ async fn stream_scan_task(
             let parse_options = JsonParseOptions::new_internal();
             let read_options = JsonReadOptions::new_internal(cfg.buffer_size, cfg.chunk_size);
 
-            daft_json::read::stream_json(
+            let json_stream = daft_json::read::stream_json(
                 url.to_string(),
                 Some(convert_options),
                 Some(parse_options),
@@ -358,7 +391,8 @@ async fn stream_scan_task(
                 None,
                 // maintain_order, TODO: Implement maintain_order for JSON
             )
-            .await?
+            .await?;
+            cast_stream_tables_to_schema(json_stream, scan_task)
         }
         #[cfg(feature = "python")]
         FileFormatConfig::Database(common_file_formats::DatabaseSourceConfig { sql, conn }) => {
@@ -387,31 +421,42 @@ async fn stream_scan_task(
                 .map(|t| t.into())
                 .context(PyIOSnafu)
             })?;
-            Box::pin(futures::stream::once(async { Ok(table) }))
+            let db_stream = futures::stream::once(async { Ok(table) });
+            cast_stream_tables_to_schema(db_stream, scan_task)
         }
         #[cfg(feature = "python")]
         FileFormatConfig::PythonFunction => {
             let iter = daft_micropartition::python::read_pyfunc_into_table_iter(&scan_task)?;
             let stream = futures::stream::iter(iter.map(|r| r.map_err(|e| e.into())));
-            Box::pin(stream)
+            cast_stream_tables_to_schema(stream, scan_task)
         }
     };
 
-    Ok(table_stream.map(move |table| {
-        let table = table?;
-        let casted_table = table.cast_to_schema_with_fill(
-            scan_task.materialized_schema().as_ref(),
-            scan_task
-                .partition_spec()
-                .as_ref()
-                .map(|pspec| pspec.to_fill_map())
-                .as_ref(),
-        )?;
-        let mp = Arc::new(MicroPartition::new_loaded(
-            scan_task.materialized_schema(),
-            Arc::new(vec![casted_table]),
-            scan_task.statistics.clone(),
-        ));
-        Ok(mp)
-    }))
+    Ok(table_stream)
+}
+
+fn cast_stream_tables_to_schema(
+    table_stream: impl Stream<Item = DaftResult<Table>> + Send + 'static,
+    scan_task: Arc<ScanTask>,
+) -> BoxStream<'static, DaftResult<Arc<MicroPartition>>> {
+    table_stream
+        .map(move |table| {
+            let table = table?;
+            let casted_table = table.cast_to_schema_with_fill(
+                scan_task.materialized_schema().as_ref(),
+                scan_task
+                    .partition_spec()
+                    .as_ref()
+                    .map(|pspec| pspec.to_fill_map())
+                    .as_ref(),
+            )?;
+            let mp = Arc::new(MicroPartition::new_loaded(
+                scan_task.materialized_schema(),
+                Arc::new(vec![casted_table]),
+                scan_task.statistics.clone(),
+            ));
+
+            Ok(mp)
+        })
+        .boxed()
 }
