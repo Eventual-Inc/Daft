@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
 use daft_core::join::JoinType;
-use daft_dsl::{null_lit, optimization::conjuct, Expr};
+use daft_dsl::{null_lit, optimization::conjuct};
 
 use super::OptimizerRule;
 use crate::{
@@ -57,7 +57,7 @@ impl OptimizerRule for FilterNullJoinKey {
                             .by_ref()
                             .zip(left_on)
                             .filter(|(null_eq_null, _)| !null_eq_null)
-                            .map(|(_, left_key)| Expr::eq(left_key.clone(), null_lit())),
+                            .map(|(_, left_key)| left_key.clone().not_eq(null_lit())),
                     )
                 } else {
                     None
@@ -69,7 +69,7 @@ impl OptimizerRule for FilterNullJoinKey {
                             .by_ref()
                             .zip(right_on)
                             .filter(|(null_eq_null, _)| !null_eq_null)
-                            .map(|(_, right_key)| Expr::eq(right_key.clone(), null_lit())),
+                            .map(|(_, right_key)| right_key.clone().not_eq(null_lit())),
                     )
                 } else {
                     None
@@ -162,10 +162,10 @@ mod tests {
             .build();
 
         let expected = left_scan
-            .filter(col("a").eq(null_lit()))?
+            .filter(col("a").not_eq(null_lit()))?
             .clone()
             .join(
-                right_scan.filter(col("c").eq(null_lit()))?,
+                right_scan.filter(col("c").not_eq(null_lit()))?,
                 vec![col("a")],
                 vec![col("c")],
                 JoinType::Inner,
@@ -209,7 +209,7 @@ mod tests {
             )?
             .build();
 
-        let expected_predicate = col("d").eq(null_lit()).and(col("f").eq(null_lit()));
+        let expected_predicate = col("d").not_eq(null_lit()).and(col("f").not_eq(null_lit()));
 
         let expected = left_scan
             .clone()
