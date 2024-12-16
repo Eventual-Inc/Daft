@@ -1,5 +1,9 @@
-use std::sync::Arc;
+use std::{
+    collections::HashSet,
+    sync::{Arc, Mutex},
+};
 
+use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_runtime::RuntimeRef;
 use daft_core::prelude::SchemaRef;
@@ -14,10 +18,11 @@ use super::blocking_sink::{
 };
 use crate::NUM_CPUS;
 
+#[derive(Clone)]
 enum AggStrategy {
     // TODO: This would probably benefit from doing sharded aggs.
     AggThenPartition,
-    PartitionThenAgg,
+    PartitionThenAgg(usize),
     PartitionOnly,
 }
 
@@ -30,7 +35,9 @@ impl AggStrategy {
     ) -> DaftResult<()> {
         match self {
             Self::AggThenPartition => Self::execute_agg_then_partition(inner_states, input, params),
-            Self::PartitionThenAgg => Self::execute_partition_then_agg(inner_states, input, params),
+            Self::PartitionThenAgg(threshold) => {
+                Self::execute_partition_then_agg(inner_states, input, params, *threshold)
+            }
             Self::PartitionOnly => Self::execute_partition_only(inner_states, input, params),
         }
     }
@@ -47,11 +54,7 @@ impl AggStrategy {
         let partitioned =
             agged.partition_by_hash(params.final_group_by.as_slice(), inner_states.len())?;
         for (p, state) in partitioned.into_iter().zip(inner_states.iter_mut()) {
-            let state = state.get_or_insert_with(|| SinglePartitionAggregateState {
-                partially_aggregated: vec![],
-                unaggregated: vec![],
-                unaggregated_size: 0,
-            });
+            let state = state.get_or_insert_default();
             state.partially_aggregated.push(p);
         }
         Ok(())
@@ -61,16 +64,13 @@ impl AggStrategy {
         inner_states: &mut [Option<SinglePartitionAggregateState>],
         input: Arc<MicroPartition>,
         params: &GroupedAggregateParams,
+        partial_agg_threshold: usize,
     ) -> DaftResult<()> {
         let partitioned =
             input.partition_by_hash(params.group_by.as_slice(), inner_states.len())?;
         for (p, state) in partitioned.into_iter().zip(inner_states.iter_mut()) {
-            let state = state.get_or_insert_with(|| SinglePartitionAggregateState {
-                partially_aggregated: vec![],
-                unaggregated: vec![],
-                unaggregated_size: 0,
-            });
-            if state.unaggregated_size + p.len() >= GroupedAggregateState::PARTIAL_AGG_THRESHOLD {
+            let state = state.get_or_insert_default();
+            if state.unaggregated_size + p.len() >= partial_agg_threshold {
                 let unaggregated = std::mem::take(&mut state.unaggregated);
                 let aggregated =
                     MicroPartition::concat(unaggregated.iter().chain(std::iter::once(&p)))?.agg(
@@ -95,11 +95,7 @@ impl AggStrategy {
         let partitioned =
             input.partition_by_hash(params.group_by.as_slice(), inner_states.len())?;
         for (p, state) in partitioned.into_iter().zip(inner_states.iter_mut()) {
-            let state = state.get_or_insert_with(|| SinglePartitionAggregateState {
-                partially_aggregated: vec![],
-                unaggregated: vec![],
-                unaggregated_size: 0,
-            });
+            let state = state.get_or_insert_default();
             state.unaggregated_size += p.len();
             state.unaggregated.push(p);
         }
@@ -107,6 +103,45 @@ impl AggStrategy {
     }
 }
 
+fn determine_agg_strategy(
+    input: &Arc<MicroPartition>,
+    params: &GroupedAggregateParams,
+    high_cardinality_threshold_ratio: f64,
+    partial_agg_threshold: usize,
+    global_strategy_lock: &Arc<Mutex<Option<AggStrategy>>>,
+) -> DaftResult<AggStrategy> {
+    let mut global_strategy = global_strategy_lock.lock().unwrap();
+    // If some other worker has determined a strategy, use that.
+    if let Some(global_strat) = global_strategy.as_ref() {
+        return Ok(global_strat.clone());
+    }
+
+    // Else determine the strategy.
+    let groupby = input.eval_expression_list(params.group_by.as_slice())?;
+
+    let groupkey_hashes = groupby
+        .get_tables()?
+        .iter()
+        .map(|t| t.hash_rows())
+        .collect::<DaftResult<Vec<_>>>()?;
+    let estimated_num_groups = groupkey_hashes
+        .iter()
+        .flatten()
+        .collect::<HashSet<_>>()
+        .len();
+
+    let decided_strategy =
+        if estimated_num_groups as f64 / input.len() as f64 >= high_cardinality_threshold_ratio {
+            AggStrategy::PartitionThenAgg(partial_agg_threshold)
+        } else {
+            AggStrategy::AggThenPartition
+        };
+
+    *global_strategy = Some(decided_strategy.clone());
+    Ok(decided_strategy)
+}
+
+#[derive(Default)]
 struct SinglePartitionAggregateState {
     partially_aggregated: Vec<MicroPartition>,
     unaggregated: Vec<MicroPartition>,
@@ -117,23 +152,24 @@ enum GroupedAggregateState {
     Accumulating {
         inner_states: Vec<Option<SinglePartitionAggregateState>>,
         strategy: Option<AggStrategy>,
+        partial_agg_threshold: usize,
+        high_cardinality_threshold_ratio: f64,
     },
     Done,
 }
 
 impl GroupedAggregateState {
-    // This is the threshold for when we should aggregate any accumulated unaggregated partitions
-    const PARTIAL_AGG_THRESHOLD: usize = 10_000;
-    // This is the threshold that indicate high cardinality grouping in the input data, and we should use partitioning first strategy.
-    // It is the ratio between the number of groups vs the number of rows.
-    // For example if the input data had 100 rows and 80 groups or above, that's considered high cardinality.
-    const HIGH_CARDINALITY_THRESHOLD_RATIO: f64 = 0.8;
-
-    fn new(num_partitions: usize) -> Self {
-        let inner_states = (0..num_partitions).map(|_| None).collect();
+    fn new(
+        num_partitions: usize,
+        partial_agg_threshold: usize,
+        high_cardinality_threshold_ratio: f64,
+    ) -> Self {
+        let inner_states = (0..num_partitions).map(|_| None).collect::<Vec<_>>();
         Self::Accumulating {
             inner_states,
             strategy: None,
+            partial_agg_threshold,
+            high_cardinality_threshold_ratio,
         }
     }
 
@@ -141,54 +177,35 @@ impl GroupedAggregateState {
         &mut self,
         input: Arc<MicroPartition>,
         params: &GroupedAggregateParams,
+        global_strategy_lock: &Arc<Mutex<Option<AggStrategy>>>,
     ) -> DaftResult<()> {
-        if let Self::Accumulating {
+        let Self::Accumulating {
             ref mut inner_states,
             strategy,
+            partial_agg_threshold,
+            high_cardinality_threshold_ratio,
         } = self
-        {
-            // If we have determined a strategy, execute it.
-            if let Some(strategy) = strategy {
-                strategy.execute_strategy(inner_states, input, params)?;
-            }
-            // Otherwise, determine a strategy based on the input data.
-            else {
-                // If we have no partial aggregation expressions and only final aggregation expressions, e.g. map_groups, we don't need to partially aggregate
-                // and can just partition the input data.
-                if params.partial_agg_exprs.is_empty() && !params.final_agg_exprs.is_empty() {
-                    *strategy = Some(AggStrategy::PartitionOnly);
-                    strategy
-                        .as_ref()
-                        .unwrap()
-                        .execute_strategy(inner_states, input, params)?;
-                    return Ok(());
-                }
-                // If we do have partial aggregation expressions, we need to estimate the cardinality of the input data
-                // to determine the best strategy. If the cardinality is high, we should do partition first, otherwise we should do aggregation first.
-                let agged = input.agg(
-                    params.partial_agg_exprs.as_slice(),
-                    params.group_by.as_slice(),
-                )?;
-                let partitioned = agged
-                    .partition_by_hash(params.final_group_by.as_slice(), inner_states.len())?;
-                for (p, state) in partitioned.into_iter().zip(inner_states.iter_mut()) {
-                    let state = state.get_or_insert_with(|| SinglePartitionAggregateState {
-                        partially_aggregated: vec![],
-                        unaggregated: vec![],
-                        unaggregated_size: 0,
-                    });
-                    state.partially_aggregated.push(p);
-                }
-                if agged.len() as f64 / input.len() as f64 >= Self::HIGH_CARDINALITY_THRESHOLD_RATIO
-                {
-                    *strategy = Some(AggStrategy::PartitionThenAgg);
-                } else {
-                    *strategy = Some(AggStrategy::AggThenPartition);
-                }
-            }
-        } else {
+        else {
             panic!("GroupedAggregateSink should be in Accumulating state");
+        };
+
+        // If we have determined a strategy, execute it.
+        if let Some(strategy) = strategy {
+            strategy.execute_strategy(inner_states, input, params)?;
+            return Ok(());
         }
+
+        // Otherwise, determine the strategy and execute
+        let decided_strategy = determine_agg_strategy(
+            &input,
+            params,
+            *high_cardinality_threshold_ratio,
+            *partial_agg_threshold,
+            global_strategy_lock,
+        )?;
+
+        decided_strategy.execute_strategy(inner_states, input, params)?;
+        *strategy = Some(decided_strategy);
         Ok(())
     }
 
@@ -227,6 +244,9 @@ struct GroupedAggregateParams {
 
 pub struct GroupedAggregateSink {
     grouped_aggregate_params: Arc<GroupedAggregateParams>,
+    partial_agg_threshold: usize,
+    high_cardinality_threshold_ratio: f64,
+    global_strategy_lock: Arc<Mutex<Option<AggStrategy>>>,
 }
 
 impl GroupedAggregateSink {
@@ -234,6 +254,7 @@ impl GroupedAggregateSink {
         aggregations: &[ExprRef],
         group_by: &[ExprRef],
         schema: &SchemaRef,
+        cfg: &DaftExecutionConfig,
     ) -> DaftResult<Self> {
         let aggregations = aggregations
             .iter()
@@ -248,13 +269,17 @@ impl GroupedAggregateSink {
         let final_agg_exprs = final_aggs
             .into_values()
             .map(|e| Arc::new(Expr::Agg(e)))
-            .collect();
+            .collect::<Vec<_>>();
         let final_group_by = if !partial_agg_exprs.is_empty() {
             group_by.iter().map(|e| col(e.name())).collect::<Vec<_>>()
         } else {
             group_by.to_vec()
         };
-
+        let strategy = if partial_agg_exprs.is_empty() && !final_agg_exprs.is_empty() {
+            Some(AggStrategy::PartitionOnly)
+        } else {
+            None
+        };
         Ok(Self {
             grouped_aggregate_params: Arc::new(GroupedAggregateParams {
                 original_aggregations: aggregations
@@ -267,6 +292,9 @@ impl GroupedAggregateSink {
                 final_group_by,
                 final_projections,
             }),
+            partial_agg_threshold: cfg.partial_aggregation_threshold,
+            high_cardinality_threshold_ratio: cfg.high_cardinality_aggregation_threshold,
+            global_strategy_lock: Arc::new(Mutex::new(strategy)),
         })
     }
 
@@ -284,6 +312,7 @@ impl BlockingSink for GroupedAggregateSink {
         runtime: &RuntimeRef,
     ) -> BlockingSinkSinkResult {
         let params = self.grouped_aggregate_params.clone();
+        let strategy_lock = self.global_strategy_lock.clone();
         runtime
             .spawn(
                 async move {
@@ -292,7 +321,7 @@ impl BlockingSink for GroupedAggregateSink {
                         .downcast_mut::<GroupedAggregateState>()
                         .expect("GroupedAggregateSink should have GroupedAggregateState");
 
-                    agg_state.push(input, &params)?;
+                    agg_state.push(input, &params, &strategy_lock)?;
                     Ok(BlockingSinkStatus::NeedMoreInput(state))
                 }
                 .instrument(info_span!("GroupedAggregateSink::sink")),
@@ -398,6 +427,10 @@ impl BlockingSink for GroupedAggregateSink {
     }
 
     fn make_state(&self) -> DaftResult<Box<dyn BlockingSinkState>> {
-        Ok(Box::new(GroupedAggregateState::new(self.num_partitions())))
+        Ok(Box::new(GroupedAggregateState::new(
+            self.num_partitions(),
+            self.partial_agg_threshold,
+            self.high_cardinality_threshold_ratio,
+        )))
     }
 }
