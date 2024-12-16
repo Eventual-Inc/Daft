@@ -109,13 +109,15 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    working_dir: Path = args.working_dir
-    assert working_dir.exists() and working_dir.is_dir(), "The working dir must exist and be directory"
-    entrypoint: Path = working_dir / args.entrypoint_script
-    assert entrypoint.exists() and entrypoint.is_file(), "The entrypoint script must exist and be a file"
+    if not (args.working_dir.exists() and args.working_dir.is_dir()):
+        raise ValueError("The working-dir must exist and be a directory")
+
+    entrypoint: Path = args.working_dir / args.entrypoint_script
+    if not (entrypoint.exists() and entrypoint.is_file()):
+        raise ValueError("The entrypoint script must exist and be a file")
 
     submit_job(
-        working_dir=working_dir,
+        working_dir=args.working_dir,
         entrypoint_script=args.entrypoint_script,
         entrypoint_args=args.entrypoint_args,
         env_vars=args.env_vars,
