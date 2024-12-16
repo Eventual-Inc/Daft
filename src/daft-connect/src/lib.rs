@@ -6,7 +6,6 @@
 #![feature(stmt_expr_attributes)]
 #![feature(try_trait_v2_residual)]
 
-use daft_sql::error::SQLPlannerResult;
 use dashmap::DashMap;
 use eyre::Context;
 #[cfg(feature = "python")]

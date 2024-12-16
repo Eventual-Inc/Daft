@@ -202,35 +202,6 @@ impl<'a> SQLPlanner<'a> {
         Ok(())
     }
 
-    pub fn parse_column_definitions(&self, column_defs: &str) {
-        let tokens = Tokenizer::new(&GenericDialect, column_defs)
-            .tokenize()
-            .unwrap();
-
-        let mut parser = Parser::new(&GenericDialect)
-            .with_options(ParserOptions {
-                trailing_commas: true,
-                ..Default::default()
-            })
-            .with_tokens(tokens);
-
-        let o = parser.parse_comma_separated(Parser::parse_column_def);
-
-        // Vec<(String, String)>
-        let outputs = o
-            .unwrap()
-            .into_iter()
-            .map(|cd| {
-                let name = cd.name.to_string();
-                let data_type = cd.data_type.to_string();
-
-                (name, data_type)
-            })
-            .collect::<Vec<_>>();
-
-        println!("{:?}", outputs);
-    }
-
     pub fn plan_sql(&mut self, sql: &str) -> SQLPlannerResult<LogicalPlanRef> {
         let tokens = Tokenizer::new(&GenericDialect {}, sql).tokenize()?;
 
