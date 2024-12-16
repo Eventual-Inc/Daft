@@ -7,11 +7,10 @@ import daft
 
 
 def run(
-    parquet_folder: Path,
     question: int,
     dry_run: bool,
 ):
-    catalog = helpers.generate_catalog(parquet_folder)
+    catalog = helpers.generate_catalog("s3://eventual-dev-benchmarking-fixtures/uncompressed/tpcds-dbgen/2/")
     query_file = Path(__file__).parent / "queries" / f"{question:02}.sql"
     with open(query_file) as f:
         query = f.read()
@@ -23,12 +22,6 @@ def run(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--tpcds-gen-folder",
-        required=True,
-        type=Path,
-        help="Path to the TPC-DS data generation folder",
-    )
     parser.add_argument(
         "--question",
         required=True,
@@ -42,7 +35,7 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    assert args.tpcds_gen_folder.exists()
+    # assert args.tpcds_gen_folder.exists()
     assert args.question in range(1, 100)
 
     run(args.tpcds_gen_folder, args.question, args.dry_run)
