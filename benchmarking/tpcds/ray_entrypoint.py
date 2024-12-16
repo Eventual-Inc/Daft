@@ -42,14 +42,7 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    d = Path(".")
-    assert d.exists()
-    for x in d.iterdir():
-        print(f"subpath: {x}")
-
-    tpcds_gen_folder: Path = args.tpcds_gen_folder
-    print(f"{tpcds_gen_folder=}")
-    assert tpcds_gen_folder.exists()
+    assert args.tpcds_gen_folder.exists()
     assert args.question in range(1, 100)
 
     run(args.tpcds_gen_folder, args.question, args.dry_run)
