@@ -35,7 +35,6 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    # assert args.tpcds_gen_folder.exists()
     assert args.question in range(1, 100)
 
-    run(args.tpcds_gen_folder, args.question, args.dry_run)
+    run(args.question, args.dry_run)
