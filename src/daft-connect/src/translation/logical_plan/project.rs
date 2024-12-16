@@ -8,14 +8,14 @@ use spark_connect::Project;
 
 use crate::translation::{logical_plan::Plan, to_daft_expr, to_logical_plan};
 
-pub fn project(project: Project) -> eyre::Result<Plan> {
+pub async fn project(project: Project) -> eyre::Result<Plan> {
     let Project { input, expressions } = project;
 
     let Some(input) = input else {
         bail!("Project input is required");
     };
 
-    let mut plan = to_logical_plan(*input)?;
+    let mut plan = Box::pin(to_logical_plan(*input)).await?;
 
     let daft_exprs: Vec<_> = expressions.iter().map(to_daft_expr).try_collect()?;
     plan.builder = plan.builder.select(daft_exprs)?;

@@ -53,6 +53,7 @@ if TYPE_CHECKING:
     import torch
 
     from daft.io import DataCatalogTable
+    from daft.unity_catalog import UnityCatalogTable
 
 from daft.logical.schema import Schema
 
@@ -826,7 +827,7 @@ class DataFrame:
     @DataframePublicAPI
     def write_deltalake(
         self,
-        table: Union[str, pathlib.Path, "DataCatalogTable", "deltalake.DeltaTable"],
+        table: Union[str, pathlib.Path, "DataCatalogTable", "deltalake.DeltaTable", "UnityCatalogTable"],
         partition_cols: Optional[List[str]] = None,
         mode: Literal["append", "overwrite", "error", "ignore"] = "append",
         schema_mode: Optional[Literal["merge", "overwrite"]] = None,
@@ -844,7 +845,7 @@ class DataFrame:
             This call is **blocking** and will execute the DataFrame when called
 
         Args:
-            table (Union[str, pathlib.Path, DataCatalogTable, deltalake.DeltaTable]): Destination `Delta Lake Table <https://delta-io.github.io/delta-rs/api/delta_table/>`__ or table URI to write dataframe to.
+            table (Union[str, pathlib.Path, DataCatalogTable, deltalake.DeltaTable, UnityCatalogTable]): Destination `Delta Lake Table <https://delta-io.github.io/delta-rs/api/delta_table/>`__ or table URI to write dataframe to.
             partition_cols (List[str], optional): How to subpartition each partition further. If table exists, expected to match table's existing partitioning scheme, otherwise creates the table with specified partition columns. Defaults to None.
             mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace table with new data, `error` will raise an error if table already exists, and `ignore` will not write anything if table already exists. Defaults to "append".
             schema_mode (str, optional): Schema mode of the write. If set to `overwrite`, allows replacing the schema of the table when doing `mode=overwrite`. Schema mode `merge` is currently not supported.
@@ -872,6 +873,7 @@ class DataFrame:
         from daft.io import DataCatalogTable
         from daft.io._deltalake import large_dtypes_kwargs
         from daft.io.object_store_options import io_config_to_storage_options
+        from daft.unity_catalog import UnityCatalogTable
 
         if schema_mode == "merge":
             raise ValueError("Schema mode' merge' is not currently supported for write_deltalake.")
@@ -881,14 +883,21 @@ class DataFrame:
 
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
-        if isinstance(table, (str, pathlib.Path, DataCatalogTable)):
+        if isinstance(table, (str, pathlib.Path, DataCatalogTable, UnityCatalogTable)):
             if isinstance(table, str):
                 table_uri = table
             elif isinstance(table, pathlib.Path):
                 table_uri = str(table)
+            elif isinstance(table, UnityCatalogTable):
+                table_uri = table.table_uri
+                io_config = table.io_config
             else:
                 table_uri = table.table_uri(io_config)
 
+            if io_config is None:
+                raise ValueError(
+                    "io_config was not provided to write_deltalake and could not be retrieved from the default configuration."
+                )
             storage_options = io_config_to_storage_options(io_config, table_uri) or {}
             table = try_get_deltatable(table_uri, storage_options=storage_options)
         elif isinstance(table, deltalake.DeltaTable):

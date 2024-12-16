@@ -1,5 +1,4 @@
 import argparse
-import sys
 from pathlib import Path
 
 import helpers
@@ -17,12 +16,9 @@ def run(
     with open(query_file) as f:
         query = f.read()
 
-    try:
-        daft.sql(query, catalog=catalog).explain(show_all=True)
-        if not dry_run:
-            daft.sql(query, catalog=catalog).collect()
-    except Exception as e:
-        print(str(e), file=sys.stderr)
+    daft.sql(query, catalog=catalog).explain(show_all=True)
+    if not dry_run:
+        daft.sql(query, catalog=catalog).collect()
 
 
 if __name__ == "__main__":
