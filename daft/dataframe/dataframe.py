@@ -2545,6 +2545,36 @@ class DataFrame:
         builder = self._builder.intersect(other._builder)
         return DataFrame(builder)
 
+    @DataframePublicAPI
+    def intersect_all(self, other: "DataFrame") -> "DataFrame":
+        """Returns the intersection of two DataFrames, including duplicates.
+
+        :param other:
+        :return:
+        """
+        builder = self._builder.intersect_all(other._builder)
+        return DataFrame(builder)
+
+    @DataframePublicAPI
+    def except_distinct(self, other: "DataFrame") -> "DataFrame":
+        """
+
+        :param other:
+        :return:
+        """
+        builder = self._builder.except_distinct(other._builder)
+        return DataFrame(builder)
+
+    @DataframePublicAPI
+    def except_all(self, other: "DataFrame") -> "DataFrame":
+        """
+
+        :param other:
+        :return:
+        """
+        builder = self._builder.except_all(other._builder)
+        return DataFrame(builder)
+
     def _materialize_results(self) -> None:
         """Materializes the results of for this DataFrame and hold a pointer to the results."""
         context = get_context()

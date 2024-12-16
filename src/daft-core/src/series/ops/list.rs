@@ -2,8 +2,9 @@ use common_error::{DaftError, DaftResult};
 use daft_schema::field::Field;
 
 use crate::{
+    array::ListArray,
     datatypes::{DataType, UInt64Array, Utf8Array},
-    prelude::CountMode,
+    prelude::{CountMode, Int64Array},
     series::{IntoSeries, Series},
 };
 
@@ -216,5 +217,15 @@ impl Series {
                 self.data_type()
             ))),
         }
+    }
+
+    /// Given a series of data T, repeat each data T with num times to create a list, returns
+    /// a series of repeated list.
+    /// # Example
+    /// ```txt
+    /// repeat([1, 2, 3], [2, 0, 1]) --> [[1, 1], [], [3]]
+    /// ```
+    pub fn list_fill(&self, num: &Int64Array) -> DaftResult<Self> {
+        ListArray::list_fill(self, num).map(|arr| arr.into_series())
     }
 }
