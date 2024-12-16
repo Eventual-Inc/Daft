@@ -6,7 +6,6 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-import duckdb
 from ray.job_submission import JobStatus, JobSubmissionClient
 
 
@@ -27,19 +26,6 @@ async def wait_on_job(logs, timeout_s):
     await asyncio.wait_for(print_logs(logs), timeout=timeout_s)
 
 
-def generate_data():
-    datadir = Path(__file__).parents[2] / "gendata"
-    datadir.mkdir(parents=True, exist_ok=True)
-    scale_factor = 0.01
-    db = duckdb.connect(database=datadir / "tpcds.db")
-    db.sql(f"call dsdgen(sf = {scale_factor})")
-    for item in db.sql("show tables").fetchall():
-        tbl = item[0]
-        parquet_file = datadir / f"{tbl}.parquet"
-        print(f"Exporting {tbl} to {parquet_file}")
-        db.sql(f"COPY {tbl} TO '{parquet_file}'")
-
-
 @dataclass
 class Result:
     query: int
@@ -54,8 +40,6 @@ def submit_job(
     env_vars: str,
     enable_ray_tracing: bool,
 ):
-    generate_data()
-
     env_vars_dict = parse_env_var_str(env_vars)
     if enable_ray_tracing:
         env_vars_dict["DAFT_ENABLE_RAY_TRACING"] = "1"
