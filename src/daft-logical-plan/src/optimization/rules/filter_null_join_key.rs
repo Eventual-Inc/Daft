@@ -13,8 +13,75 @@ use crate::{
 
 /// Optimization rule for filtering out nulls from join keys.
 ///
-/// Inserts a filter before each side of the join to remove rows where a join key is null when it is valid to do so.
-/// This will reduce the cardinality of the tables before a join, which may improve join performance.
+/// When a join will always discard null keys from a join side,
+/// this rule inserts a filter before that side to remove rows where a join key is null.
+/// This reduces the cardinality of the tables before a join to improve join performance,
+/// and can also be pushed down with other rules to reduce source and intermediate output sizes.
+///
+/// # Example
+/// ```sql
+/// SELECT * FROM left JOIN right ON left.x = right.y
+/// ```
+/// turns into
+/// ```sql
+/// SELECT *
+/// FROM (SELECT * FROM left WHERE x IS NOT NULL) AS non_null_left
+/// JOIN (SELECT * FROM right WHERE x IS NOT NULL) AS non_null_right
+/// ON non_null_left.x = non_null_right.y
+/// ```
+///
+/// So if `left` was:
+/// ```
+/// ╭───────╮
+/// │ x     │
+/// │ ---   │
+/// │ Int64 │
+/// ╞═══════╡
+/// │ 1     │
+/// ├╌╌╌╌╌╌╌┤
+/// │ 2     │
+/// ├╌╌╌╌╌╌╌┤
+/// │ None  │
+/// ╰───────╯
+/// ```
+/// And `right` was:
+/// ```
+/// ╭───────╮
+/// │ y     │
+/// │ ---   │
+/// │ Int64 │
+/// ╞═══════╡
+/// │ 1     │
+/// ├╌╌╌╌╌╌╌┤
+/// │ None  │
+/// ├╌╌╌╌╌╌╌┤
+/// │ None  │
+/// ╰───────╯
+/// ```
+/// the original query would join on all rows, whereas the new query would first filter out null rows and join on the following:
+///
+/// `non_null_left`:
+/// ```
+/// ╭───────╮
+/// │ x     │
+/// │ ---   │
+/// │ Int64 │
+/// ╞═══════╡
+/// │ 1     │
+/// ├╌╌╌╌╌╌╌┤
+/// │ 2     │
+/// ╰───────╯
+/// ```
+/// `non_null_right`:
+/// ```
+/// ╭───────╮
+/// │ y     │
+/// │ ---   │
+/// │ Int64 │
+/// ╞═══════╡
+/// │ 1     │
+/// ╰───────╯
+/// ```
 #[derive(Default, Debug)]
 pub struct FilterNullJoinKey {}
 
