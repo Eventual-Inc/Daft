@@ -87,6 +87,7 @@ python = [
   "dep:pyo3",
   "dep:pyo3-log"
 ]
+enable_hdfs = ["daft-io/enable_hdfs"]
 
 [lib]
 crate-type = ["cdylib"]
