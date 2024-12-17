@@ -1736,7 +1736,7 @@ class PyDaftExecutionConfig:
         enable_aqe: bool | None = None,
         enable_native_executor: bool | None = None,
         default_morsel_size: int | None = None,
-        enable_ray_tracing: bool | None = None,
+        enable_ray_tracing: int | None = None,
         shuffle_algorithm: str | None = None,
         pre_shuffle_merge_threshold: int | None = None,
     ) -> PyDaftExecutionConfig: ...
@@ -1783,7 +1783,7 @@ class PyDaftExecutionConfig:
     @property
     def pre_shuffle_merge_threshold(self) -> int: ...
     @property
-    def enable_ray_tracing(self) -> bool: ...
+    def enable_ray_tracing(self) -> int: ...
 
 class PyDaftPlanningConfig:
     @staticmethod

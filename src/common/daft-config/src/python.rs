@@ -98,7 +98,7 @@ impl PyDaftExecutionConfig {
         default_morsel_size: Option<usize>,
         shuffle_algorithm: Option<&str>,
         pre_shuffle_merge_threshold: Option<usize>,
-        enable_ray_tracing: Option<bool>,
+        enable_ray_tracing: Option<u32>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
@@ -290,7 +290,7 @@ impl PyDaftExecutionConfig {
     }
 
     #[getter]
-    fn enable_ray_tracing(&self) -> PyResult<bool> {
+    fn enable_ray_tracing(&self) -> PyResult<u32> {
         Ok(self.config.enable_ray_tracing)
     }
 }

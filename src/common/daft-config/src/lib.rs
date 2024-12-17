@@ -52,7 +52,7 @@ pub struct DaftExecutionConfig {
     pub default_morsel_size: usize,
     pub shuffle_algorithm: String,
     pub pre_shuffle_merge_threshold: usize,
-    pub enable_ray_tracing: bool,
+    pub enable_ray_tracing: u32,
 }
 
 impl Default for DaftExecutionConfig {
@@ -80,7 +80,7 @@ impl Default for DaftExecutionConfig {
             default_morsel_size: 128 * 1024,
             shuffle_algorithm: "map_reduce".to_string(),
             pre_shuffle_merge_threshold: 1024 * 1024 * 1024, // 1GB
-            enable_ray_tracing: false,
+            enable_ray_tracing: 0,
         }
     }
 }
@@ -109,10 +109,12 @@ impl DaftExecutionConfig {
             cfg.enable_native_executor = true;
         }
         let ray_tracing_env_var_name = "DAFT_ENABLE_RAY_TRACING";
-        if let Ok(val) = std::env::var(ray_tracing_env_var_name)
-            && matches!(val.trim().to_lowercase().as_str(), "1" | "true")
-        {
-            cfg.enable_ray_tracing = true;
+        if let Ok(val) = std::env::var(ray_tracing_env_var_name) {
+            if let Ok(val) = val.trim().parse::<u32>() {
+                cfg.enable_ray_tracing = val;
+            } else {
+                log::warn!("Invalid value for DAFT_ENABLE_RAY_TRACING. Expected a number from 0 to 2, but received: {}", val.trim());
+            }
         }
         let shuffle_algorithm_env_var_name = "DAFT_SHUFFLE_ALGORITHM";
         if let Ok(val) = std::env::var(shuffle_algorithm_env_var_name) {
