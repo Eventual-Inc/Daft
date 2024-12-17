@@ -196,8 +196,12 @@ impl PipelineNode for StreamingSinkNode {
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
-        let progress_bar =
-            runtime_handle.make_progress_bar(self.name(), ProgressBarColor::Cyan, true);
+        let progress_bar = runtime_handle.make_progress_bar(
+            self.name(),
+            ProgressBarColor::Cyan,
+            true,
+            self.runtime_stats.clone(),
+        );
         let mut child_result_receivers = Vec::with_capacity(self.children.len());
         for child in &self.children {
             let child_result_receiver = child.start(maintain_order, runtime_handle)?;

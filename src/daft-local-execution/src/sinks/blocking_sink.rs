@@ -145,8 +145,12 @@ impl PipelineNode for BlockingSinkNode {
         _maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
-        let progress_bar =
-            runtime_handle.make_progress_bar(self.name(), ProgressBarColor::Cyan, true);
+        let progress_bar = runtime_handle.make_progress_bar(
+            self.name(),
+            ProgressBarColor::Cyan,
+            true,
+            self.runtime_stats.clone(),
+        );
         let child_results_receiver = self.child.start(false, runtime_handle)?;
         let counting_receiver = CountingReceiver::new(
             child_results_receiver,

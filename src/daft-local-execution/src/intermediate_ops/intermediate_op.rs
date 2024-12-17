@@ -202,8 +202,12 @@ impl PipelineNode for IntermediateNode {
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
         let mut child_result_receivers = Vec::with_capacity(self.children.len());
-        let progress_bar =
-            runtime_handle.make_progress_bar(self.name(), ProgressBarColor::Magenta, true);
+        let progress_bar = runtime_handle.make_progress_bar(
+            self.name(),
+            ProgressBarColor::Magenta,
+            true,
+            self.runtime_stats.clone(),
+        );
         for child in &self.children {
             let child_result_receiver = child.start(maintain_order, runtime_handle)?;
             child_result_receivers.push(CountingReceiver::new(

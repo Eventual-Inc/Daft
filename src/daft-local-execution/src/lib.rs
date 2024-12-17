@@ -25,6 +25,7 @@ use indicatif::MultiProgress;
 use lazy_static::lazy_static;
 use progress_bar::{OperatorProgressBar, ProgressBarColor};
 pub use run::{run_local, ExecutionEngineResult, NativeExecutor};
+use runtime_stats::RuntimeStatsContext;
 use snafu::{futures::TryFutureExt, ResultExt, Snafu};
 
 lazy_static! {
@@ -159,9 +160,10 @@ impl ExecutionRuntimeContext {
         prefix: impl Into<Cow<'static, str>>,
         color: ProgressBarColor,
         show_received: bool,
+        runtime_stats: Arc<RuntimeStatsContext>,
     ) -> Option<Arc<OperatorProgressBar>> {
         self.multi_progress_bar.as_ref().map(|mpb| {
-            let pb = OperatorProgressBar::new(prefix, color, show_received);
+            let pb = OperatorProgressBar::new(prefix, color, show_received, runtime_stats);
             let inner = pb.inner();
             mpb.add(inner.clone());
             Arc::new(pb)

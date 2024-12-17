@@ -89,6 +89,16 @@ impl RuntimeStatsContext {
         self.rows_emitted
             .fetch_add(rows, std::sync::atomic::Ordering::Relaxed);
     }
+
+    pub(crate) fn get_rows_received(&self) -> u64 {
+        self.rows_received
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub(crate) fn get_rows_emitted(&self) -> u64 {
+        self.rows_emitted.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     #[allow(unused)]
     pub(crate) fn reset(&self) {
         self.rows_received
@@ -134,7 +144,7 @@ impl CountingSender {
     ) -> Result<(), SendError<Arc<MicroPartition>>> {
         self.rt.mark_rows_emitted(v.len() as u64);
         if let Some(ref pb) = self.progress_bar {
-            pb.increment_emitted(v.len() as u64);
+            pb.render();
         }
         self.sender.send(v).await?;
         Ok(())
@@ -165,7 +175,7 @@ impl CountingReceiver {
         if let Some(ref v) = v {
             self.rt.mark_rows_received(v.len() as u64);
             if let Some(ref pb) = self.progress_bar {
-                pb.increment_received(v.len() as u64);
+                pb.render();
             }
         }
         v
