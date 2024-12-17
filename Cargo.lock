@@ -1949,7 +1949,6 @@ version = "0.3.0-dev0"
 dependencies = [
  "common-error",
  "common-treenode",
- "daft-core",
  "daft-dsl",
  "daft-schema",
  "rstest",

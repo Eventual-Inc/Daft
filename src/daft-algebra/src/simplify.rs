@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_treenode::Transformed;
-use daft_core::prelude::*;
 use daft_dsl::{lit, null_lit, Expr, ExprRef, LiteralValue, Operator};
+use daft_schema::{dtype::DataType, schema::SchemaRef};
 
 pub fn simplify_expr(expr: Expr, schema: &SchemaRef) -> DaftResult<Transformed<ExprRef>> {
     Ok(match expr {
@@ -360,9 +360,12 @@ mod test {
     use std::sync::Arc;
 
     use common_error::DaftResult;
-    use daft_core::prelude::{Schema, SchemaRef};
     use daft_dsl::{col, lit, null_lit, ExprRef};
-    use daft_schema::{dtype::DataType, field::Field};
+    use daft_schema::{
+        dtype::DataType,
+        field::Field,
+        schema::{Schema, SchemaRef},
+    };
     use rstest::{fixture, rstest};
 
     use crate::simplify_expr;
