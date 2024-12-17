@@ -1219,6 +1219,38 @@ impl Expr {
             _ => None,
         }
     }
+
+    pub fn has_compute(&self) -> bool {
+        match self {
+            Self::Column(..) => false,
+            Self::Literal(..) => false,
+            Self::Subquery(..) => false,
+            Self::Exists(..) => false,
+            Self::OuterReferenceColumn(..) => false,
+            Self::Function { .. } => true,
+            Self::ScalarFunction(..) => true,
+            Self::Agg(_) => true,
+            Self::Alias(expr, ..) => expr.has_compute(),
+            Self::Cast(expr, ..) => expr.has_compute(),
+            Self::Not(expr) => expr.has_compute(),
+            Self::IsNull(expr) => expr.has_compute(),
+            Self::NotNull(expr) => expr.has_compute(),
+            Self::FillNull(expr, fill_value) => expr.has_compute() || fill_value.has_compute(),
+            Self::IsIn(expr, items) => {
+                expr.has_compute() || items.iter().any(|item| item.has_compute())
+            }
+            Self::Between(expr, lower, upper) => {
+                expr.has_compute() || lower.has_compute() || upper.has_compute()
+            }
+            Self::BinaryOp { left, right, .. } => left.has_compute() || right.has_compute(),
+            Self::IfElse {
+                if_true,
+                if_false,
+                predicate,
+            } => if_true.has_compute() || if_false.has_compute() || predicate.has_compute(),
+            Self::InSubquery(expr, _) => expr.has_compute(),
+        }
+    }
 }
 
 #[derive(Display, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]

@@ -115,7 +115,11 @@ pub fn physical_plan_to_pipeline(
         LocalPhysicalPlan::Project(Project {
             input, projection, ..
         }) => {
-            let proj_op = ProjectOperator::new(projection.clone());
+            let proj_op = ProjectOperator::new(projection.clone()).with_context(|_| {
+                PipelineCreationSnafu {
+                    plan_name: physical_plan.name(),
+                }
+            })?;
             let child_node = physical_plan_to_pipeline(input, psets, cfg)?;
             IntermediateNode::new(Arc::new(proj_op), vec![child_node]).boxed()
         }

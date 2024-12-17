@@ -12,6 +12,7 @@ use std::{
 use common_error::{DaftError, DaftResult};
 use futures::FutureExt;
 use lazy_static::lazy_static;
+use thread_priority::set_current_thread_priority;
 use tokio::{
     runtime::{Handle, RuntimeFlavor},
     task::JoinSet,
@@ -148,6 +149,9 @@ fn init_compute_runtime() -> RuntimeRef {
                 static COMPUTE_THREAD_ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
                 let id = COMPUTE_THREAD_ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
                 format!("Compute-Thread-{}", id)
+            })
+            .on_thread_start(|| {
+                set_current_thread_priority(thread_priority::ThreadPriority::Min).unwrap();
             })
             .max_blocking_threads(*COMPUTE_RUNTIME_MAX_BLOCKING_THREADS);
         Runtime::new(builder.build().unwrap(), PoolType::Compute)

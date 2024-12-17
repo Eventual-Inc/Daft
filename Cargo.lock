@@ -1566,6 +1566,7 @@ dependencies = [
  "lazy_static",
  "log",
  "oneshot",
+ "thread-priority",
  "tokio",
 ]
 
@@ -2289,14 +2290,15 @@ dependencies = [
  "daft-writers",
  "futures",
  "indexmap 2.5.0",
+ "kanal",
  "lazy_static",
  "log",
- "loole",
  "num-format",
  "pin-project",
  "pyo3",
  "snafu",
  "tokio",
+ "tokio-stream",
  "tokio-util",
  "tracing",
 ]
@@ -2571,10 +2573,12 @@ dependencies = [
  "common-arrow-ffi",
  "common-display",
  "common-error",
+ "common-runtime",
  "daft-core",
  "daft-dsl",
  "daft-image",
  "daft-logical-plan",
+ "futures",
  "html-escape",
  "indexmap 2.5.0",
  "num-traits",
@@ -3931,6 +3935,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "kanal"
+version = "0.1.0-pre8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b05d55519627edaf7fd0f29981f6dc03fb52df3f5b257130eb8d0bf2801ea1d7"
+dependencies = [
+ "futures-core",
+ "lock_api",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4002,9 +4016,9 @@ dependencies = [
 
 [[package]]
 name = "libc"
-version = "0.2.155"
+version = "0.2.168"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97b3888a4aecf77e811145cadf6eef5901f4782c53886191b2f693f24761847c"
+checksum = "5aaeb2981e0606ca11d79718f8bb01164f1d6ed75080182d3abf017e6d244b6d"
 
 [[package]]
 name = "libflate"
@@ -4073,16 +4087,6 @@ name = "log"
 version = "0.4.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7a70ba024b9dc04c27ea2f0c0548feb474ec5c54bba33a7f72f873a39d07b24"
-
-[[package]]
-name = "loole"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2998397c725c822c6b2ba605fd9eb4c6a7a0810f1629ba3cc232ef4f0308d96"
-dependencies = [
- "futures-core",
- "futures-sink",
-]
 
 [[package]]
 name = "lz4"
@@ -6331,6 +6335,20 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.87",
+]
+
+[[package]]
+name = "thread-priority"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cfe075d7053dae61ac5413a34ea7d4913b6e6207844fd726bdd858b37ff72bf5"
+dependencies = [
+ "bitflags 2.6.0",
+ "cfg-if",
+ "libc",
+ "log",
+ "rustversion",
+ "winapi",
 ]
 
 [[package]]

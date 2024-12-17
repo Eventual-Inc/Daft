@@ -1,7 +1,9 @@
 use std::{
     collections::HashMap,
     fs::File,
+    future::Future,
     io::Write,
+    pin::pin,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -15,8 +17,7 @@ use daft_micropartition::{
     partitioning::{InMemoryPartitionSet, PartitionSet},
     MicroPartition,
 };
-use futures::{FutureExt, Stream};
-use loole::RecvFuture;
+use futures::Stream;
 use tokio_util::sync::CancellationToken;
 #[cfg(feature = "python")]
 use {
@@ -157,7 +158,7 @@ fn should_enable_explain_analyze() -> bool {
 }
 
 pub struct ExecutionEngineReceiverIterator {
-    receiver: Receiver<Arc<MicroPartition>>,
+    receiver: kanal::Receiver<Arc<MicroPartition>>,
     handle: Option<std::thread::JoinHandle<DaftResult<()>>>,
 }
 
@@ -165,7 +166,7 @@ impl Iterator for ExecutionEngineReceiverIterator {
     type Item = DaftResult<Arc<MicroPartition>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.receiver.blocking_recv() {
+        match self.receiver.recv().ok() {
             Some(part) => Some(Ok(part)),
             None => {
                 if self.handle.is_some() {
@@ -188,7 +189,7 @@ impl Iterator for ExecutionEngineReceiverIterator {
 }
 
 pub struct ExecutionEngineReceiverStream {
-    receive_fut: RecvFuture<Arc<MicroPartition>>,
+    receiver: kanal::AsyncReceiver<Arc<MicroPartition>>,
     handle: Option<std::thread::JoinHandle<DaftResult<()>>>,
 }
 
@@ -199,7 +200,8 @@ impl Stream for ExecutionEngineReceiverStream {
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Self::Item>> {
-        match self.receive_fut.poll_unpin(cx) {
+        let x = pin!(self.receiver.recv()).poll(cx);
+        match x {
             std::task::Poll::Ready(Ok(part)) => std::task::Poll::Ready(Some(Ok(part))),
             std::task::Poll::Ready(Err(_)) => {
                 if self.handle.is_some() {
@@ -229,8 +231,9 @@ pub struct ExecutionEngineResult {
 
 impl ExecutionEngineResult {
     pub fn into_stream(self) -> impl Stream<Item = DaftResult<Arc<MicroPartition>>> {
+        let receiver = self.receiver.into_inner();
         ExecutionEngineReceiverStream {
-            receive_fut: self.receiver.into_inner().recv_async(),
+            receiver,
             handle: Some(self.handle),
         }
     }
@@ -242,7 +245,7 @@ impl IntoIterator for ExecutionEngineResult {
 
     fn into_iter(self) -> Self::IntoIter {
         ExecutionEngineReceiverIterator {
-            receiver: self.receiver,
+            receiver: self.receiver.into_inner().to_sync(),
             handle: Some(self.handle),
         }
     }
@@ -257,7 +260,7 @@ pub fn run_local(
 ) -> DaftResult<ExecutionEngineResult> {
     refresh_chrome_trace();
     let pipeline = physical_plan_to_pipeline(physical_plan, &psets, &cfg)?;
-    let (tx, rx) = create_channel(results_buffer_size.unwrap_or(1));
+    let (tx, rx) = create_channel(results_buffer_size.unwrap_or(0));
     let handle = std::thread::spawn(move || {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
