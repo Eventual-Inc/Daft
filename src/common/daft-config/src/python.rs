@@ -90,6 +90,8 @@ impl PyDaftExecutionConfig {
         csv_target_filesize: Option<usize>,
         csv_inflation_factor: Option<f64>,
         shuffle_aggregation_default_partitions: Option<usize>,
+        partial_aggregation_threshold: Option<usize>,
+        high_cardinality_aggregation_threshold: Option<f64>,
         read_sql_partition_size_bytes: Option<usize>,
         enable_aqe: Option<bool>,
         enable_native_executor: Option<bool>,
@@ -145,6 +147,13 @@ impl PyDaftExecutionConfig {
         if let Some(shuffle_aggregation_default_partitions) = shuffle_aggregation_default_partitions
         {
             config.shuffle_aggregation_default_partitions = shuffle_aggregation_default_partitions;
+        }
+        if let Some(partial_aggregation_threshold) = partial_aggregation_threshold {
+            config.partial_aggregation_threshold = partial_aggregation_threshold;
+        }
+        if let Some(high_cardinality_aggregation_threshold) = high_cardinality_aggregation_threshold
+        {
+            config.high_cardinality_aggregation_threshold = high_cardinality_aggregation_threshold;
         }
         if let Some(read_sql_partition_size_bytes) = read_sql_partition_size_bytes {
             config.read_sql_partition_size_bytes = read_sql_partition_size_bytes;
@@ -243,6 +252,16 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn get_shuffle_aggregation_default_partitions(&self) -> PyResult<usize> {
         Ok(self.config.shuffle_aggregation_default_partitions)
+    }
+
+    #[getter]
+    fn get_partial_aggregation_threshold(&self) -> PyResult<usize> {
+        Ok(self.config.partial_aggregation_threshold)
+    }
+
+    #[getter]
+    fn get_high_cardinality_aggregation_threshold(&self) -> PyResult<f64> {
+        Ok(self.config.high_cardinality_aggregation_threshold)
     }
 
     #[getter]
