@@ -36,7 +36,7 @@ def register_catalog(scale_factor: int) -> SQLCatalog:
     return SQLCatalog(
         tables={
             table: daft.read_parquet(
-                f"s3://eventual-dev-benchmarking-fixtures/uncompressed/tpcds-dbgen/{scale_factor}/{table}.parquet/"
+                f"s3://eventual-dev-benchmarking-fixtures/uncompressed/tpcds-dbgen/{scale_factor}/{table}.parquet"
             )
             for table in TABLE_NAMES
         }
