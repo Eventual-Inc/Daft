@@ -577,9 +577,9 @@ class DataType:
 DataTypeLike = Union[DataType, type]
 
 
+_EXT_TYPE_REGISTRATION_LOCK = threading.Lock()
 _EXT_TYPE_REGISTERED = False
 _STATIC_DAFT_EXTENSION = None
-_ext_type_lock = threading.Lock()
 
 
 def _ensure_registered_super_ext_type():
@@ -589,7 +589,7 @@ def _ensure_registered_super_ext_type():
     # Double-checked locking: avoid grabbing the lock if we know that the ext type
     # has already been registered.
     if not _EXT_TYPE_REGISTERED:
-        with _ext_type_lock:
+        with _EXT_TYPE_REGISTRATION_LOCK:
             if not _EXT_TYPE_REGISTERED:
 
                 class DaftExtension(pa.ExtensionType):
