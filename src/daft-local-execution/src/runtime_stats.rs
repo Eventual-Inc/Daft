@@ -10,7 +10,7 @@ use loole::SendError;
 
 use crate::{
     channel::{Receiver, Sender},
-    progress_bar::ProgressBarWrapper,
+    progress_bar::OperatorProgressBar,
 };
 
 #[derive(Default)]
@@ -112,14 +112,14 @@ impl RuntimeStatsContext {
 pub struct CountingSender {
     sender: Sender<Arc<MicroPartition>>,
     rt: Arc<RuntimeStatsContext>,
-    progress_bar: Option<Arc<ProgressBarWrapper>>,
+    progress_bar: Option<Arc<OperatorProgressBar>>,
 }
 
 impl CountingSender {
     pub(crate) fn new(
         sender: Sender<Arc<MicroPartition>>,
         rt: Arc<RuntimeStatsContext>,
-        progress_bar: Option<Arc<ProgressBarWrapper>>,
+        progress_bar: Option<Arc<OperatorProgressBar>>,
     ) -> Self {
         Self {
             sender,
@@ -144,14 +144,14 @@ impl CountingSender {
 pub struct CountingReceiver {
     receiver: Receiver<Arc<MicroPartition>>,
     rt: Arc<RuntimeStatsContext>,
-    progress_bar: Option<Arc<ProgressBarWrapper>>,
+    progress_bar: Option<Arc<OperatorProgressBar>>,
 }
 
 impl CountingReceiver {
     pub(crate) fn new(
         receiver: Receiver<Arc<MicroPartition>>,
         rt: Arc<RuntimeStatsContext>,
-        progress_bar: Option<Arc<ProgressBarWrapper>>,
+        progress_bar: Option<Arc<OperatorProgressBar>>,
     ) -> Self {
         Self {
             receiver,

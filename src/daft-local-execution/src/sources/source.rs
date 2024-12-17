@@ -89,9 +89,8 @@ impl PipelineNode for SourceNode {
                 let mut has_data = false;
                 let mut source_stream = source.get_data(maintain_order, io_stats).await?;
                 while let Some(part) = source_stream.next().await {
-                    let part = part?;
                     has_data = true;
-                    if counting_sender.send(part).await.is_err() {
+                    if counting_sender.send(part?).await.is_err() {
                         return Ok(());
                     }
                 }

@@ -23,7 +23,7 @@ use common_error::{DaftError, DaftResult};
 use common_runtime::RuntimeTask;
 use indicatif::MultiProgress;
 use lazy_static::lazy_static;
-use progress_bar::{ProgressBarColor, ProgressBarWrapper};
+use progress_bar::{OperatorProgressBar, ProgressBarColor};
 pub use run::{run_local, ExecutionEngineResult, NativeExecutor};
 use snafu::{futures::TryFutureExt, ResultExt, Snafu};
 
@@ -159,12 +159,12 @@ impl ExecutionRuntimeContext {
         prefix: impl Into<Cow<'static, str>>,
         color: ProgressBarColor,
         show_received: bool,
-    ) -> Option<Arc<ProgressBarWrapper>> {
+    ) -> Option<Arc<OperatorProgressBar>> {
         self.multi_progress_bar.as_ref().map(|mpb| {
-            let pb_wrapper = ProgressBarWrapper::new(prefix, color, show_received);
-            let inner = pb_wrapper.inner();
+            let pb = OperatorProgressBar::new(prefix, color, show_received);
+            let inner = pb.inner();
             mpb.add(inner.clone());
-            Arc::new(pb_wrapper)
+            Arc::new(pb)
         })
     }
 

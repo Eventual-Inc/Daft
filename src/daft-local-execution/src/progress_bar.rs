@@ -18,13 +18,13 @@ impl ProgressBarColor {
     }
 }
 
-pub struct ProgressBarWrapper {
+pub struct OperatorProgressBar {
     inner_progress_bar: ProgressBar,
     emitted: AtomicU64,
     show_received: bool,
 }
 
-impl ProgressBarWrapper {
+impl OperatorProgressBar {
     pub fn new(
         prefix: impl Into<Cow<'static, str>>,
         color: ProgressBarColor,
@@ -77,7 +77,7 @@ impl ProgressBarWrapper {
     }
 }
 
-impl Drop for ProgressBarWrapper {
+impl Drop for OperatorProgressBar {
     fn drop(&mut self) {
         self.inner_progress_bar.finish_and_clear();
     }
