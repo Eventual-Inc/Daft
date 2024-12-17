@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
+use daft_algebra::boolean::combine_conjunction;
 use daft_core::join::JoinType;
-use daft_dsl::optimization::conjuct;
 
 use super::OptimizerRule;
 use crate::{
@@ -119,7 +119,7 @@ impl OptimizerRule for FilterNullJoinKey {
                 };
 
                 let left_null_pred = if can_filter_left {
-                    conjuct(
+                    combine_conjunction(
                         null_equals_nulls_iter
                             .by_ref()
                             .zip(left_on)
@@ -131,7 +131,7 @@ impl OptimizerRule for FilterNullJoinKey {
                 };
 
                 let right_null_pred = if can_filter_right {
-                    conjuct(
+                    combine_conjunction(
                         null_equals_nulls_iter
                             .by_ref()
                             .zip(right_on)
