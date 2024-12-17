@@ -8,8 +8,9 @@ from daft.io.object_store_options import io_config_to_storage_options
 from daft.logical.schema import Schema
 from tests.utils import assert_pyarrow_tables_equal
 
+PYARROW_LE_8_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (8, 0, 0)
 pytestmark = pytest.mark.skipif(
-    tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (8, 0, 0),
+    PYARROW_LE_8_0_0,
     reason="deltalake only supported if pyarrow >= 8.0.0",
 )
 
