@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import datetime
 import decimal
-import sys
 from pathlib import Path
 
 import pyarrow as pa
@@ -13,15 +12,9 @@ from daft.io.object_store_options import io_config_to_storage_options
 from daft.logical.schema import Schema
 from tests.conftest import get_tests_daft_runner_name
 
-PYARROW_LE_8_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (
-    8,
-    0,
-    0,
-)
-PYTHON_LT_3_8 = sys.version_info[:2] < (3, 8)
 pytestmark = pytest.mark.skipif(
-    PYARROW_LE_8_0_0 or PYTHON_LT_3_8,
-    reason="deltalake only supported if pyarrow >= 8.0.0 and python >= 3.8",
+    tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (8, 0, 0),
+    reason="deltalake only supported if pyarrow >= 8.0.0",
 )
 
 

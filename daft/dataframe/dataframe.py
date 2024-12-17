@@ -1094,13 +1094,9 @@ class DataFrame:
         <BLANKLINE>
         (Showing first 1 of 1 rows)
         """
-        import sys
-
         from daft import from_pydict
         from daft.io.object_store_options import io_config_to_storage_options
 
-        if sys.version_info < (3, 9):
-            raise ValueError("'write_lance' requires python 3.9 or higher")
         try:
             import lance
             import pyarrow as pa
