@@ -8,7 +8,6 @@ from daft.daft import (
     CsvSourceConfig,
     FileFormatConfig,
     IOConfig,
-    NativeStorageConfig,
     StorageConfig,
 )
 from daft.dataframe import DataFrame
@@ -87,7 +86,7 @@ def read_csv(
         chunk_size=_chunk_size,
     )
     file_format_config = FileFormatConfig.from_csv_config(csv_config)
-    storage_config = StorageConfig.native(NativeStorageConfig(True, io_config))
+    storage_config = StorageConfig(True, io_config)
 
     builder = get_tabular_files_scan(
         path=path,

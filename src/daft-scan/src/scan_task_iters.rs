@@ -8,9 +8,7 @@ use daft_io::IOStatsContext;
 use daft_parquet::read::read_parquet_metadata;
 use parquet2::metadata::RowGroupList;
 
-use crate::{
-    storage_config::StorageConfig, ChunkSpec, DataSource, Pushdowns, ScanTask, ScanTaskRef,
-};
+use crate::{ChunkSpec, DataSource, Pushdowns, ScanTask, ScanTaskRef};
 
 pub(crate) type BoxScanTaskIter<'a> = Box<dyn Iterator<Item = DaftResult<ScanTaskRef>> + 'a>;
 
@@ -206,13 +204,11 @@ pub(crate) fn split_by_row_groups(
                         FileFormatConfig::Parquet(ParquetSourceConfig {
                             field_id_mapping, ..
                         }),
-                        StorageConfig::Native(_),
                         [source],
                         Some(None),
                         None,
                     ) = (
                         t.file_format_config.as_ref(),
-                        t.storage_config.as_ref(),
                         &t.sources[..],
                         t.sources.first().map(DataSource::get_chunk_spec),
                         t.pushdowns.limit,

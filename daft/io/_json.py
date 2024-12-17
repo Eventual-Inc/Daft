@@ -8,7 +8,6 @@ from daft.daft import (
     FileFormatConfig,
     IOConfig,
     JsonSourceConfig,
-    NativeStorageConfig,
     StorageConfig,
 )
 from daft.dataframe import DataFrame
@@ -64,7 +63,7 @@ def read_json(
 
     json_config = JsonSourceConfig(_buffer_size, _chunk_size)
     file_format_config = FileFormatConfig.from_json_config(json_config)
-    storage_config = StorageConfig.native(NativeStorageConfig(True, io_config))
+    storage_config = StorageConfig(True, io_config)
 
     builder = get_tabular_files_scan(
         path=path,

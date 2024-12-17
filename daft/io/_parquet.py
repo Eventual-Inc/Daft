@@ -7,7 +7,6 @@ from daft.api_annotations import PublicAPI
 from daft.daft import (
     FileFormatConfig,
     IOConfig,
-    NativeStorageConfig,
     ParquetSourceConfig,
     StorageConfig,
 )
@@ -84,7 +83,7 @@ def read_parquet(
     file_format_config = FileFormatConfig.from_parquet_config(
         ParquetSourceConfig(coerce_int96_timestamp_unit=pytimeunit, row_groups=row_groups, chunk_size=_chunk_size)
     )
-    storage_config = StorageConfig.native(NativeStorageConfig(multithreaded_io, io_config))
+    storage_config = StorageConfig(multithreaded_io, io_config)
 
     builder = get_tabular_files_scan(
         path=path,

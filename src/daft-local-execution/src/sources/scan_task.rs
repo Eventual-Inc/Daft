@@ -15,7 +15,7 @@ use daft_io::IOStatsRef;
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_micropartition::MicroPartition;
 use daft_parquet::read::{read_parquet_bulk_async, ParquetSchemaInferenceOptions};
-use daft_scan::{storage_config::StorageConfig, ChunkSpec, ScanTask};
+use daft_scan::{ChunkSpec, ScanTask};
 use futures::{Stream, StreamExt, TryStreamExt};
 use snafu::ResultExt;
 use tracing::instrument;
@@ -241,14 +241,14 @@ async fn stream_scan_task(
     }
     let source = scan_task.sources.first().unwrap();
     let url = source.get_path();
-    let (io_config, multi_threaded_io) = match scan_task.storage_config.as_ref() {
-        StorageConfig::Native(native_storage_config) => (
-            native_storage_config.io_config.as_ref(),
-            native_storage_config.multithreaded_io,
-        ),
-    };
-    let io_config = Arc::new(io_config.cloned().unwrap_or_default());
-    let io_client = daft_io::get_io_client(multi_threaded_io, io_config)?;
+    let io_config = Arc::new(
+        scan_task
+            .storage_config
+            .io_config
+            .clone()
+            .unwrap_or_default(),
+    );
+    let io_client = daft_io::get_io_client(scan_task.storage_config.multithreaded_io, io_config)?;
     let table_stream = match scan_task.file_format_config.as_ref() {
         FileFormatConfig::Parquet(ParquetSourceConfig {
             coerce_int96_timestamp_unit,

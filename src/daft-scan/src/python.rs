@@ -4,7 +4,7 @@ use common_py_serde::{deserialize_py_object, serialize_py_object};
 use pyo3::{prelude::*, types::PyTuple};
 use serde::{Deserialize, Serialize};
 
-use crate::storage_config::{NativeStorageConfig, PyStorageConfig};
+use crate::storage_config::StorageConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PyObjectSerializableWrapper(
@@ -87,9 +87,7 @@ pub mod pylib {
 
     use super::PythonTablesFactoryArgs;
     use crate::{
-        anonymous::AnonymousScanOperator,
-        glob::GlobScanOperator,
-        storage_config::{PyStorageConfig, StorageConfig},
+        anonymous::AnonymousScanOperator, glob::GlobScanOperator, storage_config::StorageConfig,
         DataSource, ScanTask,
     };
     #[pyclass(module = "daft.daft", frozen)]
@@ -110,7 +108,7 @@ pub mod pylib {
             files: Vec<String>,
             schema: PySchema,
             file_format_config: PyFileFormatConfig,
-            storage_config: PyStorageConfig,
+            storage_config: StorageConfig,
         ) -> PyResult<Self> {
             py.allow_threads(|| {
                 let schema = schema.schema;
@@ -132,7 +130,7 @@ pub mod pylib {
             py: Python,
             glob_path: Vec<String>,
             file_format_config: PyFileFormatConfig,
-            storage_config: PyStorageConfig,
+            storage_config: StorageConfig,
             hive_partitioning: bool,
             infer_schema: bool,
             schema: Option<PySchema>,
@@ -346,7 +344,7 @@ pub mod pylib {
             file: String,
             file_format: PyFileFormatConfig,
             schema: PySchema,
-            storage_config: PyStorageConfig,
+            storage_config: StorageConfig,
             num_rows: Option<i64>,
             size_bytes: Option<u64>,
             iceberg_delete_files: Option<Vec<String>>,
@@ -429,7 +427,7 @@ pub mod pylib {
                 vec![data_source],
                 file_format.into(),
                 schema.schema,
-                Arc::new(StorageConfig::Native(Arc::new(Default::default()))), // read SQL doesn't actually use the storage config
+                Arc::new(Default::default()), // read SQL doesn't actually use the storage config
                 pushdowns.map(|p| p.0.as_ref().clone()).unwrap_or_default(),
                 None,
             );
@@ -472,9 +470,7 @@ pub mod pylib {
                 schema.schema,
                 // HACK: StorageConfig isn't used when running the Python function but this is a non-optional arg for
                 // ScanTask creation, so we just put in a placeholder here
-                Arc::new(crate::storage_config::StorageConfig::Native(Arc::new(
-                    Default::default(),
-                ))),
+                Arc::new(Default::default()),
                 pushdowns.map(|p| p.0.as_ref().clone()).unwrap_or_default(),
                 None,
             );
@@ -562,9 +558,7 @@ pub mod pylib {
             vec![data_source],
             Arc::new(FileFormatConfig::Parquet(default::Default::default())),
             Arc::new(schema),
-            Arc::new(crate::storage_config::StorageConfig::Native(Arc::new(
-                default::Default::default(),
-            ))),
+            Arc::new(Default::default()),
             Pushdowns::new(None, None, columns.map(Arc::new), None),
             None,
         );
@@ -573,8 +567,7 @@ pub mod pylib {
 }
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
-    parent.add_class::<PyStorageConfig>()?;
-    parent.add_class::<NativeStorageConfig>()?;
+    parent.add_class::<StorageConfig>()?;
 
     parent.add_class::<pylib::ScanOperatorHandle>()?;
     parent.add_class::<pylib::PyScanTask>()?;

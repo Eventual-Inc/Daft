@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Any, Dict, Optional, Union
 
 from daft import context
 from daft.api_annotations import PublicAPI
-from daft.daft import IOConfig, NativeStorageConfig, ScanOperatorHandle, StorageConfig
+from daft.daft import IOConfig, ScanOperatorHandle, StorageConfig
 from daft.dataframe import DataFrame
 from daft.dependencies import unity_catalog
 from daft.io.catalog import DataCatalogTable
@@ -60,7 +60,7 @@ def read_deltalake(
     )
 
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
-    storage_config = StorageConfig.native(NativeStorageConfig(multithreaded_io, io_config))
+    storage_config = StorageConfig(multithreaded_io, io_config)
 
     if isinstance(table, str):
         table_uri = table
@@ -72,7 +72,7 @@ def read_deltalake(
         # Override the storage_config with the one provided by Unity catalog
         table_io_config = table.io_config
         if table_io_config is not None:
-            storage_config = StorageConfig.native(NativeStorageConfig(multithreaded_io, table_io_config))
+            storage_config = StorageConfig(multithreaded_io, table_io_config)
     else:
         raise ValueError(
             f"table argument must be a table URI string, DataCatalogTable or UnityCatalogTable instance, but got: {type(table)}, {table}"

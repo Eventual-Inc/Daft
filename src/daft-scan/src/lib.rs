@@ -840,11 +840,7 @@ mod test {
     use daft_schema::{schema::Schema, time_unit::TimeUnit};
     use itertools::Itertools;
 
-    use crate::{
-        glob::GlobScanOperator,
-        storage_config::{NativeStorageConfig, StorageConfig},
-        DataSource, ScanTask,
-    };
+    use crate::{glob::GlobScanOperator, storage_config::StorageConfig, DataSource, ScanTask};
 
     fn make_scan_task(num_sources: usize) -> ScanTask {
         let sources = (0..num_sources)
@@ -871,9 +867,7 @@ mod test {
             sources,
             Arc::new(file_format_config),
             Arc::new(Schema::empty()),
-            Arc::new(StorageConfig::Native(Arc::new(
-                NativeStorageConfig::new_internal(false, None),
-            ))),
+            Arc::new(StorageConfig::new_internal(false, None)),
             Pushdowns::default(),
             None,
         )
@@ -896,9 +890,7 @@ mod test {
         let glob_scan_operator: GlobScanOperator = GlobScanOperator::try_new(
             sources,
             Arc::new(file_format_config),
-            Arc::new(StorageConfig::Native(Arc::new(
-                NativeStorageConfig::new_internal(false, None),
-            ))),
+            Arc::new(StorageConfig::new_internal(false, None)),
             false,
             Some(Arc::new(Schema::empty())),
             None,

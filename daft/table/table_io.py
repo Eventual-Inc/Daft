@@ -17,7 +17,6 @@ from daft.daft import (
     JsonConvertOptions,
     JsonParseOptions,
     JsonReadOptions,
-    NativeStorageConfig,
     StorageConfig,
 )
 from daft.dependencies import pa, pacsv, pads, pq
@@ -90,7 +89,7 @@ def read_json(
     Returns:
         MicroPartition: Parsed MicroPartition from JSON
     """
-    config = storage_config.config if storage_config is not None else NativeStorageConfig(True, IOConfig())
+    config = storage_config if storage_config is not None else StorageConfig(True, IOConfig())
     assert isinstance(file, (str, pathlib.Path)), "Native downloader only works on string inputs to read_json"
     json_convert_options = JsonConvertOptions(
         limit=read_options.num_rows,
@@ -126,7 +125,7 @@ def read_parquet(
     Returns:
         MicroPartition: Parsed MicroPartition from Parquet
     """
-    config = storage_config.config if storage_config is not None else NativeStorageConfig(True, IOConfig())
+    config = storage_config if storage_config is not None else StorageConfig(True, IOConfig())
     assert isinstance(
         file, (str, pathlib.Path)
     ), "Native downloader only works on string or Path inputs to read_parquet"
@@ -211,7 +210,7 @@ def read_csv(
     Returns:
         MicroPartition: Parsed MicroPartition from CSV
     """
-    config = storage_config.config if storage_config is not None else NativeStorageConfig(True, IOConfig())
+    config = storage_config if storage_config is not None else StorageConfig(True, IOConfig())
     assert isinstance(file, (str, pathlib.Path)), "Native downloader only works on string or Path inputs to read_csv"
     has_header = csv_options.header_index is not None
     csv_convert_options = CsvConvertOptions(
