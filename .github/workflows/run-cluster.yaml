@@ -108,7 +108,6 @@ jobs:
           echo 'Invalid command submitted; command cannot be empty'
           exit 1
         fi
-        rm -rf daft
         python .github/ci-scripts/job_runner.py \
           --working-dir='${{ inputs.working_dir }}' \
           --entrypoint-script='${{ inputs.entrypoint_script }}' \
