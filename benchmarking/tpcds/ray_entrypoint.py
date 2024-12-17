@@ -62,9 +62,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--question",
-        required=True,
         type=int,
         help="The TPC-DS question index to run",
+        required=True,
     )
     parser.add_argument(
         "--dry-run",
@@ -75,6 +75,8 @@ if __name__ == "__main__":
         "--scale-factor",
         type=int,
         help="Which scale factor to run this data at",
+        required=False,
+        default=2,
     )
     args = parser.parse_args()
 
