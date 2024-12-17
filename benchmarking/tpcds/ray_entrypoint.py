@@ -32,11 +32,11 @@ TABLE_NAMES = [
 ]
 
 
-def register_catalog() -> SQLCatalog:
+def register_catalog(scale_factor: int) -> SQLCatalog:
     return SQLCatalog(
         tables={
             table: daft.read_parquet(
-                f"s3://eventual-dev-benchmarking-fixtures/uncompressed/tpcds-dbgen/2/{table}.parquet/"
+                f"s3://eventual-dev-benchmarking-fixtures/uncompressed/tpcds-dbgen/{scale_factor}/{table}.parquet/"
             )
             for table in TABLE_NAMES
         }
@@ -46,8 +46,9 @@ def register_catalog() -> SQLCatalog:
 def run(
     question: int,
     dry_run: bool,
+    scale_factor: int,
 ):
-    catalog = register_catalog()
+    catalog = register_catalog(scale_factor)
     query_file = Path(__file__).parent / "queries" / f"{question:02}.sql"
     with open(query_file) as f:
         query = f.read()
@@ -70,8 +71,13 @@ if __name__ == "__main__":
         action="store_true",
         help="Whether or not to run the query in dry-run mode; if true, only the plan will be printed out",
     )
+    parser.add_argument(
+        "--scale-factor",
+        type=int,
+        help="Which scale factor to run this data at",
+    )
     args = parser.parse_args()
 
     assert args.question in range(1, 100)
 
-    run(args.question, args.dry_run)
+    run(question=args.question, dry_run=args.dry_run, scale_factor=args.scale_factor)
