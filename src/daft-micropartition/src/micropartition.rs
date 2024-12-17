@@ -589,7 +589,8 @@ impl MicroPartition {
             .collect::<DaftResult<Vec<_>>>()?;
 
         let mut schema_with_id_index_map = self.schema.fields.clone();
-        schema_with_id_index_map.insert(
+        schema_with_id_index_map.shift_insert(
+            0,
             column_name.to_string(),
             Field::new(column_name, DataType::UInt64),
         );
