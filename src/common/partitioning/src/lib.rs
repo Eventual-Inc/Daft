@@ -1,4 +1,4 @@
-use std::{any::Any, sync::Arc};
+use std::sync::Arc;
 
 use common_error::DaftResult;
 use futures::stream::BoxStream;
@@ -48,8 +48,6 @@ pub struct PartitionMetadata {
 /// It is important to note that the methods do not take `&mut self` but instead take `&self`.
 /// So it is up to the implementation to manage any interior mutability.
 pub trait PartitionSet<T: Partition>: std::fmt::Debug + Send + Sync {
-    fn as_any(&self) -> &dyn Any;
-    fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
     /// Merge all micropartitions into a single micropartition
     fn get_merged_partitions(&self) -> DaftResult<PartitionRef>;
     /// Get a preview of the micropartitions

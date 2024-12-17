@@ -1,4 +1,4 @@
-use std::{any::Any, sync::Arc};
+use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 pub use common_partitioning::*;
@@ -101,12 +101,6 @@ impl MicroPartitionSet {
 }
 
 impl PartitionSet<MicroPartition> for MicroPartitionSet {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-    fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
-        self
-    }
     fn get_merged_partitions(&self) -> DaftResult<PartitionRef> {
         let parts = self.partitions.iter().flat_map(|v| v.value().clone());
         MicroPartition::concat(parts).map(|mp| Arc::new(mp) as _)
