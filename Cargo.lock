@@ -1577,6 +1577,7 @@ dependencies = [
  "common-display",
  "common-error",
  "common-file-formats",
+ "daft-algebra",
  "daft-dsl",
  "daft-schema",
  "pyo3",
@@ -1905,6 +1906,7 @@ dependencies = [
  "common-system-info",
  "common-tracing",
  "common-version",
+ "daft-algebra",
  "daft-catalog",
  "daft-catalog-python-catalog",
  "daft-compression",
@@ -1939,6 +1941,17 @@ dependencies = [
  "pyo3-log",
  "sysinfo",
  "tikv-jemallocator",
+]
+
+[[package]]
+name = "daft-algebra"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-error",
+ "common-treenode",
+ "daft-dsl",
+ "daft-schema",
+ "rstest",
 ]
 
 [[package]]
@@ -2329,6 +2342,7 @@ dependencies = [
  "common-resource-request",
  "common-scan-info",
  "common-treenode",
+ "daft-algebra",
  "daft-core",
  "daft-dsl",
  "daft-functions",
@@ -2536,6 +2550,7 @@ dependencies = [
  "common-error",
  "common-io-config",
  "common-runtime",
+ "daft-algebra",
  "daft-core",
  "daft-dsl",
  "daft-functions",
